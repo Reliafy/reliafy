@@ -208,13 +208,15 @@ def register() -> None:
                              "finding?: 'ok'|'degraded'|'found_failed' (inspect only), "
                              "new_item?: {name, serial?, part_number?, manufacturer?} or item_id? "
                              "(replace: what went in), notes?}"))] = [],
-                         on: DateText = None, notes: str = "") -> dict[str, Any]:
+                         on: DateText = None, notes: str = "",
+                         readings: Annotated[list[dict], Field(description=(
+                             "Meter readings taken during the work: [{meter_id, value}]."))] = []) -> dict[str, Any]:
         """Close a work order with what was done. A replacement ends the fitted item's
         time at the position (a failure if a failure mode is named, otherwise a planned
         removal) and fits the new item; that is what builds the life data. Get the
         position's failure-mode ids from get_work_order first. Nothing is saved if any
         action is invalid."""
-        return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes)
+        return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes, readings)
 
     # ---- items, locations, classes and corrections --------------------------------------
 
@@ -276,10 +278,30 @@ def register() -> None:
 
     @tool("update_task", _WRITE, "Update a task")
     def update_task(task_id: str, ctx: Context, name: str | None = None, interval: float | None = None,
-                    unit: str | None = None) -> dict[str, Any]:
+                    unit: str | None = None, also_interval: float | None = None, also_unit: str | None = None,
+                    meter_id: str | None = None) -> dict[str, Any]:
         """Rename a task or change its interval (unit: days, weeks, months, years, or a unit of use
-        such as hours)."""
-        return run(m_for(ctx).update_task, task_id, name, interval, unit)
+        such as hours, cycles, km, read from a meter on the position). also_interval + also_unit
+        add a second limit, whichever comes first (every 500 hours or 6 months); also_interval 0
+        removes it. meter_id picks a meter for a task by use."""
+        return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, meter_id)
+
+    @tool("add_meter", _WRITE, "Add a usage meter")
+    def add_meter(position_id: str, unit: str, ctx: Context, name: str = "") -> dict[str, Any]:
+        """A usage meter on a position (unit: hours, cycles, km, starts, ...). Tasks on the position
+        that go by that unit fall due from its readings, projected at the recent rate."""
+        return run(m_for(ctx).add_meter, position_id, name, unit)
+
+    @tool("record_reading", _WRITE, "Record a meter reading")
+    def record_reading(meter_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
+        """A meter reading (e.g. the pump's hour meter says 12,340). Readings only go up; a replaced
+        meter is a new meter. Meter ids are in get_position (meters)."""
+        return run(m_for(ctx).record_reading, meter_id, value, on, note)
+
+    @tool("get_meter", _READ, "Read a meter")
+    def get_meter(meter_id: str, ctx: Context) -> dict[str, Any]:
+        """A meter: its latest reading, the rate per day, and its recent readings."""
+        return run(m_for(ctx).meter, meter_id)
 
     @tool("retire_task", _WRITE, "Retire a task")
     def retire_task(task_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:

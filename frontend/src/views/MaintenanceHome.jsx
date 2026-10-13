@@ -4,6 +4,8 @@ import {
   createMaintenancePosition,
   generateWorkOrders,
   getMaintenanceOverview,
+  getMaintenanceSettings,
+  setMaintenanceSettings,
   listRcmStudies,
   maintenanceFromRcm,
 } from "../api.js";
@@ -23,10 +25,18 @@ export default function MaintenanceHome() {
   const [modal, setModal] = useState(null); // "position" | "rcm"
   const [generating, setGenerating] = useState(false);
 
+  const [digest, setDigest] = useState(null);
   const refresh = useCallback(() => {
     getMaintenanceOverview().then(setData).catch((e) => setError(e.message));
   }, []);
   useEffect(() => refresh(), [refresh]);
+  useEffect(() => {
+    getMaintenanceSettings().then((s) => setDigest(s.digest)).catch(() => {});
+  }, []);
+  const toggleDigest = async (on) => {
+    setDigest(on);
+    await setMaintenanceSettings({ digest: on }).catch(() => setDigest(!on));
+  };
 
   const onGenerate = async () => {
     setGenerating(true);
@@ -129,6 +139,12 @@ export default function MaintenanceHome() {
               {data.tree.map((node) => <TreeNode key={node.id} node={node} />)}
             </ul>
           </section>
+          {digest !== null && (
+            <label className="maint-row lib-date" style={{ gap: "0.5rem" }}>
+              <input type="checkbox" checked={digest} onChange={(e) => toggleDigest(e.target.checked)} />
+              Email me when new work orders are raised for tasks coming due
+            </label>
+          )}
         </>
       )}
 

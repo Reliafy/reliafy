@@ -76,8 +76,10 @@ export function FormModal({ title, submitLabel, onClose, onSubmit, canSubmit = t
 }
 
 export function DueChip({ task }) {
-  if (task.by_use) return <span className="lib-date">by use (needs a meter)</span>;
-  if (!task.next_due) return <span className="lib-date">—</span>;
+  if (!task.next_due) {
+    const note = (task.limits || []).map((l) => l.note).find(Boolean);
+    return <span className="lib-date">{note || "—"}</span>;
+  }
   return (
     <span className={task.overdue ? "maint-overdue" : "lib-date"}>
       {fmtDate(task.next_due)}{task.overdue ? " (overdue)" : ""}
@@ -139,4 +141,9 @@ export function LifeTable({ rows, showPosition = false, onFix }) {
       </tbody>
     </table>
   );
+}
+
+export function everyText(t) {
+  const first = `${t.interval} ${t.unit}`;
+  return t.also_interval ? `${first} or ${t.also_interval} ${t.also_unit}` : first;
 }

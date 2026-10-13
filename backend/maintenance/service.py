@@ -160,8 +160,8 @@ def _item_fitted(s: GraphStore, org: str, p: dict) -> None:
     s.put_edge(org, "AT", p["fitment_id"], p["position_id"])
     # A new item is a renewal: the position's tasks count from the day it went in.
     for task in s.inn(org, p["position_id"], "ON"):
-        if task["label"] == "Task" and (not task.get("last_done") or task["last_done"] < p["on"]):
-            s.patch_node(org, task["id"], {"last_done": p["on"]})
+        if task["label"] == "Task":
+            _renew_task(s, org, task, p["on"])
 
 
 def _item_removed(s: GraphStore, org: str, p: dict) -> None:
@@ -218,6 +218,83 @@ def _action_recorded(s: GraphStore, org: str, p: dict) -> None:
         s.put_edge(org, "ON", p["id"], p["on_fitment"])
 
 
+# ---- meters and readings (usage: run hours, cycles, km) ---------------------------
+
+USAGE_UNITS = ("hours", "cycles", "km", "miles", "starts", "tonnes", "litres")
+
+
+def _is_calendar(unit: str) -> bool:
+    return (_norm_unit(unit) or "days") in CALENDAR_UNITS
+
+
+def _readings(s: GraphStore, org: str, meter_id: str) -> list[dict]:
+    rows = [r for r in s.inn(org, meter_id, "OF") if r["label"] == "Reading" and not r.get("voided")]
+    return sorted(rows, key=lambda r: (r["on"], r["value"]))
+
+
+def _reading_at(readings: list[dict], day: str) -> float | None:
+    """The meter on ``day``: interpolated between the readings either side, the
+    last one before it, or None if every reading is later."""
+    before = [r for r in readings if r["on"] <= day]
+    after = [r for r in readings if r["on"] > day]
+    if not before:
+        return None
+    a = before[-1]
+    if not after:
+        return a["value"]
+    b = after[0]
+    span = (date.fromisoformat(b["on"]) - date.fromisoformat(a["on"])).days
+    frac = (date.fromisoformat(day) - date.fromisoformat(a["on"])).days / span if span else 0
+    return a["value"] + frac * (b["value"] - a["value"])
+
+
+def _rate(readings: list[dict]) -> float | None:
+    """Units per day over the last year of readings (None with fewer than two)."""
+    if len(readings) < 2:
+        return None
+    last = readings[-1]
+    cutoff = (date.fromisoformat(last["on"]) - timedelta(days=365)).isoformat()
+    window = [r for r in readings if r["on"] >= cutoff]
+    first = window[0] if len(window) > 1 else readings[-2]
+    days = (date.fromisoformat(last["on"]) - date.fromisoformat(first["on"])).days
+    return (last["value"] - first["value"]) / days if days > 0 else None
+
+
+def _task_meter(s: GraphStore, org: str, task: dict) -> dict | None:
+    if task.get("meter_id"):
+        return s.node(org, task["meter_id"])
+    for unit in (task.get("unit"), task.get("also_unit")):
+        if unit and not _is_calendar(unit):
+            position = s.out(org, task["id"], "ON")
+            meters = [mt for mt in (s.inn(org, position[0]["id"], "ON") if position else [])
+                      if mt["label"] == "Meter" and _norm_unit(mt["unit"]) == _norm_unit(unit)]
+            if meters:
+                return sorted(meters, key=lambda mt: mt["name"].lower())[0]
+    return None
+
+
+def _renew_task(s: GraphStore, org: str, task: dict, day: str) -> None:
+    """The task was done (or its item renewed) on ``day``: record the date, and the
+    meter reading then if it goes by use."""
+    if task.get("last_done") and task["last_done"] >= day:
+        return
+    changes = {"last_done": day}
+    meter = _task_meter(s, org, task)
+    if meter:
+        changes["last_done_reading"] = _reading_at(_readings(s, org, meter["id"]), day)
+    s.patch_node(org, task["id"], changes)
+
+
+def _meter_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Meter", {"name": p["name"], "unit": p["unit"], "created": p["on"]})
+    s.put_edge(org, "ON", p["id"], p["position_id"])
+
+
+def _meter_read(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Reading", {"on": p["on"], "value": p["value"], "note": p.get("note", "")})
+    s.put_edge(org, "OF", p["id"], p["meter_id"])
+
+
 def _work_order_closed(s: GraphStore, org: str, p: dict) -> None:
     wo = s.node(org, p["id"])
     # Work recorded after the fact: it was opened no later than it was done.
@@ -225,8 +302,7 @@ def _work_order_closed(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"status": "closed", "closed": p["on"], "opened": opened,
                                 "notes": p.get("notes", "")})
     for task in s.out(org, p["id"], "FOR"):
-        if not task.get("last_done") or task["last_done"] < p["on"]:
-            s.patch_node(org, task["id"], {"last_done": p["on"]})
+        _renew_task(s, org, task, p["on"])
 
 
 def _photo_added(s: GraphStore, org: str, p: dict) -> None:
@@ -268,6 +344,9 @@ PROJECTORS = {
     "work_order.updated": _patch,
     "work_order.cancelled": _work_order_cancelled,
     "location.updated": _patch,
+    "meter.added": _meter_added,
+    "meter.read": _meter_read,
+    "reading.voided": _flag("voided"),
     "photo.added": _photo_added,
     "photo.removed": _photo_removed,
     "coordinates.set": _coordinates_set,
@@ -535,17 +614,110 @@ class Maintenance:
     def _tasks_on(self, position_id: str) -> list[dict]:
         return [t for t in self.s.inn(self.org, position_id, "ON") if t["label"] == "Task" and not t.get("retired")]
 
-    def _task_view(self, task: dict) -> dict:
+    def _due_by(self, task: dict, interval: float, unit: str) -> dict:
+        """When one limit of a task falls due: on the calendar, or by use from its
+        meter (projected from the meter's recent rate)."""
         base = task.get("last_done") or task["start"]
-        nxt = add_interval(base, task["interval"], task["unit"])
+        if _is_calendar(unit):
+            return {"limit": f"{interval:g} {unit}", "next_due": add_interval(base, interval, unit)}
+        meter = _task_meter(self.s, self.org, task)
+        if meter is None:
+            return {"limit": f"{interval:g} {unit}", "next_due": None,
+                    "note": f"needs a {unit} meter on the position"}
+        readings = _readings(self.s, self.org, meter["id"])
+        if not readings:
+            return {"limit": f"{interval:g} {unit}", "next_due": None, "note": "needs meter readings"}
+        start = task.get("last_done_reading")
+        if start is None:
+            start = _reading_at(readings, base)
+        if start is None:
+            start = readings[0]["value"]
+        target = start + interval
+        last, rate = readings[-1], _rate(readings)
+        out = {"limit": f"{interval:g} {unit}", "due_at_reading": round(target, 2),
+               "meter": {"id": meter["id"], "name": meter["name"], "unit": meter["unit"],
+                         "reading": last["value"], "read_on": last["on"],
+                         "rate_per_day": rate and round(rate, 3)}}
+        if last["value"] >= target:
+            crossed = next((r["on"] for r in readings if r["value"] >= target), last["on"])
+            return {**out, "next_due": crossed}
+        if not rate or rate <= 0:
+            return {**out, "next_due": None, "note": "needs two readings to project a date"}
+        days = (target - last["value"]) / rate
+        return {**out, "next_due": (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()}
+
+    def _task_view(self, task: dict) -> dict:
+        limits = [self._due_by(task, task["interval"], task["unit"])]
+        if task.get("also_interval") and task.get("also_unit"):
+            limits.append(self._due_by(task, task["also_interval"], task["also_unit"]))
+        dues = [lim["next_due"] for lim in limits if lim["next_due"]]
+        nxt = min(dues) if dues else None
         open_wo = next((w for w in self.s.inn(self.org, task["id"], "FOR") if w.get("status") == "open"), None)
         return {
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
-            "interval": task["interval"], "unit": task["unit"], "last_done": task.get("last_done"),
-            "next_due": nxt, "by_use": nxt is None,
+            "interval": task["interval"], "unit": task["unit"],
+            "also_interval": task.get("also_interval"), "also_unit": task.get("also_unit"),
+            "last_done": task.get("last_done"), "last_done_reading": task.get("last_done_reading"),
+            "limits": limits, "next_due": nxt, "by_use": not _is_calendar(task["unit"]),
             "overdue": bool(nxt and nxt < date.today().isoformat()),
             "open_work_order": open_wo and {"id": open_wo["id"], "number": open_wo["number"]},
         }
+
+    # ---- meters ------------------------------------------------------------------
+
+    def add_meter(self, position_id: str, name, unit) -> dict:
+        """A usage meter on a position: run hours, cycles, km. Tasks on the position
+        that go by that unit use it."""
+        self._get(position_id, "Position")
+        unit = _norm_unit(unit)
+        if not unit or _is_calendar(unit):
+            raise Invalid(f"A meter counts use, e.g. {', '.join(USAGE_UNITS[:4])}.")
+        mid = new_id()
+        self._emit("meter.added", {"id": mid, "position_id": position_id,
+                                   "name": _text(name, "meter's name") or f"{unit.capitalize()} meter",
+                                   "unit": unit, "on": date.today().isoformat()})
+        return self.meter(mid)
+
+    def record_reading(self, meter_id: str, value, on=None, note="") -> dict:
+        self._get(meter_id, "Meter")
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise Invalid("A reading is a number.")
+        if value < 0 or value != value:
+            raise Invalid("A reading can't be negative.")
+        day = _day(on)
+        if day > date.today().isoformat():
+            raise Invalid("A reading can't be in the future.")
+        readings = _readings(self.s, self.org, meter_id)
+        before = [r for r in readings if r["on"] <= day]
+        after = [r for r in readings if r["on"] > day]
+        if before and value < before[-1]["value"]:
+            raise Invalid(f"It's lower than the reading of {before[-1]['value']:g} on {before[-1]['on']}. "
+                          "If the meter was replaced, add a new meter.")
+        if after and value > after[0]["value"]:
+            raise Invalid(f"It's higher than the later reading of {after[0]['value']:g} on {after[0]['on']}.")
+        self._emit("meter.read", {"id": new_id(), "meter_id": meter_id, "on": day, "value": value,
+                                  "note": _text(note, "note")})
+        return self.meter(meter_id)
+
+    def void_reading(self, reading_id: str) -> None:
+        if self._get(reading_id, "Reading").get("voided"):
+            raise Invalid("That reading was already struck out.")
+        self._emit("reading.voided", {"id": reading_id, "on": date.today().isoformat()})
+
+    def meter(self, meter_id: str) -> dict:
+        mt = self._get(meter_id, "Meter")
+        readings = _readings(self.s, self.org, meter_id)
+        rate = _rate(readings)
+        position = self.s.out(self.org, meter_id, "ON")
+        return {"id": meter_id, "name": mt["name"], "unit": mt["unit"],
+                "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
+                "reading": readings[-1]["value"] if readings else None,
+                "read_on": readings[-1]["on"] if readings else None,
+                "rate_per_day": rate and round(rate, 3),
+                "readings": [{"id": r["id"], "on": r["on"], "value": r["value"], "note": r.get("note", "")}
+                             for r in reversed(readings[-50:])]}
 
     def set_last_done(self, task_id: str, on) -> dict:
         """Record when a task was last done (before it was tracked here), so
@@ -604,7 +776,7 @@ class Maintenance:
                                              task_id=task["id"], due=task["next_due"]))
         return made
 
-    def close_work_order(self, work_order_id: str, actions=(), on=None, notes="") -> dict:
+    def close_work_order(self, work_order_id: str, actions=(), on=None, notes="", readings=()) -> dict:
         """Close a work order with what was done. Replacements end the fitted
         item's fitment and start the new one's."""
         wo = self._get(work_order_id, "WorkOrder")
@@ -632,6 +804,10 @@ class Maintenance:
         current = self.current_fitment(position_id)
         if current and day < current["from"]:
             raise Invalid("The work can't be done before the fitted item went in.")
+        # Meter readings taken during the work go in first, so a task by use
+        # records the reading it was done at.
+        for r in readings or []:
+            self.record_reading(r.get("meter_id"), r.get("value"), day, "read at the work order")
 
         for kind, fm, finding, a in plans:
             ends = starts = on_fitment = None
@@ -762,11 +938,29 @@ class Maintenance:
                                             "reason": _text(reason, "reason")})
         return self.work_order(work_order_id)
 
-    def update_task(self, task_id: str, name=None, interval=None, unit=None) -> dict:
+    def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
+                    also_unit=None, meter_id=None) -> dict:
+        """Change a task. also_interval / also_unit add a second limit, whichever comes
+        first (500 hours or 6 months); also_interval 0 removes it. meter_id picks the
+        meter a task by use goes by (otherwise the position's meter in its unit)."""
         task = self._get(task_id, "Task")
         if task.get("retired"):
             raise Invalid("That task has been retired.")
         changes = {}
+        if also_interval is not None:
+            try:
+                also_interval = float(also_interval)
+            except (TypeError, ValueError):
+                raise Invalid("The second limit must be a number.")
+            if also_interval <= 0:
+                changes["also_interval"], changes["also_unit"] = None, None
+            else:
+                changes["also_interval"] = also_interval
+                changes["also_unit"] = _norm_unit(also_unit or task.get("also_unit")) or "months"
+        if meter_id is not None:
+            if meter_id:
+                self._get(meter_id, "Meter")
+            changes["meter_id"] = meter_id or None
         if name is not None:
             changes["name"] = _text(name, "task's name", required=True)
         if interval is not None:
@@ -1035,6 +1229,7 @@ class Maintenance:
             "work_orders": [self._wo_brief(w) for w in wos],
             "life_data": self.life_data(id),
             "coordinates": p.get("coordinates"),
+            "meters": [self.meter(mt["id"]) for mt in self.s.inn(self.org, id, "ON") if mt["label"] == "Meter"],
             "photos": self.photos_of(id),
             "item_photos": self.photos_of(fitted["item"]["id"]) if fitted and fitted["item"] else [],
         }
@@ -1088,6 +1283,7 @@ class Maintenance:
             **self._wo_brief(w), "notes": w.get("notes", ""), "actions": actions,
             "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
             "fitted": position["fitted"], "failure_modes": position["failure_modes"],
+            "meters": [{k: mt[k] for k in ("id", "name", "unit", "reading")} for mt in position["meters"]],
             "photos": self.photos_of(id),
         }
 

@@ -7,7 +7,9 @@ import {
   getMaintenancePosition,
   listRcmStudies,
   openWorkOrder,
+  addMaintenanceMeter,
   correctMaintenanceFitment,
+  recordMaintenanceReading,
   removeMaintenanceItem,
   retireMaintenancePosition,
   retireMaintenanceTask,
@@ -19,7 +21,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DueChip, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, flatten, fmtDate, today,
+  DueChip, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, everyText, flatten, fmtDate, today,
 } from "../components/MaintenanceParts.jsx";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
@@ -128,7 +130,7 @@ export default function MaintenancePosition() {
               {p.tasks.map((t) => (
                 <tr key={t.id}>
                   <td>{t.name}</td>
-                  <td className="lib-date">{t.interval} {t.unit}</td>
+                  <td className="lib-date">{everyText(t)}</td>
                   <td className="lib-date">
                     <button type="button" className="crumb-link" title="When was it last done?"
                             onClick={() => setModal({ lastDone: t })}>
@@ -140,6 +142,31 @@ export default function MaintenancePosition() {
                     ? <Link to={`/maintenance/work-orders/${t.open_work_order.id}`}>#{t.open_work_order.number}</Link>
                     : <button className="secondary" onClick={() => workOrderForTask(t)}>Create</button>}</td>
                   <td><button className="crumb-link" onClick={() => setModal({ task: t })}>Edit</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="maint-head">
+          <h2>Meters</h2>
+          <button className="secondary" onClick={() => setModal("meter")}>Add a meter</button>
+        </div>
+        {p.meters.length === 0 ? (
+          <p className="lib-date">No meters. Add one (run hours, cycles, km) for tasks that go by use.</p>
+        ) : (
+          <table className="lib-table">
+            <thead><tr><th>Meter</th><th>Reading</th><th>Read</th><th>Rate</th><th><span className="sr-only">Read</span></th></tr></thead>
+            <tbody>
+              {p.meters.map((mt) => (
+                <tr key={mt.id}>
+                  <td>{mt.name}</td>
+                  <td>{mt.reading ?? "—"} {mt.reading != null ? mt.unit : ""}</td>
+                  <td className="lib-date">{fmtDate(mt.read_on)}</td>
+                  <td className="lib-date">{mt.rate_per_day != null ? `${mt.rate_per_day} ${mt.unit} a day` : "needs two readings"}</td>
+                  <td><button className="secondary" onClick={() => setModal({ reading: mt })}>Record reading</button></td>
                 </tr>
               ))}
             </tbody>
@@ -216,6 +243,8 @@ export default function MaintenancePosition() {
             nothing inside it in use, and no work order open.</p>
         </FormModal>
       )}
+      {modal === "meter" && <MeterModal positionId={p.id} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
+      {modal?.reading && <ReadingModal meter={modal.reading} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.task && <TaskModal task={modal.task} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.fix && <FixModal row={modal.fix} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.lastDone && (
@@ -358,16 +387,29 @@ function TaskModal({ task, onClose, onDone }) {
   const [name, setName] = useState(task.name);
   const [interval, setInterval] = useState(String(task.interval));
   const [unit, setUnit] = useState(task.unit);
+  const [also, setAlso] = useState(task.also_interval ? String(task.also_interval) : "");
+  const [alsoUnit, setAlsoUnit] = useState(task.also_unit || "months");
   const [busy, setBusy] = useState(false);
+  const UNITS = ["days", "weeks", "months", "years", "hours", "cycles", "km", "starts"];
   return (
     <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && Number(interval) > 0} onClose={onClose}
-               onSubmit={async () => onDone(await updateMaintenanceTask(task.id, { name, interval: Number(interval), unit }))}>
+               onSubmit={async () => onDone(await updateMaintenanceTask(task.id, {
+                 name, interval: Number(interval), unit, also_interval: also ? Number(also) : 0, also_unit: alsoUnit,
+               }))}>
       <Field label="Task"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Every">
         <div className="maint-row" style={{ marginTop: 0 }}>
           <input type="number" min="0" step="any" value={interval} onChange={(e) => setInterval(e.target.value)} style={{ width: "6rem" }} />
           <select value={unit} onChange={(e) => setUnit(e.target.value)}>
-            {["days", "weeks", "months", "years", "hours", "cycles", "km"].map((u) => <option key={u} value={u}>{u}</option>)}
+            {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+      </Field>
+      <Field label="Or every (whichever comes first, optional)">
+        <div className="maint-row" style={{ marginTop: 0 }}>
+          <input type="number" min="0" step="any" value={also} placeholder="none" onChange={(e) => setAlso(e.target.value)} style={{ width: "6rem" }} />
+          <select value={alsoUnit} onChange={(e) => setAlsoUnit(e.target.value)}>
+            {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>
       </Field>
@@ -391,6 +433,33 @@ function FixModal({ row, onClose, onDone }) {
       <button className="secondary" disabled={busy} onClick={async () => {
         setBusy(true); await voidMaintenanceFitment(row.fitment_id, "recorded by mistake"); onDone();
       }}>Strike it out</button>
+    </FormModal>
+  );
+}
+
+function MeterModal({ positionId, onClose, onDone }) {
+  const [name, setName] = useState("");
+  const [unit, setUnit] = useState("hours");
+  return (
+    <FormModal title="Add a meter" submitLabel="Add" onClose={onClose}
+               onSubmit={async () => onDone(await addMaintenanceMeter(positionId, name, unit))}>
+      <Field label="Counts"><select value={unit} onChange={(e) => setUnit(e.target.value)}>
+        {["hours", "cycles", "km", "starts", "tonnes", "litres"].map((u) => <option key={u} value={u}>{u}</option>)}
+      </select></Field>
+      <Field label="Name (optional)"><input value={name} placeholder="e.g. Hour meter" onChange={(e) => setName(e.target.value)} /></Field>
+    </FormModal>
+  );
+}
+
+function ReadingModal({ meter, onClose, onDone }) {
+  const [value, setValue] = useState("");
+  const [on, setOn] = useState(today());
+  return (
+    <FormModal title={`Reading: ${meter.name}`} submitLabel="Save" canSubmit={value !== ""} onClose={onClose}
+               onSubmit={async () => onDone(await recordMaintenanceReading(meter.id, Number(value), on))}>
+      <Field label={`Reading (${meter.unit})`}><input type="number" min="0" step="any" autoFocus value={value}
+             placeholder={meter.reading != null ? `last: ${meter.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
+      <Field label="Read on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
     </FormModal>
   );
 }

@@ -2203,3 +2203,16 @@ export function getPositionClasses() {
 export function getClassLifeData(positionClass) {
   return request(`/api/maintenance/classes/life-data?position_class=${encodeURIComponent(positionClass)}`);
 }
+
+export function addMaintenanceMeter(positionId, name, unit) {
+  return postJson(`/api/maintenance/positions/${positionId}/meters`, { name, unit });
+}
+export function recordMaintenanceReading(meterId, value, on) {
+  return postJson(`/api/maintenance/meters/${meterId}/readings`, { value, on });
+}
+export function getMaintenanceSettings() {
+  return request("/api/maintenance/settings");
+}
+export function setMaintenanceSettings(body) {
+  return patchJson("/api/maintenance/settings", body);
+}

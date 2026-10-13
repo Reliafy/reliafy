@@ -90,6 +90,7 @@ export default function MaintenanceWorkOrder() {
 function CloseForm({ wo, onClosed }) {
   const [on, setOn] = useState(today());
   const [notes, setNotes] = useState("");
+  const [readings, setReadings] = useState({});
   const [actions, setActions] = useState([{ kind: wo.type === "inspection" ? "inspect" : "replace" }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -108,7 +109,9 @@ function CloseForm({ wo, onClosed }) {
         notes: a.notes || "",
         new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
       }));
-      onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes }));
+      const meterReadings = Object.entries(readings).filter(([, v]) => v !== "")
+        .map(([meter_id, value]) => ({ meter_id, value: Number(value) }));
+      onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes, readings: meterReadings }));
     } catch (e) {
       setError(e.message);
       setBusy(false);
@@ -172,6 +175,13 @@ function CloseForm({ wo, onClosed }) {
       </div>
       <div className="rcm-form">
         <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
+        {(wo.meters || []).map((mt) => (
+          <Field key={mt.id} label={`${mt.name} now (${mt.unit}, optional)`}>
+            <input type="number" min="0" step="any" value={readings[mt.id] ?? ""}
+                   placeholder={mt.reading != null ? `last: ${mt.reading}` : ""}
+                   onChange={(e) => setReadings({ ...readings, [mt.id]: e.target.value })} />
+          </Field>
+        ))}
         <Field label="Notes (optional)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">

@@ -194,8 +194,9 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         view = None
         if body.get("last_done"):
             view = m.set_last_done(task_id, body["last_done"])
-        if any(k in body for k in ("name", "interval", "unit")):
-            view = m.update_task(task_id, body.get("name"), body.get("interval"), body.get("unit"))
+        if any(k in body for k in ("name", "interval", "unit", "also_interval", "also_unit", "meter_id")):
+            view = m.update_task(task_id, body.get("name"), body.get("interval"), body.get("unit"),
+                                 body.get("also_interval"), body.get("also_unit"), body.get("meter_id"))
         if view is None:
             raise Invalid("Nothing to change.")
         return view
@@ -231,6 +232,41 @@ def position_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
 @router.get("/classes/life-data")
 def class_life_data(position_class: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.class_life_data, position_class)
+
+
+@router.post("/positions/{position_id}/meters")
+def add_meter(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.add_meter, position_id, body.get("name", ""), body.get("unit"))
+
+
+@router.get("/meters/{meter_id}")
+def get_meter(meter_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.meter, meter_id)
+
+
+@router.post("/meters/{meter_id}/readings")
+def record_reading(meter_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.record_reading, meter_id, body.get("value"), body.get("on"), body.get("note", ""))
+
+
+@router.post("/readings/{reading_id}/void")
+def void_reading(reading_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: (m.void_reading(reading_id), {"voided": reading_id})[1])
+
+
+@router.get("/settings")
+def get_settings(session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                 m: Maintenance = Depends(maintenance)) -> dict:
+    doc = session.users.find_one({"_id": ctx.uid}) or {}
+    return {"digest": not doc.get("maintenance_digest_off")}
+
+
+@router.patch("/settings")
+def set_settings(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                 m: Maintenance = Depends(maintenance)) -> dict:
+    if "digest" in body:
+        session.users.update_one({"_id": ctx.uid}, {"$set": {"maintenance_digest_off": not bool(body["digest"])}})
+    return get_settings(session, ctx, m)
 
 
 # ---- items and locations ---------------------------------------------------------------
@@ -328,7 +364,8 @@ def get_work_order(work_order_id: str, m: Maintenance = Depends(maintenance)) ->
 @router.post("/work-orders/{work_order_id}/close")
 def close_work_order(work_order_id: str, body: dict = Body(...),
                      m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(m.close_work_order, work_order_id, body.get("actions") or [], body.get("on"), body.get("notes", ""))
+    return _run(m.close_work_order, work_order_id, body.get("actions") or [], body.get("on"), body.get("notes", ""),
+                body.get("readings") or [])
 
 
 # ---- photos and coordinates ----------------------------------------------------------------
