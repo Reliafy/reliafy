@@ -62,3 +62,5 @@ openpyxl==3.1.5
 # backend/services/tvc_expression.py): the base evaluator only, locked down
 # further there. MIT. Pinned: the sandbox relies on its node handlers.
 simpleeval==1.0.8
+# Photos in Reliafy Maintenance: cleaned and re-encoded (backend/maintenance/photos.py).
+pillow>=10.0

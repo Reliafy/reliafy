@@ -10,22 +10,77 @@ from __future__ import annotations
 
 import threading
 
-from fastapi import APIRouter, Body, Depends, HTTPException
-from fastapi.responses import JSONResponse
+import os
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from backend import config
 from backend.db import get_db, get_session, is_simulated
 from backend.maintenance.access import allowed
+from backend.maintenance import photos as photos_mod
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance, NotFound, summary
+from backend.maintenance.store import new_id
 from backend.maintenance.store import GraphStore, MongoEventLog
 from backend.schema import RcmStudy
 from backend.services import access as access_service
 from backend.services.access import AccessCtx, get_access
 
 router = APIRouter(prefix="/api/maintenance")
+# The phone upload page and its posts: the link's token is the credential.
+public_router = APIRouter()
 
 _store: GraphStore | None = None
+_photo_store = None
 _store_lock = threading.Lock()
+
+
+def _use_mongo() -> bool:
+    mode = config.MAINTENANCE_STORE
+    return mode == "mongo" or (mode == "auto" and not is_simulated())
+
+
+def get_photo_store():
+    global _photo_store
+    with _store_lock:
+        if _photo_store is None:
+            _photo_store = (photos_mod.MongoPhotoStore(get_db()) if _use_mongo() else
+                            photos_mod.FilePhotoStore(os.path.join(
+                                os.path.dirname(os.path.abspath(config.MAINTENANCE_DB_PATH)), "photos")))
+        return _photo_store
+
+
+def photo_links() -> photos_mod.PhotoLinks:
+    return photos_mod.PhotoLinks(get_db())
+
+
+def ingest_photo(m: Maintenance, target_id: str, raw: bytes, caption: str = "", via: str = "app") -> dict:
+    """Clean, store and record one photo. Returns the photo and any location
+    it carried (offered, never stored on the photo)."""
+    m.photo_target(target_id)
+    cleaned = photos_mod.clean(raw)
+    photo_id = new_id()
+    store = get_photo_store()
+    store.put(photo_id, "full", cleaned["full"])
+    store.put(photo_id, "thumb", cleaned["thumb"])
+    try:
+        photo = m.add_photo(photo_id, target_id, cleaned, caption, via)
+    except Exception:
+        store.delete(photo_id)
+        raise
+    return {"photo": photo, "location_offer": cleaned["gps"]}
+
+
+async def _read_body(request: Request) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > photos_mod.MAX_UPLOAD_BYTES:
+        raise photos_mod.BadPhoto("The photo is over 20 MB.")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > photos_mod.MAX_UPLOAD_BYTES:
+            raise photos_mod.BadPhoto("The photo is over 20 MB.")
+    return bytes(body)
 
 
 def get_store() -> GraphStore:
@@ -33,8 +88,7 @@ def get_store() -> GraphStore:
     global _store
     with _store_lock:
         if _store is None:
-            mode = config.MAINTENANCE_STORE
-            if mode == "mongo" or (mode == "auto" and not is_simulated()):
+            if _use_mongo():
                 _store = GraphStore(":memory:", PROJECTORS, MongoEventLog(get_db()))
             else:
                 _store = GraphStore(config.MAINTENANCE_DB_PATH, PROJECTORS)
@@ -60,7 +114,7 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
         return JSONResponse(content=fn(*args, **kwargs))
     except NotFound:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
-    except Invalid as err:
+    except (Invalid, photos_mod.BadPhoto) as err:
         return JSONResponse(status_code=422, content={"detail": str(err)})
 
 
@@ -194,3 +248,122 @@ def get_work_order(work_order_id: str, m: Maintenance = Depends(maintenance)) ->
 def close_work_order(work_order_id: str, body: dict = Body(...),
                      m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.close_work_order, work_order_id, body.get("actions") or [], body.get("on"), body.get("notes", ""))
+
+
+# ---- photos and coordinates ----------------------------------------------------------------
+
+@router.post("/photos")
+async def add_photo(request: Request, target_id: str, caption: str = "",
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Add a photo (the request body is the image) to a position, location,
+    item or work order."""
+    try:
+        raw = await _read_body(request)
+    except photos_mod.BadPhoto as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+    return _run(ingest_photo, m, target_id, raw, caption[:200], "app")
+
+
+@router.get("/photos/{photo_id}")
+def get_photo(photo_id: str, size: str = "thumb", m: Maintenance = Depends(maintenance)) -> Response:
+    try:
+        m.photo(photo_id)  # in this workspace
+    except NotFound:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+    data = get_photo_store().get(photo_id, "full" if size == "full" else "thumb")
+    if data is None:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+    return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+
+
+@router.delete("/photos/{photo_id}")
+def remove_photo(photo_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: (m.remove_photo(photo_id), {"removed": photo_id})[1])
+
+
+@router.post("/coordinates")
+def set_coordinates(body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.set_coordinates, body.get("node_id"), body.get("lat"), body.get("lon"),
+                body.get("source") or "manual")
+
+
+@router.post("/photo-links")
+def create_photo_link(request: Request, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A link for adding photos from a phone with no sign-in (see photos.py)."""
+    def go():
+        target = m.photo_target(str(body.get("target_id") or ""))
+        return link_payload(request, m, target, str(body.get("caption") or "")[:200])
+    return _run(go)
+
+
+def link_payload(request_or_base, m: Maintenance, target: dict, caption: str = "") -> dict:
+    doc, token = photo_links().create(m.org, m.actor or m.org, target, caption)
+    if isinstance(request_or_base, str):
+        base = request_or_base
+    else:
+        base = config.PUBLIC_BASE_URL or str(request_or_base.base_url).rstrip("/")
+    return {**photos_mod.PhotoLinks.public(doc), "url": f"{base}/photos/up/{doc['_id']}?t={token}",
+            "max_photos": photos_mod.MAX_PER_LINK}
+
+
+# ---- the phone upload page (public: the link's token is the credential) ---------------------
+
+def _link_or_none(link_id: str, t: str) -> dict | None:
+    if not config.MAINTENANCE_ENABLED:
+        return None
+    return photo_links().get(link_id, token=t)
+
+
+@public_router.get("/photos/up/{link_id}", include_in_schema=False)
+def upload_page(link_id: str, t: str = "") -> HTMLResponse:
+    from backend.maintenance.upload_page import render
+
+    doc = _link_or_none(link_id, t)
+    headers = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"}
+    if doc is None:
+        return HTMLResponse(render(None, "This link isn't valid. Ask for a new one."), status_code=404, headers=headers)
+    problem = photo_links().usable(doc)
+    html, nonce = render(doc, problem, with_nonce=True)
+    headers["Content-Security-Policy"] = (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; "
+                                          "img-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'")
+    return HTMLResponse(html, headers=headers)
+
+
+@public_router.post("/photos/up/{link_id}", include_in_schema=False)
+async def upload_by_link(link_id: str, request: Request, t: str = "") -> JSONResponse:
+    doc = _link_or_none(link_id, t)
+    if doc is None:
+        return JSONResponse(status_code=404, content={"detail": "This link isn't valid."})
+    problem = photo_links().usable(doc)
+    if problem:
+        return JSONResponse(status_code=410, content={"detail": problem})
+    try:
+        raw = await _read_body(request)
+        m = Maintenance(get_store(), doc["org"], doc["uid"])
+        result = ingest_photo(m, doc["target_id"], raw, doc.get("caption", ""), "link")
+    except (photos_mod.BadPhoto, Invalid) as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+    except NotFound:
+        return JSONResponse(status_code=404, content={"detail": "What this link was for no longer exists."})
+    photo_links().add_photo(doc["_id"], result["photo"]["id"], result["location_offer"])
+    return JSONResponse(content={"photo_id": result["photo"]["id"], "location_offer": result["location_offer"],
+                                 "target_name": doc["target_name"]})
+
+
+@public_router.post("/photos/up/{link_id}/location", include_in_schema=False)
+def answer_location(link_id: str, t: str = "", body: dict = Body(...)) -> JSONResponse:
+    """The uploader's answer: save this photo's location as where the equipment is, or not."""
+    doc = _link_or_none(link_id, t)
+    if doc is None:
+        return JSONResponse(status_code=404, content={"detail": "This link isn't valid."})
+    save = bool(body.get("save"))
+    offer = photo_links().answer(doc["_id"], str(body.get("photo_id") or ""), "saved" if save else "declined")
+    if offer is None:
+        return JSONResponse(status_code=404, content={"detail": "No location to answer for that photo."})
+    if save:
+        m = Maintenance(get_store(), doc["org"], doc["uid"])
+        try:
+            m.set_coordinates(doc["target_id"], offer["lat"], offer["lon"], "photo")
+        except (Invalid, NotFound) as err:
+            return JSONResponse(status_code=422, content={"detail": str(err)})
+    return JSONResponse(content={"saved": save})

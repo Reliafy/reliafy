@@ -77,3 +77,43 @@
   padding: 0.75rem;
   margin-bottom: 0.75rem;
 }
+
+.maint-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+
+.maint-photos figure {
+  margin: 0;
+}
+
+.maint-photo,
+.maint-photo-blank {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  background: var(--line);
+  cursor: pointer;
+  display: block;
+}
+
+.maint-photo-full {
+  max-width: 100%;
+  max-height: 70vh;
+  display: block;
+  margin: 0 auto;
+}
+
+.maint-ask {
+  background: var(--acc-t);
+  border: 1px solid var(--acc-line);
+  border-radius: var(--r);
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.maint-ask p {
+  margin: 0 0 0.5rem;
+}

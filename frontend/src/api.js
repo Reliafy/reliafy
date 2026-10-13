@@ -2123,3 +2123,32 @@ export function getMaintenanceAccess() {
   }
   return maintenanceAccess;
 }
+
+// Photos (Reliafy Maintenance). The image endpoints need auth, so <img> tags
+// get object URLs from these blobs rather than a plain src.
+export async function getMaintenancePhotoBlob(photoId, size = "thumb") {
+  const res = await authedFetch(`/api/maintenance/photos/${photoId}?size=${size}`);
+  if (!res.ok) throw new Error(`Photo failed to load (${res.status})`);
+  return res.blob();
+}
+
+export function uploadMaintenancePhoto(targetId, file, caption = "") {
+  const q = new URLSearchParams({ target_id: targetId, caption });
+  return request(`/api/maintenance/photos?${q}`, {
+    method: "POST",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+}
+
+export function removeMaintenancePhoto(photoId) {
+  return request(`/api/maintenance/photos/${photoId}`, { method: "DELETE" });
+}
+
+export function setMaintenanceCoordinates(nodeId, lat, lon, source = "manual") {
+  return postJson("/api/maintenance/coordinates", { node_id: nodeId, lat, lon, source });
+}
+
+export function createMaintenancePhotoLink(targetId) {
+  return postJson("/api/maintenance/photo-links", { target_id: targetId });
+}

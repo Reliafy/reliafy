@@ -214,6 +214,68 @@ def register() -> None:
         action is invalid."""
         return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes)
 
+    # ---- photos ------------------------------------------------------------------------
+
+    from mcp.server.mcpserver import Image
+
+    from backend import config
+    from backend.routers.maintenance import get_photo_store, link_payload, photo_links
+
+    @tool("create_photo_link", _WRITE, "Get a link to add photos")
+    def create_photo_link(target_id: str, ctx: Context, caption: str = "") -> dict[str, Any]:
+        """A link for adding photos to a position, location, item or work order from a phone,
+        with no sign-in: give the url to the user to open (you can't send a photo's file
+        yourself, even one shared in this chat). They can take or choose up to 20 photos
+        in the next 30 minutes. Photos are stored without location or camera details; if
+        one carries a location, the page asks the user whether to save it as where the
+        equipment is. Then call photo_link_status, and get_photo to look at them (read a
+        nameplate's make, model and serial into the item's details)."""
+        m = m_for(ctx)
+        request = ctx.request_context.request
+        base = config.PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+        return run(lambda: link_payload(base, m, m.photo_target(target_id), caption[:200]))
+
+    @tool("photo_link_status", _READ, "Check a photo link")
+    def photo_link_status(link_id: str, ctx: Context) -> dict[str, Any]:
+        """The photos added through a link so far, and any location a photo carried with the
+        user's answer (saved / declined / null: not answered on the page). If unanswered,
+        ask the user whether to save it with set_coordinates; never save it unasked."""
+        m = m_for(ctx)
+        doc = photo_links().get(link_id, org=m.org)
+        if doc is None:
+            raise ToolError("Photo link not found.")
+        return photo_links().public(doc)
+
+    @tool("list_photos", _READ, "List photos")
+    def list_photos(target_id: str, ctx: Context) -> dict[str, Any]:
+        """The photos of a position, location, item or work order (ids, captions, dates)."""
+        m = m_for(ctx)
+        return run(lambda: {"target": target_id, "photos": (m.photo_target(target_id), m.photos_of(target_id))[1]})
+
+    @tool("get_photo", _READ, "Look at a photo")
+    def get_photo(photo_id: str, ctx: Context, size: Literal["full", "thumb"] = "full") -> Image:
+        """The photo itself, to look at: read a nameplate (make, model, serial, ratings) or
+        check a condition. 'full' is up to 1600 px; 'thumb' 400 px."""
+        m = m_for(ctx)
+        run(m.photo, photo_id)
+        data = get_photo_store().get(photo_id, size)
+        if data is None:
+            raise ToolError("That photo's file is missing.")
+        return Image(data=data, format="jpeg")
+
+    @tool("set_coordinates", _WRITE, "Set where equipment is")
+    def set_coordinates(target_id: str, lat: float, lon: float, ctx: Context,
+                        source: Literal["photo", "manual"] = "manual") -> dict[str, Any]:
+        """Save a position's, item's or location's latitude and longitude (a work order's go
+        on its position). Use a photo's location only when the user has said to."""
+        return run(m_for(ctx).set_coordinates, target_id, lat, lon, source)
+
+    @tool("remove_photo", _WRITE, "Remove a photo")
+    def remove_photo(photo_id: str, ctx: Context) -> dict[str, Any]:
+        """Remove a photo from what it shows (it stays in the history)."""
+        m = m_for(ctx)
+        return run(lambda: (m.remove_photo(photo_id), {"removed": photo_id})[1])
+
     # The tools are listed only to people who may use them: wrap the server's
     # tools/list handler to drop them for everyone else.
     handlers = mcp._lowlevel_server._request_handlers

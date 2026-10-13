@@ -16,6 +16,7 @@ import {
   DueChip, Field, FormModal, OUTCOME_LABELS, flatten, fmtDate, today,
 } from "../components/MaintenanceParts.jsx";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
+import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import "./Maintenance.css";
 
 // One position: what's fitted, its RCM failure modes and tasks, its work
@@ -88,6 +89,19 @@ export default function MaintenancePosition() {
           <p className="lib-date">Nothing fitted. Fit the item doing this job, with the date it went in.</p>
         )}
       </section>
+
+      {p.fitted?.item && (
+        <MaintenancePhotos title={`Photos of the ${p.fitted.item.name}`} targetId={p.fitted.item.id}
+                           targetName={p.fitted.item.name} photos={p.item_photos} onChanged={refresh} />
+      )}
+      <MaintenancePhotos title={p.fitted?.item ? `Photos of the ${p.name} position` : "Photos"} targetId={p.id}
+                         targetName={p.name} photos={p.photos} onChanged={refresh} />
+      {p.coordinates && (
+        <p className="lib-date">
+          Location: {p.coordinates.lat}, {p.coordinates.lon}
+          {p.coordinates.source === "photo" ? " (from a photo)" : ""}
+        </p>
+      )}
 
       <section className="card">
         <div className="maint-head"><h2>Tasks</h2></div>

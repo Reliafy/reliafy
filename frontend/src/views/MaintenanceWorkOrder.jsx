@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { closeWorkOrder, getWorkOrder } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { Field, fmtDate, today } from "../components/MaintenanceParts.jsx";
+import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import "./Maintenance.css";
 
 const KINDS = [
@@ -39,6 +40,9 @@ export default function MaintenanceWorkOrder() {
       />
       {error && <div className="card error">{error}</div>}
       {wo.task && <p className="lib-date">From the task “{wo.task.name}”.</p>}
+
+      <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetName={wo.position?.name}
+                         photos={wo.photos || []} onChanged={refresh} />
 
       {wo.status === "closed" ? (
         <section className="card">

@@ -202,6 +202,23 @@ def _work_order_closed(s: GraphStore, org: str, p: dict) -> None:
             s.patch_node(org, task["id"], {"last_done": p["on"]})
 
 
+def _photo_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Photo", {
+        "caption": p.get("caption", ""), "taken_on": p.get("taken_on"), "uploaded_on": p["on"],
+        "width": p.get("width"), "height": p.get("height"), "via": p.get("via", "app"), "removed": False,
+    })
+    s.put_edge(org, "OF", p["id"], p["target_id"])
+
+
+def _photo_removed(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"removed": True})
+
+
+def _coordinates_set(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["node_id"], {"coordinates": {"lat": p["lat"], "lon": p["lon"],
+                                                     "source": p.get("source", "manual"), "on": p["on"]}})
+
+
 PROJECTORS = {
     "position.created": _position_created,
     "position.updated": _position_updated,
@@ -216,6 +233,9 @@ PROJECTORS = {
     "work_order.opened": _work_order_opened,
     "action.recorded": _action_recorded,
     "work_order.closed": _work_order_closed,
+    "photo.added": _photo_added,
+    "photo.removed": _photo_removed,
+    "coordinates.set": _coordinates_set,
 }
 
 
@@ -581,6 +601,62 @@ class Maintenance:
         self._emit("work_order.closed", {"id": work_order_id, "on": day, "notes": _text(notes, "notes")})
         return self.work_order(work_order_id)
 
+    # ---- photos and coordinates ------------------------------------------------------
+
+    def photo_target(self, node_id: str) -> dict:
+        """A node photos can show: a position, location, item or work order."""
+        node = self.s.node(self.org, node_id)
+        if node is None or node["label"] not in ("Position", "Location", "Item", "WorkOrder"):
+            raise NotFound(node_id)
+        return node
+
+    def add_photo(self, photo_id: str, target_id: str, cleaned: dict, caption="", via="app") -> dict:
+        """Record a photo whose bytes are already stored (see photos.py)."""
+        self.photo_target(target_id)
+        self._emit("photo.added", {
+            "id": photo_id, "target_id": target_id, "caption": _text(caption, "caption"),
+            "taken_on": cleaned.get("taken_on"), "width": cleaned.get("width"),
+            "height": cleaned.get("height"), "via": via, "on": date.today().isoformat(),
+        })
+        return self.photo(photo_id)
+
+    def photo(self, photo_id: str) -> dict:
+        p = self._get(photo_id, "Photo")
+        of = self.s.out(self.org, photo_id, "OF")
+        return {k: p.get(k) for k in ("id", "caption", "taken_on", "uploaded_on", "width", "height", "removed")} | {
+            "of": of and {"id": of[0]["id"], "kind": of[0]["label"],
+                          "name": of[0].get("name") or of[0].get("title")},
+        }
+
+    def photos_of(self, node_id: str) -> list[dict]:
+        found = [p for p in self.s.inn(self.org, node_id, "OF") if p["label"] == "Photo" and not p.get("removed")]
+        found.sort(key=lambda p: (p.get("taken_on") or p["uploaded_on"], p["id"]))
+        return [{k: p.get(k) for k in ("id", "caption", "taken_on", "uploaded_on", "width", "height")}
+                for p in found]
+
+    def remove_photo(self, photo_id: str) -> None:
+        if self._get(photo_id, "Photo").get("removed"):
+            raise Invalid("That photo was already removed.")
+        self._emit("photo.removed", {"id": photo_id})
+
+    def set_coordinates(self, node_id: str, lat, lon, source="manual") -> dict:
+        """Where a position, item or location is, as latitude and longitude. For a
+        work order, the coordinates go on its position."""
+        node = self.photo_target(node_id)
+        if node["label"] == "WorkOrder":
+            node = self.s.out(self.org, node_id, "ON")[0]
+        try:
+            lat, lon = float(lat), float(lon)
+        except (TypeError, ValueError):
+            raise Invalid("Latitude and longitude must be numbers.")
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise Invalid("Latitude is -90 to 90 and longitude -180 to 180.")
+        self._emit("coordinates.set", {"node_id": node["id"], "lat": round(lat, 6), "lon": round(lon, 6),
+                                       "source": source, "on": date.today().isoformat()})
+        node = self.s.node(self.org, node["id"])
+        return {"id": node["id"], "kind": node["label"], "name": node.get("name") or node.get("title"),
+                "coordinates": node["coordinates"]}
+
     # ---- reading -------------------------------------------------------------------
 
     def _item_brief(self, item: dict | None) -> dict | None:
@@ -629,6 +705,7 @@ class Maintenance:
         fitments = [f for f in self.s.inn(self.org, id, "AT") if f["label"] == "Fitment"]
         fitments.sort(key=lambda f: (f["from"], f.get("to") or "9999"), reverse=True)
         current = next((f for f in fitments if f.get("to") is None), None)
+        fitted = current and self._fitment_view(current)
         modes = self.s.out(self.org, id, "CAN_FAIL_AS")
         tasks = [self._task_view(t) for t in self.s.inn(self.org, id, "ON") if t["label"] == "Task"]
         wos = [w for w in self.s.inn(self.org, id, "ON") if w["label"] == "WorkOrder"]
@@ -639,13 +716,16 @@ class Maintenance:
             "position_class": p.get("position_class", ""), "description": p.get("description", ""),
             "path": [{"id": a["id"], "name": a["name"]} for a in path],
             "children": [{"id": c["id"], "name": c["name"]} for c in kids],
-            "fitted": current and self._fitment_view(current),
+            "fitted": fitted,
             "fitments": [self._fitment_view(f) for f in fitments],
             "failure_modes": [{k: m.get(k) for k in ("id", "text", "function", "failure", "consequence", "outcome")}
                               for m in sorted(modes, key=lambda m: m["text"].lower())],
             "tasks": sorted(tasks, key=lambda t: t["next_due"] or "9999"),
             "work_orders": [self._wo_brief(w) for w in wos],
             "life_data": self.life_data(id),
+            "coordinates": p.get("coordinates"),
+            "photos": self.photos_of(id),
+            "item_photos": self.photos_of(fitted["item"]["id"]) if fitted and fitted["item"] else [],
         }
 
     def _wo_brief(self, w: dict) -> dict:
@@ -678,6 +758,7 @@ class Maintenance:
             **self._wo_brief(w), "notes": w.get("notes", ""), "actions": actions,
             "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
             "fitted": position["fitted"], "failure_modes": position["failure_modes"],
+            "photos": self.photos_of(id),
         }
 
     def items(self) -> list[dict]:

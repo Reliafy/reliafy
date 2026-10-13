@@ -242,3 +242,18 @@ def test_access_rule(monkeypatch):
     assert not allowed({**tester, "email_verified": False})
     monkeypatch.setattr(config, "AUTH_DISABLED", True)
     assert allowed(other)
+
+
+def test_many_threads_reading_at_once_all_see_the_graph(m):
+    """Requests run on several threads against one SQLite connection: reads at
+    the same moment must not cut each other off."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    ids = [m.create_position(f"Pump {i}")["id"] for i in range(30)]
+
+    def read(pid):
+        return m.position(pid)["name"]
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        names = list(pool.map(read, ids * 10))
+    assert names == [f"Pump {i}" for i in range(30)] * 10

@@ -90,29 +90,34 @@ class UnknownEvent(ValueError):
 class SqliteEventLog:
     """The log as a table beside the graph, in the same file."""
 
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: sqlite3.Connection, lock=None):
         self._conn = conn
+        self._lock = lock or threading.RLock()
         conn.executescript(_EVENTS_SCHEMA)
 
     def append(self, event: dict) -> int:
-        cur = self._conn.execute(
-            "INSERT INTO events (id, org, type, at, actor, payload) VALUES (?, ?, ?, ?, ?, ?)",
-            (event["id"], event["org"], event["type"], event["at"], event["actor"], json.dumps(event["payload"])),
-        )
-        return int(cur.lastrowid)
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO events (id, org, type, at, actor, payload) VALUES (?, ?, ?, ?, ?, ?)",
+                (event["id"], event["org"], event["type"], event["at"], event["actor"],
+                 json.dumps(event["payload"])),
+            )
+            return int(cur.lastrowid)
 
     def since(self, seq: int) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT seq, org, type, payload FROM events WHERE seq > ? ORDER BY seq", (seq,)
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT seq, org, type, payload FROM events WHERE seq > ? ORDER BY seq", (seq,)
+            ).fetchall()
         return [{"seq": r["seq"], "org": r["org"], "type": r["type"], "payload": json.loads(r["payload"])}
                 for r in rows]
 
     def recent(self, org: str, limit: int) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT id, type, at, actor, payload FROM events WHERE org = ? ORDER BY seq DESC LIMIT ?",
-            (org, limit),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, type, at, actor, payload FROM events WHERE org = ? ORDER BY seq DESC LIMIT ?",
+                (org, limit),
+            ).fetchall()
         return [{"id": r["id"], "type": r["type"], "at": r["at"], "actor": r["actor"],
                  "payload": json.loads(r["payload"])} for r in rows]
 
@@ -167,13 +172,13 @@ class GraphStore:
         self._conn.executescript(_GRAPH_SCHEMA)
         self._lock = threading.RLock()
         self._projectors = projectors
-        self.log = log if log is not None else SqliteEventLog(self._conn)
+        self.log = log if log is not None else SqliteEventLog(self._conn, self._lock)
 
     # ---- applied position -----------------------------------------------------------
 
     def _applied(self) -> int:
-        row = self._conn.execute("SELECT value FROM meta WHERE key = 'applied'").fetchone()
-        return int(row["value"]) if row else 0
+        rows = self._all("SELECT value FROM meta WHERE key = 'applied'", ())
+        return int(rows[0]["value"]) if rows else 0
 
     def _set_applied(self, seq: int) -> None:
         self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('applied', ?)", (str(seq),))
@@ -268,40 +273,40 @@ class GraphStore:
     def _node(row) -> dict:
         return {"id": row["id"], "label": row["label"], **json.loads(row["props"])}
 
+    # Reads take the lock too: threads share the one connection, and with it
+    # its cached statements, so two reads at once could cut each other off.
+
+    def _all(self, sql: str, args: tuple) -> list:
+        with self._lock:
+            return self._conn.execute(sql, args).fetchall()
+
     def node(self, org: str, id: str, label: str | None = None) -> dict | None:
-        row = self._conn.execute(
-            "SELECT id, label, props FROM nodes WHERE org = ? AND id = ?", (org, id)
-        ).fetchone()
+        rows = self._all("SELECT id, label, props FROM nodes WHERE org = ? AND id = ?", (org, id))
+        row = rows[0] if rows else None
         if row is None or (label and row["label"] != label):
             return None
         return self._node(row)
 
     def nodes(self, org: str, label: str) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT id, label, props FROM nodes WHERE org = ? AND label = ?", (org, label)
-        ).fetchall()
+        rows = self._all("SELECT id, label, props FROM nodes WHERE org = ? AND label = ?", (org, label))
         return [self._node(r) for r in rows]
 
     def out(self, org: str, src: str, type: str) -> list[dict]:
         """Nodes at the end of ``src``'s outgoing ``type`` edges."""
-        rows = self._conn.execute(
+        rows = self._all(
             "SELECT n.id, n.label, n.props FROM edges e JOIN nodes n ON n.id = e.dst AND n.org = e.org "
-            "WHERE e.org = ? AND e.src = ? AND e.type = ?", (org, src, type)
-        ).fetchall()
+            "WHERE e.org = ? AND e.src = ? AND e.type = ?", (org, src, type))
         return [self._node(r) for r in rows]
 
     def inn(self, org: str, dst: str, type: str) -> list[dict]:
         """Nodes at the start of ``dst``'s incoming ``type`` edges."""
-        rows = self._conn.execute(
+        rows = self._all(
             "SELECT n.id, n.label, n.props FROM edges e JOIN nodes n ON n.id = e.src AND n.org = e.org "
-            "WHERE e.org = ? AND e.dst = ? AND e.type = ?", (org, dst, type)
-        ).fetchall()
+            "WHERE e.org = ? AND e.dst = ? AND e.type = ?", (org, dst, type))
         return [self._node(r) for r in rows]
 
     def snapshot(self) -> tuple[list, list]:
         """Every node and edge, sorted: for checking a rebuild gives the same graph."""
-        nodes = [tuple(r) for r in self._conn.execute(
-            "SELECT id, org, label, props FROM nodes ORDER BY id").fetchall()]
-        edges = [tuple(r) for r in self._conn.execute(
-            "SELECT id, org, type, src, dst, props FROM edges ORDER BY id").fetchall()]
+        nodes = [tuple(r) for r in self._all("SELECT id, org, label, props FROM nodes ORDER BY id", ())]
+        edges = [tuple(r) for r in self._all("SELECT id, org, type, src, dst, props FROM edges ORDER BY id", ())]
         return nodes, edges
