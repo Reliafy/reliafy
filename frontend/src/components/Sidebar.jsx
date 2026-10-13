@@ -4,6 +4,7 @@ import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
 import { publicUrl } from "../firebase.js";
+import { getMaintenanceAccess } from "../api.js";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -184,8 +185,13 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
   // Credits only buy AI use; without it the page is plain billing.
   const billingLabel = ai || agentEnabled ? "Billing & credits" : "Billing";
   // The Reliability Agent surface is behind a feature flag (hidden until ready).
+  const [maintenanceAllowed, setMaintenanceAllowed] = useState(false);
+  useEffect(() => {
+    if (!maintenanceEnabled) return;
+    getMaintenanceAccess().then((a) => setMaintenanceAllowed(!!a.allowed));
+  }, [maintenanceEnabled]);
   const items = ITEMS.filter((it) => (it.to !== "/agent" || agentEnabled)
-    && (it.to !== "/maintenance" || maintenanceEnabled));
+    && (it.to !== "/maintenance" || (maintenanceEnabled && maintenanceAllowed)));
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [confirmSignOut, setConfirmSignOut] = useState(false);

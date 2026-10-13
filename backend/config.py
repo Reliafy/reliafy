@@ -287,12 +287,20 @@ TOKEN_PRICE_FALLBACK = {"in": 5.0, "out": 30.0}
 
 # ---- Maintenance (CMMS) --------------------------------------------------------
 # Reliafy Maintenance: positions, items, fitments, RCM tasks and work orders,
-# kept in a graph (backend/maintenance). Local only for now: off unless
-# MAINTENANCE_ENABLED is set, and refused on Cloud Run until it has a
-# production graph store.
-MAINTENANCE_ENABLED = _truthy(os.environ.get("MAINTENANCE_ENABLED")) and not os.environ.get("K_SERVICE")
-# The Python graph store's SQLite file (outside the repo, so `git clean` and
-# worktree removal never take the data with them).
+# kept in a graph (backend/maintenance). In development: off unless
+# MAINTENANCE_ENABLED, and then (with sign-in on) only for operators and the
+# addresses in MAINTENANCE_EMAILS (backend/maintenance/access.py).
+MAINTENANCE_ENABLED = _truthy(os.environ.get("MAINTENANCE_ENABLED"))
+MAINTENANCE_EMAILS = {
+    e.strip().lower() for e in (os.environ.get("MAINTENANCE_EMAILS") or "").split(",") if e.strip()
+}
+# Where the event log lives: "mongo" (a collection in the app's database; the
+# graph is rebuilt in memory from it), "sqlite" (one local file holding the
+# log and the graph), or "auto": mongo when a real MongoDB is configured,
+# else sqlite.
+MAINTENANCE_STORE = (os.environ.get("MAINTENANCE_STORE") or "auto").strip().lower()
+# The SQLite file (outside the repo, so `git clean` and worktree removal never
+# take the data with them).
 MAINTENANCE_DB_PATH = os.environ.get("MAINTENANCE_DB_PATH") or os.path.expanduser(
     "~/.reliafy/maintenance.sqlite"
 )

@@ -259,6 +259,11 @@ def authenticate(db, authorization: str | None) -> tuple[int, dict | None, str]:
     the OAuth user's own plan, 'agent' (grandfathered) or 'free' (the daily
     allowance), which :func:`_gate` gates tools and quotas on."""
     scheme, _, raw = (authorization or "").partition(" ")
+    if config.AUTH_DISABLED and not raw.strip():
+        # Single-user mode (a local or self-hosted install with sign-in off):
+        # MCP needs no token, like the app. AUTH_DISABLED is refused on Cloud Run.
+        return 200, {"uid": config.DEV_USER_ID, "email": "dev@local", "name": "Dev User",
+                     "email_verified": True, "mcp_plan": "pro"}, ""
     if scheme.lower() != "bearer" or not raw.strip():
         return 401, None, (
             "Sign in to Reliafy to use it from Claude (the client starts OAuth from this response), "

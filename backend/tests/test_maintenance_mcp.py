@@ -24,12 +24,13 @@ def env(monkeypatch):
     monkeypatch.setattr(config, "AUTH_DISABLED", False)
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
     monkeypatch.setattr(config, "MAINTENANCE_ENABLED", True)
+    monkeypatch.setattr(config, "MAINTENANCE_EMAILS", {"m@example.org"})
     test_db = mongomock.MongoClient()["reliafy_maint_mcp"]
     monkeypatch.setattr(db, "_db", test_db)
     monkeypatch.setattr(db, "_simulated", True)
     monkeypatch.setattr(router, "_store", GraphStore(":memory:", PROJECTORS))
     ingest_router._hits.clear()
-    test_db.users.insert_one({"_id": UID, "email": "m@example.org", "name": "M"})
+    test_db.users.insert_one({"_id": UID, "email": "m@example.org", "name": "M", "email_verified": True})
     mcp_tools.register()
     yield {"db": test_db, "token": tokens.create_token(test_db, UID, "mcp")["token"]}
     mcp_tools.unregister()
@@ -45,7 +46,7 @@ def _session(token, fn):
         async with mcp_http_app.lifespan():
             async with httpx2.AsyncClient(
                 transport=httpx2.ASGITransport(app=app), base_url="http://testserver",
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {token}"} if token else {},
             ) as hc:
                 async with Client(streamable_http_client("http://testserver/mcp", http_client=hc),
                                   mode="legacy") as client:
@@ -115,3 +116,30 @@ def test_a_house_through_mcp(env):
     assert [(r["c"], r["status"]) for r in position["life_data"]] == [(0, "failed"), (1, "still fitted")]
     assert overview["summary"]["positions"] == 3
     assert missing.is_error and "Not found" in missing.content[0].text
+
+
+def test_no_token_needed_when_sign_in_is_off(env, monkeypatch):
+    from backend import config
+
+    async def overview(client):
+        return await client.call_tool("maintenance_overview", {})
+
+    monkeypatch.setattr(config, "AUTH_DISABLED", False)
+    with pytest.raises(Exception):
+        _session("", overview)  # 401: a token (or OAuth) is needed
+    monkeypatch.setattr(config, "AUTH_DISABLED", True)
+    result = _session("", overview)
+    assert not result.is_error and result.structured_content["summary"]["positions"] == 0
+
+
+def test_tools_hidden_from_people_without_access(env, monkeypatch):
+    from backend import config
+
+    async def names(client):
+        return {t.name for t in (await client.list_tools()).tools}, await client.call_tool("maintenance_overview", {})
+
+    monkeypatch.setattr(config, "ADMIN_EMAILS", set())
+    monkeypatch.setattr(config, "MAINTENANCE_EMAILS", set())
+    listed, result = _session(env["token"], names)
+    assert "maintenance_overview" not in listed and "list_models" in listed
+    assert result.is_error and "isn't available" in result.content[0].text

@@ -170,6 +170,10 @@ def test_api_is_off_unless_enabled_and_works_when_on(monkeypatch):
         assert client.get("/api/config").json()["maintenance"] is False
 
         monkeypatch.setattr(config, "MAINTENANCE_ENABLED", True)
+        assert client.get("/api/maintenance/access").json() == {"allowed": False}
+        assert client.get("/api/maintenance/overview").status_code == 404  # not on the list
+        monkeypatch.setattr(config, "MAINTENANCE_EMAILS", {"a@x.com"})
+        assert client.get("/api/maintenance/access").json() == {"allowed": True}
         study = client.post("/api/rcm/studies", json={"name": "Pool", "system": "Pool pump"}).json()
         client.put(f"/api/rcm/studies/{study['id']}/tree", json={"functions": [
             {"text": "Circulate water", "failures": [{"text": "No flow", "modes": [
@@ -195,3 +199,46 @@ def test_api_is_off_unless_enabled_and_works_when_on(monkeypatch):
         assert client.get("/api/maintenance/positions/nope").status_code == 404
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_a_shared_mongo_log_keeps_every_process_in_step():
+    """Two processes (two graph copies in memory) on one MongoDB log: each sees
+    the other's writes after a sync, and a rebuild gives the same graph."""
+    from backend.maintenance.store import MongoEventLog
+
+    mongo = mongomock.MongoClient()["maint_log"]
+    a = Maintenance(GraphStore(":memory:", PROJECTORS, MongoEventLog(mongo)), ORG)
+    b = Maintenance(GraphStore(":memory:", PROJECTORS, MongoEventLog(mongo)), ORG)
+    pos = a.position_from_rcm(_study())["position"]
+    b.s.sync()
+    assert b.position(pos["id"])["tasks"][0]["name"] == "Replace sacrificial anode"
+    b.fit(pos["id"], new_item={"name": "Tank"}, on="2024-02-01")
+    a.s.sync()
+    assert a.position(pos["id"])["fitted"]["item"]["name"] == "Tank"
+    assert a.s.snapshot() == b.s.snapshot()
+    before = a.s.snapshot()
+    a.s.rebuild()
+    assert a.s.snapshot() == before
+    # A fresh process (a new Cloud Run instance) starts empty and catches up.
+    c = GraphStore(":memory:", PROJECTORS, MongoEventLog(mongo))
+    c.sync()
+    assert c.snapshot() == before
+
+
+def test_access_rule(monkeypatch):
+    from backend import config
+    from backend.maintenance.access import allowed
+
+    admin = {"uid": "u1", "email": "boss@x.com", "email_verified": True}
+    tester = {"uid": "u2", "email": "tester@x.com", "email_verified": True}
+    other = {"uid": "u3", "email": "someone@x.com", "email_verified": True}
+    monkeypatch.setattr(config, "AUTH_DISABLED", False)
+    monkeypatch.setattr(config, "ADMIN_EMAILS", {"boss@x.com"})
+    monkeypatch.setattr(config, "MAINTENANCE_EMAILS", {"tester@x.com"})
+    monkeypatch.setattr(config, "MAINTENANCE_ENABLED", False)
+    assert not allowed(admin)
+    monkeypatch.setattr(config, "MAINTENANCE_ENABLED", True)
+    assert allowed(admin) and allowed(tester) and not allowed(other)
+    assert not allowed({**tester, "email_verified": False})
+    monkeypatch.setattr(config, "AUTH_DISABLED", True)
+    assert allowed(other)

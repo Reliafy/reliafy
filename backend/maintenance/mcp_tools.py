@@ -6,11 +6,13 @@ personal workspace, like the other MCP tools.
 """
 
 
+import dataclasses
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
 TOOL_NAMES: list[str] = []
+_ORIGINAL: dict = {}
 
 
 def register() -> None:
@@ -20,14 +22,17 @@ def register() -> None:
     from mcp.server.mcpserver import Context
     from mcp.server.mcpserver.exceptions import ToolError
 
+    from backend.maintenance.access import allowed
     from backend.maintenance.service import Invalid, Maintenance, NotFound, summary
-    from backend.mcp_server import _READ, _WRITE, _caller, _db, _reader, _tool
+    from backend.mcp_server import _READ, _WRITE, _caller, _db, _reader, _tool, mcp
     from backend.routers.maintenance import get_store
     from backend.schema import RcmStudy
     from backend.services import access as access_service
 
     def m_for(ctx: Context) -> Maintenance:
         user = _caller(ctx)
+        if not allowed(user):
+            raise ToolError("Reliafy Maintenance isn't available on your account yet.")
         return Maintenance(get_store(), user["uid"], user["uid"])
 
     def run(fn, *args, **kwargs):
@@ -209,6 +214,22 @@ def register() -> None:
         action is invalid."""
         return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes)
 
+    # The tools are listed only to people who may use them: wrap the server's
+    # tools/list handler to drop them for everyone else.
+    handlers = mcp._lowlevel_server._request_handlers
+    entry = handlers["tools/list"]
+    _ORIGINAL["tools/list"] = entry
+    hidden = set(TOOL_NAMES)
+
+    async def list_tools(ctx, params):
+        result = await entry.handler(ctx, params)
+        user = getattr(getattr(getattr(ctx, "request", None), "state", None), "reliafy_user", None)
+        if allowed(user):
+            return result
+        return result.model_copy(update={"tools": [t for t in result.tools if t.name not in hidden]})
+
+    handlers["tools/list"] = dataclasses.replace(entry, handler=list_tools)
+
 
 def unregister() -> None:
     """Remove the maintenance tools again (for tests)."""
@@ -217,3 +238,5 @@ def unregister() -> None:
     for name in TOOL_NAMES:
         mcp.remove_tool(name)
     TOOL_NAMES.clear()
+    if "tools/list" in _ORIGINAL:
+        mcp._lowlevel_server._request_handlers["tools/list"] = _ORIGINAL.pop("tools/list")

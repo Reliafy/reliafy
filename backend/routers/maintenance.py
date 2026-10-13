@@ -1,7 +1,9 @@
 """Reliafy Maintenance API: positions, items, RCM tasks and work orders.
 
-Local only for now: every route answers 404 unless ``MAINTENANCE_ENABLED``.
-Data belongs to the active workspace (personal, or a team).
+In development: every route answers 404 unless ``MAINTENANCE_ENABLED`` and the
+caller is allowed (backend/maintenance/access.py), except ``/access``, which
+says whether they are. Data belongs to the active workspace (personal, or a
+team).
 """
 
 from __future__ import annotations
@@ -12,9 +14,10 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from backend import config
-from backend.db import get_session
+from backend.db import get_db, get_session, is_simulated
+from backend.maintenance.access import allowed
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance, NotFound, summary
-from backend.maintenance.store import GraphStore
+from backend.maintenance.store import GraphStore, MongoEventLog
 from backend.schema import RcmStudy
 from backend.services import access as access_service
 from backend.services.access import AccessCtx, get_access
@@ -26,17 +29,30 @@ _store_lock = threading.Lock()
 
 
 def get_store() -> GraphStore:
+    """The graph, caught up with the log (other processes may have written)."""
     global _store
     with _store_lock:
         if _store is None:
-            _store = GraphStore(config.MAINTENANCE_DB_PATH, PROJECTORS)
-        return _store
+            mode = config.MAINTENANCE_STORE
+            if mode == "mongo" or (mode == "auto" and not is_simulated()):
+                _store = GraphStore(":memory:", PROJECTORS, MongoEventLog(get_db()))
+            else:
+                _store = GraphStore(config.MAINTENANCE_DB_PATH, PROJECTORS)
+        store = _store
+    store.sync()
+    return store
 
 
 def maintenance(ctx: AccessCtx = Depends(get_access)) -> Maintenance:
-    if not config.MAINTENANCE_ENABLED:
+    if not allowed(ctx.user):
         raise HTTPException(status_code=404, detail="Not found.")
     return Maintenance(get_store(), ctx.write_owner, ctx.uid)
+
+
+@router.get("/access")
+def access(ctx: AccessCtx = Depends(get_access)) -> dict:
+    """Whether the caller may use Reliafy Maintenance (the app shows it if so)."""
+    return {"allowed": allowed(ctx.user)}
 
 
 def _run(fn, *args, **kwargs) -> JSONResponse:

@@ -2113,3 +2113,13 @@ export function setTaskLastDone(taskId, lastDone) {
     body: JSON.stringify({ last_done: lastDone }),
   });
 }
+
+// Whether the signed-in user may use Reliafy Maintenance (in development):
+// asked once per page load.
+let maintenanceAccess = null;
+export function getMaintenanceAccess() {
+  if (!maintenanceAccess) {
+    maintenanceAccess = request("/api/maintenance/access").catch(() => ({ allowed: false }));
+  }
+  return maintenanceAccess;
+}
