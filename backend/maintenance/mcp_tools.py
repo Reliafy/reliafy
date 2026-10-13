@@ -295,6 +295,22 @@ def register() -> None:
         return run(m_for(ctx).add_part_used, work_order_id, part, quantity, unit_cost, part_number, note,
                    part_id, from_location_id)
 
+    from backend.maintenance import importer
+
+    @tool("import_history", _WRITE, "Import positions and item history")
+    def import_history(rows: Annotated[list[dict[str, str]], Field(description=(
+                           "One row per item per position: {position: 'House > Pool > Pump', class?, item?, "
+                           "serial?, manufacturer?, model?, part number?, fitted?: date, removed?: date, "
+                           "failed?: yes/no, failure mode?}. Column names are matched loosely."))],
+                       ctx: Context, dry_run: bool = True) -> dict[str, Any]:
+        """Bring an existing history in: positions (made from their paths), items and when they were
+        fitted, removed and whether they failed. Every row is checked first; with any error nothing is
+        written. dry_run (the default) only reports what would be made: show it, then run with
+        dry_run false. At most 5000 rows; for a file, the user can import it on the Maintenance page."""
+        if len(rows) > importer.MAX_ROWS:
+            raise ToolError(f"At most {importer.MAX_ROWS} rows at a time.")
+        return run(importer.run, m_for(ctx), [{str(k): str(v) for k, v in r.items()} for r in rows], dry_run)
+
     @tool("list_parts", _READ, "List parts and stock")
     def list_parts(ctx: Context) -> dict[str, Any]:
         """The parts catalogue: each part's stock by location, reorder points (low = at or below),

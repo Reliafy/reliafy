@@ -12,7 +12,7 @@ import threading
 
 import os
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from backend import config
@@ -266,6 +266,26 @@ def decide_proposal(proposal_id: str, decision: str, body: dict = Body(default={
 @router.get("/tasks/{task_id}/explain")
 def explain_task(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.explain_task, task_id)
+
+
+@router.post("/import")
+async def import_sheet(file: UploadFile = File(...), dry_run: bool = Form(False),
+                       m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Positions, items and their history from a CSV or Excel sheet (see importer.py)."""
+    from starlette.concurrency import run_in_threadpool
+
+    from backend.maintenance import importer
+
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if len(data) > 10 * 1024 * 1024:
+        return JSONResponse(status_code=413, content={"detail": "The file is over 10 MB."})
+    try:
+        rows = await run_in_threadpool(importer.rows_from_file, data, file.filename or "")
+    except Invalid as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+    except Exception:  # noqa: BLE001 - an unreadable file
+        return JSONResponse(status_code=422, content={"detail": "That file couldn't be read as CSV or Excel."})
+    return await run_in_threadpool(_run, importer.run, m, rows, dry_run)
 
 
 @router.get("/classes")

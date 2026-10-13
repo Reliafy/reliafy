@@ -5,6 +5,7 @@ import {
   generateWorkOrders,
   getMaintenanceOverview,
   getMaintenanceSettings,
+  importMaintenanceSheet,
   setMaintenanceSettings,
   listRcmStudies,
   maintenanceFromRcm,
@@ -58,7 +59,10 @@ export default function MaintenanceHome() {
       <PageHeader
         title="Maintenance"
         meta="Your plant as positions, what's fitted in each, the tasks from your RCM studies, and the work done."
-        actions={<button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>}
+        actions={<>
+          <button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>
+          <button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>
+        </>}
         primary={<button onClick={() => setModal("position")}><PlusIcon /> New position</button>}
       />
       <MaintenanceTabs />
@@ -156,6 +160,7 @@ export default function MaintenanceHome() {
           onCreated={(p) => navigate(`/maintenance/positions/${p.id}`)}
         />
       )}
+      {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "rcm" && (
         <FromRcmModal
           positions={positions}
@@ -247,6 +252,28 @@ function FromRcmModal({ positions, onClose, onCreated }) {
       <Field label="Inside">
         <PositionPicker positions={positions} value={parent} onChange={setParent} />
       </Field>
+    </FormModal>
+  );
+}
+
+function ImportModal({ onClose, onDone }) {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const check = async () => setPreview(await importMaintenanceSheet(file, true));
+  return (
+    <FormModal title="Import from a spreadsheet" submitLabel={preview ? "Import" : "Check it"} canSubmit={!!file}
+               onClose={onClose} onSubmit={async () => (preview ? onDone(await importMaintenanceSheet(file, false)) : check())}>
+      <p className="lib-date">
+        A CSV or Excel sheet, one row per item per position. Columns: position (a path like House &gt; Pool &gt; Pump),
+        and optionally class, item, serial, manufacturer, model, fitted, removed, failed (yes/no) and failure mode.
+        Every row is checked first; if any is wrong, nothing is imported.
+      </p>
+      <Field label="File"><input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => { setFile(e.target.files[0] || null); setPreview(null); }} /></Field>
+      {preview && (
+        <p>It will make {preview.positions_created} position{preview.positions_created === 1 ? "" : "s"},{" "}
+          {preview.items_created} item{preview.items_created === 1 ? "" : "s"} and {preview.fitments} fitments,
+          {" "}{preview.failures} of them ending in a failure.</p>
+      )}
     </FormModal>
   );
 }

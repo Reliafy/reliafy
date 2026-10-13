@@ -2292,3 +2292,10 @@ export function adjustMaintenanceStock(partId, body) {
 export function setMaintenanceReorder(partId, body) {
   return postJson(`/api/maintenance/parts/${partId}/reorder-point`, body);
 }
+
+export function importMaintenanceSheet(file, dryRun) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("dry_run", dryRun ? "true" : "false");
+  return request("/api/maintenance/import", { method: "POST", body: form });
+}
