@@ -9,6 +9,7 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import { FailureModePicker, Field, FormModal, MaintenanceTabs, NotesCard, fmtDate, today } from "../components/MaintenanceParts.jsx";
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
+import { partChoices, stockText } from "../maintenanceSpares.js";
 import "./Maintenance.css";
 
 const STATUS_LABELS = {
@@ -140,6 +141,12 @@ function CloseForm({ wo, onClosed }) {
   const [error, setError] = useState(null);
 
   const update = (i, patch) => setActions((as) => as.map((a, j) => (j === i ? { ...a, ...patch } : a)));
+  // The parts the position lists, replacement first: what a replacement is picked from.
+  const listed = partChoices(wo.suggested_parts || []).listed;
+  const pickPart = (i, id) => {
+    const pt = listed.find((x) => x.id === id);
+    update(i, { part_id: id, from: pt ? mostStock(pt) : "" });
+  };
   const removeAt = (i) => setActions((as) => as.filter((_, j) => j !== i));
 
   const submit = async () => {
@@ -152,6 +159,7 @@ function CloseForm({ wo, onClosed }) {
         finding: a.kind === "inspect" ? a.finding || null : null,
         notes: a.notes || "",
         new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
+        ...(a.kind === "replace" && a.part_id ? { part_id: a.part_id, from_location_id: a.from || null } : {}),
       }));
       const meterReadings = Object.entries(readings).filter(([, v]) => v !== "")
         .map(([point_id, value]) => ({ point_id, value: Number(value) }));
@@ -195,10 +203,27 @@ function CloseForm({ wo, onClosed }) {
                                    noneLabel={a.kind === "replace" ? "No, a planned replacement" : "None"} />
               </Field>
             )}
+            {a.kind === "replace" && listed.length > 0 && (
+              <>
+                <Field label="Part fitted (from the parts list)">
+                  <select value={a.part_id || ""} onChange={(e) => pickPart(i, e.target.value)}>
+                    <option value="">Not from the parts list</option>
+                    {listed.map((pt) => <option key={pt.id} value={pt.id}>{partLabel(pt)}</option>)}
+                  </select>
+                </Field>
+                {a.part_id && (
+                  <Field label="Take it from stock at">
+                    <StockPicker part={listed.find((x) => x.id === a.part_id)} value={a.from || ""}
+                                 onChange={(from) => update(i, { from })} />
+                  </Field>
+                )}
+              </>
+            )}
             {a.kind === "replace" && (
               <>
-                <Field label="New item">
-                  <input value={a.new_name || ""} placeholder={wo.fitted?.item?.name || "e.g. Rheem 315 L"}
+                <Field label={a.part_id ? "New item (optional: named after the part)" : "New item"}>
+                  <input value={a.new_name || ""}
+                         placeholder={listed.find((x) => x.id === a.part_id)?.name || wo.fitted?.item?.name || "e.g. Rheem 315 L"}
                          onChange={(e) => update(i, { new_name: e.target.value })} />
                 </Field>
                 <Field label="New item's serial (optional)">
@@ -268,6 +293,30 @@ function EditWorkOrder({ wo, onClose, onDone }) {
   );
 }
 
+function partLabel(pt) {
+  return `${pt.part_number}: ${pt.name}${pt.note ? `, ${pt.note}` : ""} · ${stockText(pt)}`;
+}
+
+// The store holding the most of a part, if any: where a part is taken from by default.
+function mostStock(pt) {
+  const best = [...(pt.stock || [])].sort((a, b) => b.quantity - a.quantity)[0];
+  return best && best.quantity > 0 ? best.location.id : "";
+}
+
+// Where to take a part from: the stores holding it (with how many), then any other
+// location; or leave stock as it is.
+function StockPicker({ part, places = [], value, onChange }) {
+  const held = (part?.stock || []).filter((s) => s.quantity > 0);
+  const heldIds = new Set(held.map((s) => s.location.id));
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Don't change stock</option>
+      {held.map((s) => <option key={s.location.id} value={s.location.id}>{s.location.name} ({s.quantity} there)</option>)}
+      {places.filter((l) => !heldIds.has(l.id)).map((l) => <option key={l.id} value={l.id}>{l.name} (none there)</option>)}
+    </select>
+  );
+}
+
 function money(v) {
   return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -287,6 +336,12 @@ function CostsCard({ wo, onChanged }) {
     }
   };
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const choices = partChoices(wo.suggested_parts || [], catalogue || []);
+  const chosen = [...choices.listed, ...choices.others].find((x) => x.id === f.part_id);
+  const pick = (e) => {
+    const pt = [...choices.listed, ...choices.others].find((x) => x.id === e.target.value);
+    setF({ ...f, part_id: e.target.value, quantity: pt?.quantity || f.quantity || 1, from: pt ? mostStock(pt) : "" });
+  };
   const submit = async () => {
     setError(null);
     try {
@@ -326,20 +381,26 @@ function CostsCard({ wo, onChanged }) {
               <Field label="Hourly rate (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={f.rate || ""} onChange={set("rate")} /></Field>
             </>}
             {form === "part" && <>
-              {catalogue?.length > 0 && (
+              {(choices.listed.length > 0 || choices.others.length > 0) && (
                 <Field label="From the catalogue (optional)">
-                  <select value={f.part_id || ""} onChange={set("part_id")}>
+                  <select value={f.part_id || ""} onChange={pick}>
                     <option value="">No: type it below</option>
-                    {catalogue.map((pt) => <option key={pt.id} value={pt.id}>{pt.part_number}: {pt.name} ({pt.on_hand} on hand)</option>)}
+                    {choices.listed.length > 0 && (
+                      <optgroup label="This position's parts">
+                        {choices.listed.map((pt) => <option key={pt.id} value={pt.id}>{partLabel(pt)}</option>)}
+                      </optgroup>
+                    )}
+                    {choices.others.length > 0 && (
+                      <optgroup label={choices.listed.length > 0 ? "The rest of the catalogue" : "The catalogue"}>
+                        {choices.others.map((pt) => <option key={pt.id} value={pt.id}>{pt.part_number}: {pt.name} ({pt.on_hand} on hand)</option>)}
+                      </optgroup>
+                    )}
                   </select>
                 </Field>
               )}
               {f.part_id ? (
                 <Field label="Take it from stock at (optional)">
-                  <select value={f.from || ""} onChange={set("from")}>
-                    <option value="">Don't change stock</option>
-                    {places.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
+                  <StockPicker part={chosen} places={places} value={f.from || ""} onChange={(from) => setF({ ...f, from })} />
                 </Field>
               ) : (
                 <Field label="Part"><input autoFocus value={f.part || ""} placeholder="e.g. 6203 bearing" onChange={set("part")} /></Field>

@@ -2336,6 +2336,19 @@ export function adjustMaintenanceStock(partId, body) {
 export function setMaintenanceReorder(partId, body) {
   return postJson(`/api/maintenance/parts/${partId}/reorder-point`, body);
 }
+// A position's parts list (its bill of materials), and where the spares fall short.
+export function addPositionPart(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/parts`, body);
+}
+export function updatePositionPart(listingId, body) {
+  return patchJson(`/api/maintenance/position-parts/${listingId}`, body);
+}
+export function removePositionPart(listingId) {
+  return request(`/api/maintenance/position-parts/${listingId}`, { method: "DELETE" });
+}
+export function getSparesCover(includeUnlisted = false) {
+  return request(`/api/maintenance/spares?include_unlisted=${includeUnlisted ? "true" : "false"}`);
+}
 
 export function importMaintenanceSheet(file, dryRun) {
   const form = new FormData();

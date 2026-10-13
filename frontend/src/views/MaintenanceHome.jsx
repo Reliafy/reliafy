@@ -81,6 +81,23 @@ export default function MaintenanceHome() {
       ) : (
         <>
           <Proposals proposals={data.proposals} onDecided={refresh} />
+          {data.critical_spares?.length > 0 && (
+            <section className="card">
+              <div className="maint-head">
+                <h2>Critical spares short</h2>
+                <Link to="/maintenance/parts" className="lib-date">Parts and stock</Link>
+              </div>
+              <ul className="maint-list">
+                {data.critical_spares.map((v) => (
+                  <li key={v.id}>
+                    <Link to={`/maintenance/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
+                    <span className={v.usable_on_hand > 0 ? "lib-date" : "maint-overdue"}> · {v.usable_on_hand} usable, keep {v.min_on_hand}</span>
+                    {v.use_instead && <span className="lib-date"> · use {v.use_instead.part_number} instead</span>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <section className="card">
             <div className="maint-head">
               <h2>Due in the next 30 days</h2>

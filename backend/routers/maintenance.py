@@ -186,6 +186,7 @@ def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {
         "summary": summary(m), "tree": m.tree(), "due": m.due_tasks(30),
         "open_work_orders": m.work_orders("open"), "proposals": m.proposals("pending"),
+        "critical_spares": m.critical_spares_short(),
     })
 
 
@@ -662,6 +663,36 @@ def supersede_part(part_id: str, body: dict = Body(...), m: Maintenance = Depend
 @router.post("/parts/{part_id}/interchangeable")
 def mark_interchangeable(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.mark_interchangeable, part_id, body.get("other_part_id"))
+
+
+# ---- a position's parts list, and where the spares fall short -----------------------------
+
+@router.get("/positions/{position_id}/parts")
+def position_parts(position_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.position_parts, position_id)
+
+
+@router.post("/positions/{position_id}/parts")
+def add_position_part(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_position_part, position_id, body.get("part_id"), body.get("role") or "component",
+                body.get("quantity", 1), body.get("critical", False), body.get("min_on_hand"), body.get("notes", ""))
+
+
+@router.patch("/position-parts/{listing_id}")
+def update_position_part(listing_id: str, body: dict = Body(...),
+                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_position_part, listing_id, body.get("role"), body.get("quantity"), body.get("critical"),
+                body["min_on_hand"] if "min_on_hand" in body else ..., body.get("notes"))
+
+
+@router.delete("/position-parts/{listing_id}")
+def remove_position_part(listing_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.remove_position_part, listing_id)
+
+
+@router.get("/spares")
+def spares_cover(include_unlisted: bool = False, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.spares_cover, include_unlisted)
 
 
 @router.post("/work-orders/{work_order_id}/costs")
