@@ -28,8 +28,8 @@ USERS = {
 
 PRO_PAYLOAD = {
     "detail": (
-        "Availability simulation is a paid feature. Subscribe to Pro or buy AI "
-        "credits — or download the diagram and run it locally with RePyability."
+        "Availability simulation is part of Pro. Subscribe to Pro — or download "
+        "the diagram and run it locally with RePyability."
     ),
     "code": "pro_required",
     "upgrade": True,
@@ -167,7 +167,11 @@ def test_premium_compute_allowed(client, monkeypatch):
     assert billing.premium_compute_allowed(db, USERS[FREE]) is False
     assert billing.premium_compute_allowed(db, USERS[PRO]) is True
     assert billing.premium_compute_allowed(db, USERS[ADMIN]) is True
-    assert billing.premium_compute_allowed(db, USERS[BUYER]) is True
+    # Bought credits pay for the AI features, not for compute: no simulations.
+    assert billing.premium_compute_allowed(db, USERS[BUYER]) is False
+    assert billing.reliability_agent_allowed(db, USERS[BUYER]) is True
+    assert billing.reliability_agent_allowed(db, USERS[FREE]) is False
+    assert billing.reliability_agent_allowed(db, USERS[PRO]) is True
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
     assert billing.premium_compute_allowed(db, USERS[FREE]) is True
 
@@ -252,7 +256,7 @@ def test_non_repairable_analysis_stays_free(client):
 
 # ---- Entitled users --------------------------------------------------------------
 
-@pytest.mark.parametrize("who", [PRO, ADMIN, BUYER, "billing-off"])
+@pytest.mark.parametrize("who", [PRO, ADMIN, "billing-off"])
 def test_entitled_user_computes_caches_and_forces(client, monkeypatch, who):
     from backend import config
 
@@ -556,20 +560,20 @@ def test_backfill_script_dry_run_and_apply(client, capsys):
     db.teams.insert_one({"_id": "t1", "owner_uid": PRO, "members": [{"uid": PRO}]})
     put("r-team", "team:t1", graph)                    # judged by the team owner
 
-    expected = {"r-pro", "r-admin", "r-buyer", "r-stale", "r-team"}
+    expected = {"r-pro", "r-admin", "r-stale", "r-team"}  # credits alone don't entitle
     assert {r["id"] for r in backfill.candidates(db)} == expected
 
     # Dry run (the default) writes nothing.
     assert backfill.main([]) == 0
     out = capsys.readouterr().out
-    assert "needing a saved availability result: 5" in out and "Dry run" in out
+    assert "needing a saved availability result: 4" in out and "Dry run" in out
     assert client.sims["n"] == 0
     assert "availability_cache" not in db.rbds.find_one({"_id": "r-pro"})
 
     assert backfill.main(["--apply", "--limit", "2"]) == 0
     assert client.sims["n"] == 2
     assert backfill.main(["--apply"]) == 0
-    assert client.sims["n"] == 5
+    assert client.sims["n"] == 4
     for rid in expected:
         entry = db.rbds.find_one({"_id": rid})["availability_cache"]
         assert entry["key"] == rbds_service.availability_cache_key(graph)

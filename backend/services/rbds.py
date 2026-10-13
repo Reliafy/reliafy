@@ -542,6 +542,27 @@ def availability_cache_key(graph: dict, t_simulation: float | None = None,
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
+def is_saved_graph(rbd, graph: dict | None) -> bool:
+    """Whether ``graph`` is the diagram ``rbd`` (an :class:`Rbd` or a raw
+    doc) as saved, layout aside."""
+    if rbd is None:
+        return False
+    saved = rbd.get("graph") if isinstance(rbd, dict) else getattr(rbd, "graph", None)
+    return availability_cache_key(graph or {}) == availability_cache_key(saved or {})
+
+
+def graph_owners(read_owners, rbd, graph: dict | None) -> list[str]:
+    """The owners whose saved models a posted ``graph`` may reference: the
+    caller's own read scope, plus the owner of the diagram ``rbd`` only when
+    ``graph`` is that diagram as saved. A graph that differs from the saved
+    one resolves in the caller's scope alone."""
+    owners = list(read_owners or [])
+    if rbd is None or not is_saved_graph(rbd, graph):
+        return owners
+    owner_id = rbd.get("owner_id") if isinstance(rbd, dict) else getattr(rbd, "owner_id", None)
+    return [*owners, owner_id] if owner_id and owner_id not in owners else owners
+
+
 def availability_cache_keys(doc: dict | None, graph: dict, t_simulation: float | None = None,
                             models: dict | None = None) -> list[str]:
     """The keys a saved result for ``graph`` may be under on ``doc``: the

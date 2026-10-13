@@ -524,7 +524,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
                 </p>
               ) : crewSim?.state === "pro" ? (
                 <div style={{ margin: "6px 0 0" }}>
-                  <p style={{ margin: 0 }}>Simulating the plan with your crews is part of Pro, or buy AI credits.</p>
+                  <p style={{ margin: 0 }}>Simulating the plan with your crews is part of Pro.</p>
                   <div className="rbd-upgrade-actions">
                     {crewSim.quick?.remaining_today > 0 && (
                       <button type="button" onClick={() => simulateCrews(true)}>

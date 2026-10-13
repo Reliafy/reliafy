@@ -17,6 +17,7 @@ propose the plan.
 from __future__ import annotations
 
 import io
+import math
 from datetime import date
 
 import pandas as pd
@@ -55,7 +56,7 @@ def fit_class_model(m: Maintenance, db, position_class: str, distribution: str =
                                       {"x": "days", "c": "censored"}, [], None, "days", owner_id=m.org)
     params = [{"name": p["name"], "value": p["value"]} for p in model.results.get("params") or []]
     m._emit("class.model_fitted", {
-        "id": class_id(name), "name": name, "model_id": model.id, "distribution": model.distribution_id,
+        "id": class_id(m.org, name), "name": name, "model_id": model.id, "distribution": model.distribution_id,
         "params": params, "extras": (model.results.get("options") or None), "unit": "days",
         "fitted_on": date.today().isoformat(), "failures": failures, "suspensions": len(rows) - failures,
     })
@@ -81,7 +82,7 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
     support changing. Returns the proposals made now."""
     from backend.services import strategy as strategy_service
 
-    node = m.s.node(m.org, class_id(position_class))
+    node = m.s.node(m.org, class_id(m.org, position_class))
     if not node or not node.get("model"):
         raise Invalid(f"Fit a life model for {position_class} first.")
     model = node["model"]
@@ -173,13 +174,15 @@ def economics(m: Maintenance, position_class: str, interval: float | None = None
 
     from backend.services import strategy as strategy_service
 
-    node = m.s.node(m.org, class_id(position_class))
+    node = m.s.node(m.org, class_id(m.org, position_class))
     if not node or not node.get("model"):
         raise Invalid(f"Fit a life model for {position_class} first.")
     if node.get("planned_cost") is None or node.get("failure_cost") is None:
         raise Invalid(f"Set {position_class}'s costs (a planned replacement and a failure) first.")
     if not 0 <= float(discount_rate) < 1 or not 0 < float(horizon_years) <= 100:
         raise Invalid("The discount rate is 0 to 1 (e.g. 0.07) and the horizon 1 to 100 years.")
+    if interval is not None and not (math.isfinite(float(interval)) and 0 < float(interval) <= 1e6):
+        raise Invalid("A what-if interval is a positive number of days, weeks, months or years.")
     model = node["model"]
     res = strategy_service.optimal_replacement(model["distribution"], model["params"], node["planned_cost"],
                                                node["failure_cost"], "days", model.get("extras"))

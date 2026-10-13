@@ -2,7 +2,7 @@
 
 Availability simulation (repairable diagrams) became a paid feature: free
 users and public links only see a *saved* result. This backfills that result
-for diagrams whose owner is entitled (admin, Pro, purchased credits, or
+for diagrams whose owner is entitled (admin, Pro, or
 billing off) and which have no saved result matching their current graph, so
 their public links and read-only viewers keep showing numbers.
 

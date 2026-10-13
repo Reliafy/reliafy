@@ -118,15 +118,15 @@ def test_team_invite_emails(client, sent):
     client.act_as(A)
     tid = client.post("/api/teams", json={"name": "Crew"}).json()["id"]
 
-    # Registered user -> "added" email.
+    # Registered or not, the same invitation email: accept or decline.
     client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
-    assert sent[-1]["to"] == "b@x.com" and "added" in sent[-1]["subject"].lower()
-    assert "Crew" in sent[-1]["subject"]
+    assert sent[-1]["to"] == "b@x.com" and "invited" in sent[-1]["subject"].lower()
+    assert "Crew" in sent[-1]["subject"] and "accept" in sent[-1]["body"].lower()
 
-    # Unregistered -> pending-invite email with a signup nudge.
     client.post(f"/api/teams/{tid}/members", json={"email": "new@x.com"})
     assert sent[-1]["to"] == "new@x.com" and "invited" in sent[-1]["subject"].lower()
     assert "account" in sent[-1]["body"].lower()
+    assert sent[-1]["body"].replace("new@x.com", "b@x.com") == sent[-2]["body"].replace("new@x.com", "b@x.com")
 
 
 def test_share_email(client, sent):

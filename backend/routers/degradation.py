@@ -142,12 +142,12 @@ def fit_preview(
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
-    """Fit a degradation model for preview (nothing persisted except the
-    uploaded dataset, which is content-addressed like the model-fit flow)."""
+    """Fit a degradation model for preview. Nothing is stored: an uploaded
+    CSV is parsed in memory (``dataset_id`` is null) and stored on save."""
     try:
-        dataset = _resolve_dataset(session, ctx, dataset_id, file)
+        contents = read_upload(file) if (file is not None and not dataset_id) else None
+        df, preview_dataset_id = datasets_service.preview_frame(session, ctx.write_owner, dataset_id, contents)
         spec = _spec_from_form(i, x, y, threshold, path, distribution, population_method, unit, measurement_unit)
-        df = datasets_service.load_dataframe(dataset)
         payload, _ = degradation_fit.fit(
             df, spec["mapping"], spec["threshold"], spec["path"],
             spec["distribution_id"], spec["population_method"],
@@ -160,7 +160,7 @@ def fit_preview(
     except Exception:  # pragma: no cover - defensive
         logger.exception("Degradation fit failed")
         return JSONResponse(status_code=500, content={"detail": "Fit failed. The error has been logged."})
-    return JSONResponse(content={"dataset_id": dataset.id, "spec": spec, "results": payload})
+    return JSONResponse(content={"dataset_id": preview_dataset_id, "spec": spec, "results": payload})
 
 
 @router.post("/degradation/models")
@@ -183,6 +183,10 @@ def save_model(
     denied = _creation_denied(session, ctx, "degradation_models")
     if denied is not None:
         return denied
+    denied = datasets_service.upload_denial(session, ctx, dataset_id, file)
+    if denied is not None:
+        status, payload = denied
+        return JSONResponse(status_code=status, content=payload)
     try:
         dataset = _resolve_dataset(session, ctx, dataset_id, file)
         spec = _spec_from_form(i, x, y, threshold, path, distribution, population_method, unit, measurement_unit)

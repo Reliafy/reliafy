@@ -1256,7 +1256,7 @@ export function evaluateAlt(id, useStress, refStress, opts = {}) {
 
 // Confidence bounds at a use stress by method (wald | lr | bootstrap, #231):
 // the bounds, or (bootstrap with the compute queue) ``{ job }`` to poll at
-// getRbdJob. A 402 (code pro_required) means bootstrap needs Pro or credits.
+// getRbdJob. A 402 (code pro_required) means bootstrap needs Pro.
 export function altBounds(id, { useStress, method, confidence, missionTime, tMax }) {
   return request(`/api/alt/models/${id}/bounds`, {
     method: "POST",
@@ -1288,7 +1288,8 @@ function degradationForm(file, { datasetId, mapping, threshold, path, distributi
   return form;
 }
 
-// Fit a degradation model for preview (nothing saved except an uploaded CSV).
+// Fit a degradation model for preview (nothing saved; an uploaded CSV is
+// stored by the save, so ``dataset_id`` is null for an upload).
 export function fitDegradation(file, opts) {
   return request("/api/degradation/fit", { method: "POST", body: degradationForm(file, opts) });
 }
@@ -1559,6 +1560,20 @@ export function removeTeamInvite(id, email) {
 
 export function leaveTeam(id) {
   return request(`/api/teams/${id}/leave`, { method: "POST" });
+}
+
+// Team invitations to the signed-in user's (verified) address: membership
+// starts only when the invitee accepts.
+export function listTeamInvites() {
+  return request("/api/teams/invites");
+}
+
+export function acceptTeamInvite(teamId) {
+  return request(`/api/teams/invites/${encodeURIComponent(teamId)}/accept`, { method: "POST" });
+}
+
+export function declineTeamInvite(teamId) {
+  return request(`/api/teams/invites/${encodeURIComponent(teamId)}/decline`, { method: "POST" });
 }
 
 // ---- Direct sharing ------------------------------------------------------------

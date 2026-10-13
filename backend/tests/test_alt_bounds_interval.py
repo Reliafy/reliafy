@@ -367,7 +367,9 @@ def test_routes_fit_interval_data_and_serve_bounds(session, monkeypatch):
         assert r.status_code == 200, r.text
         assert r.json()["spec"]["mapping"] == {"xl": "lo", "xr": "hi", "c": "flag"}
         assert r.json()["results"]["interval_censored"] is True
-        r = client.post("/api/alt/models", data={**form, "name": "Inspected", "dataset_id": r.json()["dataset_id"]})
+        assert r.json()["dataset_id"] is None  # a preview stores nothing; the save sends the file
+        r = client.post("/api/alt/models", data={**form, "name": "Inspected"},
+                        files={"file": ("insp.csv", csv, "text/csv")})
         assert r.status_code == 200, r.text
         mid = r.json()["id"]
 

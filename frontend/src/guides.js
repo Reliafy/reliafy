@@ -10,7 +10,8 @@
 // feature is switched off). Screenshots live in /guides/img/ and are
 // referenced from the markdown; they're produced by the capture harness
 // (scripts/capture-guides.mjs) so they stay in sync with the UI.
-import { marked } from "marked";
+// Markdown rendering (sanitized in the browser) is shared: markdown.js.
+import { renderMarkdown } from "./markdown.js";
 
 const files = import.meta.glob("./content/guides/*.md", {
   query: "?raw",
@@ -77,6 +78,4 @@ export function getGuide(slug) {
   return guides.find((g) => g.slug === slug) || null;
 }
 
-export function renderMarkdown(body) {
-  return marked.parse(body, { breaks: false, gfm: true });
-}
+export { renderMarkdown };

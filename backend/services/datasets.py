@@ -144,6 +144,55 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
     return dataset, False
 
 
+def preview_frame(db, owner_id, dataset_id: str | None, file_bytes: bytes | None) -> tuple[pd.DataFrame, str | None]:
+    """The data for a preview fit and the saved dataset's id: a saved dataset
+    by id (in ``owner_id``'s scope), or an upload parsed in memory, whose id is
+    None. A preview stores nothing; saving the model stores the upload."""
+    if dataset_id:
+        dataset = get_dataset(db, dataset_id, owner_id=owner_id)
+        if dataset is None:
+            raise FitError("Dataset not found.")
+        return load_dataframe(dataset), dataset.id
+    if file_bytes is not None:
+        return read_dataframe(file_bytes), None
+    raise FitError("Provide a CSV file or a dataset_id.")
+
+
+def upload_denial(db, ctx, dataset_id: str | None, file) -> tuple[int, dict] | None:
+    """``store_denial`` for a save request that may carry an upload: None when
+    it names a dataset instead. Reads the upload and rewinds it for the save."""
+    if dataset_id or file is None:
+        return None
+    from backend.http_limits import read_upload
+
+    contents = read_upload(file)
+    file.file.seek(0)
+    return store_denial(db, ctx, contents)
+
+
+def store_denial(db, ctx, file_bytes: bytes) -> tuple[int, dict] | None:
+    """Why this upload can't be stored as a new dataset in the active
+    workspace, as ``(status, payload)``, or None when it can.
+
+    The same checks as the dataset upload: a frozen team or view-only member
+    can't write, and a personal workspace at its plan's dataset cap can only
+    re-use data it already holds (same checksum)."""
+    from backend.services import billing as billing_service
+
+    denied = access.workspace_write_denial(ctx)
+    if denied is not None:
+        return denied
+    if (
+        not ctx.is_personal
+        or billing_service.is_admin_user(ctx.user)
+        or not billing_service.would_exceed_cap(db, ctx.uid, "datasets")
+    ):
+        return None
+    if db.datasets.find_one({"checksum": storage.checksum(file_bytes), "owner_id": ctx.write_owner}) is not None:
+        return None
+    return 402, {"detail": billing_service.cap_message(db, ctx.uid, "datasets"), "code": "cap", "upgrade": True}
+
+
 def default_name(filename: str | None) -> str:
     """A dataset's name from its file when none is given: "pump_test.csv" →
     "pump_test" (the extension adds nothing once it's a dataset)."""
@@ -157,8 +206,11 @@ def get_dataset(db, dataset_id: str, owner_id: str | list[str] | None = None) ->
 
     ``owner_id`` is optional so internal callers (the re-fit path) can fetch by
     id; external/API callers always pass it so a non-owner gets ``None`` (404).
-    Shared sample datasets are visible to every owner.
+    Shared sample datasets are visible to every owner. Ids are strings;
+    anything else (e.g. from a JSON body) matches nothing.
     """
+    if not isinstance(dataset_id, str):
+        return None
     query = {"_id": dataset_id}
     if owner_id is not None:
         query["owner_id"] = {"$in": access.owner_in(owner_id)}

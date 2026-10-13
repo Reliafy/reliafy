@@ -399,7 +399,7 @@ def test_grandfathered_agent_gets_no_simulations(env):
     compile(script["script"], script["filename"], "exec")
 
 
-def test_pro_and_purchased_credits_simulate_and_the_saved_result_is_served_after(env):
+def test_pro_simulates_and_purchased_credits_dont(env):
     from backend.services import billing
 
     rid = _repairable(env, PRO, "Pumps")
@@ -417,16 +417,12 @@ def test_pro_and_purchased_credits_simulate_and_the_saved_result_is_served_after
     assert fast["has_simulation"] is False and fast["exact"]["window"] == 500
     assert env.simulations["n"] == 1
 
-    # An Agent user who bought credits is entitled, as in the app...
+    # An Agent user who bought credits isn't entitled: simulations are Pro.
     billing.grant_credits(env.db, AGENT, 500, "purchase")
     rid = _repairable(env, AGENT, "Compressors")
     out = _ok(_call(env.oauth[AGENT], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
-    assert out["available"] and out["cached"] is False and env.simulations["n"] == 2
-    # ...and without the entitlement still gets the saved result, never a re-run.
-    env.db.credit_ledger.delete_many({"uid": AGENT, "reason": "purchase"})
-    out = _ok(_call(env.oauth[AGENT], "analyze_rbd", {"rbd_id": rid, "recompute": True}))
-    assert out["available"] and out["cached"] is True and out["can_recompute"] is False
-    assert env.simulations["n"] == 2
+    assert out["simulation"]["available"] is False and out["simulation"]["code"] == "pro_required"
+    assert env.simulations["n"] == 1
 
 
 # ---- plan-aware storage caps ----------------------------------------------------------------

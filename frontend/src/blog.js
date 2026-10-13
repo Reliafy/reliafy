@@ -2,7 +2,8 @@
 // small YAML-ish frontmatter block; Vite inlines them at build time via
 // import.meta.glob, so there's no backend, database, or runtime fetch involved.
 // Adding a post = committing a .md file.
-import { marked } from "marked";
+// Markdown rendering (sanitized in the browser) is shared: markdown.js.
+import { renderMarkdown } from "./markdown.js";
 // The frontmatter parser and slug rule live in frontmatter.js (pure, so the
 // build-time feeds and `node --test` share them); re-exported for the other
 // content layers.
@@ -64,11 +65,7 @@ export function getPost(slug, { includeFuture = false } = {}) {
   return (includeFuture ? allPosts : posts).find((p) => p.slug === slug) || null;
 }
 
-// Render a post body to HTML. Content is authored by us (trusted repo files),
-// so the output is rendered as-is.
-export function renderMarkdown(body) {
-  return marked.parse(body, { breaks: false, gfm: true });
-}
+export { renderMarkdown };
 
 export function formatDate(iso) {
   if (!iso) return "";

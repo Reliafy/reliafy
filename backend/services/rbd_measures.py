@@ -166,7 +166,7 @@ def options(measure=None, window=None, group_by=None, method=None, times=None, l
 
 
 def heavy(opts: dict) -> bool:
-    """Whether a request is a heavy one: Pro (or credits), run as a compute
+    """Whether a request is a heavy one: Pro, run as a compute
     job — the Sobol indices, or the uncertainty over time."""
     return opts.get("measure") == "uncertainty" and (opts.get("method") == "sobol" or bool(opts.get("times")))
 

@@ -336,8 +336,10 @@ def export_lines(graph: dict) -> list[str]:
     caps = graph_capacities(graph or {})
     if not caps:
         return []
+    from backend.services.rbd_export import _one_line
+
     settings = parse_production((graph or {}).get("production"))
-    unit = settings.get("unit")
+    unit = _one_line(settings.get("unit") or "")  # in a comment: one line
     out = [
         "# Each block's capacity: its throughput while it works"
         + (f" ({unit})" if unit else "") + ", or the levels it",

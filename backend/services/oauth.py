@@ -228,14 +228,22 @@ def with_query(uri: str, params: dict) -> str:
 
 # ---- Client ID Metadata Documents ------------------------------------------------
 
-CIMD_TIMEOUT = 5.0            # seconds, connect + read
+CIMD_TIMEOUT = 5.0            # seconds, each connect / read / write
+CIMD_DEADLINE = 8.0           # seconds, the whole fetch: lookup, connect, headers and body
 CIMD_MAX_BYTES = 64 * 1024
 CIMD_MIN_CACHE = 60
 CIMD_MAX_CACHE = 24 * 3600
 CIMD_DEFAULT_CACHE = 3600
+CIMD_MAX_FETCHES = 4          # fetches in flight at once on this instance
+CIMD_FETCH_WAIT = 1.0         # seconds a fetch waits for one of those
+CIMD_FAILURE_CACHE = 60       # seconds a failed fetch is remembered for its URL
+CIMD_MAX_FAILURES = 1024      # failed URLs remembered at once
 
+# client_id -> (expires, client document); failures are kept apart, briefly.
 _cimd_cache: dict[str, tuple[float, dict]] = {}
+_cimd_failures: dict[str, tuple[float, "OAuthError"]] = {}
 _cimd_lock = threading.Lock()
+_cimd_fetches = threading.BoundedSemaphore(CIMD_MAX_FETCHES)
 
 
 def is_cimd_client_id(client_id: str) -> bool:
@@ -265,28 +273,43 @@ def _resolve_public(host: str, port: int) -> str:
 def _http_fetch(url: str) -> tuple[int, dict, bytes]:
     """GET a CIMD URL safely: HTTPS only, public IPs only (resolved once and
     pinned, so a DNS rebind can't swap in an internal address between the
-    check and the connection), no redirects, 5 s timeout, 64 KB cap.
+    check and the connection), no redirects, 64 KB cap, and at most
+    :data:`CIMD_DEADLINE` seconds for the whole fetch. httpx's own timeout
+    applies to each read, so a body arriving a byte at a time would otherwise
+    keep it going; the deadline cancels it wherever it is.
 
     Returns ``(status, lower-cased headers, body)``. Tests monkeypatch this.
     """
+    import anyio
+
+    try:
+        return anyio.run(_fetch_within_deadline, url)
+    except TimeoutError as exc:
+        raise OAuthError("invalid_client", "The client's metadata document took too long to fetch.") from exc
+
+
+async def _fetch_within_deadline(url: str) -> tuple[int, dict, bytes]:
+    import anyio
     import httpx
 
     p = urlsplit(url)
     host = p.hostname or ""
     port = p.port or 443
-    ip = _resolve_public(host, port)
-    ip_host = f"[{ip}]" if ":" in ip else ip
-    pinned = urlunsplit(("https", f"{ip_host}:{port}", p.path or "/", p.query, ""))
-    host_header = host if port == 443 else f"{host}:{port}"
-    with httpx.Client(timeout=CIMD_TIMEOUT, follow_redirects=False, trust_env=False) as client:
-        with client.stream("GET", pinned, headers={"Host": host_header, "Accept": "application/json"},
-                           extensions={"sni_hostname": host}) as resp:
-            body = b""
-            for chunk in resp.iter_bytes():
-                body += chunk
-                if len(body) > CIMD_MAX_BYTES:
-                    raise OAuthError("invalid_client", "The client metadata document is too large.")
-            return resp.status_code, {k.lower(): v for k, v in resp.headers.items()}, body
+    with anyio.fail_after(CIMD_DEADLINE):
+        # getaddrinfo can't be cancelled: the deadline abandons a slow lookup.
+        ip = await anyio.to_thread.run_sync(_resolve_public, host, port, abandon_on_cancel=True)
+        ip_host = f"[{ip}]" if ":" in ip else ip
+        pinned = urlunsplit(("https", f"{ip_host}:{port}", p.path or "/", p.query, ""))
+        host_header = host if port == 443 else f"{host}:{port}"
+        async with httpx.AsyncClient(timeout=CIMD_TIMEOUT, follow_redirects=False, trust_env=False) as client:
+            async with client.stream("GET", pinned, headers={"Host": host_header, "Accept": "application/json"},
+                                     extensions={"sni_hostname": host}) as resp:
+                body = b""
+                async for chunk in resp.aiter_bytes():
+                    body += chunk
+                    if len(body) > CIMD_MAX_BYTES:
+                        raise OAuthError("invalid_client", "The client metadata document is too large.")
+                return resp.status_code, {k.lower(): v for k, v in resp.headers.items()}, body
 
 
 def _cache_seconds(headers: dict) -> int:
@@ -314,10 +337,57 @@ def validate_cimd_url(client_id: str) -> None:
 def fetch_client_metadata(client_id: str) -> dict:
     """The validated metadata document for a URL ``client_id`` (cached)."""
     validate_cimd_url(client_id)
+    hit = _cached_client(client_id)
+    if hit is not None:
+        return hit
+    # A few fetches at a time per instance, each within CIMD_DEADLINE, so
+    # slow metadata hosts can't hold many request threads.
+    if not _cimd_fetches.acquire(timeout=CIMD_FETCH_WAIT):
+        raise OAuthError("temporarily_unavailable",
+                         "Too many sign-in requests are being checked right now. Try again in a minute.", 503)
+    try:
+        hit = _cached_client(client_id)  # fetched while this request waited
+        if hit is not None:
+            return hit
+        try:
+            client, seconds = _load_client_metadata(client_id)
+        except OAuthError as exc:
+            _remember_failure(client_id, exc)
+            raise
+    finally:
+        _cimd_fetches.release()
+    with _cimd_lock:
+        _cimd_cache[client_id] = (time.monotonic() + seconds, client)
+    return client
+
+
+def _cached_client(client_id: str) -> dict | None:
+    """The cached document for ``client_id``; raises the remembered error
+    when its last fetch failed within :data:`CIMD_FAILURE_CACHE` seconds."""
+    now = time.monotonic()
     with _cimd_lock:
         hit = _cimd_cache.get(client_id)
-        if hit and hit[0] > time.monotonic():
+        if hit and hit[0] > now:
             return hit[1]
+        failed = _cimd_failures.get(client_id)
+        if failed and failed[0] > now:
+            raise OAuthError(failed[1].error, failed[1].description, failed[1].status)
+    return None
+
+
+def _remember_failure(client_id: str, exc: "OAuthError") -> None:
+    now = time.monotonic()
+    with _cimd_lock:
+        if len(_cimd_failures) >= CIMD_MAX_FAILURES:
+            for key in [k for k, (until, _) in _cimd_failures.items() if until <= now]:
+                del _cimd_failures[key]
+        while len(_cimd_failures) >= CIMD_MAX_FAILURES:
+            del _cimd_failures[next(iter(_cimd_failures))]
+        _cimd_failures[client_id] = (now + CIMD_FAILURE_CACHE, exc)
+
+
+def _load_client_metadata(client_id: str) -> tuple[dict, int]:
+    """Fetch and validate a metadata document: ``(client, cache seconds)``."""
     try:
         status, headers, body = _http_fetch(client_id)
     except OAuthError:
@@ -350,9 +420,7 @@ def fetch_client_metadata(client_id: str) -> dict:
         "token_endpoint_auth_method": "none",
         "kind": "cimd",
     }
-    with _cimd_lock:
-        _cimd_cache[client_id] = (time.monotonic() + _cache_seconds(headers), client)
-    return client
+    return client, _cache_seconds(headers)
 
 
 # ---- Dynamic client registration ---------------------------------------------------

@@ -40,7 +40,7 @@ def build(m: Maintenance, scope_id: str) -> dict:
     nodes = [{"id": "in", "type": "input"}, {"id": "out", "type": "output"}]
     for c in children:
         cls = (c.get("position_class") or "").strip()
-        model_node = m.s.node(m.org, class_id(cls)) if cls else None
+        model_node = m.s.node(m.org, class_id(m.org, cls)) if cls else None
         model = (model_node or {}).get("model")
         if model:
             block_model = {"distribution_id": model["distribution"], "params": model["params"]}

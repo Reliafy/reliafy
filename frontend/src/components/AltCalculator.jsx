@@ -277,7 +277,7 @@ export default function AltCalculator({ modelId, results }) {
             <div className="card note" role="status">
               <p style={{ margin: 0 }}>
                 <b>Bootstrap bounds are part of Pro.</b> They refit the model 200 times on Reliafy's calculation
-                service — subscribe to Pro or buy AI credits. Wald and likelihood-ratio bounds are free.
+                service — part of Pro. Wald and likelihood-ratio bounds are free.
               </p>
               <div className="rbd-upgrade-actions"><Link className="cta cta-solid" to="/billing">Upgrade to Pro</Link></div>
             </div>
