@@ -373,3 +373,44 @@ def test_a_parts_list_through_mcp(env):
     assert detail["suggested_parts"][0]["part"]["part_number"] == "B1"
     assert closed["actions"][0]["fitted"]["part_number"] == "B1" and closed["parts"][0]["quantity"] == 1
     assert removed["parts_list"] == []
+
+
+def test_positions_and_locations_through_mcp(env):
+    """Positions are functional locations, locations the physical tree; a fitted item is where its
+    position is; work orders by area."""
+
+    async def flow(client):
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+        guide = tools["maintenance_overview"].description
+        assert "FLOC" in guide and "needs no placement" in guide and "build each once" in guide
+        assert "ISN'T fitted" in tools["place_item"].description
+        assert "location_id" in tools["list_work_orders"].input_schema["properties"]
+        site = _ok(await client.call_tool("create_location", {"name": "Site"}))["id"]
+        sub = _ok(await client.call_tool("create_location", {"name": "Substation 2", "parent_id": site}))["id"]
+        mcc = _ok(await client.call_tool("create_position", {"name": "MCC-3", "location_id": sub}))
+        assert mcc["location"]["display"] == "Site › Substation 2"
+        feeder = _ok(await client.call_tool("create_position", {"name": "Feeder 13", "parent_id": mcc["id"]}))
+        assert feeder["location"]["inherited_from"]["name"] == "MCC-3"
+        pos = _ok(await client.call_tool("fit_item", {"position_id": feeder["id"], "item_name": "Breaker"}))
+        iid = pos["fitted"]["item"]["id"]
+        refused = await client.call_tool("place_item", {"item_id": iid, "location_id": site})
+        assert refused.is_error and "update_position with location_id" in refused.content[0].text
+        item = _ok(await client.call_tool("get_item", {"item_id": iid}))
+        assert item["location"]["how"] == "fitted" and item["location"]["name"] == "Substation 2"
+        wo = _ok(await client.call_tool("open_work_order", {"position_id": feeder["id"], "title": "Trip test"}))
+        there = _ok(await client.call_tool("list_work_orders", {"status": "open", "location_id": site}))
+        assert [w["id"] for w in there["work_orders"]] == [wo["id"]]
+        assert there["work_orders"][0]["location"]["name"] == "Substation 2"
+        loc = _ok(await client.call_tool("get_location", {"location_id": site}))
+        assert loc["systems"][0]["system"]["name"] == "MCC-3" and loc["counts"]["fitted_items"] == 1
+        tree = _ok(await client.call_tool("list_locations", {}))["tree"]
+        assert tree[0]["all_positions"] == 2
+        moved = _ok(await client.call_tool("update_position", {"position_id": feeder["id"], "location_id": site}))
+        assert moved["location"]["name"] == "Site" and not moved["location"]["inherited"]
+        cleared = _ok(await client.call_tool("update_position", {"position_id": feeder["id"], "clear_location": True}))
+        assert cleared["location"]["inherited"]
+        plan = _ok(await client.call_tool("adopt_item_placements", {}))
+        assert plan == {"dry_run": True, "changes": [], "skipped": []}
+        return True
+
+    assert _session(env["token"], flow)

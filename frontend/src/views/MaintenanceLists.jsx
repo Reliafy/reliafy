@@ -28,6 +28,7 @@ import {
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
+import { countsText, inheritedText, itemWhere } from "../maintenanceLocations.js";
 import "./Maintenance.css";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
@@ -67,7 +68,7 @@ export function MaintenanceItems() {
                     <td className="lib-date">{[i.manufacturer, i.model].filter(Boolean).join(" ") || "—"}</td>
                     <td className="lib-date">{i.serial || "—"}</td>
                     <td>{i.fitted_to?.name || <span className="lib-date">not fitted</span>}</td>
-                    <td className="lib-date">{i.location?.name || "—"}</td>
+                    <td className="lib-date">{itemWhere(i).label || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -86,7 +87,10 @@ function LocNode({ node }) {
     <li>
       <div className="maint-node">
         <Link className="maint-node-name" to={`/maintenance/locations/${node.id}`}>{node.name}</Link>
-        {node.items > 0 && <span className="lib-date">{node.items} item{node.items === 1 ? "" : "s"}</span>}
+        {node.all_positions > 0 && (
+          <span className="lib-date">{node.all_positions} position{node.all_positions === 1 ? "" : "s"}</span>
+        )}
+        {node.all_items > 0 && <span className="lib-date">{node.all_items} item{node.all_items === 1 ? "" : "s"} placed</span>}
       </div>
       {node.children.length > 0 && <ul>{node.children.map((c) => <LocNode key={c.id} node={c} />)}</ul>}
     </li>
@@ -120,7 +124,8 @@ export function MaintenanceLocations() {
   }, []);
   return (
     <div className="app">
-      <PageHeader crumbs={crumbs} title="Locations" meta="Physical places: sites, buildings, rooms and stores."
+      <PageHeader crumbs={crumbs} title="Locations"
+                  meta="Physical places: sites, areas, rooms and stores. Positions are located in them; spares are placed in them."
                   primary={<button onClick={() => setModal(true)}><PlusIcon /> New location</button>} />
       <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
@@ -156,18 +161,30 @@ export function MaintenanceLocation() {
       <PageHeader
         crumbs={[...crumbs, { label: "Locations", to: "/maintenance/locations" },
           ...loc.path.map((a) => ({ label: a.name, to: `/maintenance/locations/${a.id}` }))]}
-        title={loc.name} meta={loc.description || "Location"} id={loc.id}
-        actions={<button className="secondary" onClick={() => setModal("child")}><PlusIcon /> Location inside</button>}
+        title={loc.name} meta={[loc.description, countsText(loc.counts)].filter(Boolean).join(" · ") || "Location"} id={loc.id}
+        actions={<>
+          {loc.counts.open_work_orders > 0 && (
+            <button className="secondary" onClick={() => navigate(`/maintenance?location=${loc.id}`)}>
+              Open work orders here ({loc.counts.open_work_orders})</button>
+          )}
+          <button className="secondary" onClick={() => setModal("child")}><PlusIcon /> Location inside</button>
+        </>}
         primary={<button onClick={() => setModal("rename")}>Rename</button>}
       />
       <MaintenanceTabs />
+      <LocationPositions loc={loc} />
       <section className="card">
-        <div className="maint-head"><h2>Here now</h2></div>
-        {loc.items.length === 0 ? <p className="lib-date">Nothing placed here. Place items from their page.</p> : (
+        <div className="maint-head"><h2>Items placed here</h2></div>
+        {loc.items.length === 0 ? (
+          <p className="lib-date">No spares or items away from their positions here. (Fitted items are where their
+            positions are; place an item that isn't fitted from its page.)</p>
+        ) : (
           <ul className="maint-list">
             {loc.items.map((i) => (
               <li key={i.id}><Link to={`/maintenance/items/${i.id}`}>{i.name}</Link>
-                <span className="lib-date"> · since {fmtDate(i.since)}</span></li>
+                <span className="lib-date">
+                  {i.location.id !== loc.id && <> · in <Link to={`/maintenance/locations/${i.location.id}`}>{i.location.name}</Link></>}
+                  {" "}· since {fmtDate(i.since)}</span></li>
             ))}
           </ul>
         )}
@@ -175,7 +192,13 @@ export function MaintenanceLocation() {
       {loc.children.length > 0 && (
         <section className="card">
           <div className="maint-head"><h2>Inside it</h2></div>
-          <ul className="maint-list">{loc.children.map((c) => <li key={c.id}><Link to={`/maintenance/locations/${c.id}`}>{c.name}</Link></li>)}</ul>
+          <ul className="maint-list">{loc.children.map((c) => (
+            <li key={c.id}><Link to={`/maintenance/locations/${c.id}`}>{c.name}</Link>
+              {(c.positions > 0 || c.items > 0) && (
+                <span className="lib-date"> · {[c.positions && `${c.positions} position${c.positions === 1 ? "" : "s"}`,
+                  c.items && `${c.items} item${c.items === 1 ? "" : "s"} placed`].filter(Boolean).join(", ")}</span>
+              )}</li>
+          ))}</ul>
         </section>
       )}
       <MaintenancePhotos targetId={loc.id} targetName={loc.name} photos={loc.photos} onChanged={refresh} />
@@ -184,6 +207,47 @@ export function MaintenanceLocation() {
                                               onDone={(l) => { setModal(null); navigate(`/maintenance/locations/${l.id}`); }} />}
       {modal === "rename" && <RenameLocation loc={loc} onClose={() => setModal(null)} onDone={(d) => { setLoc(d); setModal(null); }} />}
     </div>
+  );
+}
+
+// The positions at a location (set on them or inherited, here or inside it), by the
+// system each belongs to, with what's fitted to each.
+function LocationPositions({ loc }) {
+  return (
+    <section className="card">
+      <div className="maint-head"><h2>Positions here</h2></div>
+      {loc.systems.length === 0 ? (
+        <p className="lib-date">No positions here yet. Set a position's location on its page: the positions inside it
+          follow, and so does whatever is fitted.</p>
+      ) : loc.systems.map((g) => (
+        <div key={g.system.id} className="maint-group">
+          <h3>
+            <Link to={`/maintenance/${g.system.kind === "Item" ? "items" : "positions"}/${g.system.id}`}>{g.system.name}</Link>
+            <span className="lib-date"> · {g.count} here</span>
+          </h3>
+          <div className="maint-scroll"><table className="lib-table">
+            <thead><tr><th>Position</th><th>Where</th><th>Fitted</th><th>Work</th></tr></thead>
+            <tbody>
+              {g.positions.map((r) => (
+                <tr key={r.id}>
+                  <td><Link to={`/maintenance/positions/${r.id}`}>{r.path}</Link>{r.tag && <span className="lib-date"> · {r.tag}</span>}</td>
+                  <td className="lib-date">
+                    {r.location.id !== loc.id && <><Link to={`/maintenance/locations/${r.location.id}`}>{r.location.name}</Link> · </>}
+                    {r.direct ? "set here" : inheritedText({ inherited: true, inherited_from: r.inherited_from })}
+                  </td>
+                  <td>{r.item ? <Link to={`/maintenance/items/${r.item.id}`}>{r.item.name}</Link> : <span className="lib-date">nothing fitted</span>}</td>
+                  <td>{r.open_work_orders > 0 ? <span className="maint-badge">{r.open_work_orders} open</span> : <span className="lib-date">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        </div>
+      ))}
+      {loc.positions_truncated && (
+        <p className="lib-date">Showing the first {loc.systems.reduce((n, g) => n + g.positions.length, 0)} of{" "}
+          {loc.counts.positions} positions.</p>
+      )}
+    </section>
   );
 }
 

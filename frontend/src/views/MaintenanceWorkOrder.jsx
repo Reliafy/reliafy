@@ -46,7 +46,8 @@ export default function MaintenanceWorkOrder() {
           ...(wo.position ? [{ label: wo.position.name, to: `/maintenance/positions/${wo.position.id}` }] : [])]}
         title={`#${wo.number} ${wo.title}`}
         meta={[wo.type, STATUS_LABELS[wo.status] || wo.status, `opened ${fmtDate(wo.opened)}`, wo.due && `due ${fmtDate(wo.due)}`,
-          wo.closed && `closed ${fmtDate(wo.closed)}`, wo.trade && `needs: ${wo.trade}`].filter(Boolean).join(" · ")}
+          wo.closed && `closed ${fmtDate(wo.closed)}`, wo.trade && `needs: ${wo.trade}`,
+          wo.location && `at ${wo.location.display}`].filter(Boolean).join(" · ")}
         id={wo.id}
         menu={wo.status === "open" ? (
           <>

@@ -1,12 +1,20 @@
 """The maintenance domain: what can be done to the plant, as events, and what
 can be read back from the graph they build.
 
-Positions are the jobs (the functional hierarchy, ``=``); locations are
-places (``+``); items are the physical things. An item is *fitted* to a
-position (a Fitment: what job it does, from when to when) and *placed* at a
-location (a Placement: where it is). Work orders record what was done as
-actions, and the fitments follow from the actions: nobody edits a fitment
-directly.
+Positions are the jobs (the functional hierarchy, ``=``: functional locations,
+SAP's FLOC); locations are places (``+``: the physical tree, Site > Area >
+Room); items are the physical things. The two trees cut across each other (the
+electrical system spans several areas; an area holds parts of several systems),
+so a position can be *located* at a location. One that isn't inherits its
+nearest ancestor's (a position inside an item: that item's position's), and a
+child can say otherwise.
+
+An item is *fitted* to a position (a Fitment: what job it does, from when to
+when), and a fitted item is where its position is. An item that isn't fitted
+(a spare in a store, one away at a repairer) is *placed* at a location (a
+Placement); taken out of a position and not placed since, it was last at its
+position's location. Work orders record what was done as actions, and the
+fitments follow from the actions: nobody edits a fitment directly.
 
 Each fitment is one row of life data: it ended in a failure, it was removed
 on purpose (a suspension), or it is still fitted (right-censored today).
@@ -77,6 +85,7 @@ NOTE_HISTORY = 20  # earlier versions of a note kept on the node (the log keeps 
 _LONG_FIELDS = {"description", "notes", "note", "instructions", "reason"}
 
 MAX_COPY_NODES = 500  # positions, failure modes and tasks made by one copy
+MAX_LOCATION_POSITIONS = 500  # positions listed on one location (the counts are of all)
 MAX_LIST = 100  # ids or entries given in one request
 MAX_POSITIONS = 20_000
 MAX_ITEMS = 50_000
@@ -452,10 +461,12 @@ def _position_created(s: GraphStore, org: str, p: dict) -> None:
     })
     if p.get("parent_id"):
         s.put_edge(org, "PART_OF", p["id"], p["parent_id"])
+    if p.get("location_id"):
+        s.put_edge(org, "LOCATED_AT", p["id"], p["location_id"])
 
 
 def _position_updated(s: GraphStore, org: str, p: dict) -> None:
-    changes = {k: v for k, v in p["changes"].items() if k != "parent_id"}
+    changes = {k: v for k, v in p["changes"].items() if k not in ("parent_id", "location_id")}
     if changes:
         s.patch_node(org, p["id"], changes)
     if "parent_id" in p["changes"]:
@@ -463,6 +474,12 @@ def _position_updated(s: GraphStore, org: str, p: dict) -> None:
             s.delete_edge(org, "PART_OF", p["id"], parent["id"])
         if p["changes"]["parent_id"]:
             s.put_edge(org, "PART_OF", p["id"], p["changes"]["parent_id"])
+    # Where the position is (None: it inherits its parent's again).
+    if "location_id" in p["changes"]:
+        for place in s.out(org, p["id"], "LOCATED_AT"):
+            s.delete_edge(org, "LOCATED_AT", p["id"], place["id"])
+        if p["changes"]["location_id"]:
+            s.put_edge(org, "LOCATED_AT", p["id"], p["changes"]["location_id"])
 
 
 def _location_created(s: GraphStore, org: str, p: dict) -> None:
@@ -1094,6 +1111,9 @@ class Maintenance:
         # The daily run isn't limited: it writes for every organisation.
         self.limited = limited
         self._checked = False
+        # Where positions are and locations' paths, worked out once per read
+        # (cleared by every change).
+        self._memo: dict = {}
 
     def check_limits(self) -> None:
         """Before a change: refuse when the organisation has started too many
@@ -1120,6 +1140,7 @@ class Maintenance:
     def _emit(self, type: str, payload: dict) -> None:
         if not self._checked:
             self.check_limits()
+        self._memo.clear()
         self.s.apply(self.org, type, payload, self.actor)
 
     def _get(self, id: str, label: str) -> dict:
@@ -1130,20 +1151,26 @@ class Maintenance:
 
     # ---- positions and locations -------------------------------------------------
 
-    def create_position(self, name, tag="", parent_id=None, position_class="", description="") -> dict:
+    def create_position(self, name, tag="", parent_id=None, position_class="", description="",
+                        location_id=None) -> dict:
+        """A position. location_id: where it physically is (otherwise it's where its
+        parent is)."""
         name = _text(name, "position's name", required=True)
         if parent_id:
             self._parent_node(parent_id)
+        location_id = self._location_ref(location_id)
         self._quota("Position", MAX_POSITIONS)
         pid = new_id()
         self._emit("position.created", {
             "id": pid, "name": name, "tag": _text(tag, "tag"), "parent_id": parent_id or None,
             "position_class": _text(position_class, "class"), "description": _text(description, "description"),
             "on": date.today().isoformat(),
-        })
+        } | ({"location_id": location_id} if location_id else {}))
         return self._get(pid, "Position")
 
     def update_position(self, id: str, **changes) -> dict:
+        """Change a position's name, tag, class or description, move it (parent_id), or
+        set where it is (location_id; None or "" clears it: it's where its parent is)."""
         self._get(id, "Position")
         allowed = {k: _text(v, k) for k, v in changes.items()
                    if k in ("name", "tag", "position_class", "description") and v is not None}
@@ -1156,9 +1183,19 @@ class Maintenance:
                 if parent == id or id in self._ancestor_ids(parent):
                     raise Invalid("A position can't sit inside itself.")
             allowed["parent_id"] = parent
+        if "location_id" in changes:
+            location_id = self._location_ref(changes["location_id"])
+            if location_id != ((self._own_location(id) or {}).get("id")):
+                allowed["location_id"] = location_id
         if allowed:
             self._emit("position.updated", {"id": id, "changes": allowed})
         return self._get(id, "Position")
+
+    def _location_ref(self, location_id) -> str | None:
+        """A location id from a request, checked (None when not given)."""
+        if location_id in (None, ""):
+            return None
+        return self._get(str(location_id), "Location")["id"]
 
     def _parent_node(self, id: str) -> dict:
         """What a position can sit inside: another position, or an item (an item
@@ -1185,8 +1222,8 @@ class Maintenance:
 
     def copy_position(self, position_id: str, name, parent_id=None) -> dict:
         """Copy a position and everything inside it: the positions, their
-        failure modes, their tasks and their parts lists (not items, stock or work
-        orders). For a second pump station like the first, or a template."""
+        failure modes, their tasks and their parts lists, and the locations set on them
+        (not items, stock or work orders). For a second pump station like the first, or a template."""
         source = self._get(position_id, "Position")
         new_name = _text(name, "copy's name", required=True)
         if parent_id:
@@ -1211,7 +1248,7 @@ class Maintenance:
             if size > MAX_COPY_NODES:
                 raise Invalid(f"That's more than {MAX_COPY_NODES} positions, failure modes, tasks and parts-list "
                               "entries to copy at once. Copy a smaller part of it.")
-            plan.append((src, new_pid, label, parent, modes, tasks, listings))
+            plan.append((src, new_pid, label, parent, modes, tasks, listings, self._own_location(src["id"])))
             for child in sorted(self.s.inn(self.org, src["id"], "PART_OF"), key=lambda c: c["name"].lower()):
                 if child["label"] == "Position":
                     read(child, new_id(), child["name"], new_pid)
@@ -1219,13 +1256,14 @@ class Maintenance:
         new = new_id()
         read(source, new, new_name, parent_id or None)
         self._quota("Position", MAX_POSITIONS, adding=len(plan))
-        self._quota("PartListing", MAX_PART_LISTINGS, adding=sum(len(x[-1]) for x in plan), what="parts-list entries")
-        for src, pid, label, parent, modes, tasks, listings in plan:
+        self._quota("PartListing", MAX_PART_LISTINGS, adding=sum(len(x[6]) for x in plan), what="parts-list entries")
+        for src, pid, label, parent, modes, tasks, listings, place in plan:
+            # A location set on the original comes with the copy (one inherited stays inherited).
             self._emit("position.created", {
                 "id": pid, "name": label, "tag": "", "parent_id": parent,
                 "position_class": src.get("position_class", ""), "description": src.get("description", ""),
                 "on": today,
-            })
+            } | ({"location_id": place["id"]} if place else {}))
             mode_ids = {}
             for fm in modes:
                 mode_ids[fm["id"]] = new_id()
@@ -1261,6 +1299,177 @@ class Maintenance:
                                         "description": _text(description, "description")})
         return self._get(lid, "Location")
 
+    # ---- where things are: positions located, items fitted or placed ------------------
+
+    def _own_location(self, position_id: str) -> dict | None:
+        """The location set on the position itself, if any."""
+        found = self.s.out(self.org, position_id, "LOCATED_AT")
+        return found[0] if found else None
+
+    def _located(self, position_id: str) -> tuple[dict | None, dict | None]:
+        """Where a position is: (location, source). The source is the node the
+        location was set on: the position itself, the nearest ancestor with one, or
+        (inside an item that isn't fitted) the item, placed somewhere. (None, None)
+        when nothing on the way up has a location."""
+        memo = self._memo.setdefault("located", {})
+        chain, node_id, seen = [], position_id, set()
+        found: tuple[dict | None, dict | None] = (None, None)
+        while node_id and node_id not in seen:
+            if node_id in memo:
+                found = memo[node_id]
+                break
+            seen.add(node_id)
+            node = self.s.node(self.org, node_id)
+            if node is None:
+                break
+            if node["label"] == "Position":
+                chain.append(node_id)
+                own = self._own_location(node_id)
+                if own:
+                    found = (own, node)
+                    break
+                parent = self._parent(node_id)
+                node_id = parent and parent["id"]
+            elif node["label"] == "Item":
+                # A position inside an item is where the item is: its position's
+                # location while fitted, or where it's placed.
+                fitment = self._current_fitment_of_item(node_id)
+                if fitment:
+                    node_id = self.s.out(self.org, fitment["id"], "AT")[0]["id"]
+                    continue
+                placement = self._placement_now(node_id)
+                if placement:
+                    found = (placement[1], node)
+                break
+            else:
+                break
+        for pid in chain:
+            memo[pid] = found
+        return found
+
+    def _location_path(self, location_id: str) -> list[dict]:
+        """The locations above one, top first."""
+        memo = self._memo.setdefault("paths", {})
+        if location_id not in memo:
+            memo[location_id] = [{"id": a["id"], "name": a["name"]} for a in
+                                 (self.s.node(self.org, a) for a in reversed(self._ancestor_ids(location_id))) if a]
+        return memo[location_id]
+
+    def _location_brief(self, loc: dict | None) -> dict | None:
+        """A location with the path down to it ("Site › Area X › Substation 2")."""
+        if not loc:
+            return None
+        path = self._location_path(loc["id"])
+        return {"id": loc["id"], "name": loc["name"], "path": path,
+                "display": " › ".join([a["name"] for a in path] + [loc["name"]])}
+
+    def _location_view(self, position_id: str) -> dict | None:
+        """A position's location as read back: where, and whether it's set on the
+        position or inherited (and from what)."""
+        loc, source = self._located(position_id)
+        if loc is None:
+            return None
+        inherited = source is not None and source["id"] != position_id
+        return {**self._location_brief(loc), "inherited": inherited,
+                "inherited_from": {"id": source["id"], "name": source["name"], "kind": source["label"]}
+                if inherited else None}
+
+    def _placement_now(self, item_id: str) -> tuple[dict, dict] | None:
+        """The placement that says where an item is now, with its location: its open
+        placement, if it isn't fitted and was placed no earlier than it last came out
+        of a position. (A placement made while it was fitted, or before it went in,
+        no longer says where it is.)"""
+        if self._current_fitment_of_item(item_id):
+            return None
+        here = max((p for p in self.s.out(self.org, item_id, "IN") if p["label"] == "Placement" and p.get("to") is None),
+                   key=lambda p: p["from"], default=None)
+        if here is None:
+            return None
+        last = self._last_removal(item_id)
+        if last and here["from"] < last["to"]:
+            return None
+        loc = self.s.out(self.org, here["id"], "AT")
+        return (here, loc[0]) if loc else None
+
+    def _last_removal(self, item_id: str) -> dict | None:
+        """The fitment the item last came out of (None if it never has)."""
+        return max((f for f in self._fitments_of(item_id) if f.get("to")), key=lambda f: f["to"], default=None)
+
+    def whereabouts(self, item_id: str) -> dict:
+        """Where an item is: fitted (where its position is), placed (a spare in a
+        store, one away for repair), or neither: then where it was last, at the
+        position it came out of, until it's placed somewhere.
+
+        {"location": the location now (with how: fitted or placed, and since) or None,
+         "last_at": {location, position, since} when it's neither fitted nor placed}."""
+        fitment = self._current_fitment_of_item(item_id)
+        if fitment:
+            position = self.s.out(self.org, fitment["id"], "AT")[0]
+            view = self._location_view(position["id"])
+            return {"location": view and {**view, "how": "fitted", "since": fitment["from"],
+                                          "position": {"id": position["id"], "name": position["name"]}},
+                    "last_at": None}
+        placed = self._placement_now(item_id)
+        if placed:
+            return {"location": {**self._location_brief(placed[1]), "how": "placed", "since": placed[0]["from"]},
+                    "last_at": None}
+        last = self._last_removal(item_id)
+        if last is None:
+            return {"location": None, "last_at": None}
+        position = self.s.out(self.org, last["id"], "AT")[0]
+        return {"location": None, "last_at": {
+            "location": self._location_brief(self._located(position["id"])[0]),
+            "position": {"id": position["id"], "name": position["name"]}, "since": last["to"]}}
+
+    def _location_ids_in(self, location_id: str) -> list[str]:
+        """A location and every location inside it."""
+        out, queue, seen = [], [location_id], set()
+        while queue:
+            lid = queue.pop()
+            if lid in seen:
+                continue
+            seen.add(lid)
+            out.append(lid)
+            queue += [c["id"] for c in self.s.inn(self.org, lid, "PART_OF") if c["label"] == "Location"]
+        return out
+
+    def _positions_at(self, location_ids) -> list[tuple[dict, dict, dict]]:
+        """Every position in use at any of these locations, set on it or inherited:
+        (position, its location, the node the location was set on). Walks down from
+        the positions located there and the items placed there."""
+        wanted = set(location_ids)
+        stack: list[tuple[dict, dict, dict]] = []
+        for lid in wanted:
+            loc = self.s.node(self.org, lid)
+            for node in self.s.inn(self.org, lid, "LOCATED_AT"):
+                if node["label"] == "Position":
+                    stack.append((node, loc, node))
+            for placement in self.s.inn(self.org, lid, "AT"):
+                if placement["label"] != "Placement" or placement.get("to") is not None:
+                    continue
+                item = self.s.inn(self.org, placement["id"], "IN")
+                now = item and self._placement_now(item[0]["id"])
+                if now and now[0]["id"] == placement["id"]:
+                    stack += [(c, loc, item[0]) for c in self._inheriting_children(item[0]["id"])]
+        out, seen = [], set()
+        while stack:
+            position, loc, source = stack.pop()
+            if position["id"] in seen or position.get("retired"):
+                continue
+            seen.add(position["id"])
+            out.append((position, loc, source))
+            stack += [(c, loc, source) for c in self._inheriting_children(position["id"])]
+            fitted = self.current_fitment(position["id"])
+            item = fitted and self.s.inn(self.org, fitted["id"], "IN")
+            if item:
+                stack += [(c, loc, source) for c in self._inheriting_children(item[0]["id"])]
+        return out
+
+    def _inheriting_children(self, parent_id: str) -> list[dict]:
+        """The positions directly inside a position or item that take its location."""
+        return [c for c in self.s.inn(self.org, parent_id, "PART_OF")
+                if c["label"] == "Position" and not c.get("retired") and not self._own_location(c["id"])]
+
     # ---- items, fitments, placements --------------------------------------------
 
     def create_item(self, name, serial="", part_number="", manufacturer="", notes="", model="",
@@ -1294,27 +1503,72 @@ class Maintenance:
         raise Invalid("Say which item: an existing one, or a new one with a name.")
 
     def place_item(self, item_id: str, location_id: str, on=None) -> dict:
-        """Record where an item is from ``on``. With no date: since it was fitted
-        to its position, if it is (it has been there all along), otherwise today;
-        never before it got where it is now."""
-        self._get(item_id, "Item")
+        """Record where an item that isn't fitted is from ``on`` (a spare in a store,
+        one away at a repairer): today with no date, never before it got where it is
+        now or came out of its last position. A fitted item is where its position
+        is: set the position's location instead."""
+        item = self._get(item_id, "Item")
         self._get(location_id, "Location")
+        fitted = self._current_fitment_of_item(item_id)
+        if fitted:
+            position = self.s.out(self.org, fitted["id"], "AT")[0]
+            where = self._location_view(position["id"])
+            raise Invalid(f"{item['name']} is fitted to {position['name']}, so it is where that position is"
+                          f"{' (' + where['display'] + ')' if where else ' (no location set yet)'}. Set the "
+                          "position's location instead (update_position with location_id), or remove the item "
+                          "first if it has left the position.")
         here = next((p for p in self.s.out(self.org, item_id, "IN")
                      if p["label"] == "Placement" and p.get("to") is None), None)
+        last = self._last_removal(item_id)
         if on in (None, ""):
-            fitted = self._current_fitment_of_item(item_id)
-            day = fitted["from"] if fitted else date.today().isoformat()
-            if here and here["from"] > day:
-                day = here["from"]
+            day = max(date.today().isoformat(), here["from"] if here else "", last["to"] if last else "")
         else:
             day = _day(on)
             if here and day < here["from"]:
                 where = self.s.out(self.org, here["id"], "AT")
                 raise Invalid(f"It has been at {where[0]['name'] if where else 'its location'} since {here['from']}; "
                               "a move can't be dated before that.")
+            if last and day < last["to"]:
+                position = self.s.out(self.org, last["id"], "AT")[0]
+                raise Invalid(f"It came out of {position['name']} on {last['to']}; it can't be placed before that.")
         self._emit("item.placed", {"item_id": item_id, "location_id": location_id,
                                    "placement_id": new_id(), "on": day})
         return self.item(item_id)
+
+    def adopt_placements(self, dry_run: bool = True) -> dict:
+        """A one-off tidy-up for placements recorded on fitted items, from before a
+        fitted item was simply where its position is. Each fitted item placed while
+        fitted (no earlier than it went in) gives its position that location, when the
+        position has none set on it and doesn't already inherit that one. Placements
+        made before the item went in (where a spare was kept) are left alone, as are
+        positions with a location of their own. dry_run: only say what would change."""
+        changes, skipped = [], []
+        for item in sorted(self.s.nodes(self.org, "Item"), key=lambda i: i["name"].lower()):
+            fitment = self._current_fitment_of_item(item["id"])
+            here = fitment and max((p for p in self.s.out(self.org, item["id"], "IN")
+                                    if p["label"] == "Placement" and p.get("to") is None),
+                                   key=lambda p: p["from"], default=None)
+            placed = here and self.s.out(self.org, here["id"], "AT")
+            if not placed:
+                continue
+            position = self.s.out(self.org, fitment["id"], "AT")[0]
+            entry = {"item": {"id": item["id"], "name": item["name"]},
+                     "position": {"id": position["id"], "name": position["name"]},
+                     "placed_at": {"id": placed[0]["id"], "name": placed[0]["name"]}, "placed_on": here["from"]}
+            own, (now, _) = self._own_location(position["id"]), self._located(position["id"])
+            if here["from"] < fitment["from"]:
+                skipped.append({**entry, "why": "placed before it was fitted (where it was kept before)"})
+            elif own:
+                skipped.append({**entry, "why": f"the position has its own location already: {own['name']}"
+                                if own["id"] != placed[0]["id"] else "the position is already there"})
+            elif now and now["id"] == placed[0]["id"]:
+                skipped.append({**entry, "why": "the position already inherits that location"})
+            else:
+                changes.append({**entry, "location_now": now and {"id": now["id"], "name": now["name"]}})
+        if not dry_run:
+            for change in changes:
+                self.update_position(change["position"]["id"], location_id=change["placed_at"]["id"])
+        return {"dry_run": dry_run, "changes": changes, "skipped": skipped}
 
     def _fitments_at(self, position_id: str) -> list[dict]:
         return [f for f in self.s.inn(self.org, position_id, "AT") if f["label"] == "Fitment" and not f.get("voided")]
@@ -2915,15 +3169,17 @@ class Maintenance:
     # ---- items, locations and classes: reading ---------------------------------------
 
     def item(self, id: str) -> dict:
-        """An item: its details and nameplate, where it's fitted and placed now, every
-        position it has been fitted to, its own positions (an engine's turbos) and photos."""
+        """An item: its details and nameplate, where it's fitted and where it is now
+        (fitted: its position's location; otherwise where it's placed, or last_at:
+        where it came out), every position it has been fitted to, its placements, its
+        own positions (an engine's turbos) and photos."""
         item = self._get(id, "Item")
         fitments = sorted(self._fitments_of(id), key=lambda f: f["from"], reverse=True)
         current = next((f for f in fitments if f.get("to") is None), None)
         placements = sorted([p for p in self.s.out(self.org, id, "IN") if p["label"] == "Placement"],
                             key=lambda p: p["from"], reverse=True)
-        here = next((p for p in placements if p.get("to") is None), None)
-        location = here and self.s.out(self.org, here["id"], "AT")
+        where = self.whereabouts(id)
+        placed_now = (self._placement_now(id) or ({},))[0].get("id")
         own = [c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
         fitted_to = current and self._fitment_view(current)["position"]
         position = fitted_to and self.s.node(self.org, fitted_to["id"])
@@ -2939,9 +3195,11 @@ class Maintenance:
             "warranty": warranty_view(item.get("warranty")),
             "documents": self.documents_of(id),
             "fitted_to": fitted_to,
-            "location": location and {"id": location[0]["id"], "name": location[0]["name"]},
+            **where,
             "history": [self._fitment_view(f) for f in fitments],
-            "placements": [{"from": p["from"], "to": p.get("to"),
+            # Every placement; current marks the one that says where it is now (none while
+            # it's fitted: older placements of a fitted item stay here as history).
+            "placements": [{"from": p["from"], "to": p.get("to"), "current": p["id"] == placed_now,
                             "location": (lambda l: l and {"id": l[0]["id"], "name": l[0]["name"]})(
                                 self.s.out(self.org, p["id"], "AT"))} for p in placements],
             "positions": [{"id": c["id"], "name": c["name"],
@@ -2951,36 +3209,126 @@ class Maintenance:
         }
 
     def location(self, id: str) -> dict:
+        """A location: its path and the locations inside it; the positions there (set on
+        them or inherited, here or in a location inside it), grouped by the system each
+        belongs to (its top position), with what's fitted to each; the items placed there
+        (not fitted: spares, ones away for repair); and counts."""
         loc = self._get(id, "Location")
-        path = [self.s.node(self.org, a) for a in reversed(self._ancestor_ids(id))]
-        here = []
-        for placement in self.s.inn(self.org, id, "AT"):
-            if placement["label"] == "Placement" and placement.get("to") is None:
-                item = self.s.inn(self.org, placement["id"], "IN")
-                if item:
-                    here.append({**self._item_brief(item[0]), "since": placement["from"]})
-        kids = [c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Location"]
+        inside = self._location_ids_in(id)
+        kids = sorted((c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Location"),
+                      key=lambda c: c["name"].lower())
+        under = {lid: c["id"] for c in kids for lid in self._location_ids_in(c["id"])}
+        found = self._positions_at(inside)
+        loose = self._loose_items(inside)
+        open_wos = {p["id"]: sum(1 for w in self.s.inn(self.org, p["id"], "ON")
+                                 if w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES) for p, _, _ in found}
+        systems: dict[str, dict] = {}
+        for position, at, source in found:
+            top = self._system_of(position["id"])
+            group = systems.setdefault(top["id"], {"system": {"id": top["id"], "name": top["name"], "kind": top["label"]},
+                                                   "count": 0, "positions": []})
+            group["count"] += 1
+            group["positions"].append((position, at, source))
+        listed = 0
+        for group in systems.values():
+            rows = []
+            for position, at, source in group["positions"]:
+                if listed >= MAX_LOCATION_POSITIONS:
+                    break
+                listed += 1
+                fitted = self.current_fitment(position["id"])
+                item = fitted and self.s.inn(self.org, fitted["id"], "IN")
+                path = [a["name"] for a in self._position_path(position["id"])] + [position["name"]]
+                rows.append({
+                    "id": position["id"], "name": position["name"], "tag": position.get("tag", ""),
+                    "position_class": position.get("position_class", ""), "path": " › ".join(path),
+                    "location": {"id": at["id"], "name": at["name"]}, "direct": source["id"] == position["id"],
+                    "inherited_from": None if source["id"] == position["id"] else
+                    {"id": source["id"], "name": source["name"], "kind": source["label"]},
+                    "item": self._item_brief(item[0] if item else None),
+                    "open_work_orders": open_wos[position["id"]],
+                })
+            group["positions"] = sorted(rows, key=lambda r: r["path"].lower())
+        count = lambda rows, lid: sum(1 for r in rows if under.get(r[1]["id"]) == lid)  # noqa: E731
         return {
             "id": id, "name": loc["name"], "description": loc.get("description", ""),
             "coordinates": loc.get("coordinates"),
-            "path": [{"id": a["id"], "name": a["name"]} for a in path],
-            "children": [{"id": c["id"], "name": c["name"]} for c in sorted(kids, key=lambda c: c["name"].lower())],
-            "items": sorted(here, key=lambda i: i["name"].lower()),
+            "path": self._location_path(id),
+            "children": [{"id": c["id"], "name": c["name"], "positions": count(found, c["id"]),
+                          "items": count(loose, c["id"])} for c in kids],
+            "counts": {
+                "positions_here": sum(1 for _, at, _ in found if at["id"] == id), "positions": len(found),
+                "fitted_items": sum(1 for p, _, _ in found if self.current_fitment(p["id"])),
+                "items_here": sum(1 for _, at, _ in loose if at["id"] == id), "items": len(loose),
+                "open_work_orders": sum(open_wos.values()),
+            },
+            "systems": sorted((g for g in systems.values() if g["positions"]), key=lambda g: g["system"]["name"].lower()),
+            "positions_truncated": listed < len(found),
+            "items": sorted(({**self._item_brief(item), "since": placement["from"],
+                              "location": {"id": at["id"], "name": at["name"]}} for item, at, placement in loose),
+                            key=lambda i: i["name"].lower()),
             "photos": self.photos_of(id),
         }
 
+    def _loose_items(self, location_ids) -> list[tuple[dict, dict, dict]]:
+        """Items placed at any of these locations and still there (not fitted since):
+        (item, location, placement)."""
+        out = []
+        for lid in location_ids:
+            loc = self.s.node(self.org, lid)
+            for placement in self.s.inn(self.org, lid, "AT"):
+                if placement["label"] != "Placement" or placement.get("to") is not None:
+                    continue
+                item = self.s.inn(self.org, placement["id"], "IN")
+                now = item and self._placement_now(item[0]["id"])
+                if now and now[0]["id"] == placement["id"]:
+                    out.append((item[0], loc, placement))
+        return out
+
+    def _system_of(self, position_id: str) -> dict:
+        """The top of a position's functional tree: the system it belongs to. An item
+        position belongs to its item's position's system (the item, if it isn't fitted)."""
+        memo = self._memo.setdefault("systems", {})
+        chain, node, seen = [], self.s.node(self.org, position_id), set()
+        top = node
+        while node and node["id"] not in seen:
+            if node["id"] in memo:
+                top = memo[node["id"]]
+                break
+            seen.add(node["id"])
+            chain.append(node["id"])
+            top = node
+            if node["label"] == "Item":
+                fitment = self._current_fitment_of_item(node["id"])
+                node = fitment and self.s.out(self.org, fitment["id"], "AT")[0]
+            else:
+                node = self._parent(node["id"])
+        for nid in chain:
+            memo[nid] = top
+        return top
+
     def location_tree(self) -> list[dict]:
+        """Every location as a tree, with the positions there (set or inherited) and the
+        items placed there (not fitted): here, and with the locations inside it (all_)."""
         locs = self.s.nodes(self.org, "Location")
         children: dict[str | None, list] = {}
         for loc in locs:
             parent = self._parent(loc["id"])
             children.setdefault(parent["id"] if parent else None, []).append(loc)
+        ids = [loc["id"] for loc in locs]
+        positions: dict[str, int] = {}
+        for _, at, _ in self._positions_at(ids):
+            positions[at["id"]] = positions.get(at["id"], 0) + 1
+        items: dict[str, int] = {}
+        for _, at, _ in self._loose_items(ids):
+            items[at["id"]] = items.get(at["id"], 0) + 1
 
         def build(loc):
-            items = sum(1 for p in self.s.inn(self.org, loc["id"], "AT")
-                        if p["label"] == "Placement" and p.get("to") is None)
-            return {"id": loc["id"], "name": loc["name"], "items": items,
-                    "children": [build(c) for c in sorted(children.get(loc["id"], []), key=lambda c: c["name"].lower())]}
+            kids = [build(c) for c in sorted(children.get(loc["id"], []), key=lambda c: c["name"].lower())]
+            here_p, here_i = positions.get(loc["id"], 0), items.get(loc["id"], 0)
+            return {"id": loc["id"], "name": loc["name"], "positions": here_p, "items": here_i,
+                    "all_positions": here_p + sum(k["all_positions"] for k in kids),
+                    "all_items": here_i + sum(k["all_items"] for k in kids), "children": kids}
 
         return [build(loc) for loc in sorted(children.get(None, []), key=lambda c: c["name"].lower())]
 
@@ -3451,6 +3799,8 @@ class Maintenance:
             "id": p["id"], "name": p["name"], "tag": p.get("tag", ""),
             "position_class": p.get("position_class", ""), "description": p.get("description", ""),
             "path": path, "retired": bool(p.get("retired")),
+            # Where it is: set on it, or inherited (inherited_from says from what); None if unset.
+            "location": self._location_view(id),
             "children": [{"id": c["id"], "name": c["name"]} for c in kids if not c.get("retired")],
             "fitted": fitted,
             "fitments": [self._fitment_view(f) for f in fitments],
@@ -3511,15 +3861,27 @@ class Maintenance:
             "trade": w.get("trade", ""),
             "under_warranty": bool(position and self._warranty_for(position[0]["id"], w["opened"])),
             "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
+            # Where the work is: its position's location (set or inherited).
+            "location": position and self._location_brief(self._located(position[0]["id"])[0]),
         }
 
-    def work_orders(self, status: str | None = None) -> list[dict]:
-        """Work orders, newest first. status 'open' means every not-yet-done status."""
+    def work_orders(self, status: str | None = None, location_id: str | None = None) -> list[dict]:
+        """Work orders, newest first. status 'open' means every not-yet-done status.
+        location_id: only those on positions at that location or a location inside it."""
         def keep(w):
             if not status:
                 return True
             return w["status"] in OPEN_STATUSES if status == "open" else w["status"] == status
         wos = [w for w in self.s.nodes(self.org, "WorkOrder") if keep(w)]
+        if location_id:
+            self._get(location_id, "Location")
+            inside = set(self._location_ids_in(location_id))
+
+            def there(w):
+                position = self.s.out(self.org, w["id"], "ON")
+                where = position and self._located(position[0]["id"])[0]
+                return bool(where) and where["id"] in inside
+            wos = [w for w in wos if there(w)]
         return [self._wo_brief(w) for w in sorted(wos, key=lambda w: w["number"], reverse=True)]
 
     def work_order(self, id: str) -> dict:
@@ -3563,13 +3925,13 @@ class Maintenance:
         out = []
         for item in sorted(self.s.nodes(self.org, "Item"), key=lambda i: i["name"].lower()):
             fitment = self._current_fitment_of_item(item["id"])
-            placement = next((p for p in self.s.out(self.org, item["id"], "IN")
-                              if p["label"] == "Placement" and p.get("to") is None), None)
-            location = placement and self.s.out(self.org, placement["id"], "AT")
+            where = self.whereabouts(item["id"])
             out.append({
                 **self._item_brief(item),
                 "fitted_to": fitment and self._fitment_view(fitment)["position"],
-                "location": location and {"id": location[0]["id"], "name": location[0]["name"]},
+                "location": where["location"] and {k: where["location"][k] for k in ("id", "name", "display", "how")},
+                "last_at": where["last_at"] and where["last_at"]["location"] and {
+                    k: where["last_at"]["location"][k] for k in ("id", "name", "display")},
             })
         return out
 
@@ -3578,7 +3940,8 @@ class Maintenance:
         for loc in sorted(self.s.nodes(self.org, "Location"), key=lambda n: n["name"].lower()):
             parent = self._parent(loc["id"])
             out.append({"id": loc["id"], "name": loc["name"], "description": loc.get("description", ""),
-                        "parent": parent and {"id": parent["id"], "name": parent["name"]}})
+                        "parent": parent and {"id": parent["id"], "name": parent["name"]},
+                        "display": self._location_brief(loc)["display"]})
         return out
 
     def life_data(self, position_id: str) -> list[dict]:

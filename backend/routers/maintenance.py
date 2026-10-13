@@ -199,8 +199,9 @@ def events(limit: int = 100, m: Maintenance = Depends(maintenance)) -> JSONRespo
 
 @router.post("/positions")
 def create_position(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A position; location_id (optional) says where it physically is."""
     return _run(m.create_position, body.get("name"), body.get("tag", ""), body.get("parent_id"),
-                body.get("position_class", ""), body.get("description", ""))
+                body.get("position_class", ""), body.get("description", ""), body.get("location_id"))
 
 
 @router.get("/positions/{position_id}")
@@ -211,9 +212,11 @@ def get_position(position_id: str, m: Maintenance = Depends(maintenance)) -> JSO
 @router.patch("/positions/{position_id}")
 def update_position(position_id: str, body: dict = Body(...),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Change a position; location_id sets where it is (null: it inherits its parent's)."""
     def go():
         m.update_position(position_id, **{k: body[k] for k in
-                                          ("name", "tag", "position_class", "description", "parent_id") if k in body})
+                                          ("name", "tag", "position_class", "description", "parent_id",
+                                           "location_id") if k in body})
         return m.position(position_id)
     return _run(go)
 
@@ -566,6 +569,13 @@ def get_location(location_id: str, m: Maintenance = Depends(maintenance)) -> JSO
     return _run(m.location, location_id)
 
 
+@router.post("/locations/adopt-placements")
+def adopt_placements(body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Fitted items' placements as their positions' locations (a one-off tidy-up);
+    dry_run (default true) only lists what would change."""
+    return _run(m.adopt_placements, body.get("dry_run", True) is not False)
+
+
 @router.patch("/locations/{location_id}")
 def update_location(location_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     kwargs = {k: body[k] for k in ("name", "description", "parent_id") if k in body}
@@ -580,8 +590,11 @@ def create_location(body: dict = Body(...), m: Maintenance = Depends(maintenance
 # ---- work orders -------------------------------------------------------------------------
 
 @router.get("/work-orders")
-def list_work_orders(status: str | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {"work_orders": m.work_orders(status)})
+def list_work_orders(status: str | None = None, location_id: str | None = None,
+                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Work orders, newest first; status 'open' for every one not yet done; location_id for
+    those on positions at that location or inside it."""
+    return _run(lambda: {"work_orders": m.work_orders(status, location_id)})
 
 
 @router.post("/work-orders")

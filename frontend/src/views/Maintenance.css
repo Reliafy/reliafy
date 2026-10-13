@@ -71,6 +71,16 @@
   padding: 0.25rem 0;
 }
 
+/* A location's positions, one group per system. */
+.maint-group + .maint-group {
+  margin-top: 1rem;
+}
+
+.maint-group h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
 .maint-action {
   border: 1px solid var(--line);
   border-radius: var(--r);
