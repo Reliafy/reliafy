@@ -62,6 +62,7 @@ def env(monkeypatch):
     monkeypatch.setattr(db, "_simulated", True)
     ingest_router._hits.clear()
     oauth_service._cimd_cache.clear()
+    oauth_service._cimd_failures.clear()
     test_db.users.insert_one({"_id": U, "email": "u@example.org", "name": "U"})
     test_db.users.insert_one({"_id": OTHER, "email": "o@example.org", "name": "O"})
 
@@ -363,6 +364,7 @@ def test_cimd_fetch_refuses_private_addresses(env, monkeypatch):
         raise AssertionError("tried to connect")
 
     monkeypatch.setattr("httpx.Client", refuse_connect)
+    monkeypatch.setattr("httpx.AsyncClient", refuse_connect)
     monkeypatch.setattr(oauth_service.socket, "getaddrinfo",
                         lambda host, port, **kw: [(2, 1, 6, "", ("169.254.169.254", port))])
     with pytest.raises(oauth_service.OAuthError, match="public host"):
