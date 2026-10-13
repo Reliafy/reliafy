@@ -13,6 +13,9 @@ from pydantic import Field
 
 TOOL_NAMES: list[str] = []
 _ORIGINAL: dict = {}
+# Tools that fit a life model on the server: Pro only, like the MCP server's
+# other fitting tools (added to its plan gating when registered).
+PRO_FIT_TOOLS = ("fit_class_model",)
 
 
 def register() -> None:
@@ -24,6 +27,7 @@ def register() -> None:
 
     from backend.maintenance.access import allowed
     from backend.maintenance.service import Invalid, Maintenance, NotFound, summary
+    from backend import mcp_server
     from backend.mcp_server import _READ, _WRITE, _caller, _db, _reader, _tool, mcp
     from backend.routers.maintenance import get_store
     from backend.schema import RcmStudy
@@ -652,11 +656,17 @@ def register() -> None:
 
     handlers["tools/list"] = dataclasses.replace(entry, handler=list_tools)
 
+    mcp_server._FIT_TOOLS.update(PRO_FIT_TOOLS)
+    mcp_server.PRO_ONLY_TOOLS.update(PRO_FIT_TOOLS)
+
 
 def unregister() -> None:
     """Remove the maintenance tools again (for tests)."""
+    from backend import mcp_server
     from backend.mcp_server import mcp
 
+    mcp_server._FIT_TOOLS.difference_update(PRO_FIT_TOOLS)
+    mcp_server.PRO_ONLY_TOOLS.difference_update(PRO_FIT_TOOLS)
     for name in TOOL_NAMES:
         mcp.remove_tool(name)
     TOOL_NAMES.clear()

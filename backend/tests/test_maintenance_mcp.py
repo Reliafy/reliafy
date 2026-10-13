@@ -165,3 +165,16 @@ def test_nameplate_and_moves_over_mcp(env):
     moved, classes, pooled = _session(env["token"], flow)
     assert moved["fitted_to"]["name"] == "Pump B" and len(moved["history"]) == 2
     assert classes["classes"][0]["fitments"] == 2 and len(pooled["rows"]) == 2
+
+
+def test_class_model_fitting_is_pro_only_over_mcp():
+    from backend import mcp_server
+    from backend.maintenance import mcp_tools
+
+    mcp_tools.register()
+    try:
+        assert "fit_class_model" in mcp_server.PRO_ONLY_TOOLS
+        assert "Pro" in mcp_server._pro_only_message("fit_class_model")
+    finally:
+        mcp_tools.unregister()
+    assert "fit_class_model" not in mcp_server.PRO_ONLY_TOOLS
