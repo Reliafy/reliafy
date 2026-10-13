@@ -6,7 +6,7 @@ import {
   setWorkStatus, updateWorkOrder,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { Field, FormModal, MaintenanceTabs, fmtDate, today } from "../components/MaintenanceParts.jsx";
+import { Field, FormModal, MaintenanceTabs, NotesCard, fmtDate, today } from "../components/MaintenanceParts.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import "./Maintenance.css";
 
@@ -56,12 +56,7 @@ export default function MaintenanceWorkOrder() {
       <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       {modal === "edit" && <EditWorkOrder wo={wo} onClose={() => setModal(null)} onDone={(d) => { setWo(d); setModal(null); }} />}
-      {modal === "cancel" && (
-        <FormModal title={`Cancel #${wo.number}`} submitLabel="Cancel it" onClose={() => setModal(null)}
-                   onSubmit={async () => { setWo(await cancelWorkOrder(wo.id, "")); setModal(null); }}>
-          <p>For work that won't be done (a duplicate, raised by mistake). Work that was done is closed instead.</p>
-        </FormModal>
-      )}
+      {modal === "cancel" && <CancelWorkOrder wo={wo} onClose={() => setModal(null)} onDone={(d) => { setWo(d); setModal(null); }} />}
       {wo.task && <p className="lib-date">From the task “{wo.task.name}”.</p>}
       {!["closed", "cancelled"].includes(wo.status) && (
         <section className="card">
@@ -91,13 +86,15 @@ export default function MaintenanceWorkOrder() {
           ))}
         </section>
       )}
+      <NotesCard notes={wo.notes} history={wo.note_history}
+                 onAppend={async (text) => setWo(await updateWorkOrder(wo.id, { append_note: text }))} />
       {wo.status !== "cancelled" && <CostsCard wo={wo} onChanged={setWo} />}
 
       <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetName={wo.position?.name}
                          photos={wo.photos || []} onChanged={refresh} />
 
       {wo.status === "cancelled" ? (
-        <section className="card"><p>Cancelled {fmtDate(wo.closed)}{wo.notes ? `: ${wo.notes}` : ""}.</p></section>
+        <section className="card"><p>Cancelled {fmtDate(wo.closed)}{wo.cancel_reason ? `: ${wo.cancel_reason}` : ""}.</p></section>
       ) : wo.status === "closed" ? (
         <section className="card">
           <div className="maint-head"><h2>What was done</h2></div>
@@ -115,7 +112,7 @@ export default function MaintenanceWorkOrder() {
               ))}
             </ul>
           )}
-          {wo.notes && <p>{wo.notes}</p>}
+          {wo.close_notes && <p className="maint-notes">{wo.close_notes}</p>}
         </section>
       ) : (
         <CloseForm wo={wo} onClosed={setWo} />
@@ -219,13 +216,25 @@ function CloseForm({ wo, onClosed }) {
                    onChange={(e) => setReadings({ ...readings, [mt.id]: e.target.value })} />
           </Field>
         ))}
-        <Field label="Notes (optional)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        <Field label="Closing notes (optional; the notes above are kept)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">
         <button onClick={submit} disabled={busy}>{busy ? "Closing…" : "Close work order"}</button>
         {wo.position && <Link to={`/maintenance/positions/${wo.position.id}`} className="lib-date">Back to {wo.position.name}</Link>}
       </div>
     </section>
+  );
+}
+
+function CancelWorkOrder({ wo, onClose, onDone }) {
+  const [reason, setReason] = useState("");
+  return (
+    <FormModal title={`Cancel #${wo.number}`} submitLabel="Cancel it" onClose={onClose}
+               onSubmit={async () => onDone(await cancelWorkOrder(wo.id, reason))}>
+      <p>For work that won't be done (a duplicate, raised by mistake). Work that was done is closed instead.
+        The notes stay as they are.</p>
+      <Field label="Why (optional)"><input value={reason} placeholder="e.g. duplicate of #12" onChange={(e) => setReason(e.target.value)} /></Field>
+    </FormModal>
   );
 }
 

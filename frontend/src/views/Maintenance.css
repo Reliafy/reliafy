@@ -168,3 +168,17 @@
 .maint-proposal p {
   margin: 0 0 0.4rem;
 }
+
+.maint-notes {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.maint-note-history {
+  margin-top: 0.75rem;
+}
+
+.maint-reading-struck {
+  color: var(--muted);
+  text-decoration: line-through;
+}

@@ -9,6 +9,8 @@ import {
   openWorkOrder,
   addMeasurementPoint,
   recordMeasurementReading,
+  correctMeasurementReading,
+  voidMeasurementReading,
   connectPositions,
   createRedundancyGroup,
   disconnectPositions,
@@ -32,6 +34,8 @@ import {
   today,
 } from "../components/MaintenanceParts.jsx";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
+import Modal from "../components/Modal.jsx";
+import { isStruck, liveReadings, readingStatusText } from "../maintenanceReadings.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import "./Maintenance.css";
 
@@ -587,7 +591,7 @@ function RbdCard({ p, onChanged }) {
 
 // A small chart of a point's readings, with its alarm limits.
 function Sparkline({ point }) {
-  const rs = [...point.readings].reverse();
+  const rs = liveReadings(point.readings).reverse();
   if (rs.length < 2) return null;
   const W = 160, H = 40;
   const vals = rs.map((r) => r.value).concat([point.alarm_above, point.alarm_below].filter((v) => v != null));
@@ -611,7 +615,6 @@ function Sparkline({ point }) {
 // temperature), read by hand or fed automatically.
 function MeasurementsCard({ p, onChanged }) {
   const [modal, setModal] = useState(null);
-  const sparkPoint = (c) => ({ ...c, readings: c.readings.map((r) => ({ ...r, value: r.value })) });
   return (
     <section className="card">
       <div className="maint-head">
@@ -625,6 +628,7 @@ function MeasurementsCard({ p, onChanged }) {
           automatically (Home Assistant, a PLC) through the ingest API.
         </p>
       ) : (
+        <div style={{ overflowX: "auto" }}>
         <table className="lib-table">
           <thead><tr><th>Measurement</th><th>Latest</th><th>Trend</th><th>Rate or alarm</th><th /></tr></thead>
           <tbody>
@@ -635,7 +639,7 @@ function MeasurementsCard({ p, onChanged }) {
                 <td>{c.reading != null ? `${c.reading} ${c.unit}` : "—"}
                   {c.status !== "ok" && <span className="maint-overdue"> {c.status}</span>}
                   <div className="lib-date">{c.read_at ? fmtDate(c.read_at.slice(0, 10)) : ""}</div></td>
-                <td><Sparkline point={sparkPoint(c)} /></td>
+                <td><Sparkline point={c} /></td>
                 <td className="lib-date">
                   {c.kind === "counter"
                     ? (c.rate_per_day != null ? `${c.rate_per_day} ${c.unit} a day` : "needs two readings")
@@ -645,14 +649,21 @@ function MeasurementsCard({ p, onChanged }) {
                       {c.alarm_work_order && <div><Link to={`/maintenance/work-orders/${c.alarm_work_order.id}`}>#{c.alarm_work_order.number} open</Link></div>}
                     </>}
                 </td>
-                <td>{c.source === "manual" && <button className="secondary" onClick={() => setModal({ read: c })}>Record</button>}</td>
+                <td>{c.source === "manual" && (
+                  <div className="maint-row" style={{ marginTop: 0 }}>
+                    <button className="secondary" onClick={() => setModal({ read: c })}>Record</button>
+                    {c.readings.length > 0 && <button className="secondary" onClick={() => setModal({ list: c })}>Readings</button>}
+                  </div>
+                )}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       )}
       {modal === "add" && <PointModal positionId={p.id} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
       {modal?.read && <PointReadingModal point={modal.read} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
+      {modal?.list && <ReadingsModal point={modal.list} onClose={() => { setModal(null); onChanged(); }} />}
     </section>
   );
 }
@@ -711,5 +722,78 @@ function PointReadingModal({ point, onClose, onDone }) {
              placeholder={point.reading != null ? `last: ${point.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
       <Field label="Read on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
     </FormModal>
+  );
+}
+
+// A manual point's readings, newest first, with the ones struck out or corrected
+// marked. A reading entered by mistake is voided; a wrong value or date is
+// corrected (the original is kept, struck out). Both need a reason.
+function ReadingsModal({ point: initial, onClose }) {
+  const [point, setPoint] = useState(initial);
+  const [edit, setEdit] = useState(null); // { id, mode: "void" | "correct", value, on, reason }
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const unit = point.unit ? ` ${point.unit}` : "";
+  const start = (r, mode) => { setError(null); setEdit({ id: r.id, mode, value: String(r.value), on: r.at, reason: "" }); };
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      setPoint(edit.mode === "void"
+        ? await voidMeasurementReading(edit.id, edit.reason)
+        : await correctMeasurementReading(edit.id, { value: Number(edit.value), on: edit.on, reason: edit.reason }));
+      setEdit(null);
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  const set = (k) => (e) => setEdit({ ...edit, [k]: e.target.value });
+  return (
+    <Modal title={`Readings: ${point.name}`} onClose={onClose} locked={busy}
+           footer={<button className="secondary" onClick={onClose} disabled={busy}>Done</button>}>
+      {error && <div className="card error">{error}</div>}
+      <p className="lib-date">The latest {point.readings.length}. Struck-out readings stay here, marked; rates, due dates
+        and alarms leave them out.</p>
+      <div style={{ overflowX: "auto" }}>
+        <table className="lib-table">
+          <thead><tr><th>Read on</th><th>Value</th><th>What happened</th><th /></tr></thead>
+          <tbody>
+            {point.readings.map((r) => (
+              <tr key={r.id}>
+                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{fmtDate(r.at)}</td>
+                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{r.value}{unit}</td>
+                <td className="lib-date">{readingStatusText(r, fmtDate) || r.note || ""}</td>
+                <td>{!isStruck(r) && (
+                  <div className="maint-row" style={{ marginTop: 0 }}>
+                    <button className="crumb-link" onClick={() => start(r, "correct")}>Correct</button>
+                    <button className="crumb-link" onClick={() => start(r, "void")}>Void</button>
+                  </div>
+                )}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {edit && (
+        <div className="maint-action">
+          <div className="rcm-form">
+            {edit.mode === "correct" && <>
+              <Field label={`Right value${unit ? ` (${point.unit})` : ""}`}>
+                <input type="number" inputMode="decimal" step="any" value={edit.value} onChange={set("value")} />
+              </Field>
+              <Field label="Really read on"><input type="date" value={edit.on} max={today()} onChange={set("on")} /></Field>
+            </>}
+            <Field label={edit.mode === "void" ? "Why it's struck out" : "Why it's corrected"}>
+              <input autoFocus value={edit.reason} placeholder={edit.mode === "void" ? "e.g. entered twice" : "e.g. an old reading entered as today"}
+                     onChange={set("reason")} />
+            </Field>
+          </div>
+          <div className="maint-row">
+            <button onClick={save} disabled={busy || !edit.reason.trim() || (edit.mode === "correct" && edit.value === "")}>
+              {busy ? "Saving…" : edit.mode === "void" ? "Void the reading" : "Save the correction"}
+            </button>
+            <button className="secondary" onClick={() => setEdit(null)} disabled={busy}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }

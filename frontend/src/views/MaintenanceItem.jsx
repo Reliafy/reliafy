@@ -12,7 +12,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import {
-  Field, FormModal, MaintenanceTabs, PositionPicker, flatten, fmtDate, today,
+  Field, FormModal, MaintenanceTabs, NotesCard, PositionPicker, flatten, fmtDate, today,
 } from "../components/MaintenanceParts.jsx";
 import "./Maintenance.css";
 
@@ -61,12 +61,14 @@ export default function MaintenanceItem() {
           <dd>{item.location ? <Link to={`/maintenance/locations/${item.location.id}`}>{item.location.name}</Link> : "—"}</dd>
           {item.part_number && <><dt>Part number</dt><dd>{item.part_number}</dd></>}
           {plate.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}
-          {item.notes && <><dt>Notes</dt><dd>{item.notes}</dd></>}
         </dl>
         {plate.length === 0 && (
           <p className="lib-date">No nameplate details yet. Add a photo of the nameplate and ask Claude to read it, or edit them here.</p>
         )}
       </section>
+
+      <NotesCard notes={item.notes} history={item.note_history}
+                 onAppend={async (text) => setItem(await updateMaintenanceItem(item.id, { append_note: text }))} />
 
       <MaintenancePhotos title="Photos" targetId={item.id} targetName={item.name} photos={item.photos} onChanged={refresh} />
 
@@ -154,7 +156,9 @@ function EditItemModal({ item, onClose, onDone }) {
           Add a field
         </button>
       </div>
-      <Field label="Notes"><textarea rows={2} value={f.notes} onChange={set("notes")} /></Field>
+      <Field label="Notes (to add a line instead, use Add note; earlier versions are kept)">
+        <textarea rows={4} value={f.notes} onChange={set("notes")} />
+      </Field>
     </FormModal>
   );
 }
