@@ -579,7 +579,7 @@ def register() -> None:
     from mcp.server.mcpserver import Image
 
     from backend import config
-    from backend.routers.maintenance import get_photo_store, link_payload, photo_links
+    from backend.routers.maintenance import link_payload, photo_links, remove_photo, served_photo
 
     @tool("create_photo_link", _WRITE, "Get a link to add photos")
     def create_photo_link(target_id: str, ctx: Context, caption: str = "") -> dict[str, Any]:
@@ -618,9 +618,9 @@ def register() -> None:
         update_item) or check a condition. 'full' is up to 1600 px; 'thumb' 400 px."""
         m = m_for(ctx)
         run(m.photo, photo_id)
-        data = get_photo_store().get(photo_id, size)
+        data = served_photo(m, photo_id, size)
         if data is None:
-            raise ToolError("That photo's file is missing.")
+            raise ToolError("That photo was removed, or its file is missing.")
         return Image(data=data, format="jpeg")
 
     @tool("set_coordinates", _WRITE, "Set where equipment is")
@@ -632,9 +632,9 @@ def register() -> None:
 
     @tool("remove_photo", _WRITE, "Remove a photo")
     def remove_photo(photo_id: str, ctx: Context) -> dict[str, Any]:
-        """Remove a photo from what it shows (it stays in the history)."""
-        m = m_for(ctx)
-        return run(lambda: (m.remove_photo(photo_id), {"removed": photo_id})[1])
+        """Remove a photo from what it shows (the history keeps that it was there; the
+        image itself is deleted)."""
+        return run(remove_photo, m_for(ctx), photo_id)
 
     # The tools are listed only to people who may use them: wrap the server's
     # tools/list handler to drop them for everyone else.

@@ -14,6 +14,7 @@ import os
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from backend import config
 from backend.db import get_db, get_session, is_simulated
@@ -56,8 +57,11 @@ def photo_links() -> photos_mod.PhotoLinks:
 
 def ingest_photo(m: Maintenance, target_id: str, raw: bytes, caption: str = "", via: str = "app") -> dict:
     """Clean, store and record one photo. Returns the photo and any location
-    it carried (offered, never stored on the photo)."""
+    it carried (offered, never stored on the photo). Blocks: call it off the
+    event loop."""
     m.photo_target(target_id)
+    m.check_limits()
+    m.check_photo_quota()
     cleaned = photos_mod.clean(raw)
     photo_id = new_id()
     store = get_photo_store()
@@ -69,6 +73,24 @@ def ingest_photo(m: Maintenance, target_id: str, raw: bytes, caption: str = "", 
         store.delete(photo_id)
         raise
     return {"photo": photo, "location_offer": cleaned["gps"]}
+
+
+def remove_photo(m: Maintenance, photo_id: str) -> dict:
+    """Remove a photo from what it shows, and delete its stored bytes (the
+    history keeps that it was there)."""
+    m.remove_photo(photo_id)
+    get_photo_store().delete(photo_id)
+    return {"removed": photo_id}
+
+
+def served_photo(m: Maintenance, photo_id: str, size: str) -> bytes | None:
+    """A photo's bytes, if it's in this workspace and hasn't been removed."""
+    try:
+        if m.photo(photo_id).get("removed"):
+            return None
+    except NotFound:
+        return None
+    return get_photo_store().get(photo_id, "full" if size == "full" else "thumb")
 
 
 async def _read_body(request: Request) -> bytes:
@@ -120,6 +142,8 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
     except LimitReached as err:
         return JSONResponse(status_code=err.status, content={"detail": str(err)})
+    except photos_mod.Busy as err:
+        return JSONResponse(status_code=503, content={"detail": str(err)}, headers={"Retry-After": "30"})
     except (Invalid, photos_mod.BadPhoto) as err:
         return JSONResponse(status_code=422, content={"detail": str(err)})
 
@@ -587,24 +611,21 @@ async def add_photo(request: Request, target_id: str, caption: str = "",
         raw = await _read_body(request)
     except photos_mod.BadPhoto as err:
         return JSONResponse(status_code=422, content={"detail": str(err)})
-    return _run(ingest_photo, m, target_id, raw, caption[:200], "app")
+    # Decoding is CPU-bound: off the event loop (photos.clean limits how many at once).
+    return await run_in_threadpool(_run, ingest_photo, m, target_id, raw, caption[:200], "app")
 
 
 @router.get("/photos/{photo_id}")
 def get_photo(photo_id: str, size: str = "thumb", m: Maintenance = Depends(maintenance)) -> Response:
-    try:
-        m.photo(photo_id)  # in this workspace
-    except NotFound:
-        return JSONResponse(status_code=404, content={"detail": "Not found."})
-    data = get_photo_store().get(photo_id, "full" if size == "full" else "thumb")
+    data = served_photo(m, photo_id, size)
     if data is None:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
-    return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+    return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=300"})
 
 
 @router.delete("/photos/{photo_id}")
-def remove_photo(photo_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: (m.remove_photo(photo_id), {"removed": photo_id})[1])
+def delete_photo(photo_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(remove_photo, m, photo_id)
 
 
 @router.post("/coordinates")
@@ -623,6 +644,7 @@ def create_photo_link(request: Request, body: dict = Body(...), m: Maintenance =
 
 
 def link_payload(request_or_base, m: Maintenance, target: dict, caption: str = "") -> dict:
+    m.check_limits()
     doc, token = photo_links().create(m.org, m.actor or m.org, target, caption)
     if isinstance(request_or_base, str):
         base = request_or_base
@@ -635,9 +657,46 @@ def link_payload(request_or_base, m: Maintenance, target: dict, caption: str = "
 # ---- the phone upload page (public: the link's token is the credential) ---------------------
 
 def _link_or_none(link_id: str, t: str) -> dict | None:
-    if not config.MAINTENANCE_ENABLED:
+    """The link, if it exists and the token is its own. The id's form and the
+    token are checked before the database is."""
+    if not config.MAINTENANCE_ENABLED or not t or len(t) > 100 or not photos_mod.link_id_ok(link_id):
         return None
     return photo_links().get(link_id, token=t)
+
+
+def _creator_may_write(doc: dict) -> bool:
+    """Whether the person who made the link may still add to its workspace:
+    still allowed Maintenance, and for a team, still a member who may edit in
+    a team that isn't frozen."""
+    from backend.services import billing as billing_service
+
+    db = get_db()
+    uid = doc["uid"]
+    user = {**(db.users.find_one({"_id": uid}) or {}), "uid": uid}
+    if not allowed(user):
+        return False
+    org = doc["org"]
+    if org == uid:
+        return True
+    if not access_service.is_team_owner(org):
+        return False
+    team = next((t for t in access_service.user_teams(db, uid)
+                 if access_service.team_principal(t["_id"]) == org), None)
+    return (team is not None and not access_service.team_frozen(db, team, billing_service)
+            and access_service.member_can_edit(db, user, billing_service))
+
+
+def _open_link(link_id: str, t: str) -> tuple[dict | None, JSONResponse | None]:
+    """The link for a post to it, or the response refusing it."""
+    doc = _link_or_none(link_id, t)
+    if doc is None:
+        return None, JSONResponse(status_code=404, content={"detail": "This link isn't valid."})
+    if photos_mod.PhotoLinks.expired(doc):
+        return None, JSONResponse(status_code=410, content={"detail": "This link has expired. Ask for a new one."})
+    if not _creator_may_write(doc):
+        return None, JSONResponse(status_code=410, content={"detail": "This link can no longer add photos. "
+                                                                         "Ask for a new one."})
+    return doc, None
 
 
 @public_router.get("/photos/up/{link_id}", include_in_schema=False)
@@ -655,33 +714,71 @@ def upload_page(link_id: str, t: str = "") -> HTMLResponse:
     return HTMLResponse(html, headers=headers)
 
 
-@public_router.post("/photos/up/{link_id}", include_in_schema=False)
-async def upload_by_link(link_id: str, request: Request, t: str = "") -> JSONResponse:
-    doc = _link_or_none(link_id, t)
-    if doc is None:
-        return JSONResponse(status_code=404, content={"detail": "This link isn't valid."})
-    problem = photo_links().usable(doc)
-    if problem:
-        return JSONResponse(status_code=410, content={"detail": problem})
+def _reserve(link_id: str, t: str) -> tuple[dict | None, JSONResponse | None]:
+    """Check the link and take one of its places for a photo (blocking: run it
+    off the event loop)."""
+    doc, refused = _open_link(link_id, t)
+    if refused is not None:
+        return None, refused
+    links = photo_links()
+    if not links.reserve(doc["_id"]):
+        problem = links.usable(links.get(doc["_id"]) or doc) or "This link can't take another photo."
+        return None, JSONResponse(status_code=410, content={"detail": problem})
+    return doc, None
+
+
+def _store_by_link(doc: dict, raw: bytes) -> JSONResponse:
+    """Clean, store and record a photo sent through a link whose place is
+    reserved; the place is given back if the photo isn't kept."""
+    links = photo_links()
     try:
-        raw = await _read_body(request)
         m = Maintenance(get_store(), doc["org"], doc["uid"])
         result = ingest_photo(m, doc["target_id"], raw, doc.get("caption", ""), "link")
+    except photos_mod.Busy as err:
+        links.release(doc["_id"])
+        return JSONResponse(status_code=503, content={"detail": str(err)}, headers={"Retry-After": "30"})
+    except LimitReached as err:
+        links.release(doc["_id"])
+        return JSONResponse(status_code=err.status, content={"detail": str(err)})
     except (photos_mod.BadPhoto, Invalid) as err:
+        links.release(doc["_id"])
         return JSONResponse(status_code=422, content={"detail": str(err)})
     except NotFound:
+        links.release(doc["_id"])
         return JSONResponse(status_code=404, content={"detail": "What this link was for no longer exists."})
-    photo_links().add_photo(doc["_id"], result["photo"]["id"], result["location_offer"])
+    except BaseException:
+        links.release(doc["_id"])
+        raise
+    links.add_photo(doc["_id"], result["photo"]["id"], result["location_offer"])
     return JSONResponse(content={"photo_id": result["photo"]["id"], "location_offer": result["location_offer"],
                                  "target_name": doc["target_name"]})
+
+
+@public_router.post("/photos/up/{link_id}", include_in_schema=False)
+async def upload_by_link(link_id: str, request: Request, t: str = "") -> JSONResponse:
+    if not config.MAINTENANCE_ENABLED or not t or not photos_mod.link_id_ok(link_id):
+        return JSONResponse(status_code=404, content={"detail": "This link isn't valid."})
+    # Database work and decoding block: both run off the event loop.
+    doc, refused = await run_in_threadpool(_reserve, link_id, t)
+    if refused is not None:
+        return refused
+    try:
+        raw = await _read_body(request)
+    except photos_mod.BadPhoto as err:
+        await run_in_threadpool(lambda: photo_links().release(doc["_id"]))
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+    except BaseException:
+        await run_in_threadpool(lambda: photo_links().release(doc["_id"]))
+        raise
+    return await run_in_threadpool(_store_by_link, doc, raw)
 
 
 @public_router.post("/photos/up/{link_id}/location", include_in_schema=False)
 def answer_location(link_id: str, t: str = "", body: dict = Body(...)) -> JSONResponse:
     """The uploader's answer: save this photo's location as where the equipment is, or not."""
-    doc = _link_or_none(link_id, t)
-    if doc is None:
-        return JSONResponse(status_code=404, content={"detail": "This link isn't valid."})
+    doc, refused = _open_link(link_id, t)
+    if refused is not None:
+        return refused
     save = bool(body.get("save"))
     offer = photo_links().answer(doc["_id"], str(body.get("photo_id") or ""), "saved" if save else "declined")
     if offer is None:
