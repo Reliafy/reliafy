@@ -168,6 +168,219 @@ def _dicts(value, what: str, limit: int = MAX_LIST) -> list[dict]:
     return items
 
 
+# ---- dates known only roughly, costs, warranties, links ----------------------------
+# A date can carry its precision: exact (the day is known), month or year (known to
+# the month or year: stored as the period's first day, shown as "Mar 2022" or
+# "2022"), or estimated (a best guess, shown as "~Mar 2022", taken as within
+# ESTIMATE_MONTHS either side). Life data turns an uncertain fitment into a range.
+
+DATE_PRECISIONS = ("exact", "month", "year", "estimated")
+ESTIMATE_MONTHS = 3
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _precision(value, what: str = "date") -> str | None:
+    """A date's precision from a request, or None when not given."""
+    if value in (None, ""):
+        return None
+    if value not in DATE_PRECISIONS:
+        raise Invalid(f"The {what}'s precision is one of {', '.join(DATE_PRECISIONS)}.")
+    return value
+
+
+def dated(value, precision=None, what: str = "date") -> tuple[str, str]:
+    """A date and its precision from a request: (ISO day, precision). The date may
+    be "2022" or "2022-03" (precision year or month, unless said otherwise) or a
+    full date; today when not given. A month or year is stored as its first day."""
+    precision = _precision(precision, what)
+    text = str(value or "").strip()
+    if not text:
+        return _day(None, what), precision or "exact"
+    parts = text[:10].split("-")
+    if len(text) == 4 and text.isdigit():
+        shown = "year"
+    elif len(text) == 7 and len(parts) == 2 and all(x.isdigit() for x in parts):
+        shown = "month"
+    else:
+        shown = "exact"
+    precision = precision or shown
+    if shown != "exact" and precision in ("exact", "estimated"):
+        if precision == "exact":
+            raise Invalid(f"An exact {what} needs the day, like 2022-03-15; for a month or a year, "
+                          "give the precision month or year.")
+        if shown == "year":
+            raise Invalid(f"For a {what} known only to the year, give the precision year.")
+        text += "-15"  # an estimate to the month: its middle
+    elif shown == "year":
+        text += "-01-01"
+    elif shown == "month":
+        text += "-01"
+    day = _day(text, what)
+    if precision == "year":
+        day = day[:4] + "-01-01"
+    elif precision == "month":
+        day = day[:7] + "-01"
+    return day, precision
+
+
+def date_range(day: str, precision: str | None) -> tuple[date, date]:
+    """The earliest and latest day a date with this precision can be."""
+    d = date.fromisoformat(day)
+    if precision == "year":
+        return d.replace(month=1, day=1), d.replace(month=12, day=31)
+    if precision == "month":
+        first = d.replace(day=1)
+        return first, first + relativedelta(months=1) - timedelta(days=1)
+    if precision == "estimated":
+        return d - relativedelta(months=ESTIMATE_MONTHS), d + relativedelta(months=ESTIMATE_MONTHS)
+    return d, d
+
+
+def date_text(day: str | None, precision: str | None) -> str | None:
+    """A date as it's known: "2022", "Mar 2022", "~Mar 2022", or the day."""
+    if not day:
+        return None
+    month = _MONTHS[int(day[5:7]) - 1]
+    if precision == "year":
+        return day[:4]
+    if precision == "month":
+        return f"{month} {day[:4]}"
+    if precision == "estimated":
+        return f"~{month} {day[:4]}"
+    return f"{int(day[8:10])} {month} {day[:4]}"
+
+
+def _dated_value(value, what: str) -> dict | None:
+    """An item's date (purchase, in service, manufacture): {date, precision, source}
+    from a date text or an object with them; None (or {}) clears it."""
+    if value in (None, "", {}):
+        return None
+    if isinstance(value, str):
+        value = {"date": value}
+    if not isinstance(value, dict):
+        raise Invalid(f"The {what} is a date, or {{date, precision, source}}.")
+    if not value.get("date"):
+        raise Invalid(f"The {what} needs a date (2022, 2022-03 or 2022-03-15).")
+    day, precision = dated(value.get("date"), value.get("precision"), what)
+    if day > date.today().isoformat():
+        raise Invalid(f"The {what} can't be in the future.")
+    return {"date": day, "precision": precision, "source": _text(value.get("source"), f"{what}'s source")}
+
+
+def _check_order(start: str, start_precision, end: str, end_precision) -> None:
+    """Refuse an end that can't be after the start, whatever the precisions allow."""
+    if date_range(end, end_precision)[1] < date_range(start, start_precision)[0]:
+        raise Invalid("It can't come out before it went in.")
+
+
+def _dated_view(value: dict | None) -> dict | None:
+    return value and {**value, "display": date_text(value["date"], value.get("precision"))}
+
+
+def _currency(value) -> str:
+    text = str(value or "").strip().upper()
+    if text and not (len(text) == 3 and text.isalpha() and text.isascii()):
+        raise Invalid("The currency is a three-letter code, like AUD, USD or EUR.")
+    return text
+
+
+def _cost_value(value, what: str = "replacement cost") -> dict | None:
+    """A replacement cost: {amount, currency, source, as_of}; None (or {}) clears it."""
+    if value in (None, "", {}):
+        return None
+    if not isinstance(value, dict):
+        raise Invalid(f"The {what} is {{amount, currency, source, as_of}}.")
+    if value.get("amount") in (None, ""):
+        raise Invalid(f"The {what} needs an amount.")
+    as_of = _day(value.get("as_of"), f"{what}'s as-of date")
+    if as_of > date.today().isoformat():
+        raise Invalid(f"The {what}'s as-of date can't be in the future.")
+    return {"amount": _number(value["amount"], what, 0, MAX_AMOUNT), "currency": _currency(value.get("currency")),
+            "source": _text(value.get("source"), f"{what}'s source"), "as_of": as_of}
+
+
+WARRANTY_FIELDS = ("ends_on", "terms", "coverage", "registration_required", "registered", "register_by")
+
+
+def _flag_value(value, what: str) -> bool:
+    if value in (None, ""):
+        return False
+    if isinstance(value, bool):
+        return value
+    if str(value).strip().lower() in ("true", "yes", "1"):
+        return True
+    if str(value).strip().lower() in ("false", "no", "0"):
+        return False
+    raise Invalid(f"{what} is true or false.")
+
+
+def _warranty_value(value) -> dict | None:
+    """A warranty: when it ends, its terms and what it covers, and whether it must be
+    registered (and by when) and has been. None (or {}) clears it."""
+    if value in (None, "", {}):
+        return None
+    if not isinstance(value, dict):
+        raise Invalid("The warranty is {ends_on, terms, coverage, registration_required, registered, register_by}.")
+    if not value.get("ends_on"):
+        raise Invalid("The warranty needs the date it ends on.")
+    out = {"ends_on": _day(value["ends_on"], "warranty's end date"),
+           "terms": _text(value.get("terms"), "warranty's terms", max_len=LONG_TEXT),
+           "coverage": _text(value.get("coverage"), "warranty's coverage", max_len=1000),
+           "registration_required": _flag_value(value.get("registration_required"), "registration_required"),
+           "registered": _flag_value(value.get("registered"), "registered"),
+           "register_by": _day(value["register_by"], "registration date") if value.get("register_by") else None}
+    if out["register_by"] and not out["registration_required"]:
+        out["registration_required"] = True
+    return out
+
+
+def warranty_view(w: dict | None, on: str | None = None) -> dict | None:
+    """A warranty with where it stands on ``on`` (today): in warranty or not, and any
+    registration still to do."""
+    if not w:
+        return None
+    on = on or date.today().isoformat()
+    due = w["register_by"] if w.get("registration_required") and not w.get("registered") else None
+    in_warranty = w["ends_on"] >= on
+    words = [f"In warranty until {date_text(w['ends_on'], 'exact')}" if in_warranty
+             else f"Warranty ended {date_text(w['ends_on'], 'exact')}"]
+    if w.get("registration_required") and not w.get("registered"):
+        words.append(f"registration due by {date_text(due, 'exact')}" if due else "registration still to do")
+    return {**w, "in_warranty": in_warranty, "registration_due": due,
+            "registration_overdue": bool(due and due < on and in_warranty), "summary": "; ".join(words) + "."}
+
+
+DOCUMENT_KINDS = ("manual", "datasheet", "invoice", "drawing", "certificate", "other")
+MAX_DOCUMENTS = 20_000  # per organisation
+MAX_DOCUMENTS_EACH = 100  # on one item, position or class
+MAX_URL = 2000
+
+
+def _url(value) -> str:
+    """A document link: an http(s) web address, nothing else (no javascript:, data:,
+    file: or the like), with no spaces, control characters or user name in it."""
+    from urllib.parse import urlsplit
+
+    text = str(value or "").strip()
+    if not text:
+        raise Invalid("The document's link (URL) is required.")
+    if len(text) > MAX_URL:
+        raise Invalid(f"The link is at most {MAX_URL} characters.")
+    if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in text):
+        raise Invalid("The link can't contain spaces or control characters.")
+    try:
+        parts = urlsplit(text)
+        host = parts.hostname
+    except ValueError:
+        raise Invalid("That link isn't a web address.")
+    if parts.scheme.lower() not in ("http", "https") or not host:
+        raise Invalid("A document link is a web address starting http:// or https://, "
+                      "like https://example.com/manual.pdf.")
+    if "@" in parts.netloc:
+        raise Invalid("The link can't carry a user name or password.")
+    return text
+
+
 def add_interval(day: str, interval: float, unit: str) -> str | None:
     """``day`` plus ``interval`` calendar units, or None for a unit of use
     (hours, cycles, km), which needs a meter to schedule. None too when the
@@ -319,7 +532,7 @@ def _flag(field: str):
 
 
 def _fitment_corrected(s: GraphStore, org: str, p: dict) -> None:
-    s.patch_node(org, p["id"], {k: p[k] for k in ("from", "to") if k in p})
+    s.patch_node(org, p["id"], {k: p[k] for k in ("from", "to", "from_precision", "to_precision") if k in p})
 
 
 def _work_order_cancelled(s: GraphStore, org: str, p: dict) -> None:
@@ -341,8 +554,10 @@ def _item_placed(s: GraphStore, org: str, p: dict) -> None:
 
 
 def _item_fitted(s: GraphStore, org: str, p: dict) -> None:
+    # from_precision only when the start isn't an exact day (older events have none).
     s.put_node(org, p["fitment_id"], "Fitment", {"from": p["on"], "to": None, "end_reason": None,
-                                                 "failure_mode_id": None})
+                                                 "failure_mode_id": None}
+               | ({"from_precision": p["from_precision"]} if p.get("from_precision") else {}))
     s.put_edge(org, "IN", p["item_id"], p["fitment_id"])
     s.put_edge(org, "AT", p["fitment_id"], p["position_id"])
     # A new item is a renewal: the position's tasks count from the day it went in.
@@ -353,7 +568,8 @@ def _item_fitted(s: GraphStore, org: str, p: dict) -> None:
 
 def _item_removed(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["fitment_id"], {"to": p["on"], "end_reason": p["reason"],
-                                        "failure_mode_id": p.get("failure_mode_id")})
+                                        "failure_mode_id": p.get("failure_mode_id")}
+                 | ({"to_precision": p["to_precision"]} if p.get("to_precision") else {}))
 
 
 def _fitment_added(s: GraphStore, org: str, p: dict) -> None:
@@ -430,6 +646,10 @@ def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
         "checklist": [{"text": t, "done": False} for t in (task or {}).get("checklist") or []],
         "status_history": [{"status": "open", "on": p["on"]}],
     })
+    # So does the trade the work needs, unless the work order names its own.
+    trade = p.get("trade") or (task or {}).get("trade")
+    if trade:
+        s.patch_node(org, p["id"], {"trade": trade})
     s.put_edge(org, "ON", p["id"], p["position_id"])
     if p.get("task_id"):
         s.put_edge(org, "FOR", p["id"], p["task_id"])
@@ -680,6 +900,23 @@ def _class_costs_set(s: GraphStore, org: str, p: dict) -> None:
     _class_upsert(s, org, p, {k: p.get(k) for k in ("planned_cost", "failure_cost", "availability_target")})
 
 
+def _class_updated(s: GraphStore, org: str, p: dict) -> None:
+    """class.updated: plain field changes on a class (its default replacement cost)."""
+    _class_upsert(s, org, p, p["changes"])
+
+
+def _document_added(s: GraphStore, org: str, p: dict) -> None:
+    """A link to a document (a manual, a datasheet, an invoice) on an item, a
+    position, or a position class (named, like the class's other events)."""
+    target = p.get("target_id")
+    if p.get("class_name"):
+        _class_upsert(s, org, {"name": p["class_name"]}, {})
+        target = class_id(org, p["class_name"])
+    s.put_node(org, p["id"], "Document", {"title": p["title"], "url": p["url"], "kind": p["kind"],
+                                          "added_on": p["on"], "removed": False})
+    s.put_edge(org, "OF", p["id"], target)
+
+
 def _class_model_fitted(s: GraphStore, org: str, p: dict) -> None:
     _class_upsert(s, org, p, {"model": {k: p.get(k) for k in (
         "model_id", "distribution", "params", "extras", "unit", "fitted_on", "failures", "suspensions")}})
@@ -799,6 +1036,9 @@ PROJECTORS = {
     "note.appended": _note_appended,
     "class.costs_set": _class_costs_set,
     "class.model_fitted": _class_model_fitted,
+    "class.updated": _class_updated,
+    "document.added": _document_added,
+    "document.removed": _flag("removed"),
     "proposal.made": _proposal_made,
     "proposal.decided": _proposal_decided,
     "interface.added": _interface_added,
@@ -1006,7 +1246,12 @@ class Maintenance:
     # ---- items, fitments, placements --------------------------------------------
 
     def create_item(self, name, serial="", part_number="", manufacturer="", notes="", model="",
-                    nameplate=None) -> dict:
+                    nameplate=None, **details) -> dict:
+        """A new item. ``details``: any of ITEM_DETAILS (dates, replacement cost,
+        warranty), as update_item takes them."""
+        details = {k: v for k, v in details.items() if k in self.ITEM_DETAILS and v not in (None, "", {})}
+        for key, value in details.items():
+            self.ITEM_DETAILS[key](value)  # checked before anything is written
         self._quota("Item", MAX_ITEMS)
         iid = new_id()
         self._emit("item.created", {
@@ -1014,8 +1259,8 @@ class Maintenance:
             "part_number": _text(part_number, "part number"), "manufacturer": _text(manufacturer, "manufacturer"),
             "model": _text(model, "model"), "notes": _text(notes, "notes"), "on": date.today().isoformat(),
         })
-        if nameplate:
-            self.update_item(iid, nameplate=nameplate)
+        if nameplate or details:
+            self.update_item(iid, nameplate=nameplate, **details)
         return self._get(iid, "Item")
 
     def _item_from(self, item_id=None, new_item=None) -> str:
@@ -1027,7 +1272,7 @@ class Maintenance:
         if new_item:
             return self.create_item(**{k: new_item.get(k) for k in
                                        ("name", "serial", "part_number", "manufacturer", "notes", "model",
-                                        "nameplate")})["id"]
+                                        "nameplate", *self.ITEM_DETAILS)})["id"]
         raise Invalid("Say which item: an existing one, or a new one with a name.")
 
     def place_item(self, item_id: str, location_id: str, on=None) -> dict:
@@ -1065,32 +1310,36 @@ class Maintenance:
     def _current_fitment_of_item(self, item_id: str) -> dict | None:
         return next((f for f in self._fitments_of(item_id) if f.get("to") is None), None)
 
-    def fit(self, position_id: str, item_id=None, new_item=None, on=None) -> dict:
-        """Fit an item to an empty position (a first install, or after a removal)."""
+    def fit(self, position_id: str, item_id=None, new_item=None, on=None, from_precision=None) -> dict:
+        """Fit an item to an empty position (a first install, or after a removal).
+        ``on`` may be known only roughly: "2022", "2022-03", or a day with
+        from_precision estimated."""
         self._get(position_id, "Position")
         if self.current_fitment(position_id):
             raise Invalid("Something is already fitted here. Replace it through a work order, "
                           "or remove it first.")
+        day, precision = dated(on, from_precision, "fitted date")
         iid = self._item_from(item_id, new_item)
-        day = _day(on)
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": iid, "position_id": position_id, "on": day,
-                                   "task_readings": self._renewal_readings(position_id, day)})
+                                   "task_readings": self._renewal_readings(position_id, day)}
+                   | ({"from_precision": precision} if precision != "exact" else {}))
         return self.position(position_id)
 
-    def remove(self, position_id: str, on=None, reason=None, failure_mode_id=None, failure_mode_text=None) -> dict:
+    def remove(self, position_id: str, on=None, reason=None, failure_mode_id=None, failure_mode_text=None,
+               to_precision=None) -> dict:
         """Take the fitted item out, with no work order (a correction, or an item
         moved elsewhere). A failure names its mode by id, or in words
         (failure_mode_text: the position's mode of that name, or a new ad-hoc one)."""
         current = self.current_fitment(position_id)
         if current is None:
             raise Invalid("Nothing is fitted here.")
-        day = _day(on)
-        if day < current["from"]:
-            raise Invalid("It can't come out before it went in.")
+        day, precision = dated(on, to_precision, "removal date")
+        _check_order(current["from"], current.get("from_precision"), day, precision)
         ref = self._mode_ref(position_id, failure_mode_id, failure_mode_text)
         reason = _end_reason(reason, ref)
         self._emit("item.removed", {"fitment_id": current["id"], "on": day, "reason": reason,
-                                    "failure_mode_id": self._mode_id(position_id, ref)})
+                                    "failure_mode_id": self._mode_id(position_id, ref)}
+                   | ({"to_precision": precision} if precision != "exact" else {}))
         return self.position(position_id)
 
     # ---- failure modes: from RCM, added by hand, or typed in at a failure ----------
@@ -1337,7 +1586,7 @@ class Maintenance:
             "interval": task["interval"], "unit": task["unit"],
             "also_interval": task.get("also_interval"), "also_unit": task.get("also_unit"),
             "instructions": task.get("instructions", ""), "checklist": task.get("checklist") or [],
-            "last_done": task.get("last_done"), "last_done_reading": task.get("last_done_reading"),
+            "trade": task.get("trade", ""), "last_done": task.get("last_done"), "last_done_reading": task.get("last_done_reading"),
             "limits": limits, "next_due": nxt, "by_use": not _is_calendar(task["unit"]),
             "overdue": bool(nxt and nxt < date.today().isoformat()),
             "open_work_order": open_wo and {"id": open_wo["id"], "number": open_wo["number"]},
@@ -1765,19 +2014,22 @@ class Maintenance:
         return 1 + max((w.get("number", 0) for w in self.s.nodes(self.org, "WorkOrder")), default=0)
 
     def open_work_order(self, position_id: str, title, type="corrective", task_id=None, due=None,
-                        notes="") -> dict:
+                        notes="", trade=None) -> dict:
+        """Open a work order. trade: who may do the work ("licensed electrician"); from a
+        task, the task's trade unless one is given."""
         self._get(position_id, "Position")
         if type not in WORK_ORDER_TYPES:
             raise Invalid(f"The type is one of {', '.join(WORK_ORDER_TYPES)}.")
         if task_id:
             self._get(task_id, "Task")
+        trade = _text(trade, "trade")
         wid = new_id()
         self._emit("work_order.opened", {
             "id": wid, "number": self._next_number(), "title": _text(title, "title", required=True),
             "type": type, "position_id": position_id, "task_id": task_id or None,
             "due": _day(due, "due date") if due else None, "notes": _text(notes, "notes"),
             "on": date.today().isoformat(),
-        })
+        } | ({"trade": trade} if trade else {}))
         return self.work_order(wid)
 
     def generate_work_orders(self, horizon_days: int = 30) -> list[dict]:
@@ -1854,16 +2106,32 @@ class Maintenance:
     # Mistakes are fixed with events too, so the history shows what changed.
 
     ITEM_FIELDS = ("name", "serial", "part_number", "manufacturer", "model", "notes")
+    # Structured details, each checked by its function; None (or {}) clears one.
+    ITEM_DETAILS = {
+        "purchase_date": lambda v: _dated_value(v, "purchase date"),
+        "in_service_date": lambda v: _dated_value(v, "in-service date"),
+        "manufacture_date": lambda v: _dated_value(v, "manufacture date"),
+        "replacement_cost": _cost_value,
+        "warranty": _warranty_value,
+    }
 
     def update_item(self, item_id: str, nameplate: dict | None = None, append_note=None, **changes) -> dict:
         """Change an item's details: name, serial, part number, manufacturer, model,
         notes, and nameplate fields (ratings, year, anything on the plate: merged in;
         a field set to "" is removed). ``notes`` replaces the whole note; ``append_note``
-        adds a dated line to the end of it. Every version is kept in note_history."""
+        adds a dated line to the end of it. Every version is kept in note_history.
+        And its structured details (ITEM_DETAILS): purchase, in-service and manufacture
+        dates with their precision and source, replacement cost, warranty; given as
+        None, each is cleared."""
         item = self._get(item_id, "Item")
         if changes.get("notes") is not None and str(changes["notes"]).strip() == (item.get("notes") or ""):
             changes.pop("notes")  # unchanged (a form sending everything back)
         out = {k: _text(v, k) for k, v in changes.items() if k in self.ITEM_FIELDS and v is not None}
+        for key, check in self.ITEM_DETAILS.items():
+            if key in changes:
+                value = check(changes[key])
+                if value != item.get(key):
+                    out[key] = value
         if "name" in out and not out["name"]:
             raise Invalid("The item's name is required.")
         if nameplate:
@@ -1929,19 +2197,22 @@ class Maintenance:
         self._emit("fitment.voided", {"id": fitment_id, "on": date.today().isoformat(),
                                       "reason": _text(reason, "reason")})
 
-    def correct_fitment(self, fitment_id: str, start=None, end=None) -> dict:
-        """Correct the dates an item went in (start) or came out (end)."""
+    def correct_fitment(self, fitment_id: str, start=None, end=None, from_precision=None, to_precision=None) -> dict:
+        """Correct the dates an item went in (start) or came out (end), and how well
+        each is known (from_precision, to_precision: exact, month, year, estimated).
+        A precision on its own re-reads the date already there at that precision."""
         f = self._get(fitment_id, "Fitment")
         changes = {}
-        if start:
-            changes["from"] = _day(start, "start date")
-        if end:
+        if start or from_precision:
+            changes["from"], changes["from_precision"] = dated(start or f["from"], from_precision, "start date")
+        if end or to_precision:
             if f.get("to") is None:
                 raise Invalid("It's still fitted: remove it, or close a work order, to end it.")
-            changes["to"] = _day(end, "end date")
+            changes["to"], changes["to_precision"] = dated(end or f["to"], to_precision, "end date")
         new_from, new_to = changes.get("from", f["from"]), changes.get("to", f.get("to"))
-        if new_to and new_to < new_from:
-            raise Invalid("It can't come out before it went in.")
+        if new_to:
+            _check_order(new_from, changes.get("from_precision", f.get("from_precision")),
+                         new_to, changes.get("to_precision", f.get("to_precision")))
         if changes:
             self._emit("fitment.corrected", {"id": fitment_id, **changes})
         return self._fitment_view(self._get(fitment_id, "Fitment"))
@@ -2008,10 +2279,10 @@ class Maintenance:
         return f"{name}{serial}, fitted {where} {when}"
 
     def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None,
-                          assignee=None, planned_for=None, append_note=None) -> dict:
+                          assignee=None, planned_for=None, append_note=None, trade=None) -> dict:
         """Change an open work order. ``notes`` replaces the whole note; ``append_note``
         adds a dated line to the end of it (on any work order, closed or cancelled too).
-        Every version is kept in note_history."""
+        Every version is kept in note_history. trade: who may do the work."""
         wo = self._get(work_order_id, "WorkOrder")
         if notes is not None and str(notes).strip() == (wo.get("notes") or ""):
             notes = None  # unchanged (a form sending everything back)
@@ -2034,6 +2305,8 @@ class Maintenance:
             changes["assignee"] = _text(assignee, "assignee")[:120]
         if planned_for is not None:
             changes["planned_for"] = _day(planned_for, "planned date") if planned_for else None
+        if trade is not None:
+            changes["trade"] = _text(trade, "trade")
         appended = self._note_to_append({**wo, **changes}, append_note)
         if changes:
             self._emit("work_order.updated", {"id": work_order_id, "changes": changes,
@@ -2264,11 +2537,12 @@ class Maintenance:
 
     def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
                     also_unit=None, point_id=None, instructions=None, checklist=None, failure_mode_id=None,
-                    source=None, reference=None, outcome=...) -> dict:
+                    source=None, reference=None, outcome=..., trade=None) -> dict:
         """Change a task. also_interval / also_unit add a second limit, whichever comes
         first (500 hours or 6 months); also_interval 0 removes it. point_id picks the
         meter a task by use goes by (otherwise the position's meter in its unit).
-        failure_mode_id links it to a failure mode on its position ('' unlinks)."""
+        failure_mode_id links it to a failure mode on its position ('' unlinks).
+        trade: who may do it ("licensed electrician"); its work orders carry it."""
         task = self._get(task_id, "Task")
         if task.get("retired"):
             raise Invalid("That task has been retired.")
@@ -2281,6 +2555,8 @@ class Maintenance:
             changes["instructions"] = _text(instructions, "instructions")[:4000]
         if checklist is not None:
             changes["checklist"] = _checklist(checklist)
+        if trade is not None:
+            changes["trade"] = _text(trade, "trade")
         if name is not None:
             changes["name"] = _text(name, "task's name", required=True)
         if unit is not None:
@@ -2363,11 +2639,20 @@ class Maintenance:
         here = next((p for p in placements if p.get("to") is None), None)
         location = here and self.s.out(self.org, here["id"], "AT")
         own = [c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
+        fitted_to = current and self._fitment_view(current)["position"]
+        position = fitted_to and self.s.node(self.org, fitted_to["id"])
+        cls = (position or {}).get("position_class", "").strip()
+        class_cost = cls and (self.s.node(self.org, class_id(self.org, cls)) or {}).get("replacement_cost")
         return {
             **{k: item.get(k, "") for k in self.ITEM_FIELDS}, "id": id, "nameplate": item.get("nameplate") or {},
             "note_history": item.get("note_history") or [],
             "created": item.get("created"), "coordinates": item.get("coordinates"),
-            "fitted_to": current and self._fitment_view(current)["position"],
+            **{k: _dated_view(item.get(k)) for k in ("purchase_date", "in_service_date", "manufacture_date")},
+            "replacement_cost": item.get("replacement_cost"),
+            "class_replacement_cost": class_cost and {**class_cost, "position_class": cls},
+            "warranty": warranty_view(item.get("warranty")),
+            "documents": self.documents_of(id),
+            "fitted_to": fitted_to,
             "location": location and {"id": location[0]["id"], "name": location[0]["name"]},
             "history": [self._fitment_view(f) for f in fitments],
             "placements": [{"from": p["from"], "to": p.get("to"),
@@ -2426,6 +2711,8 @@ class Maintenance:
                 node = self.s.node(self.org, class_id(self.org, name)) or {}
                 entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target")}
                 entry["model"] = node.get("model")
+                entry["replacement_cost"] = node.get("replacement_cost")
+                entry["documents"] = self.documents_of(class_id(self.org, name))
             entry["positions"] += 1
             for f in self._fitments_at(p["id"]):
                 entry["fitments"] += 1
@@ -2439,10 +2726,7 @@ class Maintenance:
         """What a planned replacement and a failure cost for this class of position,
         and the availability a hidden (protective) function must reach: what the
         proposed intervals are optimised against."""
-        name = _text(position_class, "class", required=True)
-        if not any((p.get("position_class") or "").strip().lower() == name.lower()
-                   for p in self.s.nodes(self.org, "Position")):
-            raise NotFound(name)
+        name = self._class_name(position_class)
         node = self.s.node(self.org, class_id(self.org, name)) or {}
         out = {}
         for key, value in (("planned_cost", planned_cost), ("failure_cost", failure_cost),
@@ -2457,6 +2741,23 @@ class Maintenance:
         if out["availability_target"] is not None and not (0 < out["availability_target"] < 1):
             raise Invalid("The availability target is between 0 and 1, e.g. 0.99.")
         self._emit("class.costs_set", {"id": class_id(self.org, name), "name": name, **out})
+        return self.position_class(name)
+
+    def _class_name(self, position_class) -> str:
+        """A class some position has (case and spacing aside), or NotFound."""
+        name = _text(position_class, "class", required=True)
+        if not any((p.get("position_class") or "").strip().lower() == name.lower()
+                   for p in self.s.nodes(self.org, "Position")):
+            raise NotFound(name)
+        return name
+
+    def set_class_replacement_cost(self, position_class: str, replacement_cost) -> dict:
+        """What an item doing this class's job costs to replace ({amount, currency,
+        source, as_of}): the default for items with no replacement cost of their own.
+        None clears it."""
+        name = self._class_name(position_class)
+        self._emit("class.updated", {"id": class_id(self.org, name), "name": name,
+                                     "changes": {"replacement_cost": _cost_value(replacement_cost)}})
         return self.position_class(name)
 
     def position_class(self, position_class: str) -> dict:
@@ -2520,7 +2821,8 @@ class Maintenance:
                                 for p in self.s.nodes(self.org, "Position")):
             raise NotFound(position_class)
         return {"position_class": position_class, "rows": sorted(rows, key=lambda r: r["from"]),
-                "failures": sum(1 for r in rows if r["c"] == 0), "suspensions": sum(1 for r in rows if r["c"] == 1)}
+                "failures": sum(1 for r in rows if r["c"] != 1), "suspensions": sum(1 for r in rows if r["c"] == 1),
+                "uncertain": sum(1 for r in rows if "xl" in r)}
 
     # ---- interfaces and redundancy ----------------------------------------------------
 
@@ -2683,6 +2985,59 @@ class Maintenance:
                     f"{len(downstream)} position{'s' if len(downstream) != 1 else ''} downstream lose their supply"
                     if downstream else "nothing downstream is connected to it") + ".")}
 
+    # ---- documents: links to manuals, datasheets, invoices -----------------------------
+
+    def _document_target(self, target_id=None, position_class=None) -> tuple[dict, str]:
+        """What a document is for, as the event names it, and its node's id."""
+        if bool(target_id) == bool(position_class):
+            raise Invalid("Say what the document is for: an item or position (target_id), or a class of "
+                          "position (position_class).")
+        if position_class:
+            name = self._class_name(position_class)
+            return {"class_name": name}, class_id(self.org, name)
+        node = self.s.node(self.org, str(target_id))
+        if node is None or node["label"] not in ("Item", "Position"):
+            raise NotFound(target_id)
+        return {"target_id": node["id"]}, node["id"]
+
+    def add_document(self, url, title="", kind="other", target_id=None, position_class=None) -> dict:
+        """A link to a document (a manual, datasheet, invoice, drawing, certificate) on an
+        item, a position, or a class of position. Only http(s) links."""
+        from urllib.parse import urlsplit
+
+        ref, node_id = self._document_target(target_id, position_class)
+        url = _url(url)
+        if kind not in DOCUMENT_KINDS:
+            raise Invalid(f"The kind is one of {', '.join(DOCUMENT_KINDS)}.")
+        parts = urlsplit(url)
+        title = _text(title, "title") or (parts.path.rstrip("/").rsplit("/", 1)[-1] or parts.hostname)[:SHORT_TEXT]
+        if len(self.documents_of(node_id)) >= MAX_DOCUMENTS_EACH:
+            raise LimitReached(f"At most {MAX_DOCUMENTS_EACH} documents on one item, position or class.")
+        if self.limited and sum(1 for d in self.s.nodes(self.org, "Document") if not d.get("removed")) >= MAX_DOCUMENTS:
+            raise LimitReached(f"This maintenance workspace can hold at most {MAX_DOCUMENTS:,} documents.")
+        did = new_id()
+        self._emit("document.added", {"id": did, **ref, "title": title, "url": url, "kind": kind,
+                                      "on": date.today().isoformat()})
+        return self.document(did)
+
+    def remove_document(self, document_id: str) -> dict:
+        if self._get(document_id, "Document").get("removed"):
+            raise Invalid("That document was already removed.")
+        self._emit("document.removed", {"id": document_id, "on": date.today().isoformat()})
+        return {"removed": document_id}
+
+    def document(self, document_id: str) -> dict:
+        d = self._get(document_id, "Document")
+        of = self.s.out(self.org, document_id, "OF")
+        return {k: d.get(k) for k in ("id", "title", "url", "kind", "added_on", "removed")} | {
+            "of": of and {"id": of[0]["id"], "kind": of[0]["label"], "name": of[0].get("name")},
+        }
+
+    def documents_of(self, node_id: str) -> list[dict]:
+        found = [d for d in self.s.inn(self.org, node_id, "OF") if d["label"] == "Document" and not d.get("removed")]
+        found.sort(key=lambda d: (DOCUMENT_KINDS.index(d["kind"]), d["title"].lower(), d["id"]))
+        return [{k: d.get(k) for k in ("id", "title", "url", "kind", "added_on")} for d in found]
+
     # ---- photos and coordinates ------------------------------------------------------
 
     def photo_target(self, node_id: str) -> dict:
@@ -2763,6 +3118,8 @@ class Maintenance:
         fm = f.get("failure_mode_id") and self.s.node(self.org, f["failure_mode_id"])
         return {
             "id": f["id"], "from": f["from"], "to": f.get("to"), "end_reason": f.get("end_reason"),
+            "from_precision": f.get("from_precision") or "exact",
+            "to_precision": (f.get("to_precision") or "exact") if f.get("to") else None,
             "failure_mode": fm and {"id": fm["id"], "text": fm["text"]},
             "item": self._item_brief(item[0] if item else None),
             "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
@@ -2824,6 +3181,7 @@ class Maintenance:
             "groups": self.groups_of(id),
             "rbd_id": p.get("rbd_id"),
             "photos": self.photos_of(id),
+            "documents": self.documents_of(id),
             "item_photos": self.photos_of(fitted["item"]["id"]) if fitted and fitted["item"] else [],
         }
 
@@ -2846,10 +3204,25 @@ class Maintenance:
             node = self._parent(node["id"])
         return list(reversed(out))
 
+    def _warranty_for(self, position_id: str, on: str) -> dict | None:
+        """The warranty of the item fitted to a position on ``on``, if it was in
+        warranty then: the item, and the warranty as it stood that day."""
+        fitments = sorted(self._fitments_at(position_id), key=lambda f: f["from"])
+        for f in fitments:
+            if f["from"] <= on and (f.get("to") is None or f["to"] >= on):
+                item = self.s.inn(self.org, f["id"], "IN")
+                w = item and item[0].get("warranty")
+                if w and w["ends_on"] >= on:
+                    return {"item": self._item_brief(item[0]), **warranty_view(w, on)}
+                return None
+        return None
+
     def _wo_brief(self, w: dict) -> dict:
         position = self.s.out(self.org, w["id"], "ON")
         return {k: w.get(k) for k in ("id", "number", "title", "type", "status", "opened", "due", "closed",
                                       "assignee", "planned_for")} | {
+            "trade": w.get("trade", ""),
+            "under_warranty": bool(position and self._warranty_for(position[0]["id"], w["opened"])),
             "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
         }
 
@@ -2891,6 +3264,8 @@ class Maintenance:
             "assignee": w.get("assignee", ""), "planned_for": w.get("planned_for"),
             "instructions": w.get("instructions", ""), "checklist": w.get("checklist") or [],
             "status_history": w.get("status_history") or [],
+            # The item fitted when it was raised, if under warranty then: a claim may cover it.
+            "warranty": self._warranty_for(position_id, w["opened"]),
             **self._wo_costs(id),
         }
 
@@ -2919,20 +3294,40 @@ class Maintenance:
     def life_data(self, position_id: str) -> list[dict]:
         """One row per fitment at this position: its life in days, and whether it
         ended in a failure (``c`` = 0) or not (``c`` = 1: removed on purpose, or
-        still fitted, censored today). Reliafy's censoring convention."""
+        still fitted, censored today). Reliafy's censoring convention.
+
+        A fitment whose start or end is known only roughly (a month, a year, an
+        estimate) has a life between ``xl`` and ``xr`` days, the shortest and longest
+        the dates allow. A failure then is interval censored (``c`` = 2, ``x`` the
+        middle); anything else is censored at the shortest (``x`` = ``xl``), the life
+        it surely reached. Exact rows are as they always were."""
         today = date.today().isoformat()
         rows = []
         for f in self._fitments_at(position_id):
             end = f.get("to") or today
+            failed = f.get("end_reason") == "failure"
             days = (date.fromisoformat(end) - date.fromisoformat(f["from"])).days
+            c, extra = 0 if failed else 1, {}
+            from_p, to_p = f.get("from_precision"), f.get("to") and f.get("to_precision")
+            if from_p not in (None, "exact") or to_p not in (None, "exact"):
+                s_lo, s_hi = date_range(f["from"], from_p)
+                e_lo, e_hi = date_range(end, to_p)
+                s_hi, e_lo = min(s_hi, e_hi), max(e_lo, s_lo)
+                lo = max(0, (e_lo - s_hi).days)
+                hi = max(lo, (e_hi - s_lo).days)
+                if failed and hi > lo:
+                    c, days = 2, round((lo + hi) / 2)
+                else:
+                    days = lo
+                extra = {"xl": lo, "xr": hi, "from_precision": from_p or "exact", "to_precision": to_p or None}
             view = self._fitment_view(f)
             rows.append({
                 "fitment_id": f["id"],
                 "item": view["item"] and view["item"]["name"], "from": f["from"], "to": f.get("to"),
-                "x": days, "c": 0 if f.get("end_reason") == "failure" else 1,
+                "x": days, "c": c,
                 "failure_mode": view["failure_mode"] and view["failure_mode"]["text"],
-                "status": "failed" if f.get("end_reason") == "failure"
-                else "still fitted" if f.get("to") is None else "removed",
+                "status": "failed" if failed else "still fitted" if f.get("to") is None else "removed",
+                **extra,
             })
         return sorted(rows, key=lambda r: r["from"])
 

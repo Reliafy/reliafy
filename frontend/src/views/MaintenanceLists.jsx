@@ -7,6 +7,7 @@ import {
   getClassLifeData,
   getPositionClass,
   setClassCosts,
+  setClassReplacementCost,
   getMaintenanceLocation,
   getPositionClasses,
   adjustMaintenanceStock,
@@ -21,7 +22,10 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
-import { Field, FormModal, LifeTable, MaintenanceTabs, Proposals, fmtDate } from "../components/MaintenanceParts.jsx";
+import {
+  DocumentsCard, Field, FormModal, LifeTable, MaintenanceTabs, Proposals, fmtDate,
+} from "../components/MaintenanceParts.jsx";
+import { costText, costValue } from "../maintenanceFields.js";
 import "./Maintenance.css";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
@@ -235,7 +239,8 @@ export function MaintenanceClasses() {
         <section className="card">
           <div className="maint-head">
             <h2>{open}: pooled life data</h2>
-            {data && <span className="lib-date">{data.failures} failures · {data.suspensions} suspensions</span>}
+            {data && <span className="lib-date">{data.failures} failures · {data.suspensions} suspensions
+              {data.uncertain ? ` · ${data.uncertain} with dates known only roughly (fitted as ranges)` : ""}</span>}
           </div>
           {data === null ? <p className="lib-date">Loading…</p> : <LifeTable rows={data.rows} showPosition />}
         </section>
@@ -308,7 +313,39 @@ function ClassPanel({ name, onChanged }) {
       </section>
       <Proposals proposals={c.proposals} onDecided={load} />
       {model && c.costs?.planned_cost != null && c.costs?.failure_cost != null && <EconomicsCard name={name} />}
+      <ReplacementCostCard name={name} cost={c.replacement_cost} onSaved={(d) => { setC(d); onChanged?.(); }} />
+      <DocumentsCard title={`${name}: documents`} documents={c.documents} target={{ position_class: name }} onChanged={load} />
     </>
+  );
+}
+
+// What an item doing this class's job costs to replace: the default for items with
+// no replacement cost of their own (for renewal planning).
+function ReplacementCostCard({ name, cost, onSaved }) {
+  const [f, setF] = useState({ amount: cost?.amount ?? "", currency: cost?.currency || "", source: cost?.source || "",
+    as_of: cost?.as_of || "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const save = async () => {
+    setBusy(true); setError(null);
+    try { onSaved(await setClassReplacementCost(name, costValue(f))); } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  return (
+    <section className="card">
+      <div className="maint-head"><h2>{name}: replacement cost</h2>
+        <span className="lib-date">{cost ? costText(cost, fmtDate) : "not set"}</span></div>
+      {error && <div className="card error">{error}</div>}
+      <p className="lib-date">The default for items in these positions with no replacement cost of their own.</p>
+      <div className="maint-row" style={{ marginTop: 0 }}>
+        <input type="number" inputMode="decimal" min="0" step="any" placeholder="amount" value={f.amount} style={{ width: "8rem" }}
+               onChange={(e) => setF({ ...f, amount: e.target.value })} />
+        <input placeholder="AUD" maxLength={3} value={f.currency} style={{ width: "5rem" }}
+               onChange={(e) => setF({ ...f, currency: e.target.value.toUpperCase() })} />
+        <input placeholder="source, e.g. list price" value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} />
+        <button className="secondary" onClick={save} disabled={busy}>{busy ? "Saving…" : f.amount === "" ? "Clear" : "Save"}</button>
+      </div>
+    </section>
   );
 }
 

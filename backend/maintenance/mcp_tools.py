@@ -61,6 +61,18 @@ def register() -> None:
         return _tool(name, annotations, title)
 
     DateText = Annotated[str | None, Field(description="A date like 2026-10-13. Default: today.")]
+    Precision = Literal["exact", "month", "year", "estimated"]
+    RoughDate = Annotated[str | None, Field(description=(
+        "A date like 2026-10-13, or 2022-03 / 2022 when only the month or year is known "
+        "(the precision follows). Default: today."))]
+    ItemDate = Annotated[dict[str, str] | None, Field(description=(
+        "{date: '2022' | '2022-03' | '2022-03-15', precision?: exact|month|year|estimated (from the "
+        "date's form if left out; estimated = a guess, e.g. 'about 6 months ago'), source?: where it "
+        "came from, e.g. 'receipt', 'serial date code', \"owner's estimate\"}. Never invent a day: give "
+        "'2022' with precision year rather than 2022-07-01."))]
+    ReplacementCost = Annotated[dict[str, Any] | None, Field(description=(
+        "{amount, currency?: 3-letter code (AUD), source?: e.g. 'supplier quote', as_of?: date of the "
+        "price (default today)}."))]
 
     # ---- reading ---------------------------------------------------------------------
 
@@ -77,10 +89,12 @@ def register() -> None:
     @tool("get_position", _READ, "Read a maintenance position")
     def get_position(position_id: str, ctx: Context) -> dict[str, Any]:
         """One position: its path, the positions inside it, the item fitted now, every
-        past fitment, its failure modes (from RCM, added by hand, or ad hoc: typed in at a
-        failure), class_failure_modes (modes seen at other positions of its class, to offer
-        when it fails), its tasks with last-done and next-due dates, its work orders, and its
-        life data (one row per item fitted: days in service, c = 0 failed or 1 censored)."""
+        past fitment (with from_precision / to_precision when a date is known only roughly),
+        its failure modes (from RCM, added by hand, or ad hoc: typed in at a failure),
+        class_failure_modes (modes seen at other positions of its class, to offer when it
+        fails), its tasks with last-done and next-due dates and the trade each needs, its work
+        orders, its document links, and its life data (one row per item fitted: days in
+        service, c = 0 failed or 1 censored, 2 failed within xl..xr days)."""
         return run(m_for(ctx).position, position_id)
 
     @tool("list_work_orders", _READ, "List work orders")
@@ -92,10 +106,12 @@ def register() -> None:
 
     @tool("get_work_order", _READ, "Read a work order")
     def get_work_order(work_order_id: str, ctx: Context) -> dict[str, Any]:
-        """A work order: its position, task, status and dates, its notes (with note_history:
-        every earlier version), the actions and close_notes recorded when it closed, the
-        cancel_reason if cancelled, and (for an open one) the item fitted now and the
-        position's failure modes, which close_work_order's actions can name."""
+        """A work order: its position, task, status and dates, the trade it needs, its notes (with
+        note_history: every earlier version), the actions and close_notes recorded when it
+        closed, the cancel_reason if cancelled, and (for an open one) the item fitted now and the
+        position's failure modes, which close_work_order's actions can name. warranty is set when
+        the item fitted when it was raised was under warranty then: check the coverage before
+        paying for the work."""
         return run(m_for(ctx).work_order, work_order_id)
 
     @tool("list_maintenance_items", _READ, "List items")
@@ -159,29 +175,34 @@ def register() -> None:
 
     @tool("fit_item", _WRITE, "Fit an item to a position")
     def fit_item(position_id: str, ctx: Context, item_id: str | None = None, item_name: str | None = None,
-                 serial: str = "", part_number: str = "", manufacturer: str = "", on: DateText = None) -> dict[str, Any]:
+                 serial: str = "", part_number: str = "", manufacturer: str = "", on: RoughDate = None,
+                 from_precision: Precision | None = None) -> dict[str, Any]:
         """Fit an item to an empty position: an existing item (item_id), or a new one
         (item_name, with optional serial, part number and manufacturer). 'on' is the
-        date it went in. A new item renews the position's tasks. To replace an item,
-        close a work order with a replace action instead."""
+        date it went in; if it's known only roughly, say so (on '2022', or a day with
+        from_precision 'estimated'): life data then treats its life as a range. A new
+        item renews the position's tasks. To replace an item, close a work order with a
+        replace action instead."""
         new_item = {"name": item_name, "serial": serial, "part_number": part_number,
                     "manufacturer": manufacturer} if item_name else None
-        return run(m_for(ctx).fit, position_id, item_id, new_item, on)
+        return run(m_for(ctx).fit, position_id, item_id, new_item, on, from_precision)
 
     @tool("remove_item", _WRITE, "Remove a fitted item")
-    def remove_item(position_id: str, ctx: Context, on: DateText = None,
+    def remove_item(position_id: str, ctx: Context, on: RoughDate = None,
                     reason: Literal["planned", "failure", "other"] | None = None,
-                    failure_mode_id: str | None = None, failure_mode_text: str | None = None) -> dict[str, Any]:
+                    failure_mode_id: str | None = None, failure_mode_text: str | None = None,
+                    to_precision: Precision | None = None) -> dict[str, Any]:
         """Take the fitted item out of a position with no work order (a correction, or
         moving it). Work done on it belongs on a work order (close_work_order). If it failed,
         name how: failure_mode_id (a mode in get_position), or failure_mode_text in words
         (the position's mode of that name is reused, else an ad-hoc one is added). A failure
         mode with no reason means it failed; with no mode, a planned removal. Recording a
-        failure as planned corrupts the life data, so name a mode whenever it failed."""
-        return run(m_for(ctx).remove, position_id, on, reason, failure_mode_id, failure_mode_text)
+        failure as planned corrupts the life data, so name a mode whenever it failed.
+        to_precision: how well the date is known."""
+        return run(m_for(ctx).remove, position_id, on, reason, failure_mode_id, failure_mode_text, to_precision)
 
     @tool("add_past_fitment", _WRITE, "Add a past fitment to a position's history")
-    def add_past_fitment(position_id: str, start: str, end: str, ctx: Context,
+    def add_past_fitment(position_id: str, start: RoughDate, end: RoughDate, ctx: Context,
                          reason: Literal["planned", "failure", "other"] | None = None,
                          item_id: str | None = None, item_name: str | None = None, serial: str = "",
                          part_number: str = "", manufacturer: str = "", model: str = "",
@@ -252,10 +273,13 @@ def register() -> None:
     @tool("open_work_order", _WRITE, "Open a work order")
     def open_work_order(position_id: str, title: str, ctx: Context,
                         type: Literal["corrective", "preventive", "inspection", "other"] = "corrective",
-                        task_id: str | None = None, due: DateText = None, notes: str = "") -> dict[str, Any]:
+                        task_id: str | None = None, due: DateText = None, notes: str = "",
+                        trade: str | None = None) -> dict[str, Any]:
         """Open a work order on a position: corrective (something's wrong), preventive
-        (usually for a task: task_id), inspection, or other."""
-        return run(m_for(ctx).open_work_order, position_id, title, type, task_id, due, notes)
+        (usually for a task: task_id), inspection, or other. trade: the trade, licence or
+        competency the work needs ('licensed electrician'); a task's work order takes the
+        task's unless given. The result flags warranty if the fitted item is under one."""
+        return run(m_for(ctx).open_work_order, position_id, title, type, task_id, due, notes, trade)
 
     @tool("generate_work_orders", _WRITE, "Create work orders for due tasks")
     def generate_work_orders(ctx: Context, horizon_days: int = 30) -> dict[str, Any]:
@@ -289,7 +313,10 @@ def register() -> None:
     @tool("get_item", _READ, "Read an item")
     def get_item(item_id: str, ctx: Context) -> dict[str, Any]:
         """An item (a physical, serial-numbered thing): details and nameplate fields, notes (with
-        note_history: every earlier version, dated), where it's fitted and placed now, every
+        note_history: every earlier version, dated); purchase, in-service and manufacture dates
+        (each with its precision and source); replacement cost (its own, and its position class's
+        default); warranty (with a summary: in warranty until, registration due by); document
+        links; where it's fitted and placed now, every
         position it has been fitted to, its own positions (an engine's turbos) and its photos."""
         return run(m_for(ctx).item, item_id)
 
@@ -303,15 +330,29 @@ def register() -> None:
                     nameplate: Annotated[dict[str, str] | None, Field(description=(
                         "Other fields from the nameplate, as label: value (e.g. {'Capacity': '315 L', "
                         "'Element': '3.6 kW', 'Year': '2019'}). Merged into what's there; a value of '' "
-                        "removes that field."))] = None) -> dict[str, Any]:
+                        "removes that field."))] = None,
+                    purchase_date: ItemDate = None, in_service_date: ItemDate = None,
+                    manufacture_date: ItemDate = None, replacement_cost: ReplacementCost = None,
+                    warranty: Annotated[dict[str, Any] | None, Field(description=(
+                        "{ends_on: date, terms?: text, coverage?: what it covers, registration_required?: "
+                        "bool, registered?: bool, register_by?: date}. Replaces the whole warranty."))] = None,
+                    clear: Annotated[list[Literal["purchase_date", "in_service_date", "manufacture_date",
+                                                  "replacement_cost", "warranty"]] | None,
+                                     Field(description="Details to remove.")] = None) -> dict[str, Any]:
         """Change an item's details. After reading a nameplate photo (get_photo), put the make in
         manufacturer, the model, the serial, and everything else on the plate in nameplate. Say
         what you read and what you couldn't. To add an observation, use append_note rather than
-        retyping notes; every version of the note is kept in note_history."""
+        retyping notes; every version of the note is kept in note_history. Dates, replacement cost
+        and warranty go in their own fields, not in notes: in_service_date is when it was installed
+        or first used; a date known only roughly keeps its precision (2022 → precision year)."""
+        details = {k: v for k, v in (("purchase_date", purchase_date), ("in_service_date", in_service_date),
+                                     ("manufacture_date", manufacture_date), ("replacement_cost", replacement_cost),
+                                     ("warranty", warranty)) if v is not None}
+        details |= {k: None for k in clear or []}
         return run(m_for(ctx).update_item, item_id, nameplate, append_note,
                    **{k: v for k, v in (("name", name), ("serial", serial), ("part_number", part_number),
                                         ("manufacturer", manufacturer), ("model", model), ("notes", notes))
-                      if v is not None})
+                      if v is not None}, **details)
 
     @tool("move_item", _WRITE, "Move an item to another position")
     def move_item(item_id: str, position_id: str, ctx: Context, on: DateText = None) -> dict[str, Any]:
@@ -328,9 +369,14 @@ def register() -> None:
         return run(lambda: (m.void_fitment(fitment_id, reason), {"voided": fitment_id})[1])
 
     @tool("correct_fitment", _WRITE, "Correct a fitment's dates")
-    def correct_fitment(fitment_id: str, ctx: Context, start: DateText = None, end: DateText = None) -> dict[str, Any]:
-        """Correct the date an item went in (start) or came out (end) of a position."""
-        return run(m_for(ctx).correct_fitment, fitment_id, start, end)
+    def correct_fitment(fitment_id: str, ctx: Context, start: RoughDate = None, end: RoughDate = None,
+                        from_precision: Precision | None = None, to_precision: Precision | None = None
+                        ) -> dict[str, Any]:
+        """Correct the date an item went in (start) or came out (end) of a position, and how
+        well each is known (from_precision / to_precision: exact, month, year, estimated). A
+        precision alone re-reads the date already there (from_precision 'year' turns
+        2022-07-01 into 2022)."""
+        return run(m_for(ctx).correct_fitment, fitment_id, start, end, from_precision, to_precision)
 
     @tool("update_work_order", _WRITE, "Update a work order")
     def update_work_order(work_order_id: str, ctx: Context, title: str | None = None, due: str | None = None,
@@ -339,14 +385,15 @@ def register() -> None:
                           type: Literal["corrective", "preventive", "inspection", "other"] | None = None,
                           assignee: str | None = None, planned_for: str | None = None,
                           append_note: Annotated[str | None, Field(description=(
-                              "A line to add to the end of the notes, dated today; the rest is kept."))] = None
-                          ) -> dict[str, Any]:
+                              "A line to add to the end of the notes, dated today; the rest is kept."))] = None,
+                          trade: str | None = None) -> dict[str, Any]:
         """Change an open work order's title, due date (a date, or '' to clear it), notes, type, who
-        it's assigned to, or the day it's planned for. append_note adds a dated line to the notes
+        it's assigned to, the day it's planned for, or the trade / licence / competency the work
+        needs ('licensed electrician'; '' clears it). append_note adds a dated line to the notes
         (a finding, progress) and works on closed and cancelled work orders too; every version of
         the note is kept in note_history."""
         return run(m_for(ctx).update_work_order, work_order_id, title, due, notes, type, assignee, planned_for,
-                   append_note)
+                   append_note, trade)
 
     @tool("set_work_status", _WRITE, "Move a work order along")
     def set_work_status(work_order_id: str, status: Literal["open", "planned", "in_progress", "waiting"],
@@ -470,19 +517,20 @@ def register() -> None:
                     checklist: list[str] | None = None, failure_mode_id: str | None = None,
                     unlink_failure_mode: bool = False, source: Source | None = None,
                     reference: str | None = None, outcome: Outcome | None = None,
-                    clear_outcome: bool = False) -> dict[str, Any]:
+                    clear_outcome: bool = False, trade: str | None = None) -> dict[str, Any]:
         """Rename a task or change its interval (unit: days, weeks, months, years, or a unit of use
         such as hours, cycles, km, from a counter on the position). also_interval + also_unit
         add a second limit, whichever comes first (every 500 hours or 6 months); also_interval 0
-        removes it. point_id picks the counter a task by use goes by. instructions and checklist (steps to
-        tick off) are copied onto each work order the task raises. failure_mode_id links a task added
-        by hand to a failure mode on its position (one from an RCM study makes it that decision's
-        task: applying the study again updates it); unlink_failure_mode removes the link. source,
+        removes it. point_id picks the counter a task by use goes by. instructions, checklist (steps to
+        tick off) and trade (who may do it: 'licensed electrician', 'gas fitter'; '' clears it) are
+        copied onto each work order the task raises. failure_mode_id links a task added by hand to
+        a failure mode on its position (one from an RCM study makes it that decision's task:
+        applying the study again updates it); unlink_failure_mode removes the link. source,
         reference and outcome (or clear_outcome) apply to tasks added by hand."""
         mode = "" if unlink_failure_mode else failure_mode_id
         return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
                    instructions, checklist, mode, source, reference,
-                   None if clear_outcome else outcome if outcome is not None else ...)
+                   None if clear_outcome else outcome if outcome is not None else ..., trade)
 
     @tool("add_measurement_point", _WRITE, "Add a measurement point")
     def add_measurement_point(position_id: str, ctx: Context, name: str = "",
@@ -581,13 +629,17 @@ def register() -> None:
     @tool("list_position_classes", _READ, "List position classes")
     def list_position_classes(ctx: Context) -> dict[str, Any]:
         """Each class of position (e.g. 'Centrifugal pump'), with its positions, fitments and
-        failures: what can be compared and pooled."""
+        failures (what can be compared and pooled), its costs, default replacement cost and
+        document links."""
         return {"classes": run(m_for(ctx).position_classes)}
 
     @tool("class_life_data", _READ, "Life data for a position class")
     def class_life_data(position_class: str, ctx: Context) -> dict[str, Any]:
         """Every fitment at every position of a class, pooled: x = days in service, c = 0 failed
-        or 1 censored (removed on purpose, or still fitted). Ready for fit_distribution."""
+        or 1 censored (removed on purpose, or still fitted). Where a date was known only roughly,
+        the row also has xl / xr, the shortest and longest life the dates allow: a failure is then
+        c = 2 (interval censored: fit with xl / xr), anything else censored at xl. fit_class_model
+        handles both."""
         return run(m_for(ctx).class_life_data, position_class)
 
     # ---- connections, redundancy, the generated RBD -----------------------------------
@@ -652,11 +704,22 @@ def register() -> None:
 
     @tool("set_class_costs", _WRITE, "Set a position class's costs")
     def set_class_costs(position_class: str, ctx: Context, planned_cost: float | None = None,
-                        failure_cost: float | None = None, availability_target: float | None = None) -> dict[str, Any]:
+                        failure_cost: float | None = None, availability_target: float | None = None,
+                        replacement_cost: ReplacementCost = None,
+                        clear_replacement_cost: bool = False) -> dict[str, Any]:
         """What a planned replacement and a failure cost for a class of position (any currency, the
         same for both), and the availability a hidden (protective) function must reach (e.g. 0.99).
-        Proposed intervals are optimised against these."""
-        return run(m_for(ctx).set_class_costs, position_class, planned_cost, failure_cost, availability_target)
+        Proposed intervals are optimised against these. replacement_cost: what an item doing this
+        job costs to replace, the default for items with none of their own."""
+        m = m_for(ctx)
+
+        def go():
+            if (planned_cost, failure_cost, availability_target) != (None, None, None):
+                m.set_class_costs(position_class, planned_cost, failure_cost, availability_target)
+            if replacement_cost is not None or clear_replacement_cost:
+                m.set_class_replacement_cost(position_class, None if clear_replacement_cost else replacement_cost)
+            return m.position_class(position_class)
+        return run(go)
 
     @tool("fit_class_model", _WRITE, "Fit a life model for a position class")
     def fit_class_model(position_class: str, ctx: Context,
@@ -704,6 +767,26 @@ def register() -> None:
         """Why a task is what it is: where it came from (RCM), every change, and the proposals
         behind them."""
         return run(m_for(ctx).explain_task, task_id)
+
+    # ---- documents ---------------------------------------------------------------------
+
+    @tool("add_document", _WRITE, "Link a document")
+    def add_document(url: str, ctx: Context, target_id: str | None = None, position_class: str | None = None,
+                     title: str = "",
+                     kind: Literal["manual", "datasheet", "invoice", "drawing", "certificate", "other"] = "other"
+                     ) -> dict[str, Any]:
+        """Attach a link to a document (an owner's manual, a datasheet, an invoice, a drawing, a
+        certificate) to an item or position (target_id), or to a class of position
+        (position_class: e.g. the datasheet every pump of that model shares). The url must be an
+        http(s) web address; use this rather than putting links in notes. The links show on
+        get_item, get_position and list_position_classes."""
+        return run(m_for(ctx).add_document, url, title, kind, target_id, position_class)
+
+    @tool("remove_document", _WRITE, "Remove a document link")
+    def remove_document(document_id: str, ctx: Context) -> dict[str, Any]:
+        """Remove a document link (its id is in the documents of get_item, get_position or
+        list_position_classes)."""
+        return run(m_for(ctx).remove_document, document_id)
 
     # ---- photos ------------------------------------------------------------------------
 

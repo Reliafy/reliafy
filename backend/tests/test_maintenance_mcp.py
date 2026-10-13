@@ -293,3 +293,46 @@ def test_tasks_failure_modes_and_past_fitments_through_mcp(env):
         return True
 
     assert _session(env["token"], flow)
+
+
+def test_structured_fields_through_mcp(env):
+    """Dates with precision, warranty, replacement cost, documents and trade (batch 1, 3.1-3.5)."""
+
+    async def flow(client):
+        names = {t.name for t in (await client.list_tools()).tools}
+        assert {"add_document", "remove_document"} <= names
+        pid = _ok(await client.call_tool("create_position", {"name": "Pump", "position_class": "Pool pump"}))["id"]
+        pos = _ok(await client.call_tool("fit_item", {"position_id": pid, "item_name": "Astral", "on": "2022"}))
+        iid = pos["fitted"]["item"]["id"]
+        item = _ok(await client.call_tool("update_item", {
+            "item_id": iid, "purchase_date": {"date": "2021", "source": "owner's estimate"},
+            "in_service_date": {"date": "2022-03-10", "precision": "estimated"},
+            "warranty": {"ends_on": "2030-01-01", "coverage": "motor", "registration_required": True},
+            "replacement_cost": {"amount": 950, "currency": "AUD", "source": "quote"}}))
+        assert item["purchase_date"]["display"] == "2021" and item["in_service_date"]["display"] == "~Mar 2022"
+        assert item["warranty"]["summary"].endswith("registration still to do.")
+        cleared = _ok(await client.call_tool("update_item", {"item_id": iid, "clear": ["purchase_date"]}))
+        assert cleared["purchase_date"] is None and cleared["warranty"]
+        doc = _ok(await client.call_tool("add_document", {"url": "https://example.com/m.pdf", "target_id": iid,
+                                                          "kind": "manual", "title": "Manual"}))
+        bad = await client.call_tool("add_document", {"url": "data:text/html,x", "target_id": iid})
+        assert bad.is_error and "http" in bad.content[0].text
+        _ok(await client.call_tool("add_document", {"url": "https://example.com/ds", "position_class": "Pool pump",
+                                                    "kind": "datasheet"}))
+        cls = _ok(await client.call_tool("set_class_costs", {"position_class": "Pool pump",
+                                                             "replacement_cost": {"amount": 800}}))
+        assert cls["replacement_cost"]["amount"] == 800 and cls["documents"][0]["kind"] == "datasheet"
+        assert cls["costs"]["planned_cost"] is None
+        _ok(await client.call_tool("remove_document", {"document_id": doc["id"]}))
+        fixed = _ok(await client.call_tool("correct_fitment", {"fitment_id": pos["fitted"]["id"],
+                                                               "from_precision": "month", "start": "2022-04"}))
+        assert fixed["from_precision"] == "month"
+        wo = _ok(await client.call_tool("open_work_order", {"position_id": pid, "title": "Hum",
+                                                            "trade": "Electrician"}))
+        assert wo["trade"] == "Electrician" and wo["warranty"]["coverage"] == "motor"
+        wo = _ok(await client.call_tool("update_work_order", {"work_order_id": wo["id"], "trade": "Pool tech"}))
+        return wo, _ok(await client.call_tool("get_item", {"item_id": iid}))
+
+    wo, item = _session(env["token"], flow)
+    assert wo["trade"] == "Pool tech"
+    assert item["documents"] == []

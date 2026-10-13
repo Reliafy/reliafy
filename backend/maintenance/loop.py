@@ -42,25 +42,46 @@ def fit_class_model(m: Maintenance, db, position_class: str, distribution: str =
     from backend.services import models as models_service
 
     data = m.class_life_data(position_class)
-    rows = [r for r in data["rows"] if r["x"] > 0]
-    failures = sum(1 for r in rows if r["c"] == 0)
+    # A row whose life is a range (dates known only roughly) counts while its
+    # longest life is above 0.
+    rows = [r for r in data["rows"] if (r["xr"] if r["c"] == 2 else r["x"]) > 0]
+    failures = sum(1 for r in rows if r["c"] != 1)
     if failures < MIN_FAILURES:
         raise Invalid(f"{data['position_class']} has {failures} failure{'s' if failures != 1 else ''} "
                       f"on record; a life model needs at least {MIN_FAILURES}.")
     buf = io.StringIO()
-    pd.DataFrame({"days": [r["x"] for r in rows], "censored": [r["c"] for r in rows]}).to_csv(buf, index=False)
+    if any(r["c"] == 2 for r in rows):
+        pd.DataFrame(_interval_rows(rows), columns=["shortest", "longest", "censored"]).to_csv(buf, index=False)
+        mapping = {"xl": "shortest", "xr": "longest", "c": "censored"}
+    else:
+        pd.DataFrame({"days": [r["x"] for r in rows], "censored": [r["c"] for r in rows]}).to_csv(buf, index=False)
+        mapping = {"x": "days", "c": "censored"}
     name = data["position_class"]
     dataset = datasets_service.create_dataset(db, f"{name}: maintenance life data.csv",
                                               buf.getvalue().encode(), m.org)
     model = models_service.save_model(db, f"{name} (from maintenance records)", dataset, distribution,
-                                      {"x": "days", "c": "censored"}, [], None, "days", owner_id=m.org)
+                                      mapping, [], None, "days", owner_id=m.org)
     params = [{"name": p["name"], "value": p["value"]} for p in model.results.get("params") or []]
     m._emit("class.model_fitted", {
         "id": class_id(m.org, name), "name": name, "model_id": model.id, "distribution": model.distribution_id,
         "params": params, "extras": (model.results.get("options") or None), "unit": "days",
         "fitted_on": date.today().isoformat(), "failures": failures, "suspensions": len(rows) - failures,
     })
-    return {**m.position_class(name), "proposals": propose(m, name)}
+    return {**m.position_class(name), "proposals": propose(m, name), "uncertain": data["uncertain"]}
+
+
+def _interval_rows(rows: list[dict]) -> list[tuple]:
+    """Life data as SurPyval's interval form (shortest, longest, censoring): an exact
+    life is the same at both ends; a failure known to lie in a range is interval
+    censored (2), or left censored (-1, failed by the longest) when the range starts
+    at 0; anything else is censored at the shortest life it surely reached (1)."""
+    out = []
+    for r in rows:
+        if r["c"] == 2:
+            out.append((r["xr"], r["xr"], -1) if r["xl"] <= 0 else (r["xl"], r["xr"], 2))
+        else:
+            out.append((r["x"], r["x"], r["c"]))
+    return out
 
 
 def _describe(model: dict) -> str:

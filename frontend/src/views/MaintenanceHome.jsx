@@ -117,14 +117,15 @@ export default function MaintenanceHome() {
               <p className="lib-date">None open.</p>
             ) : (
               <table className="lib-table">
-                <thead><tr><th>#</th><th>Title</th><th>Position</th><th>Type</th><th>Due</th></tr></thead>
+                <thead><tr><th>#</th><th>Title</th><th>Position</th><th>Type</th><th>Trade</th><th>Due</th></tr></thead>
                 <tbody>
                   {data.open_work_orders.map((w) => (
                     <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
                       <td>{w.number}</td>
-                      <td>{w.title}</td>
+                      <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                       <td>{w.position?.name}</td>
                       <td>{w.type}</td>
+                      <td className="lib-date">{w.trade || "—"}</td>
                       <td className="lib-date">{fmtDate(w.due)}</td>
                     </tr>
                   ))}

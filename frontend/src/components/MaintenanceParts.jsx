@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { decideProposal } from "../api.js";
+import { addMaintenanceDocument, decideProposal, removeMaintenanceDocument } from "../api.js";
+import {
+  DOCUMENT_KINDS, PRECISIONS, datedText, daysText, roughDateInput, roughDateValue, safeHref,
+} from "../maintenanceFields.js";
 import Modal from "./Modal.jsx";
 
 // Shared pieces for the Reliafy Maintenance pages.
@@ -9,6 +12,11 @@ export function fmtDate(iso) {
   if (!iso) return "—";
   const d = new Date(`${iso}T00:00:00`);
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+// A date as it's known: "2022", "Mar 2022", "~Mar 2022", or the day.
+export function fmtDated(iso, precision) {
+  return datedText(iso, precision, fmtDate);
 }
 
 export function today() {
@@ -30,6 +38,105 @@ export function Field({ label, children }) {
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+
+// A date that may be known only to the month or year, or estimated: its
+// precision, and an input to match. `value` is {text, precision}; onChange gets
+// the same, and `roughDateValue(text, precision)` is what to send.
+export function RoughDateField({ label, value, onChange, max }) {
+  const { text, precision } = value;
+  const setPrecision = (next) => {
+    const sent = roughDateValue(text, precision);
+    const keep = next === "year" ? sent.slice(0, 4) : next === "month" ? (sent.length >= 7 ? sent.slice(0, 7) : "")
+      : sent.length === 10 ? sent : "";
+    onChange({ text: keep, precision: next });
+  };
+  const input = precision === "year"
+    ? <input type="number" inputMode="numeric" min="1900" max="2199" placeholder="e.g. 2022" value={text}
+             onChange={(e) => onChange({ text: e.target.value, precision })} />
+    : precision === "month"
+      ? <input type="month" placeholder="e.g. 2022-03" value={text} max={max ? max.slice(0, 7) : undefined}
+               onChange={(e) => onChange({ text: e.target.value, precision })} />
+      : <input type="date" value={text} max={max} onChange={(e) => onChange({ text: e.target.value, precision })} />;
+  return (
+    <Field label={label}>
+      <div className="maint-row" style={{ marginTop: 0 }}>
+        <select value={precision} aria-label={`${label}: how well it's known`} onChange={(e) => setPrecision(e.target.value)}>
+          {PRECISIONS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+        {input}
+      </div>
+    </Field>
+  );
+}
+
+export function roughDate(day, precision) {
+  return { text: roughDateInput(day, precision || "exact"), precision: precision || "exact" };
+}
+
+// Links to documents (manuals, datasheets, invoices) on an item, a position or a
+// class. Only http(s) links open; they open in a new tab with no referrer.
+export function DocumentsCard({ title = "Documents", documents, target, onChanged }) {
+  const [adding, setAdding] = useState(false);
+  const [f, setF] = useState({ url: "", title: "", kind: "manual" });
+  const [error, setError] = useState(null);
+  const add = async () => {
+    setError(null);
+    try {
+      await addMaintenanceDocument({ ...target, ...f });
+      setAdding(false);
+      setF({ url: "", title: "", kind: "manual" });
+      onChanged?.();
+    } catch (e) { setError(e.message); }
+  };
+  const remove = async (id) => {
+    setError(null);
+    try { await removeMaintenanceDocument(id); onChanged?.(); } catch (e) { setError(e.message); }
+  };
+  return (
+    <section className="card">
+      <div className="maint-head">
+        <h2>{title}</h2>
+        {!adding && <button className="secondary" onClick={() => setAdding(true)}>Add a link</button>}
+      </div>
+      {error && <div className="card error">{error}</div>}
+      {adding && (
+        <div className="maint-action">
+          <div className="rcm-form">
+            <Field label="Link (https://…)"><input autoFocus type="url" value={f.url} placeholder="https://example.com/manual.pdf"
+                   onChange={(e) => setF({ ...f, url: e.target.value })} /></Field>
+            <Field label="Title (optional)"><input value={f.title} placeholder="e.g. Owner's manual"
+                   onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
+            <Field label="Kind">
+              <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>
+                {DOCUMENT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div className="maint-row">
+            <button onClick={add} disabled={!f.url.trim()}>Add</button>
+            <button className="secondary" onClick={() => { setAdding(false); setError(null); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {(documents || []).length === 0 ? (
+        !adding && <p className="lib-date">No documents. Link the manual, datasheet or invoice (a web address).</p>
+      ) : (
+        <ul className="maint-list">
+          {documents.map((d) => {
+            const href = safeHref(d.url);
+            return (
+              <li key={d.id}>
+                {href ? <a href={href} target="_blank" rel="noopener noreferrer">{d.title}</a> : d.title}
+                <span className="lib-date"> · {d.kind}</span>{" "}
+                <button className="crumb-link" onClick={() => remove(d.id)}>remove</button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -133,9 +240,10 @@ export function LifeTable({ rows, showPosition = false, onFix }) {
           <tr key={r.fitment_id || `${r.from}-${r.item}`}>
             {showPosition && <td>{r.position}</td>}
             <td>{r.item}</td>
-            <td className="lib-date">{fmtDate(r.from)}</td>
-            <td className="lib-date">{fmtDate(r.to)}</td>
-            <td>{r.x}</td>
+            <td className="lib-date">{fmtDated(r.from, r.from_precision)}</td>
+            <td className="lib-date">{fmtDated(r.to, r.to_precision)}</td>
+            <td title={r.xl != null ? "The dates are known only roughly: the shortest and longest life they allow" : undefined}>
+              {daysText(r)}</td>
             <td>{r.status}</td>
             <td className="lib-date">{r.failure_mode || "—"}</td>
             {onFix && <td><button className="crumb-link" onClick={() => onFix(r)}>Fix</button></td>}
