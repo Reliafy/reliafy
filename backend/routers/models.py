@@ -93,7 +93,10 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
 
 
 def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
-    models = datasets_service.models_for_dataset(session, dataset.id, ctx.read_owners, ctx.hidden)
+    # A public link shows the dataset, not the grantor's models fitted to it:
+    # a direct share of the dataset doesn't show those either.
+    public = access_service.is_public_link(ctx)
+    models = [] if public else datasets_service.models_for_dataset(session, dataset.id, ctx.read_owners, ctx.hidden)
     summary = _dataset_summary(dataset, ctx, n_models=len(models))
     try:
         preview = datasets_service.preview_rows(dataset, distinct=True)
@@ -110,7 +113,8 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     others = [
         {"kind": d["kind"], "collection": d["collection"], "id": d["id"], "name": d["name"],
          "is_sample": samples_service.is_sample(d["owner_id"])}
-        for d in datasets_service.dependents_for_dataset(session, dataset.id, ctx.read_owners, ctx.hidden)
+        for d in ([] if public else datasets_service.dependents_for_dataset(
+            session, dataset.id, ctx.read_owners, ctx.hidden))
         if d["collection"] != "models"
     ]
     return {

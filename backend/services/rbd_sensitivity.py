@@ -36,7 +36,7 @@ wear-out lives, say: its route for the long run is refused), the effects are
 simulated: each changed diagram against the diagram as it is, with common
 random numbers (as "Compare with…", :mod:`backend.services.rbd_compare`),
 over the availability simulation's window. That is the paid simulation
-(Pro or credits); the exact and numerical answers are free.
+(Pro); the exact and numerical answers are free.
 
 The diagram is built exactly as the availability analysis builds it, so the
 base values are the results tab's, and pinned blocks are held. Its

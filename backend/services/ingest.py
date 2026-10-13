@@ -396,14 +396,16 @@ def rows_from_request(content_type: str, body: bytes, json_keys: tuple[str, ...]
         payload = _json.loads(body or b"{}")
     except _json.JSONDecodeError:
         raise IngestError("Body must be JSON (or text/csv with a CSV body).")
-    if isinstance(payload, list):
-        return payload
-    for key in json_keys:
-        if isinstance(payload.get(key), list):
-            return payload[key]
-    raise IngestError(
-        f"Provide rows as a JSON array or under one of: {', '.join(json_keys)}."
-    )
+    rows = payload if isinstance(payload, list) else None
+    if isinstance(payload, dict):
+        rows = next((payload[key] for key in json_keys if isinstance(payload.get(key), list)), None)
+    if rows is None:
+        raise IngestError(
+            f"Provide rows as a JSON array or under one of: {', '.join(json_keys)}."
+        )
+    if not all(isinstance(row, dict) for row in rows):
+        raise IngestError("Each row must be a JSON object ({\"column\": value, ...}).")
+    return rows
 
 
 def dataframe_from_request(content_type: str, body: bytes) -> pd.DataFrame:

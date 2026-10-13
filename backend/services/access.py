@@ -27,6 +27,8 @@ from backend.schema import FLEET_MODEL_COLLECTIONS, fleet_model_kind
 
 TEAM_PREFIX = "team:"
 PERSONAL = "personal"
+# The write principal of a public link's read-only context: never an owner.
+PUBLIC_LINK_OWNER = "__public-link__"
 
 
 class EditConflict(Exception):
@@ -149,6 +151,11 @@ class AccessCtx:
     @property
     def is_personal(self) -> bool:
         return self.workspace == PERSONAL
+
+
+def is_public_link(ctx: AccessCtx) -> bool:
+    """Whether this context reads for an anonymous public-link viewer."""
+    return ctx.write_owner == PUBLIC_LINK_OWNER
 
 
 def can_write(ctx: AccessCtx, owner_id: str | None) -> bool:

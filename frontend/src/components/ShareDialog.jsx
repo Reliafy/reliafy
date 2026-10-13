@@ -297,7 +297,10 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
     setNote(null);
     try {
       await createShare(collection, artifactId, email.trim());
-      setNote(`Shared with ${email.trim()} — they'll see it in their workspace, read-only.`);
+      setNote(
+        `Shared with ${email.trim()}, read-only. If they don't have a Reliafy account yet, ` +
+        "it appears once they sign up with that address and verify it."
+      );
       setEmail("");
       refresh();
     } catch (err) {

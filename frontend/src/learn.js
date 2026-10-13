@@ -7,7 +7,8 @@
 // cta_text, cta_label, cta_href. A trailing `## Frequently asked questions`
 // section with `### question` subheadings is extracted into FAQPage JSON-LD
 // at prerender time (the visible content is the same markdown).
-import { marked } from "marked";
+// Markdown rendering (sanitized in the browser) is shared: markdown.js.
+import { renderMarkdown } from "./markdown.js";
 
 const files = import.meta.glob("./content/learn/*.md", {
   query: "?raw",
@@ -75,6 +76,4 @@ export function getArticle(slug) {
   return articles.find((a) => a.slug === slug) || null;
 }
 
-export function renderMarkdown(body) {
-  return marked.parse(body, { breaks: false, gfm: true });
-}
+export { renderMarkdown };

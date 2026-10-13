@@ -398,11 +398,31 @@ def summary(job: dict, ctx_uid: str, names: Optional[dict] = None) -> dict:
     return out
 
 
-def _names(db, rbd_ids) -> dict:
-    ids = [i for i in set(rbd_ids) if i]
+UNAVAILABLE_NAME = "Diagram no longer available"
+
+
+def readable_diagrams(db, ctx, rbd_ids, graph: bool = False) -> dict:
+    """``{rbd id: raw doc}`` for the diagrams among ``rbd_ids`` the caller can
+    read now. A run outlives its caller's access to the diagram (a removed
+    team member, a revoked share): the run stays theirs, the diagram doesn't."""
+    from backend.services import access as access_service
+
+    ids = [i for i in set(rbd_ids) if isinstance(i, str) and i]
     if not ids:
         return {}
-    return {d["_id"]: d.get("name") for d in db.rbds.find({"_id": {"$in": ids}}, {"name": 1})}
+    fields = {"name": 1, "owner_id": 1, **({"graph": 1} if graph else {})}
+    out = {d["_id"]: d for d in db.rbds.find({"_id": {"$in": ids}, "owner_id": {"$in": ctx.read_owners}}, fields)}
+    for rid in ids:
+        if rid not in out:
+            doc, _ = access_service.readable_raw(db, "rbds", rid, ctx)
+            if doc is not None:
+                out[rid] = doc
+    return out
+
+
+def _names(db, rbd_ids, ctx) -> dict:
+    """The current names of the diagrams the caller can still read."""
+    return {i: d.get("name") for i, d in readable_diagrams(db, ctx, rbd_ids).items()}
 
 
 def list_runs(db, ctx, rbd_id: Optional[str] = None, limit: int = DEFAULT_LIMIT,
@@ -428,7 +448,7 @@ def list_runs(db, ctx, rbd_id: Optional[str] = None, limit: int = DEFAULT_LIMIT,
             for j in db.rbd_jobs.find(query, {"context": 0}).sort("created_at", -1).limit(limit + 1)]
     more = len(jobs) > limit
     jobs = jobs[:limit]
-    names = _names(db, [j.get("rbd_id") for j in jobs])
+    names = _names(db, [j.get("rbd_id") for j in jobs], ctx)
     kept = retention(db, ctx)
     # The diagrams this list can be filtered by: the caller's runs' diagrams.
     return {
@@ -442,12 +462,12 @@ def list_runs(db, ctx, rbd_id: Optional[str] = None, limit: int = DEFAULT_LIMIT,
 def diagrams(db, ctx) -> list[dict]:
     """The diagrams the caller has runs of, for the filter."""
     ids = db.rbd_jobs.distinct("rbd_id", {"uid": ctx.uid, "kind": KIND})
-    names = _names(db, ids)
-    return sorted(({"rbd_id": i, "name": names.get(i) or "Deleted diagram"} for i in ids if i),
+    names = _names(db, ids, ctx)
+    return sorted(({"rbd_id": i, "name": names.get(i) or UNAVAILABLE_NAME} for i in ids if i),
                   key=lambda d: (d["name"] or "").lower())
 
 
-def _inputs(db, job: dict) -> dict:
+def _inputs(db, ctx, job: dict) -> dict:
     from backend.services import rbds as rbds_service
 
     request = job.get("request") or {}
@@ -457,7 +477,8 @@ def _inputs(db, job: dict) -> dict:
     blocks = sum(1 for n in graph.get("nodes") or [] if n.get("type") not in ("input", "output"))
     changed = None
     if job.get("rbd_id"):
-        doc = db.rbds.find_one({"_id": job["rbd_id"]}, {"graph": 1})
+        # Compared only while the caller can still read the diagram.
+        doc = readable_diagrams(db, ctx, [job["rbd_id"]], graph=True).get(job["rbd_id"])
         if doc is not None:
             # Compared as values (a JSON round trip may turn 2.0 into 2).
             try:
@@ -485,10 +506,10 @@ def detail(db, ctx, job: dict, entitled: bool) -> dict:
     on, and the precision it achieved."""
     from backend.services import rbd_jobs
 
-    names = _names(db, [job.get("rbd_id")])
+    names = _names(db, [job.get("rbd_id")], ctx)
     out = summary(job, ctx.uid, names)
     result = job.get("result") or {}
-    out["inputs"] = _inputs(db, job)
+    out["inputs"] = _inputs(db, ctx, job)
     engines = job.get("engines") or {}
     out["engines"] = {"repyability": engines.get("repyability") or result.get("repyability_version"),
                       "surpyval": engines.get("surpyval")}
@@ -513,7 +534,7 @@ def compare(db, ctx, run_ids: list[str]) -> dict:
             missing.append(rid)
             continue
         result = job.get("result") or {}
-        row = summary(job, ctx.uid, _names(db, [job.get("rbd_id")]))
+        row = summary(job, ctx.uid, _names(db, [job.get("rbd_id")], ctx))
         curve = result.get("curve") or {}
         row.update(
             curve={k: curve.get(k) for k in ("t", "availability", "lower", "upper", "confidence")} if curve else None,
@@ -533,25 +554,31 @@ def export_json(view: dict) -> str:
 def export_csv(view: dict) -> str:
     """A run as one tidy table: ``quantity, block, time, value, lower,
     upper`` — the headline figures, A(t) with its band, and each block's
-    share of the downtime."""
+    share of the downtime. Text cells are kept as text in a spreadsheet."""
+    from backend.services.excel import download_cell
+
     buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["quantity", "block", "time", "value", "lower", "upper"])
+    writer = csv.writer(buf)
+
+    def put(row):
+        writer.writerow([download_cell(v) for v in row])
+
+    put(["quantity", "block", "time", "value", "lower", "upper"])
     result = view.get("result") or {}
     precision = result.get("precision") or {}
-    w.writerow(["window_availability", "", result.get("t_simulation"), precision.get("window_availability"),
-                precision.get("lower"), precision.get("upper")])
+    put(["window_availability", "", result.get("t_simulation"), precision.get("window_availability"),
+         precision.get("lower"), precision.get("upper")])
     for key in ("steady_state_availability", "mean_up_time", "mean_down_time", "failure_frequency"):
         if result.get(key) is not None:
-            w.writerow([key, "", "", result.get(key), "", ""])
+            put([key, "", "", result.get(key), "", ""])
     curve = result.get("curve") or {}
     t, a = curve.get("t") or [], curve.get("availability") or []
     lo, hi = curve.get("lower") or [], curve.get("upper") or []
     for i, ti in enumerate(t):
-        w.writerow(["availability_at_t", "", ti, a[i] if i < len(a) else "",
-                    lo[i] if i < len(lo) else "", hi[i] if i < len(hi) else ""])
+        put(["availability_at_t", "", ti, a[i] if i < len(a) else "",
+             lo[i] if i < len(lo) else "", hi[i] if i < len(hi) else ""])
     for row in result.get("per_node") or []:
-        w.writerow(["downtime_share", row.get("label") or row.get("id"), "", row.get("share"), "", ""])
+        put(["downtime_share", row.get("label") or row.get("id"), "", row.get("share"), "", ""])
     return buf.getvalue()
 
 

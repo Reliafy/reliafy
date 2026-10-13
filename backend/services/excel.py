@@ -662,8 +662,28 @@ def _split(head: list, header_row: int):
     return header_filled, header_raw, rows, numbers
 
 
+# Text a spreadsheet reads as a formula when it opens a downloaded file.
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+_NUMBER = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
+
+
+def download_cell(value: Any) -> Any:
+    """A cell for a CSV or XLSX file people download: text starting with
+    ``=``, ``+``, ``-``, ``@``, a tab or a carriage return gets a leading
+    ``'`` so a spreadsheet shows it as text rather than evaluating it.
+    Numbers, and text that is just a number ("-2.5"), are left as they are.
+
+    Only for files leaving the app: CSV the app reads back itself (a
+    workbook converted for an upload, a dataset's stored copy) keeps the
+    cells exactly as they were."""
+    if isinstance(value, str) and value.startswith(_FORMULA_START) and not _NUMBER.fullmatch(value):
+        return "'" + value
+    return value
+
+
 def to_csv(table: Table) -> bytes:
-    """The table as CSV bytes (what a CSV upload of the same data would be)."""
+    """The table as CSV bytes (what a CSV upload of the same data would be).
+    The cells are written as they are: the app parses this CSV itself."""
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
     writer.writerow(table.header)

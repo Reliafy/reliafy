@@ -26,6 +26,7 @@ from backend.services import access as access_service
 from backend.services import billing as billing_service
 from backend.services import compute_core, compute_queue, free_sims
 from backend.services import rbd_runs
+from backend.services import rbds as rbds_service
 from backend.services import runtime_quote
 from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
@@ -130,7 +131,10 @@ def export_run(run_id: str, format: str = "csv", session=Depends(get_session),
     entitled = billing_service.premium_compute_allowed(session, ctx.user)
     view = rbd_runs.detail(session, ctx, job, entitled)
     if format == "json":
-        view["inputs"]["graph"] = (job.get("request") or {}).get("graph")
+        # The diagram as it was, only while the caller can still read it.
+        rbd_id = job.get("rbd_id")
+        keep_graph = not rbd_id or rbd_id in rbd_runs.readable_diagrams(session, ctx, [rbd_id])
+        view["inputs"]["graph"] = (job.get("request") or {}).get("graph") if keep_graph else None
         view["inputs"]["options"] = (job.get("request") or {}).get("options")
         body, media, ext = rbd_runs.export_json(view), "application/json; charset=utf-8", "json"
     elif format == "csv":
@@ -159,7 +163,9 @@ def rerun(run_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(ge
     rbd = None
     if job.get("rbd_id"):
         rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, job["rbd_id"], ctx)
-    owners = [*ctx.read_owners, rbd.owner_id] if rbd is not None else ctx.read_owners
+    # The diagram owner's saved models only when the run's graph is the
+    # diagram as saved now.
+    owners = rbds_service.graph_owners(ctx.read_owners, rbd, graph)
     entitled = billing_service.premium_compute_allowed(session, ctx.user)
     started = datetime.now(timezone.utc)
     usage_service.set_feature("availability_sim")

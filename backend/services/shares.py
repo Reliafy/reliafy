@@ -8,13 +8,23 @@ Referenced artifacts resolve transitively at read time (services/access.py).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
 from backend.services import access
 from backend.services import email as email_service
 from backend.services import email_trust
+from backend.services import rate_limit
 from backend.services import samples as samples_service
+
+logger = logging.getLogger(__name__)
+
+# Share requests per grantor, per hour and per day.
+SHARES_PER_HOUR = 30
+SHARES_PER_DAY = 100
+MAX_EMAIL = 254
+PENDING_PREFIX = "pending:"
 
 
 _LINK_PATHS = {
@@ -53,48 +63,96 @@ def create_share(db, collection: str, artifact_id: str, email: str, grantor: dic
         raise ShareError("Artifact not found.", 404)
 
     email_lc = (email or "").strip().lower()
-    if not email_lc or "@" not in email_lc:
+    if not email_lc or "@" not in email_lc or len(email_lc) > MAX_EMAIL:
         raise ShareError("Enter a valid email address.", 422)
     if email_lc == (grantor.get("email") or "").strip().lower():
         raise ShareError("That's you — the artifact is already yours.")
+    _consume_share(db, grantor)
 
+    # The response is the same whether or not the address has a verified
+    # account. Anyone can sign up claiming any address, so only an account
+    # that has proven it owns this one gets the share now; otherwise it waits
+    # (``recipient_uid`` "pending:<email>") and is claimed when an account
+    # signs in with the address verified (``claim_pending``).
     recipient = db.users.find_one({"$or": [{"email_lc": email_lc}, {"email": email_lc}]})
-    if recipient is None:
-        raise ShareError("No Reliafy account exists for that email address.", 404)
-    # Anyone can sign up claiming any address: share only with an account
-    # that has proven it owns this one.
-    verification = email_trust.status(db, recipient["_id"], recipient.get("email_verified"))
-    if verification == email_trust.UNKNOWN:
-        raise ShareError(email_trust.UNKNOWN_MSG, 409)
-    if verification != email_trust.VERIFIED:
-        raise ShareError(
-            "That account hasn't verified its email address yet. Ask them to verify it (Reliafy "
-            "shows them how), then share again.", 409)
+    if recipient is not None:
+        verification = email_trust.status(db, recipient["_id"], recipient.get("email_verified"))
+        if verification != email_trust.VERIFIED:
+            recipient = None
+    recipient_uid = recipient["_id"] if recipient is not None else _pending_uid(email_lc)
 
     link_path = _LINK_PATHS.get(collection, "/modelling").format(id=artifact_id)
-    existing = db.shares.find_one({"artifact_id": artifact_id, "recipient_uid": recipient["_id"]})
+    existing = db.shares.find_one({"artifact_id": artifact_id, "recipient_uid": recipient_uid})
     if existing is None:
         share = {
             "_id": uuid.uuid4().hex,
             "collection": collection,
             "artifact_id": artifact_id,
             "grantor_uid": grantor["uid"],
-            "recipient_uid": recipient["_id"],
-            "recipient_email": recipient.get("email") or email_lc,
+            "recipient_uid": recipient_uid,
+            "recipient_email": email_lc,
             "created_at": _now(),
         }
         db.shares.insert_one(share)
-        email_service.artifact_shared(
-            recipient.get("email") or email_lc,
-            grantor.get("name") or grantor.get("email") or "A Reliafy user",
-            doc.get("name") or "an analysis",
-            link_path,
-        )
+        if recipient is not None:
+            # The notification never decides the request: the share is made.
+            try:
+                email_service.artifact_shared(
+                    recipient.get("email") or email_lc,
+                    grantor.get("name") or grantor.get("email") or "A Reliafy user",
+                    doc.get("name") or "an analysis",
+                    link_path,
+                    sharer_email=grantor.get("email"),
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("share notification failed share=%s", share["_id"])
     else:
         share = existing
-    # Re-sharing un-hides: a recipient who dismissed it gets it back.
-    db.users.update_one({"_id": recipient["_id"]}, {"$pull": {"hidden_samples": artifact_id}})
+    if recipient is not None:
+        # Re-sharing un-hides: a recipient who dismissed it gets it back.
+        db.users.update_one({"_id": recipient["_id"]}, {"$pull": {"hidden_samples": artifact_id}})
     return share
+
+
+def _pending_uid(email_lc: str) -> str:
+    """The placeholder recipient of a share waiting for a verified account."""
+    return f"{PENDING_PREFIX}{email_lc}"
+
+
+def _consume_share(db, grantor: dict) -> None:
+    """Count one share request against the grantor; 429 past the hourly or
+    daily limit."""
+    for window, limit in ((3600, SHARES_PER_HOUR), (86400, SHARES_PER_DAY)):
+        if not rate_limit.consume(db, f"share:user:{grantor['uid']}", limit, window):
+            minutes = max(1, rate_limit.retry_after(window) // 60)
+            raise ShareError(f"That's a lot of shares in a short time — try again in {minutes} min.", 429)
+
+
+def claim_pending(db, user: dict) -> int:
+    """Give a signed-in account the shares waiting for its address, once the
+    address is verified. Returns how many were claimed (idempotent)."""
+    email_lc = (user.get("email") or "").strip().lower()
+    if not email_lc or not user.get("uid"):
+        return 0
+    from backend import config
+
+    flag = user.get("email_verified")
+    if config.AUTH_DISABLED:
+        verified = True
+    elif flag is None:
+        verified = email_trust.verified(db, user["uid"])
+    else:
+        verified = flag is True
+    if not verified:
+        return 0
+    claimed = 0
+    for share in db.shares.find({"recipient_uid": _pending_uid(email_lc)}):
+        if db.shares.find_one({"artifact_id": share["artifact_id"], "recipient_uid": user["uid"]}):
+            db.shares.delete_one({"_id": share["_id"]})
+            continue
+        db.shares.update_one({"_id": share["_id"]}, {"$set": {"recipient_uid": user["uid"]}})
+        claimed += 1
+    return claimed
 
 
 def list_for_artifact(db, artifact_id: str, grantor_uid: str) -> list[dict]:

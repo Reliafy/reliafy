@@ -10,7 +10,7 @@ import pytest
 
 from backend.services import rbd_analysis as ra
 from backend.services import rbd_compare
-from backend.tests.test_availability_paid import BUYER, FREE, PRO, client  # noqa: F401 - fixture
+from backend.tests.test_availability_paid import ADMIN, BUYER, FREE, PRO, client  # noqa: F401 - fixture
 from backend.tests.test_rbd_analysis import (
     _edge, _io_nodes, _repairable_component, _series_repairable_graph,
 )
@@ -245,7 +245,7 @@ def test_compare_endpoint_with_a_saved_diagram(client):
     nothing = client.post("/api/rbds/compare", json={"graph": _pumps()})
     assert nothing.status_code == 422
     # Someone else's diagram can't be read, so it can't be compared with.
-    client.act_as(BUYER)
+    client.act_as(ADMIN)
     other = client.post("/api/rbds/compare", json={"graph": _pumps(), "other_id": saved["id"]})
     assert other.status_code == 404
 

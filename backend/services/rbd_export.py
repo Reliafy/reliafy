@@ -150,6 +150,14 @@ def _one_line(text: Any) -> str:
     return re.sub(r"\s+", " ", out).strip()
 
 
+def _doc_text(text: Any) -> str:
+    """``text`` made safe inside the script's triple-quoted docstring: one
+    line, backslashes as ``/`` and every run of double quotes as single
+    quotes, so it can't end the docstring or start an escape sequence."""
+    out = _one_line(text).replace("\\", "/")
+    return re.sub(r'"{2,}', lambda m: "'" * len(m.group()), out)
+
+
 def _lit(value: Any) -> str:
     """A Python literal for an id/label, double-quoted for strings (a JSON
     string is also a valid Python string literal)."""
@@ -902,8 +910,7 @@ def _command_lines(commands: list[str]) -> list[str]:
 
 def _header(name, unit, repairable, versions, exported_at, placeholders,
             file_name, lfp=False, what=None):
-    title = _one_line(name or "Untitled RBD").replace("\\", "/")
-    title = title.replace('"""', "'''")
+    title = _doc_text(name or "Untitled RBD")
     sp, rp = versions["surpyval"], versions["repyability"]
     what = (
         "the same availability calculation as Reliafy: the exact steady-state "
@@ -957,14 +964,14 @@ def _header(name, unit, repairable, versions, exported_at, placeholders,
         "Set RELIAFY_RESULTS_JSON=results.json to also save the numbers as "
         "JSON.", 79)
     lines.append("")
-    lines.append(f"Times are in {unit_in_text(unit)}." if unit else
+    lines.append(f"Times are in {_doc_text(unit_in_text(unit))}." if unit else
                  "Times are in the diagram's time unit (none was set).")
     if placeholders:
         lines.append("")
         lines += textwrap.wrap(
             "NOTE: some blocks couldn't be exported with their model and "
             "raise until you set one (search for 'TODO: placeholder'): "
-            + ", ".join(placeholders) + ".", 79)
+            + ", ".join(_doc_text(p) for p in placeholders) + ".", 79)
     lines.append('"""')
     return "\n".join(lines)
 

@@ -99,7 +99,7 @@ const MenuIcon = () => (
 );
 
 export default function NavBar({ menuOpen = false, onMenu, menuButtonRef }) {
-  const { workspace, setWorkspaceId, teams, activeTeam, refreshTeams } = useWorkspace();
+  const { workspace, setWorkspaceId, teams, activeTeam, refreshTeams, invites } = useWorkspace();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [creatingTeam, setCreatingTeam] = useState(false);
@@ -137,6 +137,15 @@ export default function NavBar({ menuOpen = false, onMenu, menuButtonRef }) {
         </NavLink>
         <div className="nav-workspace">
           <HelpButton />
+          {invites.length > 0 && (
+            <Chip
+              tone="accent"
+              onClick={() => navigate("/settings")}
+              title="Team invitations waiting for your answer: accept or decline them in Settings."
+            >
+              {invites.length === 1 ? "Team invitation" : `${invites.length} team invitations`}
+            </Chip>
+          )}
           {activeTeam && (activeTeam.frozen || activeTeam.can_edit === false) && (
             <Chip
               tone="warning"

@@ -202,7 +202,8 @@ export default function RecurrentNewPage() {
     setSaving(true);
     setError(null);
     try {
-      const saved = await saveRecurrentModel(name.trim(), null, {
+      // A preview of an upload stores nothing (dataset_id null): the save sends the file.
+      const saved = await saveRecurrentModel(name.trim(), result.dataset_id ? null : file, {
         datasetId: result.dataset_id, mapping: map, model, unit, options, windows,
       });
       navigate(`/modelling/recurrent/${saved.id}`);

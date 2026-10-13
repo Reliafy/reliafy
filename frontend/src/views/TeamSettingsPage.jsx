@@ -12,6 +12,7 @@ import {
   leaveTeam,
 } from "../api.js";
 import Modal from "../components/Modal.jsx";
+import TeamInvites from "../components/TeamInvites.jsx";
 import { CreateTeamModal } from "../components/NavBar.jsx";
 import Button from "../components/ui/Button.jsx";
 import Chip from "../components/ui/Chip.jsx";
@@ -33,6 +34,7 @@ function NoTeam() {
   return (
     <div className="app">
       <PageHeader crumbs={CRUMBS} title="Team" />
+      <TeamInvites style={{ marginBottom: "1rem" }} />
       <Card className="team-empty">
         {teams.length === 0 ? (
           <p>No team yet. A team shares one workspace: everyone sees everything in it.</p>
@@ -98,11 +100,10 @@ export default function TeamSettingsPage() {
     setError(null);
     setInviteNote(null);
     try {
-      const result = await inviteTeamMember(team.id, email.trim());
+      await inviteTeamMember(team.id, email.trim());
       setInviteNote(
-        result.status === "added"
-          ? `${email.trim()} added to the team.`
-          : `${email.trim()} doesn't have an account yet — they'll join automatically when they sign up.`
+        `Invitation sent to ${email.trim()}. They join the team when they accept it, ` +
+        "signed in to Reliafy with that address (or once they create an account with it)."
       );
       setEmail("");
       refresh();
@@ -244,7 +245,9 @@ export default function TeamSettingsPage() {
               <tr key={i.email} className="lib-row">
                 <td><div className="lib-name" style={{ fontStyle: "italic" }}>Invited</div></td>
                 <td className="lib-date">{i.email}</td>
-                <td className="lib-date">pending</td>
+                <td className="lib-date">
+                  <Chip title="They join when they accept the invitation.">Pending</Chip>
+                </td>
                 <td className="lib-actions">
                   {isOwner && (
                     <div className="lib-acts">

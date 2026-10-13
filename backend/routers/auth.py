@@ -9,6 +9,7 @@ from backend.db import get_session
 from backend.services import access as access_service
 from backend.services import billing as billing_service
 from backend.services import samples as samples_service
+from backend.services import shares as shares_service
 from backend.services import teams as teams_service
 
 router = APIRouter(prefix="/api")
@@ -34,12 +35,13 @@ def remove_samples(user: dict = Depends(current_user_doc), session=Depends(get_s
 def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
     """Return the signed-in user's profile (and upsert it on first login).
 
-    Also grants the one-time free starter credit, activates any pending team
-    invites for this email, and attaches the plan/credit snapshot so the UI
-    can show it immediately.
+    Also grants the one-time free starter credit, claims shares waiting for
+    this (verified) address, lists team invitations awaiting this user's
+    answer, and attaches the plan/credit snapshot so the UI can show it
+    immediately.
     """
     billing_service.ensure_starter_grant(session, user["uid"])
-    teams_service.activate_invites(session, user)
+    shares_service.claim_pending(session, user)
     acct = billing_service.account(session, user["uid"])
     return {
         **user,
@@ -50,4 +52,5 @@ def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> 
             teams_service.summary(session, t, user, billing_service)
             for t in access_service.user_teams(session, user["uid"])
         ],
+        "team_invites": teams_service.pending_invites(session, user),
     }

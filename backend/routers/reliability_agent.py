@@ -50,7 +50,7 @@ def _agent_access(session, user):
     uid = user["uid"]
     admin = billing_service.is_admin_user(user)
     acct = billing_service.account(session, uid)
-    allowed = billing_service.premium_compute_allowed(session, user)
+    allowed = billing_service.reliability_agent_allowed(session, user)
     return allowed, admin, acct
 
 

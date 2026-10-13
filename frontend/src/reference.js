@@ -9,7 +9,8 @@
 //     into `## <entry-id>` sections.
 //
 // A backend test asserts the JSON is current and that every id has prose.
-import { marked } from "marked";
+// Markdown rendering (sanitized in the browser) is shared: markdown.js.
+import { renderMarkdown } from "./markdown.js";
 import catalogue from "./content/reference/catalogue.json";
 
 const files = import.meta.glob("./content/reference/*.md", {
@@ -81,9 +82,7 @@ export function getEntry(id) {
   return null;
 }
 
-export function renderMarkdown(body) {
-  return marked.parse(body || "", { breaks: false, gfm: true });
-}
+export { renderMarkdown };
 
 // "0 < α" / "0 < β" style bound summary for a parameter.
 export function boundsLabel(p) {

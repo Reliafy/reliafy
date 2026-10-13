@@ -24,23 +24,39 @@ import hmac
 import io
 import os
 import secrets
+import threading
 from datetime import date, datetime, timedelta, timezone
 
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps
+from PIL import JpegImagePlugin, MpoImagePlugin, PngImagePlugin, WebPImagePlugin  # noqa: F401 - FORMATS
 
 FULL_PX = 1600
 THUMB_PX = 400
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
-MAX_PIXELS = 60_000_000  # refuse decompression bombs well before memory trouble
+MAX_PIXELS = 40_000_000  # width x height: a phone's photo is 12-50 Mpx before it's shrunk
 MAX_PER_LINK = 20
 LINK_MINUTES = 30
 PHOTO_TARGETS = ("Position", "Location", "Item", "WorkOrder")
+# The decoders tried: JPEG (with MPO, a JPEG with extra frames as some phones
+# save, which recent Pillow opens through JPEG), PNG and WebP. Nothing else.
+FORMATS = tuple(f for f in ("JPEG", "MPO", "PNG", "WEBP") if f in Image.OPEN)
 
-Image.MAX_IMAGE_PIXELS = MAX_PIXELS
+# Pillow warns above MAX_IMAGE_PIXELS and raises above twice it: so it raises
+# above MAX_PIXELS, behind clean()'s own check of the size.
+Image.MAX_IMAGE_PIXELS = MAX_PIXELS // 2
+
+# Decoding is CPU- and memory-heavy: at most this many at once in a process.
+DECODE_SLOTS = 2
+DECODE_WAIT = 60  # seconds to wait for a slot
+_decoding = threading.BoundedSemaphore(DECODE_SLOTS)
 
 
 class BadPhoto(ValueError):
     """Not an image we can read, or too big."""
+
+
+class Busy(BadPhoto):
+    """Too many photos being processed at once (try again shortly)."""
 
 
 # ---- cleaning ----------------------------------------------------------------------
@@ -87,28 +103,59 @@ def _jpeg(img: Image.Image, px: int) -> bytes:
     return buf.getvalue()
 
 
+def _open(raw: bytes) -> Image.Image:
+    """Open (not yet decode) an upload, refusing other formats and anything
+    over MAX_PIXELS: the size is in the header, read before any pixel is."""
+    img = Image.open(io.BytesIO(raw), formats=FORMATS)
+    width, height = img.size
+    if width <= 0 or height <= 0 or width * height > MAX_PIXELS:
+        raise BadPhoto(f"The photo is too large ({width} x {height}); at most {MAX_PIXELS // 1_000_000} "
+                       "megapixels.")
+    return img
+
+
 def clean(raw: bytes) -> dict:
     """Read an uploaded image and return its cleaned versions and what was in
     its metadata: ``full``, ``thumb`` (JPEG bytes), ``width``, ``height``,
-    ``taken_on`` and ``gps`` (or None)."""
+    ``taken_on`` and ``gps`` (or None).
+
+    At most DECODE_SLOTS run at once in a process; call it off the event loop
+    (it blocks)."""
     if not raw:
         raise BadPhoto("The photo is empty.")
     if len(raw) > MAX_UPLOAD_BYTES:
         raise BadPhoto(f"The photo is over {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.")
+    if not _decoding.acquire(timeout=DECODE_WAIT):
+        raise Busy("Too many photos are being processed right now. Try again in a minute.")
     try:
-        img = Image.open(io.BytesIO(raw))
+        return _clean(raw)
+    finally:
+        _decoding.release()
+
+
+def _clean(raw: bytes) -> dict:
+    try:
+        img = _open(raw)
         img.verify()  # structure check; the image must be reopened afterwards
-        img = Image.open(io.BytesIO(raw))
+        img = _open(raw)
         exif = img.getexif()
         gps, taken = _gps(exif), _taken_on(exif)
+        img.draft("RGB", (FULL_PX * 2, FULL_PX * 2))  # a JPEG decodes at a reduced scale when it can
         img = ImageOps.exif_transpose(img)  # upright, as the camera held it
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        img.thumbnail((FULL_PX, FULL_PX), Image.Resampling.LANCZOS)  # shrink before any more copies
         img = img.convert("RGB")
-    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, SyntaxError, ValueError):
+        full = _jpeg(img, FULL_PX)
+        width, height = Image.open(io.BytesIO(full)).size
+        thumb = _jpeg(img, THUMB_PX)
+    except BadPhoto:
+        raise
+    except Image.DecompressionBombError:
+        raise BadPhoto(f"The photo is too large; at most {MAX_PIXELS // 1_000_000} megapixels.") from None
+    except Exception:  # noqa: BLE001 - any decoder failure is an unreadable photo
         raise BadPhoto("That isn't a photo Reliafy can read (JPEG, PNG or WebP).") from None
-    full = _jpeg(img, FULL_PX)
-    width, height = Image.open(io.BytesIO(full)).size
-    return {"full": full, "thumb": _jpeg(img, THUMB_PX), "width": width, "height": height,
-            "taken_on": taken, "gps": gps}
+    return {"full": full, "thumb": thumb, "width": width, "height": height, "taken_on": taken, "gps": gps}
 
 
 # ---- storing the bytes ------------------------------------------------------------------
@@ -181,13 +228,27 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+_indexed: set = set()  # databases whose links collection has its TTL index (once a process)
+_index_lock = threading.Lock()
+
+
+def link_id_ok(link_id: str) -> bool:
+    """Whether ``link_id`` has the form of a link's id (24 hex digits)."""
+    return isinstance(link_id, str) and len(link_id) == 24 and all(c in "0123456789abcdef" for c in link_id)
+
+
 class PhotoLinks:
     """Short-lived links for adding photos from a phone, in MongoDB (the app's
     database: the real one, or the simulator locally)."""
 
     def __init__(self, db):
         self._links = db["maintenance_photo_links"]
-        self._links.create_index("delete_at", expireAfterSeconds=0)
+        key = id(db)
+        if key not in _indexed:
+            with _index_lock:
+                if key not in _indexed:
+                    self._links.create_index("delete_at", expireAfterSeconds=0)
+                    _indexed.add(key)
 
     def create(self, org: str, uid: str, target: dict, caption: str = "") -> tuple[dict, str]:
         token = secrets.token_urlsafe(32)
@@ -197,7 +258,7 @@ class PhotoLinks:
             "target_id": target["id"], "target_label": target["label"],
             "target_name": target.get("name") or target.get("title") or "",
             "caption": caption, "created_at": now, "expires_at": now + timedelta(minutes=LINK_MINUTES),
-            "delete_at": now + timedelta(days=2), "photos": [], "gps_offers": [],
+            "delete_at": now + timedelta(days=2), "photos": [], "gps_offers": [], "n": 0,
         }
         self._links.insert_one(doc)
         return doc, token
@@ -212,13 +273,31 @@ class PhotoLinks:
             return None
         return doc
 
+    @staticmethod
+    def expired(doc: dict) -> bool:
+        return _now() > _aware(doc["expires_at"])
+
     def usable(self, doc: dict) -> str | None:
         """Why the link can't take another photo, or None if it can."""
-        if _now() > _aware(doc["expires_at"]):
+        if self.expired(doc):
             return "This link has expired. Ask for a new one."
-        if len(doc["photos"]) >= MAX_PER_LINK:
+        if max(len(doc["photos"]), doc.get("n", 0)) >= MAX_PER_LINK:
             return f"This link has taken its {MAX_PER_LINK} photos. Ask for a new one."
         return None
+
+    def reserve(self, link_id: str) -> bool:
+        """Take one of the link's MAX_PER_LINK places for a photo on its way, in
+        one step, so uploads at the same moment can't pass the limit together.
+        False when it has expired or has no place left. Give the place back with
+        :meth:`release` if the photo isn't kept."""
+        taken = self._links.find_one_and_update(
+            {"_id": link_id, "expires_at": {"$gt": _now()},
+             "$or": [{"n": {"$lt": MAX_PER_LINK}}, {"n": {"$exists": False}}]},
+            {"$inc": {"n": 1}})
+        return taken is not None
+
+    def release(self, link_id: str) -> None:
+        self._links.update_one({"_id": link_id, "n": {"$gt": 0}}, {"$inc": {"n": -1}})
 
     def add_photo(self, link_id: str, photo_id: str, gps: dict | None) -> None:
         update = {"$push": {"photos": photo_id}}
@@ -227,22 +306,32 @@ class PhotoLinks:
         self._links.update_one({"_id": link_id}, update)
 
     def answer(self, link_id: str, photo_id: str, answer: str) -> dict | None:
+        """Record the uploader's answer for a photo's location, once. A declined
+        location is dropped from the link. Returns the offer (with the location),
+        or None if there's no unanswered offer for that photo."""
         doc = self._links.find_one({"_id": link_id})
-        offer = next((o for o in (doc or {}).get("gps_offers", []) if o["photo_id"] == photo_id), None)
-        if offer is None:
+        offer = next((o for o in (doc or {}).get("gps_offers", []) if o.get("photo_id") == photo_id), None)
+        if offer is None or offer.get("answer") is not None:
             return None
-        self._links.update_one({"_id": link_id, "gps_offers.photo_id": photo_id},
-                               {"$set": {"gps_offers.$.answer": answer}})
-        return offer
+        update = {"$set": {"gps_offers.$.answer": answer}}
+        if answer != "saved":
+            update["$unset"] = {"gps_offers.$.lat": "", "gps_offers.$.lon": ""}
+        done = self._links.update_one(
+            {"_id": link_id, "gps_offers": {"$elemMatch": {"photo_id": photo_id, "answer": None}}}, update)
+        return offer if done.modified_count else None
 
     @staticmethod
     def public(doc: dict) -> dict:
+        """The link as its creator sees it. A location the uploader declined isn't
+        in it (it isn't kept)."""
         return {
             "link_id": doc["_id"], "target": {"id": doc["target_id"], "kind": doc["target_label"],
                                               "name": doc["target_name"]},
             "expires_at": _aware(doc["expires_at"]).isoformat(), "photos": list(doc["photos"]),
-            "location_offers": [{"photo_id": o["photo_id"], "lat": o["lat"], "lon": o["lon"],
-                                 "answer": o["answer"]} for o in doc["gps_offers"]],
+            "location_offers": [
+                {"photo_id": o["photo_id"], "answer": o.get("answer")} if o.get("answer") == "declined" else
+                {"photo_id": o["photo_id"], "lat": o["lat"], "lon": o["lon"], "answer": o.get("answer")}
+                for o in doc["gps_offers"] if o.get("answer") == "declined" or "lat" in o],
         }
 
 

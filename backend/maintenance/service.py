@@ -16,6 +16,8 @@ Dates are whole days, as ISO text (``"2026-10-13"``).
 
 from __future__ import annotations
 
+import math
+import time
 from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
@@ -45,6 +47,42 @@ class Invalid(ValueError):
     """The request can't be done as asked (HTTP 422)."""
 
 
+class LimitReached(Invalid):
+    """An organisation has reached one of its limits (HTTP 422)."""
+
+    status = 422
+
+
+class RateLimited(LimitReached):
+    """Too many changes in the last minute (HTTP 429)."""
+
+    status = 429
+
+
+# ---- limits --------------------------------------------------------------------
+# Generous ceilings, per organisation, so one workspace's use stays within what
+# a shared process holds comfortably.
+
+SHORT_TEXT = 200  # names, titles, tags, serials
+LONG_TEXT = 4000  # descriptions, notes, instructions, reasons
+_LONG_FIELDS = {"description", "notes", "note", "instructions", "reason"}
+
+MAX_COPY_NODES = 500  # positions, failure modes and tasks made by one copy
+MAX_LIST = 100  # ids or entries given in one request
+MAX_POSITIONS = 20_000
+MAX_ITEMS = 50_000
+MAX_PHOTOS = 5_000
+MAX_EVENTS = 1_000_000
+MAX_READINGS_PER_DAY = 500_000  # automated readings stored, per organisation per day (UTC)
+WRITES_PER_MINUTE = 600  # changes started, per organisation per minute
+
+MAX_AMOUNT = 1e12  # readings, costs, quantities
+MAX_CALENDAR_DAYS = 100 * 365.25  # a task interval of at most 100 years
+MAX_USE_INTERVAL = 1e7  # hours, cycles, km...
+_DAYS_PER = {"days": 1.0, "weeks": 7.0, "months": 30.4375, "years": 365.25}
+EARLIEST_DAY, LATEST_DAY = "1900-01-01", "2199-12-31"
+
+
 # ---- helpers -------------------------------------------------------------------
 
 def _day(value, what: str = "date") -> str:
@@ -52,32 +90,92 @@ def _day(value, what: str = "date") -> str:
     if value in (None, ""):
         return date.today().isoformat()
     try:
-        return date.fromisoformat(str(value)[:10]).isoformat()
+        day = date.fromisoformat(str(value)[:10]).isoformat()
     except ValueError:
-        raise Invalid(f"The {what} must be a date like 2026-10-13; got {value!r}.")
+        raise Invalid(f"The {what} must be a date like 2026-10-13; got {str(value)[:40]!r}.")
+    if not EARLIEST_DAY <= day <= LATEST_DAY:
+        raise Invalid(f"The {what} must be between {EARLIEST_DAY[:4]} and {LATEST_DAY[:4]}.")
+    return day
 
 
-def _text(value, what: str, required: bool = False) -> str:
+def _text(value, what: str, required: bool = False, max_len: int | None = None) -> str:
+    """Text from a request: trimmed, and at most ``max_len`` characters (by
+    default SHORT_TEXT, or LONG_TEXT for descriptions, notes and the like)."""
     text = str(value or "").strip()
     if required and not text:
         raise Invalid(f"The {what} is required.")
+    limit = max_len or (LONG_TEXT if what in _LONG_FIELDS else SHORT_TEXT)
+    if len(text) > limit:
+        raise Invalid(f"The {what} is at most {limit} characters.")
     return text
+
+
+def _number(value, what: str, low: float, high: float):
+    """A finite number from a request, between ``low`` and ``high``."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise Invalid(f"The {what} must be a number.")
+    if not math.isfinite(value):
+        raise Invalid(f"The {what} must be a number.")
+    if not low <= value <= high:
+        raise Invalid(f"The {what} must be between {low:g} and {high:g}.")
+    return value
+
+
+def _interval(value, unit: str, what: str = "interval") -> float:
+    """A task interval: positive, at most 100 years on the calendar, or
+    MAX_USE_INTERVAL units of use."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise Invalid(f"The {what} must be a number.")
+    if not math.isfinite(value) or value <= 0:
+        raise Invalid(f"The {what} must be positive.")
+    unit = _norm_unit(unit) or "days"
+    if unit in _DAYS_PER:
+        if value * _DAYS_PER[unit] > MAX_CALENDAR_DAYS:
+            raise Invalid(f"The {what} is at most 100 years.")
+    elif value > MAX_USE_INTERVAL:
+        raise Invalid(f"The {what} is at most {MAX_USE_INTERVAL:g} {unit}.")
+    return value
+
+
+def _list(value, what: str, limit: int = MAX_LIST) -> list:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise Invalid(f"The {what} must be a list.")
+    if len(value) > limit:
+        raise Invalid(f"At most {limit} {what} at a time.")
+    return list(value)
+
+
+def _dicts(value, what: str, limit: int = MAX_LIST) -> list[dict]:
+    items = _list(value, what, limit)
+    if not all(isinstance(x, dict) for x in items):
+        raise Invalid(f"Each of the {what} must be an object.")
+    return items
 
 
 def add_interval(day: str, interval: float, unit: str) -> str | None:
     """``day`` plus ``interval`` calendar units, or None for a unit of use
-    (hours, cycles, km), which needs a meter to schedule."""
+    (hours, cycles, km), which needs a meter to schedule. None too when the
+    date would fall outside the calendar."""
     unit = _norm_unit(unit) or "days"
-    start = date.fromisoformat(day)
-    if unit == "days":
-        return (start + timedelta(days=round(interval))).isoformat()
-    if unit == "weeks":
-        return (start + timedelta(days=round(interval * 7))).isoformat()
-    if unit in ("months", "years"):
-        months = interval * (12 if unit == "years" else 1)
-        if float(months).is_integer():
-            return (start + relativedelta(months=int(months))).isoformat()
-        return (start + timedelta(days=round(months * 30.4375))).isoformat()
+    try:
+        start = date.fromisoformat(day)
+        if unit == "days":
+            return (start + timedelta(days=round(interval))).isoformat()
+        if unit == "weeks":
+            return (start + timedelta(days=round(interval * 7))).isoformat()
+        if unit in ("months", "years"):
+            months = interval * (12 if unit == "years" else 1)
+            if float(months).is_integer():
+                return (start + relativedelta(months=int(months))).isoformat()
+            return (start + timedelta(days=round(months * 30.4375))).isoformat()
+    except (OverflowError, ValueError, TypeError):
+        return None
     return None
 
 
@@ -380,17 +478,22 @@ def _coordinates_set(s: GraphStore, org: str, p: dict) -> None:
                                                      "source": p.get("source", "manual"), "on": p["on"]}})
 
 
-def class_id(name: str) -> str:
-    """A position class's node id: one per class name (case and spacing aside)."""
+def class_id(org: str, name: str) -> str:
+    """A position class's node id: one per organisation and class name (case
+    and spacing aside)."""
     import hashlib
 
-    return "class-" + hashlib.sha1(" ".join(name.lower().split()).encode()).hexdigest()[:16]
+    key = org + "\n" + " ".join(name.lower().split())
+    return "class-" + hashlib.sha1(key.encode()).hexdigest()[:16]
 
 
 def _class_upsert(s: GraphStore, org: str, p: dict, changes: dict) -> None:
-    if s.node(org, p["id"]) is None:
-        s.put_node(org, p["id"], "PositionClass", {"name": p["name"]})
-    s.patch_node(org, p["id"], changes)
+    # The id comes from the organisation and the name, not the payload: events
+    # logged before the id took in the organisation carry the older form.
+    cid = class_id(org, p["name"])
+    if s.node(org, cid) is None:
+        s.put_node(org, cid, "PositionClass", {"name": p["name"]})
+    s.patch_node(org, cid, changes)
 
 
 def _class_costs_set(s: GraphStore, org: str, p: dict) -> None:
@@ -548,12 +651,39 @@ PROJECTORS = {
 class Maintenance:
     """One organisation's maintenance graph, acted on by one person."""
 
-    def __init__(self, store: GraphStore, org: str, actor: str | None = None):
+    def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True):
         self.s = store
         self.org = org
         self.actor = actor
+        # The daily run isn't limited: it writes for every organisation.
+        self.limited = limited
+        self._checked = False
+
+    def check_limits(self) -> None:
+        """Before a change: refuse when the organisation has started too many
+        changes this minute, or holds MAX_EVENTS events. Counted per change
+        (one request, one tool call), not per event, so a large import is one."""
+        self._checked = True
+        if not self.limited:
+            return
+        now = time.monotonic()
+        window = self.s.write_windows.get(self.org)
+        if window is None or now - window[0] >= 60:
+            window = self.s.write_windows[self.org] = [now, 0]
+        if window[1] >= WRITES_PER_MINUTE:
+            raise RateLimited(f"Too many changes in the last minute (at most {WRITES_PER_MINUTE}). "
+                              "Wait a moment and try again.")
+        window[1] += 1
+        if self.s.event_count(self.org) >= MAX_EVENTS:
+            raise LimitReached(f"This maintenance workspace has reached its limit of {MAX_EVENTS:,} recorded changes.")
+
+    def _quota(self, label: str, limit: int, adding: int = 1, what: str = "") -> None:
+        if self.limited and self.s.count(self.org, label) + adding > limit:
+            raise LimitReached(f"This maintenance workspace can hold at most {limit:,} {what or label.lower() + 's'}.")
 
     def _emit(self, type: str, payload: dict) -> None:
+        if not self._checked:
+            self.check_limits()
         self.s.apply(self.org, type, payload, self.actor)
 
     def _get(self, id: str, label: str) -> dict:
@@ -568,6 +698,7 @@ class Maintenance:
         name = _text(name, "position's name", required=True)
         if parent_id:
             self._parent_node(parent_id)
+        self._quota("Position", MAX_POSITIONS)
         pid = new_id()
         self._emit("position.created", {
             "id": pid, "name": name, "tag": _text(tag, "tag"), "parent_id": parent_id or None,
@@ -621,28 +752,51 @@ class Maintenance:
         failure modes and their tasks (not items or work orders). For a
         second pump station like the first, or a template."""
         source = self._get(position_id, "Position")
+        new_name = _text(name, "copy's name", required=True)
         if parent_id:
             self._get(parent_id, "Position")
+            if parent_id == position_id or position_id in self._ancestor_ids(parent_id):
+                raise Invalid("A position can't be copied into itself.")
         today = date.today().isoformat()
 
-        def copy(src: dict, new_name: str, parent: str | None) -> str:
-            pid = new_id()
+        # Read the whole subtree first, then write: what's copied is the tree as
+        # it was, never the copy being made.
+        plan, seen, size = [], set(), 0
+
+        def read(src: dict, new_pid: str, label: str, parent: str | None) -> None:
+            nonlocal size
+            if src["id"] in seen:
+                return
+            seen.add(src["id"])
+            modes = self.s.out(self.org, src["id"], "CAN_FAIL_AS")
+            tasks = [t for t in self.s.inn(self.org, src["id"], "ON") if t["label"] == "Task"]
+            size += 1 + len(modes) + len(tasks)
+            if size > MAX_COPY_NODES:
+                raise Invalid(f"That's more than {MAX_COPY_NODES} positions, failure modes and tasks to copy "
+                              "at once. Copy a smaller part of it.")
+            plan.append((src, new_pid, label, parent, modes, tasks))
+            for child in sorted(self.s.inn(self.org, src["id"], "PART_OF"), key=lambda c: c["name"].lower()):
+                if child["label"] == "Position":
+                    read(child, new_id(), child["name"], new_pid)
+
+        new = new_id()
+        read(source, new, new_name, parent_id or None)
+        self._quota("Position", MAX_POSITIONS, adding=len(plan))
+        for src, pid, label, parent, modes, tasks in plan:
             self._emit("position.created", {
-                "id": pid, "name": new_name, "tag": "", "parent_id": parent,
+                "id": pid, "name": label, "tag": "", "parent_id": parent,
                 "position_class": src.get("position_class", ""), "description": src.get("description", ""),
                 "on": today,
             })
             mode_ids = {}
-            for fm in self.s.out(self.org, src["id"], "CAN_FAIL_AS"):
+            for fm in modes:
                 mode_ids[fm["id"]] = new_id()
                 self._emit("failure_mode.added", {
                     "id": mode_ids[fm["id"]], "position_id": pid,
                     **{k: fm.get(k) for k in ("text", "function", "failure", "consequence", "outcome",
                                               "rcm_mode_id", "study_id")},
                 })
-            for task in self.s.inn(self.org, src["id"], "ON"):
-                if task["label"] != "Task":
-                    continue
+            for task in tasks:
                 mitigates = self.s.out(self.org, task["id"], "MITIGATES")
                 self._emit("task.added", {
                     "id": new_id(), "position_id": pid,
@@ -650,11 +804,6 @@ class Maintenance:
                     "start": today,
                     **{k: task.get(k) for k in ("name", "outcome", "interval", "unit", "rcm_mode_id", "study_id")},
                 })
-            for child in sorted(self.s.inn(self.org, src["id"], "PART_OF"), key=lambda c: c["name"].lower()):
-                copy(child, child["name"], pid)
-            return pid
-
-        new = copy(source, _text(name, "copy's name", required=True), parent_id or None)
         return self.position(new)
 
     def create_location(self, name, parent_id=None, description="") -> dict:
@@ -670,6 +819,7 @@ class Maintenance:
 
     def create_item(self, name, serial="", part_number="", manufacturer="", notes="", model="",
                     nameplate=None) -> dict:
+        self._quota("Item", MAX_ITEMS)
         iid = new_id()
         self._emit("item.created", {
             "id": iid, "name": _text(name, "item's name", required=True), "serial": _text(serial, "serial"),
@@ -756,6 +906,8 @@ class Maintenance:
         for fn in study.functions or []:
             for failure in fn.get("failures") or []:
                 for mode in failure.get("modes") or []:
+                    if not isinstance(mode, dict) or not mode.get("id"):
+                        continue  # a mode not yet saved with an id can't be tracked
                     decision = mode.get("decision") or {}
                     fm = modes.get(mode["id"])
                     if fm is None:
@@ -774,7 +926,7 @@ class Maintenance:
                         continue
                     name = decision.get("task") or f"{SCHEDULED_OUTCOMES[outcome]}: {mode.get('text', '')}"
                     unit = _norm_unit(decision.get("interval_unit")) or "days"
-                    interval = float(decision["interval"])
+                    interval = _interval(decision["interval"], unit, f"interval for {str(name)[:80]}")
                     existing = tasks.get(mode["id"])
                     if existing is None:
                         self._emit("task.added", {
@@ -835,7 +987,11 @@ class Maintenance:
         if not rate or rate <= 0:
             return {**out, "next_due": None, "note": "needs two readings to project a date"}
         days = (target - last["value"]) / rate
-        return {**out, "next_due": (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()}
+        try:
+            next_due = (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()
+        except (OverflowError, ValueError):
+            return {**out, "next_due": None, "note": "too far ahead to put a date on"}
+        return {**out, "next_due": next_due}
 
     def _task_view(self, task: dict) -> dict:
         limits = [self._due_by(task, task["interval"], task["unit"])]
@@ -904,11 +1060,8 @@ class Maintenance:
         """Receive (positive) or issue (negative) stock of a part at a location."""
         self._get(part_id, "Part")
         self._get(location_id, "Location")
-        try:
-            delta = float(delta)
-        except (TypeError, ValueError):
-            raise Invalid("The quantity must be a number.")
-        if delta == 0 or delta != delta:
+        delta = _number(delta, "quantity", -MAX_AMOUNT, MAX_AMOUNT)
+        if delta == 0:
             raise Invalid("The quantity can't be 0.")
         stock = self.s.node(self.org, stock_id(part_id, location_id))
         if (stock or {}).get("quantity", 0) + delta < 0:
@@ -1016,13 +1169,7 @@ class Maintenance:
     def _amount_or_none(value):
         if value in (None, ""):
             return None
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            raise Invalid("An alarm limit must be a number.")
-        if value != value:
-            raise Invalid("An alarm limit must be a number.")
-        return value
+        return _number(value, "alarm limit", -MAX_AMOUNT, MAX_AMOUNT)
 
     def record_reading(self, point_id: str, value, on=None, note="") -> dict:
         """A manual reading. A counter's only go up. A condition reading past an alarm
@@ -1031,12 +1178,7 @@ class Maintenance:
         if point.get("source") == "automated":
             raise Invalid(f"{point['name']} is fed automatically (tag {point.get('tag')}); its readings come in "
                           "through the feed.")
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            raise Invalid("A reading is a number.")
-        if value != value:
-            raise Invalid("A reading is a number.")
+        value = _number(value, "reading", -MAX_AMOUNT, MAX_AMOUNT)
         day = _day(on)
         if day > date.today().isoformat():
             raise Invalid("A reading can't be in the future.")
@@ -1063,27 +1205,35 @@ class Maintenance:
         an alarm limit opens an inspection. Unknown tags are reported, not stored."""
         from backend.maintenance.series import MAX_BATCH, parse_time
 
-        rows = list(rows or [])
-        if len(rows) > MAX_BATCH:
-            raise Invalid(f"At most {MAX_BATCH} readings at a time.")
+        rows = _list(rows, "readings", MAX_BATCH)
         by_tag = {mp["tag"]: mp for mp in self.s.nodes(self.org, "MeasurementPoint")
                   if mp.get("source") == "automated" and mp.get("tag")}
         grouped: dict[str, list] = {}
         unknown: dict[str, int] = {}
         for i, r in enumerate(rows):
-            tag = str(r.get("tag") or "").strip()
+            if not isinstance(r, dict):
+                raise Invalid(f"Reading {i + 1}: each reading is an object with a tag, a value and a time.")
+            tag = str(r.get("tag") or "").strip()[:SHORT_TEXT]
             point = by_tag.get(tag)
             if point is None:
-                unknown[tag] = unknown.get(tag, 0) + 1
+                if len(unknown) < 100 or tag in unknown:
+                    unknown[tag] = unknown.get(tag, 0) + 1
                 continue
             try:
-                value = float(r.get("value"))
+                value = _number(r.get("value"), "value", -MAX_AMOUNT, MAX_AMOUNT)
                 when = parse_time(r.get("time") or r.get("t") or r.get("timestamp"))
             except (TypeError, ValueError) as err:
                 raise Invalid(f"Reading {i + 1} ({tag}): {err}") from None
-            if value != value:
-                raise Invalid(f"Reading {i + 1} ({tag}): the value isn't a number.")
             grouped.setdefault(point["id"], []).append((when, value))
+        total = sum(len(pts) for pts in grouped.values())
+        if total and self.limited:
+            day = date.today().isoformat()
+            used = self.s.series_days.get((self.org, day), 0)
+            if used + total > MAX_READINGS_PER_DAY:
+                raise RateLimited(f"This workspace has stored {used:,} automated readings today; the limit is "
+                                  f"{MAX_READINGS_PER_DAY:,} a day.")
+            self.s.series_days = {k: v for k, v in self.s.series_days.items() if k[1] == day}
+            self.s.series_days[(self.org, day)] = used + total
         stored, alarms = 0, []
         for pid, pts in grouped.items():
             stored += self.s.series.append(self.org, pid, sorted(pts))
@@ -1169,7 +1319,10 @@ class Maintenance:
                     if status == "ok" and target is not None:
                         days = (target - last["value"]) / slope
                         if 0 < days < 3650:
-                            projection = (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()
+                            try:
+                                projection = (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()
+                            except (OverflowError, ValueError):
+                                projection = None
             alarm_wo = next((w for w in self.s.inn(self.org, point_id, "ALARM_FOR")
                              if w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES), None)
             out |= {"trend_per_day": trend, "projected_alarm": projection,
@@ -1254,9 +1407,10 @@ class Maintenance:
         day = _day(on)
         position_id = self.s.out(self.org, work_order_id, "ON")[0]["id"]
         modes = {m["id"] for m in self.s.out(self.org, position_id, "CAN_FAIL_AS")}
+        actions, readings = _dicts(actions, "actions"), _dicts(readings, "readings")
         # Check everything before writing anything.
         plans = []
-        for a in actions or []:
+        for a in actions:
             kind = a.get("kind")
             if kind not in ACTION_KINDS:
                 raise Invalid(f"An action is one of {', '.join(ACTION_KINDS)}.")
@@ -1435,10 +1589,14 @@ class Maintenance:
             raise Invalid(f"The {what} is required.")
         try:
             value = float(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise Invalid(f"The {what} must be a number.")
-        if value < 0 or value != value:
+        if value != value:
+            raise Invalid(f"The {what} must be a number.")
+        if value < 0:
             raise Invalid(f"The {what} can't be negative.")
+        if value > MAX_AMOUNT:
+            raise Invalid(f"The {what} is at most {MAX_AMOUNT:g}.")
         return value
 
     def log_labour(self, work_order_id: str, hours, who="", rate=None, on=None, note="") -> dict:
@@ -1546,14 +1704,14 @@ class Maintenance:
         changes = {}
         if also_interval is not None:
             try:
-                also_interval = float(also_interval)
-            except (TypeError, ValueError):
+                also_number = float(also_interval)
+            except (TypeError, ValueError, OverflowError):
                 raise Invalid("The second limit must be a number.")
-            if also_interval <= 0:
+            if also_number <= 0:
                 changes["also_interval"], changes["also_unit"] = None, None
             else:
-                changes["also_interval"] = also_interval
                 changes["also_unit"] = _norm_unit(also_unit or task.get("also_unit")) or "months"
+                changes["also_interval"] = _interval(also_number, changes["also_unit"], "second limit")
         if point_id is not None:
             if point_id:
                 if self._get(point_id, "MeasurementPoint").get("kind") != "counter":
@@ -1562,23 +1720,19 @@ class Maintenance:
         if instructions is not None:
             changes["instructions"] = _text(instructions, "instructions")[:4000]
         if checklist is not None:
-            items = [_text(c, "checklist item")[:200] for c in (checklist or [])]
+            items = [_text(c, "checklist item")[:200] for c in _list(checklist, "checklist items")]
             items = [c for c in items if c]
             if len(items) > 50:
                 raise Invalid("At most 50 checklist items.")
             changes["checklist"] = items
         if name is not None:
             changes["name"] = _text(name, "task's name", required=True)
-        if interval is not None:
-            try:
-                interval = float(interval)
-            except (TypeError, ValueError):
-                raise Invalid("The interval must be a number.")
-            if interval <= 0:
-                raise Invalid("The interval must be positive.")
-            changes["interval"] = interval
         if unit is not None:
             changes["unit"] = _norm_unit(unit) or "days"
+        if interval is not None:
+            changes["interval"] = _interval(interval, changes.get("unit", task["unit"]))
+        elif "unit" in changes:
+            _interval(task["interval"], changes["unit"])  # the interval must still make sense in the new unit
         if changes:
             self._emit("task.updated", {"id": task_id, "changes": changes})
         return self._task_view(self._get(task_id, "Task"))
@@ -1693,7 +1847,7 @@ class Maintenance:
                 continue
             entry = classes.setdefault(name, {"position_class": name, "positions": 0, "fitments": 0, "failures": 0})
             if "costs" not in entry:
-                node = self.s.node(self.org, class_id(name)) or {}
+                node = self.s.node(self.org, class_id(self.org, name)) or {}
                 entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target")}
                 entry["model"] = node.get("model")
             entry["positions"] += 1
@@ -1713,23 +1867,20 @@ class Maintenance:
         if not any((p.get("position_class") or "").strip().lower() == name.lower()
                    for p in self.s.nodes(self.org, "Position")):
             raise NotFound(name)
-        node = self.s.node(self.org, class_id(name)) or {}
+        node = self.s.node(self.org, class_id(self.org, name)) or {}
         out = {}
         for key, value in (("planned_cost", planned_cost), ("failure_cost", failure_cost),
                            ("availability_target", availability_target)):
             if value is None or value == "":
                 out[key] = node.get(key)
                 continue
-            try:
-                out[key] = float(value)
-            except (TypeError, ValueError):
-                raise Invalid(f"{key.replace('_', ' ').capitalize()} must be a number.")
+            out[key] = _number(value, key.replace("_", " "), -MAX_AMOUNT, MAX_AMOUNT)
         if out["planned_cost"] is not None and out["failure_cost"] is not None:
             if out["planned_cost"] < 0 or out["failure_cost"] <= out["planned_cost"]:
                 raise Invalid("A failure must cost more than a planned replacement (and neither below 0).")
         if out["availability_target"] is not None and not (0 < out["availability_target"] < 1):
             raise Invalid("The availability target is between 0 and 1, e.g. 0.99.")
-        self._emit("class.costs_set", {"id": class_id(name), "name": name, **out})
+        self._emit("class.costs_set", {"id": class_id(self.org, name), "name": name, **out})
         return self.position_class(name)
 
     def position_class(self, position_class: str) -> dict:
@@ -1847,7 +1998,7 @@ class Maintenance:
         """A redundancy group: positions doing the same job where k of them are enough
         (two pumps, either will do: k = 1). mode 'standby': the others wait to take over
         (standby cold, warm or hot)."""
-        members = [self._get(pid, "Position") for pid in dict.fromkeys(member_ids or [])]
+        members = [self._get(pid, "Position") for pid in dict.fromkeys(_list(member_ids, "positions"))]
         if len(members) < 2:
             raise Invalid("A redundancy group needs at least two positions.")
         try:
@@ -1868,6 +2019,11 @@ class Maintenance:
 
     def update_group(self, group_id: str, name=None, k=None, mode=None, standby=None, add=(), remove=()) -> dict:
         g = self._get(group_id, "RedundancyGroup")
+        add, remove = _list(add, "positions to add"), _list(remove, "positions to remove")
+        try:
+            new_k = int(k) if k is not None else g["k"]
+        except (TypeError, ValueError):
+            raise Invalid("k (how many are needed) is a whole number.")
         members = {m["id"] for m in self._members(group_id)}
         for pid in add or []:
             self._get(pid, "Position")
@@ -1889,7 +2045,6 @@ class Maintenance:
             if standby not in ("cold", "warm", "hot"):
                 raise Invalid("standby is cold, warm or hot.")
             changes["standby"] = standby
-        new_k = int(k) if k is not None else g["k"]
         if not 1 <= new_k < max(len(members), 2):
             raise Invalid(f"k (how many are needed) must be 1 to {len(members) - 1}.")
         if k is not None:
@@ -1964,12 +2119,21 @@ class Maintenance:
     def add_photo(self, photo_id: str, target_id: str, cleaned: dict, caption="", via="app") -> dict:
         """Record a photo whose bytes are already stored (see photos.py)."""
         self.photo_target(target_id)
+        self.check_photo_quota()
         self._emit("photo.added", {
             "id": photo_id, "target_id": target_id, "caption": _text(caption, "caption"),
             "taken_on": cleaned.get("taken_on"), "width": cleaned.get("width"),
             "height": cleaned.get("height"), "via": via, "on": date.today().isoformat(),
         })
         return self.photo(photo_id)
+
+    def check_photo_quota(self) -> None:
+        """Refuse another photo when the workspace already holds MAX_PHOTOS."""
+        if self.limited:
+            kept = sum(1 for p in self.s.nodes(self.org, "Photo") if not p.get("removed"))
+            if kept >= MAX_PHOTOS:
+                raise LimitReached(f"This maintenance workspace can hold at most {MAX_PHOTOS:,} photos. "
+                                   "Remove some first.")
 
     def photo(self, photo_id: str) -> dict:
         p = self._get(photo_id, "Photo")
@@ -2002,6 +2166,8 @@ class Maintenance:
             raise Invalid("Latitude and longitude must be numbers.")
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             raise Invalid("Latitude is -90 to 90 and longitude -180 to 180.")
+        if source not in ("manual", "photo"):
+            raise Invalid("The source is manual or photo.")
         self._emit("coordinates.set", {"node_id": node["id"], "lat": round(lat, 6), "lon": round(lon, 6),
                                        "source": source, "on": date.today().isoformat()})
         node = self.s.node(self.org, node["id"])
@@ -2206,4 +2372,6 @@ def summary(m: Maintenance) -> dict:
 
 
 
-PROJECTION_VERSION = 2  # 2: meters and condition points became measurement points
+# 2: meters and condition points became measurement points
+# 3: nodes and edges keyed by (org, id); position class ids include the org
+PROJECTION_VERSION = 3
