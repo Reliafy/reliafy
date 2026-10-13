@@ -253,3 +253,43 @@ def test_class_model_fitting_is_pro_only_over_mcp():
     finally:
         mcp_tools.unregister()
     assert "fit_class_model" not in mcp_server.PRO_ONLY_TOOLS
+
+
+def test_tasks_failure_modes_and_past_fitments_through_mcp(env):
+    async def flow(client):
+        pid = _ok(await client.call_tool("create_position", {"name": "Pump", "position_class": "Pool pump"}))["id"]
+        task = _ok(await client.call_tool("create_task", {
+            "position_id": pid, "name": "Clean basket", "interval": 1, "unit": "weeks", "source": "oem",
+            "reference": "Manual p. 12", "checklist": ["Isolate", "Empty basket"]}))
+        assert (task["source"], task["unit"], task["outcome"]) == ("oem", "weeks", None)
+        bad = await client.call_tool("create_task", {"position_id": pid, "name": "X", "interval": 1,
+                                                     "outcome": "rtf"})
+        assert bad.is_error
+        mode = _ok(await client.call_tool("add_failure_mode", {"position_id": pid, "text": "Basket blocked"}))
+        linked = _ok(await client.call_tool("update_task", {"task_id": task["id"], "failure_mode_id": mode["id"]}))
+        assert linked["failure_mode"]["text"] == "Basket blocked"
+        unlinked = _ok(await client.call_tool("update_task", {"task_id": task["id"], "unlink_failure_mode": True}))
+        assert unlinked["failure_mode"] is None
+
+        _ok(await client.call_tool("fit_item", {"position_id": pid, "item_name": "Astral", "on": "2024-01-01"}))
+        removed = _ok(await client.call_tool("remove_item", {"position_id": pid, "on": "2025-01-01",
+                                                             "failure_mode_text": "Seal leaking"}))
+        assert removed["life_data"][0]["c"] == 0
+        ad_hoc = next(f for f in removed["failure_modes"] if f["ad_hoc"])
+        merged = _ok(await client.call_tool("merge_failure_mode", {"failure_mode_id": ad_hoc["id"],
+                                                                   "into_failure_mode_id": mode["id"]}))
+        assert [f["text"] for f in merged["failure_modes"]] == ["Basket blocked"]
+        edited = _ok(await client.call_tool("update_failure_mode", {"failure_mode_id": mode["id"],
+                                                                    "failure": "No flow"}))
+        assert edited["failure"] == "No flow"
+
+        past = _ok(await client.call_tool("add_past_fitment", {
+            "position_id": pid, "start": "2020-01-01", "end": "2023-12-31", "item_name": "Old pump",
+            "failure_mode_text": "Motor burnt out", "from_precision": "year"}))
+        assert [r["c"] for r in past["life_data"]] == [0, 0]
+        clash = await client.call_tool("add_past_fitment", {"position_id": pid, "start": "2021-01-01",
+                                                            "end": "2021-06-01", "item_name": "Ghost"})
+        assert clash.is_error and "Old pump" in clash.content[0].text
+        return True
+
+    assert _session(env["token"], flow)

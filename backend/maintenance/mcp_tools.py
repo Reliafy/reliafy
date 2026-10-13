@@ -77,9 +77,10 @@ def register() -> None:
     @tool("get_position", _READ, "Read a maintenance position")
     def get_position(position_id: str, ctx: Context) -> dict[str, Any]:
         """One position: its path, the positions inside it, the item fitted now, every
-        past fitment, its failure modes (from RCM), its tasks with last-done and next-due
-        dates, its work orders, and its life data (one row per item fitted: days in
-        service, c = 0 failed or 1 censored)."""
+        past fitment, its failure modes (from RCM, added by hand, or ad hoc: typed in at a
+        failure), class_failure_modes (modes seen at other positions of its class, to offer
+        when it fails), its tasks with last-done and next-due dates, its work orders, and its
+        life data (one row per item fitted: days in service, c = 0 failed or 1 censored)."""
         return run(m_for(ctx).position, position_id)
 
     @tool("list_work_orders", _READ, "List work orders")
@@ -169,11 +170,64 @@ def register() -> None:
 
     @tool("remove_item", _WRITE, "Remove a fitted item")
     def remove_item(position_id: str, ctx: Context, on: DateText = None,
-                    reason: Literal["planned", "failure", "other"] = "planned",
-                    failure_mode_id: str | None = None) -> dict[str, Any]:
+                    reason: Literal["planned", "failure", "other"] | None = None,
+                    failure_mode_id: str | None = None, failure_mode_text: str | None = None) -> dict[str, Any]:
         """Take the fitted item out of a position with no work order (a correction, or
-        moving it). Work done on it belongs on a work order (close_work_order)."""
-        return run(m_for(ctx).remove, position_id, on, reason, failure_mode_id)
+        moving it). Work done on it belongs on a work order (close_work_order). If it failed,
+        name how: failure_mode_id (a mode in get_position), or failure_mode_text in words
+        (the position's mode of that name is reused, else an ad-hoc one is added). A failure
+        mode with no reason means it failed; with no mode, a planned removal. Recording a
+        failure as planned corrupts the life data, so name a mode whenever it failed."""
+        return run(m_for(ctx).remove, position_id, on, reason, failure_mode_id, failure_mode_text)
+
+    @tool("add_past_fitment", _WRITE, "Add a past fitment to a position's history")
+    def add_past_fitment(position_id: str, start: str, end: str, ctx: Context,
+                         reason: Literal["planned", "failure", "other"] | None = None,
+                         item_id: str | None = None, item_name: str | None = None, serial: str = "",
+                         part_number: str = "", manufacturer: str = "", model: str = "",
+                         failure_mode_id: str | None = None, failure_mode_text: str | None = None,
+                         from_precision: Literal["exact", "month", "year", "estimated"] | None = None,
+                         to_precision: Literal["exact", "month", "year", "estimated"] | None = None,
+                         note: str = "") -> dict[str, Any]:
+        """Put an earlier item into a position's history (migrating records from another
+        system) without remove / refit / work order steps: it went in on start and came out
+        on end (dates like 2019-03-01). The item: an existing one (item_id) or a new one
+        (item_name, serial...). reason: failure (name the mode by failure_mode_id or in words
+        with failure_mode_text), planned, or other; with a mode and no reason it's a failure.
+        It may sit before the current fitment but must not overlap any other fitment at the
+        position (or the item's own elsewhere); the current item and tasks are untouched.
+        from_precision / to_precision: how well each date is known (exact, month, year,
+        estimated), when it was e.g. 'sometime in 2019'. Returns the position."""
+        new_item = {"name": item_name, "serial": serial, "part_number": part_number,
+                    "manufacturer": manufacturer, "model": model} if item_name else None
+        return run(m_for(ctx).add_past_fitment, position_id, start, end, reason, item_id, new_item,
+                   failure_mode_id, failure_mode_text, from_precision, to_precision, note)
+
+    @tool("add_failure_mode", _WRITE, "Add a failure mode to a position")
+    def add_failure_mode(position_id: str, text: str, ctx: Context, function: str = "", failure: str = "",
+                         consequence: str = "") -> dict[str, Any]:
+        """A failure mode on a position without an RCM study: how it fails (text: 'Bearing
+        worn', 'Seal leaking'), optionally the function it serves, the functional failure
+        ('No flow') and the consequence. Failures (remove_item, close_work_order,
+        add_past_fitment) and tasks (create_task, update_task) can then name it by id."""
+        return run(m_for(ctx).add_failure_mode, position_id, text, function, failure, consequence)
+
+    @tool("update_failure_mode", _WRITE, "Edit a failure mode")
+    def update_failure_mode(failure_mode_id: str, ctx: Context, text: str | None = None,
+                            function: str | None = None, failure: str | None = None,
+                            consequence: str | None = None) -> dict[str, Any]:
+        """Edit a failure mode added by hand or typed in at a failure (ad hoc). Editing an
+        ad-hoc mode confirms it as a formal one. Modes from an RCM study change in the study."""
+        return run(m_for(ctx).update_failure_mode, failure_mode_id, text, function, failure, consequence)
+
+    @tool("merge_failure_mode", _WRITE, "Merge one failure mode into another")
+    def merge_failure_mode(failure_mode_id: str, into_failure_mode_id: str, ctx: Context) -> dict[str, Any]:
+        """Fold a failure mode into another on the same position (a duplicate, or an ad-hoc
+        mode typed in at a failure): its recorded failures, findings and tasks move to the
+        other, so the life data keeps them, and it leaves the list. To link an ad-hoc mode to
+        an RCM study's, apply the study to the position, then merge the ad-hoc mode into the
+        study's. Returns the position."""
+        return run(m_for(ctx).merge_failure_mode, failure_mode_id, into_failure_mode_id)
 
     @tool("set_task_last_done", _WRITE, "Set when a task was last done")
     def set_task_last_done(task_id: str, on: str, ctx: Context) -> dict[str, Any]:
@@ -188,8 +242,9 @@ def register() -> None:
 
     @tool("place_item", _WRITE, "Place an item at a location")
     def place_item(item_id: str, location_id: str, ctx: Context, on: DateText = None) -> dict[str, Any]:
-        """Record where an item physically is (a store, the workshop), separately
-        from what job it's fitted to."""
+        """Record where an item physically is (a store, the workshop, the plant room),
+        separately from what job it's fitted to. With no date ('on'), a fitted item has been
+        there since it was fitted; otherwise it's today."""
         return run(m_for(ctx).place_item, item_id, location_id, on)
 
     # ---- work ---------------------------------------------------------------------------
@@ -212,8 +267,9 @@ def register() -> None:
     def close_work_order(work_order_id: str, ctx: Context,
                          actions: Annotated[list[dict], Field(description=(
                              "What was done, in order. Each: {kind: 'replace'|'repair'|'inspect'|'other', "
-                             "failure_mode_id?: a failure mode on the position (for a replace, naming one "
-                             "means it failed that way; none means a planned replacement), "
+                             "failure_mode_id?: a failure mode on the position, or failure_mode_text?: one in "
+                             "words (the position's mode of that name, else a new ad-hoc one) (for a replace, "
+                             "naming one means it failed that way; none means a planned replacement), "
                              "finding?: 'ok'|'degraded'|'found_failed' (inspect only), "
                              "new_item?: {name, serial?, part_number?, manufacturer?} or item_id? "
                              "(replace: what went in), notes?}"))] = [],
@@ -223,7 +279,8 @@ def register() -> None:
         """Close a work order with what was done. A replacement ends the fitted item's
         time at the position (a failure if a failure mode is named, otherwise a planned
         removal) and fits the new item; that is what builds the life data. Get the
-        position's failure-mode ids from get_work_order first. Nothing is saved if any
+        position's failure-mode ids from get_work_order first; if none fits, describe it in
+        failure_mode_text rather than leaving a failure as planned. Nothing is saved if any
         action is invalid."""
         return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes, readings)
 
@@ -383,18 +440,49 @@ def register() -> None:
         that was done."""
         return run(m_for(ctx).cancel_work_order, work_order_id, reason)
 
+    Outcome = Literal["fixed_interval", "failure_finding", "on_condition"]
+    Source = Literal["manual", "oem", "statutory", "other"]
+
+    @tool("create_task", _WRITE, "Add a scheduled task to a position")
+    def create_task(position_id: str, name: str, interval: float, ctx: Context, unit: str = "months",
+                    outcome: Outcome | None = None, also_interval: float | None = None, also_unit: str | None = None,
+                    point_id: str | None = None, instructions: str = "", checklist: list[str] | None = None,
+                    source: Source = "manual", reference: str = "", failure_mode_id: str | None = None,
+                    last_done: DateText = None) -> dict[str, Any]:
+        """A scheduled task on a position without an RCM study (e.g. from the maker's manual or
+        a regulation). It falls due, raises work orders (generate_work_orders) and renews when a
+        new item is fitted, like a task from RCM. interval + unit: days, weeks, months, years, or
+        a unit of use (hours, cycles, km) counted by a counter on the position (point_id picks
+        one). also_interval + also_unit: a second limit, whichever comes first. outcome:
+        fixed_interval (replace or restore; the class life model proposes its interval and
+        plan_economics costs it), failure_finding (a check of a hidden function), on_condition
+        (a condition check), or none for other routine work (lubrication, cleaning). source:
+        oem, statutory, manual (own practice) or other, with reference (a manual section, a
+        clause). failure_mode_id links it to a failure mode on the position (from RCM: it then
+        becomes that decision's task). last_done: when it was last done, if known."""
+        return run(m_for(ctx).create_task, position_id, name, interval, unit, outcome, also_interval, also_unit,
+                   point_id, instructions, checklist, source, reference, failure_mode_id, last_done)
+
     @tool("update_task", _WRITE, "Update a task")
     def update_task(task_id: str, ctx: Context, name: str | None = None, interval: float | None = None,
                     unit: str | None = None, also_interval: float | None = None, also_unit: str | None = None,
                     point_id: str | None = None, instructions: str | None = None,
-                    checklist: list[str] | None = None) -> dict[str, Any]:
+                    checklist: list[str] | None = None, failure_mode_id: str | None = None,
+                    unlink_failure_mode: bool = False, source: Source | None = None,
+                    reference: str | None = None, outcome: Outcome | None = None,
+                    clear_outcome: bool = False) -> dict[str, Any]:
         """Rename a task or change its interval (unit: days, weeks, months, years, or a unit of use
         such as hours, cycles, km, from a counter on the position). also_interval + also_unit
         add a second limit, whichever comes first (every 500 hours or 6 months); also_interval 0
         removes it. point_id picks the counter a task by use goes by. instructions and checklist (steps to
-        tick off) are copied onto each work order the task raises."""
+        tick off) are copied onto each work order the task raises. failure_mode_id links a task added
+        by hand to a failure mode on its position (one from an RCM study makes it that decision's
+        task: applying the study again updates it); unlink_failure_mode removes the link. source,
+        reference and outcome (or clear_outcome) apply to tasks added by hand."""
+        mode = "" if unlink_failure_mode else failure_mode_id
         return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
-                   instructions, checklist)
+                   instructions, checklist, mode, source, reference,
+                   None if clear_outcome else outcome if outcome is not None else ...)
 
     @tool("add_measurement_point", _WRITE, "Add a measurement point")
     def add_measurement_point(position_id: str, ctx: Context, name: str = "",

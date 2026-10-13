@@ -224,7 +224,44 @@ def fit(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maint
 
 @router.post("/positions/{position_id}/remove")
 def remove(position_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.remove, position_id, body.get("on"), body.get("reason", "planned"), body.get("failure_mode_id"))
+    """A failure names its mode by failure_mode_id, or in words (failure_mode_text)."""
+    return _run(m.remove, position_id, body.get("on"), body.get("reason"), body.get("failure_mode_id"),
+                body.get("failure_mode_text"))
+
+
+@router.post("/positions/{position_id}/past-fitments")
+def add_past_fitment(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A past fitment into the position's history: start, end, reason, an item (item_id or new_item)."""
+    return _run(m.add_past_fitment, position_id, body.get("start"), body.get("end"), body.get("reason"),
+                body.get("item_id"), body.get("new_item"), body.get("failure_mode_id"), body.get("failure_mode_text"),
+                body.get("from_precision"), body.get("to_precision"), body.get("note", ""))
+
+
+@router.post("/positions/{position_id}/tasks")
+def create_task(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A scheduled task added by hand (not from an RCM study)."""
+    return _run(m.create_task, position_id, body.get("name"), body.get("interval"), body.get("unit") or "months",
+                body.get("outcome"), body.get("also_interval"), body.get("also_unit"), body.get("point_id"),
+                body.get("instructions", ""), body.get("checklist"), body.get("source") or "manual",
+                body.get("reference", ""), body.get("failure_mode_id"), body.get("last_done"))
+
+
+@router.post("/positions/{position_id}/failure-modes")
+def add_failure_mode(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_failure_mode, position_id, body.get("text"), body.get("function", ""), body.get("failure", ""),
+                body.get("consequence", ""))
+
+
+@router.patch("/failure-modes/{mode_id}")
+def update_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_failure_mode, mode_id, **{k: body[k] for k in ("text", "function", "failure", "consequence")
+                                                   if k in body})
+
+
+@router.post("/failure-modes/{mode_id}/merge")
+def merge_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Fold this mode into another on the same position (into_id)."""
+    return _run(m.merge_failure_mode, mode_id, body.get("into_id"))
 
 
 @router.post("/positions/{position_id}/apply-rcm")
@@ -249,10 +286,15 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if body.get("last_done"):
             view = m.set_last_done(task_id, body["last_done"])
         if any(k in body for k in ("name", "interval", "unit", "also_interval", "also_unit", "point_id",
-                                   "instructions", "checklist")):
+                                   "instructions", "checklist", "failure_mode_id", "source", "reference",
+                                   "outcome")):
             view = m.update_task(task_id, body.get("name"), body.get("interval"), body.get("unit"),
                                  body.get("also_interval"), body.get("also_unit"), body.get("point_id"),
-                                 body.get("instructions"), body.get("checklist"))
+                                 body.get("instructions"), body.get("checklist"),
+                                 ("" if body["failure_mode_id"] is None else body["failure_mode_id"])
+                                 if "failure_mode_id" in body else None,
+                                 body.get("source"), body.get("reference"),
+                                 body["outcome"] if "outcome" in body else ...)
         if view is None:
             raise Invalid("Nothing to change.")
         return view
