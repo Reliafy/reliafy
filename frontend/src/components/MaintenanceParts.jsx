@@ -192,3 +192,37 @@ export function Proposals({ proposals, onDecided, showPosition = true }) {
     </section>
   );
 }
+
+// How something failed: the position's modes, those seen at like positions
+// (same class), or "something else" typed in. value is { choice, typed } (see
+// maintenanceModes.js for turning it into request fields).
+export function FailureModePicker({ modes = [], classModes = [], value, onChange, noneLabel = "Not known" }) {
+  const v = value || { choice: "", typed: "" };
+  return (
+    <>
+      <select value={v.choice} onChange={(e) => onChange({ ...v, choice: e.target.value })}>
+        <option value="">{noneLabel}</option>
+        {modes.length > 0 && (
+          <optgroup label="This position's failure modes">
+            {modes.map((m) => <option key={m.id} value={`id:${m.id}`}>{m.text}</option>)}
+          </optgroup>
+        )}
+        {classModes.length > 0 && (
+          <optgroup label="Seen at like positions">
+            {classModes.map((t) => <option key={t} value={`text:${t}`}>{t}</option>)}
+          </optgroup>
+        )}
+        <option value="new">Something else (describe it)…</option>
+      </select>
+      {v.choice === "new" && (
+        <input autoFocus value={v.typed || ""} placeholder="e.g. Seal leaking" style={{ marginTop: "0.4rem" }}
+               onChange={(e) => onChange({ ...v, typed: e.target.value })} />
+      )}
+    </>
+  );
+}
+
+export const TASK_SOURCES = {
+  manual: "Own practice", oem: "Maker's recommendation (OEM)", statutory: "Law, regulation or standard",
+  other: "Other", rcm: "RCM study",
+};

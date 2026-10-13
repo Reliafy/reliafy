@@ -6,7 +6,8 @@ import {
   setWorkStatus, updateWorkOrder,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { Field, FormModal, MaintenanceTabs, fmtDate, today } from "../components/MaintenanceParts.jsx";
+import { FailureModePicker, Field, FormModal, MaintenanceTabs, fmtDate, today } from "../components/MaintenanceParts.jsx";
+import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import "./Maintenance.css";
 
@@ -141,7 +142,7 @@ function CloseForm({ wo, onClosed }) {
     try {
       const body = actions.map((a) => ({
         kind: a.kind,
-        failure_mode_id: a.failure_mode_id || null,
+        ...(a.kind === "other" ? {} : failureModeBody(a.mode)),
         finding: a.kind === "inspect" ? a.finding || null : null,
         notes: a.notes || "",
         new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
@@ -181,12 +182,11 @@ function CloseForm({ wo, onClosed }) {
                 </select>
               </Field>
             )}
-            {wo.failure_modes.length > 0 && a.kind !== "other" && (
+            {a.kind !== "other" && (
               <Field label={a.kind === "replace" ? "Did it fail? Which way" : "Failure mode (optional)"}>
-                <select value={a.failure_mode_id || ""} onChange={(e) => update(i, { failure_mode_id: e.target.value })}>
-                  <option value="">{a.kind === "replace" ? "No, a planned replacement" : "None"}</option>
-                  {wo.failure_modes.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
-                </select>
+                <FailureModePicker modes={wo.failure_modes} classModes={wo.class_failure_modes || []} value={a.mode}
+                                   onChange={(mode) => update(i, { mode })}
+                                   noneLabel={a.kind === "replace" ? "No, a planned replacement" : "None"} />
               </Field>
             )}
             {a.kind === "replace" && (
@@ -222,7 +222,9 @@ function CloseForm({ wo, onClosed }) {
         <Field label="Notes (optional)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">
-        <button onClick={submit} disabled={busy}>{busy ? "Closing…" : "Close work order"}</button>
+        <button onClick={submit} disabled={busy || !actions.every((a) => failureModeReady(a.mode))}>
+          {busy ? "Closing…" : "Close work order"}
+        </button>
         {wo.position && <Link to={`/maintenance/positions/${wo.position.id}`} className="lib-date">Back to {wo.position.name}</Link>}
       </div>
     </section>

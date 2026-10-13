@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  addFailureMode,
+  addPastFitment,
   applyRcmToPosition,
+  createMaintenanceTask,
   fitMaintenanceItem,
+  listMaintenanceItems,
+  mergeFailureMode,
+  updateFailureMode,
   getMaintenanceOverview,
   getMaintenancePosition,
   listRcmStudies,
@@ -28,15 +34,16 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DueChip, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, PositionPicker, everyText, flatten, fmtDate,
-  today,
+  DueChip, FailureModePicker, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, PositionPicker, TASK_SOURCES,
+  everyText, flatten, fmtDate, today,
 } from "../components/MaintenanceParts.jsx";
+import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import "./Maintenance.css";
 
-// One position: what's fitted, its RCM failure modes and tasks, its work
-// orders, and the life data its fitments give.
+// One position: what's fitted, its failure modes and tasks (from RCM or added
+// here), its work orders, and the life data its fitments give.
 export default function MaintenancePosition() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -128,16 +135,22 @@ export default function MaintenancePosition() {
       )}
 
       <section className="card">
-        <div className="maint-head"><h2>Tasks</h2></div>
+        <div className="maint-head">
+          <h2>Tasks</h2>
+          <button className="secondary" onClick={() => setModal("addTask")}><PlusIcon /> Add task</button>
+        </div>
         {p.tasks.length === 0 ? (
-          <p className="lib-date">No scheduled tasks. Apply an RCM study whose decisions have intervals.</p>
+          <p className="lib-date">No scheduled tasks. Add one (from the maker's manual, a regulation or your own
+            practice), or apply an RCM study whose decisions have intervals.</p>
         ) : (
           <table className="lib-table">
             <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>Next due</th><th>Work order</th><th><span className="sr-only">Edit</span></th></tr></thead>
             <tbody>
               {p.tasks.map((t) => (
                 <tr key={t.id}>
-                  <td>{t.name}</td>
+                  <td>{t.name}
+                    <div className="lib-date">{[TASK_SOURCES[t.source], t.reference, t.failure_mode && `prevents: ${t.failure_mode.text}`]
+                      .filter(Boolean).join(" · ")}</div></td>
                   <td className="lib-date">{everyText(t)}</td>
                   <td className="lib-date">
                     <button type="button" className="crumb-link" title="When was it last done?"
@@ -181,19 +194,24 @@ export default function MaintenancePosition() {
       </section>
 
       <section className="card">
-        <div className="maint-head"><h2>Failure modes</h2></div>
+        <div className="maint-head">
+          <h2>Failure modes</h2>
+          <button className="secondary" onClick={() => setModal({ mode: {} })}><PlusIcon /> Add failure mode</button>
+        </div>
         {p.failure_modes.length === 0 ? (
-          <p className="lib-date">None. They come from an RCM study.</p>
+          <p className="lib-date">None yet. They come from an RCM study, are added here, or are recorded when
+            something fails.</p>
         ) : (
           <table className="lib-table">
-            <thead><tr><th>Failure mode</th><th>Functional failure</th><th>Consequence</th><th>Decision</th></tr></thead>
+            <thead><tr><th>Failure mode</th><th>Functional failure</th><th>Consequence</th><th>Decision</th><th><span className="sr-only">Edit</span></th></tr></thead>
             <tbody>
               {p.failure_modes.map((m) => (
                 <tr key={m.id}>
-                  <td>{m.text}</td>
+                  <td>{m.text}{m.ad_hoc && <> <span className="maint-badge" title="Recorded at a failure: confirm it or merge it into another">ad hoc</span></>}</td>
                   <td className="lib-date">{m.failure || "—"}</td>
                   <td className="lib-date">{m.consequence || "—"}</td>
                   <td className="lib-date">{OUTCOME_LABELS[m.outcome] || "—"}</td>
+                  <td>{!m.from_rcm && <button className="crumb-link" onClick={() => setModal({ mode: m })}>Edit</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -204,7 +222,10 @@ export default function MaintenancePosition() {
       <section className="card">
         <div className="maint-head">
           <h2>Life data</h2>
-          <span className="lib-date">one row per item fitted here</span>
+          <div className="maint-row" style={{ marginTop: 0 }}>
+            <span className="lib-date">one row per item fitted here</span>
+            <button className="secondary" onClick={() => setModal("past")}>Add past fitment</button>
+          </div>
         </div>
         {p.life_data.length === 0 ? (
           <p className="lib-date">No fitments yet.</p>
@@ -231,7 +252,11 @@ export default function MaintenancePosition() {
             nothing inside it in use, and no work order open.</p>
         </FormModal>
       )}
-      {modal?.task && <TaskModal task={modal.task} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
+      {modal === "addTask" && <AddTaskModal p={p} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
+      {modal?.mode && <FailureModeModal p={p} mode={modal.mode} onClose={() => setModal(null)}
+                                        onDone={() => { setModal(null); refresh(); }} />}
+      {modal === "past" && <PastFitmentModal p={p} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
+      {modal?.task && <TaskModal task={modal.task} modes={p.failure_modes} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.fix && <FixModal row={modal.fix} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.lastDone && (
         <LastDoneModal task={modal.lastDone} onClose={() => setModal(null)}
@@ -276,11 +301,12 @@ function FitModal({ positionId, onClose, onDone }) {
 function RemoveModal({ position, onClose, onDone }) {
   const [on, setOn] = useState(today());
   const [reason, setReason] = useState("planned");
-  const [mode, setMode] = useState("");
+  const [mode, setMode] = useState(null);
   return (
     <FormModal title={`Remove ${position.fitted.item?.name || "the item"}`} submitLabel="Remove" onClose={onClose}
+               canSubmit={reason !== "failure" || failureModeReady(mode)}
                onSubmit={async () => onDone(await removeMaintenanceItem(position.id, {
-                 on, reason, failure_mode_id: reason === "failure" ? mode || null : null,
+                 on, reason, ...(reason === "failure" ? failureModeBody(mode) : {}),
                }))}>
       <p className="lib-date">For corrections and moves. Work done on it belongs on a work order.</p>
       <Field label="Removed on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
@@ -291,12 +317,160 @@ function RemoveModal({ position, onClose, onDone }) {
           <option value="other">Other</option>
         </select>
       </Field>
-      {reason === "failure" && position.failure_modes.length > 0 && (
-        <Field label="Failure mode">
-          <select value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="">Not known</option>
-            {position.failure_modes.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
+      {reason === "failure" && (
+        <Field label="How it failed">
+          <FailureModePicker modes={position.failure_modes} classModes={position.class_failure_modes}
+                             value={mode} onChange={setMode} />
+        </Field>
+      )}
+    </FormModal>
+  );
+}
+
+const UNITS = ["days", "weeks", "months", "years", "hours", "cycles", "km", "starts"];
+
+// A scheduled task added by hand: from the maker's manual, a regulation, or practice.
+function AddTaskModal({ p, onClose, onDone }) {
+  const [f, setF] = useState({
+    name: "", interval: "", unit: "months", also: "", also_unit: "months", outcome: "", source: "manual",
+    reference: "", point_id: "", failure_mode_id: "", instructions: "", checklist: "", last_done: "",
+  });
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const counters = p.measurements.filter((mp) => mp.kind === "counter");
+  return (
+    <FormModal title="Add a task" submitLabel="Add task" canSubmit={!!f.name.trim() && Number(f.interval) > 0}
+               onClose={onClose} onSubmit={async () => onDone(await createMaintenanceTask(p.id, {
+                 name: f.name, interval: Number(f.interval), unit: f.unit, outcome: f.outcome || null,
+                 also_interval: f.also ? Number(f.also) : null, also_unit: f.also ? f.also_unit : null,
+                 source: f.source, reference: f.reference, point_id: f.point_id || null,
+                 failure_mode_id: f.failure_mode_id || null, instructions: f.instructions,
+                 checklist: f.checklist.split("\n").map((x) => x.trim()).filter(Boolean), last_done: f.last_done || null,
+               }))}>
+      <Field label="Task"><input autoFocus value={f.name} placeholder="e.g. Replace sacrificial anode" onChange={set("name")} /></Field>
+      <Field label="Every">
+        <div className="maint-row" style={{ marginTop: 0 }}>
+          <input type="number" inputMode="decimal" min="0" step="any" value={f.interval} onChange={set("interval")} style={{ width: "6rem" }} />
+          <select value={f.unit} onChange={set("unit")}>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
+        </div>
+      </Field>
+      <Field label="Or every (whichever comes first, optional)">
+        <div className="maint-row" style={{ marginTop: 0 }}>
+          <input type="number" inputMode="decimal" min="0" step="any" value={f.also} placeholder="none" onChange={set("also")} style={{ width: "6rem" }} />
+          <select value={f.also_unit} onChange={set("also_unit")}>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
+        </div>
+      </Field>
+      {counters.length > 0 && (
+        <Field label="Counter (for a task by use, optional)">
+          <select value={f.point_id} onChange={set("point_id")}>
+            <option value="">The position's counter in that unit</option>
+            {counters.map((mp) => <option key={mp.id} value={mp.id}>{mp.name} ({mp.unit})</option>)}
           </select>
+        </Field>
+      )}
+      <Field label="What kind of task">
+        <select value={f.outcome} onChange={set("outcome")}>
+          <option value="">Routine work (lubricate, clean, adjust)</option>
+          <option value="fixed_interval">Replace or restore at the interval</option>
+          <option value="failure_finding">Check a hidden function (failure-finding)</option>
+          <option value="on_condition">Check condition</option>
+        </select>
+      </Field>
+      <Field label="Where it comes from">
+        <select value={f.source} onChange={set("source")}>
+          {["manual", "oem", "statutory", "other"].map((k) => <option key={k} value={k}>{TASK_SOURCES[k]}</option>)}
+        </select>
+      </Field>
+      <Field label="Reference (optional)"><input value={f.reference} placeholder="e.g. Owner's manual §7, AS 1851 table 5" onChange={set("reference")} /></Field>
+      {p.failure_modes.length > 0 && (
+        <Field label="Failure mode it prevents (optional)">
+          <select value={f.failure_mode_id} onChange={set("failure_mode_id")}>
+            <option value="">None</option>
+            {p.failure_modes.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
+          </select>
+        </Field>
+      )}
+      <Field label="Instructions (optional)"><textarea rows={3} value={f.instructions} onChange={set("instructions")} /></Field>
+      <Field label="Checklist, one step per line (optional)"><textarea rows={3} value={f.checklist} onChange={set("checklist")} /></Field>
+      <Field label="Last done (optional)"><input type="date" value={f.last_done} max={today()} onChange={set("last_done")} /></Field>
+      <p className="lib-date">It falls due, raises work orders and counts from each new item fitted, like a task from an RCM study.</p>
+    </FormModal>
+  );
+}
+
+// Add a failure mode, or edit one added here or recorded at a failure (and
+// merge it into another).
+function FailureModeModal({ p, mode, onClose, onDone }) {
+  const adding = !mode.id;
+  const [f, setF] = useState({ text: mode.text || "", failure: mode.failure || "", consequence: mode.consequence || "" });
+  const [into, setInto] = useState("");
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const others = p.failure_modes.filter((m) => m.id !== mode.id);
+  return (
+    <FormModal title={adding ? "Add a failure mode" : `Failure mode: ${mode.text}`}
+               submitLabel={into ? "Merge" : adding ? "Add" : mode.ad_hoc ? "Confirm" : "Save"}
+               canSubmit={!!f.text.trim()} onClose={onClose}
+               onSubmit={async () => onDone(into ? await mergeFailureMode(mode.id, into)
+                 : adding ? await addFailureMode(p.id, f) : await updateFailureMode(mode.id, f))}>
+      {mode.ad_hoc && <p className="lib-date">Recorded when something failed. Confirm it (edit the words if
+        you like), or merge it into the failure mode it really is.</p>}
+      <Field label="How it fails"><input autoFocus value={f.text} placeholder="e.g. Bearing worn" onChange={set("text")} disabled={!!into} /></Field>
+      <Field label="Functional failure (optional)"><input value={f.failure} placeholder="e.g. No flow" onChange={set("failure")} disabled={!!into} /></Field>
+      <Field label="Consequence (optional)"><input value={f.consequence} placeholder="e.g. operational" onChange={set("consequence")} disabled={!!into} /></Field>
+      {!adding && others.length > 0 && (
+        <Field label="Or merge it into (its failures and tasks move across)">
+          <select value={into} onChange={(e) => setInto(e.target.value)}>
+            <option value="">Don't merge</option>
+            {others.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
+          </select>
+        </Field>
+      )}
+    </FormModal>
+  );
+}
+
+// An earlier item into the history: in and out, with why it came out.
+function PastFitmentModal({ p, onClose, onDone }) {
+  const [items, setItems] = useState(null);
+  const [f, setF] = useState({ item_id: "", name: "", serial: "", start: "", end: "", reason: "planned" });
+  const [mode, setMode] = useState(null);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  useEffect(() => {
+    listMaintenanceItems().then((d) => setItems(d.items || [])).catch(() => setItems([]));
+  }, []);
+  const ready = (f.item_id || f.name.trim()) && f.start && f.end && (f.reason !== "failure" || failureModeReady(mode));
+  return (
+    <FormModal title="Add a past fitment" submitLabel="Add" canSubmit={!!ready} onClose={onClose}
+               onSubmit={async () => onDone(await addPastFitment(p.id, {
+                 start: f.start, end: f.end, reason: f.reason, item_id: f.item_id || null,
+                 new_item: f.item_id ? null : { name: f.name, serial: f.serial },
+                 ...(f.reason === "failure" ? failureModeBody(mode) : {}),
+               }))}>
+      <p className="lib-date">An item that was here before (from old records). It must not overlap another
+        fitment here; what's fitted now and the tasks stay as they are.</p>
+      {items?.length > 0 && (
+        <Field label="Item">
+          <select value={f.item_id} onChange={set("item_id")}>
+            <option value="">A new item (below)</option>
+            {items.map((i) => <option key={i.id} value={i.id}>{i.name}{i.serial ? ` (${i.serial})` : ""}</option>)}
+          </select>
+        </Field>
+      )}
+      {!f.item_id && <>
+        <Field label="New item"><input value={f.name} placeholder="e.g. Astral CTX 280" onChange={set("name")} /></Field>
+        <Field label="Serial (optional)"><input value={f.serial} onChange={set("serial")} /></Field>
+      </>}
+      <Field label="Went in"><input type="date" value={f.start} max={today()} onChange={set("start")} /></Field>
+      <Field label="Came out"><input type="date" value={f.end} max={today()} onChange={set("end")} /></Field>
+      <Field label="Why it came out">
+        <select value={f.reason} onChange={set("reason")}>
+          <option value="planned">Planned (still working)</option>
+          <option value="failure">It failed</option>
+          <option value="other">Other</option>
+        </select>
+      </Field>
+      {f.reason === "failure" && (
+        <Field label="How it failed">
+          <FailureModePicker modes={p.failure_modes} classModes={p.class_failure_modes} value={mode} onChange={setMode} />
         </Field>
       )}
     </FormModal>
@@ -369,7 +543,11 @@ function EditPositionModal({ p, onClose, onDone }) {
   );
 }
 
-function TaskModal({ task, onClose, onDone }) {
+function TaskModal({ task, modes = [], onClose, onDone }) {
+  const byHand = task.source !== "rcm";
+  const [mode, setMode] = useState(task.failure_mode?.id || "");
+  const [source, setSource] = useState(task.source);
+  const [reference, setReference] = useState(task.reference || "");
   const [name, setName] = useState(task.name);
   const [interval, setInterval] = useState(String(task.interval));
   const [unit, setUnit] = useState(task.unit);
@@ -378,12 +556,12 @@ function TaskModal({ task, onClose, onDone }) {
   const [instructions, setInstructions] = useState(task.instructions || "");
   const [checklist, setChecklist] = useState((task.checklist || []).join("\n"));
   const [busy, setBusy] = useState(false);
-  const UNITS = ["days", "weeks", "months", "years", "hours", "cycles", "km", "starts"];
   return (
     <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && Number(interval) > 0} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenanceTask(task.id, {
                  name, interval: Number(interval), unit, also_interval: also ? Number(also) : 0, also_unit: alsoUnit,
                  instructions, checklist: checklist.split("\n").map((x) => x.trim()).filter(Boolean),
+                 ...(byHand ? { source, reference, failure_mode_id: mode || null } : {}),
                }))}>
       <Field label="Task"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Every">
@@ -406,6 +584,24 @@ function TaskModal({ task, onClose, onDone }) {
       <Field label="Checklist, one step per line (optional)"><textarea rows={4} value={checklist}
              placeholder={"Isolate power\nDrain 10 L\nFit the new anode"} onChange={(e) => setChecklist(e.target.value)} /></Field>
       <p className="lib-date">Each work order this task raises gets the instructions and the checklist to tick off.</p>
+      {byHand && <>
+        <Field label="Where it comes from">
+          <select value={source} onChange={(e) => setSource(e.target.value)}>
+            {["manual", "oem", "statutory", "other"].map((k) => <option key={k} value={k}>{TASK_SOURCES[k]}</option>)}
+          </select>
+        </Field>
+        <Field label="Reference (optional)"><input value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
+        {modes.length > 0 && (
+          <Field label="Failure mode it prevents">
+            <select value={mode} onChange={(e) => setMode(e.target.value)}>
+              <option value="">None</option>
+              {modes.map((m) => <option key={m.id} value={m.id}>{m.text}{m.from_rcm ? " (RCM)" : ""}</option>)}
+            </select>
+          </Field>
+        )}
+        <p className="lib-date">Linked to a failure mode from an RCM study, this becomes that decision's task:
+          applying the study again updates it.</p>
+      </>}
       <button className="secondary" disabled={busy} onClick={async () => {
         setBusy(true); await retireMaintenanceTask(task.id, ""); onDone();
       }}>Retire this task</button>

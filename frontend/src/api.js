@@ -2200,6 +2200,21 @@ export function cancelWorkOrder(id, reason) {
 export function updateMaintenanceTask(id, body) {
   return patchJson(`/api/maintenance/tasks/${id}`, body);
 }
+export function createMaintenanceTask(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/tasks`, body);
+}
+export function addFailureMode(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/failure-modes`, body);
+}
+export function updateFailureMode(id, body) {
+  return patchJson(`/api/maintenance/failure-modes/${id}`, body);
+}
+export function mergeFailureMode(id, intoId) {
+  return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
+}
+export function addPastFitment(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/past-fitments`, body);
+}
 export function retireMaintenanceTask(id, reason) {
   return postJson(`/api/maintenance/tasks/${id}/retire`, { reason });
 }
