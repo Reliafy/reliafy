@@ -217,6 +217,8 @@ def test_work_orders_suggest_the_parts_list_and_draw_stock(m, plant):
         {"kind": "repair", "part_id": plant["kit"], "from_location_id": plant["store"]},
     ], on=date.today().isoformat())
     # The new item is made from the part; the kit's quantity comes from the parts list.
+    # An action with no failure mode, or nothing fitted, says so plainly (null, not []).
+    assert done["actions"][0]["failure_mode"] is None and done["actions"][1]["fitted"] is None
     fitted = done["actions"][0]["fitted"]
     assert (fitted["name"], fitted["part_number"], fitted["manufacturer"]) == ("Pump v2", "B1", "Grundfos")
     assert [(p["part_number"], p["quantity"]) for p in done["parts"]] == [("B1", 1), ("K1", 2)]

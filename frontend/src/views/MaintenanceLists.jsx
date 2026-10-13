@@ -12,6 +12,7 @@ import {
   getPositionClasses,
   adjustMaintenanceStock,
   createMaintenancePart,
+  getSparesCover,
   listMaintenanceItems,
   listMaintenanceParts,
   setMaintenanceReorder,
@@ -26,6 +27,7 @@ import {
   DocumentsCard, Field, FormModal, LifeTable, MaintenanceTabs, Proposals, fmtDate,
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
+import { roleLabel } from "../maintenanceSpares.js";
 import "./Maintenance.css";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
@@ -421,19 +423,26 @@ export function MaintenanceParts() {
                   primary={<button onClick={() => setModal("new")}><PlusIcon /> New part</button>} />
       <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
+      {parts?.length > 0 && <SparesCoverCard parts={parts} />}
       {parts === null ? <div className="card empty">Loading…</div> : parts.length === 0 ? (
         <div className="card empty"><p>No parts yet. Add the spares you keep: anodes, filters, bearings.</p></div>
       ) : (
         <div className="lib">
           <table className="lib-table">
-            <thead><tr><th>Part number</th><th>Part</th><th>On hand</th><th>Where</th><th>Used (12 mo)</th><th>Cover</th><th /></tr></thead>
+            <thead><tr><th>Part number</th><th>Part</th><th>On hand</th><th>Where</th><th>Used at</th><th>Used (12 mo)</th><th>Cover</th><th /></tr></thead>
             <tbody>
               {parts.map((pt) => (
                 <tr key={pt.id}>
                   <td>{pt.part_number}{pt.superseded_by && <div className="lib-date">superseded by {pt.superseded_by.part_number}</div>}</td>
                   <td>{pt.name}<div className="lib-date">{[pt.manufacturer, pt.unit_cost != null && `${pt.unit_cost} each`].filter(Boolean).join(" · ")}</div></td>
-                  <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}</td>
+                  <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}
+                    {pt.critical_short && <div className="maint-overdue">critical spare short (keep {pt.critical_min})</div>}</td>
                   <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
+                  <td className="lib-date">{(pt.used_at || []).length === 0 ? "—" : pt.used_at.map((u, i) => (
+                    <span key={u.listing_id}>{i > 0 && "; "}
+                      <Link to={`/maintenance/positions/${u.position.id}`}>{u.position.name}</Link>
+                      {` (${roleLabel(u.role).toLowerCase()}${u.critical ? ", critical" : ""})`}</span>
+                  ))}</td>
                   <td>{pt.used_last_year}</td>
                   <td className="lib-date">{pt.months_of_cover != null ? `${pt.months_of_cover} months` : "—"}</td>
                   <td><button className="secondary" onClick={() => setModal({ stock: pt })}>Stock</button></td>
@@ -447,6 +456,63 @@ export function MaintenanceParts() {
       {modal?.stock && <StockModal part={modal.stock} locations={locations} onClose={() => setModal(null)}
                                    onDone={() => { setModal(null); load(); }} />}
     </div>
+  );
+}
+
+// Where the spares don't cover the plant: critical spares below the minimum their
+// position keeps, positions whose critical replacement part has none in stock, and
+// (on request) positions with no parts list yet.
+function SparesCoverCard({ parts }) {
+  const [cover, setCover] = useState(null);
+  const [unlisted, setUnlisted] = useState(false);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    getSparesCover(unlisted).then(setCover).catch((e) => setError(e.message));
+  }, [unlisted, parts]);
+  if (error) return <div className="card error">{error}</div>;
+  if (!cover) return null;
+  const bare = cover.without_parts_list || [];
+  const line = (v) => (
+    <li key={v.id}>
+      <Link to={`/maintenance/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
+      <span className="lib-date"> · {v.usable_on_hand} usable, keep {v.min_on_hand}
+        {v.use_instead ? ` · use ${v.use_instead.part_number} instead` : ""}</span>
+    </li>
+  );
+  return (
+    <section className="card">
+      <div className="maint-head">
+        <h2>Spares cover</h2>
+        <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.4rem" }}>
+          <input type="checkbox" checked={unlisted} onChange={(e) => setUnlisted(e.target.checked)} />
+          Positions with no parts list
+        </label>
+      </div>
+      {cover.no_spare.length > 0 && (
+        <>
+          <p><strong className="maint-overdue">No spare</strong> for the critical replacement part at:</p>
+          <ul className="maint-list">{cover.no_spare.map(line)}</ul>
+        </>
+      )}
+      {cover.short.length > 0 && (
+        <>
+          <p><strong>Critical spares short</strong></p>
+          <ul className="maint-list">{cover.short.map(line)}</ul>
+        </>
+      )}
+      {cover.short.length === 0 && cover.no_spare.length === 0 && (
+        <p className="lib-date">Every critical spare is at or above its minimum. Mark spares critical on a position's Parts card.</p>
+      )}
+      {unlisted && (bare.length === 0 ? <p className="lib-date">Every position has a parts list.</p> : (
+        <>
+          <p><strong>No parts list</strong> ({bare.length})</p>
+          <ul className="maint-list">
+            {bare.map((b) => <li key={b.id}><Link to={`/maintenance/positions/${b.id}`}>{b.name}</Link>
+              {b.path.length > 0 && <span className="lib-date"> · {b.path.join(" › ")}</span>}</li>)}
+          </ul>
+        </>
+      ))}
+    </section>
   );
 }
 

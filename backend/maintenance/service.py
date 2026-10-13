@@ -3532,9 +3532,9 @@ class Maintenance:
             started = self.s.out(self.org, a["id"], "STARTS")
             actions.append({
                 "id": a["id"], "kind": a["kind"], "finding": a.get("finding"), "notes": a.get("notes", ""),
-                "failure_mode": fm and {"id": fm[0]["id"], "text": fm[0]["text"]},
+                "failure_mode": {"id": fm[0]["id"], "text": fm[0]["text"]} if fm else None,
                 "removed": self._fitment_view(ended[0])["item"] if ended else None,
-                "fitted": started and self._fitment_view(started[0])["item"],
+                "fitted": self._fitment_view(started[0])["item"] if started else None,
             })
         task = self.s.out(self.org, id, "FOR")
         position = self.position(position_id)
