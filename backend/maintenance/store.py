@@ -26,37 +26,59 @@ to one.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Callable
 
+logger = logging.getLogger(__name__)
+
 Projector = Callable[["GraphStore", str, dict], None]
 
-_GRAPH_SCHEMA = """
+# Events are read from the log in batches of this many, so catching up with a
+# long log never holds all of it in memory at once.
+SYNC_BATCH = 5000
+# A missing sequence number (a gap) is usually another process between taking
+# its number and writing its event: wait up to GAP_WAIT seconds for it. A gap
+# still open GAP_TIMEOUT seconds after it was first seen is an append that
+# never completed, and is passed over.
+GAP_WAIT = 0.5
+GAP_TIMEOUT = 30.0
+
+# Nodes and edges are keyed by (org, id): an id is only unique within its
+# organisation, so a write in one organisation can never replace a row of
+# another's, whatever id it carries.
+_NODES_EDGES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
-    id    TEXT PRIMARY KEY,
+    id    TEXT NOT NULL,
     org   TEXT NOT NULL,
     label TEXT NOT NULL,
-    props TEXT NOT NULL
+    props TEXT NOT NULL,
+    PRIMARY KEY (org, id)
 );
 CREATE TABLE IF NOT EXISTS edges (
-    id    TEXT PRIMARY KEY,
+    id    TEXT NOT NULL,
     org   TEXT NOT NULL,
     type  TEXT NOT NULL,
     src   TEXT NOT NULL,
     dst   TEXT NOT NULL,
-    props TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
+    props TEXT NOT NULL,
+    PRIMARY KEY (org, id)
 );
 CREATE INDEX IF NOT EXISTS nodes_label ON nodes (org, label);
 CREATE INDEX IF NOT EXISTS edges_src ON edges (org, src, type);
 CREATE INDEX IF NOT EXISTS edges_dst ON edges (org, dst, type);
+"""
+
+_GRAPH_SCHEMA = _NODES_EDGES_SCHEMA + """
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 _EVENTS_SCHEMA = """
@@ -104,13 +126,18 @@ class SqliteEventLog:
             )
             return int(cur.lastrowid)
 
-    def since(self, seq: int) -> list[dict]:
+    def since(self, seq: int, limit: int | None = None) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT seq, org, type, payload FROM events WHERE seq > ? ORDER BY seq", (seq,)
+                "SELECT seq, org, type, payload FROM events WHERE seq > ? ORDER BY seq LIMIT ?",
+                (seq, -1 if limit is None else int(limit)),
             ).fetchall()
         return [{"seq": r["seq"], "org": r["org"], "type": r["type"], "payload": json.loads(r["payload"])}
                 for r in rows]
+
+    def count(self, org: str) -> int:
+        with self._lock:
+            return int(self._conn.execute("SELECT COUNT(*) FROM events WHERE org = ?", (org,)).fetchone()[0])
 
     def recent(self, org: str, limit: int) -> list[dict]:
         with self._lock:
@@ -145,9 +172,14 @@ class MongoEventLog:
                                  "at": event["at"], "actor": event["actor"], "payload": event["payload"]})
         return seq
 
-    def since(self, seq: int) -> list[dict]:
-        return [{"seq": d["seq"], "org": d["org"], "type": d["type"], "payload": d["payload"]}
-                for d in self._events.find({"seq": {"$gt": seq}}).sort("seq", 1)]
+    def since(self, seq: int, limit: int | None = None) -> list[dict]:
+        cursor = self._events.find({"seq": {"$gt": seq}}).sort("seq", 1)
+        if limit is not None:
+            cursor = cursor.limit(int(limit))
+        return [{"seq": d["seq"], "org": d["org"], "type": d["type"], "payload": d["payload"]} for d in cursor]
+
+    def count(self, org: str) -> int:
+        return int(self._events.count_documents({"org": org}))
 
     def recent(self, org: str, limit: int) -> list[dict]:
         return [{"id": d["_id"], "type": d["type"], "at": d["at"], "actor": d.get("actor"),
@@ -172,16 +204,30 @@ class GraphStore:
         self._conn.executescript(_GRAPH_SCHEMA)
         self._lock = threading.RLock()
         self._projectors = projectors
+        self._gap: tuple[int, float] | None = None  # (missing seq, when first seen)
+        self._event_counts: dict[str, int] = {}
+        # Per-process counters the service keeps its write limits in.
+        self.write_windows: dict = {}
+        self.series_days: dict = {}
         self.log = log if log is not None else SqliteEventLog(self._conn, self._lock)
         from backend.maintenance.series import SqliteSeries
 
         self.series = series if series is not None else SqliteSeries(self._conn, self._lock)
-        # When the projectors change what they build, a stored graph is rebuilt
-        # from the log (the log never changes).
+        # When the projectors change what they build, or the tables change
+        # shape, a stored graph is rebuilt from the log (the log never changes).
         rows = self._all("SELECT value FROM meta WHERE key = 'version'", ())
-        if (int(rows[0]["value"]) if rows else 1) != version and self._applied():
+        stored = int(rows[0]["value"]) if rows else 1
+        if not self._schema_current() or (stored != version and self._applied()):
             self.rebuild()
         self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)", (str(version),))
+
+    def _schema_current(self) -> bool:
+        """Whether the nodes and edges tables are keyed by (org, id)."""
+        for table in ("nodes", "edges"):
+            keys = {r["name"] for r in self._all(f"PRAGMA table_info({table})", ()) if r["pk"]}
+            if keys != {"org", "id"}:
+                return False
+        return True
 
     # ---- applied position -----------------------------------------------------------
 
@@ -192,24 +238,98 @@ class GraphStore:
     def _set_applied(self, seq: int) -> None:
         self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('applied', ?)", (str(seq),))
 
+    def _note_skipped(self, seq: int, why: str) -> None:
+        rows = self._all("SELECT value FROM meta WHERE key = 'skipped'", ())
+        skipped = (json.loads(rows[0]["value"]) if rows else []) + [{"seq": seq, "why": why}]
+        self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('skipped', ?)",
+                           (json.dumps(skipped[-100:]),))
+
+    def skipped(self) -> list[dict]:
+        """Sequence numbers passed over by :meth:`sync` (most recent 100), and why."""
+        rows = self._all("SELECT value FROM meta WHERE key = 'skipped'", ())
+        return json.loads(rows[0]["value"]) if rows else []
+
     # ---- writing: events --------------------------------------------------------------
 
+    def _project(self, e: dict) -> None:
+        """Project one event from the log, inside the open transaction.
+
+        An event that can't be projected (a projector error, or a type this
+        version doesn't know, as during a rolling deploy) is logged and passed
+        over by its sequence number, with anything it half-wrote rolled back.
+        Raising instead would stop the graph at that event, and every request
+        that syncs would fail with it."""
+        self._conn.execute("SAVEPOINT event")
+        try:
+            projector = self._projectors.get(e["type"])
+            if projector is None:
+                raise UnknownEvent(e["type"])
+            projector(self, e["org"], e["payload"])
+        except Exception as err:  # noqa: BLE001 - see the docstring
+            self._conn.execute("ROLLBACK TO event")
+            self._conn.execute("RELEASE event")
+            logger.exception("maintenance event %s (%s) couldn't be projected; passed over", e["seq"], e["type"])
+            self._note_skipped(e["seq"], f"{type(err).__name__} in {e['type']}")
+        else:
+            self._conn.execute("RELEASE event")
+        if e["org"] in self._event_counts:
+            self._event_counts[e["org"]] += 1
+
+    def _apply_run(self, applied: int, events: list[dict]) -> int:
+        """Project the events that follow ``applied`` without a break; returns
+        the new applied position."""
+        self._conn.execute("BEGIN")
+        try:
+            for e in events:
+                if e["seq"] != applied + 1:
+                    break
+                self._project(e)
+                applied = e["seq"]
+            self._set_applied(applied)
+            self._conn.execute("COMMIT")
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise
+        return applied
+
     def sync(self) -> int:
-        """Apply the log's events this graph hasn't seen yet. Returns how many."""
+        """Apply the log's events this graph hasn't seen yet. Returns how many.
+
+        Events are applied strictly in sequence: only ``applied + 1`` is ever
+        next. In a shared log, a process takes its sequence number and then
+        writes its event, so another process's later event can be in the log
+        before it. On such a gap the graph stops short of it (waiting up to
+        GAP_WAIT the first time it's seen), rather than step past an event it
+        hasn't read yet and never read it. A gap still open GAP_TIMEOUT after
+        it was first seen is an append that never completed: it's recorded in
+        :meth:`skipped` and passed over."""
         with self._lock:
-            events = self.log.since(self._applied())
-            if not events:
-                return 0
-            self._conn.execute("BEGIN")
-            try:
-                for e in events:
-                    self._projectors[e["type"]](self, e["org"], e["payload"])
-                    self._set_applied(e["seq"])
-                self._conn.execute("COMMIT")
-            except Exception:
-                self._conn.execute("ROLLBACK")
-                raise
-            return len(events)
+            done = 0
+            while True:
+                applied = self._applied()
+                events = self.log.since(applied, SYNC_BATCH)
+                if not events:
+                    return done
+                now_at = self._apply_run(applied, events)
+                done += now_at - applied
+                if now_at == events[-1]["seq"]:
+                    continue  # the whole batch: read on
+                missing = now_at + 1
+                now = time.monotonic()
+                if self._gap is None or self._gap[0] != missing:
+                    self._gap = (missing, now)
+                age = now - self._gap[1]
+                if age >= GAP_TIMEOUT:
+                    logger.warning("maintenance event %s never reached the log; passed over", missing)
+                    self._conn.execute("BEGIN")
+                    self._note_skipped(missing, "missing from the log")
+                    self._set_applied(missing)
+                    self._conn.execute("COMMIT")
+                    self._gap = None
+                    continue
+                if age >= GAP_WAIT:
+                    return done
+                time.sleep(0.02)
 
     def apply(self, org: str, type: str, payload: dict, actor: str | None = None) -> dict:
         """Append an event and bring the graph up to date with it.
@@ -227,18 +347,45 @@ class GraphStore:
                 self._projectors[type](self, org, payload)
             finally:
                 self._conn.execute("ROLLBACK")
-            self.log.append(event)
+            seq = self.log.append(event)
+            self.sync()
+        # An earlier event still on its way to the log: wait (without the lock)
+        # until this one is applied, so the caller reads its own write.
+        deadline = time.monotonic() + GAP_TIMEOUT + 2
+        while self._applied() < seq:
+            if time.monotonic() > deadline:
+                raise RuntimeError(f"Maintenance event {seq} is in the log but not applied yet.")
+            time.sleep(0.05)
             self.sync()
         return event
 
-    def rebuild(self) -> int:
-        """Clear the graph and replay the whole log. Returns the events replayed."""
+    def event_count(self, org: str) -> int:
+        """How many events the organisation has in the log (kept up to date as
+        events are applied, after a first count from the log)."""
         with self._lock:
+            if org not in self._event_counts:
+                self.sync()
+                self._event_counts[org] = self.log.count(org)
+            return self._event_counts[org]
+
+    def count(self, org: str, label: str) -> int:
+        """How many nodes of ``label`` the organisation has."""
+        return int(self._all("SELECT COUNT(*) AS n FROM nodes WHERE org = ? AND label = ?", (org, label))[0]["n"])
+
+    def rebuild(self) -> int:
+        """Clear the graph and replay the whole log. Returns the events replayed.
+
+        The tables are dropped and made again, so a graph stored with an older
+        table layout comes back in the current one."""
+        with self._lock:
+            self._conn.execute("DROP TABLE IF EXISTS nodes")
+            self._conn.execute("DROP TABLE IF EXISTS edges")
+            self._conn.executescript(_NODES_EDGES_SCHEMA)
             self._conn.execute("BEGIN")
-            self._conn.execute("DELETE FROM nodes")
-            self._conn.execute("DELETE FROM edges")
             self._set_applied(0)
             self._conn.execute("COMMIT")
+            self._gap = None
+            self._event_counts.clear()
             return self.sync()
 
     def events(self, org: str, limit: int = 100) -> list[dict]:
@@ -290,6 +437,8 @@ class GraphStore:
             return self._conn.execute(sql, args).fetchall()
 
     def node(self, org: str, id: str, label: str | None = None) -> dict | None:
+        if not isinstance(id, str):
+            return None
         rows = self._all("SELECT id, label, props FROM nodes WHERE org = ? AND id = ?", (org, id))
         row = rows[0] if rows else None
         if row is None or (label and row["label"] != label):
@@ -302,6 +451,8 @@ class GraphStore:
 
     def out(self, org: str, src: str, type: str) -> list[dict]:
         """Nodes at the end of ``src``'s outgoing ``type`` edges."""
+        if not isinstance(src, str):
+            return []
         rows = self._all(
             "SELECT n.id, n.label, n.props FROM edges e JOIN nodes n ON n.id = e.dst AND n.org = e.org "
             "WHERE e.org = ? AND e.src = ? AND e.type = ?", (org, src, type))
@@ -309,6 +460,8 @@ class GraphStore:
 
     def inn(self, org: str, dst: str, type: str) -> list[dict]:
         """Nodes at the start of ``dst``'s incoming ``type`` edges."""
+        if not isinstance(dst, str):
+            return []
         rows = self._all(
             "SELECT n.id, n.label, n.props FROM edges e JOIN nodes n ON n.id = e.src AND n.org = e.org "
             "WHERE e.org = ? AND e.dst = ? AND e.type = ?", (org, dst, type))
@@ -320,6 +473,6 @@ class GraphStore:
 
     def snapshot(self) -> tuple[list, list]:
         """Every node and edge, sorted: for checking a rebuild gives the same graph."""
-        nodes = [tuple(r) for r in self._all("SELECT id, org, label, props FROM nodes ORDER BY id", ())]
-        edges = [tuple(r) for r in self._all("SELECT id, org, type, src, dst, props FROM edges ORDER BY id", ())]
+        nodes = [tuple(r) for r in self._all("SELECT id, org, label, props FROM nodes ORDER BY org, id", ())]
+        edges = [tuple(r) for r in self._all("SELECT id, org, type, src, dst, props FROM edges ORDER BY org, id", ())]
         return nodes, edges

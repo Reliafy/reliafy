@@ -380,17 +380,22 @@ def _coordinates_set(s: GraphStore, org: str, p: dict) -> None:
                                                      "source": p.get("source", "manual"), "on": p["on"]}})
 
 
-def class_id(name: str) -> str:
-    """A position class's node id: one per class name (case and spacing aside)."""
+def class_id(org: str, name: str) -> str:
+    """A position class's node id: one per organisation and class name (case
+    and spacing aside)."""
     import hashlib
 
-    return "class-" + hashlib.sha1(" ".join(name.lower().split()).encode()).hexdigest()[:16]
+    key = org + "\n" + " ".join(name.lower().split())
+    return "class-" + hashlib.sha1(key.encode()).hexdigest()[:16]
 
 
 def _class_upsert(s: GraphStore, org: str, p: dict, changes: dict) -> None:
-    if s.node(org, p["id"]) is None:
-        s.put_node(org, p["id"], "PositionClass", {"name": p["name"]})
-    s.patch_node(org, p["id"], changes)
+    # The id comes from the organisation and the name, not the payload: events
+    # logged before the id took in the organisation carry the older form.
+    cid = class_id(org, p["name"])
+    if s.node(org, cid) is None:
+        s.put_node(org, cid, "PositionClass", {"name": p["name"]})
+    s.patch_node(org, cid, changes)
 
 
 def _class_costs_set(s: GraphStore, org: str, p: dict) -> None:
@@ -1693,7 +1698,7 @@ class Maintenance:
                 continue
             entry = classes.setdefault(name, {"position_class": name, "positions": 0, "fitments": 0, "failures": 0})
             if "costs" not in entry:
-                node = self.s.node(self.org, class_id(name)) or {}
+                node = self.s.node(self.org, class_id(self.org, name)) or {}
                 entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target")}
                 entry["model"] = node.get("model")
             entry["positions"] += 1
@@ -1713,7 +1718,7 @@ class Maintenance:
         if not any((p.get("position_class") or "").strip().lower() == name.lower()
                    for p in self.s.nodes(self.org, "Position")):
             raise NotFound(name)
-        node = self.s.node(self.org, class_id(name)) or {}
+        node = self.s.node(self.org, class_id(self.org, name)) or {}
         out = {}
         for key, value in (("planned_cost", planned_cost), ("failure_cost", failure_cost),
                            ("availability_target", availability_target)):
@@ -1729,7 +1734,7 @@ class Maintenance:
                 raise Invalid("A failure must cost more than a planned replacement (and neither below 0).")
         if out["availability_target"] is not None and not (0 < out["availability_target"] < 1):
             raise Invalid("The availability target is between 0 and 1, e.g. 0.99.")
-        self._emit("class.costs_set", {"id": class_id(name), "name": name, **out})
+        self._emit("class.costs_set", {"id": class_id(self.org, name), "name": name, **out})
         return self.position_class(name)
 
     def position_class(self, position_class: str) -> dict:
@@ -2206,4 +2211,6 @@ def summary(m: Maintenance) -> dict:
 
 
 
-PROJECTION_VERSION = 2  # 2: meters and condition points became measurement points
+# 2: meters and condition points became measurement points
+# 3: nodes and edges keyed by (org, id); position class ids include the org
+PROJECTION_VERSION = 3

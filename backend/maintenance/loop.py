@@ -55,7 +55,7 @@ def fit_class_model(m: Maintenance, db, position_class: str, distribution: str =
                                       {"x": "days", "c": "censored"}, [], None, "days", owner_id=m.org)
     params = [{"name": p["name"], "value": p["value"]} for p in model.results.get("params") or []]
     m._emit("class.model_fitted", {
-        "id": class_id(name), "name": name, "model_id": model.id, "distribution": model.distribution_id,
+        "id": class_id(m.org, name), "name": name, "model_id": model.id, "distribution": model.distribution_id,
         "params": params, "extras": (model.results.get("options") or None), "unit": "days",
         "fitted_on": date.today().isoformat(), "failures": failures, "suspensions": len(rows) - failures,
     })
@@ -81,7 +81,7 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
     support changing. Returns the proposals made now."""
     from backend.services import strategy as strategy_service
 
-    node = m.s.node(m.org, class_id(position_class))
+    node = m.s.node(m.org, class_id(m.org, position_class))
     if not node or not node.get("model"):
         raise Invalid(f"Fit a life model for {position_class} first.")
     model = node["model"]
@@ -173,7 +173,7 @@ def economics(m: Maintenance, position_class: str, interval: float | None = None
 
     from backend.services import strategy as strategy_service
 
-    node = m.s.node(m.org, class_id(position_class))
+    node = m.s.node(m.org, class_id(m.org, position_class))
     if not node or not node.get("model"):
         raise Invalid(f"Fit a life model for {position_class} first.")
     if node.get("planned_cost") is None or node.get("failure_cost") is None:
