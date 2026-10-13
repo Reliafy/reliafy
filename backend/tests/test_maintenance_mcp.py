@@ -143,3 +143,25 @@ def test_tools_hidden_from_people_without_access(env, monkeypatch):
     listed, result = _session(env["token"], names)
     assert "maintenance_overview" not in listed and "list_models" in listed
     assert result.is_error and "isn't available" in result.content[0].text
+
+
+def test_nameplate_and_moves_over_mcp(env):
+    async def flow(client):
+        a = _ok(await client.call_tool("create_position", {"name": "Pump A", "position_class": "Pool pump"}))
+        b = _ok(await client.call_tool("create_position", {"name": "Pump B", "position_class": "Pool pump"}))
+        fitted = _ok(await client.call_tool("fit_item", {"position_id": a["id"], "item_name": "Pump",
+                                                         "on": "2025-01-01"}))
+        item_id = fitted["fitted"]["item"]["id"]
+        item = _ok(await client.call_tool("update_item", {
+            "item_id": item_id, "manufacturer": "Astral", "model": "CTX 280", "serial": "AX-1",
+            "nameplate": {"Power": "1.1 kW", "Voltage": "240 V"}}))
+        assert item["nameplate"] == {"Power": "1.1 kW", "Voltage": "240 V"}
+        moved = _ok(await client.call_tool("move_item", {"item_id": item_id, "position_id": b["id"],
+                                                         "on": "2026-01-01"}))
+        classes = _ok(await client.call_tool("list_position_classes", {}))
+        pooled = _ok(await client.call_tool("class_life_data", {"position_class": "Pool pump"}))
+        return moved, classes, pooled
+
+    moved, classes, pooled = _session(env["token"], flow)
+    assert moved["fitted_to"]["name"] == "Pump B" and len(moved["history"]) == 2
+    assert classes["classes"][0]["fitments"] == 2 and len(pooled["rows"]) == 2

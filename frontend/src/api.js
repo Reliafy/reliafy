@@ -2152,3 +2152,54 @@ export function setMaintenanceCoordinates(nodeId, lat, lon, source = "manual") {
 export function createMaintenancePhotoLink(targetId) {
   return postJson("/api/maintenance/photo-links", { target_id: targetId });
 }
+
+function patchJson(url, body) {
+  return request(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+}
+
+export function getMaintenanceItem(id) {
+  return request(`/api/maintenance/items/${id}`);
+}
+export function updateMaintenanceItem(id, body) {
+  return patchJson(`/api/maintenance/items/${id}`, body);
+}
+export function moveMaintenanceItem(id, positionId, on) {
+  return postJson(`/api/maintenance/items/${id}/move`, { position_id: positionId, on });
+}
+export function voidMaintenanceFitment(id, reason) {
+  return postJson(`/api/maintenance/fitments/${id}/void`, { reason });
+}
+export function correctMaintenanceFitment(id, body) {
+  return patchJson(`/api/maintenance/fitments/${id}`, body);
+}
+export function updateWorkOrder(id, body) {
+  return patchJson(`/api/maintenance/work-orders/${id}`, body);
+}
+export function cancelWorkOrder(id, reason) {
+  return postJson(`/api/maintenance/work-orders/${id}/cancel`, { reason });
+}
+export function updateMaintenanceTask(id, body) {
+  return patchJson(`/api/maintenance/tasks/${id}`, body);
+}
+export function retireMaintenanceTask(id, reason) {
+  return postJson(`/api/maintenance/tasks/${id}/retire`, { reason });
+}
+export function retireMaintenancePosition(id, reason) {
+  return postJson(`/api/maintenance/positions/${id}/retire`, { reason });
+}
+export function getMaintenanceLocation(id) {
+  return request(`/api/maintenance/locations/${id}`);
+}
+export function updateMaintenanceLocation(id, body) {
+  return patchJson(`/api/maintenance/locations/${id}`, body);
+}
+export function getPositionClasses() {
+  return request("/api/maintenance/classes");
+}
+export function getClassLifeData(positionClass) {
+  return request(`/api/maintenance/classes/life-data?position_class=${encodeURIComponent(positionClass)}`);
+}

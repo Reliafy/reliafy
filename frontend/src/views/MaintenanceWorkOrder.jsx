@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { closeWorkOrder, getWorkOrder } from "../api.js";
+import { cancelWorkOrder, closeWorkOrder, getWorkOrder, updateWorkOrder } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { Field, fmtDate, today } from "../components/MaintenanceParts.jsx";
+import { Field, FormModal, MaintenanceTabs, fmtDate, today } from "../components/MaintenanceParts.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import "./Maintenance.css";
 
@@ -19,6 +19,7 @@ export default function MaintenanceWorkOrder() {
   const { id } = useParams();
   const [wo, setWo] = useState(null);
   const [error, setError] = useState(null);
+  const [modal, setModal] = useState(null);
 
   const refresh = useCallback(() => {
     getWorkOrder(id).then(setWo).catch((e) => setError(e.message));
@@ -37,14 +38,30 @@ export default function MaintenanceWorkOrder() {
         meta={[wo.type, wo.status, `opened ${fmtDate(wo.opened)}`, wo.due && `due ${fmtDate(wo.due)}`,
           wo.closed && `closed ${fmtDate(wo.closed)}`].filter(Boolean).join(" · ")}
         id={wo.id}
+        menu={wo.status === "open" ? (
+          <>
+            <button className="ovm-item" onClick={() => setModal("edit")}>Edit work order</button>
+            <button className="ovm-item" onClick={() => setModal("cancel")}>Cancel work order</button>
+          </>
+        ) : null}
       />
+      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
+      {modal === "edit" && <EditWorkOrder wo={wo} onClose={() => setModal(null)} onDone={(d) => { setWo(d); setModal(null); }} />}
+      {modal === "cancel" && (
+        <FormModal title={`Cancel #${wo.number}`} submitLabel="Cancel it" onClose={() => setModal(null)}
+                   onSubmit={async () => { setWo(await cancelWorkOrder(wo.id, "")); setModal(null); }}>
+          <p>For work that won't be done (a duplicate, raised by mistake). Work that was done is closed instead.</p>
+        </FormModal>
+      )}
       {wo.task && <p className="lib-date">From the task “{wo.task.name}”.</p>}
 
       <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetName={wo.position?.name}
                          photos={wo.photos || []} onChanged={refresh} />
 
-      {wo.status === "closed" ? (
+      {wo.status === "cancelled" ? (
+        <section className="card"><p>Cancelled {fmtDate(wo.closed)}{wo.notes ? `: ${wo.notes}` : ""}.</p></section>
+      ) : wo.status === "closed" ? (
         <section className="card">
           <div className="maint-head"><h2>What was done</h2></div>
           {wo.actions.length === 0 ? <p className="lib-date">Closed with no actions recorded.</p> : (
@@ -162,5 +179,17 @@ function CloseForm({ wo, onClosed }) {
         {wo.position && <Link to={`/maintenance/positions/${wo.position.id}`} className="lib-date">Back to {wo.position.name}</Link>}
       </div>
     </section>
+  );
+}
+
+function EditWorkOrder({ wo, onClose, onDone }) {
+  const [title, setTitle] = useState(wo.title);
+  const [due, setDue] = useState(wo.due || "");
+  return (
+    <FormModal title="Edit work order" submitLabel="Save" canSubmit={!!title.trim()} onClose={onClose}
+               onSubmit={async () => onDone(await updateWorkOrder(wo.id, { title, due }))}>
+      <Field label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+      <Field label="Due"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+    </FormModal>
   );
 }
