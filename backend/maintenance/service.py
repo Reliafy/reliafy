@@ -37,6 +37,13 @@ ACTION_KINDS = ("replace", "repair", "inspect", "other")
 FINDINGS = ("ok", "degraded", "found_failed")
 WORK_ORDER_TYPES = ("preventive", "corrective", "inspection", "other")
 OPEN_STATUSES = ("open", "planned", "in_progress", "waiting")
+END_REASONS = ("failure", "planned", "other")
+# Where a task added by hand comes from: the maker's manual, a law or standard,
+# the organisation's own practice, or something else. (Tasks from an RCM study
+# show as "rcm".)
+TASK_SOURCES = ("manual", "oem", "statutory", "other")
+# How well a historical date is known (passed through on past fitments).
+DATE_PRECISIONS = ("exact", "month", "year", "estimated")
 
 
 class NotFound(KeyError):
@@ -71,6 +78,7 @@ MAX_COPY_NODES = 500  # positions, failure modes and tasks made by one copy
 MAX_LIST = 100  # ids or entries given in one request
 MAX_POSITIONS = 20_000
 MAX_ITEMS = 50_000
+MAX_TASKS = 100_000
 MAX_PHOTOS = 5_000
 MAX_EVENTS = 1_000_000
 MAX_READINGS_PER_DAY = 500_000  # automated readings stored, per organisation per day (UTC)
@@ -179,6 +187,48 @@ def add_interval(day: str, interval: float, unit: str) -> str | None:
     return None
 
 
+def _same_text(a, b) -> bool:
+    """Whether two names say the same thing, case and spacing aside."""
+    return " ".join(str(a or "").lower().split()) == " ".join(str(b or "").lower().split())
+
+
+def _end_reason(reason, mode_ref) -> str:
+    """Why a fitment ended. Not given: a failure if a failure mode is named,
+    otherwise planned. A planned removal can't name a failure mode (that is
+    how failures used to end up counted as planned)."""
+    if reason in (None, ""):
+        return "failure" if mode_ref else "planned"
+    if reason not in END_REASONS:
+        raise Invalid("The reason is failure, planned or other.")
+    if reason == "planned" and mode_ref:
+        raise Invalid("A planned removal has no failure mode. Say the reason is failure, or leave the "
+                      "failure mode out.")
+    return reason
+
+
+def _precision(value, what: str) -> str | None:
+    if value in (None, ""):
+        return None
+    if value not in DATE_PRECISIONS:
+        raise Invalid(f"The {what} is one of {', '.join(DATE_PRECISIONS)}.")
+    return value
+
+
+def _unit(value, default: str) -> str:
+    unit = _norm_unit(value) or default
+    if len(unit) > 20:
+        raise Invalid("The unit is at most 20 characters.")
+    return unit
+
+
+def _checklist(value) -> list[str]:
+    items = [_text(c, "checklist item")[:200] for c in _list(value, "checklist items")]
+    items = [c for c in items if c]
+    if len(items) > 50:
+        raise Invalid("At most 50 checklist items.")
+    return items
+
+
 # ---- projectors: event payload -> graph ------------------------------------------
 # Projectors read only the payload (never the clock), so replaying the log
 # gives the same graph.
@@ -268,13 +318,44 @@ def _item_removed(s: GraphStore, org: str, p: dict) -> None:
                                         "failure_mode_id": p.get("failure_mode_id")})
 
 
+def _fitment_added(s: GraphStore, org: str, p: dict) -> None:
+    """A past fitment put into a position's history: in and out again, with no
+    work order, and no effect on the tasks (they count from the current item)."""
+    s.put_node(org, p["fitment_id"], "Fitment", {
+        "from": p["from"], "to": p["to"], "end_reason": p["reason"], "failure_mode_id": p.get("failure_mode_id"),
+        "past": True, "note": p.get("note", ""),
+    } | {k: p[k] for k in ("from_precision", "to_precision") if p.get(k)})
+    s.put_edge(org, "IN", p["item_id"], p["fitment_id"])
+    s.put_edge(org, "AT", p["fitment_id"], p["position_id"])
+
+
 def _failure_mode_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "FailureMode", {
         "text": p["text"], "function": p.get("function", ""), "failure": p.get("failure", ""),
         "consequence": p.get("consequence"), "outcome": p.get("outcome"),
         "rcm_mode_id": p.get("rcm_mode_id"), "study_id": p.get("study_id"),
-    })
+    } | ({"ad_hoc": True} if p.get("ad_hoc") else {}))
     s.put_edge(org, "CAN_FAIL_AS", p["position_id"], p["id"])
+
+
+def _failure_mode_merged(s: GraphStore, org: str, p: dict) -> None:
+    """A mode folded into another on the same position: the failures recorded
+    against it, the findings and the tasks that mitigate it all move across."""
+    old, into = p["id"], p["into_id"]
+    for position in s.inn(org, old, "CAN_FAIL_AS"):
+        for f in s.inn(org, position["id"], "AT"):
+            if f["label"] == "Fitment" and f.get("failure_mode_id") == old:
+                s.patch_node(org, f["id"], {"failure_mode_id": into})
+    for edge in ("FOUND", "MITIGATES"):
+        for src in s.inn(org, old, edge):
+            s.delete_edge(org, edge, src["id"], old)
+            s.put_edge(org, edge, src["id"], into)
+    s.patch_node(org, old, {"merged_into": into, "merged_on": p.get("on")})
+
+
+# Task fields that only tasks added by hand (or edited since) carry: projected
+# only when the payload has them, so older events give the same tasks.
+_TASK_EXTRAS = ("source", "reference", "also_interval", "also_unit", "point_id", "instructions", "checklist")
 
 
 def _task_added(s: GraphStore, org: str, p: dict) -> None:
@@ -282,14 +363,22 @@ def _task_added(s: GraphStore, org: str, p: dict) -> None:
         "name": p["name"], "outcome": p.get("outcome"), "interval": p["interval"], "unit": p["unit"],
         "start": p["start"], "last_done": None, "rcm_mode_id": p.get("rcm_mode_id"),
         "study_id": p.get("study_id"),
-    })
+    } | {k: p[k] for k in _TASK_EXTRAS if k in p})
     s.put_edge(org, "ON", p["id"], p["position_id"])
     if p.get("failure_mode_id"):
         s.put_edge(org, "MITIGATES", p["id"], p["failure_mode_id"])
 
 
 def _task_updated(s: GraphStore, org: str, p: dict) -> None:
-    s.patch_node(org, p["id"], p["changes"])
+    changes = dict(p["changes"])
+    if "failure_mode_id" in changes:
+        # Linked to a failure mode (or unlinked: None), not a field.
+        mode = changes.pop("failure_mode_id")
+        for old in s.out(org, p["id"], "MITIGATES"):
+            s.delete_edge(org, "MITIGATES", p["id"], old["id"])
+        if mode:
+            s.put_edge(org, "MITIGATES", p["id"], mode)
+    s.patch_node(org, p["id"], changes)
 
 
 def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
@@ -592,7 +681,10 @@ PROJECTORS = {
     "item.placed": _item_placed,
     "item.fitted": _item_fitted,
     "item.removed": _item_removed,
+    "fitment.added": _fitment_added,
     "failure_mode.added": _failure_mode_added,
+    "failure_mode.updated": _patch,
+    "failure_mode.merged": _failure_mode_merged,
     "task.added": _task_added,
     "task.updated": _task_updated,
     "work_order.opened": _work_order_opened,
@@ -768,7 +860,7 @@ class Maintenance:
             if src["id"] in seen:
                 return
             seen.add(src["id"])
-            modes = self.s.out(self.org, src["id"], "CAN_FAIL_AS")
+            modes = self._modes_on(src["id"])
             tasks = [t for t in self.s.inn(self.org, src["id"], "ON") if t["label"] == "Task"]
             size += 1 + len(modes) + len(tasks)
             if size > MAX_COPY_NODES:
@@ -795,6 +887,7 @@ class Maintenance:
                     "id": mode_ids[fm["id"]], "position_id": pid,
                     **{k: fm.get(k) for k in ("text", "function", "failure", "consequence", "outcome",
                                               "rcm_mode_id", "study_id")},
+                    **({"ad_hoc": True} if fm.get("ad_hoc") else {}),
                 })
             for task in tasks:
                 mitigates = self.s.out(self.org, task["id"], "MITIGATES")
@@ -803,6 +896,8 @@ class Maintenance:
                     "failure_mode_id": mitigates and mode_ids.get(mitigates[0]["id"]),
                     "start": today,
                     **{k: task.get(k) for k in ("name", "outcome", "interval", "unit", "rcm_mode_id", "study_id")},
+                    # Not point_id: the copy has no measurement points yet.
+                    **{k: task[k] for k in _TASK_EXTRAS if k in task and k != "point_id"},
                 })
         return self.position(new)
 
@@ -843,10 +938,26 @@ class Maintenance:
         raise Invalid("Say which item: an existing one, or a new one with a name.")
 
     def place_item(self, item_id: str, location_id: str, on=None) -> dict:
+        """Record where an item is from ``on``. With no date: since it was fitted
+        to its position, if it is (it has been there all along), otherwise today;
+        never before it got where it is now."""
         self._get(item_id, "Item")
         self._get(location_id, "Location")
+        here = next((p for p in self.s.out(self.org, item_id, "IN")
+                     if p["label"] == "Placement" and p.get("to") is None), None)
+        if on in (None, ""):
+            fitted = self._current_fitment_of_item(item_id)
+            day = fitted["from"] if fitted else date.today().isoformat()
+            if here and here["from"] > day:
+                day = here["from"]
+        else:
+            day = _day(on)
+            if here and day < here["from"]:
+                where = self.s.out(self.org, here["id"], "AT")
+                raise Invalid(f"It has been at {where[0]['name'] if where else 'its location'} since {here['from']}; "
+                              "a move can't be dated before that.")
         self._emit("item.placed", {"item_id": item_id, "location_id": location_id,
-                                   "placement_id": new_id(), "on": _day(on)})
+                                   "placement_id": new_id(), "on": day})
         return self.item(item_id)
 
     def _fitments_at(self, position_id: str) -> list[dict]:
@@ -873,22 +984,146 @@ class Maintenance:
                                    "task_readings": self._renewal_readings(position_id, day)})
         return self.position(position_id)
 
-    def remove(self, position_id: str, on=None, reason="planned", failure_mode_id=None) -> dict:
+    def remove(self, position_id: str, on=None, reason=None, failure_mode_id=None, failure_mode_text=None) -> dict:
         """Take the fitted item out, with no work order (a correction, or an item
-        moved elsewhere)."""
+        moved elsewhere). A failure names its mode by id, or in words
+        (failure_mode_text: the position's mode of that name, or a new ad-hoc one)."""
         current = self.current_fitment(position_id)
         if current is None:
             raise Invalid("Nothing is fitted here.")
         day = _day(on)
         if day < current["from"]:
             raise Invalid("It can't come out before it went in.")
-        if reason not in ("failure", "planned", "other"):
-            raise Invalid("The reason is failure, planned or other.")
-        if failure_mode_id:
-            self._get(failure_mode_id, "FailureMode")
+        ref = self._mode_ref(position_id, failure_mode_id, failure_mode_text)
+        reason = _end_reason(reason, ref)
         self._emit("item.removed", {"fitment_id": current["id"], "on": day, "reason": reason,
-                                    "failure_mode_id": failure_mode_id or None})
+                                    "failure_mode_id": self._mode_id(position_id, ref)})
         return self.position(position_id)
+
+    # ---- failure modes: from RCM, added by hand, or typed in at a failure ----------
+
+    def _modes_on(self, position_id: str) -> list[dict]:
+        """A position's failure modes, less those merged into another."""
+        return [fm for fm in self.s.out(self.org, position_id, "CAN_FAIL_AS") if not fm.get("merged_into")]
+
+    def _mode_ref(self, position_id: str, failure_mode_id=None, failure_mode_text=None) -> tuple | None:
+        """Check the failure mode a failure names (nothing is written): ("id", id)
+        for one of the position's modes, ("text", text) for one in words, or None."""
+        text = _text(failure_mode_text, "failure mode")
+        if failure_mode_id and text:
+            raise Invalid("Name the failure mode by its id or in words, not both.")
+        if failure_mode_id:
+            fm = next((m for m in self.s.out(self.org, position_id, "CAN_FAIL_AS") if m["id"] == failure_mode_id), None)
+            if fm is None:
+                raise Invalid("That failure mode isn't on this position.")
+            return ("id", fm.get("merged_into") or fm["id"])
+        return ("text", text) if text else None
+
+    def _mode_id(self, position_id: str, ref: tuple | None) -> str | None:
+        """The id for a checked reference: a mode named in words is the position's
+        mode of that name (case and spacing aside), or a new one marked ad hoc."""
+        if ref is None:
+            return None
+        kind, value = ref
+        if kind == "id":
+            return value
+        found = next((fm for fm in self._modes_on(position_id) if _same_text(fm["text"], value)), None)
+        if found:
+            return found["id"]
+        fid = new_id()
+        self._emit("failure_mode.added", {"id": fid, "position_id": position_id, "text": value, "function": "",
+                                          "failure": "", "consequence": None, "outcome": None,
+                                          "rcm_mode_id": None, "study_id": None, "ad_hoc": True})
+        return fid
+
+    def _mode_view(self, fm: dict) -> dict:
+        return {k: fm.get(k) for k in ("id", "text", "function", "failure", "consequence", "outcome")} | {
+            "ad_hoc": bool(fm.get("ad_hoc")), "from_rcm": bool(fm.get("rcm_mode_id")),
+        }
+
+    def class_failure_modes(self, position_id: str) -> list[str]:
+        """Failure modes recorded at other positions of the same class and not
+        on this one: what to offer when something here fails."""
+        position = self._get(position_id, "Position")
+        cls = (position.get("position_class") or "").strip().lower()
+        if not cls:
+            return []
+        here = {" ".join(fm["text"].lower().split()) for fm in self._modes_on(position_id)}
+        found: dict[str, str] = {}
+        for p in self.s.nodes(self.org, "Position"):
+            if p["id"] == position_id or (p.get("position_class") or "").strip().lower() != cls:
+                continue
+            for fm in self._modes_on(p["id"]):
+                key = " ".join(fm["text"].lower().split())
+                if key and key not in here:
+                    found.setdefault(key, fm["text"])
+        return sorted(found.values(), key=str.lower)[:MAX_LIST]
+
+    def add_failure_mode(self, position_id: str, text, function="", failure="", consequence="") -> dict:
+        """A failure mode on a position without an RCM study (how it fails: 'Bearing
+        worn', 'Seal leaking'). Failures and tasks can then name it."""
+        position = self._get(position_id, "Position")
+        if position.get("retired"):
+            raise Invalid("That position has been retired.")
+        text = _text(text, "failure mode", required=True)
+        same = next((fm for fm in self._modes_on(position_id) if _same_text(fm["text"], text)), None)
+        if same:
+            raise Invalid(f"{same['text']} is already a failure mode here (id {same['id']}).")
+        fid = new_id()
+        self._emit("failure_mode.added", {
+            "id": fid, "position_id": position_id, "text": text, "function": _text(function, "function"),
+            "failure": _text(failure, "functional failure"), "consequence": _text(consequence, "consequence") or None,
+            "outcome": None, "rcm_mode_id": None, "study_id": None,
+        })
+        return self._mode_view(self._get(fid, "FailureMode"))
+
+    def _live_mode(self, mode_id: str) -> tuple[dict, dict]:
+        fm = self._get(mode_id, "FailureMode")
+        if fm.get("merged_into"):
+            raise Invalid("That failure mode was merged into another.")
+        return fm, self.s.inn(self.org, mode_id, "CAN_FAIL_AS")[0]
+
+    def update_failure_mode(self, mode_id: str, text=None, function=None, failure=None, consequence=None) -> dict:
+        """Change a failure mode added by hand or typed in at a failure. Editing an
+        ad-hoc mode confirms it as a formal one. (A mode from an RCM study is
+        changed in the study.)"""
+        fm, position = self._live_mode(mode_id)
+        if fm.get("rcm_mode_id"):
+            raise Invalid("That failure mode comes from an RCM study: change it in the study, and apply it again.")
+        changes = {}
+        if text is not None:
+            changes["text"] = _text(text, "failure mode", required=True)
+            same = next((m for m in self._modes_on(position["id"])
+                         if m["id"] != mode_id and _same_text(m["text"], changes["text"])), None)
+            if same:
+                raise Invalid(f"{same['text']} is already a failure mode here: merge the two instead.")
+        if function is not None:
+            changes["function"] = _text(function, "function")
+        if failure is not None:
+            changes["failure"] = _text(failure, "functional failure")
+        if consequence is not None:
+            changes["consequence"] = _text(consequence, "consequence") or None
+        if fm.get("ad_hoc"):
+            changes["ad_hoc"] = False
+        if changes:
+            self._emit("failure_mode.updated", {"id": mode_id, "changes": changes})
+        return self._mode_view(self._get(mode_id, "FailureMode"))
+
+    def merge_failure_mode(self, mode_id: str, into_mode_id: str) -> dict:
+        """Fold one failure mode into another on the same position: the failures
+        recorded against it, findings and tasks move to the other, and it leaves
+        the list. To link a mode typed in at a failure to one from an RCM study,
+        merge it into the study's mode (apply the study to the position first)."""
+        fm, position = self._live_mode(mode_id)
+        into, into_position = self._live_mode(into_mode_id)
+        if mode_id == into_mode_id:
+            raise Invalid("Pick two different failure modes.")
+        if position["id"] != into_position["id"]:
+            raise Invalid("Both failure modes must be on the same position.")
+        if fm.get("rcm_mode_id"):
+            raise Invalid(f"{fm['text']} comes from an RCM study, so it stays: merge {into['text']} into it instead.")
+        self._emit("failure_mode.merged", {"id": mode_id, "into_id": into_mode_id, "on": date.today().isoformat()})
+        return self.position(position["id"])
 
     # ---- RCM -> failure modes and tasks ---------------------------------------------
 
@@ -1000,8 +1235,12 @@ class Maintenance:
         dues = [lim["next_due"] for lim in limits if lim["next_due"]]
         nxt = min(dues) if dues else None
         open_wo = next((w for w in self.s.inn(self.org, task["id"], "FOR") if w.get("status") in OPEN_STATUSES), None)
+        mode = self.s.out(self.org, task["id"], "MITIGATES")
         return {
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
+            "source": task.get("source") or ("rcm" if task.get("rcm_mode_id") else "manual"),
+            "reference": task.get("reference", ""), "point_id": task.get("point_id"),
+            "failure_mode": {"id": mode[0]["id"], "text": mode[0]["text"]} if mode else None,
             "interval": task["interval"], "unit": task["unit"],
             "also_interval": task.get("also_interval"), "also_unit": task.get("also_unit"),
             "instructions": task.get("instructions", ""), "checklist": task.get("checklist") or [],
@@ -1406,7 +1645,6 @@ class Maintenance:
             raise Invalid("This work order is already closed.")
         day = _day(on)
         position_id = self.s.out(self.org, work_order_id, "ON")[0]["id"]
-        modes = {m["id"] for m in self.s.out(self.org, position_id, "CAN_FAIL_AS")}
         actions, readings = _dicts(actions, "actions"), _dicts(readings, "readings")
         # Check everything before writing anything.
         plans = []
@@ -1414,9 +1652,7 @@ class Maintenance:
             kind = a.get("kind")
             if kind not in ACTION_KINDS:
                 raise Invalid(f"An action is one of {', '.join(ACTION_KINDS)}.")
-            fm = a.get("failure_mode_id") or None
-            if fm and fm not in modes:
-                raise Invalid("That failure mode isn't on this position.")
+            fm = self._mode_ref(position_id, a.get("failure_mode_id") or None, a.get("failure_mode_text"))
             finding = a.get("finding") or None
             if kind == "inspect" and finding not in FINDINGS:
                 raise Invalid("An inspection's finding is ok, degraded or found_failed.")
@@ -1432,7 +1668,9 @@ class Maintenance:
         for r in readings or []:
             self.record_reading(r.get("point_id") or r.get("meter_id"), r.get("value"), day, "read at the work order")
 
-        for kind, fm, finding, a in plans:
+        for kind, ref, finding, a in plans:
+            # A mode named in words is found, or added, as the action is recorded.
+            fm = self._mode_id(position_id, ref)
             ends = starts = on_fitment = None
             if kind == "replace":
                 current = self.current_fitment(position_id)
@@ -1536,6 +1774,67 @@ class Maintenance:
         if changes:
             self._emit("fitment.corrected", {"id": fitment_id, **changes})
         return self._fitment_view(self._get(fitment_id, "Fitment"))
+
+    def add_past_fitment(self, position_id: str, start, end, reason=None, item_id=None, new_item=None,
+                         failure_mode_id=None, failure_mode_text=None, from_precision=None, to_precision=None,
+                         note="") -> dict:
+        """Put a past fitment into a position's history (migrating an old CMMS's
+        records): an item that went in on ``start`` and came out on ``end``, for a
+        reason (failure, with its mode by id or in words; planned; other). An
+        existing item (item_id) or a new one (new_item). It can sit before the
+        current fitment, never across another one, and changes nothing else: the
+        current item and the tasks stay as they are. from_precision / to_precision
+        say how well each date is known (exact, month, year, estimated)."""
+        self._get(position_id, "Position")
+        if start in (None, "") or end in (None, ""):
+            raise Invalid("A past fitment needs the date it went in (start) and the date it came out (end).")
+        start, end = _day(start, "start date"), _day(end, "end date")
+        if end < start:
+            raise Invalid("It can't come out before it went in.")
+        if end > date.today().isoformat():
+            raise Invalid("A past fitment has ended: the end date can't be in the future.")
+        precisions = {"from_precision": _precision(from_precision, "start date's precision"),
+                      "to_precision": _precision(to_precision, "end date's precision")}
+        ref = self._mode_ref(position_id, failure_mode_id, failure_mode_text)
+        reason = _end_reason(reason, ref)
+        clash = self._overlapping(self._fitments_at(position_id), start, end)
+        if clash:
+            raise Invalid(f"It overlaps {self._fitment_text(clash, 'here')}. Correct or strike out that "
+                          "fitment first, or change these dates.")
+        if item_id:
+            self._get(item_id, "Item")
+            clash = self._overlapping(self._fitments_of(item_id), start, end)
+            if clash:
+                where = self._fitment_view(clash)["position"]
+                raise Invalid(f"That item was fitted elsewhere then: "
+                              f"{self._fitment_text(clash, 'at ' + (where['name'] if where else 'another position'))}.")
+        elif not (new_item or {}).get("name"):
+            raise Invalid("Say which item: an existing one (item_id), or a new one with a name.")
+        note = _text(note, "note")
+        iid = item_id or self.create_item(**{k: new_item.get(k) for k in
+                                             ("name", "serial", "part_number", "manufacturer", "notes", "model",
+                                              "nameplate")})["id"]
+        self._emit("fitment.added", {
+            "fitment_id": new_id(), "item_id": iid, "position_id": position_id, "from": start, "to": end,
+            "reason": reason, "failure_mode_id": self._mode_id(position_id, ref), "note": note, **precisions,
+        })
+        return self.position(position_id)
+
+    @staticmethod
+    def _overlapping(fitments: list[dict], start: str, end: str) -> dict | None:
+        """The first fitment sharing time with start..end (meeting at a day is fine:
+        one came out and the next went in that day)."""
+        for f in sorted(fitments, key=lambda f: f["from"]):
+            if start < (f.get("to") or "9999-12-31") and f["from"] < end:
+                return f
+        return None
+
+    def _fitment_text(self, f: dict, where: str) -> str:
+        item = self._fitment_view(f)["item"] or {}
+        name = item.get("name") or "an item"
+        serial = f" (serial {item['serial']})" if item.get("serial") else ""
+        when = f"from {f['from']} to {f['to']}" if f.get("to") else f"since {f['from']}, still fitted"
+        return f"{name}{serial}, fitted {where} {when}"
 
     def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None,
                           assignee=None, planned_for=None) -> dict:
@@ -1693,46 +1992,140 @@ class Maintenance:
                                             "reason": _text(reason, "reason")})
         return self.work_order(work_order_id)
 
+    def _also_limit(self, also_interval, also_unit, current_unit=None) -> dict:
+        """A task's second limit, whichever comes first: {} with none given, both
+        None to remove it (0 or less)."""
+        if also_interval is None:
+            return {}
+        try:
+            also_number = float(also_interval)
+        except (TypeError, ValueError, OverflowError):
+            raise Invalid("The second limit must be a number.")
+        if also_number <= 0:
+            return {"also_interval": None, "also_unit": None}
+        unit = _unit(also_unit or current_unit, "months")
+        return {"also_unit": unit, "also_interval": _interval(also_number, unit, "second limit")}
+
+    def _counter(self, point_id: str) -> dict:
+        point = self._get(point_id, "MeasurementPoint")
+        if point.get("kind") != "counter":
+            raise Invalid("A task by use goes by a counter, not a condition point.")
+        return point
+
+    def _task_link(self, position_id: str, failure_mode_id, task: dict | None = None) -> dict:
+        """The changes that link a task to one of its position's failure modes (or
+        unlink it: ''). Linked to a mode from an RCM study, the task becomes that
+        decision's task, so applying the study again updates it instead of adding
+        a second one (unless the decision already has a task here)."""
+        if task and task.get("rcm_mode_id") and not task.get("source"):
+            raise Invalid("This task comes from an RCM study and stays linked to its decision.")
+        out = {"failure_mode_id": None, "rcm_mode_id": None, "study_id": None}
+        if not failure_mode_id:
+            return out
+        ref = self._mode_ref(position_id, failure_mode_id)
+        fm = self._get(ref[1], "FailureMode")
+        out["failure_mode_id"] = fm["id"]
+        if fm.get("rcm_mode_id"):
+            taken = any(t.get("rcm_mode_id") == fm["rcm_mode_id"] and t["id"] != (task or {}).get("id")
+                        for t in self.s.inn(self.org, position_id, "ON") if t["label"] == "Task")
+            if not taken:
+                out |= {"rcm_mode_id": fm["rcm_mode_id"], "study_id": fm.get("study_id")}
+        return out
+
+    def create_task(self, position_id: str, name, interval, unit="months", outcome=None, also_interval=None,
+                    also_unit=None, point_id=None, instructions="", checklist=None, source="manual", reference="",
+                    failure_mode_id=None, last_done=None) -> dict:
+        """A scheduled task on a position without an RCM study: from the maker's
+        manual (source 'oem'), a law or standard ('statutory'), your own practice
+        ('manual') or elsewhere ('other'). It's scheduled, raises work orders and
+        renews like a task from RCM. outcome says what kind of task it is (as an RCM
+        decision would): fixed_interval (replace or restore: the class's life model
+        proposes its interval and plan_economics costs it), failure_finding,
+        on_condition, or None for other routine work."""
+        position = self._get(position_id, "Position")
+        if position.get("retired"):
+            raise Invalid("That position has been retired.")
+        name = _text(name, "task's name", required=True)
+        unit = _unit(unit, "months")
+        interval = _interval(interval, unit)
+        if outcome in ("", None):
+            outcome = None
+        elif outcome not in SCHEDULED_OUTCOMES:
+            raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
+        if source not in TASK_SOURCES:
+            raise Invalid(f"The source is one of {', '.join(TASK_SOURCES)}.")
+        payload = {"id": new_id(), "position_id": position_id, "name": name, "outcome": outcome,
+                   "interval": interval, "unit": unit, "start": date.today().isoformat(),
+                   "source": source, "reference": _text(reference, "reference"),
+                   "instructions": _text(instructions, "instructions"), "checklist": _checklist(checklist)}
+        payload |= {k: v for k, v in self._also_limit(also_interval, also_unit).items() if v is not None}
+        if point_id:
+            point = self._counter(point_id)
+            on = self.s.out(self.org, point_id, "ON")
+            if not on or on[0]["id"] != position_id:
+                raise Invalid("The counter must be on the same position as the task.")
+            if _norm_unit(point.get("unit")) not in (unit, payload.get("also_unit")):
+                raise Invalid(f"{point['name']} counts {point.get('unit')}, but the task is every "
+                              f"{interval:g} {unit}.")
+            payload["point_id"] = point_id
+        payload |= self._task_link(position_id, failure_mode_id)
+        done = None
+        if last_done not in (None, ""):
+            done = _day(last_done, "last done date")
+            if done > date.today().isoformat():
+                raise Invalid("Last done can't be in the future.")
+        self._quota("Task", MAX_TASKS)
+        self._emit("task.added", payload)
+        if done:
+            self._emit("task.updated", {"id": payload["id"], "changes": {"last_done": done}})
+        return self._task_view(self._get(payload["id"], "Task"))
+
     def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
-                    also_unit=None, point_id=None, instructions=None, checklist=None) -> dict:
+                    also_unit=None, point_id=None, instructions=None, checklist=None, failure_mode_id=None,
+                    source=None, reference=None, outcome=...) -> dict:
         """Change a task. also_interval / also_unit add a second limit, whichever comes
         first (500 hours or 6 months); also_interval 0 removes it. point_id picks the
-        meter a task by use goes by (otherwise the position's meter in its unit)."""
+        meter a task by use goes by (otherwise the position's meter in its unit).
+        failure_mode_id links it to a failure mode on its position ('' unlinks)."""
         task = self._get(task_id, "Task")
         if task.get("retired"):
             raise Invalid("That task has been retired.")
-        changes = {}
-        if also_interval is not None:
-            try:
-                also_number = float(also_interval)
-            except (TypeError, ValueError, OverflowError):
-                raise Invalid("The second limit must be a number.")
-            if also_number <= 0:
-                changes["also_interval"], changes["also_unit"] = None, None
-            else:
-                changes["also_unit"] = _norm_unit(also_unit or task.get("also_unit")) or "months"
-                changes["also_interval"] = _interval(also_number, changes["also_unit"], "second limit")
+        changes = self._also_limit(also_interval, also_unit, task.get("also_unit"))
         if point_id is not None:
             if point_id:
-                if self._get(point_id, "MeasurementPoint").get("kind") != "counter":
-                    raise Invalid("A task by use goes by a counter, not a condition point.")
+                self._counter(point_id)
             changes["point_id"] = point_id or None
         if instructions is not None:
             changes["instructions"] = _text(instructions, "instructions")[:4000]
         if checklist is not None:
-            items = [_text(c, "checklist item")[:200] for c in _list(checklist, "checklist items")]
-            items = [c for c in items if c]
-            if len(items) > 50:
-                raise Invalid("At most 50 checklist items.")
-            changes["checklist"] = items
+            changes["checklist"] = _checklist(checklist)
         if name is not None:
             changes["name"] = _text(name, "task's name", required=True)
         if unit is not None:
-            changes["unit"] = _norm_unit(unit) or "days"
+            changes["unit"] = _unit(unit, "days")
         if interval is not None:
             changes["interval"] = _interval(interval, changes.get("unit", task["unit"]))
         elif "unit" in changes:
             _interval(task["interval"], changes["unit"])  # the interval must still make sense in the new unit
+        if source is not None:
+            if source not in TASK_SOURCES:
+                raise Invalid(f"The source is one of {', '.join(TASK_SOURCES)}.")
+            if task.get("rcm_mode_id") and not task.get("source"):
+                raise Invalid("This task comes from an RCM study.")
+            changes["source"] = source
+        if reference is not None:
+            changes["reference"] = _text(reference, "reference")
+        if outcome is not ...:
+            if outcome not in (None, "") and outcome not in SCHEDULED_OUTCOMES:
+                raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
+            if task.get("rcm_mode_id"):
+                raise Invalid("This task's outcome is its RCM decision's.")
+            changes["outcome"] = outcome or None
+        if failure_mode_id is not None:
+            position = self.s.out(self.org, task_id, "ON")[0]
+            linked = self.s.out(self.org, task_id, "MITIGATES")
+            if (linked[0]["id"] if linked else "") != (failure_mode_id or ""):
+                changes |= self._task_link(position["id"], failure_mode_id, task)
         if changes:
             self._emit("task.updated", {"id": task_id, "changes": changes})
         return self._task_view(self._get(task_id, "Task"))
@@ -2223,7 +2616,7 @@ class Maintenance:
         fitments.sort(key=lambda f: (f["from"], f.get("to") or "9999"), reverse=True)
         current = next((f for f in fitments if f.get("to") is None), None)
         fitted = current and self._fitment_view(current)
-        modes = self.s.out(self.org, id, "CAN_FAIL_AS")
+        modes = self._modes_on(id)
         tasks = [self._task_view(t) for t in self._tasks_on(id)]
         wos = [w for w in self.s.inn(self.org, id, "ON") if w["label"] == "WorkOrder"]
         wos.sort(key=lambda w: w["number"], reverse=True)
@@ -2235,8 +2628,8 @@ class Maintenance:
             "children": [{"id": c["id"], "name": c["name"]} for c in kids if not c.get("retired")],
             "fitted": fitted,
             "fitments": [self._fitment_view(f) for f in fitments],
-            "failure_modes": [{k: m.get(k) for k in ("id", "text", "function", "failure", "consequence", "outcome")}
-                              for m in sorted(modes, key=lambda m: m["text"].lower())],
+            "failure_modes": [self._mode_view(m) for m in sorted(modes, key=lambda m: m["text"].lower())],
+            "class_failure_modes": self.class_failure_modes(id),
             "tasks": sorted(tasks, key=lambda t: t["next_due"] or "9999"),
             "work_orders": [self._wo_brief(w) for w in wos],
             "life_data": self.life_data(id),
@@ -2306,6 +2699,7 @@ class Maintenance:
             **self._wo_brief(w), "notes": w.get("notes", ""), "actions": actions,
             "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
             "fitted": position["fitted"], "failure_modes": position["failure_modes"],
+            "class_failure_modes": position["class_failure_modes"],
             "measurements": [{k: mp[k] for k in ("id", "name", "kind", "unit", "reading")}
                              for mp in position["measurements"] if mp["source"] == "manual"],
             "photos": self.photos_of(id),
