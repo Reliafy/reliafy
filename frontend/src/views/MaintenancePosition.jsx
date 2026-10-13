@@ -150,7 +150,7 @@ export default function MaintenancePosition() {
           <p className="lib-date">No scheduled tasks. Add one (from the maker's manual, a regulation or your own
             practice), or apply an RCM study whose decisions have intervals.</p>
         ) : (
-          <div style={{ overflowX: "auto" }}><table className="lib-table">
+          <div className="maint-scroll"><table className="lib-table">
             <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>Next due</th><th>Work order</th><th><span className="sr-only">Edit</span></th></tr></thead>
             <tbody>
               {p.tasks.map((t) => (
@@ -186,7 +186,7 @@ export default function MaintenancePosition() {
         {p.work_orders.length === 0 ? (
           <p className="lib-date">None yet.</p>
         ) : (
-          <div style={{ overflowX: "auto" }}><table className="lib-table">
+          <div className="maint-scroll"><table className="lib-table">
             <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Trade</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
             <tbody>
               {p.work_orders.map((w) => (
@@ -211,7 +211,7 @@ export default function MaintenancePosition() {
           <p className="lib-date">None yet. They come from an RCM study, are added here, or are recorded when
             something fails.</p>
         ) : (
-          <div style={{ overflowX: "auto" }}><table className="lib-table">
+          <div className="maint-scroll"><table className="lib-table">
             <thead><tr><th>Failure mode</th><th>Functional failure</th><th>Consequence</th><th>Decision</th><th><span className="sr-only">Edit</span></th></tr></thead>
             <tbody>
               {p.failure_modes.map((m) => (
@@ -848,7 +848,7 @@ function MeasurementsCard({ p, onChanged }) {
           automatically (Home Assistant, a PLC) through the ingest API.
         </p>
       ) : (
-        <div style={{ overflowX: "auto" }}>
+        <div className="maint-scroll">
         <table className="lib-table">
           <thead><tr><th>Measurement</th><th>Latest</th><th>Trend</th><th>Rate or alarm</th><th /></tr></thead>
           <tbody>
@@ -972,7 +972,7 @@ function ReadingsModal({ point: initial, onClose }) {
       {error && <div className="card error">{error}</div>}
       <p className="lib-date">The latest {point.readings.length}. Struck-out readings stay here, marked; rates, due dates
         and alarms leave them out.</p>
-      <div style={{ overflowX: "auto" }}>
+      <div className="maint-scroll">
         <table className="lib-table">
           <thead><tr><th>Read on</th><th>Value</th><th>What happened</th><th /></tr></thead>
           <tbody>

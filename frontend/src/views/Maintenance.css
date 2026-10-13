@@ -182,3 +182,10 @@
   color: var(--muted);
   text-decoration: line-through;
 }
+
+/* A wide table scrolls on its own on a phone. Positioned, so screen-reader-only
+   labels (absolutely positioned) stay inside it instead of widening the page. */
+.maint-scroll {
+  overflow-x: auto;
+  position: relative;
+}
