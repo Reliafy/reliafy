@@ -2,10 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   createMaintenanceLocation,
+  fitClassModel,
+  getClassEconomics,
   getClassLifeData,
+  getPositionClass,
+  setClassCosts,
   getMaintenanceLocation,
   getPositionClasses,
+  adjustMaintenanceStock,
+  createMaintenancePart,
   listMaintenanceItems,
+  listMaintenanceParts,
+  setMaintenanceReorder,
   listMaintenanceLocations,
   updateMaintenanceLocation,
 } from "../api.js";
@@ -13,7 +21,7 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
-import { Field, FormModal, LifeTable, MaintenanceTabs, fmtDate } from "../components/MaintenanceParts.jsx";
+import { Field, FormModal, LifeTable, MaintenanceTabs, Proposals, fmtDate } from "../components/MaintenanceParts.jsx";
 import "./Maintenance.css";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
@@ -222,6 +230,7 @@ export function MaintenanceClasses() {
           </table>
         </div>
       )}
+      {open && <ClassPanel name={open} onChanged={() => getPositionClasses().then((d) => setClasses(d.classes))} />}
       {open && (
         <section className="card">
           <div className="maint-head">
@@ -232,5 +241,212 @@ export function MaintenanceClasses() {
         </section>
       )}
     </div>
+  );
+}
+
+function ClassPanel({ name, onChanged }) {
+  const [c, setC] = useState(null);
+  const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "" });
+  const [distribution, setDistribution] = useState("weibull");
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+  const [made, setMade] = useState(null);
+  const load = useCallback(() => {
+    getPositionClass(name).then((d) => {
+      setC(d);
+      setCosts({
+        planned_cost: d.costs?.planned_cost ?? "", failure_cost: d.costs?.failure_cost ?? "",
+        availability_target: d.costs?.availability_target ?? "",
+      });
+    }).catch((e) => setError(e.message));
+  }, [name]);
+  useEffect(() => { setMade(null); load(); }, [load]);
+  const save = async () => {
+    setBusy("costs"); setError(null);
+    try { setC(await setClassCosts({ position_class: name, ...costs })); onChanged?.(); } catch (e) { setError(e.message); }
+    setBusy(null);
+  };
+  const fit = async () => {
+    setBusy("fit"); setError(null);
+    try { const d = await fitClassModel(name, distribution); setMade(d.proposals.length); load(); onChanged?.(); } catch (e) { setError(e.message); }
+    setBusy(null);
+  };
+  if (!c) return <section className="card">{error ? <div className="card error">{error}</div> : <p className="lib-date">Loading…</p>}</section>;
+  const model = c.model;
+  return (
+    <>
+      <section className="card">
+        <div className="maint-head"><h2>{name}: life model and costs</h2></div>
+        {error && <div className="card error">{error}</div>}
+        <div className="rcm-form">
+          <Field label="A planned replacement costs"><input type="number" min="0" step="any" value={costs.planned_cost}
+                 onChange={(e) => setCosts({ ...costs, planned_cost: e.target.value })} /></Field>
+          <Field label="A failure costs (repair, downtime, damage)"><input type="number" min="0" step="any" value={costs.failure_cost}
+                 onChange={(e) => setCosts({ ...costs, failure_cost: e.target.value })} /></Field>
+          <Field label="Hidden functions must be available (e.g. 0.99)"><input type="number" min="0" max="1" step="any"
+                 value={costs.availability_target} onChange={(e) => setCosts({ ...costs, availability_target: e.target.value })} /></Field>
+        </div>
+        <div className="maint-row">
+          <button className="secondary" onClick={save} disabled={busy === "costs"}>{busy === "costs" ? "Saving…" : "Save costs"}</button>
+          <select value={distribution} onChange={(e) => setDistribution(e.target.value)}>
+            <option value="weibull">Weibull</option><option value="best">Best fit</option>
+            <option value="lognormal">Lognormal</option><option value="exponential">Exponential</option>
+          </select>
+          <button onClick={fit} disabled={busy === "fit" || c.failures < 2}>
+            {busy === "fit" ? "Fitting…" : model ? "Refit the life model" : "Fit a life model"}
+          </button>
+          {c.failures < 2 && <span className="lib-date">Needs at least 2 failures on record ({c.failures} so far).</span>}
+        </div>
+        {model && (
+          <p className="lib-date" style={{ marginTop: "0.75rem" }}>
+            {model.distribution} fitted {fmtDate(model.fitted_on)} to {model.failures} failures and {model.suspensions} suspensions:{" "}
+            {(model.params || []).map((p) => `${p.name} ${Number(p.value).toPrecision(4)}`).join(", ")} (days).{" "}
+            <Link to={`/modelling/m/${model.model_id}`}>Open the model</Link>
+          </p>
+        )}
+        {made !== null && <p className="lib-date">{made ? `${made} change${made === 1 ? "" : "s"} proposed.` : "No changes to propose (no scheduled tasks here, or they already match)."}</p>}
+      </section>
+      <Proposals proposals={c.proposals} onDecided={load} />
+      {model && c.costs?.planned_cost != null && c.costs?.failure_cost != null && <EconomicsCard name={name} />}
+    </>
+  );
+}
+
+function EconomicsCard({ name }) {
+  const [data, setData] = useState(null);
+  const [whatIf, setWhatIf] = useState("");
+  const [unit, setUnit] = useState("months");
+  const [years, setYears] = useState(10);
+  const [rate, setRate] = useState(7);
+  const [error, setError] = useState(null);
+  const load = useCallback(() => {
+    getClassEconomics(name, { interval: whatIf || undefined, unit, horizonYears: years, discountRate: Number(rate) / 100 })
+      .then((d) => { setData(d); setError(null); }).catch((e) => setError(e.message));
+  }, [name, whatIf, unit, years, rate]);
+  useEffect(() => { load(); }, [name]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const money = (v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return (
+    <section className="card">
+      <div className="maint-head"><h2>{name}: what the plan costs</h2></div>
+      {error && <div className="card error">{error}</div>}
+      <div className="maint-row" style={{ marginTop: 0 }}>
+        <span className="lib-date">What if every</span>
+        <input type="number" min="0" step="any" value={whatIf} style={{ width: "5rem" }} onChange={(e) => setWhatIf(e.target.value)} />
+        <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+          {["days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}
+        </select>
+        <span className="lib-date">over</span>
+        <input type="number" min="1" max="100" value={years} style={{ width: "4rem" }} onChange={(e) => setYears(e.target.value)} />
+        <span className="lib-date">years at</span>
+        <input type="number" min="0" max="99" step="any" value={rate} style={{ width: "4rem" }} onChange={(e) => setRate(e.target.value)} />
+        <span className="lib-date">%</span>
+        <button className="secondary" onClick={load}>Work it out</button>
+      </div>
+      {data && (
+        <>
+          <table className="lib-table" style={{ marginTop: "0.75rem" }}>
+            <thead><tr><th>Plan</th><th>Interval</th><th>Per year</th><th>Net present cost</th></tr></thead>
+            <tbody>
+              {data.options.map((o) => (
+                <tr key={o.plan}>
+                  <td>{o.plan === data.cheapest ? <strong>{o.plan}</strong> : o.plan}</td>
+                  <td className="lib-date">{o.interval}</td>
+                  <td>{money(o.per_year)}</td>
+                  <td>{money(o.net_present_cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="lib-date">{data.note}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
+// ---- parts and stock -------------------------------------------------------------------
+
+export function MaintenanceParts() {
+  const [parts, setParts] = useState(null);
+  const [locations, setLocations] = useState([]);
+  const [modal, setModal] = useState(null);
+  const [error, setError] = useState(null);
+  const load = useCallback(() => {
+    listMaintenanceParts().then((d) => setParts(d.parts)).catch((e) => setError(e.message));
+  }, []);
+  useEffect(() => {
+    load();
+    listMaintenanceLocations().then((d) => setLocations(d.locations)).catch(() => {});
+  }, [load]);
+  return (
+    <div className="app">
+      <PageHeader crumbs={crumbs} title="Parts" meta="The parts catalogue and what's in stock where."
+                  primary={<button onClick={() => setModal("new")}><PlusIcon /> New part</button>} />
+      <MaintenanceTabs />
+      {error && <div className="card error">{error}</div>}
+      {parts === null ? <div className="card empty">Loading…</div> : parts.length === 0 ? (
+        <div className="card empty"><p>No parts yet. Add the spares you keep: anodes, filters, bearings.</p></div>
+      ) : (
+        <div className="lib">
+          <table className="lib-table">
+            <thead><tr><th>Part number</th><th>Part</th><th>On hand</th><th>Where</th><th>Used (12 mo)</th><th>Cover</th><th /></tr></thead>
+            <tbody>
+              {parts.map((pt) => (
+                <tr key={pt.id}>
+                  <td>{pt.part_number}{pt.superseded_by && <div className="lib-date">superseded by {pt.superseded_by.part_number}</div>}</td>
+                  <td>{pt.name}<div className="lib-date">{[pt.manufacturer, pt.unit_cost != null && `${pt.unit_cost} each`].filter(Boolean).join(" · ")}</div></td>
+                  <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}</td>
+                  <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
+                  <td>{pt.used_last_year}</td>
+                  <td className="lib-date">{pt.months_of_cover != null ? `${pt.months_of_cover} months` : "—"}</td>
+                  <td><button className="secondary" onClick={() => setModal({ stock: pt })}>Stock</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {modal === "new" && <NewPartModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
+      {modal?.stock && <StockModal part={modal.stock} locations={locations} onClose={() => setModal(null)}
+                                   onDone={() => { setModal(null); load(); }} />}
+    </div>
+  );
+}
+
+function NewPartModal({ onClose, onDone }) {
+  const [f, setF] = useState({ part_number: "", name: "", manufacturer: "", unit_cost: "" });
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  return (
+    <FormModal title="New part" submitLabel="Add" canSubmit={!!f.part_number.trim() && !!f.name.trim()} onClose={onClose}
+               onSubmit={async () => onDone(await createMaintenancePart({ ...f, unit_cost: f.unit_cost === "" ? null : Number(f.unit_cost) }))}>
+      <Field label="Part number"><input autoFocus value={f.part_number} onChange={set("part_number")} /></Field>
+      <Field label="Name"><input value={f.name} placeholder="e.g. Magnesium anode" onChange={set("name")} /></Field>
+      <Field label="Manufacturer (optional)"><input value={f.manufacturer} onChange={set("manufacturer")} /></Field>
+      <Field label="Cost each (optional)"><input type="number" min="0" step="any" value={f.unit_cost} onChange={set("unit_cost")} /></Field>
+    </FormModal>
+  );
+}
+
+function StockModal({ part, locations, onClose, onDone }) {
+  const [loc, setLoc] = useState(part.stock[0]?.location.id || "");
+  const [qty, setQty] = useState("");
+  const [reorder, setReorder] = useState("");
+  return (
+    <FormModal title={`Stock: ${part.part_number}`} submitLabel="Save" canSubmit={!!loc && (qty !== "" || reorder !== "")}
+               onClose={onClose}
+               onSubmit={async () => {
+                 if (qty !== "") await adjustMaintenanceStock(part.id, { location_id: loc, delta: Number(qty), reason: Number(qty) > 0 ? "received" : "issued" });
+                 if (reorder !== "") await setMaintenanceReorder(part.id, { location_id: loc, reorder_point: Number(reorder) });
+                 onDone();
+               }}>
+      <Field label="Location">
+        <select value={loc} onChange={(e) => setLoc(e.target.value)}>
+          <option value="">{locations.length ? "Choose…" : "Add a location first"}</option>
+          {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Received (+) or issued (−)"><input type="number" step="any" value={qty} placeholder="e.g. 3 or -1" onChange={(e) => setQty(e.target.value)} /></Field>
+      <Field label="Reorder at (optional)"><input type="number" min="0" step="any" value={reorder} onChange={(e) => setReorder(e.target.value)} /></Field>
+    </FormModal>
   );
 }

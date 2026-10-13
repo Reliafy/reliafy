@@ -34,6 +34,7 @@ CALENDAR_UNITS = ("days", "weeks", "months", "years")
 ACTION_KINDS = ("replace", "repair", "inspect", "other")
 FINDINGS = ("ok", "degraded", "found_failed")
 WORK_ORDER_TYPES = ("preventive", "corrective", "inspection", "other")
+OPEN_STATUSES = ("open", "planned", "in_progress", "waiting")
 
 
 class NotFound(KeyError):
@@ -160,8 +161,8 @@ def _item_fitted(s: GraphStore, org: str, p: dict) -> None:
     s.put_edge(org, "AT", p["fitment_id"], p["position_id"])
     # A new item is a renewal: the position's tasks count from the day it went in.
     for task in s.inn(org, p["position_id"], "ON"):
-        if task["label"] == "Task" and (not task.get("last_done") or task["last_done"] < p["on"]):
-            s.patch_node(org, task["id"], {"last_done": p["on"]})
+        if task["label"] == "Task":
+            _renew_task(s, org, task, p["on"])
 
 
 def _item_removed(s: GraphStore, org: str, p: dict) -> None:
@@ -194,13 +195,53 @@ def _task_updated(s: GraphStore, org: str, p: dict) -> None:
 
 
 def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
+    task = s.node(org, p["task_id"]) if p.get("task_id") else None
     s.put_node(org, p["id"], "WorkOrder", {
         "number": p["number"], "title": p["title"], "type": p["type"], "status": "open",
         "opened": p["on"], "due": p.get("due"), "closed": None, "notes": p.get("notes", ""),
+        # A task's instructions and checklist travel with the work it raises.
+        "instructions": (task or {}).get("instructions", ""),
+        "checklist": [{"text": t, "done": False} for t in (task or {}).get("checklist") or []],
+        "status_history": [{"status": "open", "on": p["on"]}],
     })
     s.put_edge(org, "ON", p["id"], p["position_id"])
     if p.get("task_id"):
         s.put_edge(org, "FOR", p["id"], p["task_id"])
+    if p.get("alarm_point_id"):
+        s.put_edge(org, "ALARM_FOR", p["id"], p["alarm_point_id"])
+
+
+def _condition_point_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "ConditionPoint", {k: p.get(k) for k in (
+        "name", "unit", "alarm_above", "alarm_below", "source", "tag")} | {"created": p["on"]})
+    s.put_edge(org, "ON", p["id"], p["position_id"])
+
+
+def _condition_read(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "ConditionReading", {"on": p["on"], "value": p["value"], "note": p.get("note", "")})
+    s.put_edge(org, "OF", p["id"], p["point_id"])
+
+
+def _work_order_status(s: GraphStore, org: str, p: dict) -> None:
+    wo = s.node(org, p["id"])
+    history = list(wo.get("status_history") or []) + [{"status": p["status"], "on": p["on"], "note": p.get("note", "")}]
+    s.patch_node(org, p["id"], {"status": p["status"], "status_history": history})
+
+
+def _work_order_entry(label: str):
+    def project(s: GraphStore, org: str, p: dict) -> None:
+        s.put_node(org, p["id"], label, {k: v for k, v in p.items() if k not in ("id", "work_order_id")}
+                   | {"removed": False})
+        s.put_edge(org, "OF", p["id"], p["work_order_id"])
+    return project
+
+
+def _work_order_check(s: GraphStore, org: str, p: dict) -> None:
+    wo = s.node(org, p["id"])
+    checklist = [dict(c) for c in wo.get("checklist") or []]
+    if 0 <= p["index"] < len(checklist):
+        checklist[p["index"]]["done"] = p["done"]
+    s.patch_node(org, p["id"], {"checklist": checklist})
 
 
 def _action_recorded(s: GraphStore, org: str, p: dict) -> None:
@@ -218,6 +259,83 @@ def _action_recorded(s: GraphStore, org: str, p: dict) -> None:
         s.put_edge(org, "ON", p["id"], p["on_fitment"])
 
 
+# ---- meters and readings (usage: run hours, cycles, km) ---------------------------
+
+USAGE_UNITS = ("hours", "cycles", "km", "miles", "starts", "tonnes", "litres")
+
+
+def _is_calendar(unit: str) -> bool:
+    return (_norm_unit(unit) or "days") in CALENDAR_UNITS
+
+
+def _readings(s: GraphStore, org: str, meter_id: str) -> list[dict]:
+    rows = [r for r in s.inn(org, meter_id, "OF") if r["label"] == "Reading" and not r.get("voided")]
+    return sorted(rows, key=lambda r: (r["on"], r["value"]))
+
+
+def _reading_at(readings: list[dict], day: str) -> float | None:
+    """The meter on ``day``: interpolated between the readings either side, the
+    last one before it, or None if every reading is later."""
+    before = [r for r in readings if r["on"] <= day]
+    after = [r for r in readings if r["on"] > day]
+    if not before:
+        return None
+    a = before[-1]
+    if not after:
+        return a["value"]
+    b = after[0]
+    span = (date.fromisoformat(b["on"]) - date.fromisoformat(a["on"])).days
+    frac = (date.fromisoformat(day) - date.fromisoformat(a["on"])).days / span if span else 0
+    return a["value"] + frac * (b["value"] - a["value"])
+
+
+def _rate(readings: list[dict]) -> float | None:
+    """Units per day over the last year of readings (None with fewer than two)."""
+    if len(readings) < 2:
+        return None
+    last = readings[-1]
+    cutoff = (date.fromisoformat(last["on"]) - timedelta(days=365)).isoformat()
+    window = [r for r in readings if r["on"] >= cutoff]
+    first = window[0] if len(window) > 1 else readings[-2]
+    days = (date.fromisoformat(last["on"]) - date.fromisoformat(first["on"])).days
+    return (last["value"] - first["value"]) / days if days > 0 else None
+
+
+def _task_meter(s: GraphStore, org: str, task: dict) -> dict | None:
+    if task.get("meter_id"):
+        return s.node(org, task["meter_id"])
+    for unit in (task.get("unit"), task.get("also_unit")):
+        if unit and not _is_calendar(unit):
+            position = s.out(org, task["id"], "ON")
+            meters = [mt for mt in (s.inn(org, position[0]["id"], "ON") if position else [])
+                      if mt["label"] == "Meter" and _norm_unit(mt["unit"]) == _norm_unit(unit)]
+            if meters:
+                return sorted(meters, key=lambda mt: mt["name"].lower())[0]
+    return None
+
+
+def _renew_task(s: GraphStore, org: str, task: dict, day: str) -> None:
+    """The task was done (or its item renewed) on ``day``: record the date, and the
+    meter reading then if it goes by use."""
+    if task.get("last_done") and task["last_done"] >= day:
+        return
+    changes = {"last_done": day}
+    meter = _task_meter(s, org, task)
+    if meter:
+        changes["last_done_reading"] = _reading_at(_readings(s, org, meter["id"]), day)
+    s.patch_node(org, task["id"], changes)
+
+
+def _meter_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Meter", {"name": p["name"], "unit": p["unit"], "created": p["on"]})
+    s.put_edge(org, "ON", p["id"], p["position_id"])
+
+
+def _meter_read(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Reading", {"on": p["on"], "value": p["value"], "note": p.get("note", "")})
+    s.put_edge(org, "OF", p["id"], p["meter_id"])
+
+
 def _work_order_closed(s: GraphStore, org: str, p: dict) -> None:
     wo = s.node(org, p["id"])
     # Work recorded after the fact: it was opened no later than it was done.
@@ -225,8 +343,7 @@ def _work_order_closed(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"status": "closed", "closed": p["on"], "opened": opened,
                                 "notes": p.get("notes", "")})
     for task in s.out(org, p["id"], "FOR"):
-        if not task.get("last_done") or task["last_done"] < p["on"]:
-            s.patch_node(org, task["id"], {"last_done": p["on"]})
+        _renew_task(s, org, task, p["on"])
 
 
 def _photo_added(s: GraphStore, org: str, p: dict) -> None:
@@ -244,6 +361,107 @@ def _photo_removed(s: GraphStore, org: str, p: dict) -> None:
 def _coordinates_set(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["node_id"], {"coordinates": {"lat": p["lat"], "lon": p["lon"],
                                                      "source": p.get("source", "manual"), "on": p["on"]}})
+
+
+def class_id(name: str) -> str:
+    """A position class's node id: one per class name (case and spacing aside)."""
+    import hashlib
+
+    return "class-" + hashlib.sha1(" ".join(name.lower().split()).encode()).hexdigest()[:16]
+
+
+def _class_upsert(s: GraphStore, org: str, p: dict, changes: dict) -> None:
+    if s.node(org, p["id"]) is None:
+        s.put_node(org, p["id"], "PositionClass", {"name": p["name"]})
+    s.patch_node(org, p["id"], changes)
+
+
+def _class_costs_set(s: GraphStore, org: str, p: dict) -> None:
+    _class_upsert(s, org, p, {k: p.get(k) for k in ("planned_cost", "failure_cost", "availability_target")})
+
+
+def _class_model_fitted(s: GraphStore, org: str, p: dict) -> None:
+    _class_upsert(s, org, p, {"model": {k: p.get(k) for k in (
+        "model_id", "distribution", "params", "extras", "unit", "fitted_on", "failures", "suspensions")}})
+
+
+def _proposal_made(s: GraphStore, org: str, p: dict) -> None:
+    for old in s.inn(org, p["task_id"], "ABOUT"):
+        if old["label"] == "Proposal" and old.get("status") == "pending":
+            s.patch_node(org, old["id"], {"status": "superseded"})
+    s.put_node(org, p["id"], "Proposal", {k: p.get(k) for k in (
+        "kind", "current", "proposed", "reason", "made_on", "class_name")} | {"status": "pending"})
+    s.put_edge(org, "ABOUT", p["id"], p["task_id"])
+
+
+def _proposal_decided(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"status": p["decision"], "decided_on": p["on"], "note": p.get("note", "")})
+
+
+def _interface_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Interface", {k: p.get(k, "") for k in ("name", "kind", "medium", "rating")}
+               | {"created": p["on"]})
+    s.put_edge(org, "FROM", p["id"], p["from_id"])
+    s.put_edge(org, "TO", p["id"], p["to_id"])
+    if p.get("realised_by"):
+        s.put_edge(org, "REALISED_BY", p["id"], p["realised_by"])
+
+
+def _group_created(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "RedundancyGroup", {k: p.get(k) for k in ("name", "k", "mode", "standby")}
+               | {"duty": None, "created": p["on"]})
+
+
+def _group_member(add: bool):
+    def project(s: GraphStore, org: str, p: dict) -> None:
+        if add:
+            s.put_edge(org, "IN_GROUP", p["position_id"], p["group_id"])
+        else:
+            s.delete_edge(org, "IN_GROUP", p["position_id"], p["group_id"])
+    return project
+
+
+def _duty_changed(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["group_id"], {"duty": p["position_id"], "duty_since": p["on"]})
+
+
+def stock_id(part_id: str, location_id: str) -> str:
+    return f"stock-{part_id[:12]}-{location_id[:12]}"
+
+
+def _part_created(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Part", {k: p.get(k, "") for k in ("part_number", "name", "manufacturer", "unit", "notes")}
+               | {"unit_cost": p.get("unit_cost"), "created": p["on"], "superseded_by": None})
+
+
+def _part_superseded(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"superseded_by": p["by_id"]})
+    s.put_edge(org, "SUPERSEDED_BY", p["id"], p["by_id"])
+
+
+def _parts_interchangeable(s: GraphStore, org: str, p: dict) -> None:
+    s.put_edge(org, "INTERCHANGEABLE", p["a"], p["b"])
+    s.put_edge(org, "INTERCHANGEABLE", p["b"], p["a"])
+
+
+def _stock_adjusted(s: GraphStore, org: str, p: dict) -> None:
+    sid = stock_id(p["part_id"], p["location_id"])
+    node = s.node(org, sid)
+    if node is None:
+        s.put_node(org, sid, "Stock", {"quantity": 0.0, "reorder_point": None, "moves": []})
+        s.put_edge(org, "OF", sid, p["part_id"])
+        s.put_edge(org, "AT", sid, p["location_id"])
+        node = s.node(org, sid)
+    moves = (list(node.get("moves") or []) + [{"on": p["on"], "delta": p["delta"], "reason": p.get("reason", ""),
+                                                "work_order_id": p.get("work_order_id")}])[-200:]
+    s.patch_node(org, sid, {"quantity": round(node["quantity"] + p["delta"], 6), "moves": moves})
+
+
+def _stock_reorder_set(s: GraphStore, org: str, p: dict) -> None:
+    sid = stock_id(p["part_id"], p["location_id"])
+    if s.node(org, sid) is None:
+        _stock_adjusted(s, org, {**p, "delta": 0, "reason": "reorder point set"})
+    s.patch_node(org, sid, {"reorder_point": p["reorder_point"]})
 
 
 PROJECTORS = {
@@ -268,6 +486,37 @@ PROJECTORS = {
     "work_order.updated": _patch,
     "work_order.cancelled": _work_order_cancelled,
     "location.updated": _patch,
+    "meter.added": _meter_added,
+    "meter.read": _meter_read,
+    "reading.voided": _flag("voided"),
+    "class.costs_set": _class_costs_set,
+    "class.model_fitted": _class_model_fitted,
+    "proposal.made": _proposal_made,
+    "proposal.decided": _proposal_decided,
+    "interface.added": _interface_added,
+    "interface.removed": _flag("retired"),
+    "group.created": _group_created,
+    "group.updated": _patch,
+    "group.member_added": _group_member(True),
+    "group.member_removed": _group_member(False),
+    "group.retired": _flag("retired"),
+    "duty.changed": _duty_changed,
+    "position.rbd_linked": _patch,
+    "condition_point.added": _condition_point_added,
+    "condition_point.updated": _patch,
+    "condition.read": _condition_read,
+    "part.created": _part_created,
+    "part.updated": _patch,
+    "part.superseded": _part_superseded,
+    "parts.interchangeable": _parts_interchangeable,
+    "stock.adjusted": _stock_adjusted,
+    "stock.reorder_set": _stock_reorder_set,
+    "work_order.status": _work_order_status,
+    "work_order.labour": _work_order_entry("Labour"),
+    "work_order.part_used": _work_order_entry("PartUse"),
+    "work_order.cost": _work_order_entry("Cost"),
+    "work_order.entry_removed": _flag("removed"),
+    "work_order.check": _work_order_check,
     "photo.added": _photo_added,
     "photo.removed": _photo_removed,
     "coordinates.set": _coordinates_set,
@@ -535,17 +784,332 @@ class Maintenance:
     def _tasks_on(self, position_id: str) -> list[dict]:
         return [t for t in self.s.inn(self.org, position_id, "ON") if t["label"] == "Task" and not t.get("retired")]
 
-    def _task_view(self, task: dict) -> dict:
+    def _due_by(self, task: dict, interval: float, unit: str) -> dict:
+        """When one limit of a task falls due: on the calendar, or by use from its
+        meter (projected from the meter's recent rate)."""
         base = task.get("last_done") or task["start"]
-        nxt = add_interval(base, task["interval"], task["unit"])
-        open_wo = next((w for w in self.s.inn(self.org, task["id"], "FOR") if w.get("status") == "open"), None)
+        if _is_calendar(unit):
+            return {"limit": f"{interval:g} {unit}", "next_due": add_interval(base, interval, unit)}
+        meter = _task_meter(self.s, self.org, task)
+        if meter is None:
+            return {"limit": f"{interval:g} {unit}", "next_due": None,
+                    "note": f"needs a {unit} meter on the position"}
+        readings = _readings(self.s, self.org, meter["id"])
+        if not readings:
+            return {"limit": f"{interval:g} {unit}", "next_due": None, "note": "needs meter readings"}
+        start = task.get("last_done_reading")
+        if start is None:
+            start = _reading_at(readings, base)
+        if start is None:
+            start = readings[0]["value"]
+        target = start + interval
+        last, rate = readings[-1], _rate(readings)
+        out = {"limit": f"{interval:g} {unit}", "due_at_reading": round(target, 2),
+               "meter": {"id": meter["id"], "name": meter["name"], "unit": meter["unit"],
+                         "reading": last["value"], "read_on": last["on"],
+                         "rate_per_day": rate and round(rate, 3)}}
+        if last["value"] >= target:
+            crossed = next((r["on"] for r in readings if r["value"] >= target), last["on"])
+            return {**out, "next_due": crossed}
+        if not rate or rate <= 0:
+            return {**out, "next_due": None, "note": "needs two readings to project a date"}
+        days = (target - last["value"]) / rate
+        return {**out, "next_due": (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()}
+
+    def _task_view(self, task: dict) -> dict:
+        limits = [self._due_by(task, task["interval"], task["unit"])]
+        if task.get("also_interval") and task.get("also_unit"):
+            limits.append(self._due_by(task, task["also_interval"], task["also_unit"]))
+        dues = [lim["next_due"] for lim in limits if lim["next_due"]]
+        nxt = min(dues) if dues else None
+        open_wo = next((w for w in self.s.inn(self.org, task["id"], "FOR") if w.get("status") in OPEN_STATUSES), None)
         return {
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
-            "interval": task["interval"], "unit": task["unit"], "last_done": task.get("last_done"),
-            "next_due": nxt, "by_use": nxt is None,
+            "interval": task["interval"], "unit": task["unit"],
+            "also_interval": task.get("also_interval"), "also_unit": task.get("also_unit"),
+            "instructions": task.get("instructions", ""), "checklist": task.get("checklist") or [],
+            "last_done": task.get("last_done"), "last_done_reading": task.get("last_done_reading"),
+            "limits": limits, "next_due": nxt, "by_use": not _is_calendar(task["unit"]),
             "overdue": bool(nxt and nxt < date.today().isoformat()),
             "open_work_order": open_wo and {"id": open_wo["id"], "number": open_wo["number"]},
+            "proposal": next(({"id": p["id"], "proposed": p.get("proposed"), "kind": p.get("kind")}
+                              for p in self.s.inn(self.org, task["id"], "ABOUT")
+                              if p["label"] == "Proposal" and p.get("status") == "pending"), None),
         }
+
+    # ---- parts and stock ----------------------------------------------------------
+
+    def create_part(self, part_number, name, manufacturer="", unit="each", unit_cost=None, notes="") -> dict:
+        """A part in the catalogue (a bearing, a seal kit, an anode), by part number."""
+        number = _text(part_number, "part number", required=True)[:120]
+        if any(pt["part_number"].lower() == number.lower() for pt in self.s.nodes(self.org, "Part")):
+            raise Invalid(f"Part number {number} is already in the catalogue.")
+        pid = new_id()
+        self._emit("part.created", {"id": pid, "part_number": number, "name": _text(name, "part's name", required=True)[:200],
+                                    "manufacturer": _text(manufacturer, "manufacturer")[:120],
+                                    "unit": _text(unit, "unit")[:20] or "each",
+                                    "unit_cost": self._amount(unit_cost, "unit cost"), "notes": _text(notes, "notes"),
+                                    "on": date.today().isoformat()})
+        return self.part(pid)
+
+    def update_part(self, part_id: str, **changes) -> dict:
+        self._get(part_id, "Part")
+        out = {k: _text(v, k)[:200] for k, v in changes.items()
+               if k in ("name", "manufacturer", "unit", "notes") and v is not None}
+        if "unit_cost" in changes:
+            out["unit_cost"] = self._amount(changes["unit_cost"], "unit cost")
+        if out:
+            self._emit("part.updated", {"id": part_id, "changes": out})
+        return self.part(part_id)
+
+    def supersede_part(self, part_id: str, by_part_id: str) -> dict:
+        """The part is replaced by another (a new part number for the same job)."""
+        self._get(part_id, "Part")
+        self._get(by_part_id, "Part")
+        if part_id == by_part_id:
+            raise Invalid("A part can't supersede itself.")
+        self._emit("part.superseded", {"id": part_id, "by_id": by_part_id})
+        return self.part(part_id)
+
+    def mark_interchangeable(self, part_id: str, other_part_id: str) -> dict:
+        self._get(part_id, "Part")
+        self._get(other_part_id, "Part")
+        if part_id == other_part_id:
+            raise Invalid("Pick two different parts.")
+        self._emit("parts.interchangeable", {"a": part_id, "b": other_part_id})
+        return self.part(part_id)
+
+    def adjust_stock(self, part_id: str, location_id: str, delta, reason="", on=None, work_order_id=None) -> dict:
+        """Receive (positive) or issue (negative) stock of a part at a location."""
+        self._get(part_id, "Part")
+        self._get(location_id, "Location")
+        try:
+            delta = float(delta)
+        except (TypeError, ValueError):
+            raise Invalid("The quantity must be a number.")
+        if delta == 0 or delta != delta:
+            raise Invalid("The quantity can't be 0.")
+        stock = self.s.node(self.org, stock_id(part_id, location_id))
+        if (stock or {}).get("quantity", 0) + delta < 0:
+            raise Invalid(f"There are only {(stock or {}).get('quantity', 0):g} in stock there.")
+        self._emit("stock.adjusted", {"part_id": part_id, "location_id": location_id, "delta": delta,
+                                      "reason": _text(reason, "reason")[:200], "on": _day(on),
+                                      "work_order_id": work_order_id})
+        return self.part(part_id)
+
+    def set_reorder_point(self, part_id: str, location_id: str, reorder_point) -> dict:
+        self._get(part_id, "Part")
+        self._get(location_id, "Location")
+        self._emit("stock.reorder_set", {"part_id": part_id, "location_id": location_id,
+                                         "reorder_point": self._amount(reorder_point, "reorder point"),
+                                         "on": date.today().isoformat()})
+        return self.part(part_id)
+
+    def part(self, part_id: str) -> dict:
+        pt = self._get(part_id, "Part")
+        stocks = [st for st in self.s.inn(self.org, part_id, "OF") if st["label"] == "Stock"]
+        today = date.fromisoformat(date.today().isoformat())
+        year_ago = (today - timedelta(days=365)).isoformat()
+        used = sum(-mv["delta"] for st in stocks for mv in st.get("moves") or []
+                   if mv["delta"] < 0 and mv["on"] >= year_ago)
+        on_hand = sum(st["quantity"] for st in stocks)
+        monthly = used / 12 if used else 0
+        by = pt.get("superseded_by") and self.s.node(self.org, pt["superseded_by"])
+        alike = self.s.out(self.org, part_id, "INTERCHANGEABLE")
+        locs = []
+        for st in stocks:
+            loc = self.s.out(self.org, st["id"], "AT")[0]
+            locs.append({"location": {"id": loc["id"], "name": loc["name"]}, "quantity": st["quantity"],
+                         "reorder_point": st.get("reorder_point"),
+                         "low": st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]})
+        return {
+            "id": part_id, **{k: pt.get(k) for k in ("part_number", "name", "manufacturer", "unit", "unit_cost", "notes")},
+            "superseded_by": by and {"id": by["id"], "part_number": by["part_number"], "name": by["name"]},
+            "interchangeable": [{"id": a["id"], "part_number": a["part_number"], "name": a["name"]} for a in alike],
+            "stock": sorted(locs, key=lambda x: x["location"]["name"].lower()), "on_hand": on_hand,
+            "used_last_year": used, "months_of_cover": round(on_hand / monthly, 1) if monthly else None,
+            "low": any(x["low"] for x in locs),
+        }
+
+    def parts(self) -> list[dict]:
+        return [self.part(pt["id"]) for pt in sorted(self.s.nodes(self.org, "Part"),
+                                                     key=lambda pt: pt["part_number"].lower())]
+
+    # ---- condition monitoring -----------------------------------------------------
+
+    def add_condition_point(self, position_id: str, name, unit="", alarm_above=None, alarm_below=None,
+                            source="manual", tag="") -> dict:
+        """Something measured on a position to see its condition (vibration, temperature,
+        pressure, wear), with alarm limits. A reading past a limit raises an inspection
+        work order. source and tag say where readings come from (a historian tag) for later
+        links; readings are entered here for now."""
+        self._get(position_id, "Position")
+        above, below = self._amount_or_none(alarm_above), self._amount_or_none(alarm_below)
+        if above is not None and below is not None and below >= above:
+            raise Invalid("The low alarm must be below the high alarm.")
+        pid = new_id()
+        self._emit("condition_point.added", {
+            "id": pid, "position_id": position_id, "name": _text(name, "point's name", required=True),
+            "unit": _text(unit, "unit")[:20], "alarm_above": above, "alarm_below": below,
+            "source": _text(source, "source")[:60] or "manual", "tag": _text(tag, "tag")[:200],
+            "on": date.today().isoformat()})
+        return self.condition_point(pid)
+
+    def update_condition_point(self, point_id: str, name=None, alarm_above=..., alarm_below=..., tag=None) -> dict:
+        point = self._get(point_id, "ConditionPoint")
+        changes = {}
+        if name is not None:
+            changes["name"] = _text(name, "point's name", required=True)
+        if alarm_above is not ...:
+            changes["alarm_above"] = self._amount_or_none(alarm_above)
+        if alarm_below is not ...:
+            changes["alarm_below"] = self._amount_or_none(alarm_below)
+        if tag is not None:
+            changes["tag"] = _text(tag, "tag")[:200]
+        above = changes.get("alarm_above", point.get("alarm_above"))
+        below = changes.get("alarm_below", point.get("alarm_below"))
+        if above is not None and below is not None and below >= above:
+            raise Invalid("The low alarm must be below the high alarm.")
+        if changes:
+            self._emit("condition_point.updated", {"id": point_id, "changes": changes})
+        return self.condition_point(point_id)
+
+    @staticmethod
+    def _amount_or_none(value):
+        if value in (None, ""):
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise Invalid("An alarm limit must be a number.")
+        if value != value:
+            raise Invalid("An alarm limit must be a number.")
+        return value
+
+    def record_condition(self, point_id: str, value, on=None, note="") -> dict:
+        """A condition reading. Past an alarm limit, an inspection work order is opened
+        (one at a time per point)."""
+        point = self._get(point_id, "ConditionPoint")
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise Invalid("A reading is a number.")
+        if value != value:
+            raise Invalid("A reading is a number.")
+        day = _day(on)
+        if day > date.today().isoformat():
+            raise Invalid("A reading can't be in the future.")
+        self._emit("condition.read", {"id": new_id(), "point_id": point_id, "on": day, "value": value,
+                                      "note": _text(note, "note")})
+        view = self.condition_point(point_id)
+        if view["status"] != "ok" and not view["alarm_work_order"]:
+            position = self.s.out(self.org, point_id, "ON")[0]
+            limit = point["alarm_above"] if view["status"] == "high" else point["alarm_below"]
+            wid = new_id()
+            self._emit("work_order.opened", {
+                "id": wid, "number": self._next_number(), "type": "inspection", "position_id": position["id"],
+                "title": f"{point['name']} {value:g}{(' ' + point['unit']) if point.get('unit') else ''}: "
+                         f"{'above' if view['status'] == 'high' else 'below'} the {limit:g} alarm limit",
+                "task_id": None, "due": day, "notes": "Raised by a condition reading.", "on": day,
+                "alarm_point_id": point_id})
+            view = self.condition_point(point_id)
+        return view
+
+    def condition_point(self, point_id: str) -> dict:
+        point = self._get(point_id, "ConditionPoint")
+        readings = sorted([r for r in self.s.inn(self.org, point_id, "OF") if r["label"] == "ConditionReading"],
+                          key=lambda r: (r["on"], r["id"]))
+        last = readings[-1] if readings else None
+        above, below = point.get("alarm_above"), point.get("alarm_below")
+        status = "ok"
+        if last and above is not None and last["value"] >= above:
+            status = "high"
+        elif last and below is not None and last["value"] <= below:
+            status = "low"
+        trend = projection = None
+        recent = readings[-6:]
+        if len(recent) >= 3:
+            xs = [(date.fromisoformat(r["on"]) - date.fromisoformat(recent[0]["on"])).days for r in recent]
+            ys = [r["value"] for r in recent]
+            n = len(xs)
+            mx, my = sum(xs) / n, sum(ys) / n
+            sxx = sum((x - mx) ** 2 for x in xs)
+            if sxx > 0:
+                slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+                trend = round(slope, 4)
+                target = above if slope > 0 and above is not None else below if slope < 0 and below is not None else None
+                if status == "ok" and target is not None:
+                    days = (target - last["value"]) / slope
+                    if 0 < days < 3650:
+                        projection = (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()
+        alarm_wo = next((w for w in self.s.inn(self.org, point_id, "ALARM_FOR")
+                         if w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES), None)
+        position = self.s.out(self.org, point_id, "ON")
+        return {
+            "id": point_id, "name": point["name"], "unit": point.get("unit", ""), "source": point.get("source"),
+            "tag": point.get("tag", ""), "alarm_above": above, "alarm_below": below,
+            "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
+            "reading": last and last["value"], "read_on": last and last["on"], "status": status,
+            "trend_per_day": trend, "projected_alarm": projection,
+            "alarm_work_order": alarm_wo and {"id": alarm_wo["id"], "number": alarm_wo["number"]},
+            "readings": [{"id": r["id"], "on": r["on"], "value": r["value"]} for r in reversed(readings[-50:])],
+        }
+
+    # ---- meters ------------------------------------------------------------------
+
+    def add_meter(self, position_id: str, name, unit) -> dict:
+        """A usage meter on a position: run hours, cycles, km. Tasks on the position
+        that go by that unit use it."""
+        self._get(position_id, "Position")
+        unit = _norm_unit(unit)
+        if not unit or _is_calendar(unit):
+            raise Invalid(f"A meter counts use, e.g. {', '.join(USAGE_UNITS[:4])}.")
+        mid = new_id()
+        self._emit("meter.added", {"id": mid, "position_id": position_id,
+                                   "name": _text(name, "meter's name") or f"{unit.capitalize()} meter",
+                                   "unit": unit, "on": date.today().isoformat()})
+        return self.meter(mid)
+
+    def record_reading(self, meter_id: str, value, on=None, note="") -> dict:
+        self._get(meter_id, "Meter")
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise Invalid("A reading is a number.")
+        if value < 0 or value != value:
+            raise Invalid("A reading can't be negative.")
+        day = _day(on)
+        if day > date.today().isoformat():
+            raise Invalid("A reading can't be in the future.")
+        readings = _readings(self.s, self.org, meter_id)
+        before = [r for r in readings if r["on"] <= day]
+        after = [r for r in readings if r["on"] > day]
+        if before and value < before[-1]["value"]:
+            raise Invalid(f"It's lower than the reading of {before[-1]['value']:g} on {before[-1]['on']}. "
+                          "If the meter was replaced, add a new meter.")
+        if after and value > after[0]["value"]:
+            raise Invalid(f"It's higher than the later reading of {after[0]['value']:g} on {after[0]['on']}.")
+        self._emit("meter.read", {"id": new_id(), "meter_id": meter_id, "on": day, "value": value,
+                                  "note": _text(note, "note")})
+        return self.meter(meter_id)
+
+    def void_reading(self, reading_id: str) -> None:
+        if self._get(reading_id, "Reading").get("voided"):
+            raise Invalid("That reading was already struck out.")
+        self._emit("reading.voided", {"id": reading_id, "on": date.today().isoformat()})
+
+    def meter(self, meter_id: str) -> dict:
+        mt = self._get(meter_id, "Meter")
+        readings = _readings(self.s, self.org, meter_id)
+        rate = _rate(readings)
+        position = self.s.out(self.org, meter_id, "ON")
+        return {"id": meter_id, "name": mt["name"], "unit": mt["unit"],
+                "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
+                "reading": readings[-1]["value"] if readings else None,
+                "read_on": readings[-1]["on"] if readings else None,
+                "rate_per_day": rate and round(rate, 3),
+                "readings": [{"id": r["id"], "on": r["on"], "value": r["value"], "note": r.get("note", "")}
+                             for r in reversed(readings[-50:])]}
 
     def set_last_done(self, task_id: str, on) -> dict:
         """Record when a task was last done (before it was tracked here), so
@@ -604,11 +1168,11 @@ class Maintenance:
                                              task_id=task["id"], due=task["next_due"]))
         return made
 
-    def close_work_order(self, work_order_id: str, actions=(), on=None, notes="") -> dict:
+    def close_work_order(self, work_order_id: str, actions=(), on=None, notes="", readings=()) -> dict:
         """Close a work order with what was done. Replacements end the fitted
         item's fitment and start the new one's."""
         wo = self._get(work_order_id, "WorkOrder")
-        if wo["status"] != "open":
+        if wo["status"] not in OPEN_STATUSES:
             raise Invalid("This work order is already closed.")
         day = _day(on)
         position_id = self.s.out(self.org, work_order_id, "ON")[0]["id"]
@@ -632,6 +1196,10 @@ class Maintenance:
         current = self.current_fitment(position_id)
         if current and day < current["from"]:
             raise Invalid("The work can't be done before the fitted item went in.")
+        # Meter readings taken during the work go in first, so a task by use
+        # records the reading it was done at.
+        for r in readings or []:
+            self.record_reading(r.get("meter_id"), r.get("value"), day, "read at the work order")
 
         for kind, fm, finding, a in plans:
             ends = starts = on_fitment = None
@@ -735,9 +1303,10 @@ class Maintenance:
             self._emit("fitment.corrected", {"id": fitment_id, **changes})
         return self._fitment_view(self._get(fitment_id, "Fitment"))
 
-    def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None) -> dict:
+    def update_work_order(self, work_order_id: str, title=None, due=None, notes=None, type=None,
+                          assignee=None, planned_for=None) -> dict:
         wo = self._get(work_order_id, "WorkOrder")
-        if wo["status"] != "open":
+        if wo["status"] not in OPEN_STATUSES:
             raise Invalid("Only an open work order can be changed.")
         changes = {}
         if title is not None:
@@ -750,23 +1319,173 @@ class Maintenance:
             if type not in WORK_ORDER_TYPES:
                 raise Invalid(f"The type is one of {', '.join(WORK_ORDER_TYPES)}.")
             changes["type"] = type
+        if assignee is not None:
+            changes["assignee"] = _text(assignee, "assignee")[:120]
+        if planned_for is not None:
+            changes["planned_for"] = _day(planned_for, "planned date") if planned_for else None
         if changes:
             self._emit("work_order.updated", {"id": work_order_id, "changes": changes})
         return self.work_order(work_order_id)
 
+    WORK_STATUSES = {"open": "Open", "planned": "Planned", "in_progress": "In progress",
+                     "waiting": "Waiting (parts or access)"}
+
+    def _open_wo(self, work_order_id: str) -> dict:
+        wo = self._get(work_order_id, "WorkOrder")
+        if wo["status"] not in OPEN_STATUSES:
+            raise Invalid("This work order is already closed or cancelled.")
+        return wo
+
+    def set_work_status(self, work_order_id: str, status: str, note="") -> dict:
+        """Move an open work order along: open, planned, in_progress, waiting. (Close it
+        with close_work_order, or cancel it.)"""
+        wo = self._open_wo(work_order_id)
+        if status not in self.WORK_STATUSES:
+            raise Invalid(f"The status is one of {', '.join(self.WORK_STATUSES)}.")
+        if status != wo["status"]:
+            self._emit("work_order.status", {"id": work_order_id, "status": status,
+                                             "on": date.today().isoformat(), "note": _text(note, "note")})
+        return self.work_order(work_order_id)
+
+    @staticmethod
+    def _amount(value, what: str, allow_none=True):
+        if value in (None, ""):
+            if allow_none:
+                return None
+            raise Invalid(f"The {what} is required.")
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise Invalid(f"The {what} must be a number.")
+        if value < 0 or value != value:
+            raise Invalid(f"The {what} can't be negative.")
+        return value
+
+    def log_labour(self, work_order_id: str, hours, who="", rate=None, on=None, note="") -> dict:
+        self._open_or_closed(work_order_id)
+        hours = self._amount(hours, "hours", allow_none=False)
+        if hours <= 0 or hours > 1000:
+            raise Invalid("Hours must be more than 0 (and at most 1000).")
+        self._emit("work_order.labour", {"id": new_id(), "work_order_id": work_order_id, "hours": hours,
+                                         "who": _text(who, "who")[:120], "rate": self._amount(rate, "rate"),
+                                         "on": _day(on), "note": _text(note, "note")})
+        return self.work_order(work_order_id)
+
+    def add_part_used(self, work_order_id: str, part=None, quantity=1, unit_cost=None, part_number="", note="",
+                      part_id=None, from_location_id=None) -> dict:
+        """A part used on a work order: free text, or a catalogue part (part_id), issued from
+        stock at a location (from_location_id) if given."""
+        self._open_or_closed(work_order_id)
+        qty = self._amount(quantity, "quantity", allow_none=False)
+        if qty <= 0:
+            raise Invalid("The quantity must be more than 0.")
+        if part_id:
+            catalogue = self._get(part_id, "Part")
+            part = part or catalogue["name"]
+            part_number = part_number or catalogue["part_number"]
+            if unit_cost in (None, ""):
+                unit_cost = catalogue.get("unit_cost")
+            if from_location_id:
+                self.adjust_stock(part_id, from_location_id, -qty, "used on a work order",
+                                  work_order_id=work_order_id)
+        elif from_location_id:
+            raise Invalid("Stock is issued from the catalogue: give the part_id.")
+        self._emit("work_order.part_used", {"id": new_id(), "work_order_id": work_order_id,
+                                             "part": _text(part, "part", required=True)[:200],
+                                             "part_number": _text(part_number, "part number")[:120],
+                                             "quantity": qty, "unit_cost": self._amount(unit_cost, "unit cost"),
+                                             "note": _text(note, "note"), "part_id": part_id or None})
+        return self.work_order(work_order_id)
+
+    def add_cost(self, work_order_id: str, description, amount) -> dict:
+        self._open_or_closed(work_order_id)
+        self._emit("work_order.cost", {"id": new_id(), "work_order_id": work_order_id,
+                                       "description": _text(description, "description", required=True)[:200],
+                                       "amount": self._amount(amount, "amount", allow_none=False)})
+        return self.work_order(work_order_id)
+
+    def remove_entry(self, entry_id: str) -> dict:
+        node = self.s.node(self.org, entry_id)
+        if node is None or node["label"] not in ("Labour", "PartUse", "Cost"):
+            raise NotFound(entry_id)
+        if node.get("removed"):
+            raise Invalid("That entry was already removed.")
+        wo = self.s.out(self.org, entry_id, "OF")[0]
+        self._emit("work_order.entry_removed", {"id": entry_id, "on": date.today().isoformat()})
+        return self.work_order(wo["id"])
+
+    def check_item(self, work_order_id: str, index: int, done: bool = True) -> dict:
+        wo = self._open_wo(work_order_id)
+        if not 0 <= int(index) < len(wo.get("checklist") or []):
+            raise Invalid("There's no checklist item with that number.")
+        self._emit("work_order.check", {"id": work_order_id, "index": int(index), "done": bool(done)})
+        return self.work_order(work_order_id)
+
+    def _open_or_closed(self, work_order_id: str) -> dict:
+        """Labour, parts and costs can be added after closing (timesheets come late),
+        but not to a cancelled work order."""
+        wo = self._get(work_order_id, "WorkOrder")
+        if wo["status"] == "cancelled":
+            raise Invalid("This work order was cancelled.")
+        return wo
+
+    def _wo_costs(self, work_order_id: str) -> dict:
+        entries = [e for e in self.s.inn(self.org, work_order_id, "OF")
+                   if e["label"] in ("Labour", "PartUse", "Cost") and not e.get("removed")]
+        labour = [e for e in entries if e["label"] == "Labour"]
+        parts = [e for e in entries if e["label"] == "PartUse"]
+        other = [e for e in entries if e["label"] == "Cost"]
+        labour_cost = sum((e.get("rate") or 0) * e["hours"] for e in labour)
+        parts_cost = sum((e.get("unit_cost") or 0) * e["quantity"] for e in parts)
+        other_cost = sum(e["amount"] for e in other)
+        strip = lambda e: {k: v for k, v in e.items() if k not in ("label", "removed")}
+        return {
+            "labour": [strip(e) for e in sorted(labour, key=lambda e: e["on"])],
+            "parts": [strip(e) for e in parts], "other_costs": [strip(e) for e in other],
+            "totals": {"hours": round(sum(e["hours"] for e in labour), 2), "labour": round(labour_cost, 2),
+                       "parts": round(parts_cost, 2), "other": round(other_cost, 2),
+                       "total": round(labour_cost + parts_cost + other_cost, 2)},
+        }
+
     def cancel_work_order(self, work_order_id: str, reason="") -> dict:
         wo = self._get(work_order_id, "WorkOrder")
-        if wo["status"] != "open":
+        if wo["status"] not in OPEN_STATUSES:
             raise Invalid("Only an open work order can be cancelled.")
         self._emit("work_order.cancelled", {"id": work_order_id, "on": date.today().isoformat(),
                                             "reason": _text(reason, "reason")})
         return self.work_order(work_order_id)
 
-    def update_task(self, task_id: str, name=None, interval=None, unit=None) -> dict:
+    def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
+                    also_unit=None, meter_id=None, instructions=None, checklist=None) -> dict:
+        """Change a task. also_interval / also_unit add a second limit, whichever comes
+        first (500 hours or 6 months); also_interval 0 removes it. meter_id picks the
+        meter a task by use goes by (otherwise the position's meter in its unit)."""
         task = self._get(task_id, "Task")
         if task.get("retired"):
             raise Invalid("That task has been retired.")
         changes = {}
+        if also_interval is not None:
+            try:
+                also_interval = float(also_interval)
+            except (TypeError, ValueError):
+                raise Invalid("The second limit must be a number.")
+            if also_interval <= 0:
+                changes["also_interval"], changes["also_unit"] = None, None
+            else:
+                changes["also_interval"] = also_interval
+                changes["also_unit"] = _norm_unit(also_unit or task.get("also_unit")) or "months"
+        if meter_id is not None:
+            if meter_id:
+                self._get(meter_id, "Meter")
+            changes["meter_id"] = meter_id or None
+        if instructions is not None:
+            changes["instructions"] = _text(instructions, "instructions")[:4000]
+        if checklist is not None:
+            items = [_text(c, "checklist item")[:200] for c in (checklist or [])]
+            items = [c for c in items if c]
+            if len(items) > 50:
+                raise Invalid("At most 50 checklist items.")
+            changes["checklist"] = items
         if name is not None:
             changes["name"] = _text(name, "task's name", required=True)
         if interval is not None:
@@ -799,7 +1518,7 @@ class Maintenance:
             raise Invalid("Something is still fitted. Remove or move it first.")
         if any(not c.get("retired") for c in self.s.inn(self.org, position_id, "PART_OF") if c["label"] == "Position"):
             raise Invalid("Positions inside it are still in use. Retire or move them first.")
-        if any(w["label"] == "WorkOrder" and w["status"] == "open" for w in self.s.inn(self.org, position_id, "ON")):
+        if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES for w in self.s.inn(self.org, position_id, "ON")):
             raise Invalid("It has open work orders. Close or cancel them first.")
         self._emit("position.retired", {"id": position_id, "on": date.today().isoformat(),
                                         "reason": _text(reason, "reason")})
@@ -892,11 +1611,94 @@ class Maintenance:
             if not name or p.get("retired"):
                 continue
             entry = classes.setdefault(name, {"position_class": name, "positions": 0, "fitments": 0, "failures": 0})
+            if "costs" not in entry:
+                node = self.s.node(self.org, class_id(name)) or {}
+                entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target")}
+                entry["model"] = node.get("model")
             entry["positions"] += 1
             for f in self._fitments_at(p["id"]):
                 entry["fitments"] += 1
                 entry["failures"] += f.get("end_reason") == "failure"
         return sorted(classes.values(), key=lambda c: c["position_class"].lower())
+
+    # ---- closing the loop: costs, proposals -------------------------------------------
+
+    def set_class_costs(self, position_class: str, planned_cost=None, failure_cost=None,
+                        availability_target=None) -> dict:
+        """What a planned replacement and a failure cost for this class of position,
+        and the availability a hidden (protective) function must reach: what the
+        proposed intervals are optimised against."""
+        name = _text(position_class, "class", required=True)
+        if not any((p.get("position_class") or "").strip().lower() == name.lower()
+                   for p in self.s.nodes(self.org, "Position")):
+            raise NotFound(name)
+        node = self.s.node(self.org, class_id(name)) or {}
+        out = {}
+        for key, value in (("planned_cost", planned_cost), ("failure_cost", failure_cost),
+                           ("availability_target", availability_target)):
+            if value is None or value == "":
+                out[key] = node.get(key)
+                continue
+            try:
+                out[key] = float(value)
+            except (TypeError, ValueError):
+                raise Invalid(f"{key.replace('_', ' ').capitalize()} must be a number.")
+        if out["planned_cost"] is not None and out["failure_cost"] is not None:
+            if out["planned_cost"] < 0 or out["failure_cost"] <= out["planned_cost"]:
+                raise Invalid("A failure must cost more than a planned replacement (and neither below 0).")
+        if out["availability_target"] is not None and not (0 < out["availability_target"] < 1):
+            raise Invalid("The availability target is between 0 and 1, e.g. 0.99.")
+        self._emit("class.costs_set", {"id": class_id(name), "name": name, **out})
+        return self.position_class(name)
+
+    def position_class(self, position_class: str) -> dict:
+        found = next((c for c in self.position_classes()
+                      if c["position_class"].lower() == (position_class or "").strip().lower()), None)
+        if found is None:
+            raise NotFound(position_class)
+        return {**found, "proposals": [p for p in self.proposals("pending")
+                                       if (p.get("class_name") or "").lower() == found["position_class"].lower()]}
+
+    def proposals(self, status: str | None = "pending") -> list[dict]:
+        out = []
+        for pr in self.s.nodes(self.org, "Proposal"):
+            if status and pr.get("status") != status:
+                continue
+            task = self.s.out(self.org, pr["id"], "ABOUT")
+            position = task and self.s.out(self.org, task[0]["id"], "ON")
+            out.append({k: pr.get(k) for k in ("id", "kind", "current", "proposed", "reason", "status",
+                                                "made_on", "decided_on", "class_name")} | {
+                "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
+                "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
+            })
+        return sorted(out, key=lambda p: p["made_on"] or "", reverse=True)
+
+    def decide_proposal(self, proposal_id: str, accept: bool, note="") -> dict:
+        pr = self._get(proposal_id, "Proposal")
+        if pr.get("status") != "pending":
+            raise Invalid("That proposal has already been decided or superseded.")
+        task = self.s.out(self.org, proposal_id, "ABOUT")[0]
+        if accept:
+            if pr["kind"] == "interval":
+                self.update_task(task["id"], interval=pr["proposed"]["interval"], unit=pr["proposed"]["unit"])
+            elif pr["kind"] == "retire":
+                self.retire_task(task["id"], "accepted proposal: " + (pr.get("reason") or "")[:200])
+        self._emit("proposal.decided", {"id": proposal_id, "decision": "accepted" if accept else "rejected",
+                                        "on": date.today().isoformat(), "note": _text(note, "note")})
+        return next(p for p in self.proposals(None) if p["id"] == proposal_id)
+
+    def explain_task(self, task_id: str) -> dict:
+        """Why a task is what it is now: where it came from, every change to it and the
+        proposals behind them, newest first."""
+        task = self._get(task_id, "Task")
+        mine = []
+        for e in self.s.events(self.org, 5000):
+            pl = e["payload"]
+            if pl.get("id") == task_id or pl.get("task_id") == task_id:
+                mine.append({"on": e["at"][:10], "type": e["type"], "by": e.get("actor"),
+                             "detail": {k: v for k, v in pl.items() if k not in ("id", "task_id", "position_id")}})
+        decided = [p for p in self.proposals(None) if p["task"] and p["task"]["id"] == task_id]
+        return {"task": self._task_view(task), "history": mine, "proposals": decided}
 
     def class_life_data(self, position_class: str) -> dict:
         """Every fitment at every position of a class, pooled: the data for one life
@@ -911,6 +1713,163 @@ class Maintenance:
             raise NotFound(position_class)
         return {"position_class": position_class, "rows": sorted(rows, key=lambda r: r["from"]),
                 "failures": sum(1 for r in rows if r["c"] == 0), "suspensions": sum(1 for r in rows if r["c"] == 1)}
+
+    # ---- interfaces and redundancy ----------------------------------------------------
+
+    INTERFACE_KINDS = ("flow", "electrical", "mechanical", "signal", "data", "other")
+
+    def connect(self, from_id: str, to_id: str, kind="flow", medium="", name="", rating="",
+                realised_by=None) -> dict:
+        """A connection from one position to another: what flows or passes from A to B
+        (water, 240 V, a 4-20 mA signal, torque through a coupling)."""
+        a, b = self._get(from_id, "Position"), self._get(to_id, "Position")
+        if from_id == to_id:
+            raise Invalid("A position can't connect to itself.")
+        if kind not in self.INTERFACE_KINDS:
+            raise Invalid(f"The kind is one of {', '.join(self.INTERFACE_KINDS)}.")
+        if realised_by:
+            self._get(realised_by, "Position")
+        for existing in self._interfaces(from_id, "FROM"):
+            if existing["to"]["id"] == to_id and existing["kind"] == kind:
+                raise Invalid(f"{a['name']} already connects to {b['name']} ({kind}).")
+        iid = new_id()
+        self._emit("interface.added", {"id": iid, "from_id": from_id, "to_id": to_id, "kind": kind,
+                                       "medium": _text(medium, "medium"), "name": _text(name, "name"),
+                                       "rating": _text(rating, "rating"), "realised_by": realised_by or None,
+                                       "on": date.today().isoformat()})
+        return self._interface_view(self._get(iid, "Interface"))
+
+    def disconnect(self, interface_id: str) -> None:
+        if self._get(interface_id, "Interface").get("retired"):
+            raise Invalid("That connection was already removed.")
+        self._emit("interface.removed", {"id": interface_id, "on": date.today().isoformat()})
+
+    def _interface_view(self, i: dict) -> dict:
+        src = self.s.out(self.org, i["id"], "FROM")[0]
+        dst = self.s.out(self.org, i["id"], "TO")[0]
+        via = self.s.out(self.org, i["id"], "REALISED_BY")
+        return {"id": i["id"], "kind": i.get("kind"), "medium": i.get("medium", ""), "name": i.get("name", ""),
+                "rating": i.get("rating", ""), "from": {"id": src["id"], "name": src["name"]},
+                "to": {"id": dst["id"], "name": dst["name"]},
+                "realised_by": via and {"id": via[0]["id"], "name": via[0]["name"]}}
+
+    def _interfaces(self, position_id: str, end: str) -> list[dict]:
+        """Live interfaces with ``position_id`` at their FROM end (outgoing) or TO end (incoming)."""
+        return [self._interface_view(i) for i in self.s.inn(self.org, position_id, end)
+                if i["label"] == "Interface" and not i.get("retired")]
+
+    def connections(self, position_id: str) -> dict:
+        self._get(position_id, "Position")
+        return {"downstream": self._interfaces(position_id, "FROM"), "upstream": self._interfaces(position_id, "TO")}
+
+    def create_group(self, name, member_ids, k=1, mode="active", standby="cold") -> dict:
+        """A redundancy group: positions doing the same job where k of them are enough
+        (two pumps, either will do: k = 1). mode 'standby': the others wait to take over
+        (standby cold, warm or hot)."""
+        members = [self._get(pid, "Position") for pid in dict.fromkeys(member_ids or [])]
+        if len(members) < 2:
+            raise Invalid("A redundancy group needs at least two positions.")
+        try:
+            k = int(k)
+        except (TypeError, ValueError):
+            raise Invalid("k (how many are needed) is a whole number.")
+        if not 1 <= k < len(members):
+            raise Invalid(f"k (how many are needed) is 1 to {len(members) - 1} for {len(members)} positions.")
+        if mode not in ("active", "standby") or standby not in ("cold", "warm", "hot"):
+            raise Invalid("mode is active or standby; standby is cold, warm or hot.")
+        gid = new_id()
+        self._emit("group.created", {"id": gid, "name": _text(name, "group's name") or
+                                     " / ".join(m["name"] for m in members), "k": k, "mode": mode,
+                                     "standby": standby, "on": date.today().isoformat()})
+        for m in members:
+            self._emit("group.member_added", {"group_id": gid, "position_id": m["id"]})
+        return self.group(gid)
+
+    def update_group(self, group_id: str, name=None, k=None, mode=None, standby=None, add=(), remove=()) -> dict:
+        g = self._get(group_id, "RedundancyGroup")
+        members = {m["id"] for m in self._members(group_id)}
+        for pid in add or []:
+            self._get(pid, "Position")
+            if pid not in members:
+                self._emit("group.member_added", {"group_id": group_id, "position_id": pid})
+                members.add(pid)
+        for pid in remove or []:
+            if pid in members:
+                self._emit("group.member_removed", {"group_id": group_id, "position_id": pid})
+                members.discard(pid)
+        changes = {}
+        if name is not None:
+            changes["name"] = _text(name, "group's name", required=True)
+        if mode is not None:
+            if mode not in ("active", "standby"):
+                raise Invalid("mode is active or standby.")
+            changes["mode"] = mode
+        if standby is not None:
+            if standby not in ("cold", "warm", "hot"):
+                raise Invalid("standby is cold, warm or hot.")
+            changes["standby"] = standby
+        new_k = int(k) if k is not None else g["k"]
+        if not 1 <= new_k < max(len(members), 2):
+            raise Invalid(f"k (how many are needed) must be 1 to {len(members) - 1}.")
+        if k is not None:
+            changes["k"] = new_k
+        if changes:
+            self._emit("group.updated", {"id": group_id, "changes": changes})
+        return self.group(group_id)
+
+    def set_duty(self, group_id: str, position_id: str) -> dict:
+        """Which member of a standby group is running now (the others wait)."""
+        self._get(group_id, "RedundancyGroup")
+        if position_id not in {m["id"] for m in self._members(group_id)}:
+            raise Invalid("That position isn't in the group.")
+        self._emit("duty.changed", {"group_id": group_id, "position_id": position_id,
+                                    "on": date.today().isoformat()})
+        return self.group(group_id)
+
+    def retire_group(self, group_id: str) -> None:
+        self._get(group_id, "RedundancyGroup")
+        self._emit("group.retired", {"id": group_id, "on": date.today().isoformat()})
+
+    def _members(self, group_id: str) -> list[dict]:
+        return [m for m in self.s.inn(self.org, group_id, "IN_GROUP") if m["label"] == "Position"]
+
+    def group(self, group_id: str) -> dict:
+        g = self._get(group_id, "RedundancyGroup")
+        members = sorted(self._members(group_id), key=lambda m: m["name"].lower())
+        return {"id": group_id, "name": g["name"], "k": g["k"], "n": len(members), "mode": g["mode"],
+                "standby": g["standby"], "duty": g.get("duty"), "retired": bool(g.get("retired")),
+                "members": [{"id": m["id"], "name": m["name"]} for m in members]}
+
+    def groups_of(self, position_id: str) -> list[dict]:
+        return [self.group(g["id"]) for g in self.s.out(self.org, position_id, "IN_GROUP")
+                if g["label"] == "RedundancyGroup" and not g.get("retired")]
+
+    def impact(self, position_id: str) -> dict:
+        """What depends on a position: everything downstream of it through its
+        connections, and whether redundancy covers it (k of n still available)."""
+        start = self._get(position_id, "Position")
+        downstream, queue, seen = [], [position_id], {position_id}
+        while queue:
+            current = queue.pop(0)
+            for i in self._interfaces(current, "FROM"):
+                nxt = i["to"]["id"]
+                if nxt not in seen:
+                    seen.add(nxt)
+                    queue.append(nxt)
+                    downstream.append({"id": nxt, "name": i["to"]["name"], "via": i["kind"],
+                                       "from": i["from"]["name"]})
+        covered = []
+        for g in self.groups_of(position_id):
+            others = [m["name"] for m in g["members"] if m["id"] != position_id]
+            if g["n"] - 1 >= g["k"]:
+                covered.append(f"{g['name']}: {g['k']} of {g['n']} needed, so {', '.join(others)} can carry it")
+        path = self._position_path(position_id)
+        return {"position": {"id": position_id, "name": start["name"]}, "part_of": path,
+                "downstream": downstream, "redundancy": covered,
+                "summary": (f"If {start['name']} fails, " + (
+                    "redundancy covers it: " + "; ".join(covered) if covered else
+                    f"{len(downstream)} position{'s' if len(downstream) != 1 else ''} downstream lose their supply"
+                    if downstream else "nothing downstream is connected to it") + ".")}
 
     # ---- photos and coordinates ------------------------------------------------------
 
@@ -1004,7 +1963,7 @@ class Maintenance:
                 "position_class": p.get("position_class", ""),
                 "item": self._item_brief(item[0] if item else None),
                 "tasks": len(tasks), "next_due": dues[0] if dues else None,
-                "open_work_orders": sum(1 for w in wos if w["status"] == "open"),
+                "open_work_orders": sum(1 for w in wos if w["status"] in OPEN_STATUSES),
                 "children": [build(c) for c in sorted(children.get(p["id"], []), key=lambda c: c["name"].lower())],
             }
 
@@ -1035,6 +1994,12 @@ class Maintenance:
             "work_orders": [self._wo_brief(w) for w in wos],
             "life_data": self.life_data(id),
             "coordinates": p.get("coordinates"),
+            "meters": [self.meter(mt["id"]) for mt in self.s.inn(self.org, id, "ON") if mt["label"] == "Meter"],
+            "condition": [self.condition_point(c["id"]) for c in self.s.inn(self.org, id, "ON")
+                          if c["label"] == "ConditionPoint"],
+            "connections": self.connections(id),
+            "groups": self.groups_of(id),
+            "rbd_id": p.get("rbd_id"),
             "photos": self.photos_of(id),
             "item_photos": self.photos_of(fitted["item"]["id"]) if fitted and fitted["item"] else [],
         }
@@ -1060,12 +2025,18 @@ class Maintenance:
 
     def _wo_brief(self, w: dict) -> dict:
         position = self.s.out(self.org, w["id"], "ON")
-        return {k: w.get(k) for k in ("id", "number", "title", "type", "status", "opened", "due", "closed")} | {
+        return {k: w.get(k) for k in ("id", "number", "title", "type", "status", "opened", "due", "closed",
+                                      "assignee", "planned_for")} | {
             "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
         }
 
     def work_orders(self, status: str | None = None) -> list[dict]:
-        wos = [w for w in self.s.nodes(self.org, "WorkOrder") if not status or w["status"] == status]
+        """Work orders, newest first. status 'open' means every not-yet-done status."""
+        def keep(w):
+            if not status:
+                return True
+            return w["status"] in OPEN_STATUSES if status == "open" else w["status"] == status
+        wos = [w for w in self.s.nodes(self.org, "WorkOrder") if keep(w)]
         return [self._wo_brief(w) for w in sorted(wos, key=lambda w: w["number"], reverse=True)]
 
     def work_order(self, id: str) -> dict:
@@ -1088,7 +2059,12 @@ class Maintenance:
             **self._wo_brief(w), "notes": w.get("notes", ""), "actions": actions,
             "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
             "fitted": position["fitted"], "failure_modes": position["failure_modes"],
+            "meters": [{k: mt[k] for k in ("id", "name", "unit", "reading")} for mt in position["meters"]],
             "photos": self.photos_of(id),
+            "assignee": w.get("assignee", ""), "planned_for": w.get("planned_for"),
+            "instructions": w.get("instructions", ""), "checklist": w.get("checklist") or [],
+            "status_history": w.get("status_history") or [],
+            **self._wo_costs(id),
         }
 
     def items(self) -> list[dict]:
@@ -1140,7 +2116,9 @@ def summary(m: Maintenance) -> dict:
         "positions": sum(1 for p in m.s.nodes(m.org, "Position") if not p.get("retired")),
         "locations": len(m.s.nodes(m.org, "Location")),
         "items": len(m.s.nodes(m.org, "Item")),
-        "open_work_orders": sum(1 for w in m.s.nodes(m.org, "WorkOrder") if w["status"] == "open"),
+        "open_work_orders": sum(1 for w in m.s.nodes(m.org, "WorkOrder") if w["status"] in OPEN_STATUSES),
+        "low_stock": sum(1 for st in m.s.nodes(m.org, "Stock")
+                         if st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]),
         "tasks": len(m.s.nodes(m.org, "Task")),
     }
 

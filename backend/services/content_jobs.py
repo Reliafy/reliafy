@@ -260,6 +260,16 @@ def run(db, *, now: datetime | None = None, dry_run: bool = False, updates=None,
     report = _report_step(db, local, dry_run)
     if report:
         result["actions"].append(report)
+    if config.MAINTENANCE_ENABLED:
+        # Reliafy Maintenance's daily run rides on this job (once a day).
+        try:
+            from backend.maintenance import daily as maintenance_daily
+            from backend.routers.maintenance import get_store
+
+            result["actions"].append(maintenance_daily.run(db, get_store(), today=local.date(), dry_run=dry_run))
+        except Exception as exc:  # noqa: BLE001 - one step failing mustn't stop the content job
+            logger.exception("maintenance daily run failed")
+            result["actions"].append({"step": "maintenance", "error": str(exc)})
     for action in result["actions"]:
         logger.info("content job%s: %s", " (dry run)" if dry_run else "", json.dumps(action, default=str))
     return result

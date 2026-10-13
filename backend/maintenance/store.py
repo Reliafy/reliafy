@@ -305,6 +305,10 @@ class GraphStore:
             "WHERE e.org = ? AND e.dst = ? AND e.type = ?", (org, dst, type))
         return [self._node(r) for r in rows]
 
+    def orgs_with(self, label: str) -> list[str]:
+        """Every organisation with at least one node of ``label``."""
+        return [r["org"] for r in self._all("SELECT DISTINCT org FROM nodes WHERE label = ? ORDER BY org", (label,))]
+
     def snapshot(self) -> tuple[list, list]:
         """Every node and edge, sorted: for checking a rebuild gives the same graph."""
         nodes = [tuple(r) for r in self._all("SELECT id, org, label, props FROM nodes ORDER BY id", ())]

@@ -45,7 +45,9 @@ def test_a_rotable_moves_and_keeps_one_history(m):
     assert m.position(a)["fitted"] is None
     pooled = m.class_life_data("Pool pump")
     assert [(r["position"], r["x"], r["c"]) for r in pooled["rows"]] == [("Pump A", 200, 1), ("Pump B", 100, 1)]
-    assert m.position_classes() == [{"position_class": "Pool pump", "positions": 2, "fitments": 2, "failures": 0}]
+    [cls] = m.position_classes()
+    assert (cls["position_class"], cls["positions"], cls["fitments"], cls["failures"]) == ("Pool pump", 2, 2, 0)
+    assert cls["model"] is None
 
 
 def test_mistakes_are_struck_out_or_corrected(m):

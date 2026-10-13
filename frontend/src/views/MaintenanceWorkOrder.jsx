@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { cancelWorkOrder, closeWorkOrder, getWorkOrder, updateWorkOrder } from "../api.js";
+import {
+  addPartUsed, addWorkCost, cancelWorkOrder, checkWorkItem, closeWorkOrder, getWorkOrder, listMaintenanceLocations,
+  listMaintenanceParts, logLabour, removeWorkEntry,
+  setWorkStatus, updateWorkOrder,
+} from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { Field, FormModal, MaintenanceTabs, fmtDate, today } from "../components/MaintenanceParts.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import "./Maintenance.css";
+
+const STATUS_LABELS = {
+  open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
+};
 
 const KINDS = [
   { id: "replace", label: "Replaced it" },
@@ -35,7 +43,7 @@ export default function MaintenanceWorkOrder() {
         crumbs={[{ label: "Maintenance", to: "/maintenance" },
           ...(wo.position ? [{ label: wo.position.name, to: `/maintenance/positions/${wo.position.id}` }] : [])]}
         title={`#${wo.number} ${wo.title}`}
-        meta={[wo.type, wo.status, `opened ${fmtDate(wo.opened)}`, wo.due && `due ${fmtDate(wo.due)}`,
+        meta={[wo.type, STATUS_LABELS[wo.status] || wo.status, `opened ${fmtDate(wo.opened)}`, wo.due && `due ${fmtDate(wo.due)}`,
           wo.closed && `closed ${fmtDate(wo.closed)}`].filter(Boolean).join(" · ")}
         id={wo.id}
         menu={wo.status === "open" ? (
@@ -55,6 +63,35 @@ export default function MaintenanceWorkOrder() {
         </FormModal>
       )}
       {wo.task && <p className="lib-date">From the task “{wo.task.name}”.</p>}
+      {!["closed", "cancelled"].includes(wo.status) && (
+        <section className="card">
+          <div className="maint-row" style={{ marginTop: 0 }}>
+            <label className="maint-row" style={{ marginTop: 0, gap: "0.4rem" }}>Status
+              <select value={wo.status} onChange={async (e) => setWo(await setWorkStatus(wo.id, e.target.value))}>
+                <option value="open">Open</option><option value="planned">Planned</option>
+                <option value="in_progress">In progress</option><option value="waiting">Waiting (parts or access)</option>
+              </select>
+            </label>
+            <span className="lib-date">{wo.assignee ? `Assigned to ${wo.assignee}` : "Not assigned"}
+              {wo.planned_for ? ` · planned for ${fmtDate(wo.planned_for)}` : ""}</span>
+            <button className="crumb-link" onClick={() => setModal("edit")}>Change</button>
+          </div>
+        </section>
+      )}
+      {(wo.instructions || wo.checklist.length > 0) && (
+        <section className="card">
+          <div className="maint-head"><h2>Instructions</h2></div>
+          {wo.instructions && <p style={{ whiteSpace: "pre-wrap" }}>{wo.instructions}</p>}
+          {wo.checklist.map((c, i) => (
+            <label key={i} className="maint-row" style={{ marginTop: "0.25rem", gap: "0.5rem" }}>
+              <input type="checkbox" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
+                     onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
+              <span style={c.done ? { textDecoration: "line-through", color: "var(--muted)" } : null}>{c.text}</span>
+            </label>
+          ))}
+        </section>
+      )}
+      {wo.status !== "cancelled" && <CostsCard wo={wo} onChanged={setWo} />}
 
       <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetName={wo.position?.name}
                          photos={wo.photos || []} onChanged={refresh} />
@@ -90,6 +127,7 @@ export default function MaintenanceWorkOrder() {
 function CloseForm({ wo, onClosed }) {
   const [on, setOn] = useState(today());
   const [notes, setNotes] = useState("");
+  const [readings, setReadings] = useState({});
   const [actions, setActions] = useState([{ kind: wo.type === "inspection" ? "inspect" : "replace" }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -108,7 +146,9 @@ function CloseForm({ wo, onClosed }) {
         notes: a.notes || "",
         new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
       }));
-      onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes }));
+      const meterReadings = Object.entries(readings).filter(([, v]) => v !== "")
+        .map(([meter_id, value]) => ({ meter_id, value: Number(value) }));
+      onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes, readings: meterReadings }));
     } catch (e) {
       setError(e.message);
       setBusy(false);
@@ -172,6 +212,13 @@ function CloseForm({ wo, onClosed }) {
       </div>
       <div className="rcm-form">
         <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
+        {(wo.meters || []).map((mt) => (
+          <Field key={mt.id} label={`${mt.name} now (${mt.unit}, optional)`}>
+            <input type="number" min="0" step="any" value={readings[mt.id] ?? ""}
+                   placeholder={mt.reading != null ? `last: ${mt.reading}` : ""}
+                   onChange={(e) => setReadings({ ...readings, [mt.id]: e.target.value })} />
+          </Field>
+        ))}
         <Field label="Notes (optional)"><textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
       <div className="maint-row">
@@ -185,11 +232,121 @@ function CloseForm({ wo, onClosed }) {
 function EditWorkOrder({ wo, onClose, onDone }) {
   const [title, setTitle] = useState(wo.title);
   const [due, setDue] = useState(wo.due || "");
+  const [assignee, setAssignee] = useState(wo.assignee || "");
+  const [planned, setPlanned] = useState(wo.planned_for || "");
   return (
     <FormModal title="Edit work order" submitLabel="Save" canSubmit={!!title.trim()} onClose={onClose}
-               onSubmit={async () => onDone(await updateWorkOrder(wo.id, { title, due }))}>
+               onSubmit={async () => onDone(await updateWorkOrder(wo.id, { title, due, assignee, planned_for: planned }))}>
       <Field label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+      <Field label="Assigned to"><input value={assignee} placeholder="a name" onChange={(e) => setAssignee(e.target.value)} /></Field>
+      <Field label="Planned for"><input type="date" value={planned} onChange={(e) => setPlanned(e.target.value)} /></Field>
       <Field label="Due"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
     </FormModal>
+  );
+}
+
+function money(v) {
+  return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Labour, parts and other costs, with totals. Entries can be added after closing.
+function CostsCard({ wo, onChanged }) {
+  const [form, setForm] = useState(null); // "labour" | "part" | "cost"
+  const [f, setF] = useState({});
+  const [error, setError] = useState(null);
+  const [catalogue, setCatalogue] = useState(null);
+  const [places, setPlaces] = useState([]);
+  const openPart = () => {
+    setForm("part"); setF({ quantity: 1 });
+    if (catalogue === null) {
+      listMaintenanceParts().then((d) => setCatalogue(d.parts)).catch(() => setCatalogue([]));
+      listMaintenanceLocations().then((d) => setPlaces(d.locations)).catch(() => {});
+    }
+  };
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const submit = async () => {
+    setError(null);
+    try {
+      if (form === "labour") onChanged(await logLabour(wo.id, { hours: Number(f.hours), who: f.who || "", rate: f.rate ? Number(f.rate) : null }));
+      if (form === "part") onChanged(await addPartUsed(wo.id, {
+        part: f.part_id ? null : f.part, part_id: f.part_id || null, from_location_id: f.part_id && f.from ? f.from : null,
+        quantity: Number(f.quantity || 1), unit_cost: f.unit_cost ? Number(f.unit_cost) : null,
+      }));
+      if (form === "cost") onChanged(await addWorkCost(wo.id, { description: f.description, amount: Number(f.amount) }));
+      setForm(null); setF({});
+    } catch (e) { setError(e.message); }
+  };
+  const remove = async (id) => onChanged(await removeWorkEntry(id));
+  const t = wo.totals;
+  const rows = [
+    ...wo.labour.map((e) => ({ id: e.id, what: `Labour${e.who ? `: ${e.who}` : ""}`, detail: `${e.hours} h${e.rate ? ` at ${money(e.rate)}` : ""}`, cost: (e.rate || 0) * e.hours })),
+    ...wo.parts.map((e) => ({ id: e.id, what: e.part, detail: `${e.quantity}${e.unit_cost ? ` at ${money(e.unit_cost)}` : ""}`, cost: (e.unit_cost || 0) * e.quantity })),
+    ...wo.other_costs.map((e) => ({ id: e.id, what: e.description, detail: "", cost: e.amount })),
+  ];
+  return (
+    <section className="card">
+      <div className="maint-head">
+        <h2>Labour, parts and costs</h2>
+        <div className="maint-row" style={{ marginTop: 0 }}>
+          <button className="secondary" onClick={() => { setForm("labour"); setF({}); }}>Log labour</button>
+          <button className="secondary" onClick={openPart}>Part used</button>
+          <button className="secondary" onClick={() => { setForm("cost"); setF({}); }}>Other cost</button>
+        </div>
+      </div>
+      {error && <div className="card error">{error}</div>}
+      {form && (
+        <div className="maint-action">
+          <div className="rcm-form">
+            {form === "labour" && <>
+              <Field label="Hours"><input type="number" min="0" step="any" autoFocus value={f.hours || ""} onChange={set("hours")} /></Field>
+              <Field label="Who (optional)"><input value={f.who || ""} onChange={set("who")} /></Field>
+              <Field label="Hourly rate (optional)"><input type="number" min="0" step="any" value={f.rate || ""} onChange={set("rate")} /></Field>
+            </>}
+            {form === "part" && <>
+              {catalogue?.length > 0 && (
+                <Field label="From the catalogue (optional)">
+                  <select value={f.part_id || ""} onChange={set("part_id")}>
+                    <option value="">No: type it below</option>
+                    {catalogue.map((pt) => <option key={pt.id} value={pt.id}>{pt.part_number}: {pt.name} ({pt.on_hand} on hand)</option>)}
+                  </select>
+                </Field>
+              )}
+              {f.part_id ? (
+                <Field label="Take it from stock at (optional)">
+                  <select value={f.from || ""} onChange={set("from")}>
+                    <option value="">Don't change stock</option>
+                    {places.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </Field>
+              ) : (
+                <Field label="Part"><input autoFocus value={f.part || ""} placeholder="e.g. 6203 bearing" onChange={set("part")} /></Field>
+              )}
+              <Field label="Quantity"><input type="number" min="0" step="any" value={f.quantity || ""} onChange={set("quantity")} /></Field>
+              <Field label="Cost each (optional)"><input type="number" min="0" step="any" value={f.unit_cost || ""} onChange={set("unit_cost")} /></Field>
+            </>}
+            {form === "cost" && <>
+              <Field label="What for"><input autoFocus value={f.description || ""} placeholder="e.g. Plumber call-out" onChange={set("description")} /></Field>
+              <Field label="Amount"><input type="number" min="0" step="any" value={f.amount || ""} onChange={set("amount")} /></Field>
+            </>}
+          </div>
+          <div className="maint-row">
+            <button onClick={submit}>Add</button>
+            <button className="secondary" onClick={() => setForm(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {rows.length === 0 ? <p className="lib-date">Nothing recorded yet.</p> : (
+        <table className="lib-table">
+          <thead><tr><th>What</th><th>Detail</th><th>Cost</th><th><span className="sr-only">Remove</span></th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}><td>{r.what}</td><td className="lib-date">{r.detail}</td><td>{money(r.cost)}</td>
+                <td><button className="crumb-link" onClick={() => remove(r.id)}>remove</button></td></tr>
+            ))}
+            <tr><td><strong>Total</strong></td><td className="lib-date">{t.hours} h</td><td><strong>{money(t.total)}</strong></td><td /></tr>
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }

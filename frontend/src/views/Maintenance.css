@@ -154,3 +154,17 @@
 .maint-plate dd {
   margin: 0;
 }
+
+.maint-proposal {
+  border-top: 1px solid var(--line);
+  padding: 0.75rem 0;
+}
+
+.maint-proposal:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.maint-proposal p {
+  margin: 0 0 0.4rem;
+}
