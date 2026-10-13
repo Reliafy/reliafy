@@ -77,8 +77,10 @@ def register() -> None:
         return run(m_for(ctx).position, position_id)
 
     @tool("list_work_orders", _READ, "List work orders")
-    def list_work_orders(ctx: Context, status: Literal["open", "closed"] | None = None) -> dict[str, Any]:
-        """Work orders, newest first, optionally only open or closed ones."""
+    def list_work_orders(ctx: Context, status: Literal["open", "planned", "in_progress", "waiting", "closed",
+                                                       "cancelled"] | None = None) -> dict[str, Any]:
+        """Work orders, newest first. status 'open' gives every one not yet done (open, planned, in
+        progress, waiting); or one status exactly."""
         return {"work_orders": run(m_for(ctx).work_orders, status)}
 
     @tool("get_work_order", _READ, "Read a work order")
@@ -208,13 +210,15 @@ def register() -> None:
                              "finding?: 'ok'|'degraded'|'found_failed' (inspect only), "
                              "new_item?: {name, serial?, part_number?, manufacturer?} or item_id? "
                              "(replace: what went in), notes?}"))] = [],
-                         on: DateText = None, notes: str = "") -> dict[str, Any]:
+                         on: DateText = None, notes: str = "",
+                         readings: Annotated[list[dict], Field(description=(
+                             "Meter readings taken during the work: [{meter_id, value}]."))] = []) -> dict[str, Any]:
         """Close a work order with what was done. A replacement ends the fitted item's
         time at the position (a failure if a failure mode is named, otherwise a planned
         removal) and fits the new item; that is what builds the life data. Get the
         position's failure-mode ids from get_work_order first. Nothing is saved if any
         action is invalid."""
-        return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes)
+        return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes, readings)
 
     # ---- items, locations, classes and corrections --------------------------------------
 
@@ -263,10 +267,96 @@ def register() -> None:
     @tool("update_work_order", _WRITE, "Update a work order")
     def update_work_order(work_order_id: str, ctx: Context, title: str | None = None, due: str | None = None,
                           notes: str | None = None,
-                          type: Literal["corrective", "preventive", "inspection", "other"] | None = None
-                          ) -> dict[str, Any]:
-        """Change an open work order's title, due date (a date, or '' to clear it), notes or type."""
-        return run(m_for(ctx).update_work_order, work_order_id, title, due, notes, type)
+                          type: Literal["corrective", "preventive", "inspection", "other"] | None = None,
+                          assignee: str | None = None, planned_for: str | None = None) -> dict[str, Any]:
+        """Change an open work order's title, due date (a date, or '' to clear it), notes, type, who
+        it's assigned to, or the day it's planned for."""
+        return run(m_for(ctx).update_work_order, work_order_id, title, due, notes, type, assignee, planned_for)
+
+    @tool("set_work_status", _WRITE, "Move a work order along")
+    def set_work_status(work_order_id: str, status: Literal["open", "planned", "in_progress", "waiting"],
+                        ctx: Context, note: str = "") -> dict[str, Any]:
+        """Set an open work order's status: planned, in_progress, waiting (parts or access), or back to
+        open. Finish it with close_work_order."""
+        return run(m_for(ctx).set_work_status, work_order_id, status, note)
+
+    @tool("log_labour", _WRITE, "Log labour on a work order")
+    def log_labour(work_order_id: str, hours: float, ctx: Context, who: str = "", rate: float | None = None,
+                   on: DateText = None, note: str = "") -> dict[str, Any]:
+        """Hours worked on a work order, by whom, at an hourly rate if known (for its cost)."""
+        return run(m_for(ctx).log_labour, work_order_id, hours, who, rate, on, note)
+
+    @tool("add_part_used", _WRITE, "Record a part used")
+    def add_part_used(work_order_id: str, ctx: Context, part: str | None = None, quantity: float = 1,
+                      unit_cost: float | None = None, part_number: str = "", note: str = "",
+                      part_id: str | None = None, from_location_id: str | None = None) -> dict[str, Any]:
+        """A part or consumable used on a work order (bearings, a seal kit, oil): free text (part), or a
+        catalogue part (part_id; its cost fills in), taken out of stock at from_location_id if given."""
+        return run(m_for(ctx).add_part_used, work_order_id, part, quantity, unit_cost, part_number, note,
+                   part_id, from_location_id)
+
+    from backend.maintenance import importer
+
+    @tool("import_history", _WRITE, "Import positions and item history")
+    def import_history(rows: Annotated[list[dict[str, str]], Field(description=(
+                           "One row per item per position: {position: 'House > Pool > Pump', class?, item?, "
+                           "serial?, manufacturer?, model?, part number?, fitted?: date, removed?: date, "
+                           "failed?: yes/no, failure mode?}. Column names are matched loosely."))],
+                       ctx: Context, dry_run: bool = True) -> dict[str, Any]:
+        """Bring an existing history in: positions (made from their paths), items and when they were
+        fitted, removed and whether they failed. Every row is checked first; with any error nothing is
+        written. dry_run (the default) only reports what would be made: show it, then run with
+        dry_run false. At most 5000 rows; for a file, the user can import it on the Maintenance page."""
+        if len(rows) > importer.MAX_ROWS:
+            raise ToolError(f"At most {importer.MAX_ROWS} rows at a time.")
+        return run(importer.run, m_for(ctx), [{str(k): str(v) for k, v in r.items()} for r in rows], dry_run)
+
+    @tool("list_parts", _READ, "List parts and stock")
+    def list_parts(ctx: Context) -> dict[str, Any]:
+        """The parts catalogue: each part's stock by location, reorder points (low = at or below),
+        use over the last year and months of cover."""
+        return {"parts": run(m_for(ctx).parts)}
+
+    @tool("create_part", _WRITE, "Add a part to the catalogue")
+    def create_part(part_number: str, name: str, ctx: Context, manufacturer: str = "", unit: str = "each",
+                    unit_cost: float | None = None, notes: str = "") -> dict[str, Any]:
+        """A part in the catalogue, by part number (unique)."""
+        return run(m_for(ctx).create_part, part_number, name, manufacturer, unit, unit_cost, notes)
+
+    @tool("adjust_stock", _WRITE, "Receive or issue stock")
+    def adjust_stock(part_id: str, location_id: str, quantity: float, ctx: Context, reason: str = "",
+                     on: DateText = None) -> dict[str, Any]:
+        """Receive stock (positive quantity) or issue / write off (negative) at a location."""
+        return run(m_for(ctx).adjust_stock, part_id, location_id, quantity, reason, on)
+
+    @tool("set_reorder_point", _WRITE, "Set a reorder point")
+    def set_reorder_point(part_id: str, location_id: str, reorder_point: float, ctx: Context) -> dict[str, Any]:
+        """Stock at or below this at the location counts as low."""
+        return run(m_for(ctx).set_reorder_point, part_id, location_id, reorder_point)
+
+    @tool("link_parts", _WRITE, "Supersede or link parts")
+    def link_parts(part_id: str, other_part_id: str, ctx: Context,
+                   relation: Literal["superseded_by", "interchangeable"] = "interchangeable") -> dict[str, Any]:
+        """Record that part_id is superseded by other_part_id, or that the two are interchangeable."""
+        m = m_for(ctx)
+        if relation == "superseded_by":
+            return run(m.supersede_part, part_id, other_part_id)
+        return run(m.mark_interchangeable, part_id, other_part_id)
+
+    @tool("add_work_cost", _WRITE, "Add another cost to a work order")
+    def add_work_cost(work_order_id: str, description: str, amount: float, ctx: Context) -> dict[str, Any]:
+        """Any other cost of the work (a contractor, hire, call-out)."""
+        return run(m_for(ctx).add_cost, work_order_id, description, amount)
+
+    @tool("remove_work_entry", _WRITE, "Remove a labour, part or cost entry")
+    def remove_work_entry(entry_id: str, ctx: Context) -> dict[str, Any]:
+        """Remove a labour, part or cost entry recorded by mistake (ids are in get_work_order)."""
+        return run(m_for(ctx).remove_entry, entry_id)
+
+    @tool("check_item", _WRITE, "Tick a checklist item")
+    def check_item(work_order_id: str, index: int, ctx: Context, done: bool = True) -> dict[str, Any]:
+        """Tick (or untick) a work order's checklist item, numbered from 0."""
+        return run(m_for(ctx).check_item, work_order_id, index, done)
 
     @tool("cancel_work_order", _WRITE, "Cancel a work order")
     def cancel_work_order(work_order_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
@@ -276,10 +366,53 @@ def register() -> None:
 
     @tool("update_task", _WRITE, "Update a task")
     def update_task(task_id: str, ctx: Context, name: str | None = None, interval: float | None = None,
-                    unit: str | None = None) -> dict[str, Any]:
+                    unit: str | None = None, also_interval: float | None = None, also_unit: str | None = None,
+                    meter_id: str | None = None, instructions: str | None = None,
+                    checklist: list[str] | None = None) -> dict[str, Any]:
         """Rename a task or change its interval (unit: days, weeks, months, years, or a unit of use
-        such as hours)."""
-        return run(m_for(ctx).update_task, task_id, name, interval, unit)
+        such as hours, cycles, km, read from a meter on the position). also_interval + also_unit
+        add a second limit, whichever comes first (every 500 hours or 6 months); also_interval 0
+        removes it. meter_id picks a meter for a task by use. instructions and checklist (steps to
+        tick off) are copied onto each work order the task raises."""
+        return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, meter_id,
+                   instructions, checklist)
+
+    @tool("add_meter", _WRITE, "Add a usage meter")
+    def add_meter(position_id: str, unit: str, ctx: Context, name: str = "") -> dict[str, Any]:
+        """A usage meter on a position (unit: hours, cycles, km, starts, ...). Tasks on the position
+        that go by that unit fall due from its readings, projected at the recent rate."""
+        return run(m_for(ctx).add_meter, position_id, name, unit)
+
+    @tool("record_reading", _WRITE, "Record a meter reading")
+    def record_reading(meter_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
+        """A meter reading (e.g. the pump's hour meter says 12,340). Readings only go up; a replaced
+        meter is a new meter. Meter ids are in get_position (meters)."""
+        return run(m_for(ctx).record_reading, meter_id, value, on, note)
+
+    @tool("add_condition_point", _WRITE, "Add a condition monitoring point")
+    def add_condition_point(position_id: str, name: str, ctx: Context, unit: str = "",
+                            alarm_above: float | None = None, alarm_below: float | None = None,
+                            source: str = "manual", tag: str = "") -> dict[str, Any]:
+        """Something measured on a position to see its condition (vibration mm/s, bearing temperature,
+        oil debris, wear), with alarm limits. A reading past a limit opens an inspection work order.
+        source / tag record where readings come from (e.g. a historian tag) for later."""
+        return run(m_for(ctx).add_condition_point, position_id, name, unit, alarm_above, alarm_below, source, tag)
+
+    @tool("record_condition", _WRITE, "Record a condition reading")
+    def record_condition(point_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
+        """A condition reading. Returns the point's status (ok / high / low), its trend, the date it's
+        projected to reach an alarm limit, and any work order the reading raised."""
+        return run(m_for(ctx).record_condition, point_id, value, on, note)
+
+    @tool("get_condition_point", _READ, "Read a condition point")
+    def get_condition_point(point_id: str, ctx: Context) -> dict[str, Any]:
+        """A condition point: limits, latest reading and status, trend, projected alarm date, readings."""
+        return run(m_for(ctx).condition_point, point_id)
+
+    @tool("get_meter", _READ, "Read a meter")
+    def get_meter(meter_id: str, ctx: Context) -> dict[str, Any]:
+        """A meter: its latest reading, the rate per day, and its recent readings."""
+        return run(m_for(ctx).meter, meter_id)
 
     @tool("retire_task", _WRITE, "Retire a task")
     def retire_task(task_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
@@ -321,6 +454,121 @@ def register() -> None:
         """Every fitment at every position of a class, pooled: x = days in service, c = 0 failed
         or 1 censored (removed on purpose, or still fitted). Ready for fit_distribution."""
         return run(m_for(ctx).class_life_data, position_class)
+
+    # ---- connections, redundancy, the generated RBD -----------------------------------
+
+    from backend.maintenance import rbd_derive
+
+    @tool("connect_positions", _WRITE, "Connect two positions")
+    def connect_positions(from_id: str, to_id: str, ctx: Context,
+                          kind: Literal["flow", "electrical", "mechanical", "signal", "data", "other"] = "flow",
+                          medium: str = "", name: str = "", rating: str = "",
+                          realised_by: str | None = None) -> dict[str, Any]:
+        """Say that something passes from one position to another (water from the tank to the pump,
+        240 V from the switchboard to the motor, a signal from the sensor to the controller).
+        realised_by: a position for the connection itself when it's maintainable (a hose, a cable).
+        Connections wire the RBD generate_rbd makes and drive impact."""
+        return run(m_for(ctx).connect, from_id, to_id, kind, medium, name, rating, realised_by)
+
+    @tool("disconnect_positions", _WRITE, "Remove a connection")
+    def disconnect_positions(interface_id: str, ctx: Context) -> dict[str, Any]:
+        """Remove a connection (its id is in get_position's connections)."""
+        m = m_for(ctx)
+        return run(lambda: (m.disconnect(interface_id), {"removed": interface_id})[1])
+
+    @tool("create_redundancy_group", _WRITE, "Make a redundancy group")
+    def create_redundancy_group(member_ids: list[str], ctx: Context, name: str = "", k: int = 1,
+                                mode: Literal["active", "standby"] = "active",
+                                standby: Literal["cold", "warm", "hot"] = "cold") -> dict[str, Any]:
+        """Positions doing the same job where k of them are enough (two pumps, either will do: k = 1).
+        mode standby: the others wait to take over. The generated RBD draws it as k of n."""
+        return run(m_for(ctx).create_group, name, member_ids, k, mode, standby)
+
+    @tool("update_redundancy_group", _WRITE, "Change a redundancy group")
+    def update_redundancy_group(group_id: str, ctx: Context, name: str | None = None, k: int | None = None,
+                                mode: Literal["active", "standby"] | None = None,
+                                standby: Literal["cold", "warm", "hot"] | None = None,
+                                add: list[str] = [], remove: list[str] = []) -> dict[str, Any]:
+        """Rename a group, change k or its mode, or add / remove member positions."""
+        return run(m_for(ctx).update_group, group_id, name, k, mode, standby, add, remove)
+
+    @tool("set_duty", _WRITE, "Set which unit is on duty")
+    def set_duty(group_id: str, position_id: str, ctx: Context) -> dict[str, Any]:
+        """Record which member of a standby group is running now (a duty/standby swap)."""
+        return run(m_for(ctx).set_duty, group_id, position_id)
+
+    @tool("impact", _READ, "What depends on a position")
+    def impact(position_id: str, ctx: Context) -> dict[str, Any]:
+        """If this position fails, what loses its supply downstream (through connections), and
+        whether redundancy covers it."""
+        return run(m_for(ctx).impact, position_id)
+
+    @tool("generate_rbd", _WRITE, "Make an RBD from the plant")
+    def generate_rbd(position_id: str, ctx: Context) -> dict[str, Any]:
+        """Generate (or regenerate) a reliability block diagram for a system position from the
+        positions inside it: connections wire the blocks, redundancy groups become k-of-n votes, and
+        each block takes its class's fitted life model (placeholders otherwise, listed in notes).
+        It's saved as a normal RBD: analyse it with analyze_rbd."""
+        return run(rbd_derive.save, m_for(ctx), _db(), position_id)
+
+    # ---- closing the loop -------------------------------------------------------------
+
+    from backend.maintenance import loop
+
+    @tool("set_class_costs", _WRITE, "Set a position class's costs")
+    def set_class_costs(position_class: str, ctx: Context, planned_cost: float | None = None,
+                        failure_cost: float | None = None, availability_target: float | None = None) -> dict[str, Any]:
+        """What a planned replacement and a failure cost for a class of position (any currency, the
+        same for both), and the availability a hidden (protective) function must reach (e.g. 0.99).
+        Proposed intervals are optimised against these."""
+        return run(m_for(ctx).set_class_costs, position_class, planned_cost, failure_cost, availability_target)
+
+    @tool("fit_class_model", _WRITE, "Fit a life model for a position class")
+    def fit_class_model(position_class: str, ctx: Context,
+                        distribution: Literal["weibull", "best", "lognormal", "exponential", "gamma"] = "weibull"
+                        ) -> dict[str, Any]:
+        """Fit a life distribution (SurPyval) to every fitment of a class's positions (failures and
+        suspensions, in days), save it as a model in the workspace, and propose task intervals from
+        it and the class's costs. Needs at least 2 failures on record."""
+        from backend import fitting
+
+        m = m_for(ctx)
+        try:
+            return run(loop.fit_class_model, m, _db(), position_class, distribution)
+        except fitting.FitError as err:
+            raise ToolError(f"The fit didn't work: {err}") from None
+
+    @tool("plan_economics", _READ, "Cost of a replacement plan")
+    def plan_economics(position_class: str, ctx: Context, interval: float | None = None,
+                       unit: Literal["days", "weeks", "months", "years"] = "months", horizon_years: float = 10,
+                       discount_rate: float = 0.07) -> dict[str, Any]:
+        """What a class's replacement plan costs a year: the current plan, the best interval, running to
+        failure, and (with interval) a what-if; each with its net present cost over the horizon at the
+        discount rate. Needs the class's fitted model and costs."""
+        return run(loop.economics, m_for(ctx), position_class, interval, unit, horizon_years, discount_rate)
+
+    @tool("review_updates", _READ, "List proposed changes")
+    def review_updates(ctx: Context, status: Literal["pending", "accepted", "rejected", "superseded", "all"] = "pending"
+                       ) -> dict[str, Any]:
+        """Changes the life models propose to the plan (a task's interval, or retiring a task), each
+        with its reason. Show them to the user and let them decide; accept_update or reject_update."""
+        return {"proposals": run(m_for(ctx).proposals, None if status == "all" else status)}
+
+    @tool("accept_update", _WRITE, "Accept a proposed change")
+    def accept_update(proposal_id: str, ctx: Context, note: str = "") -> dict[str, Any]:
+        """Apply a proposed change (only when the user says so)."""
+        return run(m_for(ctx).decide_proposal, proposal_id, True, note)
+
+    @tool("reject_update", _WRITE, "Reject a proposed change")
+    def reject_update(proposal_id: str, ctx: Context, note: str = "") -> dict[str, Any]:
+        """Turn down a proposed change, optionally saying why."""
+        return run(m_for(ctx).decide_proposal, proposal_id, False, note)
+
+    @tool("explain_task", _READ, "Explain a task's history")
+    def explain_task(task_id: str, ctx: Context) -> dict[str, Any]:
+        """Why a task is what it is: where it came from (RCM), every change, and the proposals
+        behind them."""
+        return run(m_for(ctx).explain_task, task_id)
 
     # ---- photos ------------------------------------------------------------------------
 

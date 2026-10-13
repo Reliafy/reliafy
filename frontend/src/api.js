@@ -2203,3 +2203,108 @@ export function getPositionClasses() {
 export function getClassLifeData(positionClass) {
   return request(`/api/maintenance/classes/life-data?position_class=${encodeURIComponent(positionClass)}`);
 }
+
+export function addMaintenanceMeter(positionId, name, unit) {
+  return postJson(`/api/maintenance/positions/${positionId}/meters`, { name, unit });
+}
+export function recordMaintenanceReading(meterId, value, on) {
+  return postJson(`/api/maintenance/meters/${meterId}/readings`, { value, on });
+}
+export function getMaintenanceSettings() {
+  return request("/api/maintenance/settings");
+}
+export function setMaintenanceSettings(body) {
+  return patchJson("/api/maintenance/settings", body);
+}
+
+export function getPositionClass(name) {
+  return request(`/api/maintenance/classes/one?position_class=${encodeURIComponent(name)}`);
+}
+export function setClassCosts(body) {
+  return request("/api/maintenance/classes/costs", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+export function fitClassModel(positionClass, distribution = "weibull") {
+  return postJson("/api/maintenance/classes/fit", { position_class: positionClass, distribution });
+}
+export function decideProposal(id, accept, note = "") {
+  return postJson(`/api/maintenance/proposals/${id}/${accept ? "accept" : "reject"}`, { note });
+}
+
+export function connectPositions(body) {
+  return postJson("/api/maintenance/interfaces", body);
+}
+export function disconnectPositions(id) {
+  return postJson(`/api/maintenance/interfaces/${id}/remove`, {});
+}
+export function createRedundancyGroup(body) {
+  return postJson("/api/maintenance/groups", body);
+}
+export function setGroupDuty(groupId, positionId) {
+  return postJson(`/api/maintenance/groups/${groupId}/duty`, { position_id: positionId });
+}
+export function retireRedundancyGroup(groupId) {
+  return postJson(`/api/maintenance/groups/${groupId}/retire`, {});
+}
+export function getPositionImpact(id) {
+  return request(`/api/maintenance/positions/${id}/impact`);
+}
+export function generatePositionRbd(id) {
+  return postJson(`/api/maintenance/positions/${id}/rbd`, {});
+}
+
+export function setWorkStatus(id, status, note = "") {
+  return postJson(`/api/maintenance/work-orders/${id}/status`, { status, note });
+}
+export function logLabour(id, body) {
+  return postJson(`/api/maintenance/work-orders/${id}/labour`, body);
+}
+export function addPartUsed(id, body) {
+  return postJson(`/api/maintenance/work-orders/${id}/parts`, body);
+}
+export function addWorkCost(id, body) {
+  return postJson(`/api/maintenance/work-orders/${id}/costs`, body);
+}
+export function checkWorkItem(id, index, done) {
+  return postJson(`/api/maintenance/work-orders/${id}/checklist/${index}`, { done });
+}
+export function removeWorkEntry(id) {
+  return postJson(`/api/maintenance/work-entries/${id}/remove`, {});
+}
+
+export function addConditionPoint(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/condition-points`, body);
+}
+export function recordCondition(pointId, value, on) {
+  return postJson(`/api/maintenance/condition-points/${pointId}/readings`, { value, on });
+}
+
+export function listMaintenanceParts() {
+  return request("/api/maintenance/parts");
+}
+export function createMaintenancePart(body) {
+  return postJson("/api/maintenance/parts", body);
+}
+export function adjustMaintenanceStock(partId, body) {
+  return postJson(`/api/maintenance/parts/${partId}/stock`, body);
+}
+export function setMaintenanceReorder(partId, body) {
+  return postJson(`/api/maintenance/parts/${partId}/reorder-point`, body);
+}
+
+export function importMaintenanceSheet(file, dryRun) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("dry_run", dryRun ? "true" : "false");
+  return request("/api/maintenance/import", { method: "POST", body: form });
+}
+
+export function getClassEconomics(positionClass, { interval, unit, horizonYears, discountRate } = {}) {
+  const q = new URLSearchParams({ position_class: positionClass });
+  if (interval) q.set("interval", interval);
+  if (unit) q.set("unit", unit);
+  if (horizonYears) q.set("horizon_years", horizonYears);
+  if (discountRate !== undefined && discountRate !== "") q.set("discount_rate", discountRate);
+  return request(`/api/maintenance/classes/economics?${q}`);
+}

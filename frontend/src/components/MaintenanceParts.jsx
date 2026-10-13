@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
+import { decideProposal } from "../api.js";
 import Modal from "./Modal.jsx";
 
 // Shared pieces for the Reliafy Maintenance pages.
@@ -54,8 +55,9 @@ export function FormModal({ title, submitLabel, onClose, onSubmit, canSubmit = t
       await onSubmit();
     } catch (err) {
       setError(err.message);
-      setBusy(false);
     }
+    // A step that keeps the dialog open (check, then import) needs the button back.
+    setBusy(false);
   };
   return (
     <Modal
@@ -76,8 +78,10 @@ export function FormModal({ title, submitLabel, onClose, onSubmit, canSubmit = t
 }
 
 export function DueChip({ task }) {
-  if (task.by_use) return <span className="lib-date">by use (needs a meter)</span>;
-  if (!task.next_due) return <span className="lib-date">—</span>;
+  if (!task.next_due) {
+    const note = (task.limits || []).map((l) => l.note).find(Boolean);
+    return <span className="lib-date">{note || "—"}</span>;
+  }
   return (
     <span className={task.overdue ? "maint-overdue" : "lib-date"}>
       {fmtDate(task.next_due)}{task.overdue ? " (overdue)" : ""}
@@ -100,6 +104,7 @@ export function MaintenanceTabs() {
     { to: "/maintenance", label: "Overview", end: true },
     { to: "/maintenance/items", label: "Items" },
     { to: "/maintenance/locations", label: "Locations" },
+    { to: "/maintenance/parts", label: "Parts" },
     { to: "/maintenance/classes", label: "Classes" },
   ];
   return (
@@ -138,5 +143,52 @@ export function LifeTable({ rows, showPosition = false, onFix }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+export function everyText(t) {
+  const first = `${t.interval} ${t.unit}`;
+  return t.also_interval ? `${first} or ${t.also_interval} ${t.also_unit}` : first;
+}
+
+// Proposed changes to the plan, each with its reason, to accept or reject.
+export function Proposals({ proposals, onDecided, showPosition = true }) {
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+  if (!proposals?.length) return null;
+  const decide = async (p, accept) => {
+    setBusy(p.id);
+    setError(null);
+    try {
+      await decideProposal(p.id, accept);
+      onDecided?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <section className="card maint-proposals">
+      <div className="maint-head"><h2>Proposed changes</h2></div>
+      {error && <div className="card error">{error}</div>}
+      {proposals.map((p) => (
+        <div key={p.id} className="maint-proposal">
+          <p>
+            <strong>{p.task?.name}</strong>
+            {showPosition && p.position && <> on <Link to={`/maintenance/positions/${p.position.id}`}>{p.position.name}</Link></>}
+            {": "}
+            {p.kind === "interval"
+              ? <>every {p.current.interval} {p.current.unit} → <strong>every {p.proposed.interval} {p.proposed.unit}</strong></>
+              : <strong>stop scheduling it (run to failure)</strong>}
+          </p>
+          <p className="lib-date">{p.reason}</p>
+          <div className="maint-row" style={{ marginTop: 0 }}>
+            <button disabled={busy === p.id} onClick={() => decide(p, true)}>Accept</button>
+            <button className="secondary" disabled={busy === p.id} onClick={() => decide(p, false)}>Reject</button>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
