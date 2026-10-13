@@ -17,6 +17,7 @@ propose the plan.
 from __future__ import annotations
 
 import io
+import math
 from datetime import date
 
 import pandas as pd
@@ -180,6 +181,8 @@ def economics(m: Maintenance, position_class: str, interval: float | None = None
         raise Invalid(f"Set {position_class}'s costs (a planned replacement and a failure) first.")
     if not 0 <= float(discount_rate) < 1 or not 0 < float(horizon_years) <= 100:
         raise Invalid("The discount rate is 0 to 1 (e.g. 0.07) and the horizon 1 to 100 years.")
+    if interval is not None and not (math.isfinite(float(interval)) and 0 < float(interval) <= 1e6):
+        raise Invalid("A what-if interval is a positive number of days, weeks, months or years.")
     model = node["model"]
     res = strategy_service.optimal_replacement(model["distribution"], model["params"], node["planned_cost"],
                                                node["failure_cost"], "days", model.get("extras"))

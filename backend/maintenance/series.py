@@ -23,21 +23,36 @@ from datetime import datetime, timedelta, timezone
 MAX_BATCH = 10_000
 
 
+EARLIEST = datetime(2000, 1, 1, tzinfo=timezone.utc)
+AHEAD = timedelta(days=1)  # a feed's clock may run a little ahead
+
+
+def _from_epoch(seconds: float, value) -> datetime:
+    try:
+        return datetime.fromtimestamp(float(seconds), timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        raise ValueError(f"'{str(value)[:40]}' isn't a time (ISO 8601, or seconds since 1970).") from None
+
+
 def parse_time(value) -> datetime:
-    """An ISO time, or seconds since 1970; now when not given. Always UTC."""
+    """An ISO time, or seconds since 1970; now when not given. Always UTC, and
+    between 2000-01-01 and a day from now."""
     if value in (None, ""):
         return datetime.now(timezone.utc)
+    if isinstance(value, bool):
+        raise ValueError(f"'{value}' isn't a time (ISO 8601, or seconds since 1970).")
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(float(value), timezone.utc)
-    text = str(value).strip().replace("Z", "+00:00")
-    try:
-        t = datetime.fromisoformat(text)
-    except ValueError:
+        t = _from_epoch(value, value)
+    else:
+        text = str(value).strip().replace("Z", "+00:00")
         try:
-            return datetime.fromtimestamp(float(text), timezone.utc)
+            t = datetime.fromisoformat(text)
         except ValueError:
-            raise ValueError(f"'{value}' isn't a time (ISO 8601, or seconds since 1970).") from None
-    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+            t = _from_epoch(text, value)
+        t = t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    if not EARLIEST <= t <= datetime.now(timezone.utc) + AHEAD:
+        raise ValueError(f"'{str(value)[:40]}' is outside the times accepted (2000-01-01 to a day from now).")
+    return t
 
 
 class SqliteSeries:

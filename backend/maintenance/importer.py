@@ -25,7 +25,7 @@ import io
 import re
 from datetime import date
 
-from backend.maintenance.service import Invalid, Maintenance, new_id
+from backend.maintenance.service import MAX_ITEMS, MAX_POSITIONS, Invalid, Maintenance, new_id
 
 MAX_ROWS = 5000
 
@@ -148,7 +148,10 @@ def parse(rows: list[dict]) -> list[dict]:
 
 def run(m: Maintenance, rows: list[dict], dry_run: bool = False) -> dict:
     if not dry_run:
-        run(m, rows, dry_run=True)  # every check first: a sheet that can't all go in writes nothing
+        # Every check first: a sheet that can't all go in writes nothing.
+        preview = run(m, rows, dry_run=True)
+        m._quota("Position", MAX_POSITIONS, adding=preview["positions_created"])
+        m._quota("Item", MAX_ITEMS, adding=preview["items_created"])
     parsed = parse(rows)
     existing = {}
     for p in m.s.nodes(m.org, "Position"):

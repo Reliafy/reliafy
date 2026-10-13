@@ -19,7 +19,7 @@ from backend import config
 from backend.db import get_db, get_session, is_simulated
 from backend.maintenance.access import allowed
 from backend.maintenance import photos as photos_mod
-from backend.maintenance.service import PROJECTORS, Invalid, Maintenance, NotFound, summary
+from backend.maintenance.service import PROJECTORS, Invalid, LimitReached, Maintenance, NotFound, summary
 from backend.maintenance.store import new_id
 from backend.maintenance.store import GraphStore, MongoEventLog
 from backend.schema import RcmStudy
@@ -118,6 +118,8 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
         return JSONResponse(content=fn(*args, **kwargs))
     except NotFound:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
+    except LimitReached as err:
+        return JSONResponse(status_code=err.status, content={"detail": str(err)})
     except (Invalid, photos_mod.BadPhoto) as err:
         return JSONResponse(status_code=422, content={"detail": str(err)})
 
