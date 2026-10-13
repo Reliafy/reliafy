@@ -118,6 +118,38 @@ def test_a_house_through_mcp(env):
     assert missing.is_error and "Not found" in missing.content[0].text
 
 
+def test_a_study_given_as_json_drives_positions_and_tasks(env):
+    """create_rcm_study's study works with position_from_rcm straight away,
+    and a change through update_rcm_study reaches the position's tasks."""
+
+    async def flow(client):
+        study = _ok(await client.call_tool("create_rcm_study", {
+            "name": "Pool RCM", "system": "Pool pump", "functions": [
+                {"text": "Circulate water", "failures": [{"text": "No flow", "modes": [
+                    {"text": "Basket blocked", "consequence": "operational",
+                     "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks",
+                                  "task": "Empty the pump basket"}},
+                    {"text": "Bearing worn", "decision": {"outcome": "rtf", "rtf_basis": "random"}}]}]}]}))
+        assert study["counts"]["scheduled_tasks"] == 1
+        made = _ok(await client.call_tool("position_from_rcm", {"study_id": study["study_id"]}))
+        got = _ok(await client.call_tool("get_rcm_study", {"study_id": study["study_id"]}))
+        basket = got["functions"][0]["failures"][0]["modes"][0]
+        _ok(await client.call_tool("update_rcm_study", {"study_id": study["study_id"], "functions": [
+            {"id": got["functions"][0]["id"], "failures": [{"id": got["functions"][0]["failures"][0]["id"],
+                                                            "modes": [{"id": basket["id"], "decision": {
+                                                                "outcome": "on_condition", "interval": 2,
+                                                                "interval_unit": "weeks",
+                                                                "task": "Empty the pump basket"}}]}]}]}))
+        again = _ok(await client.call_tool("apply_rcm_to_position", {"position_id": made["position"]["id"],
+                                                                     "study_id": study["study_id"]}))
+        return made, again
+
+    made, again = _session(env["token"], flow)
+    assert made["position"]["name"] == "Pool pump" and made["tasks_added"] == 1 and made["failure_modes_added"] == 2
+    assert again["tasks_updated"] == 1 and again["tasks_added"] == 0 and again["failure_modes_added"] == 0
+    assert [t["interval"] for t in again["position"]["tasks"]] == [2]
+
+
 def test_no_token_needed_when_sign_in_is_off(env, monkeypatch):
     from backend import config
 

@@ -145,7 +145,7 @@ def register() -> None:
     def position_from_rcm(study_id: str, ctx: Context, parent_id: str | None = None) -> dict[str, Any]:
         """Create a position named for an RCM study's system, with the study's failure
         modes and a scheduled task for every decision that has an interval. Find study
-        ids with the RCM tools."""
+        ids with list_rcm_studies; create_rcm_study makes one from JSON."""
         return run(m_for(ctx).position_from_rcm, study_for(ctx, study_id), parent_id)
 
     @tool("apply_rcm_to_position", _WRITE, "Apply an RCM study to a position")
