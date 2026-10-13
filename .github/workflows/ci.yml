@@ -1,11 +1,9 @@
 name: CI
 
-# Runs on the dev -> main release PR (the gate: release.sh waits for it before
-# merging and deploying) and on main (the record of what was released). Not on
-# PRs into dev or pushes to dev: tests run locally on request before then.
+# Runs only on the dev -> main release PR: the gate release.sh waits for before
+# merging and deploying. Not on PRs into dev or on pushes (main gets exactly
+# what its release PR tested); tests otherwise run locally on request.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
