@@ -386,7 +386,7 @@ def guest_ctx(owner_id: str, grantor_uid: str) -> access.AccessCtx:
         user={"uid": grantor_uid, "email": None, "name": "Public link"},
         uid=grantor_uid,
         workspace="personal",
-        write_owner="__public-link__",
+        write_owner=access.PUBLIC_LINK_OWNER,
         read_owners=readers,
         list_owners=list(readers),
         hidden=set(),
