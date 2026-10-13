@@ -377,3 +377,12 @@ def test_the_fields_through_the_api(api):
     wo = api.post(f"{base}/work-orders", json={"position_id": pid, "title": "Rewire", "trade": "Electrician"}).json()
     assert wo["trade"] == "Electrician"
     assert api.patch(f"{base}/work-orders/{wo['id']}", json={"trade": "Gas fitter"}).json()["trade"] == "Gas fitter"
+
+
+def test_a_missed_registration_deadline_says_the_warranty_may_not_apply():
+    from backend.maintenance.service import warranty_view
+
+    w = {"ends_on": "2029-06-30", "registration_required": True, "registered": False, "register_by": "2019-12-31"}
+    view = warranty_view(w, on="2026-10-13")
+    assert view["registration_overdue"] and "may not apply" in view["summary"]
+    assert not warranty_view({**w, "registered": True}, on="2026-10-13")["registration_overdue"]

@@ -344,10 +344,13 @@ def warranty_view(w: dict | None, on: str | None = None) -> dict | None:
     in_warranty = w["ends_on"] >= on
     words = [f"In warranty until {date_text(w['ends_on'], 'exact')}" if in_warranty
              else f"Warranty ended {date_text(w['ends_on'], 'exact')}"]
+    overdue = bool(due and due < on and in_warranty)
     if w.get("registration_required") and not w.get("registered"):
-        words.append(f"registration due by {date_text(due, 'exact')}" if due else "registration still to do")
+        words.append(f"registration was due by {date_text(due, 'exact')} and isn't recorded: the warranty "
+                     "may not apply" if overdue else f"registration due by {date_text(due, 'exact')}" if due
+                     else "registration still to do")
     return {**w, "in_warranty": in_warranty, "registration_due": due,
-            "registration_overdue": bool(due and due < on and in_warranty), "summary": "; ".join(words) + "."}
+            "registration_overdue": overdue, "summary": "; ".join(words) + "."}
 
 
 DOCUMENT_KINDS = ("manual", "datasheet", "invoice", "drawing", "certificate", "other")
