@@ -45,6 +45,7 @@ from backend.fitting import (
 )
 from backend.auth import get_current_user
 from backend.routers import auth as auth_router
+from backend.routers import maintenance as maintenance_router
 from backend.routers import models as models_router
 from backend.routers import rbds as rbds_router
 from backend.routers import rbd_jobs as rbd_jobs_router
@@ -243,6 +244,8 @@ app.include_router(degradation_induced_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
 app.include_router(rcm_router.router)
+app.include_router(maintenance_router.router)
+app.include_router(maintenance_router.public_router)
 app.include_router(excel_router.router)
 app.include_router(teams_router.router)
 app.include_router(shares_router.router)
@@ -309,6 +312,8 @@ def app_config() -> dict:
         "billing": bool(config.BILLING_ENABLED or config.STRIPE_API_KEY),
         "reliability_agent": bool(config.RELIABILITY_AGENT_ENABLED),
         "mcp": mcp_switch.enabled(get_db()),
+        # Reliafy Maintenance (local only for now).
+        "maintenance": bool(config.MAINTENANCE_ENABLED),
     }
 
 
@@ -617,7 +622,7 @@ SPA_ROOTS = frozenset({
     "reliability-analysis-software",
     # The signed-in app.
     "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
-    "tokens", "admin", "billing", "changes",
+    "tokens", "admin", "billing", "changes", "maintenance",
 })
 
 

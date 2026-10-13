@@ -1,0 +1,119 @@
+/* Reliafy Maintenance pages. */
+
+.maint-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.maint-head h2 {
+  margin: 0;
+}
+
+.maint-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.maint-tree,
+.maint-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.maint-tree ul {
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--line);
+  margin-left: 0.4rem;
+}
+
+.maint-node {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+}
+
+.maint-node-name {
+  font-weight: 600;
+}
+
+.maint-node-item {
+  color: var(--muted);
+}
+
+.maint-badge {
+  font-size: 0.8rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--acc-t);
+  border: 1px solid var(--acc-line);
+}
+
+.maint-overdue {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.maint-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.maint-list li {
+  padding: 0.25rem 0;
+}
+
+.maint-action {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.maint-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+
+.maint-photos figure {
+  margin: 0;
+}
+
+.maint-photo,
+.maint-photo-blank {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  background: var(--line);
+  cursor: pointer;
+  display: block;
+}
+
+.maint-photo-full {
+  max-width: 100%;
+  max-height: 70vh;
+  display: block;
+  margin: 0 auto;
+}
+
+.maint-ask {
+  background: var(--acc-t);
+  border: 1px solid var(--acc-line);
+  border-radius: var(--r);
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.maint-ask p {
+  margin: 0 0 0.5rem;
+}

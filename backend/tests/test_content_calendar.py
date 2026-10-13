@@ -15,7 +15,7 @@ EXPECTED = [
     ("2026-11-09", "technical", "How long will this take? Survival analysis on our own run times"),
     ("2026-11-16", "commentary", "AI agents will read your failure data next: what to check"),
     ("2026-11-23", "tutorial", "Design to a target: reliability allocation"),
-    ("2026-11-30", "tutorial", "The Reliability Agent, in action: 30,000 GPUs and a temperature it wasn't told about"),
+    ("2026-11-30", "tutorial", "30,000 GPUs, 5,000 failures and a temperature nobody recorded"),
     ("2026-12-07", "whatsnew", "What's new in Reliafy: December 2026"),
     ("2026-12-14", "technical", "Failure modes that compete"),
     ("2026-12-21", "commentary", "Run to failure is a decision, not a default"),

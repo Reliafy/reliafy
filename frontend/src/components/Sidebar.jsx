@@ -4,6 +4,7 @@ import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
 import { publicUrl } from "../firebase.js";
+import { getMaintenanceAccess } from "../api.js";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -59,6 +60,12 @@ const RcmSectionIcon = () => (
     <rect x="5" y="4" width="14" height="17" rx="2" />
     <path d="M9 4V3h6v1" />
     <path d="m8.5 12 2 2 4-4.5" />
+  </svg>
+);
+
+const MaintenanceIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />
   </svg>
 );
 
@@ -149,6 +156,11 @@ const ITEMS = [
     icon: <RcmSectionIcon />,
   },
   {
+    to: "/maintenance",
+    label: "Maintenance",
+    icon: <MaintenanceIcon />,
+  },
+  {
     to: "/agent",
     label: "Reliability Agent",
     icon: <AgentIcon />,
@@ -169,11 +181,17 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 export default function Sidebar({ collapsed, onToggle, phone = false, open = false, onClose }) {
   const asideRef = useRef(null);
   const { user, signOut } = useAuth();
-  const { ai, billing, reliability_agent: agentEnabled } = useAppConfig();
+  const { ai, billing, reliability_agent: agentEnabled, maintenance: maintenanceEnabled } = useAppConfig();
   // Credits only buy AI use; without it the page is plain billing.
   const billingLabel = ai || agentEnabled ? "Billing & credits" : "Billing";
   // The Reliability Agent surface is behind a feature flag (hidden until ready).
-  const items = ITEMS.filter((it) => it.to !== "/agent" || agentEnabled);
+  const [maintenanceAllowed, setMaintenanceAllowed] = useState(false);
+  useEffect(() => {
+    if (!maintenanceEnabled) return;
+    getMaintenanceAccess().then((a) => setMaintenanceAllowed(!!a.allowed));
+  }, [maintenanceEnabled]);
+  const items = ITEMS.filter((it) => (it.to !== "/agent" || agentEnabled)
+    && (it.to !== "/maintenance" || (maintenanceEnabled && maintenanceAllowed)));
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
