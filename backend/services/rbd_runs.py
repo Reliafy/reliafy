@@ -533,25 +533,31 @@ def export_json(view: dict) -> str:
 def export_csv(view: dict) -> str:
     """A run as one tidy table: ``quantity, block, time, value, lower,
     upper`` — the headline figures, A(t) with its band, and each block's
-    share of the downtime."""
+    share of the downtime. Text cells are kept as text in a spreadsheet."""
+    from backend.services.excel import download_cell
+
     buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["quantity", "block", "time", "value", "lower", "upper"])
+    writer = csv.writer(buf)
+
+    def put(row):
+        writer.writerow([download_cell(v) for v in row])
+
+    put(["quantity", "block", "time", "value", "lower", "upper"])
     result = view.get("result") or {}
     precision = result.get("precision") or {}
-    w.writerow(["window_availability", "", result.get("t_simulation"), precision.get("window_availability"),
-                precision.get("lower"), precision.get("upper")])
+    put(["window_availability", "", result.get("t_simulation"), precision.get("window_availability"),
+         precision.get("lower"), precision.get("upper")])
     for key in ("steady_state_availability", "mean_up_time", "mean_down_time", "failure_frequency"):
         if result.get(key) is not None:
-            w.writerow([key, "", "", result.get(key), "", ""])
+            put([key, "", "", result.get(key), "", ""])
     curve = result.get("curve") or {}
     t, a = curve.get("t") or [], curve.get("availability") or []
     lo, hi = curve.get("lower") or [], curve.get("upper") or []
     for i, ti in enumerate(t):
-        w.writerow(["availability_at_t", "", ti, a[i] if i < len(a) else "",
-                    lo[i] if i < len(lo) else "", hi[i] if i < len(hi) else ""])
+        put(["availability_at_t", "", ti, a[i] if i < len(a) else "",
+             lo[i] if i < len(lo) else "", hi[i] if i < len(hi) else ""])
     for row in result.get("per_node") or []:
-        w.writerow(["downtime_share", row.get("label") or row.get("id"), "", row.get("share"), "", ""])
+        put(["downtime_share", row.get("label") or row.get("id"), "", row.get("share"), "", ""])
     return buf.getvalue()
 
 
