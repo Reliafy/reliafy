@@ -48,6 +48,36 @@ def _digest(work_orders: list[dict], overdue: list[dict], proposals=()) -> tuple
     return subject, "\n".join(lines)
 
 
+def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) -> None:
+    """The daily run for one organisation: its work orders, refits and digest."""
+    m = Maintenance(store, org, "scheduler", limited=False)
+    if dry_run:
+        due = [t for t in m.due_tasks(HORIZON_DAYS) if not t["open_work_order"]]
+        result["orgs"] += 1
+        result["work_orders"] += len(due)
+        return
+    made = m.generate_work_orders(HORIZON_DAYS)
+    result["orgs"] += 1
+    result["work_orders"] += len(made)
+    before = {pr["id"] for pr in m.proposals("pending")}
+    try:
+        refitted = loop.refit_stale(m, db)
+    except Exception:  # noqa: BLE001 - a bad refit mustn't stop the run
+        logger.exception("maintenance refit failed for %s", org)
+        refitted = []
+    new_proposals = [pr for pr in m.proposals("pending") if pr["id"] not in before]
+    result["refitted"] = result.get("refitted", 0) + len(refitted)
+    if (not made and not new_proposals) or org.startswith("team:"):
+        return
+    user = db.users.find_one({"_id": org}) or {}
+    if not allowed({**user, "uid": org}) or user.get("maintenance_digest_off") or not user.get("email"):
+        return
+    overdue = [t for t in m.due_tasks(0) if t["overdue"]]
+    subject, body = _digest(made, overdue, new_proposals)
+    email_service.send(user["email"], subject, body)
+    result["emails"] += 1
+
+
 def run(db, store, *, today: date | None = None, dry_run: bool = False) -> dict:
     """One daily run over every organisation with tasks."""
     from backend.services import email as email_service
@@ -58,32 +88,13 @@ def run(db, store, *, today: date | None = None, dry_run: bool = False) -> dict:
     store.sync()
     result = {"step": "maintenance", "date": day, "orgs": 0, "work_orders": 0, "emails": 0}
     for org in store.orgs_with("Task"):
-        m = Maintenance(store, org, "scheduler")
-        if dry_run:
-            due = [t for t in m.due_tasks(HORIZON_DAYS) if not t["open_work_order"]]
-            result["orgs"] += 1
-            result["work_orders"] += len(due)
-            continue
-        made = m.generate_work_orders(HORIZON_DAYS)
-        result["orgs"] += 1
-        result["work_orders"] += len(made)
-        before = {pr["id"] for pr in m.proposals("pending")}
+        # One organisation's trouble (a record the date maths can't place, a
+        # failed email) mustn't stop the run for the others.
         try:
-            refitted = loop.refit_stale(m, db)
-        except Exception:  # noqa: BLE001 - a bad refit mustn't stop the run
-            logger.exception("maintenance refit failed for %s", org)
-            refitted = []
-        new_proposals = [pr for pr in m.proposals("pending") if pr["id"] not in before]
-        result["refitted"] = result.get("refitted", 0) + len(refitted)
-        if (not made and not new_proposals) or org.startswith("team:"):
-            continue
-        user = db.users.find_one({"_id": org}) or {}
-        if not allowed({**user, "uid": org}) or user.get("maintenance_digest_off") or not user.get("email"):
-            continue
-        overdue = [t for t in m.due_tasks(0) if t["overdue"]]
-        subject, body = _digest(made, overdue, new_proposals)
-        email_service.send(user["email"], subject, body)
-        result["emails"] += 1
+            _run_org(db, store, org, result, dry_run, email_service)
+        except Exception:  # noqa: BLE001
+            logger.exception("maintenance daily run failed for %s", org)
+            result["failed"] = result.get("failed", 0) + 1
     if not dry_run:
         db.maintenance_runs.insert_one({"_id": day, "result": result})
     logger.info("maintenance daily run: %s", result)
