@@ -47,3 +47,38 @@ def test_bad_rows_write_nothing():
     with pytest.raises(Invalid, match="position column"):
         importer.run(m, [{"Thing": "x"}])
     assert m.tree() == []
+
+
+def test_a_csv_is_checked_before_its_parsed(monkeypatch):
+    import pandas as pd
+
+    def no_parse(*a, **k):
+        raise AssertionError("parsed")
+
+    monkeypatch.setattr(pd, "read_csv", no_parse)
+    wide = b",".join(b"c%d" % i for i in range(importer.MAX_COLS + 1)) + b"\nx\n"
+    with pytest.raises(Invalid, match="columns"):
+        importer.rows_from_file(wide, "x.csv")
+    with pytest.raises(Invalid, match="first line"):
+        importer.rows_from_file(b"c" * (importer.MAX_LINE + 1) + b"\n", "x.csv")
+    with pytest.raises(Invalid, match="rows"):
+        importer.rows_from_file(b"position\n" + b"a\n" * (importer.MAX_ROWS + 1), "x.csv")
+    with pytest.raises(Invalid, match="characters"):
+        importer.rows_from_file(b"position\n" + b"a" * (importer.MAX_CELL + 1) + b"\n", "x.csv")
+    with pytest.raises(Invalid, match="cells"):
+        importer.rows_from_file(b"position\n" + b",".join([b"a"] * (importer.MAX_COLS + 1)) + b"\n", "x.csv")
+
+
+def test_a_small_csv_still_imports():
+    rows = importer.rows_from_file(b"\xef\xbb\xbfposition,item,fitted\nHouse > Pump,Astral,2024-01-01\n\n", "x.csv")
+    assert rows == [{"position": "House > Pump", "item": "Astral", "fitted": "2024-01-01"}]
+
+
+def test_rows_given_directly_have_the_same_limits():
+    m = Maintenance(GraphStore(":memory:", PROJECTORS), "user-i")
+    with pytest.raises(Invalid, match="columns"):
+        importer.run(m, [{f"c{i}": "" for i in range(importer.MAX_COLS + 1)}])
+    with pytest.raises(Invalid, match="characters"):
+        importer.run(m, [{"position": "a" * (importer.MAX_CELL + 1)}])
+    with pytest.raises(Invalid, match="rows"):
+        importer.run(m, [{"position": "a"}] * (importer.MAX_ROWS + 1))

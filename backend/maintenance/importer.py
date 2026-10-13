@@ -21,6 +21,7 @@ made. A position that already exists (same name, same parent) is reused.
 
 from __future__ import annotations
 
+import csv
 import io
 import re
 from datetime import date
@@ -28,6 +29,9 @@ from datetime import date
 from backend.maintenance.service import MAX_ITEMS, MAX_POSITIONS, Invalid, Maintenance, new_id
 
 MAX_ROWS = 5000
+MAX_COLS = 50
+MAX_CELL = 1000  # characters in one cell
+MAX_LINE = 64 * 1024  # bytes in the header line
 
 ALIASES = {
     "position": ("position", "position path", "path", "functional location", "floc", "asset", "equipment position"),
@@ -63,6 +67,51 @@ def map_columns(header: list[str]) -> dict[str, str]:
     return out
 
 
+def _too_wide(n: int) -> Invalid:
+    return Invalid(f"The sheet has {n} columns; at most {MAX_COLS} can be imported. Keep just the columns "
+                   "listed in the help.")
+
+
+def check_csv(data: bytes) -> None:
+    """Check a CSV's size before it's parsed in full: the header line's length,
+    at most MAX_COLS columns, MAX_ROWS rows and MAX_CELL characters a cell.
+    Raises Invalid, saying which."""
+    header = data.split(b"\n", 1)[0]
+    if len(header) > MAX_LINE:
+        raise Invalid(f"The first line is over {MAX_LINE // 1024} KB; it should be the column names.")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = data.decode("latin-1")
+    rows = 0
+    try:
+        for i, row in enumerate(csv.reader(io.StringIO(text, newline=""))):
+            if len(row) > MAX_COLS:
+                raise _too_wide(len(row)) if i == 0 else Invalid(
+                    f"Row {i + 1} has {len(row)} cells; at most {MAX_COLS}.")
+            if any(len(cell) > MAX_CELL for cell in row):
+                raise Invalid(f"Row {i + 1} has a cell over {MAX_CELL} characters.")
+            if i and any(cell.strip() for cell in row):
+                rows += 1
+                if rows > MAX_ROWS:
+                    raise Invalid(f"At most {MAX_ROWS} rows at a time.")
+    except csv.Error as err:
+        raise Invalid(f"That file couldn't be read as CSV: {err}.") from None
+
+
+def check_rows(rows: list[dict]) -> None:
+    """The same limits for rows given directly (an MCP tool's rows)."""
+    if len(rows) > MAX_ROWS:
+        raise Invalid(f"At most {MAX_ROWS} rows at a time.")
+    for i, r in enumerate(rows, start=2):
+        if not isinstance(r, dict):
+            raise Invalid(f"Row {i}: each row is an object of column: value.")
+        if len(r) > MAX_COLS:
+            raise _too_wide(len(r))
+        if any(len(str(k)) > MAX_CELL or len(str(v)) > MAX_CELL for k, v in r.items()):
+            raise Invalid(f"Row {i} has a cell over {MAX_CELL} characters.")
+
+
 def rows_from_file(data: bytes, filename: str) -> list[dict]:
     """A CSV or Excel sheet as a list of {column: value} rows (strings)."""
     import pandas as pd
@@ -71,12 +120,17 @@ def rows_from_file(data: bytes, filename: str) -> list[dict]:
 
     if excel.is_excel(data, filename):
         df = excel.to_dataframe(excel.read_table(data, filename=filename, max_rows=MAX_ROWS))
+        if len(df.columns) > MAX_COLS:
+            raise _too_wide(len(df.columns))
     else:
-        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+        check_csv(data)
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, nrows=MAX_ROWS + 1)
     df = df.fillna("")
     if len(df) > MAX_ROWS:
         raise Invalid(f"At most {MAX_ROWS} rows at a time.")
-    return [{str(k): ("" if v is None else str(v)).strip() for k, v in r.items()} for r in df.to_dict("records")]
+    rows = [{str(k): ("" if v is None else str(v)).strip() for k, v in r.items()} for r in df.to_dict("records")]
+    check_rows(rows)
+    return rows
 
 
 def _date(value, what: str, row: int) -> str | None:
@@ -99,6 +153,7 @@ def parse(rows: list[dict]) -> list[dict]:
     """Check and normalise every row; raises Invalid listing the first problems."""
     if not rows:
         raise Invalid("The sheet has no rows.")
+    check_rows(rows)
     cols = map_columns(list(rows[0].keys()))
     if "position" not in cols:
         raise Invalid("There's no position column (a path like 'House > Pool > Pump').")
