@@ -64,6 +64,37 @@ def list_teams(session=Depends(get_session), user: dict = Depends(get_current_us
     }
 
 
+@router.get("/invites")
+def list_invites(session=Depends(get_session), user: dict = Depends(get_current_user)) -> dict:
+    """Team invitations to the signed-in user's (verified) address awaiting
+    an answer."""
+    return {"invites": teams_service.pending_invites(session, user)}
+
+
+@router.post("/invites/{team_id}/accept")
+def accept_invite(
+    team_id: str, session=Depends(get_session), user: dict = Depends(get_current_user)
+) -> JSONResponse:
+    """Join a team that invited the signed-in user's address."""
+    try:
+        team = teams_service.accept_invite(session, team_id, user)
+    except teams_service.TeamError as exc:
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+    return JSONResponse(content=teams_service.summary(session, team, user, billing_service))
+
+
+@router.post("/invites/{team_id}/decline")
+def decline_invite(
+    team_id: str, session=Depends(get_session), user: dict = Depends(get_current_user)
+) -> JSONResponse:
+    """Turn down a team's invitation to the signed-in user's address."""
+    try:
+        teams_service.decline_invite(session, team_id, user)
+    except teams_service.TeamError as exc:
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+    return JSONResponse(content={"ok": True})
+
+
 @router.get("/{team_id}")
 def get_team(
     team_id: str, session=Depends(get_session), user: dict = Depends(get_current_user)

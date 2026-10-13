@@ -54,6 +54,11 @@ inside it belongs to the team rather than to you — datasets, models, diagrams,
 studies. Members see it all, and the switcher moves you between your personal
 workspace and any teams you belong to.
 
+Invite people from the team's settings by email address. They join when they
+accept the invitation, signed in with that address (the invitation waits in
+their Settings, and in a new account made with that address); until then you
+see the address and "Pending".
+
 This is what you want when reliability is a shared responsibility: the models
 outlive whoever built them, and the person covering next month doesn't have to
 ask you to re-send anything.

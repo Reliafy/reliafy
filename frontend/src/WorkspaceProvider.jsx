@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthProvider.jsx";
-import { getWorkspace, setWorkspace as persistWorkspace, listTeams } from "./api.js";
+import { getWorkspace, setWorkspace as persistWorkspace, listTeams, listTeamInvites } from "./api.js";
 
 const WorkspaceContext = createContext({
   workspace: "personal",
@@ -8,6 +8,8 @@ const WorkspaceContext = createContext({
   teams: [],
   activeTeam: null,
   refreshTeams: () => {},
+  invites: [],
+  refreshInvites: () => {},
 });
 
 // Active workspace (Personal or a team) + the user's team list. The chosen
@@ -34,6 +36,18 @@ export function WorkspaceProvider({ children }) {
     refreshTeams();
   }, [refreshTeams]);
 
+  // Team invitations waiting for this user's answer (accept or decline).
+  const [invites, setInvites] = useState([]);
+  const refreshInvites = useCallback(() => {
+    if (!user) return Promise.resolve();
+    return listTeamInvites()
+      .then((d) => setInvites(d.invites || []))
+      .catch(() => setInvites([]));
+  }, [user]);
+  useEffect(() => {
+    refreshInvites();
+  }, [refreshInvites]);
+
   // Drop a stored workspace the user no longer belongs to.
   useEffect(() => {
     if (!user || teams === null || workspace === "personal") return;
@@ -54,7 +68,9 @@ export function WorkspaceProvider({ children }) {
     teams: teams || [],
     activeTeam: (teams || []).find((t) => t.id === workspace) || null,
     refreshTeams,
-  }), [workspace, setWorkspaceId, teams, refreshTeams]);
+    invites,
+    refreshInvites,
+  }), [workspace, setWorkspaceId, teams, refreshTeams, invites, refreshInvites]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

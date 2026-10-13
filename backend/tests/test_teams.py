@@ -80,6 +80,18 @@ def _create_team(client, name="Crew"):
     return r.json()["id"]
 
 
+def _join(client, tid, uid, owner=A):
+    """Invite ``uid`` (as the team owner) and accept as ``uid``; acts as the
+    owner again after."""
+    client.act_as(owner)
+    r = client.post(f"/api/teams/{tid}/members", json={"email": USERS[uid]["email"]})
+    assert r.status_code == 200, r.json()
+    client.act_as(uid)
+    r = client.post(f"/api/teams/invites/{tid}/accept")
+    assert r.status_code == 200, r.json()
+    client.act_as(owner)
+
+
 def _save_model(client, tid=None, name="M"):
     headers = {"X-Workspace-Id": tid} if tid else {}
     return client.post(
@@ -119,31 +131,99 @@ def test_membership_and_invites(client):
     client.act_as(A)
     tid = _create_team(client)
 
-    # Registered email -> member immediately.
+    # A registered email is invited, not added: the same answer as for an
+    # address with no account, and no member details for the owner.
     r = client.post(f"/api/teams/{tid}/members", json={"email": "B@X.com"})
-    assert r.status_code == 200 and r.json()["status"] == "added"
+    assert r.status_code == 200 and r.json() == {"status": "invited", "email": "b@x.com"}
+    r_unknown = client.post(f"/api/teams/{tid}/members", json={"email": "c@x.com"})
+    assert r_unknown.status_code == 200 and r_unknown.json() == {"status": "invited", "email": "c@x.com"}
     # Duplicate -> 409; self -> 400.
     assert client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"}).status_code == 409
-    assert client.post(f"/api/teams/{tid}/members", json={"email": "a@x.com"}).status_code == 400
-
-    # Unregistered email -> pending invite, activates on the invitee's /api/me.
-    r = client.post(f"/api/teams/{tid}/members", json={"email": "c@x.com"})
-    assert r.status_code == 200 and r.json()["status"] == "invited"
     assert client.post(f"/api/teams/{tid}/members", json={"email": "c@x.com"}).status_code == 409
-    client.act_as(C)
-    me = client.get("/api/me").json()
-    assert [t["id"] for t in me["teams"]] == [tid]
+    assert client.post(f"/api/teams/{tid}/members", json={"email": "a@x.com"}).status_code == 400
     detail = client.get(f"/api/teams/{tid}").json()
-    assert detail["invites"] == [] and len(detail["members"]) == 3
+    assert [m["uid"] for m in detail["members"]] == [A]
+    assert [(i["email"], i["status"]) for i in detail["invites"]] == [("b@x.com", "pending"), ("c@x.com", "pending")]
+    assert all(set(i) == {"email", "status", "invited_at"} for i in detail["invites"])
+
+    # Signing in doesn't join: the invitation waits for an answer.
+    client.act_as(B)
+    me = client.get("/api/me").json()
+    assert me["teams"] == []
+    assert [i["team_id"] for i in me["team_invites"]] == [tid]
+    assert client.get(f"/api/teams/{tid}").status_code == 404
+    assert client.get("/api/models", headers={"X-Workspace-Id": tid}).status_code == 403
+    r = client.post(f"/api/teams/invites/{tid}/accept")
+    assert r.status_code == 200 and r.json()["role"] == "member"
+    assert [t["id"] for t in client.get("/api/me").json()["teams"]] == [tid]
+    assert client.get("/api/teams/invites").json()["invites"] == []
+
+    # C has no account yet; once signed in (verified) they can decline.
+    client.act_as(C)
+    _register(client.db, C)
+    assert [i["team_name"] for i in client.get("/api/teams/invites").json()["invites"]] == ["Crew"]
+    assert client.post(f"/api/teams/invites/{tid}/decline").status_code == 200
+    assert client.post(f"/api/teams/invites/{tid}/accept").status_code == 404
+    assert client.get("/api/me").json()["teams"] == []
+    client.act_as(A)
+    detail = client.get(f"/api/teams/{tid}").json()
+    assert detail["invites"] == [] and [m["uid"] for m in detail["members"]] == [A, B]
 
     # Member can't manage; owner can remove; owner can't leave or be removed.
     client.act_as(B)
     assert client.post(f"/api/teams/{tid}/members", json={"email": "d@x.com"}).status_code == 403
-    assert client.post(f"/api/teams/{tid}/leave").status_code == 200
     client.act_as(A)
-    assert client.delete(f"/api/teams/{tid}/members/{C}").status_code == 200
+    assert client.delete(f"/api/teams/{tid}/members/{B}").status_code == 200
     assert client.delete(f"/api/teams/{tid}/members/{A}").status_code == 400
     assert client.post(f"/api/teams/{tid}/leave").status_code == 400
+    _join(client, tid, B)
+    client.act_as(B)
+    assert client.post(f"/api/teams/{tid}/leave").status_code == 200
+
+
+def test_invite_needs_the_invitees_answer_and_hides_their_details(client):
+    _make_pro(client.db, A)
+    _make_pro(client.db, B)
+    client.act_as(A)
+    tid = _create_team(client)
+    r = client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+    body = r.json()
+    assert "member" not in body and "note" not in body and B not in str(body)
+    detail = client.get(f"/api/teams/{tid}").json()
+    assert B not in str(detail) and "can_edit" not in str(detail["invites"])
+
+    # Someone else can't answer B's invitation.
+    _register(client.db, C)
+    client.act_as(C)
+    assert client.post(f"/api/teams/invites/{tid}/accept").status_code == 404
+    assert client.post(f"/api/teams/invites/{tid}/decline").status_code == 404
+    assert client.db.teams.find_one({"_id": tid})["invites"][0]["email"] == "b@x.com"
+
+    # Only the owner and the member themself see a member's plan status.
+    client.act_as(B)
+    assert client.post(f"/api/teams/invites/{tid}/accept").status_code == 200
+    _join(client, tid, C)
+    client.act_as(C)
+    members = {m["uid"]: m for m in client.get(f"/api/teams/{tid}").json()["members"]}
+    assert "can_edit" not in members[B] and "can_edit" not in members[A] and "can_edit" in members[C]
+    client.act_as(A)
+    members = {m["uid"]: m for m in client.get(f"/api/teams/{tid}").json()["members"]}
+    assert members[B]["can_edit"] is True and members[C]["can_edit"] is False
+
+
+def test_unverified_account_cant_accept(client):
+    _make_pro(client.db, A)
+    client.act_as(A)
+    tid = _create_team(client)
+    client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+    USERS[B]["email_verified"] = False
+    try:
+        client.act_as(B)
+        assert client.get("/api/teams/invites").json()["invites"] == []
+        assert client.post(f"/api/teams/invites/{tid}/accept").status_code == 403
+    finally:
+        USERS[B]["email_verified"] = True
+    assert [m["uid"] for m in client.db.teams.find_one({"_id": tid})["members"]] == [A]
 
 
 # ---- Workspace scoping + isolation ------------------------------------------------
@@ -153,7 +233,7 @@ def test_team_workspace_scoping(client):
     _make_pro(client.db, B)
     client.act_as(A)
     tid = _create_team(client)
-    client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+    _join(client, tid, B)
 
     r = _save_model(client, tid)
     assert r.status_code == 200
@@ -202,7 +282,7 @@ def test_team_workspace_is_uncapped(client, monkeypatch):
     _make_pro(client.db, B)
     client.act_as(A)
     tid = _create_team(client)
-    client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+    _join(client, tid, B)
 
     # A member saves without limits in the team workspace...
     client.act_as(B)
@@ -220,7 +300,7 @@ def test_frozen_team_is_read_only(client):
     _register(client.db, B)
     client.act_as(A)
     tid = _create_team(client)
-    client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+    _join(client, tid, B)
     assert _save_model(client, tid).status_code == 200
     mid = client.get("/api/models", headers={"X-Workspace-Id": tid}).json()["models"][0]["id"]
 
@@ -320,7 +400,7 @@ def test_free_members_are_view_only(client):
     _register(client.db, B)  # B stays free
     client.act_as(A)
     tid = _create_team(client)
-    client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+    _join(client, tid, B)
     mid = _save_model(client, tid).json()["id"]
 
     client.act_as(B)
@@ -349,7 +429,7 @@ def test_free_members_edit_when_billing_disabled(client, monkeypatch):
     _register(client.db, B)
     client.act_as(A)
     tid = _create_team(client)
-    client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+    _join(client, tid, B)
 
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
     client.act_as(B)

@@ -1562,6 +1562,20 @@ export function leaveTeam(id) {
   return request(`/api/teams/${id}/leave`, { method: "POST" });
 }
 
+// Team invitations to the signed-in user's (verified) address: membership
+// starts only when the invitee accepts.
+export function listTeamInvites() {
+  return request("/api/teams/invites");
+}
+
+export function acceptTeamInvite(teamId) {
+  return request(`/api/teams/invites/${encodeURIComponent(teamId)}/accept`, { method: "POST" });
+}
+
+export function declineTeamInvite(teamId) {
+  return request(`/api/teams/invites/${encodeURIComponent(teamId)}/decline`, { method: "POST" });
+}
+
 // ---- Direct sharing ------------------------------------------------------------
 
 export function createShare(collection, artifactId, email) {

@@ -396,16 +396,26 @@ def test_check_references_helper(client):
 
 # ---- 2. Email trust needs a verified address -------------------------------------
 
-def test_unverified_account_gets_no_email_share(client):
+def test_unverified_account_gets_share_only_once_verified(client):
     _register_all(client)
     client.act_as(D)
     client.act_as(A)
     model = _save_model(client)
     r = _share(client, "models", model["id"], "d@x.com")
-    assert r.status_code == 409 and "verified" in r.json()["detail"]
-    assert client.db.shares.count_documents({}) == 0
+    # The same answer as for a verified account: the share waits.
+    assert r.status_code == 200 and r.json()["email"] == "d@x.com"
+    assert client.db.shares.count_documents({"recipient_uid": D}) == 0
     client.act_as(D)
+    client.get("/api/me")
     assert client.get(f"/api/models/{model['id']}").status_code == 404
+    # Once verified, the next sign-in picks it up.
+    USERS[D]["email_verified"] = True
+    try:
+        client.act_as(D)
+        client.get("/api/me")
+        assert client.get(f"/api/models/{model['id']}").status_code == 200
+    finally:
+        USERS[D]["email_verified"] = False
 
 
 def test_unverified_account_gets_no_invite(client):
@@ -416,15 +426,20 @@ def test_unverified_account_gets_no_invite(client):
     # Not added directly: staged as a pending invite instead.
     r = client.post(f"/api/teams/{tid}/members", json={"email": "d@x.com"})
     assert r.status_code == 200 and r.json()["status"] == "invited"
-    # Signing in unverified doesn't activate it.
+    # Signed in unverified, the invitation isn't offered and can't be accepted.
     client.act_as(D)
-    assert client.get("/api/me").json()["teams"] == []
+    me = client.get("/api/me").json()
+    assert me["teams"] == [] and me["team_invites"] == []
+    assert client.post(f"/api/teams/invites/{tid}/accept").status_code == 403
     team = client.db.teams.find_one({"_id": tid})
     assert [m["uid"] for m in team["members"]] == [A]
-    # Once verified, the next sign-in joins the team.
+    # Once verified, it's offered; accepting joins the team.
     USERS[D]["email_verified"] = True
     try:
         client.act_as(D)
+        me = client.get("/api/me").json()
+        assert me["teams"] == [] and [i["team_id"] for i in me["team_invites"]] == [tid]
+        assert client.post(f"/api/teams/invites/{tid}/accept").status_code == 200
         assert [t["id"] for t in client.get("/api/me").json()["teams"]] == [tid]
     finally:
         USERS[D]["email_verified"] = False
@@ -679,10 +694,14 @@ def test_invite_email_handles_names_with_line_breaks(monkeypatch):
 
     monkeypatch.setattr(email_service.threading, "Thread", NoThread)
     email_service.team_invite_pending("x@y.com", "Sam\r\nBcc: z@z.com", "Crew\nTeam " + "x" * 200)
-    email_service.team_member_added("x@y.com", "Name\x00", "Crew")
+    email_service.artifact_shared("x@y.com", "Name\x00" + "n" * 200, "Model\r\nBcc: z@z.com", "/models",
+                                  sharer_email="s@x.com")
     subject = built[0]["Subject"]
     assert "\n" not in subject and "\r" not in subject and len(subject) <= 200
     assert built[0]["Bcc"] is None
+    shared = built[1]
+    assert "\n" not in shared["Subject"] and shared["Bcc"] is None and len(shared["Subject"]) <= 200
+    assert "(s@x.com)" in shared.get_content()
 
 
 def test_invites_are_rate_limited(client, monkeypatch):
@@ -755,7 +774,7 @@ def test_share_to_unknown_status_uses_verified_lookup(client, lookup):
     assert client.db.users.find_one({"_id": C})["email_verified"] is True
 
 
-def test_share_to_unknown_status_refused_when_lookup_says_unverified(client, lookup):
+def test_share_to_unknown_status_waits_when_lookup_says_unverified(client, lookup):
     answers, _ = lookup
     _register_all(client)
     _unknown(client, C)
@@ -763,12 +782,12 @@ def test_share_to_unknown_status_refused_when_lookup_says_unverified(client, loo
     client.act_as(A)
     model = _save_model(client)
     r = _share(client, "models", model["id"], "c@x.com")
-    assert r.status_code == 409 and "hasn't verified" in r.json()["detail"]
-    assert client.db.shares.count_documents({}) == 0
+    assert r.status_code == 200 and r.json()["email"] == "c@x.com"
+    assert client.db.shares.count_documents({"recipient_uid": C}) == 0
     assert client.db.users.find_one({"_id": C})["email_verified"] is False
 
 
-def test_share_to_unknown_status_refused_when_lookup_fails(client, lookup):
+def test_share_to_unknown_status_waits_when_lookup_fails(client, lookup):
     answers, calls = lookup
     _register_all(client)
     _unknown(client, C)
@@ -776,16 +795,16 @@ def test_share_to_unknown_status_refused_when_lookup_fails(client, lookup):
     client.act_as(A)
     model = _save_model(client)
     r = _share(client, "models", model["id"], "c@x.com")
-    assert r.status_code == 409 and "couldn't confirm" in r.json()["detail"]
-    assert client.db.shares.count_documents({}) == 0
+    assert r.status_code == 200 and r.json()["email"] == "c@x.com"
+    assert client.db.shares.count_documents({"recipient_uid": C}) == 0
     assert "email_verified" not in client.db.users.find_one({"_id": C})
     # Cached briefly: an immediate retry doesn't ask again.
     _share(client, "models", model["id"], "c@x.com")
     assert calls == [C]
 
 
-def test_invite_to_unknown_status_uses_lookup(client, lookup):
-    answers, _ = lookup
+def test_invite_answer_is_the_same_whatever_the_account(client, lookup):
+    answers, calls = lookup
     _register_all(client)
     _unknown(client, B)
     _unknown(client, C)
@@ -793,12 +812,13 @@ def test_invite_to_unknown_status_uses_lookup(client, lookup):
     answers[C] = RuntimeError("firebase unavailable")
     client.act_as(A)
     tid = client.post("/api/teams", json={"name": "Crew"}).json()["id"]
-    assert client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"}).json()["status"] == "added"
-    r = client.post(f"/api/teams/{tid}/members", json={"email": "c@x.com"}).json()
-    assert r["status"] == "invited" and "couldn't confirm" in r["note"]
+    bodies = [client.post(f"/api/teams/{tid}/members", json={"email": e}).json()
+              for e in ("b@x.com", "c@x.com", "nobody@x.com")]
+    assert bodies == [{"status": "invited", "email": e} for e in ("b@x.com", "c@x.com", "nobody@x.com")]
+    assert calls == []
 
 
-def test_invite_activation_with_unknown_status_uses_lookup(lookup, monkeypatch):
+def test_invite_answer_with_unknown_status_uses_lookup(lookup, monkeypatch):
     from backend import config
     from backend.services import teams
 
@@ -808,8 +828,13 @@ def test_invite_activation_with_unknown_status_uses_lookup(lookup, monkeypatch):
     db.teams.insert_one({"_id": "t1", "name": "Crew", "owner_uid": A, "members": [{"uid": A}],
                          "invites": [{"email": "c@x.com"}, {"email": "d@x.com"}]})
     answers[C], answers[D] = True, RuntimeError("down")
-    teams.activate_invites(db, {"uid": C, "email": "c@x.com", "name": "C"})
-    teams.activate_invites(db, {"uid": D, "email": "d@x.com", "name": "D"})
+    c_user = {"uid": C, "email": "c@x.com", "name": "C"}
+    d_user = {"uid": D, "email": "d@x.com", "name": "D"}
+    assert [i["team_id"] for i in teams.pending_invites(db, c_user)] == ["t1"]
+    assert teams.pending_invites(db, d_user) == []
+    teams.accept_invite(db, "t1", c_user)
+    with pytest.raises(teams.TeamError):
+        teams.accept_invite(db, "t1", d_user)
     team = db.teams.find_one({"_id": "t1"})
     assert [m["uid"] for m in team["members"]] == [A, C]
     assert [i["email"] for i in team["invites"]] == ["d@x.com"]

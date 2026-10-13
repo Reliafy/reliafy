@@ -177,6 +177,9 @@ def test_team_study_tasks_are_read_in_the_team_workspace(client):
     client.act_as(A)
     tid = _create_team(client)
     client.post(f"/api/teams/{tid}/members", json={"email": "b@x.com"})
+    client.act_as(B)
+    assert client.post(f"/api/teams/invites/{tid}/accept").status_code == 200
+    client.act_as(A)
     h = {"X-Workspace-Id": tid}
     aid = _save_replacement(client, h)
     sid = client.post("/api/rcm/studies", json={"name": "Team"}, headers=h).json()["id"]

@@ -1,9 +1,9 @@
 """Teams: shared workspaces whose artifacts every member can read and write.
 
 A team's artifacts carry ``owner_id = "team:<team_id>"`` (see
-``services/access.py``). Membership lives on the team doc; invites for
-addresses without an account stage there too and activate on the invitee's
-first ``/api/me`` call.
+``services/access.py``). Membership lives on the team doc. Adding someone
+stages an invitation there; membership starts when the invitee, signed in
+with that address verified, accepts it.
 """
 
 from __future__ import annotations
@@ -149,16 +149,17 @@ def delete_team(db, team: dict) -> None:
 
 
 def add_member_or_invite(db, team: dict, email: str, inviter: dict | None = None) -> dict:
-    """Add a registered user as member, or stage an invite for an unknown email.
+    """Stage an invitation to the team for an email address.
 
-    Only an account whose email address is verified is added straight away;
-    for any other address the invite is staged and activates when an account
-    with that address, verified, signs in. Either way the invitee gets an
-    email (when SMTP is configured). Invites are rate-limited per inviting
-    user and per team (429).
+    Membership starts only when the invitee, signed in with that address
+    verified, accepts (``accept_invite``). The response is the same whether
+    or not the address has an account, and the owner sees only the address
+    they typed until the invitee accepts. The invitee gets an email (when
+    SMTP is configured). Invites are rate-limited per inviting user and per
+    team (429).
     """
     email_lc = _norm_email(email)
-    if not email_lc or "@" not in email_lc:
+    if not email_lc or "@" not in email_lc or len(email_lc) > MAX_EMAIL:
         raise TeamError("Enter a valid email address.", 422)
     if any(_norm_email(m.get("email")) == email_lc for m in team.get("members", [])):
         raise TeamError("That person is already a member.", 409)
@@ -167,34 +168,6 @@ def add_member_or_invite(db, team: dict, email: str, inviter: dict | None = None
     if len(team.get("invites", [])) >= MAX_PENDING_INVITES:
         raise TeamError(f"This team has {MAX_PENDING_INVITES} pending invites — remove some first.", 409)
     _consume_invite(db, team, inviter)
-
-    target = db.users.find_one({"$or": [{"email_lc": email_lc}, {"email": email_lc}]})
-    note = None
-    if target is not None:
-        verification = email_trust.status(db, target["_id"], target.get("email_verified"))
-        if verification != email_trust.VERIFIED:
-            # An unproven address: stage the invite; it activates once an
-            # account with this address signs in verified.
-            target = None
-            note = ("Reliafy couldn't confirm that account's email address just now, so the invite is "
-                    "pending: they'll join when they next sign in with the address verified."
-                    if verification == email_trust.UNKNOWN else
-                    "That account hasn't verified its email address yet — they'll join once they do.")
-    if target is not None:
-        member = _member(
-            {"uid": target["_id"], "email": target.get("email"), "name": target.get("name")},
-            "member",
-        )
-        db.teams.update_one(
-            {"_id": team["_id"]},
-            {"$push": {"members": member}, "$set": {"updated_at": _now()}},
-        )
-        email_service.team_member_added(
-            member.get("email"),
-            (inviter or {}).get("name") or (inviter or {}).get("email") or "A teammate",
-            team["name"],
-        )
-        return {"status": "added", "member": _public_member(member)}
 
     invite = {"email": email_lc, "invited_by": team["owner_uid"], "invited_at": _now()}
     db.teams.update_one(
@@ -206,10 +179,7 @@ def add_member_or_invite(db, team: dict, email: str, inviter: dict | None = None
         (inviter or {}).get("name") or (inviter or {}).get("email") or "A Reliafy user",
         team["name"],
     )
-    out = {"status": "invited", "email": email_lc}
-    if note:
-        out["note"] = note
-    return out
+    return {"status": "invited", "email": email_lc}
 
 
 def _consume_invite(db, team: dict, inviter: dict | None) -> None:
@@ -247,24 +217,58 @@ def leave_team(db, team: dict, uid: str) -> None:
     remove_member(db, team, uid)
 
 
-def activate_invites(db, user: dict) -> None:
-    """Turn pending email invites into memberships on login (idempotent).
+def pending_invites(db, user: dict) -> list[dict]:
+    """The teams that have invited this user's address and await an answer.
 
     Only for a verified address: anyone can create an account claiming any
-    email, so an unverified one keeps its invites pending until verified."""
+    email, so an unverified one sees no invitations until it's verified."""
     email_lc = _norm_email(user.get("email"))
     if not email_lc or not _email_trusted(db, user):
-        return
+        return []
+    out = []
     for team in db.teams.find({"invites.email": email_lc}):
-        if role_of(team, user["uid"]) is None:
-            db.teams.update_one(
-                {"_id": team["_id"]},
-                {"$push": {"members": _member(user, "member")}, "$set": {"updated_at": _now()}},
-            )
+        if role_of(team, user["uid"]) is not None:
+            continue
+        invite = next((i for i in team.get("invites", []) if i.get("email") == email_lc), {})
+        owner = next((m for m in team.get("members", []) if m.get("uid") == team.get("owner_uid")), {})
+        invited_at = invite.get("invited_at")
+        out.append({
+            "team_id": team["_id"],
+            "team_name": team.get("name"),
+            "invited_by": _display_name(owner.get("name")) or owner.get("email"),
+            "invited_at": invited_at.isoformat() if hasattr(invited_at, "isoformat") else None,
+        })
+    return out
+
+
+def accept_invite(db, team_id: str, user: dict) -> dict:
+    """Join a team that invited this user's (verified) address."""
+    email_lc = _norm_email(user.get("email"))
+    if not email_lc or not _email_trusted(db, user):
+        raise TeamError("Verify your email address to accept team invitations.", 403)
+    team = db.teams.find_one({"_id": str(team_id), "invites.email": email_lc})
+    if team is None:
+        raise TeamError("Invitation not found.", 404)
+    if role_of(team, user["uid"]) is None:
         db.teams.update_one(
-            {"_id": team["_id"]},
-            {"$pull": {"invites": {"email": email_lc}}},
+            {"_id": team["_id"], "members.uid": {"$ne": user["uid"]}},
+            {"$push": {"members": _member(user, "member")}, "$set": {"updated_at": _now()}},
         )
+    db.teams.update_one({"_id": team["_id"]}, {"$pull": {"invites": {"email": email_lc}}})
+    return db.teams.find_one({"_id": team["_id"]})
+
+
+def decline_invite(db, team_id: str, user: dict) -> None:
+    """Turn down a team's invitation to this user's (verified) address."""
+    email_lc = _norm_email(user.get("email"))
+    if not email_lc or not _email_trusted(db, user):
+        raise TeamError("Verify your email address to answer team invitations.", 403)
+    result = db.teams.update_one(
+        {"_id": str(team_id), "invites.email": email_lc},
+        {"$pull": {"invites": {"email": email_lc}}, "$set": {"updated_at": _now()}},
+    )
+    if result.matched_count == 0:
+        raise TeamError("Invitation not found.", 404)
 
 
 def _public_member(m: dict) -> dict:
@@ -285,16 +289,24 @@ def summary(db, team: dict, user: dict, billing_service) -> dict:
 
 
 def detail(db, team: dict, user: dict, billing_service) -> dict:
+    """The team as a member sees it. Whether a member may edit (their plan)
+    is shown to the owner and to that member only; pending invitations are
+    only the address the owner typed."""
+    is_owner = role_of(team, user["uid"]) == "owner"
     members = []
     for m in team.get("members", []):
-        member_user = {"uid": m["uid"], "email": m.get("email"),
-                       "email_verified": email_trust.profile_flag(db, m["uid"])}
-        members.append({
-            **_public_member(m),
-            "can_edit": access.member_can_edit(db, member_user, billing_service),
-        })
+        entry = _public_member(m)
+        if is_owner or m["uid"] == user["uid"]:
+            member_user = {"uid": m["uid"], "email": m.get("email"),
+                           "email_verified": email_trust.profile_flag(db, m["uid"])}
+            entry["can_edit"] = access.member_can_edit(db, member_user, billing_service)
+        members.append(entry)
     return {
         **summary(db, team, user, billing_service),
         "members": members,
-        "invites": [{"email": i["email"]} for i in team.get("invites", [])],
+        "invites": [
+            {"email": i["email"], "status": "pending",
+             "invited_at": i["invited_at"].isoformat() if hasattr(i.get("invited_at"), "isoformat") else None}
+            for i in team.get("invites", [])
+        ],
     }
