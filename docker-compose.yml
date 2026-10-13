@@ -19,6 +19,10 @@ services:
       AUTH_DISABLED: "true" # single-user mode (backend)
       MONGODB_URI: mongodb://mongo:27017
       SEED_SAMPLES: "true" # start with sample datasets/models/RBDs
+      MAINTENANCE_ENABLED: "true" # Reliafy Maintenance (in development)
+      MAINTENANCE_DB_PATH: /data/maintenance/maintenance.sqlite
+    volumes:
+      - maintenance-data:/data/maintenance
     depends_on:
       - mongo
     restart: unless-stopped
@@ -31,3 +35,4 @@ services:
 
 volumes:
   mongo-data:
+  maintenance-data:

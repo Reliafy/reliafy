@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 import pytest
 
-from backend.services.maintenance_schedule import Monthly, Task, TaskDates
+from backend.maintenance.schedule import Monthly, Task, TaskDates
 
 WEEKLY = Task("inspect conveyor", first="2026-07-15", every=timedelta(weeks=1))
 

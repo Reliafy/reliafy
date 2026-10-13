@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 import pytest
 
-from backend.services.maintenance_schedule import (
+from backend.maintenance.schedule import (
     Asset,
     Hours,
     Starts,
