@@ -28,9 +28,10 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DueChip, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, PositionPicker, everyText, flatten, fmtDate,
-  today,
+  DocumentsCard, DueChip, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, PositionPicker, RoughDateField,
+  everyText, flatten, fmtDate, fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
+import { roughDateValue } from "../maintenanceFields.js";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import "./Maintenance.css";
@@ -107,7 +108,7 @@ export default function MaintenancePosition() {
           <p>
             <strong>{p.fitted.item ? <Link to={`/maintenance/items/${p.fitted.item.id}`}>{p.fitted.item.name}</Link> : "?"}</strong>
             {p.fitted.item?.serial && <span className="lib-date"> · serial {p.fitted.item.serial}</span>}
-            <span className="lib-date"> · since {fmtDate(p.fitted.from)}</span>
+            <span className="lib-date"> · since {fmtDated(p.fitted.from, p.fitted.from_precision)}</span>
           </p>
         ) : (
           <p className="lib-date">Nothing fitted. Fit the item doing this job, with the date it went in.</p>
@@ -120,6 +121,8 @@ export default function MaintenancePosition() {
       )}
       <MaintenancePhotos title={p.fitted?.item ? `Photos of the ${p.name} position` : "Photos"} targetId={p.id}
                          targetName={p.name} photos={p.photos} onChanged={refresh} />
+      <DocumentsCard documents={p.documents} target={{ target_id: p.id }} onChanged={refresh}
+                     title={p.fitted?.item ? `Documents for the ${p.name} position` : "Documents"} />
       {p.coordinates && (
         <p className="lib-date">
           Location: {p.coordinates.lat}, {p.coordinates.lon}
@@ -137,7 +140,7 @@ export default function MaintenancePosition() {
             <tbody>
               {p.tasks.map((t) => (
                 <tr key={t.id}>
-                  <td>{t.name}</td>
+                  <td>{t.name}{t.trade && <div className="lib-date">needs: {t.trade}</div>}</td>
                   <td className="lib-date">{everyText(t)}</td>
                   <td className="lib-date">
                     <button type="button" className="crumb-link" title="When was it last done?"
@@ -167,11 +170,13 @@ export default function MaintenancePosition() {
           <p className="lib-date">None yet.</p>
         ) : (
           <table className="lib-table">
-            <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
+            <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Trade</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
             <tbody>
               {p.work_orders.map((w) => (
                 <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
-                  <td>{w.number}</td><td>{w.title}</td><td>{w.type}</td><td>{w.status}</td>
+                  <td>{w.number}</td>
+                  <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
+                  <td>{w.type}</td><td className="lib-date">{w.trade || "—"}</td><td>{w.status}</td>
                   <td className="lib-date">{fmtDate(w.opened)}</td><td className="lib-date">{fmtDate(w.closed)}</td>
                 </tr>
               ))}
@@ -257,33 +262,38 @@ function FitModal({ positionId, onClose, onDone }) {
   const [serial, setSerial] = useState("");
   const [partNumber, setPartNumber] = useState("");
   const [manufacturer, setManufacturer] = useState("");
-  const [on, setOn] = useState(today());
+  const [on, setOn] = useState(roughDate(today()));
+  const onText = roughDateValue(on.text, on.precision);
   return (
-    <FormModal title="Fit an item" submitLabel="Fit" canSubmit={!!name.trim()} onClose={onClose}
+    <FormModal title="Fit an item" submitLabel="Fit" canSubmit={!!name.trim() && !!onText} onClose={onClose}
                onSubmit={async () => onDone(await fitMaintenanceItem(positionId, {
-                 new_item: { name, serial, part_number: partNumber, manufacturer }, on,
+                 new_item: { name, serial, part_number: partNumber, manufacturer }, on: onText,
+                 from_precision: on.precision,
                }))}>
       <Field label="Item"><input autoFocus value={name} placeholder="e.g. Rheem 315 L electric" onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Serial (optional)"><input value={serial} onChange={(e) => setSerial(e.target.value)} /></Field>
       <Field label="Part or model number (optional)"><input value={partNumber} onChange={(e) => setPartNumber(e.target.value)} /></Field>
       <Field label="Manufacturer (optional)"><input value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} /></Field>
-      <Field label="Fitted on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
-      <p className="lib-date">A new item counts as a renewal: this position's tasks count from the day it went in.</p>
+      <RoughDateField label="Fitted on" value={on} onChange={setOn} />
+      <p className="lib-date">A new item counts as a renewal: this position's tasks count from the day it went in.
+        Known only to the year or month? Say so: its life data becomes a range rather than a guessed day.</p>
     </FormModal>
   );
 }
 
 function RemoveModal({ position, onClose, onDone }) {
-  const [on, setOn] = useState(today());
+  const [on, setOn] = useState(roughDate(today()));
   const [reason, setReason] = useState("planned");
   const [mode, setMode] = useState("");
+  const onText = roughDateValue(on.text, on.precision);
   return (
-    <FormModal title={`Remove ${position.fitted.item?.name || "the item"}`} submitLabel="Remove" onClose={onClose}
+    <FormModal title={`Remove ${position.fitted.item?.name || "the item"}`} submitLabel="Remove" canSubmit={!!onText}
+               onClose={onClose}
                onSubmit={async () => onDone(await removeMaintenanceItem(position.id, {
-                 on, reason, failure_mode_id: reason === "failure" ? mode || null : null,
+                 on: onText, to_precision: on.precision, reason, failure_mode_id: reason === "failure" ? mode || null : null,
                }))}>
       <p className="lib-date">For corrections and moves. Work done on it belongs on a work order.</p>
-      <Field label="Removed on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
+      <RoughDateField label="Removed on" value={on} onChange={setOn} />
       <Field label="Why">
         <select value={reason} onChange={(e) => setReason(e.target.value)}>
           <option value="planned">Planned (still working)</option>
@@ -377,13 +387,14 @@ function TaskModal({ task, onClose, onDone }) {
   const [alsoUnit, setAlsoUnit] = useState(task.also_unit || "months");
   const [instructions, setInstructions] = useState(task.instructions || "");
   const [checklist, setChecklist] = useState((task.checklist || []).join("\n"));
+  const [trade, setTrade] = useState(task.trade || "");
   const [busy, setBusy] = useState(false);
   const UNITS = ["days", "weeks", "months", "years", "hours", "cycles", "km", "starts"];
   return (
     <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && Number(interval) > 0} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenanceTask(task.id, {
                  name, interval: Number(interval), unit, also_interval: also ? Number(also) : 0, also_unit: alsoUnit,
-                 instructions, checklist: checklist.split("\n").map((x) => x.trim()).filter(Boolean),
+                 instructions, checklist: checklist.split("\n").map((x) => x.trim()).filter(Boolean), trade,
                }))}>
       <Field label="Task"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Every">
@@ -402,10 +413,12 @@ function TaskModal({ task, onClose, onDone }) {
           </select>
         </div>
       </Field>
+      <Field label="Who may do it: trade, licence or competency (optional)"><input value={trade}
+             placeholder="e.g. Licensed electrician" onChange={(e) => setTrade(e.target.value)} /></Field>
       <Field label="Instructions (optional)"><textarea rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} /></Field>
       <Field label="Checklist, one step per line (optional)"><textarea rows={4} value={checklist}
              placeholder={"Isolate power\nDrain 10 L\nFit the new anode"} onChange={(e) => setChecklist(e.target.value)} /></Field>
-      <p className="lib-date">Each work order this task raises gets the instructions and the checklist to tick off.</p>
+      <p className="lib-date">Each work order this task raises gets the trade, the instructions and the checklist to tick off.</p>
       <button className="secondary" disabled={busy} onClick={async () => {
         setBusy(true); await retireMaintenanceTask(task.id, ""); onDone();
       }}>Retire this task</button>
@@ -414,14 +427,20 @@ function TaskModal({ task, onClose, onDone }) {
 }
 
 function FixModal({ row, onClose, onDone }) {
-  const [start, setStart] = useState(row.from);
-  const [end, setEnd] = useState(row.to || "");
+  const [start, setStart] = useState(roughDate(row.from, row.from_precision));
+  const [end, setEnd] = useState(roughDate(row.to, row.to_precision));
   const [busy, setBusy] = useState(false);
+  const startText = roughDateValue(start.text, start.precision);
+  const endText = roughDateValue(end.text, end.precision);
   return (
-    <FormModal title={`Fix: ${row.item}`} submitLabel="Save dates" onClose={onClose}
-               onSubmit={async () => onDone(await correctMaintenanceFitment(row.fitment_id, { start, end: row.to ? end : null }))}>
-      <Field label="Went in"><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
-      {row.to && <Field label="Came out"><input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></Field>}
+    <FormModal title={`Fix: ${row.item}`} submitLabel="Save dates" canSubmit={!!startText && (!row.to || !!endText)}
+               onClose={onClose}
+               onSubmit={async () => onDone(await correctMaintenanceFitment(row.fitment_id, {
+                 start: startText, from_precision: start.precision,
+                 ...(row.to ? { end: endText, to_precision: end.precision } : {}),
+               }))}>
+      <RoughDateField label="Went in" value={start} onChange={setStart} />
+      {row.to && <RoughDateField label="Came out" value={end} onChange={setEnd} />}
       <p className="lib-date">Recorded by mistake (wrong item or position)? Strike it out: it leaves the history and the life data.</p>
       <button className="secondary" disabled={busy} onClick={async () => {
         setBusy(true); await voidMaintenanceFitment(row.fitment_id, "recorded by mistake"); onDone();

@@ -44,7 +44,7 @@ export default function MaintenanceWorkOrder() {
           ...(wo.position ? [{ label: wo.position.name, to: `/maintenance/positions/${wo.position.id}` }] : [])]}
         title={`#${wo.number} ${wo.title}`}
         meta={[wo.type, STATUS_LABELS[wo.status] || wo.status, `opened ${fmtDate(wo.opened)}`, wo.due && `due ${fmtDate(wo.due)}`,
-          wo.closed && `closed ${fmtDate(wo.closed)}`].filter(Boolean).join(" · ")}
+          wo.closed && `closed ${fmtDate(wo.closed)}`, wo.trade && `needs: ${wo.trade}`].filter(Boolean).join(" · ")}
         id={wo.id}
         menu={wo.status === "open" ? (
           <>
@@ -63,6 +63,15 @@ export default function MaintenanceWorkOrder() {
         </FormModal>
       )}
       {wo.task && <p className="lib-date">From the task “{wo.task.name}”.</p>}
+      {wo.warranty && (
+        <div className="maint-ask">
+          <p><strong>Under warranty.</strong>{" "}
+            {wo.warranty.item && <Link to={`/maintenance/items/${wo.warranty.item.id}`}>{wo.warranty.item.name}</Link>}
+            {" "}was in warranty when this was raised (until {fmtDate(wo.warranty.ends_on)}). Check the warranty before paying for the work.</p>
+          {wo.warranty.coverage && <p className="lib-date">Covers: {wo.warranty.coverage}</p>}
+          {wo.warranty.terms && <p className="lib-date" style={{ whiteSpace: "pre-wrap" }}>{wo.warranty.terms}</p>}
+        </div>
+      )}
       {!["closed", "cancelled"].includes(wo.status) && (
         <section className="card">
           <div className="maint-row" style={{ marginTop: 0 }}>
@@ -234,10 +243,13 @@ function EditWorkOrder({ wo, onClose, onDone }) {
   const [due, setDue] = useState(wo.due || "");
   const [assignee, setAssignee] = useState(wo.assignee || "");
   const [planned, setPlanned] = useState(wo.planned_for || "");
+  const [trade, setTrade] = useState(wo.trade || "");
   return (
     <FormModal title="Edit work order" submitLabel="Save" canSubmit={!!title.trim()} onClose={onClose}
-               onSubmit={async () => onDone(await updateWorkOrder(wo.id, { title, due, assignee, planned_for: planned }))}>
+               onSubmit={async () => onDone(await updateWorkOrder(wo.id, { title, due, assignee, planned_for: planned, trade }))}>
       <Field label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+      <Field label="Who may do it: trade, licence or competency"><input value={trade} placeholder="e.g. Licensed electrician"
+             onChange={(e) => setTrade(e.target.value)} /></Field>
       <Field label="Assigned to"><input value={assignee} placeholder="a name" onChange={(e) => setAssignee(e.target.value)} /></Field>
       <Field label="Planned for"><input type="date" value={planned} onChange={(e) => setPlanned(e.target.value)} /></Field>
       <Field label="Due"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>

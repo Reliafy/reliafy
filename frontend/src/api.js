@@ -2232,6 +2232,20 @@ export function setMaintenanceSettings(body) {
   return patchJson("/api/maintenance/settings", body);
 }
 
+// Document links (http(s) only) on an item or position (target_id) or a class (position_class).
+export function addMaintenanceDocument(body) {
+  return postJson("/api/maintenance/documents", body);
+}
+export function removeMaintenanceDocument(id) {
+  return request(`/api/maintenance/documents/${id}`, { method: "DELETE" });
+}
+export function setClassReplacementCost(positionClass, replacementCost) {
+  return request("/api/maintenance/classes/replacement-cost", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ position_class: positionClass, replacement_cost: replacementCost }),
+  });
+}
+
 export function getPositionClass(name) {
   return request(`/api/maintenance/classes/one?position_class=${encodeURIComponent(name)}`);
 }
