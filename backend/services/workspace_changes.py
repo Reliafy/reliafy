@@ -210,14 +210,22 @@ def _plural(n: int, one: str, many: str | None = None) -> str:
     return f"{n} {one if n == 1 else (many or one + 's')}"
 
 
-def _day(dt: datetime) -> str:
+def _day_text(dt: datetime) -> str:
     return f"{dt.day} {dt.strftime('%b %Y')}"
 
 
-def resolve_period(db, uid: str, since: str | None = None, days: int | None = None, now=None) -> dict:
+def resolve_period(db, uid: str, since: str | None = None, days: int | None = None, now=None,
+                   tz=None) -> dict:
     """``{"since", "until", "label", "kind"}`` for a request: ``since`` is
-    ``last_visit`` or an ISO date/time; else ``days`` (default 30)."""
+    ``last_visit`` or an ISO date/time; else ``days`` (default 30). ``tz``: the
+    workspace's time zone, which a date (or a time with no offset) is in and the
+    labels' days follow (UTC when None)."""
     now = now or _now()
+    tz = tz or timezone.utc
+
+    def _day(dt: datetime) -> str:
+        return _day_text(dt.astimezone(tz))
+
     if since == "last_visit":
         doc = db.users.find_one({"_id": uid}, {"previous_visit_at": 1}) or {}
         visit = _aware(doc.get("previous_visit_at"))
@@ -229,7 +237,11 @@ def resolve_period(db, uid: str, since: str | None = None, days: int | None = No
                 "label": f"in the last {DEFAULT_DAYS} days",
                 "note": "No earlier visit is recorded yet, so this covers the last 30 days."}
     if since:
-        start = _aware(since.strip())
+        try:
+            start = datetime.fromisoformat(since.strip())
+            start = start if start.tzinfo else start.replace(tzinfo=tz)
+        except ValueError:
+            start = None
         if start is None:
             raise PeriodError("since must be 'last_visit' or a date like 2026-09-01.")
         if start >= now:

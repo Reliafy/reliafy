@@ -122,6 +122,7 @@ from backend.services import rbd_import
 from backend.services import rbd_jobs as rbd_jobs_service
 from backend.services import rbd_runs as rbd_runs_service
 from backend.services import rbd_repeats
+from backend.services import time_zones
 from backend.services.rbd_import import structure as rbd_structure
 from backend.services import rbds as rbds_service
 from backend.services import rcm as rcm_service
@@ -7811,7 +7812,8 @@ def workspace_changes(
     Free, fleet forecasts and alerts are left out (fleets are Pro), and not_compared says so."""
     user, db = _caller(ctx), _db()
     try:
-        period = changes_service.resolve_period(db, user["uid"], since=since, days=days)
+        period = changes_service.resolve_period(db, user["uid"], since=since, days=days,
+                                                tz=time_zones.zone(time_zones.of_owner(db, user["uid"])))
     except changes_service.PeriodError as exc:
         raise ToolError(str(exc)) from exc
     # Fleets are Pro over MCP (_FLEET_TOOLS): a plan without them gets the rest.
