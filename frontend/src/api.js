@@ -2308,3 +2308,10 @@ export function getClassEconomics(positionClass, { interval, unit, horizonYears,
   if (discountRate !== undefined && discountRate !== "") q.set("discount_rate", discountRate);
   return request(`/api/maintenance/classes/economics?${q}`);
 }
+
+export function addMeasurementPoint(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/points`, body);
+}
+export function recordMeasurementReading(pointId, value, on) {
+  return postJson(`/api/maintenance/points/${pointId}/readings`, { value, on });
+}

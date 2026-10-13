@@ -30,16 +30,16 @@ def m():
 def test_a_task_by_use_projects_its_date_from_the_meter(m):
     pos = m.position_from_rcm(_Study())["position"]
     pid, task = pos["id"], pos["tasks"][0]
-    assert task["by_use"] and task["next_due"] is None and "meter" in task["limits"][0]["note"]
-    meter = m.add_meter(pid, "Run hours", "hrs")
-    assert meter["unit"] == "hours"
+    assert task["by_use"] and task["next_due"] is None and "counter" in task["limits"][0]["note"]
+    meter = m.add_point(pid, "Run hours", kind="counter", unit="hrs")
+    assert meter["unit"] == "hours" and meter["kind"] == "counter" and meter["source"] == "manual"
     m.record_reading(meter["id"], 1000, _ago(60))
     m.fit(pid, new_item={"name": "Pump"}, on=_ago(60))  # renewal: last done at 1000 h
     m.record_reading(meter["id"], 1400, _ago(10))
     view = m.position(pid)["tasks"][0]
     assert view["last_done_reading"] == 1000
     lim = view["limits"][0]
-    assert lim["due_at_reading"] == 1500 and lim["meter"]["rate_per_day"] == 8
+    assert lim["due_at_reading"] == 1500 and lim["counter"]["rate_per_day"] == 8
     assert view["next_due"] == (date.today() + timedelta(days=2)).isoformat()  # 100 h at 8 h a day
     with pytest.raises(Invalid):
         m.record_reading(meter["id"], 1300)  # meters only go up
@@ -48,7 +48,7 @@ def test_a_task_by_use_projects_its_date_from_the_meter(m):
 def test_whichever_comes_first_and_the_reading_at_the_work(m):
     pos = m.position_from_rcm(_Study())["position"]
     pid, task = pos["id"], pos["tasks"][0]
-    meter = m.add_meter(pid, "", "hours")
+    meter = m.add_point(pid, "", kind="counter", unit="hours")
     m.record_reading(meter["id"], 0, _ago(200))
     m.record_reading(meter["id"], 100, _ago(100))  # 1 h a day: 500 h is 400 days away
     m.update_task(task["id"], also_interval=3, also_unit="months")
@@ -56,7 +56,7 @@ def test_whichever_comes_first_and_the_reading_at_the_work(m):
     calendar = next(lim for lim in view["limits"] if lim["limit"] == "3 months")
     assert view["next_due"] == calendar["next_due"]  # the calendar limit comes first
     wo = m.open_work_order(pid, "Seal", type="preventive", task_id=task["id"])
-    m.close_work_order(wo["id"], [{"kind": "repair"}], readings=[{"meter_id": meter["id"], "value": 180}])
+    m.close_work_order(wo["id"], [{"kind": "repair"}], readings=[{"point_id": meter["id"], "value": 180}])
     done = m.position(pid)["tasks"][0]
     assert done["last_done"] == date.today().isoformat() and done["last_done_reading"] == 180
     m.update_task(task["id"], also_interval=0)
