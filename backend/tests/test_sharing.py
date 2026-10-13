@@ -115,9 +115,14 @@ def test_share_errors(client):
     client.act_as(B)
     client.act_as(A)
     model = _save_model(client)
-    # Unknown email -> 404 with a clear message.
+    # An address with no account gets the same answer as one with an
+    # account; the share waits for that address and grants nobody access.
     r = _share(client, "models", model["id"], "ghost@nowhere.com")
-    assert r.status_code == 404 and "No Reliafy account" in r.json()["detail"]
+    assert r.status_code == 200 and r.json()["email"] == "ghost@nowhere.com"
+    assert client.db.shares.find_one({"artifact_id": model["id"]})["recipient_uid"] == "pending:ghost@nowhere.com"
+    client.act_as(C)
+    assert client.get(f"/api/models/{model['id']}").status_code == 404
+    client.act_as(A)
     # Self-share -> 400; sample -> 400; unknown collection -> 400.
     assert _share(client, "models", model["id"], "a@x.com").status_code == 400
     sample = client.db.models.find_one({"owner_id": "__samples__"})
@@ -131,7 +136,7 @@ def test_share_errors(client):
     client.act_as(A)
     assert _share(client, "models", model["id"], "b@x.com").status_code == 200
     assert _share(client, "models", model["id"], "b@x.com").status_code == 200
-    assert client.db.shares.count_documents({"artifact_id": model["id"]}) == 1
+    assert client.db.shares.count_documents({"artifact_id": model["id"], "recipient_uid": B}) == 1
 
 
 def test_hide_revoke_and_reshare(client):
@@ -262,7 +267,7 @@ def test_shared_recurrent_model(client, monkeypatch):
     from backend.tests.test_recurrent import _events_csv
 
     sent = []
-    monkeypatch.setattr(email_service, "artifact_shared", lambda *a: sent.append(a))
+    monkeypatch.setattr(email_service, "artifact_shared", lambda *a, **k: sent.append(a))
     client.act_as(B)
     client.act_as(A)
     r = client.post("/api/recurrent/models", data={

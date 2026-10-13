@@ -365,6 +365,20 @@ def test_share_to_an_address_reaches_the_account_made_for_it_later(client):
         USERS.pop("user-new")
 
 
+def test_share_is_made_even_when_the_notification_fails(client, monkeypatch):
+    from backend.services import email as email_service
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("mail down")
+
+    monkeypatch.setattr(email_service, "artifact_shared", broken)
+    mid = _owner_model(client)
+    r = client.post("/api/shares", json={"collection": "models", "artifact_id": mid, "email": "member@x.com"})
+    assert r.status_code == 200
+    client.act_as(MEMBER)
+    assert client.get(f"/api/models/{mid}").status_code == 200
+
+
 def test_share_requests_are_rate_limited(client, monkeypatch):
     from backend.services import shares
 
