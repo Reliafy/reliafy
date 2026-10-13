@@ -2299,3 +2299,12 @@ export function importMaintenanceSheet(file, dryRun) {
   form.append("dry_run", dryRun ? "true" : "false");
   return request("/api/maintenance/import", { method: "POST", body: form });
 }
+
+export function getClassEconomics(positionClass, { interval, unit, horizonYears, discountRate } = {}) {
+  const q = new URLSearchParams({ position_class: positionClass });
+  if (interval) q.set("interval", interval);
+  if (unit) q.set("unit", unit);
+  if (horizonYears) q.set("horizon_years", horizonYears);
+  if (discountRate !== undefined && discountRate !== "") q.set("discount_rate", discountRate);
+  return request(`/api/maintenance/classes/economics?${q}`);
+}

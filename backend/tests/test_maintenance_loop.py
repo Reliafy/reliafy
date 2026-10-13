@@ -88,3 +88,17 @@ def test_refit_stale_runs_only_when_there_are_new_failures(setup):
     m.close_work_order(wo["id"], [{"kind": "replace", "failure_mode_id": full["failure_modes"][0]["id"],
                                    "new_item": {"name": "Pump 3.9"}}])
     assert loop.refit_stale(m, db) == ["Centrifugal pump"]
+
+
+def test_economics_compare_the_plan_best_and_run_to_failure(setup):
+    m, db = setup
+    with pytest.raises(Invalid):
+        loop.economics(m, "Centrifugal pump")  # no model yet
+    m.set_class_costs("Centrifugal pump", planned_cost=400, failure_cost=4000)
+    loop.fit_class_model(m, db, "Centrifugal pump")
+    out = loop.economics(m, "Centrifugal pump", interval=6, unit="months")
+    plans = {o["plan"]: o for o in out["options"]}
+    assert set(plans) == {"current plan", "best interval", "run to failure", "what if"}
+    assert plans["best interval"]["per_year"] <= plans["current plan"]["per_year"] <= plans["run to failure"]["per_year"]
+    assert out["cheapest"] == "best interval"
+    assert plans["current plan"]["net_present_cost"] == pytest.approx(plans["current plan"]["per_year"] * 7.0236, rel=1e-3)

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   createMaintenanceLocation,
   fitClassModel,
+  getClassEconomics,
   getClassLifeData,
   getPositionClass,
   setClassCosts,
@@ -303,10 +304,63 @@ function ClassPanel({ name, onChanged }) {
             <Link to={`/modelling/m/${model.model_id}`}>Open the model</Link>
           </p>
         )}
-        {made !== null && <p className="lib-date">{made ? `${made} change${made === 1 ? "" : "s"} proposed.` : "No changes to propose: the tasks already match."}</p>}
+        {made !== null && <p className="lib-date">{made ? `${made} change${made === 1 ? "" : "s"} proposed.` : "No changes to propose (no scheduled tasks here, or they already match)."}</p>}
       </section>
       <Proposals proposals={c.proposals} onDecided={load} />
+      {model && c.costs?.planned_cost != null && c.costs?.failure_cost != null && <EconomicsCard name={name} />}
     </>
+  );
+}
+
+function EconomicsCard({ name }) {
+  const [data, setData] = useState(null);
+  const [whatIf, setWhatIf] = useState("");
+  const [unit, setUnit] = useState("months");
+  const [years, setYears] = useState(10);
+  const [rate, setRate] = useState(7);
+  const [error, setError] = useState(null);
+  const load = useCallback(() => {
+    getClassEconomics(name, { interval: whatIf || undefined, unit, horizonYears: years, discountRate: Number(rate) / 100 })
+      .then((d) => { setData(d); setError(null); }).catch((e) => setError(e.message));
+  }, [name, whatIf, unit, years, rate]);
+  useEffect(() => { load(); }, [name]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const money = (v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return (
+    <section className="card">
+      <div className="maint-head"><h2>{name}: what the plan costs</h2></div>
+      {error && <div className="card error">{error}</div>}
+      <div className="maint-row" style={{ marginTop: 0 }}>
+        <span className="lib-date">What if every</span>
+        <input type="number" min="0" step="any" value={whatIf} style={{ width: "5rem" }} onChange={(e) => setWhatIf(e.target.value)} />
+        <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+          {["days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}
+        </select>
+        <span className="lib-date">over</span>
+        <input type="number" min="1" max="100" value={years} style={{ width: "4rem" }} onChange={(e) => setYears(e.target.value)} />
+        <span className="lib-date">years at</span>
+        <input type="number" min="0" max="99" step="any" value={rate} style={{ width: "4rem" }} onChange={(e) => setRate(e.target.value)} />
+        <span className="lib-date">%</span>
+        <button className="secondary" onClick={load}>Work it out</button>
+      </div>
+      {data && (
+        <>
+          <table className="lib-table" style={{ marginTop: "0.75rem" }}>
+            <thead><tr><th>Plan</th><th>Interval</th><th>Per year</th><th>Net present cost</th></tr></thead>
+            <tbody>
+              {data.options.map((o) => (
+                <tr key={o.plan}>
+                  <td>{o.plan === data.cheapest ? <strong>{o.plan}</strong> : o.plan}</td>
+                  <td className="lib-date">{o.interval}</td>
+                  <td>{money(o.per_year)}</td>
+                  <td>{money(o.net_present_cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="lib-date">{data.note}</p>
+        </>
+      )}
+    </section>
   );
 }
 

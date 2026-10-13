@@ -538,6 +538,15 @@ def register() -> None:
         except fitting.FitError as err:
             raise ToolError(f"The fit didn't work: {err}") from None
 
+    @tool("plan_economics", _READ, "Cost of a replacement plan")
+    def plan_economics(position_class: str, ctx: Context, interval: float | None = None,
+                       unit: Literal["days", "weeks", "months", "years"] = "months", horizon_years: float = 10,
+                       discount_rate: float = 0.07) -> dict[str, Any]:
+        """What a class's replacement plan costs a year: the current plan, the best interval, running to
+        failure, and (with interval) a what-if; each with its net present cost over the horizon at the
+        discount rate. Needs the class's fitted model and costs."""
+        return run(loop.economics, m_for(ctx), position_class, interval, unit, horizon_years, discount_rate)
+
     @tool("review_updates", _READ, "List proposed changes")
     def review_updates(ctx: Context, status: Literal["pending", "accepted", "rejected", "superseded", "all"] = "pending"
                        ) -> dict[str, Any]:

@@ -250,6 +250,15 @@ def fit_class_model(body: dict = Body(...), session=Depends(get_session),
         return JSONResponse(status_code=422, content={"detail": f"The fit didn't work: {err}"})
 
 
+@router.get("/classes/economics")
+def class_economics(position_class: str, interval: float | None = None, unit: str = "months",
+                    horizon_years: float = 10, discount_rate: float = 0.07,
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    from backend.maintenance import loop
+
+    return _run(loop.economics, m, position_class, interval, unit, horizon_years, discount_rate)
+
+
 @router.get("/proposals")
 def list_proposals(status: str = "pending", m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {"proposals": m.proposals(None if status == "all" else status)})

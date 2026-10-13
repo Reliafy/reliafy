@@ -55,8 +55,9 @@ export function FormModal({ title, submitLabel, onClose, onSubmit, canSubmit = t
       await onSubmit();
     } catch (err) {
       setError(err.message);
-      setBusy(false);
     }
+    // A step that keeps the dialog open (check, then import) needs the button back.
+    setBusy(false);
   };
   return (
     <Modal
