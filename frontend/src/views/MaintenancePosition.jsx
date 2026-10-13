@@ -8,6 +8,13 @@ import {
   listRcmStudies,
   openWorkOrder,
   addMaintenanceMeter,
+  connectPositions,
+  createRedundancyGroup,
+  disconnectPositions,
+  generatePositionRbd,
+  getPositionImpact,
+  retireRedundancyGroup,
+  setGroupDuty,
   correctMaintenanceFitment,
   recordMaintenanceReading,
   removeMaintenanceItem,
@@ -21,7 +28,8 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DueChip, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, everyText, flatten, fmtDate, today,
+  DueChip, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, PositionPicker, everyText, flatten, fmtDate,
+  today,
 } from "../components/MaintenanceParts.jsx";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
@@ -149,6 +157,8 @@ export default function MaintenancePosition() {
         )}
       </section>
 
+      <ConnectionsCard p={p} onChanged={refresh} />
+
       <section className="card">
         <div className="maint-head">
           <h2>Meters</h2>
@@ -226,6 +236,7 @@ export default function MaintenancePosition() {
         )}
       </section>
 
+      {p.children.length > 0 && <RbdCard p={p} onChanged={refresh} />}
       {p.children.length > 0 && (
         <section className="card">
           <div className="maint-head"><h2>Positions inside</h2></div>
@@ -461,5 +472,158 @@ function ReadingModal({ meter, onClose, onDone }) {
              placeholder={meter.reading != null ? `last: ${meter.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
       <Field label="Read on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
     </FormModal>
+  );
+}
+
+// Connections in and out, redundancy groups, and what depends on this position.
+function ConnectionsCard({ p, onChanged }) {
+  const [modal, setModal] = useState(null);
+  const [impact, setImpact] = useState(null);
+  const [positions, setPositions] = useState([]);
+  const [error, setError] = useState(null);
+  const open = (kind) => {
+    getMaintenanceOverview().then((d) => setPositions(flatten(d.tree).filter((x) => x.id !== p.id))).catch(() => {});
+    setModal(kind);
+  };
+  const act = async (fn) => {
+    setError(null);
+    try { await fn(); onChanged(); } catch (e) { setError(e.message); }
+  };
+  const { upstream, downstream } = p.connections;
+  return (
+    <section className="card">
+      <div className="maint-head">
+        <h2>Connections and redundancy</h2>
+        <div className="maint-row" style={{ marginTop: 0 }}>
+          <button className="secondary" onClick={() => getPositionImpact(p.id).then(setImpact).catch((e) => setError(e.message))}>
+            What depends on it?
+          </button>
+          <button className="secondary" onClick={() => open("group")}>Redundancy group</button>
+          <button onClick={() => open("connect")}>Connect</button>
+        </div>
+      </div>
+      {error && <div className="card error">{error}</div>}
+      {upstream.length + downstream.length === 0 ? (
+        <p className="lib-date">Not connected. Say what feeds it and what it feeds (water, power, signals): the generated RBD and the impact use it.</p>
+      ) : (
+        <ul className="maint-list">
+          {upstream.map((c) => (
+            <li key={c.id}>From <Link to={`/maintenance/positions/${c.from.id}`}>{c.from.name}</Link>
+              <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
+              <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
+          ))}
+          {downstream.map((c) => (
+            <li key={c.id}>To <Link to={`/maintenance/positions/${c.to.id}`}>{c.to.name}</Link>
+              <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
+              <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
+          ))}
+        </ul>
+      )}
+      {p.groups.map((g) => (
+        <div key={g.id} className="maint-ask" style={{ marginTop: "0.75rem" }}>
+          <p><strong>{g.name}</strong>: {g.k} of {g.n} needed{g.mode === "standby" ? ` (${g.standby} standby)` : ""}.
+            {" "}Members: {g.members.map((mm) => mm.name).join(", ")}.
+            {g.mode === "standby" && <> On duty: {g.members.find((mm) => mm.id === g.duty)?.name || "not set"}.</>}</p>
+          <div className="maint-row" style={{ marginTop: 0 }}>
+            {g.mode === "standby" && g.duty !== p.id && (
+              <button className="secondary" onClick={() => act(() => setGroupDuty(g.id, p.id))}>Put {p.name} on duty</button>
+            )}
+            <button className="secondary" onClick={() => act(() => retireRedundancyGroup(g.id))}>Remove the group</button>
+          </div>
+        </div>
+      ))}
+      {impact && <p className="lib-date" style={{ marginTop: "0.75rem" }}>{impact.summary}
+        {impact.downstream.length > 0 && <> ({impact.downstream.map((d) => d.name).join(", ")})</>}</p>}
+      {modal === "connect" && <ConnectModal p={p} positions={positions} onClose={() => setModal(null)}
+                                            onDone={() => { setModal(null); onChanged(); }} />}
+      {modal === "group" && <GroupModal p={p} positions={positions} onClose={() => setModal(null)}
+                                        onDone={() => { setModal(null); onChanged(); }} />}
+    </section>
+  );
+}
+
+function ConnectModal({ p, positions, onClose, onDone }) {
+  const [other, setOther] = useState(null);
+  const [direction, setDirection] = useState("out");
+  const [kind, setKind] = useState("flow");
+  const [medium, setMedium] = useState("");
+  return (
+    <FormModal title={`Connect ${p.name}`} submitLabel="Connect" canSubmit={!!other} onClose={onClose}
+               onSubmit={async () => onDone(await connectPositions({
+                 from_id: direction === "out" ? p.id : other, to_id: direction === "out" ? other : p.id, kind, medium,
+               }))}>
+      <Field label="Direction">
+        <select value={direction} onChange={(e) => setDirection(e.target.value)}>
+          <option value="out">{p.name} feeds…</option>
+          <option value="in">{p.name} is fed by…</option>
+        </select>
+      </Field>
+      <Field label="Position"><PositionPicker positions={positions} value={other} onChange={setOther} emptyLabel="Choose…" /></Field>
+      <Field label="What passes">
+        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+          {["flow", "electrical", "mechanical", "signal", "data", "other"].map((k) => <option key={k} value={k}>{k}</option>)}
+        </select>
+      </Field>
+      <Field label="Medium or rating (optional)"><input value={medium} placeholder="e.g. water, 240 V, 4-20 mA" onChange={(e) => setMedium(e.target.value)} /></Field>
+    </FormModal>
+  );
+}
+
+function GroupModal({ p, positions, onClose, onDone }) {
+  const [chosen, setChosen] = useState([]);
+  const [k, setK] = useState(1);
+  const [mode, setMode] = useState("active");
+  const [name, setName] = useState("");
+  const n = chosen.length + 1;
+  return (
+    <FormModal title="Redundancy group" submitLabel="Create" canSubmit={chosen.length >= 1 && k >= 1 && k < n} onClose={onClose}
+               onSubmit={async () => onDone(await createRedundancyGroup({ name, member_ids: [p.id, ...chosen], k, mode }))}>
+      <p className="lib-date">Positions doing the same job as {p.name}, where only some are needed (two pumps, either will do).</p>
+      <div className="login-field">
+        <span>With</span>
+        {positions.map((x) => (
+          <label key={x.id} className="maint-row" style={{ marginTop: 0, gap: "0.4rem" }}>
+            <input type="checkbox" checked={chosen.includes(x.id)}
+                   onChange={(e) => setChosen(e.target.checked ? [...chosen, x.id] : chosen.filter((c) => c !== x.id))} />
+            {"\u00a0\u00a0".repeat(x.depth)}{x.name}
+          </label>
+        ))}
+      </div>
+      <Field label={`How many of the ${n} are needed`}><input type="number" min="1" max={Math.max(1, n - 1)} value={k}
+             onChange={(e) => setK(Number(e.target.value))} /></Field>
+      <Field label="The others">
+        <select value={mode} onChange={(e) => setMode(e.target.value)}>
+          <option value="active">run all the time (active)</option>
+          <option value="standby">wait to take over (standby)</option>
+        </select>
+      </Field>
+      <Field label="Name (optional)"><input value={name} placeholder="e.g. Pool pumps" onChange={(e) => setName(e.target.value)} /></Field>
+    </FormModal>
+  );
+}
+
+function RbdCard({ p, onChanged }) {
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const make = async () => {
+    setBusy(true); setError(null);
+    try { setResult(await generatePositionRbd(p.id)); onChanged(); } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  const rbdId = result?.rbd_id || p.rbd_id;
+  return (
+    <section className="card">
+      <div className="maint-head">
+        <h2>Reliability block diagram</h2>
+        <div className="maint-row" style={{ marginTop: 0 }}>
+          {rbdId && <Link to={`/rbds/b/${rbdId}`}>Open the RBD</Link>}
+          <button onClick={make} disabled={busy}>{busy ? "Generating…" : rbdId ? "Regenerate from the plant" : "Generate from the plant"}</button>
+        </div>
+      </div>
+      {error && <div className="card error">{error}</div>}
+      <p className="lib-date">The positions inside {p.name} become blocks, wired by their connections, with redundancy groups as k of n. Blocks take their class's fitted life model.</p>
+      {result?.notes?.length > 0 && <ul className="maint-list">{result.notes.map((n, i) => <li key={i} className="lib-date">{n}</li>)}</ul>}
+    </section>
   );
 }

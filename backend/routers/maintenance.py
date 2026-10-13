@@ -311,6 +311,51 @@ def set_settings(body: dict = Body(...), session=Depends(get_session), ctx: Acce
     return get_settings(session, ctx, m)
 
 
+@router.post("/interfaces")
+def connect(body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.connect, body.get("from_id"), body.get("to_id"), body.get("kind") or "flow",
+                body.get("medium", ""), body.get("name", ""), body.get("rating", ""), body.get("realised_by"))
+
+
+@router.post("/interfaces/{interface_id}/remove")
+def disconnect(interface_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: (m.disconnect(interface_id), {"removed": interface_id})[1])
+
+
+@router.post("/groups")
+def create_group(body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.create_group, body.get("name", ""), body.get("member_ids") or [], body.get("k", 1),
+                body.get("mode") or "active", body.get("standby") or "cold")
+
+
+@router.patch("/groups/{group_id}")
+def update_group(group_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.update_group, group_id, body.get("name"), body.get("k"), body.get("mode"), body.get("standby"),
+                body.get("add") or [], body.get("remove") or [])
+
+
+@router.post("/groups/{group_id}/duty")
+def set_duty(group_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.set_duty, group_id, body.get("position_id"))
+
+
+@router.post("/groups/{group_id}/retire")
+def retire_group(group_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: (m.retire_group(group_id), {"retired": group_id})[1])
+
+
+@router.get("/positions/{position_id}/impact")
+def impact(position_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.impact, position_id)
+
+
+@router.post("/positions/{position_id}/rbd")
+def generate_rbd(position_id: str, session=Depends(get_session), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    from backend.maintenance import rbd_derive
+
+    return _run(rbd_derive.save, m, session, position_id)
+
+
 # ---- items and locations ---------------------------------------------------------------
 
 @router.get("/items")

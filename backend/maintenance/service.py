@@ -357,6 +357,33 @@ def _proposal_decided(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"status": p["decision"], "decided_on": p["on"], "note": p.get("note", "")})
 
 
+def _interface_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Interface", {k: p.get(k, "") for k in ("name", "kind", "medium", "rating")}
+               | {"created": p["on"]})
+    s.put_edge(org, "FROM", p["id"], p["from_id"])
+    s.put_edge(org, "TO", p["id"], p["to_id"])
+    if p.get("realised_by"):
+        s.put_edge(org, "REALISED_BY", p["id"], p["realised_by"])
+
+
+def _group_created(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "RedundancyGroup", {k: p.get(k) for k in ("name", "k", "mode", "standby")}
+               | {"duty": None, "created": p["on"]})
+
+
+def _group_member(add: bool):
+    def project(s: GraphStore, org: str, p: dict) -> None:
+        if add:
+            s.put_edge(org, "IN_GROUP", p["position_id"], p["group_id"])
+        else:
+            s.delete_edge(org, "IN_GROUP", p["position_id"], p["group_id"])
+    return project
+
+
+def _duty_changed(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["group_id"], {"duty": p["position_id"], "duty_since": p["on"]})
+
+
 PROJECTORS = {
     "position.created": _position_created,
     "position.updated": _position_updated,
@@ -386,6 +413,15 @@ PROJECTORS = {
     "class.model_fitted": _class_model_fitted,
     "proposal.made": _proposal_made,
     "proposal.decided": _proposal_decided,
+    "interface.added": _interface_added,
+    "interface.removed": _flag("retired"),
+    "group.created": _group_created,
+    "group.updated": _patch,
+    "group.member_added": _group_member(True),
+    "group.member_removed": _group_member(False),
+    "group.retired": _flag("retired"),
+    "duty.changed": _duty_changed,
+    "position.rbd_linked": _patch,
     "photo.added": _photo_added,
     "photo.removed": _photo_removed,
     "coordinates.set": _coordinates_set,
@@ -1231,6 +1267,163 @@ class Maintenance:
         return {"position_class": position_class, "rows": sorted(rows, key=lambda r: r["from"]),
                 "failures": sum(1 for r in rows if r["c"] == 0), "suspensions": sum(1 for r in rows if r["c"] == 1)}
 
+    # ---- interfaces and redundancy ----------------------------------------------------
+
+    INTERFACE_KINDS = ("flow", "electrical", "mechanical", "signal", "data", "other")
+
+    def connect(self, from_id: str, to_id: str, kind="flow", medium="", name="", rating="",
+                realised_by=None) -> dict:
+        """A connection from one position to another: what flows or passes from A to B
+        (water, 240 V, a 4-20 mA signal, torque through a coupling)."""
+        a, b = self._get(from_id, "Position"), self._get(to_id, "Position")
+        if from_id == to_id:
+            raise Invalid("A position can't connect to itself.")
+        if kind not in self.INTERFACE_KINDS:
+            raise Invalid(f"The kind is one of {', '.join(self.INTERFACE_KINDS)}.")
+        if realised_by:
+            self._get(realised_by, "Position")
+        for existing in self._interfaces(from_id, "FROM"):
+            if existing["to"]["id"] == to_id and existing["kind"] == kind:
+                raise Invalid(f"{a['name']} already connects to {b['name']} ({kind}).")
+        iid = new_id()
+        self._emit("interface.added", {"id": iid, "from_id": from_id, "to_id": to_id, "kind": kind,
+                                       "medium": _text(medium, "medium"), "name": _text(name, "name"),
+                                       "rating": _text(rating, "rating"), "realised_by": realised_by or None,
+                                       "on": date.today().isoformat()})
+        return self._interface_view(self._get(iid, "Interface"))
+
+    def disconnect(self, interface_id: str) -> None:
+        if self._get(interface_id, "Interface").get("retired"):
+            raise Invalid("That connection was already removed.")
+        self._emit("interface.removed", {"id": interface_id, "on": date.today().isoformat()})
+
+    def _interface_view(self, i: dict) -> dict:
+        src = self.s.out(self.org, i["id"], "FROM")[0]
+        dst = self.s.out(self.org, i["id"], "TO")[0]
+        via = self.s.out(self.org, i["id"], "REALISED_BY")
+        return {"id": i["id"], "kind": i.get("kind"), "medium": i.get("medium", ""), "name": i.get("name", ""),
+                "rating": i.get("rating", ""), "from": {"id": src["id"], "name": src["name"]},
+                "to": {"id": dst["id"], "name": dst["name"]},
+                "realised_by": via and {"id": via[0]["id"], "name": via[0]["name"]}}
+
+    def _interfaces(self, position_id: str, end: str) -> list[dict]:
+        """Live interfaces with ``position_id`` at their FROM end (outgoing) or TO end (incoming)."""
+        return [self._interface_view(i) for i in self.s.inn(self.org, position_id, end)
+                if i["label"] == "Interface" and not i.get("retired")]
+
+    def connections(self, position_id: str) -> dict:
+        self._get(position_id, "Position")
+        return {"downstream": self._interfaces(position_id, "FROM"), "upstream": self._interfaces(position_id, "TO")}
+
+    def create_group(self, name, member_ids, k=1, mode="active", standby="cold") -> dict:
+        """A redundancy group: positions doing the same job where k of them are enough
+        (two pumps, either will do: k = 1). mode 'standby': the others wait to take over
+        (standby cold, warm or hot)."""
+        members = [self._get(pid, "Position") for pid in dict.fromkeys(member_ids or [])]
+        if len(members) < 2:
+            raise Invalid("A redundancy group needs at least two positions.")
+        try:
+            k = int(k)
+        except (TypeError, ValueError):
+            raise Invalid("k (how many are needed) is a whole number.")
+        if not 1 <= k < len(members):
+            raise Invalid(f"k (how many are needed) is 1 to {len(members) - 1} for {len(members)} positions.")
+        if mode not in ("active", "standby") or standby not in ("cold", "warm", "hot"):
+            raise Invalid("mode is active or standby; standby is cold, warm or hot.")
+        gid = new_id()
+        self._emit("group.created", {"id": gid, "name": _text(name, "group's name") or
+                                     " / ".join(m["name"] for m in members), "k": k, "mode": mode,
+                                     "standby": standby, "on": date.today().isoformat()})
+        for m in members:
+            self._emit("group.member_added", {"group_id": gid, "position_id": m["id"]})
+        return self.group(gid)
+
+    def update_group(self, group_id: str, name=None, k=None, mode=None, standby=None, add=(), remove=()) -> dict:
+        g = self._get(group_id, "RedundancyGroup")
+        members = {m["id"] for m in self._members(group_id)}
+        for pid in add or []:
+            self._get(pid, "Position")
+            if pid not in members:
+                self._emit("group.member_added", {"group_id": group_id, "position_id": pid})
+                members.add(pid)
+        for pid in remove or []:
+            if pid in members:
+                self._emit("group.member_removed", {"group_id": group_id, "position_id": pid})
+                members.discard(pid)
+        changes = {}
+        if name is not None:
+            changes["name"] = _text(name, "group's name", required=True)
+        if mode is not None:
+            if mode not in ("active", "standby"):
+                raise Invalid("mode is active or standby.")
+            changes["mode"] = mode
+        if standby is not None:
+            if standby not in ("cold", "warm", "hot"):
+                raise Invalid("standby is cold, warm or hot.")
+            changes["standby"] = standby
+        new_k = int(k) if k is not None else g["k"]
+        if not 1 <= new_k < max(len(members), 2):
+            raise Invalid(f"k (how many are needed) must be 1 to {len(members) - 1}.")
+        if k is not None:
+            changes["k"] = new_k
+        if changes:
+            self._emit("group.updated", {"id": group_id, "changes": changes})
+        return self.group(group_id)
+
+    def set_duty(self, group_id: str, position_id: str) -> dict:
+        """Which member of a standby group is running now (the others wait)."""
+        self._get(group_id, "RedundancyGroup")
+        if position_id not in {m["id"] for m in self._members(group_id)}:
+            raise Invalid("That position isn't in the group.")
+        self._emit("duty.changed", {"group_id": group_id, "position_id": position_id,
+                                    "on": date.today().isoformat()})
+        return self.group(group_id)
+
+    def retire_group(self, group_id: str) -> None:
+        self._get(group_id, "RedundancyGroup")
+        self._emit("group.retired", {"id": group_id, "on": date.today().isoformat()})
+
+    def _members(self, group_id: str) -> list[dict]:
+        return [m for m in self.s.inn(self.org, group_id, "IN_GROUP") if m["label"] == "Position"]
+
+    def group(self, group_id: str) -> dict:
+        g = self._get(group_id, "RedundancyGroup")
+        members = sorted(self._members(group_id), key=lambda m: m["name"].lower())
+        return {"id": group_id, "name": g["name"], "k": g["k"], "n": len(members), "mode": g["mode"],
+                "standby": g["standby"], "duty": g.get("duty"), "retired": bool(g.get("retired")),
+                "members": [{"id": m["id"], "name": m["name"]} for m in members]}
+
+    def groups_of(self, position_id: str) -> list[dict]:
+        return [self.group(g["id"]) for g in self.s.out(self.org, position_id, "IN_GROUP")
+                if g["label"] == "RedundancyGroup" and not g.get("retired")]
+
+    def impact(self, position_id: str) -> dict:
+        """What depends on a position: everything downstream of it through its
+        connections, and whether redundancy covers it (k of n still available)."""
+        start = self._get(position_id, "Position")
+        downstream, queue, seen = [], [position_id], {position_id}
+        while queue:
+            current = queue.pop(0)
+            for i in self._interfaces(current, "FROM"):
+                nxt = i["to"]["id"]
+                if nxt not in seen:
+                    seen.add(nxt)
+                    queue.append(nxt)
+                    downstream.append({"id": nxt, "name": i["to"]["name"], "via": i["kind"],
+                                       "from": i["from"]["name"]})
+        covered = []
+        for g in self.groups_of(position_id):
+            others = [m["name"] for m in g["members"] if m["id"] != position_id]
+            if g["n"] - 1 >= g["k"]:
+                covered.append(f"{g['name']}: {g['k']} of {g['n']} needed, so {', '.join(others)} can carry it")
+        path = self._position_path(position_id)
+        return {"position": {"id": position_id, "name": start["name"]}, "part_of": path,
+                "downstream": downstream, "redundancy": covered,
+                "summary": (f"If {start['name']} fails, " + (
+                    "redundancy covers it: " + "; ".join(covered) if covered else
+                    f"{len(downstream)} position{'s' if len(downstream) != 1 else ''} downstream lose their supply"
+                    if downstream else "nothing downstream is connected to it") + ".")}
+
     # ---- photos and coordinates ------------------------------------------------------
 
     def photo_target(self, node_id: str) -> dict:
@@ -1355,6 +1548,9 @@ class Maintenance:
             "life_data": self.life_data(id),
             "coordinates": p.get("coordinates"),
             "meters": [self.meter(mt["id"]) for mt in self.s.inn(self.org, id, "ON") if mt["label"] == "Meter"],
+            "connections": self.connections(id),
+            "groups": self.groups_of(id),
+            "rbd_id": p.get("rbd_id"),
             "photos": self.photos_of(id),
             "item_photos": self.photos_of(fitted["item"]["id"]) if fitted and fitted["item"] else [],
         }

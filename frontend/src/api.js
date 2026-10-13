@@ -2231,3 +2231,25 @@ export function fitClassModel(positionClass, distribution = "weibull") {
 export function decideProposal(id, accept, note = "") {
   return postJson(`/api/maintenance/proposals/${id}/${accept ? "accept" : "reject"}`, { note });
 }
+
+export function connectPositions(body) {
+  return postJson("/api/maintenance/interfaces", body);
+}
+export function disconnectPositions(id) {
+  return postJson(`/api/maintenance/interfaces/${id}/remove`, {});
+}
+export function createRedundancyGroup(body) {
+  return postJson("/api/maintenance/groups", body);
+}
+export function setGroupDuty(groupId, positionId) {
+  return postJson(`/api/maintenance/groups/${groupId}/duty`, { position_id: positionId });
+}
+export function retireRedundancyGroup(groupId) {
+  return postJson(`/api/maintenance/groups/${groupId}/retire`, {});
+}
+export function getPositionImpact(id) {
+  return request(`/api/maintenance/positions/${id}/impact`);
+}
+export function generatePositionRbd(id) {
+  return postJson(`/api/maintenance/positions/${id}/rbd`, {});
+}

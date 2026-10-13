@@ -344,6 +344,62 @@ def register() -> None:
         or 1 censored (removed on purpose, or still fitted). Ready for fit_distribution."""
         return run(m_for(ctx).class_life_data, position_class)
 
+    # ---- connections, redundancy, the generated RBD -----------------------------------
+
+    from backend.maintenance import rbd_derive
+
+    @tool("connect_positions", _WRITE, "Connect two positions")
+    def connect_positions(from_id: str, to_id: str, ctx: Context,
+                          kind: Literal["flow", "electrical", "mechanical", "signal", "data", "other"] = "flow",
+                          medium: str = "", name: str = "", rating: str = "",
+                          realised_by: str | None = None) -> dict[str, Any]:
+        """Say that something passes from one position to another (water from the tank to the pump,
+        240 V from the switchboard to the motor, a signal from the sensor to the controller).
+        realised_by: a position for the connection itself when it's maintainable (a hose, a cable).
+        Connections wire the RBD generate_rbd makes and drive impact."""
+        return run(m_for(ctx).connect, from_id, to_id, kind, medium, name, rating, realised_by)
+
+    @tool("disconnect_positions", _WRITE, "Remove a connection")
+    def disconnect_positions(interface_id: str, ctx: Context) -> dict[str, Any]:
+        """Remove a connection (its id is in get_position's connections)."""
+        m = m_for(ctx)
+        return run(lambda: (m.disconnect(interface_id), {"removed": interface_id})[1])
+
+    @tool("create_redundancy_group", _WRITE, "Make a redundancy group")
+    def create_redundancy_group(member_ids: list[str], ctx: Context, name: str = "", k: int = 1,
+                                mode: Literal["active", "standby"] = "active",
+                                standby: Literal["cold", "warm", "hot"] = "cold") -> dict[str, Any]:
+        """Positions doing the same job where k of them are enough (two pumps, either will do: k = 1).
+        mode standby: the others wait to take over. The generated RBD draws it as k of n."""
+        return run(m_for(ctx).create_group, name, member_ids, k, mode, standby)
+
+    @tool("update_redundancy_group", _WRITE, "Change a redundancy group")
+    def update_redundancy_group(group_id: str, ctx: Context, name: str | None = None, k: int | None = None,
+                                mode: Literal["active", "standby"] | None = None,
+                                standby: Literal["cold", "warm", "hot"] | None = None,
+                                add: list[str] = [], remove: list[str] = []) -> dict[str, Any]:
+        """Rename a group, change k or its mode, or add / remove member positions."""
+        return run(m_for(ctx).update_group, group_id, name, k, mode, standby, add, remove)
+
+    @tool("set_duty", _WRITE, "Set which unit is on duty")
+    def set_duty(group_id: str, position_id: str, ctx: Context) -> dict[str, Any]:
+        """Record which member of a standby group is running now (a duty/standby swap)."""
+        return run(m_for(ctx).set_duty, group_id, position_id)
+
+    @tool("impact", _READ, "What depends on a position")
+    def impact(position_id: str, ctx: Context) -> dict[str, Any]:
+        """If this position fails, what loses its supply downstream (through connections), and
+        whether redundancy covers it."""
+        return run(m_for(ctx).impact, position_id)
+
+    @tool("generate_rbd", _WRITE, "Make an RBD from the plant")
+    def generate_rbd(position_id: str, ctx: Context) -> dict[str, Any]:
+        """Generate (or regenerate) a reliability block diagram for a system position from the
+        positions inside it: connections wire the blocks, redundancy groups become k-of-n votes, and
+        each block takes its class's fitted life model (placeholders otherwise, listed in notes).
+        It's saved as a normal RBD: analyse it with analyze_rbd."""
+        return run(rbd_derive.save, m_for(ctx), _db(), position_id)
+
     # ---- closing the loop -------------------------------------------------------------
 
     from backend.maintenance import loop
