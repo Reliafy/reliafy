@@ -80,11 +80,12 @@ def register() -> None:
     def maintenance_overview(ctx: Context) -> dict[str, Any]:
         """The maintenance workspace at a glance: counts, the tree of positions (the
         functional hierarchy, each with what's fitted, its task count, next due date
-        and open work orders), tasks due in the next 30 days, and open work orders.
+        and open work orders), tasks due in the next 30 days, open work orders, and
+        critical_spares: critical spares below the minimum their position keeps on hand.
         Start here; use the ids with the other maintenance tools."""
         m = m_for(ctx)
         return run(lambda: {"summary": summary(m), "tree": m.tree(), "due": m.due_tasks(30),
-                            "open_work_orders": m.work_orders("open")})
+                            "open_work_orders": m.work_orders("open"), "critical_spares": m.critical_spares_short()})
 
     @tool("get_position", _READ, "Read a maintenance position")
     def get_position(position_id: str, ctx: Context) -> dict[str, Any]:
@@ -93,8 +94,11 @@ def register() -> None:
         its failure modes (from RCM, added by hand, or ad hoc: typed in at a failure),
         class_failure_modes (modes seen at other positions of its class, to offer when it
         fails), its tasks with last-done and next-due dates and the trade each needs, its work
-        orders, its document links, and its life data (one row per item fitted: days in
-        service, c = 0 failed or 1 censored, 2 failed within xl..xr days)."""
+        orders, its document links, its parts_list (catalogue parts it uses: the replacement
+        part first, with stock on hand, what to use instead if superseded, interchangeable
+        alternatives, critical-spare minimums and compatibility notes) and its life data (one
+        row per item fitted: days in service, c = 0 failed or 1 censored, 2 failed within
+        xl..xr days)."""
         return run(m_for(ctx).position, position_id)
 
     @tool("list_work_orders", _READ, "List work orders")
@@ -109,7 +113,9 @@ def register() -> None:
         """A work order: its position, task, status and dates, the trade it needs, its notes (with
         note_history: every earlier version), the actions and close_notes recorded when it
         closed, the cancel_reason if cancelled, and (for an open one) the item fitted now and the
-        position's failure modes, which close_work_order's actions can name. warranty is set when
+        position's failure modes, which close_work_order's actions can name. suggested_parts is the
+        position's parts list (replacement part first, with stock by location): pick from it for a
+        replacement or a part used rather than searching the catalogue. warranty is set when
         the item fitted when it was raised was under warranty then: check the coverage before
         paying for the work."""
         return run(m_for(ctx).work_order, work_order_id)
@@ -154,8 +160,8 @@ def register() -> None:
 
     @tool("copy_position", _WRITE, "Copy a position")
     def copy_position(position_id: str, name: str, ctx: Context, parent_id: str | None = None) -> dict[str, Any]:
-        """Copy a position and everything inside it (the positions, their failure modes
-        and tasks; not items or work orders) under a new name, optionally inside another
+        """Copy a position and everything inside it (the positions, their failure modes,
+        tasks and parts lists; not items, stock or work orders) under a new name, optionally inside another
         position. Call it repeatedly to build many like structures."""
         return run(m_for(ctx).copy_position, position_id, name, parent_id)
 
@@ -296,7 +302,10 @@ def register() -> None:
                              "naming one means it failed that way; none means a planned replacement), "
                              "finding?: 'ok'|'degraded'|'found_failed' (inspect only), "
                              "new_item?: {name, serial?, part_number?, manufacturer?} or item_id? "
-                             "(replace: what went in), notes?}"))] = [],
+                             "(replace: what went in), part_id?: a catalogue part used doing it (from "
+                             "get_work_order's suggested_parts; for a replace with no new_item / item_id, the new "
+                             "item is made from it), quantity? (default: the parts list's quantity per job, "
+                             "else 1), from_location_id? (issue it from stock there), notes?}"))] = [],
                          on: DateText = None, notes: str = "",
                          readings: Annotated[list[dict], Field(description=(
                              "Manual readings taken during the work: [{point_id, value}]."))] = []) -> dict[str, Any]:
@@ -413,7 +422,9 @@ def register() -> None:
                       unit_cost: float | None = None, part_number: str = "", note: str = "",
                       part_id: str | None = None, from_location_id: str | None = None) -> dict[str, Any]:
         """A part or consumable used on a work order (bearings, a seal kit, oil): free text (part), or a
-        catalogue part (part_id; its cost fills in), taken out of stock at from_location_id if given."""
+        catalogue part (part_id; its cost fills in), taken out of stock at from_location_id if given.
+        Pick part_id from get_work_order's suggested_parts (the position's parts list) first; its stock
+        shows where there are some to take."""
         return run(m_for(ctx).add_part_used, work_order_id, part, quantity, unit_cost, part_number, note,
                    part_id, from_location_id)
 
@@ -436,8 +447,56 @@ def register() -> None:
     @tool("list_parts", _READ, "List parts and stock")
     def list_parts(ctx: Context) -> dict[str, Any]:
         """The parts catalogue: each part's stock by location, reorder points (low = at or below),
-        use over the last year and months of cover."""
+        use over the last year and months of cover, the positions that use it (used_at) and
+        critical_short when it's a critical spare kept below a position's minimum."""
         return {"parts": run(m_for(ctx).parts)}
+
+    @tool("get_part", _READ, "Read a part")
+    def get_part(part_id: str, ctx: Context) -> dict[str, Any]:
+        """One catalogue part: stock by location, what supersedes it and what it's interchangeable
+        with, and where it's used (used_at: each position whose parts list names it, with the role,
+        quantity per job and any critical-spare minimum)."""
+        return run(m_for(ctx).part, part_id)
+
+    PartRole = Literal["replacement", "component", "consumable"]
+
+    @tool("add_position_part", _WRITE, "Put a part on a position's parts list")
+    def add_position_part(position_id: str, part_id: str, ctx: Context, role: PartRole = "component",
+                          quantity: float = 1, critical: bool = False, min_on_hand: float | None = None,
+                          notes: str = "") -> dict[str, Any]:
+        """Link a catalogue part (create_part first if it isn't there) to a position: its bill of
+        materials. role: replacement (the part that replaces what's fitted, one per position),
+        component (used in its maintenance: a seal kit, bearings) or consumable (a filter, oil).
+        quantity: how many one job takes. critical: a critical spare, with min_on_hand the least to
+        keep in stock (default one job's worth); falling below it shows on the overview. notes:
+        compatibility ('needs the matching button kit', 'fits from serial 4000 on'). Supersession
+        and interchangeable parts come from the catalogue (link_parts), not here. Returns the
+        position's parts list."""
+        return run(m_for(ctx).add_position_part, position_id, part_id, role, quantity, critical, min_on_hand, notes)
+
+    @tool("update_position_part", _WRITE, "Change a parts-list entry")
+    def update_position_part(listing_id: str, ctx: Context, role: PartRole | None = None,
+                             quantity: float | None = None, critical: bool | None = None,
+                             min_on_hand: float | None = None, notes: str | None = None) -> dict[str, Any]:
+        """Change an entry on a position's parts list (its id is in get_position's parts_list): role,
+        quantity per job, the critical flag (false drops the minimum), min_on_hand, or the
+        compatibility notes. For a different part, remove the entry and add the other."""
+        return run(m_for(ctx).update_position_part, listing_id, role, quantity, critical,
+                   ... if min_on_hand is None else min_on_hand, notes)
+
+    @tool("remove_position_part", _WRITE, "Take a part off a position's parts list")
+    def remove_position_part(listing_id: str, ctx: Context) -> dict[str, Any]:
+        """Take an entry off a position's parts list (the part stays in the catalogue). Returns the
+        position's parts list."""
+        return run(m_for(ctx).remove_position_part, listing_id)
+
+    @tool("spares_cover", _READ, "Where the spares fall short")
+    def spares_cover(ctx: Context, include_unlisted: bool = False) -> dict[str, Any]:
+        """Where the spares don't cover the plant. short: critical spares with fewer usable in stock
+        (the part, what supersedes it and its interchangeable alternatives, in every store) than
+        their position's minimum. no_spare: positions whose critical replacement part has none
+        usable at all. include_unlisted adds without_parts_list: positions with no parts list yet."""
+        return run(m_for(ctx).spares_cover, include_unlisted)
 
     @tool("create_part", _WRITE, "Add a part to the catalogue")
     def create_part(part_number: str, name: str, ctx: Context, manufacturer: str = "", unit: str = "each",

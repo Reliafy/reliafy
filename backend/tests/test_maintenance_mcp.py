@@ -336,3 +336,40 @@ def test_structured_fields_through_mcp(env):
     wo, item = _session(env["token"], flow)
     assert wo["trade"] == "Pool tech"
     assert item["documents"] == []
+
+
+def test_a_parts_list_through_mcp(env):
+    """A position's parts list: added, read back on the position, the part and the
+    work order, flagged when a critical spare runs short, and drawn on at closing."""
+
+    async def flow(client):
+        pid = _ok(await client.call_tool("create_position", {"name": "Pump A"}))["id"]
+        store = _ok(await client.call_tool("create_location", {"name": "Store"}))["id"]
+        part = _ok(await client.call_tool("create_part", {"part_number": "B1", "name": "Pump v2"}))["id"]
+        listed = _ok(await client.call_tool("add_position_part", {
+            "position_id": pid, "part_id": part, "role": "replacement", "critical": True, "min_on_hand": 1,
+            "notes": "needs matching button kit"}))
+        lid = listed["parts_list"][0]["id"]
+        overview = _ok(await client.call_tool("maintenance_overview", {}))
+        cover = _ok(await client.call_tool("spares_cover", {"include_unlisted": True}))
+        _ok(await client.call_tool("adjust_stock", {"part_id": part, "location_id": store, "quantity": 2}))
+        changed = _ok(await client.call_tool("update_position_part", {"listing_id": lid, "quantity": 1,
+                                                                      "notes": "fits from serial 4000"}))
+        got = _ok(await client.call_tool("get_part", {"part_id": part}))
+        position = _ok(await client.call_tool("get_position", {"position_id": pid}))
+        wo = _ok(await client.call_tool("open_work_order", {"position_id": pid, "title": "Seized"}))
+        detail = _ok(await client.call_tool("get_work_order", {"work_order_id": wo["id"]}))
+        closed = _ok(await client.call_tool("close_work_order", {
+            "work_order_id": wo["id"], "actions": [{"kind": "replace", "part_id": part, "from_location_id": store}]}))
+        removed = _ok(await client.call_tool("remove_position_part", {"listing_id": lid}))
+        return overview, cover, changed, got, position, detail, closed, removed
+
+    overview, cover, changed, got, position, detail, closed, removed = _session(env["token"], flow)
+    assert overview["summary"]["critical_short"] == 1 and overview["critical_spares"][0]["notes"].startswith("needs")
+    assert cover["no_spare"][0]["position"]["name"] == "Pump A" and cover["without_parts_list"] == []
+    assert changed["parts_list"][0]["notes"] == "fits from serial 4000"
+    assert got["used_at"][0]["position"]["name"] == "Pump A" and not got["critical_short"]
+    assert position["parts_list"][0]["usable_on_hand"] == 2
+    assert detail["suggested_parts"][0]["part"]["part_number"] == "B1"
+    assert closed["actions"][0]["fitted"]["part_number"] == "B1" and closed["parts"][0]["quantity"] == 1
+    assert removed["parts_list"] == []

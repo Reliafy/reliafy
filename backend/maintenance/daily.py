@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 HORIZON_DAYS = 14
 
 
-def _digest(work_orders: list[dict], overdue: list[dict], proposals=()) -> tuple[str, str]:
+def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_spares=()) -> tuple[str, str]:
     n = len(work_orders)
     parts = [f"{n} new work order{'s' if n != 1 else ''}"] if n else []
     if proposals:
@@ -42,6 +42,11 @@ def _digest(work_orders: list[dict], overdue: list[dict], proposals=()) -> tuple
             change = f"every {to['interval']:g} {to['unit']}" if to else "run to failure"
             lines.append(f"  {(pr.get('task') or {}).get('name', '')} ({(pr.get('position') or {}).get('name', '')}): {change}")
         lines.append("  Accept or reject them on the Maintenance page.")
+    if short_spares:
+        lines += ["", "Critical spares below the minimum kept on hand:"]
+        for v in short_spares[:10]:
+            lines.append(f"  {v['part']['part_number']} {v['part']['name']} for {v['position']['name']}: "
+                         f"{v['usable_on_hand']:g} usable, keep {v['min_on_hand'] or 0:g}")
     base = (config.PUBLIC_BASE_URL or "https://reliafy.com").rstrip("/")
     lines += ["", f"Open them: {base}/maintenance", "",
               "Turn these emails off on the Maintenance page.", "", "— Reliafy"]
@@ -73,7 +78,9 @@ def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) ->
     if not allowed({**user, "uid": org}) or user.get("maintenance_digest_off") or not user.get("email"):
         return
     overdue = [t for t in m.due_tasks(0) if t["overdue"]]
-    subject, body = _digest(made, overdue, new_proposals)
+    # Spares short ride along with an email that's going anyway; on their own they'd
+    # repeat every day until restocked.
+    subject, body = _digest(made, overdue, new_proposals, m.critical_spares_short())
     email_service.send(user["email"], subject, body)
     result["emails"] += 1
 

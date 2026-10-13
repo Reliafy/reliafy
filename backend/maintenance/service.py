@@ -82,6 +82,8 @@ MAX_POSITIONS = 20_000
 MAX_ITEMS = 50_000
 MAX_TASKS = 100_000
 MAX_PHOTOS = 5_000
+MAX_PART_LISTINGS = 100_000  # entries on positions' parts lists
+MAX_PARTS_EACH = 200  # on one position's parts list
 MAX_EVENTS = 1_000_000
 MAX_READINGS_PER_DAY = 500_000  # automated readings stored, per organisation per day (UTC)
 WRITES_PER_MINUTE = 600  # changes started, per organisation per minute
@@ -997,6 +999,16 @@ def _stock_reorder_set(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, sid, {"reorder_point": p["reorder_point"]})
 
 
+def _position_part_listed(s: GraphStore, org: str, p: dict) -> None:
+    """A catalogue part on a position's parts list: the part that replaces what's
+    fitted, or a component or consumable its maintenance uses."""
+    s.put_node(org, p["id"], "PartListing", {
+        "role": p["role"], "quantity": p["quantity"], "critical": p.get("critical", False),
+        "min_on_hand": p.get("min_on_hand"), "notes": p.get("notes", ""), "listed": p["on"], "removed": False})
+    s.put_edge(org, "LISTED_AT", p["id"], p["position_id"])
+    s.put_edge(org, "LISTS", p["id"], p["part_id"])
+
+
 PROJECTORS = {
     "position.created": _position_created,
     "position.updated": _position_updated,
@@ -1055,6 +1067,9 @@ PROJECTORS = {
     "parts.interchangeable": _parts_interchangeable,
     "stock.adjusted": _stock_adjusted,
     "stock.reorder_set": _stock_reorder_set,
+    "position_part.listed": _position_part_listed,
+    "position_part.updated": _patch,
+    "position_part.removed": _flag("removed"),
     "work_order.status": _work_order_status,
     "work_order.labour": _work_order_entry("Labour"),
     "work_order.part_used": _work_order_entry("PartUse"),
@@ -1170,8 +1185,8 @@ class Maintenance:
 
     def copy_position(self, position_id: str, name, parent_id=None) -> dict:
         """Copy a position and everything inside it: the positions, their
-        failure modes and their tasks (not items or work orders). For a
-        second pump station like the first, or a template."""
+        failure modes, their tasks and their parts lists (not items, stock or work
+        orders). For a second pump station like the first, or a template."""
         source = self._get(position_id, "Position")
         new_name = _text(name, "copy's name", required=True)
         if parent_id:
@@ -1191,11 +1206,12 @@ class Maintenance:
             seen.add(src["id"])
             modes = self._modes_on(src["id"])
             tasks = [t for t in self.s.inn(self.org, src["id"], "ON") if t["label"] == "Task"]
-            size += 1 + len(modes) + len(tasks)
+            listings = self._listings_at(src["id"])
+            size += 1 + len(modes) + len(tasks) + len(listings)
             if size > MAX_COPY_NODES:
-                raise Invalid(f"That's more than {MAX_COPY_NODES} positions, failure modes and tasks to copy "
-                              "at once. Copy a smaller part of it.")
-            plan.append((src, new_pid, label, parent, modes, tasks))
+                raise Invalid(f"That's more than {MAX_COPY_NODES} positions, failure modes, tasks and parts-list "
+                              "entries to copy at once. Copy a smaller part of it.")
+            plan.append((src, new_pid, label, parent, modes, tasks, listings))
             for child in sorted(self.s.inn(self.org, src["id"], "PART_OF"), key=lambda c: c["name"].lower()):
                 if child["label"] == "Position":
                     read(child, new_id(), child["name"], new_pid)
@@ -1203,7 +1219,8 @@ class Maintenance:
         new = new_id()
         read(source, new, new_name, parent_id or None)
         self._quota("Position", MAX_POSITIONS, adding=len(plan))
-        for src, pid, label, parent, modes, tasks in plan:
+        self._quota("PartListing", MAX_PART_LISTINGS, adding=sum(len(x[-1]) for x in plan), what="parts-list entries")
+        for src, pid, label, parent, modes, tasks, listings in plan:
             self._emit("position.created", {
                 "id": pid, "name": label, "tag": "", "parent_id": parent,
                 "position_class": src.get("position_class", ""), "description": src.get("description", ""),
@@ -1228,6 +1245,11 @@ class Maintenance:
                     # Not point_id: the copy has no measurement points yet.
                     **{k: task[k] for k in _TASK_EXTRAS if k in task and k != "point_id"},
                 })
+            for listing in listings:
+                self._emit("position_part.listed", {
+                    "id": new_id(), "position_id": pid, "part_id": self.s.out(self.org, listing["id"], "LISTS")[0]["id"],
+                    **{k: listing.get(k) for k in ("role", "quantity", "critical", "min_on_hand", "notes")},
+                    "on": today})
         return self.position(new)
 
     def create_location(self, name, parent_id=None, description="") -> dict:
@@ -1656,9 +1678,26 @@ class Maintenance:
                                          "on": date.today().isoformat()})
         return self.part(part_id)
 
+    def _stocks(self, part_id: str) -> list[dict]:
+        return [st for st in self.s.inn(self.org, part_id, "OF") if st["label"] == "Stock"]
+
+    def _stock_rows(self, stocks: list[dict]) -> list[dict]:
+        """A part's stock by location, by location name."""
+        locs = []
+        for st in stocks:
+            loc = self.s.out(self.org, st["id"], "AT")[0]
+            locs.append({"location": {"id": loc["id"], "name": loc["name"]}, "quantity": st["quantity"],
+                         "reorder_point": st.get("reorder_point"),
+                         "low": st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]})
+        return sorted(locs, key=lambda x: x["location"]["name"].lower())
+
     def part(self, part_id: str) -> dict:
+        """A catalogue part: its stock by location, use over the last year, what
+        supersedes it and what it's interchangeable with, and the positions whose
+        parts lists name it (used_at), with critical_short when it's a critical
+        spare at one of them and fewer are usable than that position keeps."""
         pt = self._get(part_id, "Part")
-        stocks = [st for st in self.s.inn(self.org, part_id, "OF") if st["label"] == "Stock"]
+        stocks = self._stocks(part_id)
         today = date.fromisoformat(date.today().isoformat())
         year_ago = (today - timedelta(days=365)).isoformat()
         used = sum(-mv["delta"] for st in stocks for mv in st.get("moves") or []
@@ -1667,24 +1706,245 @@ class Maintenance:
         monthly = used / 12 if used else 0
         by = pt.get("superseded_by") and self.s.node(self.org, pt["superseded_by"])
         alike = self.s.out(self.org, part_id, "INTERCHANGEABLE")
-        locs = []
-        for st in stocks:
-            loc = self.s.out(self.org, st["id"], "AT")[0]
-            locs.append({"location": {"id": loc["id"], "name": loc["name"]}, "quantity": st["quantity"],
-                         "reorder_point": st.get("reorder_point"),
-                         "low": st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]})
+        locs = self._stock_rows(stocks)
+        used_at, critical_min, critical_short = [], None, False
+        for listing in self._listings_of(part_id):
+            position = self.s.out(self.org, listing["id"], "LISTED_AT")[0]
+            used_at.append({"listing_id": listing["id"], "position": {"id": position["id"], "name": position["name"]},
+                            **{k: listing.get(k) for k in ("role", "quantity", "critical", "min_on_hand")}})
+            if listing.get("critical"):
+                critical_min = max(critical_min or 0, listing.get("min_on_hand") or 0)
+                critical_short = critical_short or self._listing_view(listing)["short"]
         return {
             "id": part_id, **{k: pt.get(k) for k in ("part_number", "name", "manufacturer", "unit", "unit_cost", "notes")},
             "superseded_by": by and {"id": by["id"], "part_number": by["part_number"], "name": by["name"]},
             "interchangeable": [{"id": a["id"], "part_number": a["part_number"], "name": a["name"]} for a in alike],
-            "stock": sorted(locs, key=lambda x: x["location"]["name"].lower()), "on_hand": on_hand,
+            "stock": locs, "on_hand": on_hand,
             "used_last_year": used, "months_of_cover": round(on_hand / monthly, 1) if monthly else None,
             "low": any(x["low"] for x in locs),
+            "used_at": sorted(used_at, key=lambda u: u["position"]["name"].lower()),
+            "critical_min": critical_min, "critical_short": critical_short,
         }
 
     def parts(self) -> list[dict]:
         return [self.part(pt["id"]) for pt in sorted(self.s.nodes(self.org, "Part"),
                                                      key=lambda pt: pt["part_number"].lower())]
+
+    # ---- a position's parts list ------------------------------------------------------
+    # Catalogue parts linked to a position (a PartListing: LISTED_AT the position,
+    # LISTS the part): the part that replaces what's fitted (role "replacement"),
+    # or a component or consumable its maintenance uses (a seal kit, a filter);
+    # how many a job takes; whether it's a critical spare, with the least to keep on
+    # hand; and compatibility notes. Stock stays the catalogue's. Per position only.
+
+    PART_ROLES = ("replacement", "component", "consumable")
+
+    def _listings_at(self, position_id: str) -> list[dict]:
+        return [x for x in self.s.inn(self.org, position_id, "LISTED_AT")
+                if x["label"] == "PartListing" and not x.get("removed")]
+
+    def _listings_of(self, part_id: str) -> list[dict]:
+        """The live parts-list entries naming a part, at positions still in the plant."""
+        out = []
+        for x in self.s.inn(self.org, part_id, "LISTS"):
+            if x["label"] != "PartListing" or x.get("removed"):
+                continue
+            position = self.s.out(self.org, x["id"], "LISTED_AT")
+            if position and not position[0].get("retired"):
+                out.append(x)
+        return out
+
+    def _listing(self, listing_id: str) -> dict:
+        node = self._get(listing_id, "PartListing")
+        if node.get("removed"):
+            raise Invalid("That entry was already taken off the parts list.")
+        return node
+
+    def _part_role(self, role) -> str:
+        role = role or "component"
+        if role not in self.PART_ROLES:
+            raise Invalid(f"A part's role is one of {', '.join(self.PART_ROLES)}.")
+        return role
+
+    @staticmethod
+    def _per_job(quantity) -> float:
+        qty = _number(1 if quantity in (None, "") else quantity, "quantity per job", 0, MAX_AMOUNT)
+        if qty <= 0:
+            raise Invalid("The quantity per job must be more than 0.")
+        return qty
+
+    def _keep_on_hand(self, critical: bool, min_on_hand, quantity: float):
+        """The least to keep on hand: only for a critical spare, enough for one job
+        unless said otherwise."""
+        if not critical:
+            return None
+        if min_on_hand in (None, ""):
+            return quantity
+        return _number(min_on_hand, "minimum on hand", 0, MAX_AMOUNT)
+
+    def _part_brief(self, pt: dict) -> dict:
+        rows = self._stock_rows(self._stocks(pt["id"]))
+        return {**{k: pt.get(k) for k in ("id", "part_number", "name", "manufacturer", "unit", "unit_cost")},
+                "on_hand": sum(r["quantity"] for r in rows),
+                "stock": [{"location": r["location"], "quantity": r["quantity"]} for r in rows]}
+
+    def _successors(self, pt: dict) -> list[dict]:
+        """What supersedes a part, in order (B supersedes A, then C supersedes B)."""
+        out, seen, nxt = [], {pt["id"]}, pt.get("superseded_by")
+        while nxt and nxt not in seen:
+            node = self.s.node(self.org, nxt, "Part")
+            if node is None:
+                break
+            seen.add(nxt)
+            out.append(node)
+            nxt = node.get("superseded_by")
+        return out
+
+    def _listing_view(self, listing: dict) -> dict:
+        """A parts-list entry with its part's stock, what to use instead if the part
+        has been superseded, and its interchangeable alternatives. usable_on_hand
+        counts the part, its successors and its alternatives in every store; a
+        critical spare is short when that's below its minimum."""
+        pt = self.s.out(self.org, listing["id"], "LISTS")[0]
+        position = self.s.out(self.org, listing["id"], "LISTED_AT")[0]
+        chain = self._successors(pt)
+        skip = {pt["id"]} | {c["id"] for c in chain}
+        alts = {}
+        for src in [pt] + chain:
+            for a in self.s.out(self.org, src["id"], "INTERCHANGEABLE"):
+                if a["id"] not in skip:
+                    alts[a["id"]] = a
+        brief = self._part_brief(pt)
+        successors = [self._part_brief(c) for c in chain]
+        alternatives = [self._part_brief(a) for a in sorted(alts.values(), key=lambda a: a["part_number"].lower())]
+        usable = brief["on_hand"] + sum(x["on_hand"] for x in successors + alternatives)
+        critical = bool(listing.get("critical"))
+        minimum = listing.get("min_on_hand") if critical else None
+        short = critical and usable < (minimum or 0)
+        words = []
+        if successors:
+            words.append(f"{pt['part_number']} is superseded: use {successors[-1]['part_number']} instead.")
+        if critical:
+            words.append(f"Critical spare: keep {minimum or 0:g} on hand; {usable:g} usable in stock"
+                         + (f", short by {(minimum or 0) - usable:g}." if short else "."))
+        return {
+            "id": listing["id"], "role": listing["role"], "quantity": listing["quantity"], "critical": critical,
+            "min_on_hand": minimum, "notes": listing.get("notes", ""),
+            "position": {"id": position["id"], "name": position["name"]},
+            "part": brief,
+            "superseded_by": successors and {k: successors[0][k] for k in ("id", "part_number", "name")} or None,
+            "use_instead": successors[-1] if successors else None, "alternatives": alternatives,
+            "usable_on_hand": usable, "short": short, "summary": " ".join(words),
+        }
+
+    def _parts_list(self, position_id: str) -> list[dict]:
+        """A position's parts list: the replacement first, then components and
+        consumables, each by part number."""
+        views = [self._listing_view(x) for x in self._listings_at(position_id)]
+        return sorted(views, key=lambda v: (self.PART_ROLES.index(v["role"]), v["part"]["part_number"].lower()))
+
+    def position_parts(self, position_id: str) -> dict:
+        p = self._get(position_id, "Position")
+        return {"position": {"id": p["id"], "name": p["name"]}, "parts_list": self._parts_list(position_id)}
+
+    def add_position_part(self, position_id: str, part_id: str, role="component", quantity=1, critical=False,
+                          min_on_hand=None, notes="") -> dict:
+        """Put a catalogue part on a position's parts list. role: replacement (the
+        part that replaces what's fitted: one per position), component or
+        consumable (used in its maintenance)."""
+        position = self._get(position_id, "Position")
+        if position.get("retired"):
+            raise Invalid("That position has been retired.")
+        pt = self._get(part_id, "Part")
+        role = self._part_role(role)
+        listings = self._listings_at(position_id)
+        if any(self.s.out(self.org, x["id"], "LISTS")[0]["id"] == part_id for x in listings):
+            raise Invalid(f"{pt['part_number']} is already on this position's parts list: change that entry instead.")
+        if role == "replacement":
+            self._one_replacement(listings)
+        if len(listings) >= MAX_PARTS_EACH:
+            raise LimitReached(f"A position's parts list holds at most {MAX_PARTS_EACH} parts.")
+        self._quota("PartListing", MAX_PART_LISTINGS, what="parts-list entries")
+        qty = self._per_job(quantity)
+        critical = _flag_value(critical, "critical")
+        self._emit("position_part.listed", {
+            "id": new_id(), "position_id": position_id, "part_id": part_id, "role": role, "quantity": qty,
+            "critical": critical, "min_on_hand": self._keep_on_hand(critical, min_on_hand, qty),
+            "notes": _text(notes, "notes"), "on": date.today().isoformat()})
+        return self.position_parts(position_id)
+
+    def _one_replacement(self, listings: list[dict], but: str | None = None) -> None:
+        for x in listings:
+            if x["role"] == "replacement" and x["id"] != but:
+                pt = self.s.out(self.org, x["id"], "LISTS")[0]
+                raise Invalid(f"{pt['part_number']} is already this position's replacement part. Make it a "
+                              "component, or take it off the list, first.")
+
+    def update_position_part(self, listing_id: str, role=None, quantity=None, critical=None, min_on_hand=...,
+                             notes=None) -> dict:
+        """Change a parts-list entry. min_on_hand: ... leaves it; None goes back to
+        one job's worth. Taking the critical flag off drops the minimum."""
+        listing = self._listing(listing_id)
+        position_id = self.s.out(self.org, listing_id, "LISTED_AT")[0]["id"]
+        changes = {}
+        if role is not None:
+            changes["role"] = self._part_role(role)
+            if changes["role"] == "replacement":
+                self._one_replacement(self._listings_at(position_id), but=listing_id)
+        if quantity is not None:
+            changes["quantity"] = self._per_job(quantity)
+        if critical is not None:
+            changes["critical"] = _flag_value(critical, "critical")
+        if notes is not None:
+            changes["notes"] = _text(notes, "notes")
+        is_critical = changes.get("critical", listing.get("critical", False))
+        if not is_critical:
+            if listing.get("min_on_hand") is not None:
+                changes["min_on_hand"] = None
+        elif min_on_hand is not ... or not listing.get("critical"):
+            given = None if min_on_hand is ... else min_on_hand
+            changes["min_on_hand"] = self._keep_on_hand(True, given, changes.get("quantity", listing["quantity"]))
+        changes = {k: v for k, v in changes.items() if v != listing.get(k)}
+        if changes:
+            self._emit("position_part.updated", {"id": listing_id, "changes": changes})
+        return self.position_parts(position_id)
+
+    def remove_position_part(self, listing_id: str) -> dict:
+        """Take a part off a position's parts list (the catalogue keeps it)."""
+        self._listing(listing_id)
+        position_id = self.s.out(self.org, listing_id, "LISTED_AT")[0]["id"]
+        self._emit("position_part.removed", {"id": listing_id, "on": date.today().isoformat()})
+        return self.position_parts(position_id)
+
+    def _critical_views(self) -> list[dict]:
+        """Every critical spare on a parts list at a position still in the plant."""
+        out = []
+        for listing in self.s.nodes(self.org, "PartListing"):
+            if listing.get("removed") or not listing.get("critical"):
+                continue
+            if self.s.out(self.org, listing["id"], "LISTED_AT")[0].get("retired"):
+                continue
+            out.append(self._listing_view(listing))
+        return sorted(out, key=lambda v: (v["position"]["name"].lower(), v["part"]["part_number"].lower()))
+
+    def critical_spares_short(self) -> list[dict]:
+        """Critical spares with fewer usable in stock than their position keeps."""
+        return [v for v in self._critical_views() if v["short"]]
+
+    def spares_cover(self, include_unlisted: bool = False) -> dict:
+        """Where the spares don't cover the plant: critical spares below their
+        minimum (short), positions whose critical replacement part has none usable
+        in stock at all (no_spare), and with include_unlisted, positions with no
+        parts list (without_parts_list)."""
+        views = self._critical_views()
+        out = {"short": [v for v in views if v["short"]],
+               "no_spare": [v for v in views if v["role"] == "replacement" and v["usable_on_hand"] <= 0]}
+        if include_unlisted:
+            out["without_parts_list"] = [
+                {"id": p["id"], "name": p["name"], "path": [a["name"] for a in self._position_path(p["id"])]}
+                for p in sorted(self.s.nodes(self.org, "Position"), key=lambda p: p["name"].lower())
+                if not p.get("retired") and not self._listings_at(p["id"])]
+        return out
 
     # ---- measurement points ---------------------------------------------------------
 
@@ -2040,7 +2300,10 @@ class Maintenance:
 
     def close_work_order(self, work_order_id: str, actions=(), on=None, notes="", readings=()) -> dict:
         """Close a work order with what was done. Replacements end the fitted
-        item's fitment and start the new one's."""
+        item's fitment and start the new one's. An action may name a catalogue
+        part used doing it (part_id, quantity, from_location_id: issued from stock
+        there): for a replacement with no other item given, the new item is made
+        from the part."""
         wo = self._get(work_order_id, "WorkOrder")
         if wo["status"] not in OPEN_STATUSES:
             raise Invalid("This work order is already closed.")
@@ -2048,7 +2311,8 @@ class Maintenance:
         position_id = self.s.out(self.org, work_order_id, "ON")[0]["id"]
         actions, readings = _dicts(actions, "actions"), _dicts(readings, "readings")
         # Check everything before writing anything.
-        plans = []
+        plans, issues = [], {}
+        per_job = {self.s.out(self.org, x["id"], "LISTS")[0]["id"]: x["quantity"] for x in self._listings_at(position_id)}
         for a in actions:
             kind = a.get("kind")
             if kind not in ACTION_KINDS:
@@ -2057,10 +2321,31 @@ class Maintenance:
             finding = a.get("finding") or None
             if kind == "inspect" and finding not in FINDINGS:
                 raise Invalid("An inspection's finding is ok, degraded or found_failed.")
+            used = None
+            if a.get("part_id"):
+                pt = self._get(a["part_id"], "Part")
+                qty = self._amount(a.get("quantity") or per_job.get(pt["id"], 1), "quantity", allow_none=False)
+                if qty <= 0:
+                    raise Invalid("The quantity must be more than 0.")
+                if a.get("from_location_id"):
+                    self._get(a["from_location_id"], "Location")
+                    key = (pt["id"], a["from_location_id"])
+                    issues[key] = issues.get(key, 0) + qty
+                    held = (self.s.node(self.org, stock_id(*key)) or {}).get("quantity", 0)
+                    if issues[key] > held:
+                        raise Invalid(f"There are only {held:g} of {pt['part_number']} in stock there.")
+                used = (pt, qty, a.get("from_location_id") or None)
+                if kind == "replace" and not a.get("item_id"):
+                    new_item = a.get("new_item") or {}
+                    a = {**a, "new_item": {**new_item, "name": new_item.get("name") or pt["name"],
+                                           "part_number": new_item.get("part_number") or pt["part_number"],
+                                           "manufacturer": new_item.get("manufacturer") or pt.get("manufacturer", "")}}
+            elif a.get("from_location_id"):
+                raise Invalid("Stock is issued from the catalogue: give the part_id.")
             if kind == "replace" and not (a.get("item_id") or (a.get("new_item") or {}).get("name")) \
                     and not self.current_fitment(position_id):
                 raise Invalid("A replacement needs the item that went in.")
-            plans.append((kind, fm, finding, a))
+            plans.append((kind, fm, finding, a, used))
         current = self.current_fitment(position_id)
         if current and day < current["from"]:
             raise Invalid("The work can't be done before the fitted item went in.")
@@ -2069,7 +2354,7 @@ class Maintenance:
         for r in readings or []:
             self.record_reading(r.get("point_id") or r.get("meter_id"), r.get("value"), day, "read at the work order")
 
-        for kind, ref, finding, a in plans:
+        for kind, ref, finding, a, used in plans:
             # A mode named in words is found, or added, as the action is recorded.
             fm = self._mode_id(position_id, ref)
             ends = starts = on_fitment = None
@@ -2094,6 +2379,10 @@ class Maintenance:
                 "failure_mode_id": fm, "notes": _text(a.get("notes"), "notes"), "on": day,
                 "ends": ends, "starts": starts, "on_fitment": on_fitment,
             })
+            if used:
+                pt, qty, from_location_id = used
+                self.add_part_used(work_order_id, part_id=pt["id"], quantity=qty, from_location_id=from_location_id,
+                                   note="fitted as the replacement" if kind == "replace" else "")
         self._emit("work_order.closed", {"id": work_order_id, "on": day, "notes": _text(notes, "notes"),
                                          "task_readings": self._renewal_readings(position_id, day)})
         return self.work_order(work_order_id)
@@ -3179,6 +3468,7 @@ class Maintenance:
             "rbd_id": p.get("rbd_id"),
             "photos": self.photos_of(id),
             "documents": self.documents_of(id),
+            "parts_list": self._parts_list(id),
             "item_photos": self.photos_of(fitted["item"]["id"]) if fitted and fitted["item"] else [],
         }
 
@@ -3263,6 +3553,9 @@ class Maintenance:
             "status_history": w.get("status_history") or [],
             # The item fitted when it was raised, if under warranty then: a claim may cover it.
             "warranty": self._warranty_for(position_id, w["opened"]),
+            # The position's parts list, replacement first: what a replacement or a part used
+            # is picked from.
+            "suggested_parts": position["parts_list"],
             **self._wo_costs(id),
         }
 
@@ -3338,6 +3631,7 @@ def summary(m: Maintenance) -> dict:
         "open_work_orders": sum(1 for w in m.s.nodes(m.org, "WorkOrder") if w["status"] in OPEN_STATUSES),
         "low_stock": sum(1 for st in m.s.nodes(m.org, "Stock")
                          if st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]),
+        "critical_short": len(m.critical_spares_short()),
         "tasks": len(m.s.nodes(m.org, "Task")),
     }
 
