@@ -279,11 +279,11 @@ function ClassPanel({ name, onChanged }) {
         <div className="maint-head"><h2>{name}: life model and costs</h2></div>
         {error && <div className="card error">{error}</div>}
         <div className="rcm-form">
-          <Field label="A planned replacement costs"><input type="number" min="0" step="any" value={costs.planned_cost}
+          <Field label="A planned replacement costs"><input type="number" inputMode="decimal" min="0" step="any" value={costs.planned_cost}
                  onChange={(e) => setCosts({ ...costs, planned_cost: e.target.value })} /></Field>
-          <Field label="A failure costs (repair, downtime, damage)"><input type="number" min="0" step="any" value={costs.failure_cost}
+          <Field label="A failure costs (repair, downtime, damage)"><input type="number" inputMode="decimal" min="0" step="any" value={costs.failure_cost}
                  onChange={(e) => setCosts({ ...costs, failure_cost: e.target.value })} /></Field>
-          <Field label="Hidden functions must be available (e.g. 0.99)"><input type="number" min="0" max="1" step="any"
+          <Field label="Hidden functions must be available (e.g. 0.99)"><input type="number" inputMode="decimal" min="0" max="1" step="any"
                  value={costs.availability_target} onChange={(e) => setCosts({ ...costs, availability_target: e.target.value })} /></Field>
         </div>
         <div className="maint-row">
@@ -331,14 +331,14 @@ function EconomicsCard({ name }) {
       {error && <div className="card error">{error}</div>}
       <div className="maint-row" style={{ marginTop: 0 }}>
         <span className="lib-date">What if every</span>
-        <input type="number" min="0" step="any" value={whatIf} style={{ width: "5rem" }} onChange={(e) => setWhatIf(e.target.value)} />
+        <input type="number" inputMode="decimal" min="0" step="any" value={whatIf} style={{ width: "5rem" }} onChange={(e) => setWhatIf(e.target.value)} />
         <select value={unit} onChange={(e) => setUnit(e.target.value)}>
           {["days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}
         </select>
         <span className="lib-date">over</span>
-        <input type="number" min="1" max="100" value={years} style={{ width: "4rem" }} onChange={(e) => setYears(e.target.value)} />
+        <input type="number" inputMode="numeric" min="1" max="100" value={years} style={{ width: "4rem" }} onChange={(e) => setYears(e.target.value)} />
         <span className="lib-date">years at</span>
-        <input type="number" min="0" max="99" step="any" value={rate} style={{ width: "4rem" }} onChange={(e) => setRate(e.target.value)} />
+        <input type="number" inputMode="decimal" min="0" max="99" step="any" value={rate} style={{ width: "4rem" }} onChange={(e) => setRate(e.target.value)} />
         <span className="lib-date">%</span>
         <button className="secondary" onClick={load}>Work it out</button>
       </div>
@@ -422,7 +422,7 @@ function NewPartModal({ onClose, onDone }) {
       <Field label="Part number"><input autoFocus value={f.part_number} onChange={set("part_number")} /></Field>
       <Field label="Name"><input value={f.name} placeholder="e.g. Magnesium anode" onChange={set("name")} /></Field>
       <Field label="Manufacturer (optional)"><input value={f.manufacturer} onChange={set("manufacturer")} /></Field>
-      <Field label="Cost each (optional)"><input type="number" min="0" step="any" value={f.unit_cost} onChange={set("unit_cost")} /></Field>
+      <Field label="Cost each (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={f.unit_cost} onChange={set("unit_cost")} /></Field>
     </FormModal>
   );
 }
@@ -446,7 +446,7 @@ function StockModal({ part, locations, onClose, onDone }) {
         </select>
       </Field>
       <Field label="Received (+) or issued (−)"><input type="number" step="any" value={qty} placeholder="e.g. 3 or -1" onChange={(e) => setQty(e.target.value)} /></Field>
-      <Field label="Reorder at (optional)"><input type="number" min="0" step="any" value={reorder} onChange={(e) => setReorder(e.target.value)} /></Field>
+      <Field label="Reorder at (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={reorder} onChange={(e) => setReorder(e.target.value)} /></Field>
     </FormModal>
   );
 }
