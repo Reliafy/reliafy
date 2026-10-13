@@ -282,6 +282,47 @@ class Maintenance:
             parent = self._parent(parent["id"])
         return out
 
+    def copy_position(self, position_id: str, name, parent_id=None) -> dict:
+        """Copy a position and everything inside it: the positions, their
+        failure modes and their tasks (not items or work orders). For a
+        second pump station like the first, or a template."""
+        source = self._get(position_id, "Position")
+        if parent_id:
+            self._get(parent_id, "Position")
+        today = date.today().isoformat()
+
+        def copy(src: dict, new_name: str, parent: str | None) -> str:
+            pid = new_id()
+            self._emit("position.created", {
+                "id": pid, "name": new_name, "tag": "", "parent_id": parent,
+                "position_class": src.get("position_class", ""), "description": src.get("description", ""),
+                "on": today,
+            })
+            mode_ids = {}
+            for fm in self.s.out(self.org, src["id"], "CAN_FAIL_AS"):
+                mode_ids[fm["id"]] = new_id()
+                self._emit("failure_mode.added", {
+                    "id": mode_ids[fm["id"]], "position_id": pid,
+                    **{k: fm.get(k) for k in ("text", "function", "failure", "consequence", "outcome",
+                                              "rcm_mode_id", "study_id")},
+                })
+            for task in self.s.inn(self.org, src["id"], "ON"):
+                if task["label"] != "Task":
+                    continue
+                mitigates = self.s.out(self.org, task["id"], "MITIGATES")
+                self._emit("task.added", {
+                    "id": new_id(), "position_id": pid,
+                    "failure_mode_id": mitigates and mode_ids.get(mitigates[0]["id"]),
+                    "start": today,
+                    **{k: task.get(k) for k in ("name", "outcome", "interval", "unit", "rcm_mode_id", "study_id")},
+                })
+            for child in sorted(self.s.inn(self.org, src["id"], "PART_OF"), key=lambda c: c["name"].lower()):
+                copy(child, child["name"], pid)
+            return pid
+
+        new = copy(source, _text(name, "copy's name", required=True), parent_id or None)
+        return self.position(new)
+
     def create_location(self, name, parent_id=None, description="") -> dict:
         name = _text(name, "location's name", required=True)
         if parent_id:

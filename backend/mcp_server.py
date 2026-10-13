@@ -7426,3 +7426,10 @@ def _authenticate_request(authorization: str | None) -> tuple[int, dict | None, 
 
 
 mcp_http_app = McpHttpApp(mcp)
+
+# Reliafy Maintenance's tools, only where it's switched on (local for now), so
+# production's tool list is unchanged.
+if config.MAINTENANCE_ENABLED:
+    from backend.maintenance import mcp_tools as _maintenance_tools
+
+    _maintenance_tools.register()
