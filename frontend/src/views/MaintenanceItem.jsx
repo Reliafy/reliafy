@@ -12,10 +12,11 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import {
-  DocumentsCard, Field, FormModal, MaintenanceTabs, NotesCard, PositionPicker, RoughDateField, flatten, fmtDate,
+  DocumentsCard, Field, FormModal, LocationPicker, MaintenanceTabs, NotesCard, PositionPicker, RoughDateField, flatten, fmtDate,
   fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue, roughDateValue } from "../maintenanceFields.js";
+import { itemWhere } from "../maintenanceLocations.js";
 import "./Maintenance.css";
 
 const ITEM_DATES = [
@@ -42,6 +43,7 @@ export default function MaintenanceItem() {
   if (!item) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const plate = Object.entries(item.nameplate || {});
+  const where = itemWhere(item, fmtDate);
   return (
     <div className="app">
       <PageHeader
@@ -51,7 +53,8 @@ export default function MaintenanceItem() {
         id={item.id}
         actions={
           <>
-            <button className="secondary" onClick={() => setModal("place")}>Place at a location</button>
+            {/* A fitted item is where its position is: only an item that isn't fitted is placed. */}
+            {!item.fitted_to && <button className="secondary" onClick={() => setModal("place")}>Place at a location</button>}
             <button className="secondary" onClick={() => setModal("move")}>Move to a position</button>
             <button className="secondary" onClick={() => setModal("more")}>Dates, cost and warranty</button>
           </>
@@ -67,7 +70,10 @@ export default function MaintenanceItem() {
           <dt>Fitted to</dt>
           <dd>{item.fitted_to ? <Link to={`/maintenance/positions/${item.fitted_to.id}`}>{item.fitted_to.name}</Link> : "Not fitted"}</dd>
           <dt>Location</dt>
-          <dd>{item.location ? <Link to={`/maintenance/locations/${item.location.id}`}>{item.location.name}</Link> : "—"}</dd>
+          <dd>
+            {where.locationId ? <Link to={`/maintenance/locations/${where.locationId}`}>{where.label}</Link> : where.label || "—"}
+            {where.note && <span className="lib-date"> · {where.note}</span>}
+          </dd>
           {item.part_number && <><dt>Part number</dt><dd>{item.part_number}</dd></>}
           {ITEM_DATES.filter((d) => item[d.key]).map((d) => (
             <Fragment key={d.key}>
@@ -294,11 +300,10 @@ function PlaceModal({ item, onClose, onDone }) {
   return (
     <FormModal title={`Where is ${item.name}?`} submitLabel="Save" canSubmit={!!to} onClose={onClose}
                onSubmit={async () => onDone(await placeMaintenanceItem(item.id, to))}>
+      <p className="lib-date">For an item that isn't fitted: a spare in a store, or one away for repair.</p>
       <Field label="Location">
-        <select value={to} onChange={(e) => setTo(e.target.value)}>
-          <option value="">{locations === null ? "Loading…" : locations.length ? "Choose…" : "No locations yet: add one under Locations"}</option>
-          {(locations || []).map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
-        </select>
+        <LocationPicker locations={locations} value={to} onChange={(v) => setTo(v || "")}
+                        emptyLabel={locations?.length === 0 ? "No locations yet: add one under Locations" : "Choose…"} />
       </Field>
     </FormModal>
   );

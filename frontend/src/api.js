@@ -2057,6 +2057,16 @@ export function getMaintenanceOverview() {
   return request("/api/maintenance/overview");
 }
 
+// Work orders, newest first: status "open" for every one not yet done; locationId for
+// those on positions at that location or a location inside it.
+export function listMaintenanceWorkOrders({ status, locationId } = {}) {
+  const q = new URLSearchParams();
+  if (status) q.set("status", status);
+  if (locationId) q.set("location_id", locationId);
+  const qs = q.toString();
+  return request(`/api/maintenance/work-orders${qs ? `?${qs}` : ""}`);
+}
+
 export function createMaintenancePosition(body) {
   return postJson("/api/maintenance/positions", body);
 }

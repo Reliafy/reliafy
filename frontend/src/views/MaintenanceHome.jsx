@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   createMaintenancePosition,
   generateWorkOrders,
   getMaintenanceOverview,
   getMaintenanceSettings,
   importMaintenanceSheet,
+  listMaintenanceLocations,
+  listMaintenanceWorkOrders,
   setMaintenanceSettings,
   listRcmStudies,
   maintenanceFromRcm,
@@ -13,7 +15,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DueChip, Field, FormModal, MaintenanceTabs, PositionPicker, Proposals, flatten, fmtDate,
+  DueChip, Field, FormModal, LocationPicker, MaintenanceTabs, PositionPicker, Proposals, flatten, fmtDate,
 } from "../components/MaintenanceParts.jsx";
 import "./Maintenance.css";
 
@@ -27,10 +29,25 @@ export default function MaintenanceHome() {
   const [generating, setGenerating] = useState(false);
 
   const [digest, setDigest] = useState(null);
+  // Open work orders by area: ?location=<id> (that location and those inside it).
+  const [params, setParams] = useSearchParams();
+  const locationId = params.get("location") || "";
+  const [locations, setLocations] = useState(null);
+  const [inArea, setInArea] = useState(null);
   const refresh = useCallback(() => {
     getMaintenanceOverview().then(setData).catch((e) => setError(e.message));
   }, []);
   useEffect(() => refresh(), [refresh]);
+  useEffect(() => {
+    listMaintenanceLocations().then((d) => setLocations(d.locations || [])).catch(() => setLocations([]));
+  }, []);
+  useEffect(() => {
+    setInArea(null);
+    if (!locationId) return;
+    listMaintenanceWorkOrders({ status: "open", locationId })
+      .then((d) => setInArea(d.work_orders)).catch((e) => setError(e.message));
+  }, [locationId, data]);
+  const openWork = locationId ? inArea : data?.open_work_orders;
   useEffect(() => {
     getMaintenanceSettings().then((s) => setDigest(s.digest)).catch(() => {});
   }, []);
@@ -112,25 +129,37 @@ export default function MaintenanceHome() {
           </section>
 
           <section className="card">
-            <div className="maint-head"><h2>Open work orders</h2></div>
-            {data.open_work_orders.length === 0 ? (
-              <p className="lib-date">None open.</p>
+            <div className="maint-head" style={{ flexWrap: "wrap" }}>
+              <h2>Open work orders</h2>
+              {locations?.length > 0 && (
+                <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.5rem" }}>
+                  In
+                  <LocationPicker locations={locations} value={locationId} emptyLabel="Every location"
+                                  onChange={(v) => setParams(v ? { location: v } : {}, { replace: true })} />
+                </label>
+              )}
+            </div>
+            {openWork == null ? (
+              <p className="lib-date">Loading…</p>
+            ) : openWork.length === 0 ? (
+              <p className="lib-date">{locationId ? "None open there." : "None open."}</p>
             ) : (
-              <table className="lib-table">
-                <thead><tr><th>#</th><th>Title</th><th>Position</th><th>Type</th><th>Trade</th><th>Due</th></tr></thead>
+              <div className="maint-scroll"><table className="lib-table">
+                <thead><tr><th>#</th><th>Title</th><th>Position</th><th>Location</th><th>Type</th><th>Trade</th><th>Due</th></tr></thead>
                 <tbody>
-                  {data.open_work_orders.map((w) => (
+                  {openWork.map((w) => (
                     <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
                       <td>{w.number}</td>
                       <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                       <td>{w.position?.name}</td>
+                      <td className="lib-date">{w.location?.name || "—"}</td>
                       <td>{w.type}</td>
                       <td className="lib-date">{w.trade || "—"}</td>
                       <td className="lib-date">{fmtDate(w.due)}</td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </section>
 

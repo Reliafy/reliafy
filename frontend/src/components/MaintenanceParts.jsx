@@ -4,6 +4,7 @@ import { addMaintenanceDocument, decideProposal, removeMaintenanceDocument } fro
 import {
   DOCUMENT_KINDS, PRECISIONS, datedText, daysText, roughDateInput, roughDateValue, safeHref,
 } from "../maintenanceFields.js";
+import { locationOptions } from "../maintenanceLocations.js";
 import Modal from "./Modal.jsx";
 
 // Shared pieces for the Reliafy Maintenance pages.
@@ -147,6 +148,16 @@ export function PositionPicker({ positions, value, onChange, emptyLabel = "None 
       {positions.map((p) => (
         <option key={p.id} value={p.id}>{"  ".repeat(p.depth)}{p.name}</option>
       ))}
+    </select>
+  );
+}
+
+// A location, by its full path (Site › Area X › Substation 2).
+export function LocationPicker({ locations, value, onChange, emptyLabel = "Choose…" }) {
+  return (
+    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
+      <option value="">{locations === null ? "Loading…" : emptyLabel}</option>
+      {locationOptions(locations).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
     </select>
   );
 }

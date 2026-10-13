@@ -11,6 +11,7 @@ import {
   updateFailureMode,
   getMaintenanceOverview,
   getMaintenancePosition,
+  listMaintenanceLocations,
   listRcmStudies,
   openWorkOrder,
   addMeasurementPoint,
@@ -36,7 +37,8 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, DueChip, FailureModePicker, Field, FormModal, LifeTable, MaintenanceTabs, OUTCOME_LABELS, PositionPicker,
+  DocumentsCard, DueChip, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, MaintenanceTabs, OUTCOME_LABELS,
+  PositionPicker,
   RoughDateField, TASK_SOURCES, everyText, flatten, fmtDate, fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
@@ -123,6 +125,31 @@ export default function MaintenancePosition() {
           </p>
         ) : (
           <p className="lib-date">Nothing fitted. Fit the item doing this job, with the date it went in.</p>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="maint-head">
+          <h2>Location</h2>
+          <button className="secondary" onClick={() => setModal("location")}>
+            {p.location && !p.location.inherited ? "Change" : "Set location"}
+          </button>
+        </div>
+        {p.location ? (
+          <p>
+            <Link to={`/maintenance/locations/${p.location.id}`}>{p.location.display}</Link>
+            {p.location.inherited && p.location.inherited_from && (
+              <span className="lib-date">
+                {" · "}{p.location.inherited_from.kind === "Item" ? "from " : "inherited from "}
+                <Link to={`/maintenance/${p.location.inherited_from.kind === "Item" ? "items" : "positions"}/${p.location.inherited_from.id}`}>
+                  {p.location.inherited_from.name}</Link>
+                {p.location.inherited_from.kind === "Item" ? ", the item it's inside" : ""}
+              </span>
+            )}
+          </p>
+        ) : (
+          <p className="lib-date">Not set. Say where this position physically is: the positions inside it, and whatever is
+            fitted, are there too unless they say otherwise.</p>
         )}
       </section>
 
@@ -253,6 +280,7 @@ export default function MaintenancePosition() {
         </section>
       )}
 
+      {modal === "location" && <LocationModal p={p} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "edit" && <EditPositionModal p={p} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "retire" && (
         <FormModal title={`Retire ${p.name}`} submitLabel="Retire" onClose={() => setModal(null)}
@@ -544,6 +572,31 @@ function LastDoneModal({ task, onClose, onDone }) {
                onSubmit={async () => onDone(await setTaskLastDone(task.id, on))}>
       <p className="lib-date">When this was last done, so the next due date counts from then.</p>
       <Field label="Last done on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
+    </FormModal>
+  );
+}
+
+// Where a position physically is: set here, or (not set) the same as the position above it.
+function LocationModal({ p, onClose, onDone }) {
+  const [locations, setLocations] = useState(null);
+  const own = p.location && !p.location.inherited ? p.location.id : "";
+  const [to, setTo] = useState(own);
+  useEffect(() => {
+    listMaintenanceLocations().then((d) => setLocations(d.locations || [])).catch(() => setLocations([]));
+  }, []);
+  const above = p.path.length > 0;
+  return (
+    <FormModal title={`Where is ${p.name}?`} submitLabel="Save" canSubmit={to !== own} onClose={onClose}
+               onSubmit={async () => { await updateMaintenancePosition(p.id, { location_id: to || null }); onDone(); }}>
+      <p className="lib-date">
+        The physical place: a site, area, room or substation. Positions inside it, and the items fitted, are there too
+        unless they say otherwise.
+      </p>
+      <Field label="Location">
+        <LocationPicker locations={locations} value={to} onChange={(v) => setTo(v || "")}
+                        emptyLabel={above ? "Not set here (where the position above it is)" : "Not set"} />
+      </Field>
+      {locations?.length === 0 && <p className="lib-date">No locations yet: add them under Locations.</p>}
     </FormModal>
   );
 }
