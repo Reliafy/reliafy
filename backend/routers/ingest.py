@@ -193,6 +193,32 @@ async def ingest_measurements(
     return await _handle(request, user, op)
 
 
+@router.post("/ingest/maintenance/readings")
+async def ingest_maintenance_readings(
+    request: Request,
+    session=Depends(get_session),
+    user: dict = Depends(ingest_scope),
+) -> JSONResponse:
+    """Automated readings for Reliafy Maintenance's measurement points: rows of
+    {tag, value, time?} (JSON, or CSV with those columns). Each goes to the point
+    fed under that tag; a condition reading past an alarm limit opens an inspection."""
+    from backend.maintenance.access import allowed
+    from backend.maintenance.service import Invalid, Maintenance
+    from backend.routers.maintenance import get_store
+
+    if not allowed(user):
+        raise HTTPException(status_code=404, detail="Not found.")
+
+    def op(content_type, body):
+        rows = ingest_service.rows_from_request(content_type, body, ("readings", "rows"))
+        try:
+            return Maintenance(get_store(), user["uid"], user["uid"]).ingest(rows)
+        except Invalid as err:
+            raise HTTPException(status_code=422, detail=str(err)) from None
+
+    return await _handle(request, user, op)
+
+
 @router.post("/import/models")
 async def import_model(
     request: Request,

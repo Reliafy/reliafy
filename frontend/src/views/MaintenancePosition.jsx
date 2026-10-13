@@ -7,9 +7,8 @@ import {
   getMaintenancePosition,
   listRcmStudies,
   openWorkOrder,
-  addConditionPoint,
-  addMaintenanceMeter,
-  recordCondition,
+  addMeasurementPoint,
+  recordMeasurementReading,
   connectPositions,
   createRedundancyGroup,
   disconnectPositions,
@@ -18,7 +17,6 @@ import {
   retireRedundancyGroup,
   setGroupDuty,
   correctMaintenanceFitment,
-  recordMaintenanceReading,
   removeMaintenanceItem,
   retireMaintenancePosition,
   retireMaintenanceTask,
@@ -159,34 +157,9 @@ export default function MaintenancePosition() {
         )}
       </section>
 
-      <ConditionCard p={p} onChanged={refresh} />
+      <MeasurementsCard p={p} onChanged={refresh} />
 
       <ConnectionsCard p={p} onChanged={refresh} />
-
-      <section className="card">
-        <div className="maint-head">
-          <h2>Meters</h2>
-          <button className="secondary" onClick={() => setModal("meter")}>Add a meter</button>
-        </div>
-        {p.meters.length === 0 ? (
-          <p className="lib-date">No meters. Add one (run hours, cycles, km) for tasks that go by use.</p>
-        ) : (
-          <table className="lib-table">
-            <thead><tr><th>Meter</th><th>Reading</th><th>Read</th><th>Rate</th><th><span className="sr-only">Read</span></th></tr></thead>
-            <tbody>
-              {p.meters.map((mt) => (
-                <tr key={mt.id}>
-                  <td>{mt.name}</td>
-                  <td>{mt.reading ?? "—"} {mt.reading != null ? mt.unit : ""}</td>
-                  <td className="lib-date">{fmtDate(mt.read_on)}</td>
-                  <td className="lib-date">{mt.rate_per_day != null ? `${mt.rate_per_day} ${mt.unit} a day` : "needs two readings"}</td>
-                  <td><button className="secondary" onClick={() => setModal({ reading: mt })}>Record reading</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
 
       <section className="card">
         <div className="maint-head"><h2>Work orders</h2></div>
@@ -258,8 +231,6 @@ export default function MaintenancePosition() {
             nothing inside it in use, and no work order open.</p>
         </FormModal>
       )}
-      {modal === "meter" && <MeterModal positionId={p.id} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
-      {modal?.reading && <ReadingModal meter={modal.reading} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.task && <TaskModal task={modal.task} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.fix && <FixModal row={modal.fix} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.lastDone && (
@@ -459,32 +430,7 @@ function FixModal({ row, onClose, onDone }) {
   );
 }
 
-function MeterModal({ positionId, onClose, onDone }) {
-  const [name, setName] = useState("");
-  const [unit, setUnit] = useState("hours");
-  return (
-    <FormModal title="Add a meter" submitLabel="Add" onClose={onClose}
-               onSubmit={async () => onDone(await addMaintenanceMeter(positionId, name, unit))}>
-      <Field label="Counts"><select value={unit} onChange={(e) => setUnit(e.target.value)}>
-        {["hours", "cycles", "km", "starts", "tonnes", "litres"].map((u) => <option key={u} value={u}>{u}</option>)}
-      </select></Field>
-      <Field label="Name (optional)"><input value={name} placeholder="e.g. Hour meter" onChange={(e) => setName(e.target.value)} /></Field>
-    </FormModal>
-  );
-}
 
-function ReadingModal({ meter, onClose, onDone }) {
-  const [value, setValue] = useState("");
-  const [on, setOn] = useState(today());
-  return (
-    <FormModal title={`Reading: ${meter.name}`} submitLabel="Save" canSubmit={value !== ""} onClose={onClose}
-               onSubmit={async () => onDone(await recordMaintenanceReading(meter.id, Number(value), on))}>
-      <Field label={`Reading (${meter.unit})`}><input type="number" min="0" step="any" autoFocus value={value}
-             placeholder={meter.reading != null ? `last: ${meter.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
-      <Field label="Read on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
-    </FormModal>
-  );
-}
 
 // Connections in and out, redundancy groups, and what depends on this position.
 function ConnectionsCard({ p, onChanged }) {
@@ -639,7 +585,7 @@ function RbdCard({ p, onChanged }) {
   );
 }
 
-// A small chart of a condition point's readings, with its alarm limits.
+// A small chart of a point's readings, with its alarm limits.
 function Sparkline({ point }) {
   const rs = [...point.readings].reverse();
   if (rs.length < 2) return null;
@@ -658,66 +604,111 @@ function Sparkline({ point }) {
   );
 }
 
-function ConditionCard({ p, onChanged }) {
+
+
+
+// Measurement points: counters (use: hours, cycles) and condition (vibration,
+// temperature), read by hand or fed automatically.
+function MeasurementsCard({ p, onChanged }) {
   const [modal, setModal] = useState(null);
+  const sparkPoint = (c) => ({ ...c, readings: c.readings.map((r) => ({ ...r, value: r.value })) });
   return (
     <section className="card">
       <div className="maint-head">
-        <h2>Condition monitoring</h2>
+        <h2>Measurements</h2>
         <button className="secondary" onClick={() => setModal("add")}>Add a measurement</button>
       </div>
-      {p.condition.length === 0 ? (
-        <p className="lib-date">Nothing measured. Add vibration, temperature or wear with alarm limits: a reading past a limit opens an inspection.</p>
+      {p.measurements.length === 0 ? (
+        <p className="lib-date">
+          Nothing measured. Add a counter (run hours, cycles) for tasks that go by use, or a condition
+          measurement (vibration, temperature) with alarm limits. Either can be read by hand or fed
+          automatically (Home Assistant, a PLC) through the ingest API.
+        </p>
       ) : (
         <table className="lib-table">
-          <thead><tr><th>Measurement</th><th>Latest</th><th>Trend</th><th>Alarm</th><th /><th /></tr></thead>
+          <thead><tr><th>Measurement</th><th>Latest</th><th>Trend</th><th>Rate or alarm</th><th /></tr></thead>
           <tbody>
-            {p.condition.map((c) => (
+            {p.measurements.map((c) => (
               <tr key={c.id}>
-                <td>{c.name}</td>
+                <td>{c.name}
+                  <div className="lib-date">{c.kind === "counter" ? "counts use" : "condition"} · {c.source === "automated" ? `feed: ${c.tag}` : "read by hand"}</div></td>
                 <td>{c.reading != null ? `${c.reading} ${c.unit}` : "—"}
                   {c.status !== "ok" && <span className="maint-overdue"> {c.status}</span>}
-                  <div className="lib-date">{fmtDate(c.read_on)}</div></td>
-                <td><Sparkline point={c} /></td>
+                  <div className="lib-date">{c.read_at ? fmtDate(c.read_at.slice(0, 10)) : ""}</div></td>
+                <td><Sparkline point={sparkPoint(c)} /></td>
                 <td className="lib-date">
-                  {[c.alarm_above != null && `above ${c.alarm_above}`, c.alarm_below != null && `below ${c.alarm_below}`].filter(Boolean).join(", ") || "—"}
-                  {c.projected_alarm && <div>reaches it about {fmtDate(c.projected_alarm)}</div>}
-                  {c.alarm_work_order && <div><Link to={`/maintenance/work-orders/${c.alarm_work_order.id}`}>#{c.alarm_work_order.number} open</Link></div>}
+                  {c.kind === "counter"
+                    ? (c.rate_per_day != null ? `${c.rate_per_day} ${c.unit} a day` : "needs two readings")
+                    : <>
+                      {[c.alarm_above != null && `above ${c.alarm_above}`, c.alarm_below != null && `below ${c.alarm_below}`].filter(Boolean).join(", ") || "no limits"}
+                      {c.projected_alarm && <div>reaches it about {fmtDate(c.projected_alarm)}</div>}
+                      {c.alarm_work_order && <div><Link to={`/maintenance/work-orders/${c.alarm_work_order.id}`}>#{c.alarm_work_order.number} open</Link></div>}
+                    </>}
                 </td>
-                <td><button className="secondary" onClick={() => setModal({ read: c })}>Record</button></td>
-                <td />
+                <td>{c.source === "manual" && <button className="secondary" onClick={() => setModal({ read: c })}>Record</button>}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      {modal === "add" && <ConditionPointModal positionId={p.id} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
-      {modal?.read && <ConditionReadingModal point={modal.read} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
+      {modal === "add" && <PointModal positionId={p.id} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
+      {modal?.read && <PointReadingModal point={modal.read} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
     </section>
   );
 }
 
-function ConditionPointModal({ positionId, onClose, onDone }) {
-  const [f, setF] = useState({ name: "", unit: "", alarm_above: "", alarm_below: "" });
+function PointModal({ positionId, onClose, onDone }) {
+  const [f, setF] = useState({ name: "", kind: "condition", unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const counter = f.kind === "counter";
   return (
-    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={!!f.name.trim()} onClose={onClose}
-               onSubmit={async () => onDone(await addConditionPoint(positionId, f))}>
-      <Field label="What"><input autoFocus value={f.name} placeholder="e.g. Vibration, Bearing temperature" onChange={set("name")} /></Field>
-      <Field label="Unit"><input value={f.unit} placeholder="e.g. mm/s, °C" onChange={set("unit")} /></Field>
-      <Field label="Alarm above (optional)"><input type="number" step="any" value={f.alarm_above} onChange={set("alarm_above")} /></Field>
-      <Field label="Alarm below (optional)"><input type="number" step="any" value={f.alarm_below} onChange={set("alarm_below")} /></Field>
+    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && (f.source === "manual" || !!f.tag.trim())}
+               onClose={onClose} onSubmit={async () => onDone(await addMeasurementPoint(positionId, {
+                 ...f, alarm_above: counter ? null : f.alarm_above, alarm_below: counter ? null : f.alarm_below,
+               }))}>
+      <Field label="What it is">
+        <select value={f.kind} onChange={set("kind")}>
+          <option value="condition">Condition (vibration, temperature, wear)</option>
+          <option value="counter">Counts use (run hours, cycles, km)</option>
+        </select>
+      </Field>
+      <Field label="Name"><input value={f.name} placeholder={counter ? "e.g. Hour meter" : "e.g. Vibration"} onChange={set("name")} /></Field>
+      {counter ? (
+        <Field label="Counts"><select value={f.unit} onChange={set("unit")}>
+          <option value="">Choose…</option>
+          {["hours", "cycles", "km", "starts", "tonnes", "litres"].map((u) => <option key={u} value={u}>{u}</option>)}
+        </select></Field>
+      ) : (
+        <>
+          <Field label="Unit"><input value={f.unit} placeholder="e.g. mm/s, °C" onChange={set("unit")} /></Field>
+          <Field label="Alarm above (optional)"><input type="number" step="any" value={f.alarm_above} onChange={set("alarm_above")} /></Field>
+          <Field label="Alarm below (optional)"><input type="number" step="any" value={f.alarm_below} onChange={set("alarm_below")} /></Field>
+        </>
+      )}
+      <Field label="Readings come from">
+        <select value={f.source} onChange={set("source")}>
+          <option value="manual">Someone reads it</option>
+          <option value="automated">A feed (Home Assistant, a PLC, a historian)</option>
+        </select>
+      </Field>
+      {f.source === "automated" && (
+        <Field label="Tag the feed sends"><input value={f.tag} placeholder="e.g. sensor.pool_pump_hours" onChange={set("tag")} /></Field>
+      )}
+      {f.source === "automated" && (
+        <p className="lib-date">The feed posts readings to /api/ingest/maintenance/readings with an API token that has the ingest scope (Settings → API access).</p>
+      )}
     </FormModal>
   );
 }
 
-function ConditionReadingModal({ point, onClose, onDone }) {
+function PointReadingModal({ point, onClose, onDone }) {
   const [value, setValue] = useState("");
   const [on, setOn] = useState(today());
   return (
     <FormModal title={`Reading: ${point.name}`} submitLabel="Save" canSubmit={value !== ""} onClose={onClose}
-               onSubmit={async () => onDone(await recordCondition(point.id, Number(value), on))}>
-      <Field label={`Reading${point.unit ? ` (${point.unit})` : ""}`}><input type="number" step="any" autoFocus value={value} onChange={(e) => setValue(e.target.value)} /></Field>
+               onSubmit={async () => onDone(await recordMeasurementReading(point.id, Number(value), on))}>
+      <Field label={`Reading${point.unit ? ` (${point.unit})` : ""}`}><input type="number" step="any" autoFocus value={value}
+             placeholder={point.reading != null ? `last: ${point.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
       <Field label="Read on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
     </FormModal>
   );

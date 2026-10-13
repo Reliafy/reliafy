@@ -162,7 +162,7 @@ class GraphStore:
     copy rebuilt from a shared log, or for tests). With no log given, the log
     lives in the same SQLite file."""
 
-    def __init__(self, path: str, projectors: dict[str, Projector], log=None):
+    def __init__(self, path: str, projectors: dict[str, Projector], log=None, series=None, version: int = 1):
         if path != ":memory:":
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
@@ -173,6 +173,15 @@ class GraphStore:
         self._lock = threading.RLock()
         self._projectors = projectors
         self.log = log if log is not None else SqliteEventLog(self._conn, self._lock)
+        from backend.maintenance.series import SqliteSeries
+
+        self.series = series if series is not None else SqliteSeries(self._conn, self._lock)
+        # When the projectors change what they build, a stored graph is rebuilt
+        # from the log (the log never changes).
+        rows = self._all("SELECT value FROM meta WHERE key = 'version'", ())
+        if (int(rows[0]["value"]) if rows else 1) != version and self._applied():
+            self.rebuild()
+        self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)", (str(version),))
 
     # ---- applied position -----------------------------------------------------------
 
