@@ -147,7 +147,7 @@ function CloseForm({ wo, onClosed }) {
         new_item: a.kind === "replace" && a.new_name ? { name: a.new_name, serial: a.new_serial || "" } : null,
       }));
       const meterReadings = Object.entries(readings).filter(([, v]) => v !== "")
-        .map(([meter_id, value]) => ({ meter_id, value: Number(value) }));
+        .map(([point_id, value]) => ({ point_id, value: Number(value) }));
       onClosed(await closeWorkOrder(wo.id, { actions: body, on, notes, readings: meterReadings }));
     } catch (e) {
       setError(e.message);
@@ -212,7 +212,7 @@ function CloseForm({ wo, onClosed }) {
       </div>
       <div className="rcm-form">
         <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
-        {(wo.meters || []).map((mt) => (
+        {(wo.measurements || []).map((mt) => (
           <Field key={mt.id} label={`${mt.name} now (${mt.unit}, optional)`}>
             <input type="number" min="0" step="any" value={readings[mt.id] ?? ""}
                    placeholder={mt.reading != null ? `last: ${mt.reading}` : ""}

@@ -162,7 +162,7 @@ def _item_fitted(s: GraphStore, org: str, p: dict) -> None:
     # A new item is a renewal: the position's tasks count from the day it went in.
     for task in s.inn(org, p["position_id"], "ON"):
         if task["label"] == "Task":
-            _renew_task(s, org, task, p["on"])
+            _renew_task(s, org, task, p["on"], (p.get("task_readings") or {}).get(task["id"]))
 
 
 def _item_removed(s: GraphStore, org: str, p: dict) -> None:
@@ -211,15 +211,21 @@ def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
         s.put_edge(org, "ALARM_FOR", p["id"], p["alarm_point_id"])
 
 
-def _condition_point_added(s: GraphStore, org: str, p: dict) -> None:
-    s.put_node(org, p["id"], "ConditionPoint", {k: p.get(k) for k in (
-        "name", "unit", "alarm_above", "alarm_below", "source", "tag")} | {"created": p["on"]})
+def _point_added(s: GraphStore, org: str, p: dict) -> None:
+    """point.added, and the older meter.added / condition_point.added (replayed into
+    the same shape: a meter counted use, a condition point showed condition)."""
+    kind = p.get("kind") or ("condition" if "alarm_above" in p or "alarm_below" in p else "counter")
+    s.put_node(org, p["id"], "MeasurementPoint", {
+        "name": p["name"], "kind": kind, "unit": p.get("unit", ""), "source": p.get("source") or "manual",
+        "tag": p.get("tag", ""), "alarm_above": p.get("alarm_above"), "alarm_below": p.get("alarm_below"),
+        "created": p["on"]})
     s.put_edge(org, "ON", p["id"], p["position_id"])
 
 
-def _condition_read(s: GraphStore, org: str, p: dict) -> None:
-    s.put_node(org, p["id"], "ConditionReading", {"on": p["on"], "value": p["value"], "note": p.get("note", "")})
-    s.put_edge(org, "OF", p["id"], p["point_id"])
+def _reading_added(s: GraphStore, org: str, p: dict) -> None:
+    """reading.added, and the older meter.read / condition.read: a manual reading."""
+    s.put_node(org, p["id"], "Reading", {"on": p["on"], "value": p["value"], "note": p.get("note", "")})
+    s.put_edge(org, "OF", p["id"], p.get("point_id") or p.get("meter_id"))
 
 
 def _work_order_status(s: GraphStore, org: str, p: dict) -> None:
@@ -259,22 +265,35 @@ def _action_recorded(s: GraphStore, org: str, p: dict) -> None:
         s.put_edge(org, "ON", p["id"], p["on_fitment"])
 
 
-# ---- meters and readings (usage: run hours, cycles, km) ---------------------------
+# ---- measurements: use counters and condition, manual or automated -------------
+# A measurement point counts use (run hours, cycles, km: only goes up, drives tasks
+# by use) or shows condition (vibration, temperature: alarms and trends). Its
+# readings are manual (entered by someone: events, in the log) or automated (a
+# feed: in the time-series store, series.py).
 
 USAGE_UNITS = ("hours", "cycles", "km", "miles", "starts", "tonnes", "litres")
+POINT_KINDS = ("counter", "condition")
+POINT_SOURCES = ("manual", "automated")
 
 
 def _is_calendar(unit: str) -> bool:
     return (_norm_unit(unit) or "days") in CALENDAR_UNITS
 
 
-def _readings(s: GraphStore, org: str, meter_id: str) -> list[dict]:
-    rows = [r for r in s.inn(org, meter_id, "OF") if r["label"] == "Reading" and not r.get("voided")]
+def _manual_readings(s: GraphStore, org: str, point_id: str) -> list[dict]:
+    rows = [r for r in s.inn(org, point_id, "OF") if r["label"] == "Reading" and not r.get("voided")]
     return sorted(rows, key=lambda r: (r["on"], r["value"]))
 
 
+def _readings(s: GraphStore, org: str, point: dict) -> list[dict]:
+    """A point's readings, oldest first, one per day for a feed (its last that day)."""
+    if point.get("source") == "automated":
+        return s.series.daily(org, point["id"])
+    return _manual_readings(s, org, point["id"])
+
+
 def _reading_at(readings: list[dict], day: str) -> float | None:
-    """The meter on ``day``: interpolated between the readings either side, the
+    """The counter on ``day``: interpolated between the readings either side, the
     last one before it, or None if every reading is later."""
     before = [r for r in readings if r["on"] <= day]
     after = [r for r in readings if r["on"] > day]
@@ -301,39 +320,37 @@ def _rate(readings: list[dict]) -> float | None:
     return (last["value"] - first["value"]) / days if days > 0 else None
 
 
-def _task_meter(s: GraphStore, org: str, task: dict) -> dict | None:
-    if task.get("meter_id"):
-        return s.node(org, task["meter_id"])
+def _task_point(s: GraphStore, org: str, task: dict) -> dict | None:
+    """The use counter a task by use goes by: the one chosen, else the position's
+    counter in the task's unit."""
+    chosen = task.get("point_id") or task.get("meter_id")
+    if chosen:
+        return s.node(org, chosen)
     for unit in (task.get("unit"), task.get("also_unit")):
         if unit and not _is_calendar(unit):
             position = s.out(org, task["id"], "ON")
-            meters = [mt for mt in (s.inn(org, position[0]["id"], "ON") if position else [])
-                      if mt["label"] == "Meter" and _norm_unit(mt["unit"]) == _norm_unit(unit)]
-            if meters:
-                return sorted(meters, key=lambda mt: mt["name"].lower())[0]
+            points = [mp for mp in (s.inn(org, position[0]["id"], "ON") if position else [])
+                      if mp["label"] == "MeasurementPoint" and mp.get("kind") == "counter"
+                      and _norm_unit(mp["unit"]) == _norm_unit(unit)]
+            if points:
+                return sorted(points, key=lambda mp: mp["name"].lower())[0]
     return None
 
 
-def _renew_task(s: GraphStore, org: str, task: dict, day: str) -> None:
+def _renew_task(s: GraphStore, org: str, task: dict, day: str, reading=None) -> None:
     """The task was done (or its item renewed) on ``day``: record the date, and the
-    meter reading then if it goes by use."""
+    counter reading then if it goes by use. A feed's reading comes in the event (the
+    projector can't read the time-series store); a manual one is read here."""
     if task.get("last_done") and task["last_done"] >= day:
         return
     changes = {"last_done": day}
-    meter = _task_meter(s, org, task)
-    if meter:
-        changes["last_done_reading"] = _reading_at(_readings(s, org, meter["id"]), day)
+    if reading is not None:
+        changes["last_done_reading"] = reading
+    else:
+        point = _task_point(s, org, task)
+        if point and point.get("source") != "automated":
+            changes["last_done_reading"] = _reading_at(_manual_readings(s, org, point["id"]), day)
     s.patch_node(org, task["id"], changes)
-
-
-def _meter_added(s: GraphStore, org: str, p: dict) -> None:
-    s.put_node(org, p["id"], "Meter", {"name": p["name"], "unit": p["unit"], "created": p["on"]})
-    s.put_edge(org, "ON", p["id"], p["position_id"])
-
-
-def _meter_read(s: GraphStore, org: str, p: dict) -> None:
-    s.put_node(org, p["id"], "Reading", {"on": p["on"], "value": p["value"], "note": p.get("note", "")})
-    s.put_edge(org, "OF", p["id"], p["meter_id"])
 
 
 def _work_order_closed(s: GraphStore, org: str, p: dict) -> None:
@@ -343,7 +360,7 @@ def _work_order_closed(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"status": "closed", "closed": p["on"], "opened": opened,
                                 "notes": p.get("notes", "")})
     for task in s.out(org, p["id"], "FOR"):
-        _renew_task(s, org, task, p["on"])
+        _renew_task(s, org, task, p["on"], (p.get("task_readings") or {}).get(task["id"]))
 
 
 def _photo_added(s: GraphStore, org: str, p: dict) -> None:
@@ -486,8 +503,11 @@ PROJECTORS = {
     "work_order.updated": _patch,
     "work_order.cancelled": _work_order_cancelled,
     "location.updated": _patch,
-    "meter.added": _meter_added,
-    "meter.read": _meter_read,
+    "point.added": _point_added,
+    "point.updated": _patch,
+    "reading.added": _reading_added,
+    "meter.added": _point_added,
+    "meter.read": _reading_added,
     "reading.voided": _flag("voided"),
     "class.costs_set": _class_costs_set,
     "class.model_fitted": _class_model_fitted,
@@ -502,9 +522,9 @@ PROJECTORS = {
     "group.retired": _flag("retired"),
     "duty.changed": _duty_changed,
     "position.rbd_linked": _patch,
-    "condition_point.added": _condition_point_added,
+    "condition_point.added": _point_added,
     "condition_point.updated": _patch,
-    "condition.read": _condition_read,
+    "condition.read": _reading_added,
     "part.created": _part_created,
     "part.updated": _patch,
     "part.superseded": _part_superseded,
@@ -698,8 +718,9 @@ class Maintenance:
             raise Invalid("Something is already fitted here. Replace it through a work order, "
                           "or remove it first.")
         iid = self._item_from(item_id, new_item)
-        self._emit("item.fitted", {"fitment_id": new_id(), "item_id": iid,
-                                   "position_id": position_id, "on": _day(on)})
+        day = _day(on)
+        self._emit("item.fitted", {"fitment_id": new_id(), "item_id": iid, "position_id": position_id, "on": day,
+                                   "task_readings": self._renewal_readings(position_id, day)})
         return self.position(position_id)
 
     def remove(self, position_id: str, on=None, reason="planned", failure_mode_id=None) -> dict:
@@ -790,13 +811,13 @@ class Maintenance:
         base = task.get("last_done") or task["start"]
         if _is_calendar(unit):
             return {"limit": f"{interval:g} {unit}", "next_due": add_interval(base, interval, unit)}
-        meter = _task_meter(self.s, self.org, task)
+        meter = _task_point(self.s, self.org, task)
         if meter is None:
             return {"limit": f"{interval:g} {unit}", "next_due": None,
-                    "note": f"needs a {unit} meter on the position"}
-        readings = _readings(self.s, self.org, meter["id"])
+                    "note": f"needs a {unit} counter on the position"}
+        readings = _readings(self.s, self.org, meter)
         if not readings:
-            return {"limit": f"{interval:g} {unit}", "next_due": None, "note": "needs meter readings"}
+            return {"limit": f"{interval:g} {unit}", "next_due": None, "note": "needs counter readings"}
         start = task.get("last_done_reading")
         if start is None:
             start = _reading_at(readings, base)
@@ -805,7 +826,7 @@ class Maintenance:
         target = start + interval
         last, rate = readings[-1], _rate(readings)
         out = {"limit": f"{interval:g} {unit}", "due_at_reading": round(target, 2),
-               "meter": {"id": meter["id"], "name": meter["name"], "unit": meter["unit"],
+               "counter": {"id": meter["id"], "name": meter["name"], "unit": meter["unit"],
                          "reading": last["value"], "read_on": last["on"],
                          "rate_per_day": rate and round(rate, 3)}}
         if last["value"] >= target:
@@ -935,44 +956,61 @@ class Maintenance:
         return [self.part(pt["id"]) for pt in sorted(self.s.nodes(self.org, "Part"),
                                                      key=lambda pt: pt["part_number"].lower())]
 
-    # ---- condition monitoring -----------------------------------------------------
+    # ---- measurement points ---------------------------------------------------------
 
-    def add_condition_point(self, position_id: str, name, unit="", alarm_above=None, alarm_below=None,
-                            source="manual", tag="") -> dict:
-        """Something measured on a position to see its condition (vibration, temperature,
-        pressure, wear), with alarm limits. A reading past a limit raises an inspection
-        work order. source and tag say where readings come from (a historian tag) for later
-        links; readings are entered here for now."""
+    def add_point(self, position_id: str, name, kind="condition", unit="", source="manual", tag="",
+                  alarm_above=None, alarm_below=None) -> dict:
+        """Something measured on a position. kind 'counter' counts use (run hours,
+        cycles, km: tasks by use go by it); 'condition' shows condition (vibration,
+        temperature, wear: alarm limits raise inspections). source 'manual' (someone
+        reads it) or 'automated' (a feed sends it, matched by tag)."""
         self._get(position_id, "Position")
+        if kind not in POINT_KINDS or source not in POINT_SOURCES:
+            raise Invalid("kind is counter or condition; source is manual or automated.")
+        tag = _text(tag, "tag")[:200]
+        if source == "automated" and not tag:
+            raise Invalid("An automated point needs the tag its feed sends readings under.")
+        if tag and any(mp.get("tag") == tag for mp in self.s.nodes(self.org, "MeasurementPoint")):
+            raise Invalid(f"Tag {tag} is already used by another point.")
+        unit = _text(unit, "unit")[:20]
+        if kind == "counter":
+            unit = _norm_unit(unit)
+            if not unit or _is_calendar(unit):
+                raise Invalid(f"A counter counts use, e.g. {', '.join(USAGE_UNITS[:4])}.")
         above, below = self._amount_or_none(alarm_above), self._amount_or_none(alarm_below)
         if above is not None and below is not None and below >= above:
             raise Invalid("The low alarm must be below the high alarm.")
         pid = new_id()
-        self._emit("condition_point.added", {
-            "id": pid, "position_id": position_id, "name": _text(name, "point's name", required=True),
-            "unit": _text(unit, "unit")[:20], "alarm_above": above, "alarm_below": below,
-            "source": _text(source, "source")[:60] or "manual", "tag": _text(tag, "tag")[:200],
-            "on": date.today().isoformat()})
-        return self.condition_point(pid)
+        self._emit("point.added", {
+            "id": pid, "position_id": position_id, "kind": kind, "source": source, "tag": tag, "unit": unit,
+            "name": _text(name, "name") or (f"{unit.capitalize()} counter" if kind == "counter" else "Condition"),
+            "alarm_above": above, "alarm_below": below, "on": date.today().isoformat()})
+        return self.point(pid)
 
-    def update_condition_point(self, point_id: str, name=None, alarm_above=..., alarm_below=..., tag=None) -> dict:
-        point = self._get(point_id, "ConditionPoint")
+    def update_point(self, point_id: str, name=None, alarm_above=..., alarm_below=..., tag=None) -> dict:
+        point = self._get(point_id, "MeasurementPoint")
         changes = {}
         if name is not None:
-            changes["name"] = _text(name, "point's name", required=True)
+            changes["name"] = _text(name, "name", required=True)
         if alarm_above is not ...:
             changes["alarm_above"] = self._amount_or_none(alarm_above)
         if alarm_below is not ...:
             changes["alarm_below"] = self._amount_or_none(alarm_below)
         if tag is not None:
-            changes["tag"] = _text(tag, "tag")[:200]
+            tag = _text(tag, "tag")[:200]
+            if point.get("source") == "automated" and not tag:
+                raise Invalid("An automated point needs a tag.")
+            if tag and any(mp.get("tag") == tag and mp["id"] != point_id
+                           for mp in self.s.nodes(self.org, "MeasurementPoint")):
+                raise Invalid(f"Tag {tag} is already used by another point.")
+            changes["tag"] = tag
         above = changes.get("alarm_above", point.get("alarm_above"))
         below = changes.get("alarm_below", point.get("alarm_below"))
         if above is not None and below is not None and below >= above:
             raise Invalid("The low alarm must be below the high alarm.")
         if changes:
-            self._emit("condition_point.updated", {"id": point_id, "changes": changes})
-        return self.condition_point(point_id)
+            self._emit("point.updated", {"id": point_id, "changes": changes})
+        return self.point(point_id)
 
     @staticmethod
     def _amount_or_none(value):
@@ -986,10 +1024,13 @@ class Maintenance:
             raise Invalid("An alarm limit must be a number.")
         return value
 
-    def record_condition(self, point_id: str, value, on=None, note="") -> dict:
-        """A condition reading. Past an alarm limit, an inspection work order is opened
-        (one at a time per point)."""
-        point = self._get(point_id, "ConditionPoint")
+    def record_reading(self, point_id: str, value, on=None, note="") -> dict:
+        """A manual reading. A counter's only go up. A condition reading past an alarm
+        limit opens an inspection (one at a time per point)."""
+        point = self._get(point_id, "MeasurementPoint")
+        if point.get("source") == "automated":
+            raise Invalid(f"{point['name']} is fed automatically (tag {point.get('tag')}); its readings come in "
+                          "through the feed.")
         try:
             value = float(value)
         except (TypeError, ValueError):
@@ -999,117 +1040,153 @@ class Maintenance:
         day = _day(on)
         if day > date.today().isoformat():
             raise Invalid("A reading can't be in the future.")
-        self._emit("condition.read", {"id": new_id(), "point_id": point_id, "on": day, "value": value,
-                                      "note": _text(note, "note")})
-        view = self.condition_point(point_id)
-        if view["status"] != "ok" and not view["alarm_work_order"]:
-            position = self.s.out(self.org, point_id, "ON")[0]
-            limit = point["alarm_above"] if view["status"] == "high" else point["alarm_below"]
-            wid = new_id()
-            self._emit("work_order.opened", {
-                "id": wid, "number": self._next_number(), "type": "inspection", "position_id": position["id"],
-                "title": f"{point['name']} {value:g}{(' ' + point['unit']) if point.get('unit') else ''}: "
-                         f"{'above' if view['status'] == 'high' else 'below'} the {limit:g} alarm limit",
-                "task_id": None, "due": day, "notes": "Raised by a condition reading.", "on": day,
-                "alarm_point_id": point_id})
-            view = self.condition_point(point_id)
-        return view
+        if point.get("kind") == "counter":
+            if value < 0:
+                raise Invalid("A counter can't be negative.")
+            readings = _manual_readings(self.s, self.org, point_id)
+            before = [r for r in readings if r["on"] <= day]
+            after = [r for r in readings if r["on"] > day]
+            if before and value < before[-1]["value"]:
+                raise Invalid(f"It's lower than the reading of {before[-1]['value']:g} on {before[-1]['on']}. "
+                              "If the counter was replaced, add a new one.")
+            if after and value > after[0]["value"]:
+                raise Invalid(f"It's higher than the later reading of {after[0]['value']:g} on {after[0]['on']}.")
+        self._emit("reading.added", {"id": new_id(), "point_id": point_id, "on": day, "value": value,
+                                     "note": _text(note, "note")})
+        if point.get("kind") == "condition":
+            self._check_alarm(point_id, value, day)
+        return self.point(point_id)
 
-    def condition_point(self, point_id: str) -> dict:
-        point = self._get(point_id, "ConditionPoint")
-        readings = sorted([r for r in self.s.inn(self.org, point_id, "OF") if r["label"] == "ConditionReading"],
-                          key=lambda r: (r["on"], r["id"]))
-        last = readings[-1] if readings else None
+    def ingest(self, rows) -> dict:
+        """Automated readings from a feed: rows of {tag, value, time?}. Each lands in the
+        time-series store under its point; a condition point whose latest reading is past
+        an alarm limit opens an inspection. Unknown tags are reported, not stored."""
+        from backend.maintenance.series import MAX_BATCH, parse_time
+
+        rows = list(rows or [])
+        if len(rows) > MAX_BATCH:
+            raise Invalid(f"At most {MAX_BATCH} readings at a time.")
+        by_tag = {mp["tag"]: mp for mp in self.s.nodes(self.org, "MeasurementPoint")
+                  if mp.get("source") == "automated" and mp.get("tag")}
+        grouped: dict[str, list] = {}
+        unknown: dict[str, int] = {}
+        for i, r in enumerate(rows):
+            tag = str(r.get("tag") or "").strip()
+            point = by_tag.get(tag)
+            if point is None:
+                unknown[tag] = unknown.get(tag, 0) + 1
+                continue
+            try:
+                value = float(r.get("value"))
+                when = parse_time(r.get("time") or r.get("t") or r.get("timestamp"))
+            except (TypeError, ValueError) as err:
+                raise Invalid(f"Reading {i + 1} ({tag}): {err}") from None
+            if value != value:
+                raise Invalid(f"Reading {i + 1} ({tag}): the value isn't a number.")
+            grouped.setdefault(point["id"], []).append((when, value))
+        stored, alarms = 0, []
+        for pid, pts in grouped.items():
+            stored += self.s.series.append(self.org, pid, sorted(pts))
+            point = self.s.node(self.org, pid)
+            if point.get("kind") == "condition":
+                latest = self.s.series.latest(self.org, pid)
+                wo = self._check_alarm(pid, latest["value"], latest["t"][:10])
+                if wo:
+                    alarms.append(wo)
+        return {"stored": stored, "points": len(grouped), "unknown_tags": unknown, "work_orders_raised": alarms}
+
+    def _check_alarm(self, point_id: str, value: float, day: str) -> dict | None:
+        """Past a limit with no alarm work order open: open one. Returns it, if opened."""
+        point = self._get(point_id, "MeasurementPoint")
         above, below = point.get("alarm_above"), point.get("alarm_below")
-        status = "ok"
-        if last and above is not None and last["value"] >= above:
-            status = "high"
-        elif last and below is not None and last["value"] <= below:
-            status = "low"
-        trend = projection = None
-        recent = readings[-6:]
-        if len(recent) >= 3:
-            xs = [(date.fromisoformat(r["on"]) - date.fromisoformat(recent[0]["on"])).days for r in recent]
-            ys = [r["value"] for r in recent]
-            n = len(xs)
-            mx, my = sum(xs) / n, sum(ys) / n
-            sxx = sum((x - mx) ** 2 for x in xs)
-            if sxx > 0:
-                slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
-                trend = round(slope, 4)
-                target = above if slope > 0 and above is not None else below if slope < 0 and below is not None else None
-                if status == "ok" and target is not None:
-                    days = (target - last["value"]) / slope
-                    if 0 < days < 3650:
-                        projection = (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()
-        alarm_wo = next((w for w in self.s.inn(self.org, point_id, "ALARM_FOR")
-                         if w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES), None)
-        position = self.s.out(self.org, point_id, "ON")
-        return {
-            "id": point_id, "name": point["name"], "unit": point.get("unit", ""), "source": point.get("source"),
-            "tag": point.get("tag", ""), "alarm_above": above, "alarm_below": below,
-            "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
-            "reading": last and last["value"], "read_on": last and last["on"], "status": status,
-            "trend_per_day": trend, "projected_alarm": projection,
-            "alarm_work_order": alarm_wo and {"id": alarm_wo["id"], "number": alarm_wo["number"]},
-            "readings": [{"id": r["id"], "on": r["on"], "value": r["value"]} for r in reversed(readings[-50:])],
-        }
-
-    # ---- meters ------------------------------------------------------------------
-
-    def add_meter(self, position_id: str, name, unit) -> dict:
-        """A usage meter on a position: run hours, cycles, km. Tasks on the position
-        that go by that unit use it."""
-        self._get(position_id, "Position")
-        unit = _norm_unit(unit)
-        if not unit or _is_calendar(unit):
-            raise Invalid(f"A meter counts use, e.g. {', '.join(USAGE_UNITS[:4])}.")
-        mid = new_id()
-        self._emit("meter.added", {"id": mid, "position_id": position_id,
-                                   "name": _text(name, "meter's name") or f"{unit.capitalize()} meter",
-                                   "unit": unit, "on": date.today().isoformat()})
-        return self.meter(mid)
-
-    def record_reading(self, meter_id: str, value, on=None, note="") -> dict:
-        self._get(meter_id, "Meter")
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            raise Invalid("A reading is a number.")
-        if value < 0 or value != value:
-            raise Invalid("A reading can't be negative.")
-        day = _day(on)
-        if day > date.today().isoformat():
-            raise Invalid("A reading can't be in the future.")
-        readings = _readings(self.s, self.org, meter_id)
-        before = [r for r in readings if r["on"] <= day]
-        after = [r for r in readings if r["on"] > day]
-        if before and value < before[-1]["value"]:
-            raise Invalid(f"It's lower than the reading of {before[-1]['value']:g} on {before[-1]['on']}. "
-                          "If the meter was replaced, add a new meter.")
-        if after and value > after[0]["value"]:
-            raise Invalid(f"It's higher than the later reading of {after[0]['value']:g} on {after[0]['on']}.")
-        self._emit("meter.read", {"id": new_id(), "meter_id": meter_id, "on": day, "value": value,
-                                  "note": _text(note, "note")})
-        return self.meter(meter_id)
+        status = "high" if above is not None and value >= above else "low" if below is not None and value <= below \
+            else "ok"
+        if status == "ok":
+            return None
+        if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES
+               for w in self.s.inn(self.org, point_id, "ALARM_FOR")):
+            return None
+        position = self.s.out(self.org, point_id, "ON")[0]
+        limit = above if status == "high" else below
+        wid = new_id()
+        self._emit("work_order.opened", {
+            "id": wid, "number": self._next_number(), "type": "inspection", "position_id": position["id"],
+            "title": f"{point['name']} {value:g}{(' ' + point['unit']) if point.get('unit') else ''}: "
+                     f"{'above' if status == 'high' else 'below'} the {limit:g} alarm limit",
+            "task_id": None, "due": day, "notes": "Raised by a reading past an alarm limit.", "on": day,
+            "alarm_point_id": point_id})
+        return {"id": wid, "point": point["name"], "position": position["name"]}
 
     def void_reading(self, reading_id: str) -> None:
         if self._get(reading_id, "Reading").get("voided"):
             raise Invalid("That reading was already struck out.")
         self._emit("reading.voided", {"id": reading_id, "on": date.today().isoformat()})
 
-    def meter(self, meter_id: str) -> dict:
-        mt = self._get(meter_id, "Meter")
-        readings = _readings(self.s, self.org, meter_id)
-        rate = _rate(readings)
-        position = self.s.out(self.org, meter_id, "ON")
-        return {"id": meter_id, "name": mt["name"], "unit": mt["unit"],
-                "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
-                "reading": readings[-1]["value"] if readings else None,
-                "read_on": readings[-1]["on"] if readings else None,
-                "rate_per_day": rate and round(rate, 3),
-                "readings": [{"id": r["id"], "on": r["on"], "value": r["value"], "note": r.get("note", "")}
-                             for r in reversed(readings[-50:])]}
+    def point(self, point_id: str) -> dict:
+        """A measurement point: its latest reading and when, the rate (a counter) or the
+        trend and projected alarm date (condition), status against its limits, and its
+        recent readings."""
+        mp = self._get(point_id, "MeasurementPoint")
+        readings = _readings(self.s, self.org, mp)
+        last = readings[-1] if readings else None
+        if mp.get("source") == "automated":
+            latest = self.s.series.latest(self.org, point_id)
+            current = latest and {"value": latest["value"], "at": latest["t"]}
+            recent = [{"at": r["t"], "value": r["value"]} for r in self.s.series.recent(self.org, point_id, 50)]
+        else:
+            current = last and {"value": last["value"], "at": last["on"]}
+            recent = [{"id": r["id"], "at": r["on"], "value": r["value"], "note": r.get("note", "")}
+                      for r in reversed(readings[-50:])]
+        above, below = mp.get("alarm_above"), mp.get("alarm_below")
+        status = "ok"
+        if current and above is not None and current["value"] >= above:
+            status = "high"
+        elif current and below is not None and current["value"] <= below:
+            status = "low"
+        out = {"id": point_id, "name": mp["name"], "kind": mp.get("kind", "counter"), "unit": mp.get("unit", ""),
+               "source": mp.get("source", "manual"), "tag": mp.get("tag", ""), "alarm_above": above,
+               "alarm_below": below, "reading": current and current["value"], "read_at": current and current["at"],
+               "status": status, "readings": recent}
+        position = self.s.out(self.org, point_id, "ON")
+        out["position"] = position and {"id": position[0]["id"], "name": position[0]["name"]}
+        if out["kind"] == "counter":
+            rate = _rate(readings)
+            out["rate_per_day"] = rate and round(rate, 3)
+        else:
+            trend = projection = None
+            recent_days = readings[-6:]
+            if len(recent_days) >= 3:
+                xs = [(date.fromisoformat(r["on"]) - date.fromisoformat(recent_days[0]["on"])).days for r in recent_days]
+                ys = [r["value"] for r in recent_days]
+                n = len(xs)
+                mx, my = sum(xs) / n, sum(ys) / n
+                sxx = sum((x - mx) ** 2 for x in xs)
+                if sxx > 0:
+                    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+                    trend = round(slope, 4)
+                    target = above if slope > 0 and above is not None else \
+                        below if slope < 0 and below is not None else None
+                    if status == "ok" and target is not None:
+                        days = (target - last["value"]) / slope
+                        if 0 < days < 3650:
+                            projection = (date.fromisoformat(last["on"]) + timedelta(days=round(days))).isoformat()
+            alarm_wo = next((w for w in self.s.inn(self.org, point_id, "ALARM_FOR")
+                             if w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES), None)
+            out |= {"trend_per_day": trend, "projected_alarm": projection,
+                    "alarm_work_order": alarm_wo and {"id": alarm_wo["id"], "number": alarm_wo["number"]}}
+        return out
+
+    def _renewal_readings(self, position_id: str, day: str) -> dict:
+        """Each use-counted task on a position: its counter's reading on ``day``, to record
+        with a renewal (a feed's reading can't be read when the event is replayed)."""
+        out = {}
+        for task in self._tasks_on(position_id):
+            point = _task_point(self.s, self.org, task)
+            if point and point.get("source") == "automated":
+                value = _reading_at(_readings(self.s, self.org, point), day)
+                if value is not None:
+                    out[task["id"]] = value
+        return out
 
     def set_last_done(self, task_id: str, on) -> dict:
         """Record when a task was last done (before it was tracked here), so
@@ -1199,7 +1276,7 @@ class Maintenance:
         # Meter readings taken during the work go in first, so a task by use
         # records the reading it was done at.
         for r in readings or []:
-            self.record_reading(r.get("meter_id"), r.get("value"), day, "read at the work order")
+            self.record_reading(r.get("point_id") or r.get("meter_id"), r.get("value"), day, "read at the work order")
 
         for kind, fm, finding, a in plans:
             ends = starts = on_fitment = None
@@ -1214,7 +1291,8 @@ class Maintenance:
                     iid = self._item_from(a.get("item_id"), a.get("new_item"))
                     starts = new_id()
                     self._emit("item.fitted", {"fitment_id": starts, "item_id": iid,
-                                               "position_id": position_id, "on": day})
+                                               "position_id": position_id, "on": day,
+                                               "task_readings": self._renewal_readings(position_id, day)})
             else:
                 fitted = self.current_fitment(position_id)
                 on_fitment = fitted and fitted["id"]
@@ -1223,7 +1301,8 @@ class Maintenance:
                 "failure_mode_id": fm, "notes": _text(a.get("notes"), "notes"), "on": day,
                 "ends": ends, "starts": starts, "on_fitment": on_fitment,
             })
-        self._emit("work_order.closed", {"id": work_order_id, "on": day, "notes": _text(notes, "notes")})
+        self._emit("work_order.closed", {"id": work_order_id, "on": day, "notes": _text(notes, "notes"),
+                                         "task_readings": self._renewal_readings(position_id, day)})
         return self.work_order(work_order_id)
 
     # ---- corrections and edits ------------------------------------------------------
@@ -1274,7 +1353,8 @@ class Maintenance:
             self._emit("item.removed", {"fitment_id": current["id"], "on": day, "reason": "planned",
                                         "failure_mode_id": None})
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": item_id,
-                                   "position_id": to_position_id, "on": day})
+                                   "position_id": to_position_id, "on": day,
+                                   "task_readings": self._renewal_readings(to_position_id, day)})
         return self.item(item_id)
 
     def void_fitment(self, fitment_id: str, reason="") -> None:
@@ -1456,9 +1536,9 @@ class Maintenance:
         return self.work_order(work_order_id)
 
     def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
-                    also_unit=None, meter_id=None, instructions=None, checklist=None) -> dict:
+                    also_unit=None, point_id=None, instructions=None, checklist=None) -> dict:
         """Change a task. also_interval / also_unit add a second limit, whichever comes
-        first (500 hours or 6 months); also_interval 0 removes it. meter_id picks the
+        first (500 hours or 6 months); also_interval 0 removes it. point_id picks the
         meter a task by use goes by (otherwise the position's meter in its unit)."""
         task = self._get(task_id, "Task")
         if task.get("retired"):
@@ -1474,10 +1554,11 @@ class Maintenance:
             else:
                 changes["also_interval"] = also_interval
                 changes["also_unit"] = _norm_unit(also_unit or task.get("also_unit")) or "months"
-        if meter_id is not None:
-            if meter_id:
-                self._get(meter_id, "Meter")
-            changes["meter_id"] = meter_id or None
+        if point_id is not None:
+            if point_id:
+                if self._get(point_id, "MeasurementPoint").get("kind") != "counter":
+                    raise Invalid("A task by use goes by a counter, not a condition point.")
+            changes["point_id"] = point_id or None
         if instructions is not None:
             changes["instructions"] = _text(instructions, "instructions")[:4000]
         if checklist is not None:
@@ -1994,9 +2075,9 @@ class Maintenance:
             "work_orders": [self._wo_brief(w) for w in wos],
             "life_data": self.life_data(id),
             "coordinates": p.get("coordinates"),
-            "meters": [self.meter(mt["id"]) for mt in self.s.inn(self.org, id, "ON") if mt["label"] == "Meter"],
-            "condition": [self.condition_point(c["id"]) for c in self.s.inn(self.org, id, "ON")
-                          if c["label"] == "ConditionPoint"],
+            "measurements": [self.point(mp["id"]) for mp in sorted(
+                (x for x in self.s.inn(self.org, id, "ON") if x["label"] == "MeasurementPoint"),
+                key=lambda x: (x.get("kind") != "counter", x["name"].lower()))],
             "connections": self.connections(id),
             "groups": self.groups_of(id),
             "rbd_id": p.get("rbd_id"),
@@ -2059,7 +2140,8 @@ class Maintenance:
             **self._wo_brief(w), "notes": w.get("notes", ""), "actions": actions,
             "task": task and {"id": task[0]["id"], "name": task[0]["name"]},
             "fitted": position["fitted"], "failure_modes": position["failure_modes"],
-            "meters": [{k: mt[k] for k in ("id", "name", "unit", "reading")} for mt in position["meters"]],
+            "measurements": [{k: mp[k] for k in ("id", "name", "kind", "unit", "reading")}
+                             for mp in position["measurements"] if mp["source"] == "manual"],
             "photos": self.photos_of(id),
             "assignee": w.get("assignee", ""), "planned_for": w.get("planned_for"),
             "instructions": w.get("instructions", ""), "checklist": w.get("checklist") or [],
@@ -2122,3 +2204,6 @@ def summary(m: Maintenance) -> dict:
         "tasks": len(m.s.nodes(m.org, "Task")),
     }
 
+
+
+PROJECTION_VERSION = 2  # 2: meters and condition points became measurement points

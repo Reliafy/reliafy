@@ -212,7 +212,7 @@ def register() -> None:
                              "(replace: what went in), notes?}"))] = [],
                          on: DateText = None, notes: str = "",
                          readings: Annotated[list[dict], Field(description=(
-                             "Meter readings taken during the work: [{meter_id, value}]."))] = []) -> dict[str, Any]:
+                             "Manual readings taken during the work: [{point_id, value}]."))] = []) -> dict[str, Any]:
         """Close a work order with what was done. A replacement ends the fitted item's
         time at the position (a failure if a failure mode is named, otherwise a planned
         removal) and fits the new item; that is what builds the life data. Get the
@@ -367,52 +367,56 @@ def register() -> None:
     @tool("update_task", _WRITE, "Update a task")
     def update_task(task_id: str, ctx: Context, name: str | None = None, interval: float | None = None,
                     unit: str | None = None, also_interval: float | None = None, also_unit: str | None = None,
-                    meter_id: str | None = None, instructions: str | None = None,
+                    point_id: str | None = None, instructions: str | None = None,
                     checklist: list[str] | None = None) -> dict[str, Any]:
         """Rename a task or change its interval (unit: days, weeks, months, years, or a unit of use
-        such as hours, cycles, km, read from a meter on the position). also_interval + also_unit
+        such as hours, cycles, km, from a counter on the position). also_interval + also_unit
         add a second limit, whichever comes first (every 500 hours or 6 months); also_interval 0
-        removes it. meter_id picks a meter for a task by use. instructions and checklist (steps to
+        removes it. point_id picks the counter a task by use goes by. instructions and checklist (steps to
         tick off) are copied onto each work order the task raises."""
-        return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, meter_id,
+        return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
                    instructions, checklist)
 
-    @tool("add_meter", _WRITE, "Add a usage meter")
-    def add_meter(position_id: str, unit: str, ctx: Context, name: str = "") -> dict[str, Any]:
-        """A usage meter on a position (unit: hours, cycles, km, starts, ...). Tasks on the position
-        that go by that unit fall due from its readings, projected at the recent rate."""
-        return run(m_for(ctx).add_meter, position_id, name, unit)
+    @tool("add_measurement_point", _WRITE, "Add a measurement point")
+    def add_measurement_point(position_id: str, ctx: Context, name: str = "",
+                              kind: Literal["counter", "condition"] = "condition", unit: str = "",
+                              source: Literal["manual", "automated"] = "manual", tag: str = "",
+                              alarm_above: float | None = None, alarm_below: float | None = None) -> dict[str, Any]:
+        """Something measured on a position. kind 'counter' counts use (run hours, cycles, km; only goes
+        up; tasks by use in that unit fall due from it). kind 'condition' shows condition (vibration
+        mm/s, temperature, wear) with alarm limits: a reading past one opens an inspection. source
+        'manual': someone reads it (record_reading). 'automated': a feed sends readings under tag to
+        the ingest API (POST /api/ingest/maintenance/readings with an ingest-scope token)."""
+        return run(m_for(ctx).add_point, position_id, name, kind, unit, source, tag, alarm_above, alarm_below)
 
-    @tool("record_reading", _WRITE, "Record a meter reading")
-    def record_reading(meter_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
-        """A meter reading (e.g. the pump's hour meter says 12,340). Readings only go up; a replaced
-        meter is a new meter. Meter ids are in get_position (meters)."""
-        return run(m_for(ctx).record_reading, meter_id, value, on, note)
+    @tool("record_reading", _WRITE, "Record a manual reading")
+    def record_reading(point_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
+        """A manual reading of a measurement point (the hour meter says 12,340; vibration 4.2 mm/s).
+        Counters only go up. Returns the point: latest, rate or trend, status, any alarm work order."""
+        return run(m_for(ctx).record_reading, point_id, value, on, note)
 
-    @tool("add_condition_point", _WRITE, "Add a condition monitoring point")
-    def add_condition_point(position_id: str, name: str, ctx: Context, unit: str = "",
-                            alarm_above: float | None = None, alarm_below: float | None = None,
-                            source: str = "manual", tag: str = "") -> dict[str, Any]:
-        """Something measured on a position to see its condition (vibration mm/s, bearing temperature,
-        oil debris, wear), with alarm limits. A reading past a limit opens an inspection work order.
-        source / tag record where readings come from (e.g. a historian tag) for later."""
-        return run(m_for(ctx).add_condition_point, position_id, name, unit, alarm_above, alarm_below, source, tag)
+    @tool("get_measurement_point", _READ, "Read a measurement point")
+    def get_measurement_point(point_id: str, ctx: Context) -> dict[str, Any]:
+        """A measurement point: kind, source and tag, latest reading, rate (counter) or trend and the date
+        it should reach an alarm limit (condition), status, recent readings. Ids are in get_position."""
+        return run(m_for(ctx).point, point_id)
 
-    @tool("record_condition", _WRITE, "Record a condition reading")
-    def record_condition(point_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
-        """A condition reading. Returns the point's status (ok / high / low), its trend, the date it's
-        projected to reach an alarm limit, and any work order the reading raised."""
-        return run(m_for(ctx).record_condition, point_id, value, on, note)
-
-    @tool("get_condition_point", _READ, "Read a condition point")
-    def get_condition_point(point_id: str, ctx: Context) -> dict[str, Any]:
-        """A condition point: limits, latest reading and status, trend, projected alarm date, readings."""
-        return run(m_for(ctx).condition_point, point_id)
-
-    @tool("get_meter", _READ, "Read a meter")
-    def get_meter(meter_id: str, ctx: Context) -> dict[str, Any]:
-        """A meter: its latest reading, the rate per day, and its recent readings."""
-        return run(m_for(ctx).meter, meter_id)
+    @tool("update_measurement_point", _WRITE, "Change a measurement point")
+    def update_measurement_point(point_id: str, ctx: Context, name: str | None = None,
+                                 alarm_above: float | None = None, alarm_below: float | None = None,
+                                 clear_alarm_above: bool = False, clear_alarm_below: bool = False,
+                                 tag: str | None = None) -> dict[str, Any]:
+        """Rename a point, set or clear its alarm limits, or change an automated point's tag."""
+        kwargs = {}
+        if name is not None:
+            kwargs["name"] = name
+        if alarm_above is not None or clear_alarm_above:
+            kwargs["alarm_above"] = None if clear_alarm_above else alarm_above
+        if alarm_below is not None or clear_alarm_below:
+            kwargs["alarm_below"] = None if clear_alarm_below else alarm_below
+        if tag is not None:
+            kwargs["tag"] = tag
+        return run(m_for(ctx).update_point, point_id, **kwargs)
 
     @tool("retire_task", _WRITE, "Retire a task")
     def retire_task(task_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
