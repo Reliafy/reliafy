@@ -214,7 +214,7 @@ function CloseForm({ wo, onClosed }) {
         <Field label="Done on"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
         {(wo.measurements || []).map((mt) => (
           <Field key={mt.id} label={`${mt.name} now (${mt.unit}, optional)`}>
-            <input type="number" min="0" step="any" value={readings[mt.id] ?? ""}
+            <input type="number" inputMode="decimal" min="0" step="any" value={readings[mt.id] ?? ""}
                    placeholder={mt.reading != null ? `last: ${mt.reading}` : ""}
                    onChange={(e) => setReadings({ ...readings, [mt.id]: e.target.value })} />
           </Field>
@@ -298,9 +298,9 @@ function CostsCard({ wo, onChanged }) {
         <div className="maint-action">
           <div className="rcm-form">
             {form === "labour" && <>
-              <Field label="Hours"><input type="number" min="0" step="any" autoFocus value={f.hours || ""} onChange={set("hours")} /></Field>
+              <Field label="Hours"><input type="number" inputMode="decimal" min="0" step="any" autoFocus value={f.hours || ""} onChange={set("hours")} /></Field>
               <Field label="Who (optional)"><input value={f.who || ""} onChange={set("who")} /></Field>
-              <Field label="Hourly rate (optional)"><input type="number" min="0" step="any" value={f.rate || ""} onChange={set("rate")} /></Field>
+              <Field label="Hourly rate (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={f.rate || ""} onChange={set("rate")} /></Field>
             </>}
             {form === "part" && <>
               {catalogue?.length > 0 && (
@@ -321,12 +321,12 @@ function CostsCard({ wo, onChanged }) {
               ) : (
                 <Field label="Part"><input autoFocus value={f.part || ""} placeholder="e.g. 6203 bearing" onChange={set("part")} /></Field>
               )}
-              <Field label="Quantity"><input type="number" min="0" step="any" value={f.quantity || ""} onChange={set("quantity")} /></Field>
-              <Field label="Cost each (optional)"><input type="number" min="0" step="any" value={f.unit_cost || ""} onChange={set("unit_cost")} /></Field>
+              <Field label="Quantity"><input type="number" inputMode="decimal" min="0" step="any" value={f.quantity || ""} onChange={set("quantity")} /></Field>
+              <Field label="Cost each (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={f.unit_cost || ""} onChange={set("unit_cost")} /></Field>
             </>}
             {form === "cost" && <>
               <Field label="What for"><input autoFocus value={f.description || ""} placeholder="e.g. Plumber call-out" onChange={set("description")} /></Field>
-              <Field label="Amount"><input type="number" min="0" step="any" value={f.amount || ""} onChange={set("amount")} /></Field>
+              <Field label="Amount"><input type="number" inputMode="decimal" min="0" step="any" value={f.amount || ""} onChange={set("amount")} /></Field>
             </>}
           </div>
           <div className="maint-row">

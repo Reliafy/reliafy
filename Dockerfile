@@ -28,30 +28,30 @@ WORKDIR /code
 # them: a later `apt-get purge` in a separate RUN only hides files, and the image
 # (downloaded on every Cloud Run cold start) would still carry them.
 #
+# - Python packages come from requirements.lock: exact versions with hashes,
+#   generated from requirements.txt by tools/lock_requirements.sh.
 # - RePyability is installed --no-deps, after the rest, so our pinned
 #   surpyval stays authoritative (it declares surpyval>=0.23, uncapped, and
 #   --no-deps stops pip re-resolving it to a newer one; see requirements.txt).
 # - firebase-admin is installed --no-deps with only what its auth module needs
-#   (google-auth, cachecontrol, pyjwt, requests, httpx): we only verify ID
+#   (google-auth, cachecontrol, pyjwt, requests, httpx, all in the lock): we only verify ID
 #   tokens, and its Firestore / Cloud Storage / gRPC dependencies (~60 MB) are
 #   never imported.
 # - Libraries' own test suites are stripped, and pip is removed: neither is
 #   needed at runtime, and together they're ~100 MB.
-COPY requirements.txt ./
+COPY requirements.lock ./
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git build-essential \
     && python -m pip install --no-cache-dir --upgrade pip \
-    && grep -viE '^firebase-admin' requirements.txt > /tmp/requirements-runtime.txt \
-    && pip install --no-cache-dir -r /tmp/requirements-runtime.txt \
-    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.13" \
+    && pip install --no-cache-dir --require-hashes -r requirements.lock \
+    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@debbb6ff2928034e273b609db9b09901cf6e6119" \
     && pip install --no-cache-dir --no-deps "firebase-admin==7.7.0" \
-    && pip install --no-cache-dir google-auth cachecontrol "pyjwt[crypto]" requests httpx \
     && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability, access_parser, defusedxml, openpyxl" \
     && find /usr/local/lib/python3.11/site-packages -depth -type d \( -name tests -o -name test \) \
          -not -path '*/_pytest/*' -prune -exec rm -rf {} + \
     && python -m pip uninstall -y pip \
     && apt-get purge -y --auto-remove git build-essential \
-    && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/requirements-runtime.txt
+    && rm -rf /var/lib/apt/lists/* /root/.cache
 
 # No display on the server: skip matplotlib's GUI-backend probing at import.
 # Its font/config cache goes to /tmp (the app user's home is read-only).

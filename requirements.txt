@@ -1,3 +1,6 @@
+# The packages the backend needs, by hand. Builds (Dockerfile, CI) install
+# requirements.lock instead: every package at an exact version with hashes.
+# After changing this file, run tools/lock_requirements.sh and commit both.
 fastapi
 uvicorn[standard]
 python-multipart
@@ -9,7 +12,7 @@ numpy
 # proportion is ``lfp_p``; ``covariance()`` replaces ``cov_matrix``): #238.
 surpyval==0.23
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
-# git tag (v0.13, which requires SurPyval 0.23), so the SurPyval
+# git commit (tag v0.13, which requires SurPyval 0.23), so the SurPyval
 # pin above stays authoritative: it declares surpyval>=0.23 (uncapped), but
 # --no-deps also stops pip re-resolving it to a newer surpyval. backend/tests/test_rbd_analysis.py exercises the pairing,
 # so a real break would fail the suite rather than reach production.
