@@ -425,6 +425,45 @@ def _duty_changed(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["group_id"], {"duty": p["position_id"], "duty_since": p["on"]})
 
 
+def stock_id(part_id: str, location_id: str) -> str:
+    return f"stock-{part_id[:12]}-{location_id[:12]}"
+
+
+def _part_created(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Part", {k: p.get(k, "") for k in ("part_number", "name", "manufacturer", "unit", "notes")}
+               | {"unit_cost": p.get("unit_cost"), "created": p["on"], "superseded_by": None})
+
+
+def _part_superseded(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"superseded_by": p["by_id"]})
+    s.put_edge(org, "SUPERSEDED_BY", p["id"], p["by_id"])
+
+
+def _parts_interchangeable(s: GraphStore, org: str, p: dict) -> None:
+    s.put_edge(org, "INTERCHANGEABLE", p["a"], p["b"])
+    s.put_edge(org, "INTERCHANGEABLE", p["b"], p["a"])
+
+
+def _stock_adjusted(s: GraphStore, org: str, p: dict) -> None:
+    sid = stock_id(p["part_id"], p["location_id"])
+    node = s.node(org, sid)
+    if node is None:
+        s.put_node(org, sid, "Stock", {"quantity": 0.0, "reorder_point": None, "moves": []})
+        s.put_edge(org, "OF", sid, p["part_id"])
+        s.put_edge(org, "AT", sid, p["location_id"])
+        node = s.node(org, sid)
+    moves = (list(node.get("moves") or []) + [{"on": p["on"], "delta": p["delta"], "reason": p.get("reason", ""),
+                                                "work_order_id": p.get("work_order_id")}])[-200:]
+    s.patch_node(org, sid, {"quantity": round(node["quantity"] + p["delta"], 6), "moves": moves})
+
+
+def _stock_reorder_set(s: GraphStore, org: str, p: dict) -> None:
+    sid = stock_id(p["part_id"], p["location_id"])
+    if s.node(org, sid) is None:
+        _stock_adjusted(s, org, {**p, "delta": 0, "reason": "reorder point set"})
+    s.patch_node(org, sid, {"reorder_point": p["reorder_point"]})
+
+
 PROJECTORS = {
     "position.created": _position_created,
     "position.updated": _position_updated,
@@ -466,6 +505,12 @@ PROJECTORS = {
     "condition_point.added": _condition_point_added,
     "condition_point.updated": _patch,
     "condition.read": _condition_read,
+    "part.created": _part_created,
+    "part.updated": _patch,
+    "part.superseded": _part_superseded,
+    "parts.interchangeable": _parts_interchangeable,
+    "stock.adjusted": _stock_adjusted,
+    "stock.reorder_set": _stock_reorder_set,
     "work_order.status": _work_order_status,
     "work_order.labour": _work_order_entry("Labour"),
     "work_order.part_used": _work_order_entry("PartUse"),
@@ -791,6 +836,104 @@ class Maintenance:
                               for p in self.s.inn(self.org, task["id"], "ABOUT")
                               if p["label"] == "Proposal" and p.get("status") == "pending"), None),
         }
+
+    # ---- parts and stock ----------------------------------------------------------
+
+    def create_part(self, part_number, name, manufacturer="", unit="each", unit_cost=None, notes="") -> dict:
+        """A part in the catalogue (a bearing, a seal kit, an anode), by part number."""
+        number = _text(part_number, "part number", required=True)[:120]
+        if any(pt["part_number"].lower() == number.lower() for pt in self.s.nodes(self.org, "Part")):
+            raise Invalid(f"Part number {number} is already in the catalogue.")
+        pid = new_id()
+        self._emit("part.created", {"id": pid, "part_number": number, "name": _text(name, "part's name", required=True)[:200],
+                                    "manufacturer": _text(manufacturer, "manufacturer")[:120],
+                                    "unit": _text(unit, "unit")[:20] or "each",
+                                    "unit_cost": self._amount(unit_cost, "unit cost"), "notes": _text(notes, "notes"),
+                                    "on": date.today().isoformat()})
+        return self.part(pid)
+
+    def update_part(self, part_id: str, **changes) -> dict:
+        self._get(part_id, "Part")
+        out = {k: _text(v, k)[:200] for k, v in changes.items()
+               if k in ("name", "manufacturer", "unit", "notes") and v is not None}
+        if "unit_cost" in changes:
+            out["unit_cost"] = self._amount(changes["unit_cost"], "unit cost")
+        if out:
+            self._emit("part.updated", {"id": part_id, "changes": out})
+        return self.part(part_id)
+
+    def supersede_part(self, part_id: str, by_part_id: str) -> dict:
+        """The part is replaced by another (a new part number for the same job)."""
+        self._get(part_id, "Part")
+        self._get(by_part_id, "Part")
+        if part_id == by_part_id:
+            raise Invalid("A part can't supersede itself.")
+        self._emit("part.superseded", {"id": part_id, "by_id": by_part_id})
+        return self.part(part_id)
+
+    def mark_interchangeable(self, part_id: str, other_part_id: str) -> dict:
+        self._get(part_id, "Part")
+        self._get(other_part_id, "Part")
+        if part_id == other_part_id:
+            raise Invalid("Pick two different parts.")
+        self._emit("parts.interchangeable", {"a": part_id, "b": other_part_id})
+        return self.part(part_id)
+
+    def adjust_stock(self, part_id: str, location_id: str, delta, reason="", on=None, work_order_id=None) -> dict:
+        """Receive (positive) or issue (negative) stock of a part at a location."""
+        self._get(part_id, "Part")
+        self._get(location_id, "Location")
+        try:
+            delta = float(delta)
+        except (TypeError, ValueError):
+            raise Invalid("The quantity must be a number.")
+        if delta == 0 or delta != delta:
+            raise Invalid("The quantity can't be 0.")
+        stock = self.s.node(self.org, stock_id(part_id, location_id))
+        if (stock or {}).get("quantity", 0) + delta < 0:
+            raise Invalid(f"There are only {(stock or {}).get('quantity', 0):g} in stock there.")
+        self._emit("stock.adjusted", {"part_id": part_id, "location_id": location_id, "delta": delta,
+                                      "reason": _text(reason, "reason")[:200], "on": _day(on),
+                                      "work_order_id": work_order_id})
+        return self.part(part_id)
+
+    def set_reorder_point(self, part_id: str, location_id: str, reorder_point) -> dict:
+        self._get(part_id, "Part")
+        self._get(location_id, "Location")
+        self._emit("stock.reorder_set", {"part_id": part_id, "location_id": location_id,
+                                         "reorder_point": self._amount(reorder_point, "reorder point"),
+                                         "on": date.today().isoformat()})
+        return self.part(part_id)
+
+    def part(self, part_id: str) -> dict:
+        pt = self._get(part_id, "Part")
+        stocks = [st for st in self.s.inn(self.org, part_id, "OF") if st["label"] == "Stock"]
+        today = date.fromisoformat(date.today().isoformat())
+        year_ago = (today - timedelta(days=365)).isoformat()
+        used = sum(-mv["delta"] for st in stocks for mv in st.get("moves") or []
+                   if mv["delta"] < 0 and mv["on"] >= year_ago)
+        on_hand = sum(st["quantity"] for st in stocks)
+        monthly = used / 12 if used else 0
+        by = pt.get("superseded_by") and self.s.node(self.org, pt["superseded_by"])
+        alike = self.s.out(self.org, part_id, "INTERCHANGEABLE")
+        locs = []
+        for st in stocks:
+            loc = self.s.out(self.org, st["id"], "AT")[0]
+            locs.append({"location": {"id": loc["id"], "name": loc["name"]}, "quantity": st["quantity"],
+                         "reorder_point": st.get("reorder_point"),
+                         "low": st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]})
+        return {
+            "id": part_id, **{k: pt.get(k) for k in ("part_number", "name", "manufacturer", "unit", "unit_cost", "notes")},
+            "superseded_by": by and {"id": by["id"], "part_number": by["part_number"], "name": by["name"]},
+            "interchangeable": [{"id": a["id"], "part_number": a["part_number"], "name": a["name"]} for a in alike],
+            "stock": sorted(locs, key=lambda x: x["location"]["name"].lower()), "on_hand": on_hand,
+            "used_last_year": used, "months_of_cover": round(on_hand / monthly, 1) if monthly else None,
+            "low": any(x["low"] for x in locs),
+        }
+
+    def parts(self) -> list[dict]:
+        return [self.part(pt["id"]) for pt in sorted(self.s.nodes(self.org, "Part"),
+                                                     key=lambda pt: pt["part_number"].lower())]
 
     # ---- condition monitoring -----------------------------------------------------
 
@@ -1228,16 +1371,30 @@ class Maintenance:
                                          "on": _day(on), "note": _text(note, "note")})
         return self.work_order(work_order_id)
 
-    def add_part_used(self, work_order_id: str, part, quantity=1, unit_cost=None, part_number="", note="") -> dict:
+    def add_part_used(self, work_order_id: str, part=None, quantity=1, unit_cost=None, part_number="", note="",
+                      part_id=None, from_location_id=None) -> dict:
+        """A part used on a work order: free text, or a catalogue part (part_id), issued from
+        stock at a location (from_location_id) if given."""
         self._open_or_closed(work_order_id)
         qty = self._amount(quantity, "quantity", allow_none=False)
         if qty <= 0:
             raise Invalid("The quantity must be more than 0.")
+        if part_id:
+            catalogue = self._get(part_id, "Part")
+            part = part or catalogue["name"]
+            part_number = part_number or catalogue["part_number"]
+            if unit_cost in (None, ""):
+                unit_cost = catalogue.get("unit_cost")
+            if from_location_id:
+                self.adjust_stock(part_id, from_location_id, -qty, "used on a work order",
+                                  work_order_id=work_order_id)
+        elif from_location_id:
+            raise Invalid("Stock is issued from the catalogue: give the part_id.")
         self._emit("work_order.part_used", {"id": new_id(), "work_order_id": work_order_id,
                                              "part": _text(part, "part", required=True)[:200],
                                              "part_number": _text(part_number, "part number")[:120],
                                              "quantity": qty, "unit_cost": self._amount(unit_cost, "unit cost"),
-                                             "note": _text(note, "note")})
+                                             "note": _text(note, "note"), "part_id": part_id or None})
         return self.work_order(work_order_id)
 
     def add_cost(self, work_order_id: str, description, amount) -> dict:
@@ -1960,6 +2117,8 @@ def summary(m: Maintenance) -> dict:
         "locations": len(m.s.nodes(m.org, "Location")),
         "items": len(m.s.nodes(m.org, "Item")),
         "open_work_orders": sum(1 for w in m.s.nodes(m.org, "WorkOrder") if w["status"] in OPEN_STATUSES),
+        "low_stock": sum(1 for st in m.s.nodes(m.org, "Stock")
+                         if st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]),
         "tasks": len(m.s.nodes(m.org, "Task")),
     }
 

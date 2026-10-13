@@ -8,7 +8,11 @@ import {
   setClassCosts,
   getMaintenanceLocation,
   getPositionClasses,
+  adjustMaintenanceStock,
+  createMaintenancePart,
   listMaintenanceItems,
+  listMaintenanceParts,
+  setMaintenanceReorder,
   listMaintenanceLocations,
   updateMaintenanceLocation,
 } from "../api.js";
@@ -303,5 +307,92 @@ function ClassPanel({ name, onChanged }) {
       </section>
       <Proposals proposals={c.proposals} onDecided={load} />
     </>
+  );
+}
+
+// ---- parts and stock -------------------------------------------------------------------
+
+export function MaintenanceParts() {
+  const [parts, setParts] = useState(null);
+  const [locations, setLocations] = useState([]);
+  const [modal, setModal] = useState(null);
+  const [error, setError] = useState(null);
+  const load = useCallback(() => {
+    listMaintenanceParts().then((d) => setParts(d.parts)).catch((e) => setError(e.message));
+  }, []);
+  useEffect(() => {
+    load();
+    listMaintenanceLocations().then((d) => setLocations(d.locations)).catch(() => {});
+  }, [load]);
+  return (
+    <div className="app">
+      <PageHeader crumbs={crumbs} title="Parts" meta="The parts catalogue and what's in stock where."
+                  primary={<button onClick={() => setModal("new")}><PlusIcon /> New part</button>} />
+      <MaintenanceTabs />
+      {error && <div className="card error">{error}</div>}
+      {parts === null ? <div className="card empty">Loading…</div> : parts.length === 0 ? (
+        <div className="card empty"><p>No parts yet. Add the spares you keep: anodes, filters, bearings.</p></div>
+      ) : (
+        <div className="lib">
+          <table className="lib-table">
+            <thead><tr><th>Part number</th><th>Part</th><th>On hand</th><th>Where</th><th>Used (12 mo)</th><th>Cover</th><th /></tr></thead>
+            <tbody>
+              {parts.map((pt) => (
+                <tr key={pt.id}>
+                  <td>{pt.part_number}{pt.superseded_by && <div className="lib-date">superseded by {pt.superseded_by.part_number}</div>}</td>
+                  <td>{pt.name}<div className="lib-date">{[pt.manufacturer, pt.unit_cost != null && `${pt.unit_cost} each`].filter(Boolean).join(" · ")}</div></td>
+                  <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}</td>
+                  <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
+                  <td>{pt.used_last_year}</td>
+                  <td className="lib-date">{pt.months_of_cover != null ? `${pt.months_of_cover} months` : "—"}</td>
+                  <td><button className="secondary" onClick={() => setModal({ stock: pt })}>Stock</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {modal === "new" && <NewPartModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
+      {modal?.stock && <StockModal part={modal.stock} locations={locations} onClose={() => setModal(null)}
+                                   onDone={() => { setModal(null); load(); }} />}
+    </div>
+  );
+}
+
+function NewPartModal({ onClose, onDone }) {
+  const [f, setF] = useState({ part_number: "", name: "", manufacturer: "", unit_cost: "" });
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  return (
+    <FormModal title="New part" submitLabel="Add" canSubmit={!!f.part_number.trim() && !!f.name.trim()} onClose={onClose}
+               onSubmit={async () => onDone(await createMaintenancePart({ ...f, unit_cost: f.unit_cost === "" ? null : Number(f.unit_cost) }))}>
+      <Field label="Part number"><input autoFocus value={f.part_number} onChange={set("part_number")} /></Field>
+      <Field label="Name"><input value={f.name} placeholder="e.g. Magnesium anode" onChange={set("name")} /></Field>
+      <Field label="Manufacturer (optional)"><input value={f.manufacturer} onChange={set("manufacturer")} /></Field>
+      <Field label="Cost each (optional)"><input type="number" min="0" step="any" value={f.unit_cost} onChange={set("unit_cost")} /></Field>
+    </FormModal>
+  );
+}
+
+function StockModal({ part, locations, onClose, onDone }) {
+  const [loc, setLoc] = useState(part.stock[0]?.location.id || "");
+  const [qty, setQty] = useState("");
+  const [reorder, setReorder] = useState("");
+  return (
+    <FormModal title={`Stock: ${part.part_number}`} submitLabel="Save" canSubmit={!!loc && (qty !== "" || reorder !== "")}
+               onClose={onClose}
+               onSubmit={async () => {
+                 if (qty !== "") await adjustMaintenanceStock(part.id, { location_id: loc, delta: Number(qty), reason: Number(qty) > 0 ? "received" : "issued" });
+                 if (reorder !== "") await setMaintenanceReorder(part.id, { location_id: loc, reorder_point: Number(reorder) });
+                 onDone();
+               }}>
+      <Field label="Location">
+        <select value={loc} onChange={(e) => setLoc(e.target.value)}>
+          <option value="">{locations.length ? "Choose…" : "Add a location first"}</option>
+          {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Received (+) or issued (−)"><input type="number" step="any" value={qty} placeholder="e.g. 3 or -1" onChange={(e) => setQty(e.target.value)} /></Field>
+      <Field label="Reorder at (optional)"><input type="number" min="0" step="any" value={reorder} onChange={(e) => setReorder(e.target.value)} /></Field>
+    </FormModal>
   );
 }

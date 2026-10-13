@@ -476,7 +476,50 @@ def log_labour(work_order_id: str, body: dict = Body(...), m: Maintenance = Depe
 @router.post("/work-orders/{work_order_id}/parts")
 def add_part_used(work_order_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.add_part_used, work_order_id, body.get("part"), body.get("quantity", 1), body.get("unit_cost"),
-                body.get("part_number", ""), body.get("note", ""))
+                body.get("part_number", ""), body.get("note", ""), body.get("part_id"), body.get("from_location_id"))
+
+
+@router.get("/parts")
+def list_parts(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: {"parts": m.parts()})
+
+
+@router.post("/parts")
+def create_part(body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.create_part, body.get("part_number"), body.get("name"), body.get("manufacturer", ""),
+                body.get("unit", "each"), body.get("unit_cost"), body.get("notes", ""))
+
+
+@router.get("/parts/{part_id}")
+def get_part(part_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.part, part_id)
+
+
+@router.patch("/parts/{part_id}")
+def update_part(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.update_part, part_id, **{k: body[k] for k in ("name", "manufacturer", "unit", "notes", "unit_cost")
+                                           if k in body})
+
+
+@router.post("/parts/{part_id}/stock")
+def adjust_stock(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.adjust_stock, part_id, body.get("location_id"), body.get("delta"), body.get("reason", ""),
+                body.get("on"))
+
+
+@router.post("/parts/{part_id}/reorder-point")
+def set_reorder_point(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.set_reorder_point, part_id, body.get("location_id"), body.get("reorder_point"))
+
+
+@router.post("/parts/{part_id}/supersede")
+def supersede_part(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.supersede_part, part_id, body.get("by_part_id"))
+
+
+@router.post("/parts/{part_id}/interchangeable")
+def mark_interchangeable(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.mark_interchangeable, part_id, body.get("other_part_id"))
 
 
 @router.post("/work-orders/{work_order_id}/costs")

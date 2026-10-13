@@ -103,6 +103,7 @@ export function MaintenanceTabs() {
     { to: "/maintenance", label: "Overview", end: true },
     { to: "/maintenance/items", label: "Items" },
     { to: "/maintenance/locations", label: "Locations" },
+    { to: "/maintenance/parts", label: "Parts" },
     { to: "/maintenance/classes", label: "Classes" },
   ];
   return (

@@ -287,10 +287,45 @@ def register() -> None:
         return run(m_for(ctx).log_labour, work_order_id, hours, who, rate, on, note)
 
     @tool("add_part_used", _WRITE, "Record a part used")
-    def add_part_used(work_order_id: str, part: str, ctx: Context, quantity: float = 1,
-                      unit_cost: float | None = None, part_number: str = "", note: str = "") -> dict[str, Any]:
-        """A part or consumable used on a work order (bearings, a seal kit, oil), with its cost."""
-        return run(m_for(ctx).add_part_used, work_order_id, part, quantity, unit_cost, part_number, note)
+    def add_part_used(work_order_id: str, ctx: Context, part: str | None = None, quantity: float = 1,
+                      unit_cost: float | None = None, part_number: str = "", note: str = "",
+                      part_id: str | None = None, from_location_id: str | None = None) -> dict[str, Any]:
+        """A part or consumable used on a work order (bearings, a seal kit, oil): free text (part), or a
+        catalogue part (part_id; its cost fills in), taken out of stock at from_location_id if given."""
+        return run(m_for(ctx).add_part_used, work_order_id, part, quantity, unit_cost, part_number, note,
+                   part_id, from_location_id)
+
+    @tool("list_parts", _READ, "List parts and stock")
+    def list_parts(ctx: Context) -> dict[str, Any]:
+        """The parts catalogue: each part's stock by location, reorder points (low = at or below),
+        use over the last year and months of cover."""
+        return {"parts": run(m_for(ctx).parts)}
+
+    @tool("create_part", _WRITE, "Add a part to the catalogue")
+    def create_part(part_number: str, name: str, ctx: Context, manufacturer: str = "", unit: str = "each",
+                    unit_cost: float | None = None, notes: str = "") -> dict[str, Any]:
+        """A part in the catalogue, by part number (unique)."""
+        return run(m_for(ctx).create_part, part_number, name, manufacturer, unit, unit_cost, notes)
+
+    @tool("adjust_stock", _WRITE, "Receive or issue stock")
+    def adjust_stock(part_id: str, location_id: str, quantity: float, ctx: Context, reason: str = "",
+                     on: DateText = None) -> dict[str, Any]:
+        """Receive stock (positive quantity) or issue / write off (negative) at a location."""
+        return run(m_for(ctx).adjust_stock, part_id, location_id, quantity, reason, on)
+
+    @tool("set_reorder_point", _WRITE, "Set a reorder point")
+    def set_reorder_point(part_id: str, location_id: str, reorder_point: float, ctx: Context) -> dict[str, Any]:
+        """Stock at or below this at the location counts as low."""
+        return run(m_for(ctx).set_reorder_point, part_id, location_id, reorder_point)
+
+    @tool("link_parts", _WRITE, "Supersede or link parts")
+    def link_parts(part_id: str, other_part_id: str, ctx: Context,
+                   relation: Literal["superseded_by", "interchangeable"] = "interchangeable") -> dict[str, Any]:
+        """Record that part_id is superseded by other_part_id, or that the two are interchangeable."""
+        m = m_for(ctx)
+        if relation == "superseded_by":
+            return run(m.supersede_part, part_id, other_part_id)
+        return run(m.mark_interchangeable, part_id, other_part_id)
 
     @tool("add_work_cost", _WRITE, "Add another cost to a work order")
     def add_work_cost(work_order_id: str, description: str, amount: float, ctx: Context) -> dict[str, Any]:

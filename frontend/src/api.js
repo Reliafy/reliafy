@@ -2279,3 +2279,16 @@ export function addConditionPoint(positionId, body) {
 export function recordCondition(pointId, value, on) {
   return postJson(`/api/maintenance/condition-points/${pointId}/readings`, { value, on });
 }
+
+export function listMaintenanceParts() {
+  return request("/api/maintenance/parts");
+}
+export function createMaintenancePart(body) {
+  return postJson("/api/maintenance/parts", body);
+}
+export function adjustMaintenanceStock(partId, body) {
+  return postJson(`/api/maintenance/parts/${partId}/stock`, body);
+}
+export function setMaintenanceReorder(partId, body) {
+  return postJson(`/api/maintenance/parts/${partId}/reorder-point`, body);
+}

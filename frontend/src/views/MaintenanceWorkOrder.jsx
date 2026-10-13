@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  addPartUsed, addWorkCost, cancelWorkOrder, checkWorkItem, closeWorkOrder, getWorkOrder, logLabour, removeWorkEntry,
+  addPartUsed, addWorkCost, cancelWorkOrder, checkWorkItem, closeWorkOrder, getWorkOrder, listMaintenanceLocations,
+  listMaintenanceParts, logLabour, removeWorkEntry,
   setWorkStatus, updateWorkOrder,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -253,12 +254,24 @@ function CostsCard({ wo, onChanged }) {
   const [form, setForm] = useState(null); // "labour" | "part" | "cost"
   const [f, setF] = useState({});
   const [error, setError] = useState(null);
+  const [catalogue, setCatalogue] = useState(null);
+  const [places, setPlaces] = useState([]);
+  const openPart = () => {
+    setForm("part"); setF({ quantity: 1 });
+    if (catalogue === null) {
+      listMaintenanceParts().then((d) => setCatalogue(d.parts)).catch(() => setCatalogue([]));
+      listMaintenanceLocations().then((d) => setPlaces(d.locations)).catch(() => {});
+    }
+  };
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const submit = async () => {
     setError(null);
     try {
       if (form === "labour") onChanged(await logLabour(wo.id, { hours: Number(f.hours), who: f.who || "", rate: f.rate ? Number(f.rate) : null }));
-      if (form === "part") onChanged(await addPartUsed(wo.id, { part: f.part, quantity: Number(f.quantity || 1), unit_cost: f.unit_cost ? Number(f.unit_cost) : null }));
+      if (form === "part") onChanged(await addPartUsed(wo.id, {
+        part: f.part_id ? null : f.part, part_id: f.part_id || null, from_location_id: f.part_id && f.from ? f.from : null,
+        quantity: Number(f.quantity || 1), unit_cost: f.unit_cost ? Number(f.unit_cost) : null,
+      }));
       if (form === "cost") onChanged(await addWorkCost(wo.id, { description: f.description, amount: Number(f.amount) }));
       setForm(null); setF({});
     } catch (e) { setError(e.message); }
@@ -276,7 +289,7 @@ function CostsCard({ wo, onChanged }) {
         <h2>Labour, parts and costs</h2>
         <div className="maint-row" style={{ marginTop: 0 }}>
           <button className="secondary" onClick={() => { setForm("labour"); setF({}); }}>Log labour</button>
-          <button className="secondary" onClick={() => { setForm("part"); setF({ quantity: 1 }); }}>Part used</button>
+          <button className="secondary" onClick={openPart}>Part used</button>
           <button className="secondary" onClick={() => { setForm("cost"); setF({}); }}>Other cost</button>
         </div>
       </div>
@@ -290,7 +303,24 @@ function CostsCard({ wo, onChanged }) {
               <Field label="Hourly rate (optional)"><input type="number" min="0" step="any" value={f.rate || ""} onChange={set("rate")} /></Field>
             </>}
             {form === "part" && <>
-              <Field label="Part"><input autoFocus value={f.part || ""} placeholder="e.g. 6203 bearing" onChange={set("part")} /></Field>
+              {catalogue?.length > 0 && (
+                <Field label="From the catalogue (optional)">
+                  <select value={f.part_id || ""} onChange={set("part_id")}>
+                    <option value="">No: type it below</option>
+                    {catalogue.map((pt) => <option key={pt.id} value={pt.id}>{pt.part_number}: {pt.name} ({pt.on_hand} on hand)</option>)}
+                  </select>
+                </Field>
+              )}
+              {f.part_id ? (
+                <Field label="Take it from stock at (optional)">
+                  <select value={f.from || ""} onChange={set("from")}>
+                    <option value="">Don't change stock</option>
+                    {places.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </Field>
+              ) : (
+                <Field label="Part"><input autoFocus value={f.part || ""} placeholder="e.g. 6203 bearing" onChange={set("part")} /></Field>
+              )}
               <Field label="Quantity"><input type="number" min="0" step="any" value={f.quantity || ""} onChange={set("quantity")} /></Field>
               <Field label="Cost each (optional)"><input type="number" min="0" step="any" value={f.unit_cost || ""} onChange={set("unit_cost")} /></Field>
             </>}
