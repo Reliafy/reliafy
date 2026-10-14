@@ -485,3 +485,65 @@ def test_tasks_on_items_and_locations_through_mcp(env):
     assert [c["text"] for c in rounds["checklist"]] == ["Pump"]
     assert replace.is_error and "is a location" in replace.content[0].text
     assert closed["status"] == "closed"
+
+
+def test_item_classes_and_the_nameplate_flow_over_mcp(env):
+    """Load the starter taxonomy, then the nameplate flow: match the maker, find or make the
+    part (the model) with its class, link the item and fill in its attributes."""
+
+    async def flow(client):
+        names = {t.name for t in (await client.list_tools()).tools}
+        assert {"list_item_classes", "create_item_class", "update_item_class", "retire_item_class",
+                "set_item_class_attributes", "assign_item_class", "set_item_part", "set_item_attributes",
+                "import_item_classes", "export_item_classes", "load_starter_item_classes", "list_manufacturers",
+                "get_manufacturer", "match_manufacturer", "create_manufacturer", "update_manufacturer",
+                "merge_manufacturers", "link_manufacturer", "link_manufacturers_by_name",
+                "get_item_class"} <= names
+        assert _ok(await client.call_tool("list_item_classes", {}))["tree"] == []
+        dry = _ok(await client.call_tool("load_starter_item_classes", {}))
+        assert dry["dry_run"] and dry["source"] == "Reliafy starter taxonomy"
+        _ok(await client.call_tool("load_starter_item_classes", {"dry_run": False}))
+        tree = _ok(await client.call_tool("list_item_classes", {}))
+        rot = next(c for c in tree["tree"] if c["name"] == "Rotating equipment")
+        pump = next(c for c in rot["children"] if c["name"] == "Pump")
+        cent = next(c for c in pump["children"] if c["name"] == "Centrifugal")
+        mine = _ok(await client.call_tool("create_item_class", {
+            "name": "Fire pump", "parent_id": cent["id"], "code": "FP", "level": "type",
+            "attributes": [{"name": "Rated pressure", "unit": "kPa"}]}))
+        assert mine["display"] == "Rotating equipment › Pump › Centrifugal › Fire pump"
+        bad = await client.call_tool("update_item_class", {"item_class_id": pump["id"], "parent_id": mine["id"]})
+        assert bad.is_error and "inside itself" in bad.content[0].text
+
+        pos = _ok(await client.call_tool("create_position", {"name": "Fire pump 1"}))
+        fitted = _ok(await client.call_tool("fit_item", {"position_id": pos["id"], "item_name": "Fire pump",
+                                                          "manufacturer": "K.S.B."}))
+        item_id = fitted["fitted"]["item"]["id"]
+        assert _ok(await client.call_tool("match_manufacturer", {"text": "K.S.B."}))["match"] is None
+        ksb = _ok(await client.call_tool("create_manufacturer", {"name": "KSB", "aliases": ["KSB SE & Co. KGaA"]}))
+        assert _ok(await client.call_tool("match_manufacturer", {"text": "K.S.B."}))["match"]["id"] == ksb["id"]
+        part = _ok(await client.call_tool("create_part", {
+            "part_number": "Etanorm 050-032-200", "name": "Etanorm fire pump", "item_class_id": mine["id"],
+            "manufacturer_id": ksb["id"]}))
+        item = _ok(await client.call_tool("set_item_part", {"item_id": item_id, "part_id": part["id"]}))
+        assert item["item_class"]["via"] == "part" and item["manufacturer_entry"]["name"] == "KSB"
+        item = _ok(await client.call_tool("set_item_attributes", {"item_id": item_id, "values": {
+            "Flow": "45 m3/h", "Head": 32, "Rated pressure": 700, "Shaft seal": "packing"}}))
+        wrong = await client.call_tool("set_item_attributes", {"item_id": item_id, "values": {"Flow": "12 L/s"}})
+        assert wrong.is_error and "m3/h" in wrong.content[0].text
+        listed = _ok(await client.call_tool("list_maintenance_items", {"item_class_id": pump["id"]}))
+        by_maker = _ok(await client.call_tool("list_parts", {"manufacturer_id": ksb["id"]}))
+        linked = _ok(await client.call_tool("link_manufacturers_by_name", {"dry_run": False}))
+        exported = _ok(await client.call_tool("export_item_classes", {"format": "csv"}))
+        imported = _ok(await client.call_tool("import_item_classes", {"csv": "path,code\nSkids > Pump skid,SK\n"}))
+        both = await client.call_tool("import_item_classes", {})
+        return item, listed, by_maker, linked, exported, imported, both
+
+    item, listed, by_maker, linked, exported, imported, both = _session(env["token"], flow)
+    values = {a["name"]: a["value"] for a in item["attributes"]}
+    assert values["Flow"] == 45.0 and values["Rated pressure"] == 700.0 and values["Shaft seal"] == "packing"
+    assert [i["name"] for i in listed["items"]] == ["Fire pump"]
+    assert [p["part_number"] for p in by_maker["parts"]] == ["Etanorm 050-032-200"]
+    assert [x["text"] for x in linked["links"]] == ["K.S.B."]
+    assert "Rotating equipment > Pump > Centrifugal > Fire pump,FP,type" in exported["csv"]
+    assert imported["dry_run"] and imported["counts"]["create"] == 2
+    assert both.is_error

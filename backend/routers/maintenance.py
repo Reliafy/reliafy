@@ -557,14 +557,18 @@ def generate_rbd(position_id: str, session=Depends(get_session), m: Maintenance 
 # ---- items and locations ---------------------------------------------------------------
 
 @router.get("/items")
-def list_items(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {"items": m.items()})
+def list_items(item_class_id: str | None = None, manufacturer_id: str | None = None,
+               m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Items; item_class_id (with the classes inside it) and manufacturer_id filter them
+    ("none": those with none)."""
+    return _run(lambda: {"items": m.items(item_class_id, manufacturer_id)})
 
 
 @router.post("/items")
 def create_item(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(lambda: m.item(m.create_item(body.get("name"), body.get("serial", ""), body.get("part_number", ""),
                                              body.get("manufacturer", ""), body.get("notes", ""),
+                                             part_id=body.get("part_id"),
                                              **{k: body[k] for k in Maintenance.ITEM_DETAILS if k in body})["id"]))
 
 
@@ -577,6 +581,18 @@ def get_item(item_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespons
 def update_item(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.update_item, item_id, body.get("nameplate"), body.get("append_note"),
                 **{k: body[k] for k in (*Maintenance.ITEM_FIELDS, *Maintenance.ITEM_DETAILS) if k in body})
+
+
+@router.put("/items/{item_id}/attributes")
+def set_item_attributes(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{values: {attribute name: value}}: checked against the item's class."""
+    return _run(m.set_item_attributes, item_id, body.get("values"))
+
+
+@router.put("/items/{item_id}/part")
+def set_item_part(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{part_id}: the catalogue part (make and model) the item is; null unlinks it."""
+    return _run(m.set_item_part, item_id, body.get("part_id"))
 
 
 @router.post("/items/{item_id}/move")
@@ -671,14 +687,16 @@ def add_part_used(work_order_id: str, body: dict = Body(...), m: Maintenance = D
 
 
 @router.get("/parts")
-def list_parts(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {"parts": m.parts()})
+def list_parts(item_class_id: str | None = None, manufacturer_id: str | None = None,
+               m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: {"parts": m.parts(item_class_id, manufacturer_id)})
 
 
 @router.post("/parts")
 def create_part(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.create_part, body.get("part_number"), body.get("name"), body.get("manufacturer", ""),
-                body.get("unit", "each"), body.get("unit_cost"), body.get("notes", ""))
+                body.get("unit", "each"), body.get("unit_cost"), body.get("notes", ""), body.get("item_class_id"),
+                body.get("manufacturer_id"))
 
 
 @router.get("/parts/{part_id}")
@@ -711,6 +729,125 @@ def supersede_part(part_id: str, body: dict = Body(...), m: Maintenance = Depend
 @router.post("/parts/{part_id}/interchangeable")
 def mark_interchangeable(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.mark_interchangeable, part_id, body.get("other_part_id"))
+
+
+# ---- item classes and manufacturers (optional) -------------------------------------------
+
+@router.get("/item-classes")
+def item_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The item class tree with counts, and every class flat by path (for pickers)."""
+    return _run(lambda: {**m.item_class_tree(), "classes": m.item_classes()})
+
+
+@router.post("/item-classes")
+def create_item_class(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.create_item_class, body.get("name"), body.get("parent_id"), body.get("code", ""),
+                body.get("level", ""), body.get("description", ""), body.get("attributes"))
+
+
+@router.get("/item-classes/export")
+def export_item_classes(format: str = "json", m: Maintenance = Depends(maintenance)) -> Response:
+    from backend.maintenance import taxonomy
+
+    if format == "csv":
+        return Response(taxonomy.export_csv(m), media_type="text/csv",
+                        headers={"Content-Disposition": 'attachment; filename="item-classes.csv"'})
+    return _run(taxonomy.export_json, m)
+
+
+@router.post("/item-classes/import")
+def import_item_classes(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A taxonomy as CSV or JSON text ({format: csv | json, text, dry_run, source}) or as
+    {classes: [...]}. A dry run (the default) only reports."""
+    from backend.maintenance import taxonomy
+
+    def go():
+        if body.get("classes") is not None:
+            rows = taxonomy.rows_from_json(body["classes"])
+        elif body.get("format") == "csv":
+            rows = taxonomy.rows_from_csv(str(body.get("text") or ""))
+        else:
+            rows = taxonomy.rows_from_json(str(body.get("text") or ""))
+        return taxonomy.run(m, rows, body.get("dry_run", True) is not False, body.get("source") or "imported")
+    return _run(go)
+
+
+@router.post("/item-classes/starter")
+def load_starter_item_classes(body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The Reliafy starter taxonomy, only on request; {dry_run} (default true)."""
+    from backend.maintenance import taxonomy
+
+    return _run(taxonomy.load_starter, m, body.get("dry_run", True) is not False)
+
+
+@router.post("/item-classes/assign")
+def assign_item_class(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{target_id: an item or part, item_class_id (null takes it away)}."""
+    return _run(m.assign_item_class, body.get("target_id"), body.get("item_class_id"))
+
+
+@router.get("/item-classes/{class_id}")
+def get_item_class(class_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.item_class, class_id)
+
+
+@router.patch("/item-classes/{class_id}")
+def update_item_class(class_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """name, code, level, description, attributes; parent_id moves it (null: to the top)."""
+    return _run(m.update_item_class, class_id, **{k: body[k] for k in (
+        "name", "code", "level", "description", "parent_id", "attributes") if k in body})
+
+
+@router.post("/item-classes/{class_id}/retire")
+def retire_item_class(class_id: str, body: dict = Body(default={}),
+                      m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(lambda: (m.retire_item_class(class_id, body.get("reason", "")), {"retired": class_id})[1])
+
+
+@router.get("/manufacturers")
+def list_manufacturers(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: {"manufacturers": m.manufacturers()})
+
+
+@router.post("/manufacturers")
+def create_manufacturer(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.create_manufacturer, body.get("name"), body.get("aliases") or [])
+
+
+@router.get("/manufacturers/match")
+def match_manufacturer(text: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.match_manufacturer, text)
+
+
+@router.post("/manufacturers/link")
+def link_manufacturer(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{target_id: an item or part, manufacturer_id (null unlinks it)}."""
+    return _run(m.link_manufacturer, body.get("target_id"), body.get("manufacturer_id"))
+
+
+@router.post("/manufacturers/link-by-name")
+def link_manufacturers_by_name(body: dict = Body(default={}),
+                               m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.link_manufacturers_by_name, body.get("dry_run", True) is not False)
+
+
+@router.get("/manufacturers/{manufacturer_id}")
+def get_manufacturer(manufacturer_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.manufacturer, manufacturer_id)
+
+
+@router.patch("/manufacturers/{manufacturer_id}")
+def update_manufacturer(manufacturer_id: str, body: dict = Body(...),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """name; add_aliases, remove_aliases."""
+    return _run(m.update_manufacturer, manufacturer_id, body.get("name"), body.get("add_aliases") or [],
+                body.get("remove_aliases") or [])
+
+
+@router.post("/manufacturers/{manufacturer_id}/merge")
+def merge_manufacturers(manufacturer_id: str, body: dict = Body(...),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.merge_manufacturers, manufacturer_id, body.get("into_id"))
 
 
 # ---- a position's parts list, and where the spares fall short -----------------------------

@@ -155,12 +155,17 @@ def register() -> None:
         return run(m_for(ctx).work_order, work_order_id)
 
     @tool("list_maintenance_items", _READ, "List items")
-    def list_maintenance_items(ctx: Context) -> dict[str, Any]:
+    def list_maintenance_items(ctx: Context, item_class_id: Annotated[str | None, Field(description=(
+                                   "Only items of this item class or a class inside it (list_item_classes); "
+                                   "'none' for items with no class."))] = None,
+                               manufacturer_id: Annotated[str | None, Field(description=(
+                                   "Only this manufacturer's items (list_manufacturers); 'none' for items "
+                                   "with no manufacturer linked."))] = None) -> dict[str, Any]:
         """Every physical item (serial-numbered thing), with the position it's fitted to and
         where it is: location (how: fitted = its position's location, or placed = a placement
         while not fitted), or last_at (taken out of a position and not placed since: where
-        that position is)."""
-        return {"items": run(m_for(ctx).items)}
+        that position is); item_class and manufacturer_entry when set."""
+        return {"items": run(m_for(ctx).items, item_class_id, manufacturer_id)}
 
     @tool("list_locations", _READ, "List locations")
     def list_locations(ctx: Context) -> dict[str, Any]:
@@ -243,15 +248,16 @@ def register() -> None:
     @tool("fit_item", _WRITE, "Fit an item to a position")
     def fit_item(position_id: str, ctx: Context, item_id: str | None = None, item_name: str | None = None,
                  serial: str = "", part_number: str = "", manufacturer: str = "", on: RoughDate = None,
-                 from_precision: Precision | None = None) -> dict[str, Any]:
+                 from_precision: Precision | None = None, part_id: str | None = None) -> dict[str, Any]:
         """Fit an item to an empty position: an existing item (item_id), or a new one
-        (item_name, with optional serial, part number and manufacturer). 'on' is the
+        (item_name, with optional serial, part number and manufacturer; or part_id: the
+        catalogue part, a make and model, it is, which fills in what isn't given). 'on' is the
         date it went in; if it's known only roughly, say so (on '2022', or a day with
         from_precision 'estimated'): life data then treats its life as a range. A new
         item renews the position's tasks. To replace an item, close a work order with a
         replace action instead."""
         new_item = {"name": item_name, "serial": serial, "part_number": part_number,
-                    "manufacturer": manufacturer} if item_name else None
+                    "manufacturer": manufacturer, "part_id": part_id} if item_name or part_id else None
         return run(m_for(ctx).fit, position_id, item_id, new_item, on, from_precision)
 
     @tool("remove_item", _WRITE, "Remove a fitted item")
@@ -407,7 +413,10 @@ def register() -> None:
         it has been fitted to, its placements (current marks the one in force), its own positions
         (an engine's turbos) and its photos. tasks: its own tasks, which follow it from position to
         position and into a store (each with its subject, next due and while_stored); work_orders on
-        it; measurements: its own measurement points (an hour meter that travels with it)."""
+        it; measurements: its own measurement points (an hour meter that travels with it).
+        item_class: what kind of thing it is (via: its own, or its part's), with attributes (each
+        with unit, kind, options and value; set_item_attributes fills them in); part: the catalogue
+        part (make and model) it is; manufacturer_entry: its maker in the register."""
         return run(m_for(ctx).item, item_id)
 
     @tool("update_item", _WRITE, "Update an item's details")
@@ -526,11 +535,14 @@ def register() -> None:
         return run(importer.run, m_for(ctx), [{str(k): str(v) for k, v in r.items()} for r in rows], dry_run)
 
     @tool("list_parts", _READ, "List parts and stock")
-    def list_parts(ctx: Context) -> dict[str, Any]:
+    def list_parts(ctx: Context, item_class_id: str | None = None,
+                   manufacturer_id: str | None = None) -> dict[str, Any]:
         """The parts catalogue: each part's stock by location, reorder points (low = at or below),
-        use over the last year and months of cover, the positions that use it (used_at) and
-        critical_short when it's a critical spare kept below a position's minimum."""
-        return {"parts": run(m_for(ctx).parts)}
+        use over the last year and months of cover, the positions that use it (used_at),
+        critical_short when it's a critical spare kept below a position's minimum, and its
+        item_class and manufacturer_entry when set. item_class_id (that class or one inside it) and
+        manufacturer_id filter it; 'none' for either lists the parts with none."""
+        return {"parts": run(m_for(ctx).parts, item_class_id, manufacturer_id)}
 
     @tool("get_part", _READ, "Read a part")
     def get_part(part_id: str, ctx: Context) -> dict[str, Any]:
@@ -581,9 +593,14 @@ def register() -> None:
 
     @tool("create_part", _WRITE, "Add a part to the catalogue")
     def create_part(part_number: str, name: str, ctx: Context, manufacturer: str = "", unit: str = "each",
-                    unit_cost: float | None = None, notes: str = "") -> dict[str, Any]:
-        """A part in the catalogue, by part number (unique)."""
-        return run(m_for(ctx).create_part, part_number, name, manufacturer, unit, unit_cost, notes)
+                    unit_cost: float | None = None, notes: str = "", item_class_id: str | None = None,
+                    manufacturer_id: str | None = None) -> dict[str, Any]:
+        """A part in the catalogue, by part number (unique): a spare (a bearing, a seal kit), or a
+        make and model of equipment (part_number = the model number, e.g. 'Etanorm 050-032-200').
+        item_class_id: what kind of thing it is (items linked to it take it); manufacturer_id: its
+        maker in the register (match_manufacturer first)."""
+        return run(m_for(ctx).create_part, part_number, name, manufacturer, unit, unit_cost, notes,
+                   item_class_id, manufacturer_id)
 
     @tool("adjust_stock", _WRITE, "Receive or issue stock")
     def adjust_stock(part_id: str, location_id: str, quantity: float, ctx: Context, reason: str = "",
@@ -976,6 +993,196 @@ def register() -> None:
         """Remove a document link (its id is in the documents of get_item, get_position or
         list_position_classes)."""
         return run(m_for(ctx).remove_document, document_id)
+
+    # ---- item classes and the manufacturer register (optional) --------------------------
+
+    from backend.maintenance import taxonomy
+
+    Attributes = Annotated[list[dict[str, Any]] | None, Field(description=(
+        "The class's own attributes: [{name, unit?, kind?: number | text | choice, options?: [..] for a "
+        "choice}], e.g. [{name: 'Flow', unit: 'm3/h'}, {name: 'Shaft seal', kind: 'choice', options: "
+        "['mechanical seal', 'packing']}]. kind defaults to number when there's a unit, else text. Classes "
+        "inside it inherit them; never repeat an inherited one."))]
+
+    @tool("list_item_classes", _READ, "List item classes")
+    def list_item_classes(ctx: Context) -> dict[str, Any]:
+        """The workspace's item class tree: what KIND OF THING items are (Rotating equipment >
+        Pump > Centrifugal > End-suction), each with its code, level label, own attributes, and
+        items / parts in it (all_items / all_parts: with the classes inside it). Optional: an empty
+        tree means the workspace doesn't use them (load_starter_item_classes or
+        import_item_classes can start one, on the user's say-so). Not a position's
+        position_class, which is the duty ('cooling-water duty pump') and pools life data."""
+        return run(m_for(ctx).item_class_tree)
+
+    @tool("get_item_class", _READ, "Read an item class")
+    def get_item_class(item_class_id: str, ctx: Context) -> dict[str, Any]:
+        """One item class: its path, code, level, description, the classes inside it, its
+        attributes (inherited ones first, each with the class it's from) and the items and parts
+        in it or a class inside it."""
+        return run(m_for(ctx).item_class, item_class_id)
+
+    @tool("create_item_class", _WRITE, "Create an item class")
+    def create_item_class(name: str, ctx: Context, parent_id: str | None = None, code: str = "",
+                          level: Annotated[str, Field(description=(
+                              "The user's name for its level, e.g. class, type, subunit, maintainable item."))] = "",
+                          description: str = "", attributes: Attributes = None) -> dict[str, Any]:
+        """Add a kind of thing to the item class tree, inside parent_id (or at the top). code: the
+        user's own code (e.g. to map to a classification standard they hold; never invent one).
+        Check list_item_classes first: reuse a class that's there rather than making a near
+        duplicate."""
+        return run(m_for(ctx).create_item_class, name, parent_id, code, level, description, attributes)
+
+    @tool("update_item_class", _WRITE, "Change or move an item class")
+    def update_item_class(item_class_id: str, ctx: Context, name: str | None = None, code: str | None = None,
+                          level: str | None = None, description: str | None = None,
+                          parent_id: str | None = None, move_to_top_level: bool = False) -> dict[str, Any]:
+        """Rename an item class, change its code, level label or description, or move it inside
+        another class (parent_id) or to the top level; never inside itself. Its items, parts and the
+        classes inside it go with it. Attributes: set_item_class_attributes."""
+        kwargs = {k: v for k, v in (("name", name), ("code", code), ("level", level), ("description", description))
+                  if v is not None}
+        if parent_id or move_to_top_level:
+            kwargs["parent_id"] = None if move_to_top_level else parent_id
+        return run(m_for(ctx).update_item_class, item_class_id, **kwargs)
+
+    @tool("set_item_class_attributes", _WRITE, "Set an item class's attributes")
+    def set_item_class_attributes(item_class_id: str, attributes: Attributes, ctx: Context) -> dict[str, Any]:
+        """Replace an item class's OWN attributes (the whole list: include the ones to keep). Inherited
+        ones belong to the class above. Values items already have for an attribute taken off stay on
+        them (other_attributes on get_item)."""
+        return run(m_for(ctx).set_item_class_attributes, item_class_id, attributes or [])
+
+    @tool("retire_item_class", _WRITE, "Retire an item class")
+    def retire_item_class(item_class_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
+        """Take an item class out of use (kept in the history). It must be empty: retire or move the
+        classes inside it, and give its items and parts another class, first."""
+        m = m_for(ctx)
+        return run(lambda: (m.retire_item_class(item_class_id, reason), {"retired": item_class_id})[1])
+
+    @tool("assign_item_class", _WRITE, "Set what kind of thing an item or part is")
+    def assign_item_class(target_id: str, ctx: Context, item_class_id: Annotated[str | None, Field(description=(
+                              "The class; null takes it away."))] = None) -> dict[str, Any]:
+        """Give an item, or a catalogue part, an item class. Prefer the part (the make and model):
+        every item linked to it takes its class; give an item its own only when it differs. An
+        item's class (its own, else its part's) decides which attributes it can have."""
+        return run(m_for(ctx).assign_item_class, target_id, item_class_id)
+
+    @tool("set_item_part", _WRITE, "Say which catalogue part an item is")
+    def set_item_part(item_id: str, ctx: Context, part_id: Annotated[str | None, Field(description=(
+                          "The catalogue part (make and model); null unlinks it."))] = None) -> dict[str, Any]:
+        """Link an item to the catalogue part that is its make and model (create_part first if it
+        isn't there). The item then takes the part's item class and manufacturer unless it has its
+        own. Items made from a part (a replacement from a part, fit_item with part_id) are linked
+        already."""
+        return run(m_for(ctx).set_item_part, item_id, part_id)
+
+    @tool("set_item_attributes", _WRITE, "Fill in an item's attributes")
+    def set_item_attributes(item_id: str, values: Annotated[dict[str, Any], Field(description=(
+                                "{attribute name: value}, e.g. {'Flow': 45, 'Head': '32 m', 'Shaft seal': "
+                                "'mechanical seal'}. Numbers in the attribute's unit (convert first); '' or "
+                                "null clears one."))], ctx: Context) -> dict[str, Any]:
+        """Fill in an item's structured attributes, checked against its item class (its own, else its
+        part's; get_item lists them with units and options). Anything else from a nameplate goes in
+        update_item's nameplate. The nameplate flow, after reading a plate with get_photo:
+        match_manufacturer (create_manufacturer if it's new) -> find the model in list_parts
+        (manufacturer_id filter) or create_part (model number, item_class_id, manufacturer_id) ->
+        set_item_part -> set_item_attributes with the ratings read -> update_item for the serial
+        and the rest. Say what you read and what you couldn't."""
+        return run(m_for(ctx).set_item_attributes, item_id, values)
+
+    @tool("import_item_classes", _WRITE, "Import an item class taxonomy")
+    def import_item_classes(ctx: Context, classes: Annotated[list[dict[str, Any]] | None, Field(description=(
+                                "JSON: [{path: 'Rotating equipment > Pump > Centrifugal', code?, level?, "
+                                "description?, attributes?: [{name, unit?, kind?, options?}]}], or {name, "
+                                "parent?: path} for path, or nested with children: [...]."))] = None,
+                            csv: Annotated[str | None, Field(description=(
+                                "Or CSV text with a header: path (or name, parent), code, level, description, "
+                                "attributes ('Flow (m3/h); Stages [number]; Seal [choice: mechanical | "
+                                "packing]')."))] = None,
+                            dry_run: bool = True, source: str = "imported") -> dict[str, Any]:
+        """Load a taxonomy of item classes the user has (their company's, or a standard they hold a
+        licence for): never type one in from memory (ISO 14224 and OREDA are copyrighted). Matched
+        by path, so it can be run again: existing classes only gain what they lack; conflicts are
+        listed and left alone. dry_run (the default) only reports what would change: show it, then
+        run with dry_run false. Every row is checked first; with any error nothing is written."""
+        m = m_for(ctx)
+        if (classes is None) == (csv is None):
+            raise ToolError("Give the classes as JSON (classes) or CSV text (csv), one of them.")
+
+        def go():
+            rows = taxonomy.rows_from_json(classes) if classes is not None else taxonomy.rows_from_csv(csv)
+            return taxonomy.run(m, rows, dry_run, source)
+        return run(go)
+
+    @tool("export_item_classes", _READ, "Export the item class taxonomy")
+    def export_item_classes(ctx: Context, format: Literal["json", "csv"] = "json") -> dict[str, Any]:
+        """The workspace's item class tree as import_item_classes reads it: JSON rows (path, code,
+        level, description, attributes) or CSV text."""
+        m = m_for(ctx)
+        return run(lambda: taxonomy.export_json(m) if format == "json" else {"csv": taxonomy.export_csv(m)})
+
+    @tool("load_starter_item_classes", _WRITE, "Load the starter item class taxonomy")
+    def load_starter_item_classes(ctx: Context, dry_run: bool = True) -> dict[str, Any]:
+        """Load the Reliafy starter taxonomy (Reliafy's own, not ISO 14224 or OREDA): common
+        equipment (pumps, motors, compressors, fans, valves, vessels, heat exchangers, conveyors,
+        gearboxes, engines, generators, transformers, switchgear, instruments, HVAC, water heaters)
+        with typical attributes. Only when the user asks for it. Safe to run again: it adds only
+        what's missing. dry_run (the default) shows what it would add."""
+        return run(taxonomy.load_starter, m_for(ctx), dry_run)
+
+    @tool("list_manufacturers", _READ, "List manufacturers")
+    def list_manufacturers(ctx: Context) -> dict[str, Any]:
+        """The manufacturer register: each maker with its aliases and how many items and parts are
+        linked to it. Items and parts keep their typed manufacturer text; the register ties the
+        spellings of one maker together."""
+        return {"manufacturers": run(m_for(ctx).manufacturers)}
+
+    @tool("get_manufacturer", _READ, "Read a manufacturer")
+    def get_manufacturer(manufacturer_id: str, ctx: Context) -> dict[str, Any]:
+        """A manufacturer: its aliases and the items and parts linked to it."""
+        return run(m_for(ctx).manufacturer, manufacturer_id)
+
+    @tool("match_manufacturer", _READ, "Find a manufacturer in the register")
+    def match_manufacturer(text: str, ctx: Context) -> dict[str, Any]:
+        """Which register entry a manufacturer as written ('K.S.B.', 'KSB AG', from a nameplate or a
+        spreadsheet) is: matched by name or alias, case, accents and punctuation aside, or without a
+        company form (AG, Ltd, Inc). match is null when none is certain; candidates are near misses
+        to ask the user about. Use before create_manufacturer, so one maker isn't entered twice."""
+        return run(m_for(ctx).match_manufacturer, text)
+
+    @tool("create_manufacturer", _WRITE, "Add a manufacturer to the register")
+    def create_manufacturer(name: str, ctx: Context, aliases: list[str] = []) -> dict[str, Any]:
+        """Add a maker to the register with the other names it goes by (aliases: 'K.S.B.', 'KSB SE &
+        Co. KGaA'). Refused if a name is already another entry's: add an alias there instead."""
+        return run(m_for(ctx).create_manufacturer, name, aliases)
+
+    @tool("update_manufacturer", _WRITE, "Rename a manufacturer or change its aliases")
+    def update_manufacturer(manufacturer_id: str, ctx: Context, name: str | None = None,
+                            add_aliases: list[str] = [], remove_aliases: list[str] = []) -> dict[str, Any]:
+        """Rename a manufacturer, or add or take off aliases."""
+        return run(m_for(ctx).update_manufacturer, manufacturer_id, name, add_aliases, remove_aliases)
+
+    @tool("merge_manufacturers", _WRITE, "Merge two manufacturers")
+    def merge_manufacturers(manufacturer_id: str, into_manufacturer_id: str, ctx: Context) -> dict[str, Any]:
+        """Fold a duplicate entry into another (both the same maker): its items and parts move across,
+        and its name and aliases become the other's aliases. Confirm with the user first."""
+        return run(m_for(ctx).merge_manufacturers, manufacturer_id, into_manufacturer_id)
+
+    @tool("link_manufacturer", _WRITE, "Link an item or part to its manufacturer")
+    def link_manufacturer(target_id: str, ctx: Context, manufacturer_id: Annotated[str | None, Field(description=(
+                              "The register entry; null unlinks it."))] = None) -> dict[str, Any]:
+        """Link an item or a part to its maker in the register (match_manufacturer finds it). Its typed
+        manufacturer text stays; if it had none, it takes the register's name. Prefer linking the part:
+        its items take it."""
+        return run(m_for(ctx).link_manufacturer, target_id, manufacturer_id)
+
+    @tool("link_manufacturers_by_name", _WRITE, "Link every item and part to the register by its text")
+    def link_manufacturers_by_name(ctx: Context, dry_run: bool = True) -> dict[str, Any]:
+        """Tidy-up: link every item and part whose typed manufacturer matches a register entry (by name
+        or alias, as match_manufacturer) and has no link yet. unmatched lists the texts that matched
+        nothing, most used first: add them (create_manufacturer) or as aliases, then run again.
+        dry_run (the default) only lists the links: show them, then run with dry_run false."""
+        return run(m_for(ctx).link_manufacturers_by_name, dry_run)
 
     # ---- photos ------------------------------------------------------------------------
 

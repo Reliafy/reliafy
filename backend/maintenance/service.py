@@ -27,6 +27,10 @@ it counts the item's own counter, else the use it had at the positions it was
 fitted to) or a location (a round, an area inspection: by the calendar). Events
 from before name only position_id, and every position's still does.
 
+What kind of thing an item is (an *item class*: Rotating equipment > Pump >
+Centrifugal) is a separate, optional tree from a position's class (its duty, which
+pools life data): see "item classes" below. So is the manufacturer register.
+
 Dates are whole days, as ISO text (``"2026-10-13"``), in the workspace's time
 zone (services/time_zones.py): "today" is the workspace's today, and a feed's
 reading is dated by the day it falls on there. Unset, that's the server's zone
@@ -108,6 +112,12 @@ MAX_PARTS_EACH = 200  # on one position's parts list
 MAX_EVENTS = 1_000_000
 MAX_READINGS_PER_DAY = 500_000  # automated readings stored, per organisation per day (UTC)
 WRITES_PER_MINUTE = 600  # changes started, per organisation per minute
+MAX_ITEM_CLASSES = 5_000
+MAX_CLASS_DEPTH = 10  # levels in the item class tree
+MAX_CLASS_ATTRIBUTES = 50  # a class's own (its subclasses add theirs)
+MAX_CHOICE_OPTIONS = 50
+MAX_MANUFACTURERS = 10_000
+MAX_ALIASES = 50  # on one manufacturer
 
 MAX_AMOUNT = 1e12  # readings, costs, quantities
 MAX_CALENDAR_DAYS = 100 * 365.25  # a task interval of at most 100 years
@@ -466,6 +476,31 @@ def _checklist(value) -> list[str]:
     return items
 
 
+def _key(text) -> str:
+    """A name compared case and spacing aside."""
+    return " ".join(str(text or "").lower().split())
+
+
+# A manufacturer's name compared without case, accents, punctuation or spacing
+# ("K.S.B." is "KSB"), and then also without a trailing company form ("KSB AG").
+_COMPANY_FORMS = {"ag", "gmbh", "mbh", "inc", "incorporated", "ltd", "limited", "pty", "plc", "llc", "co", "corp",
+                  "corporation", "company", "sa", "spa", "srl", "sarl", "sas", "bv", "nv", "ab", "as", "asa", "oy",
+                  "oyj", "kk", "kg", "kgaa", "se", "group", "holdings", "pte", "bhd", "sdn", "lp", "llp"}
+
+
+def maker_keys(text) -> tuple[str, str]:
+    """(the name's key, the key without trailing company forms) for matching a
+    manufacturer named in free text against the register."""
+    import unicodedata
+
+    plain = "".join(ch for ch in unicodedata.normalize("NFKD", str(text or "")) if not unicodedata.combining(ch))
+    words = "".join(ch if ch.isalnum() else " " for ch in plain.lower().replace("&", " and ")).split()
+    full = "".join(words)
+    while len(words) > 1 and (words[-1] in _COMPANY_FORMS or words[-1] == "and"):
+        words = words[:-1]
+    return full, "".join(words)
+
+
 # ---- projectors: event payload -> graph ------------------------------------------
 # Projectors read only the payload (never the clock), so replaying the log
 # gives the same graph.
@@ -511,6 +546,9 @@ def _item_created(s: GraphStore, org: str, p: dict) -> None:
         "nameplate": p.get("nameplate") or {}, "notes": p.get("notes", ""), "created": p["on"],
         "note_history": _note_entry([], p["on"], "set", p.get("notes", "")),
     })
+    # The catalogue part (make and model) it is, when it was made from one.
+    if p.get("part_id"):
+        s.put_edge(org, "OF_PART", p["id"], p["part_id"])
 
 
 # ---- notes: an item's or a work order's, replaced or added to -------------------
@@ -1142,6 +1180,44 @@ def _position_part_listed(s: GraphStore, org: str, p: dict) -> None:
     s.put_edge(org, "LISTS", p["id"], p["part_id"])
 
 
+# ---- item classes and manufacturers -------------------------------------------------
+
+def _item_class_created(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "ItemClass", {
+        "name": p["name"], "code": p.get("code", ""), "level": p.get("level", ""),
+        "description": p.get("description", ""), "attributes": p.get("attributes") or [],
+        "source": p.get("source", ""), "created": p["on"]})
+    if p.get("parent_id"):
+        s.put_edge(org, "PART_OF", p["id"], p["parent_id"])
+
+
+def _link(edge: str, key: str):
+    """An item or part linked to one node by ``edge`` (its item class, its part, its
+    manufacturer), replacing any link before; None unlinks it."""
+    def project(s: GraphStore, org: str, p: dict) -> None:
+        for old in s.out(org, p["target_id"], edge):
+            s.delete_edge(org, edge, p["target_id"], old["id"])
+        if p.get(key):
+            s.put_edge(org, edge, p["target_id"], p[key])
+    return project
+
+
+def _manufacturer_created(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Manufacturer", {"name": p["name"], "aliases": p.get("aliases") or [],
+                                              "created": p["on"]})
+
+
+def _manufacturer_merged(s: GraphStore, org: str, p: dict) -> None:
+    """One manufacturer folded into another: its links move across, and its name and
+    aliases become the other's aliases (the payload carries the list)."""
+    old, into = p["id"], p["into_id"]
+    for src in s.inn(org, old, "MADE_BY"):
+        s.delete_edge(org, "MADE_BY", src["id"], old)
+        s.put_edge(org, "MADE_BY", src["id"], into)
+    s.patch_node(org, into, {"aliases": p["aliases"]})
+    s.patch_node(org, old, {"merged_into": into, "merged_on": p["on"]})
+
+
 PROJECTORS = {
     "position.created": _position_created,
     "position.updated": _position_updated,
@@ -1212,6 +1288,15 @@ PROJECTORS = {
     "photo.added": _photo_added,
     "photo.removed": _photo_removed,
     "coordinates.set": _coordinates_set,
+    "item_class.created": _item_class_created,
+    "item_class.updated": _patch,
+    "item_class.retired": _flag("retired"),
+    "item_class.assigned": _link("CLASSED_AS", "item_class_id"),
+    "item.part_set": _link("OF_PART", "part_id"),
+    "manufacturer.created": _manufacturer_created,
+    "manufacturer.updated": _patch,
+    "manufacturer.merged": _manufacturer_merged,
+    "manufacturer.linked": _link("MADE_BY", "manufacturer_id"),
 }
 
 
@@ -1598,19 +1683,26 @@ class Maintenance:
     # ---- items, fitments, placements --------------------------------------------
 
     def create_item(self, name, serial="", part_number="", manufacturer="", notes="", model="",
-                    nameplate=None, **details) -> dict:
+                    nameplate=None, part_id=None, **details) -> dict:
         """A new item. ``details``: any of ITEM_DETAILS (dates, replacement cost,
-        warranty), as update_item takes them."""
+        warranty), as update_item takes them. part_id: the catalogue part (make and
+        model) it is; its name, part number and manufacturer fill in any not given,
+        and it takes the part's item class unless it's given its own."""
         details = {k: v for k, v in details.items() if k in self.ITEM_DETAILS and v not in (None, "", {})}
         for key, value in details.items():
             self.ITEM_DETAILS[key](value, self.today())  # checked before anything is written
+        part = self._get(str(part_id), "Part") if part_id else None
+        if part:
+            name = name or part["name"]
+            part_number = part_number or part["part_number"]
+            manufacturer = manufacturer or part.get("manufacturer", "")
         self._quota("Item", MAX_ITEMS)
         iid = new_id()
         self._emit("item.created", {
             "id": iid, "name": _text(name, "item's name", required=True), "serial": _text(serial, "serial"),
             "part_number": _text(part_number, "part number"), "manufacturer": _text(manufacturer, "manufacturer"),
             "model": _text(model, "model"), "notes": _text(notes, "notes"), "on": self.today(),
-        })
+        } | ({"part_id": part["id"]} if part else {}))
         if nameplate or details:
             self.update_item(iid, nameplate=nameplate, **details)
         return self._get(iid, "Item")
@@ -1624,7 +1716,7 @@ class Maintenance:
         if new_item:
             return self.create_item(**{k: new_item.get(k) for k in
                                        ("name", "serial", "part_number", "manufacturer", "notes", "model",
-                                        "nameplate", *self.ITEM_DETAILS)})["id"]
+                                        "nameplate", "part_id", *self.ITEM_DETAILS)})["id"]
         raise Invalid("Say which item: an existing one, or a new one with a name.")
 
     def place_item(self, item_id: str, location_id: str, on=None) -> dict:
@@ -2077,17 +2169,26 @@ class Maintenance:
 
     # ---- parts and stock ----------------------------------------------------------
 
-    def create_part(self, part_number, name, manufacturer="", unit="each", unit_cost=None, notes="") -> dict:
-        """A part in the catalogue (a bearing, a seal kit, an anode), by part number."""
+    def create_part(self, part_number, name, manufacturer="", unit="each", unit_cost=None, notes="",
+                    item_class_id=None, manufacturer_id=None) -> dict:
+        """A part in the catalogue (a bearing, a seal kit, an anode; or a make and model
+        of equipment), by part number. item_class_id: what kind of thing it is (the
+        items made from it take it); manufacturer_id: its maker in the register."""
         number = _text(part_number, "part number", required=True)[:120]
         if any(pt["part_number"].lower() == number.lower() for pt in self.s.nodes(self.org, "Part")):
             raise Invalid(f"Part number {number} is already in the catalogue.")
+        cid = self._live_class(item_class_id)["id"] if item_class_id else None
+        maker = self._maker(manufacturer_id) if manufacturer_id else None
         pid = new_id()
         self._emit("part.created", {"id": pid, "part_number": number, "name": _text(name, "part's name", required=True)[:200],
-                                    "manufacturer": _text(manufacturer, "manufacturer")[:120],
+                                    "manufacturer": _text(manufacturer or (maker or {}).get("name"), "manufacturer")[:120],
                                     "unit": _text(unit, "unit")[:20] or "each",
                                     "unit_cost": self._amount(unit_cost, "unit cost"), "notes": _text(notes, "notes"),
                                     "on": self.today()})
+        if cid:
+            self._emit("item_class.assigned", {"target_id": pid, "item_class_id": cid})
+        if maker:
+            self._emit("manufacturer.linked", {"target_id": pid, "manufacturer_id": maker["id"]})
         return self.part(pid)
 
     def update_part(self, part_id: str, **changes) -> dict:
@@ -2186,11 +2287,20 @@ class Maintenance:
             "low": any(x["low"] for x in locs),
             "used_at": sorted(used_at, key=lambda u: u["position"]["name"].lower()),
             "critical_min": critical_min, "critical_short": critical_short,
+            # What kind of thing it is, and its maker in the register (both optional).
+            "item_class": self._class_brief(self._effective_class(pt)[0]),
+            "manufacturer_entry": self._maker_brief(self._made_by(pt)[0]),
+            "items": sum(1 for x in self.s.inn(self.org, part_id, "OF_PART") if x["label"] == "Item"),
         }
 
-    def parts(self) -> list[dict]:
+    def parts(self, item_class_id=None, manufacturer_id=None) -> list[dict]:
+        """The catalogue, by part number. item_class_id: only parts in that class or a
+        class inside it; manufacturer_id: only that maker's ("none" for either: those
+        with none)."""
+        classes, maker = self._filter_ids(item_class_id, manufacturer_id)
         return [self.part(pt["id"]) for pt in sorted(self.s.nodes(self.org, "Part"),
-                                                     key=lambda pt: pt["part_number"].lower())]
+                                                     key=lambda pt: pt["part_number"].lower())
+                if self._kept(pt, classes, maker)]
 
     # ---- a position's parts list ------------------------------------------------------
     # Catalogue parts linked to a position (a PartListing: LISTED_AT the position,
@@ -2907,7 +3017,8 @@ class Maintenance:
                     new_item = a.get("new_item") or {}
                     a = {**a, "new_item": {**new_item, "name": new_item.get("name") or pt["name"],
                                            "part_number": new_item.get("part_number") or pt["part_number"],
-                                           "manufacturer": new_item.get("manufacturer") or pt.get("manufacturer", "")}}
+                                           "manufacturer": new_item.get("manufacturer") or pt.get("manufacturer", ""),
+                                           "part_id": pt["id"]}}
             elif a.get("from_location_id"):
                 raise Invalid("Stock is issued from the catalogue: give the part_id.")
             if kind == "replace" and not (a.get("item_id") or (a.get("new_item") or {}).get("name")) \
@@ -3562,6 +3673,590 @@ class Maintenance:
             self._emit("location.updated", {"id": location_id, "changes": changes})
         return self.location(location_id)
 
+    # ---- item classes: what kind of thing an item is (optional) ------------------------
+    # A tree the workspace builds, imports (taxonomy.py) or starts from the starter
+    # taxonomy: Rotating equipment › Pump › Centrifugal › End-suction. Each class may
+    # have a code (for mapping to a standard the company holds), a level label of the
+    # user's choosing and attributes ({name, unit, kind: number | text | choice}), which
+    # its subclasses inherit and add to. A catalogue part (a make and model) or an item
+    # is CLASSED_AS one; an item's effective class is its own, else its part's. Not a
+    # position's class, which is the duty and pools life data.
+
+    ATTRIBUTE_KINDS = ("number", "text", "choice")
+
+    def _live_class(self, class_id) -> dict:
+        node = self._get(str(class_id or ""), "ItemClass")
+        if node.get("retired"):
+            raise Invalid(f"The item class {node['name']} has been retired.")
+        return node
+
+    def _class_children(self, class_id: str | None) -> list[dict]:
+        """The live classes directly inside one (None: the top level)."""
+        if class_id is None:
+            return [c for c in self.s.nodes(self.org, "ItemClass") if not c.get("retired") and not self._parent(c["id"])]
+        return [c for c in self.s.inn(self.org, class_id, "PART_OF") if c["label"] == "ItemClass" and not c.get("retired")]
+
+    def _class_subtree(self, class_id: str) -> list[dict]:
+        """A class and every live class inside it."""
+        out, queue, seen = [], [self.s.node(self.org, class_id)], set()
+        while queue:
+            node = queue.pop()
+            if node["id"] in seen:
+                continue
+            seen.add(node["id"])
+            out.append(node)
+            queue += self._class_children(node["id"])
+        return out
+
+    def _class_chain(self, class_id: str) -> list[dict]:
+        """A class and the classes above it, top first."""
+        return [self.s.node(self.org, a) for a in reversed(self._ancestor_ids(class_id))] + [
+            self.s.node(self.org, class_id)]
+
+    def _class_brief(self, node: dict | None) -> dict | None:
+        if not node:
+            return None
+        path = [c["name"] for c in self._class_chain(node["id"])]
+        return {"id": node["id"], "name": node["name"], "code": node.get("code", ""), "level": node.get("level", ""),
+                "path": path, "display": " › ".join(path), "retired": bool(node.get("retired"))}
+
+    def _attributes(self, value, what: str = "attributes") -> list[dict]:
+        """A class's own attributes from a request: [{name, unit, kind, options}]. kind
+        defaults to number with a unit, else text; a choice lists its options."""
+        out, seen = [], set()
+        for a in _dicts(value, what, MAX_CLASS_ATTRIBUTES):
+            name = _text(a.get("name"), "attribute's name", required=True, max_len=60)
+            if any(ch in name for ch in ";|[]()"):
+                raise Invalid(f"An attribute's name can't contain ; | [ ] ( or ): {name!r}. Put the unit in unit.")
+            if _key(name) in seen:
+                raise Invalid(f"The attribute {name} is listed twice.")
+            seen.add(_key(name))
+            unit = _text(a.get("unit"), f"{name}'s unit", max_len=20)
+            kind = a.get("kind") or ("number" if unit else "text")
+            if kind not in self.ATTRIBUTE_KINDS:
+                raise Invalid(f"An attribute's kind is one of {', '.join(self.ATTRIBUTE_KINDS)}.")
+            options = []
+            for o in _list(a.get("options"), f"{name}'s options", MAX_CHOICE_OPTIONS):
+                text = _text(o, f"{name}'s option", max_len=100)
+                if "|" in text or ";" in text:
+                    raise Invalid(f"An option can't contain | or ;: {text!r}.")
+                if text and _key(text) not in {_key(x) for x in options}:
+                    options.append(text)
+            if kind == "choice" and not options:
+                raise Invalid(f"{name} is a choice: give its options.")
+            if kind != "choice" and options:
+                raise Invalid(f"Only a choice has options ({name} is {kind}).")
+            out.append({"name": name, "unit": unit, "kind": kind, "options": options})
+        return out
+
+    def _effective_attributes(self, class_id: str) -> list[dict]:
+        """A class's attributes with those it inherits, the top class's first; each
+        says which class it comes from."""
+        out = []
+        for c in self._class_chain(class_id):
+            out += [{**a, "from": {"id": c["id"], "name": c["name"]}} for a in c.get("attributes") or []]
+        return out
+
+    def _attribute_clash(self, names: set[str], parent_id: str | None, subtree: list[dict]) -> str | None:
+        """The first attribute name (by key) a class would share with a class above it
+        (from ``parent_id`` up) or inside it (``subtree``), or None."""
+        above = self._effective_attributes(parent_id) if parent_id else []
+        for a in above + [a for c in subtree for a in c.get("attributes") or []]:
+            if _key(a["name"]) in names:
+                return a["name"]
+        return None
+
+    def _sibling_named(self, parent_id: str | None, name: str, but: str | None = None) -> dict | None:
+        return next((c for c in self._class_children(parent_id) if _key(c["name"]) == _key(name) and c["id"] != but),
+                    None)
+
+    @staticmethod
+    def _class_name_text(name) -> str:
+        name = _text(name, "item class's name", required=True)
+        if ">" in name or "›" in name:
+            raise Invalid("An item class's name can't contain > or › (they separate the levels of a path).")
+        return name
+
+    def _height(self, class_id: str) -> int:
+        """How many levels a class's subtree has (1: no classes inside it)."""
+        kids = self._class_children(class_id)
+        return 1 + max((self._height(k["id"]) for k in kids), default=0)
+
+    def create_item_class(self, name, parent_id=None, code="", level="", description="", attributes=None,
+                          source="") -> dict:
+        """An item class: a kind of thing (Pump), inside another (parent_id: Rotating
+        equipment) or at the top. code: the user's own code for it (to map to a
+        standard they hold); level: their name for its level (class, type, subunit).
+        attributes: its own, added to those it inherits."""
+        name = self._class_name_text(name)
+        parent = self._live_class(parent_id) if parent_id else None
+        if parent and len(self._ancestor_ids(parent["id"])) + 2 > MAX_CLASS_DEPTH:
+            raise Invalid(f"Item classes go at most {MAX_CLASS_DEPTH} levels deep.")
+        if self._sibling_named(parent and parent["id"], name):
+            raise Invalid(f"There's already an item class called {name} there.")
+        attrs = self._attributes(attributes)
+        clash = self._attribute_clash({_key(a["name"]) for a in attrs}, parent and parent["id"], [])
+        if clash:
+            raise Invalid(f"{clash} is already an attribute of a class above it: it's inherited.")
+        self._quota("ItemClass", MAX_ITEM_CLASSES, what="item classes")
+        cid = new_id()
+        self._emit("item_class.created", {
+            "id": cid, "name": name, "parent_id": parent and parent["id"], "code": _text(code, "code"),
+            "level": _text(level, "level", max_len=60), "description": _text(description, "description"),
+            "attributes": attrs, "on": self.today()} | ({"source": _text(source, "source")} if source else {}))
+        return self.item_class(cid)
+
+    def update_item_class(self, class_id: str, name=None, code=None, level=None, description=None,
+                          parent_id=..., attributes=None) -> dict:
+        """Rename an item class, change its code, level or description, replace its own
+        attributes, or move it (parent_id; None: to the top level), never inside itself."""
+        node = self._live_class(class_id)
+        changes = {}
+        if name is not None:
+            changes["name"] = self._class_name_text(name)
+        for key, value, limit in (("code", code, SHORT_TEXT), ("level", level, 60), ("description", description, None)):
+            if value is not None:
+                changes[key] = _text(value, key, max_len=limit)
+        parent = self._parent(class_id)
+        parent_now = parent and parent["id"]
+        if parent_id is not ...:
+            target = self._live_class(parent_id)["id"] if parent_id else None
+            if target and (target == class_id or class_id in self._ancestor_ids(target)):
+                raise Invalid("An item class can't sit inside itself.")
+            if target != parent_now:
+                depth = (len(self._ancestor_ids(target)) + 1 if target else 0) + self._height(class_id)
+                if depth > MAX_CLASS_DEPTH:
+                    raise Invalid(f"Item classes go at most {MAX_CLASS_DEPTH} levels deep.")
+                changes["parent_id"] = target
+                parent_now = target
+        if self._sibling_named(parent_now, changes.get("name", node["name"]), but=class_id):
+            raise Invalid(f"There's already an item class called {changes.get('name', node['name'])} there.")
+        attrs = self._attributes(attributes) if attributes is not None else node.get("attributes") or []
+        if attributes is not None or "parent_id" in changes:
+            subtree = [c for c in self._class_subtree(class_id) if c["id"] != class_id]
+            names = {_key(a["name"]) for c in ([{"attributes": attrs}] + subtree) for a in c["attributes"] or []}
+            clash = self._attribute_clash(names, parent_now, [])
+            clash = clash or self._attribute_clash({_key(a["name"]) for a in attrs}, None, subtree)
+            if clash:
+                raise Invalid(f"{clash} would be an attribute twice on the way down: once on a class above or "
+                              "inside this one. Keep it on one of them.")
+            if attributes is not None:
+                changes["attributes"] = attrs
+        changes = {k: v for k, v in changes.items() if k == "parent_id" or v != node.get(k, "")}
+        if changes:
+            self._emit("item_class.updated", {"id": class_id, "changes": changes, "on": self.today()})
+        return self.item_class(class_id)
+
+    def set_item_class_attributes(self, class_id: str, attributes) -> dict:
+        """Replace an item class's own attributes (the inherited ones stay its parents').
+        Values items already have for an attribute taken off stay on them, shown apart."""
+        return self.update_item_class(class_id, attributes=attributes if attributes is not None else [])
+
+    def _classed(self, class_id: str) -> list[dict]:
+        """The items and parts given this class directly."""
+        return [x for x in self.s.inn(self.org, class_id, "CLASSED_AS") if x["label"] in ("Item", "Part")]
+
+    def retire_item_class(self, class_id: str, reason="") -> None:
+        """Take an item class out of use (it stays in the history). Nothing may be in
+        it: move or retire the classes inside it, and reassign its items and parts."""
+        node = self._live_class(class_id)
+        if self._class_children(class_id):
+            raise Invalid("Item classes inside it are still in use. Retire or move them first.")
+        used = self._classed(class_id)
+        if used:
+            items = sum(1 for x in used if x["label"] == "Item")
+            raise Invalid(f"{node['name']} is still the class of {items} item(s) and {len(used) - items} part(s). "
+                          "Give them another class (or none) first.")
+        self._emit("item_class.retired", {"id": class_id, "on": self.today(), "reason": _text(reason, "reason")})
+
+    def _classable(self, target_id) -> dict:
+        node = self.s.node(self.org, str(target_id or ""))
+        if node is None or node["label"] not in ("Item", "Part"):
+            raise NotFound(target_id)
+        return node
+
+    def _view(self, node: dict) -> dict:
+        return self.item(node["id"]) if node["label"] == "Item" else self.part(node["id"])
+
+    def assign_item_class(self, target_id: str, item_class_id=None) -> dict:
+        """Give an item, or a catalogue part (and so the items made from it), an item
+        class; None takes it away (an item then takes its part's)."""
+        node = self._classable(target_id)
+        cid = self._live_class(item_class_id)["id"] if item_class_id else None
+        now = self.s.out(self.org, node["id"], "CLASSED_AS")
+        if (now[0]["id"] if now else None) != cid:
+            self._emit("item_class.assigned", {"target_id": node["id"], "item_class_id": cid})
+        return self._view(node)
+
+    def _item_part(self, item_id: str) -> dict | None:
+        found = self.s.out(self.org, item_id, "OF_PART")
+        return found[0] if found else None
+
+    def set_item_part(self, item_id: str, part_id=None) -> dict:
+        """Say which catalogue part (make and model) an item is; None unlinks it."""
+        self._get(item_id, "Item")
+        pid = self._get(str(part_id), "Part")["id"] if part_id else None
+        if ((self._item_part(item_id) or {}).get("id")) != pid:
+            self._emit("item.part_set", {"target_id": item_id, "part_id": pid})
+        return self.item(item_id)
+
+    def _effective_class(self, node: dict) -> tuple[dict | None, str | None]:
+        """An item's (or part's) item class and where it comes from: "item" (its own),
+        "part" (its part's), or (None, None)."""
+        own = self.s.out(self.org, node["id"], "CLASSED_AS")
+        if own:
+            return own[0], "item" if node["label"] == "Item" else "part"
+        if node["label"] == "Item":
+            part = self._item_part(node["id"])
+            got = part and self.s.out(self.org, part["id"], "CLASSED_AS")
+            if got:
+                return got[0], "part"
+        return None, None
+
+    def _attribute_value(self, attr: dict, value):
+        """An attribute's value from a request: a number (in the attribute's unit:
+        15, "15" or "15 kW" for kW), text, or one of a choice's options."""
+        name = attr["name"]
+        if attr["kind"] == "text":
+            return _text(value, name, max_len=200)
+        if attr["kind"] == "choice":
+            found = next((o for o in attr["options"] if _key(o) == _key(value)), None)
+            if found is None:
+                raise Invalid(f"{name} is one of: {', '.join(attr['options'])}.")
+            return found
+        if isinstance(value, bool):
+            raise Invalid(f"{name} is a number.")
+        if isinstance(value, str):
+            import re
+
+            got = re.fullmatch(r"\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*(.*?)\s*", value)
+            if not got:
+                raise Invalid(f"{name} is a number{' in ' + attr['unit'] if attr['unit'] else ''}; got {value[:40]!r}.")
+            value, unit = got.group(1), got.group(2)
+            if unit and unit.replace(" ", "").lower() != attr["unit"].replace(" ", "").lower():
+                raise Invalid(f"{name} is in {attr['unit']}: convert {unit!r} to {attr['unit']} first."
+                              if attr["unit"] else f"{name} has no unit: give just the number.")
+        return _number(value, name, -MAX_AMOUNT, MAX_AMOUNT)
+
+    def set_item_attributes(self, item_id: str, values) -> dict:
+        """Fill in an item's attributes ({name: value}), checked against its effective
+        class's (its own class, else its part's): numbers in the attribute's unit, a
+        choice one of its options. "" or None clears one; the others are kept."""
+        item = self._get(item_id, "Item")
+        if not isinstance(values, dict):
+            raise Invalid("The attribute values are name: value pairs.")
+        if len(values) > MAX_LIST:
+            raise Invalid(f"At most {MAX_LIST} attribute values at a time.")
+        cls, _ = self._effective_class(item)
+        if cls is None:
+            raise Invalid(f"{item['name']} has no item class, so no attributes to fill in. Give it a class (or "
+                          "its part one) first.")
+        attrs = {_key(a["name"]): a for a in self._effective_attributes(cls["id"])}
+        now = dict(item.get("attributes") or {})
+        for key, value in values.items():
+            attr = attrs.get(_key(key))
+            if attr is None:
+                raise Invalid(f"{cls['name']} has no attribute {str(key)[:60]!r}. Its attributes: "
+                              f"{', '.join(a['name'] for a in attrs.values()) or 'none yet'}.")
+            if value is None or (isinstance(value, str) and not value.strip()):
+                now.pop(attr["name"], None)
+            else:
+                now[attr["name"]] = self._attribute_value(attr, value)
+        if now != (item.get("attributes") or {}):
+            self._emit("item.updated", {"id": item_id, "changes": {"attributes": now}, "on": self.today()})
+        return self.item(item_id)
+
+    def _item_class_view(self, node: dict) -> dict:
+        """An item's class (with via: its own or its part's) and its attribute values:
+        one row per attribute of the class, and other_attributes for values kept from
+        before (an attribute since taken off, or another class's)."""
+        cls, via = self._effective_class(node)
+        values = dict(node.get("attributes") or {})
+        rows = []
+        if cls:
+            for a in self._effective_attributes(cls["id"]):
+                rows.append({**a, "value": values.pop(a["name"], None)})
+        return {"item_class": cls and {**self._class_brief(cls), "via": via}, "attributes": rows,
+                "other_attributes": values}
+
+    # ---- the item class tree: reading --------------------------------------------------
+
+    def _class_counts(self) -> tuple[dict, dict]:
+        """How many items (by their effective class) and parts each class has directly."""
+        items: dict[str, int] = {}
+        parts: dict[str, int] = {}
+        for item in self.s.nodes(self.org, "Item"):
+            cls, _ = self._effective_class(item)
+            if cls:
+                items[cls["id"]] = items.get(cls["id"], 0) + 1
+        for pt in self.s.nodes(self.org, "Part"):
+            cls, _ = self._effective_class(pt)
+            if cls:
+                parts[cls["id"]] = parts.get(cls["id"], 0) + 1
+        return items, parts
+
+    def item_class_tree(self) -> dict:
+        """Every live item class as a tree, each with its own attributes and how many
+        items and parts are in it (items, parts) and in it or a class inside it (all_)."""
+        items, parts = self._class_counts()
+        live = [c for c in self.s.nodes(self.org, "ItemClass") if not c.get("retired")]
+        children: dict[str | None, list] = {}
+        for c in live:
+            parent = self._parent(c["id"])
+            children.setdefault(parent["id"] if parent else None, []).append(c)
+
+        def build(c):
+            kids = [build(k) for k in sorted(children.get(c["id"], []), key=lambda k: k["name"].lower())]
+            here_i, here_p = items.get(c["id"], 0), parts.get(c["id"], 0)
+            return {"id": c["id"], "name": c["name"], "code": c.get("code", ""), "level": c.get("level", ""),
+                    "description": c.get("description", ""), "source": c.get("source", ""),
+                    "attributes": c.get("attributes") or [], "items": here_i, "parts": here_p,
+                    "all_items": here_i + sum(k["all_items"] for k in kids),
+                    "all_parts": here_p + sum(k["all_parts"] for k in kids), "children": kids}
+
+        tree = [build(c) for c in sorted(children.get(None, []), key=lambda c: c["name"].lower())]
+        n_items = len(self.s.nodes(self.org, "Item"))
+        return {"tree": tree, "counts": {"classes": len(live), "items": n_items,
+                                         "items_classified": sum(items.values()),
+                                         "parts": self.s.count(self.org, "Part"),
+                                         "parts_classified": sum(parts.values())}}
+
+    def item_classes(self) -> list[dict]:
+        """Every live item class, flat, by its path (for pickers)."""
+        live = [c for c in self.s.nodes(self.org, "ItemClass") if not c.get("retired")]
+        return sorted((self._class_brief(c) for c in live), key=lambda b: [x.lower() for x in b["path"]])
+
+    def item_class(self, class_id: str) -> dict:
+        """One item class: its path, code, level, description, the classes inside it,
+        its attributes (inherited first, each with the class it's from; own_attributes:
+        just its own), and the items and parts in it or a class inside it."""
+        node = self._get(class_id, "ItemClass")
+        ids = {c["id"] for c in self._class_subtree(class_id)}
+        found = self.items(item_class_id=class_id) if not node.get("retired") else []
+        parts = [pt for pt in self.s.nodes(self.org, "Part") if (self._effective_class(pt)[0] or {}).get("id") in ids]
+        return {
+            **self._class_brief(node), "description": node.get("description", ""), "source": node.get("source", ""),
+            "created": node.get("created"),
+            "parent": self._class_brief(self._parent(class_id)),
+            "children": [self._class_brief(c) for c in sorted(self._class_children(class_id),
+                                                              key=lambda c: c["name"].lower())],
+            "attributes": self._effective_attributes(class_id), "own_attributes": node.get("attributes") or [],
+            "counts": {"items": len(found), "parts": len(parts)},
+            "items": found[:MAX_LOCATION_POSITIONS],
+            "parts": [self._part_brief(pt) for pt in sorted(parts, key=lambda pt: pt["part_number"].lower())
+                      ][:MAX_LOCATION_POSITIONS],
+        }
+
+    # ---- manufacturers: a register of makers and the names they go by ------------------
+
+    def _maker(self, manufacturer_id) -> dict:
+        node = self._get(str(manufacturer_id or ""), "Manufacturer")
+        if node.get("merged_into"):
+            raise Invalid(f"{node['name']} was merged into another manufacturer; use that one.")
+        return node
+
+    def _makers(self) -> list[dict]:
+        return [mk for mk in self.s.nodes(self.org, "Manufacturer") if not mk.get("merged_into")]
+
+    def _maker_names(self, name, aliases, but: str | None = None) -> tuple[str, list[str]]:
+        """A manufacturer's name and aliases from a request, checked: each names no
+        other manufacturer (case, accents and punctuation aside)."""
+        name = _text(name, "manufacturer's name", required=True)
+        own, out = {maker_keys(name)[0]}, []
+        for alias in _list(aliases, "aliases", MAX_ALIASES):
+            alias = _text(alias, "alias")
+            key = maker_keys(alias)[0]
+            if alias and key and key not in own:
+                own.add(key)
+                out.append(alias)
+        if len(out) > MAX_ALIASES:
+            raise Invalid(f"At most {MAX_ALIASES} aliases on one manufacturer.")
+        for mk in self._makers():
+            if mk["id"] == but:
+                continue
+            for text in [mk["name"], *mk.get("aliases", [])]:
+                if maker_keys(text)[0] in own:
+                    raise Invalid(f"{text} is already in the register" + (
+                        "." if _key(text) == _key(mk["name"]) else f", as a name for {mk['name']}.")
+                        + " Add the alias there, or merge the two.")
+        return name, out
+
+    def create_manufacturer(self, name, aliases=()) -> dict:
+        """A manufacturer in the register, with the other names it goes by ("K.S.B.",
+        "KSB SE & Co. KGaA"): free text on items and parts is matched against them."""
+        name, aliases = self._maker_names(name, aliases)
+        self._quota("Manufacturer", MAX_MANUFACTURERS)
+        mid = new_id()
+        self._emit("manufacturer.created", {"id": mid, "name": name, "aliases": aliases, "on": self.today()})
+        return self.manufacturer(mid)
+
+    def update_manufacturer(self, manufacturer_id: str, name=None, add_aliases=(), remove_aliases=()) -> dict:
+        """Rename a manufacturer, or add or take off aliases."""
+        node = self._maker(manufacturer_id)
+        drop = {maker_keys(a)[0] for a in _list(remove_aliases, "aliases to remove")}
+        kept = [a for a in node.get("aliases") or [] if maker_keys(a)[0] not in drop]
+        new_name, aliases = self._maker_names(node["name"] if name is None else name,
+                                              kept + _list(add_aliases, "aliases to add"), but=node["id"])
+        changes = {k: v for k, v in (("name", new_name), ("aliases", aliases)) if v != node.get(k)}
+        if changes:
+            self._emit("manufacturer.updated", {"id": node["id"], "changes": changes, "on": self.today()})
+        return self.manufacturer(node["id"])
+
+    def merge_manufacturers(self, manufacturer_id: str, into_id: str) -> dict:
+        """Fold one manufacturer into another (two entries for the same maker): its links
+        move across, and its name and aliases become the other's aliases."""
+        old, into = self._maker(manufacturer_id), self._maker(into_id)
+        if old["id"] == into["id"]:
+            raise Invalid("Pick two different manufacturers.")
+        keys, aliases = {maker_keys(into["name"])[0]}, []
+        for alias in [*(into.get("aliases") or []), old["name"], *(old.get("aliases") or [])]:
+            if maker_keys(alias)[0] not in keys:
+                keys.add(maker_keys(alias)[0])
+                aliases.append(alias)
+        if len(aliases) > MAX_ALIASES:
+            raise Invalid(f"Together they'd have more than {MAX_ALIASES} aliases. Take some off first.")
+        self._emit("manufacturer.merged", {"id": old["id"], "into_id": into["id"], "aliases": aliases,
+                                           "on": self.today()})
+        return self.manufacturer(into["id"])
+
+    def _maker_brief(self, node: dict | None) -> dict | None:
+        return node and {"id": node["id"], "name": node["name"], "aliases": node.get("aliases") or []}
+
+    def match_manufacturer(self, text) -> dict:
+        """The register entry a manufacturer named in free text is, if any: by its name
+        or an alias, case, accents, punctuation and spacing aside ("K.S.B." is KSB), or
+        else without a trailing company form ("KSB AG"). how: name, alias or
+        company_form. candidates: near misses (or several equally good) to choose from."""
+        text = _text(text, "manufacturer", required=True)
+        full, short = maker_keys(text)
+        exact, loose, near = None, [], []
+        for mk in self._makers():
+            names = [mk["name"], *(mk.get("aliases") or [])]
+            keys = [maker_keys(n) for n in names]
+            hit = next((i for i, k in enumerate(keys) if k[0] == full), None)
+            if hit is not None:
+                exact = (mk, "name" if hit == 0 else "alias")
+                break
+            if short and any(k[1] == short for k in keys):
+                loose.append(mk)
+            elif len(short) >= 3 and any(k[1] and (k[1].startswith(short) or short.startswith(k[1]))
+                                         for k in keys if len(k[1]) >= 3):
+                near.append(mk)
+        if exact:
+            return {"text": text, "match": self._maker_brief(exact[0]), "how": exact[1], "candidates": []}
+        if len(loose) == 1:
+            return {"text": text, "match": self._maker_brief(loose[0]), "how": "company_form", "candidates": []}
+        candidates = sorted(loose + near, key=lambda mk: mk["name"].lower())[:10]
+        return {"text": text, "match": None, "how": None, "candidates": [self._maker_brief(mk) for mk in candidates]}
+
+    def _made_by(self, node: dict) -> tuple[dict | None, str | None]:
+        """An item's (or part's) register entry and where it comes from: "item" (its
+        own link), "part" (its part's), or (None, None)."""
+        own = self.s.out(self.org, node["id"], "MADE_BY")
+        if own:
+            return own[0], "item" if node["label"] == "Item" else "part"
+        if node["label"] == "Item":
+            part = self._item_part(node["id"])
+            got = part and self.s.out(self.org, part["id"], "MADE_BY")
+            if got:
+                return got[0], "part"
+        return None, None
+
+    def link_manufacturer(self, target_id: str, manufacturer_id=None) -> dict:
+        """Link an item or a part to its manufacturer in the register (None unlinks it).
+        Its free-text manufacturer stays; if it had none, it takes the register's name."""
+        node = self._classable(target_id)
+        mid = self._maker(manufacturer_id)["id"] if manufacturer_id else None
+        now = self.s.out(self.org, node["id"], "MADE_BY")
+        if (now[0]["id"] if now else None) != mid:
+            self._emit("manufacturer.linked", {"target_id": node["id"], "manufacturer_id": mid})
+        if mid and not (node.get("manufacturer") or "").strip():
+            name = self.s.node(self.org, mid)["name"]
+            self._emit(f"{node['label'].lower()}.updated", {"id": node["id"], "changes": {"manufacturer": name}}
+                       | ({"on": self.today()} if node["label"] == "Item" else {}))
+        return self._view(node)
+
+    def link_manufacturers_by_name(self, dry_run: bool = True) -> dict:
+        """Link every item and part with a manufacturer typed in and no link of its own
+        to the register entry that text matches (match_manufacturer: by name or alias,
+        or one entry without a company form). dry_run: only say what would be linked.
+        unmatched: the texts no entry matches, most used first (to add, or to alias)."""
+        links, unmatched, cache = [], {}, {}
+        for node in sorted(self.s.nodes(self.org, "Item") + self.s.nodes(self.org, "Part"),
+                           key=lambda n: (n["label"], n["name"].lower())):
+            text = (node.get("manufacturer") or "").strip()
+            if not text or self.s.out(self.org, node["id"], "MADE_BY"):
+                continue
+            if text not in cache:
+                cache[text] = self.match_manufacturer(text)
+            found = cache[text]
+            if found["match"]:
+                links.append({"target": {"id": node["id"], "kind": node["label"].lower(), "name": node["name"]},
+                              "text": text, "manufacturer": {"id": found["match"]["id"],
+                                                             "name": found["match"]["name"]}, "how": found["how"]})
+            else:
+                unmatched[text] = unmatched.get(text, 0) + 1
+        if not dry_run:
+            for link in links:
+                self._emit("manufacturer.linked", {"target_id": link["target"]["id"],
+                                                   "manufacturer_id": link["manufacturer"]["id"]})
+        return {"dry_run": dry_run, "links": links,
+                "unmatched": [{"text": t, "count": n} for t, n in sorted(unmatched.items(), key=lambda x: (-x[1], x[0]))]}
+
+    def manufacturers(self) -> list[dict]:
+        """The register: each manufacturer with its aliases and how many items and parts
+        are linked to it (items: their own link or their part's)."""
+        items: dict[str, int] = {}
+        for item in self.s.nodes(self.org, "Item"):
+            mk, _ = self._made_by(item)
+            if mk:
+                items[mk["id"]] = items.get(mk["id"], 0) + 1
+        out = []
+        for mk in sorted(self._makers(), key=lambda mk: mk["name"].lower()):
+            parts = sum(1 for x in self.s.inn(self.org, mk["id"], "MADE_BY") if x["label"] == "Part")
+            out.append({**self._maker_brief(mk), "items": items.get(mk["id"], 0), "parts": parts})
+        return out
+
+    def manufacturer(self, manufacturer_id: str) -> dict:
+        """A manufacturer: its aliases, and the items and parts linked to it (items: their
+        own link or their part's). A merged one says what it was merged into."""
+        node = self._get(manufacturer_id, "Manufacturer")
+        into = node.get("merged_into") and self.s.node(self.org, node["merged_into"])
+        parts = [x for x in self.s.inn(self.org, manufacturer_id, "MADE_BY") if x["label"] == "Part"]
+        found = self.items(manufacturer_id=manufacturer_id) if not into else []
+        return {**self._maker_brief(node), "created": node.get("created"),
+                "merged_into": into and {"id": into["id"], "name": into["name"]},
+                "counts": {"items": len(found), "parts": len(parts)},
+                "items": found[:MAX_LOCATION_POSITIONS],
+                "parts": [self._part_brief(pt) for pt in sorted(parts, key=lambda pt: pt["part_number"].lower())
+                          ][:MAX_LOCATION_POSITIONS]}
+
+    def _filter_ids(self, item_class_id=None, manufacturer_id=None) -> tuple:
+        """The classes (a class and those inside it) and the manufacturer a list is
+        filtered to: None for no filter, "none" for the unclassified or unlinked."""
+        classes = maker = None
+        if item_class_id:
+            classes = "none" if item_class_id == "none" else {
+                c["id"] for c in self._class_subtree(self._get(str(item_class_id), "ItemClass")["id"])}
+        if manufacturer_id:
+            if manufacturer_id == "none":
+                maker = "none"
+            else:
+                node = self._get(str(manufacturer_id), "Manufacturer")
+                maker = node.get("merged_into") or node["id"]
+        return classes, maker
+
+    def _kept(self, node: dict, classes, maker) -> bool:
+        if classes is not None:
+            cls = (self._effective_class(node)[0] or {}).get("id")
+            if (cls is not None) if classes == "none" else (cls not in classes):
+                return False
+        if maker is not None:
+            mk = (self._made_by(node)[0] or {}).get("id")
+            if (mk is not None) if maker == "none" else (mk != maker):
+                return False
+        return True
+
     # ---- items, locations and classes: reading ---------------------------------------
 
     def _task_views_on(self, node_id: str) -> list[dict]:
@@ -3620,6 +4315,13 @@ class Maintenance:
             "tasks": self._task_views_on(id),
             "work_orders": self._work_orders_on(id),
             "measurements": self._points_on(id),
+            # What kind of thing it is (its own class, else its part's) and its attributes;
+            # the catalogue part (make and model) it is, and its maker in the register.
+            **self._item_class_view(item),
+            "part": (lambda pt: pt and {k: pt.get(k) for k in ("id", "part_number", "name", "manufacturer")})(
+                self._item_part(id)),
+            "manufacturer_entry": (lambda found: found[0] and {**self._maker_brief(found[0]), "via": found[1]})(
+                self._made_by(item)),
         }
 
     def location(self, id: str) -> dict:
@@ -4396,17 +5098,27 @@ class Maintenance:
             out["item"] = {**self._item_brief(subject), **self.whereabouts(subject["id"])}
         return out
 
-    def items(self) -> list[dict]:
+    def items(self, item_class_id=None, manufacturer_id=None) -> list[dict]:
+        """Every item, by name, with where it is, its item class and its manufacturer in
+        the register. item_class_id: only items in that class or a class inside it (by
+        their own class, else their part's); manufacturer_id: only that maker's. Either
+        may be "none": the items with no class, or with no manufacturer linked."""
+        classes, maker = self._filter_ids(item_class_id, manufacturer_id)
         out = []
         for item in sorted(self.s.nodes(self.org, "Item"), key=lambda i: i["name"].lower()):
+            if not self._kept(item, classes, maker):
+                continue
             fitment = self._current_fitment_of_item(item["id"])
             where = self.whereabouts(item["id"])
+            cls, mk = self._effective_class(item)[0], self._made_by(item)[0]
             out.append({
                 **self._item_brief(item),
                 "fitted_to": fitment and self._fitment_view(fitment)["position"],
                 "location": where["location"] and {k: where["location"][k] for k in ("id", "name", "display", "how")},
                 "last_at": where["last_at"] and where["last_at"]["location"] and {
                     k: where["last_at"]["location"][k] for k in ("id", "name", "display")},
+                "item_class": cls and {"id": cls["id"], "name": cls["name"]},
+                "manufacturer_entry": mk and {"id": mk["id"], "name": mk["name"]},
             })
         return out
 
