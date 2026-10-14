@@ -2121,8 +2121,14 @@ export function maintenanceFromRcm(studyId, parentId) {
   return postJson("/api/maintenance/from-rcm", { study_id: studyId, parent_id: parentId || null });
 }
 
-export function listMaintenanceItems() {
-  return request("/api/maintenance/items");
+// Items, optionally only an item class's (with the classes inside it) or a
+// manufacturer's ("none": those with none).
+export function listMaintenanceItems({ itemClassId, manufacturerId } = {}) {
+  const q = new URLSearchParams();
+  if (itemClassId) q.set("item_class_id", itemClassId);
+  if (manufacturerId) q.set("manufacturer_id", manufacturerId);
+  const qs = q.toString();
+  return request(`/api/maintenance/items${qs ? `?${qs}` : ""}`);
 }
 
 export function listMaintenanceLocations() {
@@ -2360,8 +2366,12 @@ export function recordCondition(pointId, value, on) {
   return postJson(`/api/maintenance/condition-points/${pointId}/readings`, { value, on });
 }
 
-export function listMaintenanceParts() {
-  return request("/api/maintenance/parts");
+export function listMaintenanceParts({ itemClassId, manufacturerId } = {}) {
+  const q = new URLSearchParams();
+  if (itemClassId) q.set("item_class_id", itemClassId);
+  if (manufacturerId) q.set("manufacturer_id", manufacturerId);
+  const qs = q.toString();
+  return request(`/api/maintenance/parts${qs ? `?${qs}` : ""}`);
 }
 export function createMaintenancePart(body) {
   return postJson("/api/maintenance/parts", body);
@@ -2419,4 +2429,67 @@ export function voidMeasurementReading(readingId, reason) {
 }
 export function correctMeasurementReading(readingId, { value, on, reason }) {
   return postJson(`/api/maintenance/readings/${readingId}/correct`, { value, on, reason });
+}
+
+// ---- item classes and the manufacturer register (Reliafy Maintenance; optional) ----
+
+function putJson(url, body) {
+  return request(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+export function getItemClasses() {
+  return request("/api/maintenance/item-classes");
+}
+export function getItemClass(id) {
+  return request(`/api/maintenance/item-classes/${id}`);
+}
+export function createItemClass(body) {
+  return postJson("/api/maintenance/item-classes", body);
+}
+export function updateItemClass(id, body) {
+  return patchJson(`/api/maintenance/item-classes/${id}`, body);
+}
+export function retireItemClass(id, reason = "") {
+  return postJson(`/api/maintenance/item-classes/${id}/retire`, { reason });
+}
+// An item or part's class (null takes it away).
+export function assignItemClass(targetId, itemClassId) {
+  return postJson("/api/maintenance/item-classes/assign", { target_id: targetId, item_class_id: itemClassId || null });
+}
+// A taxonomy as CSV or JSON text; a dry run unless dryRun is false.
+export function importItemClasses({ format, text, dryRun = true, source }) {
+  return postJson("/api/maintenance/item-classes/import", { format, text, dry_run: dryRun, source });
+}
+export function loadStarterItemClasses(dryRun = true) {
+  return postJson("/api/maintenance/item-classes/starter", { dry_run: dryRun });
+}
+export function downloadItemClasses(format = "csv") {
+  return downloadFile(`/api/maintenance/item-classes/export?format=${format}`, `item-classes.${format}`);
+}
+export function setItemAttributes(itemId, values) {
+  return putJson(`/api/maintenance/items/${itemId}/attributes`, { values });
+}
+export function setItemPart(itemId, partId) {
+  return putJson(`/api/maintenance/items/${itemId}/part`, { part_id: partId || null });
+}
+export function listManufacturers() {
+  return request("/api/maintenance/manufacturers");
+}
+export function createManufacturer(body) {
+  return postJson("/api/maintenance/manufacturers", body);
+}
+export function updateManufacturer(id, body) {
+  return patchJson(`/api/maintenance/manufacturers/${id}`, body);
+}
+export function mergeManufacturers(id, intoId) {
+  return postJson(`/api/maintenance/manufacturers/${id}/merge`, { into_id: intoId });
+}
+export function matchManufacturer(text) {
+  return request(`/api/maintenance/manufacturers/match?text=${encodeURIComponent(text)}`);
+}
+// An item or part's maker in the register (null unlinks it).
+export function linkManufacturer(targetId, manufacturerId) {
+  return postJson("/api/maintenance/manufacturers/link", { target_id: targetId, manufacturer_id: manufacturerId || null });
+}
+export function linkManufacturersByName(dryRun = true) {
+  return postJson("/api/maintenance/manufacturers/link-by-name", { dry_run: dryRun });
 }

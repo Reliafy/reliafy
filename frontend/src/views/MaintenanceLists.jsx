@@ -30,6 +30,9 @@ import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
 import { countsText, inheritedText, itemWhere } from "../maintenanceLocations.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
+import {
+  ClassPicker, ItemClassesSection, KindFilters, PartKindModal, useKinds,
+} from "../components/MaintenanceItemClasses.jsx";
 import "./Maintenance.css";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
@@ -40,33 +43,41 @@ export function MaintenanceItems() {
   const navigate = useNavigate();
   const [items, setItems] = useState(null);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState({ itemClassId: null, manufacturerId: null });
+  const [kinds] = useKinds();
   const [error, setError] = useState(null);
   useEffect(() => {
-    listMaintenanceItems().then((d) => setItems(d.items)).catch((e) => setError(e.message));
-  }, []);
-  const visible = (items || []).filter((i) => matches(query, i.name, i.serial, i.manufacturer, i.model, i.part_number));
+    listMaintenanceItems(filter).then((d) => setItems(d.items)).catch((e) => setError(e.message));
+  }, [filter]);
+  const filtered = !!(filter.itemClassId || filter.manufacturerId);
+  // The class column only once items have classes.
+  const showClass = (items || []).some((i) => i.item_class);
+  const visible = (items || []).filter((i) => matches(query, i.name, i.serial, i.manufacturer, i.model, i.part_number,
+    i.item_class?.name, i.manufacturer_entry?.name));
   return (
     <div className="app">
       <PageHeader crumbs={crumbs} title="Items" meta="Every physical thing: where it's fitted, where it is." />
       <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
-      {items === null ? <div className="card empty">Loading…</div> : items.length === 0 ? (
+      {items === null ? <div className="card empty">Loading…</div> : items.length === 0 && !filtered ? (
         <div className="card empty"><p>No items yet. Fit one to a position.</p></div>
       ) : (
         <>
           <div className="tablebar">
             <span className="count">{visible.length} of {items.length} items</span>
             <span className="grow" />
+            <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />
             <ListSearch value={query} onChange={setQuery} placeholder="Search items…" />
           </div>
           <div className="lib">
             <table className="lib-table">
-              <thead><tr><th>Item</th><th>Make and model</th><th>Serial</th><th>Fitted to</th><th>Location</th></tr></thead>
+              <thead><tr><th>Item</th>{showClass && <th>Class</th>}<th>Make and model</th><th>Serial</th><th>Fitted to</th><th>Location</th></tr></thead>
               <tbody>
                 {visible.map((i) => (
                   <tr key={i.id} className="lib-row" onClick={() => navigate(`/maintenance/items/${i.id}`)}>
                     <td>{i.name}</td>
-                    <td className="lib-date">{[i.manufacturer, i.model].filter(Boolean).join(" ") || "—"}</td>
+                    {showClass && <td className="lib-date">{i.item_class?.name || "—"}</td>}
+                    <td className="lib-date">{[i.manufacturer_entry?.name || i.manufacturer, i.model].filter(Boolean).join(" ") || "—"}</td>
                     <td className="lib-date">{i.serial || "—"}</td>
                     <td>{i.fitted_to?.name || <span className="lib-date">not fitted</span>}</td>
                     <td className="lib-date">{itemWhere(i).label || "—"}</td>
@@ -285,10 +296,11 @@ export function MaintenanceClasses() {
   }, [open]);
   return (
     <div className="app">
-      <PageHeader crumbs={crumbs} title="Position classes"
-                  meta="Like positions grouped, so their items' lives can be compared and pooled into one model." />
+      <PageHeader crumbs={crumbs} title="Classes"
+                  meta="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is." />
       <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
+      <h2 className="maint-section">Position classes</h2>
       {classes === null ? <div className="card empty">Loading…</div> : classes.length === 0 ? (
         <div className="card empty"><p>No classes yet. Give positions a class (e.g. “Pool pump”) when you create or edit them.</p></div>
       ) : (
@@ -316,6 +328,8 @@ export function MaintenanceClasses() {
           {data === null ? <p className="lib-date">Loading…</p> : <LifeTable rows={data.rows} showPosition />}
         </section>
       )}
+      <h2 className="maint-section">What kind of thing</h2>
+      <ItemClassesSection />
     </div>
   );
 }
@@ -478,10 +492,14 @@ export function MaintenanceParts() {
   const [parts, setParts] = useState(null);
   const [locations, setLocations] = useState([]);
   const [modal, setModal] = useState(null);
+  const [filter, setFilter] = useState({ itemClassId: null, manufacturerId: null });
+  const [kinds] = useKinds();
   const [error, setError] = useState(null);
+  const filtered = !!(filter.itemClassId || filter.manufacturerId);
+  const usesKinds = !!(kinds.classes?.length || kinds.makers?.length);
   const load = useCallback(() => {
-    listMaintenanceParts().then((d) => setParts(d.parts)).catch((e) => setError(e.message));
-  }, []);
+    listMaintenanceParts(filter).then((d) => setParts(d.parts)).catch((e) => setError(e.message));
+  }, [filter]);
   useEffect(() => {
     load();
     listMaintenanceLocations().then((d) => setLocations(d.locations)).catch(() => {});
@@ -492,9 +510,16 @@ export function MaintenanceParts() {
                   primary={<button onClick={() => setModal("new")}><PlusIcon /> New part</button>} />
       <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
-      {parts?.length > 0 && <SparesCoverCard parts={parts} />}
+      {parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
+      {usesKinds && (
+        <div className="tablebar">
+          <span className="count">{parts ? `${parts.length} part${parts.length === 1 ? "" : "s"}` : ""}</span>
+          <span className="grow" />
+          <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />
+        </div>
+      )}
       {parts === null ? <div className="card empty">Loading…</div> : parts.length === 0 ? (
-        <div className="card empty"><p>No parts yet. Add the spares you keep: anodes, filters, bearings.</p></div>
+        <div className="card empty"><p>{filtered ? "No parts match." : "No parts yet. Add the spares you keep: anodes, filters, bearings."}</p></div>
       ) : (
         <div className="lib">
           <table className="lib-table">
@@ -503,7 +528,8 @@ export function MaintenanceParts() {
               {parts.map((pt) => (
                 <tr key={pt.id}>
                   <td>{pt.part_number}{pt.superseded_by && <div className="lib-date">superseded by {pt.superseded_by.part_number}</div>}</td>
-                  <td>{pt.name}<div className="lib-date">{[pt.manufacturer, pt.unit_cost != null && `${pt.unit_cost} each`].filter(Boolean).join(" · ")}</div></td>
+                  <td>{pt.name}<div className="lib-date">{[pt.manufacturer_entry?.name || pt.manufacturer,
+                    pt.item_class?.name, pt.unit_cost != null && `${pt.unit_cost} each`].filter(Boolean).join(" · ")}</div></td>
                   <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}
                     {pt.critical_short && <div className="maint-overdue">critical spare short (keep {pt.critical_min})</div>}</td>
                   <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
@@ -514,14 +540,17 @@ export function MaintenanceParts() {
                   ))}</td>
                   <td>{pt.used_last_year}</td>
                   <td className="lib-date">{pt.months_of_cover != null ? `${pt.months_of_cover} months` : "—"}</td>
-                  <td><button className="secondary" onClick={() => setModal({ stock: pt })}>Stock</button></td>
+                  <td><button className="secondary" onClick={() => setModal({ stock: pt })}>Stock</button>
+                    {usesKinds && <> <button className="secondary" onClick={() => setModal({ kind: pt })}>What it is</button></>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {modal === "new" && <NewPartModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
+      {modal === "new" && <NewPartModal kinds={kinds} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
+      {modal?.kind && <PartKindModal part={modal.kind} kinds={kinds} onClose={() => setModal(null)}
+                                     onDone={() => { setModal(null); load(); }} />}
       {modal?.stock && <StockModal part={modal.stock} locations={locations} onClose={() => setModal(null)}
                                    onDone={() => { setModal(null); load(); }} />}
     </div>
@@ -585,8 +614,9 @@ function SparesCoverCard({ parts }) {
   );
 }
 
-function NewPartModal({ onClose, onDone }) {
-  const [f, setF] = useState({ part_number: "", name: "", manufacturer: "", unit_cost: "" });
+function NewPartModal({ kinds, onClose, onDone }) {
+  const [f, setF] = useState({ part_number: "", name: "", manufacturer: "", unit_cost: "", item_class_id: null,
+    manufacturer_id: null });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
     <FormModal title="New part" submitLabel="Add" canSubmit={!!f.part_number.trim() && !!f.name.trim()} onClose={onClose}
@@ -595,6 +625,19 @@ function NewPartModal({ onClose, onDone }) {
       <Field label="Name"><input value={f.name} placeholder="e.g. Magnesium anode" onChange={set("name")} /></Field>
       <Field label="Manufacturer (optional)"><input value={f.manufacturer} onChange={set("manufacturer")} /></Field>
       <Field label="Cost each (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={f.unit_cost} onChange={set("unit_cost")} /></Field>
+      {kinds.classes?.length > 0 && (
+        <Field label="Item class (optional: what kind of thing it is)">
+          <ClassPicker classes={kinds.classes} value={f.item_class_id} onChange={(v) => setF({ ...f, item_class_id: v })} />
+        </Field>
+      )}
+      {kinds.makers?.length > 0 && (
+        <Field label="Manufacturer in the register (optional)">
+          <select value={f.manufacturer_id || ""} onChange={(e) => setF({ ...f, manufacturer_id: e.target.value || null })}>
+            <option value="">None</option>
+            {kinds.makers.map((mk) => <option key={mk.id} value={mk.id}>{mk.name}</option>)}
+          </select>
+        </Field>
+      )}
     </FormModal>
   );
 }

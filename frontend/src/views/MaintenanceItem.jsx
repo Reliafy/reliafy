@@ -19,6 +19,7 @@ import { costText, costValue, roughDateValue } from "../maintenanceFields.js";
 import { itemWhere } from "../maintenanceLocations.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import { MeasurementsCard } from "./MaintenancePosition.jsx";
+import { ItemKindCard, useKinds } from "../components/MaintenanceItemClasses.jsx";
 import "./Maintenance.css";
 
 const ITEM_DATES = [
@@ -36,6 +37,7 @@ export default function MaintenanceItem() {
   const [item, setItem] = useState(null);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null);
+  const [kinds] = useKinds();
 
   const refresh = useCallback(() => {
     getMaintenanceItem(id).then(setItem).catch((e) => setError(e.message));
@@ -105,6 +107,8 @@ export default function MaintenanceItem() {
           <p className="lib-date">No nameplate details yet. Add a photo of the nameplate and ask Claude to read it, or edit them here.</p>
         )}
       </section>
+
+      <ItemKindCard item={item} kinds={kinds} onChanged={setItem} />
 
       <NotesCard notes={item.notes} history={item.note_history}
                  onAppend={async (text) => setItem(await updateMaintenanceItem(item.id, { append_note: text }))} />

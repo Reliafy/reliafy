@@ -199,3 +199,14 @@
   overflow-x: auto;
   position: relative;
 }
+
+/* Item classes: the chosen class in the tree. */
+.maint-tree button.link.maint-node-name[aria-current="true"] {
+  text-decoration: underline;
+}
+
+/* The Classes page's two halves: position classes, then item classes. */
+.maint-section {
+  margin: 1.5rem 0 0.75rem;
+  font-size: var(--fs-18, 1.15rem);
+}

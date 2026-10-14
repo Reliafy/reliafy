@@ -752,7 +752,9 @@ def export_item_classes(format: str = "json", m: Maintenance = Depends(maintenan
     if format == "csv":
         return Response(taxonomy.export_csv(m), media_type="text/csv",
                         headers={"Content-Disposition": 'attachment; filename="item-classes.csv"'})
-    return _run(taxonomy.export_json, m)
+    out = _run(taxonomy.export_json, m)
+    out.headers["Content-Disposition"] = 'attachment; filename="item-classes.json"'
+    return out
 
 
 @router.post("/item-classes/import")
