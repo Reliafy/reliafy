@@ -151,7 +151,8 @@ function CloseForm({ wo, onClosed }) {
   const kinds = actionKinds(KINDS, wo);
   // A replacement can only be recorded at a position (an item's: where it's fitted now).
   const atPosition = wo.can_replace !== false;
-  const [actions, setActions] = useState([{ kind: wo.type === "inspection" ? "inspect" : atPosition ? "replace" : "repair" }]);
+  const [actions, setActions] = useState([{ kind: wo.type === "inspection" || wo.subject?.kind === "location" ? "inspect"
+    : atPosition ? "replace" : "repair" }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 

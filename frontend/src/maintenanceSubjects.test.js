@@ -36,9 +36,13 @@ test("an item's work says where the item is now", () => {
 });
 
 test("an item's task says what happens in store", () => {
-  assert.equal(whileStoredText({ subject: { kind: "item" }, while_stored: "pause" }), "pauses while in store");
-  assert.equal(whileStoredText({ subject: { kind: "item" }, while_stored: "run" }), "keeps running in store");
+  assert.equal(whileStoredText({ subject: { kind: "item" }, unit: "months", while_stored: "pause" }), "pauses while in store");
+  assert.equal(whileStoredText({ subject: { kind: "item" }, unit: "months", while_stored: "run" }), "keeps running in store");
   assert.equal(whileStoredText({ subject: { kind: "position" } }), "");
+  // By use only, a store makes no difference.
+  assert.equal(whileStoredText({ subject: { kind: "item" }, unit: "hours", while_stored: "run" }), "");
+  assert.equal(whileStoredText({ subject: { kind: "item" }, unit: "hours", also_interval: 2, also_unit: "years",
+    while_stored: "pause" }), "pauses while in store");
 });
 
 test("a replacement is offered only where it can be recorded", () => {

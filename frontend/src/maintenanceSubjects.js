@@ -40,9 +40,11 @@ export function itemAtText(at) {
   return where;
 }
 
-// An item's task's setting for a spell in a store, in words.
+// An item's task's setting for a spell in a store, in words (only for a calendar
+// limit: use doesn't accrue in a store anyway).
 export function whileStoredText(task) {
   if (task?.subject?.kind !== "item") return "";
+  if (![task.unit, task.also_interval ? task.also_unit : null].some((u) => CALENDAR_UNITS.includes(u))) return "";
   return task.while_stored === "pause" ? "pauses while in store" : "keeps running in store";
 }
 
