@@ -17,6 +17,8 @@ import {
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue, roughDateValue } from "../maintenanceFields.js";
 import { itemWhere } from "../maintenanceLocations.js";
+import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
+import { MeasurementsCard } from "./MaintenancePosition.jsx";
 import "./Maintenance.css";
 
 const ITEM_DATES = [
@@ -26,7 +28,8 @@ const ITEM_DATES = [
 ];
 
 // One physical item: its details and nameplate, where it is and has been, its
-// own positions, and its photos.
+// own positions, its photos, and its own tasks (they follow it wherever it goes),
+// work orders and measurements.
 export default function MaintenanceItem() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -108,6 +111,14 @@ export default function MaintenanceItem() {
       <DocumentsCard documents={item.documents} target={{ target_id: item.id }} onChanged={refresh} />
 
       <MaintenancePhotos title="Photos" targetId={item.id} targetName={item.name} photos={item.photos} onChanged={refresh} />
+
+      <TasksCard subject={{ kind: "item", id: item.id, name: item.name }} tasks={item.tasks || []}
+                 counters={(item.measurements || []).filter((mp) => mp.kind === "counter")} onChanged={refresh}
+                 emptyText={"No tasks on this item. Add one that follows this serial number wherever it goes: a statutory "
+                   + "inspection or certificate, a calibration, warranty servicing, an overhaul every so many hours, or "
+                   + "preserving it while it's a spare. Work on the job it does belongs on its position."} />
+      <WorkOrdersCard workOrders={item.work_orders || []} />
+      <MeasurementsCard measurements={item.measurements || []} target={{ kind: "item", id: item.id }} onChanged={refresh} />
 
       <section className="card">
         <div className="maint-head"><h2>Where it has been</h2></div>

@@ -10,6 +10,7 @@ import { FailureModePicker, Field, FormModal, MaintenanceTabs, NotesCard, fmtDat
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { partChoices, stockText } from "../maintenanceSpares.js";
+import { actionKinds, itemAtText, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 
 const STATUS_LABELS = {
@@ -24,7 +25,8 @@ const KINDS = [
 ];
 
 // A work order: what it's for, and closing it with what was done. A
-// replacement ends the fitted item's time here and starts the new one's.
+// replacement ends the fitted item's time here and starts the new one's. It's on a
+// position, an item (wherever the item is now) or a location (a round).
 export default function MaintenanceWorkOrder() {
   const { id } = useParams();
   const [wo, setWo] = useState(null);
@@ -43,7 +45,7 @@ export default function MaintenanceWorkOrder() {
     <div className="app">
       <PageHeader
         crumbs={[{ label: "Maintenance", to: "/maintenance" },
-          ...(wo.position ? [{ label: wo.position.name, to: `/maintenance/positions/${wo.position.id}` }] : [])]}
+          ...(wo.subject ? [{ label: wo.subject.name, to: subjectPath(wo.subject) }] : [])]}
         title={`#${wo.number} ${wo.title}`}
         meta={[wo.type, STATUS_LABELS[wo.status] || wo.status, `opened ${fmtDate(wo.opened)}`, wo.due && `due ${fmtDate(wo.due)}`,
           wo.closed && `closed ${fmtDate(wo.closed)}`, wo.trade && `needs: ${wo.trade}`,
@@ -60,6 +62,14 @@ export default function MaintenanceWorkOrder() {
       {error && <div className="card error">{error}</div>}
       {modal === "edit" && <EditWorkOrder wo={wo} onClose={() => setModal(null)} onDone={(d) => { setWo(d); setModal(null); }} />}
       {modal === "cancel" && <CancelWorkOrder wo={wo} onClose={() => setModal(null)} onDone={(d) => { setWo(d); setModal(null); }} />}
+      {wo.subject?.kind === "item" && (
+        <p className="lib-date">On the item <Link to={subjectPath(wo.subject)}>{wo.subject.name}</Link>, which goes with it:
+          {" "}{itemAtText(wo.item_at) || "not fitted or placed anywhere"}.</p>
+      )}
+      {wo.subject?.kind === "location" && (
+        <p className="lib-date">For the place <Link to={subjectPath(wo.subject)}>{wo.subject.name}</Link>: a round or area
+          inspection. A replacement is recorded on a position's own work order.</p>
+      )}
       {wo.task && <p className="lib-date">From the task “{wo.task.name}”.</p>}
       {wo.warranty && (
         <div className="maint-ask">
@@ -93,7 +103,8 @@ export default function MaintenanceWorkOrder() {
             <label key={i} className="maint-row" style={{ marginTop: "0.25rem", gap: "0.5rem" }}>
               <input type="checkbox" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
                      onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
-              <span style={c.done ? { textDecoration: "line-through", color: "var(--muted)" } : null}>{c.text}</span>
+              <span style={c.done ? { textDecoration: "line-through", color: "var(--muted)" } : null}>
+                {c.position_id ? <Link to={`/maintenance/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
             </label>
           ))}
         </section>
@@ -102,7 +113,7 @@ export default function MaintenanceWorkOrder() {
                  onAppend={async (text) => setWo(await updateWorkOrder(wo.id, { append_note: text }))} />
       {wo.status !== "cancelled" && <CostsCard wo={wo} onChanged={setWo} />}
 
-      <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetName={wo.position?.name}
+      <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetName={wo.subject?.name || wo.position?.name}
                          photos={wo.photos || []} onChanged={refresh} />
 
       {wo.status === "cancelled" ? (
@@ -137,7 +148,10 @@ function CloseForm({ wo, onClosed }) {
   const [on, setOn] = useState(today());
   const [notes, setNotes] = useState("");
   const [readings, setReadings] = useState({});
-  const [actions, setActions] = useState([{ kind: wo.type === "inspection" ? "inspect" : "replace" }]);
+  const kinds = actionKinds(KINDS, wo);
+  // A replacement can only be recorded at a position (an item's: where it's fitted now).
+  const atPosition = wo.can_replace !== false;
+  const [actions, setActions] = useState([{ kind: wo.type === "inspection" ? "inspect" : atPosition ? "replace" : "repair" }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -175,16 +189,19 @@ function CloseForm({ wo, onClosed }) {
     <section className="card">
       <div className="maint-head"><h2>Close it</h2></div>
       {error && <div className="card error">{error}</div>}
-      <p className="lib-date">
-        Fitted now: {wo.fitted ? <strong>{wo.fitted.item?.name}</strong> : "nothing"}
-        {wo.fitted?.item?.serial && ` (${wo.fitted.item.serial})`}
-      </p>
+      {atPosition && (
+        <p className="lib-date">
+          Fitted now{wo.position && wo.subject?.kind !== "position" ? ` at ${wo.position.name}` : ""}:{" "}
+          {wo.fitted ? <strong>{wo.fitted.item?.name}</strong> : "nothing"}
+          {wo.fitted?.item?.serial && ` (${wo.fitted.item.serial})`}
+        </p>
+      )}
       {actions.map((a, i) => (
         <div key={i} className="maint-action">
           <div className="rcm-form">
             <Field label="What was done">
               <select value={a.kind} onChange={(e) => update(i, { kind: e.target.value })}>
-                {KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+                {kinds.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
               </select>
             </Field>
             {a.kind === "inspect" && (
@@ -197,7 +214,7 @@ function CloseForm({ wo, onClosed }) {
                 </select>
               </Field>
             )}
-            {a.kind !== "other" && (
+            {a.kind !== "other" && atPosition && (
               <Field label={a.kind === "replace" ? "Did it fail? Which way" : "Failure mode (optional)"}>
                 <FailureModePicker modes={wo.failure_modes} classModes={wo.class_failure_modes || []} value={a.mode}
                                    onChange={(mode) => update(i, { mode })}
@@ -257,7 +274,7 @@ function CloseForm({ wo, onClosed }) {
         <button onClick={submit} disabled={busy || !actions.every((a) => failureModeReady(a.mode))}>
           {busy ? "Closing…" : "Close work order"}
         </button>
-        {wo.position && <Link to={`/maintenance/positions/${wo.position.id}`} className="lib-date">Back to {wo.position.name}</Link>}
+        {wo.subject && <Link to={subjectPath(wo.subject)} className="lib-date">Back to {wo.subject.name}</Link>}
       </div>
     </section>
   );

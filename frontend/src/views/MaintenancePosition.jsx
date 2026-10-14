@@ -4,7 +4,6 @@ import {
   addFailureMode,
   addPastFitment,
   applyRcmToPosition,
-  createMaintenanceTask,
   fitMaintenanceItem,
   listMaintenanceItems,
   mergeFailureMode,
@@ -15,6 +14,7 @@ import {
   listRcmStudies,
   openWorkOrder,
   addMeasurementPoint,
+  addItemMeasurementPoint,
   recordMeasurementReading,
   correctMeasurementReading,
   voidMeasurementReading,
@@ -28,10 +28,7 @@ import {
   correctMaintenanceFitment,
   removeMaintenanceItem,
   retireMaintenancePosition,
-  retireMaintenanceTask,
-  setTaskLastDone,
   updateMaintenancePosition,
-  updateMaintenanceTask,
   voidMaintenanceFitment,
   addPositionPart,
   listMaintenanceParts,
@@ -41,9 +38,9 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, DueChip, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, MaintenanceTabs, OUTCOME_LABELS,
+  DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, MaintenanceTabs, OUTCOME_LABELS,
   PositionPicker,
-  RoughDateField, TASK_SOURCES, everyText, flatten, fmtDate, fmtDated, roughDate, today,
+  RoughDateField, flatten, fmtDate, fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import { roughDateValue } from "../maintenanceFields.js";
@@ -52,6 +49,7 @@ import Modal from "../components/Modal.jsx";
 import { isStruck, liveReadings, readingStatusText } from "../maintenanceReadings.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PART_ROLES, roleLabel, stockText } from "../maintenanceSpares.js";
+import { TasksCard } from "../components/MaintenanceTasks.jsx";
 import "./Maintenance.css";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
@@ -72,17 +70,6 @@ export default function MaintenancePosition() {
   const openChild = () => {
     getMaintenanceOverview().then((d) => setPositions(flatten(d.tree))).catch(() => {});
     setModal("child");
-  };
-
-  const workOrderForTask = async (task) => {
-    try {
-      const wo = await openWorkOrder({
-        position_id: id, title: task.name, type: "preventive", task_id: task.id, due: task.next_due,
-      });
-      navigate(`/maintenance/work-orders/${wo.id}`);
-    } catch (e) {
-      setError(e.message);
-    }
   };
 
   if (error && !p) return <div className="app"><div className="card error">{error}</div></div>;
@@ -175,43 +162,12 @@ export default function MaintenancePosition() {
 
       <PartsListCard p={p} onChanged={refresh} />
 
-      <section className="card">
-        <div className="maint-head">
-          <h2>Tasks</h2>
-          <button className="secondary" onClick={() => setModal("addTask")}><PlusIcon /> Add task</button>
-        </div>
-        {p.tasks.length === 0 ? (
-          <p className="lib-date">No scheduled tasks. Add one (from the maker's manual, a regulation or your own
-            practice), or apply an RCM study whose decisions have intervals.</p>
-        ) : (
-          <div className="maint-scroll"><table className="lib-table">
-            <thead><tr><th>Task</th><th>Every</th><th>Last done</th><th>Next due</th><th>Work order</th><th><span className="sr-only">Edit</span></th></tr></thead>
-            <tbody>
-              {p.tasks.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.name}
-                    <div className="lib-date">{[TASK_SOURCES[t.source], t.reference, t.failure_mode && `prevents: ${t.failure_mode.text}`,
-                      t.trade && `needs: ${t.trade}`].filter(Boolean).join(" · ")}</div></td>
-                  <td className="lib-date">{everyText(t)}</td>
-                  <td className="lib-date">
-                    <button type="button" className="crumb-link" title="When was it last done?"
-                            onClick={() => setModal({ lastDone: t })}>
-                      {t.last_done ? fmtDate(t.last_done) : "set"}
-                    </button>
-                  </td>
-                  <td><DueChip task={t} />{t.proposal && <div><span className="maint-badge">change proposed</span></div>}</td>
-                  <td>{t.open_work_order
-                    ? <Link to={`/maintenance/work-orders/${t.open_work_order.id}`}>#{t.open_work_order.number}</Link>
-                    : <button className="secondary" onClick={() => workOrderForTask(t)}>Create</button>}</td>
-                  <td><button className="crumb-link" onClick={() => setModal({ task: t })}>Edit</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table></div>
-        )}
-      </section>
+      <TasksCard subject={{ kind: "position", id: p.id, name: p.name }} tasks={p.tasks} itemTasks={p.item_tasks || []}
+                 modes={p.failure_modes} counters={p.measurements.filter((mp) => mp.kind === "counter")}
+                 onChanged={refresh}
+                 emptyText="No scheduled tasks. Add one (from the maker's manual, a regulation or your own practice), or apply an RCM study whose decisions have intervals." />
 
-      <MeasurementsCard p={p} onChanged={refresh} />
+      <MeasurementsCard measurements={p.measurements} target={{ kind: "position", id: p.id }} onChanged={refresh} />
 
       <ConnectionsCard p={p} onChanged={refresh} />
 
@@ -296,16 +252,10 @@ export default function MaintenancePosition() {
             nothing inside it in use, and no work order open.</p>
         </FormModal>
       )}
-      {modal === "addTask" && <AddTaskModal p={p} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.mode && <FailureModeModal p={p} mode={modal.mode} onClose={() => setModal(null)}
                                         onDone={() => { setModal(null); refresh(); }} />}
       {modal === "past" && <PastFitmentModal p={p} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
-      {modal?.task && <TaskModal task={modal.task} modes={p.failure_modes} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal?.fix && <FixModal row={modal.fix} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
-      {modal?.lastDone && (
-        <LastDoneModal task={modal.lastDone} onClose={() => setModal(null)}
-                       onDone={() => { setModal(null); refresh(); }} />
-      )}
       {modal === "fit" && <FitModal positionId={id} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
       {modal === "remove" && <RemoveModal position={p} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
       {modal === "rcm" && <ApplyRcmModal positionId={id} onClose={() => setModal(null)} onDone={(d) => { setP(d.position); setModal(null); }} />}
@@ -371,77 +321,6 @@ function RemoveModal({ position, onClose, onDone }) {
                              value={mode} onChange={setMode} />
         </Field>
       )}
-    </FormModal>
-  );
-}
-
-const UNITS = ["days", "weeks", "months", "years", "hours", "cycles", "km", "starts"];
-
-// A scheduled task added by hand: from the maker's manual, a regulation, or practice.
-function AddTaskModal({ p, onClose, onDone }) {
-  const [f, setF] = useState({
-    name: "", interval: "", unit: "months", also: "", also_unit: "months", outcome: "", source: "manual",
-    reference: "", point_id: "", failure_mode_id: "", instructions: "", checklist: "", last_done: "", trade: "",
-  });
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const counters = p.measurements.filter((mp) => mp.kind === "counter");
-  return (
-    <FormModal title="Add a task" submitLabel="Add task" canSubmit={!!f.name.trim() && Number(f.interval) > 0}
-               onClose={onClose} onSubmit={async () => onDone(await createMaintenanceTask(p.id, {
-                 name: f.name, interval: Number(f.interval), unit: f.unit, outcome: f.outcome || null,
-                 also_interval: f.also ? Number(f.also) : null, also_unit: f.also ? f.also_unit : null,
-                 source: f.source, reference: f.reference, point_id: f.point_id || null, trade: f.trade,
-                 failure_mode_id: f.failure_mode_id || null, instructions: f.instructions,
-                 checklist: f.checklist.split("\n").map((x) => x.trim()).filter(Boolean), last_done: f.last_done || null,
-               }))}>
-      <Field label="Task"><input autoFocus value={f.name} placeholder="e.g. Replace sacrificial anode" onChange={set("name")} /></Field>
-      <Field label="Every">
-        <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" inputMode="decimal" min="0" step="any" value={f.interval} onChange={set("interval")} style={{ width: "6rem" }} />
-          <select value={f.unit} onChange={set("unit")}>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
-        </div>
-      </Field>
-      <Field label="Or every (whichever comes first, optional)">
-        <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" inputMode="decimal" min="0" step="any" value={f.also} placeholder="none" onChange={set("also")} style={{ width: "6rem" }} />
-          <select value={f.also_unit} onChange={set("also_unit")}>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
-        </div>
-      </Field>
-      {counters.length > 0 && (
-        <Field label="Counter (for a task by use, optional)">
-          <select value={f.point_id} onChange={set("point_id")}>
-            <option value="">The position's counter in that unit</option>
-            {counters.map((mp) => <option key={mp.id} value={mp.id}>{mp.name} ({mp.unit})</option>)}
-          </select>
-        </Field>
-      )}
-      <Field label="What kind of task">
-        <select value={f.outcome} onChange={set("outcome")}>
-          <option value="">Routine work (lubricate, clean, adjust)</option>
-          <option value="fixed_interval">Replace or restore at the interval</option>
-          <option value="failure_finding">Check a hidden function (failure-finding)</option>
-          <option value="on_condition">Check condition</option>
-        </select>
-      </Field>
-      <Field label="Where it comes from">
-        <select value={f.source} onChange={set("source")}>
-          {["manual", "oem", "statutory", "other"].map((k) => <option key={k} value={k}>{TASK_SOURCES[k]}</option>)}
-        </select>
-      </Field>
-      <Field label="Reference (optional)"><input value={f.reference} placeholder="e.g. Owner's manual §7, AS 1851 table 5" onChange={set("reference")} /></Field>
-      {p.failure_modes.length > 0 && (
-        <Field label="Failure mode it prevents (optional)">
-          <select value={f.failure_mode_id} onChange={set("failure_mode_id")}>
-            <option value="">None</option>
-            {p.failure_modes.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
-          </select>
-        </Field>
-      )}
-      <Field label="Who may do it (optional)"><input value={f.trade} placeholder="e.g. licensed electrician" onChange={set("trade")} /></Field>
-      <Field label="Instructions (optional)"><textarea rows={3} value={f.instructions} onChange={set("instructions")} /></Field>
-      <Field label="Checklist, one step per line (optional)"><textarea rows={3} value={f.checklist} onChange={set("checklist")} /></Field>
-      <Field label="Last done (optional)"><input type="date" value={f.last_done} max={today()} onChange={set("last_done")} /></Field>
-      <p className="lib-date">It falls due, raises work orders and counts from each new item fitted, like a task from an RCM study.</p>
     </FormModal>
   );
 }
@@ -572,17 +451,6 @@ function NewWorkOrderModal({ positionId, onClose, onDone }) {
   );
 }
 
-function LastDoneModal({ task, onClose, onDone }) {
-  const [on, setOn] = useState(task.last_done || today());
-  return (
-    <FormModal title={`Last done: ${task.name}`} submitLabel="Save" onClose={onClose}
-               onSubmit={async () => onDone(await setTaskLastDone(task.id, on))}>
-      <p className="lib-date">When this was last done, so the next due date counts from then.</p>
-      <Field label="Last done on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
-    </FormModal>
-  );
-}
-
 // Where a position physically is: set here, or (not set) the same as the position above it.
 function LocationModal({ p, onClose, onDone }) {
   const [locations, setLocations] = useState(null);
@@ -618,75 +486,6 @@ function EditPositionModal({ p, onClose, onDone }) {
       <Field label="Tag"><input value={f.tag} onChange={set("tag")} /></Field>
       <Field label="Class (to compare like positions)"><input value={f.position_class} onChange={set("position_class")} /></Field>
       <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>
-    </FormModal>
-  );
-}
-
-function TaskModal({ task, modes = [], onClose, onDone }) {
-  const byHand = task.source !== "rcm";
-  const [mode, setMode] = useState(task.failure_mode?.id || "");
-  const [source, setSource] = useState(task.source);
-  const [reference, setReference] = useState(task.reference || "");
-  const [name, setName] = useState(task.name);
-  const [interval, setInterval] = useState(String(task.interval));
-  const [unit, setUnit] = useState(task.unit);
-  const [also, setAlso] = useState(task.also_interval ? String(task.also_interval) : "");
-  const [alsoUnit, setAlsoUnit] = useState(task.also_unit || "months");
-  const [instructions, setInstructions] = useState(task.instructions || "");
-  const [checklist, setChecklist] = useState((task.checklist || []).join("\n"));
-  const [trade, setTrade] = useState(task.trade || "");
-  const [busy, setBusy] = useState(false);
-  return (
-    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && Number(interval) > 0} onClose={onClose}
-               onSubmit={async () => onDone(await updateMaintenanceTask(task.id, {
-                 name, interval: Number(interval), unit, also_interval: also ? Number(also) : 0, also_unit: alsoUnit,
-                 instructions, checklist: checklist.split("\n").map((x) => x.trim()).filter(Boolean), trade,
-                 ...(byHand ? { source, reference, failure_mode_id: mode || null } : {}),
-               }))}>
-      <Field label="Task"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-      <Field label="Every">
-        <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" inputMode="decimal" min="0" step="any" value={interval} onChange={(e) => setInterval(e.target.value)} style={{ width: "6rem" }} />
-          <select value={unit} onChange={(e) => setUnit(e.target.value)}>
-            {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
-        </div>
-      </Field>
-      <Field label="Or every (whichever comes first, optional)">
-        <div className="maint-row" style={{ marginTop: 0 }}>
-          <input type="number" inputMode="decimal" min="0" step="any" value={also} placeholder="none" onChange={(e) => setAlso(e.target.value)} style={{ width: "6rem" }} />
-          <select value={alsoUnit} onChange={(e) => setAlsoUnit(e.target.value)}>
-            {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
-        </div>
-      </Field>
-      <Field label="Who may do it: trade, licence or competency (optional)"><input value={trade}
-             placeholder="e.g. Licensed electrician" onChange={(e) => setTrade(e.target.value)} /></Field>
-      <Field label="Instructions (optional)"><textarea rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} /></Field>
-      <Field label="Checklist, one step per line (optional)"><textarea rows={4} value={checklist}
-             placeholder={"Isolate power\nDrain 10 L\nFit the new anode"} onChange={(e) => setChecklist(e.target.value)} /></Field>
-      <p className="lib-date">Each work order this task raises gets the trade, the instructions and the checklist to tick off.</p>
-      {byHand && <>
-        <Field label="Where it comes from">
-          <select value={source} onChange={(e) => setSource(e.target.value)}>
-            {["manual", "oem", "statutory", "other"].map((k) => <option key={k} value={k}>{TASK_SOURCES[k]}</option>)}
-          </select>
-        </Field>
-        <Field label="Reference (optional)"><input value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
-        {modes.length > 0 && (
-          <Field label="Failure mode it prevents">
-            <select value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option value="">None</option>
-              {modes.map((m) => <option key={m.id} value={m.id}>{m.text}{m.from_rcm ? " (RCM)" : ""}</option>)}
-            </select>
-          </Field>
-        )}
-        <p className="lib-date">Linked to a failure mode from an RCM study, this becomes that decision's task:
-          applying the study again updates it.</p>
-      </>}
-      <button className="secondary" disabled={busy} onClick={async () => {
-        setBusy(true); await retireMaintenanceTask(task.id, ""); onDone();
-      }}>Retire this task</button>
     </FormModal>
   );
 }
@@ -1005,7 +804,9 @@ function Sparkline({ point }) {
 
 // Measurement points: counters (use: hours, cycles) and condition (vibration,
 // temperature), read by hand or fed automatically.
-function MeasurementsCard({ p, onChanged }) {
+// What's measured on a position or an item (target: {kind, id}), with its latest
+// readings: counters for tasks by use, condition with alarm limits.
+export function MeasurementsCard({ measurements, target, onChanged }) {
   const [modal, setModal] = useState(null);
   return (
     <section className="card">
@@ -1013,7 +814,7 @@ function MeasurementsCard({ p, onChanged }) {
         <h2>Measurements</h2>
         <button className="secondary" onClick={() => setModal("add")}>Add a measurement</button>
       </div>
-      {p.measurements.length === 0 ? (
+      {measurements.length === 0 ? (
         <p className="lib-date">
           Nothing measured. Add a counter (run hours, cycles) for tasks that go by use, or a condition
           measurement (vibration, temperature) with alarm limits. Either can be read by hand or fed
@@ -1024,7 +825,7 @@ function MeasurementsCard({ p, onChanged }) {
         <table className="lib-table">
           <thead><tr><th>Measurement</th><th>Latest</th><th>Trend</th><th>Rate or alarm</th><th /></tr></thead>
           <tbody>
-            {p.measurements.map((c) => (
+            {measurements.map((c) => (
               <tr key={c.id}>
                 <td>{c.name}
                   <div className="lib-date">{c.kind === "counter" ? "counts use" : "condition"} · {c.source === "automated" ? `feed: ${c.tag}` : "read by hand"}</div></td>
@@ -1053,20 +854,20 @@ function MeasurementsCard({ p, onChanged }) {
         </table>
         </div>
       )}
-      {modal === "add" && <PointModal positionId={p.id} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
+      {modal === "add" && <PointModal target={target} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
       {modal?.read && <PointReadingModal point={modal.read} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); }} />}
       {modal?.list && <ReadingsModal point={modal.list} onClose={() => { setModal(null); onChanged(); }} />}
     </section>
   );
 }
 
-function PointModal({ positionId, onClose, onDone }) {
+function PointModal({ target, onClose, onDone }) {
   const [f, setF] = useState({ name: "", kind: "condition", unit: "", source: "manual", tag: "", alarm_above: "", alarm_below: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const counter = f.kind === "counter";
   return (
     <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && (f.source === "manual" || !!f.tag.trim())}
-               onClose={onClose} onSubmit={async () => onDone(await addMeasurementPoint(positionId, {
+               onClose={onClose} onSubmit={async () => onDone(await (target.kind === "item" ? addItemMeasurementPoint : addMeasurementPoint)(target.id, {
                  ...f, alarm_above: counter ? null : f.alarm_above, alarm_below: counter ? null : f.alarm_below,
                }))}>
       <Field label="What it is">

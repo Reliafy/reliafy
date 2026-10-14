@@ -2235,6 +2235,10 @@ export function updateMaintenanceTask(id, body) {
 export function createMaintenanceTask(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/tasks`, body);
 }
+// A task on a subject: { kind: "position" | "item" | "location", id }.
+export function createSubjectTask(subject, body) {
+  return postJson(`/api/maintenance/${subject.kind}s/${subject.id}/tasks`, body);
+}
 export function addFailureMode(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/failure-modes`, body);
 }
@@ -2400,6 +2404,10 @@ export function getClassEconomics(positionClass, { interval, unit, horizonYears,
 
 export function addMeasurementPoint(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/points`, body);
+}
+// A measurement point on an item: it travels with the item.
+export function addItemMeasurementPoint(itemId, body) {
+  return postJson(`/api/maintenance/items/${itemId}/points`, body);
 }
 export function recordMeasurementReading(pointId, value, on) {
   return postJson(`/api/maintenance/points/${pointId}/readings`, { value, on });

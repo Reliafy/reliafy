@@ -29,6 +29,7 @@ import {
 import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
 import { countsText, inheritedText, itemWhere } from "../maintenanceLocations.js";
+import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import "./Maintenance.css";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
@@ -172,6 +173,10 @@ export function MaintenanceLocation() {
         primary={<button onClick={() => setModal("rename")}>Rename</button>}
       />
       <MaintenanceTabs />
+      <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
+                 emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
+                   + "building or area check: it raises one work order here, and can list every position here to check."} />
+      {(loc.work_orders || []).length > 0 && <WorkOrdersCard workOrders={loc.work_orders} />}
       <LocationPositions loc={loc} />
       <section className="card">
         <div className="maint-head"><h2>Items placed here</h2></div>

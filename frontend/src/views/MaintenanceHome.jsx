@@ -19,6 +19,7 @@ import {
 } from "../components/MaintenanceParts.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
+import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 
 // One quiet line when the workspace has no time zone and this device isn't on
@@ -147,12 +148,12 @@ export default function MaintenanceHome() {
               <p className="lib-date">Nothing due.</p>
             ) : (
               <table className="lib-table">
-                <thead><tr><th>Task</th><th>Position</th><th>Due</th><th>Work order</th></tr></thead>
+                <thead><tr><th>Task</th><th>On</th><th>Due</th><th>Work order</th></tr></thead>
                 <tbody>
                   {data.due.map((t) => (
                     <tr key={t.id}>
                       <td>{t.name}</td>
-                      <td>{t.position && <Link to={`/maintenance/positions/${t.position.id}`}>{t.position.name}</Link>}</td>
+                      <td><SubjectCell subject={t.subject} at={t.at} /></td>
                       <td><DueChip task={t} /></td>
                       <td>{t.open_work_order
                         ? <Link to={`/maintenance/work-orders/${t.open_work_order.id}`}>#{t.open_work_order.number}</Link>
@@ -181,13 +182,13 @@ export default function MaintenanceHome() {
               <p className="lib-date">{locationId ? "None open there." : "None open."}</p>
             ) : (
               <div className="maint-scroll"><table className="lib-table">
-                <thead><tr><th>#</th><th>Title</th><th>Position</th><th>Location</th><th>Type</th><th>Trade</th><th>Due</th></tr></thead>
+                <thead><tr><th>#</th><th>Title</th><th>On</th><th>Location</th><th>Type</th><th>Trade</th><th>Due</th></tr></thead>
                 <tbody>
                   {openWork.map((w) => (
                     <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
                       <td>{w.number}</td>
                       <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
-                      <td>{w.position?.name}</td>
+                      <td><SubjectCell subject={w.subject} at={w.item_at} link={false} /></td>
                       <td className="lib-date">{w.location?.name || "—"}</td>
                       <td>{w.type}</td>
                       <td className="lib-date">{w.trade || "—"}</td>
@@ -235,6 +236,20 @@ export default function MaintenanceHome() {
         />
       )}
     </div>
+  );
+}
+
+// What a due task or open work order is on: its position, or an item (and where
+// it is now) or a location, marked.
+function SubjectCell({ subject, at, link = true }) {
+  if (!subject) return null;
+  const name = link ? <Link to={subjectPath(subject)}>{subject.name}</Link> : subject.name;
+  const badge = subjectBadge(subject);
+  return (
+    <>
+      {name}{badge && <> <span className="maint-badge">{badge}</span></>}
+      {at && <div className="lib-date">{itemAtText(at)}</div>}
+    </>
   );
 }
 
