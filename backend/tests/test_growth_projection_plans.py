@@ -31,11 +31,15 @@ def _model(env, owner):
 
 def test_free_projects_saved_models_but_not_inline_data(env):
     doc = _model(env, FREE)
-    out = _ok(_call(env.oauth[FREE], "growth_projection", {"model_id": doc.id, "fef": FEF, "test_end": 400}))
+    out = _ok(_call(env.oauth[FREE], "repairable_analysis", {"action": "growth_projection", "model_id": doc.id,
+                                                             "fef": FEF, "test_end": 400}))
     assert round(out["projected"]["mtbf"], 1) == 62.8
-    assert _ok(_call(env.oauth[FREE], "next_failure", {"model_id": doc.id, "age": 400}))["quantiles"]
-    msg = _err(_call(env.oauth[FREE], "growth_projection", {"x": X, "modes": MODES, "fef": FEF,
+    assert _ok(_call(env.oauth[FREE], "repairable_analysis", {"action": "next_failure", "model_id": doc.id,
+                                                              "age": 400}))["quantiles"]
+    msg = _err(_call(env.oauth[FREE], "repairable_analysis", {"action": "growth_projection", "x": X, "modes": MODES,
+                                                              "fef": FEF,
                                                             "test_end": 400}))
     assert FREE_PRO_ONLY in msg and "model's id" in msg
-    out = _ok(_call(env.oauth[PRO], "growth_projection", {"x": X, "modes": MODES, "fef": FEF, "test_end": 400}))
+    out = _ok(_call(env.oauth[PRO], "repairable_analysis", {"action": "growth_projection", "x": X, "modes": MODES,
+                                                            "fef": FEF, "test_end": 400}))
     assert round(out["growth_potential"]["mtbf"], 2) == 78.43

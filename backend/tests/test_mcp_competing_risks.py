@@ -21,7 +21,7 @@ pytestmark = pytest.mark.usefixtures("mcp_on")
 
 
 def test_inline_fit_by_failure_mode(env):  # noqa: F811 - the fixture
-    out = _ok(_call(env.token[A], "fit_distribution", {
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit",
         "distribution": "competing_risks", "data": X, "causes": MODES, "groups": SITES, "unit": "hours"}))
     assert out["kind"] == "competing_risks" and out["failed"] == 11 and out["still_running"] == 3
     model = CompetingRisks.fit(X, MODES, how="Kaplan-Meier")
@@ -30,35 +30,36 @@ def test_inline_fit_by_failure_mode(env):  # noqa: F811 - the fixture
     assert first["units_failed_from_it_by_horizon"] == pytest.approx(float(model.cif([out["horizon"]], "seal")[0]))
     assert out["reading"] and out["gray"]["available"] and "curves" not in out
     # A cause column with a single distribution is refused, as is one without causes.
-    assert "competing" in _err(_call(env.token[A], "fit_distribution", {"data": X, "causes": MODES}))
-    assert "failure mode" in _err(_call(env.token[A], "fit_distribution", {"distribution": "competing_risks",
+    assert "competing" in _err(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": X, "causes": MODES}))
+    assert "failure mode" in _err(_call(env.token[A], "life_data_analysis", {"action": "fit",
+                                                                             "distribution": "competing_risks",
                                                                            "data": X}))
 
 
 def test_saved_from_a_dataset_and_read_back(env):  # noqa: F811
     csv = next(d for d in samples.SAMPLE_DATASETS if d["id"] == "sample-ds-pump-modes")["csv"]
     ds = datasets_service.create_dataset(env.db, "Pumps by mode", csv, A)
-    saved = _ok(_call(env.token[A], "fit_and_save_model", {
+    saved = _ok(_call(env.token[A], "models", {"action": "fit",
         "name": "Pumps by mode", "distribution": "competing_risks_cox", "dataset_id": ds.id,
         "time_column": "hours", "cause_column": "failure_mode", "group_column": "site",
         "covariates": ["duty_pct"], "unit": "hours"}))
     assert saved["saved"] and saved["regression"]["model"] == "Cox"
-    detail = _ok(_call(env.token[A], "get_model", {"model_id": saved["model_id"]}))
+    detail = _ok(_call(env.token[A], "get", {"kind": "model", "id": saved["model_id"]}))
     assert detail["kind"] == "competing_risks" and detail["failure_modes"][0]["mode"] == "bearing wear"
     assert detail["gray"]["sentence"].startswith("Seal leak differs by site")
     assert detail["reading"] == saved["reading"]
-    assert "Column 'nope'" in _err(_call(env.token[A], "fit_distribution", {
+    assert "Column 'nope'" in _err(_call(env.token[A], "life_data_analysis", {"action": "fit",
         "distribution": "competing_risks", "dataset_id": ds.id, "time_column": "hours", "cause_column": "nope"}))
 
 
 def test_kaplan_meier_life_with_its_restricted_mean(env):  # noqa: F811
-    out = _ok(_call(env.token[A], "fit_and_save_model", {
+    out = _ok(_call(env.token[A], "models", {"action": "fit",
         "name": "KM", "distribution": "kaplan_meier", "data": TIMES, "censored": FLAGS, "unit": "hours"}))
     km = KaplanMeier.fit(np.asarray(TIMES, dtype=float), np.asarray(FLAGS))
     mttf = out["life"]["mttf"]
     assert mttf["value"] == pytest.approx(float(km.mean(max(TIMES))))
     assert mttf["lower"] == pytest.approx(float(km.mean_cb(max(TIMES), alpha_ci=0.2)[0]))
-    detail = _ok(_call(env.token[A], "get_model", {"model_id": out["model_id"]}))
+    detail = _ok(_call(env.token[A], "get", {"kind": "model", "id": out["model_id"]}))
     assert detail["life"]["b_lives"][3]["value"] == pytest.approx(float(fitting._life_metrics(km)["median"]))
 
 
@@ -66,7 +67,7 @@ def test_failure_modes_with_an_item_column_or_cox_options_are_refused(env):  # n
     csv = next(d for d in samples.SAMPLE_DATASETS if d["id"] == "sample-ds-pump-modes")["csv"]
     ds = datasets_service.create_dataset(env.db, "Pumps by mode", csv, A)
     base = {"dataset_id": ds.id, "time_column": "hours", "cause_column": "failure_mode", "covariates": ["duty_pct"]}
-    assert "covariates that change over time" in _err(_call(env.token[A], "fit_distribution", {
+    assert "covariates that change over time" in _err(_call(env.token[A], "life_data_analysis", {"action": "fit",
         **base, "distribution": "competing_risks_cox", "id_column": "pump"}))
-    assert "not to failure modes" in _err(_call(env.token[A], "fit_distribution", {
+    assert "not to failure modes" in _err(_call(env.token[A], "life_data_analysis", {"action": "fit",
         **base, "distribution": "competing_risks_cox", "cox_options": {"strata_column": "site"}}))

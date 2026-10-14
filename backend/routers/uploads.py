@@ -1,6 +1,6 @@
 """``PUT /api/uploads/{upload_id}?t=…`` — where an agent sends a file.
 
-The other half of the MCP ``create_upload`` tool (see
+The other half of the MCP ``uploads create`` tool (see
 :mod:`backend.services.uploads`, which carries the security review). No user
 auth: the agent's HTTP client (``curl`` in a sandbox) has none, so the
 single-use ``t`` token is the credential. ``POST`` with a raw body works the
@@ -32,7 +32,7 @@ from backend.services import usage as usage_service
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
-_NOT_FOUND = "This upload link is invalid or has expired. Call create_upload for a new one."
+_NOT_FOUND = "This upload link is invalid or has expired. Call uploads create for a new one."
 _NO_STORE = {"Cache-Control": "no-store"}
 
 

@@ -1,4 +1,4 @@
-"""Batched, atomic edits to a saved RBD graph (the MCP ``edit_rbd`` tool).
+"""Batched, atomic edits to a saved RBD graph (the MCP ``rbd edit`` tool).
 
 An agent changes a diagram by sending a short list of operations instead of
 re-sending the whole graph. :func:`apply_ops` applies them in order to a copy
@@ -22,7 +22,7 @@ Ops (plain dicts, already shape-checked by the MCP layer's pydantic models)::
 
 Layout: whenever an op changes which nodes exist or how they connect, the
 whole diagram is re-laid out with :func:`rbd_graph.layout_graph` — the same
-layered left-to-right layout ``create_rbd`` gives a new diagram (and the
+layered left-to-right layout ``rbd create`` gives a new diagram (and the
 builder's Auto-arrange), so new and rewired blocks never overlap. Positions
 can't simply be cleared: the builder loads saved nodes as they are and needs
 one on every node (only the public page falls back to auto-layout). A batch
@@ -113,7 +113,7 @@ class _Editor:
         for n in self.nodes:
             if n.get("id") == nid:
                 return n
-        raise EditError(f"there's no node '{nid}' (ids are case-sensitive; get_rbd lists them).")
+        raise EditError(f"there's no node '{nid}' (ids are case-sensitive; get kind rbd lists them).")
 
     def has_node(self, nid: str) -> bool:
         return any(n.get("id") == nid for n in self.nodes)

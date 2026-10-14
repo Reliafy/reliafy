@@ -31,7 +31,7 @@ def _repairable_nodes(**extra):
 
 
 def _create(env, **args):
-    return _ok(_call(env.token[A], "create_rbd", {"name": "Pumps", "repairable": True,
+    return _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Pumps", "repairable": True,
                                                   "nodes": _repairable_nodes(), "edges": GRAPH["edges"], **args}))
 
 
@@ -43,49 +43,52 @@ def pro(env, monkeypatch):
     return env
 
 
-# ---- 1. costs: published, and cheapest_design reachable from them ---------------------------
+# ---- 1. costs: published, and rbd_analysis cheapest_design reachable from them ---------------------------
 
 def test_create_rbd_takes_the_diagram_costs(env):
     out = _create(env, costs={"downtime_rate": 500, "horizon": 87600, "discount_rate": 0})
     graph = env.db.rbds.find_one({"_id": out["id"]})["graph"]
     assert graph["costs"] == {"downtime_rate": 500, "horizon": 87600}  # 0 = not set
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "x", "nodes": GRAPH["nodes"], "edges": GRAPH["edges"],
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "x", "nodes": GRAPH["nodes"],
+                                           "edges": GRAPH["edges"],
                                                   "costs": {"horizon": 100}}))
     assert "costs" in msg and "repairable" in msg
 
 
 def test_cheapest_design_says_which_fields_to_set_and_works_once_they_are(pro):
     rid = _create(pro)["id"]
-    msg = _err(_call(pro.token[A], "cheapest_design", {"rbd_id": rid}))
+    msg = _err(_call(pro.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
     assert "horizon" in msg and "{op: 'set', costs: {horizon:" in msg
-    _ok(_call(pro.token[A], "edit_rbd", {"rbd_id": rid, "ops": [{"op": "set", "costs": {"horizon": 87600}}]}))
-    msg = _err(_call(pro.token[A], "cheapest_design", {"rbd_id": rid}))
+    _ok(_call(pro.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [{"op": "set",
+                                                                              "costs": {"horizon": 87600}}]}))
+    msg = _err(_call(pro.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
     assert "purchase price" in msg and "costs: {acquisition:" in msg
-    _ok(_call(pro.token[A], "edit_rbd", {"rbd_id": rid, "ops": [
+    _ok(_call(pro.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
         {"op": "update_node", "ids": ["p1", "p2"], "costs": {"acquisition": 2000}}]}))
-    no_rate = _ok(_call(pro.token[A], "cheapest_design", {"rbd_id": rid}))
+    no_rate = _ok(_call(pro.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
     assert no_rate["available"] is True and "downtime_rate" in no_rate["note"]
-    _ok(_call(pro.token[A], "edit_rbd", {"rbd_id": rid, "ops": [{"op": "set", "costs": {"downtime_rate": 5000}}]}))
-    out = _ok(_call(pro.token[A], "cheapest_design", {"rbd_id": rid}))
+    _ok(_call(pro.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [{"op": "set",
+                                                                              "costs": {"downtime_rate": 5000}}]}))
+    out = _ok(_call(pro.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
     assert out["available"] is True and out["horizon"] == 87600 and out["design"]
 
 
-# ---- 2. simulation_note names analyze_rbd's real parameter -------------------------------------
+# ---- 2. simulation_note names rbd_analysis analyze's real parameter -------------------------------------
 
 def test_simulation_note_names_a_parameter_analyze_rbd_has(pro):
     rid = _create(pro)["id"]
-    _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
-    edited = _ok(_call(pro.token[A], "edit_rbd", {"rbd_id": rid, "ops": [
+    _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
+    edited = _ok(_call(pro.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
         {"op": "update_node", "id": "p1", "model": _weibull(500, 1.2)}]}))
     note = edited["simulation_note"]
     tools = {t.name: t for t in _run(pro.token[A], lambda c: c.list_tools()).tools}
-    params = set(tools["analyze_rbd"].input_schema["properties"])
+    params = set(tools["rbd_analysis"].input_schema["properties"])
     import re
 
     named = set(re.findall(r"(\w+)=(?:true|false)", note))
     assert named and named <= params, named
     # And it does what the note says: a new simulation for the edited diagram.
-    out = _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+    out = _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     assert out["has_simulation"] is True and out["cached"] is False
 
 
@@ -147,13 +150,14 @@ def test_every_positive_life_stress_coefficient_is_bounded():
 
 def test_mcp_fit_alt_model_and_alt_use_level_intervals_stay_positive(env):
     _, x, T = _arrhenius_fit()
-    out = _ok(_call(env.token[A], "fit_alt_model", {
+    out = _ok(_call(env.token[A], "models", {"action": "fit_alt",
         "name": "Wide b", "life_model": "arrhenius", "data": x.tolist(), "stresses": [[t] for t in T],
         "unit": "hours"}))
     coeffs = {c["name"]: c for c in out["life_stress_coefficients"]}
     assert coeffs["b"]["ci_95"][0] > 0
     assert coeffs["a"]["ci_95"][0] < coeffs["a"]["value"] < coeffs["a"]["ci_95"][1]
-    ev = _ok(_call(env.token[A], "alt_use_level", {"model_id": out["model_id"], "use_stress": [313.15]}))
+    ev = _ok(_call(env.token[A], "life_data_analysis", {"action": "alt_use_level", "model_id": out["model_id"],
+                                                        "use_stress": [313.15]}))
     intervals = {c["name"]: c for c in ev["bounds"]["parameter_intervals"]}
     assert intervals["b"]["ci"][0] > 0
 
@@ -173,35 +177,37 @@ def test_a_fit_saved_before_the_fix_is_served_with_a_positive_interval():
     assert old["coefficients"][1]["ci"][0] < 0  # the stored copy isn't mutated
 
 
-# ---- 4. analyze_rbd's repairable answer ------------------------------------------------------
+# ---- 4. rbd_analysis analyze's repairable answer ------------------------------------------------------
 
 def test_no_simulation_when_every_figure_is_exact_unless_asked(pro):
     rid = _create(pro)["id"]
-    out = _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid}))
+    out = _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert out["available"] is True and out["has_simulation"] is False
     assert out["simulation"]["on_request"] is True and "simulate=true" in out["simulation"]["message"]
     assert out["exact"]["status"] == "ok" and out["availability"]["basis"] == "exact"
     assert not pro.db.rbds.find_one({"_id": rid}).get("availability_cache")
     # simulate=false: the same, without the offer's flag being misread as a refusal.
-    fast = _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": False}))
+    fast = _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False}))
     assert fast["has_simulation"] is False and "code" not in fast["simulation"]
     # Asked: it runs and is saved; afterwards the saved one is served by default.
-    ran = _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+    ran = _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     assert ran["has_simulation"] is True and ran["cached"] is False
-    again = _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid}))
+    again = _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert again["has_simulation"] is True and again["cached"] is True
     # recompute asks too.
-    assert _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid, "recompute": True}))["cached"] is False
+    assert _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid,
+                                                    "recompute": True}))["cached"] is False
 
 
 def test_simulation_still_runs_where_a_figure_needs_it(pro):
     # One repair crew for wear-out lives: no exact route, so the default simulates.
     rid = _create(pro, repair_crews=1)["id"]
-    out = _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid}))
+    out = _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert out["has_simulation"] is True and "on_request" not in out["simulation"]
     # From now (current_state) the simulation gives the next failure: it runs too.
     rid = _create(pro)["id"]
-    now = _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid, "current_state": {"p1": {"down": True}}}))
+    now = _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid,
+                                                   "current_state": {"p1": {"down": True}}}))
     assert now["has_simulation"] is True
 
 
@@ -222,7 +228,7 @@ def test_exact_complete_reads_every_route():
 
 def test_per_node_downtime_is_per_run_and_the_total_is_labelled(pro):
     rid = _create(pro)["id"]
-    out = _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+    out = _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     n = out["n_simulations"]
     assert n > 1 and out["per_node"]
     for row in out["per_node"]:
@@ -234,7 +240,7 @@ def test_per_node_downtime_is_per_run_and_the_total_is_labelled(pro):
 
 def test_precision_says_the_interval_is_centred_on_the_simulated_mean(pro):
     rid = _create(pro)["id"]
-    p = _ok(_call(pro.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))["precision"]
+    p = _ok(_call(pro.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))["precision"]
     assert p["simulated_window_availability"] is not None
     if p.get("window_availability_basis") in ("exact", "numerical"):
         assert p["interval_centre"] == "simulated_window_availability"
@@ -258,9 +264,9 @@ def test_headline_window_availability_shows_the_simulated_mean_beside_its_interv
 # ---- 5. fault tree: the cut sets' shares aren't additive -----------------------------------
 
 def test_fault_tree_cut_set_share_alone_and_the_overlap_note(env):
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "FT", "nodes": GRAPH["nodes"],
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "FT", "nodes": GRAPH["nodes"],
                                                  "edges": GRAPH["edges"]}))["id"]
-    out = _ok(_call(env.token[A], "rbd_fault_tree", {"rbd_id": rid}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "fault_tree", "rbd_id": rid}))
     cuts = out["cut_sets"]
     for row in cuts["listed"]:
         assert row["share_alone"] == row["share"]
@@ -270,7 +276,7 @@ def test_fault_tree_cut_set_share_alone_and_the_overlap_note(env):
     assert cuts["probability_sum"] > out["top_event_probability"]
     assert "don't add up to 1" in cuts["note"] and "probability_sum" in cuts["note"]
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    assert "share_alone" in tools["rbd_fault_tree"].description
+    assert "share_alone" in tools["rbd_analysis"].description
 
 
 def test_rebuilt_interval_that_overflows_is_null_not_inf():

@@ -29,25 +29,13 @@ USERS = {
 TIMES = [120, 340, 510, 700, 980, 1200, 1500, 1800, 2100, 2600]
 FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 
-READ_TOOLS = {
-    "list_models", "get_model", "reliability_at", "list_datasets", "list_rbds", "get_rbd",
-    "analyze_rbd", "get_job", "fit_distribution", "export_rbd_python", "export_rbd_json", "optimal_replacement",
-    "failure_finding_interval",
-    "optimal_overhaul", "plan_demonstration_test", "list_fleets", "fleet_forecast", "list_fleet_alerts",
-    "upgrade_link", "system_history", "list_share_links", "get_account", "get_dataset", "inspect_upload",
-    "compare_groups", "cheapest_design", "compare_rbds", "fit_per_demand", "rbd_sensitivity", "rbd_fault_tree",
-    "optimise_maintenance_intervals", "growth_projection", "next_failure", "alt_use_level",
-    "check_life_requirement", "allocate_targets", "list_rbd_runs", "get_rbd_run", "quote_rbd_simulation",
-    "workspace_changes", "list_rcm_studies", "get_rcm_study",
-}
+# A few tools, each doing one area's work by action (or kind): reads and
+# calculations apart from writes (backend/mcp_server.py, "Tools with actions").
+READ_TOOLS = {"guide", "get", "list", "life_data_analysis", "repairable_analysis", "strategy", "rbd_analysis",
+              "upgrade_link"}
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
-WRITE_TOOLS = {"fit_and_save_model", "save_model", "upload_dataset", "create_rbd", "clone_rbd", "edit_rbd",
-               "create_fleet_alert",
-               "delete_model", "delete_dataset", "delete_rbd", "upload_outage_log", "share_link",
-               "revoke_share_link", "update_model", "update_dataset",
-               "create_upload", "import_rbd", "import_excel", "fit_alt_model", "fit_recurrent_model",
-               "create_report", "upload_file_part", "create_rcm_study", "update_rcm_study"}
+WRITE_TOOLS = {"models", "datasets", "rbd", "uploads", "rcm", "sharing", "fleet"}
 
 
 # MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
@@ -232,8 +220,8 @@ def test_tools_list_has_every_tool_with_annotations(env):
         assert tool.description and tool.input_schema["type"] == "object"
         assert tool.output_schema is not None
     # The RBD rules travel with the tool.
-    assert "Redundancy MUST be modelled as redundancy" in tools["create_rbd"].description
-    assert "0 = the unit failed" in tools["fit_distribution"].description
+    assert "Redundancy must be modelled as redundancy" in tools["rbd"].description
+    assert "0 = failed, 1 = still running" in tools["life_data_analysis"].description
 
 
 # ---- fitting ----------------------------------------------------------------------
@@ -246,7 +234,8 @@ def _direct_fit(times, flags, **options):
 
 
 def test_fit_inline_censored_matches_fitting(env):
-    out = _ok(_call(env.token[A], "fit_distribution", {"data": TIMES, "censored": FLAGS, "unit": "hours"}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": TIMES, "censored": FLAGS,
+                                                         "unit": "hours"}))
     ref = _direct_fit(TIMES, FLAGS)
     assert out["saved"] is False and out["distribution"] == "Weibull" and out["unit"] == "Hours"
     for got, want in zip(out["params"], ref["params"]):
@@ -260,41 +249,44 @@ def test_fit_inline_censored_matches_fitting(env):
 
 def test_c_invert_flips_the_flags(env):
     inverted = [1 - f for f in FLAGS]
-    out = _ok(_call(env.token[A], "fit_distribution", {"data": TIMES, "censored": inverted, "c_invert": True}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": TIMES, "censored": inverted,
+                                                         "c_invert": True}))
     ref = _direct_fit(TIMES, FLAGS)
     assert [p["value"] for p in out["params"]] == pytest.approx([p["value"] for p in ref["params"]])
 
 
 def test_fit_errors_are_user_facing(env):
-    msg = _err(_call(env.token[A], "fit_distribution", {"data": [100, 200], "censored": [1, 1]}))
+    msg = _err(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": [100, 200], "censored": [1, 1]}))
     assert "marked as censored" in msg and "Traceback" not in msg
-    msg = _err(_call(env.token[A], "fit_distribution", {"data": TIMES, "distribution": "nope"}))
+    msg = _err(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": TIMES, "distribution": "nope"}))
     assert "isn't a supported" in msg
 
 
 def test_best_fit_reports_the_selection(env):
-    out = _ok(_call(env.token[A], "fit_distribution", {"data": TIMES, "censored": FLAGS, "distribution": "best"}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": TIMES, "censored": FLAGS,
+                                                         "distribution": "best"}))
     assert out["selection"]["criterion"] == "aic" and out["selection"]["candidates"]
 
 
 def test_save_persists_and_lists_and_matches_rest_reliability(env):
     from backend.main import app
 
-    saved = _ok(_call(env.token[A], "fit_and_save_model", {
+    saved = _ok(_call(env.token[A], "models", {"action": "fit",
         "data": TIMES, "censored": FLAGS, "unit": "hours", "name": "MCP bearings"}))
     mid = saved["model_id"]
     assert saved["saved"] and saved["url"].endswith(f"/modelling/m/{mid}")
     assert env.db.models.find_one({"_id": mid})["owner_id"] == A
     assert env.db.datasets.find_one({"_id": saved["dataset_id"]})["owner_id"] == A
 
-    listed = _ok(_call(env.token[A], "list_models", {"kind": "life"}))
+    listed = _ok(_call(env.token[A], "list", {"kind": "models", "model_type": "life"}))
     assert mid in [m["id"] for m in listed["life_models"]]
 
-    detail = _ok(_call(env.token[A], "get_model", {"model_id": mid}))
+    detail = _ok(_call(env.token[A], "get", {"kind": "model", "id": mid}))
     assert {p["name"] for p in detail["params"]} == {"alpha", "beta"}
     assert detail["metrics"]["mttf"] > 0
 
-    rel = _ok(_call(env.token[A], "reliability_at", {"model_id": mid, "times": [500, 1000]}))
+    rel = _ok(_call(env.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": mid, "times": [500,
+        1000]}))
     client = TestClient(app)
     for point in rel["points"]:
         rest = client.post(f"/api/v1/models/{mid}/reliability",
@@ -302,20 +294,22 @@ def test_save_persists_and_lists_and_matches_rest_reliability(env):
         for key in ("reliability", "failure", "hazard", "cumulative_hazard", "density"):
             assert point[key] == pytest.approx(rest[key])
 
-    cond = _ok(_call(env.token[A], "reliability_at", {"model_id": mid, "times": [200], "conditional_age": 500}))
-    r = {p["t"]: p for p in _ok(_call(env.token[A], "reliability_at", {"model_id": mid, "times": [500, 700]}))["points"]}
+    cond = _ok(_call(env.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": mid, "times": [200],
+                                                          "conditional_age": 500}))
+    r = {p["t"]: p for p in _ok(_call(env.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": mid,
+                                                                           "times": [500, 700]}))["points"]}
     assert cond["points"][0]["conditional_reliability"] == pytest.approx(r[700]["reliability"] / r[500]["reliability"])
 
 
 def test_dataset_upload_then_fit_from_it(env):
-    ds = _ok(_call(env.token[A], "upload_dataset", {
+    ds = _ok(_call(env.token[A], "datasets", {"action": "upload",
         "name": "Pumps", "csv": "hours,failed\n" + "\n".join(f"{t},{c}" for t, c in zip(TIMES, FLAGS))}))
     assert ds["columns"] == ["hours", "failed"] and ds["n_rows"] == len(TIMES)
-    assert ds["id"] in [d["id"] for d in _ok(_call(env.token[A], "list_datasets"))["datasets"]]
+    assert ds["id"] in [d["id"] for d in _ok(_call(env.token[A], "list", {"kind": "datasets"}))["datasets"]]
 
-    msg = _err(_call(env.token[A], "fit_distribution", {"dataset_id": ds["id"]}))
+    msg = _err(_call(env.token[A], "life_data_analysis", {"action": "fit", "dataset_id": ds["id"]}))
     assert "time_column" in msg and "hours" in msg
-    out = _ok(_call(env.token[A], "fit_distribution", {
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit",
         "dataset_id": ds["id"], "time_column": "hours", "censor_column": "failed"}))
     ref = _direct_fit(TIMES, FLAGS)
     assert [p["value"] for p in out["params"]] == pytest.approx([p["value"] for p in ref["params"]])
@@ -324,19 +318,19 @@ def test_dataset_upload_then_fit_from_it(env):
 # ---- RBDs --------------------------------------------------------------------------
 
 def test_create_analyze_and_export_rbd(env):
-    created = _ok(_call(env.token[A], "create_rbd", {"name": "Pump skid", "unit": "Hours", **GRAPH}))
+    created = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Pump skid", "unit": "Hours", **GRAPH}))
     rid = created["id"]
     assert created["placeholders"] == ["Pump B"] and created["n_blocks"] == 3
     doc = env.db.rbds.find_one({"_id": rid})
     assert doc["owner_id"] == A and all("position" in n for n in doc["graph"]["nodes"])
     assert doc["graph"]["nodes"][0]["data"]["label"]  # fleshed out for the builder
 
-    # Round trip: get_rbd returns the compact form create_rbd accepts.
-    got = _ok(_call(env.token[A], "get_rbd", {"rbd_id": rid}))
+    # Round trip: get kind rbd returns the compact form rbd create accepts.
+    got = _ok(_call(env.token[A], "get", {"kind": "rbd", "id": rid}))
     assert {n["id"] for n in got["graph"]["nodes"]} == {"input", "ctl", "p1", "p2", "output"}
     assert next(n for n in got["graph"]["nodes"] if n["id"] == "p2")["model"]["placeholder"] is True
 
-    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "times": [100, 500]}))
+    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "times": [100, 500]}))
     assert res["kind"] == "non_repairable" and res["available"]
     assert res["mttf"] > 0 and res["b_life"]["b10"] > 0
     assert res["reliability_at"][0]["reliability"] > res["reliability_at"][1]["reliability"]
@@ -349,20 +343,20 @@ def test_create_analyze_and_export_rbd(env):
     ref = rbds_service.analyze_graph(env.db, doc["graph"], [A])
     assert res["mttf"] == pytest.approx(ref["mttf"])
 
-    script = _ok(_call(env.token[A], "export_rbd_python", {"rbd_id": rid}))
+    script = _ok(_call(env.token[A], "rbd_analysis", {"action": "export_python", "rbd_id": rid}))
     assert script["filename"].endswith(".py")
     assert "import repyability" in script["script"] or "from repyability" in script["script"]
     compile(script["script"], script["filename"], "exec")
 
-    assert rid in [r["id"] for r in _ok(_call(env.token[A], "list_rbds"))["rbds"]]
+    assert rid in [r["id"] for r in _ok(_call(env.token[A], "list", {"kind": "rbds"}))["rbds"]]
 
 
 def test_create_rbd_rejects_bad_structures(env):
     bad = {"nodes": [n for n in GRAPH["nodes"] if n["id"] != "output"],
            "edges": [e for e in GRAPH["edges"] if e["target"] != "output"]}
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "Broken", **bad}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "Broken", **bad}))
     assert "Invalid RBD" in msg or "output" in msg.lower()
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "Neither"}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "Neither"}))
     assert "exactly one" in msg
     assert env.db.rbds.count_documents({"owner_id": A}) == 0
 
@@ -385,7 +379,7 @@ REPAIRABLE_STAGES = [
 def test_repairable_analysis_follows_the_paid_gate_and_cache(env, monkeypatch):
     from backend.services import billing as billing_service
 
-    created = _ok(_call(env.token[A], "create_rbd", {
+    created = _ok(_call(env.token[A], "rbd", {"action": "create",
         "name": "Duty/standby pumps", "repairable": True, "stages": REPAIRABLE_STAGES}))
     rid = created["id"]
     assert created["repairable"] is True
@@ -393,7 +387,7 @@ def test_repairable_analysis_follows_the_paid_gate_and_cache(env, monkeypatch):
     # API access but no premium compute: the exact figures (#154), and a clear
     # message for the simulation, not an error.
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: False)
-    denied = _call(env.token[A], "analyze_rbd", {"rbd_id": rid})
+    denied = _call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid})
     out = _ok(denied)
     assert out["available"] is True and out["has_simulation"] is False
     assert out["exact"]["status"] == "ok" and 0 < out["exact"]["mission_availability"] <= 1
@@ -404,14 +398,14 @@ def test_repairable_analysis_follows_the_paid_gate_and_cache(env, monkeypatch):
     # Entitled and asked (every figure here is exact, so only on request,
     # #262): computes and stores the result on the owner's diagram.
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: True)
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     assert out["available"] and out["kind"] == "repairable"
     assert 0 < out["steady_state_availability"] <= 1 and out["cached"] is False
     assert env.db.rbds.find_one({"_id": rid}).get("availability_cache")
 
     # Entitlement lapses: the saved result is still served.
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: False)
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert out["available"] and out["steady_state_availability"] > 0 and out["can_recompute"] is False
 
 
@@ -421,18 +415,19 @@ def test_calculators_match_the_strategy_service(env):
     from backend.services import strategy_store
 
     params = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-    out = _ok(_call(env.token[A], "optimal_replacement", {
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement",
         "distribution_id": "weibull", "params": params, "planned_cost": 100, "unplanned_cost": 1000}))
     ref = strategy_store.compute("optimal_replacement", {
         "distribution_id": "weibull", "params": params, "planned_cost": 100, "unplanned_cost": 1000, "unit": ""})
     assert out["beneficial"] == ref["beneficial"] and out["beneficial"]
 
-    ff = _ok(_call(env.token[A], "failure_finding_interval", {
+    ff = _ok(_call(env.token[A], "strategy", {"action": "failure_finding_interval",
         "distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-4}],
         "target_availability": 0.99}))
     assert ff  # shape is the calculator's own
 
-    msg = _err(_call(env.token[A], "optimal_replacement", {"planned_cost": 1, "unplanned_cost": 2}))
+    msg = _err(_call(env.token[A], "strategy", {"action": "optimal_replacement", "planned_cost": 1,
+                                                "unplanned_cost": 2}))
     assert "model_id" in msg
 
 
@@ -443,17 +438,17 @@ def test_calculators_use_a_saved_models_extras(env):
     from backend.services import strategy
 
     weib = [{"name": "alpha", "value": 1000.0}, {"name": "beta", "value": 3.0}]
-    lfp = _ok(_call(env.token[A], "save_model", {
+    lfp = _ok(_call(env.token[A], "models", {"action": "save",
         "name": "LFP pumps", "distribution": "weibull", "params": weib + [{"name": "p", "value": 0.6}]}))
-    out = _ok(_call(env.token[A], "optimal_replacement", {
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement",
         "model_id": lfp["model_id"], "planned_cost": 100, "unplanned_cost": 1000}))
     assert out["beneficial"] is False and "40% of units never fail" in out["recommendation"]
 
     rate = [{"name": "failure_rate", "value": 1e-3}]
-    off = _ok(_call(env.token[A], "save_model", {
+    off = _ok(_call(env.token[A], "models", {"action": "save",
         "name": "Offset relief valve", "distribution": "exponential",
         "params": rate + [{"name": "gamma", "value": 500.0}]}))
-    ff = _ok(_call(env.token[A], "failure_finding_interval", {
+    ff = _ok(_call(env.token[A], "strategy", {"action": "failure_finding_interval",
         "model_id": off["model_id"], "target_availability": 0.99}))
     ref = strategy.failure_finding("exponential", rate, 0.99, extras={"gamma": 500.0})
     assert ff["interval"] == pytest.approx(ref["interval"])
@@ -461,7 +456,7 @@ def test_calculators_use_a_saved_models_extras(env):
 
 
 def test_plan_demonstration_test(env):
-    out = _ok(_call(env.token[A], "plan_demonstration_test", {
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "plan_demonstration_test",
         "reliability": 0.95, "confidence": 0.95, "mission_time": 1000, "unit": "hours"}))
     assert out["units"] == 59 and out["solve_for"] == "units"
     assert out["summary"] == (
@@ -472,22 +467,24 @@ def test_plan_demonstration_test(env):
     assert "rows" not in out["tradeoff"]["rows"] and "curve" not in out  # lean: no plotting fields
 
     # Weibayes: test twice as long with a known shape, fewer units; the same plan the app computes.
-    ext = _ok(_call(env.token[A], "plan_demonstration_test", {
+    ext = _ok(_call(env.token[A], "life_data_analysis", {"action": "plan_demonstration_test",
         "reliability": 0.95, "mission_time": 1000, "test_multiple": 2, "shape": 2, "unit": "hours"}))
     assert ext["units"] == 15 and ext["test_time_per_unit"] == 2000
     assert ext["tradeoff"]["rows"]["2,000 hours (2×)"] == [15, 24, 32, 40]
 
     # Units given: solve for the test time per unit.
-    tt = _ok(_call(env.token[A], "plan_demonstration_test", {
+    tt = _ok(_call(env.token[A], "life_data_analysis", {"action": "plan_demonstration_test",
         "reliability": 0.95, "mission_time": 1000, "shape": 2, "units": 20, "unit": "hours"}))
     assert tt["solve_for"] == "test_time" and round(tt["test_time_per_unit"]) == 1709
 
-    mtbf = _ok(_call(env.token[A], "plan_demonstration_test", {"method": "mtbf", "mtbf": 1000, "unit": "hours"}))
+    mtbf = _ok(_call(env.token[A], "life_data_analysis", {"action": "plan_demonstration_test", "method": "mtbf",
+                                                          "mtbf": 1000, "unit": "hours"}))
     assert round(mtbf["total_test_time"]) == 2996 and mtbf["summary"].startswith("Run 2,996 hours")
 
-    assert "Weibull shape" in _err(_call(env.token[A], "plan_demonstration_test", {
+    assert "Weibull shape" in _err(_call(env.token[A], "life_data_analysis", {"action": "plan_demonstration_test",
         "reliability": 0.95, "test_multiple": 2}))
-    assert "Target reliability" in _err(_call(env.token[A], "plan_demonstration_test", {}))
+    assert "Target reliability" in _err(_call(env.token[A], "life_data_analysis",
+                                              {"action": "plan_demonstration_test"}))
 
 
 def test_optimal_overhaul_uses_a_recurrent_model(env):
@@ -496,51 +493,55 @@ def test_optimal_overhaul_uses_a_recurrent_model(env):
     doc = recurrent_service.save_from_params(
         env.db, "Compressors", "crow_amsaa",
         [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}], 5000, "hours", A)
-    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": doc.id, "cost_repair": 100, "cost_overhaul": 1000}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_overhaul", "model_id": doc.id, "cost_repair": 100,
+                                               "cost_overhaul": 1000}))
     assert out
-    assert doc.id in [m["id"] for m in _ok(_call(env.token[A], "list_models", {"kind": "recurrent"}))["recurrent_models"]]
-    msg = _err(_call(env.token[A], "optimal_overhaul", {"model_id": "nope", "cost_repair": 1, "cost_overhaul": 2}))
+    assert doc.id in [m["id"] for m in _ok(_call(env.token[A], "list", {"kind": "models",
+                                                                        "model_type": "recurrent"}))["recurrent_models"]]
+    msg = _err(_call(env.token[A], "strategy", {"action": "optimal_overhaul", "model_id": "nope", "cost_repair": 1,
+                                                "cost_overhaul": 2}))
     assert "Recurrent model not found" in msg
 
 
 # ---- scoping -------------------------------------------------------------------------
 
 def test_a_non_parametric_model_is_no_rbd_block(env):
-    """RePyability 0.12 refuses a non-parametric node: create_rbd says to fit a
+    """RePyability 0.12 refuses a non-parametric node: rbd create says to fit a
     parametric distribution instead."""
-    km = _ok(_call(env.token[A], "fit_and_save_model", {
+    km = _ok(_call(env.token[A], "models", {"action": "fit",
         "data": TIMES, "censored": FLAGS, "distribution": "kaplan_meier", "name": "KM bearings"}))
     graph = {**GRAPH, "nodes": [
         {**n, "model": {"saved_model_id": km["model_id"]}} if n["id"] == "ctl" else n for n in GRAPH["nodes"]]}
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "Empirical", **graph}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "Empirical", **graph}))
     assert "non-parametric" in msg and "Fit a parametric distribution" in msg
 
 
 def test_users_cannot_read_each_others_artifacts(env):
-    model = _ok(_call(env.token[A], "fit_and_save_model", {
+    model = _ok(_call(env.token[A], "models", {"action": "fit",
         "data": TIMES, "censored": FLAGS, "name": "A's model"}))
-    rbd = _ok(_call(env.token[A], "create_rbd", {"name": "A's RBD", **GRAPH}))
+    rbd = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "A's RBD", **GRAPH}))
 
     b = env.token[B]
-    assert "not found" in _err(_call(b, "get_model", {"model_id": model["model_id"]})).lower()
-    assert "not found" in _err(_call(b, "reliability_at", {"model_id": model["model_id"], "times": [1]})).lower()
-    assert "not found" in _err(_call(b, "get_rbd", {"rbd_id": rbd["id"]})).lower()
-    assert "not found" in _err(_call(b, "analyze_rbd", {"rbd_id": rbd["id"]})).lower()
-    assert "not found" in _err(_call(b, "export_rbd_python", {"rbd_id": rbd["id"]})).lower()
-    assert "not found" in _err(_call(b, "fit_distribution", {
+    assert "not found" in _err(_call(b, "get", {"kind": "model", "id": model["model_id"]})).lower()
+    assert "not found" in _err(_call(b, "life_data_analysis", {"action": "reliability_at",
+                                                               "model_id": model["model_id"], "times": [1]})).lower()
+    assert "not found" in _err(_call(b, "get", {"kind": "rbd", "id": rbd["id"]})).lower()
+    assert "not found" in _err(_call(b, "rbd_analysis", {"action": "analyze", "rbd_id": rbd["id"]})).lower()
+    assert "not found" in _err(_call(b, "rbd_analysis", {"action": "export_python", "rbd_id": rbd["id"]})).lower()
+    assert "not found" in _err(_call(b, "life_data_analysis", {"action": "fit",
         "dataset_id": model["dataset_id"], "time_column": "x"})).lower()
-    assert "not found" in _err(_call(b, "optimal_replacement", {
+    assert "not found" in _err(_call(b, "strategy", {"action": "optimal_replacement",
         "model_id": model["model_id"], "planned_cost": 1, "unplanned_cost": 5})).lower()
-    ids = [m["id"] for m in _ok(_call(b, "list_models"))["life_models"]]
+    ids = [m["id"] for m in _ok(_call(b, "list", {"kind": "models"}))["life_models"]]
     assert model["model_id"] not in ids
-    assert rbd["id"] not in [r["id"] for r in _ok(_call(b, "list_rbds"))["rbds"]]
-    assert model["dataset_id"] not in [d["id"] for d in _ok(_call(b, "list_datasets"))["datasets"]]
+    assert rbd["id"] not in [r["id"] for r in _ok(_call(b, "list", {"kind": "rbds"}))["rbds"]]
+    assert model["dataset_id"] not in [d["id"] for d in _ok(_call(b, "list", {"kind": "datasets"}))["datasets"]]
 
     # B can't smuggle A's saved model into a diagram of their own either.
     graph = {**GRAPH, "nodes": [
         {**n, "model": {"saved_model_id": model["model_id"]}} if n["id"] == "ctl" else n for n in GRAPH["nodes"]]}
-    assert "not found" in _err(_call(b, "create_rbd", {"name": "Sneaky", **graph})).lower()
+    assert "not found" in _err(_call(b, "rbd", {"action": "create", "name": "Sneaky", **graph})).lower()
     # ... while A can.
-    ok = _ok(_call(env.token[A], "create_rbd", {"name": "Linked", **graph, "include_graph": True}))
+    ok = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Linked", **graph, "include_graph": True}))
     ctl = next(n for n in ok["graph"]["nodes"] if n["id"] == "ctl")
     assert ctl["model"]["saved_model_id"] == model["model_id"]

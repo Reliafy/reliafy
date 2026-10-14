@@ -239,20 +239,21 @@ def test_mcp_fit_distribution_takes_include_mixtures(env):
     from backend.tests.test_mcp import A, _call, _err, _ok
 
     data = _two_mode()["h"].tolist()
-    out = _ok(_call(env.token[A], "fit_distribution", {"distribution": "best", "data": data,
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "distribution": "best", "data": data,
                                                        "include_mixtures": True, "unit": "hours"}))
     assert out["distribution_id"] == "mixture" and out["selection"]["mixture_criterion"] == "bic"
     assert out["mixture_summary"].startswith("Two failure modes")
     assert out["selection_summary"].startswith("A two-mode mixture beats the best single distribution by ")
     # One mode: the same rule — the singles' ranking as without mixtures.
     one = _weibull_shape_two()["h"].tolist()
-    on = _ok(_call(env.token[A], "fit_distribution", {"distribution": "best", "data": one,
+    on = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "distribution": "best", "data": one,
                                                       "include_mixtures": True}))
-    off = _ok(_call(env.token[A], "fit_distribution", {"distribution": "best", "data": one}))
+    off = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "distribution": "best", "data": one}))
     assert on["distribution_id"] == off["distribution_id"] == "weibull"
     ids = [c["id"] for c in on["selection"]["candidates"] if not c.get("mixture")]
     assert ids == [c["id"] for c in off["selection"]["candidates"]]
     assert "on BIC" in on["selection_summary"] and "selection_summary" not in off
-    assert "only" in _err(_call(env.token[A], "fit_distribution", {"distribution": "weibull", "data": data,
+    assert "only" in _err(_call(env.token[A], "life_data_analysis", {"action": "fit", "distribution": "weibull",
+                                                                     "data": data,
                                                                   "include_mixtures": True}))
 

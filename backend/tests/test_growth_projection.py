@@ -1,6 +1,6 @@
 """Reliability growth projection (#232) and a repairable system's next
 failure (#235): SurPyval 0.23's ``CrowAMSAA.projection`` behind the
-recurrent model page, its API and the ``growth_projection`` / ``next_failure``
+recurrent model page, its API and the ``repairable_analysis growth_projection`` / ``next_failure``
 MCP tools. Numbers are checked against SurPyval called directly."""
 
 import io
@@ -229,7 +229,8 @@ def _saved(env, df, mapping, name="Prototype", model_id="crow_amsaa"):
 
 def test_mcp_growth_projection_from_a_saved_model(env):
     doc = _saved(env, _one_system(), MAP)
-    out = _ok(_call(env.token[A], "growth_projection", {"model_id": doc.id, "bd_modes": ["b2", "b3"],
+    out = _ok(_call(env.token[A], "repairable_analysis", {"action": "growth_projection", "model_id": doc.id,
+                                                          "bd_modes": ["b2", "b3"],
                                                         "fef": {"b1": 0.8, "b4": 0.6, "b3": 0.75},
                                                         "test_end": 400}))
     # bd_modes default to 0.7; fef overrides.
@@ -239,29 +240,33 @@ def test_mcp_growth_projection_from_a_saved_model(env):
     # Nothing is saved by the tool...
     assert "projection" not in env.db.recurrent_models.find_one({"_id": doc.id})["spec"]
     # ...and with no settings and none saved it lists the modes to classify.
-    msg = _err(_call(env.token[A], "growth_projection", {"model_id": doc.id}))
+    msg = _err(_call(env.token[A], "repairable_analysis", {"action": "growth_projection", "model_id": doc.id}))
     assert "b1 (3)" in msg and "fef" in msg
-    # With saved settings (the app's), it reuses them, and get_model shows the headline.
+    # With saved settings (the app's), it reuses them, and get kind model shows the headline.
     from backend.services import recurrent as recurrent_service
 
     payload = recurrent_service.run_projection(env.db, doc, fef=FEF, test_end=400)
     recurrent_service.save_projection(env.db, doc, payload, None, A)
-    out = _ok(_call(env.token[A], "growth_projection", {"model_id": doc.id}))
+    out = _ok(_call(env.token[A], "repairable_analysis", {"action": "growth_projection", "model_id": doc.id}))
     assert out["projected"]["mtbf"] == pytest.approx(62.8, abs=0.01)
-    brief = _ok(_call(env.token[A], "get_model", {"model_id": doc.id}))["growth_projection"]
+    brief = _ok(_call(env.token[A], "get", {"kind": "model", "id": doc.id}))["growth_projection"]
     assert brief["projected_mtbf"] == pytest.approx(62.8, abs=0.01) and brief["demonstrated_mtbf"] == 36.36
     # B can't reach A's model.
-    assert "not found" in _err(_call(env.token[B], "growth_projection", {"model_id": doc.id, "fef": FEF}))
+    assert "not found" in _err(_call(env.token[B], "repairable_analysis", {"action": "growth_projection",
+                                                                           "model_id": doc.id, "fef": FEF}))
 
 
 def test_mcp_growth_projection_inline(env):
-    out = _ok(_call(env.token[A], "growth_projection", {"x": X, "modes": MODES, "fef": FEF, "test_end": 400,
+    out = _ok(_call(env.token[A], "repairable_analysis", {"action": "growth_projection", "x": X, "modes": MODES,
+                                                          "fef": FEF, "test_end": 400,
                                                         "unit": "hours"}))
     assert out["growth_potential"]["mtbf"] == pytest.approx(78.43, abs=0.01) and out["unit"] == "Hours"
-    assert "test_end" in _err(_call(env.token[A], "growth_projection", {"x": X, "modes": MODES, "fef": FEF}))
-    assert "same length" in _err(_call(env.token[A], "growth_projection", {"x": X, "modes": MODES[:3],
+    assert "test_end" in _err(_call(env.token[A], "repairable_analysis", {"action": "growth_projection", "x": X,
+                                                                          "modes": MODES, "fef": FEF}))
+    assert "same length" in _err(_call(env.token[A], "repairable_analysis", {"action": "growth_projection", "x": X,
+                                                                             "modes": MODES[:3],
                                                                            "fef": FEF, "test_end": 400}))
-    assert "not both" in _err(_call(env.token[A], "growth_projection", {"fef": FEF}))
+    assert "not both" in _err(_call(env.token[A], "repairable_analysis", {"action": "growth_projection", "fef": FEF}))
     # Inline data is a Crow-AMSAA fit, with no saved model to flag.
     assert out["projected_with"] == "crow_amsaa" and out["saved_model"] is None and "note" not in out
 
@@ -274,24 +279,26 @@ def test_projection_from_a_non_crow_amsaa_model_says_so(env, kind, name):
 
     note = f"Projected with a Crow-AMSAA fit to the same data (your saved model is {name})."
     doc = _saved(env, _one_system(), MAP, name=f"Proto {kind}", model_id=kind)
-    out = _ok(_call(env.token[A], "growth_projection", {"model_id": doc.id, "fef": FEF, "test_end": 400}))
+    out = _ok(_call(env.token[A], "repairable_analysis", {"action": "growth_projection", "model_id": doc.id,
+                                                          "fef": FEF, "test_end": 400}))
     assert out["projected"]["mtbf"] == pytest.approx(62.8, abs=0.01)  # the same Crow-AMSAA projection
     assert out["projected_with"] == "crow_amsaa" and out["saved_model"] == kind
     assert out["note"] == note and out["basis_note"] == note and out["summary"].startswith(note)
     assert next(iter(out)) == "note"  # leads the output
 
-    # The app's result and panel view carry it; get_model's headline leads with it.
+    # The app's result and panel view carry it; get kind model's headline leads with it.
     payload = recurrent_service.run_projection(env.db, doc, fef=FEF, test_end=400)
     assert payload["saved_model"] == kind and payload["basis_note"] == note
     assert recurrent_service.projection_view(env.db, doc)["basis_note"] == note
     recurrent_service.save_projection(env.db, doc, payload, None, A)
-    brief = _ok(_call(env.token[A], "get_model", {"model_id": doc.id}))["growth_projection"]
+    brief = _ok(_call(env.token[A], "get", {"kind": "model", "id": doc.id}))["growth_projection"]
     assert brief["note"] == note and brief["projected_with"] == "crow_amsaa" and brief["saved_model"] == kind
     assert brief["projected_mtbf"] == pytest.approx(62.8, abs=0.01)
 
     # A Crow-AMSAA model's projection carries the fields but no note.
     ca = _saved(env, _one_system(), MAP, name="Proto CA")
-    out = _ok(_call(env.token[A], "growth_projection", {"model_id": ca.id, "fef": FEF, "test_end": 400}))
+    out = _ok(_call(env.token[A], "repairable_analysis", {"action": "growth_projection", "model_id": ca.id, "fef": FEF,
+                                                          "test_end": 400}))
     assert out["projected_with"] == "crow_amsaa" and out["saved_model"] == "crow_amsaa"
     assert out["basis_note"] is None and "note" not in out and not out["summary"].startswith("Projected")
     assert recurrent_service.projection_view(env.db, ca)["basis_note"] is None
@@ -346,9 +353,11 @@ def test_mcp_next_failure(env):
     doc = recurrent_service.save_from_params(
         env.db, "Pumps", "crow_amsaa", [{"name": "alpha", "value": 50}, {"name": "beta", "value": 1.3}], 1000,
         "hours", A)
-    out = _ok(_call(env.token[A], "next_failure", {"model_id": doc.id, "age": 400, "within": [100]}))
+    out = _ok(_call(env.token[A], "repairable_analysis", {"action": "next_failure", "model_id": doc.id, "age": 400,
+                                                          "within": [100]}))
     ref = CrowAMSAA.from_params([50.0, 1.3])
     mu = float(ref.cif(500.0) - ref.cif(400.0))
     assert out["within"][0]["expected_failures"] == pytest.approx(mu, rel=1e-12)
     assert out["unit"] == "Hours" and out["model_id"] == doc.id and "Minimal repair" in out["assumption"]
-    assert "not found" in _err(_call(env.token[B], "next_failure", {"model_id": doc.id, "age": 400}))
+    assert "not found" in _err(_call(env.token[B], "repairable_analysis", {"action": "next_failure",
+                                                                           "model_id": doc.id, "age": 400}))

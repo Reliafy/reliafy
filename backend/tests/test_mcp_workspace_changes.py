@@ -1,4 +1,4 @@
-"""The MCP workspace_changes tool (#41): the same computed facts as the app's
+"""The MCP list kind workspace_changes tool (#41): the same computed facts as the app's
 "What changed", for the caller's own workspace, with full links."""
 
 import matplotlib
@@ -33,7 +33,7 @@ def _seed(db, owner):
 def test_workspace_changes_reports_the_callers_own_changes_with_links(env):
     _seed(env.db, PRO)
     _seed(env.db, FREE)
-    out = _ok(_call(env.oauth[PRO], "workspace_changes", {"days": 7}))
+    out = _ok(_call(env.oauth[PRO], "list", {"kind": "workspace_changes", "days": 7}))
     assert [(r["id"], r["url"]) for r in out["new"]] == [(f"{PRO}-m", f"{BASE}/modelling/m/{PRO}-m")]
     assert [a["fleet"] for a in out["alerts"]] == ["Trucks"]
     assert out["sentence"] == "In the last 7 days: 1 fleet alert fired and 1 item was added."
@@ -43,11 +43,11 @@ def test_workspace_changes_reports_the_callers_own_changes_with_links(env):
 
 def test_on_free_fleets_are_left_out_and_said_so(env):
     _seed(env.db, FREE)
-    out = _ok(_call(env.oauth[FREE], "workspace_changes"))
+    out = _ok(_call(env.oauth[FREE], "list", {"kind": "workspace_changes"}))
     assert out["alerts"] == [] and out["forecasts"] == []
     assert out["not_compared"][0]["what"] == "Fleet forecasts and alerts"
     assert out["sentence"] == "In the last 30 days: 1 item was added."
 
 
 def test_a_bad_period_is_a_tool_error(env):
-    assert "last_visit" in _err(_call(env.oauth[PRO], "workspace_changes", {"since": "lately"}))
+    assert "last_visit" in _err(_call(env.oauth[PRO], "list", {"kind": "workspace_changes", "since": "lately"}))

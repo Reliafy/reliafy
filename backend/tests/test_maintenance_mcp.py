@@ -198,12 +198,12 @@ def test_a_house_through_mcp(env):
 
 
 def test_a_study_given_as_json_drives_positions_and_tasks(env):
-    """create_rcm_study's study works with maintenance_positions from_rcm straight away,
-    and a change through update_rcm_study reaches the position's tasks (apply_rcm)."""
+    """rcm create's study works with maintenance_positions from_rcm straight away,
+    and a change through rcm update reaches the position's tasks (apply_rcm)."""
 
     async def flow(client):
-        study = _ok(await client.call_tool("create_rcm_study", {
-            "name": "Pool RCM", "system": "Pool pump", "functions": [
+        study = _ok(await client.call_tool("rcm", {
+            "action": "create", "name": "Pool RCM", "system": "Pool pump", "functions": [
                 {"text": "Circulate water", "failures": [{"text": "No flow", "modes": [
                     {"text": "Basket blocked", "consequence": "operational",
                      "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks",
@@ -212,9 +212,9 @@ def test_a_study_given_as_json_drives_positions_and_tasks(env):
         assert study["counts"]["scheduled_tasks"] == 1
         assert "from_rcm" in study["next"]
         made = _ok(await _do(client, "maintenance_positions", "from_rcm", study_id=study["study_id"]))
-        got = _ok(await client.call_tool("get_rcm_study", {"study_id": study["study_id"]}))
+        got = _ok(await client.call_tool("get", {"kind": "rcm_study", "id": study["study_id"]}))
         basket = got["functions"][0]["failures"][0]["modes"][0]
-        _ok(await client.call_tool("update_rcm_study", {"study_id": study["study_id"], "functions": [
+        _ok(await client.call_tool("rcm", {"action": "update", "study_id": study["study_id"], "functions": [
             {"id": got["functions"][0]["id"], "failures": [{"id": got["functions"][0]["failures"][0]["id"],
                                                             "modes": [{"id": basket["id"], "decision": {
                                                                 "outcome": "on_condition", "interval": 2,
@@ -256,7 +256,7 @@ def test_tools_hidden_from_people_without_access(env, monkeypatch):
     monkeypatch.setattr(config, "ADMIN_EMAILS", set())
     monkeypatch.setattr(config, "MAINTENANCE_EMAILS", set())
     listed, result, write, guide = _session(env["token"], names)
-    assert not EXPECTED_TOOLS & listed and "list_models" in listed
+    assert not EXPECTED_TOOLS & listed and {"list", "get"} <= listed
     for r in (result, write, guide):
         assert r.is_error and "isn't available" in r.content[0].text
 

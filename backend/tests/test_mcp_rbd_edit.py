@@ -1,4 +1,4 @@
-"""edit_rbd and clone_rbd: token-efficient changes to saved RBDs over MCP.
+"""rbd edit and rbd clone: token-efficient changes to saved RBDs over MCP.
 
 Through the real MCP mount (the helpers and ``env`` fixture come from
 test_mcp), plus direct checks on what was saved.
@@ -29,11 +29,12 @@ def _chain(*ids, model=None):
 
 
 def _create(env, graph=None, name="Pump skid", **kw):
-    return _ok(_call(env.token[A], "create_rbd", {"name": name, "unit": "Hours", **(graph or GRAPH), **kw}))
+    return _ok(_call(env.token[A], "rbd", {"action": "create", "name": name, "unit": "Hours", **(graph or GRAPH),
+                                           **kw}))
 
 
 def _edit(env, rid, *ops, token=None, **kw):
-    return _call(token or env.token[A], "edit_rbd", {"rbd_id": rid, "ops": list(ops), **kw})
+    return _call(token or env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": list(ops), **kw})
 
 
 def _doc(env, rid):
@@ -58,7 +59,7 @@ def test_both_tools_are_on_every_plan():
     assert not {"edit_rbd", "clone_rbd"} & (PRO_ONLY_TOOLS | UNGATED_TOOLS)
 
 
-# ---- create_rbd's lean response ----------------------------------------------------
+# ---- rbd create's lean response ----------------------------------------------------
 
 def test_create_rbd_returns_node_ids_not_the_graph(env):
     out = _create(env)
@@ -266,7 +267,7 @@ def test_if_updated_at_refuses_a_stale_edit(env):
     msg = _err(_edit(env, rid, {"op": "update_node", "id": "p1", "label": "x"}, if_updated_at=seen))
     assert "has changed since" in msg and "2030-01-02" in msg
     assert _node(env, rid, "p1")["data"]["label"] == "Pump A"
-    current = _ok(_call(env.token[A], "get_rbd", {"rbd_id": rid}))["updated_at"]
+    current = _ok(_call(env.token[A], "get", {"kind": "rbd", "id": rid}))["updated_at"]
     out = _ok(_edit(env, rid, {"op": "update_node", "id": "p1", "label": "x"}, if_updated_at=current))
     assert out["updated_at"] != current
     # The returned updated_at chains into the next edit.
@@ -277,10 +278,10 @@ def test_only_the_owner_can_edit(env):
     rid = _create(env)["id"]
     assert "not found" in _err(_edit(env, rid, {"op": "update_node", "id": "p1", "label": "x"},
                                      token=env.token[B])).lower()
-    assert "not found" in _err(_call(env.token[B], "clone_rbd", {"rbd_id": rid})).lower()
+    assert "not found" in _err(_call(env.token[B], "rbd", {"action": "clone", "rbd_id": rid})).lower()
 
 
-# ---- samples and clone_rbd ------------------------------------------------------------------
+# ---- samples and rbd clone ------------------------------------------------------------------
 
 @pytest.fixture()
 def sample(env):
@@ -294,8 +295,8 @@ def sample(env):
 
 def test_samples_are_read_only_and_clone_into_the_workspace(env, sample):
     msg = _err(_edit(env, sample, {"op": "update_node", "id": "p1", "label": "x"}))
-    assert "read-only" in msg and "clone_rbd" in msg
-    out = _ok(_call(env.token[A], "clone_rbd", {"rbd_id": sample}))
+    assert "read-only" in msg and "rbd clone" in msg
+    out = _ok(_call(env.token[A], "rbd", {"action": "clone", "rbd_id": sample}))
     assert out["id"] != sample and out["name"] == "Sample skid (copy)" and out["cloned_from"] == sample
     assert out["is_sample"] is False and out["placeholders"] == ["Pump B"]
     assert {n["id"] for n in out["nodes"]} == {"input", "ctl", "p1", "p2", "output"} and "graph" not in out
@@ -304,7 +305,7 @@ def test_samples_are_read_only_and_clone_into_the_workspace(env, sample):
     # The copy is the user's to edit; the sample is untouched.
     _ok(_edit(env, out["id"], {"op": "update_node", "id": "p1", "label": "Mine"}))
     assert _node(env, sample, "p1")["data"]["label"] == "Pump A"
-    named = _ok(_call(env.token[A], "clone_rbd", {"rbd_id": sample, "name": "Variant B"}))
+    named = _ok(_call(env.token[A], "rbd", {"action": "clone", "rbd_id": sample, "name": "Variant B"}))
     assert named["name"] == "Variant B"
 
 
@@ -314,7 +315,7 @@ def test_clone_copies_the_graph_only(env):
     rid = _create(env)["id"]
     rbds_service.store_availability(env.db, rid, "some-key", {"steady_state_availability": 0.99}, A)
     public_links.create_link(env.db, "rbds", rid, {"uid": A})
-    out = _ok(_call(env.token[A], "clone_rbd", {"rbd_id": rid}))
+    out = _ok(_call(env.token[A], "rbd", {"action": "clone", "rbd_id": rid}))
     doc = _doc(env, out["id"])
     assert "availability_cache" not in doc
     assert env.db.public_links.count_documents({"artifact_id": out["id"]}) == 0
@@ -325,7 +326,7 @@ def test_clone_counts_against_the_storage_cap(env, sample, monkeypatch):
 
     monkeypatch.setattr(billing_service, "would_exceed_cap", lambda db, uid, kind: kind == "rbds")
     monkeypatch.setattr(billing_service, "account", lambda db, uid: {"active_plan": "free"})
-    msg = _err(_call(env.token[A], "clone_rbd", {"rbd_id": sample}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "clone", "rbd_id": sample}))
     assert "limit of" in msg and "saved RBDs" in msg
     assert env.db.rbds.count_documents({"owner_id": A}) == 0
 
@@ -339,7 +340,7 @@ def _stage(n):
 
 
 def test_removing_a_node_cleans_up_its_common_cause_group(env):
-    out = _ok(_call(env.token[A], "create_rbd", {"name": "Pumps", "stages": [_stage(3)]}))
+    out = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Pumps", "stages": [_stage(3)]}))
     rid = out["id"]
     ids = [n["id"] for n in out["nodes"] if n["type"] == "component"]
     gid = _doc(env, rid)["graph"]["ccf_groups"][0]["id"]
@@ -356,7 +357,7 @@ def test_add_and_remove_ccf(env):
     out = _ok(_edit(env, rid, {"op": "add_ccf", "members": ["p1", "p2"], "beta": 0.05}))
     assert out["applied"] == ["added common-cause group ccf-1 (p1, p2; beta 0.05)"]
     assert _doc(env, rid)["graph"]["ccf_groups"] == [{"id": "ccf-1", "members": ["p1", "p2"], "beta": 0.05}]
-    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert res["ccf"]
     for op, needle in (({"op": "add_ccf", "members": ["p1", "ctl"], "beta": 0.1}, "already in common-cause"),
                        ({"op": "add_ccf", "members": ["ctl", "input"], "beta": 0.1}, "isn't a component"),
@@ -368,7 +369,7 @@ def test_add_and_remove_ccf(env):
     assert not _doc(env, rid)["graph"].get("ccf_groups")
 
 
-# ---- the result is the diagram create_rbd would build ----------------------------------------
+# ---- the result is the diagram rbd create would build ----------------------------------------
 
 def test_edited_diagram_matches_a_create_rbd_equivalent(env):
     from backend.services import rbds as rbds_service
@@ -390,10 +391,10 @@ def test_edited_diagram_matches_a_create_rbd_equivalent(env):
 
     edited, built = _doc(env, rid)["graph"], _doc(env, ref)["graph"]
     assert rbds_service.canonical_analysis_graph(edited) == rbds_service.canonical_analysis_graph(built)
-    a = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "times": [200, 800]}))
-    b = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": ref, "times": [200, 800]}))
+    a = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "times": [200, 800]}))
+    b = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": ref, "times": [200, 800]}))
     assert a["mttf"] == pytest.approx(b["mttf"]) and a["reliability_at"] == b["reliability_at"]
-    # Same layout create_rbd gives the same diagram.
+    # Same layout rbd create gives the same diagram.
     pos = lambda g: {n["id"]: n["position"] for n in g["nodes"]}  # noqa: E731
     assert pos(edited) == pos(built)
 
@@ -426,20 +427,20 @@ def test_saved_availability_goes_stale_after_an_edit(env, monkeypatch):
     rid = _create(env, {"nodes": nodes, "edges": GRAPH["edges"]}, repairable=True)["id"]
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: True)
     # Every figure is exact here, so the simulation runs only when asked (#262).
-    assert _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))["available"]
+    assert _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))["available"]
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: False)
-    assert _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))["cached"] is True
+    assert _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))["cached"] is True
 
     # A dry run changes nothing; a real edit makes the saved result stale —
     # and both say so in one short note.
     dry = _ok(_edit(env, rid, {"op": "update_node", "id": "p1", "model": _w(500, 1.2)}, dry_run=True))
     assert dry["simulation_note"].startswith("Saving this edit would put the saved availability simulation")
-    assert _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))["available"]
+    assert _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))["available"]
     edited = _ok(_edit(env, rid, {"op": "update_node", "id": "p1", "model": _w(500, 1.2)}))
     note = edited["simulation_note"]
     assert note.startswith("This edit puts the saved availability simulation out of date")
     assert "simulate=true" in note and len(note) < 160
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert out["available"] is True and out["has_simulation"] is False
     assert out["simulation"]["code"] == "pro_required"
     # Already out of date: the next edit doesn't repeat it.
@@ -469,10 +470,10 @@ def test_a_subsystem_reference_follows_the_edit(env):
         {"id": "input", "type": "input"}, {"id": "sub", "type": "subsystem", "label": "Drive", "subsystem_rbd_id": inner},
         {"id": "output", "type": "output"}],
         "edges": [{"source": "input", "target": "sub"}, {"source": "sub", "target": "output"}]}, name="Outer")["id"]
-    before = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": outer}))["mttf"]
+    before = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": outer}))["mttf"]
     _ok(_edit(env, inner, {"op": "add_node", "after": "m",
                            "node": {"id": "g", "type": "component", "label": "Gearbox", "model": _w()}}))
-    after = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": outer}))["mttf"]
+    after = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": outer}))["mttf"]
     assert after < before  # one more block in series inside the sub-system
     msg = _err(_edit(env, inner, {"op": "add_node", "parallel_to": "m",
                                   "node": {"id": "me", "type": "subsystem", "subsystem_rbd_id": inner}}))
@@ -485,7 +486,7 @@ def test_edit_response_is_much_smaller_than_get_rbd(env):
     ids = [f"b{i}" for i in range(20)]
     rid = _create(env, _chain(*ids))["id"]
     out = _ok(_edit(env, rid, {"op": "update_node", "id": "b3", "label": "Bearing 3"}))
-    full = _ok(_call(env.token[A], "get_rbd", {"rbd_id": rid}))
+    full = _ok(_call(env.token[A], "get", {"kind": "rbd", "id": rid}))
     small, big = len(json.dumps(out)), len(json.dumps(full))
     assert small < big / 2, (small, big, out)
     assert "graph" in _ok(_edit(env, rid, {"op": "update_node", "id": "b3", "label": "B3"}, include_graph=True))

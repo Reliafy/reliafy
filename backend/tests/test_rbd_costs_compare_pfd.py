@@ -302,7 +302,7 @@ def test_compare_endpoint_is_exact(client):
 
 
 def _mcp_rbd(env, name, graph):
-    rid = _ok(_call(env.token[A], "create_rbd", {
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create",
         "name": name, "unit": "Hours", "repairable": True,
         "nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"},
                   {"id": "pump", "type": "component",
@@ -317,36 +317,38 @@ def test_mcp_compare_rbds(env, monkeypatch):
     a = _priced(rate=0)
     ra_id = _mcp_rbd(env, "One pump", a)
     rb_id = _mcp_rbd(env, "Two pumps", rbd_costs.apply_copies(a, {"pump": 2}))
-    out = _ok(_call(env.token[A], "compare_rbds", {"rbd_id": ra_id, "other_rbd_id": rb_id}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "compare", "rbd_id": ra_id, "other_rbd_id": rb_id}))
     assert out["available"] and out["method"] == "exact"
     assert out["designs"]["a"]["name"] == "One pump" and out["designs"]["b"]["name"] == "Two pumps"
     direct = rbd_compare.compare_availability(a, rbd_costs.apply_copies(a, {"pump": 2}))
     assert out["differences"]["availability"]["estimate"] == pytest.approx(
         direct["differences"]["availability"]["estimate"], rel=1e-12)
     assert out["differences"]["cost"]["acquisition"] == 20000.0
-    other = _ok(_call(env.token[A], "create_rbd", {
+    other = _ok(_call(env.token[A], "rbd", {"action": "create",
         "name": "R", "nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"},
                                {"id": "x", "type": "component", "model": {
                                    "distribution_id": "exponential", "params": [{"name": "failure_rate",
                                                                                  "value": 1e-3}]}}],
         "edges": [{"source": "input", "target": "x"}, {"source": "x", "target": "output"}]}))["id"]
-    assert "non-repairable" in _err(_call(env.token[A], "compare_rbds", {"rbd_id": ra_id, "other_rbd_id": other}))
+    assert "non-repairable" in _err(_call(env.token[A], "rbd_analysis", {"action": "compare", "rbd_id": ra_id,
+                                                                         "other_rbd_id": other}))
     from backend.services import billing
 
     monkeypatch.setattr(billing, "premium_compute_allowed", lambda db, user: False)
-    paid = _ok(_call(env.token[A], "compare_rbds", {"rbd_id": ra_id, "other_rbd_id": rb_id}))
+    paid = _ok(_call(env.token[A], "rbd_analysis", {"action": "compare", "rbd_id": ra_id, "other_rbd_id": rb_id}))
     assert paid["available"] is False and paid["code"] == "pro_required"
 
 
 def test_mcp_costs_and_cheapest_design_by_horizon(env):
     rid = _mcp_rbd(env, "Plant", _priced())
-    costs = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": False}))["costs"]
+    costs = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False}))["costs"]
     rows = costs["by_horizon"]["rows"]
     assert [r["horizon"] for r in rows] == [*YEARS.tolist(), None] and rows[-1]["endless"]
     assert costs["total_cost_from_new"] == pytest.approx(rows[1]["from_new"], rel=1e-12)
-    flat = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": False, "discount_rate": 0}))["costs"]
+    flat = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False,
+                                                    "discount_rate": 0}))["costs"]
     assert all(not r.get("endless") for r in flat["by_horizon"]["rows"])
-    design = _ok(_call(env.token[A], "cheapest_design", {"rbd_id": rid, "horizons": [43800]}))
+    design = _ok(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid, "horizons": [43800]}))
     assert [r["horizon"] for r in design["by_horizon"]] == [43800.0, TEN_YEARS, None]
     assert design["by_horizon"][0]["copies"] == {"pump": 1, "valve": 2}
 
@@ -408,7 +410,7 @@ def test_export_gives_pfd_over_time_and_the_margin(tmp_path):
 
 def test_mcp_analyze_rbd_gives_pfd_over_time(env):
     rid = _mcp_rbd(env, "SIF", _sif())
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": False}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False}))
     assert out["safety"]["margin"]["sil"] == 2
     assert out["exact"]["mission_unavailability"] == pytest.approx(out["safety"]["pfd_avg"], rel=1e-6)
     assert all("pfd" in p for p in out["exact"]["curve"])

@@ -72,7 +72,7 @@ list; critical spares with min_on_hand).
 temperature, with alarm limits), then record readings."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location.", """\
 Planning the maintenance.
-- From RCM, where the user has a study: create_rcm_study saves one given as JSON (list_rcm_studies finds \
+- From RCM, where the user has a study: rcm create saves one given as JSON (list kind rcm_studies finds \
 existing ones), then maintenance_positions from_rcm (a new position with the study's failure modes and a task \
 for every decision with an interval) or apply_rcm (onto an existing position; run it again after the study \
 changes: it adds what's new and updates changed tasks).
@@ -129,7 +129,7 @@ horizon_years, discount_rate): what the class's replacement plan costs a year, n
 running to failure, each with its net present cost. Needs the class's fitted model and costs (learn topic).
 - maintenance_topology generate_rbd, position_id = a system position: a reliability block diagram from the \
 positions inside it (connections wire the blocks, redundancy groups become k of n, each block takes its class's \
-fitted model or a placeholder, listed in notes). It's saved as a normal RBD: analyze_rbd analyses it.
+fitted model or a placeholder, listed in notes). It's saved as a normal RBD: rbd_analysis analyze analyses it.
 - maintenance_get kind impact, id = a position: what loses its supply downstream if it fails, and whether \
 redundancy covers it.
 - maintenance_list kind spares_cover: critical spares below their position's minimum, and positions whose \

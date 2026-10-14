@@ -345,8 +345,8 @@ def test_sample_model_is_seeded_with_its_reading():
 def test_mcp_fit_and_reliability_along_a_schedule(env):  # noqa: F811 - env is a fixture
     from backend.tests.test_mcp import A, _call, _err, _ok
 
-    ds = _ok(_call(env.token[A], "upload_dataset", {"name": "Pumps", "csv": _csv(_pumps()).decode()}))
-    out = _ok(_call(env.token[A], "fit_distribution", {
+    ds = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Pumps", "csv": _csv(_pumps()).decode()}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit",
         "distribution": "weibull_ph", "dataset_id": ds["id"], "id_column": "pump", "time_column": "start_h",
         "time_right_column": "stop_h", "censor_column": "censored", "covariates": ["load_pct"]}))
     ref = sp.WeibullPH.fit_tvc_from_df(_pumps(), "pump", "start_h", "stop_h", "censored", Z_cols=["load_pct"])
@@ -354,13 +354,13 @@ def test_mcp_fit_and_reliability_along_a_schedule(env):  # noqa: F811 - env is a
     assert out["tvc"]["layout"] == "intervals" and out["tvc"]["readings"]
     assert "censoring" not in out  # rows are stretches of life, not units
 
-    saved = _ok(_call(env.token[A], "fit_and_save_model", {
+    saved = _ok(_call(env.token[A], "models", {"action": "fit",
         "name": "Pumps TVC", "distribution": "weibull_ph", "dataset_id": ds["id"], "id_column": "pump",
         "time_column": "start_h", "time_right_column": "stop_h", "censor_column": "censored",
         "covariates": ["load_pct"]}))
-    got = _ok(_call(env.token[A], "get_model", {"model_id": saved["model_id"]}))
+    got = _ok(_call(env.token[A], "get", {"kind": "model", "id": saved["model_id"]}))
     assert got["tvc"]["items"] == 30
-    rel = _ok(_call(env.token[A], "reliability_at", {
+    rel = _ok(_call(env.token[A], "life_data_analysis", {"action": "reliability_at",
         "model_id": saved["model_id"], "times": [1000, 4000], "covariate_schedule": SCHEDULE,
         "confidence": 0.9}))
     assert [p["reliability"] for p in rel["points"]] == pytest.approx(ref.sf_tvc([1000, 4000], _sched()))
@@ -368,10 +368,10 @@ def test_mcp_fit_and_reliability_along_a_schedule(env):  # noqa: F811 - env is a
     assert np.array([p["reliability_bounds"] for p in rel["points"]]) == pytest.approx(cb)
     assert rel["mean_life"] == pytest.approx(ref.mean_tvc(_sched()))
 
-    assert "not both" in _err(_call(env.token[A], "reliability_at", {
+    assert "not both" in _err(_call(env.token[A], "life_data_analysis", {"action": "reliability_at",
         "model_id": saved["model_id"], "times": [1000], "covariate_schedule": SCHEDULE,
         "covariates": {"load_pct": 60}}))
-    assert "dataset" in _err(_call(env.token[A], "fit_distribution", {
+    assert "dataset" in _err(_call(env.token[A], "life_data_analysis", {"action": "fit",
         "distribution": "weibull_ph", "data": [1, 2, 3], "id_column": "pump"}))
 
 

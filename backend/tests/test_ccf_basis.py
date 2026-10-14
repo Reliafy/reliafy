@@ -1,5 +1,5 @@
 """Common-cause groups split the failure rate over a lifetime (#210), and
-analyze_rbd's common-cause curve is opt-in and labelled (#214).
+rbd_analysis analyze's common-cause curve is opt-in and labelled (#214).
 
 A beta-factor group on RePyability's default *probability* basis splits each
 member's failure probability Q — a rare-event model, right for a short mission
@@ -220,14 +220,14 @@ def test_mcp_add_ccf_basis_and_warnings(env):
         for i in range(2)]
     edges = [{"source": "input", "target": "p0"}, {"source": "input", "target": "p1"},
              {"source": "p0", "target": "output"}, {"source": "p1", "target": "output"}]
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "Pumps", "nodes": nodes, "edges": edges}))["id"]
-    out = _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rid, "ops": [
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Pumps", "nodes": nodes, "edges": edges}))["id"]
+    out = _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
         {"op": "add_ccf", "members": ["p0", "p1"], "beta": 0.1, "basis": "probability"}]}))
     assert out["applied"] == ["added common-cause group ccf-1 (p0, p1; beta 0.1; probability basis)"]
-    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert res["mttf"] is None
     assert any("probability basis" in w for w in res["warnings"])
-    msg = _err(_call(env.token[A], "edit_rbd", {"rbd_id": rid, "ops": [
+    msg = _err(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
         {"op": "add_ccf", "members": ["p0", "p1"], "beta": 0.1, "basis": "hazard"}]}))
     assert "basis" in msg
 
@@ -235,17 +235,17 @@ def test_mcp_add_ccf_basis_and_warnings(env):
 # ---- #214: the curve without common cause is opt-in and labelled ---------------------
 
 def test_analyze_rbd_ccf_curve_is_opt_in(env):
-    out = _ok(_call(env.token[A], "create_rbd", {"name": "Pumps", "stages": [
+    out = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Pumps", "stages": [
         {"label": "Pumps", "common_cause_beta": 0.1, "components": [
             {"label": f"Pump {i}", "distribution": "weibull",
              "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}]} for i in range(3)]}]}))
     rid = out["id"]
-    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     ccf = res["ccf"]
     assert "baseline_sf" not in ccf and "curve_without" not in ccf
     assert "include_curves" in ccf["curve_omitted"]
     assert ccf["reliability_with"] < ccf["reliability_without"]
-    full = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "include_curves": True}))["ccf"]
+    full = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "include_curves": True}))["ccf"]
     assert "baseline_sf" not in full and "curve_omitted" not in full
     curve = full["curve_without"]
     assert [p["t"] for p in curve] == [p["t"] for p in res["curve"]]

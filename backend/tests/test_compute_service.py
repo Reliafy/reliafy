@@ -964,7 +964,7 @@ from backend.tests.test_mcp_plans import PRO as MCP_PRO  # noqa: E402
 @pytest.mark.parametrize("uid", [MCP_FREE, AGENT])
 def test_mcp_free_and_agent_still_get_no_simulations(env, uid):
     rid = _repairable(env, uid, "Pumps")
-    out = _ok(_call(env.oauth[uid], "analyze_rbd", {"rbd_id": rid}))
+    out = _ok(_call(env.oauth[uid], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert out["available"] is True and out["has_simulation"] is False  # the exact figures
     assert out["simulation"]["available"] is False and out["simulation"]["code"] == "pro_required"
     assert env.simulations["n"] == 0 and env.db.free_sim_usage.count_documents({}) == 0
@@ -977,7 +977,7 @@ def test_mcp_free_quick_sims_flag_switches_them_on(env, monkeypatch):
     monkeypatch.setattr(config, "FREE_SIM_SECONDS", 0.05)
     rid = _repairable(env, MCP_FREE, "Pumps")
     # Every figure here is exact: the simulation runs on request (#262).
-    out = _ok(_call(env.oauth[MCP_FREE], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+    out = _ok(_call(env.oauth[MCP_FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     assert out["available"] is True and out["quick"] is True and out["precision"]["half_width"] > 0
     assert out["simulation"]["available"] is True
 
@@ -1013,27 +1013,27 @@ def test_mcp_analyze_waits_then_hands_back_a_job_and_get_job_finishes_it(env, mo
     tasks, dispatch = _mcp_queue(env, monkeypatch)
     rid = _repairable(env, MCP_PRO, "Pumps")
     # Every figure here is exact: the simulation runs on request (#262).
-    out = _ok(_call(env.oauth[MCP_PRO], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+    out = _ok(_call(env.oauth[MCP_PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     # The exact figures now; the simulation as a job to fetch.
     assert out["available"] is True and out["exact"]["status"] == "ok"
     sim = out["simulation"]
     assert sim["available"] is False and sim["status"] == "queued" and sim["queue_position"] == 0
-    assert "get_job" in sim["note"] and len(tasks) == 1
+    assert "get kind job" in sim["note"] and len(tasks) == 1
     job_id = sim["job_id"]
 
-    pending = _ok(_call(env.oauth[MCP_PRO], "get_job", {"job_id": job_id}))
+    pending = _ok(_call(env.oauth[MCP_PRO], "get", {"kind": "job", "id": job_id}))
     assert pending["status"] == "queued" and pending["rbd_id"] == rid
     # Someone else's job doesn't exist for them.
-    assert "Job not found" in _err(_call(env.oauth[AGENT], "get_job", {"job_id": job_id}))
+    assert "Job not found" in _err(_call(env.oauth[AGENT], "get", {"kind": "job", "id": job_id}))
 
     dispatch()
-    done = _ok(_call(env.oauth[MCP_PRO], "get_job", {"job_id": job_id}))
+    done = _ok(_call(env.oauth[MCP_PRO], "get", {"kind": "job", "id": job_id}))
     assert done["status"] == "done" and done["available"] is True and done["simulation"]["available"] is True
     assert 0.9 < done["steady_state_availability"] < 1.0 and done["n_simulations"] == 20
     assert done["exact"]["status"] == "ok"
 
-    # Now saved on the diagram: analyze_rbd answers straight away.
-    again = _ok(_call(env.oauth[MCP_PRO], "analyze_rbd", {"rbd_id": rid}))
+    # Now saved on the diagram: rbd_analysis analyze answers straight away.
+    again = _ok(_call(env.oauth[MCP_PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert again["available"] is True and again["cached"] is True
 
 
@@ -1057,7 +1057,7 @@ def test_mcp_analyze_returns_the_result_when_the_job_finishes_in_time(env, monke
     t.start()
     try:
         # Every figure here is exact: the simulation runs on request (#262).
-        out = _ok(_call(env.oauth[MCP_PRO], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+        out = _ok(_call(env.oauth[MCP_PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     finally:
         stop.set()
         t.join(5)

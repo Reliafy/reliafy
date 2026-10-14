@@ -428,8 +428,9 @@ from backend.tests.test_mcp import env  # noqa: E402,F401 - the MCP fixture
 def test_mcp_create_analyze_and_edit_schedules(env, ref):  # noqa: F811 - env is a fixture
     from backend.tests.test_mcp import A, _call, _err, _ok
 
-    ds = _ok(_call(env.token[A], "upload_dataset", {"name": "Pumps", "csv": _pumps().to_csv(index=False)}))
-    mid = _ok(_call(env.token[A], "fit_and_save_model", {
+    ds = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Pumps",
+                                              "csv": _pumps().to_csv(index=False)}))
+    mid = _ok(_call(env.token[A], "models", {"action": "fit",
         "name": "Pumps TVC", "distribution": "weibull_ph", "dataset_id": ds["id"], "id_column": "pump",
         "time_column": "start_h", "time_right_column": "stop_h", "censor_column": "censored",
         "covariates": ["load_pct"]}))["model_id"]
@@ -438,29 +439,30 @@ def test_mcp_create_analyze_and_edit_schedules(env, ref):  # noqa: F811 - env is
               "covariate_schedules": {"load_pct": {"expression": "60 if t < 3000 else 90"}}},
              {"id": "output", "type": "output"}]
     edges = [{"source": "input", "target": "p"}, {"source": "p", "target": "output"}]
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "TVC", "unit": "Hours", "nodes": nodes,
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "TVC", "unit": "Hours", "nodes": nodes,
                                                  "edges": edges}))["id"]
-    got = _ok(_call(env.token[A], "get_rbd", {"rbd_id": rid}))
+    got = _ok(_call(env.token[A], "get", {"kind": "rbd", "id": rid}))
     node = next(n for n in got["graph"]["nodes"] if n["id"] == "p")
     assert node["covariate_schedules"] == {"load_pct": {"expression": "60 if t < 3000 else 90"}}
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "times": [1000, 5000]}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "times": [1000, 5000]}))
     sched = sp.StepSchedule.from_changepoints([0, 3000], [[60.0], [90.0]])
     assert [p["reliability"] for p in out["reliability_at"]] == pytest.approx(
         ref.sf_tvc(np.array([1000, 5000.0]), sched), rel=1e-6)
 
     # A stepped ramp past the data: clipped, with the warning relayed.
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rid, "ops": [
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
         {"op": "update_node", "id": "p",
          "covariate_schedules": {"load_pct": {"expression": "60 + 10 * floor(t / 2000)"}}}]}))
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "times": [9000], "t_max": 10000}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "times": [9000],
+                                                   "t_max": 10000}))
     assert any("goes above" in w for w in out["warnings"])
-    assert "changes in steps" in _err(_call(env.token[A], "edit_rbd", {"rbd_id": rid, "ops": [
+    assert "changes in steps" in _err(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
         {"op": "update_node", "id": "p", "covariate_schedules": {"load_pct": {"expression": "t"}}}]}))
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rid, "ops": [
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
         {"op": "update_node", "id": "p", "clear": ["covariate_schedules"]}]}))
     saved = env.db.rbds.find_one({"_id": rid})
     assert "covariate_schedules" not in next(n for n in saved["graph"]["nodes"] if n["id"] == "p")["data"]
-    assert "need a saved covariate" in _err(_call(env.token[A], "create_rbd", {
+    assert "need a saved covariate" in _err(_call(env.token[A], "rbd", {"action": "create",
         "name": "Bad", "unit": "Hours", "edges": edges, "nodes": [
             nodes[0], {**nodes[1], "model": {"distribution_id": "weibull", "params": [
                 {"name": "alpha", "value": 9}, {"name": "beta", "value": 1}]}}, nodes[2]]}))

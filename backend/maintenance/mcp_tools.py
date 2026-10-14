@@ -29,6 +29,8 @@ from typing import Annotated, Any, Literal
 from pydantic import Field
 
 from backend.maintenance import mcp_guide
+from backend.mcp_actions import Table, check, describe
+from backend.mcp_actions import choice as _choice
 
 TOOL_NAMES: list[str] = []
 _ORIGINAL: dict = {}
@@ -43,41 +45,8 @@ HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_workspace
 # ---- actions: what each takes -------------------------------------------------------
 #
 # action: (required arguments, optional arguments, what it does). "Required"
-# means not null; everything else a call gives must be one of the optional ones.
-
-Table = dict[str, tuple[str, str, str]]
-
-
-def check(selector: str, value: str, table: Table, args: dict[str, Any]) -> dict[str, Any]:
-    """Hold one call to its action's (or kind's) arguments: every required one
-    given, nothing it doesn't take. Returns the ones given (not null)."""
-    required, optional, _ = table[value]
-    required, optional = required.split(), optional.split()
-    given = {k: v for k, v in args.items() if v is not None}
-    takes = ", ".join([*required, *(o + "?" for o in optional)]) or "nothing else"
-    missing = [a for a in required if a not in given]
-    if missing:
-        raise ValueError(f"{selector} '{value}' needs {', '.join(missing)} (it takes {takes}).")
-    extra = [a for a in given if a not in required and a not in optional]
-    if extra:
-        raise ValueError(f"{selector} '{value}' doesn't take {', '.join(extra)} (it takes {takes}).")
-    return given
-
-
-def describe(intro: str, selector: str, table: Table) -> str:
-    """A tool's description: what it's for, then every action with what it takes."""
-    lines = [" ".join(intro.split()), "",
-             f"{selector} values, each with its arguments (? = optional) and when to use it:"]
-    for value, (required, optional, text) in table.items():
-        args = ", ".join([*required.split(), *(o + "?" for o in optional.split())])
-        lines.append(f"- {value}({args}): {' '.join(text.split())}")
-    return "\n".join(lines)
-
-
-def _choice(table: Table) -> Any:
-    """The selector's type: one of the table's values."""
-    return Annotated[Literal[tuple(table)], Field(  # type: ignore[valid-type]
-        description="One of the values listed in the description, each with the arguments it takes.")]
+# means not null; everything else a call gives must be one of the optional ones
+# (backend/mcp_actions.py checks every call and writes the descriptions).
 
 
 def _d(value, default):
@@ -184,7 +153,7 @@ POSITIONS: Table = {
     "retire": ("position_id", "reason", """Take it out of the plant (kept in the history). Nothing fitted, no
         position inside it in use, no work order open."""),
     "from_rcm": ("study_id", "parent_id", """A new position named for an RCM study's system, with its failure
-        modes and a task for every decision with an interval (list_rcm_studies / create_rcm_study)."""),
+        modes and a task for every decision with an interval (list kind rcm_studies / rcm create)."""),
     "apply_rcm": ("position_id study_id", "", """Bring a study's failure modes and tasks onto an existing
         position; again later adds what's new and updates changed tasks."""),
     "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
@@ -376,7 +345,7 @@ TOPOLOGY: Table = {
     "set_duty": ("group_id position_id", "", "Which member of a standby group runs now (a duty / standby swap)."),
     "generate_rbd": ("position_id", "", """Generate (or regenerate) an RBD for a system position from the
         positions inside it: connections wire the blocks, groups become k of n, blocks take their class's
-        fitted model (placeholders otherwise, listed in notes). Saved as a normal RBD: analyze_rbd."""),
+        fitted model (placeholders otherwise, listed in notes). Saved as a normal RBD: rbd_analysis analyze."""),
 }
 
 ITEM_CLASSES: Table = {

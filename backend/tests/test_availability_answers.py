@@ -1,4 +1,4 @@
-"""The repairable analyze_rbd answer an agent reads (#184, #185, #186).
+"""The repairable rbd_analysis analyze answer an agent reads (#184, #185, #186).
 
 The CW pump train of the agent test drive: an MCC, a strainer with block PM,
 a 1+1 cold standby pair on a Weibull life and a check valve, with one repair
@@ -53,14 +53,14 @@ def _sif(beta=0.05):
 
 
 def _saved(env, graph):
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "Diagram", "repairable": True,
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Diagram", "repairable": True,
                                                  "stages": REPAIRABLE_STAGES}))["id"]
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
     return rid
 
 
 def _analyze(env, rid, **kw):
-    return _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, **kw}))
+    return _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, **kw}))
 
 
 # ---- #184: simulate=false on a simulation-only diagram says so --------------------------
@@ -80,10 +80,10 @@ def test_analyze_rbd_description_documents_the_needs_simulation_answer(env):
     from backend.tests.test_mcp import _run
 
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    text = " ".join(tools["analyze_rbd"].description.split())
+    text = " ".join(tools["rbd_analysis"].description.split())
     assert "simulate=false" in text and "available=false" in text
     assert "needs_simulation=true, code 'needs_simulation'" in text
-    assert "call again with simulate=true" in text and "export_rbd_python" in text
+    assert "call again with simulate=true" in text and "export_python" in text
 
 
 def test_a_diagram_with_exact_figures_stays_available_with_a_headline(env):

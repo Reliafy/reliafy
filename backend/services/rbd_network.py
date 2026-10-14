@@ -44,7 +44,7 @@ _LINK = "link~"
 
 #: What every block-diagram analysis says of a network (they don't apply).
 NETWORK_ONLY = ("This diagram is a network (undirected links between two terminals): its result is the chance "
-                "its two terminals stay connected, which the builder's Calculator tab and analyze_rbd give. "
+                "its two terminals stay connected, which the builder's Calculator tab and rbd_analysis analyze give. "
                 "Block-diagram analyses don't apply to it.")
 
 
@@ -96,7 +96,7 @@ def carry(graph: dict, out: dict) -> None:
 
 
 def apply_set(graph: dict, op: dict) -> list[str]:
-    """edit_rbd's ``set`` of ``network`` (true, {source, target}, or false):
+    """rbd edit's ``set`` of ``network`` (true, {source, target}, or false):
     what was done, in words. Raises
     :class:`backend.services.rbd_graph.GraphError`."""
     from backend.services.rbd_graph import GraphError

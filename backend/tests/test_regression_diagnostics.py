@@ -355,19 +355,20 @@ from backend.tests.test_mcp import A as MCP_A, _call, _ok, env  # noqa: E402,F40
 
 
 def test_mcp_fit_get_model_and_cox_options(env):
-    ds = _ok(_call(env.token[MCP_A], "upload_dataset", {"name": "Rossi", "csv": _csv(_rossi()).decode()}))
+    ds = _ok(_call(env.token[MCP_A], "datasets", {"action": "upload", "name": "Rossi", "csv": _csv(_rossi()).decode()}))
     args = {"dataset_id": ds["id"], "distribution": "cox_ph", "time_column": "week", "censor_column": "c",
             "covariates": COVS}
-    fitted = _ok(_call(env.token[MCP_A], "fit_distribution", {
+    fitted = _ok(_call(env.token[MCP_A], "life_data_analysis", {"action": "fit",
         **args, "cox_options": {"tie_method": "breslow", "cluster_column": "unit"}}))
     d = fitted["diagnostics"]
     assert d["ph_test"]["verdict"] == "check" and d["robust"]["cluster"] == "unit"
     assert d["ties"]["method"] == "breslow" and fitted["options"]["cox"]["tie_method"] == "breslow"
 
-    saved = _ok(_call(env.token[MCP_A], "fit_and_save_model", {**args, "name": "Rossi Cox"}))
+    saved = _ok(_call(env.token[MCP_A], "models", {"action": "fit", **args, "name": "Rossi Cox"}))
     env.db.models.update_one({"_id": saved["model_id"]}, {"$unset": {"results.diagnostics": ""}})
-    got = _ok(_call(env.token[MCP_A], "get_model", {"model_id": saved["model_id"]}))
+    got = _ok(_call(env.token[MCP_A], "get", {"kind": "model", "id": saved["model_id"]}))
     assert got["diagnostics"]["ph_test"]["global"]["p"] == pytest.approx(_cox().check_ph().loc["GLOBAL", "p"])
 
-    stray = _call(env.token[MCP_A], "fit_distribution", {"data": [1, 2, 3], "cox_options": {"tie_method": "exact"}})
+    stray = _call(env.token[MCP_A], "life_data_analysis", {"action": "fit", "data": [1, 2, 3],
+                                                           "cox_options": {"tie_method": "exact"}})
     assert "dataset" in str(stray).lower()

@@ -1,5 +1,5 @@
-"""RCM studies over MCP as structured JSON: list_rcm_studies, get_rcm_study,
-create_rcm_study and update_rcm_study. A study made here is the one the app's
+"""RCM studies over MCP as structured JSON: list kind rcm_studies, get kind rcm_study,
+rcm create and rcm update. A study made here is the one the app's
 editor or an Excel import makes — the same tree, validation, plan cap and
 evidence-link check."""
 
@@ -31,7 +31,7 @@ PUMP = [{
 
 
 def _create(env, uid=A, **extra) -> dict:
-    return _ok(_call(env.token[uid], "create_rcm_study", {"name": "Cooling water pump", "system": "P-101",
+    return _ok(_call(env.token[uid], "rcm", {"action": "create", "name": "Cooling water pump", "system": "P-101",
                                                           "functions": PUMP, **extra}))
 
 
@@ -58,16 +58,17 @@ def test_create_saves_the_study_the_app_would(env):
 
     assert _strip_ids(doc["functions"]) == _strip_ids(rcm_service.clean_tree(PUMP))  # the editor's own cleaning
     # The app reads it like any other study.
-    listed = _ok(_call(env.token[A], "list_rcm_studies"))["studies"]
+    listed = _ok(_call(env.token[A], "list", {"kind": "rcm_studies"}))["studies"]
     assert [(s["id"], s["modes"], s["decisions"]) for s in listed] == [(out["study_id"], 4, 4)]
-    assert "data_notice" in _ok(_call(env.token[A], "list_rcm_studies"))
+    assert "data_notice" in _ok(_call(env.token[A], "list", {"kind": "rcm_studies"}))
 
 
 def test_the_same_worksheet_as_json_or_as_an_excel_import(env):
     """The FMEA workbook imported, and the same rows given as JSON, make the
     same worksheet."""
     link, _ = _upload(env, FMEA, "pump-fmea.xlsx", purpose="excel")
-    imported = _ok(_call(env.token[A], "import_excel", {"upload_id": link["upload_id"], "target": "rcm"}))
+    imported = _ok(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+                                                   "target": "rcm"}))
     as_json = [{"text": "Pump water at 50 l/s", "failures": [
         {"text": "Fails to pump", "modes": [
             {"text": "Bearing seizes", "effects": "Pump stops", "consequence": "operational", "notes": "Severity 7"},
@@ -75,7 +76,7 @@ def test_the_same_worksheet_as_json_or_as_an_excel_import(env):
         {"text": "Leaks", "modes": [
             {"text": "Seal fails", "effects": "Water on floor", "consequence": "safety", "notes": "Severity 8"}]},
     ]}]
-    made = _ok(_call(env.token[A], "create_rcm_study", {"name": "Pump", "functions": as_json}))
+    made = _ok(_call(env.token[A], "rcm", {"action": "create", "name": "Pump", "functions": as_json}))
     a = env.db.rcm_studies.find_one({"_id": imported["study_id"]})["functions"]
     b = env.db.rcm_studies.find_one({"_id": made["study_id"]})["functions"]
     assert _strip_ids(a) == _strip_ids(b)
@@ -83,7 +84,7 @@ def test_the_same_worksheet_as_json_or_as_an_excel_import(env):
 
 def test_get_reads_it_back_with_ids_and_writes_back_unchanged(env):
     out = _create(env)
-    got = _ok(_call(env.token[A], "get_rcm_study", {"study_id": out["study_id"]}))
+    got = _ok(_call(env.token[A], "get", {"kind": "rcm_study", "id": out["study_id"]}))
     assert "data_notice" in got and got["system"] == "P-101" and got["counts"]["modes"] == 4
     mode = got["functions"][0]["failures"][0]["modes"][0]
     assert mode["id"] and mode["decision"]["interval_unit"] == "months"
@@ -91,17 +92,17 @@ def test_get_reads_it_back_with_ids_and_writes_back_unchanged(env):
     assert mode["decision"]["check"]["expected_evidence"] == "degradation_model"
     before = env.db.rcm_studies.find_one({"_id": out["study_id"]})["functions"]
 
-    # What get_rcm_study gives, written back whole, changes nothing (check is ignored).
-    again = _ok(_call(env.token[A], "update_rcm_study", {"study_id": out["study_id"], "mode": "replace",
+    # What get kind rcm_study gives, written back whole, changes nothing (check is ignored).
+    again = _ok(_call(env.token[A], "rcm", {"action": "update", "study_id": out["study_id"], "mode": "replace",
                                                          "functions": got["functions"]}))
     assert again["action"] == "replace" and again["counts"] == again["counts_before"]
     assert env.db.rcm_studies.find_one({"_id": out["study_id"]})["functions"] == before
 
     # One function in full; a big study as an outline.
     fid = got["functions"][0]["id"]
-    one = _ok(_call(env.token[A], "get_rcm_study", {"study_id": out["study_id"], "function_id": fid}))
+    one = _ok(_call(env.token[A], "get", {"kind": "rcm_study", "id": out["study_id"], "function_id": fid}))
     assert [f["id"] for f in one["functions"]] == [fid]
-    assert "no function" in _err(_call(env.token[A], "get_rcm_study", {"study_id": out["study_id"],
+    assert "no function" in _err(_call(env.token[A], "get", {"kind": "rcm_study", "id": out["study_id"],
                                                                        "function_id": "nope"}))
 
 
@@ -110,19 +111,19 @@ def test_a_large_study_comes_back_as_an_outline(env, monkeypatch):
 
     monkeypatch.setattr(mcp_server, "_RCM_FULL_MODES", 2)
     out = _create(env)
-    got = _ok(_call(env.token[A], "get_rcm_study", {"study_id": out["study_id"]}))
+    got = _ok(_call(env.token[A], "get", {"kind": "rcm_study", "id": out["study_id"]}))
     assert got["outline"] is True and "function_id" in got["note"]
     assert [f["n_modes"] for f in got["functions"][0]["failures"]] == [3, 1]
 
 
 def test_merge_adds_and_changes_nodes_by_id(env):
     out = _create(env)
-    got = _ok(_call(env.token[A], "get_rcm_study", {"study_id": out["study_id"]}))
+    got = _ok(_call(env.token[A], "get", {"kind": "rcm_study", "id": out["study_id"]}))
     fn = got["functions"][0]
     fails, leaks = fn["failures"]
     impeller = fails["modes"][1]
 
-    merged = _ok(_call(env.token[A], "update_rcm_study", {"study_id": out["study_id"], "functions": [
+    merged = _ok(_call(env.token[A], "rcm", {"action": "update", "study_id": out["study_id"], "functions": [
         {"id": fn["id"], "failures": [
             # A new mode under an existing failure, and a changed decision on an existing mode.
             {"id": fails["id"], "modes": [
@@ -147,24 +148,24 @@ def test_merge_adds_and_changes_nodes_by_id(env):
     assert doc[0]["failures"][1]["id"] == leaks["id"]
 
     # An id that isn't there is refused, not added.
-    msg = _err(_call(env.token[A], "update_rcm_study", {"study_id": out["study_id"], "functions": [
+    msg = _err(_call(env.token[A], "rcm", {"action": "update", "study_id": out["study_id"], "functions": [
         {"id": fn["id"], "failures": [{"id": "nope", "modes": []}]}]}))
     assert "no functional failure with id “nope”" in msg
 
 
 def test_replace_and_details(env):
     out = _create(env)
-    done = _ok(_call(env.token[A], "update_rcm_study", {
+    done = _ok(_call(env.token[A], "rcm", {"action": "update",
         "study_id": out["study_id"], "mode": "replace", "name": "P-101 RCM", "system": "Pump P-101",
         "functions": [{"text": "Pump water", "failures": [{"text": "No flow", "modes": [{"text": "Seized"}]}]}]}))
     assert done["counts"]["modes"] == 1 and done["name"] == "P-101 RCM" and done["system"] == "Pump P-101"
-    details = _ok(_call(env.token[A], "update_rcm_study", {"study_id": out["study_id"], "description": "v2"}))
+    details = _ok(_call(env.token[A], "rcm", {"action": "update", "study_id": out["study_id"], "description": "v2"}))
     assert details["action"] == "details" and details["counts"]["modes"] == 1
     assert env.db.rcm_studies.find_one({"_id": out["study_id"]})["description"] == "v2"
-    assert "Nothing to change" in _err(_call(env.token[A], "update_rcm_study", {"study_id": out["study_id"]}))
-    assert "needs functions" in _err(_call(env.token[A], "update_rcm_study", {"study_id": out["study_id"],
+    assert "Nothing to change" in _err(_call(env.token[A], "rcm", {"action": "update", "study_id": out["study_id"]}))
+    assert "needs functions" in _err(_call(env.token[A], "rcm", {"action": "update", "study_id": out["study_id"],
                                                                               "mode": "replace"}))
-    assert "needs a name" in _err(_call(env.token[A], "update_rcm_study", {"study_id": out["study_id"],
+    assert "needs a name" in _err(_call(env.token[A], "rcm", {"action": "update", "study_id": out["study_id"],
                                                                            "name": "  "}))
 
 
@@ -187,7 +188,7 @@ def test_replace_and_details(env):
         {"text": "M", "decision": {"outcome": "fixed_interval", "interval": -1}}]}]}], "interval"),
 ])
 def test_invalid_worksheets_are_refused_saying_where(env, functions, expected):
-    msg = _err(_call(env.token[A], "create_rcm_study", {"name": "Bad", "functions": functions}))
+    msg = _err(_call(env.token[A], "rcm", {"action": "create", "name": "Bad", "functions": functions}))
     assert expected in msg
     assert env.db.rcm_studies.count_documents({}) == 0
 
@@ -196,7 +197,7 @@ def test_size_limit(env, monkeypatch):
     from backend import mcp_server
 
     monkeypatch.setattr(mcp_server, "_RCM_MAX_NODES", 3)
-    msg = _err(_call(env.token[A], "create_rcm_study", {"name": "Big", "functions": PUMP}))
+    msg = _err(_call(env.token[A], "rcm", {"action": "create", "name": "Big", "functions": PUMP}))
     assert "would have 4 failure modes; a study holds at most 3" in msg
     assert env.db.rcm_studies.count_documents({}) == 0
 
@@ -207,7 +208,7 @@ def test_evidence_must_be_the_users_own_or_a_sample(env):
     functions = [{"text": "F", "failures": [{"text": "FF", "modes": [
         {"text": "M", "decision": {"outcome": "rtf", "rtf_basis": "random",
                                    "evidence": {"type": "model", "id": model_id}}}]}]}]
-    assert "can't open" in _err(_call(env.token[A], "create_rcm_study", {"name": "S", "functions": functions}))
+    assert "can't open" in _err(_call(env.token[A], "rcm", {"action": "create", "name": "S", "functions": functions}))
     assert env.db.rcm_studies.count_documents({}) == 0
 
 
@@ -216,13 +217,13 @@ def test_only_the_users_own_studies_change(env):
     from backend.services import rcm as rcm_service
 
     out = _create(env)
-    assert "not found" in _err(_call(env.token[B], "get_rcm_study", {"study_id": out["study_id"]}))
-    assert "not found" in _err(_call(env.token[B], "update_rcm_study", {"study_id": out["study_id"],
+    assert "not found" in _err(_call(env.token[B], "get", {"kind": "rcm_study", "id": out["study_id"]}))
+    assert "not found" in _err(_call(env.token[B], "rcm", {"action": "update", "study_id": out["study_id"],
                                                                         "name": "Mine now"}))
     sample = rcm_service.create_study(env.db, "Sample pump", "", "", config.SAMPLE_OWNER)
-    got = _ok(_call(env.token[A], "get_rcm_study", {"study_id": sample.id}))
+    got = _ok(_call(env.token[A], "get", {"kind": "rcm_study", "id": sample.id}))
     assert got["is_sample"] is True
-    assert "shared sample" in _err(_call(env.token[A], "update_rcm_study", {"study_id": sample.id,
+    assert "shared sample" in _err(_call(env.token[A], "rcm", {"action": "update", "study_id": sample.id,
                                                                             "name": "Mine"}))
 
 
@@ -232,6 +233,6 @@ def test_the_free_plan_cap_applies(free_env, monkeypatch):
     env = free_env
     monkeypatch.setattr(config, "FREE_MAX_RCM_STUDIES", 1)
     _create(env, uid=FREE)
-    msg = _err(_call(env.token[FREE], "create_rcm_study", {"name": "Second", "functions": PUMP}))
+    msg = _err(_call(env.token[FREE], "rcm", {"action": "create", "name": "Second", "functions": PUMP}))
     assert "limit of 1 saved RCM studies" in msg
     assert env.db.rcm_studies.count_documents({"owner_id": FREE}) == 1

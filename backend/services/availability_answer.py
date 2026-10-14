@@ -1,4 +1,4 @@
-"""The repairable ``analyze_rbd`` answer an agent reads (#184, #185, #186).
+"""The repairable ``rbd_analysis analyze`` answer an agent reads (#184, #185, #186).
 
 The MCP server lays an availability payload out (``_availability_summary``)
 and this module finishes it so it says plainly what it holds:
@@ -33,8 +33,8 @@ from backend.units import unit_in_text
 _FIGURES = ("steady_state_availability", "unavailability", "mean_up_time", "mean_down_time",
             "failure_frequency", "figures_basis", "importance", "t_simulation")
 _SEE_REFUSED = "Refused: see exact.refused for why."
-_SIMULATE = ("Call analyze_rbd with simulate=true to run it (or export_rbd_python to run it locally), or change "
-             "what makes it simulation-only.")
+_SIMULATE = ("Call rbd_analysis analyze with simulate=true to run it (or rbd_analysis export_python to run it "
+             "locally), or change what makes it simulation-only.")
 
 
 def has_figures(payload: dict) -> bool:
@@ -135,10 +135,10 @@ def _headline(out: dict, payload: dict) -> Optional[dict]:
 
 
 #: The app's "no proof tests" warning (rbd_policies.NO_PROOF_TESTS) as an
-#: agent acts on it: the edit_rbd op that adds them (#265).
+#: agent acts on it: the rbd edit op that adds them (#265).
 NO_PROOF_TESTS_AGENT = (
     "No proof tests configured: PFDavg assumes failures are revealed and repaired at once, which is optimistic "
-    "for a low-demand safety function. Add proof-test intervals (edit_rbd update_node inspection: {op: "
+    "for a low-demand safety function. Add proof-test intervals (rbd edit update_node inspection: {op: "
     "'update_node', id: <block id>, inspection: {interval: <time between tests>}})."
 )
 
@@ -177,7 +177,7 @@ def _lead_with(out: dict, keys: tuple) -> dict:
 
 
 def finish(out: dict, payload: dict) -> dict:
-    """The repairable ``analyze_rbd`` answer, finished (see the module
+    """The repairable ``rbd_analysis analyze`` answer, finished (see the module
     docstring). ``out`` is the MCP layout of ``payload``, with the head
     fields and ``simulation``; returns the answer to send."""
     out = dict(out)

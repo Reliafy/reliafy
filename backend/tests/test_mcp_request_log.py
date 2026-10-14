@@ -58,7 +58,7 @@ def endpoint(monkeypatch, caplog):
     return make
 
 
-def _call(name="list_models"):
+def _call(name="list"):
     return {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": {"x": 1}}}
 
 
@@ -66,7 +66,7 @@ def test_a_request_is_logged_with_its_method_and_not_its_arguments(endpoint, cap
     r = endpoint("answer").post("/mcp", json=_call(), headers=AUTH)
     assert r.status_code == 200
     line = next(m for m in caplog.messages if m.startswith("MCP request"))
-    assert "tools/call:list_models" in line and "status 200" in line and "complete" in line
+    assert "tools/call:list" in line and "status 200" in line and "complete" in line
     assert '"x"' not in line and "arguments" not in line
     assert caplog.records[-1].levelno == logging.INFO
 

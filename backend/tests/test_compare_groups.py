@@ -1,7 +1,7 @@
 """Compare groups of life data (#175): log-rank, RMST difference, Gray's test.
 
 The service against SurPyval directly, the dataset endpoint (and who may call
-it), and the ``compare_groups`` MCP tool.
+it), and the ``life_data_analysis compare_groups`` MCP tool.
 """
 
 import matplotlib
@@ -230,10 +230,10 @@ def test_no_unit_reads_time_units():
 def test_inline_censor_errors_name_the_argument(mcp_env):
     from backend.tests.test_mcp import _call, _err
 
-    msg = _err(_call(mcp_env.token["user-a"], "compare_groups", {
+    msg = _err(_call(mcp_env.token["user-a"], "life_data_analysis", {"action": "compare_groups",
         "data": [1, 2, 3, 4], "group": ["A", "A", "B", "B"], "censored": [0, -1, 0, 1]}))
     assert "`censored` must hold 0 (failed) or 1" in msg and "'c'" not in msg
-    msg = _err(_call(mcp_env.token["user-a"], "compare_groups", {
+    msg = _err(_call(mcp_env.token["user-a"], "life_data_analysis", {"action": "compare_groups",
         "data": [1, 2, 3, 4], "group": ["A", "A", "B", "B"], "counts": [1, 0, 1, 1]}))
     assert "`counts` must hold a positive number" in msg
 
@@ -318,29 +318,35 @@ def test_mcp_compare_groups_inline_and_from_a_dataset(mcp_env):
     from backend.tests.test_mcp import _call, _err, _ok
 
     tok = mcp_env.token["user-a"]
-    out = _ok(_call(tok, "compare_groups", {"data": AML_X, "group": AML_G, "censored": AML_C, "unit": "weeks"}))
+    out = _ok(_call(tok, "life_data_analysis", {"action": "compare_groups", "data": AML_X, "group": AML_G,
+                                                "censored": AML_C, "unit": "weeks"}))
     assert out["verdict"].startswith("No clear difference") and out["significant"] is False
     assert out["logrank"]["statistic"] == pytest.approx(3.396, abs=1e-3)
     assert "curve" not in out["groups"][0] and "curves_omitted" in out and "url" not in out
 
     flipped = [1 - c for c in AML_C]
-    inv = _ok(_call(tok, "compare_groups", {"data": AML_X, "group": AML_G, "censored": flipped, "c_invert": True}))
+    inv = _ok(_call(tok, "life_data_analysis", {"action": "compare_groups", "data": AML_X, "group": AML_G,
+                                                "censored": flipped, "c_invert": True}))
     assert inv["logrank"]["statistic"] == pytest.approx(out["logrank"]["statistic"])
 
-    ds = _ok(_call(tok, "upload_dataset", {"name": "AML", "csv": _aml().to_csv(index=False)}))
-    msg = _err(_call(tok, "compare_groups", {"dataset_id": ds["id"], "time_column": "weeks"}))
+    ds = _ok(_call(tok, "datasets", {"action": "upload", "name": "AML", "csv": _aml().to_csv(index=False)}))
+    msg = _err(_call(tok, "life_data_analysis", {"action": "compare_groups", "dataset_id": ds["id"],
+                                                 "time_column": "weeks"}))
     assert "group_column" in msg and "arm" in msg
-    out = _ok(_call(tok, "compare_groups", {"dataset_id": ds["id"], "time_column": "weeks", "group_column": "arm",
+    out = _ok(_call(tok, "life_data_analysis", {"action": "compare_groups", "dataset_id": ds["id"],
+                                                "time_column": "weeks", "group_column": "arm",
                                             "censor_column": "censored", "include_curves": True}))
     assert out["url"].endswith(f"/datasets/d/{ds['id']}?compare=arm")
     assert out["groups"][0]["curve"]["x"][0] == 0
 
-    assert "with dataset_id" in _err(_call(tok, "compare_groups", {"data": AML_X, "group": AML_G,
+    assert "with dataset_id" in _err(_call(tok, "life_data_analysis", {"action": "compare_groups", "data": AML_X,
+                                                                       "group": AML_G,
                                                                    "time_column": "weeks"}))
-    assert "Give `group`" in _err(_call(tok, "compare_groups", {"data": AML_X}))
-    assert "one group" in _err(_call(tok, "compare_groups", {"data": AML_X, "group": ["A"] * len(AML_X)}))
+    assert "Give `group`" in _err(_call(tok, "life_data_analysis", {"action": "compare_groups", "data": AML_X}))
+    assert "one group" in _err(_call(tok, "life_data_analysis", {"action": "compare_groups", "data": AML_X,
+                                                                 "group": ["A"] * len(AML_X)}))
     # Another user's dataset isn't there.
-    assert "Dataset not found" in _err(_call(mcp_env.token["user-b"], "compare_groups", {
+    assert "Dataset not found" in _err(_call(mcp_env.token["user-b"], "life_data_analysis", {"action": "compare_groups",
         "dataset_id": ds["id"], "time_column": "weeks", "group_column": "arm"}))
 
 

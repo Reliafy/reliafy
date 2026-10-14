@@ -625,7 +625,7 @@ def test_import_of_someone_elses_export_draws_their_subsystem_in_place(client):
 
 
 # ---------------------------------------------------------------------------
-# MCP: export_rbd_json, and import_rbd takes it back
+# MCP: rbd_analysis export_json, and uploads import_rbd takes it back
 # ---------------------------------------------------------------------------
 def test_mcp_export_and_import(env):
     from backend.services import rbds as rbds_service
@@ -634,17 +634,19 @@ def test_mcp_export_and_import(env):
     sub = _save(env.db, "Drive train", copy.deepcopy(SUB), A)
     plant = _save(env.db, "Plant", _plant(sub.id), A)
 
-    out = _ok(_call(env.token[A], "export_rbd_json", {"rbd_id": plant.id}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "export_json", "rbd_id": plant.id}))
     assert out["filename"] == "plant.json" and out["notes"] and "rbd_from_json" in out["load"]
     assert json.loads(out["json"])["reliafy"]["name"] == "Plant"
 
-    back = _ok(_call(env.token[A], "import_rbd", {"content": out["json"], "name": "Plant copy"}))
+    back = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "content": out["json"], "name": "Plant copy"}))
     [item] = back["diagrams"]
     assert back["saved"] and item["import_notes"] == []
     saved = rbds_service.get_rbd(env.db, item["id"], [A])
     assert saved.name == "Plant copy" and saved.graph == rbd_graph.normalize_graph(_plant(sub.id))
 
     # B can't read A's diagram, nor A's sub-system: it is drawn in place.
-    assert "not found" in _err(_call(env.token[B], "export_rbd_json", {"rbd_id": plant.id})).lower()
-    back = _ok(_call(env.token[B], "import_rbd", {"content": out["json"], "format": "repyability"}))
+    assert "not found" in _err(_call(env.token[B], "rbd_analysis", {"action": "export_json",
+                                                                    "rbd_id": plant.id})).lower()
+    back = _ok(_call(env.token[B], "uploads", {"action": "import_rbd", "content": out["json"],
+                                               "format": "repyability"}))
     assert any("drawn in place" in n for n in back["diagrams"][0]["import_notes"])

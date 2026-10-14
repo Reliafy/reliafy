@@ -173,7 +173,7 @@ def test_export_keeps_a_vote_pinned_failed_as_a_broken_stand_in(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# MCP: create_rbd / edit_rbd take a vote mid-diagram in a repairable diagram
+# MCP: rbd create / rbd edit take a vote mid-diagram in a repairable diagram
 # ---------------------------------------------------------------------------
 def _mcp_nodes():
     exp_a = {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": LAM_A}]}
@@ -194,24 +194,24 @@ def _mcp_nodes():
 
 def test_mcp_create_and_analyse_a_repairable_rbd_with_a_mid_diagram_vote(env):
     nodes, edges = _mcp_nodes()
-    out = _ok(_call(env.token[A], "create_rbd", {"name": "Two votes", "unit": "Hours", "repairable": True,
+    out = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Two votes", "unit": "Hours", "repairable": True,
                                                  "nodes": nodes, "edges": edges}))
-    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": out["id"]}))
+    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": out["id"]}))
     assert res["steady_state_availability"] == pytest.approx(EXPECTED, rel=1e-9)
 
 
 def test_mcp_edit_rbd_adds_a_vote_mid_diagram(env):
-    # Start with stage A in plain parallel, then vote 2-of-3 on it with edit_rbd.
+    # Start with stage A in plain parallel, then vote 2-of-3 on it with rbd edit.
     nodes, edges = _mcp_nodes()
     nodes = [n for n in nodes if n["id"] != "va"]
     edges = [e for e in edges if "va" not in (e["source"], e["target"])]
     edges += [{"source": f"a{j}", "target": f"b{i}"} for j in (1, 2, 3) for i in (1, 2, 3)]
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "One vote", "unit": "Hours", "repairable": True,
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "One vote", "unit": "Hours", "repairable": True,
                                                  "nodes": nodes, "edges": edges}))["id"]
     ops = [{"op": "remove_edge", "source": f"a{j}", "target": f"b{i}"} for j in (1, 2, 3) for i in (1, 2, 3)]
     ops.append({"op": "add_node", "node": {"id": "va", "type": "knode", "label": "2oo3 A", "n": 2, "k": 3}})
     ops += [{"op": "add_edge", "source": f"a{j}", "target": "va"} for j in (1, 2, 3)]
     ops += [{"op": "add_edge", "source": "va", "target": f"b{i}"} for i in (1, 2, 3)]
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rid, "ops": ops}))
-    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": ops}))
+    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert res["steady_state_availability"] == pytest.approx(EXPECTED, rel=1e-9)

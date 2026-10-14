@@ -157,7 +157,7 @@ def carry(graph: dict, out: dict) -> None:
 
 
 def apply_set(graph: dict, op: dict) -> list[str]:
-    """edit_rbd's ``set`` of ``phases`` ([] clears them): what was done, in
+    """rbd edit's ``set`` of ``phases`` ([] clears them): what was done, in
     words. Raises :class:`backend.services.rbd_graph.GraphError`."""
     from backend.services.rbd_graph import GraphError
 
