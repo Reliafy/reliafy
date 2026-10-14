@@ -499,9 +499,9 @@ class Refusal(ToolError):
 
 
 def _gate(ctx: Context, name: str) -> bool:
-    """Plan gating for one tool call: a Free or grandfathered Agent user meets
-    the Pro-only tools, then the daily quota (counted only for calls that pass
-    the gate)."""
+    """Plan gating for one tool call (``name``: the call's key, see
+    :func:`_tool`): a Free or grandfathered Agent user meets the Pro-only
+    tools, then the daily quota (counted only for calls that pass the gate)."""
     user = _caller(ctx)
     if name in UNGATED_TOOLS:
         return False
@@ -739,18 +739,34 @@ def _slot_key(ctx: Context | None) -> str:
     return str(_caller(ctx)["uid"])
 
 
-def _tool(name: str, annotations: ToolAnnotations, title: str):
+def _tool(name: str, annotations: ToolAnnotations, title: str,
+          call_key: Callable[[dict], str] | None = None):
     """Register a tool, translating user-facing failures into tool errors.
     An API token needs the tool's scope (:func:`_tool_scope`). Over MCP the
     call runs inside the user's and the instance's concurrency slots
     (:func:`_run_in_slot`); the returned function is the plain synchronous
-    tool, for calls from Python."""
+    tool, for calls from Python.
+
+    ``call_key`` names one call from its arguments, for a tool that does
+    several things (Reliafy Maintenance's ``maintenance_work_orders`` with
+    ``action='close'`` is ``maintenance_work_orders.close``): plan gating
+    (:data:`PRO_ONLY_TOOLS`), the heavy slots (:data:`HEAVY_TOOLS`) and the
+    usage log go by that key. Without it the key is the tool's name."""
     scope = _tool_scope(annotations)
+
+    def key_of(kwargs: dict) -> str:
+        if call_key is None:
+            return name
+        try:
+            return call_key(kwargs)
+        except Exception:  # noqa: BLE001 - a bad argument is the tool's to refuse
+            return name
 
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             ctx = next((v for v in (*args, *kwargs.values()) if isinstance(v, Context)), None)
+            key = key_of(kwargs)
             started = time.perf_counter()
             state: dict = {}
             token = _CALL.set(state)
@@ -758,7 +774,7 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
             try:
                 if ctx is not None:
                     _require_scope(ctx, scope)
-                counted = _gate(ctx, name) if ctx is not None else False
+                counted = _gate(ctx, key) if ctx is not None else False
                 result = fn(*args, **kwargs)
                 if name in TEXT_RESULT_TOOLS and isinstance(result, dict):
                     result = {"data_notice": DATA_NOTICE, **result}
@@ -784,12 +800,13 @@ def _tool(name: str, annotations: ToolAnnotations, title: str):
             finally:
                 _CALL.reset(token)
                 if ctx is not None:
-                    _log_call(ctx, name, outcome, started)
+                    _log_call(ctx, key, outcome, started)
 
         @functools.wraps(fn)
         async def limited(*args, **kwargs):
             ctx = next((v for v in (*args, *kwargs.values()) if isinstance(v, Context)), None)
-            return await _run_in_slot(_slot_key(ctx), lambda: wrapper(*args, **kwargs), heavy=name in HEAVY_TOOLS)
+            return await _run_in_slot(_slot_key(ctx), lambda: wrapper(*args, **kwargs),
+                                      heavy=key_of(kwargs) in HEAVY_TOOLS)
 
         mcp.add_tool(limited, name=name, title=title, annotations=annotations,
                      description=(fn.__doc__ or "").strip())
@@ -7107,7 +7124,7 @@ def import_excel(
 # › failure modes, each mode with its decision — validated by the same
 # rcm_service.clean_tree and saved through the same service calls, with the
 # plan cap, the evidence-link check and the import's size limits, so the app,
-# share pages and position_from_rcm / apply_rcm_to_position treat it exactly
+# share pages and maintenance_positions (from_rcm / apply_rcm) treat it exactly
 # like a hand-built or imported study.
 
 _RCM_TEXT = rcm_import.MAX_TEXT
@@ -7315,7 +7332,7 @@ def _rcm_saved(db, user: dict, study, **extra) -> dict:
     if warnings:
         out["warnings"] = warnings
     out["next"] = ("get_rcm_study reads it back with every node's id; update_rcm_study changes it. Where Reliafy "
-                   "Maintenance is on, position_from_rcm and apply_rcm_to_position take this study_id.")
+                   "Maintenance is on, maintenance_positions' from_rcm and apply_rcm actions take this study_id.")
     return out
 
 
@@ -7421,8 +7438,8 @@ def create_rcm_study(
     name: Annotated[str, Field(min_length=1, max_length=200, description="The study's name.")],
     functions: Annotated[Optional[list[RcmFunction]], Field(description=_RCM_FUNCTIONS_DESC)] = None,
     system: Annotated[str, Field(max_length=200, description=(
-        "The asset or system it covers, e.g. 'Cooling water pump P-101'. position_from_rcm names the new "
-        "position after it (else after the study)."))] = "",
+        "The asset or system it covers, e.g. 'Cooling water pump P-101'. maintenance_positions' from_rcm "
+        "names the new position after it (else after the study)."))] = "",
     description: Annotated[str, Field(max_length=_RCM_TEXT, description="Optional description.")] = "",
 ) -> dict[str, Any]:
     """Save an RCM (Reliability Centred Maintenance) study — an FMEA / RCM worksheet — from structured JSON:

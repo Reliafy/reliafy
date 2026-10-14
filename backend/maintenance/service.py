@@ -1732,7 +1732,7 @@ class Maintenance:
             where = self._location_view(position["id"])
             raise Invalid(f"{item['name']} is fitted to {position['name']}, so it is where that position is"
                           f"{' (' + where['display'] + ')' if where else ' (no location set yet)'}. Set the "
-                          "position's location instead (update_position with location_id), or remove the item "
+                          "position's location instead (its location_id), or remove the item "
                           "first if it has left the position.")
         here = next((p for p in self.s.out(self.org, item_id, "IN")
                      if p["label"] == "Placement" and p.get("to") is None), None)

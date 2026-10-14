@@ -140,18 +140,22 @@ def test_photos_over_mcp(app_env):
     mcp_tools.register()
     try:
         async def flow(client):
-            pos = (await client.call_tool("create_position", {"name": "Hot water system"})).structured_content
-            link = (await client.call_tool("create_photo_link", {"target_id": pos["id"]})).structured_content
+            pos = (await client.call_tool("maintenance_positions", {"action": "create",
+                                                                     "name": "Hot water system"})).structured_content
+            link = (await client.call_tool("maintenance_attachments", {"action": "photo_link",
+                                                                       "target_id": pos["id"]})).structured_content
             path = link["url"].split("testserver", 1)[1]
             async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app),
                                           base_url="http://testserver") as phone:
                 r = await phone.post(path, content=_jpeg(), headers={"Content-Type": "image/jpeg"})
                 assert r.status_code == 200, r.text
-            status = (await client.call_tool("photo_link_status", {"link_id": link["link_id"]})).structured_content
+            status = (await client.call_tool("maintenance_get", {"kind": "photo_link",
+                                                               "id": link["link_id"]})).structured_content
             photo_id = status["photos"][0]
             assert status["location_offers"][0]["answer"] is None
-            seen = await client.call_tool("get_photo", {"photo_id": photo_id})
-            listed = (await client.call_tool("list_photos", {"target_id": pos["id"]})).structured_content
+            seen = await client.call_tool("maintenance_view_photo", {"photo_id": photo_id})
+            listed = (await client.call_tool("maintenance_list", {"kind": "photos",
+                                                                  "target_id": pos["id"]})).structured_content
             return seen, listed
 
         async def main():
