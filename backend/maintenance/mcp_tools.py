@@ -162,9 +162,10 @@ POSITIONS: Table = {
 }
 
 FITMENTS: Table = {
-    "fit": ("position_id", "item_id item_name serial part_number manufacturer part_id on from_precision", """Fit
+    "fit": ("position_id", "item_id item_name serial part_number manufacturer model part_id on from_precision",
+            """Fit
         an item to an empty position: an existing one (item_id) or a new one (item_name with serial, part
-        number, manufacturer; or part_id, the catalogue make and model, which fills in what isn't given). on: the
+        number, manufacturer, model; or part_id, the catalogue make and model, which fills in what isn't given). on: the
         date it went in, rough if need be ('2022', or a day with from_precision 'estimated'). A new item renews
         the position's tasks. To replace an item, close a work order with a replace action instead."""),
     "remove": ("position_id", "on reason failure_mode_id failure_mode_text to_precision", """Take the fitted
@@ -328,7 +329,8 @@ RELIABILITY: Table = {
         own. Returns the class."""),
     "fit_class_model": ("position_class", "distribution", """Pro. Fit a life distribution (weibull default, best,
         lognormal, exponential, gamma) to every fitment of the class's positions, save it as a model and
-        propose task intervals from it and the costs. Needs at least 2 failures."""),
+        propose task intervals from it and the costs. Needs at least 2 failures (exponential: 1, a constant
+        failure rate while there's little history). Then generate_rbd uses it for the class's blocks."""),
 }
 
 TOPOLOGY: Table = {
@@ -338,7 +340,8 @@ TOPOLOGY: Table = {
         cable)."""),
     "disconnect": ("interface_id", "", "Remove a connection (its id is in the position's connections)."),
     "create_group": ("member_ids", "name k mode standby", """Positions doing the same job where k of them are
-        enough (two pumps, either will do: k = 1, the default). mode active (default) or standby (the others
+        enough (two pumps, either will do: k = 1, the default; duty and standby: mode standby). Record it while
+        building the register: generate_rbd and impact depend on it. mode active (default) or standby (the others
         wait; standby cold, warm or hot)."""),
     "update_group": ("group_id", "name k mode standby add remove",
                      "Rename it, change k or mode, add / remove members."),
@@ -691,7 +694,8 @@ def register() -> None:
         m = m_for(ctx)
         if action == "fit":
             new_item = {"name": item_name, "serial": serial or "", "part_number": part_number or "",
-                        "manufacturer": manufacturer or "", "part_id": part_id} if item_name or part_id else None
+                        "manufacturer": manufacturer or "", "model": model or "",
+                        "part_id": part_id} if item_name or part_id else None
             return run(m.fit, position_id, item_id, new_item, on, from_precision)
         if action == "remove":
             return run(m.remove, position_id, on, reason, failure_mode_id, failure_mode_text, to_precision)

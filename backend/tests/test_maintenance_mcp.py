@@ -273,7 +273,7 @@ def test_instructions_gain_the_maintenance_section_only_for_people_with_access(e
         return client.instructions
 
     section = mcp_guide.INSTRUCTIONS
-    assert 1000 < len(section) < 1800
+    assert 1000 < len(section) < 2200
     for words in ("maintenance_overview", "maintenance_guide", "Positions", "Locations", "Classes", "Connections",
                   "never an invented day", "never place a fitted item"):
         assert words in section

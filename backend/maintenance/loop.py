@@ -45,9 +45,14 @@ def fit_class_model(m: Maintenance, db, position_class: str, distribution: str =
     # longest life is above 0.
     rows = [r for r in data["rows"] if (r["xr"] if r["c"] == 2 else r["x"]) > 0]
     failures = sum(1 for r in rows if r["c"] != 1)
-    if failures < MIN_FAILURES:
+    # A constant failure rate has one parameter: one failure (and the time in
+    # service around it) is enough. Every other distribution needs two.
+    needed = 1 if distribution == "exponential" else MIN_FAILURES
+    if failures < needed:
+        hint = (" With one failure, fit distribution 'exponential' (a constant failure rate) until more "
+                "are on record." if failures == 1 else "")
         raise Invalid(f"{data['position_class']} has {failures} failure{'s' if failures != 1 else ''} "
-                      f"on record; a life model needs at least {MIN_FAILURES}.")
+                      f"on record; a {distribution} model needs at least {needed}.{hint}")
     buf = io.StringIO()
     if any(r["c"] == 2 for r in rows):
         pd.DataFrame(_interval_rows(rows), columns=["shortest", "longest", "censored"]).to_csv(buf, index=False)

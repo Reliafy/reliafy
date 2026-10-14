@@ -21,6 +21,11 @@ Data rules: dates are calendar days in the workspace's time zone; a date known r
 location, never place a fitted item. Name a failure mode whenever something failed; never record a failure as \
 planned. Changes the life models propose are the user's to accept. Imports and tidy-ups dry-run first: show the \
 result, then run them.
+System questions from the register: when positions back each other up ('duty and standby', 'either is enough') \
+record it with maintenance_topology create_group as you build, not later. For a system's reliability, \
+maintenance_topology generate_rbd builds the RBD from the positions (then rbd_analysis analyze); don't hand-build \
+one with rbd create. A life model for a maintenance class comes from maintenance_reliability fit_class_model \
+(it reads the fitment history itself and proposes intervals), not from life_data_analysis.
 """
 
 TOPICS: dict[str, tuple[str, str]] = {
@@ -68,7 +73,10 @@ maintenance_items set_attributes with the ratings read -> maintenance_items upda
 nameplate fields and dates. Say what you read and what you couldn't.
 5. Spares: maintenance_parts create, stock (receive at a store location), add_to_position (the position's parts \
 list; critical spares with min_on_hand).
-6. Meters and condition: maintenance_measurements add_point (counter: run hours, cycles; condition: vibration, \
+6. Topology, as you build: maintenance_topology connect for what feeds what (supply, power, signal), and \
+create_group for positions that back each other up (duty and standby, 'either one is enough': k = 1). \
+generate_rbd and impact rely on it.
+7. Meters and condition: maintenance_measurements add_point (counter: run hours, cycles; condition: vibration, \
 temperature, with alarm limits), then record readings."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location.", """\
 Planning the maintenance.
@@ -116,7 +124,7 @@ Learning from the history.
 class, pooled. x = days in service, c = 0 failed or 1 censored; where a date was rough, xl / xr bound the life \
 and a failure is c = 2 (interval censored).
 2. maintenance_reliability set_class_costs (what a planned replacement and a failure cost; the availability a \
-hidden function must reach), then fit_class_model (Pro; needs at least 2 failures on record): it fits a life \
+hidden function must reach), then fit_class_model (Pro; needs at least 2 failures on record, or 1 with distribution 'exponential'): it fits a life \
 distribution, saves it as a model and proposes task intervals from it and the costs.
 3. maintenance_list kind proposals: each proposed change with its reason. Show them to the user; only when the \
 user says so, maintenance_proposals accept (or reject, with a note). Never accept one on your own judgement.
