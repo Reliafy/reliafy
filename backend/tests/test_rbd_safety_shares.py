@@ -97,10 +97,10 @@ def test_a_measure_repyability_refuses_is_left_out_with_its_reason():
 
 
 def test_agents_get_the_shares_from_analyze_rbd(env):
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "SIF", "repairable": True,
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "SIF", "repairable": True,
                                                  "stages": REPAIRABLE_STAGES}))["id"]
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": _sif()}})
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": False}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False}))
     shares = out["safety"]["shares"]
     assert {r["id"] for r in shares["elements"]} == set(RATES)
     assert shares["common_cause"][0]["failure_share"] > 0

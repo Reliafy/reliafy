@@ -139,7 +139,7 @@ def test_mcp_intervals_report_coverage(monkeypatch):
     test_db.users.insert_one({"_id": A, "email": "a@example.org", "name": "A"})
     token = tokens.create_token(test_db, A, "mcp")["token"]
     rbd = rbds_service.save_rbd(test_db, "SIF", _sif(), A)
-    out = _ok(_call(token, "optimise_maintenance_intervals", {"rbd_id": rbd.id, "blocks": ["v1", "v2"]}))
+    out = _ok(_call(token, "rbd_analysis", {"action": "optimise_intervals", "rbd_id": rbd.id, "blocks": ["v1", "v2"]}))
     assert {b["id"] for b in out["fixed_blocks"]} == {"tx", "ls"}
     assert out["untested"][0]["id"] == "v2" and out["untested"][0]["pfd_cost"] > 0
     v2 = next(b for b in out["blocks"] if b["id"] == "v2")

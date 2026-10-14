@@ -14,7 +14,7 @@ with a 3 s budget. Now:
   single-mode life with Kijima repair, a pinned block and a reliability
   diagram are untouched;
 * the runtime quote refuses it too, with the same reason;
-* the app's analysis and MCP's create_rbd / edit_rbd refuse it.
+* the app's analysis and MCP's rbd create / rbd edit refuse it.
 """
 
 import subprocess
@@ -124,12 +124,13 @@ def test_mcp_refuses_it(env):
              {"id": "a", "type": "component", "label": "A", "model": MIX, "repair": LN, "repair_quality": KIJIMA},
              {"id": "output", "type": "output"}]
     edges = [{"source": "input", "target": "a"}, {"source": "a", "target": "output"}]
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "Worn mixture", "repairable": True,
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "Worn mixture", "repairable": True,
                                                    "nodes": nodes, "edges": edges}))
     assert "two-failure-mode life with imperfect repair" in msg
     # A mixture repaired as good as new is fine; making its repair imperfect isn't.
     nodes[1].pop("repair_quality")
-    rbd = _ok(_call(env.token[A], "create_rbd", {"name": "Mixture", "repairable": True, "nodes": nodes, "edges": edges}))
-    msg = _err(_call(env.token[A], "edit_rbd", {"rbd_id": rbd["id"], "ops": [
+    rbd = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Mixture", "repairable": True, "nodes": nodes,
+                                          "edges": edges}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rbd["id"], "ops": [
         {"op": "update_node", "id": "a", "repair_quality": KIJIMA}]}))
     assert "two-failure-mode life with imperfect repair" in msg

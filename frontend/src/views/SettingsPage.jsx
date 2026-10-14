@@ -6,6 +6,8 @@ import ApiAccessPanel from "../components/ApiAccessPanel.jsx";
 import ConnectedAppsPanel from "../components/ConnectedAppsPanel.jsx";
 import McpOnRequest from "../components/McpOnRequest.jsx";
 import TeamInvites from "../components/TeamInvites.jsx";
+import TimeZonePicker from "../components/TimeZonePicker.jsx";
+import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { initials } from "../components/Sidebar.jsx";
 import Button from "../components/ui/Button.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
@@ -153,6 +155,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { billing } = useAppConfig();
+  const { personalTimeZone, savePersonalTimeZone } = useWorkspace();
 
   const initial = new URLSearchParams(location.search).get("tab");
   const [tab, setTab] = useState(TABS.some((t) => t.id === initial) ? initial : "general");
@@ -200,6 +203,14 @@ export default function SettingsPage() {
                 <div className="muted-line">{user?.email || ""}</div>
               </div>
             </div>
+          </Card>
+
+          <Card style={{ marginTop: "1rem" }}>
+            <CardHeader
+              title="Time zone"
+              subtitle="Where your personal workspace is. Today, due dates and overdue follow its calendar; not set, they follow UTC. A team's is on its Team page."
+            />
+            <TimeZonePicker value={personalTimeZone} onSave={savePersonalTimeZone} />
           </Card>
 
           <TeamInvites style={{ marginTop: "1rem" }} />

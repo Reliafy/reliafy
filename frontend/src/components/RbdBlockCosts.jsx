@@ -3,6 +3,7 @@ import { getRcmMaintenanceTasks, listRcmStudies } from "../api.js";
 import { unitInText } from "./unitText.js";
 import { unitAbbr } from "./rbdModelText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import { workspaceToday } from "../workspaceDate.js";
 
 // A repairable block's costs and maintenance (#99, #100, #156, #157), edited in
 // the block dialog's Maintenance (or Proof test) and Costs sections (#314).
@@ -451,7 +452,7 @@ export function MaintenanceFields({ ctl, unit = "", groups = [] }) {
         filled: fill,
         sources: task.sources || {},
         ...(task.analysis_name ? { analysis: task.analysis_name } : {}),
-        filled_at: new Date().toISOString().slice(0, 10),
+        filled_at: workspaceToday(),
       },
     });
     setPicking(false);

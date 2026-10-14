@@ -140,12 +140,13 @@ def test_open_psa_mgl_of_three_comes_in_as_an_mgl_group():
 
 
 # ---------------------------------------------------------------------------
-# MCP: rbd_fault_tree
+# MCP: rbd_analysis fault_tree
 # ---------------------------------------------------------------------------
 def test_mcp_fault_tree_returns_the_shared_cause(env):
     g = _air()
     rbd = rbds_service.save_rbd(env.db, "Instrument air", g, A)
-    out = _ok(_call(env.token[A], "rbd_fault_tree", {"rbd_id": rbd.id, "t": T, "max_cut_sets": 8}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "fault_tree", "rbd_id": rbd.id, "t": T,
+                                                   "max_cut_sets": 8}))
     app = fault_tree(g, t=T)
     assert out["kind"] == "reliability" and out["t"] == T
     assert out["top_event_probability"] == pytest.approx(app["top_event_probability"], rel=1e-12)
@@ -156,7 +157,8 @@ def test_mcp_fault_tree_returns_the_shared_cause(env):
     shared = [c for c in out["cut_sets"]["listed"] if c["common_cause"]]
     assert shared and shared[0]["events"] == ["Common cause: Compressor A, Compressor B, Compressor C"]
     assert "gates" not in out
-    with_gates = _ok(_call(env.token[A], "rbd_fault_tree", {"rbd_id": rbd.id, "include_gates": True}))
+    with_gates = _ok(_call(env.token[A], "rbd_analysis", {"action": "fault_tree", "rbd_id": rbd.id,
+                                                          "include_gates": True}))
     assert with_gates["gates"][0]["id"] == "TOP" and with_gates["t"] == with_gates["t_default"]
     assert any(g["kind"] == "vote" for g in with_gates["gates"])
 
@@ -165,7 +167,7 @@ def test_mcp_fault_tree_of_a_repairable_diagram(env):
     from backend.tests.test_rbd_trains import _station
 
     rbd = rbds_service.save_rbd(env.db, "Station", _station(), A)
-    out = _ok(_call(env.token[A], "rbd_fault_tree", {"rbd_id": rbd.id, "t": 100}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "fault_tree", "rbd_id": rbd.id, "t": 100}))
     assert out["kind"] == "availability" and "t" not in out
     built = ra._build_repairable_rbd(_station())[0]
     assert out["unavailability"] == pytest.approx(1.0 - built.mean_availability(), rel=1e-9)

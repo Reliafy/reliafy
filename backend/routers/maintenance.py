@@ -25,6 +25,7 @@ from backend.maintenance.store import new_id
 from backend.maintenance.store import GraphStore, MongoEventLog
 from backend.schema import RcmStudy
 from backend.services import access as access_service
+from backend.services import time_zones
 from backend.services.access import AccessCtx, get_access
 
 router = APIRouter(prefix="/api/maintenance")
@@ -126,7 +127,7 @@ def get_store() -> GraphStore:
 def maintenance(ctx: AccessCtx = Depends(get_access)) -> Maintenance:
     if not allowed(ctx.user):
         raise HTTPException(status_code=404, detail="Not found.")
-    return Maintenance(get_store(), ctx.write_owner, ctx.uid)
+    return Maintenance(get_store(), ctx.write_owner, ctx.uid, time_zone=ctx.time_zone)
 
 
 class WriteDenied(Exception):
@@ -184,8 +185,9 @@ def _study(session, ctx: AccessCtx, study_id: str) -> RcmStudy:
 @router.get("/overview")
 def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {
-        "summary": summary(m), "tree": m.tree(), "due": m.due_tasks(30),
-        "open_work_orders": m.work_orders("open"), "proposals": m.proposals("pending"),
+        "summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
+        "due": m.due_tasks(30), "open_work_orders": m.work_orders("open"), "proposals": m.proposals("pending"),
+        "critical_spares": m.critical_spares_short(),
     })
 
 
@@ -198,8 +200,9 @@ def events(limit: int = 100, m: Maintenance = Depends(maintenance)) -> JSONRespo
 
 @router.post("/positions")
 def create_position(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A position; location_id (optional) says where it physically is."""
     return _run(m.create_position, body.get("name"), body.get("tag", ""), body.get("parent_id"),
-                body.get("position_class", ""), body.get("description", ""))
+                body.get("position_class", ""), body.get("description", ""), body.get("location_id"))
 
 
 @router.get("/positions/{position_id}")
@@ -210,21 +213,81 @@ def get_position(position_id: str, m: Maintenance = Depends(maintenance)) -> JSO
 @router.patch("/positions/{position_id}")
 def update_position(position_id: str, body: dict = Body(...),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Change a position; location_id sets where it is (null: it inherits its parent's)."""
     def go():
         m.update_position(position_id, **{k: body[k] for k in
-                                          ("name", "tag", "position_class", "description", "parent_id") if k in body})
+                                          ("name", "tag", "position_class", "description", "parent_id",
+                                           "location_id") if k in body})
         return m.position(position_id)
     return _run(go)
 
 
 @router.post("/positions/{position_id}/fit")
 def fit(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.fit, position_id, body.get("item_id"), body.get("new_item"), body.get("on"))
+    return _run(m.fit, position_id, body.get("item_id"), body.get("new_item"), body.get("on"),
+                body.get("from_precision"))
 
 
 @router.post("/positions/{position_id}/remove")
 def remove(position_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.remove, position_id, body.get("on"), body.get("reason", "planned"), body.get("failure_mode_id"))
+    """A failure names its mode by failure_mode_id, or in words (failure_mode_text)."""
+    return _run(m.remove, position_id, body.get("on"), body.get("reason"), body.get("failure_mode_id"),
+                body.get("failure_mode_text"), body.get("to_precision"))
+
+
+@router.post("/positions/{position_id}/past-fitments")
+def add_past_fitment(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A past fitment into the position's history: start, end, reason, an item (item_id or new_item)."""
+    return _run(m.add_past_fitment, position_id, body.get("start"), body.get("end"), body.get("reason"),
+                body.get("item_id"), body.get("new_item"), body.get("failure_mode_id"), body.get("failure_mode_text"),
+                body.get("from_precision"), body.get("to_precision"), body.get("note", ""))
+
+
+def _create_task(m: Maintenance, body: dict, **subject) -> JSONResponse:
+    return _run(m.create_task, subject.pop("position_id", None), body.get("name"), body.get("interval"),
+                body.get("unit") or "months", body.get("outcome"), body.get("also_interval"), body.get("also_unit"),
+                body.get("point_id"), body.get("instructions", ""), body.get("checklist"),
+                body.get("source") or "manual", body.get("reference", ""), body.get("failure_mode_id"),
+                body.get("last_done"), body.get("trade", ""), while_stored=body.get("while_stored"),
+                include_positions=body.get("include_positions"), **subject)
+
+
+@router.post("/positions/{position_id}/tasks")
+def create_task(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A scheduled task added by hand (not from an RCM study), on the position: it stays with the job."""
+    return _create_task(m, body, position_id=position_id)
+
+
+@router.post("/items/{item_id}/tasks")
+def create_item_task(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A task on an item: it follows the serial number wherever it goes (while_stored: run or pause)."""
+    return _create_task(m, body, item_id=item_id)
+
+
+@router.post("/locations/{location_id}/tasks")
+def create_location_task(location_id: str, body: dict = Body(...),
+                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A task on a location (a round, an area inspection), by the calendar; include_positions lists
+    the positions there on its work orders."""
+    return _create_task(m, body, location_id=location_id)
+
+
+@router.post("/positions/{position_id}/failure-modes")
+def add_failure_mode(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_failure_mode, position_id, body.get("text"), body.get("function", ""), body.get("failure", ""),
+                body.get("consequence", ""))
+
+
+@router.patch("/failure-modes/{mode_id}")
+def update_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_failure_mode, mode_id, **{k: body[k] for k in ("text", "function", "failure", "consequence")
+                                                   if k in body})
+
+
+@router.post("/failure-modes/{mode_id}/merge")
+def merge_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Fold this mode into another on the same position (into_id)."""
+    return _run(m.merge_failure_mode, mode_id, body.get("into_id"))
 
 
 @router.post("/positions/{position_id}/apply-rcm")
@@ -249,10 +312,16 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if body.get("last_done"):
             view = m.set_last_done(task_id, body["last_done"])
         if any(k in body for k in ("name", "interval", "unit", "also_interval", "also_unit", "point_id",
-                                   "instructions", "checklist")):
+                                   "instructions", "checklist", "failure_mode_id", "source", "reference",
+                                   "outcome", "trade", "while_stored", "include_positions")):
             view = m.update_task(task_id, body.get("name"), body.get("interval"), body.get("unit"),
                                  body.get("also_interval"), body.get("also_unit"), body.get("point_id"),
-                                 body.get("instructions"), body.get("checklist"))
+                                 body.get("instructions"), body.get("checklist"),
+                                 ("" if body["failure_mode_id"] is None else body["failure_mode_id"])
+                                 if "failure_mode_id" in body else None,
+                                 body.get("source"), body.get("reference"),
+                                 body["outcome"] if "outcome" in body else ..., body.get("trade"),
+                                 body.get("while_stored"), body.get("include_positions"))
         if view is None:
             raise Invalid("Nothing to change.")
         return view
@@ -277,7 +346,8 @@ def void_fitment(fitment_id: str, body: dict = Body(default={}), m: Maintenance 
 
 @router.patch("/fitments/{fitment_id}")
 def correct_fitment(fitment_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.correct_fitment, fitment_id, body.get("start"), body.get("end"))
+    return _run(m.correct_fitment, fitment_id, body.get("start"), body.get("end"), body.get("from_precision"),
+                body.get("to_precision"))
 
 
 @router.get("/classes/one")
@@ -289,6 +359,24 @@ def get_class(position_class: str, m: Maintenance = Depends(maintenance)) -> JSO
 def set_class_costs(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.set_class_costs, body.get("position_class"), body.get("planned_cost"), body.get("failure_cost"),
                 body.get("availability_target"))
+
+
+@router.put("/classes/replacement-cost")
+def set_class_replacement_cost(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A class's default replacement cost ({amount, currency, source, as_of}; null clears it)."""
+    return _run(m.set_class_replacement_cost, body.get("position_class"), body.get("replacement_cost"))
+
+
+@router.post("/documents")
+def add_document(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A link to a document on an item or position (target_id) or a class (position_class)."""
+    return _run(m.add_document, body.get("url"), body.get("title", ""), body.get("kind") or "other",
+                body.get("target_id"), body.get("position_class"))
+
+
+@router.delete("/documents/{document_id}")
+def remove_document(document_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.remove_document, document_id)
 
 
 @router.post("/classes/fit")
@@ -367,6 +455,14 @@ def add_point(position_id: str, body: dict = Body(...), m: Maintenance = Depends
                 body.get("source") or "manual", body.get("tag", ""), body.get("alarm_above"), body.get("alarm_below"))
 
 
+@router.post("/items/{item_id}/points")
+def add_item_point(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A measurement point on an item (its own hour meter): it travels with the item."""
+    return _run(m.add_point, None, body.get("name", ""), body.get("kind") or "condition", body.get("unit", ""),
+                body.get("source") or "manual", body.get("tag", ""), body.get("alarm_above"), body.get("alarm_below"),
+                item_id=item_id)
+
+
 @router.get("/points/{point_id}")
 def get_point(point_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.point, point_id)
@@ -384,8 +480,18 @@ def record_reading(point_id: str, body: dict = Body(...), m: Maintenance = Depen
 
 
 @router.post("/readings/{reading_id}/void")
-def void_reading(reading_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(lambda: (m.void_reading(reading_id), {"voided": reading_id})[1])
+def void_reading(reading_id: str, body: dict = Body(default={}),
+                 m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Strike out a manual reading, with the reason (required). Returns the point."""
+    return _run(m.void_reading, reading_id, body.get("reason", ""))
+
+
+@router.post("/readings/{reading_id}/correct")
+def correct_reading(reading_id: str, body: dict = Body(...),
+                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Correct a manual reading's value and/or date (``value``, ``on``), with the reason
+    (required): the original is struck out and the corrected one recorded. Returns the point."""
+    return _run(m.correct_reading, reading_id, body.get("value"), body.get("on"), body.get("reason", ""))
 
 
 @router.get("/settings")
@@ -451,14 +557,19 @@ def generate_rbd(position_id: str, session=Depends(get_session), m: Maintenance 
 # ---- items and locations ---------------------------------------------------------------
 
 @router.get("/items")
-def list_items(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {"items": m.items()})
+def list_items(item_class_id: str | None = None, manufacturer_id: str | None = None,
+               m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Items; item_class_id (with the classes inside it) and manufacturer_id filter them
+    ("none": those with none)."""
+    return _run(lambda: {"items": m.items(item_class_id, manufacturer_id)})
 
 
 @router.post("/items")
 def create_item(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(lambda: m.item(m.create_item(body.get("name"), body.get("serial", ""), body.get("part_number", ""),
-                                             body.get("manufacturer", ""), body.get("notes", ""))["id"]))
+                                             body.get("manufacturer", ""), body.get("notes", ""),
+                                             part_id=body.get("part_id"),
+                                             **{k: body[k] for k in Maintenance.ITEM_DETAILS if k in body})["id"]))
 
 
 @router.get("/items/{item_id}")
@@ -468,8 +579,20 @@ def get_item(item_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespons
 
 @router.patch("/items/{item_id}")
 def update_item(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.update_item, item_id, body.get("nameplate"),
-                **{k: body[k] for k in Maintenance.ITEM_FIELDS if k in body})
+    return _run(m.update_item, item_id, body.get("nameplate"), body.get("append_note"),
+                **{k: body[k] for k in (*Maintenance.ITEM_FIELDS, *Maintenance.ITEM_DETAILS) if k in body})
+
+
+@router.put("/items/{item_id}/attributes")
+def set_item_attributes(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{values: {attribute name: value}}: checked against the item's class."""
+    return _run(m.set_item_attributes, item_id, body.get("values"))
+
+
+@router.put("/items/{item_id}/part")
+def set_item_part(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{part_id}: the catalogue part (make and model) the item is; null unlinks it."""
+    return _run(m.set_item_part, item_id, body.get("part_id"))
 
 
 @router.post("/items/{item_id}/move")
@@ -492,6 +615,13 @@ def get_location(location_id: str, m: Maintenance = Depends(maintenance)) -> JSO
     return _run(m.location, location_id)
 
 
+@router.post("/locations/adopt-placements")
+def adopt_placements(body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Fitted items' placements as their positions' locations (a one-off tidy-up);
+    dry_run (default true) only lists what would change."""
+    return _run(m.adopt_placements, body.get("dry_run", True) is not False)
+
+
 @router.patch("/locations/{location_id}")
 def update_location(location_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     kwargs = {k: body[k] for k in ("name", "description", "parent_id") if k in body}
@@ -506,14 +636,22 @@ def create_location(body: dict = Body(...), m: Maintenance = Depends(maintenance
 # ---- work orders -------------------------------------------------------------------------
 
 @router.get("/work-orders")
-def list_work_orders(status: str | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {"work_orders": m.work_orders(status)})
+def list_work_orders(status: str | None = None, location_id: str | None = None,
+                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Work orders, newest first; status 'open' for every one not yet done; location_id for
+    the work in that area: on positions there, items there now, and the location itself (or
+    locations inside it)."""
+    return _run(lambda: {"work_orders": m.work_orders(status, location_id)})
 
 
 @router.post("/work-orders")
 def open_work_order(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """On a position, an item or a location (exactly one of position_id, item_id, location_id;
+    from a task, the task's when none is given). include_positions: a location's work order
+    lists the positions there on its checklist."""
     return _run(m.open_work_order, body.get("position_id"), body.get("title"), body.get("type", "corrective"),
-                body.get("task_id"), body.get("due"), body.get("notes", ""))
+                body.get("task_id"), body.get("due"), body.get("notes", ""), body.get("trade"),
+                body.get("item_id"), body.get("location_id"), body.get("include_positions"))
 
 
 @router.post("/work-orders/generate")
@@ -527,7 +665,8 @@ def update_work_order(work_order_id: str, body: dict = Body(...),
                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.update_work_order, work_order_id, body.get("title"), body.get("due") if "due" in body else None,
                 body.get("notes"), body.get("type"), body.get("assignee"),
-                body.get("planned_for") if "planned_for" in body else None)
+                body.get("planned_for") if "planned_for" in body else None, body.get("append_note"),
+                body.get("trade"))
 
 
 @router.post("/work-orders/{work_order_id}/status")
@@ -548,14 +687,16 @@ def add_part_used(work_order_id: str, body: dict = Body(...), m: Maintenance = D
 
 
 @router.get("/parts")
-def list_parts(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {"parts": m.parts()})
+def list_parts(item_class_id: str | None = None, manufacturer_id: str | None = None,
+               m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: {"parts": m.parts(item_class_id, manufacturer_id)})
 
 
 @router.post("/parts")
 def create_part(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.create_part, body.get("part_number"), body.get("name"), body.get("manufacturer", ""),
-                body.get("unit", "each"), body.get("unit_cost"), body.get("notes", ""))
+                body.get("unit", "each"), body.get("unit_cost"), body.get("notes", ""), body.get("item_class_id"),
+                body.get("manufacturer_id"))
 
 
 @router.get("/parts/{part_id}")
@@ -588,6 +729,157 @@ def supersede_part(part_id: str, body: dict = Body(...), m: Maintenance = Depend
 @router.post("/parts/{part_id}/interchangeable")
 def mark_interchangeable(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.mark_interchangeable, part_id, body.get("other_part_id"))
+
+
+# ---- item classes and manufacturers (optional) -------------------------------------------
+
+@router.get("/item-classes")
+def item_classes(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The item class tree with counts, and every class flat by path (for pickers)."""
+    return _run(lambda: {**m.item_class_tree(), "classes": m.item_classes()})
+
+
+@router.post("/item-classes")
+def create_item_class(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.create_item_class, body.get("name"), body.get("parent_id"), body.get("code", ""),
+                body.get("level", ""), body.get("description", ""), body.get("attributes"))
+
+
+@router.get("/item-classes/export")
+def export_item_classes(format: str = "json", m: Maintenance = Depends(maintenance)) -> Response:
+    from backend.maintenance import taxonomy
+
+    if format == "csv":
+        return Response(taxonomy.export_csv(m), media_type="text/csv",
+                        headers={"Content-Disposition": 'attachment; filename="item-classes.csv"'})
+    out = _run(taxonomy.export_json, m)
+    out.headers["Content-Disposition"] = 'attachment; filename="item-classes.json"'
+    return out
+
+
+@router.post("/item-classes/import")
+def import_item_classes(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A taxonomy as CSV or JSON text ({format: csv | json, text, dry_run, source}) or as
+    {classes: [...]}. A dry run (the default) only reports."""
+    from backend.maintenance import taxonomy
+
+    def go():
+        if body.get("classes") is not None:
+            rows = taxonomy.rows_from_json(body["classes"])
+        elif body.get("format") == "csv":
+            rows = taxonomy.rows_from_csv(str(body.get("text") or ""))
+        else:
+            rows = taxonomy.rows_from_json(str(body.get("text") or ""))
+        return taxonomy.run(m, rows, body.get("dry_run", True) is not False, body.get("source") or "imported")
+    return _run(go)
+
+
+@router.post("/item-classes/starter")
+def load_starter_item_classes(body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The Reliafy starter taxonomy, only on request; {dry_run} (default true)."""
+    from backend.maintenance import taxonomy
+
+    return _run(taxonomy.load_starter, m, body.get("dry_run", True) is not False)
+
+
+@router.post("/item-classes/assign")
+def assign_item_class(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{target_id: an item or part, item_class_id (null takes it away)}."""
+    return _run(m.assign_item_class, body.get("target_id"), body.get("item_class_id"))
+
+
+@router.get("/item-classes/{class_id}")
+def get_item_class(class_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.item_class, class_id)
+
+
+@router.patch("/item-classes/{class_id}")
+def update_item_class(class_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """name, code, level, description, attributes; parent_id moves it (null: to the top)."""
+    return _run(m.update_item_class, class_id, **{k: body[k] for k in (
+        "name", "code", "level", "description", "parent_id", "attributes") if k in body})
+
+
+@router.post("/item-classes/{class_id}/retire")
+def retire_item_class(class_id: str, body: dict = Body(default={}),
+                      m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(lambda: (m.retire_item_class(class_id, body.get("reason", "")), {"retired": class_id})[1])
+
+
+@router.get("/manufacturers")
+def list_manufacturers(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(lambda: {"manufacturers": m.manufacturers()})
+
+
+@router.post("/manufacturers")
+def create_manufacturer(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.create_manufacturer, body.get("name"), body.get("aliases") or [])
+
+
+@router.get("/manufacturers/match")
+def match_manufacturer(text: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.match_manufacturer, text)
+
+
+@router.post("/manufacturers/link")
+def link_manufacturer(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{target_id: an item or part, manufacturer_id (null unlinks it)}."""
+    return _run(m.link_manufacturer, body.get("target_id"), body.get("manufacturer_id"))
+
+
+@router.post("/manufacturers/link-by-name")
+def link_manufacturers_by_name(body: dict = Body(default={}),
+                               m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.link_manufacturers_by_name, body.get("dry_run", True) is not False)
+
+
+@router.get("/manufacturers/{manufacturer_id}")
+def get_manufacturer(manufacturer_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.manufacturer, manufacturer_id)
+
+
+@router.patch("/manufacturers/{manufacturer_id}")
+def update_manufacturer(manufacturer_id: str, body: dict = Body(...),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """name; add_aliases, remove_aliases."""
+    return _run(m.update_manufacturer, manufacturer_id, body.get("name"), body.get("add_aliases") or [],
+                body.get("remove_aliases") or [])
+
+
+@router.post("/manufacturers/{manufacturer_id}/merge")
+def merge_manufacturers(manufacturer_id: str, body: dict = Body(...),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.merge_manufacturers, manufacturer_id, body.get("into_id"))
+
+
+# ---- a position's parts list, and where the spares fall short -----------------------------
+
+@router.get("/positions/{position_id}/parts")
+def position_parts(position_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.position_parts, position_id)
+
+
+@router.post("/positions/{position_id}/parts")
+def add_position_part(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_position_part, position_id, body.get("part_id"), body.get("role") or "component",
+                body.get("quantity", 1), body.get("critical", False), body.get("min_on_hand"), body.get("notes", ""))
+
+
+@router.patch("/position-parts/{listing_id}")
+def update_position_part(listing_id: str, body: dict = Body(...),
+                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_position_part, listing_id, body.get("role"), body.get("quantity"), body.get("critical"),
+                body["min_on_hand"] if "min_on_hand" in body else ..., body.get("notes"))
+
+
+@router.delete("/position-parts/{listing_id}")
+def remove_position_part(listing_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.remove_position_part, listing_id)
+
+
+@router.get("/spares")
+def spares_cover(include_unlisted: bool = False, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.spares_cover, include_unlisted)
 
 
 @router.post("/work-orders/{work_order_id}/costs")
@@ -751,12 +1043,17 @@ def _reserve(link_id: str, t: str) -> tuple[dict | None, JSONResponse | None]:
     return doc, None
 
 
+def _by_link(doc: dict) -> Maintenance:
+    """The workspace an upload link adds to, in its time zone."""
+    return Maintenance(get_store(), doc["org"], doc["uid"], time_zone=time_zones.of_owner(get_db(), doc["org"]))
+
+
 def _store_by_link(doc: dict, raw: bytes) -> JSONResponse:
     """Clean, store and record a photo sent through a link whose place is
     reserved; the place is given back if the photo isn't kept."""
     links = photo_links()
     try:
-        m = Maintenance(get_store(), doc["org"], doc["uid"])
+        m = _by_link(doc)
         result = ingest_photo(m, doc["target_id"], raw, doc.get("caption", ""), "link")
     except photos_mod.Busy as err:
         links.release(doc["_id"])
@@ -808,7 +1105,7 @@ def answer_location(link_id: str, t: str = "", body: dict = Body(...)) -> JSONRe
     if offer is None:
         return JSONResponse(status_code=404, content={"detail": "No location to answer for that photo."})
     if save:
-        m = Maintenance(get_store(), doc["org"], doc["uid"])
+        m = _by_link(doc)
         try:
             m.set_coordinates(doc["target_id"], offer["lat"], offer["lon"], "photo")
         except (Invalid, NotFound) as err:

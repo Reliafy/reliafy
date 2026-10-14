@@ -140,6 +140,33 @@ def rename_study(db, study_id: str, name: str, owner_id: str) -> RcmStudy:
     return study
 
 
+def update_details(db, study_id: str, owner_id: str, name: str | None = None, system: str | None = None,
+                   description: str | None = None) -> RcmStudy:
+    """Change a study's name, system or description (``None`` leaves one as
+    it is); the worksheet is untouched."""
+    study = get_study(db, study_id, owner_id)
+    if study is None or study.owner_id != owner_id:
+        raise StudyNotFound(study_id)
+    changes = {}
+    if name is not None:
+        if not name.strip():
+            raise RcmValidationError("The study needs a name.")
+        changes["name"] = name.strip()
+    if system is not None:
+        changes["system"] = system.strip()
+    if description is not None:
+        changes["description"] = description.strip()
+    if not changes:
+        return study
+    study = study.model_copy(update=changes)
+    study.updated_at = access.next_updated_at(study.updated_at)
+    db.rcm_studies.update_one(
+        {"_id": study_id, "owner_id": owner_id},
+        {"$set": {**changes, "updated_at": study.updated_at}},
+    )
+    return study
+
+
 def delete_study(db, study_id: str, owner_id: str) -> None:
     result = db.rcm_studies.delete_one({"_id": study_id, "owner_id": owner_id})
     if result.deleted_count == 0:

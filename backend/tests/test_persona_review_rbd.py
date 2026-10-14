@@ -1,7 +1,7 @@
 """Regression tests for the persona review of 5 Oct (#265): safety and RBD
 agent UX — a safety function without proof tests, the headline availability
 with common cause, stage components' maintenance and costs, the refusals'
-edit_rbd ops, structure_summary, times vs curve, summary_only, the proof-test
+rbd edit ops, structure_summary, times vs curve, summary_only, the proof-test
 saw-tooth note and one spelling per unit.
 
 Through the real MCP mount (helpers and the ``env`` fixture from test_mcp)
@@ -30,7 +30,7 @@ def _untested_sif(**extra):
 
 
 def _analyze(env, rid, **kw):
-    return _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, **kw}))
+    return _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, **kw}))
 
 
 def _stage(label, *names, k=None, **extra):
@@ -50,9 +50,9 @@ def test_safety_function_without_proof_tests_warns_everywhere(env):
     assert safety["warning"] == availability_answer.NO_PROOF_TESTS_AGENT
     assert safety["sil"] is not None and safety["sil_optimistic"] is True
     assert "optimistic" in safety["sil_note"]
-    # ...and the answer's warnings, worded with the edit_rbd op for an agent.
+    # ...and the answer's warnings, worded with the rbd edit op for an agent.
     assert availability_answer.NO_PROOF_TESTS_AGENT in out["warnings"]
-    assert "edit_rbd update_node inspection" in availability_answer.NO_PROOF_TESTS_AGENT
+    assert "rbd edit update_node inspection" in availability_answer.NO_PROOF_TESTS_AGENT
     assert "revealed and repaired at once" in availability_answer.NO_PROOF_TESTS_AGENT
 
 
@@ -85,25 +85,26 @@ def test_no_band_no_optimistic_flag():
 
 
 def test_create_rbd_validation_warns_a_safety_function_without_proof_tests(env):
-    out = _ok(_call(env.token[A], "create_rbd", {"name": "SIF", "repairable": True, "safety_function": True,
+    out = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "SIF", "repairable": True,
+                                          "safety_function": True,
                                                  "stages": [_stage("Valves", "Valve A", "Valve B")]}))
-    # The app's Validate says it (in its words); an agent gets the edit_rbd op.
+    # The app's Validate says it (in its words); an agent gets the rbd edit op.
     graph = env.db.rbds.find_one({"_id": out["id"]})["graph"]
     assert rbd_policies.NO_PROOF_TESTS in rbd_policies.validation_warnings(graph)
     agent = availability_answer.NO_PROOF_TESTS_AGENT
     assert agent in out["warnings"]
-    tested = _ok(_call(env.token[A], "create_rbd", {
+    tested = _ok(_call(env.token[A], "rbd", {"action": "create",
         "name": "SIF", "repairable": True, "safety_function": True,
         "stages": [_stage("Valves", "Valve A", "Valve B", **{n: {"inspection": {"interval": 8760}}
                                                               for n in ("Valve A", "Valve B")})]}))
     assert agent not in tested["warnings"]
     # Not a safety function: nothing to say.
-    plain = _ok(_call(env.token[A], "create_rbd", {"name": "x", "repairable": True,
+    plain = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "x", "repairable": True,
                                                    "stages": REPAIRABLE_STAGES}))
     assert agent not in plain["warnings"]
     # Adding the proof tests by edit takes it away; it isn't repeated on other edits.
     ops = [{"op": "update_node", "ids": ["s0c0", "s0c1"], "inspection": {"interval": 8760}}]
-    edited = _ok(_call(env.token[A], "edit_rbd", {"rbd_id": out["id"], "ops": ops}))
+    edited = _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": out["id"], "ops": ops}))
     assert agent not in edited["warnings"]
 
 
@@ -135,44 +136,44 @@ def test_non_safety_diagram_headline_is_unchanged(env):
     assert "safety" not in out
 
 
-# ---- 5. stage components take maintenance and costs; refusals give edit_rbd ops ---------------
+# ---- 5. stage components take maintenance and costs; refusals give rbd edit ops ---------------
 
 def test_stage_components_take_inspection_preventive_and_costs(env):
     stages = [_stage("Logic", "PLC", **{"PLC": {"costs": {"repair": 100, "acquisition": 5000}}}),
               _stage("Valves", "Valve A", "Valve B",
                      **{"Valve A": {"inspection": {"interval": 4380, "cost": 200, "offset": 2190}},
                         "Valve B": {"preventive": {"policy": "age", "interval": 20000, "cost": 900}}})]
-    out = _ok(_call(env.token[A], "create_rbd", {"name": "S", "repairable": True, "stages": stages}))
+    out = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "S", "repairable": True, "stages": stages}))
     data = {n["id"]: n["data"] for n in env.db.rbds.find_one({"_id": out["id"]})["graph"]["nodes"]}
     assert data["s0c0"]["costs"] == {"repair": 100, "acquisition": 5000}
     assert data["s1c0"]["inspection"] == {"interval": 4380, "cost": 200, "offset": 2190}
     assert data["s1c1"]["preventive"] == {"policy": "age", "interval": 20000, "cost": 900}
-    # The same shapes as edit_rbd update_node takes (the schema is shared).
+    # The same shapes as rbd edit update_node takes (the schema is shared).
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    comp = tools["create_rbd"].input_schema["$defs"]["StageComponent"]["properties"]
+    comp = tools["rbd"].input_schema["$defs"]["StageComponent"]["properties"]
     assert {"inspection", "preventive", "costs"} <= set(comp)
 
 
 def test_stage_maintenance_is_refused_where_it_cant_apply(env):
     stages = [_stage("Valves", "Valve A", **{"Valve A": {"inspection": {"interval": 100}}})]
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "S", "stages": stages}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "S", "stages": stages}))
     assert "repairable" in msg and "inspection" in msg
     both = [_stage("Valves", "Valve A", **{"Valve A": {"inspection": {"interval": 100},
                                                        "preventive": {"interval": 50}}})]
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "S", "repairable": True, "stages": both}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "S", "repairable": True, "stages": both}))
     assert "not both" in msg
 
 
 def _proof_tested(env, **diagram):
     stages = [_stage("Valves", "Valve A", "Valve B", **{n: {"inspection": {"interval": 4380}}
                                                         for n in ("Valve A", "Valve B")})]
-    return _ok(_call(env.token[A], "create_rbd", {"name": "S", "repairable": True, "stages": stages,
+    return _ok(_call(env.token[A], "rbd", {"action": "create", "name": "S", "repairable": True, "stages": stages,
                                                   **diagram}))["id"]
 
 
 def test_optimise_intervals_refusal_gives_the_edit_rbd_ops(env):
     rid = _proof_tested(env)
-    msg = _err(_call(env.token[A], "optimise_maintenance_intervals", {"rbd_id": rid}))
+    msg = _err(_call(env.token[A], "rbd_analysis", {"action": "optimise_intervals", "rbd_id": rid}))
     assert "Nothing is priced" in msg
     assert "double-click" not in msg and "Cost & maintenance" not in msg
     ops = json.loads(msg[msg.index("["):msg.index("]", msg.rindex("downtime_rate")) + 1])
@@ -182,15 +183,15 @@ def test_optimise_intervals_refusal_gives_the_edit_rbd_ops(env):
     assert {"op": "set", "costs": {"downtime_rate": "<cost per unit time the whole system is down>"}} in ops
     # Sent as given (numbers filled in), they make it answer.
     filled = [{**op, "inspection": {**op["inspection"], "cost": 300}} for op in ops if op["op"] == "update_node"]
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rid, "ops": filled}))
-    out = _ok(_call(env.token[A], "optimise_maintenance_intervals", {"rbd_id": rid}))
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": filled}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "optimise_intervals", "rbd_id": rid}))
     assert out["available"] is True
 
 
 def test_optimise_intervals_without_schedules_says_how_to_add_them(env):
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "x", "repairable": True,
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "x", "repairable": True,
                                                  "stages": REPAIRABLE_STAGES}))["id"]
-    msg = _err(_call(env.token[A], "optimise_maintenance_intervals", {"rbd_id": rid}))
+    msg = _err(_call(env.token[A], "rbd_analysis", {"action": "optimise_intervals", "rbd_id": rid}))
     assert "No block has scheduled replacement" in msg and "double-click" not in msg
     assert '"inspection": {"interval": "<time between tests>"' in msg and '"preventive": {"policy": "age"' in msg
     assert "Component block ids: s0c0, s1c0, s1c1" in msg
@@ -198,26 +199,27 @@ def test_optimise_intervals_without_schedules_says_how_to_add_them(env):
 
 def test_cheapest_design_refusal_no_longer_points_at_the_app(pro):
     rid = _proof_tested(pro, costs={"horizon": 87600})
-    msg = _err(_call(pro.token[A], "cheapest_design", {"rbd_id": rid}))
+    msg = _err(_call(pro.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
     assert "purchase price" in msg and "costs: {acquisition:" in msg
     assert "Cost & maintenance" not in msg and "Component block ids: s0c0, s0c1" in msg
 
 
-# ---- 6. structure_summary on create_rbd and edit_rbd -----------------------------------------
+# ---- 6. structure_summary on rbd create and rbd edit -----------------------------------------
 
 def test_create_rbd_returns_the_structure_in_one_line(env):
-    out = _ok(_call(env.token[A], "create_rbd", {"name": "x", "nodes": GRAPH["nodes"], "edges": GRAPH["edges"]}))
+    out = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "x", "nodes": GRAPH["nodes"],
+                                          "edges": GRAPH["edges"]}))
     assert out["structure_summary"] == "Controller → (Pump A ∥ Pump B)"
     stages = [_stage("Logic", "PLC"), _stage("Pumps", "P1", "P2", "P3", k=2)]
-    voted = _ok(_call(env.token[A], "create_rbd", {"name": "v", "repairable": True, "stages": stages}))
+    voted = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "v", "repairable": True, "stages": stages}))
     assert voted["structure_summary"] == "PLC → 2-of-3(P1, P2, P3)"
 
 
 def test_edit_rbd_returns_the_new_structure(env):
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "x", "nodes": GRAPH["nodes"],
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "x", "nodes": GRAPH["nodes"],
                                                  "edges": GRAPH["edges"]}))["id"]
     node = {"id": "v", "type": "component", "label": "Valve", "model": GRAPH["nodes"][1]["model"]}
-    out = _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rid, "ops": [
+    out = _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
         {"op": "add_node", "node": node, "after": "ctl"}]}))
     assert out["structure_summary"] == "Controller → Valve → (Pump A ∥ Pump B)"
 
@@ -228,7 +230,7 @@ def test_a_bridge_says_it_isnt_series_parallel(env):
              *({"id": i, "type": "component", "label": i, "model": m} for i in ("a", "b", "c", "d", "e"))]
     edges = [("input", "a"), ("input", "b"), ("a", "c"), ("b", "d"), ("a", "e"), ("e", "d"), ("c", "output"),
              ("d", "output")]
-    out = _ok(_call(env.token[A], "create_rbd", {"name": "bridge", "nodes": nodes,
+    out = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "bridge", "nodes": nodes,
                                                  "edges": [{"source": s, "target": t} for s, t in edges]}))
     assert out["structure_summary"].startswith("Not series-parallel (e.g. a bridge): 5 blocks, 8 connections")
 
@@ -237,9 +239,9 @@ def test_a_bridge_says_it_isnt_series_parallel(env):
 
 def test_analyze_rbd_documents_times_against_the_curve(env):
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    times = " ".join(tools["analyze_rbd"].input_schema["properties"]["times"]["description"].split())
+    times = " ".join(tools["rbd_analysis"].input_schema["properties"]["times"]["description"].split())
     assert "reliability_at" in times and "don't change `curve`" in times and "t_max" in times
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "x", "nodes": GRAPH["nodes"],
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "x", "nodes": GRAPH["nodes"],
                                                  "edges": GRAPH["edges"]}))["id"]
     out = _analyze(env, rid, times=[123.0])
     assert [p["t"] for p in out["reliability_at"]] == [123.0]
@@ -249,7 +251,7 @@ def test_analyze_rbd_documents_times_against_the_curve(env):
 # ---- 10. summary_only ------------------------------------------------------------------------
 
 def test_summary_only_non_repairable(env):
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "x", "nodes": GRAPH["nodes"],
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "x", "nodes": GRAPH["nodes"],
                                                  "edges": GRAPH["edges"]}))["id"]
     full = _analyze(env, rid, times=[100.0])
     lean = _analyze(env, rid, times=[100.0], summary_only=True)
@@ -303,20 +305,20 @@ def test_canonical_unit(typed, stored):
 
 
 def test_units_are_stored_in_one_spelling(env):
-    out = _ok(_call(env.token[A], "create_rbd", {"name": "x", "unit": "hrs", "nodes": GRAPH["nodes"],
+    out = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "x", "unit": "hrs", "nodes": GRAPH["nodes"],
                                                  "edges": GRAPH["edges"]}))
     assert out["unit"] == "Hours"
     assert env.db.rbds.find_one({"_id": out["id"]})["graph"]["unit"] == "Hours"
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": out["id"], "ops": [{"op": "set", "unit": "cycles"}]}))
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": out["id"], "ops": [{"op": "set", "unit": "cycles"}]}))
     assert env.db.rbds.find_one({"_id": out["id"]})["graph"]["unit"] == "Cycles"
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": out["id"], "ops": [{"op": "set", "unit": "furlongs"}]}))
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": out["id"], "ops": [{"op": "set", "unit": "furlongs"}]}))
     assert env.db.rbds.find_one({"_id": out["id"]})["graph"]["unit"] == "furlongs"  # unknown: as typed
 
 
 def test_a_diagram_stored_in_another_spelling_keeps_its_saved_results(pro):
     """A diagram saved as "hours" before #265 shows "Hours", keeps its stored
     spelling on a save, and its saved simulation still matches."""
-    rid = _ok(_call(pro.token[A], "create_rbd", {"name": "x", "repairable": True,
+    rid = _ok(_call(pro.token[A], "rbd", {"action": "create", "name": "x", "repairable": True,
                                                  "stages": REPAIRABLE_STAGES}))["id"]
     pro.db.rbds.update_one({"_id": rid}, {"$set": {"graph.unit": "hours"}})
     _analyze(pro, rid, simulate=True)
@@ -326,17 +328,17 @@ def test_a_diagram_stored_in_another_spelling_keeps_its_saved_results(pro):
     assert legacy != rbds_service.availability_cache_key(doc["graph"])
     pro.db.rbds.update_one({"_id": rid}, {"$set": {"availability_cache.key": legacy}})
 
-    got = _ok(_call(pro.token[A], "get_rbd", {"rbd_id": rid}))
+    got = _ok(_call(pro.token[A], "get", {"kind": "rbd", "id": rid}))
     assert got["unit"] == "Hours" and got["graph"]["unit"] == "Hours"
     again = _analyze(pro, rid)
     assert again["cached"] is True and again["has_simulation"] is True
     # A save (a rename-only edit) keeps "hours", so the key goes on matching.
-    _ok(_call(pro.token[A], "edit_rbd", {"rbd_id": rid, "ops": [{"op": "set", "name": "renamed"}]}))
+    _ok(_call(pro.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [{"op": "set", "name": "renamed"}]}))
     assert pro.db.rbds.find_one({"_id": rid})["graph"]["unit"] == "hours"
     assert _analyze(pro, rid)["cached"] is True
     # And an edit the analysis sees still says the saved simulation is out of date.
     model = {"distribution_id": "weibull", "params": [{"name": "alpha", "value": 500}, {"name": "beta", "value": 1.2}]}
-    edited = _ok(_call(pro.token[A], "edit_rbd", {"rbd_id": rid, "ops": [
+    edited = _ok(_call(pro.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
         {"op": "update_node", "id": "s1c0", "model": model}]}))
     assert "simulation_note" in edited
 

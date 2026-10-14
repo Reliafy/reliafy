@@ -58,7 +58,8 @@ def env(monkeypatch):
     Env.release.set()
 
 
-BODY = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "list_datasets", "arguments": {}}}
+BODY = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "list", "arguments": {"kind": "datasets"}}}
 
 
 def _headers(token):
@@ -187,7 +188,13 @@ def test_tool_calls_leave_the_app_worker_pool_free(env):
             r = await hc.get("/.well-known/oauth-authorization-server")
             assert r.status_code == 200
             assert time.monotonic() - started < 1.0
-            assert anyio.to_thread.current_default_thread_limiter().borrowed_tokens == 0
+            # The other calls in the burst pass through the app's worker pool
+            # briefly (sign-in, setup) on their way to a slot or a refusal; with
+            # every tool call still held, the pool must drain all the same.
+            pool = anyio.to_thread.current_default_thread_limiter()
+            await _wait_for(lambda: pool.borrowed_tokens == 0, seconds=3.0)
+            assert env.running == min(len(USERS) * mcp_server.MCP_USER_CONCURRENCY,
+                                      mcp_server.MCP_GLOBAL_CONCURRENCY)
             env.release.set()
 
     _serve(scenario)
@@ -228,12 +235,13 @@ def test_slots_are_given_back_when_a_tool_raises():
     assert mcp_server._SLOTS.running("u") == 0 and mcp_server._SLOTS.running() == 0
 
 
-def test_heavy_tools_are_registered_tools():
+def test_heavy_tools_are_registered_actions():
+    """Heavy slots and the data notice go by tool.action: each names a real action."""
     from backend import mcp_server
 
-    names = {t.name for t in anyio.run(mcp_server.mcp.list_tools)}
-    assert mcp_server.HEAVY_TOOLS <= names
-    assert mcp_server.TEXT_RESULT_TOOLS <= names
+    calls = {f"{tool}.{value}" for tool, (_, table) in mcp_server.TABLES.items() for value in table}
+    assert mcp_server.HEAVY_TOOLS <= calls
+    assert mcp_server.TEXT_RESULT_TOOLS <= calls
 
 
 def test_heavy_calculations_have_a_smaller_limit_of_their_own():
@@ -298,7 +306,7 @@ def test_inline_fit_data_is_capped_in_the_schema():
     from backend import mcp_server
 
     tools = {t.name: t for t in anyio.run(mcp_server.mcp.list_tools)}
-    for name in ("fit_distribution", "fit_and_save_model", "compare_groups"):
+    for name in ("life_data_analysis", "models"):  # fit, compare_groups; fit, fit_alt
         prop = tools[name].input_schema["properties"]["data"]
         schemas = prop.get("anyOf", [prop])
         assert any(s.get("maxItems") == mcp_server._INLINE_MAX_ROWS for s in schemas), name

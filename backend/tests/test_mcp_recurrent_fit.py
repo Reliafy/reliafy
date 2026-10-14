@@ -1,5 +1,5 @@
-"""Recurrent models over MCP (#65, #137): fit_recurrent_model, and what
-get_model / next_failure / optimal_overhaul say about the new families. The
+"""Recurrent models over MCP (#65, #137): models fit_recurrent, and what
+get kind model / next_failure / strategy optimal_overhaul say about the new families. The
 fits are the app's (backend.recurrent, checked against SurPyval in
 test_recurrent_models). The helpers and ``env`` fixture come from test_mcp.
 """
@@ -31,7 +31,7 @@ def _pumps() -> pd.DataFrame:
 
 def test_fit_recurrent_model_inline_crow_amsaa_matches_the_app_and_saves(env):
     df = _compressors()
-    out = _ok(_call(env.token[A], "fit_recurrent_model", {
+    out = _ok(_call(env.token[A], "models", {"action": "fit_recurrent",
         "name": "Compressors", "model": "crow_amsaa", "times": df.hours.tolist(), "systems": df.compressor.tolist(),
         "observed_to": 5000, "causes": df.failure_mode.tolist(), "unit": "hours"}))
     ref, _ = rec.fit(df, {"i": "compressor", "x": "hours", "t": "test_end", "mode": "failure_mode"}, "crow_amsaa",
@@ -44,7 +44,8 @@ def test_fit_recurrent_model_inline_crow_amsaa_matches_the_app_and_saves(env):
     assert doc["spec"]["mapping"] == {"i": "system", "x": "time", "tr": "observed_to", "mode": "cause"}
 
     # The saved model works with the minimal-repair tools.
-    ov = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": out["model_id"], "cost_repair": 100,
+    ov = _ok(_call(env.token[A], "strategy", {"action": "optimal_overhaul", "model_id": out["model_id"],
+                                              "cost_repair": 100,
                                                       "cost_overhaul": 2000}))
     assert ov["optimal"]["interval"] > 0
 
@@ -52,8 +53,8 @@ def test_fit_recurrent_model_inline_crow_amsaa_matches_the_app_and_saves(env):
 def test_fit_recurrent_model_imperfect_repair_from_a_dataset(env):
     a = env.token[A]
     df = _compressors()
-    ds = _ok(_call(a, "upload_dataset", {"name": "Compressors", "csv": df.to_csv(index=False)}))
-    out = _ok(_call(a, "fit_recurrent_model", {
+    ds = _ok(_call(a, "datasets", {"action": "upload", "name": "Compressors", "csv": df.to_csv(index=False)}))
+    out = _ok(_call(a, "models", {"action": "fit_recurrent",
         "name": "Compressors GRP", "model": "grp_ii", "dataset_id": ds["id"], "system_column": "compressor",
         "time_column": "hours", "observed_to_column": "test_end", "unit": "hours"}))
     rest = out["repair_effectiveness"]
@@ -61,18 +62,19 @@ def test_fit_recurrent_model_imperfect_repair_from_a_dataset(env):
     assert out["repair_test"]["verdict"] == "partial"
     assert len(out["next_failure_by_system"]) == 4 and out["family"] == "renewal"
 
-    got = _ok(_call(a, "get_model", {"model_id": out["model_id"]}))
+    got = _ok(_call(a, "get", {"kind": "model", "id": out["model_id"]}))
     assert got["repair_test"]["verdict"] == "partial" and got["next_failure_by_system"]
-    nf = _ok(_call(a, "next_failure", {"model_id": out["model_id"], "age": 0, "within": [500]}))
+    nf = _ok(_call(a, "repairable_analysis", {"action": "next_failure", "model_id": out["model_id"], "age": 0,
+                                              "within": [500]}))
     assert 0 < nf["within"][0]["prob_failure"] < 1 and "Imperfect repair" in nf["assumption"]
-    msg = _err(_call(a, "optimal_overhaul", {"model_id": out["model_id"], "cost_repair": 100,
+    msg = _err(_call(a, "strategy", {"action": "optimal_overhaul", "model_id": out["model_id"], "cost_repair": 100,
                                              "cost_overhaul": 2000}))
     assert "minimal-repair model" in msg
 
 
 def test_fit_recurrent_model_covariates_without_saving(env):
     df = _pumps()
-    out = _ok(_call(env.token[A], "fit_recurrent_model", {
+    out = _ok(_call(env.token[A], "models", {"action": "fit_recurrent",
         "model": "pi_nhpp", "save": False, "times": df.hours.tolist(), "systems": df.pump.tolist(),
         "observed_to": df.observed_to.tolist(),
         "covariates": {"site": df.site.tolist(), "duty_pct": df.duty_pct.tolist()}, "unit": "hours"}))
@@ -89,17 +91,17 @@ def test_fit_recurrent_model_windows_and_plain_errors(env):
     a = env.token[A]
     df = _compressors()
     gapped = df[~((df.compressor == "CMP-1") & (df.hours > 2100) & (df.hours <= 2700))]
-    out = _ok(_call(a, "fit_recurrent_model", {
+    out = _ok(_call(a, "models", {"action": "fit_recurrent",
         "model": "crow_amsaa", "save": False, "times": gapped.hours.tolist(), "systems": gapped.compressor.tolist(),
         "observed_to": 5000, "windows": {"CMP-1": [[0, 2100], [2700, 5000]]}}))
     assert out["observation_gaps"]["systems_with_gaps"] == 1
-    assert "name" in _err(_call(a, "fit_recurrent_model", {"times": [1, 2], "systems": ["a", "a"]}))
-    assert "exactly one" in _err(_call(a, "fit_recurrent_model", {"name": "X"}))
-    assert "covariate" in _err(_call(a, "fit_recurrent_model", {
+    assert "name" in _err(_call(a, "models", {"action": "fit_recurrent", "times": [1, 2], "systems": ["a", "a"]}))
+    assert "exactly one" in _err(_call(a, "models", {"action": "fit_recurrent", "name": "X"}))
+    assert "covariate" in _err(_call(a, "models", {"action": "fit_recurrent",
         "name": "X", "model": "pi_nhpp", "times": df.hours.tolist(), "systems": df.compressor.tolist()}))
 
 
 def test_fit_recurrent_model_is_pro_only():
     from backend.mcp_server import PRO_ONLY_TOOLS
 
-    assert "fit_recurrent_model" in PRO_ONLY_TOOLS
+    assert "models.fit_recurrent" in PRO_ONLY_TOOLS

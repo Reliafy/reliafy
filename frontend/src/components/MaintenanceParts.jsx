@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { decideProposal } from "../api.js";
+import { addMaintenanceDocument, decideProposal, removeMaintenanceDocument } from "../api.js";
+import {
+  DOCUMENT_KINDS, PRECISIONS, datedText, daysText, roughDateInput, roughDateValue, safeHref,
+} from "../maintenanceFields.js";
+import { locationOptions } from "../maintenanceLocations.js";
 import Modal from "./Modal.jsx";
 
 // Shared pieces for the Reliafy Maintenance pages.
@@ -11,9 +15,13 @@ export function fmtDate(iso) {
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function today() {
-  return new Date().toISOString().slice(0, 10);
+// A date as it's known: "2022", "Mar 2022", "~Mar 2022", or the day.
+export function fmtDated(iso, precision) {
+  return datedText(iso, precision, fmtDate);
 }
+
+// Today in the workspace's time zone (what the server dates things by).
+export { workspaceToday as today } from "../workspaceDate.js";
 
 // Every position in a tree, depth-first, with its depth (for pickers).
 export function flatten(tree, depth = 0, out = []) {
@@ -33,6 +41,105 @@ export function Field({ label, children }) {
   );
 }
 
+// A date that may be known only to the month or year, or estimated: its
+// precision, and an input to match. `value` is {text, precision}; onChange gets
+// the same, and `roughDateValue(text, precision)` is what to send.
+export function RoughDateField({ label, value, onChange, max }) {
+  const { text, precision } = value;
+  const setPrecision = (next) => {
+    const sent = roughDateValue(text, precision);
+    const keep = next === "year" ? sent.slice(0, 4) : next === "month" ? (sent.length >= 7 ? sent.slice(0, 7) : "")
+      : sent.length === 10 ? sent : "";
+    onChange({ text: keep, precision: next });
+  };
+  const input = precision === "year"
+    ? <input type="number" inputMode="numeric" min="1900" max="2199" placeholder="e.g. 2022" value={text}
+             onChange={(e) => onChange({ text: e.target.value, precision })} />
+    : precision === "month"
+      ? <input type="month" placeholder="e.g. 2022-03" value={text} max={max ? max.slice(0, 7) : undefined}
+               onChange={(e) => onChange({ text: e.target.value, precision })} />
+      : <input type="date" value={text} max={max} onChange={(e) => onChange({ text: e.target.value, precision })} />;
+  return (
+    <Field label={label}>
+      <div className="maint-row" style={{ marginTop: 0 }}>
+        <select value={precision} aria-label={`${label}: how well it's known`} onChange={(e) => setPrecision(e.target.value)}>
+          {PRECISIONS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+        {input}
+      </div>
+    </Field>
+  );
+}
+
+export function roughDate(day, precision) {
+  return { text: roughDateInput(day, precision || "exact"), precision: precision || "exact" };
+}
+
+// Links to documents (manuals, datasheets, invoices) on an item, a position or a
+// class. Only http(s) links open; they open in a new tab with no referrer.
+export function DocumentsCard({ title = "Documents", documents, target, onChanged }) {
+  const [adding, setAdding] = useState(false);
+  const [f, setF] = useState({ url: "", title: "", kind: "manual" });
+  const [error, setError] = useState(null);
+  const add = async () => {
+    setError(null);
+    try {
+      await addMaintenanceDocument({ ...target, ...f });
+      setAdding(false);
+      setF({ url: "", title: "", kind: "manual" });
+      onChanged?.();
+    } catch (e) { setError(e.message); }
+  };
+  const remove = async (id) => {
+    setError(null);
+    try { await removeMaintenanceDocument(id); onChanged?.(); } catch (e) { setError(e.message); }
+  };
+  return (
+    <section className="card">
+      <div className="maint-head">
+        <h2>{title}</h2>
+        {!adding && <button className="secondary" onClick={() => setAdding(true)}>Add a link</button>}
+      </div>
+      {error && <div className="card error">{error}</div>}
+      {adding && (
+        <div className="maint-action">
+          <div className="rcm-form">
+            <Field label="Link (https://…)"><input autoFocus type="url" value={f.url} placeholder="https://example.com/manual.pdf"
+                   onChange={(e) => setF({ ...f, url: e.target.value })} /></Field>
+            <Field label="Title (optional)"><input value={f.title} placeholder="e.g. Owner's manual"
+                   onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
+            <Field label="Kind">
+              <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>
+                {DOCUMENT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div className="maint-row">
+            <button onClick={add} disabled={!f.url.trim()}>Add</button>
+            <button className="secondary" onClick={() => { setAdding(false); setError(null); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {(documents || []).length === 0 ? (
+        !adding && <p className="lib-date">No documents. Link the manual, datasheet or invoice (a web address).</p>
+      ) : (
+        <ul className="maint-list">
+          {documents.map((d) => {
+            const href = safeHref(d.url);
+            return (
+              <li key={d.id}>
+                {href ? <a href={href} target="_blank" rel="noopener noreferrer">{d.title}</a> : d.title}
+                <span className="lib-date"> · {d.kind}</span>{" "}
+                <button className="crumb-link" onClick={() => remove(d.id)}>remove</button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function PositionPicker({ positions, value, onChange, emptyLabel = "None (top level)" }) {
   return (
     <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
@@ -40,6 +147,16 @@ export function PositionPicker({ positions, value, onChange, emptyLabel = "None 
       {positions.map((p) => (
         <option key={p.id} value={p.id}>{"  ".repeat(p.depth)}{p.name}</option>
       ))}
+    </select>
+  );
+}
+
+// A location, by its full path (Site › Area X › Substation 2).
+export function LocationPicker({ locations, value, onChange, emptyLabel = "Choose…" }) {
+  return (
+    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
+      <option value="">{locations === null ? "Loading…" : emptyLabel}</option>
+      {locationOptions(locations).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
     </select>
   );
 }
@@ -120,7 +237,7 @@ export function MaintenanceTabs() {
 
 export function LifeTable({ rows, showPosition = false, onFix }) {
   return (
-    <table className="lib-table">
+    <div className="maint-scroll"><table className="lib-table">
       <thead>
         <tr>
           {showPosition && <th>Position</th>}
@@ -133,16 +250,17 @@ export function LifeTable({ rows, showPosition = false, onFix }) {
           <tr key={r.fitment_id || `${r.from}-${r.item}`}>
             {showPosition && <td>{r.position}</td>}
             <td>{r.item}</td>
-            <td className="lib-date">{fmtDate(r.from)}</td>
-            <td className="lib-date">{fmtDate(r.to)}</td>
-            <td>{r.x}</td>
+            <td className="lib-date">{fmtDated(r.from, r.from_precision)}</td>
+            <td className="lib-date">{fmtDated(r.to, r.to_precision)}</td>
+            <td title={r.xl != null ? "The dates are known only roughly: the shortest and longest life they allow" : undefined}>
+              {daysText(r)}</td>
             <td>{r.status}</td>
             <td className="lib-date">{r.failure_mode || "—"}</td>
             {onFix && <td><button className="crumb-link" onClick={() => onFix(r)}>Fix</button></td>}
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 
@@ -192,3 +310,78 @@ export function Proposals({ proposals, onDecided, showPosition = true }) {
     </section>
   );
 }
+
+// Notes on an item or work order: read them, add a dated line without retyping
+// the rest (onAppend), and look back at every change (a replaced note included).
+export function NotesCard({ notes, history = [], onAppend, title = "Notes", canAppend = true }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const add = async () => {
+    setBusy(true); setError(null);
+    try { await onAppend(text.trim()); setText(""); } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  const changes = [...history].reverse();
+  return (
+    <section className="card">
+      <div className="maint-head"><h2>{title}</h2></div>
+      {error && <div className="card error">{error}</div>}
+      {notes ? <p className="maint-notes">{notes}</p> : <p className="lib-date">No notes yet.</p>}
+      {canAppend && (
+        <div className="maint-row">
+          <textarea rows={2} value={text} placeholder="Add a note (dated today; the rest is kept)"
+                    aria-label="Add a note" onChange={(e) => setText(e.target.value)} style={{ flex: 1 }} />
+          <button className="secondary" onClick={add} disabled={busy || !text.trim()}>{busy ? "Adding…" : "Add note"}</button>
+        </div>
+      )}
+      {changes.length > 1 && (
+        <details className="maint-note-history">
+          <summary className="lib-date">Every change, newest first ({changes.length})</summary>
+          <ul className="maint-list">
+            {changes.map((h, i) => (
+              <li key={i}>
+                <span className="lib-date">{h.on ? fmtDate(h.on) : "date not recorded"} · {h.change === "appended" ? "added" : "set to"}</span>
+                <div className="maint-notes">{h.text || <em className="lib-date">(cleared)</em>}</div>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
+// How something failed: the position's modes, those seen at like positions
+// (same class), or "something else" typed in. value is { choice, typed } (see
+// maintenanceModes.js for turning it into request fields).
+export function FailureModePicker({ modes = [], classModes = [], value, onChange, noneLabel = "Not known" }) {
+  const v = value || { choice: "", typed: "" };
+  return (
+    <>
+      <select value={v.choice} onChange={(e) => onChange({ ...v, choice: e.target.value })}>
+        <option value="">{noneLabel}</option>
+        {modes.length > 0 && (
+          <optgroup label="This position's failure modes">
+            {modes.map((m) => <option key={m.id} value={`id:${m.id}`}>{m.text}</option>)}
+          </optgroup>
+        )}
+        {classModes.length > 0 && (
+          <optgroup label="Seen at like positions">
+            {classModes.map((t) => <option key={t} value={`text:${t}`}>{t}</option>)}
+          </optgroup>
+        )}
+        <option value="new">Something else (describe it)…</option>
+      </select>
+      {v.choice === "new" && (
+        <input autoFocus value={v.typed || ""} placeholder="e.g. Seal leaking" style={{ marginTop: "0.4rem" }}
+               onChange={(e) => onChange({ ...v, typed: e.target.value })} />
+      )}
+    </>
+  );
+}
+
+export const TASK_SOURCES = {
+  manual: "Own practice", oem: "Maker's recommendation (OEM)", statutory: "Law, regulation or standard",
+  other: "Other", rcm: "RCM study",
+};

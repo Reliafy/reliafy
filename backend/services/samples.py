@@ -911,7 +911,7 @@ def _upgrade_sample_recurrent(db, spec: dict, existing: dict) -> None:
     """A seeded sample recurrent model whose spec predates a mapping key or
     the default growth-projection settings this release ships (#265: the
     compressor model's failure-mode column): map them, and store the
-    projection, so growth_projection and the app's Projection panel work on
+    projection, so repairable_analysis growth_projection and the app's Projection panel work on
     it straight away. The fit itself doesn't change (the mode column isn't
     part of it). Settings a sample already has are kept."""
     from backend import recurrent as recurrent_fit  # local: heavy import

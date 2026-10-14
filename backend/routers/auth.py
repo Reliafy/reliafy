@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
+from fastapi.responses import JSONResponse
 
 from backend.auth import current_user_doc
 from backend.db import get_session
@@ -11,6 +12,7 @@ from backend.services import billing as billing_service
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
 from backend.services import teams as teams_service
+from backend.services import time_zones
 
 router = APIRouter(prefix="/api")
 
@@ -43,8 +45,10 @@ def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> 
     billing_service.ensure_starter_grant(session, user["uid"])
     shares_service.claim_pending(session, user)
     acct = billing_service.account(session, user["uid"])
+    profile = session.users.find_one({"_id": user["uid"]}, {"time_zone": 1}) or {}
     return {
         **user,
+        "time_zone": time_zones.zone_name(profile.get("time_zone")),
         "plan": acct["active_plan"],
         "admin": billing_service.is_admin_user(user),
         "credit_cents": acct["credit_cents"],
@@ -54,3 +58,21 @@ def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> 
         ],
         "team_invites": teams_service.pending_invites(session, user),
     }
+
+
+@router.get("/me/time-zone")
+def get_time_zone(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
+    """The personal workspace's time zone (an IANA name), or null: UTC."""
+    doc = session.users.find_one({"_id": user["uid"]}, {"time_zone": 1}) or {}
+    return {"time_zone": time_zones.zone_name(doc.get("time_zone"))}
+
+
+@router.put("/me/time-zone")
+def put_time_zone(time_zone: str | None = Body(default=None, embed=True),
+                  user: dict = Depends(current_user_doc), session=Depends(get_session)):
+    """Set the personal workspace's time zone ("Australia/Brisbane"); null or ""
+    clears it. Calendar days (today, due, overdue) follow it."""
+    try:
+        return {"time_zone": time_zones.set_personal(session, user["uid"], time_zone)}
+    except time_zones.BadTimeZone as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})

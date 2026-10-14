@@ -279,12 +279,12 @@ def test_api_as_of_now(client):
 
 
 def test_mcp_as_of_now_and_design_life(env):  # noqa: F811
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "Pump skid", "unit": "Hours", **GRAPH}))["id"]
-    new = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "target_reliability": 0.9}))
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Pump skid", "unit": "Hours", **GRAPH}))["id"]
+    new = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "target_reliability": 0.9}))
     assert new["design_life"]["from"] == "new" and new["design_life"]["time"] > 0
     assert "current_state" not in new and "confidence" not in new
 
-    now = _ok(_call(env.token[A], "analyze_rbd", {
+    now = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze",
         "rbd_id": rid, "target_reliability": 0.9, "times": [0, 100],
         "current_state": {"p1": {"failed": True}, "ctl": {"age": 400}}}))
     assert now["from"] == "now" and now["reliability_now"] == pytest.approx(1.0)
@@ -294,13 +294,13 @@ def test_mcp_as_of_now_and_design_life(env):  # noqa: F811
     assert now["mttf"] < new["mttf"]
 
     # Hand-entered blocks carry no uncertainty: the intervals say so.
-    conf = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "target_reliability": 0.9,
+    conf = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "target_reliability": 0.9,
                                                    "confidence": 0.9}))["confidence"]
     assert conf["level"] == 0.9 and conf["uncertain_blocks"] == [] and conf["design_life"] is None
     assert {b["label"] for b in conf["fixed_blocks"]} == {"Controller", "Pump A", "Pump B"}
 
-    assert "isn't repaired" in _err(_call(env.token[A], "analyze_rbd", {
+    assert "isn't repaired" in _err(_call(env.token[A], "rbd_analysis", {"action": "analyze",
         "rbd_id": rid, "current_state": {"p1": {"down": True, "since": 2}}}))
-    assert "not both" in _err(_call(env.token[A], "analyze_rbd", {
+    assert "not both" in _err(_call(env.token[A], "rbd_analysis", {"action": "analyze",
         "rbd_id": rid, "conditional_age": 10, "current_state": {"p1": {"age": 2}}}))
-    _err(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "target_reliability": 1.5}))
+    _err(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "target_reliability": 1.5}))

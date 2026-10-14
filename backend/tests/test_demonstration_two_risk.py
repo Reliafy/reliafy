@@ -173,15 +173,16 @@ def test_app_and_v1_endpoints_take_the_producer_risk(client):  # noqa: F811
 
 
 def test_mcp_plan_demonstration_test_keeps_both_risks(env):
-    out = _ok(_call(env.token[A], "plan_demonstration_test", {
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "plan_demonstration_test",
         "reliability": 0.9, "confidence": 0.9, "design_reliability": 0.95, "producer_risk": 0.2}))
     assert (out["units"], out["failures"]) == (128, 8)
     assert out["producer_risk"] <= out["producer_risk_target"] == 0.2 and out["consumer_risk"] <= 0.1
     assert "oc_curve" not in out  # lean: no plotting fields
 
-    mtbf = _ok(_call(env.token[A], "plan_demonstration_test", {
+    mtbf = _ok(_call(env.token[A], "life_data_analysis", {"action": "plan_demonstration_test",
         "method": "mtbf", "mtbf": 1000, "confidence": 0.9, "design_mtbf": 2000, "producer_risk": 0.2,
         "unit": "hours"}))
     assert mtbf["failures"] == 9 and round(mtbf["total_test_time"]) == 14206 and mtbf["design_mtbf"] == 2000
-    assert "good design's reliability" in _err(_call(env.token[A], "plan_demonstration_test", {
+    assert "good design's reliability" in _err(_call(env.token[A], "life_data_analysis",
+                                                     {"action": "plan_demonstration_test",
         "reliability": 0.9, "producer_risk": 0.2}))

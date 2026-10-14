@@ -16,7 +16,7 @@ active workspace's ``write_owner``), so mutation queries and their
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import Depends, Header, HTTPException
 
@@ -24,6 +24,7 @@ from backend.auth import get_current_user
 from backend.config import SAMPLE_OWNER
 from backend.db import get_session
 from backend.schema import FLEET_MODEL_COLLECTIONS, fleet_model_kind
+from backend.services import time_zones
 
 TEAM_PREFIX = "team:"
 PERSONAL = "personal"
@@ -147,10 +148,17 @@ class AccessCtx:
     # contexts that act for someone else's view (public links) or that are
     # owner-scoped by design (MCP tools).
     share_fallback: bool = True
+    # The workspace's time zone (an IANA name; None: the server's, UTC), which
+    # calendar days follow: see services/time_zones.py.
+    time_zone: str | None = None
 
     @property
     def is_personal(self) -> bool:
         return self.workspace == PERSONAL
+
+    def today(self) -> date:
+        """Today's date in the workspace's time zone."""
+        return time_zones.today(self.time_zone)
 
 
 def is_public_link(ctx: AccessCtx) -> bool:
@@ -246,6 +254,7 @@ def get_access(
         return AccessCtx(
             user=user, uid=uid, workspace=PERSONAL, write_owner=uid,
             read_owners=read_owners, list_owners=uid, hidden=hidden,
+            time_zone=time_zones.zone_name(doc.get("time_zone")),
         )
 
     team = next((t for t in teams if t["_id"] == workspace), None)
@@ -260,6 +269,7 @@ def get_access(
         list_owners=[team_principal(workspace)],  # team lists exclude samples
         hidden=hidden, frozen=frozen,
         member_view_only=not member_can_edit(session, user, billing_service),
+        time_zone=time_zones.zone_name(team.get("time_zone")),
     )
 
 

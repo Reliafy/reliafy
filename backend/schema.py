@@ -32,7 +32,7 @@ class Dataset(BaseModel):
     n_rows: int = 0
     columns: list = Field(default_factory=list)
     data: bytes = b""  # raw CSV bytes (excluded from API responses)
-    notes: Optional[str] = None  # free-text annotation (set over MCP: update_dataset)
+    notes: Optional[str] = None  # free-text annotation (set over MCP: datasets update)
 
 
 class Model(BaseModel):
@@ -62,7 +62,7 @@ class Model(BaseModel):
     def _positive_intervals(cls, results: dict) -> dict:
         """A fit saved before #265 holds symmetric parameter intervals, which
         can go below zero for a positive parameter: every read of a saved
-        model (the app, get_model, share pages) serves them on the log scale,
+        model (the app, get kind model, share pages) serves them on the log scale,
         as a new fit gives them. Its time unit is shown in the one canonical
         spelling ("hours" → "Hours"). The stored document is left as it is."""
         from backend.param_intervals import corrected_results

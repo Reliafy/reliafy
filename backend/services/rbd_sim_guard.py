@@ -14,7 +14,7 @@ job, far past its limit.
 
 So such a block is refused, wherever a repairable diagram is checked or
 built: Validate, the app's and MCP's analyses (in process and on the
-calculation service), MCP ``create_rbd`` / ``edit_rbd``, and the runtime
+calculation service), MCP ``rbd create`` / ``rbd edit``, and the runtime
 quote. A refusal by window instead would hang on the mixture's shape (an
 early failure mode makes many more repairs than the same window with a
 later one), so no window is safe for every mixture. A block pinned working

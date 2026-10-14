@@ -172,7 +172,7 @@ def _m(dist, **params):
 
 
 def _mcp_pump(env):
-    return _ok(_call(env.token[A], "create_rbd", {
+    return _ok(_call(env.token[A], "rbd", {"action": "create",
         "name": "Pump", "unit": "Hours", "repairable": True,
         "nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"},
                   {"id": "pump", "type": "component", "label": "Pump", "model": _m("exponential", failure_rate=1e-3),
@@ -187,21 +187,22 @@ def test_mcp_discounted_costs_and_cheapest_design(env):
     assert "discount rate 7% a year" in out["applied"][0]
     assert _doc(env, rid)["graph"]["costs"] == {"downtime_rate": 100.0, "horizon": TEN_YEARS, "discount_rate": 7.0}
 
-    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": False}))
+    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False}))
     c = res["costs"]
     assert c["present_value"] is True and c["discount_rate"] == 7
     assert round(c["total_cost"]) == 114538 and round(c["undiscounted_total_cost"]) == 150099
     # Another rate for this answer only: nothing saved, nothing re-run.
-    flat = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": False, "discount_rate": 0}))["costs"]
+    flat = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False,
+                                                    "discount_rate": 0}))["costs"]
     assert flat["present_value"] is False and round(flat["total_cost"]) == 150099
     assert _doc(env, rid)["graph"]["costs"]["discount_rate"] == 7.0
 
-    design = _ok(_call(env.token[A], "cheapest_design", {"rbd_id": rid}))
+    design = _ok(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
     assert design["available"] and design["present_value"] and design["discount_rate"] == 7
     assert design["design"]["blocks"][0]["copies"] == 2 and design["changed"]
     assert round(design["design"]["total_cost"]) == round(rbd_costs.cheapest_design(
         _doc(env, rid)["graph"])["design"]["total_cost"])
-    steep = _ok(_call(env.token[A], "cheapest_design", {"rbd_id": rid, "discount_rate": 30}))
+    steep = _ok(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid, "discount_rate": 30}))
     assert not steep["changed"] and steep["design"]["blocks"][0]["copies"] == 1
 
     # 0 clears a field; the rest are kept.
@@ -217,20 +218,22 @@ def test_mcp_discount_errors_and_plan(env, monkeypatch):
     # A non-calendar unit can't be discounted: nothing is saved.
     msg = _err(_edit(env, rid, {"op": "set", "unit": "Cycles", "costs": {"discount_rate": 7}}))
     assert "calendar time unit" in msg and "discount_rate" not in _doc(env, rid)["graph"]["costs"]
-    assert "discount_rate" in _err(_call(env.token[A], "cheapest_design", {"rbd_id": rid, "discount_rate": 250}))
+    assert "discount_rate" in _err(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid,
+                                                                        "discount_rate": 250}))
     # Paid as in the app.
     monkeypatch.setattr(billing, "premium_compute_allowed", lambda db, user: False)
-    out = _ok(_call(env.token[A], "cheapest_design", {"rbd_id": rid}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
     assert out["available"] is False and out["code"] == "pro_required"
 
 
 def test_mcp_cheapest_design_refuses_a_reliability_diagram(env):
-    rid = _ok(_call(env.token[A], "create_rbd", {
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create",
         "name": "R", "nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"},
                                {"id": "a", "type": "component", "model": _m("exponential", failure_rate=1e-3)}],
         "edges": [{"source": "input", "target": "a"}, {"source": "a", "target": "output"}]}))["id"]
-    assert "non-repairable" in _err(_call(env.token[A], "cheapest_design", {"rbd_id": rid}))
-    assert "non-repairable" in _err(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "discount_rate": 7}))
+    assert "non-repairable" in _err(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
+    assert "non-repairable" in _err(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid,
+                                                                         "discount_rate": 7}))
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +316,7 @@ def test_export_with_crews_around_a_sub_diagram_has_the_exact_figures(tmp_path):
 
 def test_mcp_analyze_rbd_gives_crews_around_a_sub_diagram_exactly(env):
     exp = _m("exponential", failure_rate=0.01)
-    rid = _ok(_call(env.token[A], "create_rbd", {
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create",
         "name": "Crews", "unit": "Hours", "repairable": True, "repair_crews": 1,
         "nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"},
                   {"id": "a", "type": "component", "model": exp, "repair": _m("exponential", failure_rate=0.2)},
@@ -321,6 +324,7 @@ def test_mcp_analyze_rbd_gives_crews_around_a_sub_diagram_exactly(env):
                    "spares": 2, "dormancy": 0, "repair_one_at_a_time": True}],
         "edges": [{"source": "input", "target": "a"}, {"source": "a", "target": "bank"},
                   {"source": "bank", "target": "output"}]}))["id"]
-    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": False, "t_max": WINDOW}))
+    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False,
+                                                   "t_max": WINDOW}))
     assert res["available"] is True and not res.get("needs_simulation")
     assert res["exact"]["status"] == "ok" and res["exact"]["expected_failures"] > 0

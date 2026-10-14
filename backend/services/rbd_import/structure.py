@@ -238,7 +238,7 @@ def _product(lists: list[list[frozenset]]) -> list[frozenset]:
 
 def structure_line(graph: dict) -> Optional[str]:
     """Just the one-line structure of :func:`describe` (no cut sets): for
-    create_rbd / edit_rbd results (#265). ``None`` when it can't be given."""
+    rbd create / rbd edit results (#265). ``None`` when it can't be given."""
     return describe(graph, cut_sets=False)["structure"]
 
 

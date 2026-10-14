@@ -354,34 +354,34 @@ def _compact(graph):
 
 def test_mcp_create_and_analyze_a_network(env):
     compact = _compact(_bridge())
-    out = _ok(_call(env.token[MCP_A], "create_rbd", {
+    out = _ok(_call(env.token[MCP_A], "rbd", {"action": "create",
         "name": "Ring main", "unit": "Hours", "nodes": compact["nodes"], "edges": compact["edges"],
         "network": {"source": "input", "target": "output"}}))
     assert out["structure_summary"].startswith("Network (undirected)")
-    res = _ok(_call(env.token[MCP_A], "analyze_rbd", {"rbd_id": out["id"], "times": [40]}))
+    res = _ok(_call(env.token[MCP_A], "rbd_analysis", {"action": "analyze", "rbd_id": out["id"], "times": [40]}))
     assert res["kind"] == "network" and res["method"] == "exact"
     assert res["reliability_at"][0]["reliability"] == pytest.approx(float(_direct_bridge().sf(40.0)), abs=1e-12)
-    edited = _ok(_call(env.token[MCP_A], "edit_rbd", {"rbd_id": out["id"], "ops": [
+    edited = _ok(_call(env.token[MCP_A], "rbd", {"action": "edit", "rbd_id": out["id"], "ops": [
         {"op": "set", "network": {"source": "a", "target": "e"}}]}))
     assert "between a and e" in " ".join(edited["applied"])
-    assert "network" in _err(_call(env.token[MCP_A], "create_rbd", {
+    assert "network" in _err(_call(env.token[MCP_A], "rbd", {"action": "create",
         "name": "x", "nodes": compact["nodes"], "edges": compact["edges"], "repairable": True,
         "network": {}}))
 
 
 def test_mcp_create_with_phases_then_analyze_and_edit(env):
     compact = _compact({k: v for k, v in _aircraft().items() if k != "phases"})
-    out = _ok(_call(env.token[MCP_A], "create_rbd", {
+    out = _ok(_call(env.token[MCP_A], "rbd", {"action": "create",
         "name": "Flight", "unit": "Hours", "nodes": compact["nodes"], "edges": compact["edges"],
         "phases": _aircraft()["phases"]}))
-    res = _ok(_call(env.token[MCP_A], "analyze_rbd", {"rbd_id": out["id"]}))
+    res = _ok(_call(env.token[MCP_A], "rbd_analysis", {"action": "analyze", "rbd_id": out["id"]}))
     mission = res["phased_mission"]
     assert mission["mission_reliability"] == pytest.approx(_direct_aircraft().reliability(), abs=1e-12)
     assert mission["riskiest_phase"] == "Landing"
-    edited = _ok(_call(env.token[MCP_A], "edit_rbd", {"rbd_id": out["id"], "ops": [
+    edited = _ok(_call(env.token[MCP_A], "rbd", {"action": "edit", "rbd_id": out["id"], "ops": [
         {"op": "set", "phases": [{"name": "Only", "duration": 3}]}]}))
     assert "phased mission set (Only)" in " ".join(edited["applied"])
-    res = _ok(_call(env.token[MCP_A], "analyze_rbd", {"rbd_id": out["id"], "summary_only": True}))
+    res = _ok(_call(env.token[MCP_A], "rbd_analysis", {"action": "analyze", "rbd_id": out["id"], "summary_only": True}))
     assert [p["name"] for p in res["phased_mission"]["phases"]] == ["Only"]
-    got = _ok(_call(env.token[MCP_A], "get_rbd", {"rbd_id": out["id"]}))
+    got = _ok(_call(env.token[MCP_A], "get", {"kind": "rbd", "id": out["id"]}))
     assert json.dumps(got).count("Only") >= 1

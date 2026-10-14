@@ -193,7 +193,7 @@ def test_saved_empty_diagram(client):
 # ---- MCP ---------------------------------------------------------------------------------------
 
 def _saved(env, graph):
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "Empty", **GRAPH}))["id"]
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Empty", **GRAPH}))["id"]
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
     return rid
 
@@ -201,8 +201,8 @@ def _saved(env, graph):
 @pytest.mark.parametrize("make, gap", [(_empty, NO_BLOCKS), (_half, NOT_CONNECTED)])
 def test_mcp_tools_answer_in_plain_words(env, make, gap):
     rid = _saved(env, make())
-    for tool in ("analyze_rbd", "rbd_fault_tree"):
-        assert GAP_MESSAGES[gap] in _err(_call(env.token[A], tool, {"rbd_id": rid})), tool
+    for action in ("analyze", "fault_tree"):
+        assert GAP_MESSAGES[gap] in _err(_call(env.token[A], "rbd_analysis", {"action": action, "rbd_id": rid})), action
     rid = _saved(env, make(repairable=True))
-    for tool in ("analyze_rbd", "rbd_fault_tree", "rbd_sensitivity", "optimise_maintenance_intervals"):
-        assert GAP_MESSAGES[gap] in _err(_call(env.token[A], tool, {"rbd_id": rid})), tool
+    for action in ("analyze", "fault_tree", "sensitivity", "optimise_intervals"):
+        assert GAP_MESSAGES[gap] in _err(_call(env.token[A], "rbd_analysis", {"action": action, "rbd_id": rid})), action

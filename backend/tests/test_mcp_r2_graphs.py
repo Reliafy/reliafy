@@ -3,8 +3,8 @@
 Diagrams drawn in the app can carry node data the MCP node schema doesn't
 describe yet (#141): repeated blocks (``repeat_of``), warm standby
 (``dormancy``, ``standbyModel``, ``startProb``), and a repairable block's
-costs, scheduled replacement and proof tests. ``get_rbd``, ``edit_rbd``,
-``analyze_rbd``, ``clone_rbd`` and ``export_rbd_python`` must work on such
+costs, scheduled replacement and proof tests. ``get kind rbd``, ``rbd edit``,
+``rbd_analysis analyze``, ``rbd clone`` and ``rbd_analysis export_python`` must work on such
 diagrams and carry those keys through untouched.
 """
 
@@ -97,7 +97,7 @@ def _r2_data(graph):
 
 def test_get_rbd_reports_the_r2_keys(env):
     rid = _saved(env, NON_REPAIRABLE)
-    out = _ok(_call(env.token[A], "get_rbd", {"rbd_id": rid}))
+    out = _ok(_call(env.token[A], "get", {"kind": "rbd", "id": rid}))
     nodes = {n["id"]: n for n in out["graph"]["nodes"]}
     assert nodes["psu2"]["repeat_of"] == "psu"
     assert nodes["ctl"]["dormancy"] == 0.3 and nodes["ctl"]["startProb"] == 0.98
@@ -133,7 +133,7 @@ def test_edit_rbd_rewiring_a_diagram_with_a_repeated_block(env):
 
 def test_analyze_rbd_on_r2_diagrams(env):
     rid = _saved(env, NON_REPAIRABLE)
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "times": [100.0, 1000.0]}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "times": [100.0, 1000.0]}))
     assert out["available"] and out["kind"] == "non_repairable"
     assert out["mttf"] > 0 and len(out["reliability_at"]) == 2
     # The repeated supply is reported once, under the original.
@@ -141,7 +141,7 @@ def test_analyze_rbd_on_r2_diagrams(env):
     assert all(0.0 <= v <= 1.0 for v in out["importance"]["fussell_vesely"].values() if v is not None)
 
     rid = _saved(env, REPAIRABLE, name="Plant")
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     # Billing is off in these tests, so the (paid) simulation runs.
     assert out["kind"] == "repairable" and out["available"]
     assert 0.0 < out["steady_state_availability"] < 1.0
@@ -151,8 +151,8 @@ def test_analyze_rbd_on_r2_diagrams(env):
 def test_clone_and_export_r2_diagrams(env):
     for graph in (NON_REPAIRABLE, REPAIRABLE):
         rid = _saved(env, graph)
-        clone = _ok(_call(env.token[A], "clone_rbd", {"rbd_id": rid, "name": "Copy"}))
+        clone = _ok(_call(env.token[A], "rbd", {"action": "clone", "rbd_id": rid, "name": "Copy"}))
         assert _r2_data(_doc(env, clone["id"])["graph"]) == _r2_data(graph)
-        out = _ok(_call(env.token[A], "export_rbd_python", {"rbd_id": rid}))
+        out = _ok(_call(env.token[A], "rbd_analysis", {"action": "export_python", "rbd_id": rid}))
         assert out["filename"].endswith(".py") and "RePyability" in out["script"]
         compile(out["script"], out["filename"], "exec")

@@ -102,3 +102,15 @@ def test_economics_compare_the_plan_best_and_run_to_failure(setup):
     assert plans["best interval"]["per_year"] <= plans["current plan"]["per_year"] <= plans["run to failure"]["per_year"]
     assert out["cheapest"] == "best interval"
     assert plans["current plan"]["net_present_cost"] == pytest.approx(plans["current plan"]["per_year"] * 7.0236, rel=1e-3)
+
+
+def test_one_failure_fits_an_exponential_but_nothing_with_two_parameters(setup):
+    m, db = setup
+    pos = m.create_position("Cooling pump", position_class="Single-failure pump")
+    m.fit(pos["id"], new_item={"name": "P1"}, on=_ago(900))
+    m.remove(pos["id"], on=_ago(300), failure_mode_text="Seal leaking")
+    m.fit(pos["id"], new_item={"name": "P2"}, on=_ago(300))
+    with pytest.raises(Invalid, match="fit distribution 'exponential'"):
+        loop.fit_class_model(m, db, "Single-failure pump")  # weibull needs two
+    out = loop.fit_class_model(m, db, "Single-failure pump", distribution="exponential")
+    assert out["model"]["distribution"] == "exponential" and out["model"]["failures"] == 1

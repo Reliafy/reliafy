@@ -254,15 +254,15 @@ from backend.tests.test_mcp import A as MCP_A, _call, _ok, env  # noqa: E402,F40
 
 
 def _mcp_saved(env, dist):
-    ds = _ok(_call(env.token[MCP_A], "upload_dataset", {"name": "Rossi", "csv": _csv(_rossi()).decode()}))
-    return _ok(_call(env.token[MCP_A], "fit_and_save_model", {
+    ds = _ok(_call(env.token[MCP_A], "datasets", {"action": "upload", "name": "Rossi", "csv": _csv(_rossi()).decode()}))
+    return _ok(_call(env.token[MCP_A], "models", {"action": "fit",
         "name": f"Rossi {dist}", "dataset_id": ds["id"], "distribution": dist, "time_column": "week",
         "censor_column": "c", "covariates": COVS}))
 
 
 def test_mcp_reliability_at_band_and_life(env):
     saved = _mcp_saved(env, "weibull_ph")
-    out = _ok(_call(env.token[MCP_A], "reliability_at", {
+    out = _ok(_call(env.token[MCP_A], "life_data_analysis", {"action": "reliability_at",
         "model_id": saved["model_id"], "times": [20, 52], "covariates": ROW, "confidence": 0.9}))
     want = _direct().cb(np.array([20.0, 52.0]), Z, on="sf", alpha_ci=0.1, bound="two-sided")
     assert np.allclose([p["reliability_bounds"] for p in out["points"]], want, rtol=1e-6)
@@ -276,7 +276,7 @@ def test_mcp_reliability_at_band_and_life(env):
 
 def test_mcp_reliability_at_cox_says_why(env):
     saved = _mcp_saved(env, "cox_ph")
-    out = _ok(_call(env.token[MCP_A], "reliability_at", {
+    out = _ok(_call(env.token[MCP_A], "life_data_analysis", {"action": "reliability_at",
         "model_id": saved["model_id"], "times": [20], "covariates": ROW, "confidence": 0.9}))
     assert out["points"][0]["reliability_bounds"] is None and "semi-parametric" in out["bounds_note"]
     assert "No B-lives" in out["life"]["note"]

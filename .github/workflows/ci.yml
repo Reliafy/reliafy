@@ -1,9 +1,11 @@
 name: CI
 
+# Runs only on the dev -> main release PR: the gate release.sh waits for before
+# merging and deploying. Not on PRs into dev or on pushes (main gets exactly
+# what its release PR tested); tests otherwise run locally on request.
 on:
-  push:
-    branches: [main, dev]
   pull_request:
+    branches: [main]
 
 # Third-party actions are pinned to commit SHAs (the version tag each was
 # resolved from is in the comment). The jobs only read the repository.
@@ -20,12 +22,12 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements.lock
-      - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0" && pip install pytest
+      - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0" && pip install pytest==9.1.1 pytest-xdist==3.8.0
       # RePyability isn't in requirements.txt: like the Dockerfile, install the
       # pinned commit (v0.13) --no-deps so it can't re-resolve surpyval from PyPI.
       - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@debbb6ff2928034e273b609db9b09901cf6e6119"
       # The slowest tests are listed, so a slower run says where the time went.
-      - run: pytest backend/tests --durations=40
+      - run: pytest backend/tests -n auto --dist loadfile --durations=40
 
   frontend:
     runs-on: ubuntu-latest

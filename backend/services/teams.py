@@ -17,6 +17,7 @@ from backend.services import access
 from backend.services import email as email_service
 from backend.services import email_trust
 from backend.services import rate_limit
+from backend.services import time_zones
 
 # Every collection whose documents a team's workspace owns (``owner_id``),
 # Maintenance aside: deleting the team deletes them.
@@ -284,6 +285,8 @@ def summary(db, team: dict, user: dict, billing_service) -> dict:
         # Whether THIS member may edit in the team workspace (Pro/admin).
         "can_edit": access.member_can_edit(db, user, billing_service),
         "member_count": len(team.get("members", [])),
+        # The workspace's time zone (an IANA name), or None: UTC.
+        "time_zone": time_zones.zone_name(team.get("time_zone")),
         "pending_invites": len(team.get("invites", [])),
     }
 

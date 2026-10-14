@@ -419,8 +419,8 @@ RBD_RUN_PRO_TTL_DAYS = _int("RBD_RUN_PRO_TTL_DAYS", 90)
 # max instances × concurrency; the queue's max concurrent dispatches).
 COMPUTE_MACHINE = (os.environ.get("COMPUTE_MACHINE") or "").strip() or "compute"
 COMPUTE_PARALLEL_JOBS = _int("COMPUTE_PARALLEL_JOBS", 2)
-# MCP analyze_rbd waits this long for a queued simulation before answering
-# with the job id (the agent then calls get_job).
+# MCP rbd_analysis analyze waits this long for a queued simulation before answering
+# with the job id (the agent then calls get kind job).
 MCP_JOB_WAIT_S = _float("MCP_JOB_WAIT_S", 20.0)
 
 # ---- Free quick availability simulations (#147) ----------------------------

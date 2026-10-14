@@ -304,27 +304,27 @@ from backend.tests.test_mcp_plans import PRO as MCP_PRO  # noqa: E402
 def test_mcp_quote_list_and_get_runs(env):
     rid = _repairable(env, MCP_PRO, "Pumps")
     token = env.oauth[MCP_PRO]
-    quote = _ok(_call(token, "quote_rbd_simulation", {"rbd_id": rid}))
+    quote = _ok(_call(token, "rbd_analysis", {"action": "quote_simulation", "rbd_id": rid}))
     assert quote["available"] is True and quote["estimate"] and quote["median_s"] <= quote["p90_s"]
     assert "jobs_in_queue" not in quote  # no queue configured: runs in-process
     assert env.simulations["n"] == 0  # a quote runs nothing
 
-    _ok(_call(token, "analyze_rbd", {"rbd_id": rid, "simulate": True}))
-    runs = _ok(_call(token, "list_rbd_runs", {"rbd_id": rid}))
+    _ok(_call(token, "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
+    runs = _ok(_call(token, "list", {"kind": "rbd_runs", "rbd_id": rid}))
     [row] = runs["runs"]
     assert row["ran_by"] == "you" and row["via"] == "Claude (MCP)" and row["status"] == "done"
     assert row["method"] == "Full" and row["availability"]["value"] > 0.9 and row["quoted"]
     # How long runs are kept, in words (#282).
     assert runs["kept_days"] == 90 and runs["retention"] == "Runs are kept for 90 days."
 
-    run = _ok(_call(token, "get_rbd_run", {"run_id": row["run_id"], "include_curve": True}))
+    run = _ok(_call(token, "get", {"kind": "rbd_run", "id": row["run_id"], "include_curve": True}))
     assert run["result"]["n_simulations"] == 20 and run["result"]["precision"]
     assert run["engines"]["repyability"] and run["engines"]["surpyval"]
     assert run["inputs"]["blocks"] > 0 and len(run["curve"]["t"]) == len(run["curve"]["upper"])
     assert run["url"].endswith(f"/rbds/runs/{row['run_id']}")
     # Someone else's run doesn't exist for them.
-    assert "Run not found" in _err(_call(env.oauth[AGENT], "get_rbd_run", {"run_id": row["run_id"]}))
-    other = _ok(_call(env.oauth[AGENT], "list_rbd_runs", {}))
+    assert "Run not found" in _err(_call(env.oauth[AGENT], "get", {"kind": "rbd_run", "id": row["run_id"]}))
+    other = _ok(_call(env.oauth[AGENT], "list", {"kind": "rbd_runs"}))
     assert other["runs"] == [] and other["kept_days"] == 7
     assert other["retention"] == "Runs are kept for 7 days on the free plan. Pro keeps them for 90 days."
 
@@ -337,13 +337,13 @@ def test_mcp_pending_job_carries_the_estimate(env, monkeypatch):
     tasks, dispatch = _mcp_queue(env, monkeypatch)
     rid = _repairable(env, MCP_PRO, "Pumps")
     token = env.oauth[MCP_PRO]
-    quote = _ok(_call(token, "quote_rbd_simulation", {"rbd_id": rid}))
+    quote = _ok(_call(token, "rbd_analysis", {"action": "quote_simulation", "rbd_id": rid}))
     assert quote["jobs_in_queue"] == 0
-    out = _ok(_call(token, "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+    out = _ok(_call(token, "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     sim = out["simulation"]
     assert sim["status"] == "queued" and sim["estimate"] == quote["estimate"]
-    pending = _ok(_call(token, "get_job", {"job_id": sim["job_id"]}))
+    pending = _ok(_call(token, "get", {"kind": "job", "id": sim["job_id"]}))
     assert pending["estimate"] == quote["estimate"]
     dispatch()
-    run = _ok(_call(token, "get_rbd_run", {"run_id": sim["job_id"]}))
+    run = _ok(_call(token, "get", {"kind": "rbd_run", "id": sim["job_id"]}))
     assert run["status"] == "done" and run["via"] == "Claude (MCP)" and run["runtime_s"] >= 0

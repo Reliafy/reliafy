@@ -312,7 +312,7 @@ def test_older_saved_model_is_backfilled_on_read(monkeypatch):
         app.dependency_overrides.clear()
 
 
-# ---- MCP get_model ----------------------------------------------------------------
+# ---- MCP get kind model ----------------------------------------------------------------
 
 
 def test_mcp_get_model_reports_the_evidence(env):
@@ -322,7 +322,7 @@ def test_mcp_get_model_reports_the_evidence(env):
     ds = datasets_service.create_dataset(env.db, "events.csv", _frame().to_csv(index=False).encode(), A)
     doc = recurrent_service.save_model(
         env.db, "Fleet", ds, {"mapping": MAPPING, "model_id": "crow_amsaa", "unit": "hours"}, A)
-    out = _ok(_call(env.token[A], "get_model", {"model_id": doc.id}))
+    out = _ok(_call(env.token[A], "get", {"kind": "model", "id": doc.id}))
     ref = _ref()
     lo, hi = ref.param_cb("beta", alpha_ci=0.05)
     assert out["growth"] == "deteriorating"

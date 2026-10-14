@@ -47,7 +47,7 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from backend.services import access
+from backend.services import access, time_zones
 from backend.units import unit_in_text
 
 # Row cap per log: far beyond any real plant log of one diagram, and keeps a
@@ -792,7 +792,7 @@ def create_log(db, rbd, parsed: dict, owner_id: str, name: str = "") -> dict:
         "_id": uuid.uuid4().hex,
         "owner_id": owner_id,
         "rbd_id": rbd.id,
-        "name": (name or "").strip()[:120] or f"Outage log {now:%Y-%m-%d}",
+        "name": (name or "").strip()[:120] or f"Outage log {time_zones.today(time_zones.of_owner(db, owner_id))}",
         "created_at": now,
         "updated_at": now,
         **{k: parsed[k] for k in ("unit", "time_kind", "origin", "window", "rows", "asset_map", "columns")},

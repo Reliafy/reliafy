@@ -119,6 +119,19 @@ export function getMe() {
   return request("/api/me");
 }
 
+// The personal workspace's time zone: { time_zone } (an IANA name, or null: UTC).
+export function getMyTimeZone() {
+  return request("/api/me/time-zone");
+}
+
+export function setMyTimeZone(timeZone) {
+  return request("/api/me/time-zone", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ time_zone: timeZone || null }),
+  });
+}
+
 // Deployment capabilities (public, no auth): { auth, ai, billing }.
 export function getAppConfig() {
   return request("/api/config");
@@ -1538,6 +1551,15 @@ export function renameTeam(id, name) {
   });
 }
 
+// A team workspace's time zone (owner only): an IANA name, or null for UTC.
+export function setTeamTimeZone(id, timeZone) {
+  return request(`/api/teams/${id}/time-zone`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ time_zone: timeZone || null }),
+  });
+}
+
 export function deleteTeam(id) {
   return request(`/api/teams/${id}`, { method: "DELETE" });
 }
@@ -2057,6 +2079,16 @@ export function getMaintenanceOverview() {
   return request("/api/maintenance/overview");
 }
 
+// Work orders, newest first: status "open" for every one not yet done; locationId for
+// those on positions at that location or a location inside it.
+export function listMaintenanceWorkOrders({ status, locationId } = {}) {
+  const q = new URLSearchParams();
+  if (status) q.set("status", status);
+  if (locationId) q.set("location_id", locationId);
+  const qs = q.toString();
+  return request(`/api/maintenance/work-orders${qs ? `?${qs}` : ""}`);
+}
+
 export function createMaintenancePosition(body) {
   return postJson("/api/maintenance/positions", body);
 }
@@ -2089,8 +2121,14 @@ export function maintenanceFromRcm(studyId, parentId) {
   return postJson("/api/maintenance/from-rcm", { study_id: studyId, parent_id: parentId || null });
 }
 
-export function listMaintenanceItems() {
-  return request("/api/maintenance/items");
+// Items, optionally only an item class's (with the classes inside it) or a
+// manufacturer's ("none": those with none).
+export function listMaintenanceItems({ itemClassId, manufacturerId } = {}) {
+  const q = new URLSearchParams();
+  if (itemClassId) q.set("item_class_id", itemClassId);
+  if (manufacturerId) q.set("manufacturer_id", manufacturerId);
+  const qs = q.toString();
+  return request(`/api/maintenance/items${qs ? `?${qs}` : ""}`);
 }
 
 export function listMaintenanceLocations() {
@@ -2200,6 +2238,25 @@ export function cancelWorkOrder(id, reason) {
 export function updateMaintenanceTask(id, body) {
   return patchJson(`/api/maintenance/tasks/${id}`, body);
 }
+export function createMaintenanceTask(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/tasks`, body);
+}
+// A task on a subject: { kind: "position" | "item" | "location", id }.
+export function createSubjectTask(subject, body) {
+  return postJson(`/api/maintenance/${subject.kind}s/${subject.id}/tasks`, body);
+}
+export function addFailureMode(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/failure-modes`, body);
+}
+export function updateFailureMode(id, body) {
+  return patchJson(`/api/maintenance/failure-modes/${id}`, body);
+}
+export function mergeFailureMode(id, intoId) {
+  return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
+}
+export function addPastFitment(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/past-fitments`, body);
+}
 export function retireMaintenanceTask(id, reason) {
   return postJson(`/api/maintenance/tasks/${id}/retire`, { reason });
 }
@@ -2230,6 +2287,20 @@ export function getMaintenanceSettings() {
 }
 export function setMaintenanceSettings(body) {
   return patchJson("/api/maintenance/settings", body);
+}
+
+// Document links (http(s) only) on an item or position (target_id) or a class (position_class).
+export function addMaintenanceDocument(body) {
+  return postJson("/api/maintenance/documents", body);
+}
+export function removeMaintenanceDocument(id) {
+  return request(`/api/maintenance/documents/${id}`, { method: "DELETE" });
+}
+export function setClassReplacementCost(positionClass, replacementCost) {
+  return request("/api/maintenance/classes/replacement-cost", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ position_class: positionClass, replacement_cost: replacementCost }),
+  });
 }
 
 export function getPositionClass(name) {
@@ -2295,8 +2366,12 @@ export function recordCondition(pointId, value, on) {
   return postJson(`/api/maintenance/condition-points/${pointId}/readings`, { value, on });
 }
 
-export function listMaintenanceParts() {
-  return request("/api/maintenance/parts");
+export function listMaintenanceParts({ itemClassId, manufacturerId } = {}) {
+  const q = new URLSearchParams();
+  if (itemClassId) q.set("item_class_id", itemClassId);
+  if (manufacturerId) q.set("manufacturer_id", manufacturerId);
+  const qs = q.toString();
+  return request(`/api/maintenance/parts${qs ? `?${qs}` : ""}`);
 }
 export function createMaintenancePart(body) {
   return postJson("/api/maintenance/parts", body);
@@ -2306,6 +2381,19 @@ export function adjustMaintenanceStock(partId, body) {
 }
 export function setMaintenanceReorder(partId, body) {
   return postJson(`/api/maintenance/parts/${partId}/reorder-point`, body);
+}
+// A position's parts list (its bill of materials), and where the spares fall short.
+export function addPositionPart(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/parts`, body);
+}
+export function updatePositionPart(listingId, body) {
+  return patchJson(`/api/maintenance/position-parts/${listingId}`, body);
+}
+export function removePositionPart(listingId) {
+  return request(`/api/maintenance/position-parts/${listingId}`, { method: "DELETE" });
+}
+export function getSparesCover(includeUnlisted = false) {
+  return request(`/api/maintenance/spares?include_unlisted=${includeUnlisted ? "true" : "false"}`);
 }
 
 export function importMaintenanceSheet(file, dryRun) {
@@ -2327,6 +2415,81 @@ export function getClassEconomics(positionClass, { interval, unit, horizonYears,
 export function addMeasurementPoint(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/points`, body);
 }
+// A measurement point on an item: it travels with the item.
+export function addItemMeasurementPoint(itemId, body) {
+  return postJson(`/api/maintenance/items/${itemId}/points`, body);
+}
 export function recordMeasurementReading(pointId, value, on) {
   return postJson(`/api/maintenance/points/${pointId}/readings`, { value, on });
+}
+// Strike out a manual reading, or correct its value and/or date; each with a
+// reason. Both return the point, its readings list marking what was changed.
+export function voidMeasurementReading(readingId, reason) {
+  return postJson(`/api/maintenance/readings/${readingId}/void`, { reason });
+}
+export function correctMeasurementReading(readingId, { value, on, reason }) {
+  return postJson(`/api/maintenance/readings/${readingId}/correct`, { value, on, reason });
+}
+
+// ---- item classes and the manufacturer register (Reliafy Maintenance; optional) ----
+
+function putJson(url, body) {
+  return request(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+export function getItemClasses() {
+  return request("/api/maintenance/item-classes");
+}
+export function getItemClass(id) {
+  return request(`/api/maintenance/item-classes/${id}`);
+}
+export function createItemClass(body) {
+  return postJson("/api/maintenance/item-classes", body);
+}
+export function updateItemClass(id, body) {
+  return patchJson(`/api/maintenance/item-classes/${id}`, body);
+}
+export function retireItemClass(id, reason = "") {
+  return postJson(`/api/maintenance/item-classes/${id}/retire`, { reason });
+}
+// An item or part's class (null takes it away).
+export function assignItemClass(targetId, itemClassId) {
+  return postJson("/api/maintenance/item-classes/assign", { target_id: targetId, item_class_id: itemClassId || null });
+}
+// A taxonomy as CSV or JSON text; a dry run unless dryRun is false.
+export function importItemClasses({ format, text, dryRun = true, source }) {
+  return postJson("/api/maintenance/item-classes/import", { format, text, dry_run: dryRun, source });
+}
+export function loadStarterItemClasses(dryRun = true) {
+  return postJson("/api/maintenance/item-classes/starter", { dry_run: dryRun });
+}
+export function downloadItemClasses(format = "csv") {
+  return downloadFile(`/api/maintenance/item-classes/export?format=${format}`, `item-classes.${format}`);
+}
+export function setItemAttributes(itemId, values) {
+  return putJson(`/api/maintenance/items/${itemId}/attributes`, { values });
+}
+export function setItemPart(itemId, partId) {
+  return putJson(`/api/maintenance/items/${itemId}/part`, { part_id: partId || null });
+}
+export function listManufacturers() {
+  return request("/api/maintenance/manufacturers");
+}
+export function createManufacturer(body) {
+  return postJson("/api/maintenance/manufacturers", body);
+}
+export function updateManufacturer(id, body) {
+  return patchJson(`/api/maintenance/manufacturers/${id}`, body);
+}
+export function mergeManufacturers(id, intoId) {
+  return postJson(`/api/maintenance/manufacturers/${id}/merge`, { into_id: intoId });
+}
+export function matchManufacturer(text) {
+  return request(`/api/maintenance/manufacturers/match?text=${encodeURIComponent(text)}`);
+}
+// An item or part's maker in the register (null unlinks it).
+export function linkManufacturer(targetId, manufacturerId) {
+  return postJson("/api/maintenance/manufacturers/link", { target_id: targetId, manufacturer_id: manufacturerId || null });
+}
+export function linkManufacturersByName(dryRun = true) {
+  return postJson("/api/maintenance/manufacturers/link-by-name", { dry_run: dryRun });
 }

@@ -1,6 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthProvider.jsx";
-import { getWorkspace, setWorkspace as persistWorkspace, listTeams, listTeamInvites } from "./api.js";
+import {
+  getMyTimeZone, getWorkspace, setWorkspace as persistWorkspace, listTeams, listTeamInvites, setMyTimeZone,
+} from "./api.js";
+import { setWorkspaceTimeZone } from "./workspaceDate.js";
 
 const WorkspaceContext = createContext({
   workspace: "personal",
@@ -10,6 +13,10 @@ const WorkspaceContext = createContext({
   refreshTeams: () => {},
   invites: [],
   refreshInvites: () => {},
+  timeZone: null,
+  timeZoneLoaded: false,
+  personalTimeZone: null,
+  savePersonalTimeZone: () => Promise.resolve(),
 });
 
 // Active workspace (Personal or a team) + the user's team list. The chosen
@@ -48,6 +55,20 @@ export function WorkspaceProvider({ children }) {
     refreshInvites();
   }, [refreshInvites]);
 
+  // The personal workspace's time zone (a team's comes with the team list).
+  // undefined = not fetched yet.
+  const [personalTimeZone, setPersonalTimeZone] = useState(undefined);
+  useEffect(() => {
+    if (!user) return;
+    getMyTimeZone()
+      .then((d) => setPersonalTimeZone(d.time_zone || null))
+      .catch(() => setPersonalTimeZone(null));
+  }, [user]);
+  const savePersonalTimeZone = useCallback(
+    (zone) => setMyTimeZone(zone).then((d) => setPersonalTimeZone(d.time_zone || null)),
+    [],
+  );
+
   // Drop a stored workspace the user no longer belongs to.
   useEffect(() => {
     if (!user || teams === null || workspace === "personal") return;
@@ -62,15 +83,27 @@ export function WorkspaceProvider({ children }) {
     setWorkspaceState(id || "personal");
   }, []);
 
-  const value = useMemo(() => ({
-    workspace,
-    setWorkspaceId,
-    teams: teams || [],
-    activeTeam: (teams || []).find((t) => t.id === workspace) || null,
-    refreshTeams,
-    invites,
-    refreshInvites,
-  }), [workspace, setWorkspaceId, teams, refreshTeams, invites, refreshInvites]);
+  const value = useMemo(() => {
+    const activeTeam = (teams || []).find((t) => t.id === workspace) || null;
+    const timeZone = (workspace === "personal" ? personalTimeZone : activeTeam?.time_zone) || null;
+    // Forms that pre-fill today read it (workspaceDate.js): set before the
+    // pages below render with it.
+    setWorkspaceTimeZone(timeZone);
+    return {
+      workspace,
+      setWorkspaceId,
+      teams: teams || [],
+      activeTeam,
+      refreshTeams,
+      invites,
+      refreshInvites,
+      timeZone,
+      timeZoneLoaded: workspace === "personal" ? personalTimeZone !== undefined : teams !== null,
+      personalTimeZone: personalTimeZone || null,
+      savePersonalTimeZone,
+    };
+  }, [workspace, setWorkspaceId, teams, refreshTeams, invites, refreshInvites, personalTimeZone,
+    savePersonalTimeZone]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

@@ -25,7 +25,7 @@ in-process run returns it (:func:`availability_out`). ``expires_at``
 drives a TTL index: finished jobs are kept ``RBD_JOB_TTL_DAYS``. A job still
 queued or running after ``RBD_JOB_STALE_S`` was dropped by the queue (its
 retries were spent) and is reported failed. The names follow #111 (``rbd_jobs``
-/ ``get_job``), of which this is the first piece.
+/ ``get kind job``), of which this is the first piece.
 """
 
 from __future__ import annotations

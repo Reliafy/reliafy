@@ -427,3 +427,19 @@ def test_the_sentence_puts_alerts_and_moved_answers_first():
     assert _sentence("in the last 30 days", counts) == (
         "In the last 30 days: 1 fleet alert fired, 4 answers moved (2 refits, 1 forecast, 1 simulation), "
         "evidence changed on 1 RCM decision, 2 items were added and 1 changed.")
+
+
+def test_a_since_date_and_the_labels_are_in_the_workspaces_time_zone():
+    from zoneinfo import ZoneInfo
+
+    from backend.services import workspace_changes
+
+    db = mongomock.MongoClient()["changes_tz"]
+    now = datetime(2026, 10, 14, 23, 30, tzinfo=timezone.utc)
+    bne = workspace_changes.resolve_period(db, A, since="2026-09-01", now=now, tz=ZoneInfo("Australia/Brisbane"))
+    assert bne["since"] == datetime(2026, 8, 31, 14, tzinfo=timezone.utc) and bne["label"] == "since 1 Sep 2026"
+    utc = workspace_changes.resolve_period(db, A, since="2026-09-01", now=now)
+    assert utc["since"] == datetime(2026, 9, 1, tzinfo=timezone.utc) and utc["label"] == "since 1 Sep 2026"
+    db.users.insert_one({"_id": A, "previous_visit_at": datetime(2026, 10, 13, 22, tzinfo=timezone.utc)})
+    visit = workspace_changes.resolve_period(db, A, since="last_visit", now=now, tz=ZoneInfo("Australia/Brisbane"))
+    assert visit["label"] == "since your last visit (14 Oct 2026)"
