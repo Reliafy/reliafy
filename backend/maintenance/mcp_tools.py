@@ -96,6 +96,12 @@ def register() -> None:
         and is then where its position is: it needs no placement. place_item is only for
         items that aren't fitted (a spare in a store, one away at a repairer).
 
+        Tasks and work orders are on a position (the job: most tasks, and every one from
+        RCM), an item (it follows the serial number: certification, calibration, a rotable's
+        overhaul) or a location (a round or area inspection): each has a subject {kind, id,
+        name}. Due tasks and open work orders here include all three; create_task explains
+        which to use.
+
         Dates are calendar days in the workspace's time zone (time_zone, an IANA name;
         null means UTC, unset): today is the workspace's today, and a date left out
         anywhere defaults to it."""
@@ -111,7 +117,8 @@ def register() -> None:
         its failure modes (from RCM, added by hand, or ad hoc: typed in at a failure),
         class_failure_modes (modes seen at other positions of its class, to offer when it
         fails), its tasks with last-done and next-due dates and the trade each needs, its work
-        orders, its document links, its parts_list (catalogue parts it uses: the replacement
+        orders, item_tasks (the fitted item's own tasks: they fall due on their own and leave with
+        it), its document links, its parts_list (catalogue parts it uses: the replacement
         part first, with stock on hand, what to use instead if superseded, interchangeable
         alternatives, critical-spare minimums and compatibility notes) and its life data (one
         row per item fitted: days in service, c = 0 failed or 1 censored, 2 failed within
@@ -124,22 +131,27 @@ def register() -> None:
     def list_work_orders(ctx: Context, status: Literal["open", "planned", "in_progress", "waiting", "closed",
                                                        "cancelled"] | None = None,
                          location_id: str | None = None) -> dict[str, Any]:
-        """Work orders, newest first, each with its position and that position's location. status
-        'open' gives every one not yet done (open, planned, in progress, waiting); or one status
-        exactly. location_id: only work in that area (positions located there or in a location
-        inside it, set or inherited), e.g. everything open in Substation 2."""
+        """Work orders, newest first, each with its subject (what it's on: a position, an item or a
+        location), position (where the work is: an item's is the position it's fitted to now) and
+        location (an item's: wherever it is now). status 'open' gives every one not yet done (open,
+        planned, in progress, waiting); or one status exactly. location_id: only work in that area
+        (on positions located there or in a location inside it, set or inherited; on items there
+        now; on the location itself), e.g. everything open in Substation 2."""
         return {"work_orders": run(m_for(ctx).work_orders, status, location_id)}
 
     @tool("get_work_order", _READ, "Read a work order")
     def get_work_order(work_order_id: str, ctx: Context) -> dict[str, Any]:
-        """A work order: its position, task, status and dates, the trade it needs, its notes (with
-        note_history: every earlier version), the actions and close_notes recorded when it
-        closed, the cancel_reason if cancelled, and (for an open one) the item fitted now and the
-        position's failure modes, which close_work_order's actions can name. suggested_parts is the
-        position's parts list (replacement part first, with stock by location): pick from it for a
-        replacement or a part used rather than searching the catalogue. warranty is set when
-        the item fitted when it was raised was under warranty then: check the coverage before
-        paying for the work."""
+        """A work order: its subject (a position, an item or a location), task, status and dates, the
+        trade it needs, its notes (with note_history: every earlier version), the actions and
+        close_notes recorded when it closed, the cancel_reason if cancelled, and (for an open one) the
+        item fitted now and the position's failure modes, which close_work_order's actions can name.
+        suggested_parts is the position's parts list (replacement part first, with stock by
+        location): pick from it for a replacement or a part used rather than searching the catalogue.
+        warranty is set when the item fitted when it was raised (an item's: the item) was under
+        warranty then: check the coverage before paying for the work. An item's work order has item
+        (with where it is now: fitted to a position, or placed in a store) and the position data of
+        where it's fitted; a location's (a round) has its checklist, a line per position there when it
+        lists them (position_id on each line). can_replace: whether a replacement can be recorded."""
         return run(m_for(ctx).work_order, work_order_id)
 
     @tool("list_maintenance_items", _READ, "List items")
@@ -308,7 +320,7 @@ def register() -> None:
     @tool("set_task_last_done", _WRITE, "Set when a task was last done")
     def set_task_last_done(task_id: str, on: str, ctx: Context) -> dict[str, Any]:
         """Record when a task was last done (before it was tracked here), so its next
-        due date counts from then. Task ids are in get_position."""
+        due date counts from then. Task ids are in get_position, get_item and get_location."""
         return run(m_for(ctx).set_last_done, task_id, on)
 
     @tool("create_location", _WRITE, "Create a location")
@@ -330,20 +342,29 @@ def register() -> None:
     # ---- work ---------------------------------------------------------------------------
 
     @tool("open_work_order", _WRITE, "Open a work order")
-    def open_work_order(position_id: str, title: str, ctx: Context,
+    def open_work_order(title: str, ctx: Context, position_id: str | None = None, item_id: str | None = None,
+                        location_id: str | None = None,
                         type: Literal["corrective", "preventive", "inspection", "other"] = "corrective",
                         task_id: str | None = None, due: DateText = None, notes: str = "",
-                        trade: str | None = None) -> dict[str, Any]:
-        """Open a work order on a position: corrective (something's wrong), preventive
-        (usually for a task: task_id), inspection, or other. trade: the trade, licence or
-        competency the work needs ('licensed electrician'); a task's work order takes the
-        task's unless given. The result flags warranty if the fitted item is under one."""
-        return run(m_for(ctx).open_work_order, position_id, title, type, task_id, due, notes, trade)
+                        trade: str | None = None, include_positions: bool | None = None) -> dict[str, Any]:
+        """Open a work order on exactly one of: a position (position_id: work on the job and
+        whatever is fitted there), an item (item_id: work that follows that serial number, such as a
+        calibration or certificate, wherever it is now) or a location (location_id: a round or area
+        inspection). With task_id and none of them, it's on the task's subject. type: corrective
+        (something's wrong), preventive (usually for a task), inspection, or other. trade: the trade,
+        licence or competency the work needs ('licensed electrician'); a task's work order takes the
+        task's unless given. include_positions (a location's work order): a checklist line for each
+        position there, for a walkdown (default: as the task says). The result flags warranty if the
+        item is under one."""
+        return run(m_for(ctx).open_work_order, position_id, title, type, task_id, due, notes, trade, item_id,
+                   location_id, include_positions)
 
     @tool("generate_work_orders", _WRITE, "Create work orders for due tasks")
     def generate_work_orders(ctx: Context, horizon_days: int = 30) -> dict[str, Any]:
         """Open a preventive work order for every task due within horizon_days that
-        doesn't already have an open one."""
+        doesn't already have an open one, on the task's subject: its position, its item
+        (wherever the item is now) or its location (a round, listing the positions there
+        when the task says so)."""
         return {"work_orders": run(m_for(ctx).generate_work_orders, max(0, min(horizon_days, 366)))}
 
     @tool("close_work_order", _WRITE, "Close a work order")
@@ -366,8 +387,11 @@ def register() -> None:
         time at the position (a failure if a failure mode is named, otherwise a planned
         removal) and fits the new item; that is what builds the life data. Get the
         position's failure-mode ids from get_work_order first; if none fits, describe it in
-        failure_mode_text rather than leaving a failure as planned. Nothing is saved if any
-        action is invalid."""
+        failure_mode_text rather than leaving a failure as planned. On an item's work order, a
+        replacement or failure mode is at the position the item is fitted to now (refused when it
+        isn't fitted); on a location's (a round) only repair, inspect and other can be recorded:
+        put what was found in notes, and open a work order on the position for anything to
+        replace. Nothing is saved if any action is invalid."""
         return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes, readings)
 
     # ---- items, locations, classes and corrections --------------------------------------
@@ -381,7 +405,9 @@ def register() -> None:
         links; where it's fitted and where it is (location: how fitted, from its position, or
         placed; or last_at: the position it last came out of, until it's placed), every position
         it has been fitted to, its placements (current marks the one in force), its own positions
-        (an engine's turbos) and its photos."""
+        (an engine's turbos) and its photos. tasks: its own tasks, which follow it from position to
+        position and into a store (each with its subject, next due and while_stored); work_orders on
+        it; measurements: its own measurement points (an hour meter that travels with it)."""
         return run(m_for(ctx).item, item_id)
 
     @tool("update_item", _WRITE, "Update an item's details")
@@ -604,26 +630,49 @@ def register() -> None:
     Outcome = Literal["fixed_interval", "failure_finding", "on_condition"]
     Source = Literal["manual", "oem", "statutory", "other"]
 
-    @tool("create_task", _WRITE, "Add a scheduled task to a position")
-    def create_task(position_id: str, name: str, interval: float, ctx: Context, unit: str = "months",
+    @tool("create_task", _WRITE, "Add a scheduled task")
+    def create_task(name: str, interval: float, ctx: Context, position_id: str | None = None,
+                    item_id: str | None = None, location_id: str | None = None, unit: str = "months",
                     outcome: Outcome | None = None, also_interval: float | None = None, also_unit: str | None = None,
                     point_id: str | None = None, instructions: str = "", checklist: list[str] | None = None,
                     source: Source = "manual", reference: str = "", failure_mode_id: str | None = None,
-                    last_done: DateText = None, trade: str = "") -> dict[str, Any]:
-        """A scheduled task on a position without an RCM study (e.g. from the maker's manual or
-        a regulation). It falls due, raises work orders (generate_work_orders) and renews when a
-        new item is fitted, like a task from RCM. interval + unit: days, weeks, months, years, or
-        a unit of use (hours, cycles, km) counted by a counter on the position (point_id picks
-        one). also_interval + also_unit: a second limit, whichever comes first. outcome:
-        fixed_interval (replace or restore; the class life model proposes its interval and
-        plan_economics costs it), failure_finding (a check of a hidden function), on_condition
-        (a condition check), or none for other routine work (lubrication, cleaning). source:
-        oem, statutory, manual (own practice) or other, with reference (a manual section, a
-        clause). failure_mode_id links it to a failure mode on the position (from RCM: it then
-        becomes that decision's task). last_done: when it was last done, if known. trade: who may
-        do it ('licensed electrician', 'gas fitter'); its work orders carry it."""
+                    last_done: DateText = None, trade: str = "",
+                    while_stored: Literal["run", "pause"] | None = None,
+                    include_positions: bool | None = None) -> dict[str, Any]:
+        """A scheduled task without an RCM study (e.g. from the maker's manual or a regulation). It
+        falls due and raises work orders (generate_work_orders) like a task from RCM.
+
+        Put it on exactly one subject:
+        - position_id (the usual one): the job, whatever does it. The strategy follows the job and
+          its consequences (RCM); it stays with the slot and counts again from each new item
+          fitted. E.g. lubricate the pump, test the protection relay.
+        - item_id: the serial-numbered thing, wherever it goes (another position, or a store): the
+          statutory inspection or certificate of a specific pressure vessel or lifting gear,
+          calibration of an instrument, warranty-required servicing, a rotable's overhaul (an
+          engine every 10,000 h: the hours travel with it), preserving a spare in store (rotate a
+          stored motor's shaft monthly). By use, it counts the item's own counter if it has one,
+          else the use it had at each position it was fitted to (no new meter needed). while_stored:
+          run (default: calendar time keeps counting in a store) or pause (days out of a position
+          don't count, and it doesn't fall due while out).
+        - location_id: a place: an inspection round or walkdown of an area, Ex (hazardous-area)
+          inspections, building or structure inspections, an area's statutory checks. Calendar
+          units only; it raises one work order for the area. include_positions: its work orders
+          list every position there as checklist lines (a walkdown).
+
+        interval + unit: days, weeks, months, years, or a unit of use (hours, cycles, km) counted by
+        a counter on the position or item (point_id picks one). also_interval + also_unit: a second
+        limit, whichever comes first. outcome: fixed_interval (replace or restore; the class life
+        model proposes its interval and plan_economics costs it), failure_finding (a check of a
+        hidden function), on_condition (a condition check), or none for other routine work
+        (lubrication, cleaning). source: oem, statutory, manual (own practice) or other, with
+        reference (a manual section, a clause). failure_mode_id (a position's task only) links it
+        to a failure mode on the position (from RCM: it then becomes that decision's task).
+        last_done: when it was last done, if known. trade: who may do it ('licensed electrician',
+        'gas fitter'); its work orders carry it."""
         return run(m_for(ctx).create_task, position_id, name, interval, unit, outcome, also_interval, also_unit,
-                   point_id, instructions, checklist, source, reference, failure_mode_id, last_done, trade)
+                   point_id, instructions, checklist, source, reference, failure_mode_id, last_done, trade,
+                   item_id=item_id, location_id=location_id, while_stored=while_stored,
+                   include_positions=include_positions)
 
     @tool("update_task", _WRITE, "Update a task")
     def update_task(task_id: str, ctx: Context, name: str | None = None, interval: float | None = None,
@@ -632,7 +681,9 @@ def register() -> None:
                     checklist: list[str] | None = None, failure_mode_id: str | None = None,
                     unlink_failure_mode: bool = False, source: Source | None = None,
                     reference: str | None = None, outcome: Outcome | None = None,
-                    clear_outcome: bool = False, trade: str | None = None) -> dict[str, Any]:
+                    clear_outcome: bool = False, trade: str | None = None,
+                    while_stored: Literal["run", "pause"] | None = None,
+                    include_positions: bool | None = None) -> dict[str, Any]:
         """Rename a task or change its interval (unit: days, weeks, months, years, or a unit of use
         such as hours, cycles, km, from a counter on the position). also_interval + also_unit
         add a second limit, whichever comes first (every 500 hours or 6 months); also_interval 0
@@ -641,23 +692,31 @@ def register() -> None:
         copied onto each work order the task raises. failure_mode_id links a task added by hand to
         a failure mode on its position (one from an RCM study makes it that decision's task:
         applying the study again updates it); unlink_failure_mode removes the link. source,
-        reference and outcome (or clear_outcome) apply to tasks added by hand."""
+        reference and outcome (or clear_outcome) apply to tasks added by hand. while_stored (an
+        item's task): run or pause while the item is out of a position. include_positions (a
+        location's task): list the positions there on its work orders. A task's subject can't be
+        changed: retire it and create it on the other subject."""
         mode = "" if unlink_failure_mode else failure_mode_id
         return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
                    instructions, checklist, mode, source, reference,
-                   None if clear_outcome else outcome if outcome is not None else ..., trade)
+                   None if clear_outcome else outcome if outcome is not None else ..., trade, while_stored,
+                   include_positions)
 
     @tool("add_measurement_point", _WRITE, "Add a measurement point")
-    def add_measurement_point(position_id: str, ctx: Context, name: str = "",
-                              kind: Literal["counter", "condition"] = "condition", unit: str = "",
+    def add_measurement_point(ctx: Context, position_id: str | None = None, item_id: str | None = None,
+                              name: str = "", kind: Literal["counter", "condition"] = "condition", unit: str = "",
                               source: Literal["manual", "automated"] = "manual", tag: str = "",
                               alarm_above: float | None = None, alarm_below: float | None = None) -> dict[str, Any]:
-        """Something measured on a position. kind 'counter' counts use (run hours, cycles, km; only goes
-        up; tasks by use in that unit fall due from it). kind 'condition' shows condition (vibration
-        mm/s, temperature, wear) with alarm limits: a reading past one opens an inspection. source
-        'manual': someone reads it (record_reading). 'automated': a feed sends readings under tag to
-        the ingest API (POST /api/ingest/maintenance/readings with an ingest-scope token)."""
-        return run(m_for(ctx).add_point, position_id, name, kind, unit, source, tag, alarm_above, alarm_below)
+        """Something measured on a position (position_id), or on an item (item_id: a meter the item
+        carries with it, like a portable generator's hour meter; the item's tasks by use go by it
+        rather than by the counters of the positions it's fitted to). kind 'counter' counts use (run
+        hours, cycles, km; only goes up; tasks by use in that unit fall due from it). kind
+        'condition' shows condition (vibration mm/s, temperature, wear) with alarm limits: a reading
+        past one opens an inspection. source 'manual': someone reads it (record_reading).
+        'automated': a feed sends readings under tag to the ingest API (POST
+        /api/ingest/maintenance/readings with an ingest-scope token)."""
+        return run(m_for(ctx).add_point, position_id, name, kind, unit, source, tag, alarm_above, alarm_below,
+                   item_id=item_id)
 
     @tool("record_reading", _WRITE, "Record a manual reading")
     def record_reading(point_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
@@ -733,7 +792,8 @@ def register() -> None:
         set on it (direct) or inherited_from, and its open work orders; the items placed there
         (not fitted: spares, repairs); and counts (positions, fitted_items, items,
         open_work_orders). At most 500 positions are listed (positions_truncated); counts cover
-        all. For the work there, list_work_orders with this location_id."""
+        all. tasks and work_orders: the location's own (rounds, area inspections; the positions'
+        are on them). For all the work there, list_work_orders with this location_id."""
         return run(m_for(ctx).location, location_id)
 
     @tool("adopt_item_placements", _WRITE, "Turn fitted items' placements into position locations")

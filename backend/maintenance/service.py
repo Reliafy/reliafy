@@ -19,6 +19,14 @@ fitments follow from the actions: nobody edits a fitment directly.
 Each fitment is one row of life data: it ended in a failure, it was removed
 on purpose (a suspension), or it is still fitted (right-censored today).
 
+A task, and the work orders it raises, is on a subject (its ON edge): a position
+(the job: the default, and every task from RCM; it stays with the slot and counts
+again from each new item fitted), an item (it follows the serial number to another
+position or into a store: certification, calibration, a rotable's overhaul; by use
+it counts the item's own counter, else the use it had at the positions it was
+fitted to) or a location (a round, an area inspection: by the calendar). Events
+from before name only position_id, and every position's still does.
+
 Dates are whole days, as ISO text (``"2026-10-13"``), in the workspace's time
 zone (services/time_zones.py): "today" is the workspace's today, and a feed's
 reading is dated by the day it falls on there. Unset, that's the server's zone
@@ -632,7 +640,14 @@ def _failure_mode_merged(s: GraphStore, org: str, p: dict) -> None:
 # Task fields that only tasks added by hand (or edited since) carry: projected
 # only when the payload has them, so older events give the same tasks.
 _TASK_EXTRAS = ("source", "reference", "also_interval", "also_unit", "point_id", "instructions", "checklist",
-               "trade")
+               "trade", "while_stored", "include_positions")
+
+
+def _subject_id(p: dict) -> str:
+    """The node a task, work order or measurement point is on. Older events (and every
+    position's since) name it by position_id; an item's or a location's carry
+    subject: {kind, id}."""
+    return p.get("position_id") or p["subject"]["id"]
 
 
 def _task_added(s: GraphStore, org: str, p: dict) -> None:
@@ -641,7 +656,7 @@ def _task_added(s: GraphStore, org: str, p: dict) -> None:
         "start": p["start"], "last_done": None, "rcm_mode_id": p.get("rcm_mode_id"),
         "study_id": p.get("study_id"),
     } | {k: p[k] for k in _TASK_EXTRAS if k in p})
-    s.put_edge(org, "ON", p["id"], p["position_id"])
+    s.put_edge(org, "ON", p["id"], _subject_id(p))
     if p.get("failure_mode_id"):
         s.put_edge(org, "MITIGATES", p["id"], p["failure_mode_id"])
 
@@ -666,14 +681,16 @@ def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
         "note_history": _note_entry([], p["on"], "set", p.get("notes", "")),
         # A task's instructions and checklist travel with the work it raises.
         "instructions": (task or {}).get("instructions", ""),
-        "checklist": [{"text": t, "done": False} for t in (task or {}).get("checklist") or []],
+        "checklist": [{"text": t, "done": False} for t in (task or {}).get("checklist") or []]
+        # A round (a location's work order): a line for each position there, to check in turn.
+        + [{"text": r["text"], "done": False, "position_id": r["position_id"]} for r in p.get("round") or []],
         "status_history": [{"status": "open", "on": p["on"]}],
     })
     # So does the trade the work needs, unless the work order names its own.
     trade = p.get("trade") or (task or {}).get("trade")
     if trade:
         s.patch_node(org, p["id"], {"trade": trade})
-    s.put_edge(org, "ON", p["id"], p["position_id"])
+    s.put_edge(org, "ON", p["id"], _subject_id(p))
     if p.get("task_id"):
         s.put_edge(org, "FOR", p["id"], p["task_id"])
     if p.get("alarm_point_id"):
@@ -688,7 +705,7 @@ def _point_added(s: GraphStore, org: str, p: dict) -> None:
         "name": p["name"], "kind": kind, "unit": p.get("unit", ""), "source": p.get("source") or "manual",
         "tag": p.get("tag", ""), "alarm_above": p.get("alarm_above"), "alarm_below": p.get("alarm_below"),
         "created": p["on"]})
-    s.put_edge(org, "ON", p["id"], p["position_id"])
+    s.put_edge(org, "ON", p["id"], _subject_id(p))
 
 
 def _reading_added(s: GraphStore, org: str, p: dict) -> None:
@@ -824,7 +841,9 @@ def _rate(readings: list[dict]) -> float | None:
 def _reread_tasks(s: GraphStore, org: str, point_id: str, day: str) -> None:
     """A manual counter's readings changed on or before ``day`` (one backdated, struck
     out or corrected): each task by use that goes by it and was last done since then
-    takes its last-done reading again, from the readings as they are now."""
+    takes its last-done reading again, from the readings as they are now. So does an
+    item's task whose use is counted by the counters of the positions it was fitted to,
+    when this is one of them."""
     point = s.node(org, point_id)
     if point.get("source") == "automated" or point.get("kind") != "counter":
         return
@@ -832,30 +851,112 @@ def _reread_tasks(s: GraphStore, org: str, point_id: str, day: str) -> None:
     for task in s.nodes(org, "Task"):
         if not task.get("last_done") or task["last_done"] < day:
             continue
-        if (_task_point(s, org, task) or {}).get("id") != point_id:
+        own = _task_point(s, org, task)
+        if own is None:
+            subject, unit = _subject(s, org, task), _use_unit(task)
+            if not (subject and subject["label"] == "Item" and unit):
+                continue
+            used = _item_usage(s, org, subject["id"], unit, lambda mp: None if mp.get("source") == "automated"
+                               else _manual_readings(s, org, mp["id"]))
+            if used is None or point_id not in used["points"]:
+                continue
+            value = _reading_at(used["rows"], task["last_done"])
+        elif own["id"] != point_id:
             continue
-        if readings is None:
-            readings = _manual_readings(s, org, point_id)
-        value = _reading_at(readings, task["last_done"])
+        else:
+            if readings is None:
+                readings = _manual_readings(s, org, point_id)
+            value = _reading_at(readings, task["last_done"])
         if value != task.get("last_done_reading"):
             s.patch_node(org, task["id"], {"last_done_reading": value})
 
 
+def _subject(s: GraphStore, org: str, task: dict) -> dict | None:
+    """What a task (or work order, or measurement point) is on: a position, an item or
+    a location."""
+    found = s.out(org, task["id"], "ON")
+    return found[0] if found else None
+
+
+def _use_unit(task: dict) -> str | None:
+    """The unit of use a task by use counts (its first limit by use), or None."""
+    return next((u for u in (task.get("unit"), task.get("also_unit")) if u and not _is_calendar(u)), None)
+
+
+def _counter_on(s: GraphStore, org: str, node_id: str, unit: str) -> dict | None:
+    """A position's (or item's) use counter in ``unit``: the first by name."""
+    points = [mp for mp in s.inn(org, node_id, "ON")
+              if mp["label"] == "MeasurementPoint" and mp.get("kind") == "counter"
+              and _norm_unit(mp["unit"]) == _norm_unit(unit)]
+    return sorted(points, key=lambda mp: mp["name"].lower())[0] if points else None
+
+
 def _task_point(s: GraphStore, org: str, task: dict) -> dict | None:
-    """The use counter a task by use goes by: the one chosen, else the position's
-    counter in the task's unit."""
+    """The use counter a task by use goes by: the one chosen, else its subject's (the
+    position's, or the item's own) counter in the task's unit."""
     chosen = task.get("point_id") or task.get("meter_id")
     if chosen:
         return s.node(org, chosen)
     for unit in (task.get("unit"), task.get("also_unit")):
         if unit and not _is_calendar(unit):
-            position = s.out(org, task["id"], "ON")
-            points = [mp for mp in (s.inn(org, position[0]["id"], "ON") if position else [])
-                      if mp["label"] == "MeasurementPoint" and mp.get("kind") == "counter"
-                      and _norm_unit(mp["unit"]) == _norm_unit(unit)]
-            if points:
-                return sorted(points, key=lambda mp: mp["name"].lower())[0]
+            subject = _subject(s, org, task)
+            point = subject and _counter_on(s, org, subject["id"], unit)
+            if point:
+                return point
     return None
+
+
+# ---- an item's use: it travels with the item ------------------------------------
+# An item with no counter of its own has had, in a unit of use, the sum over its
+# fitments of how far its position's counter in that unit went up while it was
+# fitted there: an engine's hours since overhaul follow it from truck to truck with
+# no meter of its own. Out of a position (in a store, at a repairer) it adds nothing.
+# Done, such a task records last_done_reading as the item's use that day (on that
+# scale, starting from 0), worked out when the work order closes and carried in its
+# event; a reading at one of those positions corrected later re-reads it.
+
+def _item_usage(s: GraphStore, org: str, item_id: str, unit: str, read) -> dict | None:
+    """The item's use in ``unit`` as a counter of its own would have read it:
+    {"rows": [{on, value}] oldest first, starting from 0 at its first fitment with a
+    counter; "points": the counters it came from; "uncounted": the positions it was
+    fitted to that have no counter in that unit (their time isn't counted)}.
+    ``read(point)`` gives a counter's readings, or None when they can't be read
+    (a feed, while projecting): the whole answer is then None."""
+    rows, points, uncounted, total = [], set(), [], 0.0
+    fitments = sorted((f for f in s.out(org, item_id, "IN") if f["label"] == "Fitment" and not f.get("voided")),
+                      key=lambda f: f["from"])
+    for f in fitments:
+        position = s.out(org, f["id"], "AT")[0]
+        counter = _counter_on(s, org, position["id"], unit)
+        if counter is None:
+            uncounted.append({"id": position["id"], "name": position["name"]})
+            continue
+        readings = read(counter)
+        if readings is None:
+            return None
+        points.add(counter["id"])
+        end = f.get("to")
+        within = [r for r in readings if r["on"] >= f["from"] and (end is None or r["on"] <= end)]
+        start_on, start = f["from"], _reading_at(readings, f["from"])
+        if start is None:
+            # Read only after it went in: its use counts from the first reading.
+            if not within:
+                continue
+            start_on, start = within[0]["on"], within[0]["value"]
+        last = start
+        rows.append({"on": start_on, "value": total})
+        for r in within:
+            if r["on"] > start_on:
+                last = max(last, r["value"])
+                rows.append({"on": r["on"], "value": total + last - start})
+        if end:
+            at_end = _reading_at(readings, end)
+            if at_end is not None and at_end > last:
+                last = at_end
+                rows.append({"on": end, "value": total + last - start})
+        total += last - start
+    rows.sort(key=lambda r: (r["on"], r["value"]))
+    return {"rows": rows, "points": points, "uncounted": uncounted}
 
 
 def _renew_task(s: GraphStore, org: str, task: dict, day: str, reading=None) -> None:
@@ -871,6 +972,12 @@ def _renew_task(s: GraphStore, org: str, task: dict, day: str, reading=None) -> 
         point = _task_point(s, org, task)
         if point and point.get("source") != "automated":
             changes["last_done_reading"] = _reading_at(_manual_readings(s, org, point["id"]), day)
+        elif point is None and _use_unit(task) and (_subject(s, org, task) or {}).get("label") == "Item":
+            used = _item_usage(s, org, _subject(s, org, task)["id"], _use_unit(task),
+                               lambda mp: None if mp.get("source") == "automated"
+                               else _manual_readings(s, org, mp["id"]))
+            if used is not None:
+                changes["last_done_reading"] = _reading_at(used["rows"], day)
     s.patch_node(org, task["id"], changes)
 
 
@@ -1826,17 +1933,34 @@ class Maintenance:
 
     def _due_by(self, task: dict, interval: float, unit: str) -> dict:
         """When one limit of a task falls due: on the calendar, or by use from its
-        meter (projected from the meter's recent rate)."""
+        meter (projected from the meter's recent rate). An item's task by use with no
+        counter of its own goes by the use it has had wherever it was fitted; an item's
+        calendar task set to pause while stored doesn't count the days it spent out of
+        a position."""
         base = task.get("last_done") or task["start"]
+        limit = f"{interval:g} {unit}"
+        subject = _subject(self.s, self.org, task) or {}
         if _is_calendar(unit):
-            return {"limit": f"{interval:g} {unit}", "next_due": add_interval(base, interval, unit)}
+            if subject.get("label") == "Item" and task.get("while_stored") == "pause":
+                return {"limit": limit, **self._paused_due(subject, base, interval, unit)}
+            return {"limit": limit, "next_due": add_interval(base, interval, unit)}
         meter = _task_point(self.s, self.org, task)
+        if meter is None and subject.get("label") == "Item":
+            return {"limit": limit, **self._item_use_due(task, subject, interval, unit, base)}
         if meter is None:
-            return {"limit": f"{interval:g} {unit}", "next_due": None,
-                    "note": f"needs a {unit} counter on the position"}
+            return {"limit": limit, "next_due": None, "note": f"needs a {unit} counter on the position"}
         readings = _readings(self.s, self.org, meter, self.tz)
         if not readings:
-            return {"limit": f"{interval:g} {unit}", "next_due": None, "note": "needs counter readings"}
+            return {"limit": limit, "next_due": None, "note": "needs counter readings"}
+        return {"limit": limit, **self._due_from(task, interval, readings, base, {
+            "id": meter["id"], "name": meter["name"], "unit": meter["unit"]})}
+
+    @staticmethod
+    def _due_from(task: dict, interval: float, readings: list[dict], base: str, counter: dict,
+                  accruing: bool = True) -> dict:
+        """A limit by use from a counter's readings: the reading it falls due at, and the
+        day it was crossed or, from the recent rate, will be (not while ``accruing`` is
+        False: an item out of service adds no use)."""
         start = task.get("last_done_reading")
         if start is None:
             start = _reading_at(readings, base)
@@ -1844,13 +1968,14 @@ class Maintenance:
             start = readings[0]["value"]
         target = start + interval
         last, rate = readings[-1], _rate(readings)
-        out = {"limit": f"{interval:g} {unit}", "due_at_reading": round(target, 2),
-               "counter": {"id": meter["id"], "name": meter["name"], "unit": meter["unit"],
-                         "reading": last["value"], "read_on": last["on"],
-                         "rate_per_day": rate and round(rate, 3)}}
+        out = {"due_at_reading": round(target, 2),
+               "counter": {**counter, "reading": last["value"], "read_on": last["on"],
+                           "rate_per_day": rate and round(rate, 3)}}
         if last["value"] >= target:
             crossed = next((r["on"] for r in readings if r["value"] >= target), last["on"])
             return {**out, "next_due": crossed}
+        if not accruing:
+            return {**out, "next_due": None, "note": "not fitted anywhere: it adds no use until it's fitted again"}
         if not rate or rate <= 0:
             return {**out, "next_due": None, "note": "needs two readings to project a date"}
         days = (target - last["value"]) / rate
@@ -1860,6 +1985,63 @@ class Maintenance:
             return {**out, "next_due": None, "note": "too far ahead to put a date on"}
         return {**out, "next_due": next_due}
 
+    def item_usage(self, item_id: str, unit: str) -> dict | None:
+        """The use an item has had in ``unit``, from the counters of the positions it
+        was fitted to (see _item_usage), or None if a counter's readings can't be read."""
+        return _item_usage(self.s, self.org, item_id, unit, lambda mp: _readings(self.s, self.org, mp, self.tz))
+
+    def _item_use_due(self, task: dict, item: dict, interval: float, unit: str, base: str) -> dict:
+        """An item's limit by use with no counter of its own: from its use where it was
+        fitted (the counter is "derived")."""
+        used = self.item_usage(item["id"], unit) or {"rows": [], "uncounted": []}
+        fitted = self._current_fitment_of_item(item["id"])
+        if not used["rows"]:
+            return {"next_due": None,
+                    "note": f"needs a {unit} counter on the item, or on the position it's fitted to (with readings)"}
+        out = self._due_from(task, interval, used["rows"], base,
+                             {"id": None, "name": f"{unit} while fitted", "unit": unit, "derived": True},
+                             accruing=bool(fitted))
+        if used["uncounted"]:
+            names = ", ".join(sorted({p["name"] for p in used["uncounted"]}))
+            out["uncounted"] = used["uncounted"]
+            out.setdefault("note", f"time at {names} isn't counted: no {unit} counter there")
+        return out
+
+    def _out_of_service_days(self, item_id: str, start: str, end: str) -> int:
+        """Days from ``start`` to ``end`` the item spent fitted to no position."""
+        a, b = date.fromisoformat(start), date.fromisoformat(end)
+        if b <= a:
+            return 0
+        fitted = 0
+        for f in self._fitments_of(item_id):
+            lo = max(a, date.fromisoformat(f["from"]))
+            hi = min(b, date.fromisoformat(f["to"]) if f.get("to") else b)
+            fitted += max(0, (hi - lo).days)
+        return max(0, (b - a).days - fitted)
+
+    def _paused_due(self, item: dict, base: str, interval: float, unit: str) -> dict:
+        """A calendar limit on an item that pauses while stored: the days since ``base``
+        spent out of a position (in a store, at a repairer) don't count, and it doesn't
+        fall due while it's out."""
+        today = self.today()
+        if not self._current_fitment_of_item(item["id"]):
+            return {"next_due": None, "paused": True,
+                    "note": "paused: not fitted anywhere (in a store, or away); it counts again once fitted"}
+        due = add_interval(base, interval, unit)
+        stored = self._out_of_service_days(item["id"], base, today)
+        if due and stored:
+            try:
+                due = (date.fromisoformat(due) + timedelta(days=stored)).isoformat()
+            except (OverflowError, ValueError):
+                due = None
+        return {"next_due": due, "paused_days": stored}
+
+    def _subject_brief(self, node: dict | None) -> dict | None:
+        """What a task or work order is on: {kind: position, item or location, id, name}."""
+        if not node:
+            return None
+        return {"kind": node["label"].lower(), "id": node["id"], "name": node.get("name", "")}
+
     def _task_view(self, task: dict) -> dict:
         limits = [self._due_by(task, task["interval"], task["unit"])]
         if task.get("also_interval") and task.get("also_unit"):
@@ -1868,8 +2050,11 @@ class Maintenance:
         nxt = min(dues) if dues else None
         open_wo = next((w for w in self.s.inn(self.org, task["id"], "FOR") if w.get("status") in OPEN_STATUSES), None)
         mode = self.s.out(self.org, task["id"], "MITIGATES")
-        return {
+        subject = _subject(self.s, self.org, task)
+        out = {
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
+            # What it's on: a position (its job), an item (it follows the serial number) or a location.
+            "subject": self._subject_brief(subject),
             "source": task.get("source") or ("rcm" if task.get("rcm_mode_id") else "manual"),
             "reference": task.get("reference", ""), "point_id": task.get("point_id"),
             "failure_mode": {"id": mode[0]["id"], "text": mode[0]["text"]} if mode else None,
@@ -1884,6 +2069,11 @@ class Maintenance:
                               for p in self.s.inn(self.org, task["id"], "ABOUT")
                               if p["label"] == "Proposal" and p.get("status") == "pending"), None),
         }
+        if subject and subject["label"] == "Item":
+            out["while_stored"] = task.get("while_stored") or "run"
+        if subject and subject["label"] == "Location":
+            out["include_positions"] = bool(task.get("include_positions"))
+        return out
 
     # ---- parts and stock ----------------------------------------------------------
 
@@ -2220,13 +2410,15 @@ class Maintenance:
 
     # ---- measurement points ---------------------------------------------------------
 
-    def add_point(self, position_id: str, name, kind="condition", unit="", source="manual", tag="",
-                  alarm_above=None, alarm_below=None) -> dict:
-        """Something measured on a position. kind 'counter' counts use (run hours,
-        cycles, km: tasks by use go by it); 'condition' shows condition (vibration,
-        temperature, wear: alarm limits raise inspections). source 'manual' (someone
-        reads it) or 'automated' (a feed sends it, matched by tag)."""
-        self._get(position_id, "Position")
+    def add_point(self, position_id: str | None, name, kind="condition", unit="", source="manual", tag="",
+                  alarm_above=None, alarm_below=None, item_id=None) -> dict:
+        """Something measured on a position, or on an item (item_id: it travels with the
+        item, like a portable generator's own hour meter; an item's counter is what its
+        tasks by use go by, ahead of the counters where it's fitted). kind 'counter'
+        counts use (run hours, cycles, km: tasks by use go by it); 'condition' shows
+        condition (vibration, temperature, wear: alarm limits raise inspections). source
+        'manual' (someone reads it) or 'automated' (a feed sends it, matched by tag)."""
+        _, on = self._subject_ref("measurement point", position_id, item_id, live_position=False)
         if kind not in POINT_KINDS or source not in POINT_SOURCES:
             raise Invalid("kind is counter or condition; source is manual or automated.")
         tag = _text(tag, "tag")[:200]
@@ -2244,7 +2436,7 @@ class Maintenance:
             raise Invalid("The low alarm must be below the high alarm.")
         pid = new_id()
         self._emit("point.added", {
-            "id": pid, "position_id": position_id, "kind": kind, "source": source, "tag": tag, "unit": unit,
+            "id": pid, **on, "kind": kind, "source": source, "tag": tag, "unit": unit,
             "name": _text(name, "name") or (f"{unit.capitalize()} counter" if kind == "counter" else "Condition"),
             "alarm_above": above, "alarm_below": below, "on": self.today()})
         return self.point(pid)
@@ -2373,11 +2565,13 @@ class Maintenance:
         if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES
                for w in self.s.inn(self.org, point_id, "ALARM_FOR")):
             return None
-        position = self.s.out(self.org, point_id, "ON")[0]
+        position = self.s.out(self.org, point_id, "ON")[0]  # or the item it's on
         limit = above if status == "high" else below
         wid = new_id()
+        on = {"position_id": position["id"]} if position["label"] == "Position" else \
+            {"subject": {"kind": position["label"].lower(), "id": position["id"]}}
         self._emit("work_order.opened", {
-            "id": wid, "number": self._next_number(), "type": "inspection", "position_id": position["id"],
+            "id": wid, "number": self._next_number(), "type": "inspection", **on,
             "title": f"{point['name']} {value:g}{(' ' + point['unit']) if point.get('unit') else ''}: "
                      f"{'above' if status == 'high' else 'below'} the {limit:g} alarm limit",
             "task_id": None, "due": day, "notes": "Raised by a reading past an alarm limit.", "on": day,
@@ -2467,8 +2661,11 @@ class Maintenance:
                "source": mp.get("source", "manual"), "tag": mp.get("tag", ""), "alarm_above": above,
                "alarm_below": below, "reading": current and current["value"], "read_at": current and current["at"],
                "status": status, "readings": recent}
-        position = self.s.out(self.org, point_id, "ON")
-        out["position"] = position and {"id": position[0]["id"], "name": position[0]["name"]}
+        on = self.s.out(self.org, point_id, "ON")
+        # What it measures: a position (position), or an item (item: it travels with it).
+        out["position"] = on and on[0]["label"] == "Position" and {"id": on[0]["id"], "name": on[0]["name"]} or None
+        if on and on[0]["label"] == "Item":
+            out["item"] = {"id": on[0]["id"], "name": on[0]["name"]}
         if out["kind"] == "counter":
             rate = _rate(readings)
             out["rate_per_day"] = rate and round(rate, 3)
@@ -2511,86 +2708,184 @@ class Maintenance:
                     out[task["id"]] = value
         return out
 
+    def _task_reading(self, task: dict, day: str):
+        """A task by use's counter on ``day``, to record as its last-done reading: its
+        counter's reading then, or for an item's task with no counter of its own, the
+        use the item had had by then (from the counters where it was fitted). None for a
+        task on the calendar, or when there's no reading to give."""
+        if not _use_unit(task):
+            return None
+        point = _task_point(self.s, self.org, task)
+        if point:
+            return _reading_at(_readings(self.s, self.org, point, self.tz), day)
+        subject = _subject(self.s, self.org, task) or {}
+        if subject.get("label") == "Item":
+            used = self.item_usage(subject["id"], _use_unit(task))
+            return used and _reading_at(used["rows"], day)
+        return None
+
     def set_last_done(self, task_id: str, on) -> dict:
         """Record when a task was last done (before it was tracked here), so
-        its next due date counts from then."""
-        self._get(task_id, "Task")
+        its next due date counts from then. A task by use records its counter's
+        reading that day too (an item's: the use it had had by then)."""
+        task = self._get(task_id, "Task")
         day = _day(on, today=self.today())
         if day > self.today():
             raise Invalid("Last done can't be in the future.")
-        self._emit("task.updated", {"id": task_id, "changes": {"last_done": day}})
+        changes = {"last_done": day}
+        if _use_unit(task):
+            changes["last_done_reading"] = self._task_reading(task, day)
+        self._emit("task.updated", {"id": task_id, "changes": changes})
         return self._task_view(self._get(task_id, "Task"))
 
     def due_tasks(self, horizon_days: int = 30) -> list[dict]:
+        """Tasks falling due within the horizon (overdue ones too), soonest first, each
+        with its subject; a position's also as position, and an item's with where the
+        item is now (at: the position it's fitted to, and its location)."""
         until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
         out = []
         for task in self.s.nodes(self.org, "Task"):
             if task.get("retired"):
                 continue
-            position = self.s.out(self.org, task["id"], "ON")
-            if not position or position[0].get("retired"):
+            subject = _subject(self.s, self.org, task)
+            if not subject or subject.get("retired"):
                 continue
             view = self._task_view(task)
             if view["next_due"] and view["next_due"] <= until:
-                position = self.s.out(self.org, task["id"], "ON")
-                view["position"] = position and {"id": position[0]["id"], "name": position[0]["name"]}
+                if subject["label"] == "Position":
+                    view["position"] = {"id": subject["id"], "name": subject["name"]}
+                elif subject["label"] == "Item":
+                    view["at"] = self._item_at(subject["id"])
                 out.append(view)
         return sorted(out, key=lambda t: t["next_due"])
+
+    def _item_at(self, item_id: str) -> dict:
+        """Where an item is now, briefly: the position it's fitted to (or None) and its
+        location (where it's fitted or placed, else where it was last)."""
+        fitment = self._current_fitment_of_item(item_id)
+        position = fitment and self.s.out(self.org, fitment["id"], "AT")[0]
+        where = self.whereabouts(item_id)
+        loc = where["location"] or (where["last_at"] or {}).get("location")
+        how = "fitted" if fitment else "placed" if where["location"] else "last_at" if where["last_at"] else None
+        return {"position": position and {"id": position["id"], "name": position["name"]}, "how": how,
+                "location": loc and {k: loc[k] for k in ("id", "name", "display")}}
 
     # ---- work orders ------------------------------------------------------------------
 
     def _next_number(self) -> int:
         return 1 + max((w.get("number", 0) for w in self.s.nodes(self.org, "WorkOrder")), default=0)
 
-    def open_work_order(self, position_id: str, title, type="corrective", task_id=None, due=None,
-                        notes="", trade=None) -> dict:
-        """Open a work order. trade: who may do the work ("licensed electrician"); from a
-        task, the task's trade unless one is given."""
-        self._get(position_id, "Position")
+    SUBJECT_KINDS = ("position", "item", "location")
+
+    def _subject_ref(self, what: str, position_id=None, item_id=None, location_id=None,
+                     live_position: bool = True) -> tuple[dict, dict]:
+        """What a task or work order is on, from a request: exactly one of a position,
+        an item or a location. Returns the node and the payload naming it (a position's
+        as position_id, as events always have; an item's or a location's as subject)."""
+        given = [(k, v) for k, v in (("position", position_id), ("item", item_id), ("location", location_id))
+                 if v not in (None, "")]
+        if len(given) != 1:
+            names = "position_id or item_id" if what == "measurement point" else "position_id, item_id or location_id"
+            raise Invalid(f"Say what the {what} is on: exactly one of {names}.")
+        kind, ref = given[0]
+        node = self._get(str(ref), kind.capitalize())
+        if kind == "position":
+            if live_position and node.get("retired"):
+                raise Invalid("That position has been retired.")
+            return node, {"position_id": node["id"]}
+        return node, {"subject": {"kind": kind, "id": node["id"]}}
+
+    def _round(self, location_id: str) -> list[dict]:
+        """A round's lines: one per position at a location (or a location inside it),
+        set on it or inherited, by path (at most MAX_LOCATION_POSITIONS)."""
+        rows = []
+        for position, _, _ in self._positions_at(self._location_ids_in(location_id)):
+            path = " › ".join([a["name"] for a in self._position_path(position["id"])] + [position["name"]])
+            rows.append({"position_id": position["id"], "text": path[:SHORT_TEXT]})
+        return sorted(rows, key=lambda r: r["text"].lower())[:MAX_LOCATION_POSITIONS]
+
+    def open_work_order(self, position_id: str | None, title, type="corrective", task_id=None, due=None,
+                        notes="", trade=None, item_id=None, location_id=None, include_positions=None) -> dict:
+        """Open a work order on a position, an item (it follows the item: a calibration, a
+        certificate, an overhaul) or a location (a round, an area inspection): exactly one.
+        From a task with no subject given, the task's. trade: who may do the work ("licensed
+        electrician"); from a task, the task's trade unless one is given. include_positions
+        (a location's work order): a checklist line for each position there, to walk down
+        (by default, as the task says)."""
+        task = self._get(task_id, "Task") if task_id else None
+        if task and not any((position_id, item_id, location_id)):
+            subject = _subject(self.s, self.org, task)
+            kind = subject["label"].lower()
+            position_id, item_id, location_id = [subject["id"] if kind == k else None for k in self.SUBJECT_KINDS]
+        node, ref = self._subject_ref("work order", position_id, item_id, location_id, live_position=False)
         if type not in WORK_ORDER_TYPES:
             raise Invalid(f"The type is one of {', '.join(WORK_ORDER_TYPES)}.")
-        if task_id:
-            self._get(task_id, "Task")
+        if include_positions is None:
+            include_positions = bool(task and task.get("include_positions"))
+        include_positions = _flag_value(include_positions, "include_positions")
+        if include_positions and node["label"] != "Location":
+            raise Invalid("Only a location's work order (a round) can list the positions there.")
         trade = _text(trade, "trade")
         wid = new_id()
         self._emit("work_order.opened", {
             "id": wid, "number": self._next_number(), "title": _text(title, "title", required=True),
-            "type": type, "position_id": position_id, "task_id": task_id or None,
+            "type": type, **ref, "task_id": task_id or None,
             "due": _day(due, "due date") if due else None, "notes": _text(notes, "notes"),
             "on": self.today(),
-        } | ({"trade": trade} if trade else {}))
+        } | ({"trade": trade} if trade else {})
+          | ({"round": self._round(node["id"])} if include_positions else {}))
         return self.work_order(wid)
 
     def generate_work_orders(self, horizon_days: int = 30) -> list[dict]:
-        """A work order for every task due within the horizon that has none open."""
+        """A work order for every task due within the horizon that has none open, on the
+        task's subject: its position, its item (wherever it is) or its location."""
         made = []
         for task in self.due_tasks(horizon_days):
-            if task["open_work_order"] or not task.get("position"):
+            if task["open_work_order"] or not task.get("subject"):
                 continue
-            made.append(self.open_work_order(task["position"]["id"], task["name"], type="preventive",
-                                             task_id=task["id"], due=task["next_due"]))
+            made.append(self.open_work_order(None, task["name"], type="preventive", task_id=task["id"],
+                                             due=task["next_due"]))
         return made
+
+    def _work_position(self, subject: dict) -> str | None:
+        """The position a work order's work is done at: its own, or for an item's, the
+        position the item is fitted to now (None: not fitted, or a location's)."""
+        if subject["label"] == "Position":
+            return subject["id"]
+        if subject["label"] == "Item":
+            fitment = self._current_fitment_of_item(subject["id"])
+            return fitment and self.s.out(self.org, fitment["id"], "AT")[0]["id"]
+        return None
 
     def close_work_order(self, work_order_id: str, actions=(), on=None, notes="", readings=()) -> dict:
         """Close a work order with what was done. Replacements end the fitted
         item's fitment and start the new one's. An action may name a catalogue
         part used doing it (part_id, quantity, from_location_id: issued from stock
         there): for a replacement with no other item given, the new item is made
-        from the part."""
+        from the part.
+
+        On an item's work order, a replacement and a failure mode are at the
+        position the item is fitted to now (refused when it isn't fitted); on a
+        location's (a round), there's no position, so only repair, inspect and other."""
         wo = self._get(work_order_id, "WorkOrder")
         if wo["status"] not in OPEN_STATUSES:
             raise Invalid("This work order is already closed.")
         day = _day(on, today=self.today())
-        position_id = self.s.out(self.org, work_order_id, "ON")[0]["id"]
+        subject = self.s.out(self.org, work_order_id, "ON")[0]
+        position_id = self._work_position(subject)
         actions, readings = _dicts(actions, "actions"), _dicts(readings, "readings")
         # Check everything before writing anything.
         plans, issues = [], {}
-        per_job = {self.s.out(self.org, x["id"], "LISTS")[0]["id"]: x["quantity"] for x in self._listings_at(position_id)}
+        per_job = {self.s.out(self.org, x["id"], "LISTS")[0]["id"]: x["quantity"]
+                   for x in (self._listings_at(position_id) if position_id else [])}
         for a in actions:
             kind = a.get("kind")
             if kind not in ACTION_KINDS:
                 raise Invalid(f"An action is one of {', '.join(ACTION_KINDS)}.")
-            fm = self._mode_ref(position_id, a.get("failure_mode_id") or None, a.get("failure_mode_text"))
+            if position_id is None and (kind == "replace" or a.get("failure_mode_id") or a.get("failure_mode_text")):
+                raise Invalid(self._no_position_why(subject, kind))
+            fm = position_id and self._mode_ref(position_id, a.get("failure_mode_id") or None,
+                                                a.get("failure_mode_text"))
             finding = a.get("finding") or None
             if kind == "inspect" and finding not in FINDINGS:
                 raise Invalid("An inspection's finding is ok, degraded or found_failed.")
@@ -2619,7 +2914,7 @@ class Maintenance:
                     and not self.current_fitment(position_id):
                 raise Invalid("A replacement needs the item that went in.")
             plans.append((kind, fm, finding, a, used))
-        current = self.current_fitment(position_id)
+        current = position_id and self.current_fitment(position_id)
         if current and day < current["from"]:
             raise Invalid("The work can't be done before the fitted item went in.")
         # Meter readings taken during the work go in first, so a task by use
@@ -2629,7 +2924,7 @@ class Maintenance:
 
         for kind, ref, finding, a, used in plans:
             # A mode named in words is found, or added, as the action is recorded.
-            fm = self._mode_id(position_id, ref)
+            fm = position_id and self._mode_id(position_id, ref)
             ends = starts = on_fitment = None
             if kind == "replace":
                 current = self.current_fitment(position_id)
@@ -2644,7 +2939,7 @@ class Maintenance:
                     self._emit("item.fitted", {"fitment_id": starts, "item_id": iid,
                                                "position_id": position_id, "on": day,
                                                "task_readings": self._renewal_readings(position_id, day)})
-            else:
+            elif position_id:
                 fitted = self.current_fitment(position_id)
                 on_fitment = fitted and fitted["id"]
             self._emit("action.recorded", {
@@ -2656,9 +2951,28 @@ class Maintenance:
                 pt, qty, from_location_id = used
                 self.add_part_used(work_order_id, part_id=pt["id"], quantity=qty, from_location_id=from_location_id,
                                    note="fitted as the replacement" if kind == "replace" else "")
+        task_readings = self._renewal_readings(position_id, day) if position_id else {}
+        # An item's task by use records the use the item had had by today (its own
+        # counter's reading, or its use where it was fitted).
+        for task in self.s.out(self.org, work_order_id, "FOR"):
+            if (_subject(self.s, self.org, task) or {}).get("label") == "Item":
+                value = self._task_reading(task, day)
+                if value is not None:
+                    task_readings[task["id"]] = value
         self._emit("work_order.closed", {"id": work_order_id, "on": day, "notes": _text(notes, "notes"),
-                                         "task_readings": self._renewal_readings(position_id, day)})
+                                         "task_readings": task_readings})
         return self.work_order(work_order_id)
+
+    @staticmethod
+    def _no_position_why(subject: dict, kind: str) -> str:
+        """Why an item's or location's work order can't take a replacement or a failure mode."""
+        what = "A replacement" if kind == "replace" else "A failure mode"
+        if subject["label"] == "Item":
+            return (f"{subject['name']} isn't fitted to a position now. {what} is recorded at a position: "
+                    "record this work as repair, inspect or other, with what was found in the notes.")
+        return (f"{subject['name']} is a location, not a position. {what} is recorded at a position: record "
+                "this round's work as repair, inspect or other, and open a work order on the position for "
+                "anything to replace there.")
 
     # ---- corrections and edits ------------------------------------------------------
     # Mistakes are fixed with events too, so the history shows what changed.
@@ -3047,19 +3361,71 @@ class Maintenance:
                 out |= {"rcm_mode_id": fm["rcm_mode_id"], "study_id": fm.get("study_id")}
         return out
 
-    def create_task(self, position_id: str, name, interval, unit="months", outcome=None, also_interval=None,
+    WHILE_STORED = ("run", "pause")
+
+    def _subject_checks(self, node: dict, unit: str, also_unit, failure_mode_id=None, while_stored=None,
+                        include_positions=None) -> dict:
+        """The settings that depend on what a task is on, checked: an item's task may pause
+        while the item is stored; a location's goes by the calendar (a place counts no use)
+        and may list the positions there on its work orders; only a position's task can
+        prevent one of its failure modes. Returns the payload fields."""
+        kind = node["label"]
+        if failure_mode_id and kind != "Position":
+            raise Invalid("Failure modes are on positions: only a position's task can prevent one.")
+        if kind == "Location" and any(u and not _is_calendar(u) for u in (unit, also_unit)):
+            raise Invalid("A location's task goes by the calendar (days, weeks, months, years): a place "
+                          "counts no use. Put a task by use on the position or the item.")
+        out = {}
+        if while_stored not in (None, ""):
+            if kind != "Item":
+                raise Invalid("while_stored is for an item's task (what happens while the item is in a store).")
+            if while_stored not in self.WHILE_STORED:
+                raise Invalid("while_stored is run (it keeps falling due) or pause (the days out of a "
+                              "position don't count).")
+            out["while_stored"] = while_stored
+        if include_positions not in (None, ""):
+            flag = _flag_value(include_positions, "include_positions")
+            if flag and kind != "Location":
+                raise Invalid("include_positions is for a location's task (a round of the positions there).")
+            if kind == "Location":
+                out["include_positions"] = flag
+        return out
+
+    def _task_counter(self, point_id: str, node: dict, units) -> dict:
+        """A counter chosen for a task, checked: on the task's own subject, in its unit."""
+        point = self._counter(point_id)
+        on = self.s.out(self.org, point_id, "ON")
+        if not on or on[0]["id"] != node["id"]:
+            raise Invalid(f"The counter must be on the same {node['label'].lower()} as the task.")
+        if _norm_unit(point.get("unit")) not in units:
+            by_use = [u for u in units if u and not _is_calendar(u)]
+            raise Invalid(f"{point['name']} counts {point.get('unit')}, but the task goes by "
+                          f"{' or '.join(by_use) if by_use else 'the calendar'}.")
+        return point
+
+    def create_task(self, position_id: str | None, name, interval, unit="months", outcome=None, also_interval=None,
                     also_unit=None, point_id=None, instructions="", checklist=None, source="manual", reference="",
-                    failure_mode_id=None, last_done=None, trade="") -> dict:
-        """A scheduled task on a position without an RCM study: from the maker's
-        manual (source 'oem'), a law or standard ('statutory'), your own practice
-        ('manual') or elsewhere ('other'). It's scheduled, raises work orders and
-        renews like a task from RCM. outcome says what kind of task it is (as an RCM
-        decision would): fixed_interval (replace or restore: the class's life model
-        proposes its interval and plan_economics costs it), failure_finding,
-        on_condition, or None for other routine work."""
-        position = self._get(position_id, "Position")
-        if position.get("retired"):
-            raise Invalid("That position has been retired.")
+                    failure_mode_id=None, last_done=None, trade="", item_id=None, location_id=None,
+                    while_stored=None, include_positions=None) -> dict:
+        """A scheduled task without an RCM study: from the maker's manual (source 'oem'),
+        a law or standard ('statutory'), your own practice ('manual') or elsewhere
+        ('other'). It's scheduled and raises work orders like a task from RCM. outcome
+        says what kind of task it is (as an RCM decision would): fixed_interval (replace
+        or restore: the class's life model proposes its interval and plan_economics costs
+        it), failure_finding, on_condition, or None for other routine work.
+
+        What it's on (exactly one):
+        * position_id: the job (a functional location). It stays with the slot and counts
+          again from each new item fitted. The default, and what RCM gives.
+        * item_id: the serial-numbered thing, wherever it goes (statutory inspection of a
+          pressure vessel or lifting gear, calibration, warranty servicing, a rotable's
+          overhaul, preserving a spare in store). By use, it counts the item's own counter,
+          else the use it has had at each position it was fitted to. while_stored: run
+          (default: calendar time keeps counting in a store) or pause.
+        * location_id: a place (an inspection round, Ex inspections, a building check). By
+          the calendar only; include_positions puts a line for each position there on the
+          checklist of the work orders it raises."""
+        node, ref = self._subject_ref("task", position_id, item_id, location_id)
         name = _text(name, "task's name", required=True)
         unit = _unit(unit, "months")
         interval = _interval(interval, unit)
@@ -3069,22 +3435,19 @@ class Maintenance:
             raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
         if source not in TASK_SOURCES:
             raise Invalid(f"The source is one of {', '.join(TASK_SOURCES)}.")
-        payload = {"id": new_id(), "position_id": position_id, "name": name, "outcome": outcome,
+        payload = {"id": new_id(), **ref, "name": name, "outcome": outcome,
                    "interval": interval, "unit": unit, "start": self.today(),
                    "source": source, "reference": _text(reference, "reference"),
                    "instructions": _text(instructions, "instructions"), "checklist": _checklist(checklist),
                    "trade": _text(trade, "trade")}
         payload |= {k: v for k, v in self._also_limit(also_interval, also_unit).items() if v is not None}
+        payload |= self._subject_checks(node, unit, payload.get("also_unit"), failure_mode_id, while_stored,
+                                        include_positions)
         if point_id:
-            point = self._counter(point_id)
-            on = self.s.out(self.org, point_id, "ON")
-            if not on or on[0]["id"] != position_id:
-                raise Invalid("The counter must be on the same position as the task.")
-            if _norm_unit(point.get("unit")) not in (unit, payload.get("also_unit")):
-                raise Invalid(f"{point['name']} counts {point.get('unit')}, but the task is every "
-                              f"{interval:g} {unit}.")
+            self._task_counter(point_id, node, (unit, payload.get("also_unit")))
             payload["point_id"] = point_id
-        payload |= self._task_link(position_id, failure_mode_id)
+        if node["label"] == "Position":
+            payload |= self._task_link(node["id"], failure_mode_id)
         done = None
         if last_done not in (None, ""):
             done = _day(last_done, "last done date")
@@ -3093,25 +3456,25 @@ class Maintenance:
         self._quota("Task", MAX_TASKS)
         self._emit("task.added", payload)
         if done:
-            self._emit("task.updated", {"id": payload["id"], "changes": {"last_done": done}})
+            self.set_last_done(payload["id"], done)
         return self._task_view(self._get(payload["id"], "Task"))
 
     def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
                     also_unit=None, point_id=None, instructions=None, checklist=None, failure_mode_id=None,
-                    source=None, reference=None, outcome=..., trade=None) -> dict:
+                    source=None, reference=None, outcome=..., trade=None, while_stored=None,
+                    include_positions=None) -> dict:
         """Change a task. also_interval / also_unit add a second limit, whichever comes
         first (500 hours or 6 months); also_interval 0 removes it. point_id picks the
-        meter a task by use goes by (otherwise the position's meter in its unit).
-        failure_mode_id links it to a failure mode on its position ('' unlinks).
-        trade: who may do it ("licensed electrician"); its work orders carry it."""
+        meter a task by use goes by (otherwise its position's, or item's, meter in its
+        unit). failure_mode_id links a position's task to one of the position's failure
+        modes ('' unlinks). trade: who may do it ("licensed electrician"); its work orders
+        carry it. while_stored (an item's task): run or pause. include_positions (a
+        location's task): list the positions there on its work orders."""
         task = self._get(task_id, "Task")
         if task.get("retired"):
             raise Invalid("That task has been retired.")
+        subject = _subject(self.s, self.org, task)
         changes = self._also_limit(also_interval, also_unit, task.get("also_unit"))
-        if point_id is not None:
-            if point_id:
-                self._counter(point_id)
-            changes["point_id"] = point_id or None
         if instructions is not None:
             changes["instructions"] = _text(instructions, "instructions")[:4000]
         if checklist is not None:
@@ -3126,6 +3489,15 @@ class Maintenance:
             changes["interval"] = _interval(interval, changes.get("unit", task["unit"]))
         elif "unit" in changes:
             _interval(task["interval"], changes["unit"])  # the interval must still make sense in the new unit
+        new_unit, new_also = changes.get("unit", task["unit"]), changes.get("also_unit", task.get("also_unit"))
+        changes |= self._subject_checks(subject, new_unit, new_also, None, while_stored, include_positions)
+        if point_id is not None:
+            if point_id:
+                if subject["label"] == "Position":
+                    self._counter(point_id)
+                else:
+                    self._task_counter(point_id, subject, (new_unit, new_also))
+            changes["point_id"] = point_id or None
         if source is not None:
             if source not in TASK_SOURCES:
                 raise Invalid(f"The source is one of {', '.join(TASK_SOURCES)}.")
@@ -3141,10 +3513,13 @@ class Maintenance:
                 raise Invalid("This task's outcome is its RCM decision's.")
             changes["outcome"] = outcome or None
         if failure_mode_id is not None:
-            position = self.s.out(self.org, task_id, "ON")[0]
             linked = self.s.out(self.org, task_id, "MITIGATES")
             if (linked[0]["id"] if linked else "") != (failure_mode_id or ""):
-                changes |= self._task_link(position["id"], failure_mode_id, task)
+                if subject["label"] != "Position":
+                    raise Invalid("Failure modes are on positions: only a position's task can prevent one.")
+                changes |= self._task_link(subject["id"], failure_mode_id, task)
+        changes = {k: v for k, v in changes.items() if k not in ("while_stored", "include_positions")
+                   or v != task.get(k)}
         if changes:
             self._emit("task.updated", {"id": task_id, "changes": changes})
         return self._task_view(self._get(task_id, "Task"))
@@ -3189,11 +3564,26 @@ class Maintenance:
 
     # ---- items, locations and classes: reading ---------------------------------------
 
+    def _task_views_on(self, node_id: str) -> list[dict]:
+        """The live tasks on a position, item or location, soonest due first."""
+        return sorted((self._task_view(t) for t in self._tasks_on(node_id)), key=lambda t: t["next_due"] or "9999")
+
+    def _work_orders_on(self, node_id: str) -> list[dict]:
+        """The work orders on a position, item or location, newest first."""
+        wos = [w for w in self.s.inn(self.org, node_id, "ON") if w["label"] == "WorkOrder"]
+        return [self._wo_brief(w) for w in sorted(wos, key=lambda w: w["number"], reverse=True)]
+
+    def _points_on(self, node_id: str) -> list[dict]:
+        return [self.point(mp["id"]) for mp in sorted(
+            (x for x in self.s.inn(self.org, node_id, "ON") if x["label"] == "MeasurementPoint"),
+            key=lambda x: (x.get("kind") != "counter", x["name"].lower()))]
+
     def item(self, id: str) -> dict:
         """An item: its details and nameplate, where it's fitted and where it is now
         (fitted: its position's location; otherwise where it's placed, or last_at:
         where it came out), every position it has been fitted to, its placements, its
-        own positions (an engine's turbos) and photos."""
+        own positions (an engine's turbos) and photos; its own tasks (they follow it),
+        work orders and measurement points (an hour meter of its own)."""
         item = self._get(id, "Item")
         fitments = sorted(self._fitments_of(id), key=lambda f: f["from"], reverse=True)
         current = next((f for f in fitments if f.get("to") is None), None)
@@ -3227,13 +3617,17 @@ class Maintenance:
                            "item": (lambda f: f and self._fitment_view(f)["item"])(self.current_fitment(c["id"]))}
                           for c in sorted(own, key=lambda c: c["name"].lower())],
             "photos": self.photos_of(id),
+            "tasks": self._task_views_on(id),
+            "work_orders": self._work_orders_on(id),
+            "measurements": self._points_on(id),
         }
 
     def location(self, id: str) -> dict:
         """A location: its path and the locations inside it; the positions there (set on
         them or inherited, here or in a location inside it), grouped by the system each
         belongs to (its top position), with what's fitted to each; the items placed there
-        (not fitted: spares, ones away for repair); and counts."""
+        (not fitted: spares, ones away for repair); counts; and the location's own tasks
+        and work orders (rounds and area inspections: the positions' are on them)."""
         loc = self._get(id, "Location")
         inside = self._location_ids_in(id)
         kids = sorted((c for c in self.s.inn(self.org, id, "PART_OF") if c["label"] == "Location"),
@@ -3289,6 +3683,9 @@ class Maintenance:
                               "location": {"id": at["id"], "name": at["name"]}} for item, at, placement in loose),
                             key=lambda i: i["name"].lower()),
             "photos": self.photos_of(id),
+            # The location's own tasks (rounds, area inspections) and their work orders.
+            "tasks": self._task_views_on(id),
+            "work_orders": self._work_orders_on(id),
         }
 
     def _loose_items(self, location_ids) -> list[tuple[dict, dict, dict]]:
@@ -3829,6 +4226,8 @@ class Maintenance:
             "failure_modes": [self._mode_view(m) for m in sorted(modes, key=lambda m: m["text"].lower())],
             "class_failure_modes": self.class_failure_modes(id),
             "tasks": sorted(tasks, key=lambda t: t["next_due"] or "9999"),
+            # The fitted item's own tasks: they fall due on their own (and leave with it).
+            "item_tasks": self._task_views_on(fitted["item"]["id"]) if fitted and fitted["item"] else [],
             "work_orders": [self._wo_brief(w) for w in wos],
             "life_data": self.life_data(id),
             "coordinates": p.get("coordinates"),
@@ -3876,20 +4275,55 @@ class Maintenance:
                 return None
         return None
 
+    def _item_warranty(self, item: dict, on: str) -> dict | None:
+        """An item's warranty as it stood on ``on``, if it was in warranty then."""
+        w = item.get("warranty")
+        if w and w["ends_on"] >= on:
+            return {"item": self._item_brief(item), **warranty_view(w, on)}
+        return None
+
+    def _wo_area(self, subject: dict) -> dict | None:
+        """Where a work order's work is: its position's location (set or inherited), where
+        its item is now (fitted or placed, else where it was last), or its location."""
+        if subject["label"] == "Position":
+            return self._location_brief(self._located(subject["id"])[0])
+        if subject["label"] == "Item":
+            where = self.whereabouts(subject["id"])
+            loc = where["location"] or (where["last_at"] or {}).get("location")
+            return loc and {k: loc[k] for k in ("id", "name", "path", "display")}
+        return self._location_brief(subject)
+
     def _wo_brief(self, w: dict) -> dict:
-        position = self.s.out(self.org, w["id"], "ON")
-        return {k: w.get(k) for k in ("id", "number", "title", "type", "status", "opened", "due", "closed",
-                                      "assignee", "planned_for")} | {
+        """A work order in a list. subject: what it's on (a position, an item or a
+        location). position: the position the work is at (an item's: the one it's
+        fitted to now, if any; none for a location's). location: where the work is."""
+        found = self.s.out(self.org, w["id"], "ON")
+        subject = found[0] if found else None
+        kind = subject and subject["label"]
+        position_id = subject and self._work_position(subject)
+        position = position_id and (subject if kind == "Position" else self.s.node(self.org, position_id))
+        if kind == "Position":
+            warranty = self._warranty_for(subject["id"], w["opened"])
+        else:
+            warranty = kind == "Item" and self._item_warranty(subject, w["opened"])
+        out = {k: w.get(k) for k in ("id", "number", "title", "type", "status", "opened", "due", "closed",
+                                     "assignee", "planned_for")} | {
             "trade": w.get("trade", ""),
-            "under_warranty": bool(position and self._warranty_for(position[0]["id"], w["opened"])),
-            "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
-            # Where the work is: its position's location (set or inherited).
-            "location": position and self._location_brief(self._located(position[0]["id"])[0]),
+            "subject": self._subject_brief(subject),
+            "under_warranty": bool(warranty),
+            "position": position and {"id": position["id"], "name": position["name"]} or None,
+            # Where the work is: its position's location (set or inherited), where its item is, or its location.
+            "location": subject and self._wo_area(subject),
         }
+        if kind == "Item":
+            out["item_at"] = self._item_at(subject["id"])
+        return out
 
     def work_orders(self, status: str | None = None, location_id: str | None = None) -> list[dict]:
         """Work orders, newest first. status 'open' means every not-yet-done status.
-        location_id: only those on positions at that location or a location inside it."""
+        location_id: only the work in that area (at that location or a location inside
+        it): on positions there, on items there now (fitted or placed), and on the
+        location itself or one inside it."""
         def keep(w):
             if not status:
                 return True
@@ -3900,15 +4334,21 @@ class Maintenance:
             inside = set(self._location_ids_in(location_id))
 
             def there(w):
-                position = self.s.out(self.org, w["id"], "ON")
-                where = position and self._located(position[0]["id"])[0]
+                subject = self.s.out(self.org, w["id"], "ON")
+                where = subject and self._wo_area(subject[0])
                 return bool(where) and where["id"] in inside
             wos = [w for w in wos if there(w)]
         return [self._wo_brief(w) for w in sorted(wos, key=lambda w: w["number"], reverse=True)]
 
     def work_order(self, id: str) -> dict:
+        """A work order in full. On a position: the item fitted there and its failure
+        modes, parts list and measurements. On an item: the same at the position it's
+        fitted to now (none when it isn't fitted), its own measurements too, and where
+        it is (whereabouts). On a location (a round): its checklist, with a line per
+        position there when it lists them (each line's position_id)."""
         w = self._get(id, "WorkOrder")
-        position_id = self.s.out(self.org, id, "ON")[0]["id"]
+        subject = self.s.out(self.org, id, "ON")[0]
+        position_id = self._work_position(subject)
         actions = []
         for a in sorted(self.s.out(self.org, id, "INCLUDES"), key=lambda a: a["on"]):
             fm = self.s.out(self.org, a["id"], "FOUND")
@@ -3921,27 +4361,40 @@ class Maintenance:
                 "fitted": self._fitment_view(started[0])["item"] if started else None,
             })
         task = self.s.out(self.org, id, "FOR")
-        position = self.position(position_id)
-        return {
+        position = self.position(position_id) if position_id else None
+        points = (self._points_on(subject["id"]) if subject["label"] == "Item" else []) + \
+            (position["measurements"] if position else [])
+        if subject["label"] == "Position":
+            warranty = self._warranty_for(position_id, w["opened"])
+        else:
+            warranty = self._item_warranty(subject, w["opened"]) if subject["label"] == "Item" else None
+        out = {
             **self._wo_brief(w), "notes": w.get("notes", ""), "note_history": w.get("note_history") or [],
             "close_notes": w.get("close_notes", ""), "cancel_reason": w.get("cancel_reason", ""),
             "actions": actions,
             "task": {"id": task[0]["id"], "name": task[0]["name"]} if task else None,
-            "fitted": position["fitted"], "failure_modes": position["failure_modes"],
-            "class_failure_modes": position["class_failure_modes"],
+            "fitted": position["fitted"] if position else None,
+            "failure_modes": position["failure_modes"] if position else [],
+            "class_failure_modes": position["class_failure_modes"] if position else [],
             "measurements": [{k: mp[k] for k in ("id", "name", "kind", "unit", "reading")}
-                             for mp in position["measurements"] if mp["source"] == "manual"],
+                             for mp in points if mp["source"] == "manual"],
             "photos": self.photos_of(id),
             "assignee": w.get("assignee", ""), "planned_for": w.get("planned_for"),
             "instructions": w.get("instructions", ""), "checklist": w.get("checklist") or [],
             "status_history": w.get("status_history") or [],
-            # The item fitted when it was raised, if under warranty then: a claim may cover it.
-            "warranty": self._warranty_for(position_id, w["opened"]),
+            # The item fitted when it was raised (an item's: the item), if under warranty
+            # then: a claim may cover it.
+            "warranty": warranty,
             # The position's parts list, replacement first: what a replacement or a part used
             # is picked from.
-            "suggested_parts": position["parts_list"],
+            "suggested_parts": position["parts_list"] if position else [],
+            # Whether a replacement can be recorded: only at a position.
+            "can_replace": bool(position_id),
             **self._wo_costs(id),
         }
+        if subject["label"] == "Item":
+            out["item"] = {**self._item_brief(subject), **self.whereabouts(subject["id"])}
+        return out
 
     def items(self) -> list[dict]:
         out = []

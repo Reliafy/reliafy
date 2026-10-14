@@ -243,13 +243,33 @@ def add_past_fitment(position_id: str, body: dict = Body(...), m: Maintenance = 
                 body.get("from_precision"), body.get("to_precision"), body.get("note", ""))
 
 
+def _create_task(m: Maintenance, body: dict, **subject) -> JSONResponse:
+    return _run(m.create_task, subject.pop("position_id", None), body.get("name"), body.get("interval"),
+                body.get("unit") or "months", body.get("outcome"), body.get("also_interval"), body.get("also_unit"),
+                body.get("point_id"), body.get("instructions", ""), body.get("checklist"),
+                body.get("source") or "manual", body.get("reference", ""), body.get("failure_mode_id"),
+                body.get("last_done"), body.get("trade", ""), while_stored=body.get("while_stored"),
+                include_positions=body.get("include_positions"), **subject)
+
+
 @router.post("/positions/{position_id}/tasks")
 def create_task(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """A scheduled task added by hand (not from an RCM study)."""
-    return _run(m.create_task, position_id, body.get("name"), body.get("interval"), body.get("unit") or "months",
-                body.get("outcome"), body.get("also_interval"), body.get("also_unit"), body.get("point_id"),
-                body.get("instructions", ""), body.get("checklist"), body.get("source") or "manual",
-                body.get("reference", ""), body.get("failure_mode_id"), body.get("last_done"), body.get("trade", ""))
+    """A scheduled task added by hand (not from an RCM study), on the position: it stays with the job."""
+    return _create_task(m, body, position_id=position_id)
+
+
+@router.post("/items/{item_id}/tasks")
+def create_item_task(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A task on an item: it follows the serial number wherever it goes (while_stored: run or pause)."""
+    return _create_task(m, body, item_id=item_id)
+
+
+@router.post("/locations/{location_id}/tasks")
+def create_location_task(location_id: str, body: dict = Body(...),
+                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A task on a location (a round, an area inspection), by the calendar; include_positions lists
+    the positions there on its work orders."""
+    return _create_task(m, body, location_id=location_id)
 
 
 @router.post("/positions/{position_id}/failure-modes")
@@ -293,14 +313,15 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
             view = m.set_last_done(task_id, body["last_done"])
         if any(k in body for k in ("name", "interval", "unit", "also_interval", "also_unit", "point_id",
                                    "instructions", "checklist", "failure_mode_id", "source", "reference",
-                                   "outcome", "trade")):
+                                   "outcome", "trade", "while_stored", "include_positions")):
             view = m.update_task(task_id, body.get("name"), body.get("interval"), body.get("unit"),
                                  body.get("also_interval"), body.get("also_unit"), body.get("point_id"),
                                  body.get("instructions"), body.get("checklist"),
                                  ("" if body["failure_mode_id"] is None else body["failure_mode_id"])
                                  if "failure_mode_id" in body else None,
                                  body.get("source"), body.get("reference"),
-                                 body["outcome"] if "outcome" in body else ..., body.get("trade"))
+                                 body["outcome"] if "outcome" in body else ..., body.get("trade"),
+                                 body.get("while_stored"), body.get("include_positions"))
         if view is None:
             raise Invalid("Nothing to change.")
         return view
@@ -432,6 +453,14 @@ def class_life_data(position_class: str, m: Maintenance = Depends(maintenance)) 
 def add_point(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.add_point, position_id, body.get("name", ""), body.get("kind") or "condition", body.get("unit", ""),
                 body.get("source") or "manual", body.get("tag", ""), body.get("alarm_above"), body.get("alarm_below"))
+
+
+@router.post("/items/{item_id}/points")
+def add_item_point(item_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A measurement point on an item (its own hour meter): it travels with the item."""
+    return _run(m.add_point, None, body.get("name", ""), body.get("kind") or "condition", body.get("unit", ""),
+                body.get("source") or "manual", body.get("tag", ""), body.get("alarm_above"), body.get("alarm_below"),
+                item_id=item_id)
 
 
 @router.get("/points/{point_id}")
@@ -594,14 +623,19 @@ def create_location(body: dict = Body(...), m: Maintenance = Depends(maintenance
 def list_work_orders(status: str | None = None, location_id: str | None = None,
                      m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """Work orders, newest first; status 'open' for every one not yet done; location_id for
-    those on positions at that location or inside it."""
+    the work in that area: on positions there, items there now, and the location itself (or
+    locations inside it)."""
     return _run(lambda: {"work_orders": m.work_orders(status, location_id)})
 
 
 @router.post("/work-orders")
 def open_work_order(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """On a position, an item or a location (exactly one of position_id, item_id, location_id;
+    from a task, the task's when none is given). include_positions: a location's work order
+    lists the positions there on its checklist."""
     return _run(m.open_work_order, body.get("position_id"), body.get("title"), body.get("type", "corrective"),
-                body.get("task_id"), body.get("due"), body.get("notes", ""), body.get("trade"))
+                body.get("task_id"), body.get("due"), body.get("notes", ""), body.get("trade"),
+                body.get("item_id"), body.get("location_id"), body.get("include_positions"))
 
 
 @router.post("/work-orders/generate")

@@ -32,12 +32,13 @@ def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_sp
     subject = "Reliafy Maintenance: " + " and ".join(parts)
     lines = ["New work orders for tasks coming due:", ""] if n else []
     for w in work_orders:
-        where = (w.get("position") or {}).get("name", "")
+        where = (w.get("subject") or w.get("position") or {}).get("name", "")
         lines.append(f"  #{w['number']} {w['title']} ({where}), due {w.get('due') or 'now'}")
     if overdue:
         lines += ["", f"Overdue: {len(overdue)} task{'s' if len(overdue) != 1 else ''}."]
         for t in overdue[:10]:
-            lines.append(f"  {t['name']} ({(t.get('position') or {}).get('name', '')}), due {t['next_due']}")
+            lines.append(f"  {t['name']} ({(t.get('subject') or t.get('position') or {}).get('name', '')}), "
+                         f"due {t['next_due']}")
     if proposals:
         lines += ["", "The records changed a life model, and it proposes:"]
         for pr in proposals:

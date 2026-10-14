@@ -433,3 +433,55 @@ def test_the_workspaces_time_zone_over_mcp(env):
     after = _session(env["token"], flow)
     assert after["today"] == time_zones.today("Australia/Brisbane").isoformat()
     assert env["db"].users.find_one({"_id": UID})["time_zone"] == "Australia/Brisbane"
+
+
+def test_tasks_on_items_and_locations_through_mcp(env):
+    """create_task takes exactly one subject; the item's and the location's tasks show on
+    get_item and get_location, and their work orders on the item (where it is) and the
+    location (a round listing the positions there)."""
+
+    async def flow(client):
+        area = _ok(await client.call_tool("create_location", {"name": "Area 1"}))
+        pump = _ok(await client.call_tool("create_position", {"name": "Pump", "location_id": area["id"]}))
+        fitted = _ok(await client.call_tool("fit_item", {"position_id": pump["id"], "item_name": "Gauge G1",
+                                                         "on": "2026-01-01"}))
+        gauge = fitted["fitted"]["item"]["id"]
+        both = await client.call_tool("create_task", {"name": "Calibrate", "interval": 1, "unit": "years",
+                                                      "position_id": pump["id"], "item_id": gauge})
+        assert both.is_error and "exactly one" in both.content[0].text
+        cal = _ok(await client.call_tool("create_task", {"name": "Calibrate", "interval": 1, "unit": "years",
+                                                         "item_id": gauge, "source": "statutory",
+                                                         "last_done": "2025-01-01", "while_stored": "run"}))
+        assert cal["subject"]["kind"] == "item" and cal["while_stored"] == "run"
+        by_use = await client.call_tool("create_task", {"name": "Walk", "interval": 10, "unit": "hours",
+                                                        "location_id": area["id"]})
+        assert by_use.is_error and "calendar" in by_use.content[0].text
+        walk = _ok(await client.call_tool("create_task", {"name": "Walk the area", "interval": 1, "unit": "weeks",
+                                                          "location_id": area["id"], "include_positions": True,
+                                                          "last_done": "2026-01-01"}))
+        meter = _ok(await client.call_tool("add_measurement_point", {"item_id": gauge, "kind": "counter",
+                                                                     "unit": "hours", "name": "Own hours"}))
+        item = _ok(await client.call_tool("get_item", {"item_id": gauge}))
+        location = _ok(await client.call_tool("get_location", {"location_id": area["id"]}))
+        position = _ok(await client.call_tool("get_position", {"position_id": pump["id"]}))
+        overview = _ok(await client.call_tool("maintenance_overview", {}))
+        made = _ok(await client.call_tool("generate_work_orders", {"horizon_days": 0}))["work_orders"]
+        rounds = next(w for w in made if w["subject"]["kind"] == "location")
+        replace = await client.call_tool("close_work_order", {"work_order_id": rounds["id"],
+                                                              "actions": [{"kind": "replace"}]})
+        closed = _ok(await client.call_tool("close_work_order", {"work_order_id": rounds["id"],
+                                                                 "actions": [{"kind": "inspect", "finding": "ok"}]}))
+        return cal, walk, meter, item, location, position, overview, made, rounds, replace, closed
+
+    cal, walk, meter, item, location, position, overview, made, rounds, replace, closed = _session(env["token"], flow)
+    assert meter["item"]["name"] == "Gauge G1" and item["measurements"][0]["id"] == meter["id"]
+    assert [t["id"] for t in item["tasks"]] == [cal["id"]]
+    assert [t["id"] for t in location["tasks"]] == [walk["id"]]
+    assert [t["id"] for t in position["item_tasks"]] == [cal["id"]] and position["tasks"] == []
+    assert {t["subject"]["kind"] for t in overview["due"]} == {"item", "location"}
+    assert sorted(w["subject"]["kind"] for w in made) == ["item", "location"]
+    item_wo = next(w for w in made if w["subject"]["kind"] == "item")
+    assert item_wo["position"]["name"] == "Pump" and item_wo["location"]["name"] == "Area 1"
+    assert [c["text"] for c in rounds["checklist"]] == ["Pump"]
+    assert replace.is_error and "is a location" in replace.content[0].text
+    assert closed["status"] == "closed"
