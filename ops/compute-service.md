@@ -30,7 +30,7 @@ browser / MCP ──► reliafy (web, Mongo)                    reliafy-compute 
                         of the compute SA (audience = callback URL)
                      5. web verifies the token, stores the result
                         (and the diagram's saved availability result)
-browser polls GET /api/rbd-jobs/<id>; MCP waits up to 20 s, then get_job.
+browser polls GET /api/rbd-jobs/<id>; MCP waits up to 20 s, then get (kind job).
 ```
 
 - **What the user sees.** The exact figures (#154) are computed on the web,
@@ -331,10 +331,10 @@ End to end:
    ```
 4. **Logs.** In the web logs, look for "Rejected compute callback" (the token
    or the config is wrong) and "Enqueue of job … failed" (the IAM is wrong).
-5. **MCP.** On a Pro account, analyze_rbd on a repairable diagram with no
-   saved result returns the exact figures. Its `simulation` is either the
-   result (within 20 s) or `{available: false, status: "queued", job_id}`;
-   get_job then returns the result.
+5. **MCP.** On a Pro account, `rbd_analysis` (action `analyze`) on a
+   repairable diagram with no saved result returns the exact figures. Its
+   `simulation` is either the result (within 20 s) or `{available: false,
+   status: "queued", job_id}`; `get` (kind `job`) then returns the result.
 
 ### Rollback
 

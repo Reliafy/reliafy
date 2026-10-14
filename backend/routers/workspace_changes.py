@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from backend.db import get_session
-from backend.services import workspace_changes
+from backend.services import time_zones, workspace_changes
 from backend.services.access import AccessCtx, get_access
 
 router = APIRouter(prefix="/api")
@@ -21,7 +21,8 @@ router = APIRouter(prefix="/api")
 def workspace_changes_summary(days: int | None = None, since: str | None = None,
                               session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     try:
-        period = workspace_changes.resolve_period(session, ctx.uid, since=since, days=days)
+        period = workspace_changes.resolve_period(session, ctx.uid, since=since, days=days,
+                                                  tz=time_zones.zone(ctx.time_zone))
     except workspace_changes.PeriodError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return JSONResponse(content=workspace_changes.summarize(session, ctx.list_owners, ctx.uid, period))

@@ -322,11 +322,11 @@ def test_cimd_full_flow_and_token_works_on_mcp(env):
 
     async def use(client):
         tools = await client.list_tools()
-        fit = await client.call_tool("fit_distribution", {"data": [100, 200, 300, 400, 500]})
+        fit = await client.call_tool("life_data_analysis", {"action": "fit", "data": [100, 200, 300, 400, 500]})
         return tools, fit
 
     tools, fit = _mcp(tokens["access_token"], use)
-    assert "fit_distribution" in {t.name for t in tools.tools}
+    assert "life_data_analysis" in {t.name for t in tools.tools}
     assert not fit.is_error and fit.structured_content["saved"] is False
     assert env.db.oauth_tokens.find_one({"uid": U})["last_used_at"] is not None
 
@@ -624,11 +624,11 @@ def test_free_oauth_user_tries_it_within_the_allowance(env, monkeypatch):
     assert _post_mcp(env, tokens["access_token"]).status_code == 200
 
     async def use(client):
-        return (await client.list_tools(), await client.call_tool("list_models", {}),
-                await client.call_tool("fit_distribution", {"data": [100, 200, 300]}))
+        return (await client.list_tools(), await client.call_tool("list", {"kind": "models"}),
+                await client.call_tool("life_data_analysis", {"action": "fit", "data": [100, 200, 300]}))
 
     tools, listed, fit = _mcp(tokens["access_token"], use)
-    assert len(tools.tools) == 61  # connecting and listing work on Free...
+    assert len(tools.tools) == 15  # connecting and listing work on Free...
     assert not listed.is_error  # ...as do the allowance's tools...
     assert fit.is_error  # ...but not fitting, which is part of Pro
     text = fit.content[0].text
@@ -643,7 +643,8 @@ def test_free_oauth_user_tries_it_within_the_allowance(env, monkeypatch):
     # ...and once Pro, both work, fitting included.
     env.db.users.update_one({"_id": U}, {"$set": {"plan": "pro"}})
     assert _post_mcp(env, api).status_code == 200
-    ok = _mcp(tokens["access_token"], lambda c: c.call_tool("fit_distribution", {"data": [100, 200, 300]}))
+    ok = _mcp(tokens["access_token"], lambda c: c.call_tool("life_data_analysis", {"action": "fit", "data": [100, 200,
+        300]}))
     assert not ok.is_error
 
 
@@ -652,4 +653,4 @@ def test_api_tokens_still_work_alongside_oauth(env):
 
     api = tokens_service.create_token(env.db, U, "script")["token"]
     tools = _mcp(api, lambda c: c.list_tools())
-    assert "fit_and_save_model" in {t.name for t in tools.tools}
+    assert "models" in {t.name for t in tools.tools}

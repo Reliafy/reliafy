@@ -115,9 +115,9 @@ def test_the_app_fit_saved_model_and_share_page_name_no_solver(custom_solver, cl
 
 def test_mcp_fit_tools_name_no_solver(custom_solver, env):
     token = env.oauth[MCP_PRO]
-    fitted = _ok(_call(token, "fit_distribution", {"data": TIMES, "censored": FLAGS}))
-    saved = _ok(_call(token, "fit_and_save_model", {"data": TIMES, "censored": FLAGS, "name": "Bearings"}))
-    got = _ok(_call(token, "get_model", {"model_id": saved["model_id"]}))
+    fitted = _ok(_call(token, "life_data_analysis", {"action": "fit", "data": TIMES, "censored": FLAGS}))
+    saved = _ok(_call(token, "models", {"action": "fit", "data": TIMES, "censored": FLAGS, "name": "Bearings"}))
+    got = _ok(_call(token, "get", {"kind": "model", "id": saved["model_id"]}))
     for out in (fitted, saved, got):
         assert SOLVER not in _text(out)
 
@@ -198,14 +198,14 @@ def test_mcp_analyze_rbd_and_get_job_name_no_engine(custom_engine, env, monkeypa
     token = env.oauth[MCP_PRO]
     rid = _repairable(env, MCP_PRO, "Pumps")
     # Every figure here is exact: the simulation runs on request (#262).
-    queued = _ok(_call(token, "analyze_rbd", {"rbd_id": rid, "simulate": True}))
+    queued = _ok(_call(token, "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
     job_id = queued["simulation"]["job_id"]
     assert len(tasks) == 1 and ENGINE not in _text(tasks)  # what goes to the compute service
     dispatch()
-    done = _ok(_call(token, "get_job", {"job_id": job_id}))
+    done = _ok(_call(token, "get", {"kind": "job", "id": job_id}))
     assert done["status"] == "done" and done["simulation"]["available"] is True
     stored = env.db.rbd_jobs.find_one({"_id": job_id})
-    again = _ok(_call(token, "analyze_rbd", {"rbd_id": rid}))
+    again = _ok(_call(token, "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     for out in (queued, done, stored, again):
         assert ENGINE not in _text(out)
 

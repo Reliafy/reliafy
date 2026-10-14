@@ -84,7 +84,8 @@ def test_mcp_analyze_rbd_targets(monkeypatch):
     test_db.users.insert_one({"_id": A, "email": "a@example.org", "name": "A"})
     token = tokens.create_token(test_db, A, "mcp")["token"]
     rbd = rbds_service.save_rbd(test_db, "Pumps", {**_pumps_and_valve(), "repairable": False}, A)
-    out = _ok(_call(token, "analyze_rbd", {"rbd_id": rbd.id, "confidence": 0.9, "b_lives": [1, 10],
+    out = _ok(_call(token, "rbd_analysis", {"action": "analyze", "rbd_id": rbd.id, "confidence": 0.9, "b_lives": [1,
+        10],
                                            "times": [0, 100, 200]}))
     targets = out["confidence"]["targets"]
     assert [r["fraction"] for r in targets["b_lives"]] == [0.01, 0.1]

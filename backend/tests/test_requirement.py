@@ -228,36 +228,38 @@ def test_a_saved_analysis_keeps_the_requirement_and_the_interval():
 
 def test_mcp_check_life_requirement(env):  # noqa: F811 - the fixture
     t, c = _model()
-    saved = _ok(_call(env.token[MCP_USER], "fit_and_save_model", {
+    saved = _ok(_call(env.token[MCP_USER], "models", {"action": "fit",
         "data": t.tolist(), "censored": c.tolist(), "unit": "cycles", "name": "Seals"}))
     est, lo = _b10(Weibull.fit(t, c), 0.9)
-    out = _ok(_call(env.token[MCP_USER], "check_life_requirement", {
+    out = _ok(_call(env.token[MCP_USER], "life_data_analysis", {"action": "check_life_requirement",
         "model_id": saved["model_id"], "b_life": 10, "life": est, "confidence": 0.9}))
     assert out["verdict"] == "does_not_meet" and out["meets"] is False and out["unit"] == "Cycles"
     assert out["lower"] == pytest.approx(lo, rel=1e-3) and out["summary"].startswith("Does not meet")
-    met = _ok(_call(env.token[MCP_USER], "check_life_requirement", {
+    met = _ok(_call(env.token[MCP_USER], "life_data_analysis", {"action": "check_life_requirement",
         "model_id": saved["model_id"], "b_life": 10, "life": lo / 2}))
     assert met["verdict"] == "meets"
-    assert "not found" in _err(_call(env.token[MCP_USER], "check_life_requirement", {
+    assert "not found" in _err(_call(env.token[MCP_USER], "life_data_analysis", {"action": "check_life_requirement",
         "model_id": "nope", "b_life": 10, "life": 1}))
 
 
 def test_mcp_plans_a_b_life_test_with_beta_from_a_saved_model(env):  # noqa: F811 - the fixture
-    saved = _ok(_call(env.token[MCP_USER], "fit_and_save_model", {
+    saved = _ok(_call(env.token[MCP_USER], "models", {"action": "fit",
         "data": FIVE, "unit": "cycles", "name": "Five seals"}))
     est, (lo, hi) = _five_failure_beta()
     args = {"b_life": 10, "confidence": 0.9, "mission_time": 1000, "test_multiple": 3,
             "shape_model_id": saved["model_id"]}
-    out = _ok(_call(env.token[MCP_USER], "plan_demonstration_test", args))
+    out = _ok(_call(env.token[MCP_USER], "life_data_analysis", {"action": "plan_demonstration_test", **args}))
     assert out["b_life"] == 10 and out["unit"] == "Cycles" and out["shape"] == pytest.approx(est, rel=1e-6)
     assert out["shape_model"] == "Five seals" and out["shape_sensitivity"]["warning"]
     assert "B10 ≥ 1,000 cycles" in out["summary"]
 
-    safe = _ok(_call(env.token[MCP_USER], "plan_demonstration_test", {**args, "shape_bound": "lower"}))
+    safe = _ok(_call(env.token[MCP_USER], "life_data_analysis", {"action": "plan_demonstration_test", **args,
+                                                                 "shape_bound": "lower"}))
     assert safe["shape"] == pytest.approx(lo, rel=1e-6) and safe["shape_sensitivity"]["warning"] is None
     assert safe["units"] > out["units"]
 
-    assert "not both" in _err(_call(env.token[MCP_USER], "plan_demonstration_test", {**args, "shape": 2}))
+    assert "not both" in _err(_call(env.token[MCP_USER], "life_data_analysis", {"action": "plan_demonstration_test",
+                                                                                **args, "shape": 2}))
 
 
 def test_mcp_checks_a_requirement_on_kaplan_meier_and_royston_parmar(env):  # noqa: F811 - the fixture
@@ -265,8 +267,8 @@ def test_mcp_checks_a_requirement_on_kaplan_meier_and_royston_parmar(env):  # no
     carries the requirement check, so the tool takes those models too."""
     t, c = _model()
     for dist, verdicts in (("kaplan_meier", {"meets", "does_not_meet"}), ("royston_parmar", {"unknown"})):
-        saved = _ok(_call(env.token[MCP_USER], "fit_and_save_model", {
+        saved = _ok(_call(env.token[MCP_USER], "models", {"action": "fit",
             "distribution": dist, "data": t.tolist(), "censored": c.tolist(), "unit": "cycles", "name": dist}))
-        out = _ok(_call(env.token[MCP_USER], "check_life_requirement", {
+        out = _ok(_call(env.token[MCP_USER], "life_data_analysis", {"action": "check_life_requirement",
             "model_id": saved["model_id"], "b_life": 10, "life": 1.0}))
         assert out["verdict"] in verdicts and out["estimate"] > 0

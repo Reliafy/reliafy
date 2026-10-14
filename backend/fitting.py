@@ -2723,8 +2723,8 @@ def _raw_covariates(model, covariates: Optional[list]) -> list:
 
 
 REGRESSION_METRICS_NOTE = (
-    "Regression model: life metrics depend on the covariates; use reliability_at with covariates, "
-    "or the model's covariate means.")
+    "Regression model: life metrics depend on the covariates; use life_data_analysis reliability_at with "
+    "covariates, or the model's covariate means.")
 
 
 def clean_covariate_units(units, names=None) -> dict:

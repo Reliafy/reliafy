@@ -2,8 +2,8 @@
 delivered.
 
 The figures are checked against RePyability called directly; capacities
-survive the compact graph, edit_rbd, the JSON export and import and the
-"Download as Python" script; analyze_rbd reports them; the solar-farm sample
+survive the compact graph, rbd edit, the JSON export and import and the
+"Download as Python" script; rbd_analysis analyze reports them; the solar-farm sample
 reports its energy lost.
 """
 
@@ -271,23 +271,24 @@ def test_mcp_capacity_and_production(monkeypatch):
     edges = [{"source": s, "target": t} for s, t in [("input", "a"), ("input", "b"), ("input", "c"),
                                                      ("a", "pipe"), ("b", "pipe"), ("c", "pipe"),
                                                      ("pipe", "output")]]
-    created = _ok(_call(token, "create_rbd", {"name": "Pumps", "repairable": True, "nodes": nodes, "edges": edges,
+    created = _ok(_call(token, "rbd", {"action": "create", "name": "Pumps", "repairable": True, "nodes": nodes,
+                                       "edges": edges,
                                               "production": {"demand": 100, "unit": "m3/h", "period": 500}}))
-    out = _ok(_call(token, "analyze_rbd", {"rbd_id": created["id"], "summary_only": True}))
+    out = _ok(_call(token, "rbd_analysis", {"action": "analyze", "rbd_id": created["id"], "summary_only": True}))
     prod = out["production"]
     want = _library_repairable().capacity_distribution().delivered_fraction(100.0)
     assert prod["available"] is True and prod["production_availability"] == pytest.approx(want, rel=1e-9)
     assert prod["period"]["lost"] > 0 and "levels" not in prod
-    full = _ok(_call(token, "analyze_rbd", {"rbd_id": created["id"]}))
+    full = _ok(_call(token, "rbd_analysis", {"action": "analyze", "rbd_id": created["id"]}))
     assert math.isclose(sum(lv["probability"] for lv in full["production"]["levels"]), 1.0, rel_tol=1e-9)
 
-    edited = _ok(_call(token, "edit_rbd", {"rbd_id": created["id"], "ops": [
+    edited = _ok(_call(token, "rbd", {"action": "edit", "rbd_id": created["id"], "ops": [
         {"op": "update_node", "id": "c", "capacity": [{"value": 40, "probability": 1}]},
         {"op": "set", "production": {"demand": 80}}]}))
     assert edited["applied"]
     doc = test_db.rbds.find_one({"_id": created["id"]})
     assert next(n for n in doc["graph"]["nodes"] if n["id"] == "c")["data"]["capacity"] == 40.0
     assert doc["graph"]["production"]["demand"] == 80.0
-    err = _call(token, "edit_rbd", {"rbd_id": created["id"], "ops": [
+    err = _call(token, "rbd", {"action": "edit", "rbd_id": created["id"], "ops": [
         {"op": "update_node", "id": "c", "capacity": [{"value": 40, "probability": 0.5}]}]})
     assert err.is_error and "add up to 1" in err.content[0].text

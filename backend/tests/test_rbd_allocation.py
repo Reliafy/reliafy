@@ -236,19 +236,21 @@ def test_mcp_allocate_targets(monkeypatch):
     nr = rbds_service.save_rbd(test_db, "Pumps", _pumps(), A)
     rep = rbds_service.save_rbd(test_db, "Pumps (repairable)", _pumps(True), A)
 
-    out = _ok(_call(token, "allocate_targets", {"rbd_id": nr.id, "target": 0.999, "t": T}))
+    out = _ok(_call(token, "rbd_analysis", {"action": "allocate_targets", "rbd_id": nr.id, "target": 0.999, "t": T}))
     assert out["reached"] is True and out["method"] == "cost_based" and out["kind"] == "reliability"
     want = _library().cost_based_allocation(
         0.999, {n: float(v) for n, v in _library().node_sf(T).items() if n in RATES})
     assert {b["id"]: b["required"] for b in out["blocks"]}["c"] == pytest.approx(want["c"], rel=1e-9)
-    far = _ok(_call(token, "allocate_targets", {"rbd_id": nr.id, "target": 0.99999, "t": T,
+    far = _ok(_call(token, "rbd_analysis", {"action": "allocate_targets", "rbd_id": nr.id, "target": 0.99999, "t": T,
                                                 "method": "improvement", "fixed": ["c"]}))
     assert far["reached"] is False and far["reachable"]["high"] == pytest.approx(0.99005, rel=1e-5)
-    avail = _ok(_call(token, "allocate_targets", {"rbd_id": rep.id, "target": 0.9999, "method": "mttf_mttr"}))
+    avail = _ok(_call(token, "rbd_analysis", {"action": "allocate_targets", "rbd_id": rep.id, "target": 0.9999,
+                                              "method": "mttf_mttr"}))
     assert avail["kind"] == "availability" and avail["system"]["allocated"] == pytest.approx(0.9999)
-    err = _call(token, "allocate_targets", {"rbd_id": rep.id, "target": 0.9999, "method": "equal"})
+    err = _call(token, "rbd_analysis", {"action": "allocate_targets", "rbd_id": rep.id, "target": 0.9999,
+                                        "method": "equal"})
     assert err.is_error and "repairable" in err.content[0].text
-    err = _call(token, "allocate_targets", {"rbd_id": nr.id, "target": 0.99})
+    err = _call(token, "rbd_analysis", {"action": "allocate_targets", "rbd_id": nr.id, "target": 0.99})
     assert err.is_error and "mission time" in err.content[0].text
 
 

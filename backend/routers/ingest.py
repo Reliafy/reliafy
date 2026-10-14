@@ -205,6 +205,7 @@ async def ingest_maintenance_readings(
     from backend.maintenance.access import allowed
     from backend.maintenance.service import Invalid, LimitReached, Maintenance
     from backend.routers.maintenance import get_store
+    from backend.services import time_zones
 
     if not allowed(user):
         raise HTTPException(status_code=404, detail="Not found.")
@@ -212,7 +213,9 @@ async def ingest_maintenance_readings(
     def op(content_type, body):
         rows = ingest_service.rows_from_request(content_type, body, ("readings", "rows"))
         try:
-            return Maintenance(get_store(), user["uid"], user["uid"]).ingest(rows)
+            m = Maintenance(get_store(), user["uid"], user["uid"],
+                            time_zone=time_zones.of_owner(session, user["uid"]))
+            return m.ingest(rows)
         except LimitReached as err:
             raise HTTPException(status_code=err.status, detail=str(err)) from None
         except Invalid as err:

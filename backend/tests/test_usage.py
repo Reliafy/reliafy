@@ -38,26 +38,26 @@ def test_mcp_logs_each_outcome_with_plan_client_and_duration(env, monkeypatch):
     from backend import config
 
     monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 1)
-    _ok(_call(env.oauth[PRO], "list_models"))  # ok
-    _err(_call(env.oauth[PRO], "get_model", {"model_id": "nope"}))  # error
-    _ok(_call(env.oauth[FREE], "list_rbds"))  # ok (the allowance)
-    _err(_call(env.oauth[FREE], "list_rbds"))  # limit
-    _err(_call(env.oauth[FREE], "fit_distribution", FIT))  # pro_only (Free)
-    _err(_call(env.oauth[AGENT], "fit_distribution", FIT))  # pro_only (grandfathered Agent)
+    _ok(_call(env.oauth[PRO], "list", {"kind": "models"}))  # ok
+    _err(_call(env.oauth[PRO], "get", {"kind": "model", "id": "nope"}))  # error
+    _ok(_call(env.oauth[FREE], "list", {"kind": "rbds"}))  # ok (the allowance)
+    _err(_call(env.oauth[FREE], "list", {"kind": "rbds"}))  # limit
+    _err(_call(env.oauth[FREE], "life_data_analysis", {"action": "fit", **FIT}))  # pro_only (Free)
+    _err(_call(env.oauth[AGENT], "life_data_analysis", {"action": "fit", **FIT}))  # pro_only (grandfathered Agent)
     assert _post_mcp(env.api[FREE]).status_code == 403  # locked: a non-Pro API token
 
     got = {(e["uid"], e["feature"], e["outcome"], e["plan"]) for e in _events(env.db)
            if e["feature"] not in ("initialize", "tools/list")}
     assert got == {
-        (PRO, "list_models", "ok", "pro"),
-        (PRO, "get_model", "error", "pro"),
-        (FREE, "list_rbds", "ok", "free"),
-        (FREE, "list_rbds", "limit", "free"),
-        (FREE, "fit_distribution", "pro_only", "free"),
-        (AGENT, "fit_distribution", "pro_only", "agent"),
+        (PRO, "list.models", "ok", "pro"),
+        (PRO, "get.model", "error", "pro"),
+        (FREE, "list.rbds", "ok", "free"),
+        (FREE, "list.rbds", "limit", "free"),
+        (FREE, "life_data_analysis.fit", "pro_only", "free"),
+        (AGENT, "life_data_analysis.fit", "pro_only", "agent"),
         (FREE, "connect", "locked", "free"),
     }
-    calls = _events(env.db, feature="list_models")
+    calls = _events(env.db, feature="list.models")
     assert calls[0]["client"] == "Claude" and calls[0]["ms"] >= 0 and calls[0]["day"]
     assert _events(env.db, feature="connect")[0]["client"] == "API token"
     # Nothing about what was analysed, and no network identifiers.
@@ -81,24 +81,24 @@ def test_mcp_logs_connections_and_upgrade_link(env, monkeypatch):
 def test_simulation_refusal_is_logged_pro_only(env):
     from backend.tests.test_mcp import REPAIRABLE_STAGES
 
-    rid = _ok(_call(env.oauth[FREE], "create_rbd", {
+    rid = _ok(_call(env.oauth[FREE], "rbd", {"action": "create",
         "name": "Pumps", "repairable": True, "stages": REPAIRABLE_STAGES}))["id"]
     # The exact figures are an answer (#154)...
-    assert _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))["available"] is True
-    assert _events(env.db, feature="analyze_rbd")[0]["outcome"] == "ok"
+    assert _ok(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))["available"] is True
+    assert _events(env.db, feature="rbd_analysis.analyze")[0]["outcome"] == "ok"
     # ...a simulation-only diagram (one repair crew for wear-out lives) is the refusal.
     graph = env.db.rbds.find_one({"_id": rid})["graph"]
     graph["repair_crews"] = {"crews": 1}
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
-    assert _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid}))["available"] is False
-    assert {e["outcome"] for e in _events(env.db, feature="analyze_rbd")} == {"ok", "pro_only"}
+    assert _ok(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))["available"] is False
+    assert {e["outcome"] for e in _events(env.db, feature="rbd_analysis.analyze")} == {"ok", "pro_only"}
 
 
 def test_daily_totals_carry_no_account_ids(env):
     from backend.services import usage
 
-    _ok(_call(env.oauth[PRO], "list_models"))
-    _err(_call(env.oauth[FREE], "fit_distribution", FIT))
+    _ok(_call(env.oauth[PRO], "list", {"kind": "models"}))
+    _err(_call(env.oauth[FREE], "life_data_analysis", {"action": "fit", **FIT}))
     tomorrow = datetime.now(timezone.utc) + timedelta(days=1, hours=1)
     assert usage.rollup(env.db, now=tomorrow)["days"]
     docs = list(env.db.usage_daily.find({}))
@@ -108,7 +108,7 @@ def test_daily_totals_carry_no_account_ids(env):
         assert uid not in blob
     for doc in docs:
         assert "uid" not in doc
-    tool = next(d for d in docs if d.get("feature") == "list_models")
+    tool = next(d for d in docs if d.get("feature") == "list.models")
     assert tool["client"] == "Claude" and tool["plan"] == "pro" and tool["count"] == 1
     walls = [d for d in docs if d.get("segment") == "wall_pro_only"]
     assert walls and walls[0]["accounts"] == 1 and walls[0]["plan"] == "free"
@@ -456,7 +456,7 @@ def test_usage_logging_off_records_nothing(env, monkeypatch):
     from backend.services import billing, usage
 
     monkeypatch.setattr(config, "USAGE_LOGGING", False)
-    _ok(_call(env.oauth[PRO], "list_models"))
+    _ok(_call(env.oauth[PRO], "list", {"kind": "models"}))
     _run(env.oauth[FREE], lambda c: c.list_tools())
     assert _post_mcp(env.api[FREE]).status_code == 403
     billing.set_plan(env.db, FREE, "pro")

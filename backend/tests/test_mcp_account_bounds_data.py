@@ -1,5 +1,5 @@
-"""MCP: get_account (#133), confidence bounds in reliability_at (#134), and
-get_dataset / update_model / update_dataset (#135).
+"""MCP: get kind account (#133), confidence bounds in reliability_at (#134), and
+get kind dataset / models update / datasets update (#135).
 
 Through the real /mcp mount, as test_mcp.py: ``env`` there is a self-hosted
 install (billing off); ``plans`` below turns billing on with Free, Agent and
@@ -81,14 +81,14 @@ def _calls_used(db, uid, plan="free"):
     return billing.mcp_calls_used(db, uid, plan)
 
 
-# ---- get_account (#133) ----------------------------------------------------------------------
+# ---- get kind account (#133) ----------------------------------------------------------------------
 
 def test_get_account_is_ungated_and_on_every_plan():
     from backend.mcp_server import PRO_ONLY_TOOLS, UNGATED_TOOLS
 
-    assert "get_account" in UNGATED_TOOLS and "get_account" not in PRO_ONLY_TOOLS
+    assert "get.account" in UNGATED_TOOLS and "get.account" not in PRO_ONLY_TOOLS
     # The new data tools are ordinary: every plan, counted against the quota.
-    assert not {"get_dataset", "update_model", "update_dataset"} & (PRO_ONLY_TOOLS | UNGATED_TOOLS)
+    assert not {"get.dataset", "models.update", "datasets.update"} & (PRO_ONLY_TOOLS | UNGATED_TOOLS)
 
 
 def test_free_account_reports_calls_left_this_month_and_works_past_the_allowance(plans, monkeypatch):
@@ -99,11 +99,11 @@ def test_free_account_reports_calls_left_this_month_and_works_past_the_allowance
     monkeypatch.setattr(billing, "_now", lambda: now["t"])
     monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 3)
     token = plans.oauth[FREE]
-    _ok(_call(token, "save_model", {"name": "Bearing", "distribution": "weibull", "params": WEIBULL}))
-    _ok(_call(token, "list_models"))
+    _ok(_call(token, "models", {"action": "save", "name": "Bearing", "distribution": "weibull", "params": WEIBULL}))
+    _ok(_call(token, "list", {"kind": "models"}))
 
-    out = _ok(_call(token, "get_account"))
-    assert _calls_used(plans.db, FREE) == 2  # get_account isn't counted
+    out = _ok(_call(token, "get", {"kind": "account"}))
+    assert _calls_used(plans.db, FREE) == 2  # get kind account isn't counted
     assert out["plan"] == "free" and out["plan_name"] == "Free" and out["operator"] is False
     assert out["grandfathered"] is False
     calls = out["tool_calls"]
@@ -118,15 +118,15 @@ def test_free_account_reports_calls_left_this_month_and_works_past_the_allowance
     assert "Reliafy Pro (US$19/month)" in out["upgrade"] and "Agent" not in out["upgrade"]
     assert "upgrade_link" in out["upgrade"] and "3 tool calls a month" in out["note"]
 
-    _ok(_call(token, "list_models"))
-    assert "this month's 3 free Reliafy tool calls" in _err(_call(token, "list_models"))
-    out = _ok(_call(token, "get_account"))  # still answers once the allowance is used up
+    _ok(_call(token, "list", {"kind": "models"}))
+    assert "this month's 3 free Reliafy tool calls" in _err(_call(token, "list", {"kind": "models"}))
+    out = _ok(_call(token, "get", {"kind": "account"}))  # still answers once the allowance is used up
     assert out["tool_calls"]["used"] == 3 and out["tool_calls"]["left"] == 0
     assert _calls_used(plans.db, FREE) == 3
 
     # Next month: a fresh allowance.
     now["t"] = datetime(2026, 11, 1, 0, 5, tzinfo=timezone.utc)
-    calls = _ok(_call(token, "get_account"))["tool_calls"]
+    calls = _ok(_call(token, "get", {"kind": "account"}))["tool_calls"]
     assert calls["used"] == 0 and calls["left"] == 3 and calls["resets_on"] == "1 December 2026 (UTC)"
 
 
@@ -136,14 +136,15 @@ def test_get_account_is_never_counted_and_is_logged_as_answered(plans, monkeypat
     monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 1)
     monkeypatch.setattr(config, "USAGE_LOGGING", True)
     token = plans.oauth[FREE]
-    _ok(_call(token, "list_models"))
+    _ok(_call(token, "list", {"kind": "models"}))
     for _ in range(3):
-        _ok(_call(token, "get_account"))
-    assert "upgrade_link" in _err(_call(token, "list_models"))  # the allowance is used up...
-    assert _ok(_call(token, "get_account"))["tool_calls"]["left"] == 0  # ...and get_account still answers
+        _ok(_call(token, "get", {"kind": "account"}))
+    assert "upgrade_link" in _err(_call(token, "list", {"kind": "models"}))  # the allowance is used up...
+    assert _ok(_call(token, "get",
+                     {"kind": "account"}))["tool_calls"]["left"] == 0  # ...and get kind account still answers
     assert _calls_used(plans.db, FREE) == 1
     assert _calls_used(plans.db, FREE) == 1
-    events = list(plans.db.usage_events.find({"uid": FREE, "channel": "mcp", "feature": "get_account"}))
+    events = list(plans.db.usage_events.find({"uid": FREE, "channel": "mcp", "feature": "get.account"}))
     assert len(events) == 4 and {e["outcome"] for e in events} == {"ok"} and {e["plan"] for e in events} == {"free"}
 
 
@@ -151,7 +152,7 @@ def test_grandfathered_agent_account_shows_its_daily_quota_and_points_at_pro(pla
     from backend import config
     from backend.services import billing
 
-    out = _ok(_call(plans.oauth[AGENT], "get_account"))
+    out = _ok(_call(plans.oauth[AGENT], "get", {"kind": "account"}))
     assert out["plan"] == "agent" and out["grandfathered"] is True
     calls = out["tool_calls"]
     assert calls["period"] == "day" and calls["limit"] == config.MCP_AGENT_DAILY_CALLS
@@ -163,7 +164,7 @@ def test_grandfathered_agent_account_shows_its_daily_quota_and_points_at_pro(pla
     assert out["simulation_available"] is False
     # Bought credits don't unlock simulations: they're Pro.
     billing.grant_credits(plans.db, AGENT, 500, "purchase")
-    assert _ok(_call(plans.oauth[AGENT], "get_account"))["simulation_available"] is False
+    assert _ok(_call(plans.oauth[AGENT], "get", {"kind": "account"}))["simulation_available"] is False
 
 
 UNLIMITED_CALLS = {"unlimited": True, "period": None, "used": None, "limit": None, "left": None,
@@ -173,19 +174,19 @@ UNLIMITED_CALLS = {"unlimited": True, "period": None, "used": None, "limit": Non
 def test_pro_and_operator_accounts_are_unlimited(plans, monkeypatch):
     from backend import config
 
-    out = _ok(_call(plans.oauth[PRO], "get_account"))
+    out = _ok(_call(plans.oauth[PRO], "get", {"kind": "account"}))
     assert out["plan"] == "pro" and out["upgrade"] is None and out["simulation_available"] is True
     assert out["tool_calls"] == UNLIMITED_CALLS
     assert all(v["limit"] is None for v in out["storage"].values())
 
     monkeypatch.setattr(config, "ADMIN_EMAILS", {"free@example.org"})
-    out = _ok(_call(plans.oauth[FREE], "get_account"))
+    out = _ok(_call(plans.oauth[FREE], "get", {"kind": "account"}))
     assert out["operator"] is True and out["upgrade"] is None and out["tool_calls"] == UNLIMITED_CALLS
     assert all(v["limit"] is None for v in out["storage"].values()) and "Operator" in out["note"]
 
 
 def test_self_hosted_account_has_no_limits(env):
-    out = _ok(_call(env.token[A], "get_account"))
+    out = _ok(_call(env.token[A], "get", {"kind": "account"}))
     assert out["tool_calls"] == UNLIMITED_CALLS and out["upgrade"] is None
     assert all(v["limit"] is None for v in out["storage"].values()) and "Self-hosted" in out["note"]
 
@@ -193,14 +194,15 @@ def test_self_hosted_account_has_no_limits(env):
 # ---- reliability_at confidence bounds (#134) ---------------------------------------------------
 
 def _saved_weibull(env):
-    return _ok(_call(env.token[A], "fit_and_save_model", {
+    return _ok(_call(env.token[A], "models", {"action": "fit",
         "data": TIMES, "censored": FLAGS, "distribution": "weibull", "name": "Pumps", "unit": "hours"}))
 
 
 def test_bounds_match_surpyval_exactly_at_the_requested_times(env):
     saved = _saved_weibull(env)
     times = [300.0, 1000.0, 2500.0, 1e5]  # 1e5 is far past the plot grid: still exact
-    out = _ok(_call(env.token[A], "reliability_at", {"model_id": saved["model_id"], "times": times,
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": saved["model_id"],
+                                                         "times": times,
                                                      "confidence": 0.9}))
     ref = surpyval.Weibull.fit(x=TIMES, c=FLAGS)
     r_ref = ref.cb(np.array(times), on="sf", alpha_ci=0.1, bound="two-sided")
@@ -225,7 +227,8 @@ def test_bounds_agree_with_the_apps_confidence_band(env):
     band = models_service.confidence(env.db, saved["model_id"], {"on": "sf", "alpha_ci": 0.05}, [A],
                                      x_min=250.0, x_max=2000.0)
     ends = [band["x"][0], band["x"][-1]]
-    out = _ok(_call(env.token[A], "reliability_at", {"model_id": saved["model_id"], "times": ends,
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": saved["model_id"],
+                                                         "times": ends,
                                                      "confidence": 0.95}))
     for i, j in ((0, 0), (1, -1)):
         assert out["points"][i]["reliability_bounds"] == pytest.approx(
@@ -233,19 +236,22 @@ def test_bounds_agree_with_the_apps_confidence_band(env):
 
 
 def test_sample_model_with_data_has_bounds_and_no_confidence_means_no_bounds(samples):
-    out = _ok(_call(samples.token[A], "reliability_at", {"model_id": BEARINGS, "times": [250],
+    out = _ok(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": BEARINGS,
+                                                             "times": [250],
                                                          "confidence": 0.95}))
     lo, hi = out["points"][0]["reliability_bounds"]
     assert 0 < lo < out["points"][0]["reliability"] < hi < 1
 
-    plain = _ok(_call(samples.token[A], "reliability_at", {"model_id": BEARINGS, "times": [250]}))
+    plain = _ok(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": BEARINGS,
+                                                               "times": [250]}))
     assert "reliability_bounds" not in plain["points"][0] and "bounds_note" not in plain
 
 
 def test_ph_bounds_are_surpyvals_at_the_covariates_used(samples):
     from backend.services import models as models_service
 
-    out = _ok(_call(samples.token[A], "reliability_at", {"model_id": SEAL_PH, "times": [1000, 5000],
+    out = _ok(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": SEAL_PH,
+                                                             "times": [1000, 5000],
                                                          "confidence": 0.9}))
     live = models_service.get_live_model(samples.db, SEAL_PH, None)["model"]
     Z = pd.DataFrame({k: [v] for k, v in out["covariates_used"].items()})
@@ -257,12 +263,13 @@ def test_ph_bounds_are_surpyvals_at_the_covariates_used(samples):
 
 def test_no_bounds_without_a_covariance_and_the_note_says_why(env):
     token = env.token[A]
-    km = _ok(_call(token, "fit_and_save_model", {
+    km = _ok(_call(token, "models", {"action": "fit",
         "data": TIMES, "censored": FLAGS, "distribution": "kaplan_meier", "name": "KM"}))
-    params_only = _ok(_call(token, "save_model", {"name": "From SurPyval", "distribution": "weibull",
+    params_only = _ok(_call(token, "models", {"action": "save", "name": "From SurPyval", "distribution": "weibull",
                                                   "params": WEIBULL}))
     for model_id, why in ((km["model_id"], "non-parametric"), (params_only["model_id"], "parameters alone")):
-        out = _ok(_call(token, "reliability_at", {"model_id": model_id, "times": [500, 900], "confidence": 0.95}))
+        out = _ok(_call(token, "life_data_analysis", {"action": "reliability_at", "model_id": model_id, "times": [500,
+            900], "confidence": 0.95}))
         assert all(p["reliability_bounds"] is None and p["failure_bounds"] is None for p in out["points"])
         assert why in out["bounds_note"] and out["bounds_note"].startswith("No 95% bounds")
         assert out["points"][0]["reliability"] is not None  # the point values are still there
@@ -277,7 +284,8 @@ def test_mixture_has_no_bounds(env):
     ds = datasets_service.create_dataset(env.db, "two modes", pd.DataFrame({"x": x}).to_csv(index=False).encode(), A)
     m = models_service.save_model(env.db, "Mixture", ds, "mixture", {"x": "x"}, [], None, "hours", A,
                                   options={"mixture": 2, "mixture_distribution": "weibull"})
-    out = _ok(_call(env.token[A], "reliability_at", {"model_id": m.id, "times": [100], "confidence": 0.9}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": m.id, "times": [100],
+                                                         "confidence": 0.9}))
     assert out["points"][0]["reliability_bounds"] is None and "mixture" in out["bounds_note"]
 
 
@@ -288,7 +296,8 @@ def test_bounds_fail_closed_when_surpyval_cant_compute_them(env, monkeypatch):
         raise ValueError("Only MLE has confidence bounds")
 
     monkeypatch.setattr(surpyval.Weibull.fit(x=TIMES, c=FLAGS).__class__, "cb", boom)
-    out = _ok(_call(env.token[A], "reliability_at", {"model_id": saved["model_id"], "times": [500],
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": saved["model_id"],
+                                                         "times": [500],
                                                      "confidence": 0.9}))
     assert out["points"][0]["reliability_bounds"] is None
     assert "Only MLE has confidence bounds" in out["bounds_note"]
@@ -296,19 +305,20 @@ def test_bounds_fail_closed_when_surpyval_cant_compute_them(env, monkeypatch):
 
 @pytest.mark.parametrize("bad", [0, 1, 1.5, -0.2])
 def test_confidence_must_be_between_0_and_1(samples, bad):
-    _err(_call(samples.token[A], "reliability_at", {"model_id": BEARINGS, "times": [250], "confidence": bad}))
+    _err(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": BEARINGS,
+                                                        "times": [250], "confidence": bad}))
 
 
-# ---- get_dataset (#135) ------------------------------------------------------------------------
+# ---- get kind dataset (#135) ------------------------------------------------------------------------
 
 def _upload(token, n=120, name="Run hours"):
     rows = "\n".join(f"{100 + i},{i % 2},{'' if i == 3 else 'site-' + str(i % 3)}" for i in range(n))
-    return _ok(_call(token, "upload_dataset", {"name": name, "csv": f"hours,failed,site\n{rows}"}))
+    return _ok(_call(token, "datasets", {"action": "upload", "name": name, "csv": f"hours,failed,site\n{rows}"}))
 
 
 def test_get_dataset_pages_rows_with_typed_columns(env):
     ds = _upload(env.token[A])
-    out = _ok(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"]}))
+    out = _ok(_call(env.token[A], "get", {"kind": "dataset", "id": ds["id"]}))
     assert out["name"] == "Run hours" and out["row_count"] == 120 and out["is_sample"] is False
     assert out["columns"][:2] == [{"name": "hours", "dtype": "int64"}, {"name": "failed", "dtype": "int64"}]
     assert out["columns"][2]["name"] == "site" and out["columns"][2]["dtype"] in ("object", "str")  # pandas 2 / 3
@@ -316,95 +326,100 @@ def test_get_dataset_pages_rows_with_typed_columns(env):
     assert out["rows"][0] == [100, 0, "site-0"]
     assert out["rows"][3] == [103, 1, None]  # a blank cell is null
 
-    last = _ok(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"], "offset": 100, "limit": 50}))
+    last = _ok(_call(env.token[A], "get", {"kind": "dataset", "id": ds["id"], "offset": 100, "limit": 50}))
     assert len(last["rows"]) == 20 and last["next_offset"] is None and last["rows"][-1][0] == 219
 
-    big = _ok(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"], "limit": 500}))
+    big = _ok(_call(env.token[A], "get", {"kind": "dataset", "id": ds["id"], "limit": 500}))
     assert len(big["rows"]) == 120 and big["next_offset"] is None
 
-    past = _ok(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"], "offset": 500}))
+    past = _ok(_call(env.token[A], "get", {"kind": "dataset", "id": ds["id"], "offset": 500}))
     assert past["rows"] == [] and "past the last row" in past["note"]
 
 
 @pytest.mark.parametrize("args", [{"limit": 501}, {"limit": 0}, {"offset": -1}])
 def test_get_dataset_limits(env, args):
     ds = _upload(env.token[A], n=5)
-    _err(_call(env.token[A], "get_dataset", {"dataset_id": ds["id"], **args}))
+    _err(_call(env.token[A], "get", {"kind": "dataset", "id": ds["id"], **args}))
 
 
 def test_get_dataset_reads_samples_but_not_other_users_data(samples):
-    out = _ok(_call(samples.token[A], "get_dataset", {"dataset_id": SAMPLE_DS, "limit": 5}))
+    out = _ok(_call(samples.token[A], "get", {"kind": "dataset", "id": SAMPLE_DS, "limit": 5}))
     assert out["is_sample"] is True and len(out["rows"]) == 5 and out["row_count"] >= 5
 
     theirs = _upload(samples.token[B], n=5, name="B's data")
-    assert _err(_call(samples.token[A], "get_dataset", {"dataset_id": theirs["id"]})).endswith("Dataset not found.")
+    assert _err(_call(samples.token[A], "get", {"kind": "dataset", "id": theirs["id"]})).endswith("Dataset not found.")
 
 
-# ---- update_model / update_dataset (#135) ------------------------------------------------------
+# ---- models update / datasets update (#135) ------------------------------------------------------
 
 def test_update_model_renames_and_annotates_without_touching_the_fit(env):
     token = env.token[A]
     saved = _saved_weibull(env)
     mid = saved["model_id"]
-    before = _ok(_call(token, "get_model", {"model_id": mid}))
+    before = _ok(_call(token, "get", {"kind": "model", "id": mid}))
 
-    out = _ok(_call(token, "update_model", {"model_id": mid, "name": "  Feed pumps  ",
+    out = _ok(_call(token, "models", {"action": "update", "model_id": mid, "name": "  Feed pumps  ",
                                              "notes": "Site B only; 2019-2024."}))
     assert out["updated"] == ["name", "notes"] and out["name"] == "Feed pumps" and out["kind"] == "life"
-    after = _ok(_call(token, "get_model", {"model_id": mid}))
+    after = _ok(_call(token, "get", {"kind": "model", "id": mid}))
     assert after["name"] == "Feed pumps" and after["notes"] == "Site B only; 2019-2024."
     assert after["params"] == before["params"] and after["gof"] == before["gof"]
 
-    out = _ok(_call(token, "update_model", {"model_id": mid, "notes": ""}))  # "" clears
+    out = _ok(_call(token, "models", {"action": "update", "model_id": mid, "notes": ""}))  # "" clears
     assert out["updated"] == ["notes"] and out["notes"] is None and out["name"] == "Feed pumps"
-    assert "notes" not in _ok(_call(token, "get_model", {"model_id": mid}))
+    assert "notes" not in _ok(_call(token, "get", {"kind": "model", "id": mid}))
 
 
 def test_update_model_handles_recurrent_models(samples):
     doc = samples.db.recurrent_models.find_one({"_id": SAMPLE_REC})
     samples.db.recurrent_models.insert_one({**doc, "_id": "rec-a", "id": "rec-a", "owner_id": A})
-    out = _ok(_call(samples.token[A], "update_model", {"model_id": "rec-a", "name": "Compressors (mine)",
+    out = _ok(_call(samples.token[A], "models", {"action": "update", "model_id": "rec-a", "name": "Compressors (mine)",
                                                         "notes": "copied"}))
     assert out["kind"] == "recurrent" and out["name"] == "Compressors (mine)"
-    got = _ok(_call(samples.token[A], "get_model", {"model_id": "rec-a"}))
+    got = _ok(_call(samples.token[A], "get", {"kind": "model", "id": "rec-a"}))
     assert got["name"] == "Compressors (mine)" and got["notes"] == "copied"
 
 
 def test_update_refuses_samples_other_users_and_empty_changes(samples):
     a = samples.token[A]
-    assert "shared sample model" in _err(_call(a, "update_model", {"model_id": BEARINGS, "name": "Mine"}))
-    assert "shared sample model" in _err(_call(a, "update_model", {"model_id": SAMPLE_REC, "notes": "x"}))
-    assert "shared sample dataset" in _err(_call(a, "update_dataset", {"dataset_id": SAMPLE_DS, "name": "Mine"}))
+    assert "shared sample model" in _err(_call(a, "models", {"action": "update", "model_id": BEARINGS, "name": "Mine"}))
+    assert "shared sample model" in _err(_call(a, "models", {"action": "update", "model_id": SAMPLE_REC, "notes": "x"}))
+    assert "shared sample dataset" in _err(_call(a, "datasets", {"action": "update", "dataset_id": SAMPLE_DS,
+                                                                 "name": "Mine"}))
     assert samples.db.models.find_one({"_id": BEARINGS})["name"] != "Mine"
 
-    theirs = _ok(_call(samples.token[B], "save_model", {"name": "B's", "distribution": "weibull", "params": WEIBULL}))
+    theirs = _ok(_call(samples.token[B], "models", {"action": "save", "name": "B's", "distribution": "weibull",
+                                                    "params": WEIBULL}))
     their_ds = _upload(samples.token[B], n=5, name="B's data")
-    assert _err(_call(a, "update_model", {"model_id": theirs["model_id"], "name": "x"})).endswith("Model not found.")
-    assert _err(_call(a, "update_dataset", {"dataset_id": their_ds["id"], "name": "x"})).endswith("Dataset not found.")
+    assert _err(_call(a, "models", {"action": "update", "model_id": theirs["model_id"],
+                                    "name": "x"})).endswith("Model not found.")
+    assert _err(_call(a, "datasets", {"action": "update", "dataset_id": their_ds["id"],
+                                      "name": "x"})).endswith("Dataset not found.")
     assert samples.db.models.find_one({"_id": theirs["model_id"]})["name"] == "B's"
     assert samples.db.datasets.find_one({"_id": their_ds["id"]})["name"] == "B's data"
 
     mine = _upload(a, n=5)
-    assert "Nothing to change" in _err(_call(a, "update_dataset", {"dataset_id": mine["id"]}))
-    assert "blank" in _err(_call(a, "update_dataset", {"dataset_id": mine["id"], "name": "   "}))
-    _err(_call(a, "update_dataset", {"dataset_id": mine["id"], "notes": "x" * 5001}))
+    assert "Nothing to change" in _err(_call(a, "datasets", {"action": "update", "dataset_id": mine["id"]}))
+    assert "blank" in _err(_call(a, "datasets", {"action": "update", "dataset_id": mine["id"], "name": "   "}))
+    _err(_call(a, "datasets", {"action": "update", "dataset_id": mine["id"], "notes": "x" * 5001}))
 
 
 def test_update_dataset_renames_and_annotates_without_touching_the_data(env):
     token = env.token[A]
     ds = _upload(token, n=5)
     before = env.db.datasets.find_one({"_id": ds["id"]})
-    out = _ok(_call(token, "update_dataset", {"dataset_id": ds["id"], "name": "Hours v2", "notes": "Cleaned."}))
+    out = _ok(_call(token, "datasets", {"action": "update", "dataset_id": ds["id"], "name": "Hours v2",
+                                        "notes": "Cleaned."}))
     assert out["updated"] == ["name", "notes"] and out["dataset_id"] == ds["id"]
     assert out["name"] == "Hours v2" and out["notes"] == "Cleaned." and out["url"].endswith(f"/datasets/d/{ds['id']}")
     after = env.db.datasets.find_one({"_id": ds["id"]})
     assert after["data"] == before["data"] and after["checksum"] == before["checksum"]
-    got = _ok(_call(token, "get_dataset", {"dataset_id": ds["id"]}))
+    got = _ok(_call(token, "get", {"kind": "dataset", "id": ds["id"]}))
     assert got["name"] == "Hours v2" and got["notes"] == "Cleaned."
-    assert any(d["name"] == "Hours v2" for d in _ok(_call(token, "list_datasets"))["datasets"])
+    assert any(d["name"] == "Hours v2" for d in _ok(_call(token, "list", {"kind": "datasets"}))["datasets"])
 
-    _ok(_call(token, "update_dataset", {"dataset_id": ds["id"], "notes": ""}))
-    assert "notes" not in _ok(_call(token, "get_dataset", {"dataset_id": ds["id"]}))
+    _ok(_call(token, "datasets", {"action": "update", "dataset_id": ds["id"], "notes": ""}))
+    assert "notes" not in _ok(_call(token, "get", {"kind": "dataset", "id": ds["id"]}))
 
 
 def test_data_tools_count_against_the_free_allowance(plans, monkeypatch):
@@ -413,7 +428,7 @@ def test_data_tools_count_against_the_free_allowance(plans, monkeypatch):
     monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 3)
     token = plans.oauth[FREE]
     ds = _upload(token, n=5)
-    _ok(_call(token, "get_dataset", {"dataset_id": ds["id"]}))
-    _ok(_call(token, "update_dataset", {"dataset_id": ds["id"], "name": "Renamed"}))
+    _ok(_call(token, "get", {"kind": "dataset", "id": ds["id"]}))
+    _ok(_call(token, "datasets", {"action": "update", "dataset_id": ds["id"], "name": "Renamed"}))
     assert _calls_used(plans.db, FREE) == 3
-    assert "this month's 3 free Reliafy tool calls" in _err(_call(token, "get_dataset", {"dataset_id": ds["id"]}))
+    assert "this month's 3 free Reliafy tool calls" in _err(_call(token, "get", {"kind": "dataset", "id": ds["id"]}))

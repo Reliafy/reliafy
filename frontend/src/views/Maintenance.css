@@ -71,6 +71,16 @@
   padding: 0.25rem 0;
 }
 
+/* A location's positions, one group per system. */
+.maint-group + .maint-group {
+  margin-top: 1rem;
+}
+
+.maint-group h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
 .maint-action {
   border: 1px solid var(--line);
   border-radius: var(--r);
@@ -167,4 +177,36 @@
 
 .maint-proposal p {
   margin: 0 0 0.4rem;
+}
+
+.maint-notes {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.maint-note-history {
+  margin-top: 0.75rem;
+}
+
+.maint-reading-struck {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* A wide table scrolls on its own on a phone. Positioned, so screen-reader-only
+   labels (absolutely positioned) stay inside it instead of widening the page. */
+.maint-scroll {
+  overflow-x: auto;
+  position: relative;
+}
+
+/* Item classes: the chosen class in the tree. */
+.maint-tree button.link.maint-node-name[aria-current="true"] {
+  text-decoration: underline;
+}
+
+/* The Classes page's two halves: position classes, then item classes. */
+.maint-section {
+  margin: 1.5rem 0 0.75rem;
+  font-size: var(--fs-18, 1.15rem);
 }

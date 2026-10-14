@@ -41,7 +41,7 @@ def _weibull_of(db, model_id):
 # ---- P1.1 reliability_at evaluates the distribution, not the stored curve -------
 
 def test_reliability_at_is_exact_far_past_the_curve(samples):
-    out = _ok(_call(samples.token[A], "reliability_at", {
+    out = _ok(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at",
         "model_id": BEARINGS, "times": [1e12, 250], "conditional_age": 1e6}))
     ref = _weibull_of(samples.db, BEARINGS)
     far, near = out["points"]
@@ -56,7 +56,7 @@ def test_reliability_at_is_exact_far_past_the_curve(samples):
 
 
 def test_conditional_reliability_matches_the_ratio_in_range(samples):
-    out = _ok(_call(samples.token[A], "reliability_at", {
+    out = _ok(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at",
         "model_id": BEARINGS, "times": [300], "conditional_age": 500}))
     ref = _weibull_of(samples.db, BEARINGS)
     want = float(ref.sf(800) / ref.sf(500))
@@ -66,7 +66,8 @@ def test_conditional_reliability_matches_the_ratio_in_range(samples):
 def test_ph_model_discloses_the_covariates_used(samples):
     from backend.services import models as models_service
 
-    out = _ok(_call(samples.token[A], "reliability_at", {"model_id": SEAL_PH, "times": [1000, 5000]}))
+    out = _ok(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": SEAL_PH,
+                                                             "times": [1000, 5000]}))
     fields = samples.db.models.find_one({"_id": SEAL_PH})["results"]["functions"]["covariates"]
     defaults = {f["name"]: f["default"] for f in fields}
     assert out["method"] == "exact"
@@ -81,21 +82,22 @@ def test_ph_model_discloses_the_covariates_used(samples):
     Z = pd.DataFrame({k: [v] for k, v in defaults.items()})
     assert out["points"][0]["reliability"] == pytest.approx(float(live["model"].sf(np.array([1000.0]), Z)[0]))
 
-    given = _ok(_call(samples.token[A], "reliability_at", {
+    given = _ok(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at",
         "model_id": SEAL_PH, "times": [1000], "covariates": {"temp_C": 60}}))
     assert given["covariates_used"]["temp_C"] == 60 and given["covariate_defaults"] == ["load"]
-    msg = _err(_call(samples.token[A], "reliability_at", {
+    msg = _err(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at",
         "model_id": SEAL_PH, "times": [1000], "covariates": {"humidity": 3}}))
     assert "humidity" in msg and "temp_C" in msg
-    msg = _err(_call(samples.token[A], "reliability_at", {
+    msg = _err(_call(samples.token[A], "life_data_analysis", {"action": "reliability_at",
         "model_id": BEARINGS, "times": [1000], "covariates": {"temp_C": 60}}))
     assert "no covariates" in msg
 
 
 def test_nonparametric_model_is_interpolated_and_says_so(env):
-    saved = _ok(_call(env.token[A], "fit_and_save_model", {
+    saved = _ok(_call(env.token[A], "models", {"action": "fit",
         "data": TIMES, "censored": FLAGS, "distribution": "kaplan_meier", "name": "KM"}))
-    out = _ok(_call(env.token[A], "reliability_at", {"model_id": saved["model_id"], "times": [500, 1e7]}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": saved["model_id"],
+                                                         "times": [500, 1e7]}))
     assert out["method"] == "interpolated"
     assert out["points"][1]["beyond_curve"] is True and "held at its end" in out["note"]
     assert not out["points"][0].get("beyond_curve")
@@ -117,8 +119,8 @@ def test_analyze_rbd_reliability_at_is_exact_past_the_axis(env):
             "distribution_id": "weibull", "params": [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}]}},
         {"id": "output", "type": "output"}],
         "edges": [{"source": "input", "target": "a"}, {"source": "a", "target": "output"}]}
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "One", **graph}))["id"]
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "times": [500, 1e6]}))
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "One", **graph}))["id"]
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "times": [500, 1e6]}))
     ref = surpyval.Weibull.from_params([1000, 2])
     assert out["reliability_at"][0]["reliability"] == pytest.approx(float(ref.sf(500)), rel=1e-9)
     assert out["reliability_at"][1]["reliability"] == 0.0
@@ -127,20 +129,20 @@ def test_analyze_rbd_reliability_at_is_exact_past_the_axis(env):
 # ---- P1.2 parameter names are never read by position ---------------------------
 
 def test_calculators_refuse_unrecognised_param_names(env):
-    msg = _err(_call(env.token[A], "failure_finding_interval", {
+    msg = _err(_call(env.token[A], "strategy", {"action": "failure_finding_interval",
         "distribution_id": "exponential", "params": [{"name": "mttf", "value": 10000}],
         "target_availability": 0.99}))
     assert "failure_rate" in msg and "mttf" in msg
-    msg = _err(_call(env.token[A], "optimal_replacement", {
+    msg = _err(_call(env.token[A], "strategy", {"action": "optimal_replacement",
         "distribution_id": "weibull", "planned_cost": 1, "unplanned_cost": 10,
         "params": [{"name": "scale", "value": 1200}, {"name": "shape", "value": 2.5}]}))
     assert "alpha, beta" in msg and "scale" in msg
 
     # Any order still works, and matches the ordered call.
-    ordered = _ok(_call(env.token[A], "optimal_replacement", {
+    ordered = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement",
         "distribution_id": "weibull", "planned_cost": 1, "unplanned_cost": 10,
         "params": [{"name": "alpha", "value": 1200}, {"name": "beta", "value": 2.5}]}))
-    swapped = _ok(_call(env.token[A], "optimal_replacement", {
+    swapped = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement",
         "distribution_id": "Weibull", "planned_cost": 1, "unplanned_cost": 10,
         "params": [{"name": "beta", "value": 2.5}, {"name": "alpha", "value": 1200}]}))
     assert swapped["optimal_time"] == pytest.approx(ordered["optimal_time"])
@@ -161,16 +163,16 @@ def test_rbd_blocks_refuse_unrecognised_param_names(env):
     graph = {"nodes": [{"id": "input", "type": "input"}, {"id": "a", "type": "component", "label": "Pump", "model": bad},
                        {"id": "output", "type": "output"}],
              "edges": [{"source": "input", "target": "a"}, {"source": "a", "target": "output"}]}
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "Bad names", **graph}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "Bad names", **graph}))
     assert "Pump" in msg and "alpha, beta" in msg and "scale" in msg
 
     stages = [{"components": [{"label": "Pump", "distribution": "weibull",
                                "params": [{"name": "eta", "value": 900}, {"name": "beta", "value": 1.4}]}]}]
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "Bad stage", "stages": stages}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "Bad stage", "stages": stages}))
     assert "eta" in msg and "alpha" in msg
     assert env.db.rbds.count_documents({"owner_id": A}) == 0
 
-    msg = _err(_call(env.token[A], "save_model", {
+    msg = _err(_call(env.token[A], "models", {"action": "save",
         "name": "x", "distribution": "exponential", "params": [{"name": "mttf", "value": 100}]}))
     assert "failure_rate" in msg and "mttf" in msg
 
@@ -198,13 +200,13 @@ def _saved_block_graph(model_id):
 
 
 def test_unit_mismatch_warns_on_create_and_analyze(samples):
-    created = _ok(_call(samples.token[A], "create_rbd", {
+    created = _ok(_call(samples.token[A], "rbd", {"action": "create",
         "name": "Mixed units", "unit": "Hours", **_saved_block_graph(PUMPS)}))
     assert any("fitted in months" in w and "unit is hours" in w and "Pump" in w for w in created["warnings"])
-    out = _ok(_call(samples.token[A], "analyze_rbd", {"rbd_id": created["id"]}))
+    out = _ok(_call(samples.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": created["id"]}))
     assert any("months" in w for w in out["warnings"])
 
-    same = _ok(_call(samples.token[A], "create_rbd", {
+    same = _ok(_call(samples.token[A], "rbd", {"action": "create",
         "name": "Same units", "unit": "Months", **_saved_block_graph(PUMPS)}))
     assert not any("fitted in" in w for w in same["warnings"])
 
@@ -233,7 +235,7 @@ def _w(alpha=1000, beta=2):
 
 
 def test_create_rbd_refuses_a_diagram_with_no_output(env):
-    msg = _err(_call(env.token[A], "create_rbd", {
+    msg = _err(_call(env.token[A], "rbd", {"action": "create",
         "name": "No output", "nodes": [{"id": "input", "type": "input"}, {"id": "a", "type": "component", "model": _w()}],
         "edges": [{"source": "input", "target": "a"}]}))
     assert "exactly one output node" in msg
@@ -248,18 +250,18 @@ def test_analyze_rbd_never_returns_an_empty_error(env, monkeypatch):
                                                  {"id": "a", "type": "component", "model": _w()}],
                                        "edges": [{"source": "input", "target": "a"}]})
     rid = rbds_service.save_rbd(env.db, "Draft", graph, A).id
-    msg = _err(_call(env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    msg = _err(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert "exactly one output node" in msg
 
     # Anything unexpected still reaches the caller as an explanation, not "Error executing tool".
-    ok = _ok(_call(env.token[A], "create_rbd", {"name": "Fine", **_chain("Motor")}))
+    ok = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Fine", **_chain("Motor")}))
 
     def boom(*a, **k):
         raise IndexError("index 1 is out of bounds")
 
     monkeypatch.setattr(rbds_service, "analyze_graph", boom)
-    msg = _err(_call(env.token[A], "analyze_rbd", {"rbd_id": ok["id"]}))
-    assert "couldn't analyse" in msg and "IndexError" in msg and "get_rbd" in msg
+    msg = _err(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": ok["id"]}))
+    assert "couldn't analyse" in msg and "IndexError" in msg and "get kind rbd" in msg
 
 
 def test_app_validation_reports_missing_io_nodes():
@@ -286,13 +288,15 @@ def test_stage_settings_are_refused_not_clamped(env):
     for kw, needle in (({"k_of_n": 3}, "between 1 and 2"), ({"k_of_n": 0}, "between 1 and 2"),
                        ({"common_cause_beta": 5}, "0 ≤ beta < 1"), ({"common_cause_beta": -0.1}, "0 ≤ beta < 1"),
                        ({"common_cause_beta": 1}, "0 ≤ beta < 1")):
-        msg = _err(_call(env.token[A], "create_rbd", {"name": "S", "stages": [_stage(2, **kw)]}))
+        msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "S", "stages": [_stage(2, **kw)]}))
         assert needle in msg, (kw, msg)
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "S", "stages": [_stage(1, common_cause_beta=0.1)]}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "S", "stages": [_stage(1,
+        common_cause_beta=0.1)]}))
     assert "2 or more components" in msg
     assert env.db.rbds.count_documents({"owner_id": A}) == 0
 
-    ok = _ok(_call(env.token[A], "create_rbd", {"name": "S", "stages": [_stage(2, common_cause_beta=0.1, k_of_n=2)]}))
+    ok = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "S", "stages": [_stage(2, common_cause_beta=0.1,
+        k_of_n=2)]}))
     doc = env.db.rbds.find_one({"_id": ok["id"]})
     assert doc["graph"]["ccf_groups"][0]["beta"] == 0.1
     knode = next(n for n in doc["graph"]["nodes"] if n["type"] == "knode")
@@ -313,9 +317,9 @@ def _chain(*labels):
 
 
 def test_redundant_pair_in_series_is_a_warning(env):
-    out = _ok(_call(env.token[A], "create_rbd", {"name": "Pumps", **_chain("Pump A", "Pump B (standby)")}))
+    out = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Pumps", **_chain("Pump A", "Pump B (standby)")}))
     assert any("Pump A" in w and "Pump B (standby)" in w and "parallel" in w for w in out["warnings"])
-    res = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": out["id"]}))
+    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": out["id"]}))
     assert any("redundant pair" in w for w in res["warnings"])
 
 
@@ -370,33 +374,37 @@ def test_a_standby_nodes_own_label_is_not_a_redundant_pair():
 def test_conflicting_inputs_are_refused(samples):
     a = samples.token[A]
     inline = {"distribution_id": "weibull", "params": [{"name": "alpha", "value": 10}, {"name": "beta", "value": 3}]}
-    msg = _err(_call(a, "optimal_replacement", {"model_id": BEARINGS, **inline, "planned_cost": 1, "unplanned_cost": 9}))
+    msg = _err(_call(a, "strategy", {"action": "optimal_replacement", "model_id": BEARINGS, **inline,
+                                     "planned_cost": 1, "unplanned_cost": 9}))
     assert "exactly one of model_id or distribution_id + params" in msg
-    msg = _err(_call(a, "failure_finding_interval", {"model_id": BEARINGS, **inline, "target_availability": 0.9}))
+    msg = _err(_call(a, "strategy", {"action": "failure_finding_interval", "model_id": BEARINGS, **inline,
+                                     "target_availability": 0.9}))
     assert "exactly one of model_id" in msg
 
-    msg = _err(_call(a, "fit_distribution", {"data": TIMES, "time_column": "hours"}))
+    msg = _err(_call(a, "life_data_analysis", {"action": "fit", "data": TIMES, "time_column": "hours"}))
     assert "time_column" in msg and "dataset_id" in msg
-    ds = _ok(_call(a, "upload_dataset", {"name": "d", "csv": "t,c\n" + "\n".join(
+    ds = _ok(_call(a, "datasets", {"action": "upload", "name": "d", "csv": "t,c\n" + "\n".join(
         f"{t},{c}" for t, c in zip(TIMES, FLAGS))}))
-    msg = _err(_call(a, "fit_distribution", {"dataset_id": ds["id"], "time_column": "t", "censored": FLAGS}))
+    msg = _err(_call(a, "life_data_analysis", {"action": "fit", "dataset_id": ds["id"], "time_column": "t",
+                                               "censored": FLAGS}))
     assert "censored" in msg and "inline data" in msg
 
     graph = _saved_block_graph(BEARINGS)
-    msg = _err(_call(a, "create_rbd", {"name": "x", "stages": [_stage(1)], "edges": graph["edges"]}))
+    msg = _err(_call(a, "rbd", {"action": "create", "name": "x", "stages": [_stage(1)], "edges": graph["edges"]}))
     assert "exactly one form" in msg
     clash = {**graph, "nodes": [{**n, "model": {"saved_model_id": BEARINGS, **inline}} if n["id"] == "p" else n
                                 for n in graph["nodes"]]}
-    msg = _err(_call(a, "create_rbd", {"name": "x", **clash}))
+    msg = _err(_call(a, "rbd", {"action": "create", "name": "x", **clash}))
     assert "exactly one of saved_model_id" in msg
     stage = {"components": [{"label": "Bearing", "model_id": BEARINGS, "distribution": "weibull",
                              "params": inline["params"]}]}
-    assert "exactly one of model_id" in _err(_call(a, "create_rbd", {"name": "x", "stages": [stage]}))
+    assert "exactly one of model_id" in _err(_call(a, "rbd", {"action": "create", "name": "x", "stages": [stage]}))
 
-    # get_rbd's compact form (saved id + its own params) still round-trips.
-    created = _ok(_call(a, "create_rbd", {"name": "Linked", **graph}))
-    compact = _ok(_call(a, "get_rbd", {"rbd_id": created["id"]}))["graph"]
-    again = _ok(_call(a, "create_rbd", {"name": "Copy", "nodes": compact["nodes"], "edges": compact["edges"],
+    # get kind rbd's compact form (saved id + its own params) still round-trips.
+    created = _ok(_call(a, "rbd", {"action": "create", "name": "Linked", **graph}))
+    compact = _ok(_call(a, "get", {"kind": "rbd", "id": created["id"]}))["graph"]
+    again = _ok(_call(a, "rbd", {"action": "create", "name": "Copy", "nodes": compact["nodes"],
+                                 "edges": compact["edges"],
                                         "include_graph": True}))
     assert next(n for n in again["graph"]["nodes"] if n["id"] == "p")["model"]["saved_model_id"] == BEARINGS
 
@@ -405,7 +413,8 @@ def test_fleet_alert_refuses_arguments_its_kind_ignores(env):
     from backend.tests.test_fleet_alerts import _mcp_fleet
 
     fid = _mcp_fleet(env)
-    msg = _err(_call(env.token[A], "create_fleet_alert", {"fleet_id": fid, "kind": "above", "threshold": 2, "percent": 5}))
+    msg = _err(_call(env.token[A], "fleet", {"action": "create_alert", "fleet_id": fid, "kind": "above",
+                                             "threshold": 2, "percent": 5}))
     assert "percent" in msg and "threshold" in msg
 
 
@@ -413,24 +422,29 @@ def test_fleet_alert_refuses_arguments_its_kind_ignores(env):
 
 def test_negative_times_are_refused(samples):
     a = samples.token[A]
-    assert "≥ 0" in _err(_call(a, "reliability_at", {"model_id": BEARINGS, "times": [-100]}))
-    assert "conditional_age" in _err(_call(a, "reliability_at", {
+    assert "≥ 0" in _err(_call(a, "life_data_analysis", {"action": "reliability_at", "model_id": BEARINGS,
+                                                         "times": [-100]}))
+    assert "conditional_age" in _err(_call(a, "life_data_analysis", {"action": "reliability_at",
         "model_id": BEARINGS, "times": [1], "conditional_age": -5}))
-    zero = _ok(_call(a, "reliability_at", {"model_id": BEARINGS, "times": [0]}))
+    zero = _ok(_call(a, "life_data_analysis", {"action": "reliability_at", "model_id": BEARINGS, "times": [0]}))
     assert zero["points"][0]["reliability"] == 1.0
 
-    rid = _ok(_call(a, "create_rbd", {"name": "One", **_chain("Motor")}))["id"]
+    rid = _ok(_call(a, "rbd", {"action": "create", "name": "One", **_chain("Motor")}))["id"]
     for bad in (-10, 0):
-        assert "t_max must be a positive" in _err(_call(a, "analyze_rbd", {"rbd_id": rid, "t_max": bad}))
-    assert "≥ 0" in _err(_call(a, "analyze_rbd", {"rbd_id": rid, "times": [-1]}))
-    assert "conditional_age" in _err(_call(a, "analyze_rbd", {"rbd_id": rid, "conditional_age": -1}))
+        assert "t_max must be a positive" in _err(_call(a, "rbd_analysis", {"action": "analyze", "rbd_id": rid,
+                                                                            "t_max": bad}))
+    assert "≥ 0" in _err(_call(a, "rbd_analysis", {"action": "analyze", "rbd_id": rid, "times": [-1]}))
+    assert "conditional_age" in _err(_call(a, "rbd_analysis", {"action": "analyze", "rbd_id": rid,
+                                                               "conditional_age": -1}))
 
 
 def test_repairable_analysis_refuses_reliability_only_arguments(env):
     from backend.tests.test_mcp import REPAIRABLE_STAGES
 
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "R", "repairable": True, "stages": REPAIRABLE_STAGES}))["id"]
-    assert "non-repairable" in _err(_call(env.token[A], "analyze_rbd", {"rbd_id": rid, "times": [10]}))
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "R", "repairable": True,
+                                          "stages": REPAIRABLE_STAGES}))["id"]
+    assert "non-repairable" in _err(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid,
+                                                                         "times": [10]}))
 
 
 def test_optimal_overhaul_refuses_a_non_positive_t_max(env):
@@ -439,7 +453,7 @@ def test_optimal_overhaul_refuses_a_non_positive_t_max(env):
     doc = recurrent_service.save_from_params(
         env.db, "Compressors", "crow_amsaa",
         [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}], 5000, "hours", A)
-    msg = _err(_call(env.token[A], "optimal_overhaul", {
+    msg = _err(_call(env.token[A], "strategy", {"action": "optimal_overhaul",
         "model_id": doc.id, "cost_repair": 100, "cost_overhaul": 1000, "t_max": -1}))
     assert "t_max must be a positive" in msg
 
@@ -454,7 +468,7 @@ def test_impossible_vote_node_is_explained(env):
              {"id": "output", "type": "output"}]
     edges = [{"source": "input", "target": "a"}, {"source": "input", "target": "b"},
              {"source": "a", "target": "v"}, {"source": "b", "target": "v"}, {"source": "v", "target": "output"}]
-    msg = _err(_call(env.token[A], "create_rbd", {"name": "Vote", "nodes": nodes, "edges": edges}))
+    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "Vote", "nodes": nodes, "edges": edges}))
     assert "Vote node “v” requires 5 working inputs but only 2 branches feed it" in msg
     assert "no paths through" not in msg
 
@@ -463,11 +477,12 @@ def test_impossible_vote_node_is_explained(env):
 
 def test_censoring_errors_name_the_c_invert_parameter(env):
     a = env.token[A]
-    msg = _err(_call(a, "fit_distribution", {"data": [100, 200, 300], "censored": [1, 1, 1]}))
+    msg = _err(_call(a, "life_data_analysis", {"action": "fit", "data": [100, 200, 300], "censored": [1, 1, 1]}))
     assert "c_invert=true" in msg and "tick" not in msg and "0 = the unit failed" in msg
-    msg = _err(_call(a, "fit_distribution", {"data": [100, 200, 300], "censored": [0, 1, 1]}))
+    msg = _err(_call(a, "life_data_analysis", {"action": "fit", "data": [100, 200, 300], "censored": [0, 1, 1]}))
     assert "Only 1 of the 3" in msg and "c_invert=true" in msg and "tick" not in msg
-    msg = _err(_call(a, "fit_distribution", {"data": [100, 200, 300], "censored": [0, 0, 0], "c_invert": True}))
+    msg = _err(_call(a, "life_data_analysis", {"action": "fit", "data": [100, 200, 300], "censored": [0, 0, 0],
+                                               "c_invert": True}))
     assert "drop c_invert" in msg and "tick" not in msg
     # The app keeps its own wording.
     from backend import fitting
@@ -480,17 +495,17 @@ def test_left_censoring_is_documented_and_explained(env):
     from backend.tests.test_mcp import _run
 
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    assert "-1 = left-censored" in str(tools["fit_distribution"].input_schema)
-    msg = _err(_call(env.token[A], "fit_distribution", {"data": TIMES, "censored": [2] + FLAGS[1:]}))
+    assert "-1 = left-censored" in str(tools["life_data_analysis"].input_schema)
+    msg = _err(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": TIMES, "censored": [2] + FLAGS[1:]}))
     assert "-1 (left-censored" in msg and "0 (failed" in msg
-    out = _ok(_call(env.token[A], "fit_distribution", {"data": TIMES, "censored": [-1] + FLAGS[1:]}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": TIMES, "censored": [-1] + FLAGS[1:]}))
     assert out["params"]
 
 
 # ---- P3.13 degenerate fits are flagged ----------------------------------------------
 
 def test_zero_variance_best_fit_is_flagged(env):
-    out = _ok(_call(env.token[A], "fit_distribution", {"data": [5.0] * 6, "distribution": "best"}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": [5.0] * 6, "distribution": "best"}))
     assert any("identical" in w for w in out["warnings"])
     failed = out["selection"]["failed"]
     assert failed and all({"id", "name", "reason"} <= set(f) for f in failed)
@@ -503,7 +518,7 @@ def test_failed_mle_leads_with_fit_ok_false(env):
     from backend import fitting
 
     data = [1e-300, 1e-100, 1.0, 1e100, 1e300]
-    out = _ok(_call(env.token[A], "fit_distribution", {"data": data}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": data}))
     assert list(out)[:2] == ["fit_ok", "warning"] and out["fit_ok"] is False
     assert "did NOT converge" in out["warning"]
     # One warning, phrased for an agent: no duplicate fit_warning, no Python-API advice.
@@ -521,7 +536,7 @@ def test_failed_mle_leads_with_fit_ok_false(env):
 def test_notes_never_round_small_numbers_to_zero(env):
     from backend.services.strategy import fmt_num
 
-    ff = _ok(_call(env.token[A], "failure_finding_interval", {
+    ff = _ok(_call(env.token[A], "strategy", {"action": "failure_finding_interval",
         "distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 10}],
         "target_availability": 0.99}))
     assert "about every 0.002" in ff["note"]
@@ -529,14 +544,14 @@ def test_notes_never_round_small_numbers_to_zero(env):
         "0", "2e-05", "0.0123", "1.5", "1,000", "12,346", "3.2e+09"]
 
 
-# ---- #189 optimal_replacement flags a shape interval that reaches 1 -----------------------
+# ---- #189 strategy optimal_replacement flags a shape interval that reaches 1 -----------------------
 
 def _fitted_weibull(env, name, seed, beta, n=30, cutoff=7000.0):
     """A saved Weibull fitted to n units of Weibull(7746, beta) life, still running at cutoff."""
     rng = np.random.default_rng(seed)
     t = 7746 * rng.weibull(beta, n)
     flags = [int(x > cutoff) for x in t]
-    out = _ok(_call(env.token[A], "fit_and_save_model", {
+    out = _ok(_call(env.token[A], "models", {"action": "fit",
         "name": name, "data": [round(min(x, cutoff), 1) for x in t], "censored": flags, "unit": "hours"}))
     (b,) = [p for p in out["params"] if p["name"] == "beta"]
     return out["model_id"], b
@@ -547,7 +562,7 @@ def test_optimal_replacement_flags_weak_wear_out_evidence(env):
     # β ≈ 1.97, 95% CI ≈ [1.26, 3.08] — on the log scale since #265 ([1.09, 2.84] symmetric before).
     weak, b = _fitted_weibull(env, "Weak", seed=1, beta=1.77)
     assert 1 < b["ci"][0] < 1.3
-    out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": weak, **costs}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement", "model_id": weak, **costs}))
     assert out["beneficial"] is True
     su = out["shape_uncertainty"]
     assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
@@ -557,16 +572,16 @@ def test_optimal_replacement_flags_weak_wear_out_evidence(env):
     # β ≈ 1.49, log-scale CI ≈ [0.97, 2.31] (#265: seed 3's interval no longer reaches 1).
     random_ish, b = _fitted_weibull(env, "Random-ish", seed=13, beta=1.77)
     assert b["ci"][0] < 1 < b["ci"][1]
-    out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": random_ish, **costs}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement", "model_id": random_ish, **costs}))
     assert "includes 1" in out["uncertainty_note"]
     assert out["shape_uncertainty"]["at_beta_lower"]["beneficial"] is False
 
     clear, b = _fitted_weibull(env, "Clear", seed=7, beta=4.0, n=60, cutoff=1e9)
-    out = _ok(_call(env.token[A], "optimal_replacement", {"model_id": clear, **costs}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement", "model_id": clear, **costs}))
     assert b["ci"][0] > 3 and out["shape_uncertainty"]["at_beta_lower"]["beneficial"]
     assert "uncertainty_note" not in out
 
-    inline = _ok(_call(env.token[A], "optimal_replacement", {
+    inline = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement",
         "distribution_id": "weibull", "params": [{"name": "alpha", "value": 7746}, {"name": "beta", "value": 1.77}],
         **costs}))
     assert "shape_uncertainty" not in inline and "uncertainty_note" not in inline  # no fit, no interval
@@ -578,10 +593,10 @@ def test_failure_finding_interval_gets_the_shape_treatment(env):
     interval 20%+ shorter than the estimate's — the unsafe side."""
     target = {"target_availability": 0.99}
     early, b = _fitted_weibull(env, "Early", seed=3, beta=0.6, n=20, cutoff=1e9)  # β ≈ 0.62, CI ≈ [0.41, 0.83]
-    out = _ok(_call(env.token[A], "failure_finding_interval", {"model_id": early, **target}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "failure_finding_interval", "model_id": early, **target}))
     su = out["shape_uncertainty"]
     assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
-    alpha = next(p["value"] for p in _ok(_call(env.token[A], "get_model", {"model_id": early}))["params"]
+    alpha = next(p["value"] for p in _ok(_call(env.token[A], "get", {"kind": "model", "id": early}))["params"]
                  if p["name"] == "alpha")
     for end, beta in (("at_beta_lower", b["ci"][0]), ("at_beta_upper", b["ci"][1])):
         expected = 2 * 0.01 * alpha * math.gamma(1 + 1 / beta)  # FFI = 2(1 - A) MTTF, α held
@@ -590,11 +605,11 @@ def test_failure_finding_interval_gets_the_shape_treatment(env):
     assert "as short as" in out["uncertainty_note"] and "shorter one" in out["uncertainty_note"]
 
     clear, _ = _fitted_weibull(env, "Clear", seed=7, beta=4.0, n=60, cutoff=1e9)
-    out = _ok(_call(env.token[A], "failure_finding_interval", {"model_id": clear, **target}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "failure_finding_interval", "model_id": clear, **target}))
     assert out["shape_uncertainty"]["at_beta_lower"]["interval"] > 0.8 * out["interval"]
     assert "uncertainty_note" not in out
 
-    inline = _ok(_call(env.token[A], "failure_finding_interval", {
+    inline = _ok(_call(env.token[A], "strategy", {"action": "failure_finding_interval",
         "distribution_id": "weibull", "params": [{"name": "alpha", "value": 7746}, {"name": "beta", "value": 0.6}],
         **target}))
     assert "shape_uncertainty" not in inline and "uncertainty_note" not in inline  # no fit, no interval
@@ -618,7 +633,7 @@ def _nhpp_model(env, name, seed, beta, systems, window):
 def test_optimal_overhaul_gets_the_shape_treatment(env):
     """#189 follow-up: the overhaul optimum at each end of the Crow-AMSAA
     β interval (α held, savings over the estimate's horizon), and the same
-    notes as optimal_replacement."""
+    notes as strategy optimal_replacement."""
     from backend import recurrent as recurrent_fit
     from backend.services import recurrent as recurrent_service
 
@@ -626,7 +641,7 @@ def test_optimal_overhaul_gets_the_shape_treatment(env):
     clear = _nhpp_model(env, "Compressors", seed=1, beta=2.5, systems=5, window=3000)
     (a, b) = clear.results["params"]
     assert 2.0 < b["ci"][0] < b["value"] < b["ci"][1]  # the interval is stored with the fit
-    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": clear.id, **costs}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_overhaul", "model_id": clear.id, **costs}))
     su = out["shape_uncertainty"]
     assert su["beta_ci_95"] == [float(f"{v:.4g}") for v in b["ci"]] and su["held_fixed"] == "alpha at its estimate"
     low = recurrent_fit.optimal_overhaul({"model_id": "crow_amsaa", "params": [a["value"], b["ci"][0]]}, 100, 1000)
@@ -637,7 +652,7 @@ def test_optimal_overhaul_gets_the_shape_treatment(env):
     assert "uncertainty_note" not in out
 
     weak = _nhpp_model(env, "Pumps", seed=2, beta=1.5, systems=2, window=2000)
-    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": weak.id, **costs}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_overhaul", "model_id": weak.id, **costs}))
     assert out["optimal"] and out["shape_uncertainty"]["beta_ci_95"][0] < 1
     assert out["shape_uncertainty"]["at_beta_lower"]["pays"] is False
     assert "includes 1" in out["uncertainty_note"] and "tentative" in out["uncertainty_note"]
@@ -645,14 +660,15 @@ def test_optimal_overhaul_gets_the_shape_treatment(env):
     # A model saved before intervals were stored gets one from a refit, kept on the model.
     params = [{k: v for k, v in p.items() if k != "ci"} for p in clear.results["params"]]
     env.db.recurrent_models.update_one({"_id": clear.id}, {"$set": {"results.params": params}})
-    assert "shape_uncertainty" in _ok(_call(env.token[A], "optimal_overhaul", {"model_id": clear.id, **costs}))
+    assert "shape_uncertainty" in _ok(_call(env.token[A], "strategy", {"action": "optimal_overhaul",
+                                                                       "model_id": clear.id, **costs}))
     assert env.db.recurrent_models.find_one({"_id": clear.id})["results"]["params"][1]["ci"]
 
     # Built from parameters: no data, no interval.
     doc = recurrent_service.save_from_params(
         env.db, "Typed", "crow_amsaa", [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}], 5000,
         "hours", A)
-    out = _ok(_call(env.token[A], "optimal_overhaul", {"model_id": doc.id, **costs}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_overhaul", "model_id": doc.id, **costs}))
     assert "shape_uncertainty" not in out and "uncertainty_note" not in out
 
 
@@ -662,24 +678,25 @@ def test_fit_warns_when_the_censor_column_sounds_like_1_means_failed(env):
     from backend import mcp_server
 
     failed = [1 - f for f in FLAGS]  # the spreadsheet way: 1 = failed
-    ds = _ok(_call(env.token[A], "upload_dataset", {
+    ds = _ok(_call(env.token[A], "datasets", {"action": "upload",
         "name": "Pumps", "csv": "hours,failed,censored\n"
         + "\n".join(f"{t},{a},{b}" for t, a, b in zip(TIMES, failed, FLAGS))}))
     base = {"dataset_id": ds["id"], "time_column": "hours"}
 
-    out = _ok(_call(env.token[A], "fit_distribution", {**base, "censor_column": "failed"}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", **base, "censor_column": "failed"}))
     (warning,) = [w for w in out["warnings"] if "c_invert" in w]
     assert "“failed” sounds like 1 = failed" in warning and "3 failures and 7 still running" in warning
     assert list(out)[0] == "warnings"  # ahead of the numbers
     assert out["censoring"] == {"n_failed": 3, "n_right_censored": 7, "n_left_censored": 0}
 
-    fixed = _ok(_call(env.token[A], "fit_distribution", {**base, "censor_column": "failed", "c_invert": True}))
+    fixed = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", **base, "censor_column": "failed",
+                                                           "c_invert": True}))
     assert "warnings" not in fixed and fixed["censoring"]["n_failed"] == 7
-    plain = _ok(_call(env.token[A], "fit_distribution", {**base, "censor_column": "censored"}))
+    plain = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", **base, "censor_column": "censored"}))
     assert "warnings" not in plain and plain["censoring"]["n_failed"] == 7
     assert [p["value"] for p in plain["params"]] == pytest.approx([p["value"] for p in fixed["params"]])
 
-    saved = _ok(_call(env.token[A], "fit_and_save_model", {**base, "censor_column": "failed", "name": "Pumps"}))
+    saved = _ok(_call(env.token[A], "models", {"action": "fit", **base, "censor_column": "failed", "name": "Pumps"}))
     assert any("c_invert=true" in w for w in saved["warnings"]) and saved["censoring"]["n_failed"] == 3
 
     names = {"failed": True, "Failed?": True, "is_failure": True, "FailFlag": True, "Status": True,
@@ -692,9 +709,9 @@ def test_fit_warns_when_the_censor_column_sounds_like_1_means_failed(env):
 def test_calculator_curves_are_opt_in(env):
     args = {"distribution_id": "weibull", "planned_cost": 1, "unplanned_cost": 10,
             "params": [{"name": "alpha", "value": 1200}, {"name": "beta", "value": 2.5}]}
-    out = _ok(_call(env.token[A], "optimal_replacement", args))
+    out = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement", **args}))
     assert "curve" not in out and "include_curve" in out["curve_omitted"] and out["optimal_time"]
-    full = _ok(_call(env.token[A], "optimal_replacement", {**args, "include_curve": True}))
+    full = _ok(_call(env.token[A], "strategy", {"action": "optimal_replacement", **args, "include_curve": True}))
     assert len(full["curve"]["t"]) == 200
 
     from backend.services import recurrent as recurrent_service
@@ -703,8 +720,9 @@ def test_calculator_curves_are_opt_in(env):
         env.db, "Compressors", "crow_amsaa",
         [{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}], 5000, "hours", A)
     base = {"model_id": doc.id, "cost_repair": 100, "cost_overhaul": 1000}
-    assert "curve" not in _ok(_call(env.token[A], "optimal_overhaul", base))
-    assert _ok(_call(env.token[A], "optimal_overhaul", {**base, "include_curve": True}))["curve"]["t"]
+    assert "curve" not in _ok(_call(env.token[A], "strategy", {"action": "optimal_overhaul", **base}))
+    assert _ok(_call(env.token[A], "strategy", {"action": "optimal_overhaul", **base,
+                                                "include_curve": True}))["curve"]["t"]
 
 
 def test_fleet_forecast_lists_the_top_items_by_default(env):
@@ -714,11 +732,12 @@ def test_fleet_forecast_lists_the_top_items_by_default(env):
     fid = _mcp_fleet(env)
     fs.replace_items(env.db, fid, {"periods": 6, "default_rate": 5, "method": "single"},
                      [{"name": f"P{i}", "current_use": 10 + 3 * i} for i in range(30)], A)
-    out = _ok(_call(env.token[A], "fleet_forecast", {"fleet_id": fid}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "fleet_forecast", "fleet_id": fid}))
     items = out["forecast"]["per_item"]
     assert len(items) == 20 and "30 items" in out["forecast"]["per_item_note"]
     assert items == sorted(items, key=lambda r: -r["expected"])
-    assert len(_ok(_call(env.token[A], "fleet_forecast", {"fleet_id": fid, "include_items": True}))
+    assert len(_ok(_call(env.token[A], "strategy", {"action": "fleet_forecast", "fleet_id": fid,
+                                                    "include_items": True}))
                ["forecast"]["per_item"]) == 30
 
 
@@ -727,8 +746,8 @@ def test_fleet_forecast_lists_the_top_items_by_default(env):
 def test_export_run_matches_the_script_header(env):
     from backend.services import rbd_export
 
-    rid = _ok(_call(env.token[A], "create_rbd", {"name": "One", **_chain("Motor")}))["id"]
-    out = _ok(_call(env.token[A], "export_rbd_python", {"rbd_id": rid}))
+    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "One", **_chain("Motor")}))["id"]
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "export_python", "rbd_id": rid}))
     assert out["run"] == rbd_export.run_command(out["filename"])
     assert out["run"].endswith(f"python {out['filename']}")
     v = rbd_export.detect_versions()
@@ -749,47 +768,47 @@ def test_delete_tools_follow_the_apps_rules(samples):
     # Every plan, counted against the quota like any other tool.
     assert not {"delete_model", "delete_dataset", "delete_rbd"} & (PRO_ONLY_TOOLS | UNGATED_TOOLS)
 
-    saved = _ok(_call(a, "fit_and_save_model", {"data": TIMES, "censored": FLAGS, "name": "Mine"}))
+    saved = _ok(_call(a, "models", {"action": "fit", "data": TIMES, "censored": FLAGS, "name": "Mine"}))
     mid, did = saved["model_id"], saved["dataset_id"]
-    rbd = _ok(_call(a, "create_rbd", {"name": "Uses it", **_saved_block_graph(mid)}))
+    rbd = _ok(_call(a, "rbd", {"action": "create", "name": "Uses it", **_saved_block_graph(mid)}))
 
     # Samples and other people's artifacts are off limits.
-    assert "shared sample" in _err(_call(a, "delete_model", {"model_id": BEARINGS}))
-    assert "shared sample" in _err(_call(a, "delete_dataset", {"dataset_id": "sample-ds-bearings"}))
+    assert "shared sample" in _err(_call(a, "models", {"action": "delete", "model_id": BEARINGS}))
+    assert "shared sample" in _err(_call(a, "datasets", {"action": "delete", "dataset_id": "sample-ds-bearings"}))
     sample_rbd = samples.db.rbds.find_one({"owner_id": "__samples__"})["_id"]
-    assert "shared sample" in _err(_call(a, "delete_rbd", {"rbd_id": sample_rbd}))
-    assert "not found" in _err(_call(samples.token[B], "delete_model", {"model_id": mid})).lower()
+    assert "shared sample" in _err(_call(a, "rbd", {"action": "delete", "rbd_id": sample_rbd}))
+    assert "not found" in _err(_call(samples.token[B], "models", {"action": "delete", "model_id": mid})).lower()
     assert samples.db.models.find_one({"_id": BEARINGS}) is not None
 
     # The app's dependency rule: a dataset in use by a model can't go.
-    msg = _err(_call(a, "delete_dataset", {"dataset_id": did}))
+    msg = _err(_call(a, "datasets", {"action": "delete", "dataset_id": did}))
     assert "used by 1 model" in msg and "Mine" in msg
 
     # Stricter than the app: a model a fleet forecast runs on is refused, naming the fleet.
     from backend.services import fleet as fleet_service
 
     fleet = fleet_service.create_fleet(samples.db, "Pump fleet", mid, A)
-    msg = _err(_call(a, "delete_model", {"model_id": mid}))
+    msg = _err(_call(a, "models", {"action": "delete", "model_id": mid}))
     assert "can't be deleted" in msg and "Pump fleet" in msg and f"/fleet/forecasts/{fleet.id}" in msg
     assert samples.db.models.find_one({"_id": mid}) is not None
     fleet_service.delete_fleet(samples.db, fleet.id, A)
 
-    out = _ok(_call(a, "delete_model", {"model_id": mid}))
+    out = _ok(_call(a, "models", {"action": "delete", "model_id": mid}))
     assert out["deleted"] and out["affected"]["rbds"] == [{"id": rbd["id"], "name": "Uses it"}]
     assert samples.db.models.find_one({"_id": mid}) is None
-    assert _ok(_call(a, "delete_dataset", {"dataset_id": did}))["deleted"]
+    assert _ok(_call(a, "datasets", {"action": "delete", "dataset_id": did}))["deleted"]
     assert samples.db.datasets.find_one({"_id": did}) is None
 
     # A diagram embedded as a sub-system is reported when it goes.
-    inner = _ok(_call(a, "create_rbd", {"name": "Inner", **_chain("Motor")}))["id"]
-    outer = _ok(_call(a, "create_rbd", {"name": "Outer", "nodes": [
+    inner = _ok(_call(a, "rbd", {"action": "create", "name": "Inner", **_chain("Motor")}))["id"]
+    outer = _ok(_call(a, "rbd", {"action": "create", "name": "Outer", "nodes": [
         {"id": "input", "type": "input"}, {"id": "s", "type": "subsystem", "subsystem_rbd_id": inner},
         {"id": "output", "type": "output"}], "edges": [
         {"source": "input", "target": "s"}, {"source": "s", "target": "output"}]}))["id"]
-    out = _ok(_call(a, "delete_rbd", {"rbd_id": inner}))
+    out = _ok(_call(a, "rbd", {"action": "delete", "rbd_id": inner}))
     assert out["affected"]["rbds"] == [{"id": outer, "name": "Outer"}]
     assert samples.db.rbds.find_one({"_id": inner}) is None
-    assert "not found" in _err(_call(a, "delete_rbd", {"rbd_id": inner})).lower()
+    assert "not found" in _err(_call(a, "rbd", {"action": "delete", "rbd_id": inner})).lower()
 
 
 
@@ -799,8 +818,8 @@ def test_conditional_at_an_age_whose_reliability_underflows_is_explained_not_nul
     """R(1e6) for the bearings Weibull is exp(-1.2e7): positive, but it reads 0
     as a float. The conditional is still defined (via cumulative hazards), so
     it's returned, with a note, rather than null."""
-    out = _ok(_call(samples.token[A], "reliability_at",
-                    {"model_id": BEARINGS, "times": [1, 100], "conditional_age": 1e6}))
+    out = _ok(_call(samples.token[A], "life_data_analysis",
+                    {"action": "reliability_at", "model_id": BEARINGS, "times": [1, 100], "conditional_age": 1e6}))
     first, second = out["points"]
     assert 0 < first["conditional_reliability"] < 1e-10 and second["conditional_reliability"] == 0
     assert "too small to show" in out["note"] and "isn't 0" in out["note"]
@@ -818,7 +837,7 @@ def test_failed_candidate_reasons_are_not_cut_mid_word():
 
 
 def test_failure_finding_note_prints_the_target_as_given(env):
-    out = _ok(_call(env.token[A], "failure_finding_interval", {
+    out = _ok(_call(env.token[A], "strategy", {"action": "failure_finding_interval",
         "distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 1e-4}],
         "target_availability": 0.9999999}))
     assert "near 99.99999%" in out["note"]
@@ -841,11 +860,11 @@ def test_demonstration_target_is_printed_as_given_and_null_rows_explained():
 
 def test_failed_fit_has_no_verdict_or_metrics(env):
     data = [1e-300, 1e-100, 1.0, 1e100, 1e300]
-    out = _ok(_call(env.token[A], "fit_distribution", {"data": data}))
+    out = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": data}))
     assert out["fit_ok"] is False
     assert out["metrics"] is None and "didn't converge" in out["metrics_omitted"]
     assert out["randomness"]["verdict"] == "inconclusive" and "didn't converge" in out["randomness"]["reason"]
-    good = _ok(_call(env.token[A], "fit_distribution", {"data": [120, 340, 510, 700, 980, 1200]}))
+    good = _ok(_call(env.token[A], "life_data_analysis", {"action": "fit", "data": [120, 340, 510, 700, 980, 1200]}))
     assert good["metrics"] and "metrics_omitted" not in good
     assert good["randomness"]["verdict"] != "inconclusive" or good["randomness"]["beta_ci"] is None
 
@@ -854,7 +873,9 @@ def test_failed_fit_has_no_verdict_or_metrics(env):
 
 def test_every_argument_a_tool_takes_is_in_its_published_schema(env):
     """A client that validates against the schema can't send an argument the
-    tool reads but doesn't publish (reliability_at's confidence was one)."""
+    tool reads but doesn't publish (reliability_at's confidence was one): every
+    action's every argument is a property of its tool, and the limits the
+    action had on its own still hold."""
     import inspect
 
     from mcp.server.mcpserver import Context
@@ -863,20 +884,24 @@ def test_every_argument_a_tool_takes_is_in_its_published_schema(env):
     from backend.tests.test_mcp import _run
 
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    for name, tool in tools.items():
-        fn = getattr(mcp_server, name, None)
-        assert fn is not None and hasattr(fn, "__wrapped__"), name
-        params = [p for p, spec in inspect.signature(fn).parameters.items()
-                  if spec.annotation is not Context and p != "ctx"]
-        missing = set(params) - set(tool.input_schema.get("properties") or {})
-        assert not missing, (name, missing)
-    props = tools["reliability_at"].input_schema["properties"]
-    assert props["confidence"]["anyOf"][0] == {"exclusiveMaximum": 1, "exclusiveMinimum": 0, "type": "number"}
-    fit = tools["fit_distribution"].input_schema["properties"]
+    for name, actions in mcp_server.ACTIONS.items():
+        props = set(tools[name].input_schema["properties"])
+        for value, act in actions.items():
+            inverse = {param: arg for arg, param in act.renames.items()}
+            params = {inverse.get(p, p) for p, spec in inspect.signature(act.fn).parameters.items()
+                      if spec.annotation is not Context}
+            assert params <= props, (name, value, params - props)
+    for name in set(tools) - set(mcp_server.ACTIONS):  # guide, upgrade_link
+        params = {p for p, spec in inspect.signature(getattr(mcp_server, name)).parameters.items()
+                  if spec.annotation is not Context}
+        assert params <= set(tools[name].input_schema["properties"]), name
+    msg = _err(_call(env.token[A], "life_data_analysis", {"action": "reliability_at", "model_id": "m",
+                                                         "times": [1], "confidence": 1.5}))
+    assert "action 'reliability_at': confidence: Input should be less than 1" in msg
+    fit = tools["life_data_analysis"].input_schema["properties"]
     assert "-1" in fit["censored"]["description"] and "-1" in fit["censor_column"]["description"]
-    compare = tools["compare_groups"].input_schema["properties"]
-    assert "-1" not in compare["c_invert"]["description"]
-    assert "right-censored only" in compare["censored"]["description"]
+    assert "-1" not in fit["c_invert"]["description"]
+    assert "compare_groups: 0 and 1 only" in fit["censored"]["description"]
 
 
 def _reads(fn, var: str) -> set:
@@ -894,14 +919,14 @@ def _props(schema: dict, name: str) -> set:
 
 
 def test_every_rbd_field_the_server_reads_is_in_the_published_schema(env):
-    """#262: edit_rbd's set accepted costs.horizon etc. that an agent couldn't
-    discover. Every field the server reads in edit_rbd's ops and create_rbd's
+    """#262: rbd edit's set accepted costs.horizon etc. that an agent couldn't
+    discover. Every field the server reads in rbd edit's ops and rbd create's
     nodes and diagram settings must be published, with a description."""
     from backend.services import rbd_edit, rbd_graph, rbd_maintenance, rbd_policies
     from backend.tests.test_mcp import _run
 
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    edit, create = tools["edit_rbd"].input_schema, tools["create_rbd"].input_schema
+    edit = create = tools["rbd"].input_schema  # rbd edit's ops and rbd create's nodes
 
     # set: every op field, and the diagram's costs.
     set_reads = _reads(rbd_edit._Editor.set, "op") | _reads(rbd_edit._Editor._set_repairable_settings, "op")
@@ -910,12 +935,12 @@ def test_every_rbd_field_the_server_reads_is_in_the_published_schema(env):
     assert cost_reads == {"downtime_rate", "horizon", "discount_rate"}
     for schema in (edit, create):
         assert cost_reads <= _props(schema, "DiagramCosts")
-    # The diagram settings a graph holds: set and create_rbd both take each one.
+    # The diagram settings a graph holds: set and rbd create both take each one.
     assert set(rbd_graph.DIAGRAM_KEYS) <= _props(edit, "SetOp")
     assert set(rbd_graph.DIAGRAM_KEYS) <= set(create["properties"])
     assert set(rbd_policies.GROUP_KEYS) <= _props(edit, "MaintenanceGroup")
 
-    # Blocks: update_node and create_rbd's nodes take the same fields.
+    # Blocks: update_node and rbd create's nodes take the same fields.
     assert set(rbd_edit.UPDATE_FIELDS) <= _props(edit, "UpdateNodeOp")
     assert set(rbd_edit.UPDATE_FIELDS) <= _props(create, "RbdNode")
     clear = edit["$defs"]["UpdateNodeOp"]["properties"]["clear"]["anyOf"][0]["items"]["enum"]
@@ -936,6 +961,6 @@ def test_every_rbd_field_the_server_reads_is_in_the_published_schema(env):
     costs = edit["$defs"]["SetOp"]["properties"]["costs"]
     assert "downtime_rate" in costs["description"] and "horizon" in costs["description"]
     assert "acquisition" in create["properties"]["costs"]["description"]
-    # cheapest_design names the fields it needs.
-    desc = tools["cheapest_design"].description
+    # rbd_analysis cheapest_design names the fields it needs.
+    desc = tools["rbd_analysis"].description
     assert "costs.acquisition" in desc and "costs.horizon" in desc and "costs.downtime_rate" in desc

@@ -403,7 +403,7 @@ def _model(model, where: str, resolve_saved_model) -> dict:
     if saved_id:
         out = _saved_model(str(saved_id), where, resolve_saved_model)
         if model.get("source") != "saved" and _inline_disagrees(model, out):
-            # The compact form get_rbd returns repeats a saved model's own
+            # The compact form get kind rbd returns repeats a saved model's own
             # distribution + params, so those round-trip; different ones are
             # a conflict, never silently dropped.
             raise GraphError(

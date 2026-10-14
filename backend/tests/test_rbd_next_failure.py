@@ -211,7 +211,7 @@ def test_mcp_next_failure_from_now(env):  # noqa: F811
     rid = _repairable(env, PRO, "Pumps")
     graph = env.db.rbds.find_one({"_id": rid})["graph"]
     ids = [n["id"] for n in graph["nodes"] if n["type"] == "component"]
-    out = _ok(_call(env.oauth[PRO], "analyze_rbd", {
+    out = _ok(_call(env.oauth[PRO], "rbd_analysis", {"action": "analyze",
         "rbd_id": rid, "simulate": True, "current_state": {ids[0]: {"age": 1500.0}}}))
     nxt = out["next_failure"]
     assert nxt["method"] == "simulated" and nxt["n_simulations"] == 20
@@ -219,23 +219,23 @@ def test_mcp_next_failure_from_now(env):  # noqa: F811
     assert all(set(c) == {"label", "count", "share"} for c in nxt["causes"])
     assert out["mean_residual_life"]["value"] == nxt["mean"] and out["mean_residual_life"]["method"] == "simulated"
     # From new, or without the simulation: none.
-    plain = _ok(_call(env.oauth[PRO], "analyze_rbd", {"rbd_id": rid, "simulate": False,
+    plain = _ok(_call(env.oauth[PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False,
                                                       "current_state": {ids[0]: {"age": 1500.0}}}))
     assert "next_failure" not in plain and "mean_residual_life" not in plain
     # Free: the exact figures, and the simulation's offer (no next failure).
     rid = _repairable(env, FREE, "Pumps")
-    free = _ok(_call(env.oauth[FREE], "analyze_rbd", {"rbd_id": rid, "simulate": True,
+    free = _ok(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True,
                                                       "current_state": {ids[0]: {"age": 1500.0}}}))
     assert "next_failure" not in free and free["simulation"]["available"] is False
 
 
 def test_mcp_non_repairable_mean_residual_life(mcp_env):  # noqa: F811
-    rid = _ok(_call(mcp_env.token[A], "create_rbd", {"name": "Pump skid", "unit": "Hours", **GRAPH}))["id"]
-    now = _ok(_call(mcp_env.token[A], "analyze_rbd", {
+    rid = _ok(_call(mcp_env.token[A], "rbd", {"action": "create", "name": "Pump skid", "unit": "Hours", **GRAPH}))["id"]
+    now = _ok(_call(mcp_env.token[A], "rbd_analysis", {"action": "analyze",
         "rbd_id": rid, "current_state": {"p1": {"failed": True}, "ctl": {"age": 400}}}))
     assert now["mean_residual_life"]["method"] == "exact"
     assert now["mean_residual_life"]["value"] == pytest.approx(now["mttf"], rel=1e-12)
-    new = _ok(_call(mcp_env.token[A], "analyze_rbd", {"rbd_id": rid}))
+    new = _ok(_call(mcp_env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
     assert "mean_residual_life" not in new
 
 

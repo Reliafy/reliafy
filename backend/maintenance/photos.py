@@ -25,7 +25,7 @@ import io
 import os
 import secrets
 import threading
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from PIL import Image, ImageOps
 from PIL import JpegImagePlugin, MpoImagePlugin, PngImagePlugin, WebPImagePlugin  # noqa: F401 - FORMATS
@@ -334,6 +334,3 @@ class PhotoLinks:
                 for o in doc["gps_offers"] if o.get("answer") == "declined" or "lat" in o],
         }
 
-
-def today() -> str:
-    return date.today().isoformat()

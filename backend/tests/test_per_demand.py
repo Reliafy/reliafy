@@ -198,21 +198,22 @@ def test_mcp_fit_per_demand_and_save(env):
     from backend.tests.test_mcp import A as MA, _call, _err, _ok
 
     token = env.token[MA]
-    out = _ok(_call(token, "fit_per_demand", {"batches": BATCHES, "confidence": 0.9}))
+    out = _ok(_call(token, "life_data_analysis", {"action": "fit_per_demand", "batches": BATCHES, "confidence": 0.9}))
     assert out["saved"] is False and out["p"] == pytest.approx(4 / 150)
     exact = stats.binomtest(4, 150).proportion_ci(0.9, method="exact")
     assert out["p_interval"] == pytest.approx([exact.low, exact.high], rel=1e-9)
     assert out["bounds_method"].startswith("exact") and len(out["batches"]) == 3
 
     ds = datasets_service.create_dataset(env.db, "lots", b"lot,n,f\nL1,20,1\nL2,50,0\nL3,80,3\n", MA)
-    by_data = _ok(_call(token, "fit_per_demand", {"dataset_id": ds.id, "demands_column": "n",
+    by_data = _ok(_call(token, "life_data_analysis", {"action": "fit_per_demand", "dataset_id": ds.id,
+                                                      "demands_column": "n",
                                                   "failures_column": "f", "confidence": 0.9}))
     assert by_data["p_interval"] == out["p_interval"]
-    assert "exactly one" in _err(_call(token, "fit_per_demand", {}))
+    assert "exactly one" in _err(_call(token, "life_data_analysis", {"action": "fit_per_demand"}))
 
-    saved = _ok(_call(token, "fit_and_save_model", {"name": "Deluge valves", "demand_batches": BATCHES}))
+    saved = _ok(_call(token, "models", {"action": "fit", "name": "Deluge valves", "demand_batches": BATCHES}))
     assert saved["saved"] is True and saved["kind"] == "per_demand" and saved["confidence"] == 0.95
-    got = _ok(_call(token, "get_model", {"model_id": saved["model_id"]}))
+    got = _ok(_call(token, "get", {"kind": "model", "id": saved["model_id"]}))
     assert got["kind"] == "per_demand"
-    assert "don't apply" in _err(_call(token, "fit_and_save_model", {
+    assert "don't apply" in _err(_call(token, "models", {"action": "fit",
         "name": "x", "demand_batches": BATCHES, "data": [1, 2, 3]}))

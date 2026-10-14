@@ -263,7 +263,7 @@ def run(m: Maintenance, rows: list[dict], dry_run: bool = False) -> dict:
         if r["removed"]:
             mode_id = None
             if r["failed"] and r["failure_mode"]:
-                modes = {fm["text"].lower(): fm["id"] for fm in m.s.out(m.org, pid, "CAN_FAIL_AS")}
+                modes = {fm["text"].lower(): fm["id"] for fm in m._modes_on(pid)}
                 mode_id = modes.get(r["failure_mode"].lower())
                 if mode_id is None:
                     mode_id = new_id()

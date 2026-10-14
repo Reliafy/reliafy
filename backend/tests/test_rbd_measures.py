@@ -315,18 +315,20 @@ def test_mcp_rbd_sensitivity_measures(monkeypatch):
     token = tokens.create_token(test_db, A, "mcp")["token"]
     rbd = rbds_service.save_rbd(test_db, "Train", _train(), A)
     for measure in ("over_time", "shares", "joint", "rate"):
-        out = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "measure": measure}))
+        out = _ok(_call(token, "rbd_analysis", {"action": "sensitivity", "rbd_id": rbd.id, "measure": measure}))
         assert out["available"] is True and out["measure"] == measure and out["answer"] and out["question"]
-    over = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "measure": "over_time"}))
+    over = _ok(_call(token, "rbd_analysis", {"action": "sensitivity", "rbd_id": rbd.id, "measure": "over_time"}))
     assert len(over["time"]) <= 15 and all(len(s["values"]) == len(over["time"]) for s in over["series"])
-    shares = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "measure": "shares", "group_by": "kind"}))
+    shares = _ok(_call(token, "rbd_analysis", {"action": "sensitivity", "rbd_id": rbd.id, "measure": "shares",
+                                               "group_by": "kind"}))
     assert {s["group"] for s in shares["shares"]} == {"Lives", "Repair times"}
-    unc = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "measure": "uncertainty"}))
+    unc = _ok(_call(token, "rbd_analysis", {"action": "sensitivity", "rbd_id": rbd.id, "measure": "uncertainty"}))
     assert unc["available"] is False and unc["code"] == "no_uncertainty" and unc["fixed_blocks"]
     # Lever limits through MCP (#324).
-    limited = _ok(_call(token, "rbd_sensitivity", {
+    limited = _ok(_call(token, "rbd_analysis", {"action": "sensitivity",
         "rbd_id": rbd.id, "lever_limits": {"motor|repairability.mu": {"min": 13.0}}, "limit": 30}))
     row = next(r for r in limited["levers"] if r["id"] == "motor|repairability.mu")
     assert row["limit"] == {"min": 13.0} and row["limited"] == "yours" and row["shown_to"] == pytest.approx(13.0)
-    err = _call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "lever_limits": {"nope|x": {"min": 1}}})
+    err = _call(token, "rbd_analysis", {"action": "sensitivity", "rbd_id": rbd.id,
+                                        "lever_limits": {"nope|x": {"min": 1}}})
     assert err.is_error and "not levers" in err.content[0].text

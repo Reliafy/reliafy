@@ -302,7 +302,7 @@ def ownership(rbd, graph: dict, overrides: dict, rate: Optional[float], basis: O
 def with_discount(costs: Optional[dict], graph: dict, annual, resolve_model=None) -> Optional[dict]:
     """An availability result's ``costs`` re-priced at ``annual`` % a year (0:
     undiscounted) — the same horizon, so a saved result needn't be simulated
-    again for another rate (the MCP ``analyze_rbd``'s ``discount_rate``). The
+    again for another rate (the MCP ``rbd_analysis analyze``'s ``discount_rate``). The
     diagram is built again (``resolve_model`` resolves its saved models) for
     RePyability to price it: its exact long-run rate where the result has one;
     a simulated one stays undiscounted."""

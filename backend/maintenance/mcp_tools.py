@@ -1,45 +1,451 @@
 """MCP tools for Reliafy Maintenance.
 
-Registered on the MCP server only when ``MAINTENANCE_ENABLED`` (local only for
-now), so production's tool list is unchanged. They act on the caller's
-personal workspace, like the other MCP tools.
+Registered on the MCP server only when ``MAINTENANCE_ENABLED``, and listed only
+to people who may use Maintenance. They act on the caller's personal workspace,
+like the other MCP tools.
+
+A few tools, each doing one area's work (Anthropic's guidance for tools agents
+use: fewer, namespaced, well described):
+
+* reads: ``maintenance_overview`` (start here), ``maintenance_guide`` (how-tos
+  by topic), ``maintenance_get`` / ``maintenance_list`` (any kind of record, by
+  ``kind``) and ``maintenance_view_photo`` (an image, which can't share the
+  others' structured output);
+* writes: ``maintenance_<area>(action, ...)``, one per area.
+
+Reads and writes are separate tools: Claude approves a tool, not an action, and
+an API token's scope follows the tool's read / write annotation. Each tool's
+arguments are the union of its actions'; :func:`check` holds every call to its
+action's own (the tables below, which also write the tool's description).
+Gating, the heavy slots and the usage log go by ``tool.action`` (see
+``mcp_server._tool``'s ``call_key``).
 """
 
 
 import dataclasses
+import functools
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
+from backend.maintenance import mcp_guide
+from backend.mcp_actions import Table, check, describe
+from backend.mcp_actions import choice as _choice
+
 TOOL_NAMES: list[str] = []
 _ORIGINAL: dict = {}
-# Tools that fit a life model on the server: Pro only, like the MCP server's
-# other fitting tools (added to its plan gating when registered).
-PRO_FIT_TOOLS = ("fit_class_model",)
-# Tools that can take a while: they share the MCP server's heavy-call slots.
-HEAVY_TOOLS = ("fit_class_model", "import_history", "plan_economics", "generate_rbd")
+# Calls (tool.action) that fit a life model on the server: Pro only, like the MCP
+# server's other fitting tools (added to its plan gating when registered).
+PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
+# Calls that can take a while: they share the MCP server's heavy-call slots.
+HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_workspace.import_history",
+               "maintenance_get.plan_economics", "maintenance_topology.generate_rbd")
+
+
+# ---- actions: what each takes -------------------------------------------------------
+#
+# action: (required arguments, optional arguments, what it does). "Required"
+# means not null; everything else a call gives must be one of the optional ones
+# (backend/mcp_actions.py checks every call and writes the descriptions).
+
+
+def _d(value, default):
+    return default if value is None else value
+
+
+GET_KINDS: Table = {
+    "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
+        from_precision / to_precision for rough dates), failure modes (from RCM, by hand or ad hoc),
+        class_failure_modes (seen at other positions of its class), tasks with last-done / next-due and trade,
+        work orders, item_tasks (the fitted item's own), documents, parts_list (replacement part first, with
+        stock, supersession, alternatives, critical minimums, notes), connections, life_data (one row per item
+        fitted: days in service, c = 0 failed / 1 censored / 2 within xl..xr) and location (display, inherited,
+        inherited_from; null when none is set on it or above it)."""),
+    "item": ("id", "", """A serial-numbered thing: details, nameplate, notes with note_history, purchase /
+        in-service / manufacture dates (precision, source), replacement cost, warranty (with a summary),
+        documents, where it's fitted and where it is (location: how = fitted or placed; or last_at), every
+        position it was fitted to, placements, its own positions (an engine's turbos), photos, its own tasks
+        (they follow it; while_stored), work orders, measurements (its own meters), item_class (via its own or
+        its part's, with attributes), part and manufacturer_entry."""),
+    "work_order": ("id", "", """Subject (position, item or location), task, status, dates, trade, notes
+        with note_history, close actions / close_notes or cancel_reason; for an open one the item fitted now
+        and the position's failure modes (close actions name them), suggested_parts (the parts list,
+        replacement first, with stock by location: pick parts from it), warranty (check coverage before paying),
+        checklist (a round's: a line per position there), can_replace, and its labour / part / cost entries."""),
+    "location": ("id", "", """A place in the physical tree: path, locations inside it (with counts), the
+        positions there (set or inherited, here or deeper) grouped by system, each with its fitted item, direct
+        or inherited_from and open work orders; items placed there (spares, repairs); counts; its own tasks and
+        work orders (rounds). At most 500 positions listed (positions_truncated). For all the work there:
+        maintenance_list kind work_orders with location_id."""),
+    "part": ("id", "", """A catalogue part: stock by location, what supersedes it, what it's interchangeable
+        with, and used_at (each position whose parts list names it: role, quantity per job, critical
+        minimum)."""),
+    "measurement_point": ("id", "", """Kind, source and tag, latest reading, rate (counter) or trend and the
+        date it should reach an alarm limit (condition), status, recent readings (each with status ok,
+        correction, voided or replaced; reading ids for maintenance_measurements void / correct)."""),
+    "item_class": ("id", "", """Path, code, level, description, the classes inside it, attributes
+        (inherited first, each with the class it's from), and the items and parts in it or a class inside
+        it."""),
+    "manufacturer": ("id", "", "Its aliases and the items and parts linked to it."),
+    "task": ("id", "", """Why a task is what it is: where it came from (RCM), every change, and the proposals
+        behind them."""),
+    "class_life_data": ("id", "", """id = a position class's name. Every fitment at every position of the
+        class, pooled: x = days in service, c = 0 failed or 1 censored; rough dates add xl / xr (a failure is
+        then c = 2, interval censored)."""),
+    "plan_economics": ("id", "interval unit horizon_years discount_rate", """id = a position class's name.
+        What its replacement plan costs a year: the current plan, the best interval, running to failure and
+        (with interval) a what-if, each with its net present cost over horizon_years (default 10) at
+        discount_rate (default 0.07). Needs the class's fitted model and costs. unit: days, weeks, months
+        (default), years."""),
+    "impact": ("id", "", """id = a position. If it fails, what loses its supply downstream (through
+        connections), and whether redundancy covers it."""),
+    "photo_link": ("id", "", """id = a link_id from maintenance_attachments photo_link. The photos added
+        through it so far, and any location a photo carried with the user's answer (saved / declined / null =
+        not answered). Unanswered: ask the user before set_coordinates; never save it unasked."""),
+    "manufacturer_match": ("text", "", """Which register entry a maker as written ('K.S.B.', 'KSB AG') is:
+        by name or alias, case, accents, punctuation and company form (AG, Ltd) aside. match is null when none
+        is certain; candidates are near misses to ask the user about. Use before maintenance_manufacturers
+        create."""),
+}
+
+LIST_KINDS: Table = {
+    "work_orders": ("", "status location_id", """Newest first, each with subject, position (where the work
+        is) and location. status 'open' (every one not done: open, planned, in_progress, waiting) or one
+        status exactly (closed, cancelled...). location_id: only work in that area (positions there, set or
+        inherited, items there now, the location itself)."""),
+    "items": ("", "item_class_id manufacturer_id", """Every item with the position it's fitted to and where
+        it is (location: fitted or placed; or last_at), item_class and manufacturer_entry. item_class_id (that
+        class or one inside it) and manufacturer_id filter; 'none' for items with none."""),
+    "parts": ("", "item_class_id manufacturer_id", """The catalogue: stock by location, reorder points (low =
+        at or below), a year's use and months of cover, used_at, critical_short, item_class and
+        manufacturer_entry. Filters as items."""),
+    "locations": ("", "", """The physical tree, each with positions (located there, set or inherited) and
+        items (placed there), and all_positions / all_items counting the locations inside it."""),
+    "position_classes": ("", "", """Each position class with its positions, fitments and failures, costs,
+        default replacement cost and document links."""),
+    "item_classes": ("", "format", """format tree (default): the item class tree with code, level,
+        attributes and item / part counts (empty = not used). format json or csv: the taxonomy as
+        maintenance_item_classes import reads it."""),
+    "manufacturers": ("", "", "The manufacturer register: each maker, its aliases and how many items and parts."),
+    "photos": ("target_id", "", "The photos of a position, location, item or work order (ids, captions, dates)."),
+    "proposals": ("", "status", """Changes the life models propose (a task's interval, or retiring a task),
+        each with its reason; status pending (default), accepted, rejected, superseded or all. Show them to the
+        user and let them decide (maintenance_proposals)."""),
+    "spares_cover": ("", "include_unlisted", """Where the spares don't cover the plant: short (critical spares
+        below their position's minimum, counting supersessions and alternatives in every store), no_spare
+        (positions whose critical replacement part has none usable); include_unlisted adds
+        without_parts_list."""),
+}
+
+POSITIONS: Table = {
+    "create": ("name", "parent_id tag position_class description location_id", """A position: the job something
+        does ('Hot water system', 'MCC-3', 'Pump A'). parent_id: inside another position, or inside an item (a
+        position that travels with it, like an engine's turbo). position_class: like positions to compare and
+        pool. location_id: where it physically is; leave it out to inherit its parent's. Returns the
+        position."""),
+    "update": ("position_id", "name tag position_class description parent_id move_to_top_level location_id "
+               "clear_location", """Rename, change tag / class / description, move it (parent_id, or
+        move_to_top_level true), set where it is (location_id: positions inside without their own follow) or
+        clear_location true to inherit its parent's again."""),
+    "copy": ("position_id name", "parent_id", """Copy a position and everything inside it (positions, failure
+        modes, tasks, parts lists, locations set on them; not items, stock or work orders) under a new name.
+        Repeat it to build many like structures; then update the copy's location_id if it's elsewhere."""),
+    "retire": ("position_id", "reason", """Take it out of the plant (kept in the history). Nothing fitted, no
+        position inside it in use, no work order open."""),
+    "from_rcm": ("study_id", "parent_id", """A new position named for an RCM study's system, with its failure
+        modes and a task for every decision with an interval (list kind rcm_studies / rcm create)."""),
+    "apply_rcm": ("position_id study_id", "", """Bring a study's failure modes and tasks onto an existing
+        position; again later adds what's new and updates changed tasks."""),
+    "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
+        locations: each such placement becomes its position's location where it has none. dry_run (default
+        true) lists the changes: show them, then run with dry_run false."""),
+}
+
+FITMENTS: Table = {
+    "fit": ("position_id", "item_id item_name serial part_number manufacturer model part_id on from_precision",
+            """Fit
+        an item to an empty position: an existing one (item_id) or a new one (item_name with serial, part
+        number, manufacturer, model; or part_id, the catalogue make and model, which fills in what isn't given). on: the
+        date it went in, rough if need be ('2022', or a day with from_precision 'estimated'). A new item renews
+        the position's tasks. To replace an item, close a work order with a replace action instead."""),
+    "remove": ("position_id", "on reason failure_mode_id failure_mode_text to_precision", """Take the fitted
+        item out with no work order (a correction). If it failed, name how: failure_mode_id, or
+        failure_mode_text in words (a new ad-hoc mode if the position has none of that name); a mode with no
+        reason is a failure, no mode a planned removal. reason: planned, failure or other."""),
+    "move": ("item_id position_id", "on", """Move an item from wherever it's fitted to an empty position,
+        keeping its one history: a rotable going round, a pump swapped to standby."""),
+    "add_past": ("position_id start end", "reason item_id item_name serial part_number manufacturer model "
+                 "failure_mode_id failure_mode_text from_precision to_precision note", """Put an earlier item
+        into a position's history (migrating records): in on start, out on end. reason failure (name the mode),
+        planned or other. Must not overlap another fitment at the position or of the item. Returns the
+        position."""),
+    "void": ("fitment_id", "reason", """Strike out a fitment recorded by mistake (wrong item or position): it
+        leaves the history and life data (the event log keeps it). reason: why. Fitment ids are on the
+        position (fitments, life_data)."""),
+    "correct": ("fitment_id", "start end from_precision to_precision", """Correct the date an item went in
+        (start) or came out (end), and how well each is known. A precision alone re-reads the date there
+        (from_precision year turns 2022-07-01 into 2022)."""),
+}
+
+ITEMS: Table = {
+    "update": ("item_id", "name serial part_number manufacturer model notes append_note nameplate purchase_date "
+               "in_service_date manufacture_date replacement_cost warranty clear", """Change an item's details.
+        After reading a nameplate: make in manufacturer, the model, the serial, everything else on the plate in
+        nameplate. append_note adds a dated line (notes replaces the whole note). Dates, replacement cost and
+        warranty go in their own fields; clear removes them."""),
+    "place": ("item_id location_id", "on", """Where an item that ISN'T fitted is: a spare in a store, one away at
+        a repairer. A fitted item is refused: it is where its position is (set the position's location)."""),
+    "set_part": ("item_id part_id", "", """Link an item to its catalogue part (make and model): it then takes
+        the part's item class and manufacturer unless it has its own. part_id 'none' unlinks it."""),
+    "set_attributes": ("item_id values", "", """Fill in its structured attributes, checked against its item
+        class (its own, else its part's; maintenance_get kind item lists them). Anything else from the
+        nameplate goes in update's nameplate."""),
+}
+
+FAILURE_MODES: Table = {
+    "add": ("position_id text", "function failure consequence", """A failure mode on a position without RCM:
+        how it fails ('Bearing worn'), optionally the function, the functional failure ('No flow') and the
+        consequence. Failures and tasks then name it by id."""),
+    "update": ("failure_mode_id", "text function failure consequence", """Edit one added by hand or typed in at
+        a failure (editing an ad-hoc mode confirms it). An RCM study's modes change in the study."""),
+    "merge": ("failure_mode_id into_failure_mode_id", "", """Fold a mode into another on the same position (a
+        duplicate, an ad-hoc one): its failures, findings and tasks move across. To link an ad-hoc mode to an
+        RCM study's, apply the study, then merge into the study's. Returns the position."""),
+}
+
+TASKS: Table = {
+    "create": ("name interval", "position_id item_id location_id unit outcome also_interval also_unit point_id "
+               "instructions checklist source reference failure_mode_id last_done trade while_stored "
+               "include_positions", """A scheduled task without an RCM study, on exactly one subject:
+        position_id (the job: lubricate the pump), item_id (follows the serial number: calibration,
+        certification, a rotable's overhaul, preserving a stored spare) or location_id (a round; calendar units
+        only). unit (default months): days, weeks, months, years, or hours / cycles / km from a counter
+        (point_id). also_interval + also_unit: whichever comes first. outcome: fixed_interval, failure_finding,
+        on_condition or none. source: manual (default), oem, statutory, other, with reference.
+        failure_mode_id: a position's mode. last_done if known. trade: who may do it. while_stored (item):
+        run or pause. include_positions (location): list the positions there. maintenance_guide topic plan has
+        examples."""),
+    "update": ("task_id", "name interval unit also_interval also_unit point_id instructions checklist "
+               "failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade while_stored "
+               "include_positions", """Rename it or change its interval, second limit (also_interval 0 removes
+        it), counter, instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
+        true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
+        or include_positions. Its subject can't change: retire it and create another."""),
+    "retire": ("task_id", "reason", "Stop scheduling it (it stays in the history)."),
+    "set_last_done": ("task_id on", "", """When it was last done before it was tracked here, so its next due
+        date counts from then."""),
+}
+
+PROPOSALS: Table = {
+    "accept": ("proposal_id", "note", """Apply a change the life models proposed (maintenance_list kind
+        proposals). Only when the user says so."""),
+    "reject": ("proposal_id", "note", "Turn a proposed change down, optionally saying why."),
+}
+
+WORK_ORDERS: Table = {
+    "open": ("title", "position_id item_id location_id type task_id due notes trade include_positions", """A
+        work order on exactly one of position_id (the job and whatever's fitted), item_id (follows the serial
+        number) or location_id (a round); with task_id alone, on the task's subject. type: corrective (default),
+        preventive, inspection, other. trade: the licence or competency it needs (a task's by default).
+        include_positions: a location's checklist lists the positions there. Flags warranty."""),
+    "update": ("work_order_id", "title due notes type assignee planned_for append_note trade", """Change an open
+        one's title, due ('' clears), notes (replaces the whole note), type, assignee, planned_for or trade
+        ('' clears). append_note adds a dated line, also on closed and cancelled ones."""),
+    "status": ("work_order_id status", "note", "Move an open one along: planned, in_progress, waiting, or open."),
+    "close": ("work_order_id", "actions on notes readings", """Close it with what was done (actions, in order).
+        A replace ends the fitted item's time at the position (a failure if a failure mode is named, else
+        planned) and fits the new one: that builds the life data. Get the failure-mode ids from maintenance_get
+        kind work_order first; if none fits, use failure_mode_text, never a failure as planned. An item's work
+        order acts at the position it's fitted to now; a location's (a round) takes repair, inspect and other
+        only. Nothing is saved if any action is invalid."""),
+    "cancel": ("work_order_id", "reason", """Cancel one that won't be done (a duplicate, raised by mistake);
+        reason kept as cancel_reason. Work that was done: close."""),
+    "generate": ("", "horizon_days", """Open a preventive work order for every task due within horizon_days
+        (default 30, at most 366) that has none open, on the task's subject."""),
+    "labour": ("work_order_id hours", "who rate on note", "Hours worked, by whom, at an hourly rate if known."),
+    "part_used": ("work_order_id", "part quantity unit_cost part_number note part_id from_location_id", """A part
+        or consumable used: free text (part) or a catalogue part (part_id, from the work order's
+        suggested_parts first; its cost fills in), taken from stock at from_location_id if given. quantity
+        default 1."""),
+    "cost": ("work_order_id description amount", "", "Any other cost (a contractor, hire, call-out)."),
+    "remove_entry": ("entry_id", "", "Remove a labour, part or cost entry made by mistake (ids on the work order)."),
+    "check": ("work_order_id index", "done", "Tick (done true, default) or untick a checklist line, numbered from 0."),
+}
+
+MEASUREMENTS: Table = {
+    "add_point": ("", "position_id item_id name kind unit source tag alarm_above alarm_below", """Something
+        measured on a position (position_id) or an item (item_id: a meter it carries; its tasks by use go by
+        it). kind counter (default condition): use, only goes up (run hours, cycles, km); condition: vibration,
+        temperature, wear, with alarm limits (a reading past one opens an inspection). source manual (default:
+        someone reads it) or automated (a feed sends readings under tag to POST /api/ingest/maintenance/readings
+        with an ingest-scope token)."""),
+    "update_point": ("point_id", "name alarm_above alarm_below clear_alarm_above clear_alarm_below tag", """Rename
+        a point, set or clear its alarm limits, or change an automated point's tag."""),
+    "record": ("point_id value", "on note", """A manual reading (the hour meter says 12,340). Counters only go
+        up; on backdates it. Returns the point: latest, rate or trend, status, any alarm work order."""),
+    "void": ("reading_id reason", "", """Strike out a reading entered by mistake (a duplicate, the wrong meter),
+        saying why; rates, due dates and alarms leave it out. Returns the point."""),
+    "correct": ("reading_id reason", "value on", """Correct a reading's value (a typo) or date (entered as
+        today: move it to the day it was read): the original is struck out and the correction recorded in its
+        place. Returns the point."""),
+}
+
+LOCATIONS: Table = {
+    "create": ("name", "parent_id description", """A physical place (site, area, building, room, substation,
+        store), optionally inside another. Don't mirror the positions here: make the places, then give positions
+        a location_id."""),
+    "update": ("location_id", "name description parent_id move_to_top_level", """Rename it, change its
+        description, or move it inside another (parent_id) or to the top level."""),
+}
+
+PARTS: Table = {
+    "create": ("part_number name", "manufacturer unit unit_cost notes item_class_id manufacturer_id", """A part in
+        the catalogue, by part number (unique): a spare (a bearing, a seal kit) or a make and model of equipment
+        (part_number = the model number). item_class_id: what kind of thing it is; manufacturer_id: its maker in
+        the register (manufacturer_match first). unit default 'each'."""),
+    "stock": ("part_id location_id quantity", "reason on",
+              "Receive (positive quantity) or issue / write off (negative) at a location."),
+    "reorder": ("part_id location_id reorder_point", "",
+                "Stock at or below reorder_point at the location counts as low."),
+    "link": ("part_id other_part_id", "relation", """part_id is superseded_by other_part_id, or the two are
+        interchangeable (default)."""),
+    "add_to_position": ("position_id part_id", "role quantity critical min_on_hand notes", """Put a catalogue part
+        on a position's parts list (its bill of materials). role: replacement (replaces what's fitted, one per
+        position), component (default: used in its maintenance) or consumable. quantity: per job (default 1).
+        critical true: a critical spare, min_on_hand the least to keep (default one job's worth). notes:
+        compatibility ('fits from serial 4000 on'). Returns the parts list."""),
+    "update_on_position": ("listing_id", "role quantity critical min_on_hand notes", """Change a parts-list entry
+        (ids in the position's parts_list); critical false drops the minimum. For a different part, remove it and
+        add the other."""),
+    "remove_from_position": ("listing_id", "",
+                             "Take an entry off a position's parts list (the part stays in the catalogue)."),
+}
+
+RELIABILITY: Table = {
+    "set_class_costs": ("position_class", "planned_cost failure_cost availability_target replacement_cost "
+                        "clear_replacement_cost", """What a planned replacement and a failure cost for a position
+        class (same currency), and the availability a hidden function must reach (e.g. 0.99): proposed
+        intervals are optimised against them. replacement_cost: the default for items with none of their
+        own. Returns the class."""),
+    "fit_class_model": ("position_class", "distribution", """Pro. Fit a life distribution (weibull default, best,
+        lognormal, exponential, gamma) to every fitment of the class's positions, save it as a model and
+        propose task intervals from it and the costs. Needs at least 2 failures (exponential: 1, a constant
+        failure rate while there's little history). Then generate_rbd uses it for the class's blocks."""),
+}
+
+TOPOLOGY: Table = {
+    "connect": ("from_id to_id", "kind medium name rating realised_by", """Something passes from one position to
+        another (water tank -> pump, 240 V switchboard -> motor). kind: flow (default), electrical, mechanical,
+        signal, data, other. realised_by: a position for the connection itself when it's maintainable (a hose, a
+        cable)."""),
+    "disconnect": ("interface_id", "", "Remove a connection (its id is in the position's connections)."),
+    "create_group": ("member_ids", "name k mode standby", """Positions doing the same job where k of them are
+        enough (two pumps, either will do: k = 1, the default; duty and standby: mode standby). Record it while
+        building the register: generate_rbd and impact depend on it. mode active (default) or standby (the others
+        wait; standby cold, warm or hot)."""),
+    "update_group": ("group_id", "name k mode standby add remove",
+                     "Rename it, change k or mode, add / remove members."),
+    "set_duty": ("group_id position_id", "", "Which member of a standby group runs now (a duty / standby swap)."),
+    "generate_rbd": ("position_id", "", """Generate (or regenerate) an RBD for a system position from the
+        positions inside it: connections wire the blocks, groups become k of n, blocks take their class's
+        fitted model (placeholders otherwise, listed in notes). Saved as a normal RBD: rbd_analysis analyze."""),
+}
+
+ITEM_CLASSES: Table = {
+    "create": ("name", "parent_id code level description attributes", """Add a kind of thing to the item class
+        tree, inside parent_id or at the top. code: the user's own (never invent one). level: their name for
+        it (class, type, subunit). Reuse a class that's there rather than make a near duplicate."""),
+    "update": ("item_class_id", "name code level description parent_id move_to_top_level", """Rename it or
+        change code, level or description, or move it (never inside itself); its items, parts and classes go
+        with it."""),
+    "set_attributes": ("item_class_id attributes", "", """Replace the class's OWN attributes (the whole list).
+        Values items have for one taken off stay on them."""),
+    "retire": ("item_class_id", "reason", "Take an empty class out of use (kept in the history)."),
+    "assign": ("target_id item_class_id", "", """Give an item or a catalogue part a class; item_class_id 'none'
+        takes it away. Prefer the part: its items follow."""),
+    "import": ("", "classes csv dry_run source", """Load a taxonomy the user has (their company's, or a standard
+        they hold a licence for; never type one from memory: ISO 14224 and OREDA are copyrighted) as classes
+        (JSON) or csv, one of them. Matched by path, so it can run again; conflicts are listed and left alone.
+        dry_run (default true) reports what would change; nothing is written if any row is wrong."""),
+    "load_starter": ("", "dry_run", """Reliafy's own starter taxonomy (pumps, motors, valves, instruments, HVAC
+        and more, with typical attributes). Only when the user asks. dry_run default true."""),
+}
+
+MANUFACTURERS: Table = {
+    "create": ("name", "aliases", """Add a maker with the other names it goes by. Refused if a name is already
+        another entry's: add an alias there instead."""),
+    "update": ("manufacturer_id", "name add_aliases remove_aliases", "Rename it, or add or take off aliases."),
+    "merge": ("manufacturer_id into_manufacturer_id", "", """Fold a duplicate into another: its items and parts
+        move, its names become aliases. Confirm with the user first."""),
+    "link": ("target_id manufacturer_id", "", """Link an item or (preferably) a part to its maker; manufacturer_id
+        'none' unlinks. Its typed manufacturer text stays (or takes the register's name if it had none)."""),
+    "link_by_name": ("", "dry_run", """Link every item and part whose typed manufacturer matches an entry and has
+        no link yet; unmatched lists the texts that matched nothing, most used first. dry_run default true."""),
+}
+
+ATTACHMENTS: Table = {
+    "photo_link": ("target_id", "caption", """A link for the user to add up to 20 photos of a position, location,
+        item or work order from a phone in the next 30 minutes, with no sign-in. Give them the url (you can't
+        send a photo file yourself). Then maintenance_get kind photo_link, and maintenance_view_photo."""),
+    "set_coordinates": ("target_id lat lon", "source", """Save a position's, item's or location's latitude and
+        longitude (a work order's go on its position). source manual (default) or photo: use a photo's location
+        only when the user has said to."""),
+    "remove_photo": ("photo_id", "", "Remove a photo (the history keeps that it was there; the image is deleted)."),
+    "add_document": ("url", "target_id position_class title kind", """Link a document (an http(s) url: a manual,
+        datasheet, invoice, drawing, certificate) to an item or position (target_id), or to a position class
+        (one datasheet every pump of that model shares). Use this rather than links in notes. kind: manual,
+        datasheet, invoice, drawing, certificate, other (default)."""),
+    "remove_document": ("document_id", "",
+                        "Remove a document link (ids in the documents on the item, position or class)."),
+}
+
+WORKSPACE: Table = {
+    "set_time_zone": ("time_zone", "", """Where the workspace is, so today, due dates and overdue follow its
+        local calendar: an IANA name ('Australia/Brisbane', 'Europe/London'); '' clears it (UTC). Ask the user
+        rather than guessing."""),
+    "import_history": ("rows", "dry_run", """Bring an existing history in: positions (made from their paths),
+        items, when they were fitted and removed and whether they failed. Every row is checked first; with any
+        error nothing is written. dry_run (default true) reports what would be made: show it, then run with
+        dry_run false. At most 5000 rows; for a file, the user can import it on the Maintenance page."""),
+}
+
+
+# Each tool that does several things: the argument choosing what, and its table.
+TABLES: dict[str, tuple[str, Table]] = {
+    "maintenance_get": ("kind", GET_KINDS), "maintenance_list": ("kind", LIST_KINDS),
+    "maintenance_positions": ("action", POSITIONS), "maintenance_fitments": ("action", FITMENTS),
+    "maintenance_items": ("action", ITEMS), "maintenance_failure_modes": ("action", FAILURE_MODES),
+    "maintenance_tasks": ("action", TASKS), "maintenance_proposals": ("action", PROPOSALS),
+    "maintenance_work_orders": ("action", WORK_ORDERS), "maintenance_measurements": ("action", MEASUREMENTS),
+    "maintenance_locations": ("action", LOCATIONS), "maintenance_parts": ("action", PARTS),
+    "maintenance_reliability": ("action", RELIABILITY), "maintenance_topology": ("action", TOPOLOGY),
+    "maintenance_item_classes": ("action", ITEM_CLASSES), "maintenance_manufacturers": ("action", MANUFACTURERS),
+    "maintenance_attachments": ("action", ATTACHMENTS), "maintenance_workspace": ("action", WORKSPACE),
+}
 
 
 def register() -> None:
     """Add the maintenance tools to the MCP server (idempotent)."""
     if TOOL_NAMES:
         return
-    from mcp.server.mcpserver import Context
+    from mcp.server.mcpserver import Context, Image
     from mcp.server.mcpserver.exceptions import ToolError
 
+    from backend import config, mcp_server
+    from backend.maintenance import importer, loop, rbd_derive, taxonomy
     from backend.maintenance.access import allowed
     from backend.maintenance.service import Invalid, Maintenance, NotFound, summary
-    from backend import mcp_server
     from backend.mcp_server import _READ, _WRITE, _caller, _db, _reader, _tool, mcp
-    from backend.routers.maintenance import get_store
+    from backend.routers.maintenance import get_store, link_payload, photo_links, remove_photo, served_photo
     from backend.schema import RcmStudy
     from backend.services import access as access_service
+    from backend.services import time_zones
 
     def m_for(ctx: Context) -> Maintenance:
         user = _caller(ctx)
         if not allowed(user):
             raise ToolError("Reliafy Maintenance isn't available on your account yet.")
-        return Maintenance(get_store(), user["uid"], user["uid"])
+        return Maintenance(get_store(), user["uid"], user["uid"], time_zone=time_zones.of_owner(_db(), user["uid"]))
 
     def run(fn, *args, **kwargs):
         try:
@@ -56,572 +462,169 @@ def register() -> None:
             raise ToolError("RCM study not found.")
         return study
 
-    def tool(name, annotations, title):
+    def tool(name, annotations, title, table: Table | None = None, selector: str = "action"):
+        """Register one tool; with a table, its description lists the actions and
+        each call is keyed tool.action for gating, heavy slots and the usage log."""
         TOOL_NAMES.append(name)
-        return _tool(name, annotations, title)
 
-    DateText = Annotated[str | None, Field(description="A date like 2026-10-13. Default: today.")]
+        def decorator(fn):
+            if table is None:
+                return _tool(name, annotations, title)(fn)
+            fn.__doc__ = describe(fn.__doc__ or "", selector, table)
+
+            @functools.wraps(fn)
+            def checked(*args, **kwargs):
+                check(selector, kwargs[selector], table,
+                      {k: v for k, v in kwargs.items() if k != selector and not isinstance(v, Context)})
+                return fn(*args, **kwargs)
+            return _tool(name, annotations, title, call_key=lambda kwargs: f"{name}.{kwargs[selector]}")(checked)
+        return decorator
+
+    def none_is_null(value):
+        """'none' (or '') for an id that can be taken away: null."""
+        return None if value in ("none", "") else value
+
+    DateText = Annotated[str | None, Field(description=(
+        "A date like 2026-10-13. Default: today (the workspace's, in its time zone)."))]
+    Precision = Literal["exact", "month", "year", "estimated"]
+    RoughDate = Annotated[str | None, Field(description=(
+        "A date like 2026-10-13, or 2022-03 / 2022 when only the month or year is known "
+        "(the precision follows). Default: today (the workspace's)."))]
+    ItemDate = Annotated[dict[str, str] | None, Field(description=(
+        "{date: '2022' | '2022-03' | '2022-03-15', precision?: exact|month|year|estimated (from the "
+        "date's form if left out; estimated = a guess, e.g. 'about 6 months ago'), source?: where it "
+        "came from, e.g. 'receipt', 'serial date code', \"owner's estimate\"}. Never invent a day: give "
+        "'2022' with precision year rather than 2022-07-01."))]
+    ReplacementCost = Annotated[dict[str, Any] | None, Field(description=(
+        "{amount, currency?: 3-letter code (AUD), source?: e.g. 'supplier quote', as_of?: date of the "
+        "price (default today)}."))]
+    WholeNote = Annotated[str | None, Field(description="Replaces the WHOLE note. To add to it, use append_note.")]
+    AppendNote = Annotated[str | None, Field(description=(
+        "A line to add to the end of the notes, dated today; the rest is kept."))]
 
     # ---- reading ---------------------------------------------------------------------
 
     @tool("maintenance_overview", _READ, "Maintenance overview")
     def maintenance_overview(ctx: Context) -> dict[str, Any]:
-        """The maintenance workspace at a glance: counts, the tree of positions (the
-        functional hierarchy, each with what's fitted, its task count, next due date
-        and open work orders), tasks due in the next 30 days, and open work orders.
-        Start here; use the ids with the other maintenance tools."""
+        """The maintenance workspace at a glance: counts, the tree of positions (the functional
+        hierarchy, each with what's fitted, its task count, next due date and open work orders),
+        tasks due in the next 30 days, open work orders, critical_spares (critical spares below the
+        minimum their position keeps on hand), time_zone (IANA name; null = UTC, unset) and today (the
+        workspace's: a date left out anywhere defaults to it). Start here; use the ids with
+        maintenance_get and the other maintenance tools.
+
+        The model in brief: a position is a functional location (SAP's FLOC): the slot, by what it
+        does (Electrical > MCC-3 > Feeder 12). A location is a physical place (Site > Substation 2;
+        Store A). The two are separate trees, so build each once: never copy one into the other; link
+        them with a position's location_id. An item fitted to a position is where its position is and
+        needs no placement. Tasks and work orders are on a position, an item or a location (subject).
+        For how-tos (building the register, planning, running work, learning from failures, the data
+        rules) read maintenance_guide."""
         m = m_for(ctx)
-        return run(lambda: {"summary": summary(m), "tree": m.tree(), "due": m.due_tasks(30),
-                            "open_work_orders": m.work_orders("open")})
+        return run(lambda: {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(),
+                            "tree": m.tree(), "due": m.due_tasks(30),
+                            "open_work_orders": m.work_orders("open"), "critical_spares": m.critical_spares_short()})
 
-    @tool("get_position", _READ, "Read a maintenance position")
-    def get_position(position_id: str, ctx: Context) -> dict[str, Any]:
-        """One position: its path, the positions inside it, the item fitted now, every
-        past fitment, its failure modes (from RCM), its tasks with last-done and next-due
-        dates, its work orders, and its life data (one row per item fitted: days in
-        service, c = 0 failed or 1 censored)."""
-        return run(m_for(ctx).position, position_id)
+    Topic = Literal[tuple(mcp_guide.TOPICS)]  # type: ignore[valid-type]
 
-    @tool("list_work_orders", _READ, "List work orders")
-    def list_work_orders(ctx: Context, status: Literal["open", "planned", "in_progress", "waiting", "closed",
-                                                       "cancelled"] | None = None) -> dict[str, Any]:
-        """Work orders, newest first. status 'open' gives every one not yet done (open, planned, in
-        progress, waiting); or one status exactly."""
-        return {"work_orders": run(m_for(ctx).work_orders, status)}
+    @tool("maintenance_guide", _READ, "How to use Reliafy Maintenance")
+    def maintenance_guide(ctx: Context, topic: Annotated[Topic | None, Field(description=(
+            "The how-to to read; leave it out for the list of topics."))] = None) -> dict[str, Any]:
+        """Short how-tos for Reliafy Maintenance, one topic at a time, naming the tools and actions
+        to use. Topics: model (the four structures: positions, locations, classes, connections, and the
+        items moving through them), register (locations, positions, fitting items, the nameplate flow),
+        plan (RCM or tasks directly; tasks on a position, an item or a location), run (generate and
+        close work orders: failure modes, parts, labour, corrections), learn (class life data, fitting a
+        class model, proposals the user accepts), decide (plan economics, generated RBDs, impact, spares
+        cover), data (rough dates, placement, time zone, notes, dry runs), classes (position classes vs
+        item classes, taxonomies, manufacturers). Read the one you need before a task you haven't done
+        here yet."""
+        m_for(ctx)  # Maintenance is on for this account
+        topics = {name: summary_ for name, (summary_, _) in mcp_guide.TOPICS.items()}
+        if topic is None:
+            return {"topics": topics}
+        return {"topic": topic, "guide": mcp_guide.TOPICS[topic][1], "topics": topics}
 
-    @tool("get_work_order", _READ, "Read a work order")
-    def get_work_order(work_order_id: str, ctx: Context) -> dict[str, Any]:
-        """A work order: its position, task, status and dates, the actions recorded when
-        it closed, and (for an open one) the item fitted now and the position's failure
-        modes, which close_work_order's actions can name."""
-        return run(m_for(ctx).work_order, work_order_id)
-
-    @tool("list_maintenance_items", _READ, "List items")
-    def list_maintenance_items(ctx: Context) -> dict[str, Any]:
-        """Every physical item (serial-numbered thing), with the position it's fitted to
-        and the location it's placed at, if any."""
-        return {"items": run(m_for(ctx).items)}
-
-    @tool("list_locations", _READ, "List locations")
-    def list_locations(ctx: Context) -> dict[str, Any]:
-        """Physical locations (sites, buildings, rooms, stores) as a tree, with how many items are
-        placed in each."""
-        return {"tree": run(m_for(ctx).location_tree)}
-
-    # ---- building the plant ------------------------------------------------------------
-
-    @tool("create_position", _WRITE, "Create a position")
-    def create_position(name: str, ctx: Context, parent_id: str | None = None, tag: str = "",
-                        position_class: str = "", description: str = "") -> dict[str, Any]:
-        """A position: a job something does in the plant (the functional hierarchy),
-        such as 'Hot water system' or 'Pump A'. Items are fitted to positions. Put it
-        inside another position with parent_id, or inside an item (parent_id = an item id) for
-        a position that travels with that item, like an engine's turbo. position_class groups
-        like positions for comparison and pooled life data (e.g. 'Centrifugal pump')."""
+    @tool("maintenance_get", _READ, "Read one maintenance record", GET_KINDS, "kind")
+    def maintenance_get(kind: _choice(GET_KINDS), ctx: Context,
+                        id: Annotated[str | None, Field(description=(
+                            "The record's id (for class_life_data and plan_economics: the position class's "
+                            "name)."))] = None,
+                        text: Annotated[str | None, Field(description=(
+                            "manufacturer_match: the maker as written."))] = None,
+                        interval: Annotated[float | None, Field(
+                            description="plan_economics: a what-if interval.")] = None,
+                        unit: Literal["days", "weeks", "months", "years"] | None = None,
+                        horizon_years: float | None = None, discount_rate: float | None = None) -> dict[str, Any]:
+        """One maintenance record, or one answer about a record, by kind and id. Ids come from
+        maintenance_overview, maintenance_list and the records themselves."""
         m = m_for(ctx)
-        return run(lambda: m.position(m.create_position(name, tag, parent_id, position_class, description)["id"]))
+        rid = id
+        if kind == "photo_link":
+            doc = photo_links().get(rid, org=m.org)
+            if doc is None:
+                raise ToolError("Photo link not found.")
+            return photo_links().public(doc)
+        if kind == "plan_economics":
+            return run(loop.economics, m, rid, interval, _d(unit, "months"), _d(horizon_years, 10),
+                       _d(discount_rate, 0.07))
+        if kind == "manufacturer_match":
+            return run(m.match_manufacturer, text)
+        read = {"position": m.position, "item": m.item, "work_order": m.work_order, "location": m.location,
+                "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
+                "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
+                "impact": m.impact}[kind]
+        return run(read, rid)
 
-    @tool("update_position", _WRITE, "Update a position")
-    def update_position(position_id: str, ctx: Context, name: str | None = None, tag: str | None = None,
-                        position_class: str | None = None, description: str | None = None,
-                        parent_id: str | None = None, move_to_top_level: bool = False) -> dict[str, Any]:
-        """Rename a position, change its tag, class or description, or move it inside
-        another position (parent_id) or to the top level (move_to_top_level)."""
+    @tool("maintenance_list", _READ, "List maintenance records", LIST_KINDS, "kind")
+    def maintenance_list(kind: _choice(LIST_KINDS), ctx: Context,
+                         status: Annotated[Literal["open", "planned", "in_progress", "waiting", "closed", "cancelled",
+                                                   "pending", "accepted", "rejected", "superseded", "all"] | None,
+                                           Field(description=(
+                                               "work_orders: open (every one not done), planned, in_progress, "
+                                               "waiting, closed or cancelled. proposals: pending (default), "
+                                               "accepted, rejected, superseded or all."))] = None,
+                         location_id: str | None = None,
+                         item_class_id: Annotated[str | None, Field(description=(
+                             "Only this item class or one inside it; 'none' for those with no class."))] = None,
+                         manufacturer_id: Annotated[str | None, Field(description=(
+                             "Only this manufacturer's; 'none' for those with no manufacturer linked."))] = None,
+                         target_id: str | None = None, include_unlisted: bool | None = None,
+                         format: Literal["tree", "json", "csv"] | None = None) -> dict[str, Any]:
+        """Lists and reports across the maintenance workspace, by kind."""
         m = m_for(ctx)
-        changes = {k: v for k, v in (("name", name), ("tag", tag), ("position_class", position_class),
-                                     ("description", description)) if v is not None}
-        if parent_id or move_to_top_level:
-            changes["parent_id"] = None if move_to_top_level else parent_id
-        return run(lambda: (m.update_position(position_id, **changes), m.position(position_id))[1])
-
-    @tool("copy_position", _WRITE, "Copy a position")
-    def copy_position(position_id: str, name: str, ctx: Context, parent_id: str | None = None) -> dict[str, Any]:
-        """Copy a position and everything inside it (the positions, their failure modes
-        and tasks; not items or work orders) under a new name, optionally inside another
-        position. Call it repeatedly to build many like structures."""
-        return run(m_for(ctx).copy_position, position_id, name, parent_id)
-
-    @tool("position_from_rcm", _WRITE, "Create a position from an RCM study")
-    def position_from_rcm(study_id: str, ctx: Context, parent_id: str | None = None) -> dict[str, Any]:
-        """Create a position named for an RCM study's system, with the study's failure
-        modes and a scheduled task for every decision that has an interval. Find study
-        ids with the RCM tools."""
-        return run(m_for(ctx).position_from_rcm, study_for(ctx, study_id), parent_id)
-
-    @tool("apply_rcm_to_position", _WRITE, "Apply an RCM study to a position")
-    def apply_rcm_to_position(position_id: str, study_id: str, ctx: Context) -> dict[str, Any]:
-        """Bring an RCM study's failure modes and scheduled tasks onto an existing
-        position. Applying it again adds what's new and updates changed tasks."""
-        m = m_for(ctx)
-        return run(lambda: {**m.apply_rcm(position_id, study_for(ctx, study_id)), "position": m.position(position_id)})
-
-    @tool("fit_item", _WRITE, "Fit an item to a position")
-    def fit_item(position_id: str, ctx: Context, item_id: str | None = None, item_name: str | None = None,
-                 serial: str = "", part_number: str = "", manufacturer: str = "", on: DateText = None) -> dict[str, Any]:
-        """Fit an item to an empty position: an existing item (item_id), or a new one
-        (item_name, with optional serial, part number and manufacturer). 'on' is the
-        date it went in. A new item renews the position's tasks. To replace an item,
-        close a work order with a replace action instead."""
-        new_item = {"name": item_name, "serial": serial, "part_number": part_number,
-                    "manufacturer": manufacturer} if item_name else None
-        return run(m_for(ctx).fit, position_id, item_id, new_item, on)
-
-    @tool("remove_item", _WRITE, "Remove a fitted item")
-    def remove_item(position_id: str, ctx: Context, on: DateText = None,
-                    reason: Literal["planned", "failure", "other"] = "planned",
-                    failure_mode_id: str | None = None) -> dict[str, Any]:
-        """Take the fitted item out of a position with no work order (a correction, or
-        moving it). Work done on it belongs on a work order (close_work_order)."""
-        return run(m_for(ctx).remove, position_id, on, reason, failure_mode_id)
-
-    @tool("set_task_last_done", _WRITE, "Set when a task was last done")
-    def set_task_last_done(task_id: str, on: str, ctx: Context) -> dict[str, Any]:
-        """Record when a task was last done (before it was tracked here), so its next
-        due date counts from then. Task ids are in get_position."""
-        return run(m_for(ctx).set_last_done, task_id, on)
-
-    @tool("create_location", _WRITE, "Create a location")
-    def create_location(name: str, ctx: Context, parent_id: str | None = None, description: str = "") -> dict[str, Any]:
-        """A physical place (site, building, room, store), optionally inside another."""
-        return run(m_for(ctx).create_location, name, parent_id, description)
-
-    @tool("place_item", _WRITE, "Place an item at a location")
-    def place_item(item_id: str, location_id: str, ctx: Context, on: DateText = None) -> dict[str, Any]:
-        """Record where an item physically is (a store, the workshop), separately
-        from what job it's fitted to."""
-        return run(m_for(ctx).place_item, item_id, location_id, on)
-
-    # ---- work ---------------------------------------------------------------------------
-
-    @tool("open_work_order", _WRITE, "Open a work order")
-    def open_work_order(position_id: str, title: str, ctx: Context,
-                        type: Literal["corrective", "preventive", "inspection", "other"] = "corrective",
-                        task_id: str | None = None, due: DateText = None, notes: str = "") -> dict[str, Any]:
-        """Open a work order on a position: corrective (something's wrong), preventive
-        (usually for a task: task_id), inspection, or other."""
-        return run(m_for(ctx).open_work_order, position_id, title, type, task_id, due, notes)
-
-    @tool("generate_work_orders", _WRITE, "Create work orders for due tasks")
-    def generate_work_orders(ctx: Context, horizon_days: int = 30) -> dict[str, Any]:
-        """Open a preventive work order for every task due within horizon_days that
-        doesn't already have an open one."""
-        return {"work_orders": run(m_for(ctx).generate_work_orders, max(0, min(horizon_days, 366)))}
-
-    @tool("close_work_order", _WRITE, "Close a work order")
-    def close_work_order(work_order_id: str, ctx: Context,
-                         actions: Annotated[list[dict], Field(description=(
-                             "What was done, in order. Each: {kind: 'replace'|'repair'|'inspect'|'other', "
-                             "failure_mode_id?: a failure mode on the position (for a replace, naming one "
-                             "means it failed that way; none means a planned replacement), "
-                             "finding?: 'ok'|'degraded'|'found_failed' (inspect only), "
-                             "new_item?: {name, serial?, part_number?, manufacturer?} or item_id? "
-                             "(replace: what went in), notes?}"))] = [],
-                         on: DateText = None, notes: str = "",
-                         readings: Annotated[list[dict], Field(description=(
-                             "Manual readings taken during the work: [{point_id, value}]."))] = []) -> dict[str, Any]:
-        """Close a work order with what was done. A replacement ends the fitted item's
-        time at the position (a failure if a failure mode is named, otherwise a planned
-        removal) and fits the new item; that is what builds the life data. Get the
-        position's failure-mode ids from get_work_order first. Nothing is saved if any
-        action is invalid."""
-        return run(m_for(ctx).close_work_order, work_order_id, actions, on, notes, readings)
-
-    # ---- items, locations, classes and corrections --------------------------------------
-
-    @tool("get_item", _READ, "Read an item")
-    def get_item(item_id: str, ctx: Context) -> dict[str, Any]:
-        """An item (a physical, serial-numbered thing): details and nameplate fields, where it's
-        fitted and placed now, every position it has been fitted to, its own positions (an
-        engine's turbos) and its photos."""
-        return run(m_for(ctx).item, item_id)
-
-    @tool("update_item", _WRITE, "Update an item's details")
-    def update_item(item_id: str, ctx: Context, name: str | None = None, serial: str | None = None,
-                    part_number: str | None = None, manufacturer: str | None = None, model: str | None = None,
-                    notes: str | None = None,
-                    nameplate: Annotated[dict[str, str] | None, Field(description=(
-                        "Other fields from the nameplate, as label: value (e.g. {'Capacity': '315 L', "
-                        "'Element': '3.6 kW', 'Year': '2019'}). Merged into what's there; a value of '' "
-                        "removes that field."))] = None) -> dict[str, Any]:
-        """Change an item's details. After reading a nameplate photo (get_photo), put the make in
-        manufacturer, the model, the serial, and everything else on the plate in nameplate. Say
-        what you read and what you couldn't."""
-        return run(m_for(ctx).update_item, item_id, nameplate,
-                   **{k: v for k, v in (("name", name), ("serial", serial), ("part_number", part_number),
-                                        ("manufacturer", manufacturer), ("model", model), ("notes", notes))
-                      if v is not None})
-
-    @tool("move_item", _WRITE, "Move an item to another position")
-    def move_item(item_id: str, position_id: str, ctx: Context, on: DateText = None) -> dict[str, Any]:
-        """Move an item from wherever it's fitted to an empty position (a planned removal there and
-        a fit here), keeping its one history: a rotable going round, a pump swapped to standby."""
-        return run(m_for(ctx).move_item, item_id, position_id, on)
-
-    @tool("void_fitment", _WRITE, "Strike out a mistaken fitment")
-    def void_fitment(fitment_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
-        """Strike out a fitment recorded by mistake (wrong item or position): it leaves the
-        position's history and life data; the event log keeps it. Fitment ids are in
-        get_position (fitments, life_data)."""
-        m = m_for(ctx)
-        return run(lambda: (m.void_fitment(fitment_id, reason), {"voided": fitment_id})[1])
-
-    @tool("correct_fitment", _WRITE, "Correct a fitment's dates")
-    def correct_fitment(fitment_id: str, ctx: Context, start: DateText = None, end: DateText = None) -> dict[str, Any]:
-        """Correct the date an item went in (start) or came out (end) of a position."""
-        return run(m_for(ctx).correct_fitment, fitment_id, start, end)
-
-    @tool("update_work_order", _WRITE, "Update a work order")
-    def update_work_order(work_order_id: str, ctx: Context, title: str | None = None, due: str | None = None,
-                          notes: str | None = None,
-                          type: Literal["corrective", "preventive", "inspection", "other"] | None = None,
-                          assignee: str | None = None, planned_for: str | None = None) -> dict[str, Any]:
-        """Change an open work order's title, due date (a date, or '' to clear it), notes, type, who
-        it's assigned to, or the day it's planned for."""
-        return run(m_for(ctx).update_work_order, work_order_id, title, due, notes, type, assignee, planned_for)
-
-    @tool("set_work_status", _WRITE, "Move a work order along")
-    def set_work_status(work_order_id: str, status: Literal["open", "planned", "in_progress", "waiting"],
-                        ctx: Context, note: str = "") -> dict[str, Any]:
-        """Set an open work order's status: planned, in_progress, waiting (parts or access), or back to
-        open. Finish it with close_work_order."""
-        return run(m_for(ctx).set_work_status, work_order_id, status, note)
-
-    @tool("log_labour", _WRITE, "Log labour on a work order")
-    def log_labour(work_order_id: str, hours: float, ctx: Context, who: str = "", rate: float | None = None,
-                   on: DateText = None, note: str = "") -> dict[str, Any]:
-        """Hours worked on a work order, by whom, at an hourly rate if known (for its cost)."""
-        return run(m_for(ctx).log_labour, work_order_id, hours, who, rate, on, note)
-
-    @tool("add_part_used", _WRITE, "Record a part used")
-    def add_part_used(work_order_id: str, ctx: Context, part: str | None = None, quantity: float = 1,
-                      unit_cost: float | None = None, part_number: str = "", note: str = "",
-                      part_id: str | None = None, from_location_id: str | None = None) -> dict[str, Any]:
-        """A part or consumable used on a work order (bearings, a seal kit, oil): free text (part), or a
-        catalogue part (part_id; its cost fills in), taken out of stock at from_location_id if given."""
-        return run(m_for(ctx).add_part_used, work_order_id, part, quantity, unit_cost, part_number, note,
-                   part_id, from_location_id)
-
-    from backend.maintenance import importer
-
-    @tool("import_history", _WRITE, "Import positions and item history")
-    def import_history(rows: Annotated[list[dict[str, str]], Field(description=(
-                           "One row per item per position: {position: 'House > Pool > Pump', class?, item?, "
-                           "serial?, manufacturer?, model?, part number?, fitted?: date, removed?: date, "
-                           "failed?: yes/no, failure mode?}. Column names are matched loosely."))],
-                       ctx: Context, dry_run: bool = True) -> dict[str, Any]:
-        """Bring an existing history in: positions (made from their paths), items and when they were
-        fitted, removed and whether they failed. Every row is checked first; with any error nothing is
-        written. dry_run (the default) only reports what would be made: show it, then run with
-        dry_run false. At most 5000 rows; for a file, the user can import it on the Maintenance page."""
-        if len(rows) > importer.MAX_ROWS:
-            raise ToolError(f"At most {importer.MAX_ROWS} rows at a time.")
-        return run(importer.run, m_for(ctx), [{str(k): str(v) for k, v in r.items()} for r in rows], dry_run)
-
-    @tool("list_parts", _READ, "List parts and stock")
-    def list_parts(ctx: Context) -> dict[str, Any]:
-        """The parts catalogue: each part's stock by location, reorder points (low = at or below),
-        use over the last year and months of cover."""
-        return {"parts": run(m_for(ctx).parts)}
-
-    @tool("create_part", _WRITE, "Add a part to the catalogue")
-    def create_part(part_number: str, name: str, ctx: Context, manufacturer: str = "", unit: str = "each",
-                    unit_cost: float | None = None, notes: str = "") -> dict[str, Any]:
-        """A part in the catalogue, by part number (unique)."""
-        return run(m_for(ctx).create_part, part_number, name, manufacturer, unit, unit_cost, notes)
-
-    @tool("adjust_stock", _WRITE, "Receive or issue stock")
-    def adjust_stock(part_id: str, location_id: str, quantity: float, ctx: Context, reason: str = "",
-                     on: DateText = None) -> dict[str, Any]:
-        """Receive stock (positive quantity) or issue / write off (negative) at a location."""
-        return run(m_for(ctx).adjust_stock, part_id, location_id, quantity, reason, on)
-
-    @tool("set_reorder_point", _WRITE, "Set a reorder point")
-    def set_reorder_point(part_id: str, location_id: str, reorder_point: float, ctx: Context) -> dict[str, Any]:
-        """Stock at or below this at the location counts as low."""
-        return run(m_for(ctx).set_reorder_point, part_id, location_id, reorder_point)
-
-    @tool("link_parts", _WRITE, "Supersede or link parts")
-    def link_parts(part_id: str, other_part_id: str, ctx: Context,
-                   relation: Literal["superseded_by", "interchangeable"] = "interchangeable") -> dict[str, Any]:
-        """Record that part_id is superseded by other_part_id, or that the two are interchangeable."""
-        m = m_for(ctx)
-        if relation == "superseded_by":
-            return run(m.supersede_part, part_id, other_part_id)
-        return run(m.mark_interchangeable, part_id, other_part_id)
-
-    @tool("add_work_cost", _WRITE, "Add another cost to a work order")
-    def add_work_cost(work_order_id: str, description: str, amount: float, ctx: Context) -> dict[str, Any]:
-        """Any other cost of the work (a contractor, hire, call-out)."""
-        return run(m_for(ctx).add_cost, work_order_id, description, amount)
-
-    @tool("remove_work_entry", _WRITE, "Remove a labour, part or cost entry")
-    def remove_work_entry(entry_id: str, ctx: Context) -> dict[str, Any]:
-        """Remove a labour, part or cost entry recorded by mistake (ids are in get_work_order)."""
-        return run(m_for(ctx).remove_entry, entry_id)
-
-    @tool("check_item", _WRITE, "Tick a checklist item")
-    def check_item(work_order_id: str, index: int, ctx: Context, done: bool = True) -> dict[str, Any]:
-        """Tick (or untick) a work order's checklist item, numbered from 0."""
-        return run(m_for(ctx).check_item, work_order_id, index, done)
-
-    @tool("cancel_work_order", _WRITE, "Cancel a work order")
-    def cancel_work_order(work_order_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
-        """Cancel an open work order that won't be done (a duplicate, raised by mistake). Use
-        close_work_order for work that was done."""
-        return run(m_for(ctx).cancel_work_order, work_order_id, reason)
-
-    @tool("update_task", _WRITE, "Update a task")
-    def update_task(task_id: str, ctx: Context, name: str | None = None, interval: float | None = None,
-                    unit: str | None = None, also_interval: float | None = None, also_unit: str | None = None,
-                    point_id: str | None = None, instructions: str | None = None,
-                    checklist: list[str] | None = None) -> dict[str, Any]:
-        """Rename a task or change its interval (unit: days, weeks, months, years, or a unit of use
-        such as hours, cycles, km, from a counter on the position). also_interval + also_unit
-        add a second limit, whichever comes first (every 500 hours or 6 months); also_interval 0
-        removes it. point_id picks the counter a task by use goes by. instructions and checklist (steps to
-        tick off) are copied onto each work order the task raises."""
-        return run(m_for(ctx).update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
-                   instructions, checklist)
-
-    @tool("add_measurement_point", _WRITE, "Add a measurement point")
-    def add_measurement_point(position_id: str, ctx: Context, name: str = "",
-                              kind: Literal["counter", "condition"] = "condition", unit: str = "",
-                              source: Literal["manual", "automated"] = "manual", tag: str = "",
-                              alarm_above: float | None = None, alarm_below: float | None = None) -> dict[str, Any]:
-        """Something measured on a position. kind 'counter' counts use (run hours, cycles, km; only goes
-        up; tasks by use in that unit fall due from it). kind 'condition' shows condition (vibration
-        mm/s, temperature, wear) with alarm limits: a reading past one opens an inspection. source
-        'manual': someone reads it (record_reading). 'automated': a feed sends readings under tag to
-        the ingest API (POST /api/ingest/maintenance/readings with an ingest-scope token)."""
-        return run(m_for(ctx).add_point, position_id, name, kind, unit, source, tag, alarm_above, alarm_below)
-
-    @tool("record_reading", _WRITE, "Record a manual reading")
-    def record_reading(point_id: str, value: float, ctx: Context, on: DateText = None, note: str = "") -> dict[str, Any]:
-        """A manual reading of a measurement point (the hour meter says 12,340; vibration 4.2 mm/s).
-        Counters only go up. Returns the point: latest, rate or trend, status, any alarm work order."""
-        return run(m_for(ctx).record_reading, point_id, value, on, note)
-
-    @tool("get_measurement_point", _READ, "Read a measurement point")
-    def get_measurement_point(point_id: str, ctx: Context) -> dict[str, Any]:
-        """A measurement point: kind, source and tag, latest reading, rate (counter) or trend and the date
-        it should reach an alarm limit (condition), status, recent readings. Ids are in get_position."""
-        return run(m_for(ctx).point, point_id)
-
-    @tool("update_measurement_point", _WRITE, "Change a measurement point")
-    def update_measurement_point(point_id: str, ctx: Context, name: str | None = None,
-                                 alarm_above: float | None = None, alarm_below: float | None = None,
-                                 clear_alarm_above: bool = False, clear_alarm_below: bool = False,
-                                 tag: str | None = None) -> dict[str, Any]:
-        """Rename a point, set or clear its alarm limits, or change an automated point's tag."""
-        kwargs = {}
-        if name is not None:
-            kwargs["name"] = name
-        if alarm_above is not None or clear_alarm_above:
-            kwargs["alarm_above"] = None if clear_alarm_above else alarm_above
-        if alarm_below is not None or clear_alarm_below:
-            kwargs["alarm_below"] = None if clear_alarm_below else alarm_below
-        if tag is not None:
-            kwargs["tag"] = tag
-        return run(m_for(ctx).update_point, point_id, **kwargs)
-
-    @tool("retire_task", _WRITE, "Retire a task")
-    def retire_task(task_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
-        """Stop scheduling a task (it stays in the history)."""
-        m = m_for(ctx)
-        return run(lambda: (m.retire_task(task_id, reason), {"retired": task_id})[1])
-
-    @tool("retire_position", _WRITE, "Retire a position")
-    def retire_position(position_id: str, ctx: Context, reason: str = "") -> dict[str, Any]:
-        """Take a position out of the plant (it stays in the history). Nothing may be fitted, no
-        position inside it in use, and no work order open."""
-        m = m_for(ctx)
-        return run(lambda: (m.retire_position(position_id, reason), {"retired": position_id})[1])
-
-    @tool("get_location", _READ, "Read a location")
-    def get_location(location_id: str, ctx: Context) -> dict[str, Any]:
-        """A location: its path, the locations inside it, the items placed there now, its
-        coordinates and photos."""
-        return run(m_for(ctx).location, location_id)
-
-    @tool("update_location", _WRITE, "Update a location")
-    def update_location(location_id: str, ctx: Context, name: str | None = None, description: str | None = None,
-                        parent_id: str | None = None, move_to_top_level: bool = False) -> dict[str, Any]:
-        """Rename a location, change its description, or move it inside another (parent_id) or to
-        the top level."""
-        kwargs = {k: v for k, v in (("name", name), ("description", description)) if v is not None}
-        if parent_id or move_to_top_level:
-            kwargs["parent_id"] = None if move_to_top_level else parent_id
-        return run(m_for(ctx).update_location, location_id, **kwargs)
-
-    @tool("list_position_classes", _READ, "List position classes")
-    def list_position_classes(ctx: Context) -> dict[str, Any]:
-        """Each class of position (e.g. 'Centrifugal pump'), with its positions, fitments and
-        failures: what can be compared and pooled."""
-        return {"classes": run(m_for(ctx).position_classes)}
-
-    @tool("class_life_data", _READ, "Life data for a position class")
-    def class_life_data(position_class: str, ctx: Context) -> dict[str, Any]:
-        """Every fitment at every position of a class, pooled: x = days in service, c = 0 failed
-        or 1 censored (removed on purpose, or still fitted). Ready for fit_distribution."""
-        return run(m_for(ctx).class_life_data, position_class)
-
-    # ---- connections, redundancy, the generated RBD -----------------------------------
-
-    from backend.maintenance import rbd_derive
-
-    @tool("connect_positions", _WRITE, "Connect two positions")
-    def connect_positions(from_id: str, to_id: str, ctx: Context,
-                          kind: Literal["flow", "electrical", "mechanical", "signal", "data", "other"] = "flow",
-                          medium: str = "", name: str = "", rating: str = "",
-                          realised_by: str | None = None) -> dict[str, Any]:
-        """Say that something passes from one position to another (water from the tank to the pump,
-        240 V from the switchboard to the motor, a signal from the sensor to the controller).
-        realised_by: a position for the connection itself when it's maintainable (a hose, a cable).
-        Connections wire the RBD generate_rbd makes and drive impact."""
-        return run(m_for(ctx).connect, from_id, to_id, kind, medium, name, rating, realised_by)
-
-    @tool("disconnect_positions", _WRITE, "Remove a connection")
-    def disconnect_positions(interface_id: str, ctx: Context) -> dict[str, Any]:
-        """Remove a connection (its id is in get_position's connections)."""
-        m = m_for(ctx)
-        return run(lambda: (m.disconnect(interface_id), {"removed": interface_id})[1])
-
-    @tool("create_redundancy_group", _WRITE, "Make a redundancy group")
-    def create_redundancy_group(member_ids: list[str], ctx: Context, name: str = "", k: int = 1,
-                                mode: Literal["active", "standby"] = "active",
-                                standby: Literal["cold", "warm", "hot"] = "cold") -> dict[str, Any]:
-        """Positions doing the same job where k of them are enough (two pumps, either will do: k = 1).
-        mode standby: the others wait to take over. The generated RBD draws it as k of n."""
-        return run(m_for(ctx).create_group, name, member_ids, k, mode, standby)
-
-    @tool("update_redundancy_group", _WRITE, "Change a redundancy group")
-    def update_redundancy_group(group_id: str, ctx: Context, name: str | None = None, k: int | None = None,
-                                mode: Literal["active", "standby"] | None = None,
-                                standby: Literal["cold", "warm", "hot"] | None = None,
-                                add: list[str] = [], remove: list[str] = []) -> dict[str, Any]:
-        """Rename a group, change k or its mode, or add / remove member positions."""
-        return run(m_for(ctx).update_group, group_id, name, k, mode, standby, add, remove)
-
-    @tool("set_duty", _WRITE, "Set which unit is on duty")
-    def set_duty(group_id: str, position_id: str, ctx: Context) -> dict[str, Any]:
-        """Record which member of a standby group is running now (a duty/standby swap)."""
-        return run(m_for(ctx).set_duty, group_id, position_id)
-
-    @tool("impact", _READ, "What depends on a position")
-    def impact(position_id: str, ctx: Context) -> dict[str, Any]:
-        """If this position fails, what loses its supply downstream (through connections), and
-        whether redundancy covers it."""
-        return run(m_for(ctx).impact, position_id)
-
-    @tool("generate_rbd", _WRITE, "Make an RBD from the plant")
-    def generate_rbd(position_id: str, ctx: Context) -> dict[str, Any]:
-        """Generate (or regenerate) a reliability block diagram for a system position from the
-        positions inside it: connections wire the blocks, redundancy groups become k-of-n votes, and
-        each block takes its class's fitted life model (placeholders otherwise, listed in notes).
-        It's saved as a normal RBD: analyse it with analyze_rbd."""
-        return run(rbd_derive.save, m_for(ctx), _db(), position_id)
-
-    # ---- closing the loop -------------------------------------------------------------
-
-    from backend.maintenance import loop
-
-    @tool("set_class_costs", _WRITE, "Set a position class's costs")
-    def set_class_costs(position_class: str, ctx: Context, planned_cost: float | None = None,
-                        failure_cost: float | None = None, availability_target: float | None = None) -> dict[str, Any]:
-        """What a planned replacement and a failure cost for a class of position (any currency, the
-        same for both), and the availability a hidden (protective) function must reach (e.g. 0.99).
-        Proposed intervals are optimised against these."""
-        return run(m_for(ctx).set_class_costs, position_class, planned_cost, failure_cost, availability_target)
-
-    @tool("fit_class_model", _WRITE, "Fit a life model for a position class")
-    def fit_class_model(position_class: str, ctx: Context,
-                        distribution: Literal["weibull", "best", "lognormal", "exponential", "gamma"] = "weibull"
-                        ) -> dict[str, Any]:
-        """Fit a life distribution (SurPyval) to every fitment of a class's positions (failures and
-        suspensions, in days), save it as a model in the workspace, and propose task intervals from
-        it and the class's costs. Needs at least 2 failures on record."""
-        from backend import fitting
-
-        m = m_for(ctx)
-        try:
-            return run(loop.fit_class_model, m, _db(), position_class, distribution)
-        except fitting.FitError as err:
-            raise ToolError(f"The fit didn't work: {err}") from None
-
-    @tool("plan_economics", _READ, "Cost of a replacement plan")
-    def plan_economics(position_class: str, ctx: Context, interval: float | None = None,
-                       unit: Literal["days", "weeks", "months", "years"] = "months", horizon_years: float = 10,
-                       discount_rate: float = 0.07) -> dict[str, Any]:
-        """What a class's replacement plan costs a year: the current plan, the best interval, running to
-        failure, and (with interval) a what-if; each with its net present cost over the horizon at the
-        discount rate. Needs the class's fitted model and costs."""
-        return run(loop.economics, m_for(ctx), position_class, interval, unit, horizon_years, discount_rate)
-
-    @tool("review_updates", _READ, "List proposed changes")
-    def review_updates(ctx: Context, status: Literal["pending", "accepted", "rejected", "superseded", "all"] = "pending"
-                       ) -> dict[str, Any]:
-        """Changes the life models propose to the plan (a task's interval, or retiring a task), each
-        with its reason. Show them to the user and let them decide; accept_update or reject_update."""
-        return {"proposals": run(m_for(ctx).proposals, None if status == "all" else status)}
-
-    @tool("accept_update", _WRITE, "Accept a proposed change")
-    def accept_update(proposal_id: str, ctx: Context, note: str = "") -> dict[str, Any]:
-        """Apply a proposed change (only when the user says so)."""
-        return run(m_for(ctx).decide_proposal, proposal_id, True, note)
-
-    @tool("reject_update", _WRITE, "Reject a proposed change")
-    def reject_update(proposal_id: str, ctx: Context, note: str = "") -> dict[str, Any]:
-        """Turn down a proposed change, optionally saying why."""
-        return run(m_for(ctx).decide_proposal, proposal_id, False, note)
-
-    @tool("explain_task", _READ, "Explain a task's history")
-    def explain_task(task_id: str, ctx: Context) -> dict[str, Any]:
-        """Why a task is what it is: where it came from (RCM), every change, and the proposals
-        behind them."""
-        return run(m_for(ctx).explain_task, task_id)
-
-    # ---- photos ------------------------------------------------------------------------
-
-    from mcp.server.mcpserver import Image
-
-    from backend import config
-    from backend.routers.maintenance import link_payload, photo_links, remove_photo, served_photo
-
-    @tool("create_photo_link", _WRITE, "Get a link to add photos")
-    def create_photo_link(target_id: str, ctx: Context, caption: str = "") -> dict[str, Any]:
-        """A link for adding photos to a position, location, item or work order from a phone,
-        with no sign-in: give the url to the user to open (you can't send a photo's file
-        yourself, even one shared in this chat). They can take or choose up to 20 photos
-        in the next 30 minutes. Photos are stored without location or camera details; if
-        one carries a location, the page asks the user whether to save it as where the
-        equipment is. Then call photo_link_status, and get_photo to look at them (read a
-        nameplate's make, model and serial into the item's details)."""
-        m = m_for(ctx)
-        request = ctx.request_context.request
-        base = config.PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
-        return run(lambda: link_payload(base, m, m.photo_target(target_id), caption[:200]))
-
-    @tool("photo_link_status", _READ, "Check a photo link")
-    def photo_link_status(link_id: str, ctx: Context) -> dict[str, Any]:
-        """The photos added through a link so far, and any location a photo carried with the
-        user's answer (saved / declined / null: not answered on the page). If unanswered,
-        ask the user whether to save it with set_coordinates; never save it unasked."""
-        m = m_for(ctx)
-        doc = photo_links().get(link_id, org=m.org)
-        if doc is None:
-            raise ToolError("Photo link not found.")
-        return photo_links().public(doc)
-
-    @tool("list_photos", _READ, "List photos")
-    def list_photos(target_id: str, ctx: Context) -> dict[str, Any]:
-        """The photos of a position, location, item or work order (ids, captions, dates)."""
-        m = m_for(ctx)
-        return run(lambda: {"target": target_id, "photos": (m.photo_target(target_id), m.photos_of(target_id))[1]})
-
-    @tool("get_photo", _READ, "Look at a photo")
-    def get_photo(photo_id: str, ctx: Context, size: Literal["full", "thumb"] = "full") -> Image:
+        statuses = {"work_orders": ("open", "planned", "in_progress", "waiting", "closed", "cancelled"),
+                    "proposals": ("pending", "accepted", "rejected", "superseded", "all")}
+        if status is not None and status not in statuses[kind]:
+            raise ToolError(f"kind '{kind}' takes status {', '.join(statuses[kind])}.")
+        if kind == "work_orders":
+            return {"work_orders": run(m.work_orders, status, location_id)}
+        if kind == "items":
+            return {"items": run(m.items, item_class_id, manufacturer_id)}
+        if kind == "parts":
+            return {"parts": run(m.parts, item_class_id, manufacturer_id)}
+        if kind == "locations":
+            return {"tree": run(m.location_tree)}
+        if kind == "position_classes":
+            return {"classes": run(m.position_classes)}
+        if kind == "item_classes":
+            if format in (None, "tree"):
+                return run(m.item_class_tree)
+            return run(lambda: taxonomy.export_json(m) if format == "json" else {"csv": taxonomy.export_csv(m)})
+        if kind == "manufacturers":
+            return {"manufacturers": run(m.manufacturers)}
+        if kind == "photos":
+            return run(lambda: {"target": target_id, "photos": (m.photo_target(target_id), m.photos_of(target_id))[1]})
+        if kind == "proposals":
+            status_ = _d(status, "pending")
+            return {"proposals": run(m.proposals, None if status_ == "all" else status_)}
+        return run(m.spares_cover, bool(include_unlisted))
+
+    @tool("maintenance_view_photo", _READ, "Look at a maintenance photo")
+    def maintenance_view_photo(photo_id: str, ctx: Context, size: Literal["full", "thumb"] = "full") -> Image:
         """The photo itself, to look at: read a nameplate (make, model, serial, ratings; then
-        update_item) or check a condition. 'full' is up to 1600 px; 'thumb' 400 px."""
+        maintenance_items update / set_attributes) or check a condition. 'full' is up to 1600 px;
+        'thumb' 400 px. Photo ids: maintenance_list kind photos, or maintenance_get kind photo_link."""
         m = m_for(ctx)
         run(m.photo, photo_id)
         data = served_photo(m, photo_id, size)
@@ -629,38 +632,576 @@ def register() -> None:
             raise ToolError("That photo was removed, or its file is missing.")
         return Image(data=data, format="jpeg")
 
-    @tool("set_coordinates", _WRITE, "Set where equipment is")
-    def set_coordinates(target_id: str, lat: float, lon: float, ctx: Context,
-                        source: Literal["photo", "manual"] = "manual") -> dict[str, Any]:
-        """Save a position's, item's or location's latitude and longitude (a work order's go
-        on its position). Use a photo's location only when the user has said to."""
-        return run(m_for(ctx).set_coordinates, target_id, lat, lon, source)
+    # ---- building the plant --------------------------------------------------------------
 
-    @tool("remove_photo", _WRITE, "Remove a photo")
-    def remove_photo(photo_id: str, ctx: Context) -> dict[str, Any]:
-        """Remove a photo from what it shows (the history keeps that it was there; the
-        image itself is deleted)."""
-        return run(remove_photo, m_for(ctx), photo_id)
+    @tool("maintenance_positions", _WRITE, "Create and change positions", POSITIONS)
+    def maintenance_positions(action: _choice(POSITIONS), ctx: Context, position_id: str | None = None,
+                              name: str | None = None,
+                              parent_id: Annotated[str | None, Field(description=(
+                                  "create / update / copy: the position (or, for create, the item) it goes "
+                                  "inside. from_rcm: the position to make it in."))] = None,
+                              tag: str | None = None, position_class: str | None = None,
+                              description: str | None = None, location_id: str | None = None,
+                              move_to_top_level: bool | None = None, clear_location: bool | None = None,
+                              reason: str | None = None, study_id: str | None = None,
+                              dry_run: bool | None = None) -> dict[str, Any]:
+        """Positions: the functional tree (functional locations, SAP's FLOC): the slot, by what it does.
+        Items are fitted to them; tasks, failure modes, parts lists and life data belong to them."""
+        m = m_for(ctx)
+        if action == "create":
+            return run(lambda: m.position(m.create_position(name, tag or "", parent_id, position_class or "",
+                                                            description or "", location_id)["id"]))
+        if action == "update":
+            changes = {k: v for k, v in (("name", name), ("tag", tag), ("position_class", position_class),
+                                         ("description", description)) if v is not None}
+            if parent_id or move_to_top_level:
+                changes["parent_id"] = None if move_to_top_level else parent_id
+            if location_id or clear_location:
+                changes["location_id"] = None if clear_location else location_id
+            return run(lambda: (m.update_position(position_id, **changes), m.position(position_id))[1])
+        if action == "copy":
+            return run(m.copy_position, position_id, name, parent_id)
+        if action == "retire":
+            return run(lambda: (m.retire_position(position_id, reason or ""), {"retired": position_id})[1])
+        if action == "from_rcm":
+            return run(m.position_from_rcm, study_for(ctx, study_id), parent_id)
+        if action == "apply_rcm":
+            return run(lambda: {**m.apply_rcm(position_id, study_for(ctx, study_id)),
+                                "position": m.position(position_id)})
+        return run(m.adopt_placements, _d(dry_run, True))
+
+    @tool("maintenance_fitments", _WRITE, "Fit, remove and correct items in positions", FITMENTS)
+    def maintenance_fitments(action: _choice(FITMENTS), ctx: Context, position_id: str | None = None,
+                             item_id: str | None = None, item_name: str | None = None, serial: str | None = None,
+                             part_number: str | None = None, manufacturer: str | None = None,
+                             model: str | None = None, part_id: str | None = None, on: RoughDate = None,
+                             start: RoughDate = None, end: RoughDate = None,
+                             from_precision: Precision | None = None, to_precision: Precision | None = None,
+                             reason: Annotated[str | None, Field(description=(
+                                 "remove / add_past: planned, failure or other. void: why it was a "
+                                 "mistake."))] = None,
+                             failure_mode_id: str | None = None,
+                             failure_mode_text: Annotated[str | None, Field(description=(
+                                 "How it failed, in words: the position's mode of that name, else a new "
+                                 "ad-hoc one."))] = None,
+                             fitment_id: str | None = None, note: str | None = None) -> dict[str, Any]:
+        """Fitments: an item in a position from one date to another, and how it ended. They are the
+        history every life model is fitted to, so name a failure mode whenever an item failed:
+        recording a failure as planned corrupts the life data. Replacing an item as part of work goes
+        through maintenance_work_orders close (a replace action), not here. Example, a pump fitted
+        sometime in 2022: {action: 'fit', position_id: '<id>', item_name: 'Pool pump', manufacturer:
+        'Astral', serial: 'AX-1', on: '2022'}."""
+        m = m_for(ctx)
+        if action == "fit":
+            new_item = {"name": item_name, "serial": serial or "", "part_number": part_number or "",
+                        "manufacturer": manufacturer or "", "model": model or "",
+                        "part_id": part_id} if item_name or part_id else None
+            return run(m.fit, position_id, item_id, new_item, on, from_precision)
+        if action == "remove":
+            return run(m.remove, position_id, on, reason, failure_mode_id, failure_mode_text, to_precision)
+        if action == "move":
+            return run(m.move_item, item_id, position_id, on)
+        if action == "add_past":
+            new_item = {"name": item_name, "serial": serial or "", "part_number": part_number or "",
+                        "manufacturer": manufacturer or "", "model": model or ""} if item_name else None
+            return run(m.add_past_fitment, position_id, start, end, reason, item_id, new_item,
+                       failure_mode_id, failure_mode_text, from_precision, to_precision, note or "")
+        if action == "void":
+            return run(lambda: (m.void_fitment(fitment_id, reason or ""), {"voided": fitment_id})[1])
+        return run(m.correct_fitment, fitment_id, start, end, from_precision, to_precision)
+
+    @tool("maintenance_items", _WRITE, "Change items' details", ITEMS)
+    def maintenance_items(action: _choice(ITEMS), ctx: Context, item_id: str | None = None,
+                          name: str | None = None, serial: str | None = None, part_number: str | None = None,
+                          manufacturer: str | None = None, model: str | None = None,
+                          notes: WholeNote = None, append_note: AppendNote = None,
+                          nameplate: Annotated[dict[str, str] | None, Field(description=(
+                              "Other fields from the nameplate, as label: value (e.g. {'Capacity': '315 L', "
+                              "'Element': '3.6 kW', 'Year': '2019'}). Merged into what's there; a value of '' "
+                              "removes that field."))] = None,
+                          purchase_date: ItemDate = None, in_service_date: ItemDate = None,
+                          manufacture_date: ItemDate = None, replacement_cost: ReplacementCost = None,
+                          warranty: Annotated[dict[str, Any] | None, Field(description=(
+                              "{ends_on: date, terms?: text, coverage?: what it covers, registration_required?: "
+                              "bool, registered?: bool, register_by?: date}. Replaces the whole warranty."))] = None,
+                          clear: Annotated[list[Literal["purchase_date", "in_service_date", "manufacture_date",
+                                                        "replacement_cost", "warranty"]] | None,
+                                           Field(description="Details to remove.")] = None,
+                          location_id: str | None = None, on: DateText = None,
+                          part_id: Annotated[str | None, Field(description=(
+                              "The catalogue part (make and model); 'none' unlinks it."))] = None,
+                          values: Annotated[dict[str, Any] | None, Field(description=(
+                              "{attribute name: value}, e.g. {'Flow': 45, 'Head': '32 m', 'Shaft seal': "
+                              "'mechanical seal'}. Numbers in the attribute's unit (convert first); '' or "
+                              "null clears one."))] = None) -> dict[str, Any]:
+        """Items: the physical, serial-numbered things. Their details, nameplate, dates, warranty and
+        attributes, which catalogue part (make and model) they are, and where an unfitted one is. To
+        fit, remove or move one: maintenance_fitments. The nameplate flow is in maintenance_guide topic
+        register. Say what you read from a plate and what you couldn't."""
+        m = m_for(ctx)
+        if action == "update":
+            details = {k: v for k, v in (("purchase_date", purchase_date), ("in_service_date", in_service_date),
+                                         ("manufacture_date", manufacture_date),
+                                         ("replacement_cost", replacement_cost), ("warranty", warranty))
+                       if v is not None}
+            details |= {k: None for k in clear or []}
+            return run(m.update_item, item_id, nameplate, append_note,
+                       **{k: v for k, v in (("name", name), ("serial", serial), ("part_number", part_number),
+                                            ("manufacturer", manufacturer), ("model", model), ("notes", notes))
+                          if v is not None}, **details)
+        if action == "place":
+            return run(m.place_item, item_id, location_id, on)
+        if action == "set_part":
+            return run(m.set_item_part, item_id, none_is_null(part_id))
+        return run(m.set_item_attributes, item_id, values)
+
+    @tool("maintenance_failure_modes", _WRITE, "Add and edit failure modes", FAILURE_MODES)
+    def maintenance_failure_modes(action: _choice(FAILURE_MODES), ctx: Context, position_id: str | None = None,
+                                  failure_mode_id: str | None = None, into_failure_mode_id: str | None = None,
+                                  text: str | None = None, function: str | None = None, failure: str | None = None,
+                                  consequence: str | None = None) -> dict[str, Any]:
+        """Failure modes: how a position fails. They come from RCM studies, are added here, or are typed
+        in at a failure (ad hoc). Failures (maintenance_fitments remove / add_past, maintenance_work_orders
+        close) and tasks name them by id."""
+        m = m_for(ctx)
+        if action == "add":
+            return run(m.add_failure_mode, position_id, text, function or "", failure or "", consequence or "")
+        if action == "update":
+            return run(m.update_failure_mode, failure_mode_id, text, function, failure, consequence)
+        return run(m.merge_failure_mode, failure_mode_id, into_failure_mode_id)
+
+    Outcome = Literal["fixed_interval", "failure_finding", "on_condition"]
+
+    @tool("maintenance_tasks", _WRITE, "Create and change scheduled tasks", TASKS)
+    def maintenance_tasks(action: _choice(TASKS), ctx: Context, task_id: str | None = None,
+                          name: str | None = None, interval: float | None = None, unit: str | None = None,
+                          position_id: str | None = None, item_id: str | None = None,
+                          location_id: str | None = None, outcome: Outcome | None = None,
+                          clear_outcome: bool | None = None, also_interval: float | None = None,
+                          also_unit: str | None = None, point_id: str | None = None,
+                          instructions: str | None = None, checklist: list[str] | None = None,
+                          source: Literal["manual", "oem", "statutory", "other"] | None = None,
+                          reference: str | None = None, failure_mode_id: str | None = None,
+                          unlink_failure_mode: bool | None = None, last_done: DateText = None,
+                          trade: str | None = None, while_stored: Literal["run", "pause"] | None = None,
+                          include_positions: bool | None = None,
+                          on: Annotated[str | None, Field(description="set_last_done: a date like 2026-10-13.")] = None,
+                          reason: str | None = None) -> dict[str, Any]:
+        """Scheduled tasks: they fall due and raise work orders (maintenance_work_orders generate). A task
+        is on a position (the job; it counts again from each new item fitted), an item (follows the serial
+        number, into a store too) or a location (a round). Tasks from RCM come with maintenance_positions
+        from_rcm / apply_rcm. Example: {action: 'create', position_id: '<id>', name: 'Grease bearings',
+        interval: 500, unit: 'hours', also_interval: 6, also_unit: 'months', source: 'oem', reference:
+        'Manual 7.2'}."""
+        m = m_for(ctx)
+        if action == "create":
+            return run(m.create_task, position_id, name, interval, _d(unit, "months"), outcome, also_interval,
+                       also_unit, point_id, instructions or "", checklist, _d(source, "manual"), reference or "",
+                       failure_mode_id, last_done, trade or "", item_id=item_id, location_id=location_id,
+                       while_stored=while_stored, include_positions=include_positions)
+        if action == "update":
+            mode = "" if unlink_failure_mode else failure_mode_id
+            return run(m.update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
+                       instructions, checklist, mode, source, reference,
+                       None if clear_outcome else outcome if outcome is not None else ..., trade, while_stored,
+                       include_positions)
+        if action == "retire":
+            return run(lambda: (m.retire_task(task_id, reason or ""), {"retired": task_id})[1])
+        return run(m.set_last_done, task_id, on)
+
+    @tool("maintenance_proposals", _WRITE, "Accept or reject a proposed plan change", PROPOSALS)
+    def maintenance_proposals(action: _choice(PROPOSALS), proposal_id: str, ctx: Context,
+                              note: str | None = None) -> dict[str, Any]:
+        """Decide a change the life models proposed to the maintenance plan (a task's interval, or
+        retiring a task): maintenance_list kind proposals shows them with their reasons. The user
+        decides: accept only when they have said so."""
+        return run(m_for(ctx).decide_proposal, proposal_id, action == "accept", note or "")
+
+    # ---- work ---------------------------------------------------------------------------
+
+    @tool("maintenance_work_orders", _WRITE, "Open, progress and close work orders", WORK_ORDERS)
+    def maintenance_work_orders(
+            action: _choice(WORK_ORDERS), ctx: Context, work_order_id: str | None = None, title: str | None = None,
+            position_id: str | None = None, item_id: str | None = None, location_id: str | None = None,
+            type: Literal["corrective", "preventive", "inspection", "other"] | None = None,
+            task_id: str | None = None, due: Annotated[str | None, Field(description=(
+                "open: a date (default: none). update: a date, or '' to clear it."))] = None,
+            notes: Annotated[str | None, Field(description=(
+                "open / close: notes. update: replaces the WHOLE note (to add, use append_note)."))] = None,
+            append_note: AppendNote = None, trade: str | None = None, include_positions: bool | None = None,
+            assignee: str | None = None, planned_for: str | None = None,
+            status: Literal["open", "planned", "in_progress", "waiting"] | None = None,
+            note: str | None = None,
+            actions: Annotated[list[dict] | None, Field(description=(
+                "close: what was done, in order. Each: {kind: 'replace'|'repair'|'inspect'|'other', "
+                "failure_mode_id?: a failure mode on the position, or failure_mode_text?: one in "
+                "words (the position's mode of that name, else a new ad-hoc one) (for a replace, "
+                "naming one means it failed that way; none means a planned replacement), "
+                "finding?: 'ok'|'degraded'|'found_failed' (inspect only), "
+                "new_item?: {name, serial?, part_number?, manufacturer?} or item_id? "
+                "(replace: what went in), part_id?: a catalogue part used doing it (from "
+                "the work order's suggested_parts; for a replace with no new_item / item_id, the new "
+                "item is made from it), quantity? (default: the parts list's quantity per job, "
+                "else 1), from_location_id? (issue it from stock there), notes?}"))] = None,
+            on: DateText = None,
+            readings: Annotated[list[dict] | None, Field(description=(
+                "close: manual readings taken during the work: [{point_id, value}]."))] = None,
+            reason: str | None = None, horizon_days: int | None = None, hours: float | None = None,
+            who: str | None = None, rate: float | None = None, part: str | None = None,
+            quantity: float | None = None, unit_cost: float | None = None, part_number: str | None = None,
+            part_id: str | None = None, from_location_id: str | None = None, description: str | None = None,
+            amount: float | None = None, entry_id: str | None = None,
+            index: int | None = None, done: bool | None = None) -> dict[str, Any]:
+        """Work orders: the work itself, on a position, an item or a location, from open to closed with
+        its labour, parts and costs. Closing one with a replace is what builds the life data. The whole
+        flow is in maintenance_guide topic run. Example, a pump that failed and was replaced:
+        {action: 'close', work_order_id: '<id>', actions: [{kind: 'replace', failure_mode_id: '<the
+        position's 'Bearing worn' mode>', new_item: {name: 'Pump', serial: 'N2'}}]}."""
+        m = m_for(ctx)
+        if action == "open":
+            return run(m.open_work_order, position_id, title, _d(type, "corrective"), task_id, due, notes or "",
+                       trade, item_id, location_id, include_positions)
+        if action == "update":
+            return run(m.update_work_order, work_order_id, title, due, notes, type, assignee, planned_for,
+                       append_note, trade)
+        if action == "status":
+            return run(m.set_work_status, work_order_id, status, note or "")
+        if action == "close":
+            return run(m.close_work_order, work_order_id, actions or [], on, notes or "", readings or [])
+        if action == "cancel":
+            return run(m.cancel_work_order, work_order_id, reason or "")
+        if action == "generate":
+            return {"work_orders": run(m.generate_work_orders, max(0, min(_d(horizon_days, 30), 366)))}
+        if action == "labour":
+            return run(m.log_labour, work_order_id, hours, who or "", rate, on, note or "")
+        if action == "part_used":
+            return run(m.add_part_used, work_order_id, part, _d(quantity, 1), unit_cost, part_number or "",
+                       note or "", part_id, from_location_id)
+        if action == "cost":
+            return run(m.add_cost, work_order_id, description, amount)
+        if action == "remove_entry":
+            return run(m.remove_entry, entry_id)
+        return run(m.check_item, work_order_id, index, _d(done, True))
+
+    @tool("maintenance_measurements", _WRITE, "Measurement points and readings", MEASUREMENTS)
+    def maintenance_measurements(action: _choice(MEASUREMENTS), ctx: Context, point_id: str | None = None,
+                                 position_id: str | None = None, item_id: str | None = None,
+                                 name: str | None = None, kind: Literal["counter", "condition"] | None = None,
+                                 unit: str | None = None, source: Literal["manual", "automated"] | None = None,
+                                 tag: str | None = None, alarm_above: float | None = None,
+                                 alarm_below: float | None = None, clear_alarm_above: bool | None = None,
+                                 clear_alarm_below: bool | None = None, value: float | None = None,
+                                 on: Annotated[str | None, Field(description=(
+                                     "record: the day it was read (default today; a past date backdates it). "
+                                     "correct: the date it was really read (default unchanged)."))] = None,
+                                 note: str | None = None, reading_id: str | None = None,
+                                 reason: str | None = None) -> dict[str, Any]:
+        """Measurement points (counters such as run hours, and condition measures with alarm limits) on a
+        position or an item, and their manual readings. Counters drive tasks by use; condition alarms
+        open inspections. Reading ids are in maintenance_get kind measurement_point."""
+        m = m_for(ctx)
+        if action == "add_point":
+            return run(m.add_point, position_id, name or "", _d(kind, "condition"), unit or "",
+                       _d(source, "manual"), tag or "", alarm_above, alarm_below, item_id=item_id)
+        if action == "update_point":
+            kwargs = {}
+            if name is not None:
+                kwargs["name"] = name
+            if alarm_above is not None or clear_alarm_above:
+                kwargs["alarm_above"] = None if clear_alarm_above else alarm_above
+            if alarm_below is not None or clear_alarm_below:
+                kwargs["alarm_below"] = None if clear_alarm_below else alarm_below
+            if tag is not None:
+                kwargs["tag"] = tag
+            return run(m.update_point, point_id, **kwargs)
+        if action == "record":
+            return run(m.record_reading, point_id, value, on, note or "")
+        if action == "void":
+            return run(m.void_reading, reading_id, reason)
+        return run(m.correct_reading, reading_id, value, on, reason)
+
+    @tool("maintenance_locations", _WRITE, "Create and change locations", LOCATIONS)
+    def maintenance_locations(action: _choice(LOCATIONS), ctx: Context, location_id: str | None = None,
+                              name: str | None = None, parent_id: str | None = None,
+                              description: str | None = None, move_to_top_level: bool | None = None
+                              ) -> dict[str, Any]:
+        """Locations: the physical tree (sites, areas, buildings, rooms, substations, stores), separate
+        from the positions (the functional tree). Positions get a location_id; unfitted items are placed
+        at one (maintenance_items place)."""
+        m = m_for(ctx)
+        if action == "create":
+            return run(m.create_location, name, parent_id, description or "")
+        kwargs = {k: v for k, v in (("name", name), ("description", description)) if v is not None}
+        if parent_id or move_to_top_level:
+            kwargs["parent_id"] = None if move_to_top_level else parent_id
+        return run(m.update_location, location_id, **kwargs)
+
+    PartRole = Literal["replacement", "component", "consumable"]
+
+    @tool("maintenance_parts", _WRITE, "Parts catalogue, stock and parts lists", PARTS)
+    def maintenance_parts(action: _choice(PARTS), ctx: Context, part_id: str | None = None,
+                          part_number: str | None = None, name: str | None = None,
+                          manufacturer: str | None = None, unit: str | None = None,
+                          unit_cost: float | None = None, notes: str | None = None,
+                          item_class_id: str | None = None, manufacturer_id: str | None = None,
+                          location_id: str | None = None, quantity: float | None = None,
+                          reason: str | None = None, on: DateText = None, reorder_point: float | None = None,
+                          other_part_id: str | None = None,
+                          relation: Literal["superseded_by", "interchangeable"] | None = None,
+                          position_id: str | None = None, role: PartRole | None = None,
+                          critical: bool | None = None, min_on_hand: float | None = None,
+                          listing_id: str | None = None) -> dict[str, Any]:
+        """The parts catalogue (spares, and makes and models of equipment), stock at locations, and each
+        position's parts list (its bill of materials, with critical spares). Supersession and
+        interchangeable parts belong to the catalogue (link), not the parts list."""
+        m = m_for(ctx)
+        if action == "create":
+            return run(m.create_part, part_number, name, manufacturer or "", _d(unit, "each"), unit_cost,
+                       notes or "", item_class_id, manufacturer_id)
+        if action == "stock":
+            return run(m.adjust_stock, part_id, location_id, quantity, reason or "", on)
+        if action == "reorder":
+            return run(m.set_reorder_point, part_id, location_id, reorder_point)
+        if action == "link":
+            if relation == "superseded_by":
+                return run(m.supersede_part, part_id, other_part_id)
+            return run(m.mark_interchangeable, part_id, other_part_id)
+        if action == "add_to_position":
+            return run(m.add_position_part, position_id, part_id, _d(role, "component"), _d(quantity, 1),
+                       bool(critical), min_on_hand, notes or "")
+        if action == "update_on_position":
+            return run(m.update_position_part, listing_id, role, quantity, critical,
+                       ... if min_on_hand is None else min_on_hand, notes)
+        return run(m.remove_position_part, listing_id)
+
+    # ---- closing the loop -------------------------------------------------------------
+
+    @tool("maintenance_reliability", _WRITE, "Position class costs and life models", RELIABILITY)
+    def maintenance_reliability(action: _choice(RELIABILITY), position_class: str, ctx: Context,
+                                planned_cost: float | None = None, failure_cost: float | None = None,
+                                availability_target: float | None = None, replacement_cost: ReplacementCost = None,
+                                clear_replacement_cost: bool | None = None,
+                                distribution: Literal["weibull", "best", "lognormal", "exponential", "gamma"] | None
+                                = None) -> dict[str, Any]:
+        """A position class's costs and its fitted life model: what turns the history into proposed task
+        intervals (maintenance_guide topic learn). Read the pooled data first with maintenance_get kind
+        class_life_data; plan_economics there costs the plan."""
+        m = m_for(ctx)
+        if action == "set_class_costs":
+            def go():
+                if (planned_cost, failure_cost, availability_target) != (None, None, None):
+                    m.set_class_costs(position_class, planned_cost, failure_cost, availability_target)
+                if replacement_cost is not None or clear_replacement_cost:
+                    m.set_class_replacement_cost(position_class, None if clear_replacement_cost else replacement_cost)
+                return m.position_class(position_class)
+            return run(go)
+        from backend import fitting
+
+        try:
+            return run(loop.fit_class_model, m, _db(), position_class, _d(distribution, "weibull"))
+        except fitting.FitError as err:
+            raise ToolError(f"The fit didn't work: {err}") from None
+
+    @tool("maintenance_topology", _WRITE, "Connections, redundancy and the generated RBD", TOPOLOGY)
+    def maintenance_topology(action: _choice(TOPOLOGY), ctx: Context, from_id: str | None = None,
+                             to_id: str | None = None,
+                             kind: Literal["flow", "electrical", "mechanical", "signal", "data", "other"] | None = None,
+                             medium: str | None = None, name: str | None = None, rating: str | None = None,
+                             realised_by: str | None = None, interface_id: str | None = None,
+                             member_ids: list[str] | None = None, k: int | None = None,
+                             mode: Literal["active", "standby"] | None = None,
+                             standby: Literal["cold", "warm", "hot"] | None = None,
+                             group_id: str | None = None, add: list[str] | None = None,
+                             remove: list[str] | None = None, position_id: str | None = None) -> dict[str, Any]:
+        """How positions depend on each other: connections (what passes from one to another) and
+        redundancy groups (k of n will do). They drive impact (maintenance_get kind impact) and the RBD
+        generate_rbd makes from a system."""
+        m = m_for(ctx)
+        if action == "connect":
+            return run(m.connect, from_id, to_id, _d(kind, "flow"), medium or "", name or "", rating or "",
+                       realised_by)
+        if action == "disconnect":
+            return run(lambda: (m.disconnect(interface_id), {"removed": interface_id})[1])
+        if action == "create_group":
+            return run(m.create_group, name or "", member_ids, _d(k, 1), _d(mode, "active"), _d(standby, "cold"))
+        if action == "update_group":
+            return run(m.update_group, group_id, name, k, mode, standby, add or [], remove or [])
+        if action == "set_duty":
+            return run(m.set_duty, group_id, position_id)
+        return run(rbd_derive.save, m, _db(), position_id)
+
+    # ---- item classes and the manufacturer register (optional) --------------------------
+
+    Attributes = Annotated[list[dict[str, Any]] | None, Field(description=(
+        "The class's own attributes: [{name, unit?, kind?: number | text | choice, options?: [..] for a "
+        "choice}], e.g. [{name: 'Flow', unit: 'm3/h'}, {name: 'Shaft seal', kind: 'choice', options: "
+        "['mechanical seal', 'packing']}]. kind defaults to number when there's a unit, else text. Classes "
+        "inside it inherit them; never repeat an inherited one."))]
+
+    @tool("maintenance_item_classes", _WRITE, "The item class taxonomy", ITEM_CLASSES)
+    def maintenance_item_classes(action: _choice(ITEM_CLASSES), ctx: Context, item_class_id: Annotated[
+                                     str | None, Field(description=(
+                                         "The class; for assign, 'none' takes the target's class away."))] = None,
+                                 name: str | None = None, parent_id: str | None = None, code: str | None = None,
+                                 level: Annotated[str | None, Field(description=(
+                                     "The user's name for its level, e.g. class, type, subunit, maintainable "
+                                     "item."))] = None,
+                                 description: str | None = None, attributes: Attributes = None,
+                                 move_to_top_level: bool | None = None, reason: str | None = None,
+                                 target_id: Annotated[str | None, Field(description=(
+                                     "assign: an item or a catalogue part."))] = None,
+                                 classes: Annotated[list[dict[str, Any]] | None, Field(description=(
+                                     "import, as JSON: [{path: 'Rotating equipment > Pump > Centrifugal', code?, "
+                                     "level?, description?, attributes?: [{name, unit?, kind?, options?}]}], or "
+                                     "{name, parent?: path} for path, or nested with children: [...]."))] = None,
+                                 csv: Annotated[str | None, Field(description=(
+                                     "import, as CSV text with a header: path (or name, parent), code, level, "
+                                     "description, attributes ('Flow (m3/h); Stages [number]; Seal [choice: "
+                                     "mechanical | packing]')."))] = None,
+                                 dry_run: bool | None = None, source: str | None = None) -> dict[str, Any]:
+        """Item classes (optional): what KIND OF THING items and parts are, as a tree with attributes
+        inherited down it (Rotating equipment > Pump > Centrifugal). Not a position's position_class,
+        which is the duty and pools life data. Read it with maintenance_list kind item_classes."""
+        m = m_for(ctx)
+        if action == "create":
+            return run(m.create_item_class, name, parent_id, code or "", level or "", description or "", attributes)
+        if action == "update":
+            kwargs = {k: v for k, v in (("name", name), ("code", code), ("level", level),
+                                        ("description", description)) if v is not None}
+            if parent_id or move_to_top_level:
+                kwargs["parent_id"] = None if move_to_top_level else parent_id
+            return run(m.update_item_class, item_class_id, **kwargs)
+        if action == "set_attributes":
+            return run(m.set_item_class_attributes, item_class_id, attributes or [])
+        if action == "retire":
+            return run(lambda: (m.retire_item_class(item_class_id, reason or ""), {"retired": item_class_id})[1])
+        if action == "assign":
+            return run(m.assign_item_class, target_id, none_is_null(item_class_id))
+        if action == "import":
+            if (classes is None) == (csv is None):
+                raise ToolError("Give the classes as JSON (classes) or CSV text (csv), one of them.")
+
+            def go():
+                rows = taxonomy.rows_from_json(classes) if classes is not None else taxonomy.rows_from_csv(csv)
+                return taxonomy.run(m, rows, _d(dry_run, True), _d(source, "imported"))
+            return run(go)
+        return run(taxonomy.load_starter, m, _d(dry_run, True))
+
+    @tool("maintenance_manufacturers", _WRITE, "The manufacturer register", MANUFACTURERS)
+    def maintenance_manufacturers(action: _choice(MANUFACTURERS), ctx: Context,
+                                  manufacturer_id: Annotated[str | None, Field(description=(
+                                      "The register entry; for link, 'none' unlinks the target."))] = None,
+                                  name: str | None = None, aliases: list[str] | None = None,
+                                  add_aliases: list[str] | None = None, remove_aliases: list[str] | None = None,
+                                  into_manufacturer_id: str | None = None,
+                                  target_id: Annotated[str | None, Field(description=(
+                                      "link: an item or a catalogue part."))] = None,
+                                  dry_run: bool | None = None) -> dict[str, Any]:
+        """The manufacturer register: one entry per maker, tying its spellings together ('KSB',
+        'K.S.B.', 'KSB SE & Co. KGaA'). Items and parts keep their typed manufacturer text and link to an
+        entry. Find one first with maintenance_get kind manufacturer_match."""
+        m = m_for(ctx)
+        if action == "create":
+            return run(m.create_manufacturer, name, aliases or [])
+        if action == "update":
+            return run(m.update_manufacturer, manufacturer_id, name, add_aliases or [], remove_aliases or [])
+        if action == "merge":
+            return run(m.merge_manufacturers, manufacturer_id, into_manufacturer_id)
+        if action == "link":
+            return run(m.link_manufacturer, target_id, none_is_null(manufacturer_id))
+        return run(m.link_manufacturers_by_name, _d(dry_run, True))
+
+    # ---- photos, documents and the workspace -------------------------------------------
+
+    @tool("maintenance_attachments", _WRITE, "Photos, coordinates and document links", ATTACHMENTS)
+    def maintenance_attachments(action: _choice(ATTACHMENTS), ctx: Context,
+                                target_id: Annotated[str | None, Field(description=(
+                                    "photo_link: a position, location, item or work order. set_coordinates: a "
+                                    "position, item, location or work order. add_document: an item or "
+                                    "position."))] = None,
+                                caption: str | None = None, lat: float | None = None, lon: float | None = None,
+                                source: Literal["photo", "manual"] | None = None, photo_id: str | None = None,
+                                url: str | None = None, title: str | None = None,
+                                kind: Literal["manual", "datasheet", "invoice", "drawing", "certificate",
+                                              "other"] | None = None,
+                                position_class: str | None = None, document_id: str | None = None) -> dict[str, Any]:
+        """What's attached to the register: photos (added by the user from a phone through a link;
+        stored without location or camera details), coordinates, and links to documents. To look at a
+        photo: maintenance_view_photo."""
+        m = m_for(ctx)
+        if action == "photo_link":
+            request = ctx.request_context.request
+            base = config.PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+            return run(lambda: link_payload(base, m, m.photo_target(target_id), (caption or "")[:200]))
+        if action == "set_coordinates":
+            return run(m.set_coordinates, target_id, lat, lon, _d(source, "manual"))
+        if action == "remove_photo":
+            return run(remove_photo, m, photo_id)
+        if action == "add_document":
+            return run(m.add_document, url, title or "", _d(kind, "other"), target_id, position_class)
+        return run(m.remove_document, document_id)
+
+    @tool("maintenance_workspace", _WRITE, "Workspace settings and history import", WORKSPACE)
+    def maintenance_workspace(action: _choice(WORKSPACE), ctx: Context,
+                              time_zone: Annotated[str | None, Field(description=(
+                                  "An IANA name such as 'Australia/Brisbane'; '' clears it (UTC)."))] = None,
+                              rows: Annotated[list[dict[str, str]] | None, Field(description=(
+                                  "import_history: one row per item per position: {position: 'House > Pool > "
+                                  "Pump', class?, item?, serial?, manufacturer?, model?, part number?, fitted?: "
+                                  "date, removed?: date, failed?: yes/no, failure mode?}. Column names are "
+                                  "matched loosely."))] = None,
+                              dry_run: bool | None = None) -> dict[str, Any]:
+        """The maintenance workspace as a whole: its time zone, and bringing an existing history in."""
+        if action == "set_time_zone":
+            user = _caller(ctx)
+            m_for(ctx)  # Maintenance is on for this account
+            try:
+                return {"time_zone": time_zones.set_personal(_db(), user["uid"], time_zone)}
+            except time_zones.BadTimeZone as err:
+                raise ToolError(str(err)) from None
+        if len(rows) > importer.MAX_ROWS:
+            raise ToolError(f"At most {importer.MAX_ROWS} rows at a time.")
+        return run(importer.run, m_for(ctx), [{str(k): str(v) for k, v in r.items()} for r in rows],
+                   _d(dry_run, True))
 
     # The tools are listed only to people who may use them: wrap the server's
     # tools/list handler to drop them for everyone else.
-    handlers = mcp._lowlevel_server._request_handlers
+    lowlevel = mcp._lowlevel_server
+    handlers = lowlevel._request_handlers
     entry = handlers["tools/list"]
     _ORIGINAL["tools/list"] = entry
     hidden = set(TOOL_NAMES)
 
+    def user_of(ctx):
+        return getattr(getattr(getattr(ctx, "request", None), "state", None), "reliafy_user", None)
+
     async def list_tools(ctx, params):
         result = await entry.handler(ctx, params)
-        user = getattr(getattr(getattr(ctx, "request", None), "state", None), "reliafy_user", None)
-        if allowed(user):
+        if allowed(user_of(ctx)):
             return result
         return result.model_copy(update={"tools": [t for t in result.tools if t.name not in hidden]})
 
     handlers["tools/list"] = dataclasses.replace(entry, handler=list_tools)
 
-    mcp_server._FIT_TOOLS.update(PRO_FIT_TOOLS)
-    mcp_server.PRO_ONLY_TOOLS.update(PRO_FIT_TOOLS)
-    mcp_server.HEAVY_TOOLS.update(HEAVY_TOOLS)
+    # ... and the server's instructions gain the maintenance section only for
+    # them. initialize is built by the SDK's runner (it can't be replaced), so a
+    # server middleware adds the section to its result (and server/discover's,
+    # the newer protocol's equivalent).
+    async def instructions(ctx, call_next):
+        result = await call_next(ctx)
+        if ctx.method in ("initialize", "server/discover") and isinstance(result, dict) \
+                and allowed(user_of(ctx)):
+            base = result.get("instructions") or ""
+            result = {**result, "instructions": f"{base}\n{mcp_guide.INSTRUCTIONS}" if base
+                      else mcp_guide.INSTRUCTIONS}
+        return result
+
+    _ORIGINAL["middleware"] = instructions
+    lowlevel.middleware.append(instructions)
+
+    mcp_server._FIT_TOOLS.update(PRO_FIT_CALLS)
+    mcp_server.PRO_ONLY_TOOLS.update(PRO_FIT_CALLS)
+    mcp_server.HEAVY_TOOLS.update(HEAVY_CALLS)
 
 
 def unregister() -> None:
@@ -668,11 +1209,16 @@ def unregister() -> None:
     from backend import mcp_server
     from backend.mcp_server import mcp
 
-    mcp_server._FIT_TOOLS.difference_update(PRO_FIT_TOOLS)
-    mcp_server.PRO_ONLY_TOOLS.difference_update(PRO_FIT_TOOLS)
-    mcp_server.HEAVY_TOOLS.difference_update(HEAVY_TOOLS)
+    mcp_server._FIT_TOOLS.difference_update(PRO_FIT_CALLS)
+    mcp_server.PRO_ONLY_TOOLS.difference_update(PRO_FIT_CALLS)
+    mcp_server.HEAVY_TOOLS.difference_update(HEAVY_CALLS)
     for name in TOOL_NAMES:
         mcp.remove_tool(name)
     TOOL_NAMES.clear()
+    lowlevel = mcp._lowlevel_server
     if "tools/list" in _ORIGINAL:
-        mcp._lowlevel_server._request_handlers["tools/list"] = _ORIGINAL.pop("tools/list")
+        lowlevel._request_handlers["tools/list"] = _ORIGINAL.pop("tools/list")
+    if "middleware" in _ORIGINAL:
+        middleware = _ORIGINAL.pop("middleware")
+        if middleware in lowlevel.middleware:
+            lowlevel.middleware.remove(middleware)

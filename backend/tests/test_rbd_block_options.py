@@ -105,28 +105,28 @@ def test_a_mixture_is_checked_in_plain_words(change, needle):
 def test_a_saved_mixture_fit_is_a_block_life_over_mcp(env):
     rng_times = [float(x) for x in np.concatenate([sp.Weibull.from_params([60, 0.8]).qf(np.linspace(0.05, 0.95, 12)),
                                                     sp.Weibull.from_params([2000, 3.5]).qf(np.linspace(0.05, 0.95, 36))])]
-    saved = _ok(_call(env.token[A], "fit_and_save_model", {
+    saved = _ok(_call(env.token[A], "models", {"action": "fit",
         "data": rng_times, "distribution": "mixture", "unit": "hours", "name": "Two modes"}))
     graph = {"nodes": [{"id": "input", "type": "input"},
                        {"id": "p", "type": "component", "label": "Pump", "model": {"saved_model_id": saved["model_id"]},
                         "repair": LN},
                        {"id": "output", "type": "output"}],
              "edges": [{"source": "input", "target": "p"}, {"source": "p", "target": "output"}]}
-    rbd = _ok(_call(env.token[A], "create_rbd", {"name": "Mixed", "repairable": True, **graph}))
+    rbd = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Mixed", "repairable": True, **graph}))
     stored = next(n for n in env.db.rbds.find_one({"_id": rbd["id"]})["graph"]["nodes"] if n["id"] == "p")
     model = stored["data"]["model"]
     assert model["distribution_id"] == "mixture" and model["base_distribution_id"] == "weibull"
-    got = _ok(_call(env.token[A], "get_rbd", {"rbd_id": rbd["id"]}))
+    got = _ok(_call(env.token[A], "get", {"kind": "rbd", "id": rbd["id"]}))
     compact = next(n for n in got["graph"]["nodes"] if n["id"] == "p")["model"]
     assert compact["saved_model_id"] == saved["model_id"] and compact["base_distribution_id"] == "weibull"
-    # get_rbd's compact model round-trips through edit_rbd.
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rbd["id"], "ops": [
+    # get kind rbd's compact model round-trips through rbd edit.
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rbd["id"], "ops": [
         {"op": "update_node", "id": "p", "model": compact}]}))
     # An inline mixture, too.
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rbd["id"], "ops": [
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rbd["id"], "ops": [
         {"op": "update_node", "id": "p", "model": {k: MIX[k] for k in ("distribution_id", "base_distribution_id",
                                                                         "params")}}]}))
-    out = _ok(_call(env.token[A], "analyze_rbd", {"rbd_id": rbd["id"], "simulate": False}))
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rbd["id"], "simulate": False}))
     direct = RepairableRBD([("input", "p"), ("p", "output")],
                            {"p": {"reliability": _mixture(), "repairability": sp.LogNormal.from_params([2.0, 0.5])}})
     assert out["steady_state_availability"] == pytest.approx(direct.mean_availability(), rel=1e-9)
@@ -196,16 +196,16 @@ def test_repair_quality_over_mcp_and_in_the_exports(env, tmp_path):
                         "repair_quality": KIJIMA},
                        {"id": "output", "type": "output"}],
              "edges": [{"source": "input", "target": "a"}, {"source": "a", "target": "output"}]}
-    rbd = _ok(_call(env.token[A], "create_rbd", {"name": "Worn", "repairable": True, **graph}))
+    rbd = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Worn", "repairable": True, **graph}))
     node = lambda: next(n for n in env.db.rbds.find_one({"_id": rbd["id"]})["graph"]["nodes"] if n["id"] == "a")
     assert node()["data"]["repair_quality"] == KIJIMA
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rbd["id"], "ops": [
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rbd["id"], "ops": [
         {"op": "update_node", "id": "a", "repair_quality": {"model": "kijima2", "q": 0.7}}]}))
     assert node()["data"]["repair_quality"] == {"model": "kijima2", "q": 0.7}
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rbd["id"], "ops": [
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rbd["id"], "ops": [
         {"op": "update_node", "id": "a", "clear": ["repair_quality"]}]}))
     assert "repair_quality" not in node()["data"]
-    msg = _err(_call(env.token[A], "edit_rbd", {"rbd_id": rbd["id"], "ops": [
+    msg = _err(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rbd["id"], "ops": [
         {"op": "update_node", "id": "a", "repair_quality": {"model": "kijima1", "q": 2}}]}))
     assert "q" in msg
 
@@ -308,8 +308,9 @@ def test_standby_k_over_mcp(env):
                        {"id": "s", "type": "standby", "label": "Train", "model": W(100, 2), "spares": 1, "k": 2},
                        {"id": "output", "type": "output"}],
              "edges": [{"source": "input", "target": "s"}, {"source": "s", "target": "output"}]}
-    rbd = _ok(_call(env.token[A], "create_rbd", {"name": "Train", **graph}))
-    _ok(_call(env.token[A], "edit_rbd", {"rbd_id": rbd["id"], "ops": [{"op": "update_node", "id": "s", "k": 1}]}))
+    rbd = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Train", **graph}))
+    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rbd["id"], "ops": [{"op": "update_node", "id": "s",
+        "k": 1}]}))
     s = next(n for n in env.db.rbds.find_one({"_id": rbd["id"]})["graph"]["nodes"] if n["id"] == "s")
     assert s["data"]["k"] == 1
 

@@ -410,12 +410,13 @@ def test_mcp_fleet_forecast_names_items_and_gives_curves_on_request(env):
     fid = _mcp_fleet(env)
     fs.replace_items(env.db, fid, {"periods": 6, "default_rate": 5, "method": "single"},
                      [{"name": "Truck 1", "current_use": 30}, {"name": "Truck 2", "current_use": 90}], A)
-    out = _ok(_call(env.token[A], "fleet_forecast", {"fleet_id": fid}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "fleet_forecast", "fleet_id": fid}))
     rows = out["forecast"]["per_item"]
     assert sorted(r["name"] for r in rows) == ["Truck 1", "Truck 2"]
     assert out["forecast"]["interval_method"] == "exact" and len(out["forecast"]["per_period_interval"]) == 6
     assert "probability_by_period" not in rows[0]
-    curves = _ok(_call(env.token[A], "fleet_forecast", {"fleet_id": fid, "item_probabilities": True}))
+    curves = _ok(_call(env.token[A], "strategy", {"action": "fleet_forecast", "fleet_id": fid,
+                                                  "item_probabilities": True}))
     for row in curves["forecast"]["per_item"]:
         assert len(row["probability_by_period"]) == 6
         assert row["probability_by_period"][-1] == pytest.approx(row["prob_any"])
@@ -429,10 +430,10 @@ def test_mcp_lists_and_guards_regression_and_alt_fleets(env):
     reg = _regression_model(env.db)
     fa = fs.create_fleet(env.db, "Ovens", alt.id, A, "alt")
     fr = fs.create_fleet(env.db, "Pumps", reg.id, A)
-    kinds = {f["id"]: f["model_kind"] for f in _ok(_call(env.token[A], "list_fleets", {}))["fleets"]}
+    kinds = {f["id"]: f["model_kind"] for f in _ok(_call(env.token[A], "list", {"kind": "fleets"}))["fleets"]}
     assert kinds[fa.id] == "alt" and kinds[fr.id] == "regression"
-    out = _ok(_call(env.token[A], "fleet_forecast", {"fleet_id": fa.id}))
+    out = _ok(_call(env.token[A], "strategy", {"action": "fleet_forecast", "fleet_id": fa.id}))
     assert out["fleet"]["model_kind"] == "alt" and "model_source" not in out["fleet"]
     # A regression model a fleet runs on can't be deleted through MCP.
-    refused = _call(env.token[A], "delete_model", {"model_id": reg.id})
+    refused = _call(env.token[A], "models", {"action": "delete", "model_id": reg.id})
     assert refused.is_error and "Pumps" in refused.content[0].text

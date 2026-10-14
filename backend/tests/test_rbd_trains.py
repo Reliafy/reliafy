@@ -206,15 +206,15 @@ def test_mcp_cheapest_design_takes_trains(env, monkeypatch):
     from backend.services import billing
 
     rbd = rbds_service.save_rbd(env.db, "Pump station", _station(), A)
-    out = _ok(_call(env.token[A], "cheapest_design", {
+    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design",
         "rbd_id": rbd.id, "trains": {"Pump train": ["pump1", "motor1"]}, "blocks": []}))
     assert out["available"] and out["changed"]
     (train,) = out["design"]["trains"]
     assert train["copies"] == 2 and [b["label"] for b in train["blocks"]] == ["Pump 1", "Motor 1"]
     assert round(out["design"]["total_cost"]) == 295306
     # Errors are the app's, and the tool stays Pro.
-    assert "chain of blocks" in _err(_call(env.token[A], "cheapest_design", {
+    assert "chain of blocks" in _err(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design",
         "rbd_id": rbd.id, "trains": {"T": ["pump1", "pump2"]}}))
     monkeypatch.setattr(billing, "premium_compute_allowed", lambda db, user: False)
-    assert _ok(_call(env.token[A], "cheapest_design", {
+    assert _ok(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design",
         "rbd_id": rbd.id, "trains": {"T": ["pump1", "motor1"]}}))["code"] == "pro_required"

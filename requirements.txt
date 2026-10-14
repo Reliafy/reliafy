@@ -67,3 +67,7 @@ openpyxl==3.1.5
 simpleeval==1.0.8
 # Photos in Reliafy Maintenance: cleaned and re-encoded (backend/maintenance/photos.py).
 pillow>=10.0
+# Time zone rules for workspaces' calendar days (backend/services/time_zones.py):
+# zoneinfo reads them from here when the image has no system tz database (the
+# slim base image may not).
+tzdata

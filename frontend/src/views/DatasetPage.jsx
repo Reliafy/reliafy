@@ -40,7 +40,7 @@ export default function DatasetPage() {
   // and offer the name you just typed (location state from the New flow).
   const [reused, setReused] = useState(() => (location.state?.reused ? location.state : null));
   // ?compare=<column> opens "Compare groups" split by that column (the MCP
-  // compare_groups tool links here).
+  // life_data_analysis compare_groups action links here).
   const [params, setParams] = useSearchParams();
   const compareBy = params.get("compare");
   const comparing = compareBy !== null;

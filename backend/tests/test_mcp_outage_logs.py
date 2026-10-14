@@ -1,5 +1,5 @@
-"""The MCP outage-history tools (issue #159): upload_outage_log and
-system_history — lean output, owner-only, samples refused."""
+"""The MCP outage-history tools (issue #159): rbd upload_outage_log and
+rbd_analysis system_history — lean output, owner-only, samples refused."""
 
 import matplotlib
 
@@ -44,15 +44,15 @@ def test_mcp_upload_and_history(mcp_env):
 
     rbd = rbds_service.save_rbd(mcp_env.db, "Plant", GRAPH, A)
     tok = mcp_env.token[A]
-    assert "no outage log yet" in _err(_call(tok, "system_history", {"rbd_id": rbd.id}))
+    assert "no outage log yet" in _err(_call(tok, "rbd_analysis", {"action": "system_history", "rbd_id": rbd.id}))
 
-    out = _ok(_call(tok, "upload_outage_log", {"rbd_id": rbd.id, "csv": LOG, "window_start": "0",
+    out = _ok(_call(tok, "rbd", {"action": "upload_outage_log", "rbd_id": rbd.id, "csv": LOG, "window_start": "0",
                                                "window_end": "1000", "name": "Log"}))
     assert out["n_outages"] == 9 and out["unmapped"] == []
     assert out["url"].endswith(f"/rbds/b/{rbd.id}?tab=outages")
     assert out["history"]["kpis"]["availability"] == pytest.approx(0.91)
 
-    hist = _ok(_call(tok, "system_history", {"rbd_id": rbd.id}))
+    hist = _ok(_call(tok, "rbd_analysis", {"action": "system_history", "rbd_id": rbd.id}))
     assert hist["log_id"] == out["log_id"]
     assert hist["kpis"]["outages"] == 6
     top = hist["top_outages"]
@@ -62,14 +62,17 @@ def test_mcp_upload_and_history(mcp_env):
 
     # Explicit columns, and bad data comes back as a tool error listing the rows.
     cols = {"asset": "Asset", "start": "Outage start", "end": "Restored"}
-    assert _ok(_call(tok, "upload_outage_log", {"rbd_id": rbd.id, "csv": LOG, "columns": cols}))["columns"] == cols
-    msg = _err(_call(tok, "upload_outage_log", {"rbd_id": rbd.id, "csv": "asset,start,end\nPump A,5,1\n"}))
+    assert _ok(_call(tok, "rbd", {"action": "upload_outage_log", "rbd_id": rbd.id, "csv": LOG,
+                                  "columns": cols}))["columns"] == cols
+    msg = _err(_call(tok, "rbd", {"action": "upload_outage_log", "rbd_id": rbd.id,
+                                  "csv": "asset,start,end\nPump A,5,1\n"}))
     assert "Row 2" in msg and "before it starts" in msg
 
     # Owner-only: B can't read A's log, or upload to A's diagram.
     other = mcp_env.token[B]
-    assert "not found" in _err(_call(other, "system_history", {"rbd_id": rbd.id})).lower()
-    assert "not found" in _err(_call(other, "upload_outage_log", {"rbd_id": rbd.id, "csv": LOG})).lower()
+    assert "not found" in _err(_call(other, "rbd_analysis", {"action": "system_history", "rbd_id": rbd.id})).lower()
+    assert "not found" in _err(_call(other, "rbd", {"action": "upload_outage_log", "rbd_id": rbd.id,
+                                                    "csv": LOG})).lower()
 
 
 def test_mcp_refuses_samples(mcp_env):
@@ -78,8 +81,8 @@ def test_mcp_refuses_samples(mcp_env):
 
     mcp_env.db.rbds.insert_one({"_id": "sample-rbd", "id": "sample-rbd", "name": "Sample",
                                 "owner_id": config.SAMPLE_OWNER, "graph": GRAPH})
-    msg = _err(_call(mcp_env.token[A], "upload_outage_log", {"rbd_id": "sample-rbd", "csv": LOG}))
-    assert "shared sample" in msg and "clone_rbd" in msg
+    msg = _err(_call(mcp_env.token[A], "rbd", {"action": "upload_outage_log", "rbd_id": "sample-rbd", "csv": LOG}))
+    assert "shared sample" in msg and "rbd clone" in msg
     assert mcp_env.db.outage_logs.count_documents({}) == 0
 
 
@@ -96,11 +99,12 @@ def test_free_plan_counts_calls_and_caps_logs(env):
 
     rbd = rbds_service.save_rbd(env.db, "Plant", GRAPH, FREE)
     token = env.oauth[FREE]
-    assert _ok(_call(token, "upload_outage_log", {"rbd_id": rbd.id, "csv": LOG, "window_end": "1000"}))["log_id"]
-    assert _ok(_call(token, "system_history", {"rbd_id": rbd.id}))["kpis"]["outages"] == 6
+    assert _ok(_call(token, "rbd", {"action": "upload_outage_log", "rbd_id": rbd.id, "csv": LOG,
+                                    "window_end": "1000"}))["log_id"]
+    assert _ok(_call(token, "rbd_analysis", {"action": "system_history", "rbd_id": rbd.id}))["kpis"]["outages"] == 6
     assert billing.mcp_calls_used(env.db, FREE, "free") == 2
     # The Free plan keeps one outage log; the refusal isn't counted.
-    msg = _err(_call(token, "upload_outage_log", {"rbd_id": rbd.id, "csv": LOG}))
+    msg = _err(_call(token, "rbd", {"action": "upload_outage_log", "rbd_id": rbd.id, "csv": LOG}))
     assert "limit of 1 saved outage logs" in msg and "upgrade" in msg.lower()
     assert billing.mcp_calls_used(env.db, FREE, "free") == 2
     assert env.db.outage_logs.count_documents({"owner_id": FREE}) == 1
@@ -108,4 +112,5 @@ def test_free_plan_counts_calls_and_caps_logs(env):
     # Pro: no cap.
     pro = rbds_service.save_rbd(env.db, "Plant", GRAPH, PRO)
     for _ in range(3):
-        assert _ok(_call(env.oauth[PRO], "upload_outage_log", {"rbd_id": pro.id, "csv": LOG}))["log_id"]
+        assert _ok(_call(env.oauth[PRO], "rbd", {"action": "upload_outage_log", "rbd_id": pro.id,
+                                                 "csv": LOG}))["log_id"]

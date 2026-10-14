@@ -1,10 +1,10 @@
 """Upload links: files reach Reliafy without passing through an agent's context.
 
 An MCP agent that wants to import a file (a BlockSim project, an Excel
-workbook, a CSV of failure times) calls the ``create_upload`` tool, gets a
+workbook, a CSV of failure times) calls the ``uploads create`` tool, gets a
 single-use URL, sends the bytes there with a plain HTTP ``PUT`` (``curl``),
-then calls ``import_rbd`` / ``import_excel`` / ``upload_dataset`` /
-``upload_outage_log`` with the ``upload_id``. The file's contents never sit
+then calls ``uploads import_rbd`` / ``uploads import_excel`` / ``datasets upload`` /
+``rbd upload_outage_log`` with the ``upload_id``. The file's contents never sit
 in a tool call, so a 20 MB workbook costs the agent a few hundred tokens,
 not millions.
 
@@ -52,6 +52,11 @@ Security review (keep it true when changing this module):
   (Open-PSA, and openpyxl's workbook parsing), zip-bomb checks on workbooks
   (:mod:`backend.services.excel`), a shared decompression budget for gzip
   (BlockSim ``.rsgz``), and row / block / nesting caps.
+* **Parts through MCP** (:func:`write_part`, for agents that can't reach
+  the URL at all) need no token: the caller is the signed-in MCP user, and
+  the slot must be theirs. They claim the slot like a PUT (one sender at a
+  time), count towards the same size cap, and each part is capped well
+  under the MCP request limit.
 * **Uploads are private.** Only the creator can inspect or import one; any
   other user gets "not found" (existence isn't revealed). Uploads never count
   towards storage caps and aren't listed anywhere.
@@ -223,7 +228,8 @@ def claim(db, upload_id: str) -> Optional[dict]:
         {"_id": upload_id, "expires_at": {"$gt": now},
          "$or": [{"status": "pending"},
                  {"status": "receiving", "receiving_since": {"$lt": now - STALE_RECEIVING}}]},
-        {"$set": {"status": "receiving", "receiving_since": now, "claim": secrets.token_hex(16)}},
+        {"$set": {"status": "receiving", "receiving_since": now, "claim": secrets.token_hex(16)},
+         "$unset": {"via": ""}},
         return_document=ReturnDocument.AFTER,
     )
 
@@ -233,7 +239,8 @@ def release(db, upload_id: str, claim_id: str) -> None:
     if it still holds the slot, let the URL be used again until it expires."""
     db.upload_chunks.delete_many({"upload_id": upload_id, "claim": claim_id})
     db.uploads.update_one({"_id": upload_id, "status": "receiving", "claim": claim_id},
-                          {"$set": {"status": "pending"}, "$unset": {"receiving_since": "", "claim": ""}})
+                          {"$set": {"status": "pending"},
+                           "$unset": {"receiving_since": "", "claim": "", "via": ""}})
 
 
 def write_chunk(db, upload_id: str, n: int, data: bytes, claim_id: str) -> None:
@@ -266,7 +273,143 @@ def status_refusal(doc: dict) -> tuple[int, str]:
         return 409, "This upload link has already been used — the file is uploaded. Create a new upload to send another file."
     if doc.get("status") == "receiving":
         return 409, "A file is already being sent to this upload link."
-    return 410, "This upload link has expired (links last 15 minutes). Call create_upload for a new one."
+    return 410, "This upload link has expired (links last 15 minutes). Call uploads create for a new one."
+
+
+def next_step(purpose: Optional[str]) -> str:
+    """What to call once the file has arrived."""
+    tool = {"rbd_import": "uploads import_rbd", "excel": "uploads import_excel", "dataset": "datasets upload",
+            "outage_log": "rbd upload_outage_log"}.get(purpose or "", "the import")
+    return f"Uploaded. Now call {tool} with this upload_id (get kind upload first to see sheets and columns)."
+
+
+# ---- receiving in parts (the uploads send_part MCP tool) -----------------------------
+#
+# An agent whose sandbox can't reach the upload URL at all (an egress proxy
+# refusing both hosts) sends the file through the MCP connection instead:
+# base64 parts written into the same upload slot the PUT would fill, so every
+# tool that takes an upload_id works unchanged. The caller is the
+# authenticated MCP user, so no token: the slot must be theirs. The rules are
+# the PUT's — one sender per slot (the first part claims it, as a PUT does),
+# the slot's size cap, the format detected from the first bytes once the last
+# part is in — plus a cap per part (each is one MCP request, well under
+# ``config.MAX_REQUEST_BYTES``) and on the number of parts. A part sent again
+# replaces itself, so a retry after a dropped call is harmless. The file must
+# be complete before the slot's original ``delete_at`` (75 minutes after
+# uploads create); the token's 15 minutes only bound when the first part may
+# arrive.
+
+PART_MAX_BYTES = CHUNK_BYTES   # decoded bytes per part: one stored chunk
+MAX_PARTS = 1000
+
+
+def _parts_slot(db, upload_id: str, uid: str) -> dict:
+    """The caller's slot, claimed for parts on the first one."""
+    doc = db.uploads.find_one({"_id": str(upload_id or "")[:64], "uid": uid})
+    now = _now()
+    if doc is None or (_aware(doc.get("delete_at")) or now) <= now:
+        raise UploadError("Upload not found — it may have expired. Call uploads create and send the file again.")
+    if doc.get("status") == "pending":
+        claimed = db.uploads.find_one_and_update(
+            {"_id": doc["_id"], "uid": uid, "status": "pending", "expires_at": {"$gt": now}},
+            {"$set": {"status": "receiving", "receiving_since": now, "claim": secrets.token_hex(16),
+                      "via": "parts"}},
+            return_document=ReturnDocument.AFTER,
+        )
+        doc = claimed or db.uploads.find_one({"_id": doc["_id"], "uid": uid}) or doc
+    status = doc.get("status")
+    if status == "ready":
+        raise UploadError("This upload is already complete. Call the import tool with its upload_id, or "
+                          "uploads create for another file.")
+    if status == "pending":
+        raise UploadError("This upload's link expired before any of the file arrived (it lasts 15 minutes). "
+                          "Call uploads create again.")
+    if doc.get("via") != "parts":
+        raise UploadError("This file is already being sent to the upload URL by HTTP. Wait for that, or call "
+                          "uploads create for a new upload.")
+    return doc
+
+
+def decode_part(data_base64: str) -> bytes:
+    """A part's bytes from base64 (standard or URL-safe; line breaks and
+    missing padding allowed)."""
+    import base64
+    import binascii
+
+    text = "".join(str(data_base64 or "").split()).translate(str.maketrans("-_", "+/"))
+    text += "=" * (-len(text) % 4)
+    try:
+        return base64.b64decode(text, validate=True)
+    except (binascii.Error, ValueError):
+        raise UploadError("data_base64 isn't valid base64. Encode the part's raw bytes "
+                          "(e.g. base64.b64encode(chunk).decode()).") from None
+
+
+def write_part(db, upload_id: str, uid: str, index: int, data: bytes, last: bool,
+               sha256: Optional[str] = None) -> dict:
+    """Store part ``index`` of the caller's upload; with ``last``, check that
+    parts 0..index are all there (and match ``sha256``, when given) and mark
+    the upload received, exactly as a finished PUT does."""
+    if not isinstance(index, int) or not 0 <= index < MAX_PARTS:
+        raise UploadError(f"part_index runs from 0 to {MAX_PARTS - 1}.")
+    if not data:
+        raise UploadError("This part is empty. Send the file's bytes, base64-encoded.")
+    if len(data) > PART_MAX_BYTES:
+        raise UploadError(f"A part holds at most {PART_MAX_BYTES // 1024} KB of the file "
+                          f"(this one has {len(data) // 1024} KB). Split it into smaller parts.")
+    doc = _parts_slot(db, upload_id, uid)
+    claim_id, cap = doc["claim"], doc["max_bytes"]
+    sizes = {c["n"]: c.get("size", 0) for c in db.upload_chunks.find(
+        {"upload_id": doc["_id"], "claim": claim_id}, {"n": 1, "size": 1})}
+    sizes[index] = len(data)
+    total = sum(sizes.values())
+    if total > cap:
+        release(db, doc["_id"], claim_id)
+        raise UploadError(f"The file is larger than this upload allows ({cap / 1048576:.0f} MB), so the parts "
+                          "sent were dropped. Export just the part you need (one sheet, one project) and send "
+                          "that with a new uploads create.")
+    db.upload_chunks.replace_one(
+        {"_id": f"{doc['_id']}:{claim_id}:{index:05d}"},
+        {"upload_id": doc["_id"], "claim": claim_id, "n": index, "data": bytes(data), "size": len(data),
+         "delete_at": doc["delete_at"]},
+        upsert=True,
+    )
+    db.uploads.update_one({"_id": doc["_id"], "claim": claim_id}, {"$set": {"receiving_since": _now()}})
+    out = {"upload_id": doc["_id"], "part_index": index, "parts_received": len(sizes), "bytes_received": total}
+    if not last:
+        return {**out, "done": False, "next": f"Send part {index + 1} (last=true if it's the final one)."}
+
+    extra = sorted(n for n in sizes if n > index)
+    if extra:
+        raise UploadError(f"Parts after {index} were sent ({', '.join(map(str, extra[:10]))}), so part {index} "
+                          "can't be the last. Send last=true on the highest part.")
+    missing = [n for n in range(index + 1) if n not in sizes]
+    if missing:
+        listed = ", ".join(map(str, missing[:20])) + (" …" if len(missing) > 20 else "")
+        what = f"Parts {listed} haven't" if len(missing) > 1 else f"Part {listed} hasn't"
+        raise UploadError(f"{what} arrived. Send {'them' if len(missing) > 1 else 'it'}, then send part {index} "
+                          "again with last=true.")
+    parts = sorted(db.upload_chunks.find({"upload_id": doc["_id"], "claim": claim_id}), key=lambda c: c["n"])
+    whole = b"".join(bytes(c["data"]) for c in parts)
+    digest = hashlib.sha256(whole).hexdigest()
+    if sha256 and digest != sha256.strip().lower():
+        release(db, doc["_id"], claim_id)
+        raise UploadError("The parts put together don't match the sha256 you gave (a part was mistyped or "
+                          "cut short), so they were dropped. Send the file again from part 0 (call uploads create "
+                          "first if its 15 minutes are up).")
+    done = finish(db, doc["_id"], claim_id, len(whole), digest, whole[:65536])
+    if done is None:
+        raise UploadError("Another upload to this link took its place. Call uploads create to send this file.")
+    # The chunks live as long as the received upload (finish moved its delete_at).
+    received = db.uploads.find_one({"_id": doc["_id"]}, {"delete_at": 1}) or {}
+    if received.get("delete_at"):
+        db.upload_chunks.update_many({"upload_id": doc["_id"], "claim": claim_id},
+                                     {"$set": {"delete_at": received["delete_at"]}})
+    logger.info("upload %s received in %d parts: purpose=%s bytes=%d format=%s",
+                doc["_id"], len(parts), doc.get("purpose"), len(whole), done["detected_format"])
+    return {**out, "done": True, "size": done["size"], "sha256": done["sha256"],
+            "detected_format": done["detected_format"], "filename": doc.get("filename"),
+            "next": next_step(doc.get("purpose"))}
 
 
 # ---- format detection ----------------------------------------------------------
@@ -312,12 +455,16 @@ def get(db, upload_id: str, uid: str) -> dict:
     doc = db.uploads.find_one({"_id": str(upload_id or ""), "uid": uid})
     if doc is None or (_aware(doc.get("delete_at")) or _now()) <= _now():
         raise UploadError("Upload not found — it may have expired (uploads are kept for an hour). "
-                          "Call create_upload and send the file again.")
+                          "Call uploads create and send the file again.")
     if doc.get("status") != "ready":
+        if doc.get("via") == "parts":
+            raise UploadError("The file isn't complete yet: send its remaining parts with uploads send_part "
+                              "(last=true on the final one), then call this again.")
         if _aware(doc.get("expires_at")) and _aware(doc["expires_at"]) <= _now():
-            raise UploadError("Nothing was sent to this upload before its link expired. Call create_upload again.")
+            raise UploadError("Nothing was sent to this upload before its link expired. Call uploads create again.")
         raise UploadError("The file hasn't arrived yet: send it with an HTTP PUT to the upload URL "
-                          "(the curl command create_upload gave), then call this again.")
+                          "(the curl command uploads create gave) — or, if that can't get through, in parts "
+                          "with uploads send_part — then call this again.")
     return doc
 
 
@@ -329,7 +476,7 @@ def read(db, upload_id: str, uid: str) -> tuple[dict, bytes]:
     data = b"".join(bytes(c["data"]) for c in parts)
     if len(data) != doc.get("size") or hashlib.sha256(data).hexdigest() != doc.get("sha256"):
         logger.warning("upload %s failed its integrity check", doc["_id"])
-        raise UploadError("The uploaded file is incomplete. Call create_upload and send it again.")
+        raise UploadError("The uploaded file is incomplete. Call uploads create and send it again.")
     return doc, data
 
 
@@ -363,7 +510,7 @@ def as_text(data: bytes) -> str:
         return data.decode("latin-1")
 
 
-# ---- inspection (inspect_upload) ---------------------------------------------------
+# ---- inspection (get kind upload) ---------------------------------------------------
 
 INSPECT_SHEETS = 20        # sheets described in full
 INSPECT_SAMPLE_ROWS = 3

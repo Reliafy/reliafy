@@ -413,7 +413,7 @@ def test_mcp_rbd_sensitivity(monkeypatch):
     token = tokens.create_token(test_db, A, "mcp")["token"]
     rbd = rbds_service.save_rbd(test_db, "Pump and valve", _priced(), A)
 
-    out = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "limit": 3}))
+    out = _ok(_call(token, "rbd_analysis", {"action": "sensitivity", "rbd_id": rbd.id, "limit": 3}))
     assert out["available"] is True and out["basis"] == "exact" and len(out["levers"]) == 3
     assert out["n_levers"] == 7 and out["top"].startswith("A 10% shorter mean repair time for Pump")
     first = out["levers"][0]
@@ -421,20 +421,21 @@ def test_mcp_rbd_sensitivity(monkeypatch):
     assert first["derivative"]["availability"] < 0  # per unit of the lognormal μ: a longer repair is worse
     assert "points" in first["plain"] and out["units_note"]
     costed = {"valve|reliability.failure_rate": 10}
-    priced = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "rank_by": "cost", "costs_to_change": costed,
+    priced = _ok(_call(token, "rbd_analysis", {"action": "sensitivity", "rbd_id": rbd.id, "rank_by": "cost",
+                                               "costs_to_change": costed,
                                                   "order": "benefit_per_cost"}))
     assert priced["order"] == "benefit_per_cost"
     assert priced["levers"][0]["id"] == "valve|reliability.failure_rate"
     assert priced["levers"][0]["benefit_per_cost"] is not None
     # Ranked by benefit (the default) the costed valve stays below the pump.
-    by_benefit = _ok(_call(token, "rbd_sensitivity", {"rbd_id": rbd.id, "rank_by": "cost",
+    by_benefit = _ok(_call(token, "rbd_analysis", {"action": "sensitivity", "rbd_id": rbd.id, "rank_by": "cost",
                                                       "costs_to_change": costed, "limit": 7}))
     ids = [r["id"] for r in by_benefit["levers"]]
     assert by_benefit["order"] == "benefit" and ids[0].startswith("pump|")
     assert ids.index("pump|reliability.alpha") < ids.index("valve|reliability.failure_rate")
     assert by_benefit["top"].startswith("A 10% longer mean life for Pump")
     nr = rbds_service.save_rbd(test_db, "Plain", {**_priced(), "repairable": False}, A)
-    err = _call(token, "rbd_sensitivity", {"rbd_id": nr.id})
+    err = _call(token, "rbd_analysis", {"action": "sensitivity", "rbd_id": nr.id})
     assert err.is_error and "non-repairable" in err.content[0].text
 
 

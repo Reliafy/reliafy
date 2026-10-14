@@ -400,7 +400,7 @@ def test_mcp_optimise_maintenance_intervals(mcp):
 
     test_db, token = mcp
     sif = rbds_service.save_rbd(test_db, "SIF", _sif(), A)
-    out = _ok(_call(token, "optimise_maintenance_intervals", {
+    out = _ok(_call(token, "rbd_analysis", {"action": "optimise_intervals",
         "rbd_id": sif.id, "max_pfd": 5e-4, "allowed_intervals": CAL, "stagger_tests": True}))
     assert out["available"] is True and out["schedule"] == "proof_test"
     assert out["plan"]["pfd_avg"] == pytest.approx(0.0004925, abs=5e-8) and out["plan"]["sil"] == 3
@@ -408,9 +408,9 @@ def test_mcp_optimise_maintenance_intervals(mcp):
     assert out["as_drawn"]["meets_target"] is False
     ops = out["edit_rbd_ops"]
     assert {"op": "update_node", "id": "v2", "inspection": {"interval": 8760.0, "cost": 500, "offset": 4380.0}} in ops
-    # The ops apply with edit_rbd and give the plan.
-    _ok(_call(token, "edit_rbd", {"rbd_id": sif.id, "ops": ops}))
-    again = _ok(_call(token, "optimise_maintenance_intervals", {
+    # The ops apply with rbd edit and give the plan.
+    _ok(_call(token, "rbd", {"action": "edit", "rbd_id": sif.id, "ops": ops}))
+    again = _ok(_call(token, "rbd_analysis", {"action": "optimise_intervals",
         "rbd_id": sif.id, "max_pfd": 5e-4, "allowed_intervals": CAL, "stagger_tests": True}))
     assert again["changed"] is False
     assert again["as_drawn"]["pfd_avg"] == pytest.approx(out["plan"]["pfd_avg"], rel=1e-12)
@@ -422,19 +422,20 @@ def test_mcp_limited_crews_and_the_simulation_with_them(mcp):
 
     test_db, token = mcp
     plant = rbds_service.save_rbd(test_db, "Plant", _plant(repair_crews={"crews": 1}), A)
-    out = _ok(_call(token, "optimise_maintenance_intervals", {"rbd_id": plant.id}))
+    out = _ok(_call(token, "rbd_analysis", {"action": "optimise_intervals", "rbd_id": plant.id}))
     assert out["available"] is False and out["code"] == "crews_limited"
     assert "assume_unlimited_crews=true" in out["message"]
-    out = _ok(_call(token, "optimise_maintenance_intervals", {"rbd_id": plant.id, "assume_unlimited_crews": True}))
+    out = _ok(_call(token, "rbd_analysis", {"action": "optimise_intervals", "rbd_id": plant.id,
+                                            "assume_unlimited_crews": True}))
     assert out["available"] is True and out["crews"]["assumed_unlimited"] is True
     assert out["with_crews"]["available"] is False and "simulate_with_crews" in out["with_crews"]["note"]
-    # Replacements that take a modelled time: edit_rbd can't carry the model, so the app applies them.
+    # Replacements that take a modelled time: rbd edit can't carry the model, so the app applies them.
     assert out["edit_rbd_ops"] == [] and "duration is a model" in out["edit_rbd_note"]
-    out = _ok(_call(token, "optimise_maintenance_intervals", {
+    out = _ok(_call(token, "rbd_analysis", {"action": "optimise_intervals",
         "rbd_id": plant.id, "assume_unlimited_crews": True, "simulate_with_crews": True}))
     crews = out["with_crews"]
     assert crews["available"] is True and crews["basis"] == "simulation"
     assert 0 < crews["availability"] < 1 and crews["cost_rate"] > 0
     nr = rbds_service.save_rbd(test_db, "Plain", {**_plant(), "repairable": False}, A)
-    err = _call(token, "optimise_maintenance_intervals", {"rbd_id": nr.id})
+    err = _call(token, "rbd_analysis", {"action": "optimise_intervals", "rbd_id": nr.id})
     assert err.is_error and "non-repairable" in err.content[0].text
