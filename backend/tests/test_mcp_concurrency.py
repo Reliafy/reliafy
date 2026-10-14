@@ -187,7 +187,13 @@ def test_tool_calls_leave_the_app_worker_pool_free(env):
             r = await hc.get("/.well-known/oauth-authorization-server")
             assert r.status_code == 200
             assert time.monotonic() - started < 1.0
-            assert anyio.to_thread.current_default_thread_limiter().borrowed_tokens == 0
+            # The other calls in the burst pass through the app's worker pool
+            # briefly (sign-in, setup) on their way to a slot or a refusal; with
+            # every tool call still held, the pool must drain all the same.
+            pool = anyio.to_thread.current_default_thread_limiter()
+            await _wait_for(lambda: pool.borrowed_tokens == 0, seconds=3.0)
+            assert env.running == min(len(USERS) * mcp_server.MCP_USER_CONCURRENCY,
+                                      mcp_server.MCP_GLOBAL_CONCURRENCY)
             env.release.set()
 
     _serve(scenario)
