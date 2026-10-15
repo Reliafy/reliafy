@@ -30,6 +30,10 @@ missed day is caught up), the operators get last month's content report
 (``content_report``), once (``_id`` = ``report:<YYYY-MM>``). It runs whatever
 ``UPDATE_AUTO_SEND`` says.
 
+**Maintenance graph.** With a Neo4j mirror (or Neo4j as the graph), every run
+brings the mirror up to date and so keeps an idle AuraDB Free instance awake
+(docs/maintenance-graph.md). Neo4j unreachable is reported, never fatal.
+
 Brisbane has no daylight saving, so it is a fixed UTC+10 here.
 """
 
@@ -241,6 +245,27 @@ def _report_step(db, local: datetime, dry_run: bool) -> dict | None:
     return {**action, "result": "sent" if not failed else "failed", "sent": sent, "failed": failed}
 
 
+def _maintenance_graph_step(dry_run: bool) -> dict:
+    """Every run: bring the maintenance graph's Neo4j mirror up to date (each
+    hour the job runs, so an idle AuraDB Free instance never pauses), or, with
+    Neo4j as the graph itself, just touch it. Never fails the job."""
+    try:
+        from backend.maintenance import mirror as maintenance_mirror
+        from backend.routers.maintenance import get_store
+
+        store = get_store()
+        if getattr(store, "mirror", None) is not None:
+            if dry_run:
+                return {"step": "maintenance_mirror", "dry_run": True, "behind": len(store.mirror.pending())}
+            return maintenance_mirror.catch_up(store)
+        if hasattr(store, "conn"):
+            return {"step": "maintenance_graph", "ping_seconds": round(store.conn.ping(), 3)}
+        return {"step": "maintenance_mirror", "skipped": "no mirror"}
+    except Exception as exc:  # noqa: BLE001 - Neo4j unreachable is reported, never fatal
+        logger.warning("maintenance graph step failed: %s: %s", type(exc).__name__, exc)
+        return {"step": "maintenance_mirror", "error": f"{type(exc).__name__}: {exc}"}
+
+
 def run(db, *, now: datetime | None = None, dry_run: bool = False, updates=None,
         sleep=time.sleep, clock=time.monotonic) -> dict:
     """One scheduled run. Raises :class:`EmailNotConfigured` (unless
@@ -270,6 +295,8 @@ def run(db, *, now: datetime | None = None, dry_run: bool = False, updates=None,
         except Exception as exc:  # noqa: BLE001 - one step failing mustn't stop the content job
             logger.exception("maintenance daily run failed")
             result["actions"].append({"step": "maintenance", "error": str(exc)})
+    if config.MAINTENANCE_GRAPH_MIRROR == "neo4j" or config.MAINTENANCE_GRAPH == "neo4j":
+        result["actions"].append(_maintenance_graph_step(dry_run))
     for action in result["actions"]:
         logger.info("content job%s: %s", " (dry run)" if dry_run else "", json.dumps(action, default=str))
     return result

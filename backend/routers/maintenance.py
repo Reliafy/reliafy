@@ -106,19 +106,42 @@ async def _read_body(request: Request) -> bytes:
     return bytes(body)
 
 
+def _make_store():
+    """The graph store the config asks for (docs/maintenance-graph.md): the SQLite
+    graph (with a Neo4j mirror when MAINTENANCE_GRAPH_MIRROR=neo4j), or Neo4j
+    itself when MAINTENANCE_GRAPH=neo4j."""
+    from backend.maintenance.series import MongoSeries
+    from backend.maintenance.service import PROJECTION_VERSION
+
+    if config.MAINTENANCE_GRAPH == "neo4j":
+        from backend.maintenance.neo4j_store import Neo4jGraphStore, connect
+        from backend.maintenance.store import SqliteEventLog, open_sqlite
+
+        if _use_mongo():
+            log, series = MongoEventLog(get_db()), MongoSeries(get_db())
+        else:
+            log, series = SqliteEventLog(open_sqlite(config.MAINTENANCE_DB_PATH)), None
+        # A namespace per projection version: a new version builds its graph beside
+        # the old one, which the processes still running the old version keep using.
+        return Neo4jGraphStore(connect(), PROJECTORS, log, series=series, version=PROJECTION_VERSION,
+                               namespace=f"{config.MAINTENANCE_GRAPH_NAMESPACE}graph-v{PROJECTION_VERSION}")
+    if _use_mongo():
+        store = GraphStore(":memory:", PROJECTORS, MongoEventLog(get_db()), series=MongoSeries(get_db()),
+                           version=PROJECTION_VERSION)
+    else:
+        store = GraphStore(config.MAINTENANCE_DB_PATH, PROJECTORS, version=PROJECTION_VERSION)
+    from backend.maintenance.mirror import attach_from_config
+
+    attach_from_config(store)
+    return store
+
+
 def get_store() -> GraphStore:
     """The graph, caught up with the log (other processes may have written)."""
     global _store
     with _store_lock:
         if _store is None:
-            from backend.maintenance.series import MongoSeries
-            from backend.maintenance.service import PROJECTION_VERSION
-
-            if _use_mongo():
-                _store = GraphStore(":memory:", PROJECTORS, MongoEventLog(get_db()), series=MongoSeries(get_db()),
-                                    version=PROJECTION_VERSION)
-            else:
-                _store = GraphStore(config.MAINTENANCE_DB_PATH, PROJECTORS, version=PROJECTION_VERSION)
+            _store = _make_store()
         store = _store
     store.sync()
     return store
@@ -552,6 +575,52 @@ def generate_rbd(position_id: str, session=Depends(get_session), m: Maintenance 
     from backend.maintenance import rbd_derive
 
     return _run(rbd_derive.save, m, session, position_id)
+
+
+# ---- graph queries in Cypher (#423): owner-only ------------------------------------------
+# 404 for everyone but graph_query_allowed, as if the routes weren't there.
+
+def graph_access(ctx: AccessCtx = Depends(get_access)) -> AccessCtx:
+    from backend.maintenance.access import graph_query_allowed
+
+    if not graph_query_allowed(ctx.user):
+        raise HTTPException(status_code=404, detail="Not found.")
+    return ctx
+
+
+def _graph(fn, *args) -> JSONResponse:
+    from backend.maintenance.graph_cypher import GraphQueryError
+
+    try:
+        return JSONResponse(content=fn(*args))
+    except GraphQueryError as err:
+        return JSONResponse(status_code=err.status, content={"detail": str(err)})
+
+
+def _readable(ctx: AccessCtx) -> list[str]:
+    return [o for o in ctx.read_owners if o != config.SAMPLE_OWNER]
+
+
+@router.post("/graph/query")
+def graph_query(body: dict = Body(...), ctx: AccessCtx = Depends(graph_access)) -> JSONResponse:
+    """Read-only Cypher on the workspace's graph in the Neo4j mirror: {cypher, params?,
+    limit?, include_props?} (backend/maintenance/graph_cypher.py)."""
+    from backend.maintenance import graph_cypher
+
+    unknown = set(body) - {"cypher", "params", "limit", "include_props"}
+    if unknown:
+        return JSONResponse(status_code=422, content={"detail": f"Unknown fields: {', '.join(sorted(unknown))}."})
+    return _graph(graph_cypher.run_query, get_store(), ctx.write_owner, body.get("cypher"), body.get("params"),
+                  body.get("limit"), bool(body.get("include_props")), _readable(ctx))
+
+
+@router.get("/graph/schema")
+def graph_schema(ctx: AccessCtx = Depends(graph_access)) -> JSONResponse:
+    """The workspace's graph as graph queries see it: labels, relationships, conventions,
+    worked examples, limits and how current the mirror is."""
+    from backend.maintenance import graph_cypher
+
+    return _graph(graph_cypher.graph_schema, get_store(), ctx.write_owner, _readable(ctx))
 
 
 # ---- items and locations ---------------------------------------------------------------

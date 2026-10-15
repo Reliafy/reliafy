@@ -11,7 +11,11 @@ use: fewer, namespaced, well described):
   by topic), ``maintenance_get`` / ``maintenance_list`` (any kind of record, by
   ``kind``) and ``maintenance_view_photo`` (an image, which can't share the
   others' structured output);
-* writes: ``maintenance_<area>(action, ...)``, one per area.
+* writes: ``maintenance_<area>(action, ...)``, one per area;
+* graph queries in Cypher (#423): ``maintenance_graph_schema`` and
+  ``maintenance_graph_query``, listed and answered only for the people
+  ``access.graph_query_allowed`` lets run them (everyone else is told there's no
+  such tool), as is the guide's ``graph`` topic.
 
 Reads and writes are separate tools: Claude approves a tool, not an action, and
 an API token's scope follows the tool's read / write annotation. Each tool's
@@ -33,13 +37,16 @@ from backend.mcp_actions import Table, check, describe
 from backend.mcp_actions import choice as _choice
 
 TOOL_NAMES: list[str] = []
+# The graph query tools: a narrower audience than the rest (graph_query_allowed).
+GRAPH_TOOL_NAMES: list[str] = []
 _ORIGINAL: dict = {}
 # Calls (tool.action) that fit a life model on the server: Pro only, like the MCP
 # server's other fitting tools (added to its plan gating when registered).
 PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
 # Calls that can take a while: they share the MCP server's heavy-call slots.
 HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_workspace.import_history",
-               "maintenance_get.plan_economics", "maintenance_topology.generate_rbd")
+               "maintenance_get.plan_economics", "maintenance_topology.generate_rbd",
+               "maintenance_graph_query", "maintenance_graph_schema")
 
 
 # ---- actions: what each takes -------------------------------------------------------
@@ -433,7 +440,8 @@ def register() -> None:
 
     from backend import config, mcp_server
     from backend.maintenance import importer, loop, rbd_derive, taxonomy
-    from backend.maintenance.access import allowed
+    from backend.maintenance import graph_cypher
+    from backend.maintenance.access import allowed, graph_query_allowed
     from backend.maintenance.service import Invalid, Maintenance, NotFound, summary
     from backend.mcp_server import _READ, _WRITE, _caller, _db, _reader, _tool, mcp
     from backend.routers.maintenance import get_store, link_payload, photo_links, remove_photo, served_photo
@@ -525,7 +533,10 @@ def register() -> None:
                             "tree": m.tree(), "due": m.due_tasks(30),
                             "open_work_orders": m.work_orders("open"), "critical_spares": m.critical_spares_short()})
 
-    Topic = Literal[tuple(mcp_guide.TOPICS)]  # type: ignore[valid-type]
+    # "graph" is a topic only for the people who may run graph queries: listed
+    # tools hide it from everyone else's schema (list_tools below), and the call
+    # refuses it.
+    Topic = Literal[(*mcp_guide.TOPICS, "graph")]  # type: ignore[valid-type]
 
     @tool("maintenance_guide", _READ, "How to use Reliafy Maintenance")
     def maintenance_guide(ctx: Context, topic: Annotated[Topic | None, Field(description=(
@@ -540,10 +551,15 @@ def register() -> None:
         item classes, taxonomies, manufacturers). Read the one you need before a task you haven't done
         here yet."""
         m_for(ctx)  # Maintenance is on for this account
-        topics = {name: summary_ for name, (summary_, _) in mcp_guide.TOPICS.items()}
+        pages = dict(mcp_guide.TOPICS)
+        if graph_query_allowed(_caller(ctx)):
+            pages["graph"] = mcp_guide.GRAPH_TOPIC
+        topics = {name: summary_ for name, (summary_, _) in pages.items()}
         if topic is None:
             return {"topics": topics}
-        return {"topic": topic, "guide": mcp_guide.TOPICS[topic][1], "topics": topics}
+        if topic not in pages:
+            raise ToolError(f"Unknown topic {topic!r}: the topics are {', '.join(pages)}.")
+        return {"topic": topic, "guide": pages[topic][1], "topics": topics}
 
     @tool("maintenance_get", _READ, "Read one maintenance record", GET_KINDS, "kind")
     def maintenance_get(kind: _choice(GET_KINDS), ctx: Context,
@@ -631,6 +647,61 @@ def register() -> None:
         if data is None:
             raise ToolError("That photo was removed, or its file is missing.")
         return Image(data=data, format="jpeg")
+
+    # ---- graph queries in Cypher (#423): only for graph_query_allowed -------------------
+
+    def graph_tool(name: str, title: str):
+        GRAPH_TOOL_NAMES.append(name)
+        return _tool(name, _READ, title)
+
+    def graph_caller(ctx: Context, name: str) -> tuple[dict, list[str]]:
+        """The caller, and the workspaces they may read (their own, their teams'),
+        or the same refusal as a tool that isn't there."""
+        user = _caller(ctx)
+        if not graph_query_allowed(user):
+            raise ToolError(f"Unknown tool: {name}")
+        teams = access_service.user_teams(_db(), user["uid"])
+        return user, [user["uid"], *(access_service.team_principal(t["_id"]) for t in teams)]
+
+    def graph_run(fn, *args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except graph_cypher.GraphQueryError as err:
+            raise ToolError(str(err)) from None
+
+    @graph_tool("maintenance_graph_schema", "The maintenance graph's schema, for Cypher")
+    def maintenance_graph_schema(ctx: Context) -> dict[str, Any]:
+        """The maintenance graph as maintenance_graph_query sees it, for this workspace: each node label
+        with its count and property keys (type, how many have it), each relationship type with its
+        count and the labels it connects, the conventions (dates are ISO text, open statuses, retired
+        flags, how the structures link), worked example queries that run as they are, the limits, and
+        how current the copy is. Read it before writing a query."""
+        user, readable = graph_caller(ctx, "maintenance_graph_schema")
+        return graph_run(graph_cypher.graph_schema, get_store(), user["uid"], readable)
+
+    @graph_tool("maintenance_graph_query", "Query the maintenance graph in Cypher")
+    def maintenance_graph_query(
+            cypher: Annotated[str, Field(description=(
+                "One read-only Cypher statement. Match on {ns: $ns, org: $org} (passed for you). No CREATE, "
+                "MERGE, SET, DELETE, REMOVE, CALL, procedures or plugin functions."))],
+            ctx: Context,
+            params: Annotated[dict[str, Any] | None, Field(description=(
+                "Values for the query's other $parameters, e.g. {\"id\": \"...\"}. Not org or ns."))] = None,
+            limit: Annotated[int | None, Field(ge=1, le=graph_cypher.HARD_MAX_ROWS, description=(
+                "Most rows to return (default 1000, at most 5000)."))] = None,
+            include_props: Annotated[bool | None, Field(description=(
+                "Also give each node's whole stored record (nested values: checklists, stock moves, "
+                "nameplates) as props."))] = None) -> dict[str, Any]:
+        """Your own read-only Cypher on this workspace's maintenance graph (a copy in Neo4j kept up
+        to date in the background), for questions the other tools don't answer in one call: what's
+        downstream of a position, items of a class fitted in an area, open work with no redundancy,
+        failures by class, spares short. Read maintenance_graph_schema first (labels, relationships,
+        worked examples) and maintenance_guide topic graph. Returns columns and rows (nodes as label,
+        id and plain properties; dates as ISO text), truncated with a note past the limits, and
+        freshness: how current the copy is."""
+        user, readable = graph_caller(ctx, "maintenance_graph_query")
+        return graph_run(graph_cypher.run_query, get_store(), user["uid"], cypher, params, limit,
+                         bool(include_props), readable)
 
     # ---- building the plant --------------------------------------------------------------
 
@@ -1170,16 +1241,22 @@ def register() -> None:
     handlers = lowlevel._request_handlers
     entry = handlers["tools/list"]
     _ORIGINAL["tools/list"] = entry
-    hidden = set(TOOL_NAMES)
+    hidden = set(TOOL_NAMES) | set(GRAPH_TOOL_NAMES)
+    graph_only = set(GRAPH_TOOL_NAMES)
 
     def user_of(ctx):
         return getattr(getattr(getattr(ctx, "request", None), "state", None), "reliafy_user", None)
 
     async def list_tools(ctx, params):
         result = await entry.handler(ctx, params)
-        if allowed(user_of(ctx)):
+        user = user_of(ctx)
+        if not allowed(user):
+            return result.model_copy(update={"tools": [t for t in result.tools if t.name not in hidden]})
+        if graph_query_allowed(user):
             return result
-        return result.model_copy(update={"tools": [t for t in result.tools if t.name not in hidden]})
+        tools = [_without_graph_topic(t) if t.name == "maintenance_guide" else t
+                 for t in result.tools if t.name not in graph_only]
+        return result.model_copy(update={"tools": tools})
 
     handlers["tools/list"] = dataclasses.replace(entry, handler=list_tools)
 
@@ -1191,9 +1268,11 @@ def register() -> None:
         result = await call_next(ctx)
         if ctx.method in ("initialize", "server/discover") and isinstance(result, dict) \
                 and allowed(user_of(ctx)):
+            section = mcp_guide.INSTRUCTIONS
+            if graph_query_allowed(user_of(ctx)):
+                section = f"{section}{mcp_guide.GRAPH_INSTRUCTIONS}"
             base = result.get("instructions") or ""
-            result = {**result, "instructions": f"{base}\n{mcp_guide.INSTRUCTIONS}" if base
-                      else mcp_guide.INSTRUCTIONS}
+            result = {**result, "instructions": f"{base}\n{section}" if base else section}
         return result
 
     _ORIGINAL["middleware"] = instructions
@@ -1204,6 +1283,27 @@ def register() -> None:
     mcp_server.HEAVY_TOOLS.update(HEAVY_CALLS)
 
 
+def _without_graph_topic(tool):
+    """maintenance_guide as listed to someone who may not run graph queries: its
+    topic choices without "graph"."""
+    import copy
+
+    schema = copy.deepcopy(tool.input_schema)
+
+    def strip(node):
+        if isinstance(node, dict):
+            if isinstance(node.get("enum"), list):
+                node["enum"] = [v for v in node["enum"] if v != "graph"]
+            for v in node.values():
+                strip(v)
+        elif isinstance(node, list):
+            for v in node:
+                strip(v)
+
+    strip(schema.get("properties", {}).get("topic"))
+    return tool.model_copy(update={"input_schema": schema})
+
+
 def unregister() -> None:
     """Remove the maintenance tools again (for tests)."""
     from backend import mcp_server
@@ -1212,9 +1312,10 @@ def unregister() -> None:
     mcp_server._FIT_TOOLS.difference_update(PRO_FIT_CALLS)
     mcp_server.PRO_ONLY_TOOLS.difference_update(PRO_FIT_CALLS)
     mcp_server.HEAVY_TOOLS.difference_update(HEAVY_CALLS)
-    for name in TOOL_NAMES:
+    for name in TOOL_NAMES + GRAPH_TOOL_NAMES:
         mcp.remove_tool(name)
     TOOL_NAMES.clear()
+    GRAPH_TOOL_NAMES.clear()
     lowlevel = mcp._lowlevel_server
     if "tools/list" in _ORIGINAL:
         lowlevel._request_handlers["tools/list"] = _ORIGINAL.pop("tools/list")
