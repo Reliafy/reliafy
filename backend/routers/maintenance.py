@@ -577,6 +577,52 @@ def generate_rbd(position_id: str, session=Depends(get_session), m: Maintenance 
     return _run(rbd_derive.save, m, session, position_id)
 
 
+# ---- graph queries in Cypher (#423): owner-only ------------------------------------------
+# 404 for everyone but graph_query_allowed, as if the routes weren't there.
+
+def graph_access(ctx: AccessCtx = Depends(get_access)) -> AccessCtx:
+    from backend.maintenance.access import graph_query_allowed
+
+    if not graph_query_allowed(ctx.user):
+        raise HTTPException(status_code=404, detail="Not found.")
+    return ctx
+
+
+def _graph(fn, *args) -> JSONResponse:
+    from backend.maintenance.graph_cypher import GraphQueryError
+
+    try:
+        return JSONResponse(content=fn(*args))
+    except GraphQueryError as err:
+        return JSONResponse(status_code=err.status, content={"detail": str(err)})
+
+
+def _readable(ctx: AccessCtx) -> list[str]:
+    return [o for o in ctx.read_owners if o != config.SAMPLE_OWNER]
+
+
+@router.post("/graph/query")
+def graph_query(body: dict = Body(...), ctx: AccessCtx = Depends(graph_access)) -> JSONResponse:
+    """Read-only Cypher on the workspace's graph in the Neo4j mirror: {cypher, params?,
+    limit?, include_props?} (backend/maintenance/graph_cypher.py)."""
+    from backend.maintenance import graph_cypher
+
+    unknown = set(body) - {"cypher", "params", "limit", "include_props"}
+    if unknown:
+        return JSONResponse(status_code=422, content={"detail": f"Unknown fields: {', '.join(sorted(unknown))}."})
+    return _graph(graph_cypher.run_query, get_store(), ctx.write_owner, body.get("cypher"), body.get("params"),
+                  body.get("limit"), bool(body.get("include_props")), _readable(ctx))
+
+
+@router.get("/graph/schema")
+def graph_schema(ctx: AccessCtx = Depends(graph_access)) -> JSONResponse:
+    """The workspace's graph as graph queries see it: labels, relationships, conventions,
+    worked examples, limits and how current the mirror is."""
+    from backend.maintenance import graph_cypher
+
+    return _graph(graph_cypher.graph_schema, get_store(), ctx.write_owner, _readable(ctx))
+
+
 # ---- items and locations ---------------------------------------------------------------
 
 @router.get("/items")

@@ -175,3 +175,33 @@ running again only adds what's missing. maintenance_list kind item_classes with 
 before maintenance_manufacturers create; link an item or, preferably, a part; merge duplicates (confirm with the \
 user first); link_by_name links every item and part whose typed text matches an entry."""),
 }
+
+# Graph queries in Cypher (#423): only for the people allowed them
+# (access.graph_query_allowed), so kept out of TOPICS: maintenance_guide offers
+# the topic, and the server's instructions gain this line, to them alone.
+GRAPH_INSTRUCTIONS = """\
+Graph queries are on for this account: maintenance_graph_schema (labels, relationships, worked examples), then \
+maintenance_graph_query with read-only Cypher, for questions the other tools don't answer in one call. \
+maintenance_guide topic graph has the rules.
+"""
+
+GRAPH_TOPIC = ("Your own read-only Cypher on the maintenance graph.", """\
+Graph queries (Cypher, read-only).
+- For questions across the structures that no other tool answers in one call: what's downstream of a position, \
+items of a class fitted in an area, open work with no redundancy, failures by class, spares short. For one record \
+or a standard list, the other tools are quicker and complete.
+- First maintenance_graph_schema: the labels with counts and property keys, the relationship types and what they \
+connect, the conventions and 11 worked examples that run as they are. Start from an example.
+- Then maintenance_graph_query(cypher, params?, limit?, include_props?). Match on {ns: $ns, org: $org}: both are \
+passed for you (never pass them). Put other values in params ($id), not in the text.
+- Reads only, one statement: CREATE, MERGE, SET, DELETE, REMOVE, DROP, LOAD CSV, FOREACH, USE, SHOW, admin \
+commands, CALL (use EXISTS { }, COUNT { } or COLLECT { } subqueries), procedures and plugin functions (apoc., db., \
+dbms.) and query options are refused by name. Words such as start or set are fine as properties (t.start), map \
+keys and aliases (AS start), not as variables.
+- Limits: a 10 s timeout; a plan estimating over a million rows at any step is refused before it runs (start \
+from an id, bound variable-length paths, don't MATCH two unconnected patterns); 1,000 rows by default (limit up \
+to 5,000) and about 1 MB, cut off with a note. Return names and ids rather than whole nodes when there are many.
+- Dates are ISO text: compare them as text (f.to >= '2023-10-15'). Nested values (checklists, stock moves, \
+nameplates) are only in the stored record: return the node with include_props true.
+- Every answer has freshness: the mirror is a copy kept up to date in the background; when it's behind (a change \
+made seconds ago), it says so, and the query ran on the copy as it was.""")

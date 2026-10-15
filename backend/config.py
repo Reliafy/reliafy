@@ -327,6 +327,20 @@ MAINTENANCE_GRAPH_NAMESPACE = (os.environ.get("MAINTENANCE_GRAPH_NAMESPACE") or 
 MAINTENANCE_GRAPH_MIRROR_ORGS = frozenset(
     o.strip() for o in (os.environ.get("MAINTENANCE_GRAPH_MIRROR_ORGS") or "").split(",") if o.strip()
 )
+# Owner-only graph queries in Cypher (#423; backend/maintenance/graph_cypher.py):
+# the addresses that may run them, through the app's API or MCP (they also need
+# Maintenance). Empty: off for everyone. Only for the owner of the workspaces in
+# MAINTENANCE_GRAPH_MIRROR_ORGS: Neo4j AuraDB Free has no access control, so a
+# query can read whatever the mirror holds.
+GRAPH_QUERY_EMAILS = {
+    e.strip().lower() for e in (os.environ.get("GRAPH_QUERY_EMAILS") or "").split(",") if e.strip()
+}
+# A graph query's limits: the transaction timeout (seconds), the most rows the
+# query plan may estimate at any step (a bigger plan is refused before it runs),
+# and the most bytes of rows returned (the rest are cut off, with a note).
+GRAPH_QUERY_TIMEOUT_S = float(os.environ.get("GRAPH_QUERY_TIMEOUT_S") or 10)
+GRAPH_QUERY_MAX_ESTIMATED_ROWS = int(os.environ.get("GRAPH_QUERY_MAX_ESTIMATED_ROWS") or 1_000_000)
+GRAPH_QUERY_MAX_BYTES = int(os.environ.get("GRAPH_QUERY_MAX_BYTES") or 1_000_000)
 NEO4J_URI = (os.environ.get("NEO4J_URI") or "").strip()
 NEO4J_USERNAME = (os.environ.get("NEO4J_USERNAME") or "neo4j").strip()
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD") or ""
