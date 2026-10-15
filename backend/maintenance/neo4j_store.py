@@ -33,9 +33,8 @@ import math
 import threading
 import time
 
-from backend.maintenance.store import (
-    GAP_TIMEOUT, GAP_WAIT, SYNC_BATCH, Projector, SqliteEventLog, UnknownEvent, _notify, _now, new_id, open_sqlite,
-)
+from backend.maintenance import store as _store
+from backend.maintenance.store import Projector, SqliteEventLog, UnknownEvent, _notify, _now, new_id, open_sqlite
 
 logger = logging.getLogger(__name__)
 
@@ -445,13 +444,13 @@ class Neo4jGraphStore:
 
     def sync(self) -> int:
         """Apply the log's events this graph hasn't seen yet, strictly in sequence
-        (see ``GraphStore.sync``: gaps are waited for, then passed over). Returns
-        how many this process applied."""
+        (see ``GraphStore.sync``: gaps are waited for, then passed over; the
+        timings are store.py's). Returns how many this process applied."""
         with self._lock:
             done = 0
             while True:
                 applied = self._known = self._meta()[0]
-                events = self.log.since(applied, SYNC_BATCH)
+                events = self.log.since(applied, _store.SYNC_BATCH)
                 if not events:
                     return done
                 raced = False
@@ -473,12 +472,12 @@ class Neo4jGraphStore:
                 if self._gap is None or self._gap[0] != missing:
                     self._gap = (missing, now)
                 age = now - self._gap[1]
-                if age >= GAP_TIMEOUT:
+                if age >= _store.GAP_TIMEOUT:
                     logger.warning("maintenance event %s never reached the log; passed over", missing)
                     self._commit(_Pending(missing), applied, missing, {"seq": missing, "why": "missing from the log"})
                     self._gap = None
                     continue
-                if age >= GAP_WAIT:
+                if age >= _store.GAP_WAIT:
                     return done
                 time.sleep(0.02)
 
@@ -497,7 +496,7 @@ class Neo4jGraphStore:
                 self._local.pending = None
             seq = self.log.append(event)
             self.sync()
-        deadline = time.monotonic() + GAP_TIMEOUT + 2
+        deadline = time.monotonic() + _store.GAP_TIMEOUT + 2
         while self._known < seq:
             if time.monotonic() > deadline:
                 raise RuntimeError(f"Maintenance event {seq} is in the log but not applied yet.")
