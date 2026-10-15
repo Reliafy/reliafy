@@ -50,6 +50,7 @@ import { isStruck, liveReadings, readingStatusText } from "../maintenanceReading
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PART_ROLES, roleLabel, stockText } from "../maintenanceSpares.js";
 import { TasksCard } from "../components/MaintenanceTasks.jsx";
+import { ConditionsCard, ConnectionConditions } from "../components/MaintenanceConditions.jsx";
 import "./Maintenance.css";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
@@ -144,6 +145,8 @@ export default function MaintenancePosition() {
             fitted, are there too unless they say otherwise.</p>
         )}
       </section>
+
+      <ConditionsCard target={{ id: p.id, name: p.name, kind: "Position" }} view={p} onChanged={refresh} />
 
       {p.fitted?.item && (
         <MaintenancePhotos title={`Photos of the ${p.fitted.item.name}`} targetId={p.fitted.item.id}
@@ -662,11 +665,13 @@ function ConnectionsCard({ p, onChanged }) {
           {upstream.map((c) => (
             <li key={c.id}>From <Link to={`/maintenance/positions/${c.from.id}`}>{c.from.name}</Link>
               <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
+              <ConnectionConditions connection={c} name={`${c.from.name} → ${p.name}`} onChanged={onChanged} />{" "}
               <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
           ))}
           {downstream.map((c) => (
             <li key={c.id}>To <Link to={`/maintenance/positions/${c.to.id}`}>{c.to.name}</Link>
               <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
+              <ConnectionConditions connection={c} name={`${p.name} → ${c.to.name}`} onChanged={onChanged} />{" "}
               <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
           ))}
         </ul>

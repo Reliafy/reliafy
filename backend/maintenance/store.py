@@ -526,6 +526,14 @@ class GraphStore:
             "WHERE e.org = ? AND e.dst = ? AND e.type = ?", (org, dst, type))
         return [self._node(r) for r in rows]
 
+    def edge(self, org: str, type: str, src: str, dst: str) -> dict | None:
+        """The properties of the ``type`` edge from ``src`` to ``dst`` (None: there's none)."""
+        if not isinstance(src, str) or not isinstance(dst, str):
+            return None
+        rows = self._all("SELECT props FROM edges WHERE org = ? AND type = ? AND src = ? AND dst = ? LIMIT 1",
+                         (org, type, src, dst))
+        return json.loads(rows[0]["props"]) if rows else None
+
     def orgs_with(self, label: str) -> list[str]:
         """Every organisation with at least one node of ``label``."""
         return [r["org"] for r in self._all("SELECT DISTINCT org FROM nodes WHERE label = ? ORDER BY org", (label,))]

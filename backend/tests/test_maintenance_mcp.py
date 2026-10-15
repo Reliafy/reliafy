@@ -299,7 +299,10 @@ def test_the_guide_by_topic(env):
         return index, pages, bad
 
     index, pages, bad = _session(env["token"], flow)
-    assert set(index["topics"]) == {"model", "register", "plan", "run", "learn", "decide", "data", "classes"}
+    assert set(index["topics"]) == {"model", "register", "plan", "run", "learn", "decide", "data", "classes",
+                                    "conditions"}
+    conditions = pages["conditions"]["guide"]
+    assert "exclude_condition" in conditions and "connection holds only its own conditions" in conditions
     assert "guide" not in index and bad.is_error
     model = pages["model"]["guide"]
     assert "FLOC" in model and "needs no placement" in model and "build each once" in model
@@ -755,7 +758,9 @@ def test_item_classes_and_the_nameplate_flow_over_mcp(env):
         tools = {t.name: t for t in (await client.list_tools()).tools}
         item_class_actions = tools["maintenance_item_classes"].input_schema["properties"]["action"]["enum"]
         assert item_class_actions == ["create", "update", "set_attributes", "retire", "assign", "import",
-                                      "load_starter"]
+                                      "load_starter", "create_condition", "update_condition", "retire_condition",
+                                      "apply_condition", "exclude_condition", "remove_condition",
+                                      "import_conditions"]
         assert tools["maintenance_manufacturers"].input_schema["properties"]["action"]["enum"] == [
             "create", "update", "merge", "link", "link_by_name"]
         assert _ok(await _list(client, "item_classes"))["tree"] == []
@@ -810,3 +815,60 @@ def test_item_classes_and_the_nameplate_flow_over_mcp(env):
     assert both.is_error
     assert unlinked["part"] is None
     assert maker["name"] == "KSB"
+
+
+def test_conditions_over_mcp(env):
+    """The register by path, applied to a site, excluded on a room, a value overridden lower
+    down, read back with where each comes from; a connection's own; retired, it's gone."""
+
+    async def flow(client):
+        imported = _ok(await _do(client, "maintenance_item_classes", "import_conditions",
+                                 csv="path,kind,unit\nOutdoor,,\nAmbient temperature,value,°C\nHazardous area > Zone 1,,\n"))
+        assert imported["dry_run"] and imported["counts"]["create"] == 4
+        _ok(await _do(client, "maintenance_item_classes", "import_conditions", dry_run=False, conditions=[
+            {"path": "Outdoor"}, {"path": "Ambient temperature", "kind": "value", "unit": "°C"}]))
+        made = _ok(await _do(client, "maintenance_item_classes", "create_condition", name="Seawater"))
+        tree = _ok(await _list(client, "conditions"))
+        ids = {c["name"]: c["id"] for c in tree["tree"]}
+        assert set(ids) == {"Ambient temperature", "Outdoor", "Seawater"} and ids["Seawater"] == made["id"]
+        site = _ok(await _do(client, "maintenance_locations", "create", name="Site"))
+        area = _ok(await _do(client, "maintenance_locations", "create", name="Area 2", parent_id=site["id"]))
+        room = _ok(await _do(client, "maintenance_locations", "create", name="Control room", parent_id=site["id"]))
+        pump = _ok(await _do(client, "maintenance_positions", "create", name="Pump", location_id=area["id"]))
+        plc = _ok(await _do(client, "maintenance_positions", "create", name="PLC", location_id=room["id"]))
+        for target, cond, extra in ((site, "Outdoor", {}), (site, "Ambient temperature", {"value": 40}),
+                                    (area, "Ambient temperature", {"value": "55 °C", "note": "sun all day"})):
+            _ok(await _do(client, "maintenance_item_classes", "apply_condition", target_id=target["id"],
+                          condition_id=ids[cond], **extra))
+        _ok(await _do(client, "maintenance_item_classes", "exclude_condition", target_id=room["id"],
+                      condition_id=ids["Outdoor"]))
+        at_pump = _ok(await _get(client, "conditions", pump["id"]))
+        at_plc = _ok(await _get(client, "conditions", plc["id"]))
+        line = _ok(await _do(client, "maintenance_topology", "connect", from_id=pump["id"], to_id=plc["id"]))
+        _ok(await _do(client, "maintenance_item_classes", "apply_condition", target_id=line["id"],
+                      condition_id=ids["Seawater"]))
+        at_line = _ok(await _get(client, "conditions", line["id"]))
+        wrong = await _do(client, "maintenance_item_classes", "apply_condition", target_id=pump["id"],
+                          condition_id=ids["Outdoor"], value=3)
+        missing = await _do(client, "maintenance_item_classes", "apply_condition", condition_id=ids["Outdoor"])
+        _ok(await _do(client, "maintenance_item_classes", "update_condition", condition_id=ids["Seawater"],
+                      description="Raw seawater"))
+        _ok(await _do(client, "maintenance_item_classes", "remove_condition", target_id=room["id"],
+                      condition_id=ids["Outdoor"]))
+        back = _ok(await _get(client, "conditions", plc["id"]))
+        _ok(await _do(client, "maintenance_item_classes", "retire_condition", condition_id=ids["Outdoor"]))
+        retired = _ok(await _get(client, "position", pump["id"]))
+        exported = _ok(await _list(client, "conditions", format="csv"))
+        return at_pump, at_plc, at_line, wrong, missing, back, retired, exported
+
+    at_pump, at_plc, at_line, wrong, missing, back, retired, exported = _session(env["token"], flow)
+    pump = {e["condition"]["name"]: (e["value"], e["source"]["name"]) for e in at_pump["conditions"]}
+    assert pump == {"Outdoor": (None, "Site"), "Ambient temperature": (55.0, "Area 2")}
+    assert [e["condition"]["name"] for e in at_plc["conditions"]] == ["Ambient temperature"]
+    assert at_plc["excluded"][0]["source"]["name"] == "Control room"
+    assert at_line["target"]["kind"] == "Interface" and at_line["conditions"][0]["own"]
+    assert wrong.is_error and "has no value" in wrong.content[0].text
+    assert missing.is_error and "target_id" in missing.content[0].text
+    assert {e["condition"]["name"] for e in back["conditions"]} == {"Outdoor", "Ambient temperature"}
+    assert [e["condition"]["name"] for e in retired["conditions"]] == ["Ambient temperature"]
+    assert "Seawater,presence,,,Raw seawater" in exported["csv"] and "Outdoor" not in exported["csv"]

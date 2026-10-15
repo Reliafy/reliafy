@@ -528,6 +528,11 @@ CONVENTIONS = [
     "(task)-[:MITIGATES]->(FailureMode)<-[:CAN_FAIL_AS]-(position).",
     "Parts: (listing:PartListing)-[:LISTED_AT]->(position), (listing)-[:LISTS]->(part); (s:Stock)-[:OF]->(part), "
     "(s)-[:AT]->(location); (part)-[:SUPERSEDED_BY]->(part); (part)-[:INTERCHANGEABLE]->(part).",
+    "Conditions: (x)-[r:EXPOSED_TO]->(c:Condition) where a location, position, item or connection is exposed to "
+    "c, (x)-[:NOT_EXPOSED_TO]->(c) where one inherited from above is excluded; conditions nest by PART_OF; skip "
+    "c.retired. These are only what's set on x itself: what x inherits (from the locations around it, the "
+    "positions above it, a fitted item's position) comes from maintenance_get kind conditions. The value and note "
+    "are in the relationship's stored record (r.props, as JSON text).",
     "Variable-length paths: quantified patterns, e.g. (l:Location)-[:PART_OF]->{0,}(root); for the shortest "
     "route, MATCH p = SHORTEST 1 (a)(...)+(b).",
     "Not allowed (reads only): CREATE, MERGE, SET, DELETE, REMOVE, DROP, LOAD CSV, FOREACH, CALL (use EXISTS, "

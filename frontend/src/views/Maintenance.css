@@ -205,8 +205,59 @@
   text-decoration: underline;
 }
 
-/* The Classes page's two halves: position classes, then item classes. */
+/* The Classes page's parts: position classes, item classes, then conditions. */
 .maint-section {
   margin: 1.5rem 0 0.75rem;
   font-size: var(--fs-18, 1.15rem);
+}
+
+/* Conditions: one chip each, set here (solid), inherited (dashed, with where from) or
+   excluded (struck through). They wrap; a long note wraps inside its chip. */
+.maint-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.maint-chip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+  max-width: 100%;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--acc-line);
+  border-radius: var(--r-sm);
+  background: var(--acc-t);
+  overflow-wrap: anywhere;
+}
+
+.maint-chip-name {
+  font-weight: 600;
+}
+
+.maint-chip-inherited {
+  background: var(--surf);
+  border-style: dashed;
+  border-color: var(--line);
+}
+
+.maint-chip-excluded {
+  background: var(--surf-2);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.maint-chip-actions {
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.maint-chip-small {
+  padding: 0.05rem 0.45rem;
+  font-size: var(--fs-13);
+  margin-right: 0.35rem;
 }

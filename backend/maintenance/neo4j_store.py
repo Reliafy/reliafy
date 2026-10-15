@@ -279,6 +279,12 @@ RETURN ends, collect(CASE WHEN x IS NULL THEN NULL ELSE {{id: x.id, label: x.lab
 """
 _OUT = _ENDS.format(arrow="-[r]->")
 _INN = _ENDS.format(arrow="<-[r]-")
+# One edge's properties, found by its ends.
+_EDGE = """
+MATCH (:Node {ns: $ns, org: $org, id: $src})-[r]->(:Node {ns: $ns, org: $org, id: $dst})
+WHERE type(r) = $type
+RETURN r.props AS props LIMIT 1
+"""
 
 
 def _node(row) -> dict:
@@ -636,6 +642,17 @@ class Neo4jGraphStore:
     def inn(self, org: str, dst: str, type: str) -> list[dict]:
         """Nodes at the start of ``dst``'s incoming ``type`` edges."""
         return self._ends(org, dst, type, False)
+
+    def edge(self, org: str, type: str, src: str, dst: str) -> dict | None:
+        """The properties of the ``type`` edge from ``src`` to ``dst`` (None: there's none)."""
+        if not isinstance(src, str) or not isinstance(dst, str):
+            return None
+        pending = self._pending()
+        held = pending.edges.get((org, type, src, dst)) if pending is not None else None
+        if held is not None:
+            return json.loads(held["props"]) if held["op"] == "put" else None
+        rows = self.conn.run(_EDGE, {"ns": self.ns, "org": org, "src": src, "dst": dst, "type": type})
+        return json.loads(rows[0]["props"] or "{}") if rows else None
 
     def orgs_with(self, label: str) -> list[str]:
         rows = self.conn.run("MATCH (n:Node) WHERE n.ns = $ns AND n.label = $label "

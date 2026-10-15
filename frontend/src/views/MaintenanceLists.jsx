@@ -33,6 +33,7 @@ import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import {
   ClassPicker, ItemClassesSection, KindFilters, PartKindModal, useKinds,
 } from "../components/MaintenanceItemClasses.jsx";
+import { ConditionsCard, ConditionsSection } from "../components/MaintenanceConditions.jsx";
 import "./Maintenance.css";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
@@ -188,6 +189,7 @@ export function MaintenanceLocation() {
                  emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
                    + "building or area check: it raises one work order here, and can list every position here to check."} />
       {(loc.work_orders || []).length > 0 && <WorkOrdersCard workOrders={loc.work_orders} />}
+      <ConditionsCard target={{ id: loc.id, name: loc.name, kind: "Location" }} view={loc} onChanged={refresh} />
       <LocationPositions loc={loc} />
       <section className="card">
         <div className="maint-head"><h2>Items placed here</h2></div>
@@ -297,7 +299,7 @@ export function MaintenanceClasses() {
   return (
     <div className="app">
       <PageHeader crumbs={crumbs} title="Classes"
-                  meta="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is." />
+                  meta="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to." />
       <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       <h2 className="maint-section">Position classes</h2>
@@ -330,6 +332,8 @@ export function MaintenanceClasses() {
       )}
       <h2 className="maint-section">What kind of thing</h2>
       <ItemClassesSection />
+      <h2 className="maint-section">What things are exposed to</h2>
+      <ConditionsSection />
     </div>
   );
 }

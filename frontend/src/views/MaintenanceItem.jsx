@@ -20,6 +20,7 @@ import { itemWhere } from "../maintenanceLocations.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import { MeasurementsCard } from "./MaintenancePosition.jsx";
 import { ItemKindCard, useKinds } from "../components/MaintenanceItemClasses.jsx";
+import { ConditionsCard } from "../components/MaintenanceConditions.jsx";
 import "./Maintenance.css";
 
 const ITEM_DATES = [
@@ -109,6 +110,9 @@ export default function MaintenanceItem() {
       </section>
 
       <ItemKindCard item={item} kinds={kinds} onChanged={setItem} />
+
+      <ConditionsCard target={{ id: item.id, name: item.name, kind: "Item" }} view={item} onChanged={refresh}
+                      emptyText={`Nothing recorded. Fitted, ${item.name} takes its position's conditions; in a store, the store's. Add what applies to this item itself.`} />
 
       <NotesCard notes={item.notes} history={item.note_history}
                  onAppend={async (text) => setItem(await updateMaintenanceItem(item.id, { append_note: text }))} />

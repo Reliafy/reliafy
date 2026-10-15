@@ -29,7 +29,10 @@ from before name only position_id, and every position's still does.
 
 What kind of thing an item is (an *item class*: Rotating equipment > Pump >
 Centrifugal) is a separate, optional tree from a position's class (its duty, which
-pools life data): see "item classes" below. So is the manufacturer register.
+pools life data): see "item classes" below. So is the manufacturer register, and
+so is the register of conditions things are exposed to (Outdoor, Seawater, Zone 1),
+which locations, positions and items pass down to what's in or under them: see
+"conditions" below.
 
 Dates are whole days, as ISO text (``"2026-10-13"``), in the workspace's time
 zone (services/time_zones.py): "today" is the workspace's today, and a feed's
@@ -118,6 +121,9 @@ MAX_CLASS_ATTRIBUTES = 50  # a class's own (its subclasses add theirs)
 MAX_CHOICE_OPTIONS = 50
 MAX_MANUFACTURERS = 10_000
 MAX_ALIASES = 50  # on one manufacturer
+MAX_CONDITIONS = 2_000
+MAX_CONDITION_DEPTH = 6  # levels in the condition register
+MAX_CONDITIONS_EACH = 100  # applied to or excluded on one location, position, item or connection
 
 MAX_AMOUNT = 1e12  # readings, costs, quantities
 MAX_CALENDAR_DAYS = 100 * 365.25  # a task interval of at most 100 years
@@ -1218,6 +1224,35 @@ def _manufacturer_merged(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, old, {"merged_into": into, "merged_on": p["on"]})
 
 
+# ---- conditions: what positions, locations and items are exposed to ------------------
+
+def _condition_created(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Condition", {
+        "name": p["name"], "code": p.get("code", ""), "description": p.get("description", ""),
+        "kind": p.get("kind") or "presence", "unit": p.get("unit", ""), "source": p.get("source", ""),
+        "created": p["on"]})
+    if p.get("parent_id"):
+        s.put_edge(org, "PART_OF", p["id"], p["parent_id"])
+
+
+def _condition_applied(s: GraphStore, org: str, p: dict) -> None:
+    """A condition applied to a location, position, item or connection (EXPOSED_TO, with
+    its value and note), or excluded there (NOT_EXPOSED_TO: an inherited one stops);
+    either replaces the other."""
+    for edge in ("EXPOSED_TO", "NOT_EXPOSED_TO"):
+        s.delete_edge(org, edge, p["target_id"], p["condition_id"])
+    if p.get("excluded"):
+        s.put_edge(org, "NOT_EXPOSED_TO", p["target_id"], p["condition_id"], {"note": p.get("note", ""), "on": p["on"]})
+    else:
+        s.put_edge(org, "EXPOSED_TO", p["target_id"], p["condition_id"],
+                   {"value": p.get("value"), "note": p.get("note", ""), "on": p["on"]})
+
+
+def _condition_removed(s: GraphStore, org: str, p: dict) -> None:
+    for edge in ("EXPOSED_TO", "NOT_EXPOSED_TO"):
+        s.delete_edge(org, edge, p["target_id"], p["condition_id"])
+
+
 PROJECTORS = {
     "position.created": _position_created,
     "position.updated": _position_updated,
@@ -1297,6 +1332,11 @@ PROJECTORS = {
     "manufacturer.updated": _patch,
     "manufacturer.merged": _manufacturer_merged,
     "manufacturer.linked": _link("MADE_BY", "manufacturer_id"),
+    "condition.created": _condition_created,
+    "condition.updated": _patch,
+    "condition.retired": _flag("retired"),
+    "condition.applied": _condition_applied,
+    "condition.removed": _condition_removed,
 }
 
 
@@ -4231,6 +4271,337 @@ class Maintenance:
                 "parts": [self._part_brief(pt) for pt in sorted(parts, key=lambda pt: pt["part_number"].lower())
                           ][:MAX_LOCATION_POSITIONS]}
 
+    # ---- conditions: what things are exposed to (optional) ------------------------------
+    # A register the workspace keeps (or imports: conditions.py): Outdoor, Coastal,
+    # Seawater, Hazardous area › Zone 1, Ambient temperature (°C). A condition is
+    # presence-only or carries a value in its unit. Applied to a location, a position, an
+    # item or a connection (EXPOSED_TO {value, note}), or excluded on one
+    # (NOT_EXPOSED_TO): an indoor room inside an outdoor site isn't Outdoor.
+    #
+    # What applies to a thing is worked out when it's read, so a move changes it at
+    # once: its own conditions, then (position) the positions above it, through an item
+    # it sits in to that item's position, then the location it's at and the locations
+    # around that; (item) its own, then its position's when fitted, or the location it's
+    # placed at; (location) its own and the locations around it. The nearest mention of
+    # a condition wins: its value, or its exclusion. A connection has only its own.
+
+    CONDITION_KINDS = ("presence", "value")
+    _EXPOSABLE = ("Location", "Position", "Item", "Interface")
+
+    def _live_condition(self, condition_id) -> dict:
+        node = self._get(str(condition_id or ""), "Condition")
+        if node.get("retired"):
+            raise Invalid(f"The condition {node['name']} has been retired.")
+        return node
+
+    def _condition_children(self, condition_id: str | None) -> list[dict]:
+        """The live conditions directly inside one (None: the top level)."""
+        if condition_id is None:
+            return [c for c in self.s.nodes(self.org, "Condition") if not c.get("retired") and not self._parent(c["id"])]
+        return [c for c in self.s.inn(self.org, condition_id, "PART_OF")
+                if c["label"] == "Condition" and not c.get("retired")]
+
+    def _condition_chain(self, condition_id: str) -> list[dict]:
+        """A condition and the conditions above it, top first."""
+        return [self.s.node(self.org, a) for a in reversed(self._ancestor_ids(condition_id))] + [
+            self.s.node(self.org, condition_id)]
+
+    def _condition_brief(self, node: dict | None) -> dict | None:
+        if not node:
+            return None
+        path = [c["name"] for c in self._condition_chain(node["id"])]
+        return {"id": node["id"], "name": node["name"], "code": node.get("code", ""),
+                "kind": node.get("kind") or "presence", "unit": node.get("unit", ""), "path": path,
+                "display": " › ".join(path), "retired": bool(node.get("retired"))}
+
+    @staticmethod
+    def _condition_name(name) -> str:
+        name = _text(name, "condition's name", required=True)
+        if ">" in name or "›" in name:
+            raise Invalid("A condition's name can't contain > or › (they separate the levels of a path).")
+        return name
+
+    def _condition_kind(self, kind, unit) -> tuple[str, str]:
+        """(kind, unit) from a request: a unit makes it a value condition unless said otherwise."""
+        unit = _text(unit, "unit", max_len=20)
+        kind = kind or ("value" if unit else "presence")
+        if kind not in self.CONDITION_KINDS:
+            raise Invalid("A condition's kind is presence (it applies or it doesn't) or value (with a number, "
+                          "in its unit).")
+        if kind == "presence" and unit:
+            raise Invalid("Only a value condition has a unit.")
+        return kind, unit
+
+    def _condition_sibling(self, parent_id: str | None, name: str, but: str | None = None) -> dict | None:
+        return next((c for c in self._condition_children(parent_id) if _key(c["name"]) == _key(name)
+                     and c["id"] != but), None)
+
+    def _condition_height(self, condition_id: str) -> int:
+        kids = self._condition_children(condition_id)
+        return 1 + max((self._condition_height(k["id"]) for k in kids), default=0)
+
+    def create_condition(self, name, parent_id=None, kind=None, unit="", code="", description="", source="") -> dict:
+        """A condition in the register: presence-only ('Outdoor') or a value in a unit
+        ('Ambient temperature', °C; kind value), inside another (parent_id: 'Hazardous
+        area' for 'Zone 1') or at the top. code: the user's own."""
+        name = self._condition_name(name)
+        kind, unit = self._condition_kind(kind, unit)
+        parent = self._live_condition(parent_id) if parent_id else None
+        if parent and len(self._ancestor_ids(parent["id"])) + 2 > MAX_CONDITION_DEPTH:
+            raise Invalid(f"Conditions go at most {MAX_CONDITION_DEPTH} levels deep.")
+        if self._condition_sibling(parent and parent["id"], name):
+            raise Invalid(f"There's already a condition called {name} there.")
+        self._quota("Condition", MAX_CONDITIONS)
+        cid = new_id()
+        self._emit("condition.created", {
+            "id": cid, "name": name, "parent_id": parent and parent["id"], "kind": kind, "unit": unit,
+            "code": _text(code, "code"), "description": _text(description, "description"), "on": self.today()}
+            | ({"source": _text(source, "source")} if source else {}))
+        return self.condition(cid)
+
+    def _valued(self, condition_id: str) -> bool:
+        """Whether anything has a value for the condition."""
+        return any((self.s.edge(self.org, "EXPOSED_TO", x["id"], condition_id) or {}).get("value") is not None
+                   for x in self.s.inn(self.org, condition_id, "EXPOSED_TO"))
+
+    def update_condition(self, condition_id: str, name=None, kind=None, unit=None, code=None, description=None,
+                         parent_id=...) -> dict:
+        """Rename a condition, change its kind, unit, code or description, or move it
+        (parent_id; None: to the top level), never inside itself. A value condition with
+        values recorded stays one."""
+        node = self._live_condition(condition_id)
+        changes = {}
+        if name is not None:
+            changes["name"] = self._condition_name(name)
+        if kind is not None or unit is not None:
+            new_kind = kind or ("value" if unit else node.get("kind") or "presence")
+            new_kind, new_unit = self._condition_kind(new_kind, ("" if new_kind == "presence" else node.get("unit", ""))
+                                                      if unit is None else unit)
+            if new_kind == "presence" and node.get("kind") == "value" and self._valued(condition_id):
+                raise Invalid(f"Values are recorded for {node['name']}: it stays a value condition.")
+            changes |= {"kind": new_kind, "unit": new_unit}
+        for key, value in (("code", code), ("description", description)):
+            if value is not None:
+                changes[key] = _text(value, key)
+        parent = self._parent(condition_id)
+        parent_now = parent and parent["id"]
+        if parent_id is not ...:
+            target = self._live_condition(parent_id)["id"] if parent_id else None
+            if target and (target == condition_id or condition_id in self._ancestor_ids(target)):
+                raise Invalid("A condition can't sit inside itself.")
+            if target != parent_now:
+                depth = (len(self._ancestor_ids(target)) + 1 if target else 0) + self._condition_height(condition_id)
+                if depth > MAX_CONDITION_DEPTH:
+                    raise Invalid(f"Conditions go at most {MAX_CONDITION_DEPTH} levels deep.")
+                changes["parent_id"] = target
+                parent_now = target
+        if self._condition_sibling(parent_now, changes.get("name", node["name"]), but=condition_id):
+            raise Invalid(f"There's already a condition called {changes.get('name', node['name'])} there.")
+        changes = {k: v for k, v in changes.items()
+                   if k == "parent_id" or v != node.get(k, "presence" if k == "kind" else "")}
+        if changes:
+            self._emit("condition.updated", {"id": condition_id, "changes": changes, "on": self.today()})
+        return self.condition(condition_id)
+
+    def retire_condition(self, condition_id: str, reason="") -> None:
+        """Take a condition out of use: it no longer applies anywhere (it stays in the
+        history). The conditions inside it go first."""
+        self._live_condition(condition_id)
+        if self._condition_children(condition_id):
+            raise Invalid("Conditions inside it are still in use. Retire or move them first.")
+        self._emit("condition.retired", {"id": condition_id, "on": self.today(), "reason": _text(reason, "reason")})
+
+    def _exposable(self, target_id) -> dict:
+        node = self.s.node(self.org, str(target_id or ""))
+        if node is None or node["label"] not in self._EXPOSABLE:
+            raise NotFound(target_id)
+        if node.get("retired"):
+            raise Invalid(f"{node.get('name') or 'That connection'} has been retired.")
+        return node
+
+    def _own_conditions(self, node_id: str) -> list[tuple[dict, dict, bool]]:
+        """(condition, the edge's properties, excluded) for each condition applied to or
+        excluded on the node itself, retired ones too."""
+        out = []
+        for edge, excluded in (("EXPOSED_TO", False), ("NOT_EXPOSED_TO", True)):
+            for c in self.s.out(self.org, node_id, edge):
+                out.append((c, self.s.edge(self.org, edge, node_id, c["id"]) or {}, excluded))
+        return out
+
+    def _condition_value(self, cond: dict, value):
+        if value in (None, ""):
+            return None
+        if (cond.get("kind") or "presence") != "value":
+            raise Invalid(f"{cond['name']} has no value: it applies or it doesn't. Put any detail in the note.")
+        return self._attribute_value({"name": cond["name"], "kind": "number", "unit": cond.get("unit", "")}, value)
+
+    def _set_exposure(self, target_id, condition_id, excluded: bool, value=None, note="") -> dict:
+        node = self._exposable(target_id)
+        cond = self._live_condition(condition_id)
+        if excluded and node["label"] == "Interface":
+            raise Invalid("A connection has only its own conditions, so there's nothing to exclude there: remove "
+                          "the condition instead.")
+        value = None if excluded else self._condition_value(cond, value)
+        note = _text(note, "note", max_len=500)
+        own = {c["id"]: (props, ex) for c, props, ex in self._own_conditions(node["id"])}
+        if cond["id"] not in own and len(own) >= MAX_CONDITIONS_EACH:
+            raise LimitReached(f"At most {MAX_CONDITIONS_EACH} conditions on one {node['label'].lower()}.")
+        now = own.get(cond["id"])
+        if now is None or now[1] != excluded or now[0].get("note", "") != note or now[0].get("value") != value:
+            self._emit("condition.applied", {"target_id": node["id"], "condition_id": cond["id"], "note": note,
+                                             "on": self.today()}
+                       | ({"excluded": True} if excluded else {"value": value}))
+        return self.conditions_of(node["id"])
+
+    def apply_condition(self, target_id: str, condition_id: str, value=None, note="") -> dict:
+        """Say a location, position, item or connection is exposed to a condition, with a
+        value for a value condition (in its unit: 45, or '45 °C' for °C) and a note
+        ('salt spray, severe'). Again: changes the value or note. Returns the target's
+        conditions."""
+        return self._set_exposure(target_id, condition_id, False, value, note)
+
+    def exclude_condition(self, target_id: str, condition_id: str, note="") -> dict:
+        """Stop a condition inherited from above at a location, position or item (and so
+        below it): the control room inside an outdoor site isn't Outdoor."""
+        return self._set_exposure(target_id, condition_id, True, None, note)
+
+    def remove_condition(self, target_id: str, condition_id: str) -> dict:
+        """Take a condition (or an exclusion) off a location, position, item or connection:
+        what's inherited from above applies again."""
+        node = self._exposable(target_id)
+        cond = self._get(str(condition_id or ""), "Condition")
+        if not any(c["id"] == cond["id"] for c, _, _ in self._own_conditions(node["id"])):
+            raise Invalid(f"{cond['name']} isn't set on {node.get('name') or 'that connection'} itself. (One "
+                          "inherited from above can be excluded here.)")
+        self._emit("condition.removed", {"target_id": node["id"], "condition_id": cond["id"], "on": self.today()})
+        return self.conditions_of(node["id"])
+
+    def _exposure_chain(self, node: dict) -> list[dict]:
+        """The nodes whose conditions reach ``node``, nearest first (see above)."""
+        chain: list[dict] = []
+        seen: set[str] = set()
+
+        def add(n):
+            if n and n["id"] not in seen:
+                seen.add(n["id"])
+                chain.append(n)
+                return True
+            return False
+
+        def locations_from(loc):
+            if loc:
+                add(loc)
+                for a in reversed(self._location_path(loc["id"])):
+                    add(self.s.node(self.org, a["id"]))
+
+        def position_up(pid):
+            # The positions above it (through an item to its position), then where it is.
+            start, node_ = pid, self.s.node(self.org, pid)
+            while node_ is not None and add(node_):
+                if node_["label"] == "Item":
+                    fitment = self._current_fitment_of_item(node_["id"])
+                    node_ = fitment and self.s.out(self.org, fitment["id"], "AT")[0]
+                else:
+                    node_ = self._parent(node_["id"])
+            locations_from(self._located(start)[0])
+
+        if node["label"] == "Location":
+            locations_from(node)
+        elif node["label"] == "Position":
+            position_up(node["id"])
+        elif node["label"] == "Item":
+            add(node)
+            fitment = self._current_fitment_of_item(node["id"])
+            if fitment:
+                position_up(self.s.out(self.org, fitment["id"], "AT")[0]["id"])
+            else:
+                placed = self._placement_now(node["id"])
+                locations_from(placed and placed[1])
+        else:
+            add(node)
+        return chain
+
+    def _effective_conditions(self, node: dict) -> list[dict]:
+        """Every live condition that reaches the node, each from its nearest mention:
+        [{condition, value, note, since, excluded, own, source}]."""
+        decided: dict[str, dict] = {}
+        for n in self._exposure_chain(node):
+            for cond, props, excluded in self._own_conditions(n["id"]):
+                if cond.get("retired") or cond["id"] in decided:
+                    continue
+                own = n["id"] == node["id"]
+                decided[cond["id"]] = {
+                    "condition": self._condition_brief(cond), "value": None if excluded else props.get("value"),
+                    "note": props.get("note", ""), "since": props.get("on"), "excluded": excluded, "own": own,
+                    "source": {"id": n["id"], "name": n.get("name") or "connection", "kind": n["label"]}}
+        return sorted(decided.values(), key=lambda e: [x.lower() for x in e["condition"]["path"]])
+
+    def _conditions_view(self, node: dict) -> dict:
+        """What a page shows: the conditions that apply (own, or from where) and the ones
+        stopped here or above."""
+        found = self._effective_conditions(node)
+        return {"conditions": [e for e in found if not e["excluded"]],
+                "excluded_conditions": [e for e in found if e["excluded"]]}
+
+    def conditions_of(self, target_id: str) -> dict:
+        """A location's, position's, item's or connection's conditions: each one that
+        applies with its value, note and source (own, or the location or position it comes
+        from), and excluded: the ones stopped there or above (and where)."""
+        node = self.s.node(self.org, str(target_id or ""))
+        if node is None or node["label"] not in self._EXPOSABLE:
+            raise NotFound(target_id)
+        view = self._conditions_view(node)
+        return {"target": {"id": node["id"], "name": node.get("name") or "connection", "kind": node["label"]},
+                "conditions": view["conditions"], "excluded": view["excluded_conditions"]}
+
+    def _exposed(self, condition_id: str) -> tuple[list[dict], list[dict]]:
+        """What a condition is applied to, and excluded on, directly."""
+        return (self.s.inn(self.org, condition_id, "EXPOSED_TO"), self.s.inn(self.org, condition_id, "NOT_EXPOSED_TO"))
+
+    def condition_tree(self) -> dict:
+        """The register as a tree: each live condition with its kind, unit, code and
+        description, and where it's applied (applied) and excluded (excluded) directly."""
+        live = [c for c in self.s.nodes(self.org, "Condition") if not c.get("retired")]
+        children: dict[str | None, list] = {}
+        for c in live:
+            parent = self._parent(c["id"])
+            children.setdefault(parent["id"] if parent else None, []).append(c)
+
+        def build(c):
+            applied, excluded = self._exposed(c["id"])
+            return {"id": c["id"], "name": c["name"], "kind": c.get("kind") or "presence", "unit": c.get("unit", ""),
+                    "code": c.get("code", ""), "description": c.get("description", ""), "source": c.get("source", ""),
+                    "applied": len(applied), "excluded": len(excluded),
+                    "children": [build(k) for k in sorted(children.get(c["id"], []), key=lambda k: k["name"].lower())]}
+
+        return {"tree": [build(c) for c in sorted(children.get(None, []), key=lambda c: c["name"].lower())],
+                "counts": {"conditions": len(live)}}
+
+    def conditions(self) -> list[dict]:
+        """Every live condition, flat, by its path (for pickers)."""
+        live = [c for c in self.s.nodes(self.org, "Condition") if not c.get("retired")]
+        return sorted((self._condition_brief(c) for c in live), key=lambda b: [x.lower() for x in b["path"]])
+
+    def condition(self, condition_id: str) -> dict:
+        """One condition: its path, kind, unit, code and description, the conditions inside
+        it, and what it's applied to (with values and notes) or excluded on, directly."""
+        node = self._get(condition_id, "Condition")
+        applied, excluded = self._exposed(condition_id)
+
+        def row(n, edge):
+            props = self.s.edge(self.org, edge, n["id"], condition_id) or {}
+            return {"id": n["id"], "name": n.get("name") or "connection", "kind": n["label"],
+                    "value": props.get("value"), "note": props.get("note", ""), "since": props.get("on")}
+
+        order = lambda r: (r["kind"], r["name"].lower())  # noqa: E731
+        return {**self._condition_brief(node), "description": node.get("description", ""),
+                "source": node.get("source", ""), "created": node.get("created"),
+                "parent": self._condition_brief(self._parent(condition_id)),
+                "children": [self._condition_brief(c) for c in sorted(self._condition_children(condition_id),
+                                                                      key=lambda c: c["name"].lower())],
+                "applied_to": sorted((row(n, "EXPOSED_TO") for n in applied), key=order),
+                "excluded_on": sorted((row(n, "NOT_EXPOSED_TO") for n in excluded), key=order)}
+
     def _filter_ids(self, item_class_id=None, manufacturer_id=None) -> tuple:
         """The classes (a class and those inside it) and the manufacturer a list is
         filtered to: None for no filter, "none" for the unclassified or unlinked."""
@@ -4322,6 +4693,8 @@ class Maintenance:
                 self._item_part(id)),
             "manufacturer_entry": (lambda found: found[0] and {**self._maker_brief(found[0]), "via": found[1]})(
                 self._made_by(item)),
+            # What it's exposed to: its own conditions, then its position's or where it's placed.
+            **self._conditions_view(item),
         }
 
     def location(self, id: str) -> dict:
@@ -4388,6 +4761,8 @@ class Maintenance:
             # The location's own tasks (rounds, area inspections) and their work orders.
             "tasks": self._task_views_on(id),
             "work_orders": self._work_orders_on(id),
+            # What it's exposed to: its own conditions and the locations' around it.
+            **self._conditions_view(loc),
         }
 
     def _loose_items(self, location_ids) -> list[tuple[dict, dict, dict]]:
@@ -4616,7 +4991,9 @@ class Maintenance:
         return {"id": i["id"], "kind": i.get("kind"), "medium": i.get("medium", ""), "name": i.get("name", ""),
                 "rating": i.get("rating", ""), "from": {"id": src["id"], "name": src["name"]},
                 "to": {"id": dst["id"], "name": dst["name"]},
-                "realised_by": via and {"id": via[0]["id"], "name": via[0]["name"]}}
+                "realised_by": via and {"id": via[0]["id"], "name": via[0]["name"]},
+                # A connection's own conditions (it inherits none).
+                "conditions": self._conditions_view(i)["conditions"]}
 
     def _interfaces(self, position_id: str, end: str) -> list[dict]:
         """Live interfaces with ``position_id`` at their FROM end (outgoing) or TO end (incoming)."""
@@ -4937,6 +5314,8 @@ class Maintenance:
             "documents": self.documents_of(id),
             "parts_list": self._parts_list(id),
             "item_photos": self.photos_of(fitted["item"]["id"]) if fitted and fitted["item"] else [],
+            # What it's exposed to: its own conditions and those from above and where it is.
+            **self._conditions_view(p),
         }
 
     def _position_path(self, id: str) -> list[dict]:
