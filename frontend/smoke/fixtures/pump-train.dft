@@ -1,0 +1,9 @@
+// Galileo fault tree for the RBD import smoke test: a controller in series
+// with a 2-out-of-3 sensor bank.
+toplevel "Sys";
+"Sys" or "Ctrl" "Sensors";
+"Sensors" 2of3 "S1" "S2" "S3";
+"Ctrl" lambda=1e-4;
+"S1" lambda=1e-3;
+"S2" lambda=1e-3;
+"S3" lambda=1e-3;
