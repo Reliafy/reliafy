@@ -52,11 +52,10 @@ fails to load never goes live.
 
 ## Next (in order)
 
-1. **Recommendations from combinations of context.** An outdoor pump on
-   seawater needs checks that neither "pump" nor "outdoor" implies alone.
-   Rules match the register and propose failure modes, tasks and parts; the
-   data then tests whether a combination really changes life.
-   ([#421](https://github.com/Reliafy/reliafy/issues/421))
+1. **Conditions.** Record what things are exposed to (outdoor, seawater,
+   a hazardous zone, 45 °C ambient) on locations, positions, items and
+   connections, inherited down the trees, with exceptions where they don't
+   apply. ([#428](https://github.com/Reliafy/reliafy/issues/428))
 2. **Failure forecasts from the register.** Expected failures per position
    class, the positions most at risk, then the spares and budget to hold
    against them.
@@ -83,6 +82,8 @@ fails to load never goes live.
 Each theme has a tracking issue listing everything in it.
 
 **Maintenance and RCM** ([#283](https://github.com/Reliafy/reliafy/issues/283)):
+recommendations from combinations of conditions, such as an outdoor pump on
+seawater, once conditions are recorded (#421);
 FMEA / FMECA scoring and failure-mode libraries (#36); event-driven checks
 after over-temperature, storms or hard landings (#422); condition-based risk
 from joint models of readings and failures (#388); meter reading quality
