@@ -212,6 +212,7 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/maintenance/locations" element={<MaintenanceLocations />} />}
             {maintenanceEnabled && <Route path="/maintenance/locations/:id" element={<MaintenanceLocation />} />}
             {maintenanceEnabled && <Route path="/maintenance/classes" element={<MaintenanceClasses />} />}
+            {maintenanceEnabled && <Route path="/maintenance/classes/:name" element={<MaintenanceClasses />} />}
             {maintenanceEnabled && <Route path="/maintenance/parts" element={<MaintenancePartsPage />} />}
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

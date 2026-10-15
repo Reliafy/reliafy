@@ -4,6 +4,7 @@ import {
   createMaintenanceLocation,
   fitClassModel,
   getClassEconomics,
+  getClassForecast,
   getClassLifeData,
   getPositionClass,
   setClassCosts,
@@ -34,6 +35,13 @@ import {
   ClassPicker, ItemClassesSection, KindFilters, PartKindModal, useKinds,
 } from "../components/MaintenanceItemClasses.jsx";
 import { ConditionsCard, ConditionsSection } from "../components/MaintenanceConditions.jsx";
+import Plot from "../components/Plot.jsx";
+import ResultSummary from "../components/ui/ResultSummary.jsx";
+import { ACCENT, INK } from "../plotTheme.js";
+import { formatNumber, formatPercent } from "../format.js";
+import {
+  FORECAST_PERIODS, horizonText, money, moneyRange, periodLabels, rangeText, spareCover,
+} from "../maintenanceForecast.js";
 import "./Maintenance.css";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
@@ -284,8 +292,11 @@ function RenameLocation({ loc, onClose, onDone }) {
 // ---- position classes ----------------------------------------------------------------------
 
 export function MaintenanceClasses() {
+  const navigate = useNavigate();
+  // A class's own page (/maintenance/classes/Pool%20pump) opens its panel.
+  const { name: open = null } = useParams();
+  const setOpen = (name) => navigate(`/maintenance/classes/${encodeURIComponent(name)}`);
   const [classes, setClasses] = useState(null);
-  const [open, setOpen] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   useEffect(() => {
@@ -311,7 +322,8 @@ export function MaintenanceClasses() {
             <thead><tr><th>Class</th><th>Positions</th><th>Fitments</th><th>Failures</th></tr></thead>
             <tbody>
               {classes.map((c) => (
-                <tr key={c.position_class} className="lib-row" onClick={() => setOpen(c.position_class)}>
+                <tr key={c.position_class} className="lib-row" onClick={() => setOpen(c.position_class)}
+                    aria-current={c.position_class === open ? "true" : undefined}>
                   <td>{c.position_class}</td><td>{c.positions}</td><td>{c.fitments}</td><td>{c.failures}</td>
                 </tr>
               ))}
@@ -400,6 +412,7 @@ function ClassPanel({ name, onChanged }) {
         )}
         {made !== null && <p className="lib-date">{made ? `${made} change${made === 1 ? "" : "s"} proposed.` : "No changes to propose (no scheduled tasks here, or they already match)."}</p>}
       </section>
+      {model && <ForecastCard key={model.model_id} name={name} />}
       <Proposals proposals={c.proposals} onDecided={load} />
       {model && c.costs?.planned_cost != null && c.costs?.failure_cost != null && <EconomicsCard name={name} />}
       <ReplacementCostCard name={name} cost={c.replacement_cost} onSaved={(d) => { setC(d); onChanged?.(); }} />
@@ -484,6 +497,164 @@ function EconomicsCard({ name }) {
             </tbody>
           </table>
           <p className="lib-date">{data.note}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
+// The class's failure forecast from the register (#407): the answer first, then
+// the periods, the positions most at risk, the spares and the budget.
+function ForecastCard({ name }) {
+  const [period, setPeriod] = useState("month");
+  const [periods, setPeriods] = useState(12);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [allRisk, setAllRisk] = useState(false);
+  const load = useCallback(() => {
+    setError(null);
+    getClassForecast(name, { period, periods })
+      .then(setData).catch((e) => { setData(null); setError(e.message); });
+  }, [name, period, periods]);
+  useEffect(() => { load(); }, [name]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const most = FORECAST_PERIODS.find((p) => p.id === period)?.most || 120;
+  const shown = data?.period || period;  // the period the answer shown is in
+  const horizon = data ? horizonText(data.periods, data.period) : "";
+  const labels = data ? periodLabels(data.per_period, data.period) : [];
+  const busy = data?.per_period?.some((r) => r.expected > 0);
+  const risk = data ? (allRisk ? data.at_risk : data.at_risk.slice(0, 10)) : [];
+  const budget = data?.budget;
+  return (
+    <section className="card" data-testid="class-forecast">
+      <div className="maint-head"><h2>{name}: failure forecast</h2></div>
+      <div className="maint-row" style={{ marginTop: 0 }}>
+        <span className="lib-date">Next</span>
+        <input type="number" inputMode="numeric" min="1" max={most} value={periods} style={{ width: "4.5rem" }}
+               aria-label="How many periods" onChange={(e) => setPeriods(e.target.value)} />
+        <select value={period} aria-label="Period"
+                onChange={(e) => { setPeriod(e.target.value); setPeriods({ month: 12, quarter: 4, year: 3 }[e.target.value]); }}>
+          {FORECAST_PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label.toLowerCase()}</option>)}
+        </select>
+        <button className="secondary" onClick={load}>Forecast</button>
+      </div>
+      {error && <div className="card error">{error}</div>}
+      {data === null && !error && <p className="lib-date">Working it out…</p>}
+      {data && (
+        <>
+          <ResultSummary
+            sentence={data.n_forecast ? (
+              <>≈ <b>{formatNumber(data.expected)}</b> failures in the next <b>{horizon}</b> (likely {rangeText(data.interval)}).</>
+            ) : data.headline}
+            stats={[
+              data.n_forecast > 0 && { label: "Likely range (80%)", value: rangeText(data.interval), hint: "P10–P90, counting replacements that fail again" },
+              data.n_forecast > 0 && data.periods > 1 && { label: `Average a ${shown}`, value: `≈ ${formatNumber(data.expected / data.periods, { sig: 2 })}` },
+              { label: "Positions forecast", value: `${data.n_forecast} of ${data.n_positions}` },
+              budget && { label: "Budget", value: `≈ ${money(budget.expected, budget.currency)}`, hint: `likely ${moneyRange(budget.interval, budget.currency)}` },
+            ]}
+          >
+            {data.basis}
+          </ResultSummary>
+          {busy && (
+            <>
+              <Plot
+                data={[{
+                  // On a date axis, so the ticks thin out on a phone; the hover names the period.
+                  type: "bar", x: data.per_period.map((r) => r.start), y: data.per_period.map((r) => r.expected),
+                  marker: { color: ACCENT },
+                  error_y: {
+                    type: "data", symmetric: false, color: INK, thickness: 1, width: 3,
+                    array: data.per_period.map((r) => Math.max(0, r.p90 - r.expected)),
+                    arrayminus: data.per_period.map((r) => Math.max(0, r.expected - r.p10)),
+                  },
+                  customdata: data.per_period.map((r, i) => [labels[i], r.p10, r.p90]),
+                  hovertemplate: "%{customdata[0]}: %{y:.2f} expected (likely %{customdata[1]}–%{customdata[2]})<extra></extra>",
+                }]}
+                layout={{
+                  height: 260, bargap: 0.35,
+                  xaxis: { title: { text: `${shown[0].toUpperCase()}${shown.slice(1)} starting` }, type: "date" },
+                  yaxis: { title: { text: `Expected failures a ${shown}` }, rangemode: "tozero" },
+                }}
+                download={`${name} — failure forecast`}
+              />
+              <p className="rs-note">Whiskers: each {shown}’s likely range (80%).</p>
+            </>
+          )}
+
+          {risk.length > 0 && (
+            <>
+              <h3 className="maint-sub">Positions most at risk</h3>
+              <div className="maint-scroll"><table className="lib-table">
+                <thead><tr><th>Position</th><th>Item</th><th>In service</th><th>Chance it fails next {shown}</th><th>Failures in {horizon}</th></tr></thead>
+                <tbody>
+                  {risk.map((r) => (
+                    <tr key={r.position.id}>
+                      <td><Link to={`/maintenance/positions/${r.position.id}`}>{r.position.name}</Link></td>
+                      <td>{r.item?.name || "—"}</td>
+                      <td className="lib-date">{formatNumber(r.age)} {data.model.unit}{r.rate_basis === "counter" ? ` (+${formatNumber(r.rate_per_period)} a ${shown})` : ""}</td>
+                      <td>{formatPercent(r.prob_next_period)}</td>
+                      <td className="lib-date">≈ {formatNumber(r.expected_failures, { sig: 2 })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+              {data.at_risk.length > 10 && (
+                <button className="link" onClick={() => setAllRisk(!allRisk)}>
+                  {allRisk ? "Show the top 10" : `Show all ${data.at_risk.length}`}
+                </button>
+              )}
+            </>
+          )}
+          {data.not_forecast.length > 0 && (
+            <p className="lib-date">Not forecast: {data.not_forecast.slice(0, 12).map((s) => `${s.position.name} (${s.reason})`).join("; ")}
+              {data.n_not_forecast > 12 ? `; and ${data.n_not_forecast - 12} more` : ""}.</p>
+          )}
+
+          <h3 className="maint-sub">Spares</h3>
+          {data.spares.length === 0 ? (
+            <p className="lib-date">No replacement part or critical spare on these positions’ parts lists.</p>
+          ) : (
+            <div className="maint-scroll"><table className="lib-table">
+              <thead><tr><th>Part</th><th>Per failure</th><th>Usable in stock</th><th>Next {shown}</th><th>In {horizon}</th><th>Stock</th></tr></thead>
+              <tbody>
+                {data.spares.map((s) => (
+                  <tr key={s.part.id}>
+                    <td>{s.part.part_number} {s.part.name}{s.critical ? <span className="lib-date"> · critical</span> : null}</td>
+                    <td>{s.per_job.map((q) => formatNumber(q)).join(" / ")} {s.unit}</td>
+                    <td>{formatNumber(s.usable_on_hand)}
+                      {s.min_on_hand != null && <span className="lib-date"> (keep {formatNumber(s.min_on_hand)})</span>}</td>
+                    <td>≈ {formatNumber(s.per_period[0].mean, { sig: 2 })}
+                      {s.per_period[0].p90 > 0 && <span className="lib-date"> (likely up to {formatNumber(s.per_period[0].p90)})</span>}</td>
+                    <td>≈ {formatNumber(s.expected, { sig: 2 })} <span className="lib-date">(likely {rangeText(s.interval)})</span></td>
+                    <td className={s.short ? "maint-overdue" : "lib-date"}>{spareCover(s, data.period)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table></div>
+          )}
+
+          <h3 className="maint-sub">Budget</h3>
+          {!budget ? (
+            <p className="lib-date">Set the class’s costs above (a failure, a planned replacement) to see what this costs.</p>
+          ) : (
+            <div className="maint-scroll"><table className="lib-table">
+              <thead><tr><th>What</th><th>How many</th><th>Each</th><th>In {horizon}</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Failures</td><td>≈ {formatNumber(data.expected)}</td>
+                  <td>{money(budget.cost_per_failure, budget.currency)}{budget.basis === "replacement_cost" ? <span className="lib-date"> (replacement cost)</span> : null}</td>
+                  <td>≈ {money(budget.failures, budget.currency)} <span className="lib-date">(likely {moneyRange(budget.failures_interval, budget.currency)})</span></td>
+                </tr>
+                {budget.planned_cost != null && (
+                  <tr>
+                    <td>Planned replacements due</td><td>{budget.planned_count}</td>
+                    <td>{money(budget.planned_cost)}</td><td>{money(budget.planned)}</td>
+                  </tr>
+                )}
+                <tr><td><strong>Total</strong></td><td /><td /><td><strong>≈ {money(budget.expected, budget.currency)}</strong></td></tr>
+              </tbody>
+            </table></div>
+          )}
+          {data.notes.map((n) => <p key={n} className="lib-date">{n}</p>)}
         </>
       )}
     </section>

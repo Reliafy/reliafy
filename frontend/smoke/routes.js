@@ -81,6 +81,7 @@ export const DETAIL_IDS = {
   "/maintenance/work-orders/:id": ["/api/maintenance/work-orders", list("work_orders")],
   "/maintenance/items/:id": ["/api/maintenance/items", list("items")],
   "/maintenance/locations/:id": ["/api/maintenance/locations", list("locations")],
+  "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   // An old bookmark: redirects to the tracking list whatever the id.
   "/strategy/tracking/:modelId": [null, () => [{ id: "any-old-id" }]],
 };
@@ -95,6 +96,8 @@ const CHART_PAGES = {
   "/modelling/alt/:id": true,
   "/fleet/forecasts/:id": true,
   "/fleet/tracking/:fleetId": true,
+  // A class with a fitted model shows its failure forecast (#407).
+  "/maintenance/classes/:name": (cls) => Boolean(cls.model),
   // A failure-finding analysis is one interval: no chart.
   "/strategy/analyses/:id": (analysis) => analysis.kind !== "failure_finding",
 };

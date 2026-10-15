@@ -14,7 +14,7 @@ import logging
 from datetime import date
 
 from backend import config
-from backend.maintenance import loop
+from backend.maintenance import forecast, loop
 from backend.maintenance.access import allowed
 from backend.maintenance.service import Maintenance
 from backend.services import time_zones
@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 HORIZON_DAYS = 14
 
 
-def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_spares=()) -> tuple[str, str]:
+def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_spares=(),
+            forecast_short=()) -> tuple[str, str]:
     n = len(work_orders)
     parts = [f"{n} new work order{'s' if n != 1 else ''}"] if n else []
     if proposals:
@@ -51,6 +52,11 @@ def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_sp
         for v in short_spares[:10]:
             lines.append(f"  {v['part']['part_number']} {v['part']['name']} for {v['position']['name']}: "
                          f"{v['usable_on_hand']:g} usable, keep {v['min_on_hand'] or 0:g}")
+    if forecast_short:
+        lines += ["", "Critical spares the failure forecast needs more of next month than are in stock:"]
+        for v in forecast_short[:10]:
+            lines.append(f"  {v['part']['part_number']} {v['part']['name']} for {v['position_class']}: "
+                         f"≈ {v['expected']:.1f} expected, {v['usable_on_hand']:g} usable")
     base = (config.PUBLIC_BASE_URL or "https://reliafy.com").rstrip("/")
     lines += ["", f"Open them: {base}/maintenance", "",
               "Turn these emails off on the Maintenance page.", "", "— Reliafy"]
@@ -83,8 +89,14 @@ def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) ->
         return
     overdue = [t for t in m.due_tasks(0) if t["overdue"]]
     # Spares short ride along with an email that's going anyway; on their own they'd
-    # repeat every day until restocked.
-    subject, body = _digest(made, overdue, new_proposals, m.critical_spares_short())
+    # repeat every day until restocked. So do critical spares a class's forecast
+    # (#407) expects to need more of next month than there are.
+    try:
+        forecast_short = forecast.short_next_month(m)
+    except Exception:  # noqa: BLE001 - a forecast that fails mustn't stop the digest
+        logger.exception("maintenance forecast for the digest failed for %s", org)
+        forecast_short = []
+    subject, body = _digest(made, overdue, new_proposals, m.critical_spares_short(), forecast_short)
     email_service.send(user["email"], subject, body)
     result["emails"] += 1
 
