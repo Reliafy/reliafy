@@ -98,6 +98,7 @@ def test_class_members_are_by_each_items_own_class_else_its_parts(m):
     assert p["own_class"] in graph_query.class_members(m, p["rotating"])["items"]
 
 
+@pytest.mark.sqlite_only
 def test_cypher_is_only_asked_when_there_is_a_neo4j_graph(m):
     pid = m.create_position("A")["id"]
     with pytest.raises(graph_query.Stale):
@@ -107,6 +108,7 @@ def test_cypher_is_only_asked_when_there_is_a_neo4j_graph(m):
 
 # ---- the mirror without a Neo4j -------------------------------------------------------------
 
+@pytest.mark.sqlite_only
 def test_large_changes_are_sent_in_parts_in_write_order():
     parts = list(mirror_mod._chunks([1, 2, 3], ["g"], [10, 11, 12, 13], 3))
     assert parts == [([1, 2, 3], [], []), ([], ["g"], [10, 11]), ([], [], [12, 13])]
@@ -124,6 +126,7 @@ class _Unreachable:
         raise OSError("no route to host")
 
 
+@pytest.mark.sqlite_only
 def test_neo4j_unreachable_never_fails_a_write_or_the_hourly_job(m, monkeypatch):
     from backend import config
     from backend.routers import maintenance as router
@@ -141,6 +144,7 @@ def test_neo4j_unreachable_never_fails_a_write_or_the_hourly_job(m, monkeypatch)
     assert "error" in step and json.dumps(step)
 
 
+@pytest.mark.sqlite_only
 def test_no_mirror_unless_configured(monkeypatch):
     from backend import config
 

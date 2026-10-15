@@ -15,7 +15,9 @@ from backend.maintenance.store import GraphStore, SqliteEventLog, new_id, open_s
 from backend.tests import neo4j_support
 from backend.tests.neo4j_support import needs_neo4j, plant, query_cases
 
-pytestmark = needs_neo4j
+# These make SQLite graphs on purpose: the parity run (which swaps them for
+# Neo4j ones) leaves them be.
+pytestmark = [needs_neo4j, pytest.mark.sqlite_only]
 
 
 @pytest.fixture()

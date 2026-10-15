@@ -160,7 +160,7 @@ def _maintenance_graph_backend(request, monkeypatch):
     neo4j_support.py). Tests of SQLite's own workings are marked sqlite_only."""
     import os
 
-    if os.environ.get("MAINTENANCE_TEST_GRAPH") != "neo4j" or not hasattr(request.module, "GraphStore"):
+    if os.environ.get("MAINTENANCE_TEST_GRAPH") != "neo4j" or "maintenance" not in request.module.__name__:
         yield
         return
     if request.node.get_closest_marker("sqlite_only"):
@@ -169,7 +169,12 @@ def _maintenance_graph_backend(request, monkeypatch):
 
     if not neo4j_support.configured():
         pytest.skip("NEO4J_TEST_URI isn't set")
+    from backend.maintenance import store as store_mod
+
     created: set = set()
-    monkeypatch.setattr(request.module, "GraphStore", neo4j_support.store_factory(created))
+    factory = neo4j_support.store_factory(created)
+    if hasattr(request.module, "GraphStore"):
+        monkeypatch.setattr(request.module, "GraphStore", factory)
+    monkeypatch.setattr(store_mod, "GraphStore", factory)  # for tests that import it as they run
     yield
     neo4j_support.drop(created)
