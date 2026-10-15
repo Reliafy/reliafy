@@ -11,6 +11,7 @@ import { test, expect } from "@playwright/test";
 const SIGNED_IN = [
   ["POST", "/api/maintenance/graph/query"], // #423
   ["GET", "/api/maintenance/graph/schema"], // #423
+  ["GET", "/api/maintenance/conditions"], // #428
   ["GET", "/api/maintenance/overview"],
   ["GET", "/api/maintenance/work-orders"],
   ["GET", "/api/rbd-runs"],
