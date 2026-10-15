@@ -36,16 +36,13 @@ def test_position_class_ids_are_per_organisation(store):
 
 
 def test_the_same_id_in_two_organisations_keeps_two_rows(store):
-    with store._lock:
-        store._conn.execute("BEGIN")
-        store.put_node("org-a", "n1", "Position", {"name": "A"})
-        store.put_node("org-b", "n1", "Position", {"name": "B"})
-        store.put_node("org-a", "n2", "Position", {"name": "A2"})
-        store.put_node("org-b", "n2", "Position", {"name": "B2"})
-        store.put_edge("org-a", "PART_OF", "n1", "n2")
-        store.put_edge("org-b", "PART_OF", "n1", "n2")
-        store.delete_edge("org-b", "PART_OF", "n1", "n2")
-        store._conn.execute("COMMIT")
+    store.put_node("org-a", "n1", "Position", {"name": "A"})
+    store.put_node("org-b", "n1", "Position", {"name": "B"})
+    store.put_node("org-a", "n2", "Position", {"name": "A2"})
+    store.put_node("org-b", "n2", "Position", {"name": "B2"})
+    store.put_edge("org-a", "PART_OF", "n1", "n2")
+    store.put_edge("org-b", "PART_OF", "n1", "n2")
+    store.delete_edge("org-b", "PART_OF", "n1", "n2")
     assert store.node("org-a", "n1")["name"] == "A" and store.node("org-b", "n1")["name"] == "B"
     assert [n["name"] for n in store.out("org-a", "n1", "PART_OF")] == ["A2"]
     assert store.out("org-b", "n1", "PART_OF") == []
@@ -80,6 +77,7 @@ def _old_events(org: str) -> list[tuple[str, dict]]:
     ]
 
 
+@pytest.mark.sqlite_only
 def test_a_graph_file_in_the_older_layout_is_rebuilt(tmp_path):
     path = str(tmp_path / "maintenance.db")
     conn = sqlite3.connect(path)

@@ -304,6 +304,47 @@ MAINTENANCE_STORE = (os.environ.get("MAINTENANCE_STORE") or "auto").strip().lowe
 MAINTENANCE_DB_PATH = os.environ.get("MAINTENANCE_DB_PATH") or os.path.expanduser(
     "~/.reliafy/maintenance.sqlite"
 )
+# Where the graph projected from the log lives (docs/maintenance-graph.md):
+# "sqlite" (the default: in this process, in memory for a mongo log) or
+# "neo4j" (one shared graph in Neo4j: every read is a round trip to it, so only
+# with Neo4j close to the app).
+MAINTENANCE_GRAPH = (os.environ.get("MAINTENANCE_GRAPH") or "sqlite").strip().lower()
+# "neo4j": keep a copy of the SQLite graph in Neo4j, brought up to date in the
+# background after writes and by the hourly job, for graph queries. Requests
+# never wait for it. Off by default.
+MAINTENANCE_GRAPH_MIRROR = (os.environ.get("MAINTENANCE_GRAPH_MIRROR") or "").strip().lower()
+# "neo4j": answer the graph queries (backend/maintenance/graph_query.py) in
+# Cypher when the mirror is up to date for the workspace (else in Python). Off
+# by default: each is a round trip to Neo4j.
+MAINTENANCE_GRAPH_QUERIES = (os.environ.get("MAINTENANCE_GRAPH_QUERIES") or "").strip().lower()
+# Prefix for the graphs' namespace in Neo4j (one database can hold several).
+MAINTENANCE_GRAPH_NAMESPACE = (os.environ.get("MAINTENANCE_GRAPH_NAMESPACE") or "").strip()
+# The workspaces the mirror copies to Neo4j (comma-separated org ids: a user's
+# uid, or team:<id>; `python -m backend.scripts.maintenance_graph status` lists
+# them with their sizes). Empty: the mirror copies nothing. Every other
+# workspace is skipped by the background sync, the hourly catch-up and the
+# command, and removed from the mirror if it's there.
+MAINTENANCE_GRAPH_MIRROR_ORGS = frozenset(
+    o.strip() for o in (os.environ.get("MAINTENANCE_GRAPH_MIRROR_ORGS") or "").split(",") if o.strip()
+)
+# Owner-only graph queries in Cypher (#423; backend/maintenance/graph_cypher.py):
+# the addresses that may run them, through the app's API or MCP (they also need
+# Maintenance). Empty: off for everyone. Only for the owner of the workspaces in
+# MAINTENANCE_GRAPH_MIRROR_ORGS: Neo4j AuraDB Free has no access control, so a
+# query can read whatever the mirror holds.
+GRAPH_QUERY_EMAILS = {
+    e.strip().lower() for e in (os.environ.get("GRAPH_QUERY_EMAILS") or "").split(",") if e.strip()
+}
+# A graph query's limits: the transaction timeout (seconds), the most rows the
+# query plan may estimate at any step (a bigger plan is refused before it runs),
+# and the most bytes of rows returned (the rest are cut off, with a note).
+GRAPH_QUERY_TIMEOUT_S = float(os.environ.get("GRAPH_QUERY_TIMEOUT_S") or 10)
+GRAPH_QUERY_MAX_ESTIMATED_ROWS = int(os.environ.get("GRAPH_QUERY_MAX_ESTIMATED_ROWS") or 1_000_000)
+GRAPH_QUERY_MAX_BYTES = int(os.environ.get("GRAPH_QUERY_MAX_BYTES") or 1_000_000)
+NEO4J_URI = (os.environ.get("NEO4J_URI") or "").strip()
+NEO4J_USERNAME = (os.environ.get("NEO4J_USERNAME") or "neo4j").strip()
+NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD") or ""
+NEO4J_DATABASE = (os.environ.get("NEO4J_DATABASE") or "").strip() or None
 
 # ---- Reliability Agent (Anthropic Managed Agents) --------------------------
 # A separate, self-contained agent on Anthropic's Managed Agents runtime: Claude

@@ -251,9 +251,11 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
     mcp_tools.register()
     try:
         names = {t.name for t in anyio.run(mcp_server.mcp.list_tools)}
-        assert len(names) == 15 + 21 and READS | WRITES <= names
+        # 21 maintenance tools, and the 2 graph query tools (listed per user only to the owner).
+        assert len(names) == 15 + 21 + 2 and READS | WRITES <= names
         assert "maintenance_reliability.fit_class_model" in mcp_server.PRO_ONLY_TOOLS & mcp_server._FIT_TOOLS
         assert "maintenance_workspace.import_history" in mcp_server.HEAVY_TOOLS
+        assert {"maintenance_graph_query", "maintenance_graph_schema"} <= mcp_server.HEAVY_TOOLS & names
     finally:
         mcp_tools.unregister()
     assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 15

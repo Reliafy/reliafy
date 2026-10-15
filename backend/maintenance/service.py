@@ -4715,18 +4715,12 @@ class Maintenance:
 
     def impact(self, position_id: str) -> dict:
         """What depends on a position: everything downstream of it through its
-        connections, and whether redundancy covers it (k of n still available)."""
+        connections (nearest first: graph_query.downstream), and whether redundancy
+        covers it (k of n still available)."""
+        from backend.maintenance import graph_query
+
         start = self._get(position_id, "Position")
-        downstream, queue, seen = [], [position_id], {position_id}
-        while queue:
-            current = queue.pop(0)
-            for i in self._interfaces(current, "FROM"):
-                nxt = i["to"]["id"]
-                if nxt not in seen:
-                    seen.add(nxt)
-                    queue.append(nxt)
-                    downstream.append({"id": nxt, "name": i["to"]["name"], "via": i["kind"],
-                                       "from": i["from"]["name"]})
+        downstream = graph_query.downstream(self, position_id)
         covered = []
         for g in self.groups_of(position_id):
             others = [m["name"] for m in g["members"] if m["id"] != position_id]

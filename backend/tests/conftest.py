@@ -16,6 +16,8 @@ def _fast_sample_availability(monkeypatch):
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "real_seed: seed the samples for real, not from the suite's snapshot")
+    config.addinivalue_line(
+        "markers", "sqlite_only: tests the SQLite maintenance graph itself (skipped in the Neo4j parity run)")
 
 
 # The samples, seeded once per test run: (collection, documents) pairs.
@@ -149,3 +151,30 @@ def mcp_on(monkeypatch):
     from backend import config as app_config
 
     monkeypatch.setattr(app_config, "MCP_ENABLED", True)
+
+
+@pytest.fixture(autouse=True)
+def _maintenance_graph_backend(request, monkeypatch):
+    """MAINTENANCE_TEST_GRAPH=neo4j (with NEO4J_TEST_URI): the maintenance test
+    modules make their graphs in Neo4j instead of SQLite (backend/tests/
+    neo4j_support.py). Tests of SQLite's own workings are marked sqlite_only."""
+    import os
+
+    if os.environ.get("MAINTENANCE_TEST_GRAPH") != "neo4j" or "maintenance" not in request.module.__name__:
+        yield
+        return
+    if request.node.get_closest_marker("sqlite_only"):
+        pytest.skip("tests the SQLite graph itself")
+    from backend.tests import neo4j_support
+
+    if not neo4j_support.configured():
+        pytest.skip("NEO4J_TEST_URI isn't set")
+    from backend.maintenance import store as store_mod
+
+    created: set = set()
+    factory = neo4j_support.store_factory(created)
+    if hasattr(request.module, "GraphStore"):
+        monkeypatch.setattr(request.module, "GraphStore", factory)
+    monkeypatch.setattr(store_mod, "GraphStore", factory)  # for tests that import it as they run
+    yield
+    neo4j_support.drop(created)
