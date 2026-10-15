@@ -875,6 +875,88 @@ def retire_item_class(class_id: str, body: dict = Body(default={}),
     return _run(lambda: (m.retire_item_class(class_id, body.get("reason", "")), {"retired": class_id})[1])
 
 
+# ---- conditions: what things are exposed to (optional) -------------------------------------
+
+@router.get("/conditions")
+def list_conditions(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The condition register as a tree with counts, and every condition flat by path (for pickers)."""
+    return _run(lambda: {**m.condition_tree(), "conditions": m.conditions()})
+
+
+@router.post("/conditions")
+def create_condition(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.create_condition, body.get("name"), body.get("parent_id"), body.get("kind"), body.get("unit", ""),
+                body.get("code", ""), body.get("description", ""))
+
+
+@router.get("/conditions/export")
+def export_conditions(format: str = "json", m: Maintenance = Depends(maintenance)) -> Response:
+    from backend.maintenance import conditions
+
+    if format == "csv":
+        return Response(conditions.export_csv(m), media_type="text/csv",
+                        headers={"Content-Disposition": 'attachment; filename="conditions.csv"'})
+    out = _run(conditions.export_json, m)
+    out.headers["Content-Disposition"] = 'attachment; filename="conditions.json"'
+    return out
+
+
+@router.post("/conditions/import")
+def import_conditions(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A register as CSV or JSON text ({format: csv | json, text, dry_run, source}) or as
+    {conditions: [...]}. A dry run (the default) only reports."""
+    from backend.maintenance import conditions
+
+    def go():
+        if body.get("conditions") is not None:
+            rows = conditions.rows_from_json(body["conditions"])
+        elif body.get("format") == "csv":
+            rows = conditions.rows_from_csv(str(body.get("text") or ""))
+        else:
+            rows = conditions.rows_from_json(str(body.get("text") or ""))
+        return conditions.run(m, rows, body.get("dry_run", True) is not False, body.get("source") or "imported")
+    return _run(go)
+
+
+@router.get("/conditions/of/{target_id}")
+def conditions_of(target_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A location's, position's, item's or connection's conditions, with where each comes from."""
+    return _run(m.conditions_of, target_id)
+
+
+@router.post("/conditions/of/{target_id}")
+def set_target_condition(target_id: str, body: dict = Body(...),
+                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{condition_id, action: apply (value, note) | exclude (note) | remove}: returns the target's conditions."""
+    action, condition_id = body.get("action") or "apply", body.get("condition_id")
+    if action == "exclude":
+        return _run(m.exclude_condition, target_id, condition_id, body.get("note", ""))
+    if action == "remove":
+        return _run(m.remove_condition, target_id, condition_id)
+    if action != "apply":
+        return JSONResponse(status_code=422, content={"detail": "The action is apply, exclude or remove."})
+    return _run(m.apply_condition, target_id, condition_id, body.get("value"), body.get("note", ""))
+
+
+@router.get("/conditions/{condition_id}")
+def get_condition(condition_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.condition, condition_id)
+
+
+@router.patch("/conditions/{condition_id}")
+def update_condition(condition_id: str, body: dict = Body(...),
+                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """name, kind, unit, code, description; parent_id moves it (null: to the top)."""
+    return _run(m.update_condition, condition_id, **{k: body[k] for k in (
+        "name", "kind", "unit", "code", "description", "parent_id") if k in body})
+
+
+@router.post("/conditions/{condition_id}/retire")
+def retire_condition(condition_id: str, body: dict = Body(default={}),
+                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(lambda: (m.retire_condition(condition_id, body.get("reason", "")), {"retired": condition_id})[1])
+
+
 @router.get("/manufacturers")
 def list_manufacturers(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {"manufacturers": m.manufacturers()})
