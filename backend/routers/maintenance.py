@@ -106,19 +106,42 @@ async def _read_body(request: Request) -> bytes:
     return bytes(body)
 
 
+def _make_store():
+    """The graph store the config asks for (docs/maintenance-graph.md): the SQLite
+    graph (with a Neo4j mirror when MAINTENANCE_GRAPH_MIRROR=neo4j), or Neo4j
+    itself when MAINTENANCE_GRAPH=neo4j."""
+    from backend.maintenance.series import MongoSeries
+    from backend.maintenance.service import PROJECTION_VERSION
+
+    if config.MAINTENANCE_GRAPH == "neo4j":
+        from backend.maintenance.neo4j_store import Neo4jGraphStore, connect
+        from backend.maintenance.store import SqliteEventLog, open_sqlite
+
+        if _use_mongo():
+            log, series = MongoEventLog(get_db()), MongoSeries(get_db())
+        else:
+            log, series = SqliteEventLog(open_sqlite(config.MAINTENANCE_DB_PATH)), None
+        # A namespace per projection version: a new version builds its graph beside
+        # the old one, which the processes still running the old version keep using.
+        return Neo4jGraphStore(connect(), PROJECTORS, log, series=series, version=PROJECTION_VERSION,
+                               namespace=f"{config.MAINTENANCE_GRAPH_NAMESPACE}graph-v{PROJECTION_VERSION}")
+    if _use_mongo():
+        store = GraphStore(":memory:", PROJECTORS, MongoEventLog(get_db()), series=MongoSeries(get_db()),
+                           version=PROJECTION_VERSION)
+    else:
+        store = GraphStore(config.MAINTENANCE_DB_PATH, PROJECTORS, version=PROJECTION_VERSION)
+    from backend.maintenance.mirror import attach_from_config
+
+    attach_from_config(store)
+    return store
+
+
 def get_store() -> GraphStore:
     """The graph, caught up with the log (other processes may have written)."""
     global _store
     with _store_lock:
         if _store is None:
-            from backend.maintenance.series import MongoSeries
-            from backend.maintenance.service import PROJECTION_VERSION
-
-            if _use_mongo():
-                _store = GraphStore(":memory:", PROJECTORS, MongoEventLog(get_db()), series=MongoSeries(get_db()),
-                                    version=PROJECTION_VERSION)
-            else:
-                _store = GraphStore(config.MAINTENANCE_DB_PATH, PROJECTORS, version=PROJECTION_VERSION)
+            _store = _make_store()
         store = _store
     store.sync()
     return store
