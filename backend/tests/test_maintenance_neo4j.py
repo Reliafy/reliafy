@@ -93,7 +93,7 @@ def test_the_mirror_keeps_up_in_step_across_instances(spaces):
     one = GraphStore(":memory:", PROJECTORS, log, version=PROJECTION_VERSION)
     m = Maintenance(one, org, "tester")
     p = plant(m)
-    mirror = Neo4jMirror(one, conn, namespace=ns, queries=True)
+    mirror = Neo4jMirror(one, conn, namespace=ns, queries=True, orgs=[org])
     mirror.notify = lambda org=None: None  # synced by hand here
     mirror.attach()
     assert mirror.pending()[org]["full"]
@@ -124,7 +124,7 @@ def test_the_mirror_keeps_up_in_step_across_instances(spaces):
     # time: one writes, the other finds it done or conflicts and re-reads.
     two = GraphStore(":memory:", PROJECTORS, log, version=PROJECTION_VERSION)
     two.sync()
-    other = Neo4jMirror(two, conn, namespace=ns)
+    other = Neo4jMirror(two, conn, namespace=ns, orgs=[org])
     m.create_position("Late")
     two.sync()
     results, errors = [], []
@@ -143,12 +143,12 @@ def test_the_mirror_keeps_up_in_step_across_instances(spaces):
     assert mirror.remote_marks(refresh=True)[org][0] == one.change_marks()[0]
 
     # Copied whole: in parts in one transaction, and for a new projection version.
-    small = Neo4jMirror(one, conn, namespace=ns, chunk=25)
+    small = Neo4jMirror(one, conn, namespace=ns, chunk=25, orgs=[org])
     assert small.rebuild([org])["full"] == 1 and small.verify(org)["same"]
     one.version = PROJECTION_VERSION + 1
-    newer = Neo4jMirror(one, conn, namespace=ns)
+    newer = Neo4jMirror(one, conn, namespace=ns, orgs=[org])
     assert newer.sync()["full"] == 1 and newer.verify(org)["same"]
-    assert Neo4jMirror(two, conn, namespace=ns).sync()["skipped"] == 1  # older code leaves it alone
+    assert Neo4jMirror(two, conn, namespace=ns, orgs=[org]).sync()["skipped"] == 1  # older code leaves it alone
 
     # The hourly job's catch-up (and keep-alive) on a mirror with nothing to do.
     one.mirror = newer

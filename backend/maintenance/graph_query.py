@@ -38,8 +38,8 @@ def _cypher_target(m):
     if isinstance(s, Neo4jGraphStore):
         return s.conn, s.ns, None
     mirror = getattr(s, "mirror", None)
-    if mirror is None or not mirror.queries:
-        return None
+    if mirror is None or not mirror.queries or not mirror.in_scope(m.org):
+        return None  # (a workspace outside the mirror's scope is never in Neo4j)
     return mirror.conn, mirror.ns, {"need": s.org_mark(m.org), "version": mirror.version}
 
 

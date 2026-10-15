@@ -132,7 +132,7 @@ def test_neo4j_unreachable_never_fails_a_write_or_the_hourly_job(m, monkeypatch)
     from backend.routers import maintenance as router
     from backend.services import content_jobs
 
-    mirror = mirror_mod.Neo4jMirror(m.s, _Unreachable(), namespace="x").attach()
+    mirror = mirror_mod.Neo4jMirror(m.s, _Unreachable(), namespace="x", orgs=[ORG]).attach()
     m.create_position("A")  # wakes the mirror, which fails in the background
     mirror._thread.join(timeout=0.5)
     got = mirror_mod.catch_up(m.s)
@@ -152,3 +152,37 @@ def test_no_mirror_unless_configured(monkeypatch):
     monkeypatch.setattr(config, "MAINTENANCE_GRAPH_MIRROR", "")
     assert mirror_mod.attach_from_config(store) is None and store.mirror is None and store.listeners == []
     assert mirror_mod.catch_up(store) == {"step": "maintenance_mirror", "skipped": "no mirror"}
+
+
+@pytest.mark.sqlite_only
+def test_the_mirror_copies_only_the_workspaces_in_its_scope(m, monkeypatch):
+    """MAINTENANCE_GRAPH_MIRROR_ORGS: empty copies nothing (Neo4j isn't even asked);
+    any other workspace is passed over, even asked for by name, and never answered
+    from Neo4j."""
+    from backend import config
+
+    Maintenance(m.s, "user-other").create_position("B")
+    a = m.create_position("A")["id"]
+    mirror = mirror_mod.Neo4jMirror(m.s, _Unreachable(), namespace="x", queries=True).attach()
+    monkeypatch.setattr(config, "MAINTENANCE_GRAPH_MIRROR_ORGS", frozenset())
+    assert mirror.scope == frozenset() and mirror.pending() == {}
+    assert mirror.sync()["out_of_scope"] == 2 and mirror.sync()["orgs"] == 0
+    mirror.notify(ORG)
+    m.create_position("C")
+    assert mirror._thread is None  # nothing to send, so no sync was started
+
+    monkeypatch.setattr(config, "MAINTENANCE_GRAPH_MIRROR_ORGS", frozenset({ORG}))
+    assert mirror.sync(orgs=["user-other"]) == {"orgs": 0, "full": 0, "nodes": 0, "edges": 0, "gone": 0,
+                                                 "conflicts": 0, "skipped": 0, "out_of_scope": 1}
+    with pytest.raises(OSError):
+        mirror.sync()  # ORG is in scope: Neo4j is asked (and isn't there)
+    other = Maintenance(m.s, "user-other")
+    assert graph_query._cypher_target(other) is None  # answered in Python, no round trip
+    assert graph_query.downstream(other, other.s.nodes("user-other", "Position")[0]["id"]) == []
+    assert graph_query.downstream(m, a) == []  # in scope, Neo4j unreachable: Python
+
+    monkeypatch.setattr(config, "MAINTENANCE_GRAPH_MIRROR", "neo4j")
+    monkeypatch.setattr(config, "MAINTENANCE_GRAPH_MIRROR_ORGS", frozenset())
+    store = GraphStore(":memory:", PROJECTORS)
+    attached = mirror_mod.attach_from_config(store)
+    assert attached is store.mirror and attached.scope == frozenset() and attached._thread is None

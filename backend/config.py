@@ -319,6 +319,14 @@ MAINTENANCE_GRAPH_MIRROR = (os.environ.get("MAINTENANCE_GRAPH_MIRROR") or "").st
 MAINTENANCE_GRAPH_QUERIES = (os.environ.get("MAINTENANCE_GRAPH_QUERIES") or "").strip().lower()
 # Prefix for the graphs' namespace in Neo4j (one database can hold several).
 MAINTENANCE_GRAPH_NAMESPACE = (os.environ.get("MAINTENANCE_GRAPH_NAMESPACE") or "").strip()
+# The workspaces the mirror copies to Neo4j (comma-separated org ids: a user's
+# uid, or team:<id>; `python -m backend.scripts.maintenance_graph status` lists
+# them with their sizes). Empty: the mirror copies nothing. Every other
+# workspace is skipped by the background sync, the hourly catch-up and the
+# command, and removed from the mirror if it's there.
+MAINTENANCE_GRAPH_MIRROR_ORGS = frozenset(
+    o.strip() for o in (os.environ.get("MAINTENANCE_GRAPH_MIRROR_ORGS") or "").split(",") if o.strip()
+)
 NEO4J_URI = (os.environ.get("NEO4J_URI") or "").strip()
 NEO4J_USERNAME = (os.environ.get("NEO4J_USERNAME") or "neo4j").strip()
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD") or ""

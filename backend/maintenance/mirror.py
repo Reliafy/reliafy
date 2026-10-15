@@ -25,6 +25,12 @@ When it runs:
   from pausing when idle;
 * ``python -m backend.scripts.maintenance_graph`` (status, sync, rebuild from
   the log, verify).
+
+Which workspaces: only those in ``MAINTENANCE_GRAPH_MIRROR_ORGS`` (its scope;
+empty: none). Every other one is passed over by every sync, and the hourly
+catch-up removes any the mirror holds (:meth:`Neo4jMirror.prune`). While Neo4j
+has no access control (AuraDB Free), that is what keeps graph queries in
+Cypher (``graph_cypher.py``) to the owner's own workspaces.
 """
 
 from __future__ import annotations
@@ -69,10 +75,13 @@ class Neo4jMirror:
 
     ``conn``: a connection, or a function that makes one (called on first use, so
     attaching the mirror costs no round trip). ``queries``: graph queries may be
-    answered from it (``graph_query.py``)."""
+    answered from it (``graph_query.py``). ``orgs``: the workspaces it copies (its
+    scope); None reads ``MAINTENANCE_GRAPH_MIRROR_ORGS`` each time (empty: none)."""
 
-    def __init__(self, store, conn, namespace: str = "", queries: bool = False, chunk: int = CHUNK):
+    def __init__(self, store, conn, namespace: str = "", queries: bool = False, chunk: int = CHUNK,
+                 orgs=None):
         self.store = store
+        self._orgs = None if orgs is None else frozenset(orgs)
         self._conn = conn
         self.ns = namespace
         self.version = store.version
@@ -86,6 +95,18 @@ class Neo4jMirror:
         self._newer_noted: set[str] = set()
         self.last_error: str | None = None
         self.last_sync: dict | None = None
+
+    @property
+    def scope(self) -> frozenset:
+        """The workspaces this mirror copies; no other is ever sent to Neo4j."""
+        if self._orgs is not None:
+            return self._orgs
+        from backend import config
+
+        return frozenset(config.MAINTENANCE_GRAPH_MIRROR_ORGS)
+
+    def in_scope(self, org: str | None) -> bool:
+        return org in self.scope
 
     @property
     def conn(self) -> Neo4jConnection:
@@ -103,7 +124,10 @@ class Neo4jMirror:
     # ---- in the background --------------------------------------------------------------
 
     def notify(self, org: str | None = None) -> None:
-        """Ask for a sync soon, without waiting for it."""
+        """Ask for a sync soon, without waiting for it (not for a write to a
+        workspace outside the scope: there's nothing to send)."""
+        if (org is not None and not self.in_scope(org)) or not self.scope:
+            return
         with self._thread_lock:
             if self._thread is None or not self._thread.is_alive():
                 self._thread = threading.Thread(target=self._run, name="maintenance-mirror", daemon=True)
@@ -139,8 +163,11 @@ class Neo4jMirror:
         return self._remote
 
     def pending(self) -> dict[str, dict]:
-        """The organisations whose copy is behind: {org: {local, mirror, full}}."""
+        """The organisations in scope whose copy is behind: {org: {local, mirror, full}}."""
         _, marks = self.store.change_marks()
+        marks = {o: v for o, v in marks.items() if self.in_scope(o)}
+        if not marks:
+            return {}
         remote = self.remote_marks()
         changes_from = self.store.changes_from()
         out = {}
@@ -155,14 +182,19 @@ class Neo4jMirror:
         return applied < 0 or version != self.version or applied < changes_from
 
     def sync(self, orgs=None, full: bool = False) -> dict:
-        """Bring the copy up to date (for these organisations, or every one).
+        """Bring the copy up to date (for these organisations, or every one), in
+        scope only: any other is counted in ``out_of_scope`` and never sent.
         ``full``: copy them whole whatever their position. Returns what was sent."""
         with self._sync_lock:
             _, marks = self.store.change_marks()
-            remote = self.remote_marks(refresh=self._remote is None)
-            changes_from = self.store.changes_from()
-            result = {"orgs": 0, "full": 0, "nodes": 0, "edges": 0, "gone": 0, "conflicts": 0, "skipped": 0}
-            for org in sorted(orgs if orgs is not None else marks):
+            asked = sorted(orgs if orgs is not None else marks)
+            wanted = [o for o in asked if self.in_scope(o)]
+            result = {"orgs": 0, "full": 0, "nodes": 0, "edges": 0, "gone": 0, "conflicts": 0, "skipped": 0,
+                      "out_of_scope": len(asked) - len(wanted)}
+            if wanted:
+                self.remote_marks(refresh=self._remote is None)
+                changes_from = self.store.changes_from()
+            for org in wanted:
                 self._sync_org(org, marks.get(org, 0), changes_from, result, full)
             self.last_sync = {**result, "at": _now()}
             self.last_error = None
@@ -226,6 +258,23 @@ class Neo4jMirror:
         what Neo4j holds for them."""
         return self.sync(orgs=orgs, full=True)
 
+    def prune(self) -> list[str]:
+        """Remove from Neo4j every workspace this mirror's namespace holds that's
+        outside the scope (copied before the scope narrowed, or by hand). Returns
+        them."""
+        from backend.maintenance.neo4j_store import delete_namespace
+
+        rows = self.conn.run("MATCH (n:Node {ns: $ns}) WHERE NOT n.org IN $scope RETURN DISTINCT n.org AS org "
+                             "UNION MATCH (m:MaintenanceMirror {ns: $ns}) WHERE NOT m.org IN $scope "
+                             "RETURN m.org AS org", {"ns": self.ns, "scope": sorted(self.scope)})
+        gone = sorted({r["org"] for r in rows if r["org"] is not None})
+        for org in gone:
+            logger.warning("maintenance mirror: removing %s from Neo4j (outside MAINTENANCE_GRAPH_MIRROR_ORGS)", org)
+            delete_namespace(self.conn, self.ns, org)
+            if self._remote is not None:
+                self._remote.pop(org, None)
+        return gone
+
     def verify(self, org: str) -> dict:
         """Whether Neo4j holds exactly the store's graph for the organisation."""
         local, remote = self.store.snapshot(org), graph_snapshot(self.conn, self.ns, org)
@@ -236,7 +285,8 @@ class Neo4jMirror:
 
     def status(self) -> dict:
         remote = self.remote_marks(refresh=True)
-        return {"namespace": self.ns, "version": self.version, "orgs_in_neo4j": len(remote),
+        return {"namespace": self.ns, "version": self.version, "scope": sorted(self.scope),
+                "orgs_in_neo4j": sorted(remote), "outside_scope_in_neo4j": sorted(set(remote) - self.scope),
                 "behind": self.pending(), "last_sync": self.last_sync, "last_error": self.last_error}
 
 
@@ -265,8 +315,8 @@ def _now() -> str:
 
 def catch_up(store) -> dict:
     """The hourly job's step: bring the mirror up to date (which also keeps an
-    idle AuraDB Free instance from pausing). Never raises: Neo4j being
-    unreachable is logged and reported."""
+    idle AuraDB Free instance from pausing), and remove any workspace outside
+    its scope. Never raises: Neo4j being unreachable is logged and reported."""
     mirror = getattr(store, "mirror", None)
     if mirror is None:
         return {"step": "maintenance_mirror", "skipped": "no mirror"}
@@ -274,7 +324,9 @@ def catch_up(store) -> dict:
     try:
         mirror.conn.ping()
         result = mirror.sync()
-        return {"step": "maintenance_mirror", **result, "seconds": round(time.monotonic() - started, 2)}
+        pruned = mirror.prune()
+        return {"step": "maintenance_mirror", **result, "pruned": len(pruned),
+                "seconds": round(time.monotonic() - started, 2)}
     except Exception as err:  # noqa: BLE001 - see the docstring
         logger.warning("maintenance mirror catch-up failed: %s: %s", type(err).__name__, err)
         return {"step": "maintenance_mirror", "error": f"{type(err).__name__}: {err}"}
@@ -287,7 +339,8 @@ def mirror_namespace() -> str:
 
 
 def attach_from_config(store) -> Neo4jMirror | None:
-    """Attach a mirror to the store when ``MAINTENANCE_GRAPH_MIRROR=neo4j``. No
+    """Attach a mirror to the store when ``MAINTENANCE_GRAPH_MIRROR=neo4j``, copying
+    the workspaces in ``MAINTENANCE_GRAPH_MIRROR_ORGS`` (none when it's empty). No
     round trip: the connection is made on the first sync."""
     from backend import config
     from backend.maintenance.neo4j_store import connect
