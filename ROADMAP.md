@@ -1,166 +1,121 @@
 # Reliafy roadmap
 
-Reliafy's goal is to be the platform where failure data becomes maintenance
-decisions — open source at the core, connected end to end, so that a meter
-reading taken on a Tuesday can change a replacement interval by Wednesday.
+Reliafy's goal is to be the place where failure data becomes maintenance
+decisions: open source at the core (SurPyval, RePyability), connected end to
+end, so that a reading taken on a Tuesday can change a replacement interval by
+Wednesday.
 
-This roadmap is organised by **horizon, not date**:
+The roadmap is organised by **horizon, not date**:
 
-- **Now** — being built, or immediately next.
-- **Next** — coming after that; shapes are known, order can change.
-- **Later** — direction we're committed to, not yet scheduled.
-- **Ideas** — plausible futures, unvalidated. Argue for them.
+- **Now**: being built this week or next.
+- **Next**: after that, **in order**. The order can change.
+- **Later**: a direction we're committed to, not yet scheduled.
+- **Ideas**: plausible, unvalidated. Argue for them.
 
 **How to influence it:** 👍 the [roadmap issues](https://github.com/Reliafy/reliafy/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc)
-you want, or open a new issue. Real usage beats this document: when users
-tell us what hurts, items move. If you're evaluating Reliafy and something
-here would decide it for you, say so in the issue — that's exactly the
+you want, or open a new issue. Real usage beats this document. If something
+here would decide whether you use Reliafy, say so in the issue: that is the
 signal that reorders the list.
 
+_Last updated 15 October 2026._
+
 ---
+
+## What Reliafy does today
+
+- **Life data:** fit 20+ distributions to failures and suspensions (right,
+  left and interval censoring, truncation), mixtures, accelerated life tests,
+  regression with covariates, degradation paths with per-item remaining life,
+  and repairable systems (Crow-AMSAA, MCF, trend tests, optimal overhaul).
+- **Reliability block diagrams:** reliability, MTTF, B-lives and importance;
+  availability by simulation with repair crews and standby; k-of-n and
+  standby groups; safety functions (PFDavg, SIL); import from BlockSim,
+  Open-PSA, Galileo and Excel; download any diagram as a Python script.
+- **Strategy:** optimal replacement, failure-finding intervals, fleet failure
+  forecasts with email alerts, and evidence-linked RCM studies.
+- **Maintenance (early access):** a register of positions, locations and
+  items; plans, work orders, measurement points and spares; life data from the
+  history, class models, and interval proposals you accept or reject.
+- **Agents:** the Reliafy connector (MCP) lets Claude and other agents fit,
+  analyse and run maintenance on your data; an ingestion API feeds usage,
+  readings and new lives in.
+- **Sharing:** public links to any analysis, team workspaces.
 
 ## Now
 
-**Alerts on your data.** The ingestion loop is in place — personal API
-tokens, ingestion endpoints for fleet usage, degradation measurements and new
-lives, and notebook → Reliafy model push — so the missing piece is the
-payoff: recompute when new data lands and email when something changes state
-("Truck 12 → plan replacement", "expected failures next quarter rose
-3.2 → 4.8"). Closing the loop from data source → prediction → inbox is
-something desktop reliability tools structurally can't do.
-([#26](https://github.com/Reliafy/reliafy/issues/26))
+**Release safety.** Browser smoke tests on every release, so a page that
+fails to load never goes live.
+([#123](https://github.com/Reliafy/reliafy/issues/123))
 
-**Repairable systems, deeper.** Crow-AMSAA, Duane and HPP fits, the MCF, the
-Laplace trend test and an optimal overhaul interval are live. Next: confidence
-bounds on β and a proper growth verdict, the MIL-HDBK-189C trend test and
-goodness of fit ([#81](https://github.com/Reliafy/reliafy/issues/81)), then
-imperfect repair — generalised renewal / virtual age
-([#65](https://github.com/Reliafy/reliafy/issues/65)).
+**Writing.** The November What's new, tutorials and technical posts on the
+[content calendar](https://github.com/Reliafy/reliafy/issues/343).
 
-## Next
+## Next (in order)
 
-**Report view.** A print-friendly, single-link "report" composition of any
-analysis (public links already carry the content; this adds layout — no
-PDFs, the link *is* the report).
-
-**Spares & maintenance economics deepening.** Stock-level recommendation on
-top of fleet failure forecasts (service-level → how many spares to hold),
-block replacement policies, inspection-interval optimisation for degrading
-items.
-
-**Design-stage RBDs.** Reliability allocation — what each block needs to hit
-a system target ([#53](https://github.com/Reliafy/reliafy/issues/53)) — plus
-k-of-n cold standby and partial common-cause models
-([#84](https://github.com/Reliafy/reliafy/issues/84)).
-
-**Regression depth.** Time-varying (step-function) covariates
-([#60](https://github.com/Reliafy/reliafy/issues/60)) and confidence bands
-for regression models in the calculator
-([#54](https://github.com/Reliafy/reliafy/issues/54)).
-
-**Onboarding & guidance.** Guided first-run walkthroughs per module, worked
-sample narratives, empty states that teach.
+1. **Recommendations from combinations of context.** An outdoor pump on
+   seawater needs checks that neither "pump" nor "outdoor" implies alone.
+   Rules match the register and propose failure modes, tasks and parts; the
+   data then tests whether a combination really changes life.
+   ([#421](https://github.com/Reliafy/reliafy/issues/421))
+2. **Failure forecasts from the register.** Expected failures per position
+   class, the positions most at risk, then the spares and budget to hold
+   against them.
+   ([#407](https://github.com/Reliafy/reliafy/issues/407),
+   [#31](https://github.com/Reliafy/reliafy/issues/31))
+3. **A leaner connector.** Smaller tool definitions, so agents spend less of
+   their context on Reliafy's tools.
+   ([#410](https://github.com/Reliafy/reliafy/issues/410))
+4. **A Claude plugin** and a listing in the connector directory.
+   ([#415](https://github.com/Reliafy/reliafy/issues/415))
+5. **Intervals for rotables and alerts.** Task intervals that follow an
+   item's life since overhaul; alerts when health, RCM evidence or maintenance
+   state changes, with preferences.
+   ([#409](https://github.com/Reliafy/reliafy/issues/409),
+   [#26](https://github.com/Reliafy/reliafy/issues/26))
+6. **Connecting other systems and money.** CMMS import mappings and outbound
+   webhooks; optimal replacement in business terms; guided fleet set-up.
+   ([#39](https://github.com/Reliafy/reliafy/issues/39),
+   [#296](https://github.com/Reliafy/reliafy/issues/296),
+   [#297](https://github.com/Reliafy/reliafy/issues/297))
 
 ## Later
 
-### The model landscape
+Each theme has a tracking issue listing everything in it.
 
-Reliafy's statistical core, [SurPyval](https://github.com/derrynknife/SurPyval),
-organises survival models along orthogonal axes — **time scale**
-(continuous durations vs discrete trials) × **recurrence** × **competing
-events** × **covariates** × **estimation method**. Our destination for the
-analysis engine is simple to state: **every cell of that table, surfaced in
-the UI** with the same fit-plot-decide workflow the current models have.
-The engine already implements more of the landscape than Reliafy exposes;
-much of this horizon is UI, not statistics:
+**Maintenance and RCM** ([#283](https://github.com/Reliafy/reliafy/issues/283)):
+FMEA / FMECA scoring and failure-mode libraries (#36); event-driven checks
+after over-temperature, storms or hard landings (#422); condition-based risk
+from joint models of readings and failures (#388); meter reading quality
+(#413); position class templates (#412); an offline work-order app (#419);
+Maintenance for every account (#418).
 
-- **Covariates** — semi-parametric Buckley-James (AFT) and Lin-Ying
-  (additive hazards) alongside the PH/AFT/PO/AH families already live
-- **Competing events** — cumulative incidence, Fine-Gray / cause-specific
-  hazards regression
-- **Recurrence** — proportional-intensity regression and cause-specific MCF
-- **Distribution breadth** — Beta, Beta4 and Uniform to complete a catalogue
-  that already spans Weibull, Exponentiated Weibull, Gumbel, Logistic,
-  LogLogistic, discrete and non-parametric models with offsets
+**Forecasts, spares and strategy** ([#416](https://github.com/Reliafy/reliafy/issues/416)):
+calendar-allowed replacement intervals (#320), a capital renewal plan from
+life models (#408), group comparisons saved as strategy analyses (#201).
 
-### Beyond the table
+**Modelling** ([#279](https://github.com/Reliafy/reliafy/issues/279)):
+Gamma and Wiener degradation processes (#178), Bayesian fitting with priors
+(#38), accelerated degradation tests (#69), copulas and survival forests
+(#180).
 
-**Accelerated degradation testing (ADT).** Degradation paths that depend on
-stress — the degradation counterpart of the accelerated life testing that's
-already live.
+**Reliability data library** ([#115](https://github.com/Reliafy/reliafy/issues/115)):
+cited, licence-clean failure-rate records with pages, an API and agent search
+(#116, #117); publishing models, diagrams and datasets to share (#120, #121).
 
-**Richer degradation models.** Nonlinear paths (power, exponential,
-logistic), random-effects/hierarchical fits across units, gamma-process
-models; measurement-noise handling.
+**Connector and integrations** ([#143](https://github.com/Reliafy/reliafy/issues/143)):
+redundancy design within a budget (#141), degradation tools (#137), a
+versioned RBD spec with a validator (#108), fleets and team workspaces over
+the connector (#138, #140), a command-line client (#42).
 
-**Competing risks.** Competing-risk fits when multiple failure modes race
-(mixture models for mixed failure modes are already live).
-
-**FMEA/FMECA.** Structured failure-modes analysis that feeds the RCM module
-(mode libraries, severity/occurrence/detection, criticality ranking) — with
-the same live-evidence linking RCM has.
-
-**Spares-aware availability.** Repair simulation that accounts for spares,
-logistics delay and repair crews, on top of the repairable RBDs already live.
-
-**Bayesian fitting.** Priors from handbooks or expert judgement for
-small-sample fleets; credible intervals throughout.
-
-**CMMS integrations.** Import mappers/templates for the common exports
-(SAP PM, Maximo, Fiix…) on top of the ingestion API. Webhooks outbound for
-events (health transitions, contradicted decisions).
-
-**Deeper collaboration.** Comments on artifacts, analysis version history,
-RCM review workflows (sign-off, periodic-review reminders), org-level
-workspaces. SSO when organisations ask.
-
-**Assistant depth.** Explain-this-result, draft-the-report,
-auto-map-my-CSV, "what changed since last month?" — the assistant as a
-reliability engineer's analyst, not a chatbot.
+**Platform** ([#285](https://github.com/Reliafy/reliafy/issues/285)):
+comments, version history and RCM sign-off reminders (#40).
 
 ## Ideas
 
-**Deep survival models — learned RUL distributions from operating data.**
-The moonshot. Once the ingestion API is streaming usage, duty, and
-condition signals, train neural survival models that regress *full
-survival distributions* on covariate histories — censoring-aware losses, a
-distribution output head, so every prediction is a distribution of
-remaining life with honest uncertainty, re-scored on a regular cadence as
-data lands, feeding the same health badges and alerts as the statistical
-models. The ingestion API is deliberately the first step of this: it
-builds the training corpus. Where fleets are small, the classical models
-remain the fallback — this augments the statistics, never replaces the
-transparency.
-
-- Warranty forecasting and returns analysis
-- Stress–strength interference
-- Common-cause failure and fault-tree views for RBDs
-- Embeddable live charts (intranet dashboards)
-- Custom KPI dashboard across a whole workspace
-- Condition-monitoring signal ingestion (vibration/oil trends as
-  degradation measures)
-- Dark mode
-- Localisation
-
----
-
-## Recently shipped
-
-Evidence-linked RCM with live contradiction flagging · degradation tracking
-with per-item RUL and credible intervals · fleet failure forecasting
-(analytic + Monte Carlo renewals) · team workspaces and view-only sharing ·
-public read-only share links (`/p/…`) for every artifact type, RBDs
-included (read-only canvas + server-computed results) · AI assistant with tool access to
-every module · censored/truncated-data MLE fitting across Weibull,
-Lognormal, Exponential, Gamma, Normal, and proportional-hazards models ·
-reliability block diagrams with k-of-n, standby, importance measures, and
-cut sets · repairable-system analysis (Crow-AMSAA, Duane, MCF, Laplace trend
-test, optimal overhaul interval) · repairable RBDs with repair times,
-availability and per-block importance · accelerated life testing · mixture
-models · non-parametric suite (Kaplan-Meier, Nelson-Aalen,
-Fleming-Harrington, Turnbull) · per-demand and discrete-time models · all five
-estimation methods with offsets · personal API tokens, ingestion endpoints and
-notebook → Reliafy model push · RSS feeds and a monthly What's-new · use Reliafy from Claude — a remote MCP server and claude.ai connector (OAuth) with 17 tools · "Download as Python" for any RBD (a standalone SurPyval + RePyability script) · saved, shareable availability results.
-
-*(No dates on this document by design. It reorders as users teach us what
-matters — that's a feature.)*
+- Agents querying their own maintenance graph directly, as a paid add-on
+  ([#423](https://github.com/Reliafy/reliafy/issues/423))
+- Upload pages an agent creates, so you can send it a file
+  ([#420](https://github.com/Reliafy/reliafy/issues/420))
+- Deep survival models: learned remaining-life distributions from operating
+  data ([#49](https://github.com/Reliafy/reliafy/issues/49))
+- Bring-your-own models ([#56](https://github.com/Reliafy/reliafy/issues/56))
