@@ -71,3 +71,7 @@ pillow>=10.0
 # zoneinfo reads them from here when the image has no system tz database (the
 # slim base image may not).
 tzdata
+# The maintenance graph in Neo4j (backend/maintenance/neo4j_store.py, mirror.py,
+# graph_query.py): the official driver, Apache-2.0. Only used when NEO4J_URI is
+# set and MAINTENANCE_GRAPH or MAINTENANCE_GRAPH_MIRROR asks for it.
+neo4j

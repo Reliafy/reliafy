@@ -304,6 +304,25 @@ MAINTENANCE_STORE = (os.environ.get("MAINTENANCE_STORE") or "auto").strip().lowe
 MAINTENANCE_DB_PATH = os.environ.get("MAINTENANCE_DB_PATH") or os.path.expanduser(
     "~/.reliafy/maintenance.sqlite"
 )
+# Where the graph projected from the log lives (docs/maintenance-graph.md):
+# "sqlite" (the default: in this process, in memory for a mongo log) or
+# "neo4j" (one shared graph in Neo4j: every read is a round trip to it, so only
+# with Neo4j close to the app).
+MAINTENANCE_GRAPH = (os.environ.get("MAINTENANCE_GRAPH") or "sqlite").strip().lower()
+# "neo4j": keep a copy of the SQLite graph in Neo4j, brought up to date in the
+# background after writes and by the hourly job, for graph queries. Requests
+# never wait for it. Off by default.
+MAINTENANCE_GRAPH_MIRROR = (os.environ.get("MAINTENANCE_GRAPH_MIRROR") or "").strip().lower()
+# "neo4j": answer the graph queries (backend/maintenance/graph_query.py) in
+# Cypher when the mirror is up to date for the workspace (else in Python). Off
+# by default: each is a round trip to Neo4j.
+MAINTENANCE_GRAPH_QUERIES = (os.environ.get("MAINTENANCE_GRAPH_QUERIES") or "").strip().lower()
+# Prefix for the graphs' namespace in Neo4j (one database can hold several).
+MAINTENANCE_GRAPH_NAMESPACE = (os.environ.get("MAINTENANCE_GRAPH_NAMESPACE") or "").strip()
+NEO4J_URI = (os.environ.get("NEO4J_URI") or "").strip()
+NEO4J_USERNAME = (os.environ.get("NEO4J_USERNAME") or "neo4j").strip()
+NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD") or ""
+NEO4J_DATABASE = (os.environ.get("NEO4J_DATABASE") or "").strip() or None
 
 # ---- Reliability Agent (Anthropic Managed Agents) --------------------------
 # A separate, self-contained agent on Anthropic's Managed Agents runtime: Claude

@@ -14,8 +14,11 @@ Two logs:
   disk doesn't last, so the graph lives in memory and is rebuilt from the log
   when an instance starts.
 
-The graph is the Python backend; a Neo4j backend will implement the same
-methods, and the same tests will run against both.
+This SQLite graph is the Python backend. ``neo4j_store.Neo4jGraphStore``
+implements the same methods in Neo4j, and the maintenance tests run against
+both. The SQLite graph also keeps, for each node and edge, the last event that
+changed it (``changes``): a Neo4j mirror (``mirror.py``) copies what changed
+since it was last brought up to date, without replaying events itself.
 
 Nodes have an ``id``, a ``label`` (Position, Item, Fitment, ...) and
 ``props``; edges have a ``type`` and run from ``src`` to ``dst``. Every row
@@ -74,7 +77,23 @@ CREATE INDEX IF NOT EXISTS edges_src ON edges (org, src, type);
 CREATE INDEX IF NOT EXISTS edges_dst ON edges (org, dst, type);
 """
 
-_GRAPH_SCHEMA = _NODES_EDGES_SCHEMA + """
+# The last event that wrote each node and edge (an edge deleted keeps its row,
+# with its ends, so a mirror can delete it too). Cleared with the graph.
+_CHANGES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS changes (
+    org   TEXT NOT NULL,
+    kind  TEXT NOT NULL,
+    id    TEXT NOT NULL,
+    seq   INTEGER NOT NULL,
+    type  TEXT,
+    src   TEXT,
+    dst   TEXT,
+    PRIMARY KEY (org, kind, id)
+);
+CREATE INDEX IF NOT EXISTS changes_seq ON changes (org, seq);
+"""
+
+_GRAPH_SCHEMA = _NODES_EDGES_SCHEMA + _CHANGES_SCHEMA + """
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -97,6 +116,19 @@ CREATE INDEX IF NOT EXISTS events_org ON events (org, seq);
 
 def new_id() -> str:
     return uuid.uuid4().hex
+
+
+def open_sqlite(path: str) -> sqlite3.Connection:
+    """A SQLite connection as the store uses it: shared across threads (behind
+    a lock), committing each statement unless a transaction is begun, rows by
+    name, and WAL for a file."""
+    if path != ":memory:":
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    if path != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 
 def _now() -> str:
@@ -195,20 +227,22 @@ class GraphStore:
     lives in the same SQLite file."""
 
     def __init__(self, path: str, projectors: dict[str, Projector], log=None, series=None, version: int = 1):
-        if path != ":memory:":
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
-        self._conn.row_factory = sqlite3.Row
-        if path != ":memory:":
-            self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn = open_sqlite(path)
+        tracked = bool(self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'changes'").fetchall())
         self._conn.executescript(_GRAPH_SCHEMA)
         self._lock = threading.RLock()
         self._projectors = projectors
         self._gap: tuple[int, float] | None = None  # (missing seq, when first seen)
         self._event_counts: dict[str, int] = {}
+        self._seq = 0  # the event being projected, recorded against what it writes
         # Per-process counters the service keeps its write limits in.
         self.write_windows: dict = {}
         self.series_days: dict = {}
+        # Called with the organisation after each event this process appends
+        # (a mirror's trigger), and the mirror itself when one is attached.
+        self.listeners: list[Callable[[str], None]] = []
+        self.mirror = None
         self.log = log if log is not None else SqliteEventLog(self._conn, self._lock)
         from backend.maintenance.series import SqliteSeries
 
@@ -219,7 +253,12 @@ class GraphStore:
         stored = int(rows[0]["value"]) if rows else 1
         if not self._schema_current() or (stored != version and self._applied()):
             self.rebuild()
+        elif not tracked:
+            # A graph stored before changes were kept: they're complete only
+            # from here on.
+            self._set_meta("changes_from", str(self._applied()))
         self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)", (str(version),))
+        self.version = version
 
     def _schema_current(self) -> bool:
         """Whether the nodes and edges tables are keyed by (org, id)."""
@@ -236,7 +275,10 @@ class GraphStore:
         return int(rows[0]["value"]) if rows else 0
 
     def _set_applied(self, seq: int) -> None:
-        self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('applied', ?)", (str(seq),))
+        self._set_meta("applied", str(seq))
+
+    def _set_meta(self, key: str, value: str) -> None:
+        self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
 
     def _note_skipped(self, seq: int, why: str) -> None:
         rows = self._all("SELECT value FROM meta WHERE key = 'skipped'", ())
@@ -260,6 +302,7 @@ class GraphStore:
         Raising instead would stop the graph at that event, and every request
         that syncs would fail with it."""
         self._conn.execute("SAVEPOINT event")
+        self._seq = e["seq"]
         try:
             projector = self._projectors.get(e["type"])
             if projector is None:
@@ -357,6 +400,7 @@ class GraphStore:
                 raise RuntimeError(f"Maintenance event {seq} is in the log but not applied yet.")
             time.sleep(0.05)
             self.sync()
+        _notify(self.listeners, org)
         return event
 
     def event_count(self, org: str) -> int:
@@ -380,9 +424,11 @@ class GraphStore:
         with self._lock:
             self._conn.execute("DROP TABLE IF EXISTS nodes")
             self._conn.execute("DROP TABLE IF EXISTS edges")
-            self._conn.executescript(_NODES_EDGES_SCHEMA)
+            self._conn.execute("DROP TABLE IF EXISTS changes")
+            self._conn.executescript(_NODES_EDGES_SCHEMA + _CHANGES_SCHEMA)
             self._conn.execute("BEGIN")
             self._set_applied(0)
+            self._set_meta("changes_from", "0")
             self._conn.execute("COMMIT")
             self._gap = None
             self._event_counts.clear()
@@ -393,11 +439,18 @@ class GraphStore:
 
     # ---- writing: the graph (projectors only) ---------------------------------------
 
+    def _changed(self, org: str, kind: str, id: str, type=None, src=None, dst=None) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO changes (org, kind, id, seq, type, src, dst) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (org, kind, id, self._seq, type, src, dst),
+        )
+
     def put_node(self, org: str, id: str, label: str, props: dict) -> None:
         self._conn.execute(
             "INSERT OR REPLACE INTO nodes (id, org, label, props) VALUES (?, ?, ?, ?)",
             (id, org, label, json.dumps(props)),
         )
+        self._changed(org, "node", id)
 
     def patch_node(self, org: str, id: str, changes: dict) -> None:
         node = self.node(org, id)
@@ -416,12 +469,18 @@ class GraphStore:
             "INSERT OR REPLACE INTO edges (id, org, type, src, dst, props) VALUES (?, ?, ?, ?, ?, ?)",
             (eid, org, type, src, dst, json.dumps(props or {})),
         )
+        self._changed(org, "edge", eid, type, src, dst)
 
     def delete_edge(self, org: str, type: str, src: str, dst: str) -> None:
+        gone = self._conn.execute(
+            "SELECT id FROM edges WHERE org = ? AND type = ? AND src = ? AND dst = ?", (org, type, src, dst),
+        ).fetchall()
         self._conn.execute(
             "DELETE FROM edges WHERE org = ? AND type = ? AND src = ? AND dst = ?",
             (org, type, src, dst),
         )
+        for row in gone:
+            self._changed(org, "edge", row["id"], type, src, dst)
 
     # ---- reading -------------------------------------------------------------------
 
@@ -471,8 +530,69 @@ class GraphStore:
         """Every organisation with at least one node of ``label``."""
         return [r["org"] for r in self._all("SELECT DISTINCT org FROM nodes WHERE label = ? ORDER BY org", (label,))]
 
-    def snapshot(self) -> tuple[list, list]:
-        """Every node and edge, sorted: for checking a rebuild gives the same graph."""
-        nodes = [tuple(r) for r in self._all("SELECT id, org, label, props FROM nodes ORDER BY org, id", ())]
-        edges = [tuple(r) for r in self._all("SELECT id, org, type, src, dst, props FROM edges ORDER BY org, id", ())]
+    def snapshot(self, org: str | None = None) -> tuple[list, list]:
+        """Every node and edge (of one organisation, if given), sorted: for checking
+        a rebuild, or another backend, gives the same graph."""
+        where, args = ("WHERE org = ? ", (org,)) if org is not None else ("", ())
+        nodes = [tuple(r) for r in self._all(f"SELECT id, org, label, props FROM nodes {where}ORDER BY org, id", args)]
+        edges = [tuple(r) for r in self._all(
+            f"SELECT id, org, type, src, dst, props FROM edges {where}ORDER BY org, id", args)]
         return nodes, edges
+
+    # ---- what changed: for a mirror ---------------------------------------------------
+
+    def change_marks(self) -> tuple[int, dict[str, int]]:
+        """The applied position, and for each organisation the last event that
+        changed its graph."""
+        with self._lock:
+            rows = self._all("SELECT org, MAX(seq) AS seq FROM changes GROUP BY org", ())
+            return self._applied(), {r["org"]: int(r["seq"]) for r in rows}
+
+    def org_mark(self, org: str) -> int:
+        """The last event that changed the organisation's graph (0: none yet)."""
+        rows = self._all("SELECT MAX(seq) AS seq FROM changes WHERE org = ?", (org,))
+        return int(rows[0]["seq"] or 0)
+
+    def changes_from(self) -> int:
+        """The event from which ``changes`` is complete (0: the whole log)."""
+        rows = self._all("SELECT value FROM meta WHERE key = 'changes_from'", ())
+        return int(rows[0]["value"]) if rows else 0
+
+    def org_changes(self, org: str, since: int | None) -> dict:
+        """What a copy of the organisation's graph as at event ``since`` needs to be
+        brought up to date: the nodes and edges written since, and the edges deleted
+        since (by their ends). ``since`` None: the whole graph. Rows carry ``w``, the
+        order they were written in (reads list nodes and edges in it).
+
+        {"applied": the position the copy is then up to date with,
+         "nodes": [(id, label, props, w)], "edges": [(id, type, src, dst, props, w)],
+         "gone": [(id, type, src, dst)]}"""
+        with self._lock:
+            applied = self._applied()
+            if since is None:
+                nodes = self._all("SELECT id, label, props, rowid AS w FROM nodes WHERE org = ?", (org,))
+                edges = self._all("SELECT id, type, src, dst, props, rowid AS w FROM edges WHERE org = ?", (org,))
+                gone = []
+            else:
+                nodes = self._all(
+                    "SELECT n.id, n.label, n.props, n.rowid AS w FROM changes c JOIN nodes n ON n.org = c.org "
+                    "AND n.id = c.id WHERE c.org = ? AND c.kind = 'node' AND c.seq > ?", (org, since))
+                rows = self._all(
+                    "SELECT c.id AS cid, c.type AS ctype, c.src AS csrc, c.dst AS cdst, e.id, e.type, e.src, e.dst, "
+                    "e.props, e.rowid AS w FROM changes c LEFT JOIN edges e ON e.org = c.org AND e.id = c.id "
+                    "WHERE c.org = ? AND c.kind = 'edge' AND c.seq > ?", (org, since))
+                edges = [r for r in rows if r["id"] is not None]
+                gone = [(r["cid"], r["ctype"], r["csrc"], r["cdst"]) for r in rows if r["id"] is None]
+            return {"applied": applied,
+                    "nodes": [(r["id"], r["label"], r["props"], r["w"]) for r in nodes],
+                    "edges": [(r["id"], r["type"], r["src"], r["dst"], r["props"], r["w"]) for r in edges],
+                    "gone": gone}
+
+
+def _notify(listeners, org: str) -> None:
+    """Tell the listeners (a mirror's trigger) about a write; never fail the write."""
+    for listener in listeners:
+        try:
+            listener(org)
+        except Exception:  # noqa: BLE001 - a listener's trouble isn't the writer's
+            logger.exception("maintenance store listener failed")
