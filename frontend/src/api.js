@@ -2493,3 +2493,33 @@ export function linkManufacturer(targetId, manufacturerId) {
 export function linkManufacturersByName(dryRun = true) {
   return postJson("/api/maintenance/manufacturers/link-by-name", { dry_run: dryRun });
 }
+
+// ---- conditions: what things are exposed to (Reliafy Maintenance; optional) ----
+
+export function getConditions() {
+  return request("/api/maintenance/conditions");
+}
+export function getCondition(id) {
+  return request(`/api/maintenance/conditions/${id}`);
+}
+export function createCondition(body) {
+  return postJson("/api/maintenance/conditions", body);
+}
+export function updateCondition(id, body) {
+  return patchJson(`/api/maintenance/conditions/${id}`, body);
+}
+export function retireCondition(id, reason = "") {
+  return postJson(`/api/maintenance/conditions/${id}/retire`, { reason });
+}
+// A location's, position's, item's or connection's conditions: apply (value, note),
+// exclude (note) or remove one; each returns the target's conditions.
+export function setTargetCondition(targetId, { conditionId, action = "apply", value, note }) {
+  return postJson(`/api/maintenance/conditions/of/${targetId}`, { condition_id: conditionId, action, value, note });
+}
+// A register as CSV or JSON text; a dry run unless dryRun is false.
+export function importConditions({ format, text, dryRun = true, source }) {
+  return postJson("/api/maintenance/conditions/import", { format, text, dry_run: dryRun, source });
+}
+export function downloadConditions(format = "csv") {
+  return downloadFile(`/api/maintenance/conditions/export?format=${format}`, `conditions.${format}`);
+}

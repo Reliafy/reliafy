@@ -94,6 +94,8 @@ GET_KINDS: Table = {
         (inherited first, each with the class it's from), and the items and parts in it or a class inside
         it."""),
     "manufacturer": ("id", "", "Its aliases and the items and parts linked to it."),
+    "conditions": ("id", "", """id = a location, position, item or connection: the conditions that apply, each
+        with value, note and source (own or where it's inherited from), and those excluded."""),
     "task": ("id", "", """Why a task is what it is: where it came from (RCM), every change, and the proposals
         behind them."""),
     "class_life_data": ("id", "", """id = a position class's name. Every fitment at every position of the
@@ -134,6 +136,8 @@ LIST_KINDS: Table = {
         attributes and item / part counts (empty = not used). format json or csv: the taxonomy as
         maintenance_item_classes import reads it."""),
     "manufacturers": ("", "", "The manufacturer register: each maker, its aliases and how many items and parts."),
+    "conditions": ("", "format", """The condition register as a tree, with where each is applied (format json or
+        csv: for import)."""),
     "photos": ("target_id", "", "The photos of a position, location, item or work order (ids, captions, dates)."),
     "proposals": ("", "status", """Changes the life models propose (a task's interval, or retiring a task),
         each with its reason; status pending (default), accepted, rejected, superseded or all. Show them to the
@@ -376,6 +380,16 @@ ITEM_CLASSES: Table = {
         dry_run (default true) reports what would change; nothing is written if any row is wrong."""),
     "load_starter": ("", "dry_run", """Reliafy's own starter taxonomy (pumps, motors, valves, instruments, HVAC
         and more, with typical attributes). Only when the user asks. dry_run default true."""),
+    "create_condition": ("name", "parent_id kind unit code description",
+                         "Add a condition to the register (maintenance_guide topic conditions)."),
+    "update_condition": ("condition_id", "name kind unit code description parent_id move_to_top_level",
+                         "Rename, change or move a condition."),
+    "retire_condition": ("condition_id", "reason", "Retire a condition: it stops applying anywhere."),
+    "apply_condition": ("target_id condition_id", "value note",
+                        "Record that a location, position, item or connection is exposed to it."),
+    "exclude_condition": ("target_id condition_id", "note", "Stop an inherited condition there and below."),
+    "remove_condition": ("target_id condition_id", "", "Take a condition or exclusion off the target."),
+    "import_conditions": ("", "conditions csv dry_run source", "Load a register by path, like import."),
 }
 
 MANUFACTURERS: Table = {
@@ -440,6 +454,7 @@ def register() -> None:
 
     from backend import config, mcp_server
     from backend.maintenance import importer, loop, rbd_derive, taxonomy
+    from backend.maintenance import conditions as register_io
     from backend.maintenance import graph_cypher
     from backend.maintenance.access import allowed, graph_query_allowed
     from backend.maintenance.service import Invalid, Maintenance, NotFound, summary
@@ -548,8 +563,8 @@ def register() -> None:
         close work orders: failure modes, parts, labour, corrections), learn (class life data, fitting a
         class model, proposals the user accepts), decide (plan economics, generated RBDs, impact, spares
         cover), data (rough dates, placement, time zone, notes, dry runs), classes (position classes vs
-        item classes, taxonomies, manufacturers). Read the one you need before a task you haven't done
-        here yet."""
+        item classes, taxonomies, manufacturers), conditions (what things are exposed to, inherited).
+        Read the one you need before a task you haven't done here yet."""
         m_for(ctx)  # Maintenance is on for this account
         pages = dict(mcp_guide.TOPICS)
         if graph_query_allowed(_caller(ctx)):
@@ -589,7 +604,7 @@ def register() -> None:
         read = {"position": m.position, "item": m.item, "work_order": m.work_order, "location": m.location,
                 "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
-                "impact": m.impact}[kind]
+                "impact": m.impact, "conditions": m.conditions_of}[kind]
         return run(read, rid)
 
     @tool("maintenance_list", _READ, "List maintenance records", LIST_KINDS, "kind")
@@ -629,6 +644,10 @@ def register() -> None:
             return run(lambda: taxonomy.export_json(m) if format == "json" else {"csv": taxonomy.export_csv(m)})
         if kind == "manufacturers":
             return {"manufacturers": run(m.manufacturers)}
+        if kind == "conditions":
+            if format in (None, "tree"):
+                return run(m.condition_tree)
+            return run(lambda: register_io.export_json(m) if format == "json" else {"csv": register_io.export_csv(m)})
         if kind == "photos":
             return run(lambda: {"target": target_id, "photos": (m.photo_target(target_id), m.photos_of(target_id))[1]})
         if kind == "proposals":
@@ -1109,7 +1128,34 @@ def register() -> None:
         "['mechanical seal', 'packing']}]. kind defaults to number when there's a unit, else text. Classes "
         "inside it inherit them; never repeat an inherited one."))]
 
-    @tool("maintenance_item_classes", _WRITE, "The item class taxonomy", ITEM_CLASSES)
+    def item_condition(m, action, condition_id, name, parent_id, kind, unit, code, description, move_to_top_level,
+                       reason, target_id, value, note, conditions, csv, dry_run, source):
+        """maintenance_item_classes' condition actions."""
+        if action == "create_condition":
+            return run(m.create_condition, name, parent_id, kind, unit or "", code or "", description or "")
+        if action == "update_condition":
+            kwargs = {k: v for k, v in (("name", name), ("kind", kind), ("unit", unit), ("code", code),
+                                        ("description", description)) if v is not None}
+            if parent_id or move_to_top_level:
+                kwargs["parent_id"] = None if move_to_top_level else parent_id
+            return run(m.update_condition, condition_id, **kwargs)
+        if action == "retire_condition":
+            return run(lambda: (m.retire_condition(condition_id, reason or ""), {"retired": condition_id})[1])
+        if action == "apply_condition":
+            return run(m.apply_condition, target_id, condition_id, value, note or "")
+        if action == "exclude_condition":
+            return run(m.exclude_condition, target_id, condition_id, note or "")
+        if action == "remove_condition":
+            return run(m.remove_condition, target_id, condition_id)
+        if (conditions is None) == (csv is None):
+            raise ToolError("Give the conditions as JSON (conditions) or CSV text (csv), one of them.")
+
+        def go():
+            rows = register_io.rows_from_json(conditions) if conditions is not None else register_io.rows_from_csv(csv)
+            return register_io.run(m, rows, _d(dry_run, True), _d(source, "imported"))
+        return run(go)
+
+    @tool("maintenance_item_classes", _WRITE, "Item classes and conditions", ITEM_CLASSES)
     def maintenance_item_classes(action: _choice(ITEM_CLASSES), ctx: Context, item_class_id: Annotated[
                                      str | None, Field(description=(
                                          "The class; for assign, 'none' takes the target's class away."))] = None,
@@ -1120,7 +1166,16 @@ def register() -> None:
                                  description: str | None = None, attributes: Attributes = None,
                                  move_to_top_level: bool | None = None, reason: str | None = None,
                                  target_id: Annotated[str | None, Field(description=(
-                                     "assign: an item or a catalogue part."))] = None,
+                                     "assign: an item or a catalogue part. *_condition: a location, position, "
+                                     "item or connection."))] = None,
+                                 condition_id: str | None = None,
+                                 kind: Annotated[Literal["presence", "value"] | None, Field(description=(
+                                     "A condition: presence (default) or value (a number in unit)."))] = None,
+                                 unit: str | None = None, value: float | str | None = None,
+                                 note: str | None = None,
+                                 conditions: Annotated[list[dict[str, Any]] | None, Field(description=(
+                                     "import_conditions: [{path: 'Hazardous area > Zone 1', kind?, unit?, code?, "
+                                     "description?}]."))] = None,
                                  classes: Annotated[list[dict[str, Any]] | None, Field(description=(
                                      "import, as JSON: [{path: 'Rotating equipment > Pump > Centrifugal', code?, "
                                      "level?, description?, attributes?: [{name, unit?, kind?, options?}]}], or "
@@ -1132,8 +1187,12 @@ def register() -> None:
                                  dry_run: bool | None = None, source: str | None = None) -> dict[str, Any]:
         """Item classes (optional): what KIND OF THING items and parts are, as a tree with attributes
         inherited down it (Rotating equipment > Pump > Centrifugal). Not a position's position_class,
-        which is the duty and pools life data. Read it with maintenance_list kind item_classes."""
+        which is the duty and pools life data. Read it with maintenance_list kind item_classes. Also the
+        condition register (Outdoor, Seawater, Zone 1) and what things are exposed to."""
         m = m_for(ctx)
+        if action.endswith("_condition") or action == "import_conditions":
+            return item_condition(m, action, condition_id, name, parent_id, kind, unit, code, description,
+                                  move_to_top_level, reason, target_id, value, note, conditions, csv, dry_run, source)
         if action == "create":
             return run(m.create_item_class, name, parent_id, code or "", level or "", description or "", attributes)
         if action == "update":

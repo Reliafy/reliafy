@@ -146,6 +146,22 @@ def plant(m) -> dict:
     m.assign_item_class(own_class, rotating)
     m.assign_item_class(engine, centrifugal)
     m.assign_item_class(spare, centrifugal)
+
+    # Conditions: nested, with and without values, excluded lower down, on an item and a
+    # connection, and one retired after it was applied.
+    cond = lambda name, **kw: m.create_condition(name, **kw)["id"]  # noqa: E731
+    outdoor, hazard, temp, gone = cond("Outdoor"), cond("Hazardous area"), cond("Ambient temperature", unit="°C"), \
+        cond("Old condition")
+    zone1 = cond("Zone 1", parent_id=hazard)
+    m.apply_condition(site, outdoor)
+    m.exclude_condition(sub, outdoor, "indoors")
+    m.apply_condition(site, temp, 40)
+    m.apply_condition(area, temp, 55, "sun all day")
+    m.apply_condition(mcc, zone1)
+    m.apply_condition(engine, temp, 90)
+    m.apply_condition(m.connections(tank)["downstream"][0]["id"], outdoor)
+    m.apply_condition(yard, gone)
+    m.retire_condition(gone)
     return {"site": site, "area": area, "sub": sub, "gallery": gallery, "store": store, "yard": yard,
             "elec": elec, "mcc": mcc, "f12": f12, "f13": f13, "truck": truck, "engine": engine,
             "engine2": engine2, "engine3": engine3, "breaker": breaker, "spare": spare, "moved": moved,
