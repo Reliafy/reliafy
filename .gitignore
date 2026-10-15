@@ -139,6 +139,9 @@ tmp/
 # Node / frontend build
 frontend/node_modules/
 frontend/dist/
+# Browser smoke test output (npm run smoke)
+frontend/playwright-report/
+frontend/test-results/
 
 # Persisted app data (SQLite DB + dataset files)
 data/

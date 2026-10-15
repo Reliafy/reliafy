@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!-- Open-PSA fault tree for the RBD import smoke test: cooling is lost when
+     both trains fail (each a pump or a valve) or the support system fails. -->
+<opsa-mef name="cooling">
+  <define-fault-tree name="Cooling">
+    <define-gate name="Top">
+      <label>Loss of cooling</label>
+      <or>
+        <gate name="BothTrains"/>
+        <basic-event name="Support"/>
+      </or>
+    </define-gate>
+    <define-gate name="BothTrains">
+      <and><gate name="TrainA"/><gate name="TrainB"/></and>
+    </define-gate>
+    <define-gate name="TrainA"><or><basic-event name="PumpA"/><basic-event name="ValveA"/></or></define-gate>
+    <define-gate name="TrainB"><or><basic-event name="PumpB"/><basic-event name="ValveB"/></or></define-gate>
+  </define-fault-tree>
+  <model-data>
+    <define-basic-event name="PumpA"><exponential><float value="3e-4"/><system-mission-time/></exponential></define-basic-event>
+    <define-basic-event name="PumpB"><exponential><float value="3e-4"/><system-mission-time/></exponential></define-basic-event>
+    <define-basic-event name="ValveA"><exponential><float value="1e-4"/><system-mission-time/></exponential></define-basic-event>
+    <define-basic-event name="ValveB"><exponential><float value="1e-4"/><system-mission-time/></exponential></define-basic-event>
+    <define-basic-event name="Support">
+      <Weibull><float value="50000"/><float value="1.5"/><float value="0"/><system-mission-time/></Weibull>
+    </define-basic-event>
+  </model-data>
+</opsa-mef>

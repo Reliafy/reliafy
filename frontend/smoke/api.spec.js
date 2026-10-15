@@ -1,0 +1,71 @@
+// The server is running the code it should: routes that must exist, asked
+// without signing in. With sign-in on, a signed-in route answers 401; a 404
+// means the server doesn't have the route — an old build left serving (as on
+// 15 Oct). In single-user mode (no sign-in) the route answers, so anything
+// but the framework's own "no such route" will do.
+//
+// Add a route here when a release depends on it, newest first; a POST is sent
+// with an empty JSON body, so nothing is created.
+import { test, expect } from "@playwright/test";
+
+const SIGNED_IN = [
+  ["POST", "/api/maintenance/graph/query"], // #423
+  ["GET", "/api/maintenance/graph/schema"], // #423
+  ["GET", "/api/maintenance/overview"],
+  ["GET", "/api/maintenance/work-orders"],
+  ["GET", "/api/rbd-runs"],
+  ["POST", "/api/rbds/import"],
+  ["GET", "/api/rbds"],
+  ["GET", "/api/rcm/studies"],
+  ["GET", "/api/fleet/fleets"],
+  ["GET", "/api/strategy/analyses"],
+  ["GET", "/api/models"],
+  ["GET", "/api/datasets"],
+  ["GET", "/api/me"],
+];
+
+// Public: these answer anyone.
+const PUBLIC = ["/api/health", "/api/config", "/api/distributions"];
+
+let auth;
+test.beforeAll(async ({ request }) => {
+  const res = await request.get("/api/config");
+  expect(res.ok(), "/api/config").toBeTruthy();
+  ({ auth } = await res.json());
+});
+
+test("deployed site has sign-in on", async () => {
+  test.skip(!process.env.SMOKE_BASE_URL, "local runs are single-user");
+  expect(auth).toBe(true);
+});
+
+test("public API routes answer", async ({ request }) => {
+  for (const path of PUBLIC) {
+    const res = await request.get(path);
+    expect(res.status(), path).toBe(200);
+  }
+});
+
+// The framework's own answer for a path or method it has no route for. (A
+// route that exists but is switched off here says "Not found." instead.)
+async function noRoute(res) {
+  if (res.status() === 405) return true;
+  if (res.status() !== 404) return false;
+  return (await res.json().catch(() => ({}))).detail === "Not Found";
+}
+
+test("signed-in API routes exist", async ({ request }) => {
+  const wrong = [];
+  for (const [method, path] of SIGNED_IN) {
+    const res = await request.fetch(path, { method, ...(method === "POST" ? { data: {} } : {}) });
+    if (auth ? res.status() !== 401 : await noRoute(res)) wrong.push(`${method} ${path}: ${res.status()}`);
+  }
+  expect(wrong, auth ? "expected 401 (signed out) from each" : "expected each route to exist").toEqual([]);
+});
+
+test("an unknown API route is a 404", async ({ request }) => {
+  // The control for the check above: the server does answer 404 for a route it lacks.
+  const res = await request.get("/api/no-such-route-smoke");
+  expect(res.status()).toBe(404);
+  expect(await noRoute(res)).toBe(true);
+});
