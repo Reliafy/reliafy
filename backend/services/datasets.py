@@ -13,7 +13,7 @@ from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.fitting import FitError
 from backend.fitting import preview as _preview
-from backend.fitting import read_csv_capped, read_dataframe
+from backend.fitting import header_guess, read_csv_capped, read_dataframe, with_generic_header
 from backend.schema import Dataset, Model
 
 
@@ -25,14 +25,26 @@ def _list_query(owner_id, shared=frozenset()):
         return {"$or": [query, {"_id": {"$in": sorted(shared)}}]}
     return query
 
-def normalize_pasted(content: str) -> bytes:
+def pasted_header_guess(content: str) -> int:
+    """:func:`backend.fitting.header_guess` for pasted text, split on the
+    delimiter :func:`normalize_pasted` would choose."""
+    from backend.fitting import first_row_is_data
+
+    text = (content or "").strip()
+    header = next((ln for ln in text.splitlines() if ln.strip()), "")
+    delim = max("\t,;|", key=lambda d: header.count(d))
+    return 0 if first_row_is_data(header, delim) else 1
+
+
+def normalize_pasted(content: str, no_header: bool = False) -> bytes:
     """Parse pasted tabular text (CSV or TSV) into canonical CSV bytes.
 
     The delimiter is chosen from a fixed set (tab / comma / semicolon / pipe)
     by counting occurrences in the header row — so spreadsheet paste (tabs)
     and CSV both work — rather than letting pandas sniff any character (which
     can wrongly split on letters in single-column data). Everything downstream
-    then sees a plain CSV.
+    then sees a plain CSV. ``no_header``: the first row is data, and the
+    columns are named ``col 1``, ``col 2``, ….
     """
     import io
 
@@ -56,7 +68,8 @@ def normalize_pasted(content: str) -> bytes:
         )
     try:
         df = read_csv_capped(io.StringIO(text), sep=delim, width_text=header,
-                             engine="python", skipinitialspace=True)
+                             engine="python", skipinitialspace=True,
+                             **({"header": None} if no_header else {}))
     except FitError:
         raise
     except Exception as exc:
@@ -68,26 +81,40 @@ def normalize_pasted(content: str) -> bytes:
             "Only one column was detected. Separate columns with commas or tabs "
             "and include a header row."
         )
+    if no_header:
+        df.columns = [f"col {i + 1}" for i in range(df.shape[1])]
     return df.to_csv(index=False).encode()
 
 
-def _apply_generic_header(file_bytes: bytes) -> bytes:
-    """No-header upload: parse the file with ``header=None``, name the columns
-    ``col 1``, ``col 2``, … and re-serialise, so the first row (which would
-    otherwise be consumed as column names) is kept as data."""
-    import io
+def check_size(data: bytes) -> None:
+    """Refuse a file over ``MAX_UPLOAD_BYTES`` in words."""
+    from backend import config
 
-    try:
-        df = read_csv_capped(io.BytesIO(file_bytes), header=None,
-                             width_text=bytes(file_bytes[:1024 * 1024]).decode("utf-8", "replace"))
-    except FitError:
-        raise
-    except Exception as exc:  # pragma: no cover - pandas raises many types
-        raise FitError(f"Could not parse the file as CSV: {exc}") from exc
-    if df.empty or df.shape[1] == 0:
-        raise FitError("The uploaded CSV is empty.")
-    df.columns = [f"col {i + 1}" for i in range(df.shape[1])]
-    return df.to_csv(index=False).encode()
+    if len(data) > config.MAX_UPLOAD_BYTES:
+        mb = config.MAX_UPLOAD_BYTES / (1024 * 1024)
+        raise FitError(
+            f"That file is too large ({len(data) / (1024 * 1024):.1f} MB). "
+            f"The limit is {mb:.0f} MB — try trimming unused columns or rows."
+        )
+
+
+def apply_generic_header(file_bytes: bytes) -> bytes:
+    """No-header upload: the first row is kept as data, the columns named
+    ``col 1``, ``col 2``, … (see :func:`backend.fitting.with_generic_header`).
+    The size is checked before parsing, and again after the rewrite (which
+    lengthens the file)."""
+    check_size(file_bytes)
+    out = with_generic_header(file_bytes)
+    check_size(out)
+    return out
+
+
+def resolve_no_header(file_bytes: bytes, no_header: bool | None) -> tuple[bool, int]:
+    """Whether to read a CSV as having no header row, and the guess: the
+    header row's number, 1 (the first row) or 0 (none). ``no_header`` None
+    takes the guess, so a first row of only numbers is kept as data (#434)."""
+    guess = header_guess(file_bytes)
+    return (guess == 0 if no_header is None else bool(no_header)), guess
 
 
 def create_dataset(db, name: str, file_bytes: bytes, owner_id: str, no_header: bool = False) -> Dataset:
@@ -106,22 +133,9 @@ def create_or_reuse(db, name: str, file_bytes: bytes, owner_id: str,
     """``create_dataset``, also saying whether identical data already existed
     (``True``: the existing dataset, under its own name, came back) — so the
     app can tell the user rather than silently dropping the new name."""
-    from backend import config
-
-    def _check_size(data: bytes) -> None:
-        if len(data) > config.MAX_UPLOAD_BYTES:
-            mb = config.MAX_UPLOAD_BYTES / (1024 * 1024)
-            raise FitError(
-                f"That file is too large ({len(data) / (1024 * 1024):.1f} MB). "
-                f"The limit is {mb:.0f} MB — try trimming unused columns or rows."
-            )
-
-    # Checked before parsing, and again after the header rewrite (which can
-    # lengthen the file).
-    _check_size(file_bytes)
+    check_size(file_bytes)
     if no_header:
-        file_bytes = _apply_generic_header(file_bytes)
-        _check_size(file_bytes)
+        file_bytes = apply_generic_header(file_bytes)
 
     digest = storage.checksum(file_bytes)
     existing = db.datasets.find_one({"checksum": digest, "owner_id": owner_id})

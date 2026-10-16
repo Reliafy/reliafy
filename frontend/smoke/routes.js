@@ -82,6 +82,7 @@ export const DETAIL_IDS = {
   "/maintenance/items/:id": ["/api/maintenance/items", list("items")],
   "/maintenance/locations/:id": ["/api/maintenance/locations", list("locations")],
   "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
+  "/maintenance/parts/:id": ["/api/maintenance/parts", list("parts")], // #435
   // An old bookmark: redirects to the tracking list whatever the id.
   "/strategy/tracking/:modelId": [null, () => [{ id: "any-old-id" }]],
 };

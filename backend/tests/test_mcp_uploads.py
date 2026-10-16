@@ -571,6 +571,37 @@ def test_upload_dataset_from_a_csv_or_workbook_upload(env):
                                                                          "upload_id": link4["upload_id"]}))
 
 
+def test_upload_dataset_guesses_a_missing_header_and_says_so(env):
+    from backend import fitting
+
+    # #434: a first row of only numbers is data, with a one-line hint.
+    csv = "300,544966.3125\n410,612000.5\n520,701234.25\n"
+    out = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Raw", "csv": csv}))
+    assert out["columns"] == ["col 1", "col 2"] and out["n_rows"] == 3
+    assert out["header_guess"] == 0 and out["hint"] == fitting.HEADER_HINT
+
+    # no_header=false: the numbers are the names after all.
+    out = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Raw 2", "csv": csv,
+                                               "no_header": False}))
+    assert out["columns"] == ["300", "544966.3125"] and out["n_rows"] == 2 and "hint" not in out
+
+    named = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Named",
+                                                 "csv": "hours,failed\n1,0\n2,1\n"}))
+    assert named["header_guess"] == 1 and "hint" not in named
+
+    # A sheet of numbers: the same guess, over an upload and over import_excel.
+    book = _workbook({"Lives": [[300, 1.5], [410, 2.5], [520, 3.5]]})
+    link, _ = _upload(env, book, "lives.xlsx", purpose="dataset")
+    out = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Sheet",
+                                               "upload_id": link["upload_id"]}))
+    assert out["columns"] == ["col 1", "col 2"] and out["n_rows"] == 3
+    assert out["header_guess"] == 0 and "import_excel" in out["hint"]
+    link2, _ = _upload(env, book, "lives.xlsx", purpose="excel")
+    out = _ok(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link2["upload_id"],
+                                              "target": "dataset", "name": "Sheet 2"}))
+    assert out["header_row"] == 0 and out["hint"] == fitting.SHEET_HEADER_HINT
+
+
 def test_upload_outage_log_from_an_upload(env):
     from backend.services import rbds as rbds_service
 

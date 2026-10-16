@@ -12,15 +12,107 @@ export const EMPTY_MAPPING = {
 // Column facts from /api/columns or a dataset's detail: name → { dtype,
 // blanks, values ({value: rows} when there are few, else null), nUnique }.
 // Without dtypes (an older response) a column is numeric when its preview is.
+// ``whole``: the column holds only whole numbers (null for text, undefined
+// when the server didn't say); ``decimal``: a value from the preview that
+// isn't one, for a message.
 export function columnFacts(csv) {
-  const { columns = [], dtypes, blanks, values, n_unique: nUnique, preview = [] } = csv || {};
+  const { columns = [], dtypes, blanks, values, n_unique: nUnique, whole, preview = [] } = csv || {};
   return Object.fromEntries(
     columns.map((name, i) => {
       const sample = preview.map((r) => r[i]).filter((v) => v !== null && v !== "");
       const dtype = dtypes?.[i] ?? (sample.length && sample.every((v) => typeof v === "number") ? "float64" : "object");
-      return [name, { dtype, blanks: blanks?.[i] ?? 0, values: values?.[i] ?? null, nUnique: nUnique?.[i] ?? null, sample: sample[0] }];
+      const decimal = sample.find((v) => typeof v === "number" && !Number.isInteger(v));
+      return [name, {
+        dtype, blanks: blanks?.[i] ?? 0, values: values?.[i] ?? null, nUnique: nUnique?.[i] ?? null, sample: sample[0],
+        whole: whole?.[i] ?? (decimal !== undefined ? false : undefined), decimal,
+      }];
     })
   );
+}
+
+// Why a column can't be the count (n), or null when it can (#434): a count
+// says how many units share a row, so it holds whole numbers. "text" or
+// "decimals".
+export function countProblem(fact) {
+  if (!fact) return null;
+  if (!isNumeric(fact.dtype)) return "text";
+  if (fact.whole === false) return "decimals";
+  return null;
+}
+
+// What a mapping field does when a column is picked for it: the time column
+// and the interval pair exclude each other, no failure modes means no groups,
+// and a new status column starts from guessed meanings for its values.
+export function setMappingField(mapping, field, value, facts = {}) {
+  const next = { ...mapping, [field]: value };
+  if (field === "x" && value) {
+    next.xl = "";
+    next.xr = "";
+  } else if ((field === "xl" || field === "xr") && value) {
+    next.x = "";
+  }
+  if (field === "e" && !value) next.g = "";
+  if (field === "c") Object.assign(next, guessStatus(value, facts));
+  return next;
+}
+
+// ---- What each column is for (#434) -------------------------------------------
+// The Data step also lists every column with its role, so a column that isn't
+// a time, a status or a count (a cost, an id) has a home: Ignore, or a
+// covariate where the model takes them.
+
+const ROLE_FIELDS = ["x", "xl", "xr", "i", "c", "n", "e", "tl", "tr", "g", "group"];
+const ROLE_LABELS = {
+  x: "Time to failure", xl: "Earliest failure time", xr: "Latest failure time", i: "Item",
+  c: "Failed or still running", n: "Count", e: "Failure mode", tl: "Observed from", tr: "Observed until",
+  g: "Group to compare", group: "Group by", cov: "Covariate", "": "Ignored",
+};
+const TVC_LABELS = {
+  intervals: { xl: "Start of the row", xr: "End of the row" },
+  timeline: { x: "Time of the row" },
+};
+
+// A role's name in words, for the layout (#60's rows name their times their own way).
+export function roleLabel(role, timeVarying = null) {
+  return TVC_LABELS[timeVarying]?.[role] || ROLE_LABELS[role] || role;
+}
+
+// The roles a column can be given: the survival fields of the layout, a
+// covariate (``covariates``: the model takes them), and "Ignore this column".
+export function roleChoices({ timeVarying = null, covariates = false, failureMode = false } = {}) {
+  const fields = timeVarying === "intervals" ? ["i", "xl", "xr", "c"]
+    : timeVarying === "timeline" ? ["i", "x", "c"]
+    : ["x", "c", "n", "xl", "xr", "tl", "tr"];
+  if (failureMode) fields.push("e");
+  return [...fields, ...(covariates ? ["cov"] : []), ""];
+}
+
+// Each column's role: a mapping field, "cov" or "" (ignored).
+export function columnRoles(columns, mapping, covariates = []) {
+  return Object.fromEntries((columns || []).map((col) => [
+    col,
+    ROLE_FIELDS.find((f) => mapping[f] === col) || (covariates.includes(col) ? "cov" : ""),
+  ]));
+}
+
+// The mapping and covariates after ``col`` is given ``role`` ("" ignores it):
+// it leaves whatever it did before, and takes the role from any other column.
+export function assignRole(mapping, covariates, col, role, facts = {}) {
+  let next = { ...mapping };
+  for (const f of ROLE_FIELDS) if (next[f] === col) next = setMappingField(next, f, "", facts);
+  let covs = (covariates || []).filter((c) => c !== col);
+  if (role === "cov") covs = [...covs, col];
+  else if (role) next = setMappingField(next, role, col, facts);
+  return { mapping: next, covariates: covs };
+}
+
+// Which columns are used, and for what, and which are ignored.
+export function roleSummary(roles) {
+  const entries = Object.entries(roles || {});
+  return {
+    used: entries.filter(([, r]) => r).map(([col, role]) => ({ col, role })),
+    ignored: entries.filter(([, r]) => !r).map(([col]) => col),
+  };
 }
 
 // How a status value is matched (as the server does): trimmed and
@@ -181,6 +273,10 @@ export function dataStepProblems(mapping, facts, nRows) {
     out.push("Failure modes take one time per unit: clear the interval and truncation columns, or the failure mode.");
   }
   numericCol(mapping.n, "counts");
+  if (mapping.n && countProblem(f(mapping.n)) === "decimals") {
+    const eg = f(mapping.n).decimal != null ? ` (e.g. “${f(mapping.n).decimal}”)` : "";
+    out.push(`“${mapping.n}” holds decimals${eg}, so it can't be a count: a count says how many units share each row, in whole numbers. Set Count to none, or pick a column of whole numbers.`);
+  }
   numericCol(mapping.tl, "times");
   numericCol(mapping.tr, "times");
   const s = statusSummary(mapping, facts, nRows);

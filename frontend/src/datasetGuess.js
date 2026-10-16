@@ -123,7 +123,9 @@ export function guessLifeColumns(columns) {
     columns.find((c) => STATUS_WORDS.test(words(c.name)) && !NOT_STATUS.test(words(c.name)) && looksLikeStatus(c)) ||
     columns.find((c) => CENSOR_RE.test(String(c.name).trim()) && looksLikeStatus(c));
   const c = status?.name || "";
-  const count = columns.find((col) => col.name !== c && isNumeric(col.dtype) && COUNT_NAMES.test(String(col.name).trim()));
+  // A count holds whole numbers (``whole`` false: it has decimals, #434).
+  const count = columns.find((col) => col.name !== c && isNumeric(col.dtype) && col.whole !== false
+    && COUNT_NAMES.test(String(col.name).trim()));
   const n = count?.name || "";
   const numeric = columns.filter((col) => isNumeric(col.dtype) && col.name !== c && col.name !== n);
   const x =
@@ -158,6 +160,29 @@ function sniff(text) {
   const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
   return best[1] > 0 ? best[0] : ",";
 }
+// Does the first row look like data rather than column names (#434)? True
+// when every cell is a number ("300,544966.3125"): the file was saved without
+// a header, and its first row would otherwise be lost as the names. The
+// server guesses the same way (fitting.first_row_is_data).
+const isNumberCell = (c) => c !== "" && Number.isFinite(Number(c));
+export function firstRowIsData(text, delim = null) {
+  const s = String(text || "").replace(/^﻿/, "");
+  const first = s.split(/\r?\n/).find((l) => l.trim()) || "";
+  if (!first || first.includes('"')) return false;
+  const cells = first.split(delim || sniff(s)).map((c) => c.trim());
+  return cells.length > 0 && cells.every(isNumberCell);
+}
+
+// A header-less CSV with a header row added (col 1, col 2, …), so the first
+// row is kept as data wherever the file goes next (the fit and the save read
+// a file as it is).
+export function withGenericHeader(text) {
+  const s = String(text || "").replace(/^﻿/, "");
+  const first = s.split(/\r?\n/).find((l) => l.trim()) || "";
+  const n = first.split(",").length;
+  return `${Array.from({ length: n }, (_, i) => `col ${i + 1}`).join(",")}\n${s}`;
+}
+
 export function parsePreview(text, { rows = 5, noHeader = false } = {}) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < (noHeader ? 1 : 2)) return null;

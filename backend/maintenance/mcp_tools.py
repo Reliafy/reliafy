@@ -45,7 +45,8 @@ _ORIGINAL: dict = {}
 PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
 # Calls that can take a while: they share the MCP server's heavy-call slots.
 HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_workspace.import_history",
-               "maintenance_get.plan_economics", "maintenance_get.class_forecast",
+               "maintenance_parts.import_bom", "maintenance_parts.positions_from_structure",
+               "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema")
 
 
@@ -86,7 +87,11 @@ GET_KINDS: Table = {
         maintenance_list kind work_orders with location_id."""),
     "part": ("id", "", """A catalogue part: stock by location, what supersedes it, what it's interchangeable
         with, and used_at (each position whose parts list names it: role, quantity per job, critical
-        minimum)."""),
+        minimum); its indenture level and components (one level down)."""),
+    "part_structure": ("id", "", "A part's structure as a tree, and every part below it with its total quantity "
+                                 "in one (rollup)."),
+    "where_used": ("id", "", "The parts a part is in (with the quantity in one), and the positions and items "
+                             "using it."),
     "measurement_point": ("id", "", """Kind, source and tag, latest reading, rate (counter) or trend and the
         date it should reach an alarm limit (condition), status, recent readings (each with status ok,
         correction, voided or replaced; reading ids for maintenance_measurements void / correct)."""),
@@ -106,8 +111,11 @@ GET_KINDS: Table = {
         (with interval) a what-if, each with its net present cost over horizon_years (default 10) at
         discount_rate (default 0.07). Needs the class's fitted model and costs. unit: days, weeks, months
         (default), years."""),
-    "class_forecast": ("id", "period periods", """id = a position class's name. Its failure forecast from the
-        register (guide topic decide)."""),
+    "class_forecast": ("id", "period periods service_level lead_time_days review_days", """id = a position
+        class's name. Its failure forecast from the register, with each spare's stock levels (guide topic
+        decide)."""),
+    "spares_plan": ("id", "period periods service_level lead_time_days review_days", """id = a position class's
+        name. Each spare's stock levels per period, and the risk at any stock."""),
     "impact": ("id", "", """id = a position. If it fails, what loses its supply downstream (through
         connections), and whether redundancy covers it."""),
     "photo_link": ("id", "", """id = a link_id from maintenance_attachments photo_link. The photos added
@@ -327,12 +335,29 @@ PARTS: Table = {
         position), component (default: used in its maintenance) or consumable. quantity: per job (default 1).
         critical true: a critical spare, min_on_hand the least to keep (default one job's worth). notes:
         compatibility ('fits from serial 4000 on'). Returns the parts list."""),
+    "update": ("part_id", "name manufacturer unit unit_cost notes lead_time_days service_level repairable "
+               "turnaround_days", """Change a catalogue part. For its stock levels: lead_time_days to replenish,
+        service_level (chance of no stock-out to plan for, e.g. 0.95), repairable with turnaround_days (repaired
+        and sent back)."""),
     "update_on_position": ("listing_id", "role quantity critical min_on_hand notes", """Change a parts-list entry
         (ids in the position's parts_list); critical false drops the minimum. For a different part, remove it and
         add the other."""),
     "remove_from_position": ("listing_id", "",
                              "Take an entry off a position's parts list (the part stays in the catalogue)."),
+    # Product structure (#435): how-to in the guide's structure topic.
+    "add_component": ("part_id component_id", "quantity ref",
+                      "Put component_id in part_id's structure (quantity in one, default 1); loops are refused."),
+    "update_component": ("part_id component_id", "quantity ref", "Change a structure line's quantity or ref."),
+    "remove_component": ("part_id component_id", "", "Take component_id out of part_id's structure."),
+    "set_level": ("part_id", "level", "Set a part's indenture level from the workspace's list ('' clears it)."),
+    "set_levels": ("levels", "renamed", "Replace the workspace's indenture level list, top first."),
+    "import_bom": ("rows", "dry_run", "Import a BOM, one row per parent-child line (dry_run default true)."),
+    "positions_from_structure": ("part_id", "position_id levels dry_run",
+                                 "Make positions from a part's structure under position_id (dry_run default true)."),
 }
+
+STRUCTURE_ACTIONS = ("add_component", "update_component", "remove_component", "set_level", "set_levels",
+                     "import_bom", "positions_from_structure")
 
 RELIABILITY: Table = {
     "set_class_costs": ("position_class", "planned_cost failure_cost availability_target replacement_cost "
@@ -455,7 +480,7 @@ def register() -> None:
     from mcp.server.mcpserver.exceptions import ToolError
 
     from backend import config, mcp_server
-    from backend.maintenance import forecast, importer, loop, rbd_derive, taxonomy
+    from backend.maintenance import bom, forecast, importer, loop, rbd_derive, taxonomy
     from backend.maintenance import conditions as register_io
     from backend.maintenance import graph_cypher
     from backend.maintenance.access import allowed, graph_query_allowed
@@ -565,7 +590,8 @@ def register() -> None:
         close work orders: failure modes, parts, labour, corrections), learn (class life data, fitting a
         class model, proposals the user accepts), decide (plan economics, generated RBDs, impact, spares
         cover), data (rough dates, placement, time zone, notes, dry runs), classes (position classes vs
-        item classes, taxonomies, manufacturers), conditions (what things are exposed to, inherited).
+        item classes, taxonomies, manufacturers), conditions (what things are exposed to, inherited),
+        structure (parts made of parts: BOMs, indenture levels, where used).
         Read the one you need before a task you haven't done here yet."""
         m_for(ctx)  # Maintenance is on for this account
         pages = dict(mcp_guide.TOPICS)
@@ -590,7 +616,14 @@ def register() -> None:
                         unit: Literal["days", "weeks", "months", "years"] | None = None,
                         horizon_years: float | None = None, discount_rate: float | None = None,
                         period: Literal["month", "quarter", "year"] | None = None,
-                        periods: int | None = None) -> dict[str, Any]:
+                        periods: int | None = None,
+                        service_level: Annotated[float | None, Field(description=(
+                            "Chance of no stock-out for every spare (default: each part's own, else 0.95)."))]
+                        = None,
+                        lead_time_days: Annotated[float | None, Field(description=(
+                            "A lead time for every spare (default: each part's own, else 30)."))] = None,
+                        review_days: Annotated[float | None, Field(description=(
+                            "How often stock is checked (default 0)."))] = None) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance_overview, maintenance_list and the records themselves."""
         m = m_for(ctx)
@@ -603,14 +636,19 @@ def register() -> None:
         if kind == "plan_economics":
             return run(loop.economics, m, rid, interval, _d(unit, "months"), _d(horizon_years, 10),
                        _d(discount_rate, 0.07))
-        if kind == "class_forecast":
-            return run(forecast.class_forecast, m, rid, _d(period, "month"), _d(periods, 12))
+        if kind in ("class_forecast", "spares_plan"):
+            def go():
+                fc = forecast.class_forecast(m, rid, _d(period, "month"), _d(periods, 12), service_level,
+                                             lead_time_days, review_days)
+                return forecast.spares_plan(fc) if kind == "spares_plan" else forecast.without_plans(fc)
+            return run(go)
         if kind == "manufacturer_match":
             return run(m.match_manufacturer, text)
         read = {"position": m.position, "item": m.item, "work_order": m.work_order, "location": m.location,
                 "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
-                "impact": m.impact, "conditions": m.conditions_of}[kind]
+                "impact": m.impact, "conditions": m.conditions_of, "part_structure": m.part_structure,
+                "where_used": m.where_used}[kind]
         return run(read, rid)
 
     @tool("maintenance_list", _READ, "List maintenance records", LIST_KINDS, "kind")
@@ -1034,6 +1072,26 @@ def register() -> None:
 
     PartRole = Literal["replacement", "component", "consumable"]
 
+    def parts_structure(m, action, part_id, component_id, quantity, ref, level, levels, renamed, rows, dry_run,
+                        position_id):
+        """maintenance_parts' product structure actions (#435)."""
+        if action == "add_component":
+            return run(m.add_component, part_id, component_id, _d(quantity, 1), ref or "")
+        if action == "update_component":
+            return run(m.update_component, part_id, component_id, quantity, ref)
+        if action == "remove_component":
+            return run(m.remove_component, part_id, component_id)
+        if action == "set_level":
+            return run(m.set_part_level, part_id, level or "")
+        if action == "set_levels":
+            return run(m.set_part_levels, levels, renamed)
+        if action == "import_bom":
+            def go():
+                header, table = bom.table_from_rows(rows)
+                return bom.run(m, header, table, _d(dry_run, True))
+            return run(go)
+        return run(m.positions_from_structure, part_id, position_id, levels, _d(dry_run, True))
+
     @tool("maintenance_parts", _WRITE, "Parts catalogue, stock and parts lists", PARTS)
     def maintenance_parts(action: _choice(PARTS), ctx: Context, part_id: str | None = None,
                           part_number: str | None = None, name: str | None = None,
@@ -1046,14 +1104,34 @@ def register() -> None:
                           relation: Literal["superseded_by", "interchangeable"] | None = None,
                           position_id: str | None = None, role: PartRole | None = None,
                           critical: bool | None = None, min_on_hand: float | None = None,
-                          listing_id: str | None = None) -> dict[str, Any]:
+                          listing_id: str | None = None, component_id: str | None = None,
+                          ref: Annotated[str | None, Field(description=(
+                              "A reference designator or position-in-assembly label: 'B1' ('B1, B2' for 2)."))] = None,
+                          level: str | None = None, levels: list[str] | None = None,
+                          renamed: Annotated[dict[str, str] | None, Field(description=(
+                              "set_levels: {old name: new name}; parts at a renamed level follow."))] = None,
+                          rows: Annotated[list[dict[str, str]] | None, Field(description=(
+                              "import_bom: [{'parent part number', 'part number', quantity?, nomenclature?, "
+                              "'indenture level'?, manufacturer?, reference?}]; names matched loosely."))] = None,
+                          dry_run: bool | None = None, lead_time_days: float | None = None,
+                          service_level: float | None = None, repairable: bool | None = None,
+                          turnaround_days: float | None = None) -> dict[str, Any]:
         """The parts catalogue (spares, and makes and models of equipment), stock at locations, and each
         position's parts list (its bill of materials, with critical spares). Supersession and
-        interchangeable parts belong to the catalogue (link), not the parts list."""
+        interchangeable parts belong to the catalogue (link), not the parts list. Parts made of parts
+        (product structure): guide topic structure."""
         m = m_for(ctx)
+        if action in STRUCTURE_ACTIONS:
+            return parts_structure(m, action, part_id, component_id, quantity, ref, level, levels, renamed, rows,
+                                   dry_run, position_id)
         if action == "create":
             return run(m.create_part, part_number, name, manufacturer or "", _d(unit, "each"), unit_cost,
                        notes or "", item_class_id, manufacturer_id)
+        if action == "update":
+            changes = {"name": name, "manufacturer": manufacturer, "unit": unit, "unit_cost": unit_cost,
+                       "notes": notes, "lead_time_days": lead_time_days, "service_level": service_level,
+                       "repairable": repairable, "turnaround_days": turnaround_days}
+            return run(m.update_part, part_id, **{k: v for k, v in changes.items() if v is not None})
         if action == "stock":
             return run(m.adjust_stock, part_id, location_id, quantity, reason or "", on)
         if action == "reorder":

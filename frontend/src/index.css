@@ -4310,6 +4310,85 @@ h1 .chip,
   line-height: 1.5;
 }
 .fit-step .ds-change { align-self: flex-start; font-size: var(--fs-14); }
+
+/* Every column and its role (#434), the used / ignored summary as its head. */
+.col-roles { display: flex; flex-direction: column; gap: var(--sp-2); }
+.col-roles-h { margin: 0; font-size: var(--fs-13); line-height: 1.5; overflow-wrap: anywhere; }
+.col-roles-sum { color: var(--muted); }
+.col-roles-sum b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.col-roles-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: var(--sp-2) var(--sp-4);
+}
+.col-role {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 190px);
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-2) 6px var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+}
+.col-role.ignored { background: var(--surf-2); }
+.col-role.ignored .col-role-name { color: var(--muted); }
+.col-role-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.col-role-eg { font-size: var(--fs-12); font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+
+/* "Your first row looks like data…" with its Undo (#434). */
+.ds-header-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--acc-line);
+  border-radius: var(--r-sm);
+  background: var(--acc-t);
+  color: var(--ink);
+  font-size: var(--fs-14);
+}
+.ds-header-note .link { font-size: inherit; }
+
+/* After a fit that isn't saved yet: the one-click save (#434). */
+.fit-save-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--acc-line);
+  border-radius: var(--r-sm);
+  background: var(--acc-t);
+}
+.fit-save-cta-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--fs-14); color: var(--ink); }
+.fit-save-cta-text span { color: var(--muted); font-size: var(--fs-13); }
+.unsaved-fit { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-4); }
+.unsaved-fit-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--fs-14); }
+.unsaved-fit-text span { color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }
+.unsaved-fit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+@media (max-width: 560px) {
+  .fit-save-cta > button, .unsaved-fit-actions > button { min-height: 44px; }
+  .fit-save-cta > button { width: 100%; }
+  .ds-header-note .link { min-height: 44px; }
+}
 @media (max-width: 560px) {
   .ds-status .seg-btn, .fit-step .ds-change { min-height: 44px; }
 }

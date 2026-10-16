@@ -9,6 +9,8 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  ["GET", "/api/maintenance/parts/levels"], // #435
+  ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407
   ["POST", "/api/maintenance/graph/query"], // #423
   ["GET", "/api/maintenance/graph/schema"], // #423

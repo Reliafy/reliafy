@@ -300,7 +300,9 @@ def test_the_guide_by_topic(env):
 
     index, pages, bad = _session(env["token"], flow)
     assert set(index["topics"]) == {"model", "register", "plan", "run", "learn", "decide", "data", "classes",
-                                    "conditions"}
+                                    "conditions", "structure"}
+    structure = pages["structure"]["guide"]
+    assert "add_component" in structure and "positions_from_structure" in structure and "loop" in structure
     conditions = pages["conditions"]["guide"]
     assert "exclude_condition" in conditions and "connection holds only its own conditions" in conditions
     assert "guide" not in index and bad.is_error
@@ -453,6 +455,47 @@ def test_a_class_forecast_over_mcp(env):
     assert out["n_forecast"] == 2 and out["headline"].startswith("≈ ")
     assert wrong.is_error and "doesn't take interval" in wrong.content[0].text
     assert "class_forecast" in guide["guide"]
+
+
+def test_spares_stock_levels_over_mcp(env):
+    # #31: set a part's lead time with maintenance_parts update, read hold N and the
+    # plan with maintenance_get class_forecast / spares_plan.
+    from backend import mcp_server
+    from backend.maintenance.service import Maintenance
+    from backend.routers import maintenance as router
+
+    assert "maintenance_get.spares_plan" in mcp_server.HEAVY_TOOLS
+    _fitted_class()
+    m = Maintenance(router._store, UID, UID)
+    positions = [p["id"] for p in m.s.nodes(UID, "Position")]
+
+    async def flow(client):
+        part = _ok(await _do(client, "maintenance_parts", "create", part_number="PP-1", name="Pool pump",
+                             unit_cost=500))
+        for pid in positions:
+            _ok(await _do(client, "maintenance_parts", "add_to_position", position_id=pid, part_id=part["id"],
+                          role="replacement"))
+        updated = _ok(await _do(client, "maintenance_parts", "update", part_id=part["id"], lead_time_days=90,
+                                service_level=0.9))
+        brief = _ok(await _get(client, "class_forecast", "Pool pump"))
+        plan = _ok(await _get(client, "spares_plan", "Pool pump", period="quarter", periods=4, service_level=0.99,
+                              review_days=30))
+        bad = await _get(client, "spares_plan", "Pool pump", service_level=5)
+        wrong = await _do(client, "maintenance_parts", "update", part_id=part["id"], position_id=positions[0])
+        guide = _ok(await client.call_tool("maintenance_guide", {"topic": "decide"}))
+        return updated, brief, plan, bad, wrong, guide
+
+    updated, brief, plan, bad, wrong, guide = _session(env["token"], flow)
+    assert updated["lead_time_days"] == 90 and updated["service_level"] == 0.9
+    st = brief["spares"][0]["stocking"]
+    assert st["lead_time_basis"] == "part" and st["service_level"] == 0.9 and st["hold"] >= 0
+    assert "per_period" not in st and "risk_curve" not in st and st["summary"].startswith("Hold ")
+    part = plan["parts"][0]
+    assert plan["period"] == "quarter" and part["service_level"] == 0.99 and part["window_days"] == 120
+    assert len(part["per_period"]) == 4 and part["risk_curve"] and part["hold_cost"] == 500 * part["hold"]
+    assert bad.is_error and "service level" in bad.content[0].text
+    assert wrong.is_error and "doesn't take position_id" in wrong.content[0].text
+    assert "spares_plan" in guide["guide"] and "lead_time_days" in guide["guide"]
 
 
 def test_reading_a_class_forecast_isnt_pro_only(free_env):
@@ -917,3 +960,55 @@ def test_conditions_over_mcp(env):
     assert {e["condition"]["name"] for e in back["conditions"]} == {"Outdoor", "Ambient temperature"}
     assert [e["condition"]["name"] for e in retired["conditions"]] == ["Ambient temperature"]
     assert "Seawater,presence,,,Raw seawater" in exported["csv"] and "Outdoor" not in exported["csv"]
+
+
+def test_product_structure_over_mcp(env):
+    """A BOM imported as rows (dry run, then for real, then again with no change), a loop
+    refused with its path, a line added and changed by hand, the structure and where used
+    read back, a level set and the list renamed, and positions made from the structure."""
+    rows = [{"NHA": "", "PN": "SYS-1", "Nomenclature": "Cooling system", "Indenture level": "System"},
+            {"NHA": "SYS-1", "PN": "PU-1", "Qty": "2", "Nomenclature": "Pump unit", "Indenture level": "Subsystem"},
+            {"NHA": "PU-1", "PN": "MTR-1", "Qty": "1", "Nomenclature": "Motor", "Indenture level": "LRU"},
+            {"NHA": "MTR-1", "PN": "BRG-1", "Qty": "2", "Nomenclature": "Bearing", "Indenture level": "Component"},
+            {"NHA": "PU-1", "PN": "BRG-1", "Qty": "2"}]
+
+    async def flow(client):
+        dry = _ok(await _do(client, "maintenance_parts", "import_bom", rows=rows))
+        done = _ok(await _do(client, "maintenance_parts", "import_bom", rows=rows, dry_run=False))
+        again = _ok(await _do(client, "maintenance_parts", "import_bom", rows=rows, dry_run=False))
+        parts = {p["part_number"]: p["id"] for p in _ok(await _list(client, "parts"))["parts"]}
+        loop = await _do(client, "maintenance_parts", "add_component", part_id=parts["BRG-1"],
+                         component_id=parts["SYS-1"])
+        seal = _ok(await _do(client, "maintenance_parts", "create", part_number="S-1", name="Seal"))
+        _ok(await _do(client, "maintenance_parts", "add_component", part_id=parts["PU-1"], component_id=seal["id"],
+                      ref="S1"))
+        changed = _ok(await _do(client, "maintenance_parts", "update_component", part_id=parts["PU-1"],
+                                component_id=seal["id"], quantity=3))
+        _ok(await _do(client, "maintenance_parts", "remove_component", part_id=parts["PU-1"], component_id=seal["id"]))
+        structure = _ok(await _get(client, "part_structure", parts["SYS-1"]))
+        used = _ok(await _get(client, "where_used", parts["BRG-1"]))
+        level = _ok(await _do(client, "maintenance_parts", "set_level", part_id=seal["id"], level="sru"))
+        levels = _ok(await _do(client, "maintenance_parts", "set_levels",
+                               levels=["System", "Subsystem", "LRU", "Shop unit", "Component"],
+                               renamed={"SRU": "Shop unit"}))
+        top = _ok(await _do(client, "maintenance_positions", "create", name="Cooling"))
+        positions = _ok(await _do(client, "maintenance_parts", "positions_from_structure", part_id=parts["SYS-1"],
+                                  position_id=top["id"], levels=["System", "Subsystem"]))
+        made = _ok(await _do(client, "maintenance_parts", "positions_from_structure", part_id=parts["SYS-1"],
+                             position_id=top["id"], levels=["System", "Subsystem"], dry_run=False))
+        stray = await _do(client, "maintenance_parts", "set_level", part_id=seal["id"], level="LRU", ref="x")
+        return dry, done, again, loop, changed, structure, used, level, levels, positions, made, stray
+
+    dry, done, again, loop, changed, structure, used, level, levels, positions, made, stray = _session(
+        env["token"], flow)
+    assert dry["dry_run"] and dry["counts"]["parts_created"] == 4 and dry["counts"]["lines_added"] == 4
+    assert not done["dry_run"] and again["counts"]["unchanged"] == 4 and again["counts"]["lines_added"] == 0
+    assert loop.is_error and "BRG-1 › SYS-1 › PU-1" in loop.content[0].text
+    assert {c["part_number"]: c["qty"] for c in changed["tree"]["children"]}["S-1"] == 3
+    assert {r["part_number"]: r["total"] for r in structure["rollup"]} == {"PU-1": 2, "MTR-1": 2, "BRG-1": 8}
+    assert [a["part_number"] for a in used["assemblies"]] == ["SYS-1", "PU-1", "MTR-1"]
+    assert level["level"] == "SRU"
+    assert [x["name"] for x in levels["levels"]][3] == "Shop unit"
+    assert positions["dry_run"] and positions["counts"]["create"] == 3
+    assert not made["dry_run"] and made["counts"]["create"] == 3
+    assert stray.is_error and "ref" in stray.content[0].text

@@ -4,7 +4,7 @@ import PreviewTable from "./PreviewTable.jsx";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import { SPREADSHEET_ACCEPT, isSpreadsheetFile, pasteDataset, uploadDataset } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { fileStem, parsePreview } from "../datasetGuess.js";
+import { fileStem, firstRowIsData, parsePreview } from "../datasetGuess.js";
 import "./Datasets.css";
 
 // ---- structured form fields (SurPyval survival inputs, no covariates) --------
@@ -54,7 +54,9 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   const [step, setStep] = useState("upload"); // upload | enter
   const [enterMode, setEnterMode] = useState("paste"); // paste | form
   const [name, setName] = useState("");
-  const [noHeader, setNoHeader] = useState(false);
+  // No header row: the user's choice, or null to guess from the data (#434:
+  // a first row of only numbers is data).
+  const [headerChoice, setHeaderChoice] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [dragging, setDragging] = useState(false);
@@ -65,13 +67,18 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   // text for the preview; an Excel workbook its chosen sheet (the sheet picker
   // already showed its rows).
   const [picked, setPicked] = useState(null); // { file, text?, excel? }
+  // paste
+  const [text, setText] = useState("");
+
+  // The data on show (the picked CSV, or the paste) and whether its first row
+  // looks like data; the guess holds until the user says otherwise.
+  const shownText = step === "enter" ? (enterMode === "paste" ? text : null) : picked?.text ?? null;
+  const guessedNoHeader = useMemo(() => shownText != null && firstRowIsData(shownText), [shownText]);
+  const noHeader = headerChoice ?? guessedNoHeader;
   const filePreview = useMemo(
     () => (picked?.text != null ? parsePreview(picked.text, { noHeader }) : null),
     [picked, noHeader]
   );
-
-  // paste
-  const [text, setText] = useState("");
   const preview = useMemo(() => parsePreview(text, { noHeader }), [text, noHeader]);
 
   // form — one comma-separated value list per field
@@ -181,13 +188,21 @@ export default function NewDatasetModal({ onClose, onCreated }) {
   );
 
   const noHeaderBox = (excelNote) => (
-    <label className="ds-check">
-      <input type="checkbox" checked={noHeader} onChange={(e) => setNoHeader(e.target.checked)} />
-      <span>
-        No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …
-        {excelNote && " (for an Excel file you choose the header row next)"}
-      </span>
-    </label>
+    <>
+      {headerChoice === null && guessedNoHeader && shownText != null && (
+        <p className="ds-header-note" role="status">
+          <span>Your first row looks like data, so we've treated it as data.</span>
+          <button type="button" className="link" onClick={() => setHeaderChoice(false)}>Undo</button>
+        </p>
+      )}
+      <label className="ds-check">
+        <input type="checkbox" checked={noHeader} onChange={(e) => setHeaderChoice(e.target.checked)} />
+        <span>
+          No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …
+          {excelNote && " (for an Excel file you choose the header row next)"}
+        </span>
+      </label>
+    </>
   );
 
   return (
@@ -229,7 +244,7 @@ export default function NewDatasetModal({ onClose, onCreated }) {
                   </span>
                 )}
                 {picked.excel?.sheet && <span className="muted">Sheet “{picked.excel.sheet}”</span>}
-                <button className="link" onClick={() => { setPicked(null); setError(null); }} disabled={busy}>
+                <button className="link" onClick={() => { setPicked(null); setHeaderChoice(null); setError(null); }} disabled={busy}>
                   Choose another file
                 </button>
               </div>

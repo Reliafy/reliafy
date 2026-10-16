@@ -9,6 +9,7 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import { ShowMeHow } from "../components/Walkthrough.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import WhatChangedPanel from "../components/WhatChanged.jsx";
+import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
 
 const ACTIVATED_KEY = "reliafy_activated";
 const RECENT = 5;
@@ -49,6 +50,9 @@ export default function ModellingDashboard() {
         title="Modelling"
         meta={<>Fit life data, repairable systems, accelerated tests and degradation. <ShowMeHow id="fit" /></>}
       />
+
+      {/* A fit left without saving, with its one-click save (#434). */}
+      <UnsavedFitReminder />
 
       {/* What changed in the workspace (#41): first, once it has work of its own. */}
       <WhatChangedPanel />

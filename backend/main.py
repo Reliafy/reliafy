@@ -321,15 +321,28 @@ def app_config() -> dict:
 @app.post("/api/columns")
 def columns_endpoint(
     file: UploadFile = File(...),
+    no_header: bool | None = Form(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
     """Return the column names and a sample of rows from an uploaded CSV.
 
     Used by the frontend to populate the x/c/n/xl/xr/tl/tr column selectors.
+    ``header_guess`` is the row that looks like the header: 1, or 0 when the
+    first row is all numbers (data), which adds a one-line ``hint``.
+    ``no_header`` true previews the file with its first row as data (columns
+    ``col 1``, ``col 2``, …); the fit and save endpoints read a file as it
+    is, so send them the same columns (#434).
     """
+    from backend.fitting import HEADER_PREVIEW_HINT, header_guess, with_generic_header
+
     contents = read_upload(file)
     try:
-        return JSONResponse(content=preview(contents, distinct=True))
+        guess = header_guess(contents)
+        out = preview(with_generic_header(contents) if no_header else contents, distinct=True)
+        out["header_guess"] = guess
+        if guess == 0 and no_header is None:
+            out["hint"] = HEADER_PREVIEW_HINT
+        return JSONResponse(content=out)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 

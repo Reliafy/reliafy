@@ -2,7 +2,7 @@ import Select from "./Select.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { guessUnit } from "../datasetGuess.js";
-import { guessStatus, setStatusMeaning, statusMeaning, statusValues } from "../lifeData.js";
+import { countProblem, setMappingField, setStatusMeaning, statusMeaning, statusValues } from "../lifeData.js";
 import { TVC_STATUS, TvcTimeFields } from "./TvcColumns.jsx";
 
 // Column mapping in plain words (#291). Encodes SurPyval's input rules:
@@ -42,18 +42,8 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
   const options = (none) => [{ value: "", label: none }, ...columns];
 
   const setField = (field, value) => {
-    const next = { ...mapping, [field]: value };
-    // Enforce mutual exclusivity by clearing the conflicting side.
-    if (field === "x" && value) {
-      next.xl = "";
-      next.xr = "";
-    } else if ((field === "xl" || field === "xr") && value) {
-      next.x = "";
-    }
-    // The group column (#177) compares failure modes: no modes, no groups.
-    if (field === "e" && !value) next.g = "";
-    // A new status column starts from guessed meanings for its values.
-    if (field === "c") Object.assign(next, guessStatus(value, facts));
+    // Exclusive fields, groups and status meanings: see setMappingField.
+    const next = setMappingField(mapping, field, value, facts);
     // A unit guessed from the old time column follows the new one.
     if (field === "x" && onUnitChange && (!unit || unit === guessUnit(mapping.x))) {
       onUnitChange(guessUnit(value));
@@ -63,10 +53,21 @@ export default function ColumnMapper({ columns, mapping, onChange, unit, onUnitC
 
   const values = mapping.c ? statusValues(facts[mapping.c]?.values) : [];
 
+  // A count holds whole numbers (#434): a column of text or decimals is
+  // shown, but can't be picked, with the reason beside it.
+  const countOptions = (none) => [
+    { value: "", label: none },
+    ...columns.map((col) => {
+      const why = countProblem(facts[col]);
+      return why ? { value: col, label: col, hint: why === "text" ? "text" : "has decimals", disabled: col !== mapping.n } : col;
+    }),
+  ];
+
   const field = (key, label, none, hint) => (
     <label className="ds-field" key={key}>
       <span className="ds-label">{label}</span>
-      <Select value={mapping[key] || ""} onChange={(v) => setField(key, v)} options={options(none)} />
+      <Select value={mapping[key] || ""} onChange={(v) => setField(key, v)}
+              options={key === "n" ? countOptions(none) : options(none)} />
       {hint && <span className="ds-hint">{hint}</span>}
     </label>
   );

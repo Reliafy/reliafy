@@ -426,12 +426,16 @@ def class_economics(position_class: str, interval: float | None = None, unit: st
 
 @router.get("/classes/forecast")
 def class_forecast(position_class: str, period: str = "month", periods: int = 12,
-                   m: Maintenance = Depends(maintenance)) -> JSONResponse:
+                   service_level: float | None = None, lead_time_days: float | None = None,
+                   review_days: float | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The class's failure forecast from the register (#407): expected failures per
-    period with P10–P90, positions at risk, spares demand against stock, budget."""
+    period with P10–P90, positions at risk, spares demand against stock and each
+    spare's stock levels (#31: service_level and lead_time_days override every
+    part's own), budget."""
     from backend.maintenance import forecast
 
-    return _run(forecast.class_forecast, m, position_class, period, periods)
+    return _run(forecast.class_forecast, m, position_class, period, periods, service_level, lead_time_days,
+                review_days)
 
 
 @router.get("/proposals")
@@ -778,6 +782,102 @@ def create_part(body: dict = Body(...), m: Maintenance = Depends(maintenance_wri
                 body.get("manufacturer_id"))
 
 
+# ---- product structure: parts made of parts (#435) ---------------------------------------
+# (Before /parts/{part_id}, so /parts/levels isn't read as a part id.)
+
+@router.get("/parts/levels")
+def part_levels(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The indenture levels, top first, with how many parts are at each."""
+    return _run(m.part_level_list)
+
+
+@router.put("/parts/levels")
+def set_part_levels(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{levels: [names, top first], renamed: {old: new}}."""
+    return _run(m.set_part_levels, body.get("levels"), body.get("renamed"))
+
+
+@router.post("/parts/import-bom")
+async def import_bom(file: UploadFile = File(...), dry_run: bool = Form(True), sheet: str | None = Form(None),
+                     header_row: str | None = Form(None), mapping: str | None = Form(None),
+                     levels_by_depth: bool = Form(False),
+                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A BOM from CSV or Excel: one row per parent -> child line, or an indented BOM with
+    a level on each row (see bom.py). sheet and header_row pick an Excel sheet's table
+    (blank: the first sheet, its header guessed); mapping ({field: column}, JSON) overrides
+    the guessed columns; levels_by_depth names an indented BOM's parts' indenture levels
+    from the workspace's list, top first. A dry run (the default) only reports."""
+    import json
+
+    from backend.maintenance import bom
+    from backend.routers.excel import header_row_param
+    from backend.services import excel
+
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if len(data) > 10 * 1024 * 1024:
+        return JSONResponse(status_code=413, content={"detail": "The file is over 10 MB."})
+    try:
+        cols = json.loads(mapping) if mapping else None
+        if cols is not None and not isinstance(cols, dict):
+            raise ValueError
+    except ValueError:
+        return JSONResponse(status_code=422, content={"detail": "mapping is {field: column} as JSON."})
+    try:
+        header, rows = await run_in_threadpool(bom.table_from_file, data, file.filename or "", sheet or None,
+                                               header_row_param(header_row))
+    except (Invalid, excel.ExcelError) as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+    except Exception:  # noqa: BLE001 - an unreadable file
+        return JSONResponse(status_code=422, content={"detail": "That file couldn't be read as CSV or Excel."})
+    def go() -> JSONResponse:
+        return _run(bom.run, m, header, rows, dry_run, cols, m.part_levels() if levels_by_depth else None)
+
+    return await run_in_threadpool(go)
+
+
+@router.get("/parts/{part_id}/structure")
+def part_structure(part_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The part's structure as a tree, and the quantities rolled up."""
+    return _run(m.part_structure, part_id)
+
+
+@router.post("/parts/{part_id}/structure")
+def add_component(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{child_id, quantity, ref}: returns the structure."""
+    return _run(m.add_component, part_id, body.get("child_id"), body.get("quantity", 1), body.get("ref", ""))
+
+
+@router.patch("/parts/{part_id}/structure/{child_id}")
+def update_component(part_id: str, child_id: str, body: dict = Body(...),
+                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_component, part_id, child_id, body.get("quantity"), body.get("ref"))
+
+
+@router.delete("/parts/{part_id}/structure/{child_id}")
+def remove_component(part_id: str, child_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.remove_component, part_id, child_id)
+
+
+@router.post("/parts/{part_id}/structure/positions")
+def positions_from_structure(part_id: str, body: dict = Body(default={}),
+                             m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{parent_id, levels (null: every part), dry_run (default true)}: positions made from the structure."""
+    return _run(m.positions_from_structure, part_id, body.get("parent_id"), body.get("levels"),
+                body.get("dry_run", True) is not False)
+
+
+@router.get("/parts/{part_id}/where-used")
+def where_used(part_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The parts it's in, the positions listing it or fitted with one, and the items of it."""
+    return _run(m.where_used, part_id)
+
+
+@router.put("/parts/{part_id}/level")
+def set_part_level(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{level}: one of the indenture levels ('' clears it)."""
+    return _run(m.set_part_level, part_id, body.get("level"))
+
+
 @router.get("/parts/{part_id}")
 def get_part(part_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.part, part_id)
@@ -785,7 +885,9 @@ def get_part(part_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespons
 
 @router.patch("/parts/{part_id}")
 def update_part(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.update_part, part_id, **{k: body[k] for k in ("name", "manufacturer", "unit", "notes", "unit_cost")
+    return _run(m.update_part, part_id, **{k: body[k] for k in ("name", "manufacturer", "unit", "notes", "unit_cost",
+                                                                "lead_time_days", "service_level", "repairable",
+                                                                "turnaround_days")
                                            if k in body})
 
 

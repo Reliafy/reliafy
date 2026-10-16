@@ -16,6 +16,7 @@ import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { unitInText } from "../components/unitText.js";
 import { itemsWithoutUsage, usageInputValue } from "../fleetUsage.js";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
+import FleetSparesCard from "../components/FleetSparesCard.jsx";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -509,6 +510,12 @@ export default function FleetForecastPage() {
             </>
           )}
         </div>
+      )}
+
+      {/* #297: the spares answer, from the same forecast (lead time + service level → hold N). */}
+      {showAnswer && (
+        <FleetSparesCard fleet={fleet} settings={settings} forecast={forecast} readOnly={readOnly} dirty={dirty}
+                         onChange={(v) => setSetting("spares", v)} />
       )}
 
       <div className="card" style={{ marginTop: "1rem" }}>
