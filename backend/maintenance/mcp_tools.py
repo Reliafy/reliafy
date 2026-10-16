@@ -45,8 +45,8 @@ _ORIGINAL: dict = {}
 PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
 # Calls that can take a while: they share the MCP server's heavy-call slots.
 HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_workspace.import_history",
-               "maintenance_get.plan_economics", "maintenance_topology.generate_rbd",
-               "maintenance_graph_query", "maintenance_graph_schema")
+               "maintenance_get.plan_economics", "maintenance_get.class_forecast",
+               "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema")
 
 
 # ---- actions: what each takes -------------------------------------------------------
@@ -106,6 +106,8 @@ GET_KINDS: Table = {
         (with interval) a what-if, each with its net present cost over horizon_years (default 10) at
         discount_rate (default 0.07). Needs the class's fitted model and costs. unit: days, weeks, months
         (default), years."""),
+    "class_forecast": ("id", "period periods", """id = a position class's name. Its failure forecast from the
+        register (guide topic decide)."""),
     "impact": ("id", "", """id = a position. If it fails, what loses its supply downstream (through
         connections), and whether redundancy covers it."""),
     "photo_link": ("id", "", """id = a link_id from maintenance_attachments photo_link. The photos added
@@ -453,7 +455,7 @@ def register() -> None:
     from mcp.server.mcpserver.exceptions import ToolError
 
     from backend import config, mcp_server
-    from backend.maintenance import importer, loop, rbd_derive, taxonomy
+    from backend.maintenance import forecast, importer, loop, rbd_derive, taxonomy
     from backend.maintenance import conditions as register_io
     from backend.maintenance import graph_cypher
     from backend.maintenance.access import allowed, graph_query_allowed
@@ -586,7 +588,9 @@ def register() -> None:
                         interval: Annotated[float | None, Field(
                             description="plan_economics: a what-if interval.")] = None,
                         unit: Literal["days", "weeks", "months", "years"] | None = None,
-                        horizon_years: float | None = None, discount_rate: float | None = None) -> dict[str, Any]:
+                        horizon_years: float | None = None, discount_rate: float | None = None,
+                        period: Literal["month", "quarter", "year"] | None = None,
+                        periods: int | None = None) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance_overview, maintenance_list and the records themselves."""
         m = m_for(ctx)
@@ -599,6 +603,8 @@ def register() -> None:
         if kind == "plan_economics":
             return run(loop.economics, m, rid, interval, _d(unit, "months"), _d(horizon_years, 10),
                        _d(discount_rate, 0.07))
+        if kind == "class_forecast":
+            return run(forecast.class_forecast, m, rid, _d(period, "month"), _d(periods, 12))
         if kind == "manufacturer_match":
             return run(m.match_manufacturer, text)
         read = {"position": m.position, "item": m.item, "work_order": m.work_order, "location": m.location,

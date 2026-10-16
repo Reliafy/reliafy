@@ -133,11 +133,17 @@ distribution, saves it as a model and proposes task intervals from it and the co
 user says so, maintenance_proposals accept (or reject, with a note). Never accept one on your own judgement.
 4. maintenance_get kind task: why a task is what it is (where it came from, every change, the proposals behind \
 them)."""),
-    "decide": ("Plan economics, generated RBDs, impact and spares cover.", """\
+    "decide": ("Plan economics, failure forecast, generated RBDs, impact and spares cover.", """\
 Deciding with the numbers.
 - maintenance_get kind plan_economics, id = the position class (optional interval for a what-if, unit, \
 horizon_years, discount_rate): what the class's replacement plan costs a year, now, at the best interval and \
 running to failure, each with its net present cost. Needs the class's fitted model and costs (learn topic).
+- maintenance_get kind class_forecast, id = the position class (period month / quarter / year, periods, default \
+12 months): failures expected from the positions' fitted items with P10–P90, per period too, counting \
+replacements that fail again (headline: say it as given); at_risk, positions by chance of failing next period; \
+not_forecast, positions with nothing fitted or no usage rate (a model by use needs counter readings); spares, each \
+replacement or critical part's demand per period and cumulative against usable stock (prob_covered); budget, from \
+the class's costs. Needs the class's fitted model.
 - maintenance_topology generate_rbd, position_id = a system position: a reliability block diagram from the \
 positions inside it (connections wire the blocks, redundancy groups become k of n, each block takes its class's \
 fitted model or a placeholder, listed in notes). It's saved as a normal RBD: rbd_analysis analyze analyses it.

@@ -2412,6 +2412,12 @@ export function getClassEconomics(positionClass, { interval, unit, horizonYears,
   return request(`/api/maintenance/classes/economics?${q}`);
 }
 
+// The class's failure forecast from the register (#407).
+export function getClassForecast(positionClass, { period = "month", periods = 12 } = {}) {
+  const q = new URLSearchParams({ position_class: positionClass, period, periods: String(periods) });
+  return request(`/api/maintenance/classes/forecast?${q}`);
+}
+
 export function addMeasurementPoint(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/points`, body);
 }

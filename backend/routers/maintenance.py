@@ -424,6 +424,16 @@ def class_economics(position_class: str, interval: float | None = None, unit: st
     return _run(loop.economics, m, position_class, interval, unit, horizon_years, discount_rate)
 
 
+@router.get("/classes/forecast")
+def class_forecast(position_class: str, period: str = "month", periods: int = 12,
+                   m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The class's failure forecast from the register (#407): expected failures per
+    period with P10–P90, positions at risk, spares demand against stock, budget."""
+    from backend.maintenance import forecast
+
+    return _run(forecast.class_forecast, m, position_class, period, periods)
+
+
 @router.get("/proposals")
 def list_proposals(status: str = "pending", m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {"proposals": m.proposals(None if status == "all" else status)})

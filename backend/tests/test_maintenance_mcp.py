@@ -420,6 +420,51 @@ def test_class_model_fitting_is_pro_only_over_mcp():
     assert "maintenance_get.plan_economics" not in mcp_server.HEAVY_TOOLS
 
 
+def _fitted_class(name="Pool pump"):
+    """Two pumps of a class with items in and the class's model, as fit_class_model
+    records it (straight into the store the MCP tools read)."""
+    from backend.maintenance.service import Maintenance, class_id
+    from backend.routers import maintenance as router
+
+    m = Maintenance(router._store, UID, UID)
+    for i in (1, 2):
+        pid = m.create_position(f"Pump {i}", position_class=name)["id"]
+        m.fit(pid, new_item={"name": f"Pump {i}"}, on="2025-01-01")
+    m._emit("class.model_fitted", {
+        "id": class_id(UID, name), "name": name, "model_id": "m1", "distribution": "weibull",
+        "params": [{"name": "alpha", "value": 600.0}, {"name": "beta", "value": 2.5}], "extras": None,
+        "unit": "days", "fitted_on": m.today(), "failures": 6, "suspensions": 2})
+
+
+def test_a_class_forecast_over_mcp(env):
+    from backend import mcp_server
+
+    assert "maintenance_get.class_forecast" in mcp_server.HEAVY_TOOLS
+    _fitted_class()
+
+    async def flow(client):
+        out = _ok(await _get(client, "class_forecast", "Pool pump", period="quarter", periods=4))
+        wrong = await _get(client, "class_forecast", "Pool pump", interval=3)
+        guide = _ok(await client.call_tool("maintenance_guide", {"topic": "decide"}))
+        return out, wrong, guide
+
+    out, wrong, guide = _session(env["token"], flow)
+    assert out["position_class"] == "Pool pump" and out["period"] == "quarter" and len(out["per_period"]) == 4
+    assert out["n_forecast"] == 2 and out["headline"].startswith("≈ ")
+    assert wrong.is_error and "doesn't take interval" in wrong.content[0].text
+    assert "class_forecast" in guide["guide"]
+
+
+def test_reading_a_class_forecast_isnt_pro_only(free_env):
+    # Like plan_economics: only fitting the class's model is Pro.
+    _fitted_class()
+
+    async def flow(client):
+        return await _get(client, "class_forecast", "Pool pump")
+
+    assert not _session(free_env["oauth"], flow).is_error
+
+
 def test_nameplate_and_moves_over_mcp(env):
     async def flow(client):
         a = _ok(await _do(client, "maintenance_positions", "create", name="Pump A", position_class="Pool pump"))

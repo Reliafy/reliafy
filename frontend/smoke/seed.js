@@ -1,8 +1,9 @@
 // Global setup for the local run: the samples cover most pages, but nothing
 // seeds Maintenance or an RBD simulation run, so make one of each here (a
 // position from the sample RCM study, a location, an item fitted to the
-// position, a work order, a part, the starter item classes, and one
-// availability run) through the API. Skipped against a deployed site.
+// position, a work order, a part, the starter item classes, a position class
+// with a fitted life model, and one availability run) through the API. Skipped
+// against a deployed site.
 import { request } from "@playwright/test";
 
 export default async function seed(config) {
@@ -25,6 +26,29 @@ export default async function seed(config) {
     await post(`${m}/work-orders`, { position_id, title: "Smoke test inspection" });
     await post(`${m}/parts`, { part_number: "SMOKE-PAD", name: "Smoke test brake pad" });
     await post(`${m}/item-classes/starter`, { dry_run: false });
+
+    // A position class with a fitted life model, so its page draws the failure
+    // forecast (#407): three pumps, each with two past failures and an item in
+    // now, a critical replacement part with one in stock, and the class's costs.
+    const ago = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    const pump = "Smoke test pump";
+    const spare = await post(`${m}/parts`, { part_number: "SMOKE-PUMP", name: "Smoke test pump", unit_cost: 900 });
+    await post(`${m}/parts/${spare.id}/stock`, { location_id: location.id, delta: 1, reason: "smoke test" });
+    for (const [i, lives] of [[520, 610], [470, 690], [560, 580]].entries()) {
+      const p = await post(`${m}/positions`, { name: `Smoke pump ${i + 1}`, position_class: pump });
+      let day = 1500;
+      for (const [n, life] of lives.entries()) {
+        await post(`${m}/positions/${p.id}/past-fitments`, {
+          start: ago(day), end: ago(day - life), reason: "failure", failure_mode_text: "Seized",
+          new_item: { name: `Smoke pump ${i + 1}.${n}` },
+        });
+        day -= life;
+      }
+      await post(`${m}/positions/${p.id}/fit`, { new_item: { name: `Smoke pump ${i + 1}.now` }, on: ago(day) });
+      await post(`${m}/positions/${p.id}/parts`, { part_id: spare.id, role: "replacement", critical: true });
+    }
+    await send("PUT")(`${m}/classes/costs`, { position_class: pump, planned_cost: 400, failure_cost: 4000 });
+    await post(`${m}/classes/fit`, { position_class: pump });
 
     // One availability run, for the run history pages.
     const rbd = await (await api.get("/api/rbds/sample-rbd-instrument-air-availability")).json();
