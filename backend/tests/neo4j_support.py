@@ -84,8 +84,9 @@ def plant(m) -> dict:
     """A workspace with every shape the graph queries walk: nested locations;
     positions located, inheriting, retired, and inside items (fitted, placed,
     neither, and one whose fitment was struck out); spares placed and moved;
-    connections with two ways round, a loop and a removed one; and an item class
-    tree with a retired branch, items classed directly and by their part."""
+    connections with two ways round, a loop and a removed one; an item class
+    tree with a retired branch, items classed directly and by their part; and a product
+    structure (parts made of parts, a shared one, indenture levels)."""
     loc = lambda name, parent=None: m.create_location(name, parent_id=parent)["id"]  # noqa: E731
     site = loc("Site")
     area, gallery, store, yard = loc("Area X", site), loc("Gallery", site), loc("Store", site), loc("Yard")
@@ -147,6 +148,23 @@ def plant(m) -> dict:
     m.assign_item_class(engine, centrifugal)
     m.assign_item_class(spare, centrifugal)
 
+    # Product structure (#435): the pump part contains a motor and bearings, the motor
+    # bearings too (one bearing part, shared); a line changed, one taken out; indenture
+    # levels set, and the list changed with a level renamed.
+    motor = m.create_part("M-200", "Motor M-200")["id"]
+    bearing = m.create_part("B-6205", "Bearing 6205")["id"]
+    seal = m.create_part("S-10", "Seal kit")["id"]
+    for pid, level in ((part, "Assembly"), (motor, "LRU"), (bearing, "Component")):
+        m.set_part_level(pid, level)
+    m.add_component(part, motor, 1, "M1")
+    m.add_component(part, bearing, 2, "B1, B2")
+    m.add_component(motor, bearing, 2)
+    m.add_component(part, seal, 1)
+    m.update_component(part, seal, 2, "S1")
+    m.remove_component(part, seal)
+    m.add_component(motor, seal, 1)
+    m.set_part_levels(["System", "Assembly", "Line-replaceable unit", "Component"], {"LRU": "Line-replaceable unit"})
+
     # Conditions: nested, with and without values, excluded lower down, on an item and a
     # connection, and one retired after it was applied.
     cond = lambda name, **kw: m.create_condition(name, **kw)["id"]  # noqa: E731
@@ -167,7 +185,8 @@ def plant(m) -> dict:
             "engine2": engine2, "engine3": engine3, "breaker": breaker, "spare": spare, "moved": moved,
             "tank": tank, "pump_a": pump_a, "pump_b": pump_b, "filter": filt, "header": header, "outlet": outlet,
             "rotating": rotating, "pump": pump, "centrifugal": centrifugal, "retired_class": retired,
-            "part": part, "by_part": by_part, "own_class": own_class}
+            "part": part, "by_part": by_part, "own_class": own_class, "motor": motor, "bearing": bearing,
+            "seal": seal}
 
 
 def query_cases(p: dict) -> list[tuple[str, str]]:

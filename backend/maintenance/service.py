@@ -1253,6 +1253,94 @@ def _condition_removed(s: GraphStore, org: str, p: dict) -> None:
         s.delete_edge(org, edge, p["target_id"], p["condition_id"])
 
 
+# ---- product structure: parts made of parts (#435) -------------------------------------
+# (:Part)-[:CONTAINS {qty, ref}]->(:Part): how many of the child go into one of the parent,
+# and an optional reference designator or position-in-assembly label. A part's indenture
+# level is a plain field (part.updated), one of the workspace's list (a PartLevels node).
+
+MAX_COMPONENTS_EACH = 500  # lines in one part's structure
+MAX_STRUCTURE_LEVELS = 20  # parts nested inside parts, top to bottom
+MAX_PART_LEVELS = 30  # names on the indenture level list
+MAX_TREE_NODES = 2_000  # rows drawn in one structure tree (a shared assembly is drawn wherever it's used)
+DEFAULT_PART_LEVELS = ("System", "Subsystem", "Assembly", "LRU", "SRU", "Component")
+
+
+def part_levels_id(org: str) -> str:
+    """The node holding an organisation's indenture level list."""
+    import hashlib
+
+    return "part-levels-" + hashlib.sha1(org.encode()).hexdigest()[:16]
+
+
+def _part_levels_set(s: GraphStore, org: str, p: dict) -> None:
+    """The indenture level list, replaced; a level renamed on the way renames it on
+    the parts at it."""
+    lid = part_levels_id(org)
+    if s.node(org, lid) is None:
+        s.put_node(org, lid, "PartLevels", {"levels": p["levels"]})
+    else:
+        s.patch_node(org, lid, {"levels": p["levels"]})
+    renamed = p.get("renamed") or {}
+    if renamed:
+        for pt in s.nodes(org, "Part"):
+            if pt.get("level") in renamed:
+                s.patch_node(org, pt["id"], {"level": renamed[pt["level"]]})
+
+
+def _component_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_edge(org, "CONTAINS", p["parent_id"], p["child_id"], {"qty": p["qty"], "ref": p.get("ref", "")})
+
+
+def _component_updated(s: GraphStore, org: str, p: dict) -> None:
+    props = s.edge(org, "CONTAINS", p["parent_id"], p["child_id"]) or {}
+    s.put_edge(org, "CONTAINS", p["parent_id"], p["child_id"], {**props, **p["changes"]})
+
+
+def _component_removed(s: GraphStore, org: str, p: dict) -> None:
+    s.delete_edge(org, "CONTAINS", p["parent_id"], p["child_id"])
+
+
+def _ref_labels(props: dict) -> list[str]:
+    """A line's ref as separate labels ("B1, B2" -> ["B1", "B2"])."""
+    return [x.strip() for x in str(props.get("ref") or "").replace(";", ",").split(",") if x.strip()]
+
+
+def structure_path(start: str, target: str, children) -> list[str] | None:
+    """The part ids from ``start`` down to ``target`` (both included) through
+    ``children(id)``, or None when ``target`` isn't inside ``start``."""
+    stack, seen = [(start, [start])], {start}
+    while stack:
+        at, path = stack.pop()
+        if at == target:
+            return path
+        for child in children(at):
+            if child not in seen:
+                seen.add(child)
+                stack.append((child, path + [child]))
+    return None
+
+
+def structure_heights(ids, children) -> dict[str, int]:
+    """For each part, how many levels its structure has below it (0: none), through
+    ``children(id)``; the structure has no loops."""
+    memo: dict[str, int] = {}
+    for start in ids:
+        if start in memo:
+            continue
+        # Depth first without recursion (an imported chain can be thousands long);
+        # a part on the way down counts as 0 meanwhile, so a loop can't hang it.
+        stack = [(start, False)]
+        while stack:
+            pid, done = stack.pop()
+            if done:
+                memo[pid] = max((memo.get(c, 0) + 1 for c in children(pid)), default=0)
+            elif pid not in memo:
+                memo[pid] = 0
+                stack.append((pid, True))
+                stack.extend((c, False) for c in children(pid) if c not in memo)
+    return memo
+
+
 PROJECTORS = {
     "position.created": _position_created,
     "position.updated": _position_updated,
@@ -1337,6 +1425,11 @@ PROJECTORS = {
     "condition.retired": _flag("retired"),
     "condition.applied": _condition_applied,
     "condition.removed": _condition_removed,
+    # Product structure (#435).
+    "part_levels.set": _part_levels_set,
+    "part.component_added": _component_added,
+    "part.component_updated": _component_updated,
+    "part.component_removed": _component_removed,
 }
 
 
@@ -2331,6 +2424,8 @@ class Maintenance:
             "item_class": self._class_brief(self._effective_class(pt)[0]),
             "manufacturer_entry": self._maker_brief(self._made_by(pt)[0]),
             "items": sum(1 for x in self.s.inn(self.org, part_id, "OF_PART") if x["label"] == "Item"),
+            # Its indenture level and structure one level down (#435).
+            **self._structure_summary(part_id, pt),
         }
 
     def parts(self, item_class_id=None, manufacturer_id=None) -> list[dict]:
@@ -2557,6 +2652,403 @@ class Maintenance:
                 for p in sorted(self.s.nodes(self.org, "Position"), key=lambda p: p["name"].lower())
                 if not p.get("retired") and not self._listings_at(p["id"])]
         return out
+
+    # ---- product structure: parts made of parts (#435) ---------------------------------
+    # A part can contain other parts (a CONTAINS line: how many go into one of it, and a
+    # reference designator or position-in-assembly label), so a system is made of
+    # assemblies, made of replaceable units, made of components. A loop is refused. A
+    # part's indenture level (optional) is one of the workspace's list. Read down (the
+    # structure, with quantities rolled up) or up (where used: the parts it's in, the
+    # positions listing it or fitted with one, the items that are one). Positions can be
+    # made from a structure. No configuration baselines or effectivity yet. Importing a
+    # BOM: bom.py.
+
+    def part_levels(self) -> list[str]:
+        """The workspace's indenture levels, top first."""
+        node = self.s.node(self.org, part_levels_id(self.org))
+        return list(node["levels"]) if node else list(DEFAULT_PART_LEVELS)
+
+    def _level_name(self, level, levels: list[str] | None = None) -> str:
+        """A level as the list spells it ('' for none); one not on the list is refused."""
+        text = _text(level, "indenture level", max_len=60)
+        if not text:
+            return ""
+        levels = self.part_levels() if levels is None else levels
+        found = next((name for name in levels if _key(name) == _key(text)), None)
+        if found is None:
+            raise Invalid(f"{text} isn't on the list of indenture levels ({', '.join(levels)}): add it there first.")
+        return found
+
+    def _levels_in_use(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for pt in self.s.nodes(self.org, "Part"):
+            if pt.get("level"):
+                out[pt["level"]] = out.get(pt["level"], 0) + 1
+        return out
+
+    def part_level_list(self) -> dict:
+        """The indenture levels, top first, with how many parts are at each."""
+        used = self._levels_in_use()
+        return {"levels": [{"name": n, "parts": used.get(n, 0)} for n in self.part_levels()],
+                "default": list(DEFAULT_PART_LEVELS)}
+
+    def set_part_levels(self, levels, renamed=None) -> dict:
+        """Replace the indenture level list (top first). renamed: {old name: new name}
+        renames a level, and the parts at it follow. A level parts are at can't be left out."""
+        names, keys = [], set()
+        for raw in _list(levels, "indenture levels", MAX_PART_LEVELS):
+            name = _text(raw, "indenture level", max_len=60)
+            if not name:
+                continue
+            if _key(name) in keys:
+                raise Invalid(f"{name} is on the list twice.")
+            keys.add(_key(name))
+            names.append(name)
+        if not names:
+            raise Invalid("Give at least one indenture level.")
+        current = self.part_levels()
+        renames: dict[str, str] = {}
+        if renamed:
+            if not isinstance(renamed, dict):
+                raise Invalid("renamed is {old name: new name}.")
+            for old, new in renamed.items():
+                was = next((n for n in current if _key(n) == _key(old)), None)
+                if was is None:
+                    raise Invalid(f"{old} isn't on the list now.")
+                now = next((n for n in names if _key(n) == _key(new)), None)
+                if now is None:
+                    raise Invalid(f"{was} is renamed {new}, but {new} isn't on the new list.")
+                if now != was:
+                    renames[was] = now
+        for level, count in self._levels_in_use().items():
+            after = renames.get(level, level)
+            match = next((n for n in names if _key(n) == _key(after)), None)
+            if match is None:
+                raise Invalid(f"{count} part{'s are' if count != 1 else ' is'} at {level}: rename it, or change "
+                              f"{'their' if count != 1 else 'its'} level first.")
+            if match != level:
+                renames[level] = match
+        if names != current or renames:
+            self._emit("part_levels.set", {"levels": names, "renamed": renames, "on": self.today()})
+        return self.part_level_list()
+
+    def set_part_level(self, part_id: str, level) -> dict:
+        """A part's indenture level, from the workspace's list ('' or None clears it)."""
+        pt = self._get(part_id, "Part")
+        name = self._level_name(level)
+        if name != (pt.get("level") or ""):
+            self._emit("part.updated", {"id": part_id, "changes": {"level": name}})
+        return self.part(part_id)
+
+    def _structure_part(self, pt: dict) -> dict:
+        return {**{k: pt.get(k) for k in ("id", "part_number", "name", "manufacturer", "unit")},
+                "level": pt.get("level") or ""}
+
+    def _components(self, part_id: str) -> list[tuple[dict, dict]]:
+        """A part's structure one level down: (part, {qty, ref}) by part number."""
+        memo = self._memo.setdefault("components", {})
+        if part_id not in memo:
+            lines = [(c, self.s.edge(self.org, "CONTAINS", part_id, c["id"]) or {})
+                     for c in self.s.out(self.org, part_id, "CONTAINS")]
+            memo[part_id] = sorted(lines, key=lambda x: (x[0]["part_number"].lower(), x[0]["id"]))
+        return memo[part_id]
+
+    def _used_in(self, part_id: str) -> list[tuple[dict, dict]]:
+        """The parts one level up that contain it: (part, {qty, ref}) by part number."""
+        memo = self._memo.setdefault("used_in", {})
+        if part_id not in memo:
+            lines = [(p, self.s.edge(self.org, "CONTAINS", p["id"], part_id) or {})
+                     for p in self.s.inn(self.org, part_id, "CONTAINS")]
+            memo[part_id] = sorted(lines, key=lambda x: (x[0]["part_number"].lower(), x[0]["id"]))
+        return memo[part_id]
+
+    def _component_ids(self, part_id: str) -> list[str]:
+        return [c["id"] for c, _ in self._components(part_id)]
+
+    def _structure_summary(self, part_id: str, pt: dict) -> dict:
+        """For a part's record: its indenture level, its structure one level down, and
+        how many parts contain it."""
+        return {"level": pt.get("level") or "",
+                "components": [{"id": c["id"], "part_number": c["part_number"], "name": c["name"],
+                                "qty": props.get("qty"), "ref": props.get("ref", "")}
+                               for c, props in self._components(part_id)],
+                "used_in": len(self._used_in(part_id))}
+
+    def _items_of_part(self, part_id: str) -> list[dict]:
+        return [x for x in self.s.inn(self.org, part_id, "OF_PART") if x["label"] == "Item"]
+
+    @staticmethod
+    def _per_one(quantity) -> float:
+        qty = _number(1 if quantity in (None, "") else quantity, "quantity", 0, MAX_AMOUNT)
+        if qty <= 0:
+            raise Invalid("The quantity must be more than 0.")
+        return qty
+
+    def _structure_line(self, part_id: str, child_id: str) -> tuple[dict, dict, dict | None]:
+        parent, child = self._get(part_id, "Part"), self._get(child_id, "Part")
+        return parent, child, self.s.edge(self.org, "CONTAINS", part_id, child_id)
+
+    def _check_no_loop(self, parent: dict, child: dict) -> None:
+        """Refuse a line that would put a part inside itself (naming the loop), or make
+        the structure deeper than MAX_STRUCTURE_LEVELS."""
+        if parent["id"] == child["id"]:
+            raise Invalid("A part can't contain itself.")
+        path = structure_path(child["id"], parent["id"], self._component_ids)
+        if path:
+            numbers = [parent["part_number"]] + [self.s.node(self.org, pid)["part_number"] for pid in path]
+            raise Invalid(f"That would make a loop: {' › '.join(numbers)}. A part can't contain a part it's inside.")
+        above = structure_heights([parent["id"]], lambda pid: [p["id"] for p, _ in self._used_in(pid)])[parent["id"]]
+        below = structure_heights([child["id"]], self._component_ids)[child["id"]]
+        if above + below + 2 > MAX_STRUCTURE_LEVELS:
+            raise Invalid(f"A structure goes at most {MAX_STRUCTURE_LEVELS} levels deep.")
+
+    def add_component(self, part_id: str, child_id: str, quantity=1, ref="") -> dict:
+        """Put a part in another's structure: quantity, how many go into one of it; ref, a
+        reference designator or position-in-assembly label. Returns the structure."""
+        parent, child, line = self._structure_line(part_id, child_id)
+        if line is not None:
+            raise Invalid(f"{child['part_number']} is already in {parent['part_number']}: change that line instead.")
+        if len(self._components(part_id)) >= MAX_COMPONENTS_EACH:
+            raise LimitReached(f"A part's structure holds at most {MAX_COMPONENTS_EACH} lines.")
+        self._check_no_loop(parent, child)
+        qty = self._per_one(quantity)
+        self._emit("part.component_added", {"parent_id": part_id, "child_id": child_id, "qty": qty,
+                                            "ref": _text(ref, "reference"), "on": self.today()})
+        return self.part_structure(part_id)
+
+    def update_component(self, part_id: str, child_id: str, quantity=None, ref=None) -> dict:
+        """Change a structure line's quantity or ref."""
+        parent, child, line = self._structure_line(part_id, child_id)
+        if line is None:
+            raise Invalid(f"{child['part_number']} isn't in {parent['part_number']}.")
+        changes = {}
+        if quantity is not None:
+            changes["qty"] = self._per_one(quantity)
+        if ref is not None:
+            changes["ref"] = _text(ref, "reference")
+        changes = {k: v for k, v in changes.items() if v != line.get(k)}
+        if changes:
+            self._emit("part.component_updated", {"parent_id": part_id, "child_id": child_id, "changes": changes,
+                                                  "on": self.today()})
+        return self.part_structure(part_id)
+
+    def remove_component(self, part_id: str, child_id: str) -> dict:
+        """Take a part out of another's structure (both stay in the catalogue)."""
+        parent, child, line = self._structure_line(part_id, child_id)
+        if line is None:
+            raise Invalid(f"{child['part_number']} isn't in {parent['part_number']}.")
+        self._emit("part.component_removed", {"parent_id": part_id, "child_id": child_id, "on": self.today()})
+        return self.part_structure(part_id)
+
+    def _rolled_down(self, part_id: str, memo: dict) -> dict[str, float]:
+        """How many of each part, at every level below, go into one of part_id."""
+        if part_id not in memo:
+            out: dict[str, float] = {}
+            for child, props in self._components(part_id):
+                q = props.get("qty", 1)
+                out[child["id"]] = out.get(child["id"], 0) + q
+                for below, n in self._rolled_down(child["id"], memo).items():
+                    out[below] = out.get(below, 0) + q * n
+            memo[part_id] = out
+        return memo[part_id]
+
+    def _rolled_up(self, part_id: str, memo: dict) -> dict[str, float]:
+        """For each part above it (at any level), how many of part_id go into one of that part."""
+        if part_id not in memo:
+            out: dict[str, float] = {}
+            for parent, props in self._used_in(part_id):
+                q = props.get("qty", 1)
+                out[parent["id"]] = out.get(parent["id"], 0) + q
+                for above, n in self._rolled_up(parent["id"], memo).items():
+                    out[above] = out.get(above, 0) + q * n
+            memo[part_id] = out
+        return memo[part_id]
+
+    def _level_order(self, rows: list[dict]) -> list[dict]:
+        order = {n: i for i, n in enumerate(self.part_levels())}
+        return sorted(rows, key=lambda r: (order.get(r["level"], len(order)), r["part_number"].lower()))
+
+    def part_structure(self, part_id: str) -> dict:
+        """A part's structure as a tree: each line with its quantity, ref and total (how
+        many in one of the top part). And the roll-up, the spares view: every part below it
+        with the total quantity in one (an SRU in an LRU counted by both quantities),
+        whether it's at the lowest level, its stock on hand and, when items of the top part
+        are in the register, the quantity installed across them."""
+        root = self._get(part_id, "Part")
+        shown, truncated = 0, False
+
+        def grow(pt: dict, line: dict | None, total: float, depth: int) -> dict:
+            nonlocal shown, truncated
+            shown += 1
+            out = {**self._structure_part(pt), "qty": line and line.get("qty"), "ref": (line or {}).get("ref", ""),
+                   "total": total, "children": []}
+            for child, props in self._components(pt["id"]):
+                if shown >= MAX_TREE_NODES or depth >= MAX_STRUCTURE_LEVELS:
+                    truncated = out["more"] = True
+                    break
+                out["children"].append(grow(child, props, round(total * props.get("qty", 1), 6), depth + 1))
+            return out
+
+        tree = grow(root, None, 1, 0)
+        totals = self._rolled_down(part_id, {})
+        items = len(self._items_of_part(part_id))
+        rows = []
+        for pid, total in totals.items():
+            pt = self.s.node(self.org, pid, "Part")
+            rows.append({**self._structure_part(pt), "total": round(total, 6), "lowest": not self._components(pid),
+                         "on_hand": sum(st["quantity"] for st in self._stocks(pid)),
+                         **({"installed": round(total * items, 6)} if items else {})})
+        return {"part": self._structure_part(root), "tree": tree, "rollup": self._level_order(rows),
+                "counts": {"parts": len(totals), "lines": sum(len(self._components(p)) for p in [part_id, *totals]),
+                           "depth": structure_heights([part_id], self._component_ids)[part_id],
+                           "lowest": sum(1 for r in rows if r["lowest"])},
+                "items": items, "truncated": truncated, "indenture_levels": self.part_levels()}
+
+    def _position_brief(self, position: dict) -> dict:
+        return {"id": position["id"], "name": position["name"],
+                "path": [a["name"] for a in self._position_path(position["id"])]}
+
+    MAX_WHERE_USED = 500  # positions and items listed where a part is used (the counts are of all)
+
+    def where_used(self, part_id: str) -> dict:
+        """Where a part is used: the parts it's in (parents, one level up, with quantity
+        and ref; assemblies, every part above it with how many go into one), the positions
+        whose parts list names it or with an item of it fitted, and the items of it in the
+        register (linked to it, or with its part number typed in)."""
+        pt = self._get(part_id, "Part")
+        parents = [{**self._structure_part(a), "qty": props.get("qty"), "ref": props.get("ref", "")}
+                   for a, props in self._used_in(part_id)]
+        direct = {p["id"] for p in parents}
+        assemblies = self._level_order([
+            {**self._structure_part(self.s.node(self.org, aid, "Part")), "total": round(q, 6), "direct": aid in direct,
+             "top": not self._used_in(aid)} for aid, q in self._rolled_up(part_id, {}).items()])
+        positions = []
+        for listing in self._listings_of(part_id):
+            position = self.s.out(self.org, listing["id"], "LISTED_AT")[0]
+            positions.append({"position": self._position_brief(position), "how": "listed", "role": listing["role"],
+                              "quantity": listing["quantity"]})
+        linked = self._items_of_part(part_id)
+        seen = {x["id"] for x in linked}
+        number = _key(pt["part_number"])
+        typed = [x for x in self.s.nodes(self.org, "Item") if x["id"] not in seen and _key(x.get("part_number")) == number]
+        items = []
+        for item, is_linked in [(x, True) for x in linked] + [(x, False) for x in typed]:
+            fitment = self._current_fitment_of_item(item["id"])
+            position = fitment and self.s.out(self.org, fitment["id"], "AT")[0]
+            where = self.whereabouts(item["id"])["location"]
+            brief = {"id": item["id"], "name": item["name"], "serial": item.get("serial", "")}
+            items.append({**brief, "linked": is_linked, "fitted_to": position and {"id": position["id"],
+                                                                                   "name": position["name"]},
+                          "location": where and where.get("display")})
+            if position:
+                positions.append({"position": self._position_brief(position), "how": "fitted", "item": brief})
+        positions.sort(key=lambda r: ([n.lower() for n in r["position"]["path"]], r["position"]["name"].lower(),
+                                      r["how"]))
+        items.sort(key=lambda r: (not r["linked"], r["name"].lower(), r["serial"].lower()))
+        return {"part": self._structure_part(pt), "parents": parents, "assemblies": assemblies,
+                "positions": positions[:self.MAX_WHERE_USED], "items": items[:self.MAX_WHERE_USED],
+                "counts": {"parents": len(parents), "assemblies": len(assemblies), "positions": len(positions),
+                           "items": len(items)}}
+
+    def positions_from_structure(self, part_id: str, parent_id=None, levels=None, dry_run: bool = True) -> dict:
+        """Make positions from a part's structure, under a position (parent_id; an item for
+        positions inside it; None: the top level): a position for each part and each one of
+        its quantity (Pump 1, Pump 2; tagged with the line's refs when there's one each),
+        with that part as its replacement part. levels: the indenture levels that become
+        positions; a part at another level (or none) is passed through, and what's inside it
+        comes in under the position above. None: every part. A position already there under
+        the same position with the same name is used again, so it can be run again.
+        dry_run (the default) only reports."""
+        root = self._get(part_id, "Part")
+        under = self._parent_node(parent_id) if parent_id else None
+        chosen = None
+        if levels is not None:
+            chosen = {self._level_name(x) for x in _list(levels, "indenture levels", MAX_PART_LEVELS)} - {""}
+            if not chosen:
+                raise Invalid("Choose at least one indenture level to make positions for.")
+        plan: list[dict] = []
+        skipped: list[dict] = []
+        kids: dict = {}
+        named: set = set()
+
+        def there(at: tuple) -> dict[str, str]:
+            """Positions already under an existing position (or at the top level), by name."""
+            if at[0] != "id":
+                return {}
+            if at not in kids:
+                if at[1] is None:
+                    nodes = [p for p in self.s.nodes(self.org, "Position") if self._parent(p["id"]) is None]
+                else:
+                    nodes = [c for c in self.s.inn(self.org, at[1], "PART_OF") if c["label"] == "Position"]
+                kids[at] = {_key(c["name"]): c["id"] for c in nodes if not c.get("retired")}
+            return kids[at]
+
+        def visit(pt: dict, count: float, refs: list[str], at: tuple, path: list[str], depth: int) -> None:
+            if depth > MAX_STRUCTURE_LEVELS:
+                return
+            if chosen is not None and (pt.get("level") or "") not in chosen:
+                for child, props in self._components(pt["id"]):
+                    visit(child, count * props.get("qty", 1), _ref_labels(props) if count == 1 else [], at, path,
+                          depth + 1)
+                return
+            if count != int(count):
+                skipped.append({"part_number": pt["part_number"], "name": pt["name"], "quantity": round(count, 6),
+                                "why": "not a whole number of them, so no position (a consumable?)"})
+                return
+            n = int(count)
+            labels = refs if len(refs) == n else []
+            for i in range(n):
+                name = pt["name"][:150] if n == 1 else f"{pt['name'][:150]} {i + 1}"
+                base, k = name, 2
+                while (at, _key(name)) in named:  # two of one name side by side: Seal, Seal (2)
+                    name, k = f"{base} ({k})", k + 1
+                named.add((at, _key(name)))
+                found = there(at).get(_key(name))
+                plan.append({"name": name, "tag": labels[i] if labels else "", "at": at, "part": pt, "existing": found,
+                             "path": path + [name]})
+                if len(plan) > MAX_COPY_NODES:
+                    raise Invalid(f"That's more than {MAX_COPY_NODES} positions at once. Choose fewer levels, or "
+                                  "make them from a smaller part of the structure.")
+                here = ("id", found) if found else ("new", len(plan) - 1)
+                for child, props in self._components(pt["id"]):
+                    visit(child, props.get("qty", 1), _ref_labels(props), here, path + [name], depth + 1)
+
+        visit(root, 1, [], ("id", under["id"] if under else None), [under["name"]] if under else [], 0)
+        listed = []
+        for i, e in enumerate(plan):
+            if e["existing"]:
+                now = self._listings_at(e["existing"])
+                if any(x["role"] == "replacement" or self.s.out(self.org, x["id"], "LISTS")[0]["id"] == e["part"]["id"]
+                       for x in now):
+                    continue
+            listed.append(i)
+        made = [e for e in plan if not e["existing"]]
+        ids: dict[int, str] = {i: e["existing"] for i, e in enumerate(plan) if e["existing"]}
+        if not dry_run:
+            self._quota("Position", MAX_POSITIONS, adding=len(made))
+            self._quota("PartListing", MAX_PART_LISTINGS, adding=len(listed), what="parts-list entries")
+            today = self.today()
+            for i, e in enumerate(plan):
+                if e["existing"]:
+                    continue
+                ids[i] = new_id()
+                self._emit("position.created", {
+                    "id": ids[i], "name": e["name"], "tag": e["tag"][:SHORT_TEXT],
+                    "parent_id": e["at"][1] if e["at"][0] == "id" else ids[e["at"][1]],
+                    "position_class": "", "description": "", "on": today})
+            for i in listed:
+                self._emit("position_part.listed", {
+                    "id": new_id(), "position_id": ids[i], "part_id": plan[i]["part"]["id"], "role": "replacement",
+                    "quantity": 1.0, "critical": False, "min_on_hand": None, "notes": "", "on": today})
+        rows = [{"path": " › ".join(e["path"]), "part_number": e["part"]["part_number"],
+                 "level": e["part"].get("level") or "", "tag": e["tag"], "new": not e["existing"],
+                 **({"id": ids[i]} if i in ids else {})} for i, e in enumerate(plan)]
+        return {"dry_run": dry_run, "part": self._structure_part(root),
+                "under": under and {"id": under["id"], "name": under["name"], "kind": under["label"]},
+                "levels": None if chosen is None else [n for n in self.part_levels() if n in chosen],
+                "counts": {"create": len(made), "reuse": len(plan) - len(made), "parts_list": len(listed),
+                           "skipped": len(skipped)},
+                "positions": rows[:200], "skipped": skipped[:200], "top": rows[0].get("id") if rows else None}
 
     # ---- measurement points ---------------------------------------------------------
 

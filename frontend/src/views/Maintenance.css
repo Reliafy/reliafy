@@ -272,3 +272,69 @@
   font-size: var(--fs-13);
   margin-right: 0.35rem;
 }
+
+/* Product structure (#435): a part's tree, with a toggle per line that has parts
+   inside it, the line's quantity before the part, and the indenture level list. */
+.maint-toggle {
+  display: inline-block;
+  width: 1.1rem;
+  text-align: center;
+  flex: none;
+}
+
+button.maint-toggle {
+  padding: 0;
+  text-decoration: none;
+}
+
+.maint-qty {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.maint-levels {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.maint-levels li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.maint-levels input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.maint-levels input:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: var(--focus);
+}
+
+.maint-levels .lib-date {
+  white-space: nowrap;
+}
+
+.maint-fieldset {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.5rem 0.75rem 0.75rem;
+  margin: 0;
+}
+
+.maint-fieldset legend {
+  padding: 0 0.3rem;
+  font-weight: 600;
+}

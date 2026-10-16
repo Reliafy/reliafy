@@ -21,6 +21,7 @@ import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import { MeasurementsCard } from "./MaintenancePosition.jsx";
 import { ItemKindCard, useKinds } from "../components/MaintenanceItemClasses.jsx";
 import { ConditionsCard } from "../components/MaintenanceConditions.jsx";
+import { ItemPartStructureCard } from "../components/MaintenanceStructure.jsx";
 import "./Maintenance.css";
 
 const ITEM_DATES = [
@@ -110,6 +111,7 @@ export default function MaintenanceItem() {
       </section>
 
       <ItemKindCard item={item} kinds={kinds} onChanged={setItem} />
+      <ItemPartStructureCard part={item.part} />
 
       <ConditionsCard target={{ id: item.id, name: item.name, kind: "Item" }} view={item} onChanged={refresh}
                       emptyText={`Nothing recorded. Fitted, ${item.name} takes its position's conditions; in a store, the store's. Add what applies to this item itself.`} />
