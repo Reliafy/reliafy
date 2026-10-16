@@ -2404,6 +2404,48 @@ export function getSparesCover(includeUnlisted = false) {
   return request(`/api/maintenance/spares?include_unlisted=${includeUnlisted ? "true" : "false"}`);
 }
 
+// ---- product structure: parts made of parts (#435) ----
+export function getMaintenancePart(id) {
+  return request(`/api/maintenance/parts/${id}`);
+}
+export function getPartStructure(id) {
+  return request(`/api/maintenance/parts/${id}/structure`);
+}
+export function getPartWhereUsed(id) {
+  return request(`/api/maintenance/parts/${id}/where-used`);
+}
+// {childId, quantity, ref}; each returns the structure.
+export function addPartComponent(partId, { childId, quantity, ref }) {
+  return postJson(`/api/maintenance/parts/${partId}/structure`, { child_id: childId, quantity, ref });
+}
+export function updatePartComponent(partId, childId, body) {
+  return patchJson(`/api/maintenance/parts/${partId}/structure/${childId}`, body);
+}
+export function removePartComponent(partId, childId) {
+  return request(`/api/maintenance/parts/${partId}/structure/${childId}`, { method: "DELETE" });
+}
+export function setPartLevel(partId, level) {
+  return putJson(`/api/maintenance/parts/${partId}/level`, { level: level || "" });
+}
+export function getPartLevels() {
+  return request("/api/maintenance/parts/levels");
+}
+// levels: names, top first; renamed: {old: new}.
+export function setPartLevels(levels, renamed = {}) {
+  return putJson("/api/maintenance/parts/levels", { levels, renamed });
+}
+// A dry run unless dryRun is false; levels null: every part becomes a position.
+export function positionsFromStructure(partId, { parentId = null, levels = null, dryRun = true } = {}) {
+  return postJson(`/api/maintenance/parts/${partId}/structure/positions`,
+    { parent_id: parentId, levels, dry_run: dryRun });
+}
+// A BOM from CSV or Excel (sheet and header row for a workbook); a dry run unless dryRun is false.
+export function importBom(file, { dryRun = true, sheet, headerRow } = {}) {
+  return request("/api/maintenance/parts/import-bom", {
+    method: "POST", body: excelForm(file, sheet, headerRow, { dry_run: dryRun ? "true" : "false" }),
+  });
+}
+
 export function importMaintenanceSheet(file, dryRun) {
   const form = new FormData();
   form.append("file", file);

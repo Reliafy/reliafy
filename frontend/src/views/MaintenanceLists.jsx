@@ -35,6 +35,9 @@ import {
   ClassPicker, ItemClassesSection, KindFilters, PartKindModal, useKinds,
 } from "../components/MaintenanceItemClasses.jsx";
 import { ConditionsCard, ConditionsSection } from "../components/MaintenanceConditions.jsx";
+import { ImportBomModal, LevelsModal, StructureTree } from "../components/MaintenanceStructure.jsx";
+import { partsForest } from "../maintenanceStructure.js";
+import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import Plot from "../components/Plot.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { ACCENT, INK } from "../plotTheme.js";
@@ -670,6 +673,7 @@ export function MaintenanceParts() {
   const [filter, setFilter] = useState({ itemClassId: null, manufacturerId: null });
   const [kinds] = useKinds();
   const [error, setError] = useState(null);
+  const [view, setView] = useState("list");
   const filtered = !!(filter.itemClassId || filter.manufacturerId);
   const usesKinds = !!(kinds.classes?.length || kinds.makers?.length);
   const load = useCallback(() => {
@@ -681,29 +685,38 @@ export function MaintenanceParts() {
   }, [load]);
   return (
     <div className="app">
-      <PageHeader crumbs={crumbs} title="Parts" meta="The parts catalogue and what's in stock where."
+      <PageHeader crumbs={crumbs} title="Parts" meta="The parts catalogue, what parts are made of, and what's in stock where."
+                  actions={<>
+                    <button className="secondary" onClick={() => setModal("bom")}>Import a BOM</button>
+                    <button className="secondary" onClick={() => setModal("levels")}>Indenture levels</button>
+                  </>}
                   primary={<button onClick={() => setModal("new")}><PlusIcon /> New part</button>} />
       <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       {parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
-      {usesKinds && (
-        <div className="tablebar">
-          <span className="count">{parts ? `${parts.length} part${parts.length === 1 ? "" : "s"}` : ""}</span>
+      {parts?.length > 0 && (
+        <div className="tablebar" style={{ flexWrap: "wrap" }}>
+          <span className="count">{`${parts.length} part${parts.length === 1 ? "" : "s"}`}</span>
+          <SegmentedControl size="sm" label="Show" value={view} onChange={setView} style={{ flex: "none" }}
+                            options={[{ value: "list", label: "List" }, { value: "structure", label: "Structure" }]} />
           <span className="grow" />
-          <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />
+          {usesKinds && <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />}
         </div>
       )}
       {parts === null ? <div className="card empty">Loading…</div> : parts.length === 0 ? (
-        <div className="card empty"><p>{filtered ? "No parts match." : "No parts yet. Add the spares you keep: anodes, filters, bearings."}</p></div>
-      ) : (
-        <div className="lib">
+        <div className="card empty"><p>{filtered ? "No parts match." : "No parts yet. Add the spares you keep: anodes, filters, bearings; or import a BOM."}</p></div>
+      ) : view === "structure" ? <PartsStructure parts={parts} /> : (
+        <div className="lib maint-scroll">
           <table className="lib-table">
             <thead><tr><th>Part number</th><th>Part</th><th>On hand</th><th>Where</th><th>Used at</th><th>Used (12 mo)</th><th>Cover</th><th /></tr></thead>
             <tbody>
               {parts.map((pt) => (
                 <tr key={pt.id}>
-                  <td>{pt.part_number}{pt.superseded_by && <div className="lib-date">superseded by {pt.superseded_by.part_number}</div>}</td>
-                  <td>{pt.name}<div className="lib-date">{[pt.manufacturer_entry?.name || pt.manufacturer,
+                  <td><Link to={`/maintenance/parts/${pt.id}`}>{pt.part_number}</Link>
+                    {pt.superseded_by && <div className="lib-date">superseded by {pt.superseded_by.part_number}</div>}</td>
+                  <td>{pt.name}{pt.level && <> <span className="maint-badge">{pt.level}</span></>}
+                    <div className="lib-date">{[pt.manufacturer_entry?.name || pt.manufacturer,
+                    pt.components?.length > 0 && `${pt.components.length} part${pt.components.length === 1 ? "" : "s"} inside`,
                     pt.item_class?.name, pt.unit_cost != null && `${pt.unit_cost} each`].filter(Boolean).join(" · ")}</div></td>
                   <td>{pt.on_hand} {pt.unit}{pt.low && <span className="maint-overdue"> low</span>}
                     {pt.critical_short && <div className="maint-overdue">critical spare short (keep {pt.critical_min})</div>}</td>
@@ -728,7 +741,27 @@ export function MaintenanceParts() {
                                      onDone={() => { setModal(null); load(); }} />}
       {modal?.stock && <StockModal part={modal.stock} locations={locations} onClose={() => setModal(null)}
                                    onDone={() => { setModal(null); load(); }} />}
+      {modal === "bom" && <ImportBomModal onClose={() => setModal(null)} onDone={() => { setModal(null); setView("structure"); load(); }} />}
+      {modal === "levels" && <LevelsModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
     </div>
+  );
+}
+
+// The catalogue as structures (#435): each top assembly with what it's made of, then a
+// count of the parts in no structure.
+function PartsStructure({ parts }) {
+  const { roots, loose } = partsForest(parts);
+  return (
+    <section className="card">
+      {roots.length === 0 ? (
+        <p className="lib-date">No part is made of other parts yet. Open a part to add what goes inside it, or import a BOM.</p>
+      ) : roots.map((r) => (
+        <div key={r.id} className="maint-group"><StructureTree tree={r} /></div>
+      ))}
+      {loose.length > 0 && roots.length > 0 && (
+        <p className="lib-date">{loose.length} part{loose.length === 1 ? " is" : "s are"} in no structure (see List).</p>
+      )}
+    </section>
   );
 }
 
