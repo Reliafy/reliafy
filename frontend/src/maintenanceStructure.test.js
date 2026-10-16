@@ -1,8 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  bomImportSummary, levelsIn, partsForest, positionsPlanSummary, qtyNumber, qtyText, treeKeys,
+  bomFormatText, bomImportSummary, bomIsIndented, levelsIn, partsForest, positionsPlanSummary, qtyNumber, qtyText,
+  treeKeys,
 } from "./maintenanceStructure.js";
+
+test("the BOM format the import detected, in words", () => {
+  const indented = { format: { id: "outline", label: "Indented, by outline number (1, 1.1, 1.1.2)", column: "Level" } };
+  assert.equal(bomFormatText(indented), "Indented, by outline number (1, 1.1, 1.1.2) (column “Level”).");
+  assert.equal(bomIsIndented(indented), true);
+  const flat = { format: { id: "list", label: "A list of parts", column: null } };
+  assert.equal(bomFormatText(flat), "A list of parts.");
+  assert.equal(bomIsIndented(flat), false);
+  assert.equal(bomIsIndented({ format: { id: "parent" } }), false);
+  assert.equal(bomFormatText({}), "");
+  assert.equal(bomIsIndented(null), false);
+});
 
 test("a line's quantity reads without float noise", () => {
   assert.equal(qtyText(2), "× 2");
