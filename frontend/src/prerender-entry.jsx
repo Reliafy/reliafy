@@ -175,8 +175,8 @@ export function gatedPages() {
   return pages;
 }
 
-// Titles of the blog posts and updates, for the operators' monthly content
-// report (backend/services/content_report.py).
+// Titles of the blog posts and updates, for operator tooling (a content
+// report).
 export function pageTitles() {
   const titles = {};
   for (const p of allPosts) titles[`/blog/${p.slug}`] = p.title;
@@ -184,8 +184,8 @@ export function pageTitles() {
   return titles;
 }
 
-// Every blog post as the admin page's publishing calendar needs it
-// (backend/services/content_calendar.py): the image has no source files.
+// Every blog post with its date, type and image, for operator tooling (a
+// publishing calendar): the image has no source files.
 export function calendarPosts() {
   return allPosts.map((p) => ({
     slug: p.slug,

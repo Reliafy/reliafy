@@ -1,6 +1,13 @@
 """Suite-wide test settings."""
 
+import os
+
 import pytest
+
+# The suite tests the app as published: optional extensions installed in this
+# environment aren't loaded (test_extensions.py registers its own). A suite
+# that wants them sets EXTENSIONS_DISABLED=false before this runs.
+os.environ.setdefault("EXTENSIONS_DISABLED", "true")
 
 
 @pytest.fixture(autouse=True)

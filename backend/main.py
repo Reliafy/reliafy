@@ -76,7 +76,6 @@ from backend.routers import excel as excel_router
 from backend.routers import teams as teams_router
 from backend.routers import shares as shares_router
 from backend.routers import telemetry as telemetry_router
-from backend.routers import admin as admin_router
 from backend.routers import fleet as fleet_router
 from backend.routers import public as public_router
 from backend.routers import reports as reports_router
@@ -86,6 +85,7 @@ from backend.routers import email_prefs as email_prefs_router
 from backend.routers import walkthroughs as walkthroughs_router
 from backend.routers import lifecycle as lifecycle_router
 from backend.routers import content_jobs as content_jobs_router
+from backend.routers import extensions as extensions_router
 from backend.routers import feeds as feeds_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
@@ -251,7 +251,6 @@ app.include_router(excel_router.router)
 app.include_router(teams_router.router)
 app.include_router(shares_router.router)
 app.include_router(telemetry_router.router)
-app.include_router(admin_router.router)
 app.include_router(fleet_router.router)
 app.include_router(public_router.router)
 app.include_router(reports_router.router)
@@ -270,6 +269,12 @@ app.include_router(workspace_changes_router.router)
 app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
+# Optional extensions (backend/extensions.py): the pages they add, and their
+# own routes. Nothing installed: an empty list, and no other routes.
+app.include_router(extensions_router.router)
+from backend import extensions as _extensions  # noqa: E402
+
+_extensions.load(app)
 
 # MCP (Model Context Protocol) server for AI assistants — token-authed, and
 # registered before the SPA catch-all so GET/POST/DELETE /mcp reach it.
@@ -627,7 +632,8 @@ def contained_path(path: Path, root: Path) -> Path | None:
 # Any other path that isn't a built file or a prerendered page is a real 404
 # (#118): crawlers and agents asking for /llms.txt-style paths used to get the
 # shell with a 200. Under the public roots below, a cloud build can also tell
-# a page that doesn't exist (#374).
+# a page that doesn't exist (#374). Pages added by installed extensions
+# (backend/extensions.py) get the shell too; without them, their paths are 404s.
 SPA_ROOTS = frozenset({
     # Public pages (cloud builds) and sign-in.
     "blog", "whats-new", "learn", "guides", "reference", "api-docs", "p", "terms", "privacy",
@@ -636,14 +642,14 @@ SPA_ROOTS = frozenset({
     "reliability-analysis-software",
     # The signed-in app.
     "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
-    "tokens", "admin", "billing", "changes", "maintenance",
+    "tokens", "billing", "changes", "maintenance",
 })
 
 
 def is_spa_route(full_path: str) -> bool:
     """Whether ``full_path`` (no leading slash) is one of the app's routes."""
     first = full_path.strip("/").split("/", 1)[0]
-    return first == "" or first in SPA_ROOTS
+    return first == "" or first in SPA_ROOTS or first in _extensions.page_roots()
 
 
 # Public pages that a cloud build prerenders, every one of them (#374):

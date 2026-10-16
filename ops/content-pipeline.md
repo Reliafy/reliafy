@@ -1,20 +1,15 @@
 # Content pipeline runbook
 
-The content plan (#343, calendar #344) runs with one human step a month: the
-founder reviews and merges a pull request (#367). Everything after the merge
-and the next deploy happens on its own, on its date.
-
-**Status:** the code is in this branch. None of the setup below has been done
-yet: no secret, no scheduler job, no settings, and the Zap still watches
-`/whats-new/feed.xml`.
+The content plan (#343) runs with one human step a month: the founder
+reviews and merges a pull request of the month's content (#367). Everything
+after the merge and the next deploy happens on its own, on its date. How the
+drafts are written is outside this repository; they arrive as an ordinary
+pull request that only touches `frontend/src/content/`.
 
 ## How it fits together
 
 ```
- 15th, 08:00 Brisbane          GitHub Actions: content-draft.yml
-   calendar.yml + what shipped
-   + library releases          ──► Claude Code drafts next month
-                                   └─► one PR "Content for <Month>"
+ mid-month                      one PR "Content for <Month>"
  founder reviews, edits, merges ──► approval of every item, email included
  deploy (before the first date) ──► content baked into the image
 
@@ -23,23 +18,18 @@ yet: no secret, no scheduler job, no settings, and the Zap still watches
    /social/feed.xml item         ──► Zapier ──► Reliafy LinkedIn page
    What's new with send: auto    ──► Cloud Scheduler ──► /internal/content/run
                                      test copy Friday before, list on the day
- 1st of the month, 10:00          the same job emails the content report
 ```
 
 ### What's in the repo
 
 | What | Where | Notes |
 |---|---|---|
-| Calendar | `.github/content/calendar.yml` | Slots to Jan 2027: date, type, title. Tested by `backend/tests/test_content_calendar.py`. |
-| Drafting instructions | `.github/content/draft-prompt.md` | What Claude reads and writes, the house style, the no-invented-figures rule. |
-| Drafting job | `.github/workflows/content-draft.yml` | 15th and by hand. Gathers what shipped and the library releases for Claude, who has no network. |
 | Blog posts | `frontend/src/content/blog/YYYY-MM-DD-<slug>.md` | Optional `linkedin: \|` block: the exact LinkedIn announcement. |
 | What's new | `frontend/src/content/updates/YYYY-MM-DD-<slug>.md` | `send: auto` = the job emails it. Optional `linkedin: \|`. |
 | Short LinkedIn posts | `frontend/src/content/social/YYYY-MM-DD-<slug>.md` | `date`, optional `link` (a Reliafy URL or site path) and `image`; the body is the post. Never on the website. |
 | Feeds | `backend/routers/feeds.py`, `frontend/src/contentFeed.js` | Built into `dist/feeds.json`, served date-filtered. |
 | Date gate | `backend/services/content_gate.py` | Prerendered pages and sitemap entries held until their date. |
-| Scheduled job | `backend/services/content_jobs.py`, `backend/routers/content_jobs.py` | Auto-send and the monthly report. |
-| Report | `backend/services/content_report.py` | Also on the admin page: "Content report (monthly)". |
+| Scheduled job | `backend/services/content_jobs.py`, `backend/routers/content_jobs.py` | Auto-send, plus any steps installed extensions add (`backend/extensions.py`). |
 
 A short post, a `linkedin:` block, a `send:` value and every committed content
 file are checked by `frontend/src/contentFeed.test.js` (in CI), which also
@@ -49,40 +39,11 @@ fails if two LinkedIn items share a date or one falls on a weekend (from
 ### Cadence: one LinkedIn post every weekday
 
 The LinkedIn page gets one post every weekday, Monday to Friday, about 20 a
-month, and never two on one day (`cadence.posts_per_weekday: 1` in the
-calendar). A blog post or What's new is its date's post: its `linkedin:`
-announcement goes out that day. Each monthly batch drafts exactly one short
-post for every other weekday of the month (one with no blog post, What's new
-or short post on it already), 30-70 words, one point each, spread across the
-four themes (life data; system reliability and safety; maintenance decisions;
-open source and AI agents) and these kinds of post:
-
-- cut from the month's pieces (a chart's finding, a worked example's number);
-- one feature with a screenshot;
-- a method tip with a number;
-- the AI-agent angle (a request through the MCP connector and what it returns);
-- open source and library releases;
-- fleet and maintenance numbers.
-
-Posts with an image are preferred. The drafting job can only use images
-already under `frontend/public/` (it can't take screenshots or write outside
-`frontend/src/content/`), so where a post wants a new one, the PR has a box
-saying what to capture; save it as `frontend/public/social/<name>.png`
+month, and never two on one day. A blog post or What's new is its date's post: its `linkedin:`
+announcement goes out that day; every other weekday gets one short post
+(`frontend/src/content/social/`), 30-70 words, one point each. Posts with an
+image are preferred: save it as `frontend/public/social/<name>.png`
 (1360×900 or 1200×627) and add `image: /social/<name>.png` to the post.
-
-### Library releases
-
-Each batch announces new versions of SurPyval and RePyability, the
-open-source libraries Reliafy is built on, on the Reliafy LinkedIn page. The
-drafting job lists every version released in the last 45 days: GitHub
-Releases (with their notes), and tags with no Release (SurPyval's older
-releases), pointing to the library's changelog. For each library with a version
-not yet announced, Claude drafts one short post,
-`social/<date>-<library>-<version>.md` (`surpyval-0-24`), on one of the
-month's free weekdays (it is that day's post), ending "Release notes: <url>". A post for a version, or for a later one, means
-it was announced, so the window's overlap doesn't post twice. The
-`link` field takes only Reliafy pages, so the release notes are in the text.
-Delete the file in review to skip a release.
 
 ### Pages and the sitemap
 
@@ -113,7 +74,7 @@ repost.
 |---|---|
 | LinkedIn feed links | `utm_source=linkedin&utm_medium=social&utm_campaign=<slug>` (the short post's or the page's) |
 | RSS feed links | `utm_source=rss&utm_medium=feed&utm_campaign=<slug>` |
-| Update emails | `utm_source=email&utm_medium=update&utm_campaign=<update slug>` (#269; `medium=update` keeps the Email campaigns card's split from lifecycle emails) |
+| Update emails | `utm_source=email&utm_medium=update&utm_campaign=<update slug>` (#269; `medium=update` keeps update emails apart from lifecycle emails in reports) |
 | Lifecycle emails | `utm_source=email&utm_medium=lifecycle&utm_campaign=welcome\|day3` |
 
 Only links to reliafy.com are tagged; unsubscribe links never are. No URL
@@ -144,30 +105,6 @@ what it would do and sends and records nothing.
 The CLI still works for a manual send. It shares the send log, so the two
 never email anyone twice.
 
-### Monthly report
-
-From 10:00 Brisbane on the 1st (caught up to the 7th), the job emails the
-operators last month's report, once (`report:<YYYY-MM>`): views and visitors
-per blog post and update, tagged landings by source and campaign, sign-ups
-(attributed to the tagged link and the first post their visit saw before
-signing up, by the daily visitor hash), update emails sent, and
-unsubscribes. The admin page shows the same tables for any of the last four
-months. Analytics are kept 90 days.
-
-### On the admin page
-
-**Admin → Content** (`/admin?tab=content`, `GET /api/admin/content-calendar`)
-shows a month of the calendar: every blog post, What's new and LinkedIn item
-as published, scheduled or planned (a slot with no file yet), the weekdays
-with no LinkedIn item, each What's new email's state (test copy, list sends
-from `update_sends`, the `UPDATE_AUTO_SEND` switch), and the pipeline: the
-next drafting run, the last `content/` pull request, whether the scheduler is
-configured, and the LinkedIn feed. It reads the build's `content.json` and
-`feeds.json` and the calendar, which the Dockerfile copies into the image.
-GitHub answers are cached for 12 minutes; set `GITHUB_TOKEN` on the service
-(a fine-grained token with read-only access to public repositories is enough)
-to lift GitHub's 60-requests-an-hour limit for unauthenticated calls.
-
 ## One-time setup
 
 Run the gcloud blocks in one shell, in order.
@@ -186,23 +123,7 @@ printf '%s\n' "endpoint: $RUN_URL" "scheduler SA: $CRON_SA"
 
 `RUN_URL` must be the `https://…run.app/internal/content/run` URL.
 
-### 1. The `ANTHROPIC_API_KEY` repository secret (founder)
-
-The drafting job's only secret. Create a key in the Anthropic Console (a
-workspace with a monthly spend limit of about US$25 is a sensible cap), then:
-
-```sh
-gh secret set ANTHROPIC_API_KEY -R Reliafy/reliafy   # paste the key when asked
-```
-
-Then run the job once by hand: Actions → Content draft → Run workflow (leave
-the month empty for next month). Expect a pull request "Content for <Month>"
-in 15-40 minutes.
-
-Pull requests opened with the workflow's token don't start CI. To run CI on
-the drafts, push any commit to the branch or close and reopen the PR.
-
-### 2. The scheduler's service account
+### 1. The scheduler's service account
 
 No roles; it only signs the token the service checks.
 
@@ -213,7 +134,7 @@ gcloud iam service-accounts add-iam-policy-binding "$CRON_SA" --project "$PROJEC
   --member "user:$(gcloud config get-value account)" --role roles/iam.serviceAccountUser
 ```
 
-### 3. Settings on the web service
+### 2. Settings on the web service
 
 `UPDATE_EMAIL_EXCLUDE` is comma-separated, so this uses `;` as gcloud's
 delimiter between variables (`^;^`; not `@`, which the service account and
@@ -230,8 +151,8 @@ gcloud run services update reliafy --project "$PROJECT" --region "$REGION" \
 | `CONTENT_CRON_AUDIENCE` | `RUN_URL`. Unset: the endpoint refuses every call (401). |
 | `CONTENT_CRON_SA` | The scheduler's service account. Unset: 401. |
 | `UPDATE_EMAIL_EXCLUDE` | Addresses the automatic send skips, comma-separated. |
-| `UPDATE_AUTO_SEND` | `true` to send `send: auto` updates. Default off: step 5. |
-| `CONTENT_OPERATOR_EMAILS` | Optional: who gets test copies and the report. Default `ADMIN_EMAILS`. |
+| `UPDATE_AUTO_SEND` | `true` to send `send: auto` updates. Default off: step 4. |
+| `CONTENT_OPERATOR_EMAILS` | Optional: who gets test copies. Default `ADMIN_EMAILS`. |
 | `UPDATE_AUTO_SECONDS` | Optional: seconds one run may send for. Default 240. |
 
 SMTP (`SMTP_HOST`, `EMAIL_FROM`, …) and Pushover are already configured.
@@ -244,7 +165,7 @@ gcloud run services describe reliafy --region "$REGION" --project "$PROJECT" \
   --format='value(spec.template.spec.timeoutSeconds)'   # should be 300 or more
 ```
 
-### 4. The Cloud Scheduler job
+### 3. The Cloud Scheduler job
 
 Hourly from 10:05 to 17:05 Brisbane, every day: the first run does the day's
 work, the rest retry a failure or continue a long send. Repeat calls are
@@ -257,7 +178,7 @@ gcloud scheduler jobs create http reliafy-content-run \
   --uri "$RUN_URL" --http-method POST \
   --oidc-service-account-email "$CRON_SA" --oidc-token-audience "$RUN_URL" \
   --attempt-deadline 600s \
-  --description "Reliafy content pipeline: What's new auto-send, monthly report (#367)"
+  --description "Reliafy content pipeline: What's new auto-send (#367)"
 ```
 
 Check it:
@@ -270,7 +191,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" "$RUN_URL?dry_run=true"
 gcloud scheduler jobs run reliafy-content-run --project "$PROJECT" --location "$REGION"
 ```
 
-### 5. Switch the auto-send on
+### 4. Switch the auto-send on
 
 After the first drafted What's new is merged and deployed:
 
@@ -279,9 +200,9 @@ gcloud run services update reliafy --project "$PROJECT" --region "$REGION" \
   --update-env-vars "UPDATE_AUTO_SEND=true"
 ```
 
-Check traffic follows the new revision, as in step 3.
+Check traffic follows the new revision, as in step 2.
 
-### 6. Point the LinkedIn Zap at `/social/feed.xml`
+### 5. Point the LinkedIn Zap at `/social/feed.xml`
 
 In Zapier, open the RSS → LinkedIn Company Update Zap:
 
@@ -301,10 +222,9 @@ new is posted once, from the new feed.
 
 ## Approving a month
 
-1. The PR "Content for <Month>" arrives around the 15th with a checklist:
-   one box per item (every weekday of the month, so a gap or a double shows),
-   every `[CHECK: …]` figure, each screenshot a post wants, the topic chosen
-   for any "to be chosen" slot.
+1. The PR "Content for <Month>" arrives around the middle of the month with a
+   checklist: one box per item (every weekday of the month, so a gap or a
+   double shows), every `[CHECK: …]` figure, and each screenshot a post wants.
 2. Edit on the branch: wording, dates, `linkedin:` text, short posts. Resolve
    every `[CHECK: …]`. Delete anything you don't want.
 3. **Merge = approval.** Every item then goes out on its date, the What's new
@@ -323,9 +243,8 @@ new is posted once, from the new feed.
 | One post, page or short post | Before its date: delete or re-date the file, merge, deploy. |
 | One What's new email | Remove `send: auto` from the update, merge, deploy. Or, at once: `UPDATE_AUTO_SEND=false` (below). |
 | All automatic emails, at once | `gcloud run services update reliafy --project "$PROJECT" --region "$REGION" --update-env-vars UPDATE_AUTO_SEND=false` |
-| The scheduled job (emails and report) | `gcloud scheduler jobs pause reliafy-content-run --project "$PROJECT" --location "$REGION"` (`resume` to restart) |
+| The scheduled job | `gcloud scheduler jobs pause reliafy-content-run --project "$PROJECT" --location "$REGION"` (`resume` to restart) |
 | LinkedIn posting | Turn the Zap off in Zapier. |
-| Monthly drafting | `gh workflow disable content-draft.yml -R Reliafy/reliafy`, or delete the `ANTHROPIC_API_KEY` secret. |
 
 A send already running finishes its current run (at most `UPDATE_AUTO_SECONDS`).
 
@@ -337,5 +256,5 @@ A send already running finishes its current run (at most `UPDATE_AUTO_SECONDS`).
   `update_sends`, as for the CLI.
 - **A partial send** (failures or out of time) is continued by the next
   hourly run, for up to three days after the date.
-- **Cost:** the drafting run uses the Anthropic API, roughly US$5-20 a month.
-  The scheduler job and the extra requests cost cents.
+- **Extension steps** (if any are installed) log under the same logger and
+  appear in the run's `actions`; one that fails is reported, never fatal.

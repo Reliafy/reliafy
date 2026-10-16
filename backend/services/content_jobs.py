@@ -1,4 +1,4 @@
-"""The content pipeline's scheduled job (#367): What's new emails, monthly report.
+"""The content pipeline's scheduled job (#367): What's new emails, and steps from extensions.
 
 ``POST /internal/content/run`` (``backend/routers/content_jobs.py``) calls
 :func:`run`. Cloud Scheduler calls it daily (hourly 10:05–17:05 Brisbane, so a
@@ -25,10 +25,11 @@ The operator gets a Pushover note after each send. ``UPDATE_AUTO_SEND`` off
 (the default) sends no update at all. ``dry_run`` reports what a run would do
 and sends and records nothing.
 
-**Monthly report.** From 10:00 Brisbane on the 1st (until the 7th, so a
-missed day is caught up), the operators get last month's content report
-(``content_report``), once (``_id`` = ``report:<YYYY-MM>``). It runs whatever
-``UPDATE_AUTO_SEND`` says.
+**Extension steps.** Installed extensions (``backend/extensions.py``) can
+add steps of their own: each is called as ``step(db, brisbane_now, dry_run)``
+and returns an action (a dict) or None. They run whatever
+``UPDATE_AUTO_SEND`` says, and can use :func:`claim`, :func:`finish` and
+:func:`done` to run once. A step that raises is reported, never fatal.
 
 **Maintenance graph.** With a Neo4j mirror (or Neo4j as the graph), every run
 brings the mirror up to date and so keeps an idle AuraDB Free instance awake
@@ -208,41 +209,24 @@ def _update_steps(db, local: datetime, updates, dry_run: bool, *, sleep, clock) 
     return actions
 
 
-REPORT_LAST_DAY = 7
+# Public names for extension steps (they claim, finish and check steps the
+# same way as the update steps above).
+claim, finish, done = _claim, _finish, _done
 
 
-def _report_step(db, local: datetime, dry_run: bool) -> dict | None:
-    from backend.services import content_report
-    from backend.services import email as email_service
+def _extension_steps(db, local: datetime, dry_run: bool) -> list[dict]:
+    from backend import extensions
 
-    if local.day > REPORT_LAST_DAY or local.hour < SEND_HOUR:
-        return None
-    month = content_report.previous_month(local.date())
-    key = f"report:{month}"
-    action = {"step": "monthly report", "month": month}
-    operators = list(config.CONTENT_OPERATOR_EMAILS)
-    if _done(db, key):
-        return {**action, "result": "already sent"}
-    if not operators:
-        return {**action, "result": "no operator address (CONTENT_OPERATOR_EMAILS / ADMIN_EMAILS)"}
-    report = content_report.build(db, month)
-    if dry_run:
-        return {**action, "result": "would send", "to": len(operators),
-                "posts": len(report["posts"]), "signups": report["signups"]["accounts"]}
-    if not _claim(db, key, local, kind="report", month=month):
-        return {**action, "result": "another run has it"}
-    subject = f"Reliafy content report: {content_report.month_label(month)}"
-    text, html = content_report.render_text(report), content_report.render_html(report)
-    sent, failed = 0, 0
-    for to in operators:
+    actions = []
+    for name, step in extensions.job_steps():
         try:
-            email_service.send_now(to, subject, text, html=html)
-            sent += 1
-        except Exception:  # noqa: BLE001 - logged; retried next run
-            logger.exception("content job: monthly report failed")
-            failed += 1
-    _finish(db, key, "failed" if failed else "done", local, sent=sent, failed=failed)
-    return {**action, "result": "sent" if not failed else "failed", "sent": sent, "failed": failed}
+            action = step(db, local, dry_run)
+        except Exception as exc:  # noqa: BLE001 - one step failing mustn't stop the job
+            logger.exception("content job: extension step failed (%s)", name)
+            action = {"step": f"extension:{name}", "error": f"{type(exc).__name__}: {exc}"}
+        if action:
+            actions.append(action)
+    return actions
 
 
 def _maintenance_graph_step(dry_run: bool) -> dict:
@@ -282,9 +266,7 @@ def run(db, *, now: datetime | None = None, dry_run: bool = False, updates=None,
         if updates is None:
             updates = load_updates()
         result["actions"] += _update_steps(db, local, updates, dry_run, sleep=sleep, clock=clock)
-    report = _report_step(db, local, dry_run)
-    if report:
-        result["actions"].append(report)
+    result["actions"] += _extension_steps(db, local, dry_run)
     if config.MAINTENANCE_ENABLED:
         # Reliafy Maintenance's daily run rides on this job (once a day).
         try:

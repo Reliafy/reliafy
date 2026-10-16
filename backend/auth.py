@@ -133,7 +133,7 @@ def upsert_user(db, user: dict, *, ip: str = "", user_agent: str = "") -> dict:
     """Record/refresh the user's profile on first sight (and each login).
 
     ``ip`` / ``user_agent`` (only ever hashed) give the signup event the same
-    daily visitor hash as that browser's pageviews, so the content report can
+    daily visitor hash as that browser's pageviews, so reports can
     say which tagged link or post the visit that signed up came from (#353)."""
     now = datetime.now(timezone.utc)
     email = user.get("email")

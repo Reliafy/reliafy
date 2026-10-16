@@ -54,12 +54,14 @@ const TeamSettingsPage = lazy(() => import("./views/TeamSettingsPage.jsx"));
 const SettingsPage = lazy(() => import("./views/SettingsPage.jsx"));
 const ApiDocsPage = lazy(() => import("./views/ApiDocsPage.jsx"));
 const ReliabilityAgent = lazy(() => import("./views/ReliabilityAgent.jsx"));
-const AdminPage = lazy(() => import("./views/AdminPage.jsx"));
+// Pages added by optional extensions (extensions.js).
+const ExtensionPage = lazy(() => import("./components/ExtensionPage.jsx"));
 // What changed in the workspace (#41).
 const ChangesPage = lazy(() => import("./views/ChangesPage.jsx"));
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { unmatchedRoute } from "./appConfig.js";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
+import { ExtensionsProvider, useExtensions } from "./ExtensionsProvider.jsx";
 
 // The authenticated app shell. This module is code-split: App.jsx
 // lazy-imports it, so the public/marketing pages ship without the app bundle.
@@ -102,6 +104,14 @@ function usePhone() {
 }
 
 export default function AppShell() {
+  return (
+    <ExtensionsProvider>
+      <Shell />
+    </ExtensionsProvider>
+  );
+}
+
+function Shell() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const phone = usePhone();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -133,6 +143,7 @@ export default function AppShell() {
   // Keying the routed content on the workspace remounts every view on switch,
   // so all lists refetch under the new X-Workspace-Id without any per-view code.
   const { workspace } = useWorkspace();
+  const { mounts: extensionMounts, loaded: extensionsLoaded } = useExtensions();
   useEffect(() => {
     const prefetch = () => import("./components/Plot.jsx").catch(() => {});
     if ("requestIdleCallback" in window) {
@@ -221,14 +232,17 @@ export default function AppShell() {
             <Route path="/api-docs" element={<ApiDocsPage />} />
             {/* API tokens moved into Settings; keep old links working. */}
             <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
-            <Route path="/admin" element={<AdminPage />} />
             <Route path="/changes" element={<ChangesPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
-            {/* Until the config loads, /billing and /agent aren't registered:
-                wait rather than redirect a direct load of them. */}
+            {extensionMounts.map((m) => (
+              <Route key={`${m.extension}/${m.id}`} path={`${m.path}/*`} element={<ExtensionPage mount={m} />} />
+            ))}
+            {/* Until the config and the extension pages load, /billing, /agent
+                and those pages aren't registered: wait rather than redirect a
+                direct load of them. */}
             <Route
               path="*"
-              element={unmatchedRoute(config) === "redirect"
+              element={unmatchedRoute(config, extensionsLoaded) === "redirect"
                 ? <Navigate to="/modelling" replace />
                 : <div className="card empty view-loading">Loading…</div>}
             />

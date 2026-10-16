@@ -102,34 +102,6 @@ def test_other_events_ignore_walkthrough_fields(client):
     assert doc["name"] == "first_run_rbd" and "walkthrough" not in doc and "step" not in doc
 
 
-def test_admin_traffic_counts_per_walkthrough(client):
-    for _ in range(3):
-        _event(client, "walkthrough_started", walkthrough="fit")
-        _event(client, "walkthrough_step", walkthrough="fit", step=1)
-    _event(client, "walkthrough_step", walkthrough="fit", step=2)
-    _event(client, "walkthrough_step", walkthrough="fit", step=2)
-    _event(client, "walkthrough_completed", walkthrough="fit", step=4)
-    _event(client, "walkthrough_skipped", walkthrough="fit", step=2)
-    _event(client, "walkthrough_started", walkthrough="fleet")
-    _event(client, "first_run_rbd")
-
-    client.act_as(B)
-    assert client.get("/api/admin/traffic").status_code == 403
-    client.act_as(A)
-    data = client.get("/api/admin/traffic?days=7").json()
-    rows = {r["key"]: r for r in data["walkthroughs"]}
-    assert list(rows) == ["fit", "replacement", "rbd", "rcm", "fleet"]
-    fit = rows["fit"]
-    assert (fit["started"], fit["completed"], fit["skipped"]) == (3, 1, 1)
-    assert fit["steps"] == {"1": 3, "2": 2}
-    assert fit["completion_rate"] == pytest.approx(1 / 3, abs=1e-4)
-    assert rows["fleet"]["started"] == 1 and rows["fleet"]["completion_rate"] == 0
-    assert rows["rbd"] == {"key": "rbd", "started": 0, "completed": 0, "skipped": 0,
-                           "steps": {}, "completion_rate": None}
-    # Said once: walkthrough events are in their own table, not the event list.
-    assert data["events"] == [{"key": "first_run_rbd", "count": 1}]
-
-
 def test_auto_start_once_per_user(client):
     client.act_as(A)
     assert client.post("/api/me/walkthroughs/auto", json={"id": "rbd"}).json() == {"start": True}

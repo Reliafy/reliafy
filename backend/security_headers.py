@@ -10,7 +10,9 @@ the policy can be checked against real traffic before it is enforced. Only
 What the policy allows, and why:
 
 * scripts: our own bundle, plus ``apis.google.com`` (Firebase Auth loads the
-  Google API loader for its sign-in popup).
+  Google API loader for its sign-in popup), and ``blob:`` only when an
+  installed extension adds pages (their modules are fetched with the user's
+  credentials and run from a ``blob:`` URL, backend/extensions.py).
 * styles: our own CSS, Google Fonts' stylesheet, and inline styles (React and
   Plotly set ``style`` attributes).
 * fonts: Google Fonts (``fonts.gstatic.com``).
@@ -39,9 +41,12 @@ def content_security_policy() -> str:
                "https://apis.google.com", *config.CSP_CONNECT_EXTRA]
     frames = ["'self'", "https://accounts.google.com", "https://apis.google.com",
               *config.CSP_FRAME_EXTRA]
+    from backend import extensions
+
+    scripts = ["'self'", "https://apis.google.com"] + (["blob:"] if extensions.has_pages() else [])
     directives = {
         "default-src": ["'self'"],
-        "script-src": ["'self'", "https://apis.google.com"],
+        "script-src": scripts,
         "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
         "img-src": ["'self'", "data:", "blob:", "https:"],

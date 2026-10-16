@@ -96,27 +96,6 @@ def test_utm_captured_and_clipped(client):
     assert len(doc["utm_source"]) == 100
 
 
-def test_traffic_endpoint_gated_and_aggregates(client):
-    _post_event(client, {"path": "/", "referrer": "https://news.ycombinator.com/"})
-    _post_event(client, {"path": "/", "utm_source": "linkedin"})
-    _post_event(client, {"path": "/login"}, ip="198.51.100.9")
-    _post_event(client, {"name": "activated", "path": "/modelling"})
-
-    client.act_as(B)
-    assert client.get("/api/admin/traffic").status_code == 403
-
-    client.act_as(A)
-    data = client.get("/api/admin/traffic?days=7").json()
-    assert data["pageviews"] == 3
-    today = data["daily"][-1]
-    assert today["pageviews"] == 3 and today["visitors"] == 2
-    assert len(data["daily"]) == 7
-    assert {"key": "/", "count": 2} in data["top_pages"]
-    assert data["top_referrers"] == [{"key": "news.ycombinator.com", "count": 1}]
-    assert data["top_sources"] == [{"key": "linkedin", "count": 1}]
-    assert data["events"] == [{"key": "activated", "count": 1}]
-
-
 def test_signup_event_once_per_account(client):
     client.act_as(A)
     client.get("/api/me")
@@ -145,7 +124,3 @@ def test_new_signup_emails_operators(client, monkeypatch):
     assert "a@x.com" in subject  # the new user's email is in the subject
 
 
-def test_traffic_days_clamped(client):
-    client.act_as(A)
-    assert client.get("/api/admin/traffic?days=5000").json()["days"] == 90
-    assert client.get("/api/admin/traffic?days=0").json()["days"] == 14

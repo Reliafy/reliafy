@@ -97,8 +97,8 @@ const feedCount = feedData.length;
 
 // Dated pages for the server's date gate (path -> YYYY-MM-DD, UTC), and the
 // updates for the scheduled What's new send (the image has no source files),
-// the posts' titles for the monthly content report, and the blog posts for
-// the admin page's publishing calendar.
+// and the posts' titles and blog posts for operator tooling (a content
+// report and a publishing calendar).
 writeFileSync(
   join(dist, "content.json"),
   JSON.stringify(

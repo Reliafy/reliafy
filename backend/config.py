@@ -174,7 +174,7 @@ MCP_AGENT_DAILY_CALLS = _int("MCP_AGENT_DAILY_CALLS", 2000)
 # keeps the web instance billed until the platform's own timeout.
 MCP_REQUEST_TIMEOUT_S = _int("MCP_REQUEST_TIMEOUT_S", 60)
 # The MCP connector's on/off switch (backend/services/mcp_switch.py) is kept
-# in the database and set from the Admin page. MCP_ENABLED overrides it:
+# in the database (app_settings). MCP_ENABLED overrides it:
 # true forces MCP on, false forces it off; unset (or anything else) leaves
 # it to the stored switch, whose default is off on the cloud and on for a
 # self-hosted install (billing off).
@@ -494,8 +494,8 @@ LIFECYCLE_CRON_SA = (os.environ.get("LIFECYCLE_CRON_SA") or "").strip() or None
 # One scheduled job, POST /internal/content/run, called by Cloud Scheduler
 # with an OIDC token (same check as the lifecycle job): it emails an approved
 # What's new (frontmatter `send: auto`) — a test copy to the operators on the
-# Friday before, the list at 10:00 Brisbane on its date — and the operators'
-# monthly content report on the 1st. See ops/content-pipeline.md.
+# Friday before, the list at 10:00 Brisbane on its date — and runs any steps
+# installed extensions add. See ops/content-pipeline.md.
 # Either of the first two unset = the endpoint refuses every call.
 CONTENT_CRON_AUDIENCE = (os.environ.get("CONTENT_CRON_AUDIENCE") or "").strip() or None
 CONTENT_CRON_SA = (os.environ.get("CONTENT_CRON_SA") or "").strip() or None
@@ -508,7 +508,7 @@ UPDATE_EMAIL_EXCLUDE = {
     for e in os.environ.get("UPDATE_EMAIL_EXCLUDE", "").split(",")
     if e.strip()
 }
-# Who gets the test copies and the monthly report (comma-separated);
+# Who gets the test copies (comma-separated);
 # defaults to ADMIN_EMAILS.
 CONTENT_OPERATOR_EMAILS = sorted(
     {e.strip().lower() for e in os.environ.get("CONTENT_OPERATOR_EMAILS", "").split(",") if e.strip()}

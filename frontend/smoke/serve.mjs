@@ -20,9 +20,13 @@ Object.assign(env, {
   AUTH_DISABLED: "true",
   MAINTENANCE_ENABLED: "true",
   MAINTENANCE_STORE: "mongo",
-  // The single-user mode's fixed user, made an operator so /admin is tested too.
+  // The single-user mode's fixed user, made an operator, so operator-only
+  // behaviour (and any installed extension's operator pages) is tested too.
   ADMIN_EMAILS: "dev@local",
   PUSH_ERROR_ALERTS: "false",
+  // The app as published: optional extensions installed in this Python aren't
+  // loaded, unless SMOKE_EXTENSIONS=true (an extension's own smoke tests).
+  EXTENSIONS_DISABLED: process.env.SMOKE_EXTENSIONS === "true" ? "false" : "true",
   MPLBACKEND: "Agg",
   PYTHONUNBUFFERED: "1",
 });
