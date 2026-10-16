@@ -291,7 +291,7 @@ def test_alt_fleet_forecasts_each_item_at_its_stress(session):
     theirs = sp.forecast(live, age=[2000, 1000], Z=[[300.0], [320.0]], horizon=200.0 * np.arange(1, 7),
                          alpha_ci=0.2)
     _same(ours, theirs)
-    assert ours["model_kind"] == "alt" and ours["model_url"] == f"/modelling/alt/{model.id}"
+    assert ours["model_kind"] == "alt" and ours["model_url"] == f"/models/alt/{model.id}"
     # Hotter runs fail sooner.
     assert ours["per_item"][1]["prob_any"] > ours["per_item"][0]["prob_any"]
 

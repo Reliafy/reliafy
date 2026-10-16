@@ -9,13 +9,13 @@ import { ShowMeHow } from "./Walkthrough.jsx";
 
 // First-run starts (#194). Each start reports one client event (allowlisted in
 // backend/routers/telemetry.py), so first actions can be counted against
-// signups. ``upload`` (#312) is only on the Modelling home's "Start here".
+// signups. ``upload`` (#312) is only on the Home page's "Start here".
 function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   const list = [];
   if (upload) {
     list.push({
       key: "upload",
-      to: "/modelling/new?mode=data",
+      to: "/models/new?mode=data",
       icon: <UploadIcon />,
       title: "Upload a CSV or Excel file",
       body: "A column of times to failure, and a 0/1 column for units still running if you have one.",
@@ -24,7 +24,7 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   }
   list.push({
     key: "paste",
-    to: "/modelling/new?mode=paste",
+    to: "/models/new?mode=paste",
     onClick: () => trackEvent("first_run_paste"),
     icon: <PasteIcon />,
     title: "Paste failure times",
@@ -35,7 +35,7 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   if (sampleModelId) {
     list.push({
       key: "sample",
-      to: `/modelling/m/${sampleModelId}`,
+      to: `/models/m/${sampleModelId}`,
       onClick: () => trackEvent("first_run_sample"),
       icon: <WaveIcon />,
       title: "Open a sample model",
@@ -50,7 +50,7 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   list.push({
     key: "rbd",
     // The sample diagram opens with its walkthrough, once per user (#32).
-    to: sampleRbdId ? withLaunch(`/rbds/b/${sampleRbdId}`, "rbd", { auto: true }) : "/rbds/b",
+    to: sampleRbdId ? withLaunch(`/systems/b/${sampleRbdId}`, "rbd", { auto: true }) : "/systems/b",
     onClick: () => trackEvent("first_run_rbd"),
     icon: <RbdIcon />,
     title: "Build a block diagram",
@@ -83,7 +83,7 @@ function AgentLine() {
   );
 }
 
-// The Modelling home's "Start here" (#312): upload, paste, a sample, a
+// The Home page's "Start here" (#312): upload, paste, a sample, a
 // diagram. ``info`` is the first-run state (useFirstRun): the starts for an
 // empty workspace, or false once the user has work of their own — then the
 // starts stay, without the first-run line and the agent line.
@@ -109,9 +109,9 @@ export function StartHere({ info, sampleModelId = null }) {
       </div>
       <p className="first-run-more">
         Other models:{" "}
-        <Link to="/modelling/recurrent/new">Recurrent events</Link> ·{" "}
-        <Link to="/modelling/alt/new">Accelerated life</Link> ·{" "}
-        <Link to="/modelling/degradation">Degradation</Link>
+        <Link to="/models/recurrent/new">Recurrent events</Link> ·{" "}
+        <Link to="/models/alt/new">Accelerated life</Link> ·{" "}
+        <Link to="/models/degradation">Degradation</Link>
       </p>
       {first && (
         <p className="first-run-more">

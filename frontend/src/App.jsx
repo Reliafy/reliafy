@@ -84,7 +84,7 @@ export default function App() {
             {/* Marketing storefront (landing, blog) and login only exist on
                 multi-user (cloud) builds. Single-user self-host builds go
                 straight into the app: these routes fall through to the shell,
-                whose catch-all redirects to /modelling. */}
+                whose catch-all redirects to /home. */}
             {!AUTH_DISABLED && <Route path="/" element={<Landing />} />}
             {!AUTH_DISABLED && <Route path="/blog" element={<Blog />} />}
             {!AUTH_DISABLED && <Route path="/blog/:slug" element={<BlogPost />} />}

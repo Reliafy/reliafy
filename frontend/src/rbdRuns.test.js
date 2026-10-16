@@ -68,8 +68,8 @@ test("queue status with the quote and the wait", () => {
 });
 
 test("runs paths", () => {
-  assert.equal(runsPath(), "/rbds/runs");
-  assert.equal(runsPath("a b"), "/rbds/runs?rbd=a%20b");
+  assert.equal(runsPath(), "/systems/runs");
+  assert.equal(runsPath("a b"), "/systems/runs?rbd=a%20b");
 });
 
 test("how long runs are kept: free with an upgrade link, Pro plainly", () => {

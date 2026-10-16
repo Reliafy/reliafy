@@ -502,7 +502,7 @@ def test_save_model_from_parameters(env):
     mid = saved["model_id"]
     assert saved["distribution_id"] == "weibull" and saved["unit"] == "Hours"
     assert saved["params"] == [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-    assert saved["url"].endswith(f"/modelling/m/{mid}") and saved["dataset_id"] == ds["id"]
+    assert saved["url"].endswith(f"/models/m/{mid}") and saved["dataset_id"] == ds["id"]
     ref = surpyval.Weibull.from_params([1200, 2.5])
     assert saved["metrics"]["mttf"] == pytest.approx(float(ref.mean()))
 

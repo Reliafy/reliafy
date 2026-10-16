@@ -20,7 +20,7 @@ def _client():
 
 def test_spa_shell_and_prerendered_html_are_no_cache():
     c = _client()
-    for path in ("/rbds/b/some-diagram", "/", "/blog"):
+    for path in ("/systems/b/some-diagram", "/", "/blog"):
         r = c.get(path)
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("text/html")

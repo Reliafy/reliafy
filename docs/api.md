@@ -57,7 +57,7 @@ and **no changes**.
 
 Updates `current_use` (and optionally the per-item usage `rate`) on a
 failure-forecast fleet, then recomputes the forecast. The fleet id is in the
-app URL: `/fleet/forecasts/<fleet_id>`.
+app URL: `/forecasts/<fleet_id>`.
 
 CSV columns: `name` (or `id`), `current_use`, optional `rate`.
 

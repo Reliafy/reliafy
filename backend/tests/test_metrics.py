@@ -100,7 +100,7 @@ def test_traffic_endpoint_gated_and_aggregates(client):
     _post_event(client, {"path": "/", "referrer": "https://news.ycombinator.com/"})
     _post_event(client, {"path": "/", "utm_source": "linkedin"})
     _post_event(client, {"path": "/login"}, ip="198.51.100.9")
-    _post_event(client, {"name": "activated", "path": "/modelling"})
+    _post_event(client, {"name": "activated", "path": "/home"})
 
     client.act_as(B)
     assert client.get("/api/admin/traffic").status_code == 403

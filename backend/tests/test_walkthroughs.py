@@ -47,7 +47,7 @@ def client(monkeypatch):
 def _event(client, name, **extra):
     return client.post(
         "/api/metrics/event",
-        json={"name": name, "path": "/modelling/new", **extra},
+        json={"name": name, "path": "/models/new", **extra},
         headers={"user-agent": "Mozilla/5.0", "x-forwarded-for": "203.0.113.7"},
     )
 

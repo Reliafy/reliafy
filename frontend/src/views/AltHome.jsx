@@ -9,7 +9,7 @@ import { PlusIcon, itemName } from "../components/LibRows.jsx";
 
 // Accelerated life (ALT) models — mirrors the life-data and recurrent lists:
 // header + "New model", then the saved-model list. The fit flow lives on its
-// own page (/modelling/alt/new).
+// own page (/models/alt/new).
 export default function AltHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
@@ -36,10 +36,10 @@ export default function AltHome() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }]}
+        crumbs={[{ label: "Models", to: "/models" }]}
         title="Accelerated life"
         meta="Failure times at elevated stress, extrapolated to your use level."
-        primary={<button onClick={() => navigate("/modelling/alt/new")}><PlusIcon /> New model</button>}
+        primary={<button onClick={() => navigate("/models/alt/new")}><PlusIcon /> New model</button>}
       />
 
       <FirstRunStrip info={firstRun} />
@@ -49,7 +49,7 @@ export default function AltHome() {
       <AltLibrary
         models={models || []}
         loading={models === null}
-        onOpen={(id) => navigate(`/modelling/alt/${id}`)}
+        onOpen={(id) => navigate(`/models/alt/${id}`)}
         onDelete={onDelete}
       />
     </div>

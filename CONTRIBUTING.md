@@ -48,7 +48,7 @@ new page with an id (`/things/:id`) needs one line in `DETAIL_IDS`
 cd frontend
 npx playwright install chromium                  # once
 SMOKE_PYTHON=../venv/bin/python npm run smoke    # build, start the backend, run
-npm run smoke -- --headed -g "/rbds"             # watch one part
+npm run smoke -- --headed -g "/systems"          # watch one part
 npm run smoke -- --base-url https://reliafy.com  # a deployed site, signed out
 ```
 

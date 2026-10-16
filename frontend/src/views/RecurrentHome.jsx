@@ -36,10 +36,10 @@ export default function RecurrentHome() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }]}
+        crumbs={[{ label: "Models", to: "/models" }]}
         title="Recurrent events"
         meta="Repairable systems: is the failure rate improving or worsening?"
-        primary={<button onClick={() => navigate("/modelling/recurrent/new")}><PlusIcon /> New model</button>}
+        primary={<button onClick={() => navigate("/models/recurrent/new")}><PlusIcon /> New model</button>}
       />
 
       <FirstRunStrip info={firstRun} />
@@ -49,7 +49,7 @@ export default function RecurrentHome() {
       <RecurrentLibrary
         models={models || []}
         loading={models === null}
-        onOpen={(id) => navigate(`/modelling/recurrent/${id}`)}
+        onOpen={(id) => navigate(`/models/recurrent/${id}`)}
         onDelete={onDelete}
       />
     </div>

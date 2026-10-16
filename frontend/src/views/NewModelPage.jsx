@@ -61,7 +61,7 @@ export default function NewModelPage() {
       .catch(() => setSamples([]));
   }, []);
 
-  const openModel = (model) => navigate(`/modelling/m/${model.id}`);
+  const openModel = (model) => navigate(`/models/m/${model.id}`);
 
   const start = (next, dsId = null) => {
     setDatasetId(dsId);
@@ -83,7 +83,7 @@ export default function NewModelPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Life data models", to: "/modelling/life" }]}
+        crumbs={[{ label: "Models", to: "/models" }, { label: "Life data models", to: "/models/life" }]}
         title={heading}
         meta={sub}
       />

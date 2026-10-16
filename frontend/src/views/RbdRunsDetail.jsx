@@ -59,7 +59,7 @@ export default function RbdRunsDetail() {
     setError(null);
     try {
       const out = await rerunRbdRun(runId);
-      navigate(`/rbds/runs/${out.run_id}`);
+      navigate(`/systems/runs/${out.run_id}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -71,7 +71,7 @@ export default function RbdRunsDetail() {
   if (!run) {
     return (
       <div className="app rbd-runs">
-        <PageHeader crumbs={[{ label: "RBDs", to: "/rbds" }, { label: "Simulation runs", to: runsPath() }]} title="Simulation run" />
+        <PageHeader crumbs={[{ label: "Systems", to: "/systems" }, { label: "Simulation runs", to: runsPath() }]} title="Simulation run" />
         {error ? <div className="card error">{error}</div> : <div className="card empty">Loading…</div>}
       </div>
     );
@@ -104,7 +104,7 @@ export default function RbdRunsDetail() {
   return (
     <div className="app rbd-runs">
       <PageHeader
-        crumbs={[{ label: "RBDs", to: "/rbds" }, { label: "Simulation runs", to: runsPath(run.rbd_id) }]}
+        crumbs={[{ label: "Systems", to: "/systems" }, { label: "Simulation runs", to: runsPath(run.rbd_id) }]}
         title={run.rbd_name || "Simulation run"}
         badges={
           <>
@@ -120,7 +120,7 @@ export default function RbdRunsDetail() {
           </button>
         }
         actions={run.rbd_id ? (
-          <button type="button" className="secondary" onClick={() => navigate(`/rbds/b/${run.rbd_id}`)}>Open diagram</button>
+          <button type="button" className="secondary" onClick={() => navigate(`/systems/b/${run.rbd_id}`)}>Open diagram</button>
         ) : null}
         menu={
           done ? (

@@ -48,10 +48,9 @@ export default function AllModelsPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }]}
         title="All models"
         meta="Life data, accelerated life, recurrent events and degradation, in one list."
-        primary={<button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>}
+        primary={<button onClick={() => navigate("/models/new")}><PlusIcon /> New model</button>}
       />
 
       <FirstRunStrip info={firstRun} />

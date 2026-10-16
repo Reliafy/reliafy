@@ -26,7 +26,7 @@ export default function SafetyStarterCard() {
           </button>
         </span>
       </div>
-      <Link className="sif-card-cta" to="/rbds/b" state={{ starter: "safety" }}>
+      <Link className="sif-card-cta" to="/systems/b" state={{ starter: "safety" }}>
         Open the starter →
       </Link>
     </div>

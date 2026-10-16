@@ -13,9 +13,9 @@ import "../components/Datasets.css";
 
 // Where each kind of model fitted to a dataset opens.
 const MODEL_PATH = {
-  alt_models: "/modelling/alt/",
-  recurrent_models: "/modelling/recurrent/",
-  degradation_models: "/modelling/degradation/",
+  alt_models: "/models/alt/",
+  recurrent_models: "/models/recurrent/",
+  degradation_models: "/models/degradation/",
 };
 const KIND_LABEL = { "ALT model": "ALT", "recurrent model": "Recurrent", "degradation model": "Degradation" };
 
@@ -23,9 +23,9 @@ const KIND_LABEL = { "ALT model": "ALT", "recurrent model": "Recurrent", "degrad
 // histories — the recurrent or degradation fit.
 function fitAction(ds) {
   const kind = ds.profile?.repeated_units?.kind;
-  if (kind === "recurrent") return { label: "Fit a recurrent model", to: `/modelling/recurrent/new?dataset=${encodeURIComponent(ds.id)}` };
-  if (kind === "degradation") return { label: "Fit a degradation model", to: "/modelling/degradation" };
-  return { label: "Fit a model", to: `/modelling/new?dataset=${encodeURIComponent(ds.id)}` };
+  if (kind === "recurrent") return { label: "Fit a recurrent model", to: `/models/recurrent/new?dataset=${encodeURIComponent(ds.id)}` };
+  if (kind === "degradation") return { label: "Fit a degradation model", to: "/models/degradation" };
+  return { label: "Fit a model", to: `/models/new?dataset=${encodeURIComponent(ds.id)}` };
 }
 
 // Detail view for one dataset: a preview of the rows (each column's type under
@@ -66,7 +66,7 @@ export default function DatasetPage() {
     if (!window.confirm(`Delete dataset “${ds.name}”?`)) return;
     try {
       await deleteDataset(id);
-      navigate("/datasets");
+      navigate("/data");
     } catch (e) {
       setError(e.message);
     }
@@ -95,7 +95,7 @@ export default function DatasetPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Datasets", to: "/datasets" }]}
+        crumbs={[{ label: "Data", to: "/data" }]}
         title={ds ? itemName(ds) : "Dataset"}
         badges={ds?.is_sample && <Chip>Sample</Chip>}
         meta={ds && (
@@ -167,7 +167,7 @@ export default function DatasetPage() {
                       <button
                         key={m.id}
                         className="ds-model-row"
-                        onClick={() => navigate(`/modelling/m/${m.id}`)}
+                        onClick={() => navigate(`/models/m/${m.id}`)}
                       >
                         <span className="ds-model-name" title={itemName(m)}>{itemName(m)}</span>
                         {/* The distribution, unless the name already says it. */}

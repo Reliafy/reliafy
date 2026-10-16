@@ -48,7 +48,7 @@ import {
 } from "../maintenanceForecast.js";
 import "./Maintenance.css";
 
-const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
+const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
 // ---- items -------------------------------------------------------------------------------
 
@@ -87,7 +87,7 @@ export function MaintenanceItems() {
               <thead><tr><th>Item</th>{showClass && <th>Class</th>}<th>Make and model</th><th>Serial</th><th>Fitted to</th><th>Location</th></tr></thead>
               <tbody>
                 {visible.map((i) => (
-                  <tr key={i.id} className="lib-row" onClick={() => navigate(`/maintenance/items/${i.id}`)}>
+                  <tr key={i.id} className="lib-row" onClick={() => navigate(`/asset-register/items/${i.id}`)}>
                     <td>{i.name}</td>
                     {showClass && <td className="lib-date">{i.item_class?.name || "—"}</td>}
                     <td className="lib-date">{[i.manufacturer_entry?.name || i.manufacturer, i.model].filter(Boolean).join(" ") || "—"}</td>
@@ -111,7 +111,7 @@ function LocNode({ node }) {
   return (
     <li>
       <div className="maint-node">
-        <Link className="maint-node-name" to={`/maintenance/locations/${node.id}`}>{node.name}</Link>
+        <Link className="maint-node-name" to={`/asset-register/locations/${node.id}`}>{node.name}</Link>
         {node.all_positions > 0 && (
           <span className="lib-date">{node.all_positions} position{node.all_positions === 1 ? "" : "s"}</span>
         )}
@@ -160,7 +160,7 @@ export function MaintenanceLocations() {
         <section className="card"><ul className="maint-tree">{data.tree.map((n) => <LocNode key={n.id} node={n} />)}</ul></section>
       )}
       {modal && <NewLocationModal locations={data?.locations || []} onClose={() => setModal(false)}
-                                  onDone={(l) => navigate(`/maintenance/locations/${l.id}`)} />}
+                                  onDone={(l) => navigate(`/asset-register/locations/${l.id}`)} />}
     </div>
   );
 }
@@ -184,8 +184,8 @@ export function MaintenanceLocation() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[...crumbs, { label: "Locations", to: "/maintenance/locations" },
-          ...loc.path.map((a) => ({ label: a.name, to: `/maintenance/locations/${a.id}` }))]}
+        crumbs={[...crumbs, { label: "Locations", to: "/asset-register/locations" },
+          ...loc.path.map((a) => ({ label: a.name, to: `/asset-register/locations/${a.id}` }))]}
         title={loc.name} meta={[loc.description, countsText(loc.counts)].filter(Boolean).join(" · ") || "Location"} id={loc.id}
         actions={<>
           {loc.counts.open_work_orders > 0 && (
@@ -211,9 +211,9 @@ export function MaintenanceLocation() {
         ) : (
           <ul className="maint-list">
             {loc.items.map((i) => (
-              <li key={i.id}><Link to={`/maintenance/items/${i.id}`}>{i.name}</Link>
+              <li key={i.id}><Link to={`/asset-register/items/${i.id}`}>{i.name}</Link>
                 <span className="lib-date">
-                  {i.location.id !== loc.id && <> · in <Link to={`/maintenance/locations/${i.location.id}`}>{i.location.name}</Link></>}
+                  {i.location.id !== loc.id && <> · in <Link to={`/asset-register/locations/${i.location.id}`}>{i.location.name}</Link></>}
                   {" "}· since {fmtDate(i.since)}</span></li>
             ))}
           </ul>
@@ -223,7 +223,7 @@ export function MaintenanceLocation() {
         <section className="card">
           <div className="maint-head"><h2>Inside it</h2></div>
           <ul className="maint-list">{loc.children.map((c) => (
-            <li key={c.id}><Link to={`/maintenance/locations/${c.id}`}>{c.name}</Link>
+            <li key={c.id}><Link to={`/asset-register/locations/${c.id}`}>{c.name}</Link>
               {(c.positions > 0 || c.items > 0) && (
                 <span className="lib-date"> · {[c.positions && `${c.positions} position${c.positions === 1 ? "" : "s"}`,
                   c.items && `${c.items} item${c.items === 1 ? "" : "s"} placed`].filter(Boolean).join(", ")}</span>
@@ -234,7 +234,7 @@ export function MaintenanceLocation() {
       <MaintenancePhotos targetId={loc.id} targetName={loc.name} photos={loc.photos} onChanged={refresh} />
       {loc.coordinates && <p className="lib-date">Coordinates: {loc.coordinates.lat}, {loc.coordinates.lon}</p>}
       {modal === "child" && <NewLocationModal locations={all} parentId={loc.id} onClose={() => setModal(null)}
-                                              onDone={(l) => { setModal(null); navigate(`/maintenance/locations/${l.id}`); }} />}
+                                              onDone={(l) => { setModal(null); navigate(`/asset-register/locations/${l.id}`); }} />}
       {modal === "rename" && <RenameLocation loc={loc} onClose={() => setModal(null)} onDone={(d) => { setLoc(d); setModal(null); }} />}
     </div>
   );
@@ -252,7 +252,7 @@ function LocationPositions({ loc }) {
       ) : loc.systems.map((g) => (
         <div key={g.system.id} className="maint-group">
           <h3>
-            <Link to={`/maintenance/${g.system.kind === "Item" ? "items" : "positions"}/${g.system.id}`}>{g.system.name}</Link>
+            <Link to={`/asset-register/${g.system.kind === "Item" ? "items" : "positions"}/${g.system.id}`}>{g.system.name}</Link>
             <span className="lib-date"> · {g.count} here</span>
           </h3>
           <div className="maint-scroll"><table className="lib-table">
@@ -260,12 +260,12 @@ function LocationPositions({ loc }) {
             <tbody>
               {g.positions.map((r) => (
                 <tr key={r.id}>
-                  <td><Link to={`/maintenance/positions/${r.id}`}>{r.path}</Link>{r.tag && <span className="lib-date"> · {r.tag}</span>}</td>
+                  <td><Link to={`/asset-register/positions/${r.id}`}>{r.path}</Link>{r.tag && <span className="lib-date"> · {r.tag}</span>}</td>
                   <td className="lib-date">
-                    {r.location.id !== loc.id && <><Link to={`/maintenance/locations/${r.location.id}`}>{r.location.name}</Link> · </>}
+                    {r.location.id !== loc.id && <><Link to={`/asset-register/locations/${r.location.id}`}>{r.location.name}</Link> · </>}
                     {r.direct ? "set here" : inheritedText({ inherited: true, inherited_from: r.inherited_from })}
                   </td>
-                  <td>{r.item ? <Link to={`/maintenance/items/${r.item.id}`}>{r.item.name}</Link> : <span className="lib-date">nothing fitted</span>}</td>
+                  <td>{r.item ? <Link to={`/asset-register/items/${r.item.id}`}>{r.item.name}</Link> : <span className="lib-date">nothing fitted</span>}</td>
                   <td>{r.open_work_orders > 0 ? <span className="maint-badge">{r.open_work_orders} open</span> : <span className="lib-date">—</span>}</td>
                 </tr>
               ))}
@@ -299,7 +299,7 @@ export function MaintenanceClasses() {
   const navigate = useNavigate();
   // A class's own page (/maintenance/classes/Pool%20pump) opens its panel.
   const { name: open = null } = useParams();
-  const setOpen = (name) => navigate(`/maintenance/classes/${encodeURIComponent(name)}`);
+  const setOpen = (name) => navigate(`/asset-register/classes/${encodeURIComponent(name)}`);
   const [classes, setClasses] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -411,7 +411,7 @@ function ClassPanel({ name, onChanged }) {
           <p className="lib-date" style={{ marginTop: "0.75rem" }}>
             {model.distribution} fitted {fmtDate(model.fitted_on)} to {model.failures} failures and {model.suspensions} suspensions:{" "}
             {(model.params || []).map((p) => `${p.name} ${Number(p.value).toPrecision(4)}`).join(", ")} (days).{" "}
-            <Link to={`/modelling/m/${model.model_id}`}>Open the model</Link>
+            <Link to={`/models/m/${model.model_id}`}>Open the model</Link>
           </p>
         )}
         {made !== null && <p className="lib-date">{made ? `${made} change${made === 1 ? "" : "s"} proposed.` : "No changes to propose (no scheduled tasks here, or they already match)."}</p>}
@@ -594,7 +594,7 @@ function ForecastCard({ name }) {
                 <tbody>
                   {risk.map((r) => (
                     <tr key={r.position.id}>
-                      <td><Link to={`/maintenance/positions/${r.position.id}`}>{r.position.name}</Link></td>
+                      <td><Link to={`/asset-register/positions/${r.position.id}`}>{r.position.name}</Link></td>
                       <td>{r.item?.name || "—"}</td>
                       <td className="lib-date">{formatNumber(r.age)} {data.model.unit}{r.rate_basis === "counter" ? ` (+${formatNumber(r.rate_per_period)} a ${shown})` : ""}</td>
                       <td>{formatPercent(r.prob_next_period)}</td>
@@ -671,14 +671,15 @@ function ForecastCard({ name }) {
 
 // ---- parts and stock -------------------------------------------------------------------
 
-export function MaintenanceParts() {
+// `view`: "structure" opens on the parts as structures (Systems › Product structure, #438).
+export function MaintenanceParts({ view: initialView = "list" }) {
   const [parts, setParts] = useState(null);
   const [locations, setLocations] = useState([]);
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState({ itemClassId: null, manufacturerId: null });
   const [kinds] = useKinds();
   const [error, setError] = useState(null);
-  const [view, setView] = useState("list");
+  const [view, setView] = useState(initialView);
   const filtered = !!(filter.itemClassId || filter.manufacturerId);
   const usesKinds = !!(kinds.classes?.length || kinds.makers?.length);
   const load = useCallback(() => {
@@ -717,7 +718,7 @@ export function MaintenanceParts() {
             <tbody>
               {parts.map((pt) => (
                 <tr key={pt.id}>
-                  <td><Link to={`/maintenance/parts/${pt.id}`}>{pt.part_number}</Link>
+                  <td><Link to={`/asset-register/parts/${pt.id}`}>{pt.part_number}</Link>
                     {pt.superseded_by && <div className="lib-date">superseded by {pt.superseded_by.part_number}</div>}</td>
                   <td>{pt.name}{pt.level && <> <span className="maint-badge">{pt.level}</span></>}
                     <div className="lib-date">{[pt.manufacturer_entry?.name || pt.manufacturer,
@@ -728,7 +729,7 @@ export function MaintenanceParts() {
                   <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
                   <td className="lib-date">{(pt.used_at || []).length === 0 ? "—" : pt.used_at.map((u, i) => (
                     <span key={u.listing_id}>{i > 0 && "; "}
-                      <Link to={`/maintenance/positions/${u.position.id}`}>{u.position.name}</Link>
+                      <Link to={`/asset-register/positions/${u.position.id}`}>{u.position.name}</Link>
                       {` (${roleLabel(u.role).toLowerCase()}${u.critical ? ", critical" : ""})`}</span>
                   ))}</td>
                   <td>{pt.used_last_year}</td>
@@ -785,7 +786,7 @@ function SparesCoverCard({ parts }) {
   const bare = cover.without_parts_list || [];
   const line = (v) => (
     <li key={v.id}>
-      <Link to={`/maintenance/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
+      <Link to={`/asset-register/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
       <span className="lib-date"> · {v.usable_on_hand} usable, keep {v.min_on_hand}
         {v.use_instead ? ` · use ${v.use_instead.part_number} instead` : ""}</span>
     </li>
@@ -818,7 +819,7 @@ function SparesCoverCard({ parts }) {
         <>
           <p><strong>No parts list</strong> ({bare.length})</p>
           <ul className="maint-list">
-            {bare.map((b) => <li key={b.id}><Link to={`/maintenance/positions/${b.id}`}>{b.name}</Link>
+            {bare.map((b) => <li key={b.id}><Link to={`/asset-register/positions/${b.id}`}>{b.name}</Link>
               {b.path.length > 0 && <span className="lib-date"> · {b.path.join(" › ")}</span>}</li>)}
           </ul>
         </>

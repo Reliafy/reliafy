@@ -17,7 +17,7 @@ export default function GuideBody({ guide, compact = false }) {
     if (!root) return;
     // Guides cross-link to /guides, /learn and /blog. Those routes don't exist
     // in an auth-disabled build, where they'd fall through to the app shell and
-    // bounce to /modelling — so send them to the public site instead.
+    // bounce to /home — so send them to the public site instead.
     if (AUTH_DISABLED) {
       root.querySelectorAll("a[href^='/']").forEach((a) => {
         const href = a.getAttribute("href") || "";

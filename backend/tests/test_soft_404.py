@@ -93,7 +93,7 @@ def _is_404_shell(r) -> bool:
 
 # ---- unknown roots: the plain 404 page, as since #118 ---------------------------
 
-@pytest.mark.parametrize("path", ["/totally-made-up", "/models/abc", "/wp-login.php", "/Bloggs/past"])
+@pytest.mark.parametrize("path", ["/totally-made-up", "/modeling/abc", "/wp-login.php", "/Bloggs/past"])
 def test_unknown_roots_are_404_pages(site, path):
     r = site.get(path)
     assert r.status_code == 404, path
@@ -164,6 +164,8 @@ def test_without_the_content_index_slugs_keep_the_shell(site, dist):
     "/modelling", "/modelling/m/abc123", "/modelling/recurrent/r1", "/rbds/b/123", "/rbds/runs/run9",
     "/datasets/d/d1", "/fleet/tracking/f1", "/fleet/forecasts/f2", "/strategy/analyses/s1",
     "/rcm/studies/s1", "/settings", "/login", "/oauth/consent", "/unsubscribe",
+    "/home", "/models/m/abc123", "/systems/b/123", "/data/d/d1", "/forecasts/f2",
+    "/models/tracking/f1", "/maintenance/rcm/s1", "/asset-register/positions/p1", "/reports",
 ])
 def test_app_routes_with_ids_keep_the_shell_and_a_200(site, path):
     r = site.get(path)

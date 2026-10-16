@@ -48,6 +48,9 @@ def test_llms_txt_is_served_as_text(site):
     "/login", "/oauth/consent", "/p/sometoken", "/unsubscribe", "/api-docs", "/terms", "/privacy",
     "/blog", "/blog/a-post-not-prerendered-yet", "/learn/weibull", "/guides/x", "/reference/weibull",
     "/whats-new/october-2026", "/rcm-software", "/weibull-analysis-software",
+    # #438's addresses (the old ones above redirect to them in the app).
+    "/home", "/models", "/models/m/abc", "/systems/b/123", "/data", "/forecasts/f1", "/reports",
+    "/asset-register", "/asset-register/items/i1", "/maintenance/rcm/s1",
 ])
 def test_app_routes_get_the_shell(site, path):
     r = site.get(path)

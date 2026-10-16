@@ -11,7 +11,7 @@ test("every tab of every sample RBD", async ({ page, request, problems }) => {
   const samples = rbds.filter((r) => r.is_sample);
   expect(samples.length).toBeGreaterThan(0);
   for (const rbd of samples) {
-    await open(page, `/rbds/b/${rbd.id}`);
+    await open(page, `/systems/b/${rbd.id}`);
     const tablist = page.getByRole("tablist", { name: "Diagram views" });
     const names = await tablist.getByRole("tab").allInnerTexts();
     expect(names.length, `${rbd.id}: no tabs`).toBeGreaterThan(1);
@@ -28,7 +28,7 @@ test("every tab of every sample RBD", async ({ page, request, problems }) => {
 });
 
 test("calculate a sample RBD", async ({ page, problems }) => {
-  await open(page, "/rbds/b/sample-rbd-pump-station");
+  await open(page, "/systems/b/sample-rbd-pump-station");
   await page.getByRole("tab", { name: "Calculator" }).click();
   await page.locator('[data-wt="rbd-calculate"]').click();
   const panel = page.locator(".rbd-calc-panel").first();
@@ -64,9 +64,9 @@ for (const { format, file, blocks } of IMPORTS) {
       expect(res.ok()).toBeTruthy();
       upload = { name: "reliafy-rbd-template.xlsx", mimeType: "application/octet-stream", buffer: await res.body() };
     }
-    await open(page, "/rbds");
+    await open(page, "/systems");
     await page.locator('input[type="file"]').setInputFiles(upload);
-    await page.waitForURL(/\/rbds\/b$/, { timeout: 30_000 });
+    await page.waitForURL(/\/systems\/b$/, { timeout: 30_000 });
     await expect(page.locator(".react-flow__node").nth(blocks - 1)).toBeVisible();
     await expectHealthy(page, problems, { label: `${format} import` });
   });

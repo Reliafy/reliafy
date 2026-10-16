@@ -51,7 +51,7 @@ def _model_brief(m) -> dict:
         "n": r.get("n"),
         "unit": r.get("unit") or (m.spec or {}).get("unit", ""),
         "created_at": m.created_at.isoformat(),
-        "url": f"/modelling/m/{m.id}",
+        "url": f"/models/m/{m.id}",
     }
 
 
@@ -195,7 +195,7 @@ async def api_create_dataset(
         "name": ds.name,
         "n_rows": ds.n_rows,
         "columns": [c["name"] for c in ds.columns],
-        "url": f"/datasets/d/{ds.id}",
+        "url": f"/data/d/{ds.id}",
     })
 
 

@@ -117,7 +117,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
           { name: "data", type: "bool", req: false, desc: "Upload the fitted observations too (default True → full plot, refittable). False = params only." },
           { name: "unit", type: "str", req: false, desc: "Unit of the time axis." },
         ]}
-        returns={`"https://reliafy.com/modelling/m/a1b2…"   # str — open in the app`}
+        returns={`"https://reliafy.com/models/m/a1b2…"   # str — open in the app`}
       />
 
       <ClientFn
@@ -131,7 +131,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
           { name: "unit", type: "str", req: false, desc: "Time unit." },
           { name: "extras", type: "dict", req: false, desc: "gamma / p / f0 for offset / LFP / zero-inflation." },
         ]}
-        returns={`"https://reliafy.com/modelling/m/…"   # str`}
+        returns={`"https://reliafy.com/models/m/…"   # str`}
       />
 
       <ClientFn
@@ -139,7 +139,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
         endpoint="GET /api/v1/models"
         desc="Your saved models."
         returns={`[ { "id": "a1b2…", "name": "Bearing life", "distribution": "Weibull",
-    "kind": "distribution", "n": 30, "unit": "hours", "url": "/modelling/m/…" }, … ]`}
+    "kind": "distribution", "n": 30, "unit": "hours", "url": "/models/m/…" }, … ]`}
       />
 
       <ClientFn
@@ -177,7 +177,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
           { name: "covariates", type: "str[]", req: false, desc: "Covariate columns (PH)." },
           { name: "formula", type: "str", req: false, desc: "Formulaic covariate formula." },
         ]}
-        returns={`{ "id": …, "name": "Bearing life", "distribution": "Weibull", "url": "/modelling/m/…" }`}
+        returns={`{ "id": …, "name": "Bearing life", "distribution": "Weibull", "url": "/models/m/…" }`}
       />
 
       <h3>reliafy.data</h3>
@@ -190,7 +190,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
           { name: "csv", type: "str", req: false, desc: "Raw CSV text (with a header). Provide this or data." },
           { name: "data", type: "dict", req: false, desc: "Column arrays, e.g. {\"hours\": [...], \"failed\": [...]}." },
         ]}
-        returns={`{ "id": "d3…", "name": "Bearings", "n_rows": 8, "columns": ["hours","failed"], "url": "/datasets/d/…" }`}
+        returns={`{ "id": "d3…", "name": "Bearings", "n_rows": 8, "columns": ["hours","failed"], "url": "/data/d/…" }`}
       />
 
       <h3>reliafy.strategy</h3>
@@ -243,7 +243,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
         sig="fleet.forecast(fleet_id)"
         endpoint="GET /api/v1/fleets/{id}/forecast"
         desc="The live failure forecast for one of your fleets."
-        params={[{ name: "fleet_id", type: "str", req: true, desc: "Fleet id (from /fleet/forecasts/<id>)." }]}
+        params={[{ name: "fleet_id", type: "str", req: true, desc: "Fleet id (from /forecasts/<id>)." }]}
         returns={`{ "fleet": {id, name, model_id}, "forecast": {status, method, periods, expected_failures, …} }`}
       />
 
@@ -288,7 +288,7 @@ function HttpDocs({ base }) {
   "models": [
     { "id": "a1b2…", "name": "Bearing life", "kind": "distribution",
       "distribution": "Weibull", "n": 30, "unit": "hours",
-      "created_at": "2026-07-15T02:48:08+00:00", "url": "/modelling/m/a1b2…" }
+      "created_at": "2026-07-15T02:48:08+00:00", "url": "/models/m/a1b2…" }
   ]
 }`}
       />
@@ -353,7 +353,7 @@ function HttpDocs({ base }) {
   -H "Authorization: Bearer rlf_..." -H "Content-Type: application/json" \\
   -d '{"name": "Bearings", "csv": "hours,failed\\n120,1\\n340,0"}'`}
         returns={`{ "id": "d3…", "name": "Bearings", "n_rows": 2,
-  "columns": ["hours", "failed"], "url": "/datasets/d/d3…" }`}
+  "columns": ["hours", "failed"], "url": "/data/d/d3…" }`}
       />
 
       <Endpoint
@@ -375,14 +375,14 @@ function HttpDocs({ base }) {
        "mapping": {"x": "hours", "c": "failed"}, "unit": "hours"}'`}
         returns={`{ "id": "a1b2…", "name": "Bearing life", "kind": "distribution",
   "distribution": "Weibull", "n": 2, "unit": "hours",
-  "created_at": "…", "url": "/modelling/m/a1b2…" }`}
+  "created_at": "…", "url": "/models/m/a1b2…" }`}
       />
 
       <h3>Fleet forecasts</h3>
       <Endpoint
         method="GET"
         path="/api/v1/fleets/{id}/forecast"
-        desc="The live failure forecast — expected failures per period. Id is in /fleet/forecasts/<id>."
+        desc="The live failure forecast — expected failures per period. Id is in /forecasts/<id>."
         request={[{ name: "id", type: "string · path", req: true, desc: "Fleet id." }]}
         returns={`{
   "fleet": { "id": "f1…", "name": "Delivery trucks", "model_id": "a1b2…" },
@@ -521,7 +521,7 @@ function HttpDocs({ base }) {
           { name: "options / extras", type: "object", req: false, desc: "offset/zi/lfp (data) or gamma/p/f0 (params)." },
         ]}
         returns={`{ "id": "a1b2…", "name": "Pump bearings", "distribution": "Weibull",
-  "params_only": false, "url": "/modelling/m/a1b2…" }`}
+  "params_only": false, "url": "/models/m/a1b2…" }`}
       />
     </div>
   );

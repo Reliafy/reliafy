@@ -1034,7 +1034,7 @@ def _life_brief(m) -> dict:
         "unit": r.get("unit") or (m.spec or {}).get("unit", ""),
         "is_sample": samples_service.is_sample(m.owner_id),
         "created_at": m.created_at.isoformat(),
-        "url": _url(f"/modelling/m/{m.id}"),
+        "url": _url(f"/models/m/{m.id}"),
         # #230: a fit whose numbers aren't estimates is flagged in the list too.
         **({"maximum": "no finite maximum"} if r.get("no_finite_maximum") else {}),
     }
@@ -1055,7 +1055,7 @@ def _recurrent_brief(doc) -> dict:
         "unit": r.get("unit", ""),
         "is_sample": samples_service.is_sample(doc.owner_id),
         "created_at": doc.created_at.isoformat(),
-        "url": _url(f"/modelling/recurrent/{doc.id}"),
+        "url": _url(f"/models/recurrent/{doc.id}"),
     }
 
 
@@ -1799,7 +1799,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
         "model_id": model.id,
         "name": model.name,
         "dataset_id": dataset.id,
-        "url": _url(f"/modelling/m/{model.id}"),
+        "url": _url(f"/models/m/{model.id}"),
         **summary,
     }
 
@@ -1991,7 +1991,7 @@ def _save_per_demand(ctx: Context, name: str, batches: list, confidence: float) 
     model = models_service.create_per_demand(db, user["uid"], name, confidence=confidence,
                                              batches=[b.model_dump() for b in batches])
     return {"saved": True, "model_id": model.id, "name": model.name,
-            "url": _url(f"/modelling/m/{model.id}"), **_per_demand_summary(model.results or {})}
+            "url": _url(f"/models/m/{model.id}"), **_per_demand_summary(model.results or {})}
 
 
 _EXTRA_PARAMS = ("gamma", "p", "f0")  # offset, limited failure population, zero-inflation
@@ -2068,7 +2068,7 @@ def save_model(
         "params": _plain_params(r),
         "unit": r.get("unit", ""),
         "metrics": metrics,
-        "url": _url(f"/modelling/m/{model.id}"),
+        "url": _url(f"/models/m/{model.id}"),
     }
     if r.get("extra_params"):
         out["extra_params"] = r["extra_params"]
@@ -2547,7 +2547,7 @@ def fit_alt_model(
         "model_id": doc.id,
         "name": doc.name,
         "dataset_id": dataset.id,
-        "url": _url(f"/modelling/alt/{doc.id}"),
+        "url": _url(f"/models/alt/{doc.id}"),
         **_censoring(checks),
         **({"warnings": [checks["warning"]]} if checks.get("warning") else {}),
         **_alt_brief(doc.results or {}),
@@ -2616,7 +2616,7 @@ def alt_use_level(
     answer: dict[str, Any] = {
         "model": doc.name,
         "model_id": doc.id,
-        "url": _url(f"/modelling/alt/{doc.id}"),
+        "url": _url(f"/models/alt/{doc.id}"),
         "unit": results.get("unit", ""),
         "use_stress": out.get("use_stress"),
         "metrics": {k: _finite(v) for k, v in m.items()},
@@ -2668,7 +2668,7 @@ def list_datasets(ctx: Context) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     return {"datasets": [
         {"id": d.id, "name": d.name, "n_rows": d.n_rows, "columns": [c["name"] for c in d.columns],
-         "created_at": d.created_at.isoformat(), "url": _url(f"/datasets/d/{d.id}")}
+         "created_at": d.created_at.isoformat(), "url": _url(f"/data/d/{d.id}")}
         for d in datasets_service.list_datasets(db, user["uid"])
     ]}
 
@@ -2715,7 +2715,7 @@ def upload_dataset(
     if upload is not None:
         uploads_service.delete(db, upload["_id"])
     out = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
-           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}"),
+           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/data/d/{ds.id}"),
            "header_guess": guess}
     if hint:
         out["hint"] = hint
@@ -2778,7 +2778,7 @@ def get_dataset(
         "offset": offset,
         "rows": rows,
         "next_offset": end if end < total else None,
-        "url": _url(f"/datasets/d/{ds.id}"),
+        "url": _url(f"/data/d/{ds.id}"),
     }
     if ds.notes:
         out["notes"] = ds.notes
@@ -2801,7 +2801,7 @@ def _rbd_brief(rbd) -> dict:
         "n_blocks": sum(1 for n in g.get("nodes") or [] if n.get("type") not in ("input", "output")),
         "is_sample": samples_service.is_sample(rbd.owner_id),
         "updated_at": rbd.updated_at.isoformat(),
-        "url": _url(f"/rbds/b/{rbd.id}"),
+        "url": _url(f"/systems/b/{rbd.id}"),
     }
 
 
@@ -4039,7 +4039,7 @@ def analyze_rbd(
         raise ToolError("Give either conditional_age (the whole system's age) or current_state (each block's "
                         "state now), not both.")
     placeholders = rbd_graph.placeholder_labels(graph)
-    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/systems/b/{rbd.id}")}
     if placeholders:
         head["placeholders"] = placeholders
         head["warning"] = "Some blocks use placeholder (guessed) models — results are illustrative until replaced."
@@ -4185,7 +4185,7 @@ def get_job(
     out: dict[str, Any] = {"job_id": job["_id"], "status": job.get("status"), "kind": job.get("kind")}
     if job.get("kind") == rbd_jobs_service.KIND_ALT_BOUNDS:
         # life_data_analysis alt_use_level's bootstrap bounds (#231); rbd_id holds the ALT model.
-        out.update(model_id=job.get("rbd_id"), url=_url(f"/modelling/alt/{job.get('rbd_id')}"))
+        out.update(model_id=job.get("rbd_id"), url=_url(f"/models/alt/{job.get('rbd_id')}"))
         if job.get("status") == "done":
             return {**out, "available": True, "bounds": _alt_bounds_summary(job.get("result") or {})}
         if job.get("status") == "failed":
@@ -4193,7 +4193,7 @@ def get_job(
         return {**out, "available": False, **_job_pending(db, job)}
     if job.get("rbd_id"):
         out["rbd_id"] = job["rbd_id"]
-        out["url"] = _url(f"/rbds/b/{job['rbd_id']}")
+        out["url"] = _url(f"/systems/b/{job['rbd_id']}")
     if job.get("status") == "done" and job.get("kind") == rbd_jobs_service.KIND_SENSITIVITY:
         return {**out, **_sensitivity_summary(job.get("result") or {}, 15)}
     if job.get("status") == "done" and job.get("kind") == rbd_jobs_service.KIND_INTERVALS:
@@ -4261,7 +4261,7 @@ def get_rbd_run(
     out = _run_brief(view)
     out.update(inputs=view["inputs"], engines=view["engines"])
     if view.get("rbd_id"):
-        out["url"] = _url(f"/rbds/runs/{run_id}")
+        out["url"] = _url(f"/systems/runs/{run_id}")
     if job.get("status") == "done":
         payload = view["result"]
         out["result"] = _availability_summary(payload)
@@ -4462,7 +4462,7 @@ def cheapest_design(
     uid = user["uid"]
     rbd = _get_rbd(db, uid, rbd_id)
     graph = rbd.graph or {}
-    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/systems/b/{rbd.id}")}
     if not graph.get("repairable"):
         raise ToolError(f"“{rbd.name}” is non-repairable (analysed for reliability): the cheapest design prices "
                         "a repairable diagram's ownership. Its redundancy for reliability is the app's Design tab.")
@@ -4518,7 +4518,7 @@ def compare_rbds(
     uid = user["uid"]
     a = _get_rbd(db, uid, rbd_id)
     b = _get_rbd(db, uid, other_rbd_id)
-    head = {"rbd_id": a.id, "other_rbd_id": b.id, "url": _url(f"/rbds/b/{a.id}")}
+    head = {"rbd_id": a.id, "other_rbd_id": b.id, "url": _url(f"/systems/b/{a.id}")}
     for doc in (a, b):
         if not (doc.graph or {}).get("repairable"):
             raise ToolError(f"“{doc.name}” is non-repairable (analysed for reliability): only repairable "
@@ -4592,7 +4592,7 @@ def rbd_fault_tree(
     ranked = sorted(res["events"], key=lambda e: -((e.get("importance") or {}).get("criticality") or 0.0))
     cuts = res["cut_sets"]
     out: dict[str, Any] = {
-        "rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}"),
+        "rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/systems/b/{rbd.id}"),
         "kind": res["kind"], "unit": res.get("unit") or None,
         "top_event_probability": res["top_event_probability"],
         "n_gates": res["n_gates"], "n_events": res["n_events"],
@@ -4798,7 +4798,7 @@ def allocate_targets(
         "availability_method": availability_method, "levers": levers, "max_mttf": max_mttf,
         "min_mttr": min_mttr, "mttf_feasibility": mttf_feasibility, "mttr_feasibility": mttr_feasibility,
     }.items() if v is not None}
-    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}"), "method": chosen,
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/systems/b/{rbd.id}"), "method": chosen,
             "target": target}
     try:
         res = rbd_allocation.allocate_for_owner(db, graph, owners, target, chosen, t=t, options=options)
@@ -4877,7 +4877,7 @@ def rbd_sensitivity(
     uid = user["uid"]
     rbd = _get_rbd(db, uid, rbd_id)
     graph = rbd.graph or {}
-    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/systems/b/{rbd.id}")}
     if not graph.get("repairable"):
         raise ToolError(f"“{rbd.name}” is non-repairable (analysed for reliability). What to improve ranks a "
                         "repairable diagram's levers; rbd_analysis analyze's importance measures rank a non-repairable "
@@ -5082,7 +5082,7 @@ def optimise_maintenance_intervals(
     uid = user["uid"]
     rbd = _get_rbd(db, uid, rbd_id)
     graph = rbd.graph or {}
-    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/rbds/b/{rbd.id}")}
+    head = {"rbd_id": rbd.id, "name": rbd.name, "url": _url(f"/systems/b/{rbd.id}")}
     if not graph.get("repairable"):
         raise ToolError(f"“{rbd.name}” is non-repairable (analysed for reliability): maintenance and proof-test "
                         "intervals are chosen on a repairable diagram. For one component's replacement age use "
@@ -5605,7 +5605,7 @@ def growth_projection(
             test_end = test_end if test_end is not None else saved.get("test_end")
         payload = recurrent_service.run_projection(db, doc, fef=settings, bc=bc_modes or [], test_end=test_end,
                                                    mode_column=mode_column)
-        return {**_projection_out(payload), "model_id": doc.id, "url": _url(f"/modelling/recurrent/{doc.id}")}
+        return {**_projection_out(payload), "model_id": doc.id, "url": _url(f"/models/recurrent/{doc.id}")}
 
     if user.get("mcp_plan", "pro") != "pro":
         raise Refusal(
@@ -5785,7 +5785,7 @@ def next_failure(
     live = recurrent_service.get_live_model(db, model_id, owners)
     out = recurrent_fit.next_failure(live, age, within=within, quantiles=quantiles)
     return {**out, "unit": (doc.results or {}).get("unit", ""), "model": (doc.results or {}).get("model"),
-            "model_id": doc.id, "url": _url(f"/modelling/recurrent/{doc.id}")}
+            "model_id": doc.id, "url": _url(f"/models/recurrent/{doc.id}")}
 
 
 def compare_groups(
@@ -5868,7 +5868,7 @@ def compare_groups(
                             f"(group_column). Columns: {', '.join(names)}.")
         df = datasets_service.load_dataframe(dataset)
         label = group_column
-        url = _url(f"/datasets/d/{dataset.id}?compare={quote(group_column)}")
+        url = _url(f"/data/d/{dataset.id}?compare={quote(group_column)}")
     prepared = compare_groups_service.prepare(
         df, time_column=time_column, group_column=group_column, censor_column=censor_column,
         count_column=count_column, cause_column=cause_column, c_invert=c_invert,
@@ -5896,7 +5896,7 @@ def list_fleets(ctx: Context) -> dict[str, Any]:
         {"id": f.id, "name": f.name, "model_id": f.model_id, "model_kind": f.model_kind,
          "n_items": len(f.items or []),
          "settings": f.settings, "is_sample": samples_service.is_sample(f.owner_id),
-         "url": _url(f"/fleet/forecasts/{f.id}")}
+         "url": _url(f"/forecasts/{f.id}")}
         for f in fleet_service.list_fleets(db, _owners(user["uid"]))
     ]}
 
@@ -5942,7 +5942,7 @@ def fleet_forecast(
                     "per_item_note": f"Top {_TOP_ITEMS} of {len(items)} items by expected failures; pass "
                                      "include_items=true for all of them."}
     return {"fleet": {"id": fleet.id, "name": fleet.name, "model_id": fleet.model_id,
-                      "model_kind": fleet.model_kind, "url": _url(f"/fleet/forecasts/{fleet.id}")},
+                      "model_kind": fleet.model_kind, "url": _url(f"/forecasts/{fleet.id}")},
             "headline": fleet_service.headline(fleet, forecast), "forecast": forecast}
 
 
@@ -5965,7 +5965,7 @@ def list_fleet_alerts(
     forecast = alerts_service.current_forecast(db, fleet, [*_owners(user["uid"]), fleet.owner_id])
     rules = alerts_service.list_alerts(db, fleet.id) if fleet.owner_id == user["uid"] else []
     return {"fleet": {"id": fleet.id, "name": fleet.name, "settings": fleet.settings,
-                      "url": _url(f"/fleet/forecasts/{fleet.id}")},
+                      "url": _url(f"/forecasts/{fleet.id}")},
             "expected_failures": (forecast or {}).get("expected"),
             "alerts": [alerts_service.public(d, user["uid"], fleet, forecast) for d in rules]}
 
@@ -6007,7 +6007,7 @@ def create_fleet_alert(
     except (alerts_service.AlertValidationError, alerts_service.AlertLimitError) as exc:
         raise ToolError(str(exc)) from None
     return {"alert": alerts_service.public(doc, user["uid"], fleet),
-            "url": _url(f"/fleet/forecasts/{fleet.id}#alerts")}
+            "url": _url(f"/forecasts/{fleet.id}#alerts")}
 
 
 # ---------------------------------------------------------------------------
@@ -6047,7 +6047,7 @@ def delete_model(
         fleets = [f for f in fleet_service.list_fleets(db, uid)
                   if fleet_service.MODEL_COLLECTIONS[f.model_kind] == "models" and f.model_id == m.id]
         if fleets:
-            names = ", ".join(f"\u201c{f.name}\u201d ({_url(f'/fleet/forecasts/{f.id}')})" for f in fleets)
+            names = ", ".join(f"\u201c{f.name}\u201d ({_url(f'/forecasts/{f.id}')})" for f in fleets)
             raise ToolError(
                 f"Model \u201c{m.name}\u201d can't be deleted: {len(fleets)} fleet forecast"
                 f"{'s' if len(fleets) != 1 else ''} run{'' if len(fleets) != 1 else 's'} on it ({names}). "
@@ -6068,7 +6068,7 @@ def delete_model(
         fleets = [f for f in fleet_service.list_fleets(db, uid)
                   if f.model_kind == "recurrent" and f.model_id == doc.id]
         if fleets:
-            names = ", ".join(f"\u201c{f.name}\u201d ({_url(f'/fleet/forecasts/{f.id}')})" for f in fleets)
+            names = ", ".join(f"\u201c{f.name}\u201d ({_url(f'/forecasts/{f.id}')})" for f in fleets)
             raise ToolError(
                 f"Model \u201c{doc.name}\u201d can't be deleted: {len(fleets)} fleet forecast"
                 f"{'s' if len(fleets) != 1 else ''} run{'' if len(fleets) != 1 else 's'} on it ({names}). "
@@ -6086,7 +6086,7 @@ def delete_model(
 
 
 def _fleet_refusal(name: str, fleets: list) -> ToolError:
-    names = ", ".join(f"“{f.name}” ({_url(f'/fleet/forecasts/{f.id}')})" for f in fleets)
+    names = ", ".join(f"“{f.name}” ({_url(f'/forecasts/{f.id}')})" for f in fleets)
     return ToolError(
         f"Model “{name}” can't be deleted: {len(fleets)} fleet forecast"
         f"{'s' if len(fleets) != 1 else ''} run{'' if len(fleets) != 1 else 's'} on it ({names}). "
@@ -6201,7 +6201,7 @@ def _own_rbd(db, uid: str, rbd_id: str):
 
 
 def _outages_url(rbd_id: str) -> str:
-    return _url(f"/rbds/b/{rbd_id}?tab=outages")
+    return _url(f"/systems/b/{rbd_id}?tab=outages")
 
 
 def upload_outage_log(
@@ -6331,9 +6331,9 @@ _UPLOAD_FALLBACK_URL = (
     "If the PUT to url can't connect, or a proxy refuses its host (e.g. CONNECT tunnel failed, 403), send the "
     "same PUT once to url_fallback (curl_fallback) instead: the same single-use link on {site}, slower for large "
     "files. The link is only used up when a PUT reaches Reliafy, so a refused first attempt doesn't spend it. ")
-_UPLOAD_APP_PAGES = {"rbd_import": ("/rbds/list", "RBDs › Import"), "dataset": ("/datasets/list", "Datasets"),
-                     "excel": ("/datasets/list", "Datasets, RCM or RBDs › Import"),
-                     "outage_log": ("/rbds/list", "the diagram's Outage history tab")}
+_UPLOAD_APP_PAGES = {"rbd_import": ("/systems", "Systems › Import"), "dataset": ("/data", "Data"),
+                     "excel": ("/data", "Data, RCM or Systems › Import"),
+                     "outage_log": ("/systems", "the diagram's Outage history tab")}
 # Inline content (uploads import_rbd): small text formats only — anything larger goes
 # through uploads create rather than the agent's context.
 INLINE_MAX_BYTES = 200 * 1024
@@ -6791,7 +6791,7 @@ def _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row) -> dic
     uploads_service.delete(db, doc["_id"])
     out = {"target": "dataset", "sheet": table.sheet, "header_row": table.header_row,
            "id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
-           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
+           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/data/d/{ds.id}")}
     if table.notes:
         out["notes"] = table.notes
     if header_row is None and table.header_row == 0:
@@ -6840,7 +6840,7 @@ def _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id) 
         "sheet": table.sheet, "header_row": table.header_row,
         "mapping": options["mapping"], "extra_columns": options.get("extra_columns") or [],
         "counts": result["counts"], "warnings": (result.get("warnings") or [])[:_IMPORT_NOTES],
-        "url": _url(f"/rcm/studies/{study.id}"),
+        "url": _url(f"/maintenance/rcm/{study.id}"),
     }
     if any(unmapped.values()):
         out["unmapped_values"] = {k: v for k, v in unmapped.items() if v}
@@ -7136,7 +7136,7 @@ def _rcm_saved(db, user: dict, study, **extra) -> dict:
     resolved = rcm_service.resolve(db, study, _owners(user["uid"]))
     out = {"study_id": study.id, "name": study.name, "system": study.system, **extra,
            "counts": _rcm_counts(study.functions), "evidence": resolved["rollup"],
-           "updated_at": study.updated_at.isoformat(), "url": _url(f"/rcm/studies/{study.id}")}
+           "updated_at": study.updated_at.isoformat(), "url": _url(f"/maintenance/rcm/{study.id}")}
     warnings = _rcm_warnings(study.functions)
     if warnings:
         out["warnings"] = warnings
@@ -7197,7 +7197,7 @@ def list_rcm_studies(ctx: Context) -> dict[str, Any]:
         out.append({"id": study.id, "name": study.name, "system": study.system,
                     "functions": counts["functions"], "modes": counts["modes"], "decisions": counts["decisions"],
                     "is_sample": samples_service.is_sample(study.owner_id),
-                    "updated_at": study.updated_at.isoformat(), "url": _url(f"/rcm/studies/{study.id}")})
+                    "updated_at": study.updated_at.isoformat(), "url": _url(f"/maintenance/rcm/{study.id}")})
     return {"studies": out}
 
 
@@ -7221,7 +7221,7 @@ def get_rcm_study(
     out = {"id": study.id, "name": study.name, "system": study.system, "description": study.description,
            "is_sample": samples_service.is_sample(study.owner_id), "counts": _rcm_counts(study.functions),
            "evidence": resolved["rollup"], "updated_at": study.updated_at.isoformat(),
-           "url": _url(f"/rcm/studies/{study.id}")}
+           "url": _url(f"/maintenance/rcm/{study.id}")}
     if function_id:
         functions = [fn for fn in functions if fn.get("id") == function_id]
         if not functions:
@@ -7547,7 +7547,7 @@ def update_model(
         m = service.set_notes(db, m.id, notes, uid)
     return {"updated": _changed(name, notes), "model_id": m.id, "kind": kind, "name": m.name,
             "notes": (m.spec or {}).get("notes"),
-            "url": _url(f"/modelling/m/{m.id}" if kind == "life" else f"/modelling/recurrent/{m.id}")}
+            "url": _url(f"/models/m/{m.id}" if kind == "life" else f"/models/recurrent/{m.id}")}
 
 
 def update_dataset(
@@ -7569,7 +7569,7 @@ def update_dataset(
     if ds is None:
         raise ToolError("Dataset not found.")
     return {"updated": _changed(name, notes), "dataset_id": ds.id, "name": ds.name, "notes": ds.notes,
-            "url": _url(f"/datasets/d/{ds.id}")}
+            "url": _url(f"/data/d/{ds.id}")}
 
 
 # ---------------------------------------------------------------------------

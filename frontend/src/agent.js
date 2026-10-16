@@ -63,9 +63,12 @@ function interpCurve(x, y, xq) {
 // step, so a client can't change them. This file runs the tools: each tool
 // defined there needs a case in makeExecutor below (a backend test checks).
 
-// Only let the assistant route to real in-app pages.
+// Only let the assistant route to real in-app pages (the earlier addresses
+// still redirect, #438).
 const NAV_PREFIXES = [
-  "/modelling", "/rbds", "/datasets", "/strategy", "/fleet", "/rcm", "/team", "/changes",
+  "/home", "/models", "/systems", "/data", "/strategy", "/forecasts", "/reports", "/maintenance/rcm",
+  "/team", "/changes",
+  "/modelling", "/rbds", "/datasets", "/fleet", "/rcm",
 ];
 export function isAllowedPath(path) {
   return typeof path === "string" && path.startsWith("/") && NAV_PREFIXES.some(

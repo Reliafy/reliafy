@@ -97,7 +97,7 @@ export function ItemKindCard({ item, kinds, onChanged }) {
         <dd>{item.item_class ? <>{item.item_class.display}
           {viaText(item.item_class.via) && <span className="lib-date"> ({viaText(item.item_class.via)})</span>}</> : "—"}</dd>
         <dt>Model (part)</dt>
-        <dd>{item.part ? <Link to="/maintenance/parts">{item.part.part_number}</Link> : "—"}
+        <dd>{item.part ? <Link to="/asset-register/parts">{item.part.part_number}</Link> : "—"}
           {item.part && <span className="lib-date"> · {item.part.name}</span>}</dd>
         <dt>Manufacturer</dt>
         <dd>{item.manufacturer_entry ? <>{item.manufacturer_entry.name}
@@ -341,7 +341,7 @@ function ItemClassPanel({ id, data, onChanged, onRetired, onAddChild }) {
       {c.items.length > 0 && (
         <ul className="maint-list">
           {c.items.map((i) => (
-            <li key={i.id}><Link to={`/maintenance/items/${i.id}`}>{i.name}</Link>
+            <li key={i.id}><Link to={`/asset-register/items/${i.id}`}>{i.name}</Link>
               <span className="lib-date"> · {[i.manufacturer, i.model, i.serial].filter(Boolean).join(" ") || "—"}
                 {i.item_class && i.item_class.id !== c.id ? ` · ${i.item_class.name}` : ""}</span></li>
           ))}

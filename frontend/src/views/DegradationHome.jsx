@@ -39,15 +39,15 @@ export default function DegradationHome() {
     }
   };
 
-  const open = (id) => navigate(`/modelling/degradation/${id}`);
+  const open = (id) => navigate(`/models/degradation/${id}`);
   const visible = (models || []).filter((m) => matches(query, m.name, m.path_model, m.id));
 
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }]}
+        crumbs={[{ label: "Models", to: "/models" }]}
         title="Degradation models"
-        meta="How assets wear toward a failure threshold. Track individual items under Fleet."
+        meta="How assets wear toward a failure threshold. Track individual items under Models › Degradation tracking."
         primary={<button onClick={() => setModalOpen(true)}><PlusIcon /> New model</button>}
       />
 

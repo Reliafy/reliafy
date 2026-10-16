@@ -10,7 +10,7 @@ import { relativeTime } from "../instrument.js";
 
 // One saved degradation model, in the life model page's shape: the header,
 // then one card with the tabs, each chart beside its side panel. The fleet of
-// tracked items lives under Fleet → Degradation tracking ("Track items").
+// tracked items lives under Models → Degradation tracking ("Track items").
 export default function DegradationModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -39,7 +39,7 @@ export default function DegradationModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Degradation", to: "/modelling/degradation" }]}
+        crumbs={[{ label: "Models", to: "/models" }, { label: "Degradation", to: "/models/degradation" }]}
         title={itemName(model)}
         badges={model.is_sample && <Chip>Sample</Chip>}
         meta={
@@ -49,7 +49,7 @@ export default function DegradationModelPage() {
           </>
         }
         primary={
-          <button onClick={() => navigate("/fleet/tracking")}>
+          <button onClick={() => navigate("/models/tracking")}>
             Track items{nItems > 0 ? ` (${nItems})` : ""}
           </button>
         }

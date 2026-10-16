@@ -7,7 +7,7 @@
 //   npm run smoke -- --base-url <url>      a deployed site instead, signed out and
 //                                          read-only (or set SMOKE_BASE_URL)
 //
-// Anything else goes to `playwright test` (-g "/rbds", --debug, --ui, a spec file).
+// Anything else goes to `playwright test` (-g "/systems", --debug, --ui, a spec file).
 // The backend runs on SMOKE_PORT (8765) with SMOKE_PYTHON (python3): a Python
 // with the backend's requirements installed. The report: npx playwright show-report.
 import { spawnSync } from "node:child_process";

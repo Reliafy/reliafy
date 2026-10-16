@@ -7,7 +7,8 @@ import ChatPanel from "./components/ChatPanel.jsx";
 import VerifyEmailBanner from "./components/VerifyEmailBanner.jsx";
 import { WalkthroughProvider } from "./components/Walkthrough.jsx";
 const BillingPage = lazy(() => import("./views/BillingPage.jsx"));
-const ModellingDashboard = lazy(() => import("./views/ModellingDashboard.jsx"));
+const HomePage = lazy(() => import("./views/HomePage.jsx"));
+const ReportsPage = lazy(() => import("./views/ReportsPage.jsx"));
 const ModellingHome = lazy(() => import("./views/ModellingHome.jsx"));
 const AllModelsPage = lazy(() => import("./views/AllModelsPage.jsx"));
 const NewModelPage = lazy(() => import("./views/NewModelPage.jsx"));
@@ -60,6 +61,7 @@ const ChangesPage = lazy(() => import("./views/ChangesPage.jsx"));
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { unmatchedRoute } from "./appConfig.js";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
+import { RolesProvider } from "./RolesProvider.jsx";
 
 // The authenticated app shell. This module is code-split: App.jsx
 // lazy-imports it, so the public/marketing pages ship without the app bundle.
@@ -68,11 +70,13 @@ import { useWorkspace } from "./WorkspaceProvider.jsx";
 // Flow) arrive with the pages that use them. The chart module is prefetched
 // once the browser is idle so the first chart page doesn't wait for it.
 
-// Old bookmarks carried MODEL ids; fleets are their own ids now, so the
-// safest landing is the tracking index.
-function TrackingRedirect() {
-  useParams();
-  return <Navigate to="/fleet/tracking" replace />;
+// An earlier address (#438, and older renames): to the page's new place, with
+// the same ids, query and #hash.
+function Moved({ to }) {
+  const params = useParams();
+  const { search, hash } = useLocation();
+  const path = to.replace(/:(\w+)/g, (_, name) => encodeURIComponent(params[name] ?? ""));
+  return <Navigate to={path + search + hash} replace />;
 }
 
 // The desktop rail's collapsed/expanded choice is remembered per device.
@@ -143,6 +147,7 @@ export default function AppShell() {
     return () => window.clearTimeout(id);
   }, []);
   return (
+    <RolesProvider>
     <WalkthroughProvider>
       <NavBar
         menuOpen={phone && menuOpen}
@@ -162,74 +167,125 @@ export default function AppShell() {
           <ErrorBoundary>
           <Suspense fallback={<div className="card empty view-loading">Loading…</div>}>
           <Routes>
-            <Route path="/" element={<Navigate to="/modelling" replace />} />
-            <Route path="/modelling" element={<ModellingDashboard />} />
-            <Route path="/modelling/models" element={<AllModelsPage />} />
-            <Route path="/modelling/life" element={<ModellingHome />} />
-            <Route path="/modelling/new" element={<NewModelPage />} />
-            <Route path="/modelling/degradation" element={<DegradationHome />} />
-            <Route path="/modelling/degradation/:id" element={<DegradationModelPage />} />
-            <Route path="/modelling/recurrent" element={<RecurrentHome />} />
-            <Route path="/modelling/recurrent/new" element={<RecurrentNewPage />} />
-            <Route path="/modelling/recurrent/:id" element={<RecurrentModelPage />} />
-            <Route path="/modelling/alt" element={<AltHome />} />
-            <Route path="/modelling/alt/new" element={<AltNewPage />} />
-            <Route path="/modelling/alt/:id" element={<AltModelPage />} />
-            <Route path="/modelling/m/:id" element={<ModelPage />} />
-            {/* Each section opens on its list (#312); the old list URLs redirect. */}
-            <Route path="/rbds" element={<RbdHome />} />
-            <Route path="/rbds/list" element={<Navigate to="/rbds" replace />} />
-            <Route path="/rbds/b" element={<RbdBuilder />} />
-            <Route path="/rbds/b/:id" element={<RbdBuilder />} />
-            <Route path="/rbds/runs" element={<RbdRuns />} />
-            <Route path="/rbds/runs/compare" element={<RbdRunsCompare />} />
-            <Route path="/rbds/runs/:runId" element={<RbdRunsDetail />} />
-            <Route path="/datasets" element={<DatasetsHome />} />
-            <Route path="/datasets/list" element={<Navigate to="/datasets" replace />} />
-            <Route path="/datasets/d/:id" element={<DatasetPage />} />
+            <Route path="/" element={<Navigate to="/home" replace />} />
+            <Route path="/home" element={<HomePage />} />
+
+            {/* Design (#438): systems as designed. */}
+            <Route path="/systems" element={<RbdHome />} />
+            <Route path="/systems/b" element={<RbdBuilder />} />
+            <Route path="/systems/b/:id" element={<RbdBuilder />} />
+            <Route path="/systems/runs" element={<RbdRuns />} />
+            <Route path="/systems/runs/compare" element={<RbdRunsCompare />} />
+            <Route path="/systems/runs/:runId" element={<RbdRunsDetail />} />
+            {maintenanceEnabled && <Route path="/systems/structure" element={<MaintenancePartsPage view="structure" />} />}
+
+            {/* Operate: the assets as maintained, and their maintenance. */}
+            {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceHome part="assets" />} />}
+            {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}
+            {maintenanceEnabled && <Route path="/asset-register/items" element={<MaintenanceItems />} />}
+            {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}
+            {maintenanceEnabled && <Route path="/asset-register/locations" element={<MaintenanceLocations />} />}
+            {maintenanceEnabled && <Route path="/asset-register/locations/:id" element={<MaintenanceLocation />} />}
+            {maintenanceEnabled && <Route path="/asset-register/classes" element={<MaintenanceClasses />} />}
+            {maintenanceEnabled && <Route path="/asset-register/classes/:name" element={<MaintenanceClasses />} />}
+            {maintenanceEnabled && <Route path="/asset-register/parts" element={<MaintenancePartsPage />} />}
+            {maintenanceEnabled && <Route path="/asset-register/parts/:id" element={<MaintenancePart />} />}
+            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome part="work" />} />}
+            {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
+            <Route path="/maintenance/rcm" element={<RcmHome />} />
+            <Route path="/maintenance/rcm/:id" element={<RcmStudyPage />} />
+
+            {/* Analyse. */}
+            <Route path="/data" element={<DatasetsHome />} />
+            <Route path="/data/d/:id" element={<DatasetPage />} />
+            <Route path="/models" element={<AllModelsPage />} />
+            <Route path="/models/life" element={<ModellingHome />} />
+            <Route path="/models/new" element={<NewModelPage />} />
+            <Route path="/models/m/:id" element={<ModelPage />} />
+            <Route path="/models/degradation" element={<DegradationHome />} />
+            <Route path="/models/degradation/:id" element={<DegradationModelPage />} />
+            <Route path="/models/recurrent" element={<RecurrentHome />} />
+            <Route path="/models/recurrent/new" element={<RecurrentNewPage />} />
+            <Route path="/models/recurrent/:id" element={<RecurrentModelPage />} />
+            <Route path="/models/alt" element={<AltHome />} />
+            <Route path="/models/alt/new" element={<AltNewPage />} />
+            <Route path="/models/alt/:id" element={<AltModelPage />} />
+            <Route path="/models/tracking" element={<FleetTrackingHome />} />
+            <Route path="/models/tracking/:fleetId" element={<StrategyTracking />} />
             <Route path="/strategy" element={<StrategyAnalyses />} />
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
             <Route path="/strategy/demonstration-test" element={<StrategyDemonstration />} />
-            <Route path="/strategy/tracking" element={<Navigate to="/fleet/tracking" replace />} />
-            <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
-            <Route path="/fleet" element={<FleetForecasts />} />
-            <Route path="/fleet/tracking" element={<FleetTrackingHome />} />
-            <Route path="/fleet/tracking/:fleetId" element={<StrategyTracking />} />
-            <Route path="/fleet/forecasts" element={<Navigate to="/fleet" replace />} />
-            <Route path="/fleet/forecasts/:id" element={<FleetForecastPage />} />
-            <Route path="/strategy/analyses" element={<Navigate to="/strategy" replace />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
+            <Route path="/forecasts" element={<FleetForecasts />} />
+            <Route path="/forecasts/:id" element={<FleetForecastPage />} />
+
+            <Route path="/reports" element={<ReportsPage />} />
             {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}
-            <Route path="/rcm" element={<RcmHome />} />
-            <Route path="/rcm/studies" element={<Navigate to="/rcm" replace />} />
-            <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
-            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
-            {maintenanceEnabled && <Route path="/maintenance/positions/:id" element={<MaintenancePosition />} />}
-            {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
-            {maintenanceEnabled && <Route path="/maintenance/items" element={<MaintenanceItems />} />}
-            {maintenanceEnabled && <Route path="/maintenance/items/:id" element={<MaintenanceItem />} />}
-            {maintenanceEnabled && <Route path="/maintenance/locations" element={<MaintenanceLocations />} />}
-            {maintenanceEnabled && <Route path="/maintenance/locations/:id" element={<MaintenanceLocation />} />}
-            {maintenanceEnabled && <Route path="/maintenance/classes" element={<MaintenanceClasses />} />}
-            {maintenanceEnabled && <Route path="/maintenance/classes/:name" element={<MaintenanceClasses />} />}
-            {maintenanceEnabled && <Route path="/maintenance/parts" element={<MaintenancePartsPage />} />}
-            {maintenanceEnabled && <Route path="/maintenance/parts/:id" element={<MaintenancePart />} />}
+
+            {/* Account. */}
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/api-docs" element={<ApiDocsPage />} />
-            {/* API tokens moved into Settings; keep old links working. */}
-            <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/changes" element={<ChangesPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
+
+            {/* Earlier addresses: each goes to its page's new place (#438). */}
+            <Route path="/modelling" element={<Moved to="/home" />} />
+            <Route path="/modelling/models" element={<Moved to="/models" />} />
+            <Route path="/modelling/life" element={<Moved to="/models/life" />} />
+            <Route path="/modelling/new" element={<Moved to="/models/new" />} />
+            <Route path="/modelling/m/:id" element={<Moved to="/models/m/:id" />} />
+            <Route path="/modelling/degradation" element={<Moved to="/models/degradation" />} />
+            <Route path="/modelling/degradation/:id" element={<Moved to="/models/degradation/:id" />} />
+            <Route path="/modelling/recurrent" element={<Moved to="/models/recurrent" />} />
+            <Route path="/modelling/recurrent/new" element={<Moved to="/models/recurrent/new" />} />
+            <Route path="/modelling/recurrent/:id" element={<Moved to="/models/recurrent/:id" />} />
+            <Route path="/modelling/alt" element={<Moved to="/models/alt" />} />
+            <Route path="/modelling/alt/new" element={<Moved to="/models/alt/new" />} />
+            <Route path="/modelling/alt/:id" element={<Moved to="/models/alt/:id" />} />
+            <Route path="/rbds" element={<Moved to="/systems" />} />
+            <Route path="/rbds/list" element={<Moved to="/systems" />} />
+            <Route path="/rbds/b" element={<Moved to="/systems/b" />} />
+            <Route path="/rbds/b/:id" element={<Moved to="/systems/b/:id" />} />
+            <Route path="/rbds/runs" element={<Moved to="/systems/runs" />} />
+            <Route path="/rbds/runs/compare" element={<Moved to="/systems/runs/compare" />} />
+            <Route path="/rbds/runs/:runId" element={<Moved to="/systems/runs/:runId" />} />
+            <Route path="/datasets" element={<Moved to="/data" />} />
+            <Route path="/datasets/list" element={<Moved to="/data" />} />
+            <Route path="/datasets/d/:id" element={<Moved to="/data/d/:id" />} />
+            <Route path="/strategy/analyses" element={<Moved to="/strategy" />} />
+            {/* Old tracking bookmarks carried MODEL ids; fleets have their own now. */}
+            <Route path="/strategy/tracking" element={<Moved to="/models/tracking" />} />
+            <Route path="/strategy/tracking/:modelId" element={<Moved to="/models/tracking" />} />
+            <Route path="/fleet" element={<Moved to="/forecasts" />} />
+            <Route path="/fleet/forecasts" element={<Moved to="/forecasts" />} />
+            <Route path="/fleet/forecasts/:id" element={<Moved to="/forecasts/:id" />} />
+            <Route path="/fleet/tracking" element={<Moved to="/models/tracking" />} />
+            <Route path="/fleet/tracking/:fleetId" element={<Moved to="/models/tracking/:fleetId" />} />
+            <Route path="/rcm" element={<Moved to="/maintenance/rcm" />} />
+            <Route path="/rcm/studies" element={<Moved to="/maintenance/rcm" />} />
+            <Route path="/rcm/studies/:id" element={<Moved to="/maintenance/rcm/:id" />} />
+            <Route path="/maintenance/positions/:id" element={<Moved to="/asset-register/positions/:id" />} />
+            <Route path="/maintenance/items" element={<Moved to="/asset-register/items" />} />
+            <Route path="/maintenance/items/:id" element={<Moved to="/asset-register/items/:id" />} />
+            <Route path="/maintenance/locations" element={<Moved to="/asset-register/locations" />} />
+            <Route path="/maintenance/locations/:id" element={<Moved to="/asset-register/locations/:id" />} />
+            <Route path="/maintenance/classes" element={<Moved to="/asset-register/classes" />} />
+            <Route path="/maintenance/classes/:name" element={<Moved to="/asset-register/classes/:name" />} />
+            <Route path="/maintenance/parts" element={<Moved to="/asset-register/parts" />} />
+            <Route path="/maintenance/parts/:id" element={<Moved to="/asset-register/parts/:id" />} />
+            {/* API tokens moved into Settings. */}
+            <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
+
             {/* Until the config loads, /billing and /agent aren't registered:
                 wait rather than redirect a direct load of them. */}
             <Route
               path="*"
               element={unmatchedRoute(config) === "redirect"
-                ? <Navigate to="/modelling" replace />
+                ? <Navigate to="/home" replace />
                 : <div className="card empty view-loading">Loading…</div>}
             />
           </Routes>
@@ -239,5 +295,6 @@ export default function AppShell() {
         {ai && <ChatPanel />}
       </div>
     </WalkthroughProvider>
+    </RolesProvider>
   );
 }

@@ -12,7 +12,7 @@ export const AUTH_DISABLED =
 
 // Auth-disabled builds (local dev, self-hosted instances) ship only the app —
 // the marketing pages (guides, blog) aren't routed, so an in-app link to
-// /guides would fall through to the app shell and bounce to /modelling. Point
+// /guides would fall through to the app shell and bounce to /home. Point
 // those links at the public site instead. Override the host with
 // VITE_PUBLIC_SITE if you mirror the content elsewhere.
 const PUBLIC_SITE =

@@ -321,7 +321,7 @@ def test_mcp_quote_list_and_get_runs(env):
     assert run["result"]["n_simulations"] == 20 and run["result"]["precision"]
     assert run["engines"]["repyability"] and run["engines"]["surpyval"]
     assert run["inputs"]["blocks"] > 0 and len(run["curve"]["t"]) == len(run["curve"]["upper"])
-    assert run["url"].endswith(f"/rbds/runs/{row['run_id']}")
+    assert run["url"].endswith(f"/systems/runs/{row['run_id']}")
     # Someone else's run doesn't exist for them.
     assert "Run not found" in _err(_call(env.oauth[AGENT], "get", {"kind": "rbd_run", "id": row["run_id"]}))
     other = _ok(_call(env.oauth[AGENT], "list", {"kind": "rbd_runs"}))

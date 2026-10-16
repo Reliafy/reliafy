@@ -9,7 +9,7 @@ const src = (file) => readFileSync(new URL(`../src/${file}`, import.meta.url), "
 
 // Every `<Route path=...>` in a file, with the `{flag && ...}` gate in front of
 // it (null when ungated: the gate sits between the previous route and this
-// one) and whether it only redirects.
+// one), whether it only redirects, and where to (`target`, "/models/m/:id").
 function routesIn(file) {
   const text = src(file);
   const found = [];
@@ -19,7 +19,8 @@ function routesIn(file) {
     const gate = gates.length ? gates[gates.length - 1][1] : null;
     previous = m.index + m[0].length;
     for (const path of m[1] ? [m[1]] : productPaths()) {
-      found.push({ path, gate, redirect: /<Navigate\b|<TrackingRedirect\b/.test(m[2]) });
+      const target = /<(?:Moved|Navigate)\s+to="([^"?]+)/.exec(m[2])?.[1] || null;
+      found.push({ path, gate, redirect: /<Navigate\b|<Moved\b/.test(m[2]), target });
     }
   }
   return found;
@@ -55,7 +56,7 @@ export function publicRoutes() {
 
 export const hasParam = (path) => path.includes("/:");
 
-// Fill a route's parameter: "/modelling/m/:id" + "abc" -> "/modelling/m/abc".
+// Fill a route's parameter: "/models/m/:id" + "abc" -> "/models/m/abc".
 export const fill = (path, id) => path.replace(/:\w+/, encodeURIComponent(id));
 
 // Where each app route with a parameter gets its records (each `{id, ...}`):
@@ -66,39 +67,48 @@ export const fill = (path, id) => path.replace(/:\w+/, encodeURIComponent(id));
 export const MAX_IDS = 12;
 const list = (key, field = "id") => (body) => (body[key] || []).map((x) => ({ ...x, id: x[field] }));
 export const DETAIL_IDS = {
-  "/modelling/m/:id": ["/api/models", list("models")],
-  "/modelling/degradation/:id": ["/api/degradation/models", list("models")],
-  "/modelling/recurrent/:id": ["/api/recurrent/models", list("models")],
-  "/modelling/alt/:id": ["/api/alt/models", list("models")],
-  "/rbds/b/:id": ["/api/rbds", list("rbds")],
-  "/rbds/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
-  "/datasets/d/:id": ["/api/datasets", list("datasets")],
+  "/models/m/:id": ["/api/models", list("models")],
+  "/models/degradation/:id": ["/api/degradation/models", list("models")],
+  "/models/recurrent/:id": ["/api/recurrent/models", list("models")],
+  "/models/alt/:id": ["/api/alt/models", list("models")],
+  "/systems/b/:id": ["/api/rbds", list("rbds")],
+  "/systems/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
+  "/data/d/:id": ["/api/datasets", list("datasets")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
-  "/fleet/tracking/:fleetId": ["/api/fleet/tracked", list("fleets")],
-  "/fleet/forecasts/:id": ["/api/fleet/fleets", list("fleets")],
-  "/rcm/studies/:id": ["/api/rcm/studies", list("studies")],
-  "/maintenance/positions/:id": ["/api/maintenance/overview", list("tree")],
+  "/models/tracking/:fleetId": ["/api/fleet/tracked", list("fleets")],
+  "/forecasts/:id": ["/api/fleet/fleets", list("fleets")],
+  "/maintenance/rcm/:id": ["/api/rcm/studies", list("studies")],
+  "/asset-register/positions/:id": ["/api/maintenance/overview", list("tree")],
   "/maintenance/work-orders/:id": ["/api/maintenance/work-orders", list("work_orders")],
-  "/maintenance/items/:id": ["/api/maintenance/items", list("items")],
-  "/maintenance/locations/:id": ["/api/maintenance/locations", list("locations")],
-  "/maintenance/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
-  "/maintenance/parts/:id": ["/api/maintenance/parts", list("parts")], // #435
-  // An old bookmark: redirects to the tracking list whatever the id.
-  "/strategy/tracking/:modelId": [null, () => [{ id: "any-old-id" }]],
+  "/asset-register/items/:id": ["/api/maintenance/items", list("items")],
+  "/asset-register/locations/:id": ["/api/maintenance/locations", list("locations")],
+  "/asset-register/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
+  "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")], // #435
 };
+
+// Where a route's ids come from: its own line above, or, for an earlier
+// address that redirects (#438), its new place's; one whose new place drops
+// the id (/strategy/tracking/:modelId) takes any id.
+export function idSource(route) {
+  if (DETAIL_IDS[route.path]) return DETAIL_IDS[route.path];
+  if (route.redirect && route.target) {
+    return hasParam(route.target) ? DETAIL_IDS[route.target] : [null, () => [{ id: "any-old-id" }]];
+  }
+  return undefined;
+}
 
 // Pages that draw a chart: the test waits for a Plotly plot on these (true,
 // or a test of the record shown). The chart library loads with the first page
 // that needs it, so a broken chart chunk shows up here.
 const CHART_PAGES = {
-  "/modelling/m/:id": true,
-  "/modelling/degradation/:id": true,
-  "/modelling/recurrent/:id": true,
-  "/modelling/alt/:id": true,
-  "/fleet/forecasts/:id": true,
-  "/fleet/tracking/:fleetId": true,
+  "/models/m/:id": true,
+  "/models/degradation/:id": true,
+  "/models/recurrent/:id": true,
+  "/models/alt/:id": true,
+  "/forecasts/:id": true,
+  "/models/tracking/:fleetId": true,
   // A class with a fitted model shows its failure forecast (#407).
-  "/maintenance/classes/:name": (cls) => Boolean(cls.model),
+  "/asset-register/classes/:name": (cls) => Boolean(cls.model),
   // A failure-finding analysis is one interval: no chart.
   "/strategy/analyses/:id": (analysis) => analysis.kind !== "failure_finding",
 };

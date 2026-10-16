@@ -59,15 +59,15 @@ LOG_DAYS = 800
 
 # collection -> (label, url prefix)
 COLLECTIONS = {
-    "models": ("Life model", "/modelling/m/"),
-    "recurrent_models": ("Repairable-system model", "/modelling/recurrent/"),
-    "alt_models": ("Accelerated test model", "/modelling/alt/"),
-    "degradation_models": ("Degradation model", "/modelling/degradation/"),
-    "datasets": ("Dataset", "/datasets/d/"),
-    "rbds": ("Block diagram", "/rbds/b/"),
-    "fleets": ("Failure forecast", "/fleet/forecasts/"),
-    "tracked_fleets": ("Tracked fleet", "/fleet/tracking/"),
-    "rcm_studies": ("RCM study", "/rcm/studies/"),
+    "models": ("Life model", "/models/m/"),
+    "recurrent_models": ("Repairable-system model", "/models/recurrent/"),
+    "alt_models": ("Accelerated test model", "/models/alt/"),
+    "degradation_models": ("Degradation model", "/models/degradation/"),
+    "datasets": ("Dataset", "/data/d/"),
+    "rbds": ("Block diagram", "/systems/b/"),
+    "fleets": ("Failure forecast", "/forecasts/"),
+    "tracked_fleets": ("Tracked fleet", "/models/tracking/"),
+    "rcm_studies": ("RCM study", "/maintenance/rcm/"),
     "strategy_analyses": ("Strategy analysis", "/strategy/analyses/"),
 }
 
