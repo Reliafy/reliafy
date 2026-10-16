@@ -3,8 +3,40 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   censorInverted, guessSplit, guessCompareColumns, dtypeLabel, nameSaysDistribution, parsePreview, fileStem,
-  guessLifeColumns, guessStatusMeaning, guessUnit,
+  guessLifeColumns, guessStatusMeaning, guessUnit, firstRowIsData, withGenericHeader,
 } from "./datasetGuess.js";
+
+// #434: the upload that started it had no header, so "300" and "544966.3125"
+// became the column names and the first row was lost.
+test("a first row of only numbers is data, not column names", () => {
+  assert.equal(firstRowIsData("300,544966.3125\n410,612000.5\n"), true);
+  assert.equal(firstRowIsData("﻿1.5\t2e3\n3\t4"), true); // a byte-order mark, tabs
+  assert.equal(firstRowIsData("\n  12 , -4 \n1,2"), true);
+  assert.equal(firstRowIsData("hours,cost\n1,2"), false);
+  assert.equal(firstRowIsData("300,cost\n1,2"), false); // one name makes it a header
+  assert.equal(firstRowIsData("300,,5\n1,2,3"), false); // a blank isn't a number
+  assert.equal(firstRowIsData('"1","2"\n3,4'), false); // quoted: left to the server
+  assert.equal(firstRowIsData(""), false);
+  // The fit wizard's files are comma-separated, whatever the sniff says.
+  assert.equal(firstRowIsData("1;2\n3;4", ","), false);
+});
+
+test("a header-less file gains col 1, col 2, … and keeps every row", () => {
+  assert.equal(withGenericHeader("300,544966.3125\n410,612000.5\n"), "col 1,col 2\n300,544966.3125\n410,612000.5\n");
+  assert.equal(withGenericHeader("﻿7\n8\n"), "col 1\n7\n8\n");
+  const p = parsePreview(withGenericHeader("300,544966.3125\n410,612000.5\n"));
+  assert.deepEqual(p.columns, ["col 1", "col 2"]);
+  assert.equal(p.nRows, 2);
+});
+
+test("a column of decimals isn't guessed as the count", () => {
+  const cols = [
+    { name: "hours", dtype: "int64" },
+    { name: "n", dtype: "float64", whole: false },
+  ];
+  assert.equal(guessLifeColumns(cols).n, "");
+  assert.equal(guessLifeColumns([cols[0], { ...cols[1], whole: true }]).n, "n");
+});
 
 const PUMP = [
   { name: "unit", dtype: "str" },

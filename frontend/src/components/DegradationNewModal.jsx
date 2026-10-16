@@ -12,6 +12,7 @@ import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import PreviewTable from "./PreviewTable.jsx";
+import HeaderNote, { detectHeader } from "./HeaderNote.jsx";
 
 // Three-step modal for fitting a degradation model, mirroring the FitFlow steps:
 // (1) pick a source (upload / saved dataset), (2) map item/time/measurement
@@ -28,6 +29,7 @@ export default function DegradationNewModal({ onClose, onSaved }) {
   // An Excel workbook becomes a CSV of the chosen sheet before anything else.
   const { toCsv, modal: sheetModal } = useSpreadsheet();
   const [file, setFile] = useState(null);
+  const [headerNote, setHeaderNote] = useState(null); // a file with no header row (#434)
   const [datasetId, setDatasetId] = useState(null);
   const [sourceName, setSourceName] = useState("");
   const [csv, setCsv] = useState(null); // { columns, preview, n_rows }
@@ -72,10 +74,12 @@ export default function DegradationNewModal({ onClose, onSaved }) {
     setNameTyped(null);
   };
 
-  const pickFile = async (picked) => {
+  const pickFile = async (picked, { keepHeader = false } = {}) => {
     if (!picked) return;
-    const f = await toCsv(picked);
-    if (!f) return;
+    const csvFile = await toCsv(picked);
+    if (!csvFile) return;
+    const { file: f, note } = await detectHeader(picked, csvFile, { keepHeader });
+    setHeaderNote(note);
     setFile(f);
     setDatasetId(null);
     setSourceName(f.name);
@@ -96,6 +100,7 @@ export default function DegradationNewModal({ onClose, onSaved }) {
 
   const pickDataset = async (d) => {
     setFile(null);
+    setHeaderNote(null);
     setDatasetId(d.id);
     setSourceName(d.name);
     resetTyped();
@@ -269,6 +274,7 @@ export default function DegradationNewModal({ onClose, onSaved }) {
           <p className="muted-line" style={{ marginTop: 0 }}>
             {sourceName} · {csv.n_rows} rows · {csv.columns.length} columns
           </p>
+          <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
           <PreviewTable columns={csv.columns} rows={csv.preview} />
           <div className="row" style={{ gap: "0.8rem" }}>
             {colSelect("Item id column", "i")}

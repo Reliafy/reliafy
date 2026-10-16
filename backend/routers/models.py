@@ -11,6 +11,7 @@ from backend import config
 from backend.db import get_session
 from backend.http_limits import read_upload
 from backend.fitting import FitError, covariate_units_from_form, options_from_form, per_demand_batches_from_df
+from backend.fitting import HEADER_HINT, SHEET_HEADER_HINT
 from backend import regression_diagnostics, storage
 from backend.routers import excel as excel_router
 from backend.services import billing as billing_service
@@ -127,6 +128,7 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "dtypes": preview.get("dtypes"),
         "blanks": preview.get("blanks"),
         "values": preview.get("values"),
+        "whole": preview.get("whole"),
         "models": [_model_summary(m, ctx) for m in models],
         "other_models": others,
         "profile": profile,
@@ -151,13 +153,19 @@ def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acc
 def upload_dataset(
     file: UploadFile = File(...),
     name: str | None = Form(default=None),
-    no_header: bool = Form(default=False),
+    no_header: bool | None = Form(default=None),
     sheet: str | None = Form(default=None),
     header_row: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Store an uploaded CSV as a standalone dataset (no fit required).
+
+    ``no_header``: true keeps the first row as data (columns ``col 1``,
+    ``col 2``, …), false reads it as the column names; blank guesses, so a
+    first row of only numbers is kept as data. The response's
+    ``header_guess`` is the guessed header row (1, or 0 for none), with a
+    one-line ``hint`` when the guess was applied (#434).
 
     An Excel workbook (.xlsx) works too: ``sheet`` (default: the first) is
     converted to CSV from ``header_row`` (a sheet row number; blank = the
@@ -167,19 +175,29 @@ def upload_dataset(
     # Up to the Excel reader's limit here; a CSV (or the CSV a sheet becomes)
     # is held to MAX_UPLOAD_BYTES by create_dataset.
     contents = read_upload(file, max(excel_service.MAX_FILE_BYTES, config.MAX_UPLOAD_BYTES))
-    if excel_service.is_excel(contents, file.filename or ""):
-        try:
-            row = excel_router.header_row_param(header_row)
-            # Under the user's import guard (a sync handler: FastAPI runs it
-            # in its threadpool, off the event loop).
-            table = excel_router.guarded(ctx.uid, excel_service.read_table, contents, sheet,
-                                         0 if no_header else row, file.filename or "")
-        except excel_service.ExcelError as exc:
-            return JSONResponse(status_code=422, content={"detail": str(exc)})
-        except Exception as exc:
-            return excel_router.excel_error(exc, "dataset", contents, file.filename or "")
-        contents = excel_service.to_csv(table)
-        no_header = False  # already applied: header-less sheets get col 1, col 2, …
+    try:
+        if excel_service.is_excel(contents, file.filename or ""):
+            try:
+                row = excel_router.header_row_param(header_row)
+                # Under the user's import guard (a sync handler: FastAPI runs it
+                # in its threadpool, off the event loop).
+                table = excel_router.guarded(ctx.uid, excel_service.read_table, contents, sheet,
+                                             0 if no_header else row, file.filename or "")
+            except excel_service.ExcelError as exc:
+                return JSONResponse(status_code=422, content={"detail": str(exc)})
+            except Exception as exc:
+                return excel_router.excel_error(exc, "dataset", contents, file.filename or "")
+            contents = excel_service.to_csv(table)
+            # Already applied: header-less sheets get col 1, col 2, …
+            guess = table.header_row
+            hint = SHEET_HEADER_HINT if row is None and no_header is None and guess == 0 else None
+        else:
+            apply, guess = datasets_service.resolve_no_header(contents, no_header)
+            hint = HEADER_HINT if apply and no_header is None else None
+            if apply:
+                contents = datasets_service.apply_generic_header(contents)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
     # Free-plan cap (new datasets only — re-uploading an existing file is fine).
     denied = _creation_denied(session, ctx, "datasets")
     if denied is not None:
@@ -189,7 +207,7 @@ def upload_dataset(
     try:
         dataset, reused = datasets_service.create_or_reuse(
             session, (name or "").strip() or datasets_service.default_name(file.filename), contents,
-            ctx.write_owner, no_header=no_header,
+            ctx.write_owner,
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
@@ -198,21 +216,24 @@ def upload_dataset(
         return JSONResponse(
             status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."}
         )
-    return JSONResponse(content=_created(dataset, reused, session, ctx))
+    return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
 
 
 @router.post("/datasets/paste")
 def paste_dataset(
     name: str = Body(default=""),
     content: str = Body(default=""),
-    no_header: bool = Body(default=False),
+    no_header: bool | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Create a dataset from pasted tabular text (CSV or TSV). Used by the
-    paste-data form and the assistant."""
+    paste-data form and the assistant. ``no_header`` and the response's
+    ``header_guess`` / ``hint`` are as for an upload."""
     try:
-        csv_bytes = datasets_service.normalize_pasted(content)
+        guess = datasets_service.pasted_header_guess(content)
+        apply = guess == 0 if no_header is None else bool(no_header)
+        csv_bytes = datasets_service.normalize_pasted(content, no_header=apply)
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     # Free-plan cap (skipped when the identical data already exists).
@@ -224,20 +245,27 @@ def paste_dataset(
     try:
         dataset, reused = datasets_service.create_or_reuse(
             session, (name or "").strip() or "Pasted data", csv_bytes, ctx.write_owner,
-            no_header=no_header,
         )
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store pasted dataset")
         return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
-    return JSONResponse(content=_created(dataset, reused, session, ctx))
+    hint = HEADER_HINT if apply and no_header is None else None
+    return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
 
 
-def _created(dataset, reused: bool, session, ctx: AccessCtx) -> dict:
+def _created(dataset, reused: bool, session, ctx: AccessCtx, guess: int = 1, hint: str | None = None) -> dict:
     """A create's response: the dataset, plus ``reused`` when identical data
-    was already saved (the existing dataset came back, under its own name)."""
-    return {**_dataset_detail(dataset, session, ctx), **({"reused": True} if reused else {})}
+    was already saved (the existing dataset came back, under its own name),
+    the guessed header row and, when a first row of numbers was kept as data
+    because ``no_header`` was left blank, a one-line ``hint`` saying so."""
+    return {
+        **_dataset_detail(dataset, session, ctx),
+        **({"reused": True} if reused else {}),
+        "header_guess": guess,
+        **({"hint": hint} if hint else {}),
+    }
 
 
 @router.patch("/datasets/{dataset_id}")

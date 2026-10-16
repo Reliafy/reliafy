@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Select from "../components/Select.jsx";
 import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
+import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
 import AltResultView from "../components/AltResultView.jsx";
 import {
   getAltOptions, getColumns, listDatasets, getDataset, fitAlt, saveAltModel, SPREADSHEET_ACCEPT,
@@ -25,6 +26,7 @@ export default function AltNewPage() {
   const [datasets, setDatasets] = useState([]);
 
   const [file, setFile] = useState(null);
+  const [headerNote, setHeaderNote] = useState(null); // a file with no header row (#434)
   const [datasetId, setDatasetId] = useState(null);
   const [sourceName, setSourceName] = useState("");
   const [csv, setCsv] = useState(null);
@@ -72,14 +74,16 @@ export default function AltNewPage() {
     setStress(Array.from({ length: nStress }, (_, j) => ({ col: columns[j + 1] || "", label: "" })));
   };
 
-  const pickFile = async (picked) => {
+  const pickFile = async (picked, { keepHeader = false } = {}) => {
     if (!picked) return;
-    const f = await toCsv(picked);
-    if (!f) return;
-    if (f.size > 5 * 1024 * 1024) {
-      setError(`That file is ${(f.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB.`);
+    const csvFile = await toCsv(picked);
+    if (!csvFile) return;
+    if (csvFile.size > 5 * 1024 * 1024) {
+      setError(`That file is ${(csvFile.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB.`);
       return;
     }
+    const { file: f, note } = await detectHeader(picked, csvFile, { keepHeader });
+    setHeaderNote(note);
     setFile(f); setDatasetId(null); setSourceName(f.name); setResult(null); setError(null); setLoading(true);
     try {
       const cols = await getColumns(f);
@@ -89,7 +93,7 @@ export default function AltNewPage() {
   };
 
   const pickDataset = async (d) => {
-    setFile(null); setDatasetId(d.id); setSourceName(d.name); setResult(null); setError(null); setLoading(true);
+    setFile(null); setHeaderNote(null); setDatasetId(d.id); setSourceName(d.name); setResult(null); setError(null); setLoading(true);
     try {
       const full = await getDataset(d.id);
       loadColumns(full.preview_columns || [], full.preview || [], full.n_rows);
@@ -229,6 +233,7 @@ export default function AltNewPage() {
 
         {step === 2 && (
           <div className="fit-step">
+            <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
             <div className="alt-model-pick">
               <div className="dist-field" style={{ width: 260 }}>
                 <span className="dist-label">Life distribution</span>
