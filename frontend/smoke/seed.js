@@ -3,8 +3,25 @@
 // position from the sample RCM study, a location, an item fitted to the
 // position, a work order, a part and an assembly of it, the starter item classes, a position
 // class with a fitted life model and a spare with a lead time, and one availability run)
-// through the API. Skipped against a deployed site.
+// through the API, and a generic sample plan for the Admin page's Plan tab. Skipped
+// against a deployed site.
 import { request } from "@playwright/test";
+
+export const SAMPLE_PLAN = [
+  "# Example plan",
+  "",
+  "A sample plan with two dummy tasks.",
+  "",
+  "```mermaid",
+  "gantt",
+  "    title Example plan",
+  "    dateFormat YYYY-MM-DD",
+  "    section Sample",
+  "    Task one :a1, 2026-01-05, 14d",
+  "    Task two :after a1, 10d",
+  "```",
+  "",
+].join("\n");
 
 export default async function seed(config) {
   if (process.env.SMOKE_BASE_URL) return;
@@ -56,6 +73,9 @@ export default async function seed(config) {
     }
     await send("PUT")(`${m}/classes/costs`, { position_class: pump, planned_cost: 400, failure_cost: 4000 });
     await post(`${m}/classes/fit`, { position_class: pump });
+
+    // A generic sample plan for the Admin page's Plan tab: prose and a Gantt chart.
+    await send("PUT")("/api/admin/plan", { markdown: SAMPLE_PLAN, source: "smoke/seed.js" });
 
     // One availability run, for the run history pages.
     const rbd = await (await api.get("/api/rbds/sample-rbd-instrument-air-availability")).json();

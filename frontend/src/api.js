@@ -1873,6 +1873,12 @@ export function setAdminMcp(enabled, reason = "") {
   });
 }
 
+// Operator-only: the plan shown on the Admin page's Plan tab,
+// { markdown, updated_at, updated_by, source } (a 404 when none is stored).
+export function getAdminPlan() {
+  return request("/api/admin/plan");
+}
+
 // Un-hide all dismissed sample artifacts.
 export function restoreSamples() {
   return request("/api/samples/restore", { method: "POST" });

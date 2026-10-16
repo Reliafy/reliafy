@@ -16,6 +16,7 @@ import UsageSection from "../components/UsageSection.jsx";
 import WalkthroughStats from "../components/WalkthroughStats.jsx";
 import AdminContentTab from "../components/AdminContentTab.jsx";
 import AdminLibrariesTab from "../components/AdminLibrariesTab.jsx";
+import AdminPlanTab from "../components/AdminPlanTab.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -436,10 +437,11 @@ const TABS = [
   { id: "usage", label: "Usage" },
   { id: "content", label: "Content" },
   { id: "libraries", label: "Libraries" },
+  { id: "plan", label: "Plan" },
 ];
 
 // Operator dashboard (ADMIN_EMAILS accounts only): usage, the publishing
-// calendar, and where the libraries stand, one tab each (?tab=).
+// calendar, where the libraries stand, and the plan, one tab each (?tab=).
 export default function AdminPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -475,6 +477,7 @@ export default function AdminPage() {
       {tab === "usage" && <UsageTab days={days} includeAdmin={includeAdmin} setIncludeAdmin={setIncludeAdmin} />}
       {tab === "content" && <AdminContentTab />}
       {tab === "libraries" && <AdminLibrariesTab />}
+      {tab === "plan" && <AdminPlanTab />}
     </div>
   );
 }

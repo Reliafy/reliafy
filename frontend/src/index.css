@@ -5202,6 +5202,21 @@ button.cal-chip.wide { min-height: 44px; padding: 6px 10px; font-size: var(--fs-
   .lib-rows > div { grid-template-columns: 1fr; gap: 0; }
 }
 
+/* Admin, Plan tab: the plan's prose at full width; each chart (a Gantt keeps
+   its own width) scrolls sideways inside its own box, never the page. */
+.admin-plan { margin-top: 14px; }
+.card.admin-plan-card { margin-top: 0; min-width: 0; }
+.guide-prose.admin-plan-prose { max-width: none; min-width: 0; overflow-wrap: anywhere; }
+.admin-plan-prose h1 { margin: 0 0 12px; font-size: var(--fs-24); }
+.admin-plan-prose h3 { margin: 24px 0 8px; font-size: var(--fs-16); }
+.admin-plan-prose code { overflow-wrap: anywhere; }
+.admin-plan-chart { overflow-x: auto; max-width: 100%; margin: 0 0 16px; padding: 4px 0; }
+.admin-plan-chart svg { display: block; max-width: none; height: auto; }
+.admin-plan-chart-pending { color: var(--muted); font-size: var(--fs-13); padding: 12px 0; }
+.admin-plan-chart-error { margin: 0 0 16px; }
+.admin-plan-chart-error .muted-line { margin: 0 0 6px; }
+.admin-plan .lib-bar code { font-size: var(--fs-12); overflow-wrap: anywhere; }
+
 /* Admin: product usage */
 .usage-legend { margin-top: 12px; }
 .usage-note { margin: 12px 0 0; font-size: var(--fs-12); color: var(--subtle); line-height: 1.45; }

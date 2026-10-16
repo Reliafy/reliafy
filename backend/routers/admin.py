@@ -5,12 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends
+from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from backend.auth import get_current_user
 from backend.config import SAMPLE_OWNER
 from backend.db import get_session
+from backend.services import admin_plan
 from backend.services import billing as billing_service
 from backend.services import content_calendar
 from backend.services import content_report
@@ -218,3 +220,40 @@ async def libraries_view(refresh: bool = False, user: dict = Depends(get_current
     body = await run_in_threadpool(library_status.status, refresh=refresh)
     body["refresh"] = {"done": refresh, "limited": limited, "retry_in": wait}
     return JSONResponse(content=body)
+
+
+class PlanIn(BaseModel):
+    markdown: str
+    source: str = ""
+
+
+@router.get("/plan")
+def plan_view(session=Depends(get_session), user: dict = Depends(get_current_user)) -> JSONResponse:
+    """The operators' plan (markdown, with fenced ``mermaid`` charts) for the
+    Admin page's Plan tab: ``{markdown, updated_at, updated_by, source}``."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    plan = admin_plan.get(session)
+    if plan is None:
+        return JSONResponse(status_code=404, content={
+            "detail": "No plan stored yet. Push one with python -m backend.scripts.push_plan PLAN.md.",
+            "code": "no_plan",
+        })
+    return JSONResponse(content=plan)
+
+
+@router.put("/plan")
+def plan_store(
+    body: PlanIn,
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """Replace the plan (at most 512 KB of markdown). ``source`` says where it
+    came from, e.g. a repository and commit."""
+    if not billing_service.is_admin_user(user):
+        return JSONResponse(status_code=403, content={"detail": "Operator accounts only."})
+    try:
+        plan = admin_plan.store(session, body.markdown, body.source, user.get("email") or user["uid"])
+    except admin_plan.PlanTooLarge as exc:
+        return JSONResponse(status_code=413, content={"detail": str(exc)})
+    return JSONResponse(content=plan)
