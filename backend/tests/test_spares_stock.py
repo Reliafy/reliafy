@@ -72,6 +72,14 @@ def test_a_poisson_binomial_count_is_exact():
     assert pmf[:4] == pytest.approx(want) and pmf.sum() == pytest.approx(1)
 
 
+def test_nothing_to_hold_says_so_plainly():
+    none = spares.answer(spares.Demand.from_samples([0] * 50), spares.Demand.from_samples([0] * 50), 2, 0.95)
+    words = spares.sentence(none, 0.95, "the lead time (60 days)")
+    assert none["hold"] == 0 and not none["below_reorder"]
+    assert words == ("Hold 0: a 95% chance of no stock-out over the lead time (60 days). With 2 usable now, the "
+                     "chance of running out is under 1%.")
+
+
 def test_service_levels_and_durations_are_checked():
     assert spares.service_level(95) == 0.95 and spares.service_level("0.99") == 0.99
     assert spares.service_level(None) is None
@@ -128,7 +136,7 @@ def test_a_longer_lead_time_or_review_needs_more(m):
     both = _stocking(m, lead_time_days=30, review_days=30)
     assert both["window_days"] == 60 and both["hold"] == by_lead[2]["hold"]
     assert both["reorder_at"] == by_lead[1]["hold"] < both["hold"]
-    assert "Reorder when usable stock falls to" in both["summary"]
+    assert f"At each review, order back up to {both['hold']:g}; between reviews, reorder if" in both["summary"]
     assert "lead time and review period (60 days)" in both["summary"]
 
 

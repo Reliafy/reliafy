@@ -1017,7 +1017,7 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
              "reorder_at": leads[k].quantile(level) if leads[k] is not None else None,
              "expected_demand": protects[k].mean} for k in range(periods)]
     return {**base, "status": "ok", "window": protect, **now, "per_period": plan, "basis": basis,
-            "summary": spares.sentence(now, level, window, repairable=repairable)}
+            "summary": spares.sentence(now, level, window, repairable=repairable, review=review > 0)}
 
 
 # ---- Repairable fleets: a recurrent-event model (#235) ----------------------------

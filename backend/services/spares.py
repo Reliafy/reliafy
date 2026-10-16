@@ -207,9 +207,10 @@ def level_text(level: float) -> str:
     return f"{level:.1%}".replace(".0%", "%")
 
 
-def sentence(ans: dict, level: float, window: str, unit: str = "", repairable: bool = False) -> str:
+def sentence(ans: dict, level: float, window: str, unit: str = "", repairable: bool = False,
+             review: bool = False) -> str:
     """The recommendation in words. ``window``: what the hold covers ('the lead
-    time (60 days)')."""
+    time (60 days)'); ``review``: stock is checked periodically, not continuously."""
     each = f" {unit}" if unit and unit != "each" else ""
     sl = level_text(level)
     if repairable:
@@ -217,8 +218,12 @@ def sentence(ans: dict, level: float, window: str, unit: str = "", repairable: b
                  "while failed ones are repaired (one site, every unit sent comes back).")
     else:
         words = f"Hold {_n(ans['hold'])}{each}: a {sl} chance of no stock-out over {window}."
-        if ans.get("reorder_at") is not None:
-            if ans["reorder_at"] >= ans["hold"]:
+        if ans.get("reorder_at") is not None and ans["hold"] > 0:
+            if review:
+                words += f" At each review, order back up to {_n(ans['hold'])}"
+                words += (f"; between reviews, reorder if usable stock falls to {_n(ans['reorder_at'])}."
+                          if ans["reorder_at"] < ans["hold"] else ".")
+            elif ans["reorder_at"] >= ans["hold"]:
                 words += " Order one for one: replace each as it's used."
             else:
                 words += f" Reorder when usable stock falls to {_n(ans['reorder_at'])}."

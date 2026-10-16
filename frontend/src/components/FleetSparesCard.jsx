@@ -5,6 +5,7 @@
 import { formatNumber } from "../format.js";
 import { money } from "../maintenanceForecast.js";
 import { CardHeader } from "./ui/Card.jsx";
+import ResultSummary from "./ui/ResultSummary.jsx";
 import SparesWhatIf from "./SparesWhatIf.jsx";
 import { SERVICE_LEVELS, fleetSparesCsv, levelText, overText, riskText, saveText } from "../sparesPlan.js";
 
@@ -49,7 +50,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
         {field("unit_cost", "Cost each")}
       </div>
       <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label className="maint-row" style={{ gap: "0.4rem", marginTop: 0 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
           <input type="checkbox" checked={!!sp.repairable} disabled={readOnly}
                  onChange={(e) => set("repairable", e.target.checked || null)} />
           Repairable: failed ones are repaired and come back
@@ -63,22 +64,23 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
       {answer && !ok && <p className="lib-date">{answer.summary || answer.reason}</p>}
       {ok && (
         <>
-          <p data-testid="fleet-spares-summary">{answer.summary}</p>
-          <div className="maint-scroll"><table className="lib-table">
-            <tbody>
-              <tr><th>Hold</th><td><b>{formatNumber(answer.hold)}</b>
-                {answer.hold_cost != null && <span className="lib-date"> ({money(answer.hold_cost)})</span>}</td></tr>
-              <tr><th>Reorder at</th><td>{answer.reorder_at == null ? "repair each one"
-                : answer.reorder_at >= answer.hold ? "one for one: replace each as it’s used" : formatNumber(answer.reorder_at)}</td></tr>
-              <tr><th>Expected use over {over}</th><td>≈ {formatNumber(answer.expected_demand, { sig: 2 })}</td></tr>
-              {answer.stock != null && (
-                <tr><th>With {formatNumber(answer.stock)} in stock</th>
-                  <td className={answer.below_reorder ? "maint-overdue" : undefined}>
-                    {riskText(answer.risk_at_stock)} chance of running out
-                    {answer.to_order > 0 ? `; order ${formatNumber(answer.to_order)}` : ""}</td></tr>
-              )}
-            </tbody>
-          </table></div>
+          <ResultSummary
+            sentence={<span data-testid="fleet-spares-summary">{answer.summary}</span>}
+            tone={answer.below_reorder ? "caveat" : "neutral"}
+            stats={[
+              { label: answer.repairable ? "Pool" : "Hold", value: formatNumber(answer.hold),
+                hint: answer.hold_cost != null ? money(answer.hold_cost) : undefined },
+              { label: "Reorder at",
+                value: answer.reorder_at == null ? "repair each"
+                  : !answer.review && answer.hold > 0 && answer.reorder_at >= answer.hold ? "one for one"
+                    : formatNumber(answer.reorder_at) },
+              { label: "Expected use", value: `≈ ${formatNumber(answer.expected_demand, { sig: 2 })}`, hint: `over ${over}` },
+              answer.stock != null && {
+                label: `Runs out with ${formatNumber(answer.stock)}`, value: riskText(answer.risk_at_stock),
+                hint: answer.to_order > 0 ? `order ${formatNumber(answer.to_order)}` : undefined,
+              },
+            ]}
+          />
           <SparesWhatIf curve={answer.risk_curve} over={over} initial={answer.hold} idPrefix="fleet" />
           <details>
             <summary className="lib-date">Stock to hold by {label.replace(/s$/i, "")}</summary>
@@ -92,7 +94,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
               </tbody>
             </table></div>
           </details>
-          <div className="maint-row">
+          <div style={{ marginTop: "0.6rem" }}>
             <button className="secondary" onClick={() => saveText(fleetSparesCsv(answer, { fleet: fleet.name, periodLabel: label }),
               fileName(fleet.name))}>Export spares plan (CSV)</button>
           </div>

@@ -101,7 +101,7 @@ export function ClassStocking({ data, name, serviceLevel, reviewDays, onOptions,
                   <td><b>{formatNumber(st.hold)}</b>
                     {st.hold_cost != null && <span className="lib-date"> ({money(st.hold_cost)})</span>}</td>
                   <td>{st.reorder_at == null ? <span className="lib-date">repair each</span>
-                    : st.reorder_at >= st.hold ? <span className="lib-date">one for one</span> : formatNumber(st.reorder_at)}</td>
+                    : !st.review_days && st.hold > 0 && st.reorder_at >= st.hold ? <span className="lib-date">one for one</span> : formatNumber(st.reorder_at)}</td>
                   <td>{formatNumber(s.usable_on_hand)}
                     {st.below_reorder && <span className="maint-overdue"> {st.repairable ? "short" : "reorder now"}</span>}</td>
                   <td className={st.risk_at_stock > 1 - st.service_level + 1e-9 ? "maint-overdue" : undefined}>

@@ -455,7 +455,7 @@ def _stocking(m: Maintenance, dist, units: list[dict], matrix: np.ndarray, rows:
             window = f"the lead time and review period ({_days(inp['window_days'])})"
         else:
             window = f"the lead time ({_days(inp['lead_time_days'])})"
-        words = spares.sentence(now, level, window, row["unit"], inp["repairable"])
+        words = spares.sentence(now, level, window, row["unit"], inp["repairable"], inp["review_days"] > 0)
         if inp["lead_time_basis"] == "assumed" and not inp["repairable"]:
             words += f" No lead time is set for this part: {DEFAULT_LEAD_DAYS} days assumed."
         row["stocking"] = {**inp, **now, "per_period": plan, "summary": words}
