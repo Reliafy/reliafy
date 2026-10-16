@@ -144,6 +144,13 @@ replacements that fail again (headline: say it as given); at_risk, positions by 
 not_forecast, positions with nothing fitted or no usage rate (a model by use needs counter readings); spares, each \
 replacement or critical part's demand per period and cumulative against usable stock (prob_covered); budget, from \
 the class's costs. Needs the class's fitted model.
+- Spares stock levels: each class_forecast spare has stocking: hold (enough for a service_level chance of no \
+stock-out over the lead time plus review_days), reorder_at (the lead time alone), risk_at_stock and expected_short \
+at today's usable stock, hold_cost from the part's unit_cost; summary says it in words. maintenance_get kind \
+spares_plan adds the levels for a window starting each period, and risk_curve ([stock, chance of running out]) to \
+answer "what if we hold 4?". Read off the simulated demand; one site. Set a part's lead_time_days and service_level \
+(or repairable with turnaround_days: the pool covers the repair turnaround) with maintenance_parts update; without \
+a lead time 30 days is assumed and said.
 - maintenance_topology generate_rbd, position_id = a system position: a reliability block diagram from the \
 positions inside it (connections wire the blocks, redundancy groups become k of n, each block takes its class's \
 fitted model or a placeholder, listed in notes). It's saved as a normal RBD: rbd_analysis analyze analyses it.

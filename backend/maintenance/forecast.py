@@ -17,6 +17,11 @@ quantity per job, so the same simulation gives each part's demand as a
 distribution per period, against its stock. Class costs price the failures, and
 the class's scheduled replacements falling due price the planned work.
 
+Each part also gets stock levels (#31, ``services.spares``): how many to hold for
+a service level over its lead time plus the review period, when to reorder, and
+the chance today's stock runs out, read off the raw simulated demand over those
+windows (a second run of the same engine that keeps every failure's time).
+
 Nothing is stored: it's worked out on read, and kept briefly for repeat reads
 until the workspace's next event (fitments, close-outs, manual readings) or a
 few minutes (a feed's readings arrive without one).
@@ -35,6 +40,7 @@ import numpy as np
 
 from backend.maintenance import service as svc
 from backend.maintenance.service import Invalid, Maintenance, class_id
+from backend.services import spares
 
 PERIODS = ("month", "quarter", "year")
 MAX_PERIODS = 120
@@ -43,6 +49,8 @@ MAX_PARTS = 25  # parts tallied per class (the replacement parts and critical sp
 MAX_RANKED = 100  # positions listed in at_risk
 RATE_WINDOW_DAYS = 365  # counter readings the usage rate is estimated from
 LEVEL = 0.8  # P10–P90
+DEFAULT_LEAD_DAYS = 30  # a part's lead time when it has none (said so: "assumed")
+MAX_LEAD_DAYS = spares.MAX_LEAD_DAYS
 CACHE_SECONDS = 300
 _CACHE: OrderedDict = OrderedDict()
 _CACHE_SIZE = 32
@@ -177,8 +185,24 @@ def _summary(values: np.ndarray, qs=(0.1, 0.5, 0.9)) -> dict:
     return out
 
 
-def class_forecast(m: Maintenance, position_class, period: str = "month", periods=12) -> dict:
-    """The class's failure forecast: see the module docstring. Cached briefly."""
+def _stocking_options(service_level, lead_time_days, review_days) -> dict:
+    """The request's what-ifs for the spares stock levels: a service level and a
+    lead time for every part (each part's own, else the defaults, otherwise), and
+    the review period."""
+    try:
+        return {"service_level": spares.service_level(service_level),
+                "lead_time_days": spares.duration(lead_time_days, "lead time (days)", MAX_LEAD_DAYS),
+                "review_days": spares.duration(review_days, "review period (days)", MAX_LEAD_DAYS) or 0.0}
+    except spares.SparesError as exc:
+        raise Invalid(str(exc)) from None
+
+
+def class_forecast(m: Maintenance, position_class, period: str = "month", periods=12, service_level=None,
+                   lead_time_days=None, review_days=None) -> dict:
+    """The class's failure forecast: see the module docstring. Cached briefly.
+    service_level, lead_time_days and review_days set the spares' stock levels
+    (#31): see :func:`_stocking`."""
+    opts = _stocking_options(service_level, lead_time_days, review_days)
     period = (period or "month").strip().lower()
     if period not in PERIODS:
         raise Invalid(f"The period is one of {', '.join(PERIODS)}.")
@@ -200,13 +224,14 @@ def class_forecast(m: Maintenance, position_class, period: str = "month", period
     store_key = getattr(m.s, "_forecast_key", None)
     if store_key is None:
         store_key = m.s._forecast_key = uuid.uuid4().hex
-    key = (store_key, m.org, m.s.event_count(m.org), m.today(), name.lower(), period, periods)
+    key = (store_key, m.org, m.s.event_count(m.org), m.today(), name.lower(), period, periods,
+           *sorted(opts.items()))
     now = time.monotonic()
     with _LOCK:
         hit = _CACHE.get(key)
         if hit and now - hit[0] < CACHE_SECONDS:
             return copy.deepcopy(hit[1])
-    out = _forecast(m, name, period, periods, days)
+    out = _forecast(m, name, period, periods, days, opts)
     with _LOCK:
         _CACHE[key] = (now, out)
         while len(_CACHE) > _CACHE_SIZE:
@@ -214,7 +239,7 @@ def class_forecast(m: Maintenance, position_class, period: str = "month", period
     return copy.deepcopy(out)
 
 
-def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float) -> dict:
+def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float, opts: dict | None = None) -> dict:
     from backend.maintenance.loop import FEW_FAILURES
     from backend.services import fleet
     from backend.services.strategy import StrategyError, _model_from_params
@@ -274,8 +299,8 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float)
         notes.append("Positions without a usage rate aren't forecast (not counted as no failures): record "
                      f"readings on their {unit} counter.")
 
-    spares, matrix = _spare_columns(m, units)
-    weights = np.column_stack([np.ones(len(units)), matrix]) if units else np.zeros((0, 1 + len(spares)))
+    spares_cols, matrix = _spare_columns(m, units)
+    weights = np.column_stack([np.ones(len(units)), matrix]) if units else np.zeros((0, 1 + len(spares_cols)))
     if units:
         ages = np.array([u["age"] for u in units], dtype=float)
         rates = np.array([u["rate"] for u in units], dtype=float)
@@ -307,7 +332,7 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float)
     ranked.sort(key=lambda r: (-r["prob_next_period"], r["position"]["name"].lower()))
 
     spare_rows = []
-    for j, entry in enumerate(spares, start=1):
+    for j, entry in enumerate(spares_cols, start=1):
         demand = tally[:, :, j]
         cum = np.cumsum(demand, axis=1)
         have = float(entry["usable_on_hand"])
@@ -340,11 +365,101 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float)
                      "replacement can fail again."),
            "per_period": per_period, "at_risk": ranked[:MAX_RANKED], "at_risk_truncated": len(ranked) > MAX_RANKED,
            "spares": spare_rows, "budget": _budget(m, node, positions, failures, starts, periods)}
+    out["stocking"] = _stocking(m, dist, units, matrix, spare_rows, opts or _stocking_options(None, None, None),
+                                periods, days, starts)
     if out["budget"] and out["budget"].get("planned"):
         notes.append("Planned replacements aren't taken off the failure count (each failure is replaced like for "
                      "like), so with a replacement plan in place the failures err high.")
     out["notes"] = notes
     return out
+
+
+STOCKING_NOTE = (
+    "Stock levels are read off the simulated demand itself, not a normal approximation. Hold covers each part's "
+    "lead time plus the review period at its service level; reorder at covers the lead time alone. Usable stock in "
+    "every store counts as one stock: a single site. A repairable part's pool covers its repair turnaround (one "
+    "repair shop, every unit sent comes back).")
+
+
+def _days(v: float) -> str:
+    return f"{v:g} day{'s' if v != 1 else ''}"
+
+
+def _part_stocking(node: dict, opts: dict) -> dict:
+    """One part's stock-level inputs, and where each came from: the request (a
+    what-if for every part), the part's own, or the default."""
+    if opts["service_level"] is not None:
+        level, level_basis = opts["service_level"], "request"
+    elif node.get("service_level") is not None:
+        level, level_basis = float(node["service_level"]), "part"
+    else:
+        level, level_basis = spares.DEFAULT_SERVICE_LEVEL, "default"
+    if opts["lead_time_days"] is not None:
+        lead, lead_basis = opts["lead_time_days"], "request"
+    elif node.get("lead_time_days") is not None:
+        lead, lead_basis = float(node["lead_time_days"]), "part"
+    else:
+        lead, lead_basis = float(DEFAULT_LEAD_DAYS), "assumed"
+    turnaround = node.get("turnaround_days")
+    repairable = bool(node.get("repairable")) and turnaround is not None
+    review = float(opts["review_days"] or 0)
+    return {"part_settings": {k: node.get(k) for k in svc.PART_STOCKING},
+            "service_level": level, "service_level_basis": level_basis, "lead_time_days": lead,
+            "lead_time_basis": lead_basis, "review_days": review, "repairable": repairable,
+            "turnaround_days": float(turnaround) if turnaround is not None else None,
+            "window_days": float(turnaround) if repairable else lead + review}
+
+
+def _demand(events: dict, start: float, length: float, weights: np.ndarray):
+    """One part's simulated demand over ``length`` periods from ``start``."""
+    return spares.Demand.from_samples(spares.window_demand(events, start, start + length, weights)[:, 0])
+
+
+def _stocking(m: Maintenance, dist, units: list[dict], matrix: np.ndarray, rows: list[dict], opts: dict,
+              periods: int, days: float, starts: list[str]) -> dict:
+    """Each spare's stock levels (#31), on its row as ``stocking``: hold N, reorder
+    at, the risk at today's usable stock, what holding N costs, a risk curve for
+    any stock, and the same for a window starting at each period. Returns what
+    applies to them all."""
+    from backend.services import fleet
+    from backend.services.strategy import StrategyError
+
+    meta = {"service_level": opts["service_level"], "default_service_level": spares.DEFAULT_SERVICE_LEVEL,
+            "lead_time_days": opts["lead_time_days"], "default_lead_time_days": DEFAULT_LEAD_DAYS,
+            "review_days": opts["review_days"], "note": STOCKING_NOTE}
+    if not rows or not units:
+        return meta
+    inputs = [_part_stocking(m.s.node(m.org, r["part"]["id"]) or {}, opts) for r in rows]
+    ages = np.array([u["age"] for u in units], dtype=float)
+    rates = np.array([u["rate"] for u in units], dtype=float)
+    horizon = (periods - 1) + max(i["window_days"] for i in inputs) / days
+    try:
+        events = fleet._renewal_events(dist, ages, rates, horizon)
+    except StrategyError as exc:
+        return {**meta, "error": str(exc)}
+    meta["sims"] = events["sims"]
+    for j, (row, inp) in enumerate(zip(rows, inputs)):
+        weights = matrix[:, j:j + 1]
+        level = inp["service_level"]
+        protect = [_demand(events, k, inp["window_days"] / days, weights) for k in range(periods)]
+        lead = None if inp["repairable"] else [_demand(events, k, inp["lead_time_days"] / days, weights)
+                                               for k in range(periods)]
+        now = spares.answer(protect[0], lead[0] if lead else None, row["usable_on_hand"], level,
+                            row["part"].get("unit_cost"))
+        plan = [{"start": starts[k], "hold": protect[k].quantile(level),
+                 "reorder_at": lead[k].quantile(level) if lead else None,
+                 "expected_demand": protect[k].mean} for k in range(periods)]
+        if inp["repairable"]:
+            window = f"the repair turnaround ({_days(inp['window_days'])})"
+        elif inp["review_days"]:
+            window = f"the lead time and review period ({_days(inp['window_days'])})"
+        else:
+            window = f"the lead time ({_days(inp['lead_time_days'])})"
+        words = spares.sentence(now, level, window, row["unit"], inp["repairable"], inp["review_days"] > 0)
+        if inp["lead_time_basis"] == "assumed" and not inp["repairable"]:
+            words += f" No lead time is set for this part: {DEFAULT_LEAD_DAYS} days assumed."
+        row["stocking"] = {**inp, **now, "per_period": plan, "summary": words}
+    return meta
 
 
 def _headline(name, expected, interval, periods, word, n) -> str:
@@ -385,10 +500,32 @@ def _budget(m: Maintenance, node: dict, positions, failures: np.ndarray, starts:
     }
 
 
-def short_next_month(m: Maintenance) -> list[dict]:
-    """For the daily digest: critical spares whose expected use next month, from
-    their class's forecast, is more than is usable in stock."""
-    out = []
+def without_plans(fc: dict) -> dict:
+    """A class forecast with each spare's stock levels for now only: no plan per
+    period or risk curve (those are in :func:`spares_plan`)."""
+    out = dict(fc)
+    drop = ("per_period", "risk_curve")
+    out["spares"] = [{**s, "stocking": {k: v for k, v in s["stocking"].items() if k not in drop}}
+                     if s.get("stocking") else s for s in fc["spares"]]
+    return out
+
+
+def spares_plan(fc: dict) -> dict:
+    """The stocking plan from a class forecast: each spare's stock levels now and
+    for a window starting at each period, with its risk curve."""
+    keep = ("part", "unit", "critical", "roles", "positions", "per_job", "usable_on_hand", "min_on_hand",
+            "use_instead")
+    return {**{k: fc[k] for k in ("position_class", "today", "period", "periods", "horizon_end")},
+            "stocking": fc.get("stocking"),
+            "parts": [{**{k: s.get(k) for k in keep}, "stock_by_location": s.get("stock"),
+                       **(s.get("stocking") or {}), "demand_per_period": s["per_period"]} for s in fc["spares"]]}
+
+
+def digest_spares(m: Maintenance) -> tuple[list[dict], list[dict]]:
+    """For the daily digest, from each class's forecast: critical spares whose
+    expected use next month is more than is usable in stock, and parts with a
+    lead time set whose usable stock is below the reorder point it needs (#31)."""
+    short, below = [], []
     for c in m.position_classes():
         if not c.get("model"):
             continue
@@ -399,6 +536,17 @@ def short_next_month(m: Maintenance) -> list[dict]:
         for s in fc["spares"]:
             need = s["per_period"][0]["mean"]
             if s["critical"] and need > s["usable_on_hand"]:
-                out.append({"position_class": c["position_class"], "part": s["part"], "expected": need,
-                            "failures": fc["expected"], "usable_on_hand": s["usable_on_hand"]})
-    return out
+                short.append({"position_class": c["position_class"], "part": s["part"], "expected": need,
+                              "failures": fc["expected"], "usable_on_hand": s["usable_on_hand"]})
+            st = s.get("stocking")
+            if st and st["lead_time_basis"] == "part" and st.get("below_reorder"):
+                below.append({"position_class": c["position_class"], "part": s["part"],
+                              "usable_on_hand": s["usable_on_hand"], "reorder_at": st["reorder_at"],
+                              "hold": st["hold"], "service_level": st["service_level"],
+                              "lead_time_days": st["lead_time_days"], "repairable": st["repairable"]})
+    return short, below
+
+
+def short_next_month(m: Maintenance) -> list[dict]:
+    """Critical spares whose expected use next month is more than is usable in stock."""
+    return digest_spares(m)[0]

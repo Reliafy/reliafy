@@ -17,6 +17,22 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
   await expectHealthy(page, problems, { label: "saved model", chart: true });
 });
 
+// #31: a class with a fitted model and a spare with a lead time shows how many to
+// hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
+test("a class's spares stock levels and the what-if", async ({ page, problems }) => {
+  await open(page, `/maintenance/classes/${encodeURIComponent("Smoke test pump")}`);
+  const stocking = page.getByTestId("spares-stocking");
+  await expect(stocking.getByRole("heading", { name: "Stock to hold" })).toBeVisible({ timeout: 30_000 });
+  const row = stocking.getByRole("row", { name: /SMOKE-PUMP/ });
+  await expect(row).toContainText("60 days lead time at 95%");
+  await expect(page.getByTestId("spares-summary")).toContainText(/^Hold \d+: a 95% chance of no stock-out/);
+  await page.getByLabel("If we hold").fill("0");
+  await expect(page.getByTestId("spares-whatif")).toContainText("chance of running out over the lead time");
+  await stocking.getByLabel("Service level").selectOption("0.99");
+  await expect(row).toContainText("at 99%");
+  await expectHealthy(page, problems, { label: "class stock levels", chart: true });
+});
+
 // #434, the first run: a CSV saved without a header row. Its first row is
 // all numbers, so it's read as data (col 1, col 2) and said so; the column of
 // decimals can't be made the count; the fit is saved, with its data, in one
