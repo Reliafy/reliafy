@@ -455,6 +455,47 @@ def test_a_class_forecast_over_mcp(env):
     assert "class_forecast" in guide["guide"]
 
 
+def test_spares_stock_levels_over_mcp(env):
+    # #31: set a part's lead time with maintenance_parts update, read hold N and the
+    # plan with maintenance_get class_forecast / spares_plan.
+    from backend import mcp_server
+    from backend.maintenance.service import Maintenance
+    from backend.routers import maintenance as router
+
+    assert "maintenance_get.spares_plan" in mcp_server.HEAVY_TOOLS
+    _fitted_class()
+    m = Maintenance(router._store, UID, UID)
+    positions = [p["id"] for p in m.s.nodes(UID, "Position")]
+
+    async def flow(client):
+        part = _ok(await _do(client, "maintenance_parts", "create", part_number="PP-1", name="Pool pump",
+                             unit_cost=500))
+        for pid in positions:
+            _ok(await _do(client, "maintenance_parts", "add_to_position", position_id=pid, part_id=part["id"],
+                          role="replacement"))
+        updated = _ok(await _do(client, "maintenance_parts", "update", part_id=part["id"], lead_time_days=90,
+                                service_level=0.9))
+        brief = _ok(await _get(client, "class_forecast", "Pool pump"))
+        plan = _ok(await _get(client, "spares_plan", "Pool pump", period="quarter", periods=4, service_level=0.99,
+                              review_days=30))
+        bad = await _get(client, "spares_plan", "Pool pump", service_level=5)
+        wrong = await _do(client, "maintenance_parts", "update", part_id=part["id"], position_id=positions[0])
+        guide = _ok(await client.call_tool("maintenance_guide", {"topic": "decide"}))
+        return updated, brief, plan, bad, wrong, guide
+
+    updated, brief, plan, bad, wrong, guide = _session(env["token"], flow)
+    assert updated["lead_time_days"] == 90 and updated["service_level"] == 0.9
+    st = brief["spares"][0]["stocking"]
+    assert st["lead_time_basis"] == "part" and st["service_level"] == 0.9 and st["hold"] >= 0
+    assert "per_period" not in st and "risk_curve" not in st and st["summary"].startswith("Hold ")
+    part = plan["parts"][0]
+    assert plan["period"] == "quarter" and part["service_level"] == 0.99 and part["window_days"] == 120
+    assert len(part["per_period"]) == 4 and part["risk_curve"] and part["hold_cost"] == 500 * part["hold"]
+    assert bad.is_error and "service level" in bad.content[0].text
+    assert wrong.is_error and "doesn't take position_id" in wrong.content[0].text
+    assert "spares_plan" in guide["guide"] and "lead_time_days" in guide["guide"]
+
+
 def test_reading_a_class_forecast_isnt_pro_only(free_env):
     # Like plan_economics: only fitting the class's model is Pro.
     _fitted_class()

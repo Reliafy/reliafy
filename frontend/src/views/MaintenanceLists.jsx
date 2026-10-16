@@ -35,6 +35,7 @@ import {
   ClassPicker, ItemClassesSection, KindFilters, PartKindModal, useKinds,
 } from "../components/MaintenanceItemClasses.jsx";
 import { ConditionsCard, ConditionsSection } from "../components/MaintenanceConditions.jsx";
+import { ClassStocking } from "../components/MaintenanceStocking.jsx";
 import Plot from "../components/Plot.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { ACCENT, INK } from "../plotTheme.js";
@@ -511,12 +512,14 @@ function ForecastCard({ name }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [allRisk, setAllRisk] = useState(false);
+  // The spares' stock levels (#31): a service level for every part, and how often stock is checked.
+  const [stocking, setStocking] = useState({ serviceLevel: "", reviewDays: "" });
   const load = useCallback(() => {
     setError(null);
-    getClassForecast(name, { period, periods })
+    getClassForecast(name, { period, periods, ...stocking })
       .then(setData).catch((e) => { setData(null); setError(e.message); });
-  }, [name, period, periods]);
-  useEffect(() => { load(); }, [name]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [name, period, periods, stocking]);
+  useEffect(() => { load(); }, [name, stocking]);  // eslint-disable-line react-hooks/exhaustive-deps
   const most = FORECAST_PERIODS.find((p) => p.id === period)?.most || 120;
   const shown = data?.period || period;  // the period the answer shown is in
   const horizon = data ? horizonText(data.periods, data.period) : "";
@@ -631,6 +634,8 @@ function ForecastCard({ name }) {
               </tbody>
             </table></div>
           )}
+          <ClassStocking data={data} name={name} serviceLevel={stocking.serviceLevel} reviewDays={stocking.reviewDays}
+                         onOptions={(o) => setStocking((s) => ({ ...s, ...o }))} onChanged={load} />
 
           <h3 className="maint-sub">Budget</h3>
           {!budget ? (

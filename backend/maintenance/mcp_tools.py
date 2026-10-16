@@ -45,7 +45,7 @@ _ORIGINAL: dict = {}
 PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
 # Calls that can take a while: they share the MCP server's heavy-call slots.
 HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_workspace.import_history",
-               "maintenance_get.plan_economics", "maintenance_get.class_forecast",
+               "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema")
 
 
@@ -106,8 +106,11 @@ GET_KINDS: Table = {
         (with interval) a what-if, each with its net present cost over horizon_years (default 10) at
         discount_rate (default 0.07). Needs the class's fitted model and costs. unit: days, weeks, months
         (default), years."""),
-    "class_forecast": ("id", "period periods", """id = a position class's name. Its failure forecast from the
-        register (guide topic decide)."""),
+    "class_forecast": ("id", "period periods service_level lead_time_days review_days", """id = a position
+        class's name. Its failure forecast from the register, with each spare's stock levels (guide topic
+        decide)."""),
+    "spares_plan": ("id", "period periods service_level lead_time_days review_days", """id = a position class's
+        name. Each spare's stock levels per period, and the risk at any stock."""),
     "impact": ("id", "", """id = a position. If it fails, what loses its supply downstream (through
         connections), and whether redundancy covers it."""),
     "photo_link": ("id", "", """id = a link_id from maintenance_attachments photo_link. The photos added
@@ -327,6 +330,10 @@ PARTS: Table = {
         position), component (default: used in its maintenance) or consumable. quantity: per job (default 1).
         critical true: a critical spare, min_on_hand the least to keep (default one job's worth). notes:
         compatibility ('fits from serial 4000 on'). Returns the parts list."""),
+    "update": ("part_id", "name manufacturer unit unit_cost notes lead_time_days service_level repairable "
+               "turnaround_days", """Change a catalogue part. For its stock levels: lead_time_days to replenish,
+        service_level (chance of no stock-out to plan for, e.g. 0.95), repairable with turnaround_days (repaired
+        and sent back)."""),
     "update_on_position": ("listing_id", "role quantity critical min_on_hand notes", """Change a parts-list entry
         (ids in the position's parts_list); critical false drops the minimum. For a different part, remove it and
         add the other."""),
@@ -590,7 +597,14 @@ def register() -> None:
                         unit: Literal["days", "weeks", "months", "years"] | None = None,
                         horizon_years: float | None = None, discount_rate: float | None = None,
                         period: Literal["month", "quarter", "year"] | None = None,
-                        periods: int | None = None) -> dict[str, Any]:
+                        periods: int | None = None,
+                        service_level: Annotated[float | None, Field(description=(
+                            "Chance of no stock-out for every spare (default: each part's own, else 0.95)."))]
+                        = None,
+                        lead_time_days: Annotated[float | None, Field(description=(
+                            "A lead time for every spare (default: each part's own, else 30)."))] = None,
+                        review_days: Annotated[float | None, Field(description=(
+                            "How often stock is checked (default 0)."))] = None) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance_overview, maintenance_list and the records themselves."""
         m = m_for(ctx)
@@ -603,8 +617,12 @@ def register() -> None:
         if kind == "plan_economics":
             return run(loop.economics, m, rid, interval, _d(unit, "months"), _d(horizon_years, 10),
                        _d(discount_rate, 0.07))
-        if kind == "class_forecast":
-            return run(forecast.class_forecast, m, rid, _d(period, "month"), _d(periods, 12))
+        if kind in ("class_forecast", "spares_plan"):
+            def go():
+                fc = forecast.class_forecast(m, rid, _d(period, "month"), _d(periods, 12), service_level,
+                                             lead_time_days, review_days)
+                return forecast.spares_plan(fc) if kind == "spares_plan" else forecast.without_plans(fc)
+            return run(go)
         if kind == "manufacturer_match":
             return run(m.match_manufacturer, text)
         read = {"position": m.position, "item": m.item, "work_order": m.work_order, "location": m.location,
@@ -1046,7 +1064,9 @@ def register() -> None:
                           relation: Literal["superseded_by", "interchangeable"] | None = None,
                           position_id: str | None = None, role: PartRole | None = None,
                           critical: bool | None = None, min_on_hand: float | None = None,
-                          listing_id: str | None = None) -> dict[str, Any]:
+                          listing_id: str | None = None, lead_time_days: float | None = None,
+                          service_level: float | None = None, repairable: bool | None = None,
+                          turnaround_days: float | None = None) -> dict[str, Any]:
         """The parts catalogue (spares, and makes and models of equipment), stock at locations, and each
         position's parts list (its bill of materials, with critical spares). Supersession and
         interchangeable parts belong to the catalogue (link), not the parts list."""
@@ -1054,6 +1074,11 @@ def register() -> None:
         if action == "create":
             return run(m.create_part, part_number, name, manufacturer or "", _d(unit, "each"), unit_cost,
                        notes or "", item_class_id, manufacturer_id)
+        if action == "update":
+            changes = {"name": name, "manufacturer": manufacturer, "unit": unit, "unit_cost": unit_cost,
+                       "notes": notes, "lead_time_days": lead_time_days, "service_level": service_level,
+                       "repairable": repairable, "turnaround_days": turnaround_days}
+            return run(m.update_part, part_id, **{k: v for k, v in changes.items() if v is not None})
         if action == "stock":
             return run(m.adjust_stock, part_id, location_id, quantity, reason or "", on)
         if action == "reorder":

@@ -95,7 +95,8 @@ def get_fleet(
     fleet, via_share = access_service.fetch_readable(session, "fleets", Fleet, fleet_id, ctx)
     if fleet is None or fleet.id in ctx.hidden:
         return JSONResponse(status_code=404, content={"detail": "Fleet not found."})
-    forecast = fleet_service.compute(session, fleet, [*ctx.read_owners, fleet.owner_id])
+    forecast = fleet_service.compute(session, fleet, [*ctx.read_owners, fleet.owner_id],
+                                     spares_opts=(fleet.settings or {}).get("spares"))
     workspace_changes.note_forecast(session, fleet, forecast)
     payload = {**_summary(fleet, ctx, forecast), "items": fleet.items, "forecast": forecast}
     if via_share:
@@ -173,7 +174,8 @@ def put_items(
         return JSONResponse(status_code=409, content={"detail": access_service.CONFLICT_MSG, "code": "conflict"})
     access_service.stamp_editor(session, "fleets", fleet_id, ctx)
     fleet.updated_by = access_service.editor_of(ctx)
-    forecast = fleet_service.compute(session, fleet, [*ctx.read_owners, fleet.owner_id])
+    forecast = fleet_service.compute(session, fleet, [*ctx.read_owners, fleet.owner_id],
+                                     spares_opts=(fleet.settings or {}).get("spares"))
     workspace_changes.note_forecast(session, fleet, forecast)
     return JSONResponse(content={**_summary(fleet, ctx, forecast), "items": fleet.items, "forecast": forecast})
 

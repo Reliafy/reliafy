@@ -2,8 +2,8 @@
 // seeds Maintenance or an RBD simulation run, so make one of each here (a
 // position from the sample RCM study, a location, an item fitted to the
 // position, a work order, a part, the starter item classes, a position class
-// with a fitted life model, and one availability run) through the API. Skipped
-// against a deployed site.
+// with a fitted life model and a spare with a lead time, and one availability
+// run) through the API. Skipped against a deployed site.
 import { request } from "@playwright/test";
 
 export default async function seed(config) {
@@ -34,6 +34,8 @@ export default async function seed(config) {
     const pump = "Smoke test pump";
     const spare = await post(`${m}/parts`, { part_number: "SMOKE-PUMP", name: "Smoke test pump", unit_cost: 900 });
     await post(`${m}/parts/${spare.id}/stock`, { location_id: location.id, delta: 1, reason: "smoke test" });
+    // A lead time, so the forecast's stock levels (#31) go by the part's own.
+    await patch(`${m}/parts/${spare.id}`, { lead_time_days: 60 });
     for (const [i, lives] of [[520, 610], [470, 690], [560, 580]].entries()) {
       const p = await post(`${m}/positions`, { name: `Smoke pump ${i + 1}`, position_class: pump });
       let day = 1500;

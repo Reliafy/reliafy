@@ -1141,6 +1141,29 @@ def stock_id(part_id: str, location_id: str) -> str:
     return f"stock-{part_id[:12]}-{location_id[:12]}"
 
 
+PART_STOCKING = ("lead_time_days", "service_level", "repairable", "turnaround_days")
+
+
+def _stocking_fields(changes: dict) -> dict:
+    """A part's stock-level settings (#31) from an update, each only when given (null
+    clears it): its replenishment lead time and target service level, and whether
+    it's repaired and sent back (repairable, with the repair turnaround)."""
+    from backend.services import spares
+
+    out = {}
+    try:
+        for key, what in (("lead_time_days", "lead time (days)"), ("turnaround_days", "repair turnaround (days)")):
+            if key in changes:
+                out[key] = spares.duration(changes[key], what, spares.MAX_LEAD_DAYS)
+        if "service_level" in changes:
+            out["service_level"] = spares.service_level(changes["service_level"])
+    except spares.SparesError as exc:
+        raise Invalid(str(exc)) from None
+    if "repairable" in changes and changes["repairable"] is not None:
+        out["repairable"] = bool(changes["repairable"])
+    return out
+
+
 def _part_created(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Part", {k: p.get(k, "") for k in ("part_number", "name", "manufacturer", "unit", "notes")}
                | {"unit_cost": p.get("unit_cost"), "created": p["on"], "superseded_by": None})
@@ -2237,6 +2260,7 @@ class Maintenance:
                if k in ("name", "manufacturer", "unit", "notes") and v is not None}
         if "unit_cost" in changes:
             out["unit_cost"] = self._amount(changes["unit_cost"], "unit cost")
+        out.update(_stocking_fields(changes))
         if out:
             self._emit("part.updated", {"id": part_id, "changes": out})
         return self.part(part_id)
@@ -2320,6 +2344,7 @@ class Maintenance:
                 critical_short = critical_short or self._listing_view(listing)["short"]
         return {
             "id": part_id, **{k: pt.get(k) for k in ("part_number", "name", "manufacturer", "unit", "unit_cost", "notes")},
+            **{k: pt.get(k) for k in PART_STOCKING},
             "superseded_by": by and {"id": by["id"], "part_number": by["part_number"], "name": by["name"]},
             "interchangeable": [{"id": a["id"], "part_number": a["part_number"], "name": a["name"]} for a in alike],
             "stock": locs, "on_hand": on_hand,

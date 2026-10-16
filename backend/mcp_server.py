@@ -5889,17 +5889,26 @@ def fleet_forecast(
     item_probabilities: Annotated[bool, Field(description=(
         "First-failures forecasts: add each listed item's chance of failing by the end of every period "
         "(probability_by_period), for 'which items are at risk, and when'."))] = False,
+    spares: Annotated[dict[str, Any] | None, Field(description=(
+        "How many replacement parts to hold, in the fleet's periods: {lead_time, service_level? (default 0.95), "
+        "review?, per_failure?, stock?, unit_cost?, repairable? with turnaround?}. Default: the fleet's saved "
+        "spares settings."))] = None,
 ) -> dict[str, Any]:
     """A fleet's live failure forecast: expected failures over the horizon with a P10-P90
     range, per period and per item (the top 20 unless include_items; item_probabilities adds each item's chance by
     period); regression and ALT fleets at each item's covariates or stress; recurrent fleets count every repeat
-    failure. Pro."""
+    failure. spares adds how many to hold for a lead time and service level. Pro."""
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     fleet = fleet_service.get_fleet(db, fleet_id, owners)
     if fleet is None:
         raise ToolError("Fleet not found.")
-    forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id], item_periods=item_probabilities)
+    try:
+        opts = fleet_service._clean_spares({**((fleet.settings or {}).get("spares") or {}), **(spares or {})})
+    except fleet_service.FleetValidationError as exc:
+        raise ToolError(str(exc)) from None
+    forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id], item_periods=item_probabilities,
+                                     spares_opts=opts)
     names = {it.get("id"): it.get("name") for it in fleet.items or []}
     items = [{"name": names.get(r.get("id")), **r} for r in forecast.get("per_item") or []]
     forecast = {**forecast, "per_item": items}

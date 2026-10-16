@@ -40,6 +40,7 @@ from backend.services import access
 from backend.services import alt as alt_service
 from backend.services import models as models_service
 from backend.services import recurrent as recurrent_service
+from backend.services import spares
 from backend.services.strategy import _model_from_params, StrategyError
 from backend.units import unit_in_text
 
@@ -151,6 +152,10 @@ def _clean_settings(settings) -> dict:
         value = _optional_number(settings.get(key), f"The warranty limit ({what})")
         if value is not None:
             out[key] = value
+    # #31: the replacement part's spares question, only when asked.
+    spares_settings = _clean_spares(settings.get("spares"))
+    if spares_settings:
+        out["spares"] = spares_settings
     return out
 
 
@@ -368,16 +373,18 @@ def replace_items(db, fleet_id: str, settings, items, owner_id: str,
 
 # ---- Forecast --------------------------------------------------------------------
 
-def compute(db, fleet: Fleet, owners, *, item_periods: bool = False) -> dict:
+def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts: dict | None = None) -> dict:
     """The live forecast for a fleet (never stored).
 
     ``item_periods`` adds each item's cumulative chance of failing by the end
-    of every period (first-failures forecasts only)."""
+    of every period (first-failures forecasts only). ``spares_opts`` (the
+    fleet's spares settings, or a what-if) adds ``spares``: how many of the
+    replacement part to hold (#31)."""
     kind = fleet.model_kind
     if kind == "recurrent":
-        return _compute_recurrent(db, fleet, owners)
+        return _compute_recurrent(db, fleet, owners, spares_opts)
     if kind == "alt":
-        return _compute_covariate(db, fleet, owners, None, item_periods)
+        return _compute_covariate(db, fleet, owners, None, item_periods, spares_opts)
     # "life" or "regression": a saved life model. Its own fit decides which
     # forecast runs, so a fleet stored as "life" on a model that is now a
     # regression model (or the reverse) still forecasts correctly.
@@ -387,7 +394,7 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False) -> dict:
                 "reason": "The linked life model no longer exists."}
     results = model.results or {}
     if results.get("kind") == "regression":
-        return _compute_covariate(db, fleet, owners, model, item_periods)
+        return _compute_covariate(db, fleet, owners, model, item_periods, spares_opts)
     if not results.get("params"):
         return {"status": "stale",
                 "reason": "The linked model can't be evaluated as a plain distribution."}
@@ -444,6 +451,8 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False) -> dict:
     for row, (rate, basis) in zip(out["per_item"], chosen):
         row["rate_used"] = rate
         row["rate_basis"] = basis  # "estimated" | "manual" | "default"
+    if spares_opts:
+        out["spares"] = _spares_or_reason(spares_opts, method, dist, ages, rates, periods, base["period_label"])
     return out
 
 
@@ -537,7 +546,7 @@ def _covariate_rows(fields: list, settings: dict, items: list) -> list[dict]:
     return rows
 
 
-def _compute_covariate(db, fleet: Fleet, owners, model, item_periods: bool) -> dict:
+def _compute_covariate(db, fleet: Fleet, owners, model, item_periods: bool, spares_opts=None) -> dict:
     """The live first-failure forecast of a regression or ALT fleet."""
     live, fields, info = _live_covariate_model(db, fleet, owners, model)
     if live is None:
@@ -604,6 +613,9 @@ def _compute_covariate(db, fleet: Fleet, owners, model, item_periods: bool) -> d
         row["covariates"] = values
         row["rate_used"] = rate
         row["rate_basis"] = basis
+    if spares_opts:
+        out["spares"] = _spares_or_reason(spares_opts, "single", live, ages, rates, periods, base["period_label"],
+                                          Z=Z)
     return out
 
 
@@ -837,6 +849,177 @@ def _forecast_renewals(dist, ages, uses, rates, periods, items, *, weights=None)
     return out
 
 
+_EVENT_SIMS = 4000
+_MAX_EVENT_DRAWS = 4_000_000  # items × runs
+_MAX_EVENTS = 20_000_000
+
+
+def _renewal_events(dist, ages, rates, horizon: float) -> dict:
+    """Every failure, with renewals, in a simulation over ``horizon`` periods:
+    each failure's run (``sim``), time in periods from now (``t``, ascending) and
+    item (``item``), for demand over any window (the spares stock levels, #31).
+
+    Each item draws from its own seeded stream, a fixed number of draws per
+    round, so a longer horizon only adds failures after the shorter one's: the
+    same failures fall in the same window whatever the horizon (a longer lead
+    time on one part leaves the others' answers as they were)."""
+    n = len(ages)
+    sims = max(500, min(_EVENT_SIMS, _MAX_EVENT_DRAWS // max(n, 1)))
+    runs, times, which, total = [], [], [], 0
+    for i in range(n):
+        a, rate = float(ages[i]), float(rates[i])
+        if rate <= 0 or horizon <= 0:
+            continue
+        use = rate * horizon
+        rng = np.random.default_rng([12345, i])
+        sf_a = max(float(dist.sf(a)), 1e-12)
+        ff_a = float(dist.ff(a))
+        elapsed = np.asarray(dist.qf(ff_a + rng.uniform(size=sims) * sf_a), dtype=float) - a
+        elapsed = np.nan_to_num(elapsed, nan=np.inf, posinf=np.inf)
+        alive = elapsed < use
+        while alive.any():
+            idx = np.flatnonzero(alive)
+            runs.append(idx.astype(np.int32))
+            times.append(elapsed[idx] / rate)
+            which.append(np.full(idx.size, i, dtype=np.int32))
+            total += idx.size
+            if total > _MAX_EVENTS:
+                raise StrategyError("Too many failures to simulate over this window: the lives are very short "
+                                    "for the horizon.")
+            fresh = np.asarray(dist.qf(rng.uniform(size=sims)[idx]), dtype=float)
+            elapsed[idx] += np.maximum(np.nan_to_num(fresh, nan=np.inf, posinf=np.inf), 0.0)
+            alive[idx] = elapsed[idx] < use
+    if not runs:
+        return {"sims": sims, "sim": np.zeros(0, np.int32), "t": np.zeros(0), "item": np.zeros(0, np.int32)}
+    t = np.concatenate(times)
+    order = np.argsort(t, kind="stable")
+    return {"sims": sims, "sim": np.concatenate(runs)[order], "t": t[order], "item": np.concatenate(which)[order]}
+
+
+# ---- Spares: how many to hold (#31, #297) -----------------------------------------
+#
+# A fleet's spares question, in its own periods: the replacement part's lead time,
+# a target service level, how often stock is reviewed, parts per failure, the
+# stock on hand and its cost; or a repairable part's repair turnaround. The answer
+# reads the demand over each window off the forecast's own distribution: the
+# renewals simulation's raw runs, the exact Poisson-binomial count of first
+# failures, or a repairable fleet's Poisson count.
+
+MAX_SPARES_PERIODS = 120.0
+
+
+def _clean_spares(value) -> dict | None:
+    """The spares settings kept on a fleet, or None when none are given."""
+    if value in (None, "", {}):
+        return None
+    if not isinstance(value, dict):
+        raise FleetValidationError("The spares settings must be an object.")
+    try:
+        out = {"lead_time": spares.duration(value.get("lead_time"), "lead time", MAX_SPARES_PERIODS),
+               "service_level": spares.service_level(value.get("service_level")),
+               "review": spares.duration(value.get("review"), "review period", MAX_SPARES_PERIODS),
+               "turnaround": spares.duration(value.get("turnaround"), "repair turnaround", MAX_SPARES_PERIODS)}
+    except spares.SparesError as exc:
+        raise FleetValidationError(str(exc)) from None
+    out["per_failure"] = _optional_number(value.get("per_failure"), "Parts per failure")
+    if out["per_failure"] is not None and out["per_failure"] <= 0:
+        raise FleetValidationError("Parts per failure must be more than 0.")
+    out["stock"] = _optional_number(value.get("stock"), "The stock on hand")
+    out["unit_cost"] = _optional_number(value.get("unit_cost"), "The cost each")
+    if value.get("repairable"):
+        out["repairable"] = True
+    out = {k: v for k, v in out.items() if v is not None}
+    return out or None
+
+
+def _spares_or_reason(opts, method, model, ages, rates, periods, label, *, Z=None) -> dict:
+    """``spares_answer``, or why it can't be worked out (the forecast still stands)."""
+    try:
+        return spares_answer(opts, method, model, ages, rates, periods, label, Z=Z)
+    except StrategyError as exc:
+        return {"status": "error", "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - a model refusing these values
+        return {"status": "error", "reason": f"The spares answer couldn't be worked out: {exc}"}
+
+
+def _amount(v: float, label: str) -> str:
+    word = label.rstrip("s") if v == 1 and label.endswith("s") else label
+    return f"{v:g} {word}"
+
+
+def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, label: str, *, Z=None) -> dict:
+    """How many of the replacement part to hold: now, and for a window starting at
+    each period. ``method``: renewals (``model`` a distribution), single (first
+    failures, ``model`` a distribution or a covariate model with ``Z``) or
+    repairable (a recurrent model)."""
+    level = opts.get("service_level") or spares.DEFAULT_SERVICE_LEVEL
+    per = float(opts.get("per_failure") or 1.0)
+    review = float(opts.get("review") or 0.0)
+    repairable = bool(opts.get("repairable")) and opts.get("turnaround") is not None
+    lead = opts.get("lead_time")
+    base = {"service_level": level, "per_failure": per, "period_label": label}
+    if repairable:
+        protect, lead_len = float(opts["turnaround"]), None
+        window = f"the repair turnaround ({_amount(protect, label)})"
+        base.update(repairable=True, turnaround=protect)
+    elif lead is None:
+        return {**base, "status": "needs_lead_time",
+                "summary": "Set the replacement part's lead time to see how many to hold."}
+    else:
+        protect, lead_len = float(lead) + review, float(lead)
+        window = (f"the lead time and review period ({_amount(protect, label)})" if review
+                  else f"the lead time ({_amount(protect, label)})")
+        base.update(lead_time=float(lead), review=review)
+    ages = np.asarray(ages, dtype=float)
+    rates = np.asarray(rates, dtype=float)
+    starts = np.arange(periods, dtype=float)
+    bounds = [(s, s + protect) for s in starts] + ([(s, s + lead_len) for s in starts] if lead_len is not None else [])
+
+    if method == "renewals":
+        events = _renewal_events(model, ages, rates, (periods - 1) + protect)
+        demand = [spares.Demand.from_samples(spares.window_demand(events, a, b) * per) for a, b in bounds]
+        basis = f"From {events['sims']:,} simulated runs, counting replacements that fail again."
+    elif method == "single":
+        clock = _ItemClock(model, ages, rates, Z)
+        cuts = sorted({x for ab in bounds for x in ab})
+        running = rates > 0
+        surv = {}
+        for x in cuts:
+            if x <= 0:
+                surv[x] = np.ones(len(ages))
+                continue
+            with np.errstate(all="ignore"), warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                s = np.asarray(clock.cs(np.full(len(ages), x), np.zeros(len(ages))), dtype=float)
+            surv[x] = np.where(running, np.clip(np.nan_to_num(s, nan=0.0, posinf=0.0), 0.0, 1.0), 1.0)
+        probs = np.array([np.clip(surv[a] - surv[b], 0.0, 1.0) for a, b in bounds])
+        demand = [spares.Demand.from_pmf(pmf, per) for pmf in spares.bernoulli_sum_pmfs(probs)]
+        basis = "Exact, given the model: each item fails at most once (first failures)."
+    else:
+        def cum(x):
+            with np.errstate(all="ignore"):
+                lam = np.asarray(model.cif(ages + rates * x), dtype=float) - np.asarray(model.cif(ages), dtype=float)
+            return np.nan_to_num(lam, nan=0.0, posinf=0.0)
+
+        cache: dict = {}
+        means = []
+        for a, b in bounds:
+            for x in (a, b):
+                if x not in cache:
+                    cache[x] = cum(x).sum() if x > 0 else 0.0
+            means.append(max(0.0, cache[b] - cache[a]))
+        demand = [spares.Demand.from_pmf(spares.poisson_pmf(mu), per) for mu in means]
+        basis = "Poisson, given the model: every repeat failure is counted."
+    protects = demand[:periods]
+    leads = demand[periods:] if lead_len is not None else [None] * periods
+    now = spares.answer(protects[0], leads[0], opts.get("stock"), level, opts.get("unit_cost"))
+    plan = [{"period": k + 1, "hold": protects[k].quantile(level),
+             "reorder_at": leads[k].quantile(level) if leads[k] is not None else None,
+             "expected_demand": protects[k].mean} for k in range(periods)]
+    return {**base, "status": "ok", "window": protect, **now, "per_period": plan, "basis": basis,
+            "summary": spares.sentence(now, level, window, repairable=repairable)}
+
+
 # ---- Repairable fleets: a recurrent-event model (#235) ----------------------------
 
 REPAIRABLE_NOTE = (
@@ -850,7 +1033,7 @@ REPAIRABLE_FAMILIES = (
     "covariate and imperfect-repair models aren't supported yet.")
 
 
-def _compute_recurrent(db, fleet: Fleet, owners) -> dict:
+def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
     """The live forecast of a fleet running on a recurrent-event model."""
     doc = recurrent_service.get_model(db, fleet.model_id, owners)
     if doc is None:
@@ -895,6 +1078,9 @@ def _compute_recurrent(db, fleet: Fleet, owners) -> dict:
     for row, (rate, basis) in zip(out["per_item"], chosen):
         row["rate_used"] = rate
         row["rate_basis"] = basis
+    if spares_opts:
+        out["spares"] = _spares_or_reason(spares_opts, "repairable", live, ages, rates, periods,
+                                          base["period_label"])
     return out
 
 

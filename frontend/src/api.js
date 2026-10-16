@@ -2413,9 +2413,20 @@ export function getClassEconomics(positionClass, { interval, unit, horizonYears,
 }
 
 // The class's failure forecast from the register (#407).
-export function getClassForecast(positionClass, { period = "month", periods = 12 } = {}) {
+// serviceLevel / leadTimeDays (what-ifs for every spare) and reviewDays set its
+// spares' stock levels (#31).
+export function getClassForecast(positionClass, { period = "month", periods = 12, serviceLevel, leadTimeDays,
+  reviewDays } = {}) {
   const q = new URLSearchParams({ position_class: positionClass, period, periods: String(periods) });
+  if (serviceLevel) q.set("service_level", serviceLevel);
+  if (leadTimeDays !== undefined && leadTimeDays !== null && leadTimeDays !== "") q.set("lead_time_days", leadTimeDays);
+  if (reviewDays) q.set("review_days", reviewDays);
   return request(`/api/maintenance/classes/forecast?${q}`);
+}
+// A catalogue part's fields, e.g. its stock-level settings (lead_time_days,
+// service_level, repairable, turnaround_days; null clears one).
+export function updateMaintenancePart(partId, body) {
+  return patchJson(`/api/maintenance/parts/${partId}`, body);
 }
 
 export function addMeasurementPoint(positionId, body) {

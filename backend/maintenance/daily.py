@@ -25,7 +25,7 @@ HORIZON_DAYS = 14
 
 
 def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_spares=(),
-            forecast_short=()) -> tuple[str, str]:
+            forecast_short=(), below_reorder=()) -> tuple[str, str]:
     n = len(work_orders)
     parts = [f"{n} new work order{'s' if n != 1 else ''}"] if n else []
     if proposals:
@@ -57,6 +57,14 @@ def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_sp
         for v in forecast_short[:10]:
             lines.append(f"  {v['part']['part_number']} {v['part']['name']} for {v['position_class']}: "
                          f"≈ {v['expected']:.1f} expected, {v['usable_on_hand']:g} usable")
+    if below_reorder:
+        lines += ["", "Spares below the reorder point their lead time needs:"]
+        for v in below_reorder[:10]:
+            level = f"{v['service_level']:.1%}".replace(".0%", "%")
+            need = (f"keep a pool of {v['hold']:g}" if v["repairable"]
+                    else f"reorder at {v['reorder_at']:g}, hold {v['hold']:g}")
+            lines.append(f"  {v['part']['part_number']} {v['part']['name']} for {v['position_class']}: "
+                         f"{v['usable_on_hand']:g} usable, {need} ({level} service level)")
     base = (config.PUBLIC_BASE_URL or "https://reliafy.com").rstrip("/")
     lines += ["", f"Open them: {base}/maintenance", "",
               "Turn these emails off on the Maintenance page.", "", "— Reliafy"]
@@ -90,13 +98,14 @@ def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) ->
     overdue = [t for t in m.due_tasks(0) if t["overdue"]]
     # Spares short ride along with an email that's going anyway; on their own they'd
     # repeat every day until restocked. So do critical spares a class's forecast
-    # (#407) expects to need more of next month than there are.
+    # (#407) expects to need more of next month than there are, and parts below
+    # the reorder point their lead time needs (#31).
     try:
-        forecast_short = forecast.short_next_month(m)
+        forecast_short, below_reorder = forecast.digest_spares(m)
     except Exception:  # noqa: BLE001 - a forecast that fails mustn't stop the digest
         logger.exception("maintenance forecast for the digest failed for %s", org)
-        forecast_short = []
-    subject, body = _digest(made, overdue, new_proposals, m.critical_spares_short(), forecast_short)
+        forecast_short, below_reorder = [], []
+    subject, body = _digest(made, overdue, new_proposals, m.critical_spares_short(), forecast_short, below_reorder)
     email_service.send(user["email"], subject, body)
     result["emails"] += 1
 

@@ -426,12 +426,16 @@ def class_economics(position_class: str, interval: float | None = None, unit: st
 
 @router.get("/classes/forecast")
 def class_forecast(position_class: str, period: str = "month", periods: int = 12,
-                   m: Maintenance = Depends(maintenance)) -> JSONResponse:
+                   service_level: float | None = None, lead_time_days: float | None = None,
+                   review_days: float | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The class's failure forecast from the register (#407): expected failures per
-    period with P10–P90, positions at risk, spares demand against stock, budget."""
+    period with P10–P90, positions at risk, spares demand against stock and each
+    spare's stock levels (#31: service_level and lead_time_days override every
+    part's own), budget."""
     from backend.maintenance import forecast
 
-    return _run(forecast.class_forecast, m, position_class, period, periods)
+    return _run(forecast.class_forecast, m, position_class, period, periods, service_level, lead_time_days,
+                review_days)
 
 
 @router.get("/proposals")
@@ -785,7 +789,9 @@ def get_part(part_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespons
 
 @router.patch("/parts/{part_id}")
 def update_part(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.update_part, part_id, **{k: body[k] for k in ("name", "manufacturer", "unit", "notes", "unit_cost")
+    return _run(m.update_part, part_id, **{k: body[k] for k in ("name", "manufacturer", "unit", "notes", "unit_cost",
+                                                                "lead_time_days", "service_level", "repairable",
+                                                                "turnaround_days")
                                            if k in body})
 
 
