@@ -44,3 +44,47 @@ export function splitMermaid(markdown) {
   flush();
   return parts;
 }
+
+// The plan's own repository and commit from its stored `source`
+// ("Owner/repo@<sha or ref>"), or null.
+export function sourceRepo(source) {
+  const m = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)@([A-Za-z0-9_.\/-]+)$/.exec((source || "").trim());
+  if (!m || m[3].includes("..")) return null;
+  return { owner: m[1], repo: m[2], ref: m[3] };
+}
+
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
+// A relative link's path inside the repo (the plan sits at its root):
+// "./", "../" and a leading "/" resolved, the #fragment / ?query kept.
+function repoPath(href) {
+  const at = href.search(/[?#]/);
+  const [path, rest] = at < 0 ? [href, ""] : [href.slice(0, at), href.slice(at)];
+  const out = [];
+  for (const seg of path.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return out.join("/") + rest;
+}
+
+// Links in the plan's rendered (sanitized) HTML. Absolute links (a scheme,
+// "//host") and in-page "#anchors" are left alone. A relative link
+// ("README.md", "docs/x.md") points into the plan's repository, which the app
+// doesn't serve: with a GitHub source it goes to that file at that commit,
+// in a new tab; without one it becomes plain text.
+export function rewritePlanLinks(html, source) {
+  const repo = sourceRepo(source);
+  return (html || "").replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (whole, attrs, text) => {
+    const m = /\shref="([^"]*)"/i.exec(attrs);
+    if (!m) return whole;
+    const href = m[1];
+    if (SCHEME.test(href) || href.startsWith("//") || href.startsWith("#")) return whole;
+    const path = repoPath(href);
+    if (!repo || !path || /^[?#]/.test(path)) return `<span class="plan-link-local">${text}</span>`;
+    const url = `https://github.com/${repo.owner}/${repo.repo}/blob/${repo.ref}/${path}`;
+    const rest = attrs.replace(m[0], "").replace(/\s(target|rel)="[^"]*"/gi, "");
+    return `<a href="${url}"${rest} target="_blank" rel="noreferrer">${text}</a>`;
+  });
+}

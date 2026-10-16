@@ -10,18 +10,23 @@ import { request } from "@playwright/test";
 export const SAMPLE_PLAN = [
   "# Example plan",
   "",
-  "A sample plan with two dummy tasks.",
+  "A sample plan with dummy tasks in each state. See [the notes](docs/notes.md).",
   "",
   "```mermaid",
   "gantt",
   "    title Example plan",
   "    dateFormat YYYY-MM-DD",
   "    section Sample",
-  "    Task one :a1, 2026-01-05, 14d",
-  "    Task two :after a1, 10d",
+  "    Task one :done, a1, 2026-01-05, 14d",
+  "    Task two :active, a2, after a1, 10d",
+  "    Task three :crit, a3, after a2, 7d",
+  "    Task four :a4, after a3, 10d",
+  "    section Release",
+  "    Milestone :milestone, m1, after a4, 0d",
   "```",
   "",
 ].join("\n");
+export const SAMPLE_PLAN_SOURCE = "example/plans@abc1234";
 
 export default async function seed(config) {
   if (process.env.SMOKE_BASE_URL) return;
@@ -75,7 +80,7 @@ export default async function seed(config) {
     await post(`${m}/classes/fit`, { position_class: pump });
 
     // A generic sample plan for the Admin page's Plan tab: prose and a Gantt chart.
-    await send("PUT")("/api/admin/plan", { markdown: SAMPLE_PLAN, source: "smoke/seed.js" });
+    await send("PUT")("/api/admin/plan", { markdown: SAMPLE_PLAN, source: SAMPLE_PLAN_SOURCE });
 
     // One availability run, for the run history pages.
     const rbd = await (await api.get("/api/rbds/sample-rbd-instrument-air-availability")).json();

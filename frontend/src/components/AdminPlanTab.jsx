@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAdminPlan } from "../api.js";
 import { renderMarkdown } from "../markdown.js";
-import { splitMermaid } from "../planMarkdown.js";
+import { rewritePlanLinks, splitMermaid } from "../planMarkdown.js";
+import { ganttThemeVariables, readTokens } from "../planTheme.js";
 import Card from "./ui/Card.jsx";
 
 // The Admin page's Plan tab: the operators' plan, a markdown document kept in
@@ -10,6 +11,9 @@ import Card from "./ui/Card.jsx";
 // renderer (markdown.js); fenced ```mermaid blocks render with mermaid, which
 // is imported only here, when a plan with charts opens, so its chunk never
 // loads anywhere else. A block mermaid can't draw shows its source and why.
+// Relative links point into the plan's own repository, which the app doesn't
+// serve: they go to GitHub at the plan's commit, or become plain text
+// (planMarkdown.js, rewritePlanLinks).
 
 // Gantt charts keep at least this width and scroll inside their own box
 // rather than squeezing onto a phone.
@@ -40,10 +44,15 @@ async function drawCharts(parts, width, onChart, alive) {
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
-    theme: "neutral",
+    // The app's colours (planTheme.js): done, active, crit and not-started
+    // tasks each look different.
+    theme: "base",
+    themeVariables: ganttThemeVariables(readTokens()),
     suppressErrorRendering: true,
     fontFamily: getComputedStyle(document.body).fontFamily,
-    gantt: { useMaxWidth: false, useWidth: width },
+    // Short axis dates ("5 Jan") so the ticks don't run into each other; a
+    // chart's own axisFormat still wins.
+    gantt: { useMaxWidth: false, useWidth: width, axisFormat: "%-d %b" },
   });
   for (const [i, p] of parts.entries()) {
     if (p.type !== "mermaid") continue;
@@ -140,7 +149,7 @@ export default function AdminPlanTab() {
               p.type === "mermaid" ? (
                 <Chart key={i} code={p.code} chart={charts[i]} />
               ) : (
-                <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(p.text) }} />
+                <div key={i} dangerouslySetInnerHTML={{ __html: rewritePlanLinks(renderMarkdown(p.text), data.source) }} />
               )
             )}
           </div>

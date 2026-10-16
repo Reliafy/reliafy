@@ -5212,6 +5212,8 @@ button.cal-chip.wide { min-height: 44px; padding: 6px 10px; font-size: var(--fs-
 .admin-plan-prose code { overflow-wrap: anywhere; }
 .admin-plan-chart { overflow-x: auto; max-width: 100%; margin: 0 0 16px; padding: 4px 0; }
 .admin-plan-chart svg { display: block; max-width: none; height: auto; }
+/* d3 draws the Gantt's grid lines in currentColor (black): use the app's line colour. */
+.admin-plan-chart .grid .tick line { stroke: var(--line); }
 .admin-plan-chart-pending { color: var(--muted); font-size: var(--fs-13); padding: 12px 0; }
 .admin-plan-chart-error { margin: 0 0 16px; }
 .admin-plan-chart-error .muted-line { margin: 0 0 6px; }
