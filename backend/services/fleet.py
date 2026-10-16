@@ -768,7 +768,13 @@ def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
     return out
 
 
-def _forecast_renewals(dist, ages, uses, rates, periods, items) -> dict:
+def _forecast_renewals(dist, ages, uses, rates, periods, items, *, weights=None) -> dict:
+    """Failures with renewals, by Monte Carlo. ``weights`` (items × columns,
+    optional) also tallies, per simulation and period, what each failure
+    weighs in each column: a column of ones counts failures, a column of an
+    item's parts per job counts the parts its failures use. The tally
+    (sims × periods × columns) comes back as ``tally``, for per-period
+    distributions (a class's spares demand, #407)."""
     n = len(items)
     sims = max(200, min(_SIMS, _MAX_DRAWS // max(n, 1)))
     rng = np.random.default_rng(12345)  # deterministic: same fleet -> same forecast
@@ -776,6 +782,10 @@ def _forecast_renewals(dist, ages, uses, rates, periods, items) -> dict:
     counts = np.zeros(sims)
     per_item_counts = np.zeros(n)
     per_period = np.zeros(periods)
+    tally = None
+    if weights is not None:
+        weights = np.asarray(weights, dtype=float).reshape(n, -1)
+        tally = np.zeros((sims, periods, weights.shape[1]), dtype=np.float32)
 
     for i in range(n):
         a, u, rate = float(ages[i]), float(uses[i]), float(rates[i])
@@ -796,6 +806,8 @@ def _forecast_renewals(dist, ages, uses, rates, periods, items) -> dict:
             if rate > 0:
                 idx = np.minimum((elapsed[alive] / rate).astype(int), periods - 1)
                 np.add.at(per_period, idx, 1.0)
+                if tally is not None:
+                    np.add.at(tally, (np.flatnonzero(alive), idx), weights[i])
             # Replacement: a fresh unit's full life.
             fresh = np.asarray(dist.qf(rng.uniform(size=int(alive.sum()))), dtype=float)
             fresh = np.nan_to_num(fresh, nan=np.inf, posinf=np.inf)
@@ -809,7 +821,7 @@ def _forecast_renewals(dist, ages, uses, rates, periods, items) -> dict:
     expected = float(counts.mean())
     p10, p90 = np.percentile(counts, [10, 90])
     prob_any = _cond_prob(dist, ages, uses)
-    return {
+    out = {
         "expected": expected,
         "interval": [float(p10), float(p90)],
         "sims": sims,
@@ -820,6 +832,9 @@ def _forecast_renewals(dist, ages, uses, rates, periods, items) -> dict:
         ],
         "per_period": [float(x / sims) for x in per_period],
     }
+    if tally is not None:
+        out["tally"] = tally
+    return out
 
 
 # ---- Repairable fleets: a recurrent-event model (#235) ----------------------------

@@ -200,6 +200,17 @@
   position: relative;
 }
 
+/* A part of a card: the class forecast's positions, spares and budget. */
+.maint-sub {
+  margin: 1.25rem 0 0.5rem;
+  font-size: var(--fs-16, 1rem);
+}
+
+/* The chosen class in the list (its page). */
+.lib-row[aria-current="true"] td {
+  font-weight: 600;
+}
+
 /* Item classes: the chosen class in the tree. */
 .maint-tree button.link.maint-node-name[aria-current="true"] {
   text-decoration: underline;

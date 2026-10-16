@@ -15,6 +15,9 @@ const BENIGN_CONSOLE = [
   // A sample diagram's Outage history tab: the list answers 403 with code
   // "sample", and the tab says to duplicate the sample first.
   /status of 403 \(Forbidden\) \(\S+\/api\/rbds\/sample-[\w-]+\/outage-logs\)$/,
+  // Pageview analytics, throttled per address (120 a minute): the whole suite
+  // opening pages from one address can pass that. The page doesn't wait on it.
+  /status of 429 \(Too Many Requests\) \(\S+\/api\/metrics\/event\)$/,
 ];
 
 export const test = base.extend({
