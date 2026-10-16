@@ -39,7 +39,7 @@ export default function MaintenancePart() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: "/maintenance" }, { label: "Parts", to: "/maintenance/parts" }]}
+        crumbs={[{ label: "Assets", to: "/asset-register" }, { label: "Parts", to: "/asset-register/parts" }]}
         title={`${part.part_number} ${part.name}`}
         meta={[part.level, part.manufacturer_entry?.name || part.manufacturer, `${qtyNumber(part.on_hand)} on hand`]
           .filter(Boolean).join(" · ")}
@@ -60,7 +60,7 @@ export default function MaintenancePart() {
           <dt>On hand</dt><dd>{qtyNumber(part.on_hand)}{part.stock.length > 0 && (
             <span className="lib-date"> · {part.stock.map((s) => `${s.location.name}: ${qtyNumber(s.quantity)}`).join(", ")}</span>)}</dd>
           <dt>Items of it</dt><dd>{part.items}</dd>
-          {part.superseded_by && <><dt>Superseded by</dt><dd><Link to={`/maintenance/parts/${part.superseded_by.id}`}>{part.superseded_by.part_number}</Link></dd></>}
+          {part.superseded_by && <><dt>Superseded by</dt><dd><Link to={`/asset-register/parts/${part.superseded_by.id}`}>{part.superseded_by.part_number}</Link></dd></>}
           {part.notes && <><dt>Notes</dt><dd>{part.notes}</dd></>}
         </dl>
       </section>
@@ -84,7 +84,7 @@ export default function MaintenancePart() {
                            onEdit={(line) => setModal({ line })} onRemove={remove} />
           </>
         )}
-        {made && <p className="lib-date">{positionsPlanSummary(made)}{made.top && <> <Link to={`/maintenance/positions/${made.top}`}>Open the top one</Link>.</>}</p>}
+        {made && <p className="lib-date">{positionsPlanSummary(made)}{made.top && <> <Link to={`/asset-register/positions/${made.top}`}>Open the top one</Link>.</>}</p>}
       </section>
 
       {lines.length > 0 && <RollupCard structure={structure} />}

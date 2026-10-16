@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { addMaintenanceDocument, decideProposal, removeMaintenanceDocument } from "../api.js";
 import {
   DOCUMENT_KINDS, PRECISIONS, datedText, daysText, roughDateInput, roughDateValue, safeHref,
 } from "../maintenanceFields.js";
 import { locationOptions } from "../maintenanceLocations.js";
+import { activeEntry, liveEntries } from "../navigation.js";
 import Modal from "./Modal.jsx";
 
 // Shared pieces for the Reliafy Maintenance pages.
@@ -215,18 +216,15 @@ export const OUTCOME_LABELS = {
   accept: "Accept",
 };
 
-// The Maintenance section's own tabs.
+// The section's own pages as tabs (Assets, Maintenance or Systems: the menu's
+// children, #438), for when the menu's are out of sight (collapsed, a phone).
 export function MaintenanceTabs() {
-  const tabs = [
-    { to: "/maintenance", label: "Overview", end: true },
-    { to: "/maintenance/items", label: "Items" },
-    { to: "/maintenance/locations", label: "Locations" },
-    { to: "/maintenance/parts", label: "Parts" },
-    { to: "/maintenance/classes", label: "Classes" },
-  ];
+  const { pathname } = useLocation();
+  const entry = activeEntry(liveEntries({ maintenance: true }), pathname);
+  if (!entry?.children) return null;
   return (
-    <nav className="maint-tabs" aria-label="Maintenance">
-      {tabs.map((t) => (
+    <nav className="maint-tabs" aria-label={entry.label}>
+      {entry.children.map((t) => (
         <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => (isActive ? "active" : "")}>
           {t.label}
         </NavLink>
@@ -294,7 +292,7 @@ export function Proposals({ proposals, onDecided, showPosition = true }) {
         <div key={p.id} className="maint-proposal">
           <p>
             <strong>{p.task?.name}</strong>
-            {showPosition && p.position && <> on <Link to={`/maintenance/positions/${p.position.id}`}>{p.position.name}</Link></>}
+            {showPosition && p.position && <> on <Link to={`/asset-register/positions/${p.position.id}`}>{p.position.name}</Link></>}
             {": "}
             {p.kind === "interval"
               ? <>every {p.current.interval} {p.current.unit} → <strong>every {p.proposed.interval} {p.proposed.unit}</strong></>

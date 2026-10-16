@@ -38,9 +38,11 @@ function TimeZoneNudge({ zone }) {
   );
 }
 
-// Reliafy Maintenance home: what's due, open work orders, and the plant as a
-// tree of positions with what's fitted in each.
-export default function MaintenanceHome() {
+// Reliafy Maintenance's two homes (#438): Maintenance (`part="work"`: what's
+// due, open work orders, proposed changes) and Assets (`part="assets"`: the
+// plant as a tree of positions with what's fitted in each).
+export default function MaintenanceHome({ part = "work" }) {
+  const assets = part === "assets";
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -93,8 +95,10 @@ export default function MaintenanceHome() {
   return (
     <div className="app">
       <PageHeader
-        title="Maintenance"
-        meta="Your plant as positions, what's fitted in each, the tasks from your RCM studies, and the work done."
+        title={assets ? "Assets" : "Maintenance"}
+        meta={assets
+          ? "Your plant as positions, and what's fitted in each."
+          : "What's due from your RCM studies' tasks, the work orders, and the work done."}
         actions={<>
           <button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>
           <button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>
@@ -117,17 +121,18 @@ export default function MaintenanceHome() {
         </div>
       ) : (
         <>
+          {!assets && (<>
           <Proposals proposals={data.proposals} onDecided={refresh} />
           {data.critical_spares?.length > 0 && (
             <section className="card">
               <div className="maint-head">
                 <h2>Critical spares short</h2>
-                <Link to="/maintenance/parts" className="lib-date">Parts and stock</Link>
+                <Link to="/asset-register/parts" className="lib-date">Parts and stock</Link>
               </div>
               <ul className="maint-list">
                 {data.critical_spares.map((v) => (
                   <li key={v.id}>
-                    <Link to={`/maintenance/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
+                    <Link to={`/asset-register/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
                     <span className={v.usable_on_hand > 0 ? "lib-date" : "maint-overdue"}> · {v.usable_on_hand} usable, keep {v.min_on_hand}</span>
                     {v.use_instead && <span className="lib-date"> · use {v.use_instead.part_number} instead</span>}
                   </li>
@@ -199,7 +204,9 @@ export default function MaintenanceHome() {
               </table></div>
             )}
           </section>
+          </>)}
 
+          {assets && (
           <section className="card">
             <div className="maint-head">
               <h2>Positions</h2>
@@ -211,7 +218,8 @@ export default function MaintenanceHome() {
               {data.tree.map((node) => <TreeNode key={node.id} node={node} />)}
             </ul>
           </section>
-          {digest !== null && (
+          )}
+          {!assets && digest !== null && (
             <label className="maint-row lib-date" style={{ gap: "0.5rem" }}>
               <input type="checkbox" checked={digest} onChange={(e) => toggleDigest(e.target.checked)} />
               Email me when new work orders are raised for tasks coming due
@@ -224,7 +232,7 @@ export default function MaintenanceHome() {
         <NewPositionModal
           positions={positions}
           onClose={() => setModal(null)}
-          onCreated={(p) => navigate(`/maintenance/positions/${p.id}`)}
+          onCreated={(p) => navigate(`/asset-register/positions/${p.id}`)}
         />
       )}
       {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
@@ -232,7 +240,7 @@ export default function MaintenanceHome() {
         <FromRcmModal
           positions={positions}
           onClose={() => setModal(null)}
-          onCreated={(r) => navigate(`/maintenance/positions/${r.position.id}`)}
+          onCreated={(r) => navigate(`/asset-register/positions/${r.position.id}`)}
         />
       )}
     </div>
@@ -257,10 +265,10 @@ function TreeNode({ node }) {
   return (
     <li>
       <div className="maint-node">
-        <Link to={`/maintenance/positions/${node.id}`} className="maint-node-name">{node.name}</Link>
+        <Link to={`/asset-register/positions/${node.id}`} className="maint-node-name">{node.name}</Link>
         {node.tag && <span className="lib-date">{node.tag}</span>}
         <span className="maint-node-item">{node.item
-          ? <Link to={`/maintenance/items/${node.item.id}`}>{node.item.name}</Link>
+          ? <Link to={`/asset-register/items/${node.item.id}`}>{node.item.name}</Link>
           : <span className="lib-date">nothing fitted</span>}</span>
         {node.next_due && <span className="lib-date">next due {fmtDate(node.next_due)}</span>}
         {node.open_work_orders > 0 && <span className="maint-badge">{node.open_work_orders} open</span>}

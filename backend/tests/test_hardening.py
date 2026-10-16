@@ -141,7 +141,7 @@ def test_share_email(client, sent):
     client.post("/api/shares", json={"collection": "models", "artifact_id": mid, "email": "b@x.com"})
     assert sent[-1]["to"] == "b@x.com"
     assert "shared" in sent[-1]["subject"].lower()
-    assert f"/modelling/m/{mid}" in sent[-1]["body"]
+    assert f"/models/m/{mid}" in sent[-1]["body"]
     # Duplicate share doesn't re-send.
     n = len(sent)
     client.post("/api/shares", json={"collection": "models", "artifact_id": mid, "email": "b@x.com"})

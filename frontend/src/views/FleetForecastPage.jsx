@@ -120,8 +120,8 @@ export default function FleetForecastPage() {
   const fieldLabel = (f) => f.label || f.name;
   const fleetDefault = (f) => (blank(fleetCovariates[f.name]) ? f.default : fleetCovariates[f.name]);
   const modelUrl = forecast.model_url
-    || (fleet.model_kind === "alt" ? `/modelling/alt/${fleet.model_id}`
-      : repairable ? `/modelling/recurrent/${fleet.model_id}` : `/modelling/m/${fleet.model_id}`);
+    || (fleet.model_kind === "alt" ? `/models/alt/${fleet.model_id}`
+      : repairable ? `/models/recurrent/${fleet.model_id}` : `/models/m/${fleet.model_id}`);
   const single = (settings.method || "renewals") === "single";
   const showService = single && !repairable && !blank(settings.warranty_periods);
   const nameById = Object.fromEntries(items.map((it) => [it.id, it.name]));
@@ -268,7 +268,7 @@ export default function FleetForecastPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Fleet" }, { label: "Failure forecasts", to: "/fleet" }]}
+        crumbs={[{ label: "Forecasts", to: "/forecasts" }]}
         title={itemName(fleet)}
         badges={
           <>

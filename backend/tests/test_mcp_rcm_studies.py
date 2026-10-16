@@ -46,7 +46,7 @@ def test_create_saves_the_study_the_app_would(env):
     assert out["name"] == "Cooling water pump" and out["system"] == "P-101"
     assert out["counts"] == {"functions": 1, "failures": 2, "modes": 4, "decisions": 4, "scheduled_tasks": 2}
     assert out["evidence"]["modes"] == 4 and out["evidence"]["unevidenced"] == 4
-    assert out["url"].endswith(f"/rcm/studies/{out['study_id']}")
+    assert out["url"].endswith(f"/maintenance/rcm/{out['study_id']}")
     # Decisions that won't become scheduled tasks as they stand are pointed out.
     assert any("no interval" in w and "Impeller worn" in w for w in out["warnings"])
     assert any("no interval_unit" in w and "Seal fails" in w for w in out["warnings"])

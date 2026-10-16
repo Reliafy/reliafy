@@ -634,9 +634,11 @@ SPA_ROOTS = frozenset({
     "unsubscribe", "login", "oauth",
     "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",
     "reliability-analysis-software",
-    # The signed-in app.
-    "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
-    "tokens", "admin", "billing", "changes", "maintenance",
+    # The signed-in app (#438: Design · Operate · Analyse).
+    "home", "systems", "asset-register", "maintenance", "data", "models", "strategy", "forecasts",
+    "reports", "agent", "team", "settings", "tokens", "admin", "billing", "changes",
+    # Earlier addresses, which the app redirects to their new place (#438).
+    "modelling", "rbds", "datasets", "fleet", "rcm",
 })
 
 
@@ -724,7 +726,7 @@ _NOT_FOUND_HTML = """<!doctype html>
 <main>
   <h1>Page not found</h1>
   <p>There's nothing at this address. It may have moved, or the link may be mistyped.</p>
-  <p><a href="/">Go to the home page</a> &middot; <a href="/modelling">Open the app</a> &middot;
+  <p><a href="/">Go to the home page</a> &middot; <a href="/home">Open the app</a> &middot;
      <a href="/blog">Read the blog</a></p>
 </main>
 </body>
@@ -778,7 +780,7 @@ def spa_response(full_path: str, dist: Path, share_live=None) -> Response:
     (``/blog/<slug>``, ``/learn/<slug>``…) gets the shell with a 404, so the
     app's own "not found" page shows; anything else under a content root
     (``/terms/x``, ``/blog/a/b``) gets the plain 404 page. The app's own
-    routes with ids (``/modelling/m/<id>``…) keep the shell and a 200: only
+    routes with ids (``/models/m/<id>``…) keep the shell and a 200: only
     the browser knows whether the signed-in user has that id. With
     ``share_live`` (the live app passes :func:`share_link_live`), a share page
     ``/p/<token>`` whose link is unknown, expired or revoked gets the shell

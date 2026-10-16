@@ -8,15 +8,15 @@ const DATA = {
   sentence: "In the last 30 days: 1 fleet alert fired, 1 refit moved its answer and 1 item was added.",
   counts: { items: 4, new: 1, changed: 0, refits: 2, refits_moved: 1, forecasts_moved: 0, alerts: 1,
     rcm_evidence: 0, runs: 0, runs_moved: 0 },
-  new: [{ collection: "rbds", type: "Block diagram", id: "d", name: "Skid", url: "/rbds/b/d", at: "2026-10-09T00:00:00+00:00" }],
+  new: [{ collection: "rbds", type: "Block diagram", id: "d", name: "Skid", url: "/systems/b/d", at: "2026-10-09T00:00:00+00:00" }],
   changed: [],
   refits: [
-    { id: "m1", name: "Pump life", url: "/modelling/m/m1", at: "2026-10-08T00:00:00+00:00", unit: "Hours", comparable: true,
+    { id: "m1", name: "Pump life", url: "/models/m/m1", at: "2026-10-08T00:00:00+00:00", unit: "Hours", comparable: true,
       moved: [{ measure: "B10", before: 1200, after: 900, change: -0.25 }, { measure: "Failure pattern", before: "random", after: "wear-out" }] },
-    { id: "m2", name: "Seal life", url: "/modelling/m/m2", at: "2026-10-07T00:00:00+00:00", unit: "Hours", comparable: true, moved: [] },
+    { id: "m2", name: "Seal life", url: "/models/m/m2", at: "2026-10-07T00:00:00+00:00", unit: "Hours", comparable: true, moved: [] },
   ],
   forecasts: [],
-  alerts: [{ fleet_id: "f", fleet: "Trucks", url: "/fleet/forecasts/f", at: "2026-10-10T00:00:00+00:00",
+  alerts: [{ fleet_id: "f", fleet: "Trucks", url: "/forecasts/f", at: "2026-10-10T00:00:00+00:00",
     text: "Expected failures for Trucks rose above 2" }],
   rcm_evidence: [],
   simulations: [],
@@ -28,7 +28,7 @@ test("rows put alerts and moved answers before new items, and held refits last",
   const rows = changeRows(DATA);
   assert.deepEqual(rows.map((r) => r.kind), ["Fleet alert", "Refit moved", "New block diagram", "Refitted"]);
   assert.equal(rows[0].tone, "warning");
-  assert.equal(rows[1].url, "/modelling/m/m1");
+  assert.equal(rows[1].url, "/models/m/m1");
 });
 
 test("a refit's detail gives each measure before and after", () => {
@@ -54,7 +54,7 @@ test("the assistant gets the computed facts and what couldn't be compared, nothi
   const out = changesForAssistant(DATA);
   assert.equal(out.sentence, DATA.sentence);
   assert.equal(out.changes.length, 4);
-  assert.deepEqual(out.changes[0], { kind: "Fleet alert", name: "Trucks", path: "/fleet/forecasts/f",
+  assert.deepEqual(out.changes[0], { kind: "Fleet alert", name: "Trucks", path: "/forecasts/f",
     detail: "Expected failures for Trucks rose above 2", at: "2026-10-10T00:00:00+00:00" });
   assert.deepEqual(out.not_compared, ["Failures recorded against the forecast: Not stored."]);
   assert.equal(changesForAssistant(DATA, 2).more, 2);
@@ -66,8 +66,8 @@ test("simulations and evidence read plainly", async () => {
     "2 runs; availability 96.21% → 94.87%");
   assert.equal(rcmDetail({ mode: "Seal leaks", evidence: "Seal life", status_before: "supported", status: "contradicted",
     status_changed: true }), "“Seal leaks”: Seal life was refitted; evidence supported → contradicted");
-  const rows = changeRows({ rcm_evidence: [{ study_id: "s", study: "Pump RCM", url: "/rcm/studies/s", mode: "Seal leaks",
-    evidence: "Seal life", evidence_url: "/modelling/m/x", status: "contradicted" }] });
+  const rows = changeRows({ rcm_evidence: [{ study_id: "s", study: "Pump RCM", url: "/maintenance/rcm/s", mode: "Seal leaks",
+    evidence: "Seal life", evidence_url: "/models/m/x", status: "contradicted" }] });
   assert.equal(rows[0].tone, "danger");
 });
 

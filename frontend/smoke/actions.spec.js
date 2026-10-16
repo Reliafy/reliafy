@@ -3,16 +3,16 @@
 import { test, expect, open, expectHealthy } from "./health.js";
 
 test("fit and save a Weibull model from a sample dataset", async ({ page, problems }) => {
-  await open(page, "/datasets/d/sample-ds-bearings");
+  await open(page, "/data/d/sample-ds-bearings");
   await page.getByRole("button", { name: "Fit a model" }).click();
-  await expect(page).toHaveURL(/\/modelling\/new\?dataset=sample-ds-bearings/);
+  await expect(page).toHaveURL(/\/models\/new\?dataset=sample-ds-bearings/);
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Fit Weibull" }).click();
   await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
   await expectHealthy(page, problems, { label: "fitted model", chart: true });
 
   await page.getByRole("button", { name: "Save model" }).click();
-  await page.waitForURL(/\/modelling\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
+  await page.waitForURL(/\/models\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: /Weibull/ })).toBeVisible();
   await expectHealthy(page, problems, { label: "saved model", chart: true });
 });
@@ -27,7 +27,7 @@ const HEADERLESS = [
 ].join("\n") + "\n";
 
 async function uploadAndFit(page) {
-  await open(page, "/modelling/new?mode=data");
+  await open(page, "/models/new?mode=data");
   await page.locator('input[type="file"]').setInputFiles({
     name: "raw.csv", mimeType: "text/csv", buffer: Buffer.from(HEADERLESS),
   });
@@ -50,7 +50,7 @@ async function uploadAndFit(page) {
 }
 
 async function expectSavedWithData(page) {
-  await page.waitForURL(/\/modelling\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
+  await page.waitForURL(/\/models\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: /Weibull/ })).toBeVisible();
   const id = page.url().split("/").pop();
   const model = await (await page.request.get(`/api/models/${id}`)).json();
@@ -69,12 +69,12 @@ test("a headerless CSV is detected, fitted and saved with its data in one click"
 
 test("a fit left unsaved is offered for saving on the next visit to Modelling", async ({ page, problems }) => {
   await uploadAndFit(page);
-  await open(page, "/modelling");
+  await open(page, "/home");
   await expect(page.getByText("You left a fit without saving it")).toBeVisible();
   await page.getByRole("button", { name: "Save it and its data" }).click();
   await expectSavedWithData(page);
   // Saved: no reminder now.
-  await open(page, "/modelling");
+  await open(page, "/home");
   await expect(page.getByText("You left a fit without saving it")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "modelling home" });
 });

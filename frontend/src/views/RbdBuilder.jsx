@@ -2130,7 +2130,7 @@ export default function RbdBuilder() {
   return (
     <div className={"app rbd-app" + (tab === "builder" ? "" : " rbd-app-scroll")}>
       <PageHeader
-        crumbs={[{ label: "RBDs", to: "/rbds" }]}
+        crumbs={[{ label: "Systems", to: "/systems" }]}
         title={(meta.name || "").replace(SAMPLE_SUFFIX, "") || (id ? "" : "Untitled RBD")}
         badges={SAMPLE_SUFFIX.test(meta.name || "") && <Chip>Sample</Chip>}
         id={meta.id || id}
@@ -2182,12 +2182,12 @@ export default function RbdBuilder() {
             key={id || (starter ? `starter-${location.key}` : "new")}
             rbdId={id}
             imported={imported}
-            onNew={() => navigate("/rbds/b")}
-            onOpenLibrary={() => navigate("/rbds")}
+            onNew={() => navigate("/systems/b")}
+            onOpenLibrary={() => navigate("/systems")}
             onSaved={(savedId) => {
               // Saved: the "added as a block — not saved yet" note no longer holds.
               setAdded(null);
-              navigate(`/rbds/b/${savedId}`, { replace: true });
+              navigate(`/systems/b/${savedId}`, { replace: true });
             }}
             onMeta={setMeta}
             onTab={setTab}

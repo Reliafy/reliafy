@@ -132,6 +132,24 @@ export function setMyTimeZone(timeZone) {
   });
 }
 
+// What the user does (#438): { roles: [...], offer }. No roles: everything
+// shown; `offer`: ask, once (new users).
+export function getMyRoles() {
+  return request("/api/me/roles");
+}
+
+export function setMyRoles(roles) {
+  return request("/api/me/roles", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roles }),
+  });
+}
+
+export function dismissRolesOffer() {
+  return request("/api/me/roles/dismiss", { method: "POST" });
+}
+
 // Deployment capabilities (public, no auth): { auth, ai, billing }.
 export function getAppConfig() {
   return request("/api/config");
@@ -1641,6 +1659,11 @@ export function createPublicLink(collection, artifactId, options = {}) {
 export function listPublicLinks(collection, artifactId) {
   const q = new URLSearchParams({ collection, artifact_id: artifactId });
   return request(`/api/public-links?${q}`);
+}
+
+// Every live link the user has made, newest first: { links: [...] } (Reports, #438).
+export function listAllPublicLinks() {
+  return request("/api/public-links");
 }
 
 // Relabel, or set / rotate / remove the password: { label } |

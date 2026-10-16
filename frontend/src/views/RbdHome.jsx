@@ -52,7 +52,7 @@ export default function RbdHome() {
   const [excelMapping, setExcelMapping] = useState(null); // {file, message}: a workbook to map by hand
 
   // Open an imported diagram in the builder, unsaved (the builder's Save keeps it).
-  const openImported = (d) => navigate("/rbds/b", { state: { imported: d } });
+  const openImported = (d) => navigate("/systems/b", { state: { imported: d } });
 
   const onImportFile = async (e) => {
     const file = e.target.files?.[0];
@@ -115,7 +115,7 @@ export default function RbdHome() {
     }
   };
 
-  const open = (id) => navigate(`/rbds/b/${id}`);
+  const open = (id) => navigate(`/systems/b/${id}`);
   const loading = rbds === null;
   const visible = (rbds || []).filter((r) => matches(query, r.name, r.id));
 
@@ -129,7 +129,7 @@ export default function RbdHome() {
         onChange={onImportFile}
       />
       <PageHeader
-        title="RBDs"
+        title="Systems"
         meta={<>Reliability block diagrams: system reliability, availability and importance. <ShowMeHow id="rbd" /></>}
         actions={
           <button
@@ -141,7 +141,7 @@ export default function RbdHome() {
             <ImportIcon /> {importing ? "Importing…" : "Import"}
           </button>
         }
-        primary={<button onClick={() => navigate("/rbds/b")}><PlusIcon /> New diagram</button>}
+        primary={<button onClick={() => navigate("/systems/b")}><PlusIcon /> New diagram</button>}
         menu={
           <button
             className="ovm-item"
@@ -202,7 +202,7 @@ export default function RbdHome() {
         <div className="card empty">
           <h2>No saved RBDs</h2>
           <p>Create a reliability block diagram and save it to see it here.</p>
-          <button style={{ marginTop: "1rem" }} onClick={() => navigate("/rbds/b")}>
+          <button style={{ marginTop: "1rem" }} onClick={() => navigate("/systems/b")}>
             <PlusIcon /> New diagram
           </button>
         </div>

@@ -24,8 +24,8 @@ test("where a condition comes from", () => {
   assert.equal(sourceText({ own: true, excluded: true }), "excluded here");
   assert.equal(sourceText({ own: false, excluded: false, source: { name: "Site" } }), "from Site");
   assert.equal(sourceText({ own: false, excluded: true, source: { name: "Control room" } }), "excluded at Control room");
-  assert.equal(sourcePath({ kind: "Location", id: "l1" }), "/maintenance/locations/l1");
-  assert.equal(sourcePath({ kind: "Item", id: "i1" }), "/maintenance/items/i1");
+  assert.equal(sourcePath({ kind: "Location", id: "l1" }), "/asset-register/locations/l1");
+  assert.equal(sourcePath({ kind: "Item", id: "i1" }), "/asset-register/items/i1");
   assert.equal(sourcePath({ kind: "Interface", id: "x" }), null);
 });
 

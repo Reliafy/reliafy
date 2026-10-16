@@ -42,7 +42,7 @@ export function ChangeList({ rows }) {
 
 const PANEL_ROWS = 4;
 
-// The Modelling home's panel: the last 30 days in one sentence, then the few
+// The Home page's panel: the last 30 days in one sentence, then the few
 // changes that matter most, and a link to the full page. Hidden while the
 // workspace has nothing of its own.
 export default function WhatChangedPanel() {

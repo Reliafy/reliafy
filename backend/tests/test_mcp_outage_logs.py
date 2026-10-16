@@ -49,7 +49,7 @@ def test_mcp_upload_and_history(mcp_env):
     out = _ok(_call(tok, "rbd", {"action": "upload_outage_log", "rbd_id": rbd.id, "csv": LOG, "window_start": "0",
                                                "window_end": "1000", "name": "Log"}))
     assert out["n_outages"] == 9 and out["unmapped"] == []
-    assert out["url"].endswith(f"/rbds/b/{rbd.id}?tab=outages")
+    assert out["url"].endswith(f"/systems/b/{rbd.id}?tab=outages")
     assert out["history"]["kpis"]["availability"] == pytest.approx(0.91)
 
     hist = _ok(_call(tok, "rbd_analysis", {"action": "system_history", "rbd_id": rbd.id}))

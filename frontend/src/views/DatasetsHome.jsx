@@ -46,7 +46,7 @@ export default function DatasetsHome() {
   const onCreated = (ds, typedName) => {
     setNewOpen(false);
     refresh();
-    navigate(`/datasets/d/${ds.id}`, ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
+    navigate(`/data/d/${ds.id}`, ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
   };
 
   const onDelete = async (d) => {
@@ -62,14 +62,14 @@ export default function DatasetsHome() {
     }
   };
 
-  const open = (id) => navigate(`/datasets/d/${id}`);
+  const open = (id) => navigate(`/data/d/${id}`);
   const loading = datasets === null;
   const visible = (datasets || []).filter((d) => matches(query, d.name, d.id));
 
   return (
     <div className="app">
       <PageHeader
-        title="Datasets"
+        title="Data"
         meta="Stored once and reused by every model fitted from them."
         primary={<button onClick={() => setNewOpen(true)}><PlusIcon /> New dataset</button>}
       />
@@ -113,7 +113,7 @@ export default function DatasetsHome() {
                       <div className="ds-name">
                         <span className="ds-ic"><FileIcon /></span>
                         {/* A real link, so the row opens from the keyboard too. */}
-                        <Link className="lib-name ds-row-link" to={`/datasets/d/${d.id}`} onClick={(e) => e.stopPropagation()}>
+                        <Link className="lib-name ds-row-link" to={`/data/d/${d.id}`} onClick={(e) => e.stopPropagation()}>
                           {itemName(d)}
                         </Link>
                         {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}

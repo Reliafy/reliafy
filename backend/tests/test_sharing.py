@@ -277,7 +277,7 @@ def test_shared_recurrent_model(client, monkeypatch):
     rm = r.json()
     r = _share(client, "recurrent_models", rm["id"], "b@x.com")
     assert r.status_code == 200, r.text
-    assert sent and sent[0][-1] == f"/modelling/recurrent/{rm['id']}"
+    assert sent and sent[0][-1] == f"/models/recurrent/{rm['id']}"
 
     client.act_as(B)
     rows = client.get("/api/recurrent/models").json()["models"]

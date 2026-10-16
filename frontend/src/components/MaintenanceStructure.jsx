@@ -15,7 +15,7 @@ import {
   bomImportSummary, levelsIn, positionsPlanSummary, qtyNumber, qtyText, treeKeys,
 } from "../maintenanceStructure.js";
 
-const partLink = (id) => `/maintenance/parts/${id}`;
+const partLink = (id) => `/asset-register/parts/${id}`;
 
 // ---- the tree ------------------------------------------------------------------------
 
@@ -152,10 +152,10 @@ export function WhereUsedCard({ used }) {
               <ul className="maint-list">
                 {used.positions.map((p, i) => (
                   <li key={`${p.position.id}-${p.how}-${i}`}>
-                    <Link to={`/maintenance/positions/${p.position.id}`}>{p.position.name}</Link>
+                    <Link to={`/asset-register/positions/${p.position.id}`}>{p.position.name}</Link>
                     {p.position.path.length > 0 && <span className="lib-date"> · {p.position.path.join(" › ")}</span>}
                     <span className="lib-date"> · {p.how === "fitted"
-                      ? <>fitted: <Link to={`/maintenance/items/${p.item.id}`}>{p.item.name}{p.item.serial ? ` ${p.item.serial}` : ""}</Link></>
+                      ? <>fitted: <Link to={`/asset-register/items/${p.item.id}`}>{p.item.name}{p.item.serial ? ` ${p.item.serial}` : ""}</Link></>
                       : `on its parts list (${p.role}, ${qtyNumber(p.quantity)} a job)`}</span>
                   </li>
                 ))}
@@ -168,7 +168,7 @@ export function WhereUsedCard({ used }) {
               <ul className="maint-list">
                 {used.items.map((it) => (
                   <li key={it.id}>
-                    <Link to={`/maintenance/items/${it.id}`}>{it.name}</Link>
+                    <Link to={`/asset-register/items/${it.id}`}>{it.name}</Link>
                     {it.serial && <span className="lib-date"> · {it.serial}</span>}
                     <span className="lib-date"> · {it.fitted_to ? `fitted to ${it.fitted_to.name}` : it.location || "not fitted"}
                       {!it.linked && " · its part number typed in, not linked"}</span>

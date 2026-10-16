@@ -336,7 +336,7 @@ def test_mcp_compare_groups_inline_and_from_a_dataset(mcp_env):
     out = _ok(_call(tok, "life_data_analysis", {"action": "compare_groups", "dataset_id": ds["id"],
                                                 "time_column": "weeks", "group_column": "arm",
                                             "censor_column": "censored", "include_curves": True}))
-    assert out["url"].endswith(f"/datasets/d/{ds['id']}?compare=arm")
+    assert out["url"].endswith(f"/data/d/{ds['id']}?compare=arm")
     assert out["groups"][0]["curve"]["x"][0] == 0
 
     assert "with dataset_id" in _err(_call(tok, "life_data_analysis", {"action": "compare_groups", "data": AML_X,

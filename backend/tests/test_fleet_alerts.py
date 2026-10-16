@@ -260,10 +260,10 @@ def test_above_rule_is_edge_triggered(client, outbox):
     assert f"{low:.1f} → {high:.1f}" in msg["text"]
     assert "over the next 12 months" in msg["text"]
     assert "usage update received via the API" in msg["text"] and "UTC" in msg["text"]
-    assert f"https://reliafy.test/fleet/forecasts/{fid}" in msg["text"]
+    assert f"https://reliafy.test/forecasts/{fid}" in msg["text"]
     assert "Manage alerts: " in msg["text"] and "Brisbane, Australia" in msg["text"]
     assert "Fleet alert" in msg["html"] and "View the fleet" in msg["html"]
-    assert f"https://reliafy.test/fleet/forecasts/{fid}" in msg["html"]
+    assert f"https://reliafy.test/forecasts/{fid}" in msg["html"]
 
     # Still above: no second email.
     assert _ingest(client, fid, token, 950)["alerts_fired"] == 0
@@ -442,7 +442,7 @@ def test_mcp_fleet_alert_tools(env):
 
     created = _ok(_call(a, "fleet", {"action": "create_alert", "fleet_id": fid, "kind": "within", "x": 0.5,
                                      "y_periods": 3}))
-    assert created["alert"]["kind"] == "within" and created["url"].endswith(f"/fleet/forecasts/{fid}#alerts")
+    assert created["alert"]["kind"] == "within" and created["url"].endswith(f"/forecasts/{fid}#alerts")
     bad = _call(a, "fleet", {"action": "create_alert", "fleet_id": fid, "kind": "within", "x": 0.5, "y_periods": 7})
     assert bad.is_error and "horizon" in bad.content[0].text
 

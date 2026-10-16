@@ -73,7 +73,7 @@ export default function FleetTrackingHome() {
     setCreateError(null);
     try {
       const fleet = await createTrackedFleet(name.trim(), pickedId);
-      navigate(`/fleet/tracking/${fleet.id}`);
+      navigate(`/models/tracking/${fleet.id}`);
     } catch (err) {
       setCreateError(err.message);
     } finally {
@@ -94,13 +94,13 @@ export default function FleetTrackingHome() {
     }
   };
 
-  const open = (id) => navigate(`/fleet/tracking/${id}`);
+  const open = (id) => navigate(`/models/tracking/${id}`);
   const visible = (fleets || []).filter((f) => matches(query, f.name, f.model_name, f.id));
 
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Fleet" }]}
+        crumbs={[{ label: "Models", to: "/models" }]}
         title="Degradation tracking"
         meta="Each item's remaining life against a degradation model; open a fleet to log inspections."
         primary={<button onClick={openCreate}><PlusIcon /> New tracked fleet</button>}
@@ -116,7 +116,7 @@ export default function FleetTrackingHome() {
           <p>
             Name a fleet, pick the degradation model it runs against, and
             register the items you have in service — or{" "}
-            <Link to="/modelling/degradation" className="evidence-link">fit a model</Link> first.
+            <Link to="/models/degradation" className="evidence-link">fit a model</Link> first.
           </p>
           <button style={{ marginTop: "1rem" }} onClick={openCreate}>
             <PlusIcon /> New tracked fleet
@@ -218,7 +218,7 @@ export default function FleetTrackingHome() {
             </label>
             <p className="muted-line">
               One model can back any number of fleets. Don't have a model yet?{" "}
-              <Link to="/modelling/degradation" className="evidence-link" onClick={() => setModalOpen(false)}>
+              <Link to="/models/degradation" className="evidence-link" onClick={() => setModalOpen(false)}>
                 Fit a degradation model
               </Link>{" "}
               from your inspection history first.

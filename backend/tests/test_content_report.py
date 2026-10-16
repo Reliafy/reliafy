@@ -43,7 +43,7 @@ def _seed(d):
     oct5 = at(2026, 10, 5)
     # Visitor A: LinkedIn link to the import post, then signs up.
     _event(d, "pageview", "/blog/import-rbds", oct5, "A", "linkedin", "import-rbds")
-    _event(d, "pageview", "/modelling", oct5 + timedelta(minutes=1), "A", "linkedin", "import-rbds")
+    _event(d, "pageview", "/home", oct5 + timedelta(minutes=1), "A", "linkedin", "import-rbds")
     _event(d, "signup", "/login", oct5 + timedelta(minutes=2), "A")
     # Visitor B: the update email, reads October's update, no sign-up.
     _event(d, "pageview", "/whats-new/october-2026", oct5, "B", "email", "october-2026")

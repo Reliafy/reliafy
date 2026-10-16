@@ -143,7 +143,7 @@ export default function RcmStudyPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "RCM", to: "/rcm" }]}
+        crumbs={[{ label: "RCM studies", to: "/maintenance/rcm" }]}
         title={itemName(study)}
         badges={
           <>

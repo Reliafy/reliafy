@@ -32,7 +32,7 @@ for (const route of publicRoutes().filter((r) => !OWN_TEST.has(r.path))) {
 }
 
 test("the app asks for sign-in", async ({ page, problems }) => {
-  for (const path of ["/modelling", "/rbds/b/sample-rbd-pump-station", "/maintenance"]) {
+  for (const path of ["/home", "/systems/b/sample-rbd-pump-station", "/maintenance"]) {
     await open(page, path);
     await expect(page, `${path} without signing in`).toHaveURL(/\/login$/);
   }

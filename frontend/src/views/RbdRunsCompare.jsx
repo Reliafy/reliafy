@@ -94,7 +94,7 @@ export default function RbdRunsCompare() {
   return (
     <div className="app rbd-runs">
       <PageHeader
-        crumbs={[{ label: "RBDs", to: "/rbds" }, { label: "Simulation runs", to: runsPath(rbdId) }]}
+        crumbs={[{ label: "Systems", to: "/systems" }, { label: "Simulation runs", to: runsPath(rbdId) }]}
         title="Compare runs"
         meta={names.length ? names.join(" · ") : null}
       />
@@ -137,7 +137,7 @@ export default function RbdRunsCompare() {
                   const a = availabilityText(r.availability);
                   const ss = r.steady_state_availability;
                   return (
-                    <tr key={r.run_id} className="lib-row" onClick={() => navigate(`/rbds/runs/${r.run_id}`)}>
+                    <tr key={r.run_id} className="lib-row" onClick={() => navigate(`/systems/runs/${r.run_id}`)}>
                       <td>
                         <Chip dot={COLORWAY[i % COLORWAY.length]}>Run {i + 1}</Chip>{" "}
                         <span className="lib-date">{when(r.created_at)}</span>

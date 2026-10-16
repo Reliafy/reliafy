@@ -13,7 +13,7 @@ import { CATEGORY } from "./plotTheme.js";
 
 // Every saved model — life data, accelerated life, recurrent, degradation — as
 // one list of rows, newest first. Shared by the All models list and the
-// Modelling home's "Your recent models".
+// Home page's "Your recent models".
 
 export const TYPE_LABEL = {
   life: "Life data",
@@ -42,7 +42,7 @@ export async function loadAllModels() {
     noMax: !!m.no_finite_maximum,
     color: distColor(m.distribution),
     created_at: m.created_at,
-    to: `/modelling/m/${m.id}`,
+    to: `/models/m/${m.id}`,
   }));
   const deg = (dm.models || []).map((m) => ({
     ...common(m),
@@ -50,7 +50,7 @@ export async function loadAllModels() {
     detail: m.path_model || "—",
     color: CATEGORY.violet,
     created_at: m.updated_at || m.created_at,
-    to: `/modelling/degradation/${m.id}`,
+    to: `/models/degradation/${m.id}`,
   }));
   const acc = (am.models || []).map((m) => ({
     ...common(m),
@@ -60,7 +60,7 @@ export async function loadAllModels() {
     noMax: !!m.no_finite_maximum,
     color: CATEGORY.teal,
     created_at: m.created_at,
-    to: `/modelling/alt/${m.id}`,
+    to: `/models/alt/${m.id}`,
   }));
   const rec = (rm.models || []).map((m) => ({
     ...common(m),
@@ -68,7 +68,7 @@ export async function loadAllModels() {
     detail: m.model || "—",
     color: CATEGORY.amber,
     created_at: m.created_at,
-    to: `/modelling/recurrent/${m.id}`,
+    to: `/models/recurrent/${m.id}`,
   }));
   return [...life, ...deg, ...acc, ...rec].sort((a, b) => (a.created_at > b.created_at ? -1 : 1));
 }

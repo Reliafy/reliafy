@@ -46,7 +46,7 @@ export default function RcmHome() {
     setCreateError(null);
     try {
       const study = await createRcmStudy(name.trim(), system.trim(), description.trim());
-      navigate(`/rcm/studies/${study.id}`);
+      navigate(`/maintenance/rcm/${study.id}`);
     } catch (err) {
       if (err.code === "cap") {
         setModalOpen(false);
@@ -72,7 +72,7 @@ export default function RcmHome() {
     }
   };
 
-  const open = (id) => navigate(`/rcm/studies/${id}`);
+  const open = (id) => navigate(`/maintenance/rcm/${id}`);
   const visible = (studies || []).filter((s) => matches(query, s.name, s.system, s.id));
 
   return (
@@ -157,7 +157,7 @@ export default function RcmHome() {
       {importOpen && (
         <RcmImportModal
           onClose={() => setImportOpen(false)}
-          onImported={(study) => navigate(`/rcm/studies/${study.id}`)}
+          onImported={(study) => navigate(`/maintenance/rcm/${study.id}`)}
         />
       )}
 

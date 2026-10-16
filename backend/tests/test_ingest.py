@@ -360,7 +360,7 @@ def test_import_model_with_data(client):
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["params_only"] is False and body["url"].startswith("/modelling/m/")
+    assert body["params_only"] is False and body["url"].startswith("/models/m/")
 
     # The model opened in-app has a full result (plot + params).
     client.act_as(A)

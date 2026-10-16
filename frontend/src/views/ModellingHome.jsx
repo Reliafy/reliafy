@@ -33,10 +33,10 @@ export default function ModellingHome() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }]}
+        crumbs={[{ label: "Models", to: "/models" }]}
         title="Life data models"
         meta="Fitted life distributions and proportional-hazards models."
-        primary={<button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>}
+        primary={<button onClick={() => navigate("/models/new")}><PlusIcon /> New model</button>}
       />
 
       <UnsavedFitReminder />
@@ -48,7 +48,7 @@ export default function ModellingHome() {
       <ModelLibrary
         models={models}
         loading={loading}
-        onOpen={(id) => navigate(`/modelling/m/${id}`)}
+        onOpen={(id) => navigate(`/models/m/${id}`)}
         onDelete={onDelete}
       />
     </div>

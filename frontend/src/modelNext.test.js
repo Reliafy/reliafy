@@ -18,7 +18,7 @@ test("nextStepsFor: which tools take which kind of model", () => {
 
 test("nextStepLink opens each tool with the model chosen", () => {
   assert.equal(nextStepLink("replacement", "m1"), "/strategy/replacement?model=m1");
-  assert.equal(nextStepLink("fleet", "m1"), "/fleet?new=1&model=m1");
+  assert.equal(nextStepLink("fleet", "m1"), "/forecasts?new=1&model=m1");
   assert.equal(nextStepLink("test", "m1", { unit: "Hours" }), "/strategy/demonstration-test?unit=Hours&model=m1");
   assert.equal(modelFromSearch("?model=m1&new=1"), "m1");
   assert.equal(modelFromSearch("?model=<x>"), null);

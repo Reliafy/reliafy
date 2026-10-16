@@ -11,6 +11,8 @@ import { ShowMeHow } from "../components/Walkthrough.jsx";
 import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
 import { formatNumber } from "../format.js";
 import { modelFromSearch, plainName } from "../modelNext.js";
+import ClassForecastList from "../components/ClassForecastList.jsx";
+import { useRoles } from "../RolesProvider.jsx";
 
 // A forecast's row figure: "≈ 40.3 in 12 months", or why there isn't one.
 function expectedCell(f) {
@@ -26,10 +28,11 @@ function expectedCell(f) {
   return `≈ ${formatNumber(f.expected)} in ${periods} ${word}`;
 }
 
-// Fleet forecasts, the Fleet section's root: one row per fleet with its live
-// expected-failure headline.
+// Forecasts (#438): one row per fleet with its live expected-failure
+// headline, then (with Reliafy Maintenance) the position classes' forecasts.
 export default function FleetForecasts() {
   const navigate = useNavigate();
+  const { has } = useRoles();
   const [fleets, setFleets] = useState(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
@@ -89,13 +92,13 @@ export default function FleetForecasts() {
     }
   };
 
-  // Opened as /fleet?new=1&model=<id>: the new-forecast dialog, with the
+  // Opened as /forecasts?new=1&model=<id>: the new-forecast dialog, with the
   // model chosen. The query is dropped so a reload doesn't reopen it.
   const { search } = useLocation();
   useEffect(() => {
     const wanted = modelFromSearch(search);
     if (!wanted || new URLSearchParams(search).get("new") !== "1") return;
-    navigate("/fleet", { replace: true });
+    navigate("/forecasts", { replace: true });
     openCreate(wanted);
     // openCreate is this render's; it runs once per link.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,7 +112,7 @@ export default function FleetForecasts() {
       const alt = modelKind !== "recurrent" && modelId.startsWith("alt:");
       const fleet = await createFleet(
         name.trim(), alt ? modelId.slice(4) : modelId, modelKind === "recurrent" ? "recurrent" : alt ? "alt" : "life");
-      navigate(`/fleet/forecasts/${fleet.id}`);
+      navigate(`/forecasts/${fleet.id}`);
     } catch (err) {
       if (err.code === "cap") {
         setModalOpen(false);
@@ -135,15 +138,14 @@ export default function FleetForecasts() {
     }
   };
 
-  const open = (id) => navigate(`/fleet/forecasts/${id}`);
+  const open = (id) => navigate(`/forecasts/${id}`);
   const visible = (fleets || []).filter((f) => matches(query, f.name, f.id));
 
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Fleet" }]}
-        title="Failure forecasts"
-        meta={<>How many failures a fleet will see over a horizon, from your fitted models. <ShowMeHow id="fleet" /></>}
+        title="Forecasts"
+        meta={<>How many failures to expect over a horizon: fleets from your fitted models{has.maintenance ? ", position classes from their own history" : ""}. <ShowMeHow id="fleet" /></>}
         primary={<button onClick={() => openCreate()}><PlusIcon /> New forecast</button>}
       />
 
@@ -157,6 +159,7 @@ export default function FleetForecasts() {
         </div>
       )}
 
+      {has.maintenance && <div className="recent-models-head home-card"><h2>Fleets</h2></div>}
       {fleets === null ? (
         <div className="card empty">Loading…</div>
       ) : fleets.length === 0 ? (
@@ -209,6 +212,8 @@ export default function FleetForecasts() {
           </div>
         </>
       )}
+
+      <ClassForecastList />
 
       {modalOpen && (
         <Modal
@@ -263,8 +268,8 @@ export default function FleetForecasts() {
             </label>
             <p className="muted-line">
               {modelKind === "recurrent"
-                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Recurrent events first if you don't have one yet."
-                : "The forecast evaluates this model at each item's age (and, for a regression or ALT model, at each item's own conditions) — fit one under Modelling first if you don't have one yet."}
+                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Models › Recurrent first if you don't have one yet."
+                : "The forecast evaluates this model at each item's age (and, for a regression or ALT model, at each item's own conditions) — fit one under Models first if you don't have one yet."}
             </p>
           </div>
         </Modal>

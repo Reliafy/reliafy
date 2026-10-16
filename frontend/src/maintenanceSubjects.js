@@ -12,10 +12,10 @@ export function taskUnits(kind) {
   return kind === "location" ? CALENDAR_UNITS : ALL_UNITS;
 }
 
-// The page a subject is on: /maintenance/items/<id>.
+// The page a subject is on: /asset-register/items/<id>.
 export function subjectPath(subject) {
   if (!subject?.id || !PATHS[subject.kind]) return null;
-  return `/maintenance/${PATHS[subject.kind]}/${subject.id}`;
+  return `/asset-register/${PATHS[subject.kind]}/${subject.id}`;
 }
 
 // The API path for a subject's tasks or points: /api/maintenance/items/<id>/tasks.
