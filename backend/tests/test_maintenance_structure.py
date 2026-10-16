@@ -358,6 +358,195 @@ def test_an_excel_bom_imports_like_a_csv(m):
     assert m.part_structure(_pid(m, "100200"))["counts"]["depth"] == 3
 
 
+# ---- indented BOMs: a level on each row instead of a parent ------------------------------------
+
+# FOUR_LEVELS again, indented: rows in tree order with a level number, no parent column. The
+# bearing is in the pump unit after the motor's parts, so its parent is two rows back up.
+INDENTED = """Level,PN,Qty,Nomenclature,Indenture level,Manufacturer,Ref
+0,SYS-1,,Cooling water system,System,,
+1,PU-1,2,Pump unit,Subsystem,,"P1, P2"
+2,MTR-1,1,Motor,LRU,ABB,M1
+3,BRG-1,2,Bearing 6205,Component,SKF,
+3,FAN-1,1,Cooling fan,SRU,,F1
+4,BLD-1,6,Fan blade,Component,,
+2,BRG-1,2,Bearing 6205,Component,SKF,"B1, B2"
+"""
+FOUR_LEVELS_TREE = (
+    "SYS-1", None, "", 1, [
+        ("PU-1", 2.0, "P1, P2", 2.0, [
+            ("BRG-1", 2.0, "B1, B2", 4.0, []),
+            ("MTR-1", 1.0, "M1", 2.0, [
+                ("BRG-1", 2.0, "", 4.0, []),
+                ("FAN-1", 1.0, "F1", 2.0, [("BLD-1", 6.0, "", 12.0, [])])])])])
+
+
+def _relevel(text, levels):
+    """INDENTED with its level column swapped for ``levels`` (one per row, in order)."""
+    lines = text.strip().split("\n")
+    header = lines[0].split(",", 1)[1]
+    return "\n".join([f"{levels[0]},{header}"] + [f"{lv},{ln.split(',', 1)[1]}"
+                                                  for lv, ln in zip(levels[1:], lines[1:])]) + "\n"
+
+
+def test_an_indented_bom_by_level_number_makes_the_same_structure_and_reruns_unchanged(m):
+    dry = _import(m, INDENTED)
+    assert dry["dry_run"] and dry["ok"] and m.parts() == []
+    assert dry["format"] == {"id": "levels", "label": "Indented, by level number", "column": "Level"}
+    assert dry["columns"] == {"bom_level": "Level", "part_number": "PN", "quantity": "Qty", "name": "Nomenclature",
+                              "level": "Indenture level", "manufacturer": "Manufacturer", "ref": "Ref"}
+    assert dry["counts"] == {"rows": 7, "parts_created": 6, "parts_updated": 0, "lines_added": 6, "lines_changed": 0,
+                             "unchanged": 0, "levels_added": 0, "conflicts": 0, "errors": 0}
+    done = _import(m, INDENTED, dry_run=False)
+    assert done["ok"] and not done["dry_run"]
+    assert _tree(m.part_structure(_pid(m, "SYS-1"))["tree"]) == FOUR_LEVELS_TREE
+    assert m.part(_pid(m, "MTR-1"))["level"] == "LRU"  # the indenture text column, as it is
+    # Again, as levels from 1, and as the parent-and-child file: all the same lines, nothing written.
+    events, graph = m.s.event_count(ORG), m.s.snapshot()
+    for text in (INDENTED, _relevel(INDENTED, ["Level", 1, 2, 3, 4, 4, 5, 3]), FOUR_LEVELS):
+        again = _import(m, text, dry_run=False)
+        assert again["ok"] and again["counts"]["unchanged"] == 6
+        assert again["counts"]["parts_created"] + again["counts"]["lines_added"] + again["counts"]["lines_changed"] == 0
+    assert m.s.event_count(ORG) == events and m.s.snapshot() == graph
+    _rebuilds(m)
+
+
+@pytest.mark.parametrize("levels, kind", [
+    (["Lvl", "0", ".1", "..2", "...3", "...3", "....4", "..2"], "dotted"),
+    (["BOM level", "1", ".2", "..3", "...4", "...4", "....5", "..3"], "dotted"),
+    (["Indenture", "1", "1.1", "1.1.1", "1.1.1.1", "1.1.1.2", "1.1.1.2.1", "1.1.2"], "outline"),
+    (["LCN", "A", "A1", "A1A", "A1A01", "A1A02", "A1A02X", "A1B"], "lcn"),
+])
+def test_each_indented_format_is_detected_and_makes_the_same_structure(m, levels, kind):
+    got = _import(m, _relevel(INDENTED, levels), dry_run=False)
+    assert got["ok"], got["errors"]
+    assert got["format"]["id"] == kind and got["format"]["column"] == levels[0]
+    assert got["counts"]["lines_added"] == 6
+    assert _tree(m.part_structure(_pid(m, "SYS-1"))["tree"]) == FOUR_LEVELS_TREE
+    again = _import(m, _relevel(INDENTED, levels), dry_run=False)
+    assert again["counts"]["unchanged"] == 6 and again["counts"]["lines_added"] == again["counts"]["lines_changed"] == 0
+
+
+def test_outline_numbers_and_lcns_can_come_in_any_order_but_level_numbers_cannot(m):
+    shuffled = "Outline number,PN,Qty\n1.2.1,C,3\n1.1,A,1\n1,TOP,\n1.2,B,2\n"
+    got = _import(m, shuffled, dry_run=False)
+    assert got["ok"] and got["format"]["id"] == "outline"
+    assert _tree(m.part_structure(_pid(m, "TOP"))["tree"]) == (
+        "TOP", None, "", 1, [("A", 1.0, "", 1.0, []), ("B", 2.0, "", 2.0, [("C", 3.0, "", 6.0, [])])])
+    lcn = _import(m, "LCN,PN\nAB,C\nA,TOP\nAA,X\n", dry_run=False)
+    assert lcn["ok"] and {(x["parent"], x["part_number"]) for x in lcn["lines_added"]} == {("TOP", "C"), ("TOP", "X")}
+    # Level numbers say where a row is only by the rows above it: a child before its parent is refused.
+    events = m.s.event_count(ORG)
+    child_first = _import(m, "Level,PN\n2,GRANDCHILD\n0,TOP2\n1,CHILD\n", dry_run=False)
+    assert child_first["dry_run"] and child_first["errors"] == [
+        {"row": 2, "error": "It's at level 2, but the first row has to be at the top level (0)."}]
+    up_then_down = _import(m, "Level,PN\n0,TOP2\n1,CHILD\n0,TOP3\n2,LOST\n")
+    assert up_then_down["errors"] == [{"row": 5, "error": "It's at level 2 straight after a row at level 0: a level "
+                                                          "is skipped (one level down at a time)."}]
+    assert m.s.event_count(ORG) == events
+
+
+def test_a_level_jump_is_refused_naming_the_row(m):
+    jumps = {
+        "Level,PN\n1,A\n2,B\n4,C\n3,D\n": (4, "It's at level 4 straight after a row at level 2: a level is skipped "
+                                            "(one level down at a time)."),
+        "Lvl,PN\n.1,A\n..2,B\n....4,C\n": (4, "It's at level 4 straight after a row at level 2: a level is skipped "
+                                            "(one level down at a time)."),
+        "Level,PN\n1,A\n1.1,B\n1.1.1.1,C\n": (4, "It's 1.1.1.1, but there's no 1.1.1: that's more than one level "
+                                              "below 1.1."),
+        "Level,PN\n1,A\n2.1,B\n": (3, "It's 2.1, but there's no 2 to hold it."),
+        "LCN,PN\nA,SYS\nA01,PU\nA0101,MTR\nA02,PU2\nA020101,X\n": (
+            6, "LCN A020101 is longer than others at its level (A0101): the level between it and A02 is missing."),
+        "LCN,PN\nA,SYS\nA01,PU\nB01,X\nB0101,Y\n": (
+            4, "LCN B01 doesn't extend any other LCN in the file and is longer than the top's (A): its parent is "
+               "missing."),
+    }
+    for text, (row, error) in jumps.items():
+        got = _import(m, text, dry_run=False)
+        assert got["dry_run"] and not got["ok"] and got["errors"] == [{"row": row, "error": error}], text
+    assert m.parts() == []  # all or nothing
+    # Repeated codes, a blank level and a stray value among numbers are row errors too.
+    assert _import(m, "Level,PN\n1,A\n1.1,B\n1.1,C\n")["errors"][0]["row"] == 4
+    assert _import(m, "LCN,PN\nA,X\na,Y\n")["errors"] == [{"row": 3, "error": "LCN A is on row 2 too."}]
+    odd = _import(m, "Level,PN\n0,A\n1,B\n,C\nx,D\n1,E\n")
+    assert odd["format"]["id"] == "levels"
+    assert odd["errors"] == [{"row": 4, "error": "The level is blank."},
+                             {"row": 5, "error": "The level 'x' isn't a whole number (0, 1, 2) like the others."}]
+
+
+def test_several_top_rows_are_several_top_parts(m):
+    got = _import(m, "Level,PN,Qty\n1,PUMP-A,\n2,IMP-1,1\n2,SEAL-1,2\n1,PUMP-B,\n2,IMP-1,1\n1,SPARE-KIT,\n",
+                  dry_run=False)
+    assert got["ok"] and got["counts"]["parts_created"] == 5 and got["counts"]["lines_added"] == 3
+    roots = [p["part_number"] for p in m.parts() if p["components"] and not p["used_in"]]
+    assert sorted(roots) == ["PUMP-A", "PUMP-B"]
+    assert m.part(_pid(m, "SPARE-KIT"))["components"] == []  # a top row with nothing under it: just a part
+    assert {p["part_number"] for p in m.where_used(_pid(m, "IMP-1"))["parents"]} == {"PUMP-A", "PUMP-B"}
+
+
+def test_an_assembly_listed_twice_says_its_lines_once(m):
+    # The motor's bearings, under each pump: one line, not added up. Two rows under one motor do add up.
+    text = ("Level,PN,Qty,Ref\n0,SYS,,\n1,PU-A,1,\n2,MTR,1,\n3,BRG,1,B1\n3,BRG,1,B2\n1,PU-B,1,\n2,MTR,1,\n"
+            "3,BRG,2,B1\n")
+    got = _import(m, text, dry_run=False)
+    assert got["ok"]
+    assert [x for x in got["lines_added"] if x["part_number"] == "BRG"] == [
+        {"parent": "MTR", "part_number": "BRG", "qty": 2.0, "ref": "B1, B2", "rows": [5, 6, 9]}]
+    differs = _import(m, text.replace("3,BRG,2,B1", "3,BRG,3,B1"))
+    assert differs["errors"] == [{"row": 9, "error": "MTR holds 3 of BRG here, but 2 at row 5: one part has one "
+                                                     "structure."}]
+
+
+def test_levels_name_indenture_only_when_asked(m):
+    text = "Level,PN,Indenture level\n0,SYS,\n1,PU,\n2,MTR,Line-replaceable unit\n3,BRG,\n"
+    header, rows = bom.table_from_file(text.encode(), "bom.csv")
+    plain = bom.run(m, header, rows)
+    assert plain["parts_created"] == [{"part_number": "SYS", "name": "SYS"}, {"part_number": "PU", "name": "PU"},
+                                      {"part_number": "MTR", "name": "MTR", "level": "Line-replaceable unit"},
+                                      {"part_number": "BRG", "name": "BRG"}]
+    named = bom.run(m, header, rows, dry_run=False, level_names=m.part_levels())
+    assert named["ok"] and named["levels_added"] == ["Line-replaceable unit"]
+    assert [m.part(_pid(m, n))["level"] for n in ("SYS", "PU", "MTR", "BRG")] == [
+        "System", "Subsystem", "Line-replaceable unit", "LRU"]  # its own text wins
+    deep = bom.table_from_file(b"Level,PN\n0,A\n1,B\n2,C\n", "x.csv")
+    assert bom.run(m, *deep, level_names=["Top", "Next"])["errors"] == [
+        {"row": 4, "error": "It's 2 levels below the top: deeper than the 2 level names."}]
+    with pytest.raises(Invalid, match="needs an indented BOM"):
+        bom.run(m, *bom.table_from_file(FOUR_LEVELS.encode(), "x.csv"), level_names=["System"])
+    # A parent-and-child file's numeric level column isn't taken for indenture level names.
+    got = _import(m, "NHA,PN,Level\n,TOP,0\nTOP,KID,1\n")
+    assert got["format"]["id"] == "parent" and "level" not in got["columns"] and got["counts"]["levels_added"] == 0
+    _rebuilds(m)
+
+
+def test_an_indented_bom_from_excel_and_from_rows(m):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Pump set, indented BOM"])
+    ws.append([])
+    ws.append(["Level", "Part number", "Qty", "Description"])
+    ws.append([1, 100200, None, "Pump set"])  # numbers, as Excel keeps them
+    ws.append([2.0, 300400, 2, "Pump unit"])
+    ws.append([3, "MTR-1", 1, "Motor"])
+    ws.append([4, "BRG-1", 2, "Bearing"])
+    ws.append([3, "SEAL-1", 1, "Seal"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    got = _import(m, buf.getvalue(), dry_run=False, filename="bom.xlsx")
+    assert got["ok"] and got["format"]["id"] == "levels"
+    assert got["counts"]["parts_created"] == 5 and got["counts"]["lines_added"] == 4
+    assert {p["part_number"] for p in m.parts()} == {"100200", "300400", "MTR-1", "BRG-1", "SEAL-1"}
+    assert m.part_structure(_pid(m, "100200"))["counts"]["depth"] == 3
+    assert _import(m, buf.getvalue(), dry_run=False, filename="bom.xlsx")["counts"]["unchanged"] == 4
+    # Rows given directly (the MCP tool's), outline numbers in any order.
+    header, rows = bom.table_from_rows([{"level": "1.1", "part number": "300400", "qty": 3},
+                                        {"level": 1, "part number": "100200"}])
+    again = bom.run(m, header, rows, dry_run=False)
+    assert again["format"]["id"] == "outline" and again["counts"]["lines_changed"] == 1
+    _rebuilds(m)
+
+
 def test_the_shared_plants_structure_reads_back_and_rebuilds(m):
     """The plant the graph and Neo4j tests share carries a structure too."""
     p = plant(m)
@@ -440,3 +629,10 @@ def test_product_structure_through_the_api(api):
                       data={"mapping": '{"part_number": "Code", "parent": "Assy"}'}).json()
     assert mapped["counts"]["lines_added"] == 1
     assert api.post(f"{base}/parts/import-bom", files=files, data={"mapping": "[1]"}).status_code == 422
+    # An indented BOM: the format detected, and levels named from the list only when asked.
+    indented = {"file": ("bom.csv", b"Level,PN\n0,NEW-SYS\n1,NEW-SUB\n", "text/csv")}
+    dry = api.post(f"{base}/parts/import-bom", files=indented).json()
+    assert dry["format"]["id"] == "levels" and dry["parts_created"][1] == {"part_number": "NEW-SUB",
+                                                                          "name": "NEW-SUB"}
+    named = api.post(f"{base}/parts/import-bom", files=indented, data={"levels_by_depth": "true"}).json()
+    assert named["parts_created"][1]["level"] == "Subsystem"

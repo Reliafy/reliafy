@@ -2440,9 +2440,13 @@ export function positionsFromStructure(partId, { parentId = null, levels = null,
     { parent_id: parentId, levels, dry_run: dryRun });
 }
 // A BOM from CSV or Excel (sheet and header row for a workbook); a dry run unless dryRun is false.
-export function importBom(file, { dryRun = true, sheet, headerRow } = {}) {
+// levelsByDepth: an indented BOM's levels name its parts' indenture levels from the workspace's list.
+export function importBom(file, { dryRun = true, sheet, headerRow, levelsByDepth = false } = {}) {
   return request("/api/maintenance/parts/import-bom", {
-    method: "POST", body: excelForm(file, sheet, headerRow, { dry_run: dryRun ? "true" : "false" }),
+    method: "POST",
+    body: excelForm(file, sheet, headerRow, {
+      dry_run: dryRun ? "true" : "false", ...(levelsByDepth ? { levels_by_depth: "true" } : {}),
+    }),
   });
 }
 

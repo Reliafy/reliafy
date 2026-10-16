@@ -223,8 +223,10 @@ in one of each), the positions whose parts list names it or with an item of it f
 with its part number typed in).
 - A BOM from a spreadsheet: import_bom with rows, one per parent-child line: parent part number (or NHA, next higher \
 assembly), part number (or PN), quantity (Qty), nomenclature, indenture level, manufacturer, reference. A row \
-without a parent just describes a part. Parts are matched by part number; missing ones are created; an existing \
-one only gains a level or manufacturer it lacks. Two rows for one parent and child add up. Lines the rows don't name \
+without a parent just describes a part. An indented BOM works too: rows in tree order with a 'level' (0/1/2, \
+.1/..2, outline 1.1.2, or an 'LCN') instead of a parent; the result's format says which was detected. Parts \
+are matched by part number; missing ones are created; an existing one only gains a level or manufacturer it \
+lacks. Two rows for one parent and child add up. Lines the rows don't name \
 stay. Every row is checked first (loops named with their path); with any error nothing is written. dry_run first, \
 then false; the same rows again change nothing. For a file, the user can import it on the Parts page.
 - As-designed to as-maintained: an item is an instance of a part (maintenance_items set_part). \

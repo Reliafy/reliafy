@@ -796,11 +796,13 @@ def set_part_levels(body: dict = Body(...), m: Maintenance = Depends(maintenance
 @router.post("/parts/import-bom")
 async def import_bom(file: UploadFile = File(...), dry_run: bool = Form(True), sheet: str | None = Form(None),
                      header_row: str | None = Form(None), mapping: str | None = Form(None),
+                     levels_by_depth: bool = Form(False),
                      m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """A BOM from CSV or Excel, one row per parent -> child line (see bom.py). sheet and
-    header_row pick an Excel sheet's table (blank: the first sheet, its header guessed);
-    mapping ({field: column}, JSON) overrides the guessed columns. A dry run (the default)
-    only reports."""
+    """A BOM from CSV or Excel: one row per parent -> child line, or an indented BOM with
+    a level on each row (see bom.py). sheet and header_row pick an Excel sheet's table
+    (blank: the first sheet, its header guessed); mapping ({field: column}, JSON) overrides
+    the guessed columns; levels_by_depth names an indented BOM's parts' indenture levels
+    from the workspace's list, top first. A dry run (the default) only reports."""
     import json
 
     from backend.maintenance import bom
@@ -823,7 +825,10 @@ async def import_bom(file: UploadFile = File(...), dry_run: bool = Form(True), s
         return JSONResponse(status_code=422, content={"detail": str(err)})
     except Exception:  # noqa: BLE001 - an unreadable file
         return JSONResponse(status_code=422, content={"detail": "That file couldn't be read as CSV or Excel."})
-    return await run_in_threadpool(_run, bom.run, m, header, rows, dry_run, cols)
+    def go() -> JSONResponse:
+        return _run(bom.run, m, header, rows, dry_run, cols, m.part_levels() if levels_by_depth else None)
+
+    return await run_in_threadpool(go)
 
 
 @router.get("/parts/{part_id}/structure")

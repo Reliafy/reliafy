@@ -75,6 +75,19 @@ export function bomImportSummary(result) {
   return `${text}.`;
 }
 
+// The BOM's format as the import read it: "Indented, by level number (column “Level”)."
+export function bomFormatText(result) {
+  const f = result && result.format;
+  if (!f || !f.label) return "";
+  return `${f.label}${f.column ? ` (column “${f.column}”)` : ""}.`;
+}
+
+// Whether a BOM import read the file as indented (a level on each row, no parent column).
+export function bomIsIndented(result) {
+  const id = result && result.format && result.format.id;
+  return !!id && id !== "parent" && id !== "list";
+}
+
 // "Create positions from structure": what it would make, or made.
 export function positionsPlanSummary(result) {
   if (!result) return "";

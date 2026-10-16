@@ -12,7 +12,7 @@ import {
 import { Field, FormModal, PositionPicker, flatten } from "./MaintenanceParts.jsx";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import {
-  bomImportSummary, levelsIn, positionsPlanSummary, qtyNumber, qtyText, treeKeys,
+  bomFormatText, bomImportSummary, bomIsIndented, levelsIn, positionsPlanSummary, qtyNumber, qtyText, treeKeys,
 } from "../maintenanceStructure.js";
 
 const partLink = (id) => `/maintenance/parts/${id}`;
@@ -297,16 +297,17 @@ export function LevelsModal({ onClose, onDone }) {
 
 const FIELD_NAMES = {
   parent: "parent part number", part_number: "part number", quantity: "quantity", name: "nomenclature",
-  level: "indenture level", manufacturer: "manufacturer", ref: "reference",
+  level: "indenture level", bom_level: "BOM level", manufacturer: "manufacturer", ref: "reference",
 };
 
 export function ImportBomModal({ onClose, onDone }) {
   const [file, setFile] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [byDepth, setByDepth] = useState(false);
   const { chooseSheet, modal } = useSpreadsheet();
   const pick = async (f) => {
-    setPreview(null); setSheet(null); setFile(null);
+    setPreview(null); setSheet(null); setFile(null); setByDepth(false);
     if (!f) return;
     if (isSpreadsheetFile(f)) {
       const choice = await chooseSheet(f);
@@ -315,14 +316,20 @@ export function ImportBomModal({ onClose, onDone }) {
     }
     setFile(f);
   };
-  const send = (dryRun) => importBom(file, { dryRun, sheet: sheet?.sheet, headerRow: sheet?.headerRow });
+  const send = (dryRun, levelsByDepth = byDepth) =>
+    importBom(file, { dryRun, sheet: sheet?.sheet, headerRow: sheet?.headerRow, levelsByDepth });
+  const nameByDepth = async (on) => {  // checked again with the names, so the preview shows them
+    setByDepth(on);
+    try { setPreview(await send(true, on)); } catch { setPreview(null); }
+  };
   return (
     <>
       <FormModal title="Import a BOM" submitLabel={preview?.ok ? "Import" : "Check it"} canSubmit={!!file} onClose={onClose}
                  onSubmit={async () => (preview?.ok ? onDone(await send(false)) : setPreview(await send(true)))}>
         <p className="lib-date">
           A bill of materials as CSV or Excel, one row per line: the parent's part number (NHA), the part number that goes
-          in it (PN), the quantity, and optionally nomenclature, indenture level, manufacturer and reference. Parts are
+          in it (PN), the quantity, and optionally nomenclature, indenture level, manufacturer and reference. An indented
+          BOM works too: rows in tree order with a level instead of a parent (0/1/2, .1/..2, 1.1.2 or an LCN). Parts are
           matched by part number and missing ones are created. Every row is checked first; if any is wrong, nothing is
           imported. Running the same file again changes nothing.
         </p>
@@ -331,6 +338,14 @@ export function ImportBomModal({ onClose, onDone }) {
         {preview && (
           <>
             <p>{bomImportSummary(preview)}</p>
+            {preview.format && <p className="lib-date">Read as: {bomFormatText(preview)}</p>}
+            {bomIsIndented(preview) && (
+              <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.4rem" }}>
+                <input type="checkbox" checked={byDepth} onChange={(e) => nameByDepth(e.target.checked)} />
+                Name each part's indenture level by its depth, from this workspace's list (a part's own indenture
+                level column still wins)
+              </label>
+            )}
             <p className="lib-date">Columns: {Object.entries(preview.columns).map(([f, c]) => `${FIELD_NAMES[f] || f} = "${c}"`).join("; ")}.</p>
             {preview.errors.length > 0 && (
               <ul className="maint-list">{preview.errors.map((e, i) => <li key={i} className="maint-overdue">{e.row ? `Row ${e.row}: ` : ""}{e.error}</li>)}</ul>
