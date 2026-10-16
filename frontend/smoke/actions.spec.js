@@ -1,6 +1,7 @@
 // The main path through the app: fit a model to a sample dataset and save it.
 // (Calculating an RBD is in rbd.spec.js.)
 import { test, expect, open, expectHealthy } from "./health.js";
+import { SAMPLE_PLAN_SOURCE } from "./seed.js";
 
 test("fit and save a Weibull model from a sample dataset", async ({ page, problems }) => {
   await open(page, "/datasets/d/sample-ds-bearings");
@@ -93,4 +94,54 @@ test("a fit left unsaved is offered for saving on the next visit to Modelling", 
   await open(page, "/modelling");
   await expect(page.getByText("You left a fit without saving it")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "modelling home" });
+});
+
+// The Admin page's Plan tab: the sample plan smoke/seed.js stores renders its
+// prose and draws its Gantt chart as an SVG. Mermaid loads only when the tab
+// opens, and on a phone the chart scrolls inside its own box, not the page.
+test("the Admin page's Plan tab draws the plan's Gantt chart", async ({ page, problems }) => {
+  const scripts = [];
+  page.on("request", (req) => req.resourceType() === "script" && scripts.push(req.url()));
+  await open(page, "/admin");
+  expect(scripts.filter((u) => /mermaid/i.test(u)), "mermaid loaded before the Plan tab opened").toEqual([]);
+
+  await page.getByRole("tab", { name: "Plan" }).click();
+  await expect(page).toHaveURL(/\/admin\?tab=plan$/);
+  await expect(page.getByRole("heading", { name: "Example plan", level: 1 })).toBeVisible();
+  await expect(page.getByTestId("plan-updated")).toContainText(`from ${SAMPLE_PLAN_SOURCE}`);
+  // A relative link goes to the file in the plan's repository, at its commit.
+  const link = page.locator(".admin-plan-prose").getByRole("link", { name: "the notes" });
+  await expect(link).toHaveAttribute("href", "https://github.com/example/plans/blob/abc1234/docs/notes.md");
+  await expect(link).toHaveAttribute("target", "_blank");
+  const chart = page.locator(".admin-plan-chart svg").first();
+  await expect(chart).toBeVisible({ timeout: 30_000 });
+  for (const name of ["Task one", "Task two", "Task three", "Task four"]) await expect(chart.getByText(name)).toBeVisible();
+  expect(scripts.some((u) => /mermaid/i.test(u)), "mermaid's chunk loaded").toBe(true);
+  // Each state draws differently: not started, done, active and crit bars
+  // have four different fills, and the milestone is a diamond.
+  const fills = await chart.evaluate((svg) => {
+    const fill = (re) => {
+      const bar = [...svg.querySelectorAll("rect.task")].find((r) => re.test(r.getAttribute("class")));
+      return bar ? getComputedStyle(bar).fill : null;
+    };
+    return {
+      todo: fill(/\btask\d\b/), done: fill(/\bdone\d\b/), active: fill(/\bactive\d\b/), crit: fill(/\bcrit\d\b/),
+      milestone: Boolean(svg.querySelector("rect.milestone")),
+    };
+  });
+  expect(fills.milestone, "a milestone diamond").toBe(true);
+  expect(Object.values(fills).slice(0, 4).every(Boolean), JSON.stringify(fills)).toBe(true);
+  expect(new Set([fills.todo, fills.done, fills.active, fills.crit]).size, JSON.stringify(fills)).toBe(4);
+  await expectHealthy(page, problems, { label: "admin plan" });
+
+  await page.setViewportSize({ width: 400, height: 800 });
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect(page.locator(".admin-plan-chart svg").first()).toBeVisible({ timeout: 30_000 });
+  const widths = await page.evaluate(() => {
+    const box = document.querySelector(".admin-plan-chart");
+    return { page: document.documentElement.scrollWidth, view: window.innerWidth, chart: box.scrollWidth, box: box.clientWidth };
+  });
+  expect(widths.page, "the page scrolls sideways at 400 px").toBeLessThanOrEqual(widths.view);
+  expect(widths.chart, "the Gantt chart keeps its width and scrolls in its box").toBeGreaterThan(widths.box);
+  expect(problems, "admin plan at 400 px").toEqual([]);
 });
