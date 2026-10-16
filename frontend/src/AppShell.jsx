@@ -49,6 +49,7 @@ const MaintenanceLocations = lazy(() => import("./views/MaintenanceLists.jsx").t
 const MaintenanceLocation = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocation })));
 const MaintenanceClasses = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceClasses })));
 const MaintenancePartsPage = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceParts })));
+const MaintenancePart = lazy(() => import("./views/MaintenancePart.jsx"));
 const TeamSettingsPage = lazy(() => import("./views/TeamSettingsPage.jsx"));
 const SettingsPage = lazy(() => import("./views/SettingsPage.jsx"));
 const ApiDocsPage = lazy(() => import("./views/ApiDocsPage.jsx"));
@@ -214,6 +215,7 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/maintenance/classes" element={<MaintenanceClasses />} />}
             {maintenanceEnabled && <Route path="/maintenance/classes/:name" element={<MaintenanceClasses />} />}
             {maintenanceEnabled && <Route path="/maintenance/parts" element={<MaintenancePartsPage />} />}
+            {maintenanceEnabled && <Route path="/maintenance/parts/:id" element={<MaintenancePart />} />}
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/api-docs" element={<ApiDocsPage />} />

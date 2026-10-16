@@ -5,6 +5,7 @@ import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
+import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
 import RecurrentColumnMapper from "../components/RecurrentColumnMapper.jsx";
 import RecurrentParamsPanel from "../components/RecurrentParamsPanel.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
@@ -66,6 +67,7 @@ export default function RecurrentNewPage() {
   const [datasets, setDatasets] = useState([]);
 
   const [file, setFile] = useState(null);
+  const [headerNote, setHeaderNote] = useState(null); // a file with no header row (#434)
   const [datasetId, setDatasetId] = useState(null);
   const [sourceName, setSourceName] = useState("");
   const [csv, setCsv] = useState(null); // { columns, preview, n_rows }
@@ -109,14 +111,16 @@ export default function RecurrentNewPage() {
     ? "Observation windows work with the minimal-repair models only: clear them on the Data step, or pick one of those."
     : null;
 
-  const pickFile = async (picked) => {
+  const pickFile = async (picked, { keepHeader = false } = {}) => {
     if (!picked) return;
-    const f = await toCsv(picked);
-    if (!f) return;
-    if (f.size > 5 * 1024 * 1024) {
-      setError(`That file is ${(f.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB. Try trimming unused columns or rows.`);
+    const csvFile = await toCsv(picked);
+    if (!csvFile) return;
+    if (csvFile.size > 5 * 1024 * 1024) {
+      setError(`That file is ${(csvFile.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB. Try trimming unused columns or rows.`);
       return;
     }
+    const { file: f, note } = await detectHeader(picked, csvFile, { keepHeader });
+    setHeaderNote(note);
     setFile(f);
     setDatasetId(null);
     setSourceName(f.name);
@@ -138,6 +142,7 @@ export default function RecurrentNewPage() {
 
   const pickDataset = async (d) => {
     setFile(null);
+    setHeaderNote(null);
     setDatasetId(d.id);
     setSourceName(d.name);
     setResult(null);
@@ -371,6 +376,7 @@ export default function RecurrentNewPage() {
         {step === 2 && csv && (
           <div className="fit-step">
             <p className="muted-line">{sourceName} · {csv.n_rows} rows · {csv.columns.length} columns</p>
+            <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
             <PreviewTable columns={csv.columns} rows={csv.preview} />
             <RecurrentColumnMapper
               columns={csv.columns}

@@ -329,6 +329,72 @@ def read_dataframe(file_bytes: bytes) -> pd.DataFrame:
     return df
 
 
+def _is_number(cell: str) -> bool:
+    try:
+        return math.isfinite(float(cell))
+    except ValueError:
+        return False
+
+
+def first_row_is_data(text: str, sep: str = ",") -> bool:
+    """Does the first non-blank row of CSV ``text`` look like data rather than
+    column names? True when every cell is a number (``300,544966.3125``): a
+    header with no name in it is almost always a file saved without one, whose
+    first row would otherwise be lost as column names (#434)."""
+    import csv
+
+    line = next((ln for ln in text.lstrip("﻿").splitlines() if ln.strip()), "")
+    try:
+        cells = next(csv.reader([line], delimiter=sep), [])
+    except csv.Error:
+        return False
+    cells = [c.strip() for c in cells]
+    return bool(cells) and all(c and _is_number(c) for c in cells)
+
+
+def header_guess(file_bytes: bytes, sep: str = ",") -> int:
+    """The row that holds the column names, as an Excel sheet's guess is
+    given: 1 (the first row) or 0 (none: the first row is data)."""
+    return 0 if first_row_is_data(_head_text(file_bytes, 64 * 1024), sep) else 1
+
+
+# What an agent or API caller is told when a first row of numbers was read as
+# data (``no_header`` left blank). One line.
+HEADER_HINT = ("The first row is all numbers, so it was read as data (columns col 1, col 2, …); "
+               "send no_header=false if it really is the header.")
+# The same for an Excel sheet, whose header is chosen by row number.
+SHEET_HEADER_HINT = ("The sheet's first rows are all numbers, so they were read as data (columns col 1, "
+                     "col 2, …); send header_row if one of them is the header.")
+# The same for a preview that only reports the guess.
+HEADER_PREVIEW_HINT = ("The first row is all numbers, so it looks like data, not column names: add a "
+                       "header row, or save the file as a dataset (which keeps that row as data) and fit that.")
+
+
+def with_generic_header(file_bytes: bytes) -> bytes:
+    """A CSV with no header row, re-serialised with columns ``col 1``,
+    ``col 2``, … so its first row is kept as data."""
+    try:
+        df = read_csv_capped(io.BytesIO(file_bytes), header=None, width_text=_head_text(file_bytes))
+    except FitError:
+        raise
+    except Exception as exc:  # pragma: no cover - pandas raises many types
+        raise FitError(f"Could not parse the file as CSV: {exc}") from exc
+    if df.empty or df.shape[1] == 0:
+        raise FitError("The uploaded CSV is empty.")
+    df.columns = [f"col {i + 1}" for i in range(df.shape[1])]
+    return df.to_csv(index=False).encode()
+
+
+def _whole_column(series: pd.Series) -> Optional[bool]:
+    """Whether a numeric column holds only whole numbers (a count can), None
+    for a text column."""
+    if not pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series):
+        return None
+    values = series.dropna().to_numpy(dtype=float)
+    values = values[np.isfinite(values)]
+    return bool(np.all(values == np.round(values)))
+
+
 def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
     """Return column names and a small sample of rows for the mapping UI.
 
@@ -353,6 +419,8 @@ def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
         out["dtypes"] = [str(t) for t in df.dtypes]
         out["blanks"] = [int(n) for n in df.isna().sum().tolist()]
         out["values"] = [_few_values(df[c]) for c in df.columns]
+        # Whole numbers only (null for text): what a count column needs (#434).
+        out["whole"] = [_whole_column(df[c]) for c in df.columns]
     return out
 
 
@@ -745,6 +813,19 @@ def _fit_failure_hint(exc: Exception, kwargs: dict, distribution_name: str,
     return raw
 
 
+def _check_counts(name: str, col: np.ndarray) -> None:
+    """A count column says how many units share each row, so it holds whole
+    numbers: refuse one with decimals (a usage figure or a cost mapped as
+    counts, #434) in words, before SurPyval does in its own."""
+    finite = col[np.isfinite(col)]
+    bad = finite[finite != np.round(finite)]
+    if bad.size:
+        raise FitError(
+            f"“{name}” holds decimals (e.g. {bad[0]:.10g}), so it can't be a count: a count column says how "
+            "many units share each row, in whole numbers. Leave Count empty, or pick another column."
+        )
+
+
 def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
     """Turn a column mapping into keyword arguments for ``<dist>.fit``.
 
@@ -765,6 +846,8 @@ def build_fit_inputs(df: pd.DataFrame, mapping: dict) -> dict:
             col = np.where(np.isnan(col), -np.inf, col)
         elif field == "tr":
             col = np.where(np.isnan(col), np.inf, col)
+        elif field == "n":
+            _check_counts(name, col)
         kwargs[field] = col
 
     return kwargs

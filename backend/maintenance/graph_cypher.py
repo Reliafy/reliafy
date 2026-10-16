@@ -528,6 +528,10 @@ CONVENTIONS = [
     "(task)-[:MITIGATES]->(FailureMode)<-[:CAN_FAIL_AS]-(position).",
     "Parts: (listing:PartListing)-[:LISTED_AT]->(position), (listing)-[:LISTS]->(part); (s:Stock)-[:OF]->(part), "
     "(s)-[:AT]->(location); (part)-[:SUPERSEDED_BY]->(part); (part)-[:INTERCHANGEABLE]->(part).",
+    "Product structure: (assembly:Part)-[r:CONTAINS]->(component:Part), one line per pair, its qty (how many in one "
+    "assembly) and ref in r.props (JSON text); no loops. part.level is its indenture level. Whole BOM below a part: "
+    "(top)-[:CONTAINS]->{1,}(x); totals multiply along the path, so take them from maintenance_get kind "
+    "part_structure.",
     "Conditions: (x)-[r:EXPOSED_TO]->(c:Condition) where a location, position, item or connection is exposed to "
     "c, (x)-[:NOT_EXPOSED_TO]->(c) where one inherited from above is excluded; conditions nest by PART_OF; skip "
     "c.retired. These are only what's set on x itself: what x inherits (from the locations around it, the "

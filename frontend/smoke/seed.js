@@ -1,9 +1,9 @@
 // Global setup for the local run: the samples cover most pages, but nothing
 // seeds Maintenance or an RBD simulation run, so make one of each here (a
 // position from the sample RCM study, a location, an item fitted to the
-// position, a work order, a part, the starter item classes, a position class
-// with a fitted life model and a spare with a lead time, and one availability
-// run) through the API. Skipped against a deployed site.
+// position, a work order, a part and an assembly of it, the starter item classes, a position
+// class with a fitted life model and a spare with a lead time, and one availability run)
+// through the API. Skipped against a deployed site.
 import { request } from "@playwright/test";
 
 export default async function seed(config) {
@@ -24,7 +24,12 @@ export default async function seed(config) {
     await patch(`${m}/positions/${position_id}`, { location_id: location.id });
     await post(`${m}/positions/${position_id}/fit`, { item_id: item.id });
     await post(`${m}/work-orders`, { position_id, title: "Smoke test inspection" });
-    await post(`${m}/parts`, { part_number: "SMOKE-PAD", name: "Smoke test brake pad" });
+    const pad = await post(`${m}/parts`, { part_number: "SMOKE-PAD", name: "Smoke test brake pad" });
+    // A product structure (#435): an axle brake set made of four pads, the item an instance of it.
+    const brakes = await post(`${m}/parts`, { part_number: "SMOKE-BRAKES", name: "Smoke test axle brake set" });
+    await post(`${m}/parts/${brakes.id}/structure`, { child_id: pad.id, quantity: 4, ref: "LF, RF, LR, RR" });
+    await send("PUT")(`${m}/parts/${brakes.id}/level`, { level: "Assembly" });
+    await send("PUT")(`${m}/items/${item.id}/part`, { part_id: brakes.id });
     await post(`${m}/item-classes/starter`, { dry_run: false });
 
     // A position class with a fitted life model, so its page draws the failure

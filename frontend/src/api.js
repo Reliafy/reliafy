@@ -143,6 +143,8 @@ export function getDistributions() {
 }
 
 // Upload a CSV and get back its columns + a preview of the first rows.
+// The response's ``header_guess`` is 0 when the first row is all numbers
+// (data, not names): the fit wizard adds a header first (#434).
 export function getColumns(file) {
   const form = new FormData();
   form.append("file", file);
@@ -431,11 +433,13 @@ export function compareGroups(datasetId, body) {
 // Upload a CSV as a standalone dataset (deduped by content on the server).
 // An Excel workbook works too: ``excel`` = { sheet, headerRow } picks the
 // sheet and header row (headerRow 0 = none), converted to CSV server-side.
-export function uploadDataset(file, name, noHeader = false, excel = null) {
+// ``noHeader``: true / false says whether the first row is data; null lets
+// the server guess (a first row of only numbers is data, #434).
+export function uploadDataset(file, name, noHeader = null, excel = null) {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
-  if (noHeader) form.append("no_header", "true");
+  if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
   if (excel?.sheet) form.append("sheet", excel.sheet);
   if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
   return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
@@ -490,13 +494,17 @@ export async function excelToCsvFile(file, sheet, headerRow) {
 }
 
 // Create a dataset from pasted tabular text (CSV or TSV; delimiter sniffed
-// server-side). Used by the paste-data form and the assistant.
-export function pasteDataset(name, content, noHeader = false) {
+// server-side). Used by the paste-data form and the assistant. ``noHeader``
+// as for uploadDataset (null: guessed).
+export function pasteDataset(name, content, noHeader = null) {
   return withEvent(
     request("/api/datasets/paste", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name || "", content: content || "", no_header: !!noHeader }),
+      body: JSON.stringify({
+        name: name || "", content: content || "",
+        ...(noHeader != null ? { no_header: !!noHeader } : {}),
+      }),
     }),
     "dataset_upload"
   );
@@ -2394,6 +2402,48 @@ export function removePositionPart(listingId) {
 }
 export function getSparesCover(includeUnlisted = false) {
   return request(`/api/maintenance/spares?include_unlisted=${includeUnlisted ? "true" : "false"}`);
+}
+
+// ---- product structure: parts made of parts (#435) ----
+export function getMaintenancePart(id) {
+  return request(`/api/maintenance/parts/${id}`);
+}
+export function getPartStructure(id) {
+  return request(`/api/maintenance/parts/${id}/structure`);
+}
+export function getPartWhereUsed(id) {
+  return request(`/api/maintenance/parts/${id}/where-used`);
+}
+// {childId, quantity, ref}; each returns the structure.
+export function addPartComponent(partId, { childId, quantity, ref }) {
+  return postJson(`/api/maintenance/parts/${partId}/structure`, { child_id: childId, quantity, ref });
+}
+export function updatePartComponent(partId, childId, body) {
+  return patchJson(`/api/maintenance/parts/${partId}/structure/${childId}`, body);
+}
+export function removePartComponent(partId, childId) {
+  return request(`/api/maintenance/parts/${partId}/structure/${childId}`, { method: "DELETE" });
+}
+export function setPartLevel(partId, level) {
+  return putJson(`/api/maintenance/parts/${partId}/level`, { level: level || "" });
+}
+export function getPartLevels() {
+  return request("/api/maintenance/parts/levels");
+}
+// levels: names, top first; renamed: {old: new}.
+export function setPartLevels(levels, renamed = {}) {
+  return putJson("/api/maintenance/parts/levels", { levels, renamed });
+}
+// A dry run unless dryRun is false; levels null: every part becomes a position.
+export function positionsFromStructure(partId, { parentId = null, levels = null, dryRun = true } = {}) {
+  return postJson(`/api/maintenance/parts/${partId}/structure/positions`,
+    { parent_id: parentId, levels, dry_run: dryRun });
+}
+// A BOM from CSV or Excel (sheet and header row for a workbook); a dry run unless dryRun is false.
+export function importBom(file, { dryRun = true, sheet, headerRow } = {}) {
+  return request("/api/maintenance/parts/import-bom", {
+    method: "POST", body: excelForm(file, sheet, headerRow, { dry_run: dryRun ? "true" : "false" }),
+  });
 }
 
 export function importMaintenanceSheet(file, dryRun) {

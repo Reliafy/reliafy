@@ -96,6 +96,10 @@ def target_fields(target: str) -> list[dict] | None:
         from backend.services.rbd_import import excel as rbd_excel
 
         return rbd_excel.BLOCK_FIELDS if target == "rbd_blocks" else rbd_excel.CONNECTION_FIELDS
+    if target == "bom":
+        from backend.maintenance import bom
+
+        return bom.FIELDS
     return None
 
 
@@ -109,7 +113,7 @@ def workbook_table(
 ) -> JSONResponse:
     """One sheet's header and first rows (as text) for a column mapper.
 
-    With ``target`` (``rcm``, ``rbd_blocks``, ``rbd_connections``) the
+    With ``target`` (``rcm``, ``rbd_blocks``, ``rbd_connections``, ``bom``) the
     response adds that importer's ``fields`` and a ``guess`` at the mapping
     from the header names (and, for ``rcm``, the columns suggested for the
     notes)."""

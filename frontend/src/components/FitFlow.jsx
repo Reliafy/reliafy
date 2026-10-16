@@ -10,6 +10,10 @@ import {
 } from "../api.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import ColumnMapper from "./ColumnMapper.jsx";
+import ColumnRoles from "./ColumnRoles.jsx";
+import HeaderNote, { detectHeader } from "./HeaderNote.jsx";
+import { useUnsavedFitScope } from "./UnsavedFitReminder.jsx";
+import { forgetUnsavedFit, rememberUnsavedFit, unsavedFitRecord } from "../unsavedFit.js";
 import Covariates from "./Covariates.jsx";
 import CoxOptions from "./CoxOptions.jsx";
 import PreviewTable from "./PreviewTable.jsx";
@@ -104,6 +108,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const [source, setSource] = useState(initialSource === "paste" ? "paste" : "upload");
   const [pasted, setPasted] = useState("");
   const [file, setFile] = useState(null);
+  // A CSV whose first row is all numbers has no header (#434): it's read as
+  // data (col 1, col 2, …) and said so, with Undo. { original, kept }:
+  // the file as uploaded, and whether its first row was kept as the names.
+  const [headerNote, setHeaderNote] = useState(null);
   const [datasetId, setDatasetId] = useState(null);
   const [sourceName, setSourceName] = useState("");
   const [csv, setCsv] = useState(null); // { columns, preview, n_rows, dtypes, blanks, values }
@@ -202,7 +210,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     return { mapping: tvcMap || map, unit: simplePaste ? "" : g.unit };
   };
 
-  const pickFile = async (picked) => {
+  // ``keepHeader``: read the first row as the column names even when it's
+  // all numbers (the header notice's Undo).
+  const pickFile = async (picked, { keepHeader = false } = {}) => {
     if (!picked) return;
     const f = await toCsv(picked);
     if (!f) return;
@@ -211,14 +221,19 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       setError(`That file is ${(f.size / (1024 * 1024)).toFixed(1)} MB — the limit is 5 MB. Try trimming unused columns or rows.`);
       return;
     }
-    setFile(f);
+    // No header row (#434): the file gains one (col 1, col 2, …), and says
+    // so. Pasted values are always named.
+    const { file: use, note } = f.name === PASTED ? { file: f, note: null }
+      : await detectHeader(picked, f, { keepHeader });
+    setFile(use);
+    setHeaderNote(note);
     setDatasetId(null);
     setSourceName(f.name);
     setError(null);
     setLoading(true);
     try {
-      const cols = await getColumns(f);
-      loadColumns(cols, isSimplePaste(cols.columns) && f.name === PASTED);
+      const cols = await getColumns(use);
+      loadColumns(cols, isSimplePaste(cols.columns) && use.name === PASTED);
       setStep(2);
     } catch (err) {
       setError(err.message);
@@ -230,6 +245,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // Use an already-saved dataset as the source — no re-upload needed.
   const pickDataset = async (d) => {
     setFile(null);
+    setHeaderNote(null);
     setDatasetId(d.id);
     setSourceName(d.name);
     setError(null);
@@ -401,17 +417,42 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     }
   };
 
-  const persist = () =>
-    saveModel(name.trim(), distribution, file, fitMapping, {
-      unit,
-      datasetId: datasetId || undefined,
-      ...(hasCovariates
-        ? { ...(advanced ? { formula } : { covariates, covariateUnits: covUnits }), ...coxFit }
-        : byMode ? {} : { fitOptions: fitOpts }),
+  // A fit on the Result step is kept in this browser until it's saved, so the
+  // next visit to Modelling can offer to save it (#434).
+  const fitScope = useUnsavedFitScope();
+  const remembered = useRef(0);
+
+  // What a save sends besides the data: also kept with an unsaved fit.
+  const saveOpts = {
+    unit,
+    ...(hasCovariates
+      ? { ...(advanced ? { formula } : { covariates, covariateUnits: covUnits }), ...coxFit }
+      : byMode ? {} : { fitOptions: fitOpts }),
+  };
+  const persist = async () => {
+    const model = await saveModel(name.trim(), distribution, file, fitMapping, {
+      ...saveOpts, datasetId: datasetId || undefined,
     });
+    forgetUnsavedFit(fitScope);
+    return model;
+  };
+
+  useEffect(() => {
+    if (step !== 4 || !result || !name.trim()) return;
+    const turn = ++remembered.current;
+    const record = (csv) => unsavedFitRecord({
+      name: name.trim(), distribution, mapping: fitMapping, opts: saveOpts,
+      datasetId, csv, fileName: file?.name,
+    });
+    (file && !datasetId ? file.text() : Promise.resolve(null))
+      .catch(() => null)
+      .then((csv) => turn === remembered.current && rememberUnsavedFit(fitScope, record(csv)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, result, name]);
 
   const onSave = async () => {
     if (!name.trim()) return;
+    remembered.current += 1; // a remember still reading the file is stale now
     setSaving(true);
     setError(null);
     try {
@@ -426,6 +467,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   // beside Save, then the tool opens with it (the caller navigates).
   const saveForUse = async () => {
     if (!name.trim()) throw new Error("Name the model beside Save first.");
+    remembered.current += 1;
     setSaving(true);
     try {
       return (await persist()).id;
@@ -641,6 +683,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             {sourceName === PASTED ? "Pasted values" : sourceName} · {csv.n_rows} rows
             {!simple && ` · ${csv.columns.length} columns`}
           </p>
+          <HeaderNote note={headerNote} onPick={pickFile} disabled={loading} />
           {simple ? (
             <div className="ds-row">
               <label className="ds-field ds-unit">
@@ -673,6 +716,21 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 facts={facts}
                 timeVarying={tvc}
                 failureMode
+              />
+              <ColumnRoles
+                columns={csv.columns}
+                mapping={mapping}
+                covariates={advanced ? [] : covariates}
+                facts={facts}
+                timeVarying={tvc}
+                covariatesAllowed={!advanced}
+                failureMode
+                onChange={(next, { col, role }) => {
+                  // A unit guessed from the old time column follows the new one.
+                  if (role === "x" && (!unit || unit === guessUnit(mapping.x))) setUnit(guessUnit(col));
+                  setMapping(next.mapping);
+                  if (!advanced) setCovariates(next.covariates);
+                }}
               />
               <ResultDetails
                 summary="Advanced (regression): covariates"
@@ -783,6 +841,21 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
       {step === 4 && result && (
         <div className="fit-step" data-wt="fit-result">
+          {/* Nothing is kept until it's saved: say so, with the one-click save (#434). */}
+          <div className="fit-save-cta">
+            <div className="fit-save-cta-text">
+              <b>This fit isn't saved yet.</b>
+              <span>
+                {file
+                  ? "Save the model and the data it was fitted to, to come back to them."
+                  : "Save the model to come back to it."}
+              </span>
+            </div>
+            <button type="button" onClick={onSave} disabled={!name.trim() || saving}
+                    title={name.trim() ? undefined : "Name the model beside Save first"}>
+              {saving ? "Saving…" : file ? "Save this model and its data" : "Save this model"}
+            </button>
+          </div>
           <ResultView
             result={result}
             split={split}
