@@ -7,6 +7,7 @@ import { FirstRunStrip } from "../components/FirstRun.jsx";
 import { useFirstRun } from "../firstRun.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
+import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
 
 // The life-data models list.
 export default function ModellingHome() {
@@ -37,6 +38,8 @@ export default function ModellingHome() {
         meta="Fitted life distributions and proportional-hazards models."
         primary={<button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>}
       />
+
+      <UnsavedFitReminder />
 
       <FirstRunStrip info={firstRun} />
 

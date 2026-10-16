@@ -2684,6 +2684,8 @@ def upload_dataset(
     sheet: Annotated[Optional[str], Field(description=(
         "With an .xlsx upload_id: the sheet to read (needed when the workbook has several; get kind upload "
         "lists them)."))] = None,
+    no_header: Annotated[Optional[bool], Field(description=(
+        "True if the first row is data, not column names; omit to guess."))] = None,
 ) -> dict[str, Any]:
     """Save a dataset from CSV text (csv) or a file sent with uploads create (upload_id; an .xlsx
     needs sheet); returns its id, columns and a preview. Censoring columns: 0 = failed, 1 = still running."""
@@ -2691,16 +2693,38 @@ def upload_dataset(
     if (csv is None) == (upload_id is None):
         raise ToolError("Give either csv (text) or upload_id (a file sent through uploads create) — exactly one.")
     _cap(db, user, "datasets", "datasets")
-    upload = None
+    upload, sheet_header = None, None
     if upload_id is not None:
-        upload, text = _upload_table_text(db, user["uid"], upload_id, sheet)
+        upload, text, sheet_header = _upload_table(db, user["uid"], upload_id, sheet, 0 if no_header else None)
     else:
         text = csv
-    ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(text), user["uid"])
+    # The header row, guessed as the app does (#434): a sheet's as it's
+    # converted (0 = none), text's from a first row of only numbers.
+    hint = None
+    if sheet_header is not None:
+        guess, apply = sheet_header, False
+        if guess == 0 and no_header is None:
+            hint = _SHEET_HEADER_HINT
+    else:
+        guess = datasets_service.pasted_header_guess(text)
+        apply = guess == 0 if no_header is None else bool(no_header)
+        if apply and no_header is None:
+            hint = fitting.HEADER_HINT
+    ds = datasets_service.create_dataset(db, name.strip(), datasets_service.normalize_pasted(text, apply),
+                                         user["uid"])
     if upload is not None:
         uploads_service.delete(db, upload["_id"])
-    return {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
-            "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
+    out = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
+           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}"),
+           "header_guess": guess}
+    if hint:
+        out["hint"] = hint
+    return out
+
+
+# A guessed header-less sheet over MCP, in its own words: upload_dataset takes no header_row.
+_SHEET_HEADER_HINT = ("The sheet's first rows are all numbers, so they were read as data (columns col 1, "
+                      "col 2, …); uploads import_excel takes header_row if one of them is the header.")
 
 
 # ---- get kind dataset (#135): a dataset's rows, a page at a time --------------------
@@ -6375,16 +6399,25 @@ def _upload_table_text(db, uid: str, upload_id: str, sheet: Optional[str]) -> tu
     """An upload for datasets upload / rbd upload_outage_log as CSV text: a CSV /
     TSV file as it is, a workbook's sheet converted (as the app's Excel
     import does)."""
+    doc, text, _ = _upload_table(db, uid, upload_id, sheet)
+    return doc, text
+
+
+def _upload_table(db, uid: str, upload_id: str, sheet: Optional[str],
+                  header_row: Optional[int] = None) -> tuple[dict, str, Optional[int]]:
+    """``_upload_table_text`` with the sheet's header row (None for a CSV):
+    ``header_row`` as for :func:`excel.read_table`, None = guessed."""
     from backend.services import excel
 
     doc, data = uploads_service.read(db, upload_id, uid)
     with _untrusted_file(uid):
         if uploads_service.is_excel(doc):
-            return doc, excel.to_csv(_workbook_table(data, doc["filename"], sheet)).decode("utf-8")
+            table = _workbook_table(data, doc["filename"], sheet, header_row)
+            return doc, excel.to_csv(table).decode("utf-8"), table.header_row
     if doc.get("detected_format") not in ("csv", "text"):
         raise ToolError(f"This upload is a {doc.get('detected_format')} file, not a table: upload CSV / TSV text "
                         "or an .xlsx workbook. (Diagram files go to uploads import_rbd.)")
-    return doc, uploads_service.as_text(data)
+    return doc, uploads_service.as_text(data), None
 
 
 def _upload_fallback(purpose: str, site: Optional[str] = None) -> str:
@@ -6752,6 +6785,8 @@ def _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row) -> dic
            "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
     if table.notes:
         out["notes"] = table.notes
+    if header_row is None and table.header_row == 0:
+        out["hint"] = fitting.SHEET_HEADER_HINT  # guessed: the first rows are all numbers (#434)
     return out
 
 

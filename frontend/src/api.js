@@ -143,6 +143,8 @@ export function getDistributions() {
 }
 
 // Upload a CSV and get back its columns + a preview of the first rows.
+// The response's ``header_guess`` is 0 when the first row is all numbers
+// (data, not names): the fit wizard adds a header first (#434).
 export function getColumns(file) {
   const form = new FormData();
   form.append("file", file);
@@ -431,11 +433,13 @@ export function compareGroups(datasetId, body) {
 // Upload a CSV as a standalone dataset (deduped by content on the server).
 // An Excel workbook works too: ``excel`` = { sheet, headerRow } picks the
 // sheet and header row (headerRow 0 = none), converted to CSV server-side.
-export function uploadDataset(file, name, noHeader = false, excel = null) {
+// ``noHeader``: true / false says whether the first row is data; null lets
+// the server guess (a first row of only numbers is data, #434).
+export function uploadDataset(file, name, noHeader = null, excel = null) {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
-  if (noHeader) form.append("no_header", "true");
+  if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
   if (excel?.sheet) form.append("sheet", excel.sheet);
   if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
   return withEvent(request("/api/datasets", { method: "POST", body: form }), "dataset_upload");
@@ -490,13 +494,17 @@ export async function excelToCsvFile(file, sheet, headerRow) {
 }
 
 // Create a dataset from pasted tabular text (CSV or TSV; delimiter sniffed
-// server-side). Used by the paste-data form and the assistant.
-export function pasteDataset(name, content, noHeader = false) {
+// server-side). Used by the paste-data form and the assistant. ``noHeader``
+// as for uploadDataset (null: guessed).
+export function pasteDataset(name, content, noHeader = null) {
   return withEvent(
     request("/api/datasets/paste", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name || "", content: content || "", no_header: !!noHeader }),
+      body: JSON.stringify({
+        name: name || "", content: content || "",
+        ...(noHeader != null ? { no_header: !!noHeader } : {}),
+      }),
     }),
     "dataset_upload"
   );

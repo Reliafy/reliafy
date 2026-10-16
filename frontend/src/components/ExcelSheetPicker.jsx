@@ -30,6 +30,7 @@ export default function ExcelSheetPicker({ inspection, value, onChange, sheetLab
       })),
     { value: "0", label: "No header row (name columns col 1, col 2, …)" },
   ];
+  const firstRow = rowOptions.length > 1 ? Number(rowOptions[0].value) : 0;
 
   return (
     <div className="xl-picker">
@@ -96,10 +97,17 @@ export default function ExcelSheetPicker({ inspection, value, onChange, sheetLab
           </table>
         </div>
       )}
+      {/* A guess of no header row (the first rows are all numbers) is said, with Undo (#434). */}
+      {!header && current.guessed_header_row === 0 && firstRow ? (
+        <p className="ds-header-note" role="status">
+          <span>Your first row looks like data, so we've treated it as data.</span>
+          <button type="button" className="link" onClick={() => setHeader(firstRow)}>Undo</button>
+        </p>
+      ) : null}
       <p className="hint" style={{ margin: 0 }}>
         {header
           ? <>Row {header} holds the column names{header > 1 ? "; rows above it are skipped" : ""}. Click another row to change it.</>
-          : <>No header row — every row is data.</>}
+          : <>No header row — every row is data. Click a row to use it as the header.</>}
         {current.cols > width && ` Showing the first ${width} of ${current.cols} columns.`}
       </p>
       {current.notes?.map((n, i) => (

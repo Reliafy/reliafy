@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 // click-outside close.
 //
 //   <Select value={v} onChange={setV} options=[{value, label, hint?, disabled?}]
-//           placeholder? disabled? className? title? />
+//           placeholder? disabled? className? title? ariaLabel? />
 //
 // `options` entries may also be plain strings. `className` variants:
 //   sel-embedded — borderless, for selects fused inside a bordered parent
@@ -37,6 +37,7 @@ export default function Select({
   disabled = false,
   className = "",
   title,
+  ariaLabel,
 }) {
   const items = options.map(norm);
   const selected = items.find((o) => !o._header && o.value === value);
@@ -143,6 +144,7 @@ export default function Select({
         onKeyDown={onKeyDown}
         disabled={disabled}
         title={title}
+        aria-label={ariaLabel}
         role="combobox"
         aria-expanded={open}
         aria-haspopup="listbox"
