@@ -62,7 +62,7 @@ MAX_XML_DEPTH = 400
 MAX_ROOTS = 20
 # Expression nodes evaluated across the whole file: parameters are evaluated
 # where they are used, so a parameter built from others is counted each time.
-MAX_EXPRESSION_STEPS = 1_000_000
+MAX_EXPRESSION_STEPS = 200_000
 # A rate in FIT (failures in time) is failures per 10⁹ hours.
 _FIT = 1e-9
 _ROOT_TAGS = ("opsa-mef", "open-psa")
