@@ -14,10 +14,11 @@ matplotlib.use("Agg")
 import pytest  # noqa: E402
 import surpyval as sv  # noqa: E402
 from repyability import BetaFactor, CCFGroup, RepairableRBD  # noqa: E402
+from repyability.rbd import _long_run  # noqa: E402
 from scipy.integrate import quad  # noqa: E402
 
 from backend.services import rbd_analysis as ra  # noqa: E402
-from backend.services import rbd_export, rbd_policies  # noqa: E402
+from backend.services import rbd_export, rbd_policies, repy_compat  # noqa: E402
 from backend.services.rbd_analysis import AnalysisError  # noqa: E402
 from backend.services.rbds import availability_cache_key  # noqa: E402
 from backend.tests.test_mcp import A, _call, _err, _ok, env  # noqa: E402,F401 - env is a fixture
@@ -193,7 +194,8 @@ def test_standby_group_in_a_diagram_with_crews_and_costs():
     rbd2 = ra._build_repairable_rbd(g2)[0]
     assert r2["costs"]["cost_rate"] == pytest.approx(rbd2.expected_cost_rate(), rel=1e-12)
     assert r2["costs"]["by_category"]["repair"] == pytest.approx(
-        200 * rbd2._standby_long_run("g").unit_failure_frequency + 50 * rbd2._node_frequencies("v")[0], rel=1e-9)
+        200 * _long_run._standby_long_run(rbd2, "g").unit_failure_frequency
+        + 50 * _long_run._node_frequencies(rbd2, "v")[0], rel=1e-9)
 
 
 @pytest.mark.parametrize("data, needle", [
@@ -234,7 +236,7 @@ def test_condition_based_replacement_matches_repyability():
     assert c["cost_rate"] == pytest.approx(direct.expected_cost_rate(), rel=1e-12)
     assert math.fsum(c["by_category"].values()) == pytest.approx(c["cost_rate"], rel=1e-9)
     # A condition check at each interval the pump is up at.
-    up = direct._block_cycle("c").before
+    up = repy_compat.block_cycle(direct, "c").before
     assert c["by_category"]["inspection"] == pytest.approx(1 * up / 10, rel=1e-12)
     assert c["by_category"]["preventive"] > 0
 
@@ -291,7 +293,7 @@ def test_separate_groups_are_exact_with_a_setup_category():
     c = r["costs"]
     assert c["cost_rate_basis"] == "exact"
     assert c["cost_rate"] == pytest.approx(direct.expected_cost_rate(), rel=1e-12)
-    actions = sum(direct._node_actions("a", direct.node_availability()["a"]))
+    actions = sum(repy_compat.node_actions(direct, "a", direct.node_availability()["a"]))
     assert c["by_category"]["setup"] == pytest.approx(2 * 5000 * actions, rel=1e-9)
     assert math.fsum(c["by_category"].values()) == pytest.approx(c["cost_rate"], rel=1e-9)
 
