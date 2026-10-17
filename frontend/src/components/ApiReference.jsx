@@ -818,7 +818,8 @@ function LiveToolList({ specUrl }) {
     <div className="api-tools">
       <p className="muted-line">
         {tools.length} tools, {countActions(tools)} actions, read live from the spec. Open a tool for
-        its actions and arguments (<b>bold</b> ones are required). Reliafy Maintenance users also
+        its actions and their arguments (<b>bold</b> ones are required); each action is{" "}
+        <code>POST /api/v1/{"{tool}"}/{"{action}"}</code>. Reliafy Maintenance users also
         have the Maintenance tools; they show in <code>/api/v1/tools</code> and the spec when you
         call with your token.
       </p>
@@ -834,7 +835,7 @@ function LiveToolList({ specUrl }) {
           <ul className="api-list">
             {t.actions.map((a) => (
               <li key={a.path}>
-                <code className="api-path">POST {a.path}</code>
+                <code className="api-path" title={`POST ${a.path}`}>{a.action ? <b>{a.action}</b> : `POST ${a.path}`}</code>
                 {a.pro && <span className="api-tag">Pro</span>}
                 {" "}— {a.summary}
                 {(a.required.length > 0 || a.optional.length > 0) && (

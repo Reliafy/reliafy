@@ -5,10 +5,17 @@
 // the page says they exist and who gets them.
 const HIDDEN = /^maintenance_/;
 
-function firstSentence(text) {
-  const s = String(text || "").trim();
-  const cut = s.search(/\.(\s|$)/);
-  return cut === -1 ? s : s.slice(0, cut + 1);
+const MAX = 180;
+
+// A description's first sentence, at most MAX characters (cut at a word, with "…").
+export function oneLine(text) {
+  let s = String(text || "").replace(/\s+/g, " ").trim();
+  const cut = s.search(/[.?](\s|$)/);
+  if (cut !== -1) s = s.slice(0, cut + 1);
+  if (s.length <= MAX) return s;
+  const head = s.slice(0, MAX);
+  const space = head.lastIndexOf(" ");
+  return `${(space > MAX / 2 ? head.slice(0, space) : head).replace(/[\s,;:(–—-]+$/, "")}…`;
 }
 
 /** The tools in an OpenAPI spec from /api/v1/openapi.json, in the spec's order:
@@ -29,7 +36,7 @@ export function toolsFromSpec(spec) {
     tools.get(name).actions.push({
       action: op["x-reliafy-action"] || null,
       path,
-      summary: firstSentence(op.summary || op.description),
+      summary: oneLine(op.description || op.summary),
       required,
       optional: args.filter((a) => !required.includes(a)),
       pro: Boolean(op["x-reliafy-pro-only"]),

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { countActions, toolsFromSpec } from "./apiSpec.js";
+import { countActions, oneLine, toolsFromSpec } from "./apiSpec.js";
 
 const op = (tool, action, summary, schema, extra = {}) => ({
   post: {
@@ -62,4 +62,18 @@ test("a missing or broken spec gives an empty list, not an error", () => {
   assert.deepEqual(toolsFromSpec(null), []);
   assert.deepEqual(toolsFromSpec({}), []);
   assert.deepEqual(toolsFromSpec({ paths: { "/x": null } }), []);
+});
+
+test("a one-line summary is the first sentence, cut short at a word", () => {
+  assert.equal(oneLine("Fit a model. Then more."), "Fit a model.");
+  assert.equal(oneLine("Is A better than B? Split the data."), "Is A better than B?");
+  assert.equal(oneLine("  Spaces\n  collapse  "), "Spaces collapse");
+  const long = oneLine(`${"word ".repeat(60)}end.`);
+  assert.ok(long.length <= 181 && long.endsWith("word…"), long);
+  assert.equal(oneLine(""), "");
+});
+
+test("the summary comes from the full description, not the spec's clipped summary", () => {
+  const spec = { paths: { "/api/v1/x/y": op("x", "y", "Clipped (c", {}, { description: "Clipped (complete). Rest." }) } };
+  assert.equal(toolsFromSpec(spec)[0].actions[0].summary, "Clipped (complete).");
 });
