@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TEST_PLAN_TABS, TEST_PLANNING_PATH, altPlanLink, altPrefill, frac, num, tabFromPath } from "./testPlanning.js";
+import { TEST_PLAN_TABS, TEST_PLANNING_PATH, altPlanLink, altPrefill, frac, num, planningValue, tabFromPath } from "./testPlanning.js";
 
 test("each tab has its own path, the Demonstration tab the page's", () => {
   assert.equal(TEST_PLAN_TABS[0].path, TEST_PLANNING_PATH);
@@ -39,6 +39,28 @@ test("an ALT model's planning values for the next test", () => {
     highStress: "393",
   });
   assert.equal(altPlanLink("m 1"), "/strategy/test-planning/accelerated?model=m%201");
+});
+
+test("a fit's raw values start the form at 4 significant figures", () => {
+  assert.equal(planningValue(5.158909835425411e-26), "5.159e-26");
+  assert.equal(planningValue(15.829945744196094), "15.83");
+  assert.equal(planningValue(0.7555564199952891), "0.7556");
+  assert.equal(planningValue(6694), "6694");
+  assert.equal(planningValue(36), "36");
+  assert.equal(planningValue(NaN), "");
+  const fluid = {
+    ...ALT,
+    life_model_id: "inverse_power",
+    stresses: [{ key: "s1", column: "kv", label: "Voltage", unit: "kV" }],
+    params: [{ name: "beta", value: 0.7555564199952891 }],
+    coefficients: [{ name: "a", value: 5.158909835425411e-26 }, { name: "n", value: 15.829945744196094 }],
+    levels: [{ stress: [26.000000000000004], n: 3 }, { stress: [36], n: 3 }],
+  };
+  const p = altPrefill(fluid);
+  assert.deepEqual(p.params, { a: "5.159e-26", n: "15.83" });
+  assert.equal(p.shape, "0.7556");
+  assert.equal(p.highStress, "36");
+  for (const v of [...Object.values(p.params), p.shape, p.highStress]) assert.ok(Number.isFinite(Number(v)), v);
 });
 
 test("models a plan can't use give no prefill", () => {

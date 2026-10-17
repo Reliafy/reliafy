@@ -41,6 +41,15 @@ export const altPlanLink = (modelId) => `${TEST_PLANNING_PATH}/accelerated?model
 // A saved ALT model's planning values for the next test, or null when the
 // plan can't use it (two stresses, or a distribution other than Weibull or
 // lognormal). Strings, as the form holds them.
+// A fitted value as a form field's starting value: 4 significant figures, in a
+// form a number field accepts (5.158909835425411e-26 → "5.159e-26",
+// 15.829945744196094 → "15.83", 6694 → "6694"). A planning value is a best
+// guess, and a field full of digits reads as more certain than the fit is.
+export function planningValue(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? String(Number(n.toPrecision(4))) : "";
+}
+
 export function altPrefill(results) {
   const r = results || {};
   const model = PLAN_LIFE_MODELS[r.life_model_id];
@@ -53,15 +62,15 @@ export function altPrefill(results) {
   const out = {
     distribution: r.distribution_id,
     lifeModel: r.life_model_id,
-    params: Object.fromEntries(model.params.map((n) => [n, String(coeffs[n])])),
-    shape: String(shape),
+    params: Object.fromEntries(model.params.map((n) => [n, planningValue(coeffs[n])])),
+    shape: planningValue(shape),
     unit: r.unit || "",
     stressUnit: r.stresses[0].unit || "",
   };
   if (tested.length) {
     // The highest stress tested is a safe highest stress for the next test.
     const top = [...tested].sort((a, b) => b - a)[0];
-    out.highStress = String(top);
+    out.highStress = planningValue(top);
   }
   return out;
 }

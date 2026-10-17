@@ -7,7 +7,7 @@ import Plot from "./Plot.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Assumptions, Choice, ComputeButton, Field, PlanAnswer, SimulationCheck, usePlan } from "./TestPlanShared.jsx";
 import { getAltModel } from "../api.js";
-import { formatNumber, formatWithUnit } from "../format.js";
+import { formatNumber, formatPercent, formatWithUnit } from "../format.js";
 import { ACCENT, COLORWAY } from "../plotTheme.js";
 import { PLAN_DISTRIBUTIONS, PLAN_LIFE_MODELS, altPrefill, frac, num } from "../testPlanning.js";
 import { unitInText } from "./unitText.js";
@@ -36,11 +36,11 @@ const list = (s) => String(s || "").split(/[,\s]+/).filter(Boolean).map(Number);
 function AllocationChart({ result }) {
   const rows = result.rows;
   const su = result.stress_unit ? ` ${result.stress_unit}` : "";
-  const x = rows.map((r) => `${formatNumber(r.stress)}${su}`);
+  const x = rows.map((r) => `${formatNumber(r.stress, { sig: 4 })}${su}`);
   return (
     <Plot
       data={[
-        { type: "bar", name: "Units", x, y: rows.map((r) => r.units), marker: { color: ACCENT },
+        { type: "bar", name: "Units", x, y: rows.map((r) => Math.round(r.units)), marker: { color: ACCENT },
           hovertemplate: "%{x}: %{y} units<extra></extra>" },
         { type: "bar", name: "Expected failures", x, y: rows.map((r) => r.expected_failures),
           marker: { color: COLORWAY[1] }, hovertemplate: "%{x}: %{y:.1f} failures expected<extra></extra>" },
@@ -122,8 +122,8 @@ export default function AcceleratedTestPlan({ modelId = null }) {
   const u = result?.unit ? unitInText(result.unit) : "";
   const su = result?.stress_unit ? ` ${result.stress_unit}` : "";
   const stats = result && [
-    { label: "Lowest stress", value: `${formatNumber(result.rows[0].stress)}${su}` },
-    { label: "Units", value: formatNumber(result.rows.reduce((t, r) => t + r.units, 0), { sig: 7 }) },
+    { label: "Lowest stress", value: `${formatNumber(result.rows[0].stress, { sig: 4 })}${su}` },
+    { label: "Units", value: formatNumber(Math.round(result.rows.reduce((t, r) => t + r.units, 0)), { sig: 7 }) },
     { label: "Expected failures", value: formatNumber(result.total_expected_failures) },
     { label: "Within a factor of", value: formatNumber(result.precision) },
   ];
@@ -208,9 +208,9 @@ export default function AcceleratedTestPlan({ modelId = null }) {
               <tbody>
                 {result.rows.map((r) => (
                   <tr key={r.stress}>
-                    <td className="calc-row-label">{formatNumber(r.stress, { sig: 5 })}{su}</td>
-                    <td>{r.units}</td>
-                    <td>{(r.share * 100).toFixed(0)}%</td>
+                    <td className="calc-row-label">{formatNumber(r.stress, { sig: 4 })}{su}</td>
+                    <td>{formatNumber(Math.round(r.units), { sig: 7 })}</td>
+                    <td>{formatPercent(r.share)}</td>
                     <td>{formatNumber(r.expected_failures)}</td>
                   </tr>
                 ))}
