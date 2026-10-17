@@ -172,15 +172,15 @@ const TIERS = (primaryHref, mcpOn = true) => [
   {
     name: "Enterprise",
     // No list price: scoped with each organisation.
-    price: "Let's talk",
-    per: "",
-    blurb: "For organisations running reliability at scale, with people on call.",
+    price: "Custom",
+    per: "per organisation",
+    blurb: "Reliafy across your organisation, with our team behind it.",
     features: [
-      "Everything in Pro, for your whole organisation",
-      "Support from the Reliafy team, with agreed response times",
-      "Monitoring of your data feeds, models and integrations, with alerts when something stops or drifts",
-      "Graph access: query the connections across your assets, maintenance and failures",
-      "Help getting your data in, and onboarding for your team",
+      "Everything in Pro, for every engineer in your organisation",
+      "Dedicated support from the people who build Reliafy, with agreed response times",
+      "Proactive monitoring of your data feeds, models and integrations, with alerts before a gap becomes a wrong answer",
+      "Full graph access: ask questions across assets, maintenance history and failures that a table can't answer",
+      "Guided onboarding: we help bring your data in and get your team productive",
     ],
     cta: { label: "Talk to us", href: ENTERPRISE_CONTACT, external: true, ghost: true },
   },

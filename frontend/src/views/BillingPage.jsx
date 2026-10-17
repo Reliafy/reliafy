@@ -177,8 +177,9 @@ export default function BillingPage() {
             noPayments
           )}
           <p className="muted-line">
-            Need support, monitoring or graph access for your organisation?{" "}
-            <a href={ENTERPRISE_CONTACT}>Talk to us about Enterprise</a>.
+            Rolling Reliafy out across a team or site? Enterprise adds dedicated support,
+            proactive monitoring and full graph access.{" "}
+            <a href={ENTERPRISE_CONTACT}>Talk to us</a>.
           </p>
         </div>
       )}
