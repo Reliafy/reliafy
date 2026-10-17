@@ -390,6 +390,37 @@ def run_alt_bounds(request: dict) -> dict:
         raise rbd_analysis.AnalysisError(str(exc)) from exc
 
 
+def calendar_request(inputs: dict) -> dict:
+    """A self-contained calendar-replacement request (Strategy › Replacement,
+    shutdown calendar, sampled): the model's distribution and parameters, the
+    shuts as dates and prices, and the options, exactly the keyword arguments
+    of :func:`strategy_calendar.calendar_replacement`."""
+    return json.loads(json.dumps({k: inputs.get(k) for k in _CALENDAR_KEYS}, default=str))
+
+
+_CALENDAR_KEYS = ("distribution_id", "params", "extras", "unit", "today", "opportunities", "failure_cost",
+                  "anytime_cost", "max_age", "method", "mc_samples", "seed", "horizon_months")
+
+
+def run_calendar(request: dict) -> dict:
+    """Run a self-contained calendar-replacement request: the sampled cost
+    rate over a long calendar cycle (the exact methods answer on the web)."""
+    from backend.services import strategy_calendar
+    from backend.services.strategy import StrategyError
+
+    if not isinstance(request, dict):
+        raise InvalidRequest("The request must be an object.")
+    unknown = set(request) - set(_CALENDAR_KEYS)
+    if unknown:
+        raise InvalidRequest(f"Unknown fields: {', '.join(sorted(unknown))}.")
+    args = {k: request.get(k) for k in _CALENDAR_KEYS if k not in ("distribution_id", "params")}
+    try:
+        return strategy_calendar.calendar_replacement(request.get("distribution_id"), request.get("params") or [],
+                                                      **args)
+    except StrategyError as exc:
+        raise rbd_analysis.AnalysisError(str(exc)) from exc
+
+
 # What the compute service runs, by job kind. A new analysis adds its runner
 # here; the web side adds a request builder above and a KIND_ in rbd_jobs.
 # (#240's next failure rides in ``availability`` when a state is given.)
@@ -401,6 +432,8 @@ RUNNERS: dict[str, Callable[[dict], dict]] = {
     "alt_bounds": run_alt_bounds,
     # What to improve's other measures (#225): heavy uncertainty runs.
     "measures": run_measures,
+    # Replacement over a shutdown calendar, sampled over a long cycle (Pro).
+    "calendar_replacement": run_calendar,
 }
 KINDS = tuple(RUNNERS)
 
