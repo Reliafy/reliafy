@@ -475,7 +475,7 @@ def _log_call(ctx: Context, name: str, outcome: str, started: float) -> None:
     try:
         user = _caller(ctx)
         usage_service.record(
-            _db(), uid=user["uid"], channel="mcp", feature=name, outcome=outcome,
+            _db(), uid=user["uid"], channel=user.get("usage_channel", "mcp"), feature=name, outcome=outcome,
             plan=_usage_plan(user), client=usage_service.client_of(user),
             ms=(time.perf_counter() - started) * 1000)
     except Exception:  # noqa: BLE001 - logging must never fail a tool

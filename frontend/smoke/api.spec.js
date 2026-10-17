@@ -26,10 +26,13 @@ const SIGNED_IN = [
   ["GET", "/api/models"],
   ["GET", "/api/datasets"],
   ["GET", "/api/me"],
+  ["GET", "/api/v1/tools"], // every MCP tool action over REST
+  ["POST", "/api/v1/list/models"],
+  ["POST", "/api/v1/maintenance/photos"],
 ];
 
 // Public: these answer anyone.
-const PUBLIC = ["/api/health", "/api/config", "/api/distributions"];
+const PUBLIC = ["/api/health", "/api/config", "/api/distributions", "/api/v1/openapi.json"];
 
 let auth;
 test.beforeAll(async ({ request }) => {
