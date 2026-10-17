@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
-import { PRO_PRICE } from "../pricing.js";
+import { ENTERPRISE_CONTACT, PRO_PRICE } from "../pricing.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import McpOnRequest from "../components/McpOnRequest.jsx";
 import Chip from "../components/ui/Chip.jsx";
@@ -176,6 +176,11 @@ export default function BillingPage() {
           ) : (
             noPayments
           )}
+          <p className="muted-line">
+            Rolling Reliafy out across a team or site? Enterprise adds dedicated support,
+            proactive monitoring, full graph access and hosting in your region.{" "}
+            <a href={ENTERPRISE_CONTACT}>Talk to us</a>.
+          </p>
         </div>
       )}
 

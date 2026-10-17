@@ -5,7 +5,7 @@ import PublicFooter from "../components/PublicFooter.jsx";
 import HeroPlot from "../components/HeroPlot.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
-import { PRO_PRICE } from "../pricing.js";
+import { ENTERPRISE_CONTACT, PRO_PRICE } from "../pricing.js";
 
 const CheckIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -168,6 +168,22 @@ const TIERS = (primaryHref, mcpOn = true) => [
       "Top-up credit packs from $5 — credits never expire",
     ],
     cta: { label: "Start with Pro", href: primaryHref },
+  },
+  {
+    name: "Enterprise",
+    // No list price: scoped with each organisation.
+    price: "Custom",
+    per: "per organisation",
+    blurb: "Reliafy across your organisation, with our team behind it.",
+    features: [
+      "Everything in Pro, for every engineer in your organisation",
+      "Dedicated support from the people who build Reliafy, with agreed response times",
+      "Proactive monitoring of your data feeds, models and integrations, with alerts before a gap becomes a wrong answer",
+      "Full graph access: ask questions across assets, maintenance history and failures that a table can't answer",
+      "Guided onboarding: we help bring your data in and get your team productive",
+      "Hosted in the region you need, on infrastructure we run for you",
+    ],
+    cta: { label: "Talk to us", href: ENTERPRISE_CONTACT, external: true, ghost: true },
   },
 ];
 
