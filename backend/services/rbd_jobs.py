@@ -56,8 +56,11 @@ KIND_ALT_BOUNDS = "alt_bounds"
 # What to improve's other measures (#225): a heavy uncertainty run (Sobol
 # indices, figures over time over draws; see rbd_measures). Never stored.
 KIND_MEASURES = "measures"
+# A life or accelerated test plan checked by simulation (Test planning;
+# backend.routers.test_planning submits it). Never stored.
+KIND_TEST_PRECISION = "test_precision"
 # Kinds whose finished result is shown as it came back.
-_PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS, KIND_MEASURES)
+_PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS, KIND_MEASURES, KIND_TEST_PRECISION)
 ACTIVE = ("queued", "running")
 FINISHED = ("done", "failed")
 

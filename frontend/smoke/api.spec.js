@@ -9,6 +9,11 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  ["POST", "/api/test-planning/sequential"], // Test planning
+  ["POST", "/api/test-planning/life"],
+  ["POST", "/api/test-planning/accelerated"],
+  ["POST", "/api/test-planning/comparison"],
+  ["POST", "/api/test-planning/simulate"],
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AltLibrary from "./AltLibrary.jsx";
 import { listAltModels, deleteAltModel } from "../api.js";
 import { FirstRunStrip } from "../components/FirstRun.jsx";
@@ -38,7 +38,8 @@ export default function AltHome() {
       <PageHeader
         crumbs={[{ label: "Modelling", to: "/modelling" }]}
         title="Accelerated life"
-        meta="Failure times at elevated stress, extrapolated to your use level."
+        meta={<>Failure times at elevated stress, extrapolated to your use level. Planning a test first?{" "}
+          <Link to="/strategy/test-planning/accelerated">Plan an accelerated test</Link>.</>}
         primary={<button onClick={() => navigate("/modelling/alt/new")}><PlusIcon /> New model</button>}
       />
 

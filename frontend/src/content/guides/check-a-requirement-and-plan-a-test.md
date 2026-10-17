@@ -3,7 +3,7 @@ title: "Check a requirement and plan a demonstration test"
 task: "Does my model meet B10 ≥ 500 hours at 90% confidence, and if not, what test would show it?"
 category: "Maintenance strategy"
 prerequisites: "A B-life requirement and, ideally, a fitted life model of the item."
-related_href: "/strategy/demonstration-test"
+related_href: "/strategy/test-planning"
 related_label: "Open the demonstration test"
 order: 21
 ---

@@ -1,0 +1,26 @@
+/* Strategy › Test planning: the plain-language lead-in on each tab, the
+   simulation check, and a checkbox laid out like the number fields. */
+.tp-explain {
+  margin: 0 0 var(--sp-4);
+  color: var(--muted);
+  max-width: 72ch;
+  line-height: 1.5;
+}
+
+.tp-sim {
+  margin: var(--sp-4) 0;
+}
+
+.tp-sim .rs-note {
+  max-width: 72ch;
+}
+
+.tp-sim-out {
+  margin: var(--sp-3) 0 0;
+  max-width: 72ch;
+}
+
+.tp-check input[type="checkbox"] {
+  width: auto;
+  align-self: flex-start;
+}

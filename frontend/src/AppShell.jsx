@@ -31,7 +31,7 @@ const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
 const StrategyReplacement = lazy(() => import("./views/StrategyReplacement.jsx"));
 const StrategyCompare = lazy(() => import("./views/StrategyCompare.jsx"));
 const StrategyFailureFinding = lazy(() => import("./views/StrategyFailureFinding.jsx"));
-const StrategyDemonstration = lazy(() => import("./views/StrategyDemonstration.jsx"));
+const StrategyTestPlanning = lazy(() => import("./views/StrategyTestPlanning.jsx"));
 const StrategyAnalyses = lazy(() => import("./views/StrategyAnalyses.jsx"));
 const StrategyTracking = lazy(() => import("./views/StrategyTracking.jsx"));
 const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
@@ -73,6 +73,13 @@ import { useWorkspace } from "./WorkspaceProvider.jsx";
 function TrackingRedirect() {
   useParams();
   return <Navigate to="/fleet/tracking" replace />;
+}
+
+// The Demonstration test page became Test planning's Demonstration tab: old
+// links (a model's "Plan a test", bookmarks) keep their query string.
+function DemonstrationTestRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/strategy/test-planning${search}`} replace />;
 }
 
 // The desktop rail's collapsed/expanded choice is remembered per device.
@@ -191,7 +198,12 @@ export default function AppShell() {
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
-            <Route path="/strategy/demonstration-test" element={<StrategyDemonstration />} />
+            <Route path="/strategy/test-planning" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/test-planning/sequential" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/test-planning/life" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/test-planning/accelerated" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/test-planning/comparison" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/demonstration-test" element={<DemonstrationTestRedirect />} />
             <Route path="/strategy/tracking" element={<Navigate to="/fleet/tracking" replace />} />
             <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
             <Route path="/fleet" element={<FleetForecasts />} />

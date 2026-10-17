@@ -112,6 +112,7 @@ def demonstration_test_endpoint(
     b_life: float | None = Body(default=None),
     shape_interval: list[float] | None = Body(default=None),
     shape_model: str | None = Body(default=None, max_length=200),
+    failure_terminated: bool | None = Body(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
     """Plan a reliability demonstration test: units, test time and allowed failures
@@ -126,6 +127,7 @@ def demonstration_test_endpoint(
                 method=method, mtbf=mtbf, design_reliability=design_reliability,
                 design_mtbf=design_mtbf, unit=unit, producer_risk=producer_risk,
                 b_life=b_life, shape_interval=shape_interval, shape_model=shape_model,
+                failure_terminated=failure_terminated,
             )
         )
     except StrategyError as exc:

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import AltResultView from "../components/AltResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getAltModel, deleteAltModel } from "../api.js";
@@ -7,6 +7,7 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
+import { altPlanLink, altPrefill } from "../testPlanning.js";
 
 // A saved Accelerated Life model — mirrors the other model pages: title and
 // saved meta, then the result view (answer card, life-stress plot, use-level
@@ -58,6 +59,12 @@ export default function AltModelPage() {
       {model && (
         <div className="card">
           <AltResultView results={model.results} modelId={model.id} />
+          {altPrefill(model.results) && (
+            <p className="hint">
+              Testing again? <Link to={altPlanLink(model.id)}>Plan the next accelerated test from this fit</Link>:
+              the stresses, units at each and failures to expect.
+            </p>
+          )}
         </div>
       )}
     </div>
