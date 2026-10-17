@@ -181,6 +181,7 @@ const TIERS = (primaryHref, mcpOn = true) => [
       "Proactive monitoring of your data feeds, models and integrations, with alerts before a gap becomes a wrong answer",
       "Full graph access: ask questions across assets, maintenance history and failures that a table can't answer",
       "Guided onboarding: we help bring your data in and get your team productive",
+      "Hosted where you need it: in your region, in your own cloud, or on your own servers",
     ],
     cta: { label: "Talk to us", href: ENTERPRISE_CONTACT, external: true, ghost: true },
   },
