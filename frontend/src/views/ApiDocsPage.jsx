@@ -26,10 +26,10 @@ export default function ApiDocsPage() {
           </div>
           <h1>API reference</h1>
           <p>
-            Read models &amp; reliability, create datasets and fit, read fleet
-            forecasts, run strategy calculators, and push operational data —
-            through the <b>reliafy-client</b> Python package or the raw{" "}
-            <b>HTTP API</b>. Create a token under{" "}
+            Everything Reliafy’s Claude connector can do — fit, analyse RBDs, plan
+            tests, run strategy calculators, save and share — over plain HTTPS, from
+            the <b>reliafy</b> command line or the <b>reliafy-client</b> Python
+            package, plus pushing data and sending files. Create a token under{" "}
             <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
               Settings › API access
             </button>

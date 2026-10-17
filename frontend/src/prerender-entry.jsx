@@ -80,7 +80,7 @@ export function routes() {
       path: "/api-docs",
       title: "API Reference — Reliafy Reliability API",
       description:
-        "The Reliafy HTTP API and reliafy-client Python package: read fitted models and reliability, create datasets and fit distributions, read fleet forecasts, run strategy calculators, and push operational data.",
+        "The Reliafy API, the reliafy command line and the reliafy-client Python package: every tool of the Claude connector over HTTPS (fit, analyse RBDs, plan tests, strategy), an OpenAPI spec, data ingest, and file and photo uploads.",
     },
     {
       path: "/terms",

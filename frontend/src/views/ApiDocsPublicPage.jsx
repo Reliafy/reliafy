@@ -4,7 +4,7 @@ import PublicFooter from "../components/PublicFooter.jsx";
 import ApiReference, { McpDocs } from "../components/ApiReference.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 
-// Public, crawlable API reference for the Reliafy read/ingestion API. Prerendered
+// Public, crawlable API reference for the Reliafy API (tools, CLI, client, ingest). Prerendered
 // to static HTML for search engines (see prerender-entry.jsx) and reachable
 // without an account. Token management stays in-app under Settings › API access.
 export default function ApiDocsPublicPage() {
@@ -16,11 +16,11 @@ export default function ApiDocsPublicPage() {
         <header className="blog-article-head">
           <h1>API reference</h1>
           <p>
-            Read models &amp; reliability, create datasets and fit, read fleet
-            forecasts, run strategy calculators, and push operational data — through
-            the <b>reliafy-client</b> Python package or the raw <b>HTTP API</b>.{" "}
-            <Link to="/login">Create a free account</Link>, then generate a token under
-            Settings › API access.{" "}
+            Everything Reliafy’s Claude connector can do — fit, analyse RBDs, plan tests,
+            run strategy calculators, save and share — over plain HTTPS, from the{" "}
+            <b>reliafy</b> command line or the <b>reliafy-client</b> Python package, plus
+            pushing data and sending files. <Link to="/login">Create an account</Link>, then
+            create a token under Settings › API access (Pro).{" "}
             {mcpOn ? (
               <>
                 Claude (claude.ai, desktop, mobile, Claude Code) can connect to your account

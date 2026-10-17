@@ -5360,6 +5360,35 @@ button.cal-chip.wide { min-height: 44px; padding: 6px 10px; font-size: var(--fs-
   flex-shrink: 0;
 }
 
+/* The live tool list (read from /api/v1/openapi.json). */
+.api-tools { margin-top: 0.4rem; }
+.api-tool { border: 1px solid var(--line); border-radius: var(--r); margin-top: 0.5rem; }
+.api-tool > summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: var(--fs-14);
+}
+.api-tool > summary code { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+.api-tool-meta { font-size: var(--fs-12); color: var(--muted); min-width: 0; }
+.api-tool[open] > summary { border-bottom: 1px solid var(--line2); }
+.api-tool > .api-list { padding: 4px 12px 10px 1.9rem; gap: 8px; }
+.api-tool .api-path { font-size: var(--fs-12); }
+.api-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: var(--fs-12);
+  border-radius: var(--r-sm);
+  background: var(--acc-t);
+  color: var(--acc-d);
+}
+.api-args { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 3px; }
+.api-args code { font-family: var(--mono); font-size: var(--fs-12); overflow-wrap: anywhere; }
+
 /* Public link section in the share dialog. */
 .pl-section {
   margin-top: 1rem;
