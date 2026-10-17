@@ -144,6 +144,7 @@ from backend.services import workspace_changes as changes_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import strategy_store
+from backend.services import test_planning as test_planning_service
 from backend.services import tokens as tokens_service
 from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service
@@ -324,7 +325,7 @@ accelerated tests, test plans), repairable_analysis (recurrent models), strategy
 overhaul intervals, fleet forecasts) and rbd_analysis (reliability, availability, what to improve, intervals, \
 exports). Writes change the workspace: models, datasets, rbd, uploads (files in), rcm, sharing, fleet. Each tool \
 takes an action (or kind); its description lists every action with the arguments it takes. guide(topic) has \
-the how-tos: life_data, units, accelerated, repairable, rbds, rbd_analysis, strategy, fleets, uploads, rcm, \
+the how-tos: life_data, units, accelerated, test_planning, repairable, rbds, rbd_analysis, strategy, fleets, uploads, rcm, \
 sharing, workspace, plans — read the one you need before a task you haven't done here yet.
 
 Conventions — follow them exactly:
@@ -5400,6 +5401,156 @@ def plan_demonstration_test(
     return _lean_demonstration(out)
 
 
+# ---- Test planning beyond the demonstration test (SurPyval's test_planning) -------------
+# The demonstration test's own arguments, reused so each shows one description.
+_DEMO_ARG = {name: p.annotation for name, p in inspect.signature(plan_demonstration_test).parameters.items()}
+_PCT = Annotated[Optional[float], Field(gt=0, lt=1, description="A chance, e.g. 0.8.")]
+
+
+def _lean_plan(out: dict, drop: tuple = ()) -> dict:
+    """A test plan without the page's chart arrays."""
+    return {k: v for k, v in out.items() if k not in ("oc_curve", "curve", *drop) and v is not None}
+
+
+def plan_sequential_test(
+    ctx: Context,
+    method: Annotated[Literal["mtbf", "attribute"], Field(description=(
+        "'mtbf' (failures against total test time) or 'attribute' (failures against units "
+        "tested)."))] = "mtbf",
+    mtbf: _DEMO_ARG["mtbf"] = None,
+    reliability: _DEMO_ARG["reliability"] = None,
+    design_mtbf: _DEMO_ARG["design_mtbf"] = None,
+    design_reliability: _DEMO_ARG["design_reliability"] = None,
+    confidence: _DEMO_ARG["confidence"] = 0.9,
+    producer_risk: _DEMO_ARG["producer_risk"] = 0.1,
+    unit: _UNIT = None,
+    failures_seen: Annotated[Optional[int], Field(ge=0, description="Failures so far, to ask what the test says "
+                                                                    "now.")] = None,
+    time_seen: Annotated[Optional[float], Field(ge=0, description="Total test time so far (method mtbf).")] = None,
+    units_seen: Annotated[Optional[int], Field(ge=0, description="Units tested so far (method attribute).")] = None,
+) -> dict[str, Any]:
+    """A truncated sequential test of an MTBF or a reliability against a good design: accept/reject lines,
+    both risks as run, average length against the fixed-length test; with failures_seen, accept, reject or
+    continue."""
+    _caller(ctx)
+    out = test_planning_service.sequential_test(
+        method=method, mtbf=mtbf, good_mtbf=design_mtbf, reliability=reliability,
+        good_reliability=design_reliability, confidence=confidence, producer_risk=producer_risk, unit=unit,
+        failures_seen=failures_seen, time_seen=time_seen, units_seen=units_seen)
+    b = out.pop("boundaries")
+    if method == "mtbf":
+        rows = [{"failures": f, "accept_at_time": a, "reject_by_time": r}
+                for f, a, r in zip(b["failures"], b["accept"], b["reject"])]
+    else:  # one row wherever a line steps, not one per unit
+        rows, last = [], None
+        for n, a, r in zip(b["units"], b["accept"], b["reject"]):
+            if (a, r) != last:
+                rows.append({"from_units": n, "accept_if_failures_at_most": a, "reject_at_failures": r})
+                last = (a, r)
+    return {**_lean_plan(out), "boundaries": rows}
+
+
+def plan_life_test(
+    ctx: Context,
+    params: Annotated[list[Param], Field(min_length=2, max_length=2, description=(
+        "Planning values in SurPyval names: weibull [alpha, beta], lognormal [mu, sigma]."))],
+    distribution: Annotated[Literal["weibull", "lognormal"], Field(description=(
+        "weibull or lognormal."))] = "weibull",
+    solve_for: Annotated[Literal["precision", "units", "length"], Field(description=(
+        "precision (of units), units (for within_pct) or length (for units and within_pct)."))]
+    = "precision",
+    units: _DEMO_ARG["units"] = None,
+    within_pct: Annotated[Optional[float], Field(gt=0, le=1000, description=(
+        "The precision wanted, as ± percent: 20 = the interval within a factor of 1.2."))] = None,
+    test_end: Annotated[Literal["time", "failures", "all"], Field(description=(
+        "When the test stops: at censor_time, when failure_fraction have failed, or when all have."))] = "time",
+    censor_time: Annotated[Optional[float], Field(gt=0, description="When the test stops (the test length).")]
+    = None,
+    failure_fraction: _PCT = None,
+    quantity: Annotated[Literal["b_life", "mean"], Field(description="Estimate the B-life or the mean.")]
+    = "b_life",
+    b_life: Annotated[Optional[float], Field(gt=0, lt=100)] = 10,
+    confidence: _DEMO_ARG["confidence"] = 0.9,
+    unit: _UNIT = None,
+) -> dict[str, Any]:
+    """How precisely a life test estimates a B-life or the mean from planning values, or the units or test
+    length for a precision."""
+    _caller(ctx)
+    out = test_planning_service.life_test(
+        solve_for=solve_for, distribution=distribution, params=[p.model_dump() for p in params], units=units,
+        precision=within_pct, test_end=test_end, censor_time=censor_time, failure_fraction=failure_fraction,
+        quantity=quantity, b_life=b_life, confidence=confidence, unit=unit)
+    return _lean_plan(out)
+
+
+def plan_accelerated_test(
+    ctx: Context,
+    life_params: Annotated[list[Param], Field(min_length=2, max_length=2, description=(
+        "The life model's planning values: arrhenius and eyring [a, b], inverse_power [a, n]."))],
+    shape: _DEMO_ARG["shape"],
+    use_stress: Annotated[list[float], Field(min_length=1, max_length=1, description=(
+        "The use stress, e.g. [323] (kelvin for the thermal models)."))],
+    censor_time: Annotated[float, Field(gt=0, description="When the test stops (the test length).")],
+    life_model: Annotated[Literal["arrhenius", "eyring", "inverse_power"], Field(
+        description="The life-stress model.")] = "arrhenius",
+    distribution: Annotated[Literal["weibull", "lognormal"], Field(description=(
+        "weibull or lognormal."))] = "weibull",
+    high_stress: Annotated[Optional[float], Field(description="The highest stress the test may use.")] = None,
+    units: _DEMO_ARG["units"] = None,
+    levels: Annotated[Optional[int], Field(ge=2, le=6, description=(
+        "Stress levels: 2 the optimum plan, 3+ a compromise plan."))] = 2,
+    stresses: Annotated[Optional[list[float]], Field(min_length=1, max_length=10, description=(
+        "A test of your own: its stresses (with units_at) instead of high_stress and units."))] = None,
+    units_at: Annotated[Optional[list[int]], Field(min_length=1, max_length=10)] = None,
+    b_life: Annotated[Optional[float], Field(gt=0, lt=100)] = 10,
+    confidence: _DEMO_ARG["confidence"] = 0.9,
+    unit: _UNIT = None,
+) -> dict[str, Any]:
+    """An accelerated life test plan from planning values: stresses, units at each, expected failures and the
+    B-life's precision at the use stress (or the precision of your own test)."""
+    _caller(ctx)
+    check = stresses is not None or units_at is not None
+    out = test_planning_service.accelerated_test(
+        mode="check" if check else "plan", distribution=distribution, life_model=life_model,
+        life_params=[p.model_dump() for p in life_params], shape=shape, use_stress=use_stress[0],
+        high_stress=high_stress, units=units, censor_time=censor_time, levels=levels, stresses=stresses,
+        units_at=units_at, b_life=b_life, confidence=confidence, unit=unit)
+    return _lean_plan(out, ("stresses", "units", "fractions", "expected_failures", "life_params"))
+
+
+def plan_comparison(
+    ctx: Context,
+    kind: Annotated[Literal["logrank", "rate_ratio"], Field(description=(
+        "logrank: old and new units side by side; rate_ratio: one fleet's failure rate before and after a "
+        "change."))],
+    solve_for: Annotated[Literal["sample_size", "power", "exposure", "detectable"], Field(description=(
+        "logrank sample_size or power; rate_ratio exposure, detectable or power."))],
+    hazard_ratio: Annotated[Optional[float], Field(gt=0, description="New over old failure rate, e.g. 0.6.")]
+    = None,
+    event_probability: _PCT = None,
+    units_per_group: Annotated[Optional[int], Field(ge=2)] = None,
+    failures_before: Annotated[Optional[int], Field(ge=1)] = None,
+    exposure_before: Annotated[Optional[float], Field(gt=0, description="Operating time the failures_before "
+                                                                         "came in.")] = None,
+    exposure_after: Annotated[Optional[float], Field(gt=0)] = None,
+    rate_ratio: Annotated[Optional[float], Field(gt=0, description="The change to detect: rate after over "
+                                                                   "before, e.g. 0.5.")] = None,
+    power: _PCT = 0.8,
+    confidence: _DEMO_ARG["confidence"] = 0.95,
+    one_sided: Optional[bool] = False,
+    unit: _UNIT = None,
+) -> dict[str, Any]:
+    """Did the change work? A log-rank test's failures, units and power, or a before/after failure-rate
+    test's exposure, smallest detectable change and power."""
+    _caller(ctx)
+    out = test_planning_service.comparison(
+        kind=kind, solve_for=solve_for, hazard_ratio=hazard_ratio, event_probability=event_probability,
+        units_per_group=units_per_group, power=power, confidence=confidence, one_sided=bool(one_sided),
+        failures_before=failures_before, exposure_before=exposure_before, exposure_after=exposure_after,
+        rate_ratio=rate_ratio, unit=unit)
+    return _lean_plan(out)
+
+
 def _demo_shape_from_model(db, uid: str, model_id: str, bound: str) -> dict:
     """A saved Weibull model's β for a demonstration plan (#295): ``shape``
     (the estimate or its 95% lower bound), ``shape_interval``, ``shape_model``
@@ -7739,7 +7890,7 @@ _action_tool("list", _READ, "List saved items", "kind", """The user's saved item
 
 _action_tool("life_data_analysis", _READ, "Analyse life data", "action", """Life data analysis that saves
     nothing: fit distributions, evaluate a saved model, check a requirement, compare groups, extrapolate an
-    accelerated test, plan a demonstration test. Censoring: 0 = failed, 1 = still running, -1 = left-, 2 =
+    accelerated test, plan a test (guide topic test_planning). Censoring: 0 = failed, 1 = still running, -1 = left-, 2 =
     interval-censored (guide topic life_data). To keep a fit, use models.""", {
     "fit": _act(fit_distribution),
     "fit_per_demand": _act(fit_per_demand),
@@ -7748,6 +7899,10 @@ _action_tool("life_data_analysis", _READ, "Analyse life data", "action", """Life
     "compare_groups": _act(compare_groups),
     "alt_use_level": _act(alt_use_level),
     "plan_demonstration_test": _act(plan_demonstration_test),
+    "plan_sequential_test": _act(plan_sequential_test),
+    "plan_life_test": _act(plan_life_test),
+    "plan_accelerated_test": _act(plan_accelerated_test),
+    "plan_comparison": _act(plan_comparison),
 }, docs={
     "model_id": ("A saved model id (list kind models): a life model for reliability_at and check_life_requirement, "
                  "an ALT model (models fit_alt) for alt_use_level."),

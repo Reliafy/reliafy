@@ -390,6 +390,18 @@ def run_alt_bounds(request: dict) -> dict:
         raise rbd_analysis.AnalysisError(str(exc)) from exc
 
 
+def run_test_precision(request: dict) -> dict:
+    """Simulate a planned life or accelerated test (a request from
+    :func:`backend.services.test_planning.simulation_request`)."""
+    from backend.services import test_planning
+    from backend.services.strategy import StrategyError
+
+    try:
+        return test_planning.simulate_precision(request)
+    except StrategyError as exc:
+        raise InvalidRequest(str(exc)) from exc
+
+
 # What the compute service runs, by job kind. A new analysis adds its runner
 # here; the web side adds a request builder above and a KIND_ in rbd_jobs.
 # (#240's next failure rides in ``availability`` when a state is given.)
@@ -401,6 +413,8 @@ RUNNERS: dict[str, Callable[[dict], dict]] = {
     "alt_bounds": run_alt_bounds,
     # What to improve's other measures (#225): heavy uncertainty runs.
     "measures": run_measures,
+    # Test planning: a life or accelerated test plan checked by simulation.
+    "test_precision": run_test_precision,
 }
 KINDS = tuple(RUNNERS)
 

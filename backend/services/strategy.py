@@ -502,8 +502,19 @@ def failure_finding(
 
 
 # ---------------------------------------------------------------------------
-# Demonstration test planning (RePyability's ``demonstration`` module, #129)
+# Demonstration test planning (#129): SurPyval's ``test_planning`` (it was
+# RePyability's ``demonstration`` module until SurPyval 0.25 took it over).
 # ---------------------------------------------------------------------------
+
+
+def _demo_engine():
+    """The functions the calculator plans with: SurPyval's ``test_planning``
+    in RePyability's old signatures (:mod:`backend.services.demo_engine`). A
+    function so the old-vs-new snapshot test can swap the engine."""
+    from backend.services import demo_engine
+
+    return demo_engine
+
 
 DEMO_METHODS = ("attribute", "mtbf")
 _DEMO_FAILURE_COLUMNS = (0, 1, 2, 3)
@@ -560,21 +571,21 @@ def _demo_oc_attribute(demo, R, design, n, r, ext, consumer_risk, pass_prob) -> 
     }
 
 
-def _demo_oc_mtbf(demo, target, design, total, r, consumer_risk, pass_prob) -> dict:
+def _demo_oc_mtbf(demo, target, design, total, r, consumer_risk, pass_prob, **ft) -> dict:
     """The MTBF test's operating characteristic: the chance of passing against
     the design's true MTBF (log-spaced), across the tails."""
     lo = target
     for _ in range(60):
-        if float(demo.mtbf_pass_probability(lo, total, r)) <= _DEMO_OC_TAIL:
+        if float(demo.mtbf_pass_probability(lo, total, r, **ft)) <= _DEMO_OC_TAIL:
             break
         lo /= 1.25
     hi = max(target, design or target)
     for _ in range(60):
-        if float(demo.mtbf_pass_probability(hi, total, r)) >= 1.0 - _DEMO_OC_TAIL:
+        if float(demo.mtbf_pass_probability(hi, total, r, **ft)) >= 1.0 - _DEMO_OC_TAIL:
             break
         hi *= 1.25
     x = np.geomspace(lo, hi, _DEMO_OC_POINTS)
-    passes = np.atleast_1d(demo.mtbf_pass_probability(x, total, r))
+    passes = np.atleast_1d(demo.mtbf_pass_probability(x, total, r, **ft))
     points = [{"label": "Target", "x": target, "pass_probability": consumer_risk}]
     if design is not None:
         points.append({"label": "Good design", "x": design, "pass_probability": pass_prob})
@@ -675,8 +686,9 @@ def demonstration_test(
     b_life=None,
     shape_interval=None,
     shape_model=None,
+    failure_terminated=None,
 ) -> dict:
-    """Plan a reliability demonstration test with RePyability (#129).
+    """Plan a reliability demonstration test (#129, SurPyval's test planning).
 
     ``method='attribute'`` (binomial / success run): each unit runs for
     ``test_multiple`` missions of ``mission_time`` and passes or fails; the
@@ -691,6 +703,9 @@ def demonstration_test(
     ``method='mtbf'`` (constant failure rate, chi-squared): the total
     time-terminated test time that demonstrates ``mtbf`` with at most
     ``failures`` failures (``mtbf_test_time``), split over ``units`` if given.
+    ``failure_terminated=True`` plans a test that stops at its
+    ``failures``-th failure instead (2r rather than 2r + 2 degrees of
+    freedom; it needs at least one failure, and no producer's risk).
 
     ``design_reliability`` / ``design_mtbf`` (optional): the chance a design
     that good passes the planned test (its operating characteristic).
@@ -714,7 +729,7 @@ def demonstration_test(
     warning when β is too poorly known for the plan
     (:mod:`backend.services.demo_shape`).
     """
-    from repyability import demonstration as demo
+    demo = _demo_engine()
 
     method = (method or "attribute").strip().lower()
     if method not in DEMO_METHODS:
@@ -726,7 +741,10 @@ def demonstration_test(
     pr = None if _blank(producer_risk) else _demo_prob(producer_risk, "Producer's risk")
 
     if method == "mtbf":
-        return _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s, pr)
+        return _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s, pr,
+                          failure_terminated=bool(failure_terminated))
+    if failure_terminated:
+        raise StrategyError("A failure-terminated test is an MTBF test: choose the MTBF test type.")
 
     from backend.services import demo_shape
 
@@ -965,13 +983,25 @@ def _demo_attribute_tradeoff(demo, R, c, r, k, beta, t, unit_s, solve_for, n) ->
     return out
 
 
-def _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s, pr=None) -> dict:
+def _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s, pr=None, failure_terminated=False) -> dict:
     """Constant-failure-rate (chi-squared) time-terminated test; with a
-    producer's risk, MIL-HDBK-781's fixed-length plan keeping both risks."""
+    producer's risk, MIL-HDBK-781's fixed-length plan keeping both risks.
+    ``failure_terminated``: the test stops at its ``r``-th failure instead
+    (the response then says so in ``failure_terminated``; without it the
+    response is unchanged)."""
     if _blank(mtbf):
         raise StrategyError("Enter the MTBF to demonstrate.")
     target = _demo_positive(mtbf, "Target MTBF")
     design = None if _blank(design_mtbf) else _demo_positive(design_mtbf, "Design MTBF")
+    ft = {"failure_terminated": True} if failure_terminated else {}
+    if ft and r < 1:
+        raise StrategyError(
+            "A failure-terminated test stops at a failure, so it needs at least 1 failure allowed. With none "
+            "allowed, plan a time-terminated test.")
+    if ft and pr is not None:
+        raise StrategyError(
+            "A plan that keeps both risks is time-terminated (it chooses the failures allowed). Leave the "
+            "producer's risk empty for a failure-terminated test.")
     if pr is not None:
         if design is None:
             raise StrategyError(
@@ -985,25 +1015,40 @@ def _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s, pr=None) -> dict:
         r = int(plan.failures)
         total = float(plan.test_time)
     else:
-        total = float(demo.mtbf_test_time(target, c, r))
+        total = float(demo.mtbf_test_time(target, c, r, **ft))
     per_unit = total / n_given if n_given else None
-    consumer_risk = float(demo.mtbf_pass_probability(target, total, r))
-    pass_prob = float(demo.mtbf_pass_probability(design, total, r)) if design is not None else None
+    consumer_risk = float(demo.mtbf_pass_probability(target, total, r, **ft))
+    pass_prob = float(demo.mtbf_pass_probability(design, total, r, **ft)) if design is not None else None
 
-    summary = (
-        f"Run {_time_phrase(total, unit_s)} of total test time {_failures_phrase(r)} to show "
-        f"MTBF ≥ {_time_phrase(target, unit_s)} at {_pct(c)} confidence"
-        + (f" — about {_time_phrase(per_unit, unit_s)} on each of {n_given:,} units" if per_unit else "")
-        + "."
-    )
+    if ft:
+        summary = (
+            f"Run until failure {r}: if it comes after {_time_phrase(total, unit_s)} of total test time, "
+            f"the test shows MTBF ≥ {_time_phrase(target, unit_s)} at {_pct(c)} confidence"
+            + (f" (about {_time_phrase(per_unit, unit_s)} on each of {n_given:,} units)" if per_unit else "")
+            + "."
+        )
+    else:
+        summary = (
+            f"Run {_time_phrase(total, unit_s)} of total test time {_failures_phrase(r)} to show "
+            f"MTBF ≥ {_time_phrase(target, unit_s)} at {_pct(c)} confidence"
+            + (f" — about {_time_phrase(per_unit, unit_s)} on each of {n_given:,} units" if per_unit else "")
+            + "."
+        )
     if pass_prob is not None:
         summary += _demo_risks_sentence(f"MTBF is {_time_phrase(design, unit_s)}", pass_prob, pr,
                                         consumer_risk, c)
+    stopping = (
+        f"Failure-terminated test: failed units are repaired or replaced and testing continues until failure "
+        f"{r}; the test passes if that failure comes after the total time (chi-squared bound, 2r degrees of "
+        "freedom)."
+        if ft else
+        "Time-terminated test: failed units are repaired or replaced and testing continues; the test "
+        f"passes with at most {r} failure{'s' if r != 1 else ''} in the total time (chi-squared bound)."
+    )
     assumptions = [
         "Constant failure rate (exponential lifetimes): only the total unit time on test matters, "
         "not how it is split across units.",
-        "Time-terminated test: failed units are repaired or replaced and testing continues; the test "
-        f"passes with at most {r} failure{'s' if r != 1 else ''} in the total time (chi-squared bound).",
+        stopping,
         "Not for wear-out: if the failure rate rises with age, an MTBF test on young units overstates "
         "reliability — use an attribute test with a Weibull shape instead.",
         f"A design exactly at the target MTBF still passes {consumer_risk:.1%} of the time "
@@ -1019,14 +1064,16 @@ def _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s, pr=None) -> dict:
                 f"A fixed-length plan (MIL-HDBK-781) for a discrimination ratio of "
                 f"{fmt_num(design / target)}: the shortest test keeping both risks.")
     cols = sorted(set(_DEMO_FAILURE_COLUMNS) | {r})
-    totals = [float(demo.mtbf_test_time(target, c, f)) for f in cols]
+    if ft:
+        cols = [f for f in cols if f >= 1]
+    totals = [float(demo.mtbf_test_time(target, c, f, **ft)) for f in cols]
     rows = [{"key": None, "x": None, "label": "Total test time", "values": totals, "selected": True}]
     if n_given:
         rows.append({
             "key": n_given, "x": None, "label": f"Per unit ({n_given:,} units)",
             "values": [v / n_given for v in totals], "selected": False,
         })
-    return {
+    out = {
         "method": "mtbf",
         "solve_for": "test_time",
         "unit": unit_s,
@@ -1044,7 +1091,7 @@ def _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s, pr=None) -> dict:
         "two_risk": pr is not None,
         "summary": summary,
         "assumptions": assumptions,
-        "oc_curve": _demo_oc_mtbf(demo, target, design, total, r, consumer_risk, pass_prob),
+        "oc_curve": _demo_oc_mtbf(demo, target, design, total, r, consumer_risk, pass_prob, **ft),
         "tradeoff": {
             "solve_for": "total_test_time",
             "row_label": "",
@@ -1054,3 +1101,6 @@ def _demo_mtbf(demo, mtbf, c, r, n_given, design_mtbf, unit_s, pr=None) -> dict:
             "rows": rows,
         },
     }
+    if ft:
+        out["failure_terminated"] = True  # only when asked: the default response is unchanged
+    return out
