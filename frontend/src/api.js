@@ -244,6 +244,26 @@ export function optimalReplacement(distributionId, params, plannedCost, unplanne
   });
 }
 
+// Replacement over a shutdown calendar (Strategy › Replacement): the long-run
+// best rule, or (method "sampling", Pro, with the compute queue) ``{ job }`` to
+// poll at getRbdJob. A 402 (code pro_required) means sampling needs Pro.
+export function calendarReplacement(body) {
+  return request("/api/strategy/calendar-replacement", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// One unit in service on the calendar: replace it now, at the next shut, or later.
+export function calendarNext(body) {
+  return request("/api/strategy/calendar-next", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // Re-evaluate a fitted model's functions at covariate values. ``path`` comes
 // from the result payload (functions.evaluate_path) and differs for unsaved
 // (in-memory) vs saved (re-fit) models.

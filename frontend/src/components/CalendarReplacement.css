@@ -1,0 +1,38 @@
+/* Strategy › Replacement, shutdown calendar. */
+.cal-h { margin: var(--sp-5) 0 0.25rem; font-size: var(--fs-16); }
+.cal-shuts { display: flex; flex-direction: column; gap: 0.75rem; margin: 0.75rem 0; }
+.cal-shut {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem 1rem;
+  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0.75rem; margin: 0; min-width: 0;
+}
+.cal-shut .calc-t input[type="text"] { width: 180px; }
+.cal-shut .calc-t input[type="number"] { width: 120px; }
+.cal-every-row { display: flex; gap: 0.5rem; align-items: center; }
+.cal-every-row input[type="number"] { width: 80px !important; }
+.cal-dates textarea {
+  width: 220px; max-width: 100%; font: inherit; font-size: var(--fs-14); color: var(--ink);
+  background: var(--surf); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0.45rem 0.6rem;
+}
+.cal-remove { align-self: center; }
+.cal-form .calc-t input[type="date"] {
+  background: var(--surf); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink);
+  padding: 0.4rem 0.6rem; font: inherit; font-size: var(--fs-14);
+}
+.cal-advanced { margin-top: 1rem; }
+.cal-advanced summary { cursor: pointer; color: var(--muted); font-size: var(--fs-14); }
+.cal-block { margin-top: var(--sp-5); }
+.cal-block h3 { margin: 0 0 0.5rem; font-size: var(--fs-16); }
+.cal-rule { margin: 0; padding-left: 1.2rem; line-height: 1.6; }
+.cal-rule .cal-unused { color: var(--muted); }
+.cal-block .mini-table td, .cal-block .mini-table th { white-space: nowrap; }
+.cal-block .mini-table td:first-child { white-space: normal; min-width: 10rem; }
+.cal-now { border-top: 1px solid var(--line); padding-top: var(--sp-5); }
+.cal-now-answer { margin: 0.75rem 0; }
+.cal-best td { font-weight: 600; }
+
+@media (max-width: 520px) {
+  .cal-shut .calc-t, .cal-shut .calc-t input[type="text"], .cal-shut .calc-t input[type="number"] { width: 100%; }
+  .cal-shut .calc-t { flex: 1 1 100%; }
+  .cal-form .strategy-costs .calc-t { flex: 1 1 100%; }
+  .cal-form .strategy-costs .calc-t input { width: 100%; }
+}

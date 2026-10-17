@@ -38,7 +38,8 @@ def test_fifteen_tools_reads_apart_from_writes(env):
     assert {mcp_server.TABLES[n][0] for n in ("get", "list")} == {"kind"}
     assert {mcp_server.TABLES[n][0] for n in set(mcp_server.TABLES) - {"get", "list"}} == {"action"}
     # Every one of the 66 old tools is an action now, but upgrade_link (still a tool of its own).
-    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 69  # + 4 test plans
+    # + 4 test plans, + strategy calendar_replacement, next_replacement
+    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 71
 
 
 def test_every_action_is_in_its_tool_description_and_schema(env):

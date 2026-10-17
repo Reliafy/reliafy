@@ -155,13 +155,25 @@ with rbd edit.
 (SurPyval + RePyability) with the run command; export_json: RePyability's JSON (uploads import_rbd takes it \
 back)."""),
 
-    "strategy": ("Replacement, proof-test and overhaul intervals; shape uncertainty.", """\
+    "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
 Maintenance strategy (strategy).
 - strategy optimal_replacement: the cost-optimal age-replacement interval from a life model (model_id, or \
 distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper.
 - strategy failure_finding_interval: the proof-test interval keeping a hidden protective function (relief valve, trip, \
 standby unit) at a target availability.
 - strategy optimal_overhaul: the overhaul interval of a repairable system from a minimal-repair recurrent model.
+- strategy calendar_replacement: when replacing costs less at shuts (annual, quarterly, weekly stops) than between \
+them, the long-run best rule: at each shut, replace the part if it is older than a threshold age (the threshold \
+depends on when the next cheaper shut comes). Give the model in a time unit, the shuts (name, cost, every N \
+days/weeks/months/years from a start date, or dates), failure_cost and anytime_cost (a planned replacement between \
+shuts; omit when only shuts allow one). Today is time 0; months are 365.25/12 days. Back: cost_rate (per model \
+unit) and cost_per_year, the rule in words, by_kind (replacements and cost a year per shut kind and failures), \
+comparisons (run to failure, age replacement ignoring the shuts, every shut of a kind) and the next 12 months' \
+shuts with each one's threshold and chance of a replacement. method dp (default) and integration (no anytime_cost) \
+are exact and free; sampling (Pro) is for calendars whose cycle is very long, with cost_rate_se. Quote the unit.
+- strategy next_replacement: the same calendar plus the age of the unit in service today: replace it now, at the \
+next shut of each kind, between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
+(from that age replacing now beats waiting).
 - With a saved Weibull (or Crow-AMSAA) model fitted to data, shape_uncertainty gives the answer at each end of \
 the shape's 95% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
 (for a protective function, the shorter interval is the safe side).
