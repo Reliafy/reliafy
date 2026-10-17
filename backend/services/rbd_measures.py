@@ -550,8 +550,9 @@ def fits_for(graph: dict, resolve_model) -> tuple[dict, list]:
             if not isinstance(model, dict):
                 continue
             mid = ru._saved_id(model)
-            if model.get("kind") in ("regression", "nonparametric"):
-                reasons.append(ru._REGRESSION if model.get("kind") == "regression" else ru._NONPARAMETRIC)
+            if model.get("kind") in ("regression", "nonparametric", "joint"):
+                reasons.append({"regression": ru._REGRESSION, "joint": ru._JOINT}.get(
+                    model.get("kind"), ru._NONPARAMETRIC))
                 continue
             if mid is None:
                 reasons.append(ru._HAND_ENTERED)

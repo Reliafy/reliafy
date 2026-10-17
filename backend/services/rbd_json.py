@@ -67,6 +67,8 @@ EXPORT_NOTES = (
 _UNSUPPORTED = {
     "regression": "a fitted proportional-hazards model",
     "nonparametric": "a non-parametric model fitted to a dataset",
+    "joint": ("a condition-based (joint) model's unit, which lives only in Reliafy (it is one unit given its "
+              "readings, and RePyability's file can't carry the readings)"),
 }
 
 

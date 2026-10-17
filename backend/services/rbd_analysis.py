@@ -181,6 +181,74 @@ def _ph_reliability(model: dict, where: str, resolve_model, cov_values):
         raise AnalysisError(f"{where}: {exc}") from exc
 
 
+#: Why a repairable diagram (or a block of several units) takes no
+#: condition-based block, for the user.
+JOINT_REPAIRABLE = (
+    "{where} is a condition-based block: one unit in service now, given its readings. A repairable diagram "
+    "replaces a failed unit with a new one, which has none of those readings, so it can't take this block. "
+    "Use a non-repairable diagram for the mission from now, or give this block a life distribution fitted "
+    "to the population's lives.")
+JOINT_ONE_UNIT = (
+    "{where} is a condition-based block: one unit given its own readings. Use it as a single component "
+    "block (one per unit, each with its own readings), not as a block of several units or a standby group.")
+
+
+def is_joint(model) -> bool:
+    return isinstance(model, dict) and model.get("kind") == "joint"
+
+
+def joint_unit_inputs(model: dict, entry: dict, where: str) -> dict:
+    """The block's unit as ``{"age", "covariates", "markers"}``: a fitted
+    running unit (``joint_unit: {"id"}``) or one entered on the block
+    (``{"age", "markers": [[age, value], ...], "covariates": {...}}``)."""
+    unit = model.get("joint_unit")
+    if not isinstance(unit, dict) or not unit:
+        raise AnalysisError(f"{where}: pick the unit this block is: a running unit of the model, or enter its "
+                            "age, readings and covariates.")
+    if unit.get("id") not in (None, ""):
+        inp = (entry.get("units") or {}).get(str(unit["id"]))
+        if inp is None:
+            raise AnalysisError(f"{where}: unit {unit['id']!r} isn't a running unit of model "
+                                f"{entry.get('name') or ''!r} (refitted since?). Pick another.")
+        return inp
+    try:
+        age = float(unit.get("age"))
+    except (TypeError, ValueError):
+        raise AnalysisError(f"{where}: give the unit's age now (since new).") from None
+    markers = unit.get("markers") or []
+    if isinstance(markers, dict):
+        markers = [[a, v] for a, v in markers.items()]
+    return {"age": age, "covariates": unit.get("covariates") or {}, "markers": markers}
+
+
+def _joint_reliability(model: dict, where: str, resolve_model):
+    """A condition-based block: one unit of a saved joint model, given its
+    readings (RePyability's ``JointNode``): at mission time ``t`` its
+    reliability is ``pred.sf(age + t)``, already conditioned on the unit
+    having reached its age."""
+    model_id = model.get("modelId") or model.get("model_id")
+    if not model_id:
+        raise AnalysisError(f"{where}: no condition-based model selected.")
+    if resolve_model is None:
+        # Structural context (validation): stand in with a perfect node.
+        return PerfectReliability
+    entry = resolve_model(model_id)
+    if not entry:
+        raise AnalysisError(f"{where}: saved model not found — re-fit it or pick another.")
+    if entry.get("kind") != "joint":
+        raise AnalysisError(f"{where}: the saved model isn't a condition-based (joint) model.")
+    from repyability import JointNode
+
+    from backend import joint as joint_fit
+
+    inp = joint_unit_inputs(model, entry, where)
+    try:
+        pred = joint_fit.predict(entry["model"], inp.get("covariates"), inp.get("markers"), inp.get("age"))
+        return JointNode(pred)
+    except (FitError, TypeError, ValueError) as exc:
+        raise AnalysisError(f"{where}: {exc}") from None
+
+
 def nonparametric_message(model: dict, where: str) -> str:
     """Why a block on a non-parametric model can't be analysed, and what to do."""
     what = model.get("distribution") or model.get("name") or "an empirical estimate"
@@ -219,6 +287,8 @@ def _build_distribution(
     # re-fitted empirical estimator (sf/ff) via the same refit-on-demand path.
     if model.get("kind") == "nonparametric":
         return _nonparametric_reliability(model, where, resolve_model)
+    if model.get("kind") == "joint":
+        return _joint_reliability(model, where, resolve_model)
     from backend.services import rbd_mixture
 
     if rbd_mixture.is_mixture(model):
@@ -375,6 +445,10 @@ def _node_reliability(
     if ntype == "component":
         model = _build_distribution(data.get("model"), label, resolve_model, cov_values)
         return model, None
+
+    if ntype in ("series", "parallel", "standby", "loadshare") and (
+            is_joint(data.get("model")) or is_joint(data.get("standbyModel"))):
+        raise AnalysisError(JOINT_ONE_UNIT.format(where=label))
 
     if ntype == "knode":
         # A pure voting gate: perfectly reliable itself, requiring `n` of the
@@ -1158,8 +1232,29 @@ def _ccf_basis_checks(graph: dict, labels: dict) -> tuple[list[str], list[str]]:
     return errors, warnings_
 
 
+def _joint_hi(node) -> Optional[float]:
+    """A condition-based block's time bound, from now: the time by which it
+    has failed with probability 0.99, or, when its survival levels off above
+    0.01, ten Weibull scales on (as SurPyval's own default grid for a
+    prediction does), so the curve shows it levelling off."""
+    try:
+        v = float(np.asarray(node.qf(0.99)).item())
+    except Exception:  # noqa: BLE001
+        v = np.nan
+    if np.isfinite(v) and v > 0:
+        return v
+    # Levels off: far enough out to show the plateau.
+    try:
+        jm = node.model
+        return 10.0 * float(jm.params[jm.parameter_names.index("alpha")])
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _model_hi(model) -> Optional[float]:
     """A sensible upper time bound for a single node's reliability."""
+    if _is_joint_node(model):
+        return _joint_hi(model)
     hi = getattr(model, "_hi", None)
     if hi:
         return float(hi)
@@ -1486,6 +1581,32 @@ def _system_mttf(rbd, system, base_hi: float, s: float, overrides: dict) -> tupl
         return None, None
 
 
+def _is_joint_node(model) -> bool:
+    from repyability import JointNode
+
+    return isinstance(model, JointNode)
+
+
+JOINT_MEAN_NOTE = (
+    "No mean life is shown: a condition-based block's reading can level off, leaving a chance it never fails, "
+    "so the mean can be infinite. Read the median (B50) and the reliability curve instead.")
+
+
+def _joint_mttf(system, mttf, horizon: float, s: float, overrides: dict) -> tuple[Optional[float], Optional[str]]:
+    """The MTTF of a diagram with condition-based blocks, or None with why:
+    where the system's reliability hasn't fallen to (near) 0 far beyond the
+    axis, its mean may be infinite and is never shown as a number."""
+    try:
+        with np.errstate(all="ignore"):
+            far = float(np.atleast_1d(_conditional_sf(system, np.array([max(horizon, 1.0) * 1e3]), s,
+                                                      **overrides))[0])
+    except Exception:  # noqa: BLE001 - can't tell: don't show it
+        far = 1.0
+    if mttf is None or not np.isfinite(mttf) or not np.isfinite(far) or far > 1e-6:
+        return None, JOINT_MEAN_NOTE
+    return mttf, None
+
+
 def _clean(arr) -> list:
     """Coerce an array to a JSON-safe list (inf/nan -> null)."""
     out = []
@@ -1546,6 +1667,11 @@ def parse_nonrepairable_state(graph: dict, raw) -> Optional[dict]:
             raise AnalysisError(f"{label} is pinned {data['state']}, so it takes no current state.")
         if not isinstance(spec, dict):
             raise AnalysisError(f'{label}: give {{"failed": true}} or {{"age": …}}; got {spec!r}.')
+        if is_joint(data.get("model")) and spec.get("age") not in (None, 0) and not spec.get("failed"):
+            raise AnalysisError(
+                f"{label} is a condition-based block: it is already as of now, at its unit's age from its "
+                "readings, and another age would condition it again. Leave it out of the state (or mark it "
+                "failed); to move it on, give the unit's newer age and readings on the block.")
         unknown = sorted(set(spec) - _NOW_FIELDS)
         if unknown:
             hint = (" (a non-repairable block isn't repaired: give failed: true)"
@@ -1809,6 +1935,8 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
                 "label": labels.get(nid, nid),
                 "type": node_types.get(nid),
                 "sf": _clean(node_sf),
+                # A condition-based block runs from its unit's age now.
+                **({"joint_age": float(reliabilities[nid].age)} if _is_joint_node(reliabilities.get(nid)) else {}),
             }
         )
 
@@ -1891,6 +2019,10 @@ def _analyze(graph, resolve_subsystem, t_max, covariates, resolve_model, conditi
     mttf, mttf_note = _system_mttf(rbd, system, float(grid[-1]), s, overrides)
     if mttf_note:
         notes.append(mttf_note)
+    if any(_is_joint_node(m) for m in reliabilities.values()):
+        mttf, joint_note = _joint_mttf(system, mttf, float(grid[-1]), s, overrides)
+        if joint_note:
+            notes.append(joint_note)
     mrl = _mean_residual_life(rbd, state, *pins, mttf) if state else None
     if mrl is not None:
         mttf = mrl["value"]
@@ -2205,6 +2337,8 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
             from backend.services import rbd_tvc
 
             rbd_tvc.refuse_repairable(data, label)
+        if any(is_joint(data.get(k)) for k in ("model", "standbyModel")):
+            raise AnalysisError(JOINT_REPAIRABLE.format(where=label))
         reliability = _build_distribution(data.get("model"), label, resolve_model, None)
         if ntype == "standby":
             # A duty unit plus spares, each repaired on its own (#156).

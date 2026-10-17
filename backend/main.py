@@ -71,6 +71,7 @@ from backend.routers import degradation as degradation_router
 from backend.routers import degradation_induced as degradation_induced_router
 from backend.routers import recurrent as recurrent_router
 from backend.routers import alt as alt_router
+from backend.routers import joint as joint_router
 from backend.routers import rcm as rcm_router
 from backend.routers import excel as excel_router
 from backend.routers import teams as teams_router
@@ -243,6 +244,7 @@ app.include_router(degradation_router.router)
 app.include_router(degradation_induced_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
+app.include_router(joint_router.router)
 app.include_router(rcm_router.router)
 app.include_router(maintenance_router.router)
 app.include_router(maintenance_router.public_router)
