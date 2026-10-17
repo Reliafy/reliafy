@@ -215,12 +215,24 @@ def create_per_demand(db, uid: str, name: str, demands=None, failures=None, conf
     return model
 
 
-def list_models(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[Model]:
-    """The owner's models plus the shared samples, minus hidden samples."""
+# Saved-model kinds kept out of the life-model list (and so out of every
+# picker built on it): condition-based (joint) models, which are fitted to
+# two tables and predict a unit given its readings, not a population's life.
+# They have their own list (``backend.services.joint``).
+SEPARATE_KINDS = ("joint",)
+
+
+def list_models(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset(),
+                kinds: tuple | None = None) -> list[Model]:
+    """The owner's models plus the shared samples, minus hidden samples.
+    ``kinds``: only those kinds; by default every kind but the
+    :data:`SEPARATE_KINDS`."""
+    query = _list_query(owner_id, shared)
+    kind_filter = {"kind": {"$in": list(kinds)}} if kinds else {"kind": {"$nin": list(SEPARATE_KINDS)}}
     return [
         from_doc(Model, m)
         for m in db.models.find(
-            _list_query(owner_id, shared)
+            {"$and": [query, kind_filter]}
         ).sort("created_at", -1)
         if m["_id"] not in hidden
     ]
@@ -582,8 +594,15 @@ def get_live_model(db, model_id: str, owner_id: str | list[str]) -> dict | None:
     graph and read it. Returns ``None`` if the model id is unknown/not owned,
     and raises ``fitting.FitError`` if the model has no covariate functions.
     """
-    if get_model(db, model_id, owner_id) is None:
+    model = get_model(db, model_id, owner_id)
+    if model is None:
         return None
+    if model.kind == "joint":
+        # A condition-based (joint) model: SurPyval's JointModel, rehydrated
+        # from its saved to_dict, with its running units' inputs.
+        from backend.services import joint as joint_service
+
+        return joint_service.live_entry(model)
     return fitting._MODEL_STORE.get(_live_cache_id(db, model_id, owner_id))
 
 

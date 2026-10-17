@@ -62,7 +62,7 @@ function Fold({ title, summary, open: initialOpen, children }) {
 // safety function the proof test comes straight after Failure, open, and the
 // costs stay folded. Pre-filled with the node's current models.
 export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false, groups = [],
-                                         safety = false, capacity = false }) {
+                                         safety = false, capacity = false, jointBlock = false }) {
   const [name, setName] = useState(initial?.label ?? "");
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
@@ -133,6 +133,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
           <>
             <ModelPicker label={safety ? "Life model (dangerous undetected failures, λDU)" : "Life model (time to failure)"}
                          value={initial?.model} onChange={setModel} rbdBlock unit={unit}
+                         joint={jointBlock && !safety ? { repairable } : null}
                          meanEntry={safety ? "Mean time to a dangerous failure" : "Mean life, MTBF"} />
             <MeanEcho model={model} unit={unit} label="Mean life" />
           </>

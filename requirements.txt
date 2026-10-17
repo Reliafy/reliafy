@@ -8,12 +8,13 @@ pandas
 numpy
 # SurPyval from PyPI, pinned to the version the RePyability below targets
 # (each tagged release is published to PyPI from its tag).
-# 0.23 is a breaking release (names 0.22 deprecated now raise; the LFP
-# proportion is ``lfp_p``; ``covariance()`` replaces ``cov_matrix``): #238.
-surpyval==0.23
+# 0.25 removes the names 0.24 deprecated (e.g. ``ProportionalIntensityNHPP``
+# takes ``baseline``, not ``dist``) and deprecates the top-level converters
+# and ``RecurrentEventData`` (now ``EventHistoryData``).
+surpyval==0.25
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
-# git commit (tag v0.13, which requires SurPyval 0.23), so the SurPyval
-# pin above stays authoritative: it declares surpyval>=0.23 (uncapped), but
+# git commit (tag v0.15, which requires SurPyval 0.25), so the SurPyval
+# pin above stays authoritative: it declares surpyval>=0.25 (uncapped), but
 # --no-deps also stops pip re-resolving it to a newer surpyval. backend/tests/test_rbd_analysis.py exercises the pairing,
 # so a real break would fail the suite rather than reach production.
 # RePyability's runtime deps (numpy/scipy via surpyval, networkx, tqdm) are

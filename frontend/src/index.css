@@ -8843,3 +8843,48 @@ input.rbd-rename {
   .detail-panel .gofr.next-step { min-height: 44px; }
   .detail-panel .life-reading .life-reading-action { min-height: 44px; }
 }
+
+/* Condition-based risk (joint models of readings and failures). */
+.joint-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+.joint-table-pick { min-width: 0; }
+.joint-table-pick .preview-wrap { margin-top: 10px; max-width: 100%; overflow-x: auto; }
+.joint-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.joint-row > :first-child { flex: 1 1 200px; min-width: 0; }
+.joint-fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; margin: 8px 0; }
+.joint-fields .dist-field { flex: 1 1 180px; min-width: 0; max-width: 280px; }
+.joint-fields .dist-field input { width: 100%; box-sizing: border-box; }
+.joint-h3 { font-size: 0.95rem; margin: 16px 0 6px; }
+.joint-check { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; flex-wrap: wrap; }
+.joint-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.joint-check-out { margin-top: 12px; }
+.joint-result > .card, .joint-result > section { margin-bottom: 16px; }
+.joint-answer { border-left: 3px solid var(--accent, #2f6df6); }
+.joint-warn { color: var(--warn, #b45309); }
+.joint-params .joint-part th { text-align: left; padding-top: 12px; font-weight: 600; }
+.joint-params td.muted { min-width: 220px; }
+.joint-risk tr.is-selected td { background: rgba(47, 109, 246, 0.06); }
+.joint-hr { margin: 0; padding-left: 20px; }
+.joint-hr li { margin: 4px 0; }
+.joint-unit { display: flex; flex-direction: column; gap: 12px; }
+.joint-enter { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
+.joint-enter .dist-field { flex: 1 1 160px; min-width: 0; max-width: 240px; }
+.joint-enter .dist-field input { width: 100%; box-sizing: border-box; }
+.joint-readings { flex-basis: 100% !important; max-width: 360px !important; }
+.joint-readings textarea { width: 100%; box-sizing: border-box; font-family: var(--mono, monospace); }
+.joint-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.joint-charts > div { min-width: 0; }
+.joint-block-src { display: flex; flex-direction: column; gap: 10px; }
+.rbd-joint-note { margin: 4px 0; }
+/* Wide tables scroll on their own on a phone (as .maint-scroll in Maintenance.css,
+   which these pages don't load). */
+.joint-result .maint-scroll, .joint-new .maint-scroll { overflow-x: auto; position: relative; max-width: 100%; }
+.joint-result > section, .joint-result > .card { min-width: 0; }
+.joint-fields .dist-field input, .joint-enter .dist-field input, .joint-readings textarea {
+  background: var(--surf); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink);
+  padding: 0.5rem 0.65rem; font-size: var(--fs-14);
+}
+.joint-fields .dist-field input:focus, .joint-enter .dist-field input:focus, .joint-readings textarea:focus {
+  outline: none; border-color: var(--acc); box-shadow: var(--focus);
+}
+.joint-covs th:not(:first-child), .joint-covs td:not(:first-child) { text-align: center; }
+.joint-covs th:first-child, .joint-covs td:first-child { text-align: left; }

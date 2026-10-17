@@ -206,42 +206,60 @@ def covariates(df: pd.DataFrame, mapping: dict, keep: pd.Series) -> tuple[np.nda
 
 
 def with_end_rows(inputs: dict) -> dict:
-    """The renewal fitters take each system's end of observation as a
-    ``c = 1`` row, not ``tr``: add one at its window's end for each system
-    that has no ``c = 1`` row and was watched past its last failure."""
+    """The renewal fitters' inputs: ``x``, ``i``, ``c`` (``n``, ``tl``), each
+    system's end of observation a ``c = 1`` row (see :func:`observed`)."""
+    out = observed(inputs)[0]
+    return {k: out[k] for k in ("x", "i", "c", "n", "tl") if k in out}
+
+
+def observed(inputs: dict) -> tuple[dict, np.ndarray]:
+    """``inputs`` with each system's observation window (``tr``) given as an
+    end-of-observation (``c = 1``) row, and ``tr`` dropped: ``(inputs, src)``,
+    ``src`` the input row each row came from (an added row: its system's
+    first), to extend per-row arrays such as covariates or causes.
+
+    Reliafy's ``tr`` is where a system's observation ended. SurPyval 0.23 read
+    a recurrent ``tr`` that way too, but since 0.25 it is right truncation (a
+    system is in the data because it failed by ``tr``), which the parametric
+    fits correct for and the other methods refuse. SurPyval's upgrade note:
+    give the end of observation as a ``c = 1`` row instead, and the fits are
+    as before. A system with its own ``c = 1`` row keeps it (0.23 required
+    the two to agree); one whose window ends at its last failure needs none.
+    """
     x, i = np.asarray(inputs["x"], dtype=float), np.asarray(inputs["i"])
     c = np.asarray(inputs.get("c", np.zeros(x.size, dtype=int)), dtype=int)
-    n = inputs.get("n")
-    tr = inputs.get("tr")
-    out = {"x": x, "i": i, "c": c}
-    if n is not None:
-        out["n"] = np.asarray(n, dtype=int)
+    src = np.arange(x.size)
+    out = {k: v for k, v in inputs.items() if k != "tr"}
+    out.update(x=x, i=i, c=c)
+    if inputs.get("n") is not None:
+        out["n"] = np.asarray(inputs["n"], dtype=int)
     if inputs.get("tl") is not None:
         out["tl"] = np.asarray(inputs["tl"], dtype=float)
+    tr = inputs.get("tr")
     if tr is None:
-        return out
+        return out, src
     tr = np.asarray(tr, dtype=float)
     closed = set(i[c == 1].tolist())
-    add_x, add_i, add_tl = [], [], []
+    add_x, add_src = [], []
     for sys_id in dict.fromkeys(i.tolist()):
         if sys_id in closed:
             continue
-        rows = i == sys_id
+        rows = np.flatnonzero(i == sys_id)
         end = float(np.nanmax(tr[rows]))
         if end > float(np.max(x[rows])):
             add_x.append(end)
-            add_i.append(sys_id)
-            if "tl" in out:
-                add_tl.append(float(out["tl"][rows][0]))
+            add_src.append(int(rows[0]))
     if add_x:
+        add_src = np.asarray(add_src, dtype=int)
         out["x"] = np.concatenate([x, add_x])
-        out["i"] = np.concatenate([i, np.asarray(add_i, dtype=i.dtype)])
+        out["i"] = np.concatenate([i, i[add_src]])
         out["c"] = np.concatenate([c, np.ones(len(add_x), dtype=int)])
         if "n" in out:
             out["n"] = np.concatenate([out["n"], np.ones(len(add_x), dtype=int)])
         if "tl" in out:
-            out["tl"] = np.concatenate([out["tl"], add_tl])
-    return out
+            out["tl"] = np.concatenate([out["tl"], out["tl"][add_src]])
+        src = np.concatenate([src, add_src])
+    return out, src
 
 
 def parse_windows(value) -> dict:
@@ -447,16 +465,17 @@ def by_cause(inputs: dict, causes: np.ndarray, unit: str = "") -> dict | None:
     still uses them)."""
     from backend.recurrent import growth_verdict
 
-    x, i = np.asarray(inputs["x"], dtype=float), np.asarray(inputs["i"])
-    c = np.asarray(inputs.get("c", np.zeros(x.size, dtype=int)), dtype=int)
+    c = np.asarray(inputs.get("c", np.zeros(np.size(inputs["x"]), dtype=int)), dtype=int)
     if np.any((c != 0) & (c != 1)):
         return {"causes": [], "reason": "Failures by cause need exact failure times: the data has left- or "
                                         "interval-censored rows."}
+    inputs, src = observed(inputs)
+    x, i, c = inputs["x"], inputs["i"], inputs["c"]
     n = inputs.get("n")
-    e = np.asarray(causes, dtype=object).copy()
+    e = np.asarray(causes, dtype=object)[src].copy()
     e[(c == 0) & np.asarray([v is None for v in e])] = _NO_CAUSE
     e[c == 1] = None
-    kw = {k: inputs[k] for k in ("tl", "tr") if inputs.get(k) is not None}
+    kw = {k: inputs[k] for k in ("tl",) if inputs.get(k) is not None}
     if n is not None and np.any(np.asarray(n) > 1):
         reps = np.maximum(np.asarray(n, dtype=int), 1)
         x, i, c, e = np.repeat(x, reps), np.repeat(i, reps), np.repeat(c, reps), np.repeat(e, reps)
@@ -557,10 +576,10 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str, unit: str = "", gof_test
 
 
 def _fit_regression(inputs: dict, Z: np.ndarray, names: list, opts: dict):
-    frame = pd.DataFrame(Z, columns=names)
-    kw = {k: inputs[k] for k in ("i", "c", "n", "tl", "tr") if inputs.get(k) is not None}
-    # SurPyval 0.23 names the baseline process ``dist``.
-    return ProportionalIntensityNHPP.fit(inputs["x"], frame, dist=BASELINES[opts["baseline"]], **kw)
+    ins, src = observed(inputs)
+    frame = pd.DataFrame(np.asarray(Z)[src], columns=names)
+    kw = {k: ins[k] for k in ("i", "c", "n", "tl") if ins.get(k) is not None}
+    return ProportionalIntensityNHPP.fit(ins["x"], frame, baseline=BASELINES[opts["baseline"]], **kw)
 
 
 def _fit_renewal(model_id: str, inputs: dict, opts: dict):

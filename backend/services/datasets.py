@@ -288,8 +288,12 @@ def dependents_for_dataset(db, dataset_id: str, owner_id, hidden=frozenset()) ->
     leave unable to refit (#265). Hidden samples are left out."""
     out = []
     for collection, kind in DEPENDENT_COLLECTIONS:
+        # A condition-based (joint) model is fitted to a second dataset too,
+        # its readings (``spec.readings_dataset_id``).
+        uses = ({"$or": [{"dataset_id": dataset_id}, {"spec.readings_dataset_id": dataset_id}]}
+                if collection == "models" else {"dataset_id": dataset_id})
         for d in db[collection].find(
-            {"dataset_id": dataset_id, "owner_id": {"$in": access.owner_in(owner_id)}}
+            {**uses, "owner_id": {"$in": access.owner_in(owner_id)}}
         ).sort("created_at", -1):
             if d["_id"] in hidden:
                 continue
@@ -305,11 +309,13 @@ def dependent_counts(db, owner_id, hidden=frozenset()) -> dict[str, int]:
     counts: dict[str, int] = {}
     for collection, _kind in DEPENDENT_COLLECTIONS:
         for d in db[collection].find(
-            {"owner_id": {"$in": access.owner_in(owner_id)}}, {"dataset_id": 1}
+            {"owner_id": {"$in": access.owner_in(owner_id)}}, {"dataset_id": 1, "spec.readings_dataset_id": 1}
         ):
-            ds_id = d.get("dataset_id")
-            if ds_id and d["_id"] not in hidden:
-                counts[ds_id] = counts.get(ds_id, 0) + 1
+            if d["_id"] in hidden:
+                continue
+            for ds_id in {d.get("dataset_id"), (d.get("spec") or {}).get("readings_dataset_id")}:
+                if ds_id:
+                    counts[ds_id] = counts.get(ds_id, 0) + 1
     return counts
 
 
