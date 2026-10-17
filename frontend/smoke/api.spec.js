@@ -31,6 +31,7 @@ const SIGNED_IN = [
   ["GET", "/api/fleet/fleets"],
   ["GET", "/api/strategy/analyses"],
   ["GET", "/api/models"],
+  ["GET", "/api/joint/models"],
   ["GET", "/api/datasets"],
   ["GET", "/api/me"],
   ["GET", "/api/v1/tools"], // every MCP tool action over REST

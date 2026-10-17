@@ -50,7 +50,7 @@ export default function AllModelsPage() {
       <PageHeader
         crumbs={[{ label: "Modelling", to: "/modelling" }]}
         title="All models"
-        meta="Life data, accelerated life, recurrent events and degradation, in one list."
+        meta="Life data, accelerated life, recurrent events, degradation and condition-based risk, in one list."
         primary={<button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>}
       />
 

@@ -61,7 +61,7 @@ from backend.services import rbd_analysis, rbd_intervals, rbd_measures, rbd_sens
 # Node-data keys holding a life/repair model spec.
 _MODEL_KEYS = ("model", "repair", "standbyModel")
 # Model kinds that only exist as a re-fit of a saved model's data.
-NEEDS_SAVED_MODEL = frozenset({"regression", "nonparametric"})
+NEEDS_SAVED_MODEL = frozenset({"regression", "nonparametric", "joint"})
 # Display-only node fields (React Flow), dropped from the request.
 _UI_KEYS = frozenset({
     "position", "positionAbsolute", "selected", "dragging", "width", "height",
@@ -433,6 +433,21 @@ def run_calendar(request: dict) -> dict:
         raise rbd_analysis.AnalysisError(str(exc)) from exc
 
 
+def run_joint_fit(request: dict) -> dict:
+    """Fit a condition-based (joint) model of a :func:`backend.joint.fit_request`
+    and return the model, its results and its running units' inputs. The
+    same function runs in-process when no queue is configured."""
+    from backend import joint
+    from backend.fitting import FitError
+
+    if not isinstance(request, dict) or not isinstance(request.get("items"), list):
+        raise InvalidRequest("The request needs the units.")
+    try:
+        return joint.run_fit(request)
+    except FitError as exc:
+        raise rbd_analysis.AnalysisError(str(exc)) from exc
+
+
 # What the compute service runs, by job kind. A new analysis adds its runner
 # here; the web side adds a request builder above and a KIND_ in rbd_jobs.
 # (#240's next failure rides in ``availability`` when a state is given.)
@@ -448,6 +463,8 @@ RUNNERS: dict[str, Callable[[dict], dict]] = {
     "test_precision": run_test_precision,
     # Replacement over a shutdown calendar, sampled over a long cycle (Pro).
     "calendar_replacement": run_calendar,
+    # A condition-based (joint) model's fit: 8-40 s for a real fleet.
+    "joint_fit": run_joint_fit,
 }
 KINDS = tuple(RUNNERS)
 

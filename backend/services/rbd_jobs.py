@@ -62,6 +62,9 @@ KIND_TEST_PRECISION = "test_precision"
 # Replacement over a shutdown calendar, sampled (Strategy › Replacement).
 # No diagram: ``rbd_id`` is None. Never stored.
 KIND_CALENDAR = "calendar_replacement"
+# A condition-based (joint) model's fit: the model is saved when the job
+# finishes (``pending``), and the job's view gives its id.
+KIND_JOINT_FIT = "joint_fit"
 # Kinds whose finished result is shown as it came back.
 _PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS, KIND_MEASURES, KIND_TEST_PRECISION,
                        KIND_CALENDAR)
@@ -223,6 +226,10 @@ def finish(db, job_id: str, status: str, *, result: Optional[dict] = None, error
             from backend.services import rbd_runs
 
             rbd_runs.on_finished(db, job, update["result"], timings, engines)
+        if job.get("kind") == KIND_JOINT_FIT:
+            from backend.services import joint as joint_service
+
+            joint_service.on_job_done(db, job, update["result"])
     elif job.get("quick"):
         free_sims.refund(db, job.get("uid"), job.get("free_sim_day"))
     return True
@@ -322,7 +329,11 @@ def view(db, job: dict, entitled: bool) -> dict:
 
         out.update(rbd_runs.progress(db, job))
     if job.get("status") == "done":
-        if job.get("kind") in _PLAIN_RESULT_KINDS:
+        if job.get("kind") == KIND_JOINT_FIT:
+            from backend.services import joint as joint_service
+
+            out["result"] = joint_service.job_result(job)
+        elif job.get("kind") in _PLAIN_RESULT_KINDS:
             out["result"] = generic_engine_fields({**(job.get("result") or {}), "job_id": job["_id"]})
         else:
             out["result"] = job_payload(job, entitled)

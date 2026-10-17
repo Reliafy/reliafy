@@ -12,6 +12,9 @@ const ModellingHome = lazy(() => import("./views/ModellingHome.jsx"));
 const AllModelsPage = lazy(() => import("./views/AllModelsPage.jsx"));
 const NewModelPage = lazy(() => import("./views/NewModelPage.jsx"));
 const ModelPage = lazy(() => import("./views/ModelPage.jsx"));
+const JointHome = lazy(() => import("./views/JointHome.jsx"));
+const JointNewPage = lazy(() => import("./views/JointNewPage.jsx"));
+const JointModelPage = lazy(() => import("./views/JointModelPage.jsx"));
 const DegradationHome = lazy(() => import("./views/DegradationHome.jsx"));
 const DegradationModelPage = lazy(() => import("./views/DegradationModelPage.jsx"));
 const RecurrentHome = lazy(() => import("./views/RecurrentHome.jsx"));
@@ -182,6 +185,9 @@ export default function AppShell() {
             <Route path="/modelling/alt" element={<AltHome />} />
             <Route path="/modelling/alt/new" element={<AltNewPage />} />
             <Route path="/modelling/alt/:id" element={<AltModelPage />} />
+            <Route path="/modelling/joint" element={<JointHome />} />
+            <Route path="/modelling/joint/new" element={<JointNewPage />} />
+            <Route path="/modelling/joint/:id" element={<JointModelPage />} />
             <Route path="/modelling/m/:id" element={<ModelPage />} />
             {/* Each section opens on its list (#312); the old list URLs redirect. */}
             <Route path="/rbds" element={<RbdHome />} />

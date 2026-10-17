@@ -302,6 +302,15 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
             "surv.Weibull.from_params([alpha, beta]) for the covariates you "
             "want."
         )
+    if kind == "joint":
+        raise _Missing(
+            f"Block '{label}' is a condition-based block ({what}): one unit "
+            "of a joint model fitted in Reliafy, given its readings. Its "
+            "model lives only in your workspace. Fit it with SurPyval "
+            "(the model's own Download as Python does) and put the unit in "
+            "the diagram as repyability.JointNode(model, Z=..., markers=..., "
+            "age=...)."
+        )
     if kind == "nonparametric":
         raise _Missing(
             f"Block '{label}' uses a non-parametric model ({what}), which "

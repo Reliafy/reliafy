@@ -64,6 +64,7 @@ _CHUNK_ELEMENTS = 2_000_000
 _HAND_ENTERED = "hand-entered parameters"
 _REGRESSION = "regression (covariate) model — kept at its fitted curve"
 _NONPARAMETRIC = "non-parametric model"
+_JOINT = "condition-based block — kept at its unit's prediction"
 _LOADSHARE = "load-sharing group — kept at its fitted load-life model"
 _STALE = ("its parameters differ from the saved model's current fit — "
           "re-pick the model to refresh them")
@@ -283,6 +284,8 @@ def _draw_graph(
                 reasons.append(_REGRESSION)
             elif kind == "nonparametric":
                 reasons.append(_NONPARAMETRIC)
+            elif kind == "joint":
+                reasons.append(_JOINT)
             elif model_id is None:
                 reasons.append(_HAND_ENTERED)
             else:

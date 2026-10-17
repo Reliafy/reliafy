@@ -38,8 +38,9 @@ def test_fifteen_tools_reads_apart_from_writes(env):
     assert {mcp_server.TABLES[n][0] for n in ("get", "list")} == {"kind"}
     assert {mcp_server.TABLES[n][0] for n in set(mcp_server.TABLES) - {"get", "list"}} == {"action"}
     # Every one of the 66 old tools is an action now, but upgrade_link (still a tool of its own).
-    # + 4 test plans, + strategy calendar_replacement, next_replacement
-    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 71
+    # + 4 test plans, + strategy calendar_replacement, next_replacement, + joint models' fit_joint,
+    # predict_joint and models fit_joint.
+    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 74
 
 
 def test_every_action_is_in_its_tool_description_and_schema(env):
@@ -135,7 +136,8 @@ def test_plan_gating_goes_by_action(env):
     assert mcp_server.UNCOUNTED_TOOLS == {"uploads.send_part"}
     assert mcp_server.PRO_ONLY_TOOLS == {"life_data_analysis.fit", "models.fit", "models.fit_alt",
                                          "models.fit_recurrent", "list.fleets", "strategy.fleet_forecast",
-                                         "list.fleet_alerts", "fleet.create_alert"}
+                                         "list.fleet_alerts", "fleet.create_alert",
+                                         "life_data_analysis.fit_joint", "models.fit_joint"}
     assert "models save" in mcp_server._pro_only_message("life_data_analysis.fit")
     assert "AcceleratedLife" in mcp_server._pro_only_message("models.fit_alt")
 

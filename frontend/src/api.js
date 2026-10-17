@@ -2635,3 +2635,54 @@ export function importConditions({ format, text, dryRun = true, source }) {
 export function downloadConditions(format = "csv") {
   return downloadFile(`/api/maintenance/conditions/export?format=${format}`, `conditions.${format}`);
 }
+
+// ---- Condition-based risk (joint models of readings and failures) ------------
+// Saved models of kind "joint": fitted to a lifetimes dataset (one row per
+// unit) and a readings dataset (one row per reading). The fit is Pro and runs
+// as a job when the calculation service is on (202 {job}: poll getRbdJob).
+
+export function getJointOptions() {
+  return request("/api/joint/options");
+}
+
+export function checkJointData(body) {
+  return request("/api/joint/check", jsonBody("POST", body));
+}
+
+// 200 {model_id, model} (fitted here) or 202 {job} (queued): both resolve.
+export async function fitJointModel(body) {
+  const res = await authedFetch("/api/joint/models", jsonBody("POST", body));
+  const data = await readJson(res);
+  return { ...data, status: res.status };
+}
+
+export function listJointModels() {
+  return request("/api/joint/models");
+}
+
+export function getJointModel(id) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}`);
+}
+
+export function updateJointModel(id, patch) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}`, jsonBody("PATCH", patch));
+}
+
+export function deleteJointModel(id) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function getJointUnit(id, unitId) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}/units/${encodeURIComponent(unitId)}`);
+}
+
+// A unit given by its values: {age, markers: [[age, value], ...], covariates}.
+export function predictJointUnit(id, body) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}/predict`, jsonBody("POST", body));
+}
+
+// Download as Python: a script that refits the model with SurPyval's
+// fit_from_df from the data it was fitted to. Free for every viewer.
+export function downloadJointPython(id) {
+  return downloadFile(`/api/joint/models/${encodeURIComponent(id)}/export.py`, "condition-based-risk.py");
+}

@@ -35,7 +35,20 @@ allowed; b_life, shape_model_id, producer_risk). Relay plan warnings. Other test
 - One-shot items (a valve that must open): life_data_analysis fit_per_demand (batches of demands and \
 failures; exact bounds); models fit with demand_batches saves one.
 - "Is A better than B?": life_data_analysis compare_groups (split by a column or give a group per time; \
-log-rank, RMST difference, Gray's test per mode, a verdict to relay). Nothing is fitted."""),
+log-rank, RMST difference, Gray's test per mode, a verdict to relay). Nothing is fitted.
+- Condition-based risk (a joint model, Pro): a reading taken again and again on each unit (vibration, wear, oil \
+debris) and the units' lives, fitted together. Two datasets: lifetimes, one row per unit (unit_id_column, \
+age_column = age since new at failure or when last seen running, censor_column, optional entry_age_column and \
+numeric covariates; age_right_column for units found failed between two ages, flag 2), and readings, one row \
+per reading (reading_unit_column, reading_age_column since new, reading_value_column). Ages are since new, in \
+one time unit (say it). hazard_covariates change the failure rate at a given reading; path_covariates change \
+how the reading drifts; one may be in both. path_model: linear unless the readings clearly curve. \
+life_data_analysis fit_joint reports; models fit_joint saves. The fit runs on the calculation service (8-40 s): \
+it may come back as a job (get kind job). Quote each hazard ratio with its 95% CI, as its text says.
+- A running unit's risk: life_data_analysis predict_joint (unit_id, or age_now + readings + unit_covariates): \
+survival over the horizons with bounds, and the median remaining life. Never quote a mean life for these \
+units: a reading that levels off can leave a chance of never failing, so the mean can be infinite; "not \
+reached" means the median is beyond any finite age."""),
 
     "units": ("Time units for data, models and diagrams.", """\
 Units.
@@ -119,6 +132,11 @@ tests), costs (downtime_rate, horizon, discount_rate) and production (capacity d
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
 - Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network), \
 covariate_schedules on a block with a saved regression model.
+- Condition-based block (non-repairable diagrams only, one component block per unit): model = \
+{saved_model_id: <joint model id>, joint_unit: {id: <running unit id>}} or joint_unit {age, readings: [[age, \
+value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \
+unit's survival to age + t given its readings. Don't give it an age in current_state (it is already as of \
+now). Repairable diagrams, exports to RePyability JSON and Download as Python refuse it (it lives in Reliafy).
 - Edit, don't rebuild: rbd edit with one batch of ops (add_node / remove_node / update_node / add_edge / \
 remove_edge / set / add_ccf / remove_ccf), all or nothing; dry_run checks first; if_updated_at refuses if the \
 diagram changed. Samples are read-only: rbd clone first. get kind rbd reads a diagram's full graph.

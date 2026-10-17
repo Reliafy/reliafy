@@ -258,9 +258,9 @@ def test_job_kinds_are_a_registry():
     from backend.services import compute_core
 
     assert compute_core.KINDS == ("availability", "sensitivity", "intervals", "alt_bounds", "measures",
-                                  "test_precision", "calendar_replacement")
+                                  "test_precision", "calendar_replacement", "joint_fit")
     assert set(compute_core.RUNNERS) == {"availability", "sensitivity", "intervals", "alt_bounds", "measures",
-                                         "test_precision", "calendar_replacement"}
+                                         "test_precision", "calendar_replacement", "joint_fit"}
     with pytest.raises(compute_core.InvalidRequest, match="Unknown kind"):
         compute_core.run("next_failure", {"graph": _graph()})
 
