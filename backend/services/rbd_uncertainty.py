@@ -3,7 +3,7 @@ in its fitted component models (RePyability 0.9's epistemic uncertainty).
 
 A block that references a saved, maximum-likelihood fitted model carries that
 fit's parameter uncertainty: each of ``n_draws`` draws gives it plausible
-parameters from the fit's own covariance (surpyval's ``hess_inv``), drawn by
+parameters from the fit's own covariance (surpyval's ``covariance()``), drawn by
 RePyability's ``"fit"`` sampler on scales that keep every draw valid (log for
 a positive parameter, logit for one in (0, 1); an offset, zero-inflation or
 LFP parameter keeps its fitted value). The system reliability is computed
@@ -24,7 +24,7 @@ blocks, the units of one parallel block, or a block inside a sub-system:
 drawing them independently would understate the uncertainty, which is about
 the one population's parameters.
 
-Saved models persist their fitted surpyval model (with ``hess_inv``), so no
+Saved models persist their fitted surpyval model (with its covariance), so no
 refit is needed; older saved models without it are refitted once from their
 dataset by the existing refit-on-demand path and cached. Blocks with
 hand-entered parameters, regression (proportional-hazards / AFT) models,
@@ -107,7 +107,9 @@ class _Collector:
         live = (entry or {}).get("model")
         if live is None or not hasattr(getattr(live, "dist", None), "from_params"):
             return _UNREADABLE
-        if getattr(live, "hess_inv", None) is None:
+        from backend.fitting import _covariance_of
+
+        if _covariance_of(live) is None:
             return "no parameter covariance (not a maximum-likelihood fit)"
         # Per-model seed: adding or removing another block never changes this
         # model's draws.

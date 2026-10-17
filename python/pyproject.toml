@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 # Distribution name is reliafy-client (the bare `reliafy` name is taken on
 # PyPI by an unrelated project); the import package stays `import reliafy`.
 name = "reliafy-client"
-version = "0.2.0"
-description = "Push SurPyval models to Reliafy — shareable, trackable, citable reliability analyses."
+version = "0.3.0"
+description = "The Reliafy API client and command line: every Reliafy tool, files, photos and data ingest."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "AGPL-3.0-or-later" }
@@ -15,10 +15,17 @@ authors = [{ name = "Reliafy" }]
 keywords = ["reliability", "survival-analysis", "weibull", "surpyval", "maintenance"]
 dependencies = []          # stdlib only; SurPyval is optional (yours to fit with)
 
+[project.scripts]
+# `reliafy` is the command; `reliafy-client` is the same command, for when
+# another program called `reliafy` is already on the path.
+reliafy = "reliafy.cli:main"
+reliafy-client = "reliafy.cli:main"
+
 [project.urls]
 Homepage = "https://reliafy.com"
 Source = "https://github.com/Reliafy/reliafy"
 Documentation = "https://github.com/Reliafy/reliafy/blob/main/python/README.md"
+Changelog = "https://github.com/Reliafy/reliafy/blob/main/python/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["reliafy"]
