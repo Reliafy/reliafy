@@ -1420,6 +1420,27 @@ export function demonstrationTest(body) {
   });
 }
 
+// Test planning (SurPyval's test_planning): kind is "sequential", "life",
+// "accelerated" or "comparison"; the body is that calculator's inputs.
+export function testPlan(kind, body) {
+  return request(`/api/test-planning/${encodeURIComponent(kind)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// Check a life ("life") or accelerated ("accelerated") test plan by
+// simulation (Pro): the result, or {job} to poll with getRbdJob; 402 with
+// code "pro_required" when not entitled.
+export function simulateTestPlan(kind, inputs, nSim = null) {
+  return request("/api/test-planning/simulate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, inputs, n_sim: nSim }),
+  });
+}
+
 // Persist a strategy analysis (results recomputed server-side from inputs).
 export function saveStrategyAnalysis(name, kind, inputs) {
   return request("/api/strategy/analyses", {

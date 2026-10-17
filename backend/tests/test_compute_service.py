@@ -173,7 +173,7 @@ def test_compute_app_health_and_availability():
 
     tc = TestClient(compute_app.app)
     health = tc.get("/health").json()
-    assert health["ok"] is True and health["repyability_version"].startswith("0.13")
+    assert health["ok"] is True and health["repyability_version"].startswith("0.15")
     # /healthz (Cloud Run reserves paths ending in "z") stays, for local use.
     assert tc.get("/healthz").json() == health
 
@@ -257,8 +257,10 @@ def test_request_is_self_contained_and_runs_without_a_database(monkeypatch):
 def test_job_kinds_are_a_registry():
     from backend.services import compute_core
 
-    assert compute_core.KINDS == ("availability", "sensitivity", "intervals", "alt_bounds", "measures")
-    assert set(compute_core.RUNNERS) == {"availability", "sensitivity", "intervals", "alt_bounds", "measures"}
+    assert compute_core.KINDS == ("availability", "sensitivity", "intervals", "alt_bounds", "measures",
+                                  "test_precision")
+    assert set(compute_core.RUNNERS) == {"availability", "sensitivity", "intervals", "alt_bounds", "measures",
+                                         "test_precision"}
     with pytest.raises(compute_core.InvalidRequest, match="Unknown kind"):
         compute_core.run("next_failure", {"graph": _graph()})
 
@@ -285,7 +287,7 @@ def test_run_reports_running_then_result_and_retries_a_failed_callback(monkeypat
     assert all(url == CALLBACK_URL for url, _ in sent)
     final = sent[-1][1]
     assert final["job_id"] == "job1" and final["result"]["n_simulations"] == 10
-    assert final["timings"]["compute_s"] >= 0 and final["repyability_version"].startswith("0.13")
+    assert final["timings"]["compute_s"] >= 0 and final["repyability_version"].startswith("0.15")
 
     # The web app didn't take the result: 5xx so Cloud Tasks retries.
     answer["status"] = 503

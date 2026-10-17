@@ -32,7 +32,7 @@ back with ``status: "refused"`` and RePyability's reason, never approximated.
 The uncertain inputs are the blocks whose life (or repair) is a saved model
 fitted by maximum likelihood, whose parameters are still the fit's: the
 diagram is rebuilt with each such model carrying its fit's parameter
-covariance (``hess_inv``), one model object per saved model, so blocks
+covariance (SurPyval's ``covariance()``), one model object per saved model, so blocks
 sharing a saved model are drawn together (RePyability's populations).
 Everything else stays fixed, and the result says why. The covariances travel
 with a compute request (``fits``), as the compute service has no database.
@@ -258,7 +258,7 @@ def analyze_measure(graph: dict, resolve_model=None, *, measure: str, window: Op
     """One measure of a repairable diagram (see the module docstring), as a
     JSON-able payload with ``status`` "ok" (or "refused", "no_uncertainty"),
     the measure's figures, a plain ``answer`` and its ``question``.
-    ``fits`` ({model id: {distribution_id, params, hess_inv, extras}}) are
+    ``fits`` ({model id: {distribution_id, params, covariance, extras}}) are
     the saved models' fits for ``uncertainty`` and ``fixed`` the blocks that
     stay fixed (see :func:`fits_for`, which a compute request carries them
     from); without them they're looked up with ``resolve_model``."""
@@ -529,7 +529,7 @@ def _rate_answer(out: dict, unit: str) -> str:
 # -- Whose uncertainty widens the answer? (vega) -------------------------------
 def fits_for(graph: dict, resolve_model) -> tuple[dict, list]:
     """The saved models' fits the diagram's blocks use, still matching the
-    blocks' parameters: ``({model id: {distribution_id, params, hess_inv,
+    blocks' parameters: ``({model id: {distribution_id, params, covariance,
     extras}}, fixed)``, ``fixed`` the blocks that stay fixed and why."""
     from backend.services import rbd_uncertainty as ru
 
@@ -586,14 +586,26 @@ def _fit_of(model_id: str, resolve_model):
     live = (entry or {}).get("model")
     if live is None or not hasattr(getattr(live, "dist", None), "from_params"):
         return ru._UNREADABLE
-    cov = getattr(live, "hess_inv", None)
+    from backend.fitting import _covariance_of
+
+    cov = _covariance_of(live)
     if cov is None:
         return "no parameter covariance (not a maximum-likelihood fit)"
-    cov = np.atleast_2d(np.asarray(cov, dtype=float))
     params = np.atleast_1d(np.asarray(live.params, dtype=float))
-    if cov.shape != (len(params), len(params)) or not np.all(np.isfinite(cov)):
+    # SurPyval's covariance() is the distribution's parameters, then the
+    # limited-failure share and the zero-inflation fraction where the model
+    # has them; RePyability draws those shares too (0.14).
+    k = len(params) + sum(1 for share in ("lfp_p", "f0") if _has_share(live, share))
+    if cov.shape != (k, k) or not np.all(np.isfinite(cov)):
         return "its fit's parameter covariance doesn't match its parameters"
-    return {"live": live, "fit": {"params": [float(v) for v in params], "hess_inv": cov.tolist()}}
+    return {"live": live, "fit": {"params": [float(v) for v in params], "covariance": cov.tolist()}}
+
+
+def _has_share(model, share: str) -> bool:
+    """Whether a fitted model has a limited-failure (``lfp_p``) or
+    zero-inflation (``f0``) part, which its covariance carries."""
+    flag = {"lfp_p": "lfp", "f0": "zi"}[share]
+    return bool(getattr(model, flag, False))
 
 
 def _with_fits(rbd, graph: dict, fits: dict, labels: dict) -> tuple[Any, list, list]:
@@ -634,7 +646,10 @@ def _with_fits(rbd, graph: dict, fits: dict, labels: dict) -> tuple[Any, list, l
                 if entry is None:
                     continue
                 obj = entry["dist"].from_params(list(fits[mid]["params"]), **surpyval_extras(model.get("extras")))
-                obj.hess_inv = np.asarray(fits[mid]["hess_inv"], dtype=float)
+                # What RePyability's "fit" draws from: SurPyval's covariance()
+                # (since RePyability 0.14; it read ``hess_inv`` before).
+                cov = fits[mid].get("covariance", fits[mid].get("hess_inv"))
+                obj._covariance = np.asarray(cov, dtype=float)
                 objects[mid] = obj if is_fit(obj) else None
             if objects[mid] is None:
                 continue

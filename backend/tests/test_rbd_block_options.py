@@ -445,24 +445,23 @@ def _timed_direct():
                          {"a": spec(0.0), "b": spec(4380.0)}, ccf_groups=[CCFGroup(["a", "b"], BetaFactor(0.1))])
 
 
-def test_timed_tests_keep_the_group_in_every_figure_but_the_frequency(tmp_path):
+def test_timed_tests_keep_the_group_in_every_figure(tmp_path):
     g = _timed_pair()
     out = ra.analyze_availability(g, n_simulations=40)
     direct = _timed_direct()
     cc = out["common_cause"]
-    assert cc["included"] is True and "frequency_left_out" in cc
+    assert cc["included"] is True and "frequency_left_out" not in cc
     # Availability, PFDavg and the cost rate take the group, exactly as RePyability does.
     assert out["steady_state_availability"] == pytest.approx(direct.mean_availability(), rel=1e-12)
     assert out["safety"]["pfd_avg"] == pytest.approx(direct.mean_unavailability(), rel=1e-12)
     assert out["costs"]["cost_rate"] == pytest.approx(direct.expected_cost_rate(), rel=1e-9)
-    # The exact failure frequency is the one RePyability refuses: only the simulated estimate stands.
-    with pytest.raises(NotImplementedError):
-        direct.system_failure_frequency()
-    assert out["figures_basis"]["failure_frequency"] == "simulation"
-    assert "importance_left_out" in cc  # the measures the engine gives no value for here, said
+    # The exact failure frequency takes the group too (RePyability 0.14; 0.13
+    # refused it and only the simulated estimate stood).
+    assert out["failure_frequency"] == pytest.approx(direct.system_failure_frequency(), rel=1e-9)
+    assert out["figures_basis"]["failure_frequency"] == "exact"
     exact = ra.exact_availability(g)
     assert exact["common_cause_included"] is True and exact["expected_failures"] > 0
     # The script keeps the group and its availability, and leaves the frequency out.
     res, proc = _run(rbd_export.to_python(g, "SIF"), tmp_path, n_sims="20")
     assert res["steady_state_availability"] == pytest.approx(out["steady_state_availability"], rel=1e-12)
-    assert "Failure frequency: nan" in proc.stdout
+    assert "Failure frequency: nan" not in proc.stdout

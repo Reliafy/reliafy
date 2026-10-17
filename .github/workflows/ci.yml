@@ -24,8 +24,8 @@ jobs:
           cache-dependency-path: requirements.lock
       - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0" && pip install pytest==9.1.1 pytest-xdist==3.8.0
       # RePyability isn't in requirements.txt: like the Dockerfile, install the
-      # pinned commit (v0.13) --no-deps so it can't re-resolve surpyval from PyPI.
-      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@debbb6ff2928034e273b609db9b09901cf6e6119"
+      # pinned commit (v0.15) --no-deps so it can't re-resolve surpyval from PyPI.
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@af15a3eccd4806cafed95a0c8fa9b0d1ebcc4010"
       # The slowest tests are listed, so a slower run says where the time went.
       - run: pytest backend/tests -n auto --dist loadfile --durations=40
 
@@ -60,7 +60,7 @@ jobs:
           cache-dependency-path: requirements.lock
       # The backend's packages as the backend job (and the Dockerfile) install them.
       - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0"
-      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@debbb6ff2928034e273b609db9b09901cf6e6119"
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@af15a3eccd4806cafed95a0c8fa9b0d1ebcc4010"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"

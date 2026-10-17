@@ -19,7 +19,7 @@ function routesIn(file) {
     const gate = gates.length ? gates[gates.length - 1][1] : null;
     previous = m.index + m[0].length;
     for (const path of m[1] ? [m[1]] : productPaths()) {
-      found.push({ path, gate, redirect: /<Navigate\b|<TrackingRedirect\b/.test(m[2]) });
+      found.push({ path, gate, redirect: /<Navigate\b|<\w+Redirect\b/.test(m[2]) });
     }
   }
   return found;

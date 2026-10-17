@@ -127,8 +127,8 @@ Keep to the project's rules (`CLAUDE.md`):
   )
   state = {
       "pump": NodeState(age=5200.0),
-      "valve": NodeState(age=7000.0, phase=7000.0),
-      "sensor": NodeState(age=3000.0, phase=3000.0),
+      "valve": NodeState(age=7000.0, since_scheduled=7000.0),
+      "sensor": NodeState(age=3000.0, since_scheduled=3000.0),
   }
   ends = month * np.arange(1, 13)
   events = rbd.expected_events(ends, state=state)
@@ -214,8 +214,8 @@ Keep to the project's rules (`CLAUDE.md`):
       },
   )
   # 82 days from 11 Oct to 1 Jan (the window [0, t) leaves its end out);
-  # phase: 4 days since the last time, 7 Oct
-  rbd.expected_events(82.0, state={"task": NodeState(phase=4.0)}).node_preventive
+  # since_scheduled: 4 days since the last time, 7 Oct
+  rbd.expected_events(82.0, state={"task": NodeState(since_scheduled=4.0)}).node_preventive
   # -> {'task': 12.0}
   ```
 
@@ -682,7 +682,7 @@ Keep to the project's rules (`CLAUDE.md`):
 - **How it is solved:**
   - **The mean:** `RepairableRBD.expected_cost(t, state=...)` at each
     date, exact, from the bearing's state today (its age, and the days
-    since the last shut: `NodeState(age=224, phase=159)`). The policies
+    since the last shut: `NodeState(age=224, since_scheduled=159)`). The policies
     are UC-7's: replacement on condition at the shuts for the best one,
     block replacement for every shut.
   - **The range:** simulated, as a range must be (the README: "the answer

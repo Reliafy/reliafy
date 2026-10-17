@@ -22,7 +22,7 @@ const TOOLS = [
   { to: "/strategy/replacement", icon: <CostIcon />, label: "Optimal replacement" },
   { to: "/strategy/compare", icon: <CompareIcon />, label: "Compare two models" },
   { to: "/strategy/failure-finding", icon: <StrategyIcon />, label: "Failure finding" },
-  { to: "/strategy/demonstration-test", icon: <TestIcon />, label: "Demonstration test" },
+  { to: "/strategy/test-planning", icon: <TestIcon />, label: "Test planning" },
 ];
 
 // The Strategy section's root: its tools, then the saved analyses —

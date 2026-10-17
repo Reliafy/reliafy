@@ -13,7 +13,7 @@ const frac = (s) => (s === "" || s == null ? null : Number(s) / 100);
 
 // Demonstration test planner: how many units to test, for how long, with how
 // many failures allowed, to show a reliability (or a B-life) at a confidence
-// (RePyability's test planning). Needs no saved model; ``initial`` (from
+// (SurPyval's test planning). Needs no saved model; ``initial`` (from
 // requirement.js's parseDemoPrefill) starts it from a model's requirement
 // (#295): the B-life, its life, the confidence, the model's unit and its β.
 export default function DemonstrationTest({ initial = null }) {
@@ -36,6 +36,8 @@ export default function DemonstrationTest({ initial = null }) {
   const [mtbf, setMtbf] = useState("1000");
   const [design, setDesign] = useState("");
   const [producerRisk, setProducerRisk] = useState("");
+  // MTBF tests: stop at a set time (the usual) or at the last failure allowed.
+  const [stopAt, setStopAt] = useState("time");
   const [result, setResult] = useState(null);
   const [inputs, setInputs] = useState(null);
   const [error, setError] = useState(null);
@@ -99,6 +101,7 @@ export default function DemonstrationTest({ initial = null }) {
       else body.test_multiple = num(multiple) ?? 1;
     } else {
       Object.assign(body, { mtbf: num(mtbf), units: num(units), design_mtbf: num(design) });
+      if (stopAt === "failure") body.failure_terminated = true;
     }
     return body;
   };
@@ -161,6 +164,18 @@ export default function DemonstrationTest({ initial = null }) {
               options={[
                 { value: "reliability", label: "Reliability over a mission" },
                 { value: "b_life", label: "B-life (e.g. B10 ≥ a life)" },
+              ]}
+            />
+          )}
+          {!attribute && (
+            <SegmentedControl
+              label="The test stops"
+              showLabel
+              value={stopAt}
+              onChange={setStopAt}
+              options={[
+                { value: "time", label: "At a set test time" },
+                { value: "failure", label: "At the last failure allowed" },
               ]}
             />
           )}
@@ -237,6 +252,12 @@ export default function DemonstrationTest({ initial = null }) {
             {byTime
               ? "Solving for the test time per unit trades time for units, which depends on the Weibull shape β of the lifetime (assumed known)."
               : `Testing each unit for longer than ${byB ? "the life" : "one mission"} needs fewer units when the Weibull shape β is known (Weibayes). Leave the length at 1 for a plain success-run / binomial test.`}
+          </p>
+        )}
+        {!attribute && stopAt === "failure" && (
+          <p className="hint">
+            A failure-terminated test runs until a set number of failures and passes if the last one comes late
+            enough. It needs at least one failure allowed, and plans with a producer&apos;s risk are time-terminated.
           </p>
         )}
         <p className="hint">
