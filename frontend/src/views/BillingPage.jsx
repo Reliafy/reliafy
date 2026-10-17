@@ -178,7 +178,7 @@ export default function BillingPage() {
           )}
           <p className="muted-line">
             Rolling Reliafy out across a team or site? Enterprise adds dedicated support,
-            proactive monitoring, full graph access and hosting where you need it.{" "}
+            proactive monitoring, full graph access and hosting in your region.{" "}
             <a href={ENTERPRISE_CONTACT}>Talk to us</a>.
           </p>
         </div>
