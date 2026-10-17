@@ -11,9 +11,10 @@ Everything here is SurPyval's:
 
 * ``CompetingRisks`` (Aalen-Johansen) gives each mode's cumulative incidence
   and, fitted with ``how="Kaplan-Meier"``, the all-cause failure probability;
-  ``KaplanMeier``'s ``cb`` bounds the all-cause curve (Greenwood). SurPyval
-  0.23 has no variance for a single mode's incidence, so each mode's curve
-  comes without a band (``mode_bounds`` false, and the app says so);
+  ``KaplanMeier``'s ``cb`` bounds the all-cause curve (Greenwood). Each
+  mode's band is ``CompetingRisks.cb`` (Aalen's variance, as R's
+  ``cmprsk::cuminc``; SurPyval 0.24 and later); where there is none the
+  curve comes without a band (``mode_bounds`` false, and the app says so);
 * ``gray_test`` compares one mode's incidence across groups of units (sites,
   suppliers) when a group column is given;
 * ``CompetingRisksProportionalHazards`` (the advanced choice, with covariates)
@@ -207,8 +208,8 @@ def _incidence(model, cause, t) -> np.ndarray:
 
 
 def _cif_bounds(model, cause, t) -> Optional[np.ndarray]:
-    """A mode's pointwise 95% bounds, where SurPyval gives them (its
-    ``CompetingRisks`` in 0.23 has no ``cb``): None otherwise."""
+    """A mode's pointwise 95% bounds, where SurPyval gives them
+    (``CompetingRisks.cb``, since 0.24): None otherwise."""
     cb = getattr(model, "cb", None)
     if not callable(cb):
         return None
