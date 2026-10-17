@@ -5,6 +5,7 @@ import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
 import { publicUrl } from "../firebase.js";
 import { getMaintenanceAccess } from "../api.js";
+import ExtensionNavItems from "./ExtensionNavItems.jsx";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -328,6 +329,7 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
             </div>
           );
         })}
+        <ExtensionNavItems section="workspace" collapsed={collapsed} />
       </nav>
 
       <div className="side-grow" />
@@ -351,6 +353,7 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
           {!collapsed && <span className="side-label">{billingLabel}</span>}
         </NavLink>
       )}
+      <ExtensionNavItems section="account" collapsed={collapsed} />
       <a
         className="side-item"
         href="/api-docs"

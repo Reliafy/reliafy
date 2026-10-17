@@ -154,6 +154,7 @@ env reference for operators:
 | `AI_PROVIDER`, `AI_MODEL`, `AI_MARKUP` | The metered assistant's provider/model/markup. |
 | `PRO_MONTHLY_CREDIT_CENTS` | AI credit included with each month of Pro (granted per paid invoice; default 1000). |
 | `ADMIN_EMAILS` | Comma-separated operator emails with full access regardless of payment (no plan caps, AI not credit-checked). |
+| `EXTENSIONS_DISABLED` | `true` skips optional extensions: installed packages in the `reliafy.extensions` entry-point group that add API routes and pages (see `backend/extensions.py`). Nothing installed, nothing changes. |
 | `PUSHOVER_TOKEN`, `PUSHOVER_USER` | Operator push notifications (new signups, crashes) via [Pushover](https://pushover.net). Unset → falls back to email, then to a log line. |
 | `PUSH_ERROR_ALERTS` | Push an alert when the server hits an unexpected error (default on wherever Pushover is configured). Throttled: same fault once per 30 min, 8 per hour. Set `false` to keep a dev machine quiet. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` | Outbound email for team invites and share notifications. Unset → every send is a logged no-op. |

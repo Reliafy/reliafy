@@ -20,8 +20,9 @@ export function settledConfig(fetched) {
 }
 
 // What the app shell does with a path no route matched. Routes gated on the
-// config (/billing, /agent) aren't registered until it loads, so redirecting
-// before then would send a direct load of /billing to /modelling.
-export function unmatchedRoute(config) {
-  return config.loaded ? "redirect" : "wait";
+// config (/billing, /agent) aren't registered until it loads, nor extension
+// pages until their list has (`extensionsLoaded`), so redirecting before then
+// would send a direct load of /billing to /modelling.
+export function unmatchedRoute(config, extensionsLoaded = true) {
+  return config.loaded && extensionsLoaded ? "redirect" : "wait";
 }

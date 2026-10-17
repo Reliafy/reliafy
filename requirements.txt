@@ -42,9 +42,6 @@ markdown
 # the iCalendar standard's recurrences). Already installed with pandas; named
 # because the app imports it.
 python-dateutil>=2.8.2
-# Reads the content calendar for the admin page (backend/services/content_calendar.py).
-# Already installed by uvicorn[standard]; named because the app imports it.
-pyyaml
 # Managed Agents live in the beta namespace (beta.agents/environments/sessions);
 # event-delta streaming (for our SSE) landed in 0.115.0. Pinned for reproducible
 # builds against the still-evolving Managed Agents beta API.

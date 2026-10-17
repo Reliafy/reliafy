@@ -1,6 +1,5 @@
 """Product-usage logging: MCP tool calls and app requests become usage
-events (90-day TTL), rolled up into identifier-free daily totals, reported
-on the operator dashboard.
+events (90-day TTL), rolled up into identifier-free daily totals.
 
 MCP calls go through the real ``/mcp`` mount with the fixtures of
 test_mcp_plans.py (Free, Agent and Pro users; OAuth tokens from a client
@@ -172,7 +171,7 @@ def test_init_db_creates_the_usage_indexes(monkeypatch):
     ("GET", "/api/rbds/r1", None),
     ("GET", "/api/me", None),
     ("GET", "/api/billing", None),
-    ("GET", "/api/admin/usage", None),
+    ("GET", "/api/extensions", None),
     ("POST", "/api/metrics/event", None),
     ("POST", "/api/client-error", None),
     ("POST", "/api/columns", None),
@@ -369,84 +368,6 @@ def test_upgrade_after_an_mcp_wall_is_recorded_once(monkeypatch):
     conv = {(e["uid"], e["feature"]) for e in db.usage_events.find({"channel": "billing"})}
     assert conv == {("walled", "pro_upgrade"), ("walled", "upgrade_after_mcp_lock"), ("plain", "pro_upgrade")}
     assert db.usage_events.count_documents({"channel": "billing"}) == 3
-
-    rep = usage.report(db, days=30)
-    assert rep["pro_wall"]["accounts"] == 1 and rep["pro_wall"]["limit_accounts"] == 1
-    assert rep["pro_wall"]["upgraded_accounts"] == 1
-    assert rep["pro_wall"]["pro_upgrades"] == 2 and rep["pro_wall"]["upgrades_after_wall"] == 1
-
-
-# ---- the report and the admin endpoint ------------------------------------------------------
-
-def test_report_shapes_and_operator_exclusion(monkeypatch):
-    from backend.services import usage
-
-    db = mongomock.MongoClient()["usage_report"]
-    _seed(db, monkeypatch)
-    today = DAY + timedelta(days=1, hours=3)
-    _seed(db, monkeypatch, at=today)  # today: not rolled up, aggregated live
-    rep = usage.report(db, days=30, now=today)
-
-    assert rep["days"] == 30 and len(rep["daily"]) == 30 and rep["daily"][-1]["day"] == "2026-10-06"
-    d5, d6 = rep["daily"][-2], rep["daily"][-1]
-    for d in (d5, d6):  # rolled-up and live days agree
-        assert (d["app"], d["mcp"], d["mcp_connects"]) == (4, 2, 1)
-        assert (d["app_accounts"], d["mcp_accounts"], d["any_accounts"]) == (2, 2, 3)
-    assert rep["totals"]["app"] == 8 and rep["totals"]["mcp"] == 4 and rep["totals"]["mcp_connects"] == 2
-    tools = {t["key"]: t for t in rep["mcp_tools"]}
-    assert tools["list_models"]["ok"] == 2 and tools["fit_distribution"]["pro_only"] == 2
-    assert tools["list_models"]["avg_ms"] == 5
-    assert rep["app_features"][0] == {"key": "fit", "count": 8, "ok": 8, "error": 0, "locked": 0,
-                                      "limit": 0, "pro_only": 0}
-    assert rep["mcp_outcomes"] == {"ok": 2, "error": 0, "locked": 0, "limit": 0, "pro_only": 2}
-    assert {c["key"] for c in rep["mcp_clients"]} == {"Claude", "Cursor"}
-    assert rep["share"]["mcp_share"] == pytest.approx(4 / 12, abs=1e-4)
-    assert rep["share"]["mcp_accounts"] == 2 and rep["share"]["app_accounts"] == 2
-    assert rep["share"]["mcp_and_app_accounts"] == 1 and rep["share"]["mcp_only_accounts"] == 1
-    assert rep["pro_wall"]["pro_only_accounts"] == 1 and rep["pro_wall"]["repeat_accounts"] == 1
-    assert rep["weekly"][-1]["week"] == "2026-10-05" and rep["weekly"][-1]["wall_pro_only"] == 1
-
-    with_ops = usage.report(db, days=30, include_admin=True, now=today)
-    assert with_ops["totals"]["app"] == 10 and with_ops["daily"][-1]["app_accounts"] == 3
-
-
-def test_report_counts_failed_calls_per_channel(monkeypatch):
-    from backend.services import usage
-
-    db = mongomock.MongoClient()["usage_errors"]
-    _seed(db, monkeypatch)
-    usage.record(db, uid="b", channel="mcp", feature="get_model", outcome="error", plan="pro")
-    usage.record(db, uid="a", channel="app", feature="fit", outcome="error", plan="free")
-    usage.record(db, uid="a", channel="app", feature="fit", outcome="error", plan="free")
-    usage.record(db, uid="ops", channel="app", feature="fit", outcome="error", plan="admin")
-    rep = usage.report(db, days=7, now=DAY)
-    # Refusals (pro_only, limit) aren't failures; operator accounts are left out.
-    assert rep["totals"]["errors"] == {"app": 2, "mcp": 1, "api": 0}
-    assert usage.report(db, days=7, include_admin=True, now=DAY)["totals"]["errors"]["app"] == 3
-
-
-def test_admin_usage_endpoint_is_operator_only(monkeypatch):
-    from backend import config, db as db_module
-    from backend.auth import get_current_user
-    from backend.main import app
-
-    monkeypatch.setattr(config, "AUTH_DISABLED", False)
-    monkeypatch.setattr(config, "ADMIN_EMAILS", {"ops@example.org"})
-    test_db = mongomock.MongoClient()["usage_admin"]
-    monkeypatch.setattr(db_module, "_db", test_db)
-    tc = TestClient(app)
-    try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": "u", "email": "u@example.org", "email_verified": True}
-        assert tc.get("/api/admin/usage").status_code == 403
-        app.dependency_overrides[get_current_user] = lambda: {"uid": "ops", "email": "ops@example.org", "email_verified": True}
-        for days, expect in [(7, 7), (90, 90), (365, 365), (12, 30)]:
-            body = tc.get(f"/api/admin/usage?days={days}").json()
-            assert body["days"] == expect and len(body["daily"]) == expect
-            assert set(body) >= {"totals", "daily", "weekly", "mcp_tools", "app_features", "api_features",
-                                 "mcp_outcomes", "mcp_clients", "mcp_plans", "share", "pro_wall", "window_days"}
-            assert body["window_days"] == min(expect, 90)
-    finally:
-        app.dependency_overrides.clear()
 
 
 # ---- off switch -----------------------------------------------------------------------------

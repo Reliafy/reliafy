@@ -184,14 +184,17 @@ def new_signup(new_email: str | None, new_name: str | None) -> None:
     an instance configured only with ADMIN_EMAILS keeps working. Fired from the
     server-side first-sight hook so it can't be missed.
     """
+    from backend import extensions
     from backend.services import push as push_service
 
     who = new_email or "unknown"
+    page = extensions.operator_page_path()
+    link, link_title = (_app_url(page), "Operator dashboard") if page else (_app_url("/modelling"), "Open Reliafy")
     if push_service.send(
         "New Reliafy signup",
         f"{new_name or '—'}\n{who}",
-        url=_app_url("/admin"),
-        url_title="Operator dashboard",
+        url=link,
+        url_title=link_title,
     ):
         return
 
@@ -205,7 +208,7 @@ def new_signup(new_email: str | None, new_name: str | None) -> None:
         "A new user just signed up for Reliafy.\n\n"
         f"Name:  {new_name or '—'}\n"
         f"Email: {new_email or '—'}\n\n"
-        f"Operator dashboard: {_app_url('/admin')}\n\n"
+        f"{link_title}: {link}\n\n"
         "— Reliafy"
     )
     for to in admins:

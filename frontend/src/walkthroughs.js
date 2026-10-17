@@ -280,7 +280,7 @@ export function rectInView(rect, viewport, inset = 0) {
   return rect.top >= 0 && rect.top + Math.min(rect.height, 80) <= viewport.height - inset;
 }
 
-// The admin report's step funnel for one walkthrough's row ({ steps: {"1": n,
+// A walkthrough's step funnel from a traffic report row ({ steps: {"1": n,
 // …} }): how many runs reached each of its steps, in order, zeros included.
 export function stepFunnel(row, id) {
   const wt = getWalkthrough(id);

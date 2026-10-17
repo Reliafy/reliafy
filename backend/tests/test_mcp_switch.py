@@ -256,34 +256,3 @@ def test_credit_pack_does_not_turn_it_on(env):
                            "data": {"object": {"id": "cs_p", "metadata": {"uid": U, "kind": "pack",
                                                                            "grant_cents": "500"}}}})
     assert mcp_switch.enabled(env.db) is False and env.pushed == []
-
-
-# ---- admin API ---------------------------------------------------------------------
-
-def test_admin_api_reads_and_sets_the_switch(env):
-    env.act_as(ADMIN)
-    state = env.client.get("/api/admin/mcp").json()
-    assert state["enabled"] is False and state["stored"] is None and state["default"] is False
-    assert state["override"] is None and state["changed_at"] is None
-
-    r = env.client.post("/api/admin/mcp", json={"enabled": True, "reason": "a free user asked"})
-    assert r.status_code == 200
-    state = r.json()
-    assert state["enabled"] is True and state["changed_by"] == ADMIN["email"]
-    assert state["reason"] == "a free user asked" and state["changed_at"]
-    # Takes effect at once on this process.
-    env.act_as(None)
-    assert env.client.post("/mcp", json={}).status_code == 401
-
-    env.act_as(ADMIN)
-    state = env.client.post("/api/admin/mcp", json={"enabled": False}).json()
-    assert state["enabled"] is False and state["reason"] == "set on the Admin page"
-
-
-def test_admin_api_is_operator_only(env):
-    env.act_as(NOT_ADMIN)
-    assert env.client.get("/api/admin/mcp").status_code == 403
-    assert env.client.post("/api/admin/mcp", json={"enabled": True}).status_code == 403
-    assert env.db.app_settings.find_one({"_id": "mcp"}) is None
-    env.act_as(None)
-    assert env.client.get("/api/admin/mcp").status_code == 401

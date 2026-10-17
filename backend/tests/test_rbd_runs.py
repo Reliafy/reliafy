@@ -279,21 +279,6 @@ def test_quote_runs_on_the_compute_machine_when_queued(client, queue):
     assert client.post("/api/rbds/quote", json={"graph": _graph()}).json()["machine"] == "compute"
 
 
-def test_admin_calibration_endpoints(client):
-    client.act_as(PRO)
-    assert client.get("/api/admin/runtime-quote").status_code == 403
-    assert client.post("/api/admin/runtime-quote/refit", json={"machine": "web"}).status_code == 403
-    graph = _graph()
-    _analyze(client, graph, _save(client, graph))
-    client.act_as(ADMIN)
-    out = client.get("/api/admin/runtime-quote").json()
-    web = next(m for m in out["machines"] if m["machine"] == "web")
-    assert web["runs"] == 1 and web["factor"] == 1.0 and out["min_runs"] == 10
-    assert out["model"]["coefficients"]["log_replications"] == 0.58
-    refit = client.post("/api/admin/runtime-quote/refit", json={"machine": "web", "apply": True}).json()
-    assert refit["refitted"] is False and refit["observed"] == 1
-
-
 # ---- MCP -------------------------------------------------------------------------------------
 
 from backend.tests.test_mcp import _err, _ok  # noqa: E402

@@ -1,0 +1,2 @@
+[reliafy.extensions]
+dummy = dummy_extension:extension

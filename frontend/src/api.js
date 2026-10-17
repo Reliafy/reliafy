@@ -13,7 +13,7 @@ const STREAM_ORIGIN =
 
 // Activation milestones: fire a product event when the promise resolves.
 // These are the funnel steps between "signed up" and "getting value" —
-// visible in /admin traffic so acquisition posts can be judged on
+// visible in the first-party traffic reports so acquisition posts can be judged on
 // activation, not just signups.
 function withEvent(promise, name) {
   return promise.then((result) => {
@@ -1817,61 +1817,15 @@ export function revokeOAuthGrant(id) {
   return request(`/api/me/oauth-grants/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-// Operator-only stats (403 for regular accounts).
-export function getAdminStats() {
-  return request("/api/admin/stats");
+// Pages added by optional extensions that this user may see:
+// { mounts: [{ extension, id, label, title, path, section, bundle }] }.
+export function getExtensionMounts() {
+  return request("/api/extensions");
 }
 
-// Operator-only: new accounts in the last `days` days, and the latest few.
-export function getAdminSignups(days = 7) {
-  return request(`/api/admin/signups?days=${days}`);
-}
-
-// Operator-only first-party traffic analytics.
-export function getAdminTraffic(days = 14) {
-  return request(`/api/admin/traffic?days=${days}`);
-}
-
-// Operator-only: what each update / lifecycle email brought in (#269).
-export function getAdminEmailCampaigns(days = 90) {
-  return request(`/api/admin/email-campaigns?days=${days}`);
-}
-
-// Operator-only monthly content report (#353): month is YYYY-MM, "" = last month.
-export function getAdminContentReport(month = "") {
-  return request(`/api/admin/content-report${month ? `?month=${encodeURIComponent(month)}` : ""}`);
-}
-
-// Operator-only publishing calendar for one month (YYYY-MM): posts, What's
-// new and its email, LinkedIn items, planned slots, gaps, and the pipeline.
-export function getAdminContentCalendar(month = "") {
-  return request(`/api/admin/content-calendar${month ? `?month=${encodeURIComponent(month)}` : ""}`);
-}
-
-// Operator-only library status: SurPyval, RePyability and this deployment,
-// with the next step. `refresh` revalidates GitHub and PyPI (once a minute).
-export function getAdminLibraries(refresh = false) {
-  return request(`/api/admin/libraries${refresh ? "?refresh=true" : ""}`);
-}
-
-// Operator-only product usage (app / MCP / API, the MCP plan wall).
-export function getAdminUsage(days = 30, includeAdmin = false) {
-  return request(`/api/admin/usage?days=${days}${includeAdmin ? "&include_admin=true" : ""}`);
-}
-
-// Operator-only: the MCP connector's switch — on/off, who or what last
-// changed it and when, and whether MCP_ENABLED overrides it.
-export function getAdminMcp() {
-  return request("/api/admin/mcp");
-}
-
-export function setAdminMcp(enabled, reason = "") {
-  return request("/api/admin/mcp", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled, reason }),
-  });
-}
+// For extension pages (extensions.js): the same authenticated fetch and JSON
+// request every call here uses (auth and workspace headers, token refresh).
+export { authedFetch, request as apiRequest };
 
 // Un-hide all dismissed sample artifacts.
 export function restoreSamples() {

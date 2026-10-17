@@ -13,12 +13,10 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from backend import config
-from backend.services import walkthroughs as walkthroughs_service
 
 # Crawlers and headless browsers aren't visitors.
 _BOT_RE = re.compile(
@@ -96,67 +94,3 @@ def record_event(
             doc["step"] = int(step)
     db.metrics_events.insert_one(doc)
     return True
-
-
-def traffic(db, days: int = 14) -> dict:
-    """Aggregate the last ``days`` of events for the operator dashboard.
-
-    Aggregation is plain Python over a projected cursor: volumes are small at
-    this stage, and it keeps mongomock (tests, self-host fallback) fully
-    supported without worrying about aggregation-pipeline coverage.
-    """
-    days = max(1, min(int(days or 14), RETENTION_DAYS))
-    since = datetime.now(timezone.utc) - timedelta(days=days)
-    cursor = db.metrics_events.find(
-        {"created_at": {"$gte": since}},
-        {
-            "_id": 0, "name": 1, "path": 1, "ref_host": 1,
-            "utm_source": 1, "visitor": 1, "day": 1, "walkthrough": 1, "step": 1,
-        },
-    )
-
-    daily_views: Counter = Counter()
-    daily_visitors: dict[str, set] = defaultdict(set)
-    pages: Counter = Counter()
-    referrers: Counter = Counter()
-    sources: Counter = Counter()
-    events: Counter = Counter()
-    walkthrough_events = []
-
-    for e in cursor:
-        day = e.get("day", "")
-        if e.get("name") == "pageview":
-            daily_views[day] += 1
-            daily_visitors[day].add(e.get("visitor"))
-            pages[e.get("path") or "/"] += 1
-            if e.get("ref_host"):
-                referrers[e["ref_host"]] += 1
-            if e.get("utm_source"):
-                sources[e["utm_source"]] += 1
-        elif e.get("walkthrough"):
-            walkthrough_events.append(e)  # counted in "walkthroughs" below
-        else:
-            events[e["name"]] += 1
-
-    # A continuous day axis (oldest first), zero-filled.
-    today = datetime.now(timezone.utc).date()
-    axis = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days - 1, -1, -1)]
-    daily = [
-        {"day": d, "pageviews": daily_views.get(d, 0), "visitors": len(daily_visitors.get(d, ()))}
-        for d in axis
-    ]
-
-    top = lambda c, n=10: [{"key": k, "count": v} for k, v in c.most_common(n)]
-    return {
-        "days": days,
-        "pageviews": sum(daily_views.values()),
-        "visitors_daily_sum": sum(len(v) for v in daily_visitors.values()),
-        "daily": daily,
-        "top_pages": top(pages),
-        "top_referrers": top(referrers),
-        "top_sources": top(sources),
-        "events": top(events),
-        # Guided walkthroughs (#32): runs started, completed, skipped and
-        # each step reached, per walkthrough.
-        "walkthroughs": walkthroughs_service.summarise(walkthrough_events),
-    }
