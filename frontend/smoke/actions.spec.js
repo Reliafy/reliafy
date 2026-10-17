@@ -131,3 +131,40 @@ test("replacement over a shutdown calendar: the rule, the next months and one un
   await expect(now).toContainText("Keep it: replace it at the Annual shutdown", { timeout: 30_000 });
   await expect(now).toContainText("Replacing now becomes the best choice from an age of");
 });
+
+// A photo added to a work order (a nameplate, say) moved to the work order's
+// position from the photo's "Link or move" picker: it leaves the work order and
+// shows on the position (smoke/seed.js makes the work order).
+const NAMEPLATE_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAGAAAABACAIAAABqVuVZAAAC7UlEQVR42u3aW0hTcRwH8N8u6uatoWFGYoF3i7C0KWYuVJKoB8UgM5vRTY2UQDFyYQ+tG4mWipIWCaVZWfkUTjAvMTRJty6ixtBA8VKuy2Jl7nJ6GK2B03yqjn6/b/8L5+HD7///c87/cILTagmZP1wQAAhAAAIQgAAEIAAh9sJfeLi7Mmk5KEQdb0IFYYn9kyW2mCJkbxazgaCCAAQgAAEIQAACEIAQAAEIQAACEC3Rzx1zE7rOMy91M5/PNZmYwmrlpFavrk1/qfmQIVdYJvTU7BMfvWud7+bsWCgVJ0T4bjlSb+lJkQQkS/xdhPzi+l7l63GBI/9C5taVK4QuQn5Zo7pDNcbuCjqfGS2rVmbIFQ2tQwVpEUQ0azDxuFxxiLfd+VX58f0jWoZhLE0Pd0FSrJ/0XHNeeWehVExE+3cEvxmelsqbs660Fh2MZP0S83QXOjrwiOhp72hdy6Cls+KhOmdPmN35J8va7ygGrE2Rq1Ndy6CZYSa0epGrExE9aHt7WzFARP4+IqOJYT1Q6b2+uqKd8mPR4UFevUNTls7u/gkiigy1U0TTn7/bNofHvzQ/f0dEieK1bapRItLpZw1G8+XsbZV5cWdvdrEe6HGnZldBU9/Q+9MHxCdSfldNeeO8RTQ3vqvcDu/eUNLQZ+05VfUsv6IzOdaP3UAe7oJNgV46/eyjDs2hiy2p8YHWoZ6BSZOZiVq/+o8PcRbwS3IkshrlR90MEZ3JiOTxOETUrhqThPmwG4hhmNJcibeni2U3GdfqbUfLG9W2NWU3HA5dyoq59aT/lWb61zHnkBDuS0RhAV4jEzp2H/Ofvv4outF1LXf7jMFoNjOy60rb0ReDUwajybKFz5fkWP+YjWtEroK9cUHfZgxZxa1X76suZcekJ4YYjGZZtfI/AeIs/I+i9WJkaV/74GYVrxoAAhCAAAQgACEAAhCAAAQgAAGIcC9Gy/KXe1QQgOjvfnJFUEEAAhCAAAQgAAFoueYnG4bvXTtLdPoAAAAASUVORK5CYII=",
+  "base64",
+);
+
+test("move a photo from a work order to its position", async ({ page, problems }) => {
+  const { work_orders: wos } = await (await page.request.get("/api/maintenance/work-orders")).json();
+  const wo = wos.find((w) => w.title === "Smoke test inspection");
+  expect(wo?.position, "the seeded work order and its position").toBeTruthy();
+  const added = await page.request.post(
+    `/api/maintenance/photos?target_id=${wo.id}&caption=${encodeURIComponent("Smoke nameplate")}`,
+    { data: NAMEPLATE_PNG, headers: { "Content-Type": "image/png" } },
+  );
+  expect(added.ok(), await added.text()).toBeTruthy();
+  const photoId = (await added.json()).photo.id;
+
+  await open(page, `/maintenance/work-orders/${wo.id}`);
+  await page.getByRole("img", { name: "Smoke nameplate" }).click();
+  await page.getByRole("button", { name: "Link or move…" }).click();
+  const picker = page.locator(".modal").filter({ hasText: "Link or move this photo" });
+  await picker.getByLabel(/Move it there/).check();
+  await picker.getByLabel("Kind").selectOption("Position");
+  await picker.getByLabel("Which position").selectOption(wo.position.id);
+  await picker.getByRole("button", { name: "Move", exact: true }).click();
+  await expect(page.getByRole("img", { name: "Smoke nameplate" })).toHaveCount(0);
+  await expectHealthy(page, problems, { label: "work order after moving a photo" });
+
+  const position = await (await page.request.get(`/api/maintenance/positions/${wo.position.id}`)).json();
+  expect(position.photos.map((p) => p.id)).toContain(photoId);
+  await open(page, `/maintenance/positions/${wo.position.id}`);
+  await expect(page.getByRole("img", { name: "Smoke nameplate" })).toBeVisible();
+  await expectHealthy(page, problems, { label: "position with the moved photo" });
+});

@@ -16,6 +16,7 @@ const SIGNED_IN = [
   ["POST", "/api/test-planning/simulate"],
   ["POST", "/api/strategy/calendar-replacement"], // replacement over a shutdown calendar
   ["POST", "/api/strategy/calendar-next"],
+  ["POST", "/api/maintenance/photos/smoke/move"], // a photo on several places
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407

@@ -8,7 +8,9 @@
     reliafy push model.json
     reliafy upload data.csv --name Bearings
     reliafy import rbd plant.xml
-    reliafy photo add IMG_01.jpg IMG_02.jpg --to POSITION_ID
+    reliafy photo add IMG_01.jpg IMG_02.HEIC --to POSITION_ID
+    reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
+    reliafy photo move PHOTO_ID --to POSITION_ID      # only there
     reliafy ingest usage fleet.csv --fleet FLEET_ID
     reliafy ingest readings readings.csv
 
@@ -422,6 +424,10 @@ def _expand(patterns: list[str]) -> list[str]:
 
 
 def cmd_photo(client: Client, ns) -> int:
+    if ns.verb != "add":
+        return _photo_links(client, ns)
+    if not ns.to:
+        raise ReliafyError("photo add needs --to TARGET_ID.")
     files = _expand(ns.files)
     failed = 0
     results = []
@@ -442,6 +448,26 @@ def cmd_photo(client: Client, ns) -> int:
         table(results)
         print(f"\n{len(files) - failed} of {len(files)} added.")
     return 1 if failed else 0
+
+
+def _photo_links(client: Client, ns) -> int:
+    """photo link / move / unlink: maintenance_attachments link_photo,
+    move_photo and unlink_photo for each photo id."""
+    if ns.verb == "unlink":
+        if not ns.from_id:
+            raise ReliafyError("photo unlink needs --from TARGET_ID.")
+    elif not ns.to:
+        raise ReliafyError(f"photo {ns.verb} needs --to TARGET_ID.")
+    results = []
+    for photo_id in ns.files:
+        if ns.verb == "unlink":
+            out = client.call("maintenance_attachments", "unlink_photo", photo_id=photo_id, target_id=ns.from_id)
+        else:
+            out = client.call("maintenance_attachments", f"{ns.verb}_photo", photo_id=photo_id, target_id=ns.to,
+                              from_id=ns.from_id if ns.verb == "move" else None)
+        results.append({"photo_id": photo_id, "on": ", ".join(t.get("name") or t["id"] for t in out.get("on", []))})
+    render(results, ns.json)
+    return 0
 
 
 def cmd_ingest(client: Client, ns) -> int:
@@ -512,10 +538,14 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--format", help="rbd: blocksim, openpsa, galileo, excel or repyability (default: detected).")
     sp.add_argument("--target", help="excel: dataset, rcm or rbd.")
     sp.add_argument("--sheet")
-    sp = add("photo", cmd_photo, "Add photos to a maintenance position, item, location or work order.")
-    sp.add_argument("verb", choices=["add"])
-    sp.add_argument("files", nargs="+", help="Image files (globs work).")
-    sp.add_argument("--to", required=True, help="The position, item, location or work order id.")
+    sp = add("photo", cmd_photo, "Add photos to a maintenance position, item, location or work order; link a "
+                                 "photo to another one too, move it, or unlink it.")
+    sp.add_argument("verb", choices=["add", "link", "move", "unlink"])
+    sp.add_argument("files", nargs="+", help="add: image files (globs work; JPEG, PNG, WebP, HEIC). "
+                                             "link, move, unlink: photo ids.")
+    sp.add_argument("--to", help="The position, item, location or work order id.")
+    sp.add_argument("--from", dest="from_id", help="unlink: where to take it off. move: only off this one "
+                                                   "(default: off everywhere else).")
     sp.add_argument("--caption")
     sp = add("ingest", cmd_ingest, "Push usage, readings, measurements or life data from a CSV file.")
     sp.add_argument("what", choices=["usage", "readings", "measurements", "lives"])

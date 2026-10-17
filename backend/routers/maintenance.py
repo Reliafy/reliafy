@@ -1207,6 +1207,24 @@ def delete_photo(photo_id: str, m: Maintenance = Depends(maintenance_write)) -> 
     return _run(remove_photo, m, photo_id)
 
 
+@router.post("/photos/{photo_id}/link")
+def link_photo(photo_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{target_id}: show the photo on another position, location, item or work order too."""
+    return _run(m.link_photo, photo_id, str(body.get("target_id") or ""))
+
+
+@router.post("/photos/{photo_id}/unlink")
+def unlink_photo(photo_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{target_id}: take the photo off one place (never its last)."""
+    return _run(m.unlink_photo, photo_id, str(body.get("target_id") or ""))
+
+
+@router.post("/photos/{photo_id}/move")
+def move_photo(photo_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{target_id, from_id?}: move the photo off from_id (or off everywhere else) to target_id."""
+    return _run(m.move_photo, photo_id, str(body.get("target_id") or ""), body.get("from_id") or None)
+
+
 @router.post("/coordinates")
 def set_coordinates(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.set_coordinates, body.get("node_id"), body.get("lat"), body.get("lon"),
