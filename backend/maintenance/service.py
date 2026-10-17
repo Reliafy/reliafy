@@ -1045,7 +1045,18 @@ def _photo_added(s: GraphStore, org: str, p: dict) -> None:
 
 
 def _photo_removed(s: GraphStore, org: str, p: dict) -> None:
+    # The photo node is marked, not its links: every place it shows filters it out.
     s.patch_node(org, p["id"], {"removed": True})
+
+
+def _photo_linked(s: GraphStore, org: str, p: dict) -> None:
+    """A photo shown on one more position, location, item or work order (a
+    nameplate taken on a work order, on its position too): one OF edge each."""
+    s.put_edge(org, "OF", p["id"], p["target_id"])
+
+
+def _photo_unlinked(s: GraphStore, org: str, p: dict) -> None:
+    s.delete_edge(org, "OF", p["id"], p["target_id"])
 
 
 def _coordinates_set(s: GraphStore, org: str, p: dict) -> None:
@@ -1433,6 +1444,8 @@ PROJECTORS = {
     "work_order.check": _work_order_check,
     "photo.added": _photo_added,
     "photo.removed": _photo_removed,
+    "photo.linked": _photo_linked,
+    "photo.unlinked": _photo_unlinked,
     "coordinates.set": _coordinates_set,
     "item_class.created": _item_class_created,
     "item_class.updated": _patch,
@@ -5709,19 +5722,72 @@ class Maintenance:
                 raise LimitReached(f"This maintenance workspace can hold at most {MAX_PHOTOS:,} photos. "
                                    "Remove some first.")
 
+    PHOTO_KINDS = ("Position", "Location", "Item", "WorkOrder")
+
+    def photo_targets(self, photo_id: str) -> list[dict]:
+        """Every place a photo shows: positions, then locations, items and work
+        orders, each by name."""
+        found = [{"id": n["id"], "kind": n["label"], "name": n.get("name") or n.get("title")}
+                 for n in self.s.out(self.org, photo_id, "OF") if n["label"] in self.PHOTO_KINDS]
+        found.sort(key=lambda t: (self.PHOTO_KINDS.index(t["kind"]), (t["name"] or "").lower(), t["id"]))
+        return found
+
     def photo(self, photo_id: str) -> dict:
         p = self._get(photo_id, "Photo")
-        of = self.s.out(self.org, photo_id, "OF")
+        on = self.photo_targets(photo_id)
         return {k: p.get(k) for k in ("id", "caption", "taken_on", "uploaded_on", "width", "height", "removed")} | {
-            "of": of and {"id": of[0]["id"], "kind": of[0]["label"],
-                          "name": of[0].get("name") or of[0].get("title")},
+            "of": on[0] if on else [], "on": on,
         }
 
     def photos_of(self, node_id: str) -> list[dict]:
+        """A node's photos; also_on: the other places each one shows."""
         found = [p for p in self.s.inn(self.org, node_id, "OF") if p["label"] == "Photo" and not p.get("removed")]
         found.sort(key=lambda p: (p.get("taken_on") or p["uploaded_on"], p["id"]))
         return [{k: p.get(k) for k in ("id", "caption", "taken_on", "uploaded_on", "width", "height")}
+                | {"also_on": [t for t in self.photo_targets(p["id"]) if t["id"] != node_id]}
                 for p in found]
+
+    def _live_photo(self, photo_id: str) -> dict:
+        p = self._get(photo_id, "Photo")
+        if p.get("removed"):
+            raise Invalid("That photo was removed.")
+        return p
+
+    def link_photo(self, photo_id: str, target_id: str) -> dict:
+        """Show a photo on one more position, location, item or work order. It
+        stays where it already is; linking it again changes nothing."""
+        self._live_photo(photo_id)
+        self.photo_target(target_id)
+        if self.s.edge(self.org, "OF", photo_id, target_id) is None:
+            self._emit("photo.linked", {"id": photo_id, "target_id": target_id, "on": self.today()})
+        return self.photo(photo_id)
+
+    def unlink_photo(self, photo_id: str, target_id: str) -> dict:
+        """Take a photo off one of the places it shows. Its last place can't
+        be: remove the photo, or move it, instead."""
+        self._live_photo(photo_id)
+        on = self.photo_targets(photo_id)
+        if target_id not in {t["id"] for t in on}:
+            raise Invalid("That photo isn't on that.")
+        if len(on) == 1:
+            raise Invalid("That's the only place the photo shows. Move it somewhere else, or remove the photo.")
+        self._emit("photo.unlinked", {"id": photo_id, "target_id": target_id, "on": self.today()})
+        return self.photo(photo_id)
+
+    def move_photo(self, photo_id: str, target_id: str, from_id: str | None = None) -> dict:
+        """Move a photo to target_id: off from_id, or, without one, off every
+        other place it shows. (A link to the new place, then unlinks.)"""
+        self._live_photo(photo_id)
+        self.photo_target(target_id)
+        on = {t["id"] for t in self.photo_targets(photo_id)}
+        if from_id is not None and from_id not in on:
+            raise Invalid("That photo isn't on what it's being moved from.")
+        if self.s.edge(self.org, "OF", photo_id, target_id) is None:
+            self._emit("photo.linked", {"id": photo_id, "target_id": target_id, "on": self.today()})
+        for old in sorted(on if from_id is None else {from_id}):
+            if old != target_id:
+                self._emit("photo.unlinked", {"id": photo_id, "target_id": old, "on": self.today()})
+        return self.photo(photo_id)
 
     def remove_photo(self, photo_id: str) -> None:
         if self._get(photo_id, "Photo").get("removed"):

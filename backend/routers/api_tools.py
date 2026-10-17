@@ -56,7 +56,7 @@ _PRO_REQUIRED = ("The programmatic API is a Pro feature. Upgrade to Pro to use A
 REST_ONLY = {
     "maintenance_photos.add": {
         "method": "POST", "path": "/api/v1/maintenance/photos",
-        "summary": "Add a photo (the image as the body, or multipart field 'file') to a position, item, "
+        "summary": "Add a photo (JPEG, PNG, WebP or HEIC: the body, or multipart field 'file') to a position, item, "
                    "location or work order. Cleaned and stripped of EXIF; at most 20 MB.",
     },
     "uploads.put": {

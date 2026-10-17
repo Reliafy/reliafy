@@ -17,7 +17,8 @@ and everything from 0.2 keeps working.
   `push_lives`.
 - The `reliafy` command (also installed as `reliafy-client`): `login`,
   `tools`, any `<tool> <action>` with `--help`, `--json` or table output, and
-  `push`, `fit`, `upload`, `import`, `photo add`, `ingest`, `models list`.
+  `push`, `fit`, `upload`, `import`, `photo add` (JPEG, PNG, WebP, HEIC), `photo
+  link`, `photo move`, `photo unlink`, `ingest`, `models list`.
 - `reliafy.push` and `reliafy.push_params` work as the README always showed.
 - The token and server can come from `reliafy login`'s saved config.
 

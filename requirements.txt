@@ -68,6 +68,13 @@ openpyxl==3.1.5
 simpleeval==1.0.8
 # Photos in Reliafy Maintenance: cleaned and re-encoded (backend/maintenance/photos.py).
 pillow>=10.0
+# HEIC/HEIF photos (an iPhone's default), decoded to JPEG on arrival. pi-heif
+# is the decode-only build of pillow-heif (BSD-3-Clause): its wheels bundle
+# libheif and libde265 (both LGPL-3.0) and, unlike pillow-heif's, no x265
+# encoder (GPL). Binary wheels for Linux x86_64 and macOS arm64: no system
+# libraries needed. The tests encode their HEIC fixture with pillow-heif, a
+# test-only install (CI, CONTRIBUTING.md), never in the image.
+pi-heif
 # Time zone rules for workspaces' calendar days (backend/services/time_zones.py):
 # zoneinfo reads them from here when the image has no system tz database (the
 # slim base image may not).

@@ -9,7 +9,7 @@ Backend (Python 3.11):
 ```
 python3.11 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt pytest
+pip install -r requirements.txt pytest pillow-heif
 AUTH_DISABLED=true uvicorn backend.main:app --port 8000 --reload
 ```
 

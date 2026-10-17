@@ -108,6 +108,8 @@ reliafy push model.json                          # {distribution, params | data,
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption Nameplate
+reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
+reliafy photo move PHOTO_ID --to POSITION_ID      # only there
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
 ```

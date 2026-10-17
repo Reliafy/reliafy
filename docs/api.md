@@ -106,7 +106,7 @@ MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
 
 | Call | Does |
 |---|---|
-| `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG or WebP; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
+| `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
 | `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `uploads create` (no other credentials; at most 30 MB). Then import it: `datasets upload`, `uploads import_rbd`, `uploads import_excel` or `rbd upload_outage_log` with that `upload_id`. |
 
 ---
@@ -148,6 +148,8 @@ reliafy push model.json
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption "Nameplate"
+reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
+reliafy photo move PHOTO_ID --to POSITION_ID      # only there
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
 ```

@@ -204,6 +204,32 @@ def test_cli_photo_add(server, capsys):
     assert len(detail["photos"]) == 4
 
 
+def test_cli_photo_heic_link_and_move(server, capsys):
+    import pillow_heif
+
+    tmp = server["tmp"]
+    rf = Client()
+    a = rf.call("maintenance_positions", "create", name="Pump A")["id"]
+    b = rf.call("maintenance_positions", "create", name="Pump B")["id"]
+    buf = io.BytesIO()
+    pillow_heif.from_pillow(Image.new("RGB", (64, 48), (10, 120, 200))).save(buf, quality=80)
+    (tmp / "IMG_0001.HEIC").write_bytes(buf.getvalue())
+    code, out, _ = run(capsys, "photo", "add", str(tmp / "IMG_0001.HEIC"), "--to", a, "--json")
+    assert code == 0, out
+    photo_id = json.loads(out)[0]["photo_id"]
+    code, out, _ = run(capsys, "photo", "link", photo_id, "--to", b, "--json")
+    assert code == 0 and json.loads(out)[0]["on"] == "Pump A, Pump B"
+    code, out, _ = run(capsys, "photo", "unlink", photo_id, "--from", a, "--json")
+    assert code == 0 and json.loads(out)[0]["on"] == "Pump B"
+    code, out, err = run(capsys, "photo", "unlink", photo_id, "--from", b)
+    assert code == 1 and "only place" in err
+    code, out, _ = run(capsys, "photo", "move", photo_id, "--to", a)
+    assert code == 0 and "Pump A" in out
+    assert rf.call("maintenance_get", "position", id=b)["photos"] == []
+    code, _, err = run(capsys, "photo", "link", photo_id)
+    assert code == 1 and "--to" in err
+
+
 class _OldServer(BaseHTTPRequestHandler):
     """A Reliafy server from before the tools API: FastAPI's plain 404."""
 
