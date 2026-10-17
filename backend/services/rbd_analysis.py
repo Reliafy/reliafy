@@ -3381,14 +3381,23 @@ def _with_labels(text: str, labels: dict) -> str:
     return plain_reason(text)
 
 
-def _routes_summary(routes: dict, labels: dict) -> dict:
+def _priced(rbd) -> bool:
+    """Whether anything in a repairable diagram is priced (a running cost or
+    an acquisition cost): RePyability's cost analyses refuse one that isn't."""
+    return bool(getattr(rbd, "has_costs", False) or getattr(rbd, "acquisition_cost", None))
+
+
+def _routes_summary(routes: dict, labels: dict, priced: bool = True) -> dict:
     """The routes of the analyses behind the availability figures: how each
     is computed (exact / numerical / simulated / refused), why, and the
-    blocks that decide it."""
+    blocks that decide it. A diagram with nothing priced has no cost figure,
+    so no cost route: RePyability (0.14 on) refuses its cost analyses, where
+    0.13 called them exact, and a refused route would read as a figure the
+    exact analysis can't give (and ask for a simulation)."""
     out = {}
     for key in _EXACT_ROUTE_KEYS:
         r = routes.get(key)
-        if r is None:
+        if r is None or (key == "expected_cost" and not priced):
             continue
         out[key] = {
             "route": r.route,
@@ -3408,7 +3417,7 @@ def _availability_routes(graph: dict, with_status: bool = False):
     identical, in the user's words, else None."""
     try:
         rbd, labels, *_ = _build_repairable_rbd(graph)
-        summary = _routes_summary(rbd.analysis_routes(), labels)
+        summary = _routes_summary(rbd.analysis_routes(), labels, _priced(rbd))
     except AnalysisError as exc:
         refusal = str(exc) if _is_ccf_identity_refusal(exc) else None
         return (None, None, refusal) if with_status else None
@@ -3485,7 +3494,7 @@ def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float]
     chosen, _ = chosen_horizon(horizon, graph)
     window = chosen if chosen is not None else float(_availability_horizon(graph, state))
     routes = rbd.analysis_routes()
-    summary = _routes_summary(routes, labels)
+    summary = _routes_summary(routes, labels, _priced(rbd))
     base: dict[str, Any] = {
         "from": "now" if node_states else "new",
         "current_state": state or None,

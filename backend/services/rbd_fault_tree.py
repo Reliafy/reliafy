@@ -36,6 +36,7 @@ unreliability ``1 - R(t)``. On top of ``from_rbd``:
 from __future__ import annotations
 
 import heapq
+import logging
 import warnings
 from itertools import combinations
 from math import comb
@@ -44,11 +45,14 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from backend.services import rbd_analysis as ra
+from backend.services import repy_compat
 from backend.services.rbd_analysis import AnalysisError
 from repyability import FaultTree
 from repyability.rbd.ccf import VALIDITY as CCF_VALIDITY
 from repyability.rbd.helper_classes import PerfectReliability
 from repyability.rbd.non_repairable_rbd import NonRepairableRBD
+
+logger = logging.getLogger(__name__)
 
 # Cut sets listed in the result, most likely first; the count is always given.
 _LISTED_CUT_SETS = 100
@@ -593,7 +597,7 @@ def _payload(
     importance: dict[str, dict] = {e: {} for e in tree.events}
     try:
         with np.errstate(all="ignore"):
-            top, occurred, not_occurred, _, _ = tree._conditioned(t)
+            top, occurred, not_occurred = repy_compat.fault_tree_conditioned(tree, t)
             for e in tree.events:
                 o, n = float(occurred[e][0]), float(not_occurred[e][0])
                 importance[e] = {
@@ -603,7 +607,9 @@ def _payload(
                     "risk_reduction_worth": ra._f(top[0] / n),
                 }
     except Exception:  # noqa: BLE001 - the tree and cut sets still stand
-        pass
+        # Logged, not silent: a library change once dropped every measure
+        # here without a trace (RePyability 0.14's ``_conditioned``).
+        logger.exception("Fault-tree importance measures failed")
 
     cuts = _ranked_cut_sets(tree, q, t)
     # Fussell–Vesely: the share of the top event carried by the cut sets

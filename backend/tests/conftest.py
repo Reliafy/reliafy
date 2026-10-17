@@ -18,6 +18,14 @@ def pytest_configure(config):
         "markers", "real_seed: seed the samples for real, not from the suite's snapshot")
     config.addinivalue_line(
         "markers", "sqlite_only: tests the SQLite maintenance graph itself (skipped in the Neo4j parity run)")
+    # SurPyval's and RePyability's own deprecations fail the suite, so a name
+    # the next release removes is found here rather than in production. Their
+    # messages: SurPyval "... will be removed in v0.26", its dated converters
+    # "... removed in the first release on or after ...", RePyability "...
+    # will be refused in 0.16" (a FutureWarning).
+    library = r".*(will be removed in v0\.|removed in the first release on or after|will be refused in 0\.)"
+    for category in ("DeprecationWarning", "FutureWarning"):
+        config.addinivalue_line("filterwarnings", f"error:{library}:{category}")
 
 
 # The samples, seeded once per test run: (collection, documents) pairs.

@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from backend.tests.test_recurrent import A, _client
+from backend.tests.test_recurrent_bounds import _ended
 
 CMP_MAP = {"i": "compressor", "x": "hours", "t": "test_end", "mode": "failure_mode"}
 PUMP_MAP = {"i": "pump", "x": "hours", "tr": "observed_to", "mode": "cause", "z": ["site", "duty_pct"]}
@@ -58,10 +59,14 @@ def test_proportional_intensity_matches_surpyval_and_reads_each_covariate():
     # SurPyval directly: the text covariate as an indicator against the level
     # most pumps have (five each: alphabetical, Coastal).
     Z = pd.DataFrame({"site: Inland": (df.site == "Inland").astype(float), "duty_pct": df.duty_pct.astype(float)})
-    direct = _quiet(ProportionalIntensityNHPP.fit, df.hours.to_numpy(float), Z, i=df.pump.to_numpy(),
-                    tr=df.observed_to.to_numpy(float), dist=CrowAMSAA)
-    # Each estimate and SurPyval's param_cb (SurPyval 0.23 has no summary()
-    # on this model): the baseline in params, the coefficients in coeffs.
+    # Each pump's window as its end-of-observation (c = 1) row, with the
+    # pump's covariates (SurPyval reads ``tr`` as right truncation since 0.25).
+    ended = _ended(df.hours.to_numpy(float), df.pump.to_numpy(), df.observed_to.to_numpy(float))
+    first = {p: k for k, p in reversed(list(enumerate(df.pump)))}
+    Z = Z.iloc[list(range(len(df))) + [first[p] for p in ended["i"][len(df):]]].reset_index(drop=True)
+    direct = _quiet(ProportionalIntensityNHPP.fit, ended["x"], Z, i=ended["i"], c=ended["c"], baseline=CrowAMSAA)
+    # Each estimate and SurPyval's param_cb: the baseline in params, the
+    # coefficients in coeffs.
     estimate = dict(zip(direct.parameter_names, [*direct.params, *direct.coeffs]))
     by_name = {c["name"]: c for c in payload["coefficients"]}
     for name in ("site: Inland", "duty_pct"):
@@ -202,8 +207,10 @@ def test_by_cause_matches_cause_specific_mcf_and_nhpp():
 
     x, i, e, tr = (df.hours.to_numpy(float), df.compressor.to_numpy(), df.failure_mode.to_numpy(object),
                    df.test_end.to_numpy(float))
-    mcf = CauseSpecificMCF.fit(x, i=i, e=e, tr=tr)
-    para = _quiet(CauseSpecificNHPP.fit, x, i=i, e=e, tr=tr)
+    ended = _ended(x, i, tr)
+    e = np.r_[e, [None] * (ended["x"].size - x.size)]
+    mcf = CauseSpecificMCF.fit(ended["x"], i=ended["i"], c=ended["c"], e=e)
+    para = _quiet(CauseSpecificNHPP.fit, ended["x"], i=ended["i"], c=ended["c"], e=e)
     valve = bc["causes"][0]
     assert valve["mcf"]["mcf"] == pytest.approx(list(mcf.models["valve"].mcf_hat))
     cb = mcf.mcf_cb(np.asarray(valve["mcf"]["x"]), "valve", alpha_ci=0.05)
@@ -274,7 +281,7 @@ def test_crow_amsaa_restarts_a_search_that_wanders_off():
     payload, _ = rec.fit(df, {k: v for k, v in PUMP_MAP.items() if k != "z"}, "crow_amsaa", gof_test=False)
     # The same fit on times rescaled to the unit interval (whose scale maps back).
     s = float(df.hours.max())
-    unit = CrowAMSAA.fit(df.hours.to_numpy(float) / s, i=df.pump.to_numpy(), tr=df.observed_to.to_numpy(float) / s)
+    unit = CrowAMSAA.fit(**_ended(df.hours.to_numpy(float) / s, df.pump.to_numpy(), df.observed_to.to_numpy(float) / s))
     alpha, beta = (p["value"] for p in payload["params"])
     assert alpha == pytest.approx(unit.params[0] * s, rel=1e-4) and beta == pytest.approx(unit.params[1], rel=1e-4)
     assert np.isfinite(payload["mtbf"])
@@ -372,3 +379,39 @@ def test_fleet_refuses_a_covariate_or_imperfect_repair_model():
     doc = svc.save_model(db, "GRP", dataset, {"mapping": CMP_MAP, "model_id": "grp_i", "unit": "hours"}, A)
     with pytest.raises(fleet_service.FleetValidationError, match="minimal-repair"):
         fleet_service.create_fleet(db, "Fleet", doc.id, A, model_kind="recurrent")
+
+
+# ---- Observation windows given to SurPyval as end-of-observation rows ------------------
+
+def test_windows_go_to_surpyval_as_end_of_observation_rows():
+    """Reliafy's ``tr`` is where a system's observation ended; SurPyval 0.25
+    reads ``tr`` as right truncation, so each window goes in as a ``c = 1``
+    row (what 0.23 did with it): only for a system without its own, and only
+    where the window runs past the last failure."""
+    from backend import recurrent_models as extra
+
+    inputs = {"x": np.array([10.0, 40.0, 15.0, 200.0, 30.0]), "i": np.array(["a", "a", "b", "b", "c"]),
+              "c": np.array([0, 0, 0, 1, 0]), "tl": np.array([5.0, 5.0, 0.0, 0.0, 0.0]),
+              "tr": np.array([150.0, 150.0, 200.0, 200.0, 30.0])}
+    out, src = extra.observed(inputs)
+    assert "tr" not in out
+    assert out["x"].tolist() == [10.0, 40.0, 15.0, 200.0, 30.0, 150.0]
+    assert out["i"].tolist() == ["a", "a", "b", "b", "c", "a"]
+    assert out["c"].tolist() == [0, 0, 0, 1, 0, 1]
+    assert out["tl"].tolist() == [5.0, 5.0, 0.0, 0.0, 0.0, 5.0]
+    assert src.tolist() == [0, 1, 2, 3, 4, 0]
+    # Without windows nothing changes.
+    plain, src = extra.observed({k: v for k, v in inputs.items() if k != "tr"})
+    assert plain["x"].tolist() == inputs["x"].tolist() and src.tolist() == list(range(5))
+
+
+def test_a_windowed_fit_is_the_fit_with_end_rows():
+    from surpyval.recurrent import CrowAMSAA
+
+    from backend import recurrent as rec
+
+    df = pd.DataFrame({"s": ["a", "a", "b", "b", "b"], "t": [100.0, 400.0, 50.0, 300.0, 600.0],
+                       "end": [800.0, 800.0, 700.0, 700.0, 700.0]})
+    payload, _ = rec.fit(df, {"i": "s", "x": "t", "tr": "end"}, "crow_amsaa", "hours", gof_test=False)
+    ref = CrowAMSAA.fit(**_ended(df.t.to_numpy(float), df.s.to_numpy(), df.end.to_numpy(float)))
+    assert [p["value"] for p in payload["params"]] == pytest.approx(list(ref.params), rel=1e-6)
