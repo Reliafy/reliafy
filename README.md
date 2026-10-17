@@ -96,7 +96,7 @@ open http://localhost:8000.
 ### Tests
 
 ```
-pip install pytest
+pip install pytest pillow-heif   # pillow-heif writes the tests' HEIC photos
 pytest backend/tests
 ```
 

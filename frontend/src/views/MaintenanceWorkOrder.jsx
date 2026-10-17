@@ -113,8 +113,10 @@ export default function MaintenanceWorkOrder() {
                  onAppend={async (text) => setWo(await updateWorkOrder(wo.id, { append_note: text }))} />
       {wo.status !== "cancelled" && <CostsCard wo={wo} onChanged={setWo} />}
 
-      <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetName={wo.subject?.name || wo.position?.name}
-                         photos={wo.photos || []} onChanged={refresh} />
+      <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetKind="WorkOrder" targetName={wo.subject?.name || wo.position?.name}
+                         photos={wo.photos || []} onChanged={refresh}
+                         related={[wo.subject, wo.position && { ...wo.position, kind: "Position" },
+                           wo.location && { ...wo.location, kind: "Location" }]} />
 
       {wo.status === "cancelled" ? (
         <section className="card"><p>Cancelled {fmtDate(wo.closed)}{wo.cancel_reason ? `: ${wo.cancel_reason}` : ""}.</p></section>

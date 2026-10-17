@@ -129,6 +129,19 @@ def validate_regression(model, df: pd.DataFrame, mapping: dict, covariates: list
         return unavailable("These scores couldn't be computed for this model.")
 
 
+def _survival(model, Z, times) -> np.ndarray:
+    """Each unit's predicted survival at ``times``, within [0, 1]. An
+    additive-hazards model's survival above 1 (its cumulative hazard
+    negative) counts as 1; since SurPyval 0.25 those points are outside the
+    model's support and come back nan, which counts the same."""
+    from surpyval.metrics import survival_probability
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*outside the model's support", category=RuntimeWarning)
+        S = np.asarray(survival_probability(model, Z, times), dtype=float)
+    return np.clip(np.nan_to_num(S, nan=1.0), 0.0, 1.0)
+
+
 def _validate(model, df: pd.DataFrame, mapping: dict, covariates: list) -> dict:
     from surpyval import KaplanMeier
     from surpyval.metrics import auc_td, concordance_index, integrated_brier_score, survival_probability
@@ -208,7 +221,7 @@ def _validate(model, df: pd.DataFrame, mapping: dict, covariates: list) -> dict:
     times = np.unique(np.quantile(failed, np.linspace(*SPAN, N_TIMES)))
     times = times[(times > 0) & (times < t_max)]
     if times.size >= 2:
-        S = np.clip(survival_probability(model, Z, times), 0.0, 1.0)
+        S = _survival(model, Z, times)
         km = np.asarray(KaplanMeier.fit(x, c).sf(times), dtype=float)
         S0 = np.tile(km, (x.size, 1))
         ibs = integrated_brier_score(x, c, S, times)
@@ -227,7 +240,7 @@ def _validate(model, df: pd.DataFrame, mapping: dict, covariates: list) -> dict:
     horizons = np.unique(np.quantile(failed, AUC_QUANTILES))
     horizons = horizons[(horizons > 0) & (horizons < t_max)]
     if horizons.size:
-        S_h = survival_probability(model, Z, horizons)
+        S_h = _survival(model, Z, horizons)
         _, auc = auc_td(x, c, 1.0 - S_h, horizons)
         out["auc"] = [{"time": float(t), "value": float(a)} for t, a in zip(horizons, auc) if np.isfinite(a)]
     return out

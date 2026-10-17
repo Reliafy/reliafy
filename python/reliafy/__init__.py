@@ -23,8 +23,18 @@ Grouped by area:
                                          planned_cost=200, unplanned_cost=1500)
     reliafy.fleet.forecast(fleet_id)
 
+    # any tool action (0.3; needs a server with the tools API)
+    reliafy.call("list", "models")
+    reliafy.call("life_data_analysis", "fit", data=[120, 340, 510], censored=[0, 0, 1])
+    reliafy.default_client().upload_dataset("bearings.xlsx")
+
+    # ingest
+    reliafy.push_usage(fleet_id, [{"name": "Truck 07", "current_use": 12500}])
+    reliafy.push_readings([{"tag": "PT-101", "value": 4.2}])
+
 The token is a personal API token (Reliafy Cloud -> API access; a Pro
-feature); self-hosted instances pass ``base_url``.
+feature); self-hosted instances pass ``base_url``. The ``reliafy`` command
+(also ``reliafy-client``) does the same from a shell: see ``reliafy --help``.
 """
 
 from __future__ import annotations
@@ -34,7 +44,12 @@ import os
 import urllib.error
 import urllib.request
 
-__all__ = ["configure", "models", "data", "strategy", "fleet", "ReliafyError"]
+from reliafy import config as _saved
+
+__version__ = "0.3.0"
+__all__ = ["configure", "default_client", "call", "Client", "models", "data", "strategy", "fleet", "ReliafyError",
+           "ServerTooOld", "push", "push_params", "push_usage", "push_readings", "push_lives",
+           "push_measurements"]
 
 _DEFAULT_BASE = "https://reliafy.com"
 
@@ -53,13 +68,13 @@ _DIST_MAP = {
 }
 
 _config = {
-    "token": os.environ.get("RELIAFY_TOKEN"),
-    "base_url": os.environ.get("RELIAFY_BASE_URL", _DEFAULT_BASE),
+    # The environment first, then what ``reliafy login`` saved.
+    "token": os.environ.get("RELIAFY_TOKEN") or _saved.load().get("token"),
+    "base_url": (os.environ.get("RELIAFY_BASE_URL") or _saved.load().get("base_url") or _DEFAULT_BASE).rstrip("/"),
 }
 
 
-class ReliafyError(RuntimeError):
-    pass
+from reliafy.client import Client, ReliafyError, ServerTooOld  # noqa: E402
 
 
 def configure(token: str | None = None, base_url: str | None = None) -> None:
@@ -114,6 +129,38 @@ def _extract(model, include_data: bool):
             out["n"] = [int(v) for v in n]
         body["data"] = out
     return body
+
+
+def default_client() -> Client:
+    """A :class:`Client` with the configured token and base URL."""
+    return Client(token=_config.get("token") or "", base_url=_config["base_url"])
+
+
+def call(tool: str, action: str | None = None, /, **args):
+    """Call any tool action (``reliafy.call("list", "models")``): the same
+    arguments and results as Reliafy's MCP tools. See :meth:`Client.call`."""
+    return default_client().call(tool, action, **args)
+
+
+def push_usage(fleet_id: str, rows=None, *, csv: str | None = None, file: str | None = None) -> dict:
+    """Update a fleet's items' current use: rows of {name (or id), current_use, rate?}, CSV text or a CSV file."""
+    return default_client().push_usage(fleet_id, rows, csv=csv, file=file)
+
+
+def push_readings(rows=None, *, csv: str | None = None, file: str | None = None) -> dict:
+    """Readings for Reliafy Maintenance's measurement points: rows of {tag, value, time?}."""
+    return default_client().push_readings(rows, csv=csv, file=file)
+
+
+def push_measurements(fleet_id: str, rows=None, *, csv: str | None = None, file: str | None = None) -> dict:
+    """Degradation readings {item, time, value} for a tracked fleet."""
+    return default_client().push_measurements(fleet_id, rows, csv=csv, file=file)
+
+
+def push_lives(dataset_id: str, rows=None, *, csv: str | None = None, file: str | None = None,
+               refit: bool = True) -> dict:
+    """Append life-data rows to a dataset; by default its models refit."""
+    return default_client().push_lives(dataset_id, rows, csv=csv, file=file, refit=refit)
 
 
 def _request(method: str, path: str, payload: dict | None = None) -> dict:
@@ -331,7 +378,8 @@ strategy = _Namespace(
 )
 fleet = _Namespace("fleet", forecast=fleet_forecast)
 
-# The namespaces hold the only references now; drop the flat names so the API
-# is exclusively reliafy.models.* / data.* / strategy.* / fleet.*.
-del (push, push_params, list_models, get_model, reliability, upload_dataset,
+# The namespaces hold the references; the flat names go, so the API is
+# reliafy.models.* / data.* / strategy.* / fleet.* (plus call / Client).
+# reliafy.push / reliafy.push_params stay too (the README's quick start).
+del (list_models, get_model, reliability, upload_dataset,
      fit, fleet_forecast, optimal_replacement, failure_finding, demonstration_test)

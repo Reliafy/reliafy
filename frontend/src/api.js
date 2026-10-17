@@ -2206,6 +2206,21 @@ export function removeMaintenancePhoto(photoId) {
   return request(`/api/maintenance/photos/${photoId}`, { method: "DELETE" });
 }
 
+// Where a photo shows: link it to one more position, location, item or work
+// order; unlink it from one (never its last); or move it (off fromId, or off
+// everywhere else). Each returns the photo with `on`, every place it shows.
+export function linkMaintenancePhoto(photoId, targetId) {
+  return postJson(`/api/maintenance/photos/${photoId}/link`, { target_id: targetId });
+}
+
+export function unlinkMaintenancePhoto(photoId, targetId) {
+  return postJson(`/api/maintenance/photos/${photoId}/unlink`, { target_id: targetId });
+}
+
+export function moveMaintenancePhoto(photoId, targetId, fromId = null) {
+  return postJson(`/api/maintenance/photos/${photoId}/move`, { target_id: targetId, from_id: fromId });
+}
+
 export function setMaintenanceCoordinates(nodeId, lat, lon, source = "manual") {
   return postJson("/api/maintenance/coordinates", { node_id: nodeId, lat, lon, source });
 }
