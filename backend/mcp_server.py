@@ -153,6 +153,7 @@ from backend.services import rbd_costs
 from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
 from backend.services.strategy import StrategyError
+from backend.services import strategy_calendar, strategy_calendar_api
 from backend.units import canonical_unit, unit_in_text
 
 logger = logging.getLogger(__name__)
@@ -4191,6 +4192,13 @@ def get_job(
         if job.get("status") == "failed":
             return {**out, "available": False, "message": job.get("error") or rbd_jobs_service.FAILED_ERROR}
         return {**out, "available": False, **_job_pending(db, job)}
+    if job.get("kind") == rbd_jobs_service.KIND_CALENDAR:
+        # strategy calendar_replacement's sampled run.
+        if job.get("status") == "done":
+            return {**out, "available": True, **_calendar_summary(job.get("result") or {}, False)}
+        if job.get("status") == "failed":
+            return {**out, "available": False, "message": job.get("error") or rbd_jobs_service.FAILED_ERROR}
+        return {**out, "available": False, **_job_pending(db, job)}
     if job.get("rbd_id"):
         out["rbd_id"] = job["rbd_id"]
         out["url"] = _url(f"/rbds/b/{job['rbd_id']}")
@@ -5248,6 +5256,115 @@ def optimal_replacement(
     out = strategy_store.compute("optimal_replacement", {**inputs, **costs})
     out.update(_shape_uncertainty(db, user["uid"], model_id, inputs, costs, out))
     return _maybe_curve(out, include_curve)
+
+
+class CalendarShut(BaseModel):
+    name: str = Field(description="The shut's name, e.g. annual shutdown.")
+    cost: float = Field(ge=0, description="What replacing the part at this shut costs.")
+    every: Optional[float] = Field(default=None, gt=0, description="It comes every this many every_unit...")
+    every_unit: Optional[Literal["days", "weeks", "months", "years"]] = Field(default=None,
+                                                                             description="... (default days)")
+    start: Optional[str] = Field(default=None, description="... from this date (YYYY-MM-DD; default today).")
+    dates: Optional[list[str]] = Field(default=None, description="Or its dates (YYYY-MM-DD) instead of every.")
+
+
+_SHUTS = Annotated[list[CalendarShut], Field(description="The shuts (opportunities to replace cheaply), each "
+                                                         "every N days/weeks/months/years from a start, or on dates.")]
+_FAILURE_COST = Annotated[float, Field(gt=0, description="Cost of a replacement at a failure.")]
+_ANYTIME_COST = Annotated[Optional[float], Field(ge=0, description="Cost of a planned replacement between shuts; "
+                                                                   "omit when only shuts allow one.")]
+_TODAY = Annotated[Optional[str], Field(description="Today's date (YYYY-MM-DD), time 0; default the server's.")]
+
+
+def _calendar_inputs(db, uid: str, model_id, distribution_id, params, unit, shuts, failure_cost, anytime_cost,
+                     today, max_age) -> dict:
+    inputs = _dist_inputs(db, uid, model_id, distribution_id, params, unit)
+    return {**inputs, "opportunities": [sh.model_dump(exclude_none=True) for sh in shuts or []],
+            "failure_cost": failure_cost, "anytime_cost": anytime_cost, "today": today, "max_age": max_age}
+
+
+def _calendar_summary(out: dict, include_schedule: bool) -> dict:
+    """A calendar answer for an agent: the schedule's used rows unless asked
+    for all of them."""
+    rows = out.get("schedule") or []
+    if include_schedule:
+        return out
+    kinds = {ln.get("kind") for ln in out.get("rule") or [] if ln.get("used")}
+    used = [r for r in rows if (r.get("chance") or 0) >= 1e-3 or r.get("kind") in kinds]
+    return {**{k: v for k, v in out.items() if k != "schedule"}, "schedule": used,
+            "schedule_note": (f"{len(used)} of {len(rows)} shuts up to {out.get('schedule_until')}: those the rule "
+                              "uses or where a replacement is likely; include_schedule=true lists them all.")}
+
+
+def calendar_replacement(
+    ctx: Context,
+    shuts: _SHUTS,
+    failure_cost: _FAILURE_COST,
+    unit: _UNIT = None,
+    model_id: _MODEL_ID = None,
+    distribution_id: _DIST_ID = None,
+    params: _PARAMS = None,
+    anytime_cost: _ANYTIME_COST = None,
+    today: _TODAY = None,
+    max_age: Annotated[Optional[float], Field(gt=0, description="Oldest age considered (model units).")] = None,
+    method: Annotated[Literal["dp", "integration", "sampling"], Field(
+        description="dp (default) or integration: exact, free; sampling: Pro, long cycles.")] = "dp",
+    include_schedule: Annotated[bool, Field(description="List every shut in the next 12 months.")] = False,
+    wait_seconds: Annotated[float, Field(ge=0, le=60, description="sampling: wait this long for the job.")] = 20,
+) -> dict[str, Any]:
+    """The long-run best replacement rule over a calendar of shuts (today = time 0): the threshold age at each shut,
+    the cost against running to failure and plain age replacement, and the next 12 months by date."""
+    user, db = _caller(ctx), _db()
+    inputs = {**_calendar_inputs(db, user["uid"], model_id, distribution_id, params, unit, shuts, failure_cost,
+                                 anytime_cost, today, max_age), "method": method}
+    entitled = billing_service.premium_compute_allowed(db, user)
+    note = None
+    if method == "sampling" and not entitled:
+        _soft_refusal("pro_only")
+        inputs["method"] = "dp"
+        note = strategy_calendar_api.SAMPLING_PRO_PAYLOAD["detail"] + " This is the exact answer. " + _upgrade_path()
+    try:
+        code, out = strategy_calendar_api.run(db, user, inputs, entitled=entitled)
+    except (StrategyError, AnalysisError) as exc:
+        raise ToolError(str(exc)) from None
+    if code == 202:
+        job = _await_job(db, out["job"]["job_id"], wait_seconds)
+        if job is None or job.get("status") != "done":
+            if job is not None and job.get("status") == "failed":
+                raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+            return {"available": False, **_job_pending(db, job or {"_id": out["job"]["job_id"]})}
+        out = job.get("result") or {}
+    elif code != 200:
+        raise ToolError(out.get("detail") or "The calculation couldn't run.")
+    out = _calendar_summary(out, include_schedule)
+    return {**out, "pro_note": note} if note else out
+
+
+def calendar_next_replacement(
+    ctx: Context,
+    age: Annotated[float, Field(ge=0, description="The unit in service's age today, in the model's unit.")],
+    shuts: _SHUTS,
+    failure_cost: _FAILURE_COST,
+    unit: _UNIT = None,
+    model_id: _MODEL_ID = None,
+    distribution_id: _DIST_ID = None,
+    params: _PARAMS = None,
+    anytime_cost: _ANYTIME_COST = None,
+    now_cost: Annotated[Optional[float], Field(ge=0, description="Cost of replacing it today (default the "
+                                                                 "any-day cost, or a shut's falling today).")] = None,
+    today: _TODAY = None,
+    max_age: Annotated[Optional[float], Field(gt=0, description="Oldest age considered (model units).")] = None,
+) -> dict[str, Any]:
+    """For one unit in service on a shut calendar: replace it now, at the next shut, between shuts or run it to failure,
+    each choice's cost and the age from which replacing now pays."""
+    user, db = _caller(ctx), _db()
+    inputs = _calendar_inputs(db, user["uid"], model_id, distribution_id, params, unit, shuts, failure_cost,
+                              anytime_cost, today, max_age)
+    try:
+        return strategy_calendar.calendar_next(inputs.pop("distribution_id"), inputs.pop("params"), age=age,
+                                               now_cost=now_cost, **inputs)
+    except StrategyError as exc:
+        raise ToolError(str(exc)) from None
 
 
 def failure_finding_interval(
@@ -7777,6 +7894,8 @@ _action_tool("strategy", _READ, "Maintenance strategy", "action", """Maintenance
     "failure_finding_interval": _act(failure_finding_interval),
     "optimal_overhaul": _act(optimal_overhaul),
     "fleet_forecast": _act(fleet_forecast),
+    "calendar_replacement": _act(calendar_replacement),
+    "next_replacement": _act(calendar_next_replacement),
 }, docs={"model_id": ("A saved model id (list kind models): a plain life model for optimal_replacement and "
                      "failure_finding_interval (or distribution_id + params instead), a recurrent one for "
                      "optimal_overhaul.")})

@@ -94,3 +94,40 @@ test("a fit left unsaved is offered for saving on the next visit to Modelling", 
   await expect(page.getByText("You left a fit without saving it")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "modelling home" });
 });
+
+// Strategy › Replacement, shutdown calendar: shuts every 180 days at 100, 150
+// between shuts, 400 at a failure, for a bearing (Weibull, scale 365 days,
+// shape 2): replace at a shut a bearing older than about 138 days; the unit in
+// service 200 days old is kept to the next shut.
+test("replacement over a shutdown calendar: the rule, the next months and one unit now", async ({ page, problems }) => {
+  await open(page, "/strategy/replacement");
+  await page.getByRole("radio", { name: "Shutdown calendar" }).click();
+  await expect(page).toHaveURL(/mode=calendar/);
+  await page.getByRole("radio", { name: "Parameters" }).click();
+  await page.getByLabel(/Scale α/).fill("365");
+  await page.getByLabel(/Shape β/).fill("2");
+  await page.getByRole("combobox", { name: "Model time unit" }).click();
+  await page.getByRole("option", { name: "Days", exact: true }).click();
+  const shut = page.getByRole("group", { name: "Shut 1" });
+  await shut.getByLabel("Replacing at it costs").fill("100");
+  await shut.getByLabel(/Every how many/).fill("180");
+  await shut.getByRole("combobox", { name: "Every unit" }).click();
+  await page.getByRole("option", { name: "days", exact: true }).click();
+  // The first shut in 150 days (UC-12's outage), so none falls today.
+  const first = new Date(Date.now() + 150 * 86_400_000);
+  const iso = `${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(first.getDate()).padStart(2, "0")}`;
+  await shut.getByLabel("Starting").fill(iso);
+  await page.getByLabel("Failure (unplanned) cost").fill("400");
+  await page.getByLabel("Replacing between shuts costs").fill("150");
+  await page.getByRole("button", { name: "Compute" }).click();
+  const rule = page.getByTestId("calendar-rule");
+  await expect(rule).toContainText(/replace the part if it is older than 13\d days/, { timeout: 30_000 });
+  await expect(page.getByTestId("calendar-schedule").getByRole("row")).toHaveCount(3); // a header and 2 shuts
+  await expectHealthy(page, problems, { label: "calendar replacement", chart: true });
+
+  const now = page.getByTestId("calendar-unit-now");
+  await now.getByLabel(/Its age today/).fill("200");
+  await now.getByRole("button", { name: "Check this unit" }).click();
+  await expect(now).toContainText("Keep it: replace it at the Annual shutdown", { timeout: 30_000 });
+  await expect(now).toContainText("Replacing now becomes the best choice from an age of");
+});

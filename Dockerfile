@@ -31,7 +31,7 @@ WORKDIR /code
 # - Python packages come from requirements.lock: exact versions with hashes,
 #   generated from requirements.txt by tools/lock_requirements.sh.
 # - RePyability is installed --no-deps, after the rest, so our pinned
-#   surpyval stays authoritative (it declares surpyval>=0.23, uncapped, and
+#   surpyval stays authoritative (it declares surpyval>=0.25, uncapped, and
 #   --no-deps stops pip re-resolving it to a newer one; see requirements.txt).
 # - firebase-admin is installed --no-deps with only what its auth module needs
 #   (google-auth, cachecontrol, pyjwt, requests, httpx, all in the lock): we only verify ID
@@ -44,7 +44,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git build-essential \
     && python -m pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir --require-hashes -r requirements.lock \
-    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@debbb6ff2928034e273b609db9b09901cf6e6119" \
+    && pip install --no-cache-dir --no-deps "git+https://github.com/derrynknife/RePyability.git@af15a3eccd4806cafed95a0c8fa9b0d1ebcc4010" \
     && pip install --no-cache-dir --no-deps "firebase-admin==7.7.0" \
     && python -c "import firebase_admin, firebase_admin.auth, surpyval, repyability, access_parser, defusedxml, openpyxl" \
     && find /usr/local/lib/python3.11/site-packages -depth -type d \( -name tests -o -name test \) \

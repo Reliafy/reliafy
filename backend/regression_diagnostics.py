@@ -4,8 +4,10 @@ The checks SurPyval gives a Cox proportional-hazards model, shaped for the
 app's Validation tab and the API, with a plain verdict first and the numbers
 second:
 
-* the proportional-hazards test (Grambsch-Therneau, ``check_ph``): one row
-  per covariate and a GLOBAL row. A small p-value says a covariate's effect
+* the proportional-hazards test (Grambsch-Therneau, ``check_ph``; since
+  SurPyval 0.25 the exact score test of R's ``cox.zph``, survival 3.0 and
+  later, rather than the older approximation): one row per covariate and a
+  GLOBAL row. A small p-value says a covariate's effect
   changes over time, so one hazard ratio misstates it. A parametric PH model
   (Weibull PH, …) makes the same assumption; it is tested with a Cox model on
   the same covariates, the standard test of it;

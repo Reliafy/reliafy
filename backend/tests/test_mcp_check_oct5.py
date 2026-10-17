@@ -119,13 +119,13 @@ def test_alt_fit_and_use_level_keep_positive_coefficients_positive():
     from backend import alt
 
     model, _, _ = _arrhenius_fit()
-    # SurPyval's own Wald interval on b goes below zero (it treats the
-    # life-stress coefficients as unbounded)...
-    assert model.param_cb("b", alpha_ci=0.05)[0] < 0
-    # ...Reliafy's doesn't; a, which can be negative, keeps SurPyval's.
+    # Reliafy's interval on b stays positive (on the log scale); since 0.24
+    # SurPyval's own Wald interval is the same (SurPyval #655: it went below
+    # zero before). a, which can be negative, keeps SurPyval's.
     lo, hi = alt.param_interval(model, "b", 0.95)
     b = float(model.params[model.parameter_names.index("b")])
     assert 0 < lo < b < hi
+    assert [lo, hi] == pytest.approx(list(model.param_cb("b", alpha_ci=0.05)), rel=1e-9)
     assert alt.param_interval(model, "a", 0.95) == pytest.approx(list(model.param_cb("a", alpha_ci=0.05)))
     bounds = alt.use_level_bounds(model, [313.15], "arrhenius")
     by_name = {c["name"]: c for c in bounds["coefficients"]}
