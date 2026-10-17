@@ -41,6 +41,7 @@ from typing import Any, Optional
 import numpy as np
 
 from backend.services import rbd_maintenance as rm
+from backend.services import repy_compat
 from backend.services.method_labels import route_reason
 from backend.services.rbd_analysis import AnalysisError, _f
 
@@ -460,7 +461,7 @@ def crews_summary(rbd, graph: dict, labels: dict, gate_ids: set) -> Optional[dic
     crews = rbd.repair_crews
     if crews is None:
         return None
-    jobs = [k for k in rbd._crew_served() if getattr(k, "node", k) not in gate_ids]
+    jobs = [k for k in repy_compat.crew_served(rbd) if getattr(k, "node", k) not in gate_ids]
     owners = {getattr(k, "node", k) for k in jobs}
     priority = {labels.get(n, str(n)): p for n, p in rbd._priority.items() if p}
     own = [labels.get(n["id"], n["id"]) for n in graph.get("nodes") or []

@@ -42,6 +42,7 @@ import numpy as np
 from backend.services import rbd_analysis as ra
 from backend.services import rbd_discount
 from backend.services import rbd_maintenance as rm
+from backend.services import repy_compat
 from backend.services.rbd_analysis import AnalysisError
 
 #: Cost categories, in display order (RePyability's ``by_category`` keys).
@@ -92,7 +93,7 @@ def exact_breakdown(rbd, overrides: dict) -> dict:
             if rbd._crews_couple():
                 # Limited repair crews (#156): the components' long-run values
                 # come from the crews' Markov chain, as in expected_cost_rate.
-                probabilities, weights = rbd._chain_probabilities(working, broken)
+                probabilities, weights = repy_compat.chain_probabilities(rbd, working, broken)
                 availability = {n: float(weights @ probabilities[n]) for n in rbd.nodes}
             else:
                 probs = rbd._probabilities_with_overrides(rbd.node_availability(), working, broken)
@@ -107,7 +108,7 @@ def exact_breakdown(rbd, overrides: dict) -> dict:
         if node not in forced:
             # Corrective and preventive actions per unit time (a standby
             # group's units' failures, or from the crews' chain).
-            failures, maintained = rbd._node_actions(node, availability[node])
+            failures, maintained = repy_compat.node_actions(rbd, node, availability[node])
             for key in ("repair", "replace"):
                 if f"{key}_cost" in costs:
                     row[key] = _mean_cost(costs[f"{key}_cost"]) * failures
@@ -118,7 +119,7 @@ def exact_breakdown(rbd, overrides: dict) -> dict:
                 if schedule is not None and schedule.policy == "condition":
                     # Condition checks (#96) at each multiple of the interval it is up at.
                     row["inspection"] = (_mean_cost(costs["inspection_cost"])
-                                         * rbd._block_cycle(node).before / schedule.interval)
+                                         * repy_compat.block_cycle(rbd, node).before / schedule.interval)
                 else:
                     row["inspection"] = _mean_cost(costs["inspection_cost"]) / rbd._inspection[node].interval
         if costs.get("downtime_cost"):
@@ -131,7 +132,7 @@ def exact_breakdown(rbd, overrides: dict) -> dict:
             if node in forced:
                 continue
             row = by_block.setdefault(node, dict(blank))
-            row["setup"] += group.setup_cost * sum(rbd._node_actions(node, availability[node]))
+            row["setup"] += group.setup_cost * sum(repy_compat.node_actions(rbd, node, availability[node]))
     by_category = {k: math.fsum(r[k] for r in by_block.values()) for k in CATEGORIES if k != "system_downtime"}
     by_category["system_downtime"] = system_down
     return {"total": total, "by_category": by_category, "by_block": by_block}
