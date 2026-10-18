@@ -24,10 +24,10 @@ extrapolate to a condition you never tested.
 One row per unit, with the failure time and the stress that unit was running at:
 
 ```
-hours,temp_C,censored
-1350,60,0
-950,80,0
-620,100,0
+hours,temp_K,censored
+1350,333,0
+950,353,0
+620,373,0
 ```
 
 Two stress levels is the bare minimum; **three or more is much better**, because
@@ -63,8 +63,9 @@ Match the relationship to the physics:
   trips people up constantly, and using Celsius will give you a nonsense fit.
 - **Inverse power law** for voltage, load, or pressure.
 - **Eyring** as a physically-derived thermal alternative to Arrhenius.
-- **Dual-exponential**, **temperature–nonthermal**, or **dual power** for two
-  stresses together.
+- **Linear** for a simple straight-line trend of life with stress.
+- **Dual exponential (temp–humidity)**, **Temperature–nonthermal** or **Dual
+  power** for two stresses together.
 
 Then map your columns — the failure time, the stress column(s), and censoring if
 you have it — and fit.

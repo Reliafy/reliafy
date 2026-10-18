@@ -53,9 +53,10 @@ item id, time and measurement columns, and set the **Failure threshold** along
 with the **Time unit** and **Measurement unit** so the outputs are labelled
 properly.
 
-In the next step you choose a **path** — how degradation progresses. Linear is the common
-case and the right default; use others when the physics says wear accelerates or
-plateaus. What the model does is fit a path to each item, extrapolate each to the
+In the next step you choose a **path** — how degradation progresses. The
+default, **Best (auto-select by AICc)**, tries all nine paths and keeps the one
+that fits best. **Linear** is the common case for steady wear; choose another
+when the physics says wear accelerates or plateaus. What the model does is fit a path to each item, extrapolate each to the
 threshold, and then fit a life distribution to the resulting crossing times —
 which is how a set of wear curves becomes a reliability model of the population.
 

@@ -124,7 +124,8 @@ to repeat, **Method and limits** offers a sampled method (Pro).
 If the component is inspected rather than replaced on a schedule — you're
 looking for a hidden failure rather than pre-empting a visible one — the
 [failure-finding interval](/strategy/failure-finding) calculator under Strategy
-is the right tool instead.
+is the right tool instead: see
+[setting a failure-finding interval](/guides/failure-finding-interval).
 
 If you want to know how many failures to *expect* across a fleet over the next
 year, rather than when to replace one item, that's
@@ -134,4 +135,5 @@ And if you're deciding among several candidate policies, save each analysis —
 Reliafy keeps them under Strategy → Saved analyses so you can compare and cite
 them later, which matters when someone asks in six months why the interval is
 what it is. An [RCM study](/rcm) can cite a saved analysis as the evidence for a
-failure mode's maintenance task.
+failure mode's maintenance task: see
+[running an RCM study](/guides/rcm-study).

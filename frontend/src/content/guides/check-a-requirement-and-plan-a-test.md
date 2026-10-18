@@ -54,8 +54,8 @@ pass/fail test of **B10 ≥ 500 hours at 90%**, in hours, solving for the number
 of units to test. It also offers the model's Weibull shape: *β from Bearing life
 — Weibull (sample): 2.5, 95% interval 1.88–3.32*.
 
-Press **Compute** with **0 failures allowed** and a test length of **1×** the
-life:
+Press **Compute** with **Failures allowed** at **0** and a **Test length per
+unit** of **1** (× the life):
 
 > Test **22 units** for **500 hours** each; pass if **none** fail.
 
@@ -130,13 +130,13 @@ own numbers. Every plan is free.
 
 - **Demonstration**: show a design meets a reliability, B-life or MTBF target.
   Use it when a specification or a customer sets a pass mark.
-- **Sequential test**: the same question, but you check after every failure and
+- **[Sequential test](/strategy/test-planning/sequential)**: the same question, but you check after every failure and
   stop as soon as the answer is clear. Use it when test time is dear. The
   example (show an MTBF of 1,000 hours, where a good design has 2,000) decides a
   good design after about 10,800 hours of testing on average, against 20,100
   for a fixed-length test with the same risks. The accept and reject lines tell
   you, failure by failure, whether to stop.
-- **Life test**: how precisely a test will *estimate* a B-life or the mean life,
+- **[Life test](/strategy/test-planning/life)**: how precisely a test will *estimate* a B-life or the mean life,
   rather than pass or fail it. Use it to size a test before you fit a model to
   its results. In the example, 30 units stopped at 500 hours give about 6.6
   failures, enough to pin B10 down to within a factor of 1.5. **Solve for**

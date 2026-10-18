@@ -78,10 +78,11 @@ ways:
 - **Changes the risk**: at the *same* reading, the unit fails sooner. A harsher
   site, say, where a vibration of 4 mm/s is more dangerous than it is
   elsewhere.
-- **Changes the reading's path**: the reading itself moves differently. A
-  heavier load makes the vibration climb faster.
+- **Changes the path**: the reading itself moves differently. A heavier load
+  makes the vibration climb faster.
 
-Tick either or both. Leave a box empty when you have no reason to think the
+The boxes read *load changes the risk* and *load changes the path*. Tick either
+or both. Leave a box empty when you have no reason to think the
 column matters that way: every extra effect needs more data to pin down. Use
 numbers only, 0 and 1 for yes and no.
 
@@ -90,7 +91,9 @@ numbers only, 0 and 1 for yes and no.
 Under **3. Model**, the **Reading's path** describes how the reading drifts with
 age on a typical unit. **Linear** (a steady rise) is the default and the right
 start for most readings. **Exponential** suits a reading that grows by a fixed
-proportion, **Logarithmic** one that rises quickly then levels off. Each unit
+proportion, **Power** one that grows as a power of age, **Logarithmic** one
+that rises quickly then levels off, and **Quadratic** one whose rate of change
+itself changes with age (slower to fit). Each unit
 gets its own version of the path: its own starting level and its own rate.
 
 Set the time unit, name what is read and its unit (vibration, mm/s), and press
