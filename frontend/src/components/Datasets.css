@@ -163,11 +163,16 @@
 .section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
 .section-tags .linkish { font-size: 12px; }
 .ds-units { font-size: 13px; white-space: nowrap; color: var(--muted); }
-.ds-fit { position: relative; display: inline-flex; border: 1px solid var(--line); border-radius: 6px; background: var(--surf); }
-.ds-fit button { background: none; border: 0; color: var(--acc-d, inherit); font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: 6px; min-height: 0; box-shadow: none; }
-.ds-fit .ds-fit-more { padding: 3px 7px; border-left: 1px solid var(--line); border-radius: 0 6px 6px 0; color: var(--muted); }
-.ds-fit button:hover { background: var(--surf-2); }
-.ds-fit-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 250px;
+.ds-acts { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.ds-acts > button { background: none; border: 1px solid transparent; border-radius: 6px; min-height: 0; box-shadow: none; padding: 3px 8px; font-size: 13px; }
+.ds-acts .ds-fit-go { color: var(--acc-d, inherit); font-weight: 500; border-color: var(--line); background: var(--surf); padding: 3px 12px; }
+.ds-acts .ds-more { color: var(--muted); fill: currentColor; padding: 3px 5px; }
+.ds-acts > button:hover { background: var(--surf-2); }
+.ds-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 260px;
   display: flex; flex-direction: column; background: var(--surf); border: 1px solid var(--line);
-  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; }
-.ds-fit-menu button { text-align: left; color: inherit; font-weight: 400; padding: 8px 10px; border-left: 0; }
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; text-align: left; }
+.ds-menu button { text-align: left; background: none; border: 0; box-shadow: none; min-height: 0; color: inherit; font-size: 13px; font-weight: 400; padding: 7px 10px; border-radius: 6px; }
+.ds-menu button:hover, .ds-menu button:focus { background: var(--surf-2); }
+.ds-menu-h { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 10px 2px; }
+.ds-menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+.ds-menu .ds-menu-del { color: var(--danger, #c0392b); }

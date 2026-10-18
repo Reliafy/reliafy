@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { listDatasets, deleteDataset } from "../api.js";
+import { listDatasets, deleteDataset, renameDataset } from "../api.js";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { datasetPath } from "../sections.js";
 import { fitOptions } from "../datasetFit.js";
@@ -18,28 +18,36 @@ const FileIcon = () => (
   </svg>
 );
 
-// One control: "Fit" opens the usual fit; the chevron (only when there's a
-// choice) lists every fit for this data.
-function FitButton({ d }) {
+// Each row: a quick "Fit" for the usual fit, and a ⋯ menu with every fit, the
+// data (open, rename) and delete.
+function RowMenu({ d, onRename, onDelete }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const options = fitOptions(d);
-  const go = (to) => (e) => { e.stopPropagation(); navigate(to); };
+  const act = (fn) => (e) => { e.stopPropagation(); setOpen(false); fn(); };
   return (
-    <div className="ds-fit" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setOpen(false)}>
-      <button type="button" className="ds-fit-go" title={options[0].label} onClick={go(options[0].to)}>Fit</button>
-      {options.length > 1 && (
-        <button type="button" className="ds-fit-more" aria-haspopup="menu" aria-expanded={open}
-          aria-label="More ways to fit" onClick={() => setOpen((o) => !o)}>
-          <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    <td className="lib-actions">
+      <div className="ds-acts" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setOpen(false)}>
+        <button type="button" className="ds-fit-go" title={options[0].label} onClick={act(() => navigate(options[0].to))}>Fit</button>
+        <button type="button" className="ds-more" aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
+          onClick={() => setOpen((o) => !o)}>
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></svg>
         </button>
-      )}
-      {open && (
-        <div className="ds-fit-menu" role="menu">
-          {options.map((o) => <button type="button" key={o.label} role="menuitem" onClick={go(o.to)}>{o.label}</button>)}
-        </div>
-      )}
-    </div>
+        {open && (
+          <div className="ds-menu" role="menu">
+            <div className="ds-menu-h">Fit a model</div>
+            {options.map((o) => <button type="button" key={o.label} role="menuitem" onClick={act(() => navigate(o.to))}>{o.label}</button>)}
+            <div className="ds-menu-h">Data</div>
+            <button type="button" role="menuitem" onClick={act(() => navigate(datasetPath(d.id)))}>Open and view the data</button>
+            {!d.read_only && <button type="button" role="menuitem" onClick={act(() => onRename(d))}>Rename</button>}
+            <div className="ds-menu-sep" />
+            <button type="button" role="menuitem" className="ds-menu-del" onClick={act(() => onDelete(d))}>
+              {d.read_only ? "Remove from my view" : "Delete"}
+            </button>
+          </div>
+        )}
+      </div>
+    </td>
   );
 }
 
@@ -89,6 +97,17 @@ export default function DatasetsHome() {
     }
   };
 
+  const onRename = async (d) => {
+    const name = window.prompt("Dataset name", d.name);
+    if (!name || !name.trim() || name.trim() === d.name) return;
+    try {
+      await renameDataset(d.id, name.trim());
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const open = (id) => navigate(datasetPath(id));
   const newDataset = <button onClick={() => setNewOpen(true)}><PlusIcon /> New dataset</button>;
 
@@ -119,9 +138,8 @@ export default function DatasetsHome() {
           <th key="d">Dataset</th>,
           <th key="h" className="lib-opt" style={{ width: 270 }}>Holds</th>,
           <th key="r" style={{ width: 200 }}>Units</th>,
-          <th key="f" style={{ width: 84 }}><span className="sr-only">Fit</span></th>,
           <th key="t" className="lib-opt" style={{ width: 100 }}>Added</th>,
-          <th key="a"><span className="sr-only">Actions</span></th>,
+          <th key="a" style={{ width: 96 }}><span className="sr-only">Actions</span></th>,
         ]}
         render={(d) => (
           <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>
@@ -142,10 +160,8 @@ export default function DatasetsHome() {
               {d.summary || `${(d.n_rows ?? 0).toLocaleString()} rows`}
               {d.n_models > 0 && <div className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</div>}
             </td>
-            <td><FitButton d={d} /></td>
             <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
-            {/* The row opens the dataset, so no separate Open button. */}
-            <RowActions item={d} onDelete={() => onDelete(d)} />
+            <RowMenu d={d} onRename={onRename} onDelete={onDelete} />
           </tr>
         )}
       />
