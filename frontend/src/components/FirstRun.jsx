@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { trackEvent } from "../telemetry.js";
 import { MCP_CONTACT } from "../appConfig.js";
@@ -9,7 +10,7 @@ import { ShowMeHow } from "./Walkthrough.jsx";
 
 // First-run starts (#194). Each start reports one client event (allowlisted in
 // backend/routers/telemetry.py), so first actions can be counted against
-// signups. ``upload`` (#312) is only on the Modelling home's "Start here".
+// signups. ``upload`` (#312) is only on Home's "Start here".
 function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   const list = [];
   if (upload) {
@@ -20,6 +21,7 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
       title: "Upload a CSV or Excel file",
       body: "A column of times to failure, and a 0/1 column for units still running if you have one.",
       cta: "Upload",
+      short: "Upload a file",
     });
   }
   list.push({
@@ -83,7 +85,7 @@ function AgentLine() {
   );
 }
 
-// The Modelling home's "Start here" (#312): upload, paste, a sample, a
+// Home's "Start here" (#312): upload, paste, a sample, a
 // diagram. ``info`` is the first-run state (useFirstRun): the starts for an
 // empty workspace, or false once the user has work of their own — then the
 // starts stay, without the first-run line and the agent line.
@@ -129,22 +131,38 @@ export function StartHere({ info, sampleModelId = null }) {
   );
 }
 
-// The per-type pages' version: one compact row of the same starts, shown
-// only while the workspace has nothing of its own.
-export function FirstRunStrip({ info }) {
-  if (!info) return null;
+// Home's compact version, once the workspace has work of its own: the same
+// starts as one row of links.
+export function StartHereCompact({ sampleModelId = null }) {
   return (
-    <section className="first-run first-run-lite" aria-label="Get started">
+    <section className="first-run first-run-lite start-compact" aria-label="Start something new">
       <div className="first-run-lite-row">
-        <span className="first-run-lite-label">New here?</span>
-        {starts(info).map((s) => (
+        <span className="first-run-lite-label">Start something new</span>
+        {starts({ sampleModelId, sampleRbdId: null }, { upload: true }).map((s) => (
           <Link key={s.key} className="first-run-chip" to={s.to} onClick={s.onClick}>
             {s.icon}
-            {s.short}
+            {s.short || s.title}
           </Link>
         ))}
       </div>
-      <AgentLine />
     </section>
   );
+}
+
+// Activation metric: fire once, the moment a workspace shows its first
+// life-data model of its own. localStorage-guarded so it reports a browser's
+// first activation; storage that throws (private mode) just skips it.
+const ACTIVATED_KEY = "reliafy_activated";
+export function useActivation(rows) {
+  const ownLife = (rows || []).some((r) => !r.is_sample && r.type === "life");
+  useEffect(() => {
+    if (!ownLife) return;
+    try {
+      if (localStorage.getItem(ACTIVATED_KEY) === "1") return;
+      localStorage.setItem(ACTIVATED_KEY, "1");
+    } catch {
+      return;
+    }
+    trackEvent("activated");
+  }, [ownLife]);
 }

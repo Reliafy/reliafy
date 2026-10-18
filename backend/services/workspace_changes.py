@@ -63,7 +63,7 @@ COLLECTIONS = {
     "recurrent_models": ("Repairable-system model", "/modelling/recurrent/"),
     "alt_models": ("Accelerated test model", "/modelling/alt/"),
     "degradation_models": ("Degradation model", "/modelling/degradation/"),
-    "datasets": ("Dataset", "/datasets/d/"),
+    "datasets": ("Dataset", "/modelling/data/"),
     "rbds": ("Block diagram", "/rbds/b/"),
     "fleets": ("Failure forecast", "/fleet/forecasts/"),
     "tracked_fleets": ("Tracked fleet", "/fleet/tracking/"),

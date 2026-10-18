@@ -28,7 +28,7 @@ PENDING_PREFIX = "pending:"
 
 
 _LINK_PATHS = {
-    "datasets": "/datasets/d/{id}",
+    "datasets": "/modelling/data/{id}",
     "models": "/modelling/m/{id}",
     "rbds": "/rbds/b/{id}",
     "degradation_models": "/modelling/degradation/{id}",

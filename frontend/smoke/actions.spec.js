@@ -3,7 +3,7 @@
 import { test, expect, open, expectHealthy } from "./health.js";
 
 test("fit and save a Weibull model from a sample dataset", async ({ page, problems }) => {
-  await open(page, "/datasets/d/sample-ds-bearings");
+  await open(page, "/modelling/data/sample-ds-bearings");
   await page.getByRole("button", { name: "Fit a model" }).click();
   await expect(page).toHaveURL(/\/modelling\/new\?dataset=sample-ds-bearings/);
   await page.getByRole("button", { name: "Next" }).click();

@@ -12,10 +12,10 @@ import {
   listRcmStudies,
   maintenanceFromRcm,
 } from "../api.js";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DueChip, Field, FormModal, LocationPicker, MaintenanceTabs, PositionPicker, Proposals, flatten, fmtDate,
+  DueChip, Field, FormModal, LocationPicker, PositionPicker, Proposals, flatten, fmtDate,
 } from "../components/MaintenanceParts.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
@@ -92,16 +92,15 @@ export default function MaintenanceHome() {
 
   return (
     <div className="app">
-      <PageHeader
+      <SectionHeader
         title="Maintenance"
-        meta="Your plant as positions, what's fitted in each, the tasks from your RCM studies, and the work done."
+        purpose="Your plant as positions, what's fitted in each, the tasks from your RCM studies, and the work done."
         actions={<>
           <button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>
           <button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>
         </>}
         primary={<button onClick={() => setModal("position")}><PlusIcon /> New position</button>}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       {data && <TimeZoneNudge zone={data.time_zone} />}
       {data === null ? (

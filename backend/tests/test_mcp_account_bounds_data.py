@@ -411,7 +411,7 @@ def test_update_dataset_renames_and_annotates_without_touching_the_data(env):
     out = _ok(_call(token, "datasets", {"action": "update", "dataset_id": ds["id"], "name": "Hours v2",
                                         "notes": "Cleaned."}))
     assert out["updated"] == ["name", "notes"] and out["dataset_id"] == ds["id"]
-    assert out["name"] == "Hours v2" and out["notes"] == "Cleaned." and out["url"].endswith(f"/datasets/d/{ds['id']}")
+    assert out["name"] == "Hours v2" and out["notes"] == "Cleaned." and out["url"].endswith(f"/modelling/data/{ds['id']}")
     after = env.db.datasets.find_one({"_id": ds["id"]})
     assert after["data"] == before["data"] and after["checksum"] == before["checksum"]
     got = _ok(_call(token, "get", {"kind": "dataset", "id": ds["id"]}))

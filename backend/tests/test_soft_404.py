@@ -165,7 +165,7 @@ def test_without_the_content_index_slugs_keep_the_shell(site, dist):
 
 @pytest.mark.parametrize("path", [
     "/modelling", "/modelling/m/abc123", "/modelling/recurrent/r1", "/rbds/b/123", "/rbds/runs/run9",
-    "/datasets/d/d1", "/fleet/tracking/f1", "/fleet/forecasts/f2", "/strategy/analyses/s1",
+    "/datasets/d/d1", "/home", "/modelling/data/d1", "/fleet/tracking/f1", "/fleet/forecasts/f2", "/strategy/analyses/s1",
     "/rcm/studies/s1", "/settings", "/login", "/oauth/consent", "/unsubscribe",
 ])
 def test_app_routes_with_ids_keep_the_shell_and_a_200(site, path):

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getMaintenancePart, getPartStructure, getPartWhereUsed } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { MaintenanceTabs } from "../components/MaintenanceParts.jsx";
 import {
   ComponentModal, LevelModal, PositionsFromStructureModal, RollupCard, StructureTree, WhereUsedCard, removeLine,
 } from "../components/MaintenanceStructure.jsx";
@@ -47,7 +46,6 @@ export default function MaintenancePart() {
         actions={<button className="secondary" onClick={() => setModal("level")}>Indenture level</button>}
         primary={<button onClick={() => setModal({ line: null })}>Add a part to it</button>}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
 
       <section className="card">

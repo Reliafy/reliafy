@@ -175,7 +175,7 @@ export default function Landing() {
   const { user } = useAuth();
   const { mcp: mcpOn } = useAppConfig();
   const location = useLocation();
-  const primaryHref = user ? "/modelling" : "/login?signup";
+  const primaryHref = user ? "/home" : "/login?signup";
   const primaryLabel = user ? "Open the app" : "Get started";
 
   // Support /#pricing links from other pages: scroll once the section exists.

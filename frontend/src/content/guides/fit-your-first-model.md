@@ -51,7 +51,9 @@ censoring covers most real cases.
 
 ## Loading it in
 
-Go to **Modelling → New model** and choose **Fit to data**. The fit runs in four
+Reliafy opens on [Home](/home): what changed, what needs attention and your
+recent work, with **Start here** cards while your workspace is new. From there,
+go to **Modelling → New model** and choose **Fit to data**. The fit runs in four
 steps, shown along the bottom: **Source**, **Data**, **Model** and **Result**.
 For the source, drop a CSV or Excel file straight onto the page, paste a column
 of values, or pick a dataset you've already uploaded — datasets are reusable, so
@@ -60,7 +62,7 @@ re-uploading.
 
 ![The new-model flow: drop a CSV or pick a saved dataset](/guides/img/fit-01-new.png)
 
-If your file has no header row, upload it under [Datasets](/datasets) → **New dataset** and
+If your file has no header row, upload it under [Modelling › Data](/modelling/data) → **New dataset** and
 tick **No header row**: Reliafy names the columns `col 1`, `col 2`, … so the
 first row stays data rather than being eaten as titles.
 

@@ -6,7 +6,7 @@ import {
   setWorkStatus, updateWorkOrder,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { FailureModePicker, Field, FormModal, MaintenanceTabs, NotesCard, fmtDate, today } from "../components/MaintenanceParts.jsx";
+import { FailureModePicker, Field, FormModal, NotesCard, fmtDate, today } from "../components/MaintenanceParts.jsx";
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { partChoices, stockText } from "../maintenanceSpares.js";
@@ -58,7 +58,6 @@ export default function MaintenanceWorkOrder() {
           </>
         ) : null}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       {modal === "edit" && <EditWorkOrder wo={wo} onClose={() => setModal(null)} onDone={(d) => { setWo(d); setModal(null); }} />}
       {modal === "cancel" && <CancelWorkOrder wo={wo} onClose={() => setModal(null)} onDone={(d) => { setWo(d); setModal(null); }} />}

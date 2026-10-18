@@ -9014,3 +9014,31 @@ input.rbd-rename {
 }
 .joint-covs th:not(:first-child), .joint-covs td:not(:first-child) { text-align: center; }
 .joint-covs th:first-child, .joint-covs td:first-child { text-align: left; }
+
+/* One template for every section's pages (components/SectionPage.jsx). */
+.section-tablebar { flex-wrap: wrap; }
+.section-tablebar .section-type-filter { min-width: 170px; }
+.section-nomatch { margin: 14px 4px; font-size: var(--fs-13); color: var(--muted); }
+.section-empty .section-empty-action { margin-top: 1rem; }
+.section-empty .section-empty-more { margin-top: 1rem; font-size: var(--fs-13); color: var(--muted); }
+.section-empty .section-empty-more button.link { font-size: var(--fs-13); }
+@media (max-width: 720px) {
+  .section-tablebar .grow { display: none; }
+  .section-tablebar .count { flex-basis: 100%; }
+  .section-tablebar .search { flex: 1; min-width: 0; width: auto; }
+}
+/* A menu button as a page's main action ("+ New analysis ▾"). */
+.ovm-label { gap: 6px; padding: 0 14px; white-space: nowrap; }
+a.ovm-item { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+a.ovm-item svg { width: 15px; height: 15px; flex: none; }
+.ovm-label + .ovm-menu { min-width: 210px; }
+@media (max-width: 720px) {
+  /* The header's actions sit at the left on a phone: open rightwards. */
+  .ovm-label + .ovm-menu { left: 0; right: auto; }
+}
+
+/* Home. */
+.home .wc-panel { margin-top: 24px; }
+.home-count { font-size: var(--fs-13); color: var(--muted); }
+.home-note { margin: 0 0 8px; font-size: var(--fs-13); color: var(--muted); }
+.home .start-compact { margin-top: 28px; }

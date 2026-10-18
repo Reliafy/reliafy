@@ -38,7 +38,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, MaintenanceTabs, OUTCOME_LABELS,
+  DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, OUTCOME_LABELS,
   PositionPicker,
   RoughDateField, flatten, fmtDate, fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
@@ -98,7 +98,6 @@ export default function MaintenancePosition() {
         }
         primary={<button onClick={() => setModal("wo")}>New work order</button>}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
 
       <section className="card">

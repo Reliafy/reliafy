@@ -3,7 +3,7 @@ title: "Share models and diagrams with other people"
 task: "How do I show a colleague my analysis, or work on it as a team?"
 category: "Getting started"
 prerequisites: "Something saved — a model, diagram, or analysis."
-related_href: "/modelling/models"
+related_href: "/modelling"
 related_label: "Open saved models"
 order: 45
 ---

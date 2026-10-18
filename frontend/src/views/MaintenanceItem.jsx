@@ -12,7 +12,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import {
-  DocumentsCard, Field, FormModal, LocationPicker, MaintenanceTabs, NotesCard, PositionPicker, RoughDateField, flatten, fmtDate,
+  DocumentsCard, Field, FormModal, LocationPicker, NotesCard, PositionPicker, RoughDateField, flatten, fmtDate,
   fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue, roughDateValue } from "../maintenanceFields.js";
@@ -68,7 +68,6 @@ export default function MaintenanceItem() {
         }
         primary={<button onClick={() => setModal("edit")}>Edit details</button>}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
 
       <section className="card">

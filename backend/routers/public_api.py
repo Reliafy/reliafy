@@ -195,7 +195,7 @@ async def api_create_dataset(
         "name": ds.name,
         "n_rows": ds.n_rows,
         "columns": [c["name"] for c in ds.columns],
-        "url": f"/datasets/d/{ds.id}",
+        "url": f"/modelling/data/{ds.id}",
     })
 
 
