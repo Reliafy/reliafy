@@ -765,6 +765,26 @@ async function main() {
       async cleanup() {
         if (this.modelId) await fetch(`${BASE}/api/models/${this.modelId}`, { method: "DELETE" });
       } },
+    // --- Reliability Agent: the landing page (saved conversations; none on a
+    // fresh server). Sign-in isn't needed, but the page only exists when the
+    // server runs with RELIABILITY_AGENT_ENABLED=true, and without a model key
+    // (ANTHROPIC_API_KEY) it shows "Not configured yet" instead of New chat.
+    // The workflow has neither (the flag would also add Agent to the sidebar
+    // in every other shot), so this shot is skipped there and says so; the
+    // image on disk is kept. Re-capture it by hand with both and ONLY=agent.
+    { file: "agent-01-landing.png", url: "/agent", settle: 1500,
+      async skip() {
+        const keep = "; the existing image is kept. Re-capture it with ONLY=agent on a server that has it.";
+        if (!config.reliability_agent) {
+          return `the Reliability Agent is off on this server (RELIABILITY_AGENT_ENABLED)${keep}`;
+        }
+        const info = await api("/reliability-agent/info").catch(() => null);
+        if (!info?.enabled) return `the Reliability Agent has no model key on this server (ANTHROPIC_API_KEY)${keep}`;
+        return null;
+      },
+      async act(page) {
+        await page.locator(".agent-sess-list, .empty-note").first().waitFor({ timeout: 15000 });
+      } },
   ];
 
   // Shots needing purpose-built fixtures (created below, deleted afterwards).
@@ -962,9 +982,18 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1360, height: 900 }, deviceScaleFactor: 2 });
   let n = 0;
   const failed = [];
+  const skipped = [];
 
   const shoot = async (list) => {
     for (const s of list) {
+      // A shot that can't be taken on this server (a feature switched off)
+      // is skipped out loud, never silently, and keeps its existing image.
+      const why = s.skip ? await s.skip() : null;
+      if (why) {
+        console.warn(`SKIPPED ${s.file}: ${why}`);
+        skipped.push(s.file);
+        continue;
+      }
       try {
         // Every shot starts in the personal workspace (the team shot switches).
         if (page.url().startsWith(BASE)) await page.evaluate(() => localStorage.removeItem("reliafy.workspace"));
@@ -1037,6 +1066,7 @@ async function main() {
     await browser.close();
   }
   console.log(`\nDone. ${n} screenshots in ${OUT}${fx ? "; fixtures cleaned up" : ""}.`);
+  if (skipped.length) console.warn(`${skipped.length} shot(s) skipped, images kept: ${skipped.join(", ")}`);
   if (failed.length) {
     console.error(`${failed.length} shot(s) failed: ${failed.join(", ")}`);
     process.exit(1);

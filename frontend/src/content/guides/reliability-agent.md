@@ -6,6 +6,11 @@ prerequisites: "A Pro plan or AI credits. Data is optional — the agent can res
 related_href: "/agent"
 related_label: "Open the Reliability Agent"
 order: 40
+# Screenshot note. The release capture (guide-screenshots.yml) skips
+# agent-01-landing.png and says so, because its server has the Reliability Agent
+# off and no model key. Re-capture it by hand on a server with
+# RELIABILITY_AGENT_ENABLED=true and ANTHROPIC_API_KEY, with ONLY=agent
+# (see frontend/scripts/capture-guides.mjs).
 ---
 
 The Reliability Agent is available on request — email hello@reliafy.com and
