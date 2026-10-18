@@ -160,7 +160,8 @@
 /* What a dataset holds (#261): small tags on one line, the units count, and Fit. */
 .ds-tags { display: flex; flex-wrap: nowrap; gap: 4px; overflow: hidden; }
 .ds-tags .chip { font-size: 11px; padding: 1px 6px; white-space: nowrap; }
-.section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: 12px; }
+.section-tags .chip { font-size: 12px; padding: 1px 8px; }
 .section-tags .linkish { font-size: 12px; }
 .ds-units { font-size: 13px; white-space: nowrap; color: var(--muted); }
 .ds-acts { position: relative; display: inline-flex; align-items: center; gap: 4px; }

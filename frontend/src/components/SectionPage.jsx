@@ -126,6 +126,18 @@ export function SectionList({
             ? `${rows.length} ${rows.length === 1 ? one : many}`
             : `${visible.length} of ${rows.length} ${many}`}
         </span>
+        {allTags.length > 0 && (
+          <div className="section-tags" role="group" aria-label="Filter by what it holds">
+            {allTags.map((t) => (
+              <button key={t} type="button" aria-pressed={on.includes(t)}
+                className={"chip chip-btn " + (on.includes(t) ? "chip-accent" : "chip-neutral")}
+                onClick={() => toggle(t)}>
+                {t}
+              </button>
+            ))}
+            {on.length > 0 && <button type="button" className="linkish" onClick={() => setOn([])}>Clear</button>}
+          </div>
+        )}
         <span className="grow" />
         {present.length > 1 && (
           <Select
@@ -138,18 +150,6 @@ export function SectionList({
         )}
         <ListSearch value={query} onChange={setQuery} placeholder={placeholder || `Search ${many}…`} />
       </div>
-      {allTags.length > 0 && (
-        <div className="section-tags" role="group" aria-label="Filter by what it holds">
-          {allTags.map((t) => (
-            <button key={t} type="button" aria-pressed={on.includes(t)}
-              className={"chip chip-btn " + (on.includes(t) ? "chip-accent" : "chip-neutral")}
-              onClick={() => toggle(t)}>
-              {t}
-            </button>
-          ))}
-          {on.length > 0 && <button type="button" className="linkish" onClick={() => setOn([])}>Clear</button>}
-        </div>
-      )}
       <div className={"lib" + (className ? " " + className : "")}>
         <table className="lib-table">
           <thead><tr>{head}</tr></thead>
