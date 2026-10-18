@@ -455,7 +455,59 @@ def detect_tags(df: pd.DataFrame) -> dict:
     elif censor or times:
         use_for.append("Life model" + (" with covariates" if covs else ""))
         use_for.append("Condition monitoring (the lifetimes)")
-    return {"tags": [t for t in TAGS if t in tags], "use_for": use_for}
+    out_tags = [t for t in TAGS if t in tags]
+    return {"tags": out_tags, "use_for": use_for, "summary": _summary(df, unit, censor, out_tags)}
+
+
+_GENERIC_ID_RE = re.compile(r"^(id|ids|unit|units|item|items|serial|sn|tag|no|number|name|asset_id|unit_id|item_id)$", re.IGNORECASE)
+
+
+def _plural(word: str, n: int) -> str:
+    if n == 1:
+        return word
+    if word.endswith("y") and word[-2:-1] not in "aeiou":
+        return word[:-1] + "ies"
+    if word.endswith(("s", "x", "ch", "sh")):
+        return word + "es"
+    return word + "s"
+
+
+def _noun(col: str | None) -> str:
+    """What a row's unit is called, from its ID column ("pump" → pumps)."""
+    if not col:
+        return "unit"
+    word = re.sub(r"[_\s-]*(id|no|number|serial|sn|tag)$", "", str(col).strip(), flags=re.IGNORECASE)
+    word = re.sub(r"[_-]+", " ", word).strip().lower()
+    if not word or _GENERIC_ID_RE.match(word) or len(word) > 20:
+        return "unit"
+    return word[:-1] if word.endswith("s") and not word.endswith("ss") else word
+
+
+def _id_column(df: pd.DataFrame, unit: str | None) -> str | None:
+    if unit:
+        return unit
+    for c in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique(dropna=True) == len(df):
+            return str(c)
+    return None
+
+
+def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[str]) -> str:
+    """The list's count: units of the dataset's own noun, and what happened to them,
+    e.g. "40 pumps · 19 failed", "10 trucks · 71 failures", "30 bearings · 193 readings"."""
+    idc = _id_column(df, unit)
+    noun = _noun(idc)
+    n_units = int(df[unit].nunique(dropna=True)) if unit else len(df)
+    units = f"{n_units:,} {_plural(noun, n_units)}"
+    failed = int((df[censor] == 0).sum()) if censor else None
+    if "Measurements" in tags:
+        return f"{units} · {len(df):,} readings"
+    if "Repeat failures" in tags:
+        n = failed if failed is not None else len(df)
+        return f"{units} · {n:,} {_plural('failure', n)}"
+    if failed is None:
+        return f"{units} · all failed" if "Lifetime data" in tags else units
+    return f"{units} · {failed:,} failed"
 
 
 _TAG_CACHE: dict[str, dict] = {}
@@ -469,7 +521,7 @@ def dataset_tags(dataset: Dataset) -> dict:
         try:
             _TAG_CACHE[key] = detect_tags(load_dataframe(dataset))
         except Exception:  # noqa: BLE001 - an unreadable file just has no tags
-            _TAG_CACHE[key] = {"tags": [], "use_for": []}
+            _TAG_CACHE[key] = {"tags": [], "use_for": [], "summary": ""}
         if len(_TAG_CACHE) > 5000:
             _TAG_CACHE.pop(next(iter(_TAG_CACHE)))
     return _TAG_CACHE[key]

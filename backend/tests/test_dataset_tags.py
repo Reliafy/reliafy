@@ -47,3 +47,13 @@ def test_repeat_failures_without_a_status_column():
             for u in range(4) for k in range(1, 4)]
     out = tags(rows, ["pump", "hours", "site", "duty_pct", "cause", "observed_to"])
     assert out["tags"] == ["Repeat failures", "Covariates"]
+
+
+def test_summary_counts_units_by_their_own_name():
+    life = tags([[f"P-{i}", 100 + i, i % 2] for i in range(10)], ["pump", "hours", "censored"])
+    assert life["summary"] == "10 pumps · 5 failed"
+    rows = [[f"HT-{u}", 1000 * k + 37 * u, 0 if k < 3 else 1] for u in range(4) for k in range(1, 4)]
+    assert tags(rows, ["truck", "engine_hours", "censored"])["summary"] == "4 trucks · 8 failures"
+    rows = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u] for u in range(4) for k in range(4)]
+    assert tags(rows, ["bearing", "hours", "vibration_mm_s"])["summary"] == "4 bearings · 16 readings"
+    assert tags([[1.0], [2.0], [3.5]], ["x"])["summary"] == "3 units · all failed"

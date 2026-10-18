@@ -92,7 +92,7 @@ export default function DatasetsHome() {
         head={[
           <th key="d" style={{ width: "34%" }}>Dataset</th>,
           <th key="h" className="lib-opt">Holds</th>,
-          <th key="r" style={{ width: 90 }}>Rows</th>,
+          <th key="r" style={{ width: 200 }}>Units</th>,
           <th key="u" className="lib-opt" style={{ width: 170 }}><span className="sr-only">Used by</span></th>,
           <th key="t" className="lib-opt">Added</th>,
           <th key="a"><span className="sr-only">Actions</span></th>,
@@ -112,7 +112,7 @@ export default function DatasetsHome() {
             <td className="lib-opt">
               <div className="ds-tags">{(d.tags || []).map((t) => <Chip key={t}>{t}</Chip>)}</div>
             </td>
-            <td className="lib-n">{(d.n_rows ?? 0).toLocaleString()}</td>
+            <td className="ds-units">{d.summary || `${(d.n_rows ?? 0).toLocaleString()} rows`}</td>
             <td className="lib-opt">
               {d.n_models > 0 && (
                 <span className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</span>

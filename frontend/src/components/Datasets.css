@@ -161,3 +161,4 @@
 .ds-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
 .section-tags .linkish { font-size: 12px; }
+.ds-units { font-size: 13px; white-space: nowrap; }
