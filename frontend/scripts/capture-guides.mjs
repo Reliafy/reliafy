@@ -12,8 +12,9 @@
 //   3. npx playwright install chromium   (playwright is a devDependency)
 //   4. BASE_URL=http://localhost:8000 npm run capture:guides
 //
-// The weekly "Guide screenshots" workflow (.github/workflows/guide-screenshots.yml)
-// does exactly this and opens a pull request when any image changed (#74).
+// The "Guide screenshots" workflow (.github/workflows/guide-screenshots.yml),
+// run by hand on the release branch as a release step, does exactly this and
+// opens a pull request into that branch when any image changed (#74).
 //
 // The hard canvas gestures (drag-to-wire, right-click menus) are NOT scripted —
 // instead each RBD guide seeds a real saved diagram through the API and the

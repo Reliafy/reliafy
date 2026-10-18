@@ -71,8 +71,9 @@ How-to guides (`frontend/src/content/guides/`):
   doesn't know, a missing guide, post, image or `#anchor`) and on a feature page
   in `GUIDE_COVERAGE` (`src/guideCoverage.js`) that no guide links to. A new
   main page goes in that list, with a new or updated guide that links to it.
-- Screenshots come from `frontend/scripts/capture-guides.mjs` (re-run weekly by
-  `guide-screenshots.yml`); add a step there for each new image.
+- Screenshots come from `frontend/scripts/capture-guides.mjs` (re-run by hand on
+  the release branch before each release by `guide-screenshots.yml`, which
+  opens its pull request into that branch); add a step there for each new image.
 
 Add or extend tests for any behaviour you change.
 
