@@ -90,7 +90,8 @@ export default function DatasetsHome() {
           action: newDataset,
         }}
         head={[
-          <th key="d" style={{ width: "46%" }}>Dataset</th>,
+          <th key="d" style={{ width: "34%" }}>Dataset</th>,
+          <th key="h" className="lib-opt">Holds</th>,
           <th key="r" style={{ width: 90 }}>Rows</th>,
           <th key="u" className="lib-opt" style={{ width: 170 }}><span className="sr-only">Used by</span></th>,
           <th key="t" className="lib-opt">Added</th>,
@@ -107,12 +108,9 @@ export default function DatasetsHome() {
                 </Link>
                 {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}
               </div>
-              {(d.tags?.length > 0 || d.use_for?.length > 0) && (
-                <div className="ds-tags">
-                  {(d.tags || []).map((t) => <Chip key={t}>{t}</Chip>)}
-                  {d.use_for?.length > 0 && <span className="ds-usefor">For: {d.use_for.join(" · ")}</span>}
-                </div>
-              )}
+            </td>
+            <td className="lib-opt">
+              <div className="ds-tags">{(d.tags || []).map((t) => <Chip key={t}>{t}</Chip>)}</div>
             </td>
             <td className="lib-n">{(d.n_rows ?? 0).toLocaleString()}</td>
             <td className="lib-opt">
