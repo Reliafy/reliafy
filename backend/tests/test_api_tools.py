@@ -420,3 +420,15 @@ def test_spec_is_valid_and_public_safe(env):
         assert word not in text.lower(), word
     op = spec["paths"]["/api/v1/life_data_analysis/fit"]["post"]
     assert op["x-reliafy-pro-only"] and op["x-reliafy-heavy"] and op["x-reliafy-scope"] == "read"
+
+
+def test_report_a_problem_and_check_it(env):
+    r = env.post("/api/v1/report_problem/report", {"kind": "missing_capability", "summary": "No way to undo a fit",
+                                                   "tool": "models", "trying": "refit with other columns"})
+    assert r.status_code == 200, r.text
+    rid = r.json()["report_id"]
+    assert env.post("/api/v1/report_problem/status", {"report_id": rid}).json()["status"] == "new"
+    assert env.post("/api/v1/report_problem/status", {"report_id": rid}, uid=B).status_code == 404
+    # Only operators triage or update.
+    assert env.post("/api/v1/report_problem/update", {"report_id": rid, "status": "fixed"}).status_code in (400, 403, 422)
+    assert env.post("/api/v1/report_problem/triage").status_code in (400, 403, 422)
