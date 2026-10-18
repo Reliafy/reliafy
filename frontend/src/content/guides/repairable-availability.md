@@ -113,10 +113,11 @@ elsewhere, however satisfying they feel.
 
 The figures behind the headline (mean up and down time, failure frequency,
 expected failures and downtime over the window, and each block's importance) are
-under **Details**. There, **Run simulation** adds the spread of outcomes: the
-chance of no outage, percentiles and a confidence band. Each run on a saved
-diagram is kept for 90 days under **Run history**, where you can compare two
-runs side by side.
+under **Details**. There, **Run simulation** (Pro) adds the spread of outcomes:
+the chance of no outage, percentiles and a confidence band. On the Free plan,
+**Run quick simulation** gives a shorter, time-capped estimate a few times a
+day. Each run on a saved diagram is kept under **Run history** (7 days on Free,
+90 on Pro), where you can compare two runs side by side.
 
 ## Where to go next
 

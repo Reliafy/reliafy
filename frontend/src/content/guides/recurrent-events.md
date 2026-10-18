@@ -54,8 +54,8 @@ Three optional columns add more:
 
 ## Fitting
 
-Go to **Modelling → Recurrent events → New model**, pick your data, map the
-columns, and choose a model:
+Go to **Modelling → Recurrent** and press **New model**. Pick your data, map
+the columns, and choose a model. The default kind, **Minimal repair**, offers:
 
 - **Crow-AMSAA (NHPP)** — the standard reliability-growth model, and the right
   default.
@@ -65,7 +65,7 @@ columns, and choose a model:
 - **Cox-Lewis (log-linear NHPP)** — a rate that changes by a fixed proportion
   per unit time. An alternative when the trend doesn't follow a power law.
 
-Two more kinds sit beside these:
+Two more kinds sit beside **Minimal repair**:
 
 - **Covariates — proportional intensity.** One baseline failure rate (Crow-AMSAA by
   default) scaled up or down for each system by its covariates. It answers "which
@@ -145,9 +145,12 @@ If the same equipment also has a wear-out story at the component level, fit thos
 as ordinary [life models](/guides/fit-your-first-model) — the two views answer
 different questions and are complementary, not competing.
 
-If you're deciding whether to keep repairing or replace outright, a recurrent
-model built from parameters feeds that comparison directly, and the **Overhaul**
-tab finds the overhaul interval for a minimal-repair model.
+If you're deciding whether to keep repairing or overhaul, the **Overhaul** tab
+on a minimal-repair model finds the cost-optimal overhaul interval. For a growth
+test, the **Growth projection** tab gives the MTBF the system reaches once the
+fixes for each failure mode are in (AMSAA-Crow, MIL-HDBK-189C). It needs a
+column naming each failure's mode, and you mark each mode as not fixed (A),
+fixed after the test (BD) or fixed during it (BC).
 
 A saved recurrent model can also drive a
 [fleet failure forecast](/guides/forecast-fleet-failures-and-spares) for

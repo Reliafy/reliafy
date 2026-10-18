@@ -6,6 +6,11 @@ prerequisites: "A Pro plan or AI credits. Data is optional — the agent can res
 related_href: "/agent"
 related_label: "Open the Reliability Agent"
 order: 40
+# Screenshot note. The release capture (guide-screenshots.yml) skips
+# agent-01-landing.png and says so, because its server has the Reliability Agent
+# off and no model key. Re-capture it by hand on a server with
+# RELIABILITY_AGENT_ENABLED=true and ANTHROPIC_API_KEY, with ONLY=agent
+# (see frontend/scripts/capture-guides.mjs).
 ---
 
 The Reliability Agent is available on request — email hello@reliafy.com and
@@ -66,12 +71,13 @@ against.
 ## What it can and can't build
 
 It creates **datasets**, **life models** (the full range — censoring, truncation,
-covariates, the offset/zero-inflation/limited-failure-population modifiers), and
-**RBDs** — including repairable diagrams that report availability, and
-common-cause groups on redundant stages.
+covariates, the offset/zero-inflation/limited-failure-population modifiers),
+**recurrent-event models** for repairable systems, **accelerated life models**,
+**degradation models**, and **RBDs** — including repairable diagrams that report
+availability, and common-cause groups on redundant stages.
 
-It doesn't create degradation models, RCM studies, or fleet objects yet. If you
-ask, it'll say so rather than improvising.
+It doesn't create RCM studies, fleet forecasts or condition-based risk models
+yet. If you ask, it'll say so rather than improvising.
 
 ## Conversations are saved
 
@@ -86,3 +92,15 @@ The agent runs a real sandbox on a frontier model, so it consumes AI credits
 based on the work it does — meaningfully more than the assistant. Viewing past
 conversations is free; only sending a message costs anything. Your credit
 balance is shown at the top of the page.
+
+## Other ways to automate
+
+The agent works inside Reliafy. To drive the same analyses from outside it,
+there are two other routes:
+
+- **Claude, or another AI assistant, through MCP.** Connect it to Reliafy and
+  ask in conversation; it uses your workspace's tools directly. See
+  [Claude (MCP)](/api-docs/mcp).
+- **Your own scripts.** The API, the `reliafy` command line and the Python
+  client run the same tools from a notebook or a nightly job. See
+  [use Reliafy from scripts](/guides/use-the-api-and-cli).

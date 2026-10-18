@@ -322,6 +322,11 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/strategy/compare-two", "strategy_compare"),
     ("POST", "/api/strategy/failure-finding", "strategy_failure_finding"),
     ("POST", "/api/strategy/demonstration-test", "strategy_demonstration"),
+    ("POST", "/api/test-planning/sequential", "test_planning_sequential"),
+    ("POST", "/api/test-planning/life", "test_planning_life"),
+    ("POST", "/api/test-planning/accelerated", "test_planning_accelerated"),
+    ("POST", "/api/test-planning/comparison", "test_planning_comparison"),
+    ("POST", "/api/test-planning/simulate", "test_planning_simulate"),
     ("POST", "/api/strategy/analyses", "strategy_save"),
     ("POST", "/api/recurrent/models/{id}/overhaul", "strategy_overhaul"),
     # Recurrent, degradation, ALT

@@ -161,7 +161,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
       return (
         <TabEmptyState
           title="Design: the cheapest copies of each block, and the best maintenance intervals"
-          need="It needs a purchase price, age replacement or proof tests on a block (double-click it → Cost & maintenance)."
+          need="It needs a purchase price, age replacement or proof tests on a block (double-click it → Maintenance or Costs)."
           action={readOnly
             ? onSaveCopy && { label: "Save a copy to edit", onClick: onSaveCopy }
             : onBuild && { label: "Go to the Builder", onClick: onBuild }}

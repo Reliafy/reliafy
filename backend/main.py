@@ -64,6 +64,7 @@ from backend.routers import rbd_measures as rbd_measures_router
 from backend.routers import rbd_missions as rbd_missions_router
 from backend.routers import rbd_tvc as rbd_tvc_router
 from backend.routers import strategy as strategy_router
+from backend.routers import test_planning as test_planning_router
 from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
 from backend.routers import reliability_agent as reliability_agent_router
@@ -71,6 +72,7 @@ from backend.routers import degradation as degradation_router
 from backend.routers import degradation_induced as degradation_induced_router
 from backend.routers import recurrent as recurrent_router
 from backend.routers import alt as alt_router
+from backend.routers import joint as joint_router
 from backend.routers import rcm as rcm_router
 from backend.routers import excel as excel_router
 from backend.routers import teams as teams_router
@@ -82,6 +84,7 @@ from backend.routers import public as public_router
 from backend.routers import reports as reports_router
 from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
+from backend.routers import api_tools as api_tools_router
 from backend.routers import email_prefs as email_prefs_router
 from backend.routers import walkthroughs as walkthroughs_router
 from backend.routers import lifecycle as lifecycle_router
@@ -232,6 +235,7 @@ app.include_router(rbd_measures_router.router)
 app.include_router(rbd_missions_router.router)
 app.include_router(rbd_tvc_router.router)
 app.include_router(strategy_router.router)
+app.include_router(test_planning_router.router)
 app.include_router(compare_groups_router.router)
 app.include_router(regression_diagnostics_router.router)
 # Reliability along a covariate schedule (#60).
@@ -243,6 +247,7 @@ app.include_router(degradation_router.router)
 app.include_router(degradation_induced_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
+app.include_router(joint_router.router)
 app.include_router(rcm_router.router)
 app.include_router(maintenance_router.router)
 app.include_router(maintenance_router.public_router)
@@ -257,6 +262,10 @@ app.include_router(public_router.router)
 app.include_router(reports_router.router)
 app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
+# Every MCP tool action over REST (POST /api/v1/{tool}/{action}), its OpenAPI
+# spec and the REST-only photo upload. After public_api: its fixed /api/v1
+# routes win over the generic {tool}/{action} ones.
+app.include_router(api_tools_router.router)
 app.include_router(email_prefs_router.router)
 app.include_router(walkthroughs_router.router)
 # Lifecycle emails (#272): the daily day-3 trigger (Cloud Scheduler, OIDC).
@@ -656,7 +665,8 @@ def is_spa_route(full_path: str) -> bool:
 # page (BlogPost, WhatsNewPost, LearnArticle, GuidePage, ReferenceFamily): an
 # unknown or not-yet-dated slug gets that page from the shell, with a 404.
 CONTENT_COLLECTIONS = frozenset({"blog", "whats-new", "learn", "guides", "reference"})
-# Single prerendered pages: nothing lives beneath them.
+# Single prerendered pages: nothing lives beneath them but their own
+# prerendered pages (the API docs' /api-docs/<page>), served before this check.
 CONTENT_PAGES = frozenset({
     "api-docs", "terms", "privacy",
     "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",

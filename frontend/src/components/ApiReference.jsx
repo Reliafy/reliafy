@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAppConfig } from "../ConfigProvider.jsx";
+import { countActions, toolsFromSpec } from "../apiSpec.js";
+import { API_DOCS_PAGES, apiDocsNeighbours, apiDocsPath, legacyApiDocsTarget } from "../apiDocsPages.js";
 import McpOnRequest from "./McpOnRequest.jsx";
 import Tabs from "./ui/Tabs.jsx";
 
@@ -43,16 +46,39 @@ function Fields({ title, rows }) {
   );
 }
 
-// One endpoint, OpenAPI-style: method + path, description, request fields, an
-// example, and the response shape.
-function Endpoint({ method, path, desc, request, example, returns }) {
-  return (
-    <div className="api-ep">
-      <div className="api-ep-head">
-        <span className={`api-method ${method.toLowerCase()}`}>{method}</span>
-        <code className="api-path">{path}</code>
+// An entry that folds: the head stays in view and the detail opens on a
+// click, so a page of many endpoints stays short. The detail is still in the
+// page (and the prerendered HTML) for search and find-in-page.
+function Fold({ fold, head, children }) {
+  if (!fold) {
+    return (
+      <div className="api-ep">
+        {head}
+        {children}
       </div>
-      {desc && <p className="muted-line api-ep-desc">{desc}</p>}
+    );
+  }
+  return (
+    <details className="api-ep api-fold">
+      <summary>{head}</summary>
+      {children}
+    </details>
+  );
+}
+
+// One endpoint, OpenAPI-style: method + path, description, request fields, an
+// example, and the response shape. ``fold``: the description shows; the rest
+// opens on a click.
+function Endpoint({ method, path, desc, request, example, returns, fold = false }) {
+  const head = (
+    <div className="api-ep-head">
+      <span className={`api-method ${method.toLowerCase()}`}>{method}</span>
+      <code className="api-path">{path}</code>
+    </div>
+  );
+  return (
+    <Fold fold={fold} head={<>{head}{fold && desc && <p className="muted-line api-ep-desc">{desc}</p>}</>}>
+      {!fold && desc && <p className="muted-line api-ep-desc">{desc}</p>}
       <Fields title="Request" rows={request} />
       {example && <Code>{example}</Code>}
       {returns && (
@@ -61,20 +87,22 @@ function Endpoint({ method, path, desc, request, example, returns }) {
           <Code>{returns}</Code>
         </div>
       )}
-    </div>
+    </Fold>
   );
 }
 
 // One client function, matching the endpoint layout: signature, description,
 // a Parameters table, and Returns. ``endpoint`` shows the HTTP call it maps to.
-function ClientFn({ sig, endpoint, desc, params, returns }) {
+function ClientFn({ sig, endpoint, desc, params, returns, fold = false }) {
+  const head = (
+    <div className="api-ep-head api-fn-head">
+      <code className="api-path api-sig">{sig}</code>
+      {endpoint && <span className="api-maps">{endpoint}</span>}
+    </div>
+  );
   return (
-    <div className="api-ep">
-      <div className="api-ep-head api-fn-head">
-        <code className="api-path api-sig">{sig}</code>
-        {endpoint && <span className="api-maps">{endpoint}</span>}
-      </div>
-      {desc && <p className="muted-line api-ep-desc">{desc}</p>}
+    <Fold fold={fold} head={<>{head}{fold && desc && <p className="muted-line api-ep-desc">{desc}</p>}</>}>
+      {!fold && desc && <p className="muted-line api-ep-desc">{desc}</p>}
       <Fields title="Parameters" rows={params} />
       {returns && (
         <div className="api-fields">
@@ -82,7 +110,7 @@ function ClientFn({ sig, endpoint, desc, params, returns }) {
           <Code>{returns}</Code>
         </div>
       )}
-    </div>
+    </Fold>
   );
 }
 
@@ -91,23 +119,81 @@ function ClientDocs() {
   return (
     <div className="api-section">
       <p className="muted-line">
-        <code>reliafy-client</code> is a thin Python wrapper over the HTTP API —
-        each call maps to one endpoint (shown on the right). Pure standard
-        library; you bring{" "}
+        <code>reliafy-client</code> is the Python client for the API, and it installs the{" "}
+        <code>reliafy</code> command line too. Pure standard library, no dependencies; you bring{" "}
         <a className="evidence-link" href="https://github.com/derrynknife/SurPyval" target="_blank" rel="noreferrer">SurPyval</a>{" "}
-        (<a className="evidence-link" href="https://surpyval.readthedocs.io/en/latest/" target="_blank" rel="noreferrer">docs</a>).
+        (<a className="evidence-link" href="https://surpyval.readthedocs.io/en/latest/" target="_blank" rel="noreferrer">docs</a>)
+        for your own fits.
       </p>
 
-      <h3>Install &amp; authenticate</h3>
+      <h3>Install and sign in</h3>
       <Code>{`pip install reliafy-client        # installed as reliafy-client, imported as \`reliafy\`
 
-import reliafy
-reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-hosted`}</Code>
-      <p className="muted-line">Create a token under <b>Settings → API access</b> (Pro on Reliafy Cloud).</p>
+from reliafy import Client
+rf = Client(token="rlf_...")      # or RELIAFY_TOKEN, or the token saved by \`reliafy login\``}</Code>
+      <ul className="api-list">
+        <li>
+          Version 0.3 needs a Reliafy server with the tools API: reliafy.com has it from this
+          release; a self-hosted server needs a build where <code>GET /api/v1/tools</code> answers.
+          Against an older server the new calls stop with <code>reliafy.ServerTooOld</code>, and
+          everything from 0.2 keeps working.
+        </li>
+        <li>Self-hosted: <code>Client(base_url="https://reliafy.example.com")</code>. A local server with sign-in off needs no token.</li>
+      </ul>
+
+      <h3>Every tool: Client.call</h3>
+      <ClientFn
+        sig="Client.call(tool, action=None, /, wait=False, **args)"
+        endpoint="POST /api/v1/{tool}/{action}"
+        desc="Call any tool action with its arguments, exactly as the Claude connector does. Leave out action for a tool without actions. wait=True (or a number of seconds) polls a long-running job until it finishes."
+        params={[
+          { name: "tool", type: "str", req: true, desc: "The tool, e.g. \"life_data_analysis\"." },
+          { name: "action", type: "str", req: false, desc: "The action (or kind), e.g. \"fit\"." },
+          { name: "wait", type: "bool | float", req: false, desc: "Wait for a job_id result to finish (True, or at most this many seconds)." },
+          { name: "**args", type: "any", req: false, desc: "The action's arguments; None values are left out." },
+        ]}
+        returns={`{ … }   # the tool's result, the same JSON an AI assistant gets`}
+      />
+      <Code>{`rf.call("list", "models")
+rf.call("life_data_analysis", "fit", distribution="weibull",
+        data=[120, 340, 510, 700, 980], censored=[0, 0, 1, 0, 0], unit="hours")
+rf.call("guide", topic="life_data")                       # a tool without actions
+rf.call("rbd_analysis", "analyze", rbd_id="…", simulate=True, wait=True)
+
+rf.tools()     # the tools and actions you may call (GET /api/v1/tools)
+rf.spec()      # the OpenAPI spec`}</Code>
+      <ul className="api-list">
+        <li>Shortcuts: <code>rf.list(kind)</code>, <code>rf.get(kind, id)</code>, <code>rf.fit(data, distribution=…, censored=…)</code>, <code>rf.reliability(model_id, times)</code>, <code>rf.guide(topic)</code>, <code>rf.wait(job_id)</code>.</li>
+        <li><code>reliafy.call(tool, action, **args)</code> does the same with the configured token.</li>
+        <li>A refused call raises <code>reliafy.ReliafyError</code> with <code>status</code> (the HTTP status) and <code>detail</code> (what Reliafy said).</li>
+      </ul>
+
+      <h3 id="files">Files, photos and data</h3>
+      <Code>{`rf.upload_dataset("bearings.xlsx", name="Bearings")     # CSV or .xlsx, as a dataset
+rf.import_rbd("plant.xml")                              # BlockSim, Open-PSA, Galileo, RePyability, the Excel template
+rf.import_excel("fmea.xlsx", target="rcm")              # dataset, rcm or rbd
+rf.add_photo("nameplate.jpg", target_id="…")            # Reliafy Maintenance users
+
+rf.push_usage(fleet_id, [{"name": "Truck 01", "current_use": 5230}])
+rf.push_measurements(tracked_fleet_id, file="readings.csv")
+rf.push_lives(dataset_id, file="new_failures.csv")      # appends, then refits its models`}</Code>
+      <p className="muted-line">
+        Files are streamed from disk. The ingest helpers take rows, <code>csv=</code> text or{" "}
+        <code>file=</code> a path, and are also on the module (<code>reliafy.push_usage(…)</code>).
+        Reliafy Maintenance users also have <code>push_readings</code> for meter and condition readings.
+      </p>
+
+      <h3>The 0.2 functions (still supported)</h3>
+      <p className="muted-line">
+        Everything from 0.2 works unchanged, on any server: <code>reliafy.configure(token=…)</code>,
+        then the functions below. Each maps to one of the original routes; open one for its
+        parameters and what it returns.
+      </p>
 
       <h3>reliafy.models</h3>
 
       <ClientFn
+        fold
         sig="models.push(model, name, *, data=True, unit=None)"
         endpoint="POST /api/import/models"
         desc="Push a fitted SurPyval model and return its URL."
@@ -121,6 +207,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
       />
 
       <ClientFn
+        fold
         sig="models.push_params(distribution, params, name, *, unit=None, extras=None)"
         endpoint="POST /api/import/models"
         desc="Push a model by distribution + parameter values (no SurPyval object)."
@@ -135,6 +222,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
       />
 
       <ClientFn
+        fold
         sig="models.list()"
         endpoint="GET /api/v1/models"
         desc="Your saved models."
@@ -143,6 +231,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
       />
 
       <ClientFn
+        fold
         sig="models.get(model_id)"
         endpoint="GET /api/v1/models/{id}"
         desc="One model's fit."
@@ -152,6 +241,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
       />
 
       <ClientFn
+        fold
         sig="models.reliability(model_id, t=None, covariates=None)"
         endpoint="POST /api/v1/models/{id}/reliability"
         desc="Evaluate the reliability functions."
@@ -165,6 +255,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
       />
 
       <ClientFn
+        fold
         sig="models.fit(dataset_id, distribution, name, *, mapping=None, unit=None, covariates=None, formula=None)"
         endpoint="POST /api/v1/fit"
         desc="Fit and save a model from one of your datasets."
@@ -182,6 +273,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
 
       <h3>reliafy.data</h3>
       <ClientFn
+        fold
         sig="data.upload(name, *, csv=None, data=None)"
         endpoint="POST /api/v1/datasets"
         desc="Create a dataset from CSV text or column arrays."
@@ -195,6 +287,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
 
       <h3>reliafy.strategy</h3>
       <ClientFn
+        fold
         sig="strategy.optimal_replacement(distribution, params, planned_cost, unplanned_cost, *, unit=None)"
         endpoint="POST /api/v1/strategy/optimal-replacement"
         desc="Cost-optimal preventive-replacement interval."
@@ -208,6 +301,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
         returns={`{ "optimal_time": 580.5, "optimal_cost_rate": 0.51, "beneficial": true, "mttf": 1272.4 }`}
       />
       <ClientFn
+        fold
         sig="strategy.failure_finding(distribution, params, target_availability, *, unit=None)"
         endpoint="POST /api/v1/strategy/failure-finding"
         desc="Inspection interval for a hidden (protective) function."
@@ -220,6 +314,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
         returns={`{ "interval": 176.4, "method": "…", "mttf": 8760, "target_availability": 0.99 }`}
       />
       <ClientFn
+        fold
         sig="strategy.demonstration_test(reliability, *, confidence=0.95, mission_time=None, failures=0, test_multiple=1.0, shape=None, units=None, method='attribute', mtbf=None, design_reliability=None, design_mtbf=None, producer_risk=None, unit=None, b_life=None, shape_interval=None)"
         endpoint="POST /api/v1/strategy/demonstration-test"
         desc="Plan a reliability demonstration test: units to test, test time per unit, allowed failures."
@@ -240,6 +335,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
 
       <h3>reliafy.fleet</h3>
       <ClientFn
+        fold
         sig="fleet.forecast(fleet_id)"
         endpoint="GET /api/v1/fleets/{id}/forecast"
         desc="The live failure forecast for one of your fleets."
@@ -249,7 +345,7 @@ reliafy.configure(token="rlf_...")   # or set RELIAFY_TOKEN; base_url= for self-
 
       <ul className="api-list">
         <li>Errors raise <code>reliafy.ReliafyError</code>; reads/writes are scoped to your own data.</li>
-        <li>Full request/response field tables are on the <b>HTTP API</b> tab.</li>
+        <li>Full request and response field tables are on <Link className="evidence-link" to={apiDocsPath("v1-routes")}>Original routes and ingest</Link>.</li>
       </ul>
     </div>
   );
@@ -260,27 +356,20 @@ function HttpDocs({ base }) {
   return (
     <div className="api-section">
       <p className="muted-line">
-        Token-authed endpoints scoped to your own data. Base URL{" "}
-        <code>{base}</code>. Every request needs the bearer header below.
+        <b>Still supported.</b> The nine original routes below and the ingest routes keep working
+        exactly as before, with the same token and scopes. For anything new, use{" "}
+        <Link className="evidence-link" to={apiDocsPath("tools")}>the tools API</Link>: it covers all of these and much more.
       </p>
-
-      <h3>Authentication</h3>
-      <p className="muted-line">
-        A personal token (<code>rlf_…</code>) from <b>Settings → API access</b>.
-        Tokens reach <b>your own</b> data — never the account, billing,
-        tokens, or team artifacts — and only what their scopes allow: <b>Push data</b> for the
-        ingest endpoints, <b>Read</b> for reads and calculations, <b>Write</b> for creating datasets
-        and fitting models.
-      </p>
-      <Code>{`-H "Authorization: Bearer rlf_your_token_here"`}</Code>
       <ul className="api-list">
-        <li>Bodies are JSON; the ingest endpoints also accept raw CSV (<code>Content-Type: text/csv</code>).</li>
-        <li>Errors: <code>422</code> (bad input, with a message), <code>404</code> (unknown/foreign id), <code>401</code> (bad token), <code>403</code> (the token lacks the scope), <code>429</code> (over 120 req/min).</li>
+        <li>Bodies are JSON; the ingest routes also take raw CSV (<code>Content-Type: text/csv</code>).</li>
+        <li>Open a route for its fields, an example and its response.</li>
+        <li>Errors: <code>422</code> (bad input, with a message), <code>404</code> (unknown or someone else’s id), <code>401</code> (bad token), <code>403</code> (the token lacks the scope), <code>429</code> (over 120 requests a minute).</li>
       </ul>
 
       <h3>Models &amp; reliability</h3>
 
       <Endpoint
+        fold
         method="GET"
         path="/api/v1/models"
         desc="List your saved models (life-data and degradation)."
@@ -294,6 +383,7 @@ function HttpDocs({ base }) {
       />
 
       <Endpoint
+        fold
         method="GET"
         path="/api/v1/models/{id}"
         desc="A model's fitted parameters, life metrics, and goodness-of-fit."
@@ -320,6 +410,7 @@ function HttpDocs({ base }) {
       />
 
       <Endpoint
+        fold
         method="POST"
         path="/api/v1/models/{id}/reliability"
         desc="Evaluate the reliability functions. With t you get point values; without it, the full grid."
@@ -341,6 +432,7 @@ function HttpDocs({ base }) {
       <h3>Datasets &amp; fitting</h3>
 
       <Endpoint
+        fold
         method="POST"
         path="/api/v1/datasets"
         desc="Create a dataset from CSV text or column arrays."
@@ -357,6 +449,7 @@ function HttpDocs({ base }) {
       />
 
       <Endpoint
+        fold
         method="POST"
         path="/api/v1/fit"
         desc="Fit and save a model from one of your datasets."
@@ -380,6 +473,7 @@ function HttpDocs({ base }) {
 
       <h3>Fleet forecasts</h3>
       <Endpoint
+        fold
         method="GET"
         path="/api/v1/fleets/{id}/forecast"
         desc="The live failure forecast — expected failures per period. Id is in /fleet/forecasts/<id>."
@@ -394,6 +488,7 @@ function HttpDocs({ base }) {
 
       <h3>Strategy calculators</h3>
       <Endpoint
+        fold
         method="POST"
         path="/api/v1/strategy/optimal-replacement"
         desc="Cost-optimal preventive-replacement interval."
@@ -409,6 +504,7 @@ function HttpDocs({ base }) {
   "planned_cost": 200, "unplanned_cost": 1500 }`}
       />
       <Endpoint
+        fold
         method="POST"
         path="/api/v1/strategy/failure-finding"
         desc="Inspection interval that keeps a hidden (protective) function available."
@@ -422,6 +518,7 @@ function HttpDocs({ base }) {
   "target_availability": 0.99, "interval": 176.4, "method": "…", "note": "…" }`}
       />
       <Endpoint
+        fold
         method="POST"
         path="/api/v1/strategy/demonstration-test"
         desc="Plan a reliability demonstration test (success run, binomial, Weibayes or MTBF)."
@@ -452,6 +549,7 @@ function HttpDocs({ base }) {
         (a bad row is a 422 with no changes applied).
       </p>
       <Endpoint
+        fold
         method="POST"
         path="/api/ingest/fleets/{fleet_id}/usage"
         desc="Update forecast items' current use, then recompute the forecast and check the fleet's alerts."
@@ -487,6 +585,7 @@ function HttpDocs({ base }) {
         </li>
       </ul>
       <Endpoint
+        fold
         method="POST"
         path="/api/ingest/tracking/{fleet_id}/measurements"
         desc="Append (item, time, value) readings to a tracked fleet and re-predict remaining life."
@@ -497,6 +596,7 @@ function HttpDocs({ base }) {
         returns={`{ "updated": 1, "items": [ { … } ] }`}
       />
       <Endpoint
+        fold
         method="POST"
         path="/api/ingest/datasets/{dataset_id}/lives"
         desc="Append failure rows to a dataset and refit its models in place."
@@ -506,9 +606,14 @@ function HttpDocs({ base }) {
         ]}
         returns={`{ "appended": 12, "n_rows": 142, "refit": [ { "id": "…", "name": "…" } ] }`}
       />
+      <p className="muted-line">
+        Reliafy Maintenance users also have an ingest route for automated meter and condition
+        readings; it’s described in the app.
+      </p>
 
       <h3>Model import</h3>
       <Endpoint
+        fold
         method="POST"
         path="/api/import/models"
         desc="Create a model from a fit done elsewhere (what reliafy.push wraps)."
@@ -523,6 +628,423 @@ function HttpDocs({ base }) {
         returns={`{ "id": "a1b2…", "name": "Pump bearings", "distribution": "Weibull",
   "params_only": false, "url": "/modelling/m/a1b2…" }`}
       />
+    </div>
+  );
+}
+const EXAMPLES = [
+  {
+    id: "fit",
+    label: "Fit a distribution",
+    note: "Fit a Weibull to five failure times, one still running (censored 1). Fitting is Pro.",
+    curl: (base) => `curl -X POST ${base}/api/v1/life_data_analysis/fit \\
+  -H "Authorization: Bearer $RELIAFY_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"distribution": "weibull", "data": [120, 340, 510, 700, 980],
+       "censored": [0, 0, 1, 0, 0], "unit": "hours"}'`,
+    python: `rf.call("life_data_analysis", "fit", distribution="weibull",
+        data=[120, 340, 510, 700, 980], censored=[0, 0, 1, 0, 0], unit="hours")`,
+  },
+  {
+    id: "rbd",
+    label: "Analyse an RBD",
+    note: "System reliability, MTTF and importance for a saved diagram (list rbds gives the ids). With simulate, a long run answers with a job to poll.",
+    curl: (base) => `curl -X POST ${base}/api/v1/rbd_analysis/analyze \\
+  -H "Authorization: Bearer $RELIAFY_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"rbd_id": "RBD_ID", "times": [1000, 8760]}'`,
+    python: `rf.call("rbd_analysis", "analyze", rbd_id="RBD_ID", times=[1000, 8760])
+rf.call("rbd_analysis", "analyze", rbd_id="RBD_ID", simulate=True, wait=True)  # waits for the job`,
+  },
+  {
+    id: "plan",
+    label: "Plan a test",
+    note: "How many units to test, and for how long, to show 90% reliability over 1,000 hours with 90% confidence.",
+    curl: (base) => `curl -X POST ${base}/api/v1/life_data_analysis/plan_demonstration_test \\
+  -H "Authorization: Bearer $RELIAFY_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"reliability": 0.9, "confidence": 0.9, "mission_time": 1000, "unit": "hours"}'`,
+    python: `rf.call("life_data_analysis", "plan_demonstration_test",
+        reliability=0.9, confidence=0.9, mission_time=1000, unit="hours")`,
+  },
+];
+
+// ---- The live tool list -------------------------------------------------------
+// Read once from the live OpenAPI spec and shared by every page that shows it
+// (the overview's count, the Tools API page's list). A failed read is retried
+// on the next page that asks.
+let toolsPromise = null;
+function loadTools() {
+  if (!toolsPromise) {
+    toolsPromise = fetch("/api/v1/openapi.json", { headers: { Accept: "application/json" } })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((spec) => toolsFromSpec(spec))
+      .catch((e) => {
+        toolsPromise = null;
+        throw e;
+      });
+  }
+  return toolsPromise;
+}
+
+function useLiveTools() {
+  const [state, setState] = useState({ status: "loading", tools: [] });
+  useEffect(() => {
+    let live = true;
+    loadTools()
+      .then((tools) => live && setState({ status: tools.length ? "ok" : "error", tools }))
+      .catch(() => live && setState({ status: "error", tools: [] }));
+    return () => { live = false; };
+  }, []);
+  return state;
+}
+
+// ---- Overview ------------------------------------------------------------------
+function Overview({ base }) {
+  const { status, tools } = useLiveTools();
+  const count = status === "ok" ? `${tools.length} tools, ${countActions(tools)} actions. ` : "";
+  return (
+    <div className="api-section">
+      <h2 id="quick-start">Quick start</h2>
+      <p className="muted-line">
+        From a script, a scheduled job, the <code>reliafy</code> command line or the Python client.
+        On Reliafy Cloud, API tokens are part of <b>Pro</b>; self-hosted servers have no plans and
+        allow everything.
+      </p>
+
+      <h3>1. Create a token</h3>
+      <p className="muted-line">
+        Sign in, open <b>Settings → API access</b> and create a personal token (<code>rlf_…</code>).
+        Send it on every request. Scopes, limits and errors: <Link className="evidence-link" to={apiDocsPath("authentication")}>Tokens and errors</Link>.
+      </p>
+      <Code>{`Authorization: Bearer rlf_your_token_here`}</Code>
+
+      <h3>2. Make a call</h3>
+      <p className="muted-line">
+        Base URL <code>{base}/api/v1</code>. Bodies and answers are JSON.
+      </p>
+      <Code>{`curl -X POST ${base}/api/v1/list/models \\
+  -H "Authorization: Bearer $RELIAFY_TOKEN"`}</Code>
+
+      <h3>3. Or use the command line</h3>
+      <Code>{`pip install reliafy-client
+reliafy login                     # asks for your token and saves it
+reliafy models list`}</Code>
+
+      <h2 id="pages">In these docs</h2>
+      <div className="api-docs-cards">
+        {API_DOCS_PAGES.filter((p) => p.slug).map((p) => (
+          <Link key={p.slug} className="api-docs-card" to={apiDocsPath(p.slug)}>
+            <b>{p.label}</b>
+            <span>{p.slug === "tools" ? count : ""}{p.blurb}</span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---- Tokens, scopes, limits and errors --------------------------------------------
+function Authentication({ base }) {
+  return (
+    <div className="api-section">
+      <h2 id="tokens">Tokens and scopes</h2>
+      <p className="muted-line">
+        Sign in, open <b>Settings → API access</b> and create a personal token (<code>rlf_…</code>).
+        Choose its scopes when you create it; revoke it there any time. Send it on every request:
+      </p>
+      <Code>{`Authorization: Bearer rlf_your_token_here`}</Code>
+      <div className="table-scroll">
+        <table className="api-params">
+          <tbody>
+            <tr>
+              <td><code>read</code></td>
+              <td className="api-pdesc">Reads and calculations: the tools that change nothing (<code>guide</code>, <code>get</code>, <code>list</code>, the analysis tools, <code>strategy</code>, <code>upgrade_link</code>).</td>
+            </tr>
+            <tr>
+              <td><code>write</code></td>
+              <td className="api-pdesc">Everything that saves, changes, shares or deletes (<code>models</code>, <code>datasets</code>, <code>rbd</code>, <code>uploads</code>, <code>rcm</code>, <code>sharing</code>, <code>fleet</code>), and photo uploads.</td>
+            </tr>
+            <tr>
+              <td><code>ingest</code></td>
+              <td className="api-pdesc">Push data only (“Push data” in the app): the ingest routes and model import. An ingest-only token can never read your analyses.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="muted-line">
+        No token can reach your account, billing or tokens. Tokens made before scopes existed keep all three.
+        The base URL is <code>{base}/api/v1</code>.
+      </p>
+
+      <h2 id="limits">Limits and errors</h2>
+      <ul className="api-list">
+        <li><b>Rate limit:</b> 120 requests a minute per account. Ingest routes take at most 5,000 rows a request.</li>
+        <li>Calls are gated exactly as over the Claude connector: Pro accounts get every tool with no monthly allowance, and a few heavy calculations can run at once per account.</li>
+        <li>Every refusal is JSON, <code>{`{"detail": "…"}`}</code>, said plainly.</li>
+      </ul>
+      <div className="table-scroll">
+        <table className="api-params">
+          <tbody>
+            {[
+              ["401", "No token, or a wrong, expired or revoked one."],
+              ["402", "Needs Pro: a token on an account without Pro, or a Pro-only tool."],
+              ["403", "Outside the token’s scopes (for example a write with a read-only token)."],
+              ["404", "No such tool, action or item, or one you can’t see."],
+              ["422", "The arguments: the detail says which and why."],
+              ["429", "The rate limit, the monthly allowance, or too many calculations running at once."],
+              ["503", "Busy: try again in a minute."],
+              ["504", "The call ran out of time."],
+            ].map(([code, text]) => (
+              <tr key={code}>
+                <td><code>{code}</code></td>
+                <td className="api-pdesc">{text}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---- The tools API ---------------------------------------------------------------
+function ToolsApi({ base }) {
+  const specUrl = `${base}/api/v1/openapi.json`;
+  return (
+    <div className="api-section">
+      <p className="muted-line">
+        Every action of every tool in Reliafy’s Claude connector (MCP) is also a REST call, with
+        the same arguments, the same checks and the same result. The REST calls are built from the
+        connector’s tools, so a new tool or action is here as soon as it ships.
+      </p>
+      <Endpoint
+        method="POST"
+        path="/api/v1/{tool}/{action}"
+        desc="A tool with actions (or, for get and list, kinds). The body is a JSON object of the action’s arguments; the action is in the path, not the body."
+      />
+      <Endpoint
+        method="POST"
+        path="/api/v1/{tool}"
+        desc="A tool without actions, such as guide or upgrade_link."
+      />
+      <Endpoint
+        method="GET"
+        path="/api/v1/tools"
+        desc="The tools and actions your token may call, each with its path and its required and optional arguments."
+      />
+      <Endpoint
+        method="GET"
+        path="/api/v1/openapi.json"
+        desc="An OpenAPI 3.1 spec of every tool action with its full argument schema: the complete, always-current reference. Without a token it covers the core tools; with one, everything that account may call. Generate a client from it, or import it into Postman or similar."
+      />
+      <p className="muted-line">
+        <a className="evidence-link" href={specUrl} target="_blank" rel="noreferrer">Open the OpenAPI spec</a>
+        {" · "}
+        <Link className="evidence-link" to={apiDocsPath("examples")}>Worked examples</Link>
+      </p>
+
+      <h3 id="jobs">Long-running calculations</h3>
+      <p className="muted-line">
+        A long simulation or search answers at once with a <code>job_id</code> and a{" "}
+        <code>status</code> of <code>queued</code> or <code>running</code>. Poll it until{" "}
+        <code>status</code> is <code>done</code> (with the result) or <code>failed</code>. The Python
+        client (<code>wait=True</code>) and the command line wait for you.
+      </p>
+      <Code>{`curl -X POST ${base}/api/v1/get/job \\
+  -H "Authorization: Bearer $RELIAFY_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"id": "JOB_ID"}'`}</Code>
+
+      <h3 id="tool-list">Every tool and action</h3>
+      <LiveToolList specUrl={specUrl} />
+    </div>
+  );
+}
+
+// The tools and actions, read from the live OpenAPI spec.
+function LiveToolList({ specUrl }) {
+  const state = useLiveTools();
+  const fallback = (
+    <p className="muted-line">
+      The full list of tools, actions and arguments is in the{" "}
+      <a className="evidence-link" href={specUrl} target="_blank" rel="noreferrer">OpenAPI spec</a>,
+      and <code>GET /api/v1/tools</code> (or <code>reliafy tools</code>) lists what your token may call.
+    </p>
+  );
+  if (state.status === "loading") {
+    return <>{<p className="muted-line">Loading the tool list…</p>}{fallback}</>;
+  }
+  if (state.status === "error") {
+    return <>{<p className="muted-line">The tool list couldn’t be loaded just now.</p>}{fallback}</>;
+  }
+  const { tools } = state;
+  return (
+    <div className="api-tools">
+      <p className="muted-line">
+        {tools.length} tools, {countActions(tools)} actions, read live from the spec. Open a tool for
+        its actions and their arguments (<b>bold</b> ones are required); each action is{" "}
+        <code>POST /api/v1/{"{tool}"}/{"{action}"}</code>. Reliafy Maintenance users also
+        have the Maintenance tools; they show in <code>/api/v1/tools</code> and the spec when you
+        call with your token.
+      </p>
+      {tools.map((t) => (
+        <details className="api-tool" key={t.name}>
+          <summary>
+            <code>{t.name}</code>
+            <span className="api-tool-meta">
+              {t.actions[0].action ? `${t.actions.length} action${t.actions.length === 1 ? "" : "s"}` : t.actions[0].summary}
+              {" · "}{t.scope}
+            </span>
+          </summary>
+          <ul className="api-list">
+            {t.actions.map((a) => (
+              <li key={a.path}>
+                <code className="api-path" title={`POST ${a.path}`}>{a.action ? <b>{a.action}</b> : `POST ${a.path}`}</code>
+                {a.pro && <span className="api-tag">Pro</span>}
+                {" "}— {a.summary}
+                {(a.required.length > 0 || a.optional.length > 0) && (
+                  <div className="api-args">
+                    {a.required.map((n) => <code key={n}><b>{n}</b></code>)}
+                    {a.optional.map((n) => <code key={n}>{n}</code>)}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+// ---- Worked examples -----------------------------------------------------------------
+const EXAMPLE_LANGS = [
+  { id: "python", label: "Python" },
+  { id: "curl", label: "curl" },
+];
+
+function Examples({ base }) {
+  const [lang, setLang] = useState("python");
+  return (
+    <div className="api-section">
+      <p className="muted-line">
+        Three calls from start to finish. Pick a language; every example switches with it.
+      </p>
+      <Tabs tabs={EXAMPLE_LANGS} value={lang} onChange={setLang} label="Example language" />
+      {EXAMPLES.map((ex) => (
+        <div className="api-ep" key={ex.id}>
+          <div className="api-ep-head"><b>{ex.label}</b></div>
+          <p className="muted-line api-ep-desc">{ex.note}</p>
+          <Code>{lang === "curl" ? ex.curl(base) : ex.python}</Code>
+        </div>
+      ))}
+      <p className="muted-line">
+        The Python lines use <code>rf = Client()</code> from <code>reliafy-client</code> (see{" "}
+        <Link className="evidence-link" to={apiDocsPath("python")}>the Python client</Link>). The same calls from{" "}
+        <Link className="evidence-link" to={apiDocsPath("cli")}>the command line</Link>:{" "}
+        <code>reliafy life_data_analysis fit --distribution weibull …</code>. A long job, such as a
+        simulation, is polled as in <Link className="evidence-link" to={`${apiDocsPath("tools")}#jobs`}>long-running calculations</Link>.
+      </p>
+    </div>
+  );
+}
+
+// ---- Files and photos ------------------------------------------------------------------
+function Files({ base }) {
+  return (
+    <div className="api-section">
+      <p className="muted-line">
+        The connector’s tool calls carry JSON, not files. These two take bytes, so they’re on the
+        API, the Python client and the command line only:
+      </p>
+      <Endpoint
+        method="PUT"
+        path="/api/uploads/{upload_id}?t=…"
+        desc="Send a file to the single-use link from uploads create (at most 30 MB; the link’s t is the credential, no other sign-in). Then import it by its upload_id: datasets upload, uploads import_rbd, uploads import_excel or rbd upload_outage_log."
+        example={`curl -X POST ${base}/api/v1/uploads/create -H "Authorization: Bearer $RELIAFY_TOKEN" \\
+  -H "Content-Type: application/json" -d '{"purpose": "rbd_import", "filename": "plant.xml"}'   # → url, upload_id
+curl -X PUT --data-binary @plant.xml "UPLOAD_URL"
+curl -X POST ${base}/api/v1/uploads/import_rbd -H "Authorization: Bearer $RELIAFY_TOKEN" \\
+  -H "Content-Type: application/json" -d '{"upload_id": "UPLOAD_ID"}'
+
+reliafy import rbd plant.xml          # the same three steps
+reliafy upload bearings.xlsx --name Bearings`}
+      />
+      <ul className="api-list">
+        <li><code>PUT /api/uploads/{"{upload_id}"}?t=…</code> (or <code>POST</code> with the raw body) — no sign-in: the link’s token is the credential. It works once and expires after 15 minutes. Answers <code>{`{ upload_id, size, sha256, detected_format }`}</code>.</li>
+        <li>Errors: <code>404</code> (no such upload, or a wrong token), <code>409</code> (already used), <code>410</code> (expired), <code>413</code> (over the size limit — 30 MB at most), <code>429</code> (too many attempts).</li>
+        <li>Uploads are private to you, are never served back, and are deleted once imported or after an hour.</li>
+        <li>The upload URL points straight at Reliafy’s app service, which is fastest. Some sandboxes and corporate proxies refuse that host (for example <code>CONNECT tunnel failed, response 403</code>). For those, <code>uploads create</code> also returns <code>url_fallback</code> (with a ready <code>curl_fallback</code>): the same link on reliafy.com. Send the same PUT there once. It’s slower for large files. A PUT that a proxy refused never reached Reliafy, so the link is still unused.</li>
+      </ul>
+      <Endpoint
+        method="POST"
+        path="/api/v1/maintenance/photos?target_id=…&caption=…"
+        desc="Reliafy Maintenance users: add a photo to a position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC, at most 20 MB), or multipart with a file field. It’s cleaned and stripped of camera and location data, like a photo added in the app. Needs the write scope."
+        example={`reliafy photo add IMG_*.jpg --to POSITION_ID --caption "Nameplate"
+reliafy photo link PHOTO_ID --to LOCATION_ID     # show it there too
+reliafy photo move PHOTO_ID --to POSITION_ID     # only there
+reliafy photo unlink PHOTO_ID --from LOCATION_ID`}
+      />
+      <p className="muted-line">
+        From Python: <code>rf.upload_dataset</code>, <code>rf.import_rbd</code>,{" "}
+        <code>rf.import_excel</code> and <code>rf.add_photo</code> (see{" "}
+        <Link className="evidence-link" to={`${apiDocsPath("python")}#files`}>the Python client</Link>).
+      </p>
+    </div>
+  );
+}
+
+// ---- The command line ------------------------------------------------------------
+function CliDocs() {
+  return (
+    <div className="api-section">
+      <p className="muted-line">
+        <code>pip install reliafy-client</code> installs the <code>reliafy</code> command. It’s also
+        installed as <code>reliafy-client</code>, the same command: if another program called{" "}
+        <code>reliafy</code> is already on your path, use <code>reliafy-client</code> instead.
+      </p>
+
+      <h3>Sign in</h3>
+      <Code>{`pip install reliafy-client
+reliafy login                     # asks for your token and saves it
+reliafy whoami                    # your account and plan
+reliafy logout                    # forget the saved token`}</Code>
+      <ul className="api-list">
+        <li>
+          <code>reliafy login</code> saves the token in <code>~/.config/reliafy/config.json</code>{" "}
+          (<code>%APPDATA%\reliafy</code> on Windows; set <code>RELIAFY_CONFIG_DIR</code> to choose),
+          readable by you only.
+        </li>
+        <li>Or set <code>RELIAFY_TOKEN</code> (and <code>RELIAFY_BASE_URL</code> for a self-hosted server), or pass <code>--token</code> and <code>--base-url</code>.</li>
+      </ul>
+
+      <h3>Any tool action</h3>
+      <Code>{`reliafy tools                                  # every tool and action you may call
+reliafy <tool> <action> --arg value …          # any of them
+reliafy life_data_analysis fit --help          # one action's arguments
+reliafy strategy optimal_replacement --distribution-id weibull \\
+    --params '[{"name":"alpha","value":1200},{"name":"beta","value":2.5}]' \\
+    --planned-cost 200 --unplanned-cost 1500
+reliafy models list
+reliafy call get model --args '{"id": "MODEL_ID"}'`}</Code>
+      <ul className="api-list">
+        <li>Values are read as their argument’s type: text, numbers, <code>true</code>/<code>false</code>, JSON for lists and objects (<code>--times 100,500,1000</code> works too). <code>@file</code> reads a file.</li>
+        <li><code>--args '{"{…}"}'</code> gives every argument as one JSON object.</li>
+        <li>Long jobs are waited for; <code>--no-wait</code> prints the <code>job_id</code> instead.</li>
+        <li>Add <code>--json</code> to any command for JSON instead of the readable summary.</li>
+      </ul>
+
+      <h3>Shortcuts</h3>
+      <Code>{`reliafy fit failures.csv --dist weibull --censor-column status --save "Pump bearings"
+reliafy push model.json                        # {distribution, params | data, name?, unit?}
+reliafy upload bearings.xlsx --name Bearings   # CSV or .xlsx as a dataset
+reliafy import rbd plant.xml                   # BlockSim, Open-PSA, Galileo, RePyability, Excel
+reliafy import excel fmea.xlsx --target rcm
+reliafy ingest usage meters.csv --fleet FLEET_ID
+reliafy ingest measurements readings.csv --fleet TRACKED_FLEET_ID
+reliafy ingest lives new_failures.csv --dataset DATASET_ID
+reliafy photo add IMG_*.jpg --to POSITION_ID   # Reliafy Maintenance users`}</Code>
+      <ul className="api-list">
+        <li><code>reliafy fit</code> never guesses what a flag column means: Reliafy reads 0 = failed, 1 = still running. If yours is 1 = failed, add <code>--c-invert</code>.</li>
+        <li>Reliafy Maintenance users also have <code>reliafy ingest readings</code> and <code>reliafy photo link|move|unlink</code>.</li>
+        <li><code>reliafy photo add</code> reports each file and exits non-zero if any failed.</li>
+      </ul>
     </div>
   );
 }
@@ -617,17 +1139,14 @@ const MCP_TOOLS = [
 ];
 
 // "Use Reliafy from Claude (MCP)": what the MCP server is and how to connect
-// (headed, while the connector is switched off, by how to ask for it).
-// Rendered as its own section (not a tab) so the prerendered public page
-// carries it in the static HTML. ``tokenNote`` says where tokens come from.
-export function McpDocs({ tokenNote }) {
+// (headed, while the connector is switched off, by how to ask for it): the
+// /api-docs/mcp page. ``tokenNote`` says where tokens come from.
+function McpDocs({ tokenNote }) {
   const { mcp: mcpOn } = useAppConfig();
   const base = (typeof window !== "undefined" && window.location.origin) || "https://reliafy.com";
   const url = `${base}/mcp`;
   return (
-    <div className="card api-ref">
-      <div className="api-section">
-        <h2 id="mcp">Use Reliafy from Claude (MCP)</h2>
+    <div className="api-section">
         {!mcpOn && <McpOnRequest className="api-mcp-off" />}
         <p className="muted-line">
           Reliafy runs a remote <b>Model Context Protocol</b> server, so Claude — on the web, the
@@ -695,9 +1214,7 @@ export function McpDocs({ tokenNote }) {
   -H "Content-Type: application/octet-stream" \\
   "${base}/api/uploads/UPLOAD_ID?t=TOKEN"`}</Code>
         <ul className="api-list">
-          <li><code>PUT /api/uploads/{"{upload_id}"}?t=…</code> (or <code>POST</code> with the raw body) — no sign-in: the link’s token is the credential. It works once and expires after 15 minutes. Answers <code>{`{ upload_id, size, sha256, detected_format }`}</code>.</li>
-          <li>Errors: <code>404</code> (no such upload, or a wrong token), <code>409</code> (already used), <code>410</code> (expired), <code>413</code> (over the size limit — 30 MB at most), <code>429</code> (too many attempts).</li>
-          <li>Uploads are private to you, are never served back, and are deleted once imported or after an hour.</li>
+          <li>The link works once, expires after 15 minutes and takes at most 30 MB. Its answer, errors and privacy: <Link className="evidence-link" to={apiDocsPath("files")}>Files and photos</Link>.</li>
           <li>The upload URL points straight at Reliafy’s app service, which is fastest. Some sandboxes and corporate proxies refuse that host (for example <code>CONNECT tunnel failed, response 403</code>). For those, <code>uploads create</code> also returns <code>url_fallback</code> (with a ready <code>curl_fallback</code>): the same link on reliafy.com. Send the same PUT there once. It’s slower for large files. A PUT that a proxy refused never reached Reliafy, so the link is still unused.</li>
           <li>If Claude’s environment can’t reach either URL (no network), small text files (up to 200 KB) can be pasted instead — CSV into <code>datasets upload</code> or <code>rbd upload_outage_log</code>, Open-PSA or Galileo text into <code>uploads import_rbd</code>. Other files of up to a few hundred KB (an Excel workbook, a BlockSim project) can go through the MCP connection itself with <code>uploads send_part</code>: base64 parts into the same upload, checked against the file’s SHA-256. An FMEA / RCM worksheet can also be given as data with <code>rcm create</code>. Anything larger is uploaded in the app.</li>
         </ul>
@@ -708,45 +1225,131 @@ export function McpDocs({ tokenNote }) {
           <code>get</code> and <code>list</code>, the kind). Each tool’s description lists its actions and what
           each takes, and <code>guide</code> gives the agent how-tos by topic.
         </p>
-        <ul className="api-list">
-          {MCP_TOOLS.map(({ name, desc, actions }) => (
-            <li key={name}>
-              <code>{name}</code> — {desc}
-              {actions && (
-                <ul className="api-list">
-                  {actions.map(([action, text]) => (
-                    <li key={action}><code>{action}</code> — {text}</li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="api-tools">
+          {MCP_TOOLS.map(({ name, desc, actions }) => (actions ? (
+            <details className="api-tool" key={name}>
+              <summary>
+                <code>{name}</code>
+                <span className="api-tool-meta">{desc}</span>
+              </summary>
+              <ul className="api-list">
+                {actions.map(([action, text]) => (
+                  <li key={action}><code>{action}</code> — {text}</li>
+                ))}
+              </ul>
+            </details>
+          ) : (
+            <div className="api-tool api-tool-flat" key={name}>
+              <code>{name}</code>
+              <span className="api-tool-meta">{desc}</span>
+            </div>
+          )))}
+        </div>
         <ul className="api-list">
           <li>Censoring follows Reliafy’s convention: <b>0 = failed</b>, <b>1 = still running</b>. Data coded the other way round can be fitted with the inverted-flags option.</li>
           <li>Reading and calculating tools (<code>guide</code>, <code>get</code>, <code>list</code>, the four analysis tools and <code>upgrade_link</code>) are marked read-only; the tools that save, change, share or delete in your workspace are marked as writes, so Claude asks before running them, and deletes only what you ask it to, after confirming by name.</li>
           <li>Errors: <code>401</code> (not signed in, or a missing, expired or revoked token), <code>403</code> (an API token whose owner isn’t on Pro — tokens are Pro-only; a signed-in Claude connection without Pro connects, and each tool says it needs Pro), <code>429</code> (over 120 requests/minute), <code>503</code> (the MCP connector isn’t switched on — it’s available on request).</li>
         </ul>
-      </div>
     </div>
   );
 }
 
-const API_TABS = [
-  { id: "client", label: "reliafy-client (Python)" },
-  { id: "http", label: "HTTP API" },
-];
+// ---- The pages and their frame ------------------------------------------------------
+// The sub-navigation: a list down the left on a wide screen, a menu on a phone.
+function ApiDocsNav({ page }) {
+  const navigate = useNavigate();
+  return (
+    <nav className="api-docs-nav" aria-label="API docs pages">
+      <label className="api-docs-select">
+        <span>Page</span>
+        <select value={apiDocsPath(page)} onChange={(e) => navigate(e.target.value)}>
+          {API_DOCS_PAGES.map((p) => (
+            <option key={p.slug} value={apiDocsPath(p.slug)}>{p.label}</option>
+          ))}
+        </select>
+      </label>
+      <ul className="api-docs-menu">
+        {API_DOCS_PAGES.map((p) => (
+          <li key={p.slug}>
+            <Link
+              to={apiDocsPath(p.slug)}
+              className={p.slug === page ? "active" : undefined}
+              aria-current={p.slug === page ? "page" : undefined}
+            >
+              {p.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
 
-// In-app reference for the programmatic API + the reliafy-client package.
-// Examples use the live origin, so self-hosted instances show their own base URL.
-export default function ApiReference() {
+function PrevNext({ page }) {
+  const { prev, next } = apiDocsNeighbours(page);
+  return (
+    <div className="api-docs-pager">
+      {prev ? (
+        <Link className="api-docs-prev" to={apiDocsPath(prev.slug)}>
+          <span>Previous</span>
+          <b>{prev.label}</b>
+        </Link>
+      ) : <span />}
+      {next && (
+        <Link className="api-docs-next" to={apiDocsPath(next.slug)}>
+          <span>Next</span>
+          <b>{next.label}</b>
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function PageBody({ page, base, tokenNote }) {
+  switch (page) {
+    case "authentication": return <Authentication base={base} />;
+    case "tools": return <ToolsApi base={base} />;
+    case "examples": return <Examples base={base} />;
+    case "cli": return <CliDocs />;
+    case "python": return <ClientDocs />;
+    case "files": return <Files base={base} />;
+    case "mcp": return <McpDocs tokenNote={tokenNote} />;
+    case "v1-routes": return <HttpDocs base={base} />;
+    default: return <Overview base={base} />;
+  }
+}
+
+// The API docs, one page of them (``page`` is its slug; "" is the overview),
+// with the sub-navigation and previous / next links. ``header`` is the host's
+// page head (title and, on the overview, the introduction); ``tokenNote`` says
+// where tokens come from. Examples use the live origin, so self-hosted
+// instances show their own base URL.
+export default function ApiDocs({ page = "", header, tokenNote }) {
   const base = (typeof window !== "undefined" && window.location.origin) || "https://reliafy.com";
-  const [tab, setTab] = useState("client");
+  const navigate = useNavigate();
+  const { hash } = useLocation();
+  // Links to the old single page (/api-docs#mcp) go to the page that section
+  // is on now; a link to an anchor on this page scrolls to it once drawn.
+  useEffect(() => {
+    if (!hash) return;
+    const target = page === "" ? legacyApiDocsTarget(hash) : null;
+    if (target) {
+      navigate(target, { replace: true });
+      return;
+    }
+    document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView();
+  }, [page, hash]);
 
   return (
-    <div className="card api-ref">
-      <Tabs tabs={API_TABS} value={tab} onChange={setTab} label="API reference" />
-      {tab === "client" ? <ClientDocs /> : <HttpDocs base={base} />}
+    <div className="api-docs">
+      <ApiDocsNav page={page} />
+      <div className="api-docs-main">
+        {header}
+        <div className="card api-ref">
+          <PageBody page={page} base={base} tokenNote={tokenNote} />
+        </div>
+        <PrevNext page={page} />
+      </div>
     </div>
   );
 }

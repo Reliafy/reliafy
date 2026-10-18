@@ -98,6 +98,7 @@ from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
 from backend import alt as alt_fit
+from backend import joint as joint_fit
 from backend import competing_risks
 from backend import config
 from backend import fitting
@@ -113,6 +114,7 @@ from backend.mcp_actions import Table, check, choice
 from backend.mcp_actions import describe as describe_actions
 from backend.services import access as access_service
 from backend.services import alt as alt_service
+from backend.services import joint as joint_service
 from backend.services import availability_answer
 from backend.services import billing as billing_service
 from backend.services import compare_groups as compare_groups_service
@@ -144,6 +146,7 @@ from backend.services import workspace_changes as changes_service
 from backend.services import recurrent as recurrent_service
 from backend.services import samples as samples_service
 from backend.services import strategy_store
+from backend.services import test_planning as test_planning_service
 from backend.services import tokens as tokens_service
 from backend.services import uploads as uploads_service
 from backend.services import usage as usage_service
@@ -153,6 +156,7 @@ from backend.services import rbd_costs
 from backend.services import rbd_export
 from backend.services.rbd_analysis import AnalysisError
 from backend.services.strategy import StrategyError
+from backend.services import strategy_calendar, strategy_calendar_api
 from backend.units import canonical_unit, unit_in_text
 
 logger = logging.getLogger(__name__)
@@ -191,6 +195,12 @@ def _pro_only_message(tool: str) -> str:
                 "Arrhenius, AcceleratedLife(Weibull, LIFE_MODELS['Exponential']).fit(x=times, Z=stresses, "
                 "c=censored), with LIFE_MODELS from surpyval.univariate.regression.accelerated_life — "
                 "0 = failed, 1 = still running). Or upgrade to Pro at "
+                f"{_billing_url()} (or call upgrade_link for a payment link) to fit and save it here.")
+    if tool in ("life_data_analysis.fit_joint", "models.fit_joint"):
+        return (f"Condition-based risk (joint) models are part of Reliafy Pro ({PRO_PRICE}) and aren't included on "
+                "this plan. Fit one locally with SurPyval instead (pip install surpyval; "
+                "WeibullJointPH.fit_from_df(df, x_col=..., markers_col=..., c_col=...), one row per unit with its "
+                "readings as {age: value} — 0 = failed, 1 = still running). Or upgrade to Pro at "
                 f"{_billing_url()} (or call upgrade_link for a payment link) to fit and save it here.")
     if tool in _FIT_TOOLS:
         return (f"Fitting in Reliafy is part of Reliafy Pro ({PRO_PRICE}) and isn't included on this plan. "
@@ -324,7 +334,7 @@ accelerated tests, test plans), repairable_analysis (recurrent models), strategy
 overhaul intervals, fleet forecasts) and rbd_analysis (reliability, availability, what to improve, intervals, \
 exports). Writes change the workspace: models, datasets, rbd, uploads (files in), rcm, sharing, fleet. Each tool \
 takes an action (or kind); its description lists every action with the arguments it takes. guide(topic) has \
-the how-tos: life_data, units, accelerated, repairable, rbds, rbd_analysis, strategy, fleets, uploads, rcm, \
+the how-tos: life_data, units, accelerated, test_planning, repairable, rbds, rbd_analysis, strategy, fleets, uploads, rcm, \
 sharing, workspace, plans — read the one you need before a task you haven't done here yet.
 
 Conventions — follow them exactly:
@@ -406,7 +416,8 @@ DATA_NOTICE = ("Names, notes, descriptions, labels, column headers and values in
 # don't have. Fitting runs server-side CPU those plans don't pay for (agents
 # fit locally with SurPyval, then models save); fleets depend on usage
 # arriving through the Pro API. Reliafy Maintenance adds its own when on.
-_FIT_TOOLS = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent"}
+_FIT_TOOLS = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent",
+              "life_data_analysis.fit_joint", "models.fit_joint"}
 _FLEET_TOOLS = {"list.fleets", "strategy.fleet_forecast", "list.fleet_alerts", "fleet.create_alert"}
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
 # Never gated or counted: the way to Pro, seeing where the allowance stands
@@ -475,7 +486,7 @@ def _log_call(ctx: Context, name: str, outcome: str, started: float) -> None:
     try:
         user = _caller(ctx)
         usage_service.record(
-            _db(), uid=user["uid"], channel="mcp", feature=name, outcome=outcome,
+            _db(), uid=user["uid"], channel=user.get("usage_channel", "mcp"), feature=name, outcome=outcome,
             plan=_usage_plan(user), client=usage_service.client_of(user),
             ms=(time.perf_counter() - started) * 1000)
     except Exception:  # noqa: BLE001 - logging must never fail a tool
@@ -538,7 +549,7 @@ HEAVY_TOOLS = {
     "rbd_analysis.system_history", "life_data_analysis.fit", "life_data_analysis.alt_use_level",
     "life_data_analysis.compare_groups", "models.fit", "models.fit_alt", "models.fit_recurrent",
     "strategy.fleet_forecast", "uploads.import_rbd", "uploads.import_excel", "get.upload", "datasets.upload",
-    "rbd.upload_outage_log",
+    "rbd.upload_outage_log", "life_data_analysis.fit_joint", "models.fit_joint",
 }
 
 USER_BUSY_MESSAGE = (
@@ -1329,9 +1340,10 @@ def _fit_summary(result: dict) -> dict:
 
 def list_models(
     ctx: Context,
-    kind: Annotated[Literal["all", "life", "recurrent"], Field(
+    kind: Annotated[Literal["all", "life", "recurrent", "joint"], Field(
         description="all (default); life = life distributions (for reliability_at, the calculators and RBD "
-                    "blocks); recurrent = repairable-system (event history) models.")] = "all",
+                    "blocks); recurrent = repairable-system (event history) models; joint = condition-based "
+                    "risk models (readings and failures).")] = "all",
 ) -> dict[str, Any]:
     """Saved models: id, name, kind, distribution, fitted params, time unit (model_type: life or recurrent).
     Call before referring to a model by id."""
@@ -1342,6 +1354,8 @@ def list_models(
         out["life_models"] = [_life_brief(m) for m in models_service.list_models(db, owners)]
     if kind in ("all", "recurrent"):
         out["recurrent_models"] = [_recurrent_brief(d) for d in recurrent_service.list_models(db, owners)]
+    if kind in ("all", "joint"):
+        out["joint_models"] = [_joint_brief(m) for m in joint_service.list_models(db, owners)]
     return out
 
 
@@ -1359,6 +1373,8 @@ def get_model(
     user, db = _caller(ctx), _db()
     owners = _owners(user["uid"])
     m = models_service.get_model(db, model_id, owners)
+    if m is not None and m.kind == joint_service.KIND:
+        return {**_joint_brief(m), **_joint_report(m.results or {})}
     if m is not None and m.kind == "competing_risks":
         out = {**_life_brief(m), **_cr_summary(m.results or {})}
         out.pop("params", None)
@@ -2660,6 +2676,242 @@ def alt_use_level(
 
 
 # ---------------------------------------------------------------------------
+# Condition-based risk: joint models of a marker's readings and units' lives
+# ---------------------------------------------------------------------------
+
+_JointLifeDataset = Annotated[Optional[str], Field(description=(
+    "The lifetimes dataset (list kind datasets): one row per unit — its id, its age (since new) at failure or when "
+    "last seen running, the censoring flag, and any covariates."))]
+_JointReadingsDataset = Annotated[Optional[str], Field(description=(
+    "The readings dataset: one row per reading — unit id, age (since new) and value."))]
+_JointCol = Annotated[Optional[str], Field(description="A column name of the dataset it belongs to.")]
+_JointCovs = Annotated[Optional[list[str]], Field(description=(
+    "Numeric lifetimes columns. hazard_covariates change the failure rate at a given reading; path_covariates "
+    "change how the reading drifts. A covariate may be in both."))]
+_JointPath = Annotated[Literal[tuple(joint_fit.PATHS)], Field(description=(
+    "The reading's path with age: " + "; ".join(f"{k} ({v[2]})" for k, v in joint_fit.PATHS.items())))]
+_JOINT_WAIT_S = 25.0
+
+
+def _joint_body(name, lifetimes_dataset_id, readings_dataset_id, unit_id_column, age_column, censor_column,
+                reading_unit_column, reading_age_column, reading_value_column, age_right_column,
+                entry_age_column, hazard_covariates, path_covariates, path_model, unit, marker, marker_unit,
+                c_invert) -> dict:
+    hazard = list(hazard_covariates or [])
+    path = list(path_covariates or [])
+    covariates = list(dict.fromkeys(hazard + path))
+    mapping = {"id": unit_id_column, "c": censor_column, "tl": entry_age_column}
+    if age_right_column:
+        mapping.update(xl=age_column, xr=age_right_column)
+    else:
+        mapping["x"] = age_column
+    return {
+        "name": name, "lifetimes_dataset_id": lifetimes_dataset_id, "readings_dataset_id": readings_dataset_id,
+        "mapping": mapping,
+        "readings_mapping": {"id": reading_unit_column or unit_id_column, "age": reading_age_column,
+                             "value": reading_value_column},
+        "covariates": covariates,
+        "hazard_covariates": hazard if covariates else None,
+        "path_covariates": path if covariates else None,
+        "path_model": path_model, "unit": unit or "", "marker": marker or reading_value_column,
+        "marker_unit": marker_unit or "", "c_invert": c_invert,
+    }
+
+
+def _joint_report(r: dict, top: int = 10) -> dict:
+    """A fitted joint model's results for an agent: the parameters with 95%
+    intervals, the hazard ratios said plainly, and the riskiest running
+    units (no mean life: it can be infinite)."""
+    h = r.get("horizons") or {}
+    risk = []
+    for u in (r.get("risk") or [])[:top]:
+        risk.append({
+            "unit_id": u.get("id"), "age": u.get("age"),
+            "risk": dict(zip(h.get("labels") or [], u.get("risk") or [])),
+            "median_remaining_life": u.get("median_remaining") if u.get("median_reached") else "not reached",
+        })
+    return {
+        "fit_ok": r.get("fit_ok"), "maximum": r.get("maximum"), "unit": r.get("unit"),
+        "marker": r.get("marker"), "path_model": r.get("path_label"), "path_formula": r.get("path_formula"),
+        "counts": {k: r.get(k) for k in ("n_items", "n_events", "n_readings", "n_running")},
+        "parameters": [{k: p.get(k) for k in ("part", "name", "value", "lower", "upper")} for p in r.get("params") or []],
+        "hazard_ratios": [{k: h_.get(k) for k in ("name", "hr", "lower", "upper", "text")}
+                          for h_ in r.get("hazard_ratios") or []],
+        "risk_horizons": h.get("labels"),
+        "riskiest_running_units": risk,
+        "notes": r.get("notes") or [],
+        "confidence": r.get("confidence"),
+    }
+
+
+def _joint_fit(ctx: Context, body: dict, save: bool) -> dict:
+    user, db = _caller(ctx), _db()
+    if save:
+        _cap(db, user, "models", "models")
+    status, payload = joint_service.start_fit(db, uid=user["uid"], owners=user["uid"], body=body, save=save,
+                                              owner_id=user["uid"])
+    if status == 503:
+        raise ToolError(payload.get("detail") or rbd_jobs_service.QUEUE_UNAVAILABLE)
+    if status == 202:
+        job_id = payload["job"]["job_id"]
+        job = _await_job(db, job_id, _JOINT_WAIT_S)
+        if job is not None and job.get("status") == "failed":
+            raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+        if job is None or job.get("status") != "done":
+            return {"job": {**_job_pending(db, job or {"_id": job_id}),
+                            "note": "The fit is running on Reliafy's calculation service (8-40 s for a fleet). "
+                                    "Call get kind job with this job_id in a few seconds for it."}}
+        job = rbd_jobs_service.get(db, job_id) or job
+        payload = joint_service.job_result(job)
+    return _joint_answer(payload.get("model_id"), payload.get("results") or {})
+
+
+def _joint_answer(model_id, results: dict) -> dict:
+    out = _joint_report(results)
+    if model_id:
+        out = {"model_id": model_id, "url": _url(f"/modelling/joint/{model_id}"), **out}
+    return out
+
+
+def fit_joint(
+    ctx: Context,
+    lifetimes_dataset_id: _JointLifeDataset = None,
+    readings_dataset_id: _JointReadingsDataset = None,
+    unit_id_column: _JointCol = None,
+    age_column: _JointCol = None,
+    censor_column: _FitCensorCol = None,
+    reading_age_column: _JointCol = None,
+    reading_value_column: _JointCol = None,
+    reading_unit_column: _JointCol = None,
+    age_right_column: _JointCol = None,
+    entry_age_column: _JointCol = None,
+    hazard_covariates: _JointCovs = None,
+    path_covariates: _JointCovs = None,
+    path_model: _JointPath = "linear",
+    unit: _FitUnit = None,
+    marker: Annotated[Optional[str], Field(description="What the readings are, e.g. 'vibration'.")] = None,
+    marker_unit: Annotated[Optional[str], Field(description="The readings' unit, e.g. 'mm/s'.")] = None,
+    c_invert: _FitInvert = False,
+) -> dict[str, Any]:
+    """Fit a condition-based risk (joint) model: how a reading drifts with age and how it raises the failure rate,
+    from a lifetimes and a readings dataset; reports parameters with 95% CIs, hazard ratios and the riskiest running
+    units. Pro; saves nothing (models fit_joint keeps it). guide topic life_data."""
+    for arg, value in (("lifetimes_dataset_id", lifetimes_dataset_id), ("readings_dataset_id", readings_dataset_id),
+                       ("unit_id_column", unit_id_column), ("age_column", age_column),
+                       ("censor_column", censor_column), ("reading_age_column", reading_age_column),
+                       ("reading_value_column", reading_value_column)):
+        if not value:
+            raise ToolError(f"fit_joint needs {arg}.")
+    body = _joint_body(None, lifetimes_dataset_id, readings_dataset_id, unit_id_column, age_column, censor_column,
+                       reading_unit_column, reading_age_column, reading_value_column, age_right_column,
+                       entry_age_column, hazard_covariates, path_covariates, path_model, unit, marker,
+                       marker_unit, c_invert)
+    return _joint_fit(ctx, body, save=False)
+
+
+def fit_joint_model(
+    ctx: Context,
+    name: Annotated[str, Field(min_length=1, description="Name for the saved model.")],
+    lifetimes_dataset_id: _JointLifeDataset = None,
+    readings_dataset_id: _JointReadingsDataset = None,
+    unit_id_column: _JointCol = None,
+    age_column: _JointCol = None,
+    censor_column: _FitCensorCol = None,
+    reading_age_column: _JointCol = None,
+    reading_value_column: _JointCol = None,
+    reading_unit_column: _JointCol = None,
+    age_right_column: _JointCol = None,
+    entry_age_column: _JointCol = None,
+    hazard_covariates: _JointCovs = None,
+    path_covariates: _JointCovs = None,
+    path_model: _JointPath = "linear",
+    unit: _FitUnit = None,
+    marker: Annotated[Optional[str], Field(description="What the readings are, e.g. 'vibration'.")] = None,
+    marker_unit: Annotated[Optional[str], Field(description="The readings' unit, e.g. 'mm/s'.")] = None,
+    c_invert: _FitInvert = False,
+) -> dict[str, Any]:
+    """Fit and save a condition-based risk (joint) model, as life_data_analysis fit_joint does, for
+    life_data_analysis predict_joint and RBD blocks. Pro."""
+    for arg, value in (("lifetimes_dataset_id", lifetimes_dataset_id), ("readings_dataset_id", readings_dataset_id),
+                       ("unit_id_column", unit_id_column), ("age_column", age_column),
+                       ("censor_column", censor_column), ("reading_age_column", reading_age_column),
+                       ("reading_value_column", reading_value_column)):
+        if not value:
+            raise ToolError(f"fit_joint needs {arg}.")
+    body = _joint_body(name, lifetimes_dataset_id, readings_dataset_id, unit_id_column, age_column, censor_column,
+                       reading_unit_column, reading_age_column, reading_value_column, age_right_column,
+                       entry_age_column, hazard_covariates, path_covariates, path_model, unit, marker,
+                       marker_unit, c_invert)
+    return _joint_fit(ctx, body, save=True)
+
+
+def _joint_model(db, model_id: str, owners):
+    m = models_service.get_model(db, model_id, owners)
+    if m is None or m.kind != joint_service.KIND:
+        raise ToolError("Not a condition-based (joint) model: list kind models with model_type joint.")
+    return m
+
+
+def predict_joint(
+    ctx: Context,
+    model_id: Annotated[str, Field(description="A saved joint model id (list kind models).")],
+    unit_id: Annotated[Optional[str], Field(description="One of the model's running units.")] = None,
+    age_now: Annotated[Optional[float], Field(description=(
+        "Instead of unit_id: the unit's age now, since new, at or after its last reading."))] = None,
+    readings: Annotated[Optional[list[list[float]]], Field(max_length=2000, description=(
+        "Instead of unit_id: the unit's readings so far, [[age, value], ...]."))] = None,
+    unit_covariates: Annotated[Optional[dict[str, float]], Field(description=(
+        "Instead of unit_id: the unit's covariates, {name: value}."))] = None,
+) -> dict[str, Any]:
+    """A unit's updating risk from a saved joint model: survival over the model's horizons with 95% bounds, and
+    median remaining life ('not reached' when it never falls to a half — never a mean)."""
+    user, db = _caller(ctx), _db()
+    m = _joint_model(db, model_id, _owners(user["uid"]))
+    try:
+        if unit_id:
+            if age_now is not None or readings or unit_covariates:
+                raise ToolError("Give unit_id, or age_now with readings and unit_covariates, not both.")
+            v = joint_service.unit_view(m, unit_id)
+        else:
+            if age_now is None:
+                raise ToolError("predict_joint needs unit_id, or age_now (with readings and unit_covariates).")
+            v = joint_service.predict(m, {"age": age_now, "markers": readings or [],
+                                          "covariates": unit_covariates or {}})
+    except FitError as exc:
+        raise ToolError(str(exc)) from None
+    h = v.get("horizons") or {}
+    pred = v.get("prediction") or {}
+    x = pred.get("x") or []
+    band = {}
+    if pred.get("sf_lower") and x:
+        import numpy as np
+
+        targets = [v["age"] + t for t in h.get("values") or []]
+        band = {label: [float(np.interp(t, x, pred["sf_lower"])), float(np.interp(t, x, pred["sf_upper"]))]
+                for label, t in zip(h.get("labels") or [], targets) if t <= x[-1]}
+    rl = pred.get("remaining_life") or {}
+    return {
+        "model_id": m.id, "url": _url(f"/modelling/joint/{m.id}"), "unit_id": v.get("unit_id"),
+        "unit": (m.results or {}).get("unit"), "age_now": v.get("age"), "covariates": v.get("covariates"),
+        "n_readings": len(v.get("markers") or []),
+        "survival": dict(zip(h.get("labels") or [], v.get("survival") or [])),
+        "survival_95ci": band or None,
+        "median_remaining_life": v.get("median_remaining") if v.get("median_reached") else "not reached",
+        "remaining_life_quantiles": {f"p{int(round(p * 100))}": (life if life is not None else "not reached")
+                                     for p, life in zip(rl.get("p") or [], rl.get("life") or [])},
+        "marker_now": v.get("marker_now"),
+    }
+
+
+def _joint_brief(m) -> dict:
+    r = m.results or {}
+    return {"id": m.id, "name": m.name, "model_type": "joint", "distribution": r.get("distribution"),
+            "marker": r.get("marker"), "unit": r.get("unit"), "covariates": r.get("covariates") or [],
+            "n_running": r.get("n_running"), "running_units": list(((m.serialized or {}).get("units") or {}))[:50],
+            "url": _url(f"/modelling/joint/{m.id}")}
+
+
+# ---------------------------------------------------------------------------
 # Datasets
 # ---------------------------------------------------------------------------
 
@@ -2858,6 +3110,19 @@ class BlockModel(BaseModel):
         "model — a saved mixture fit included — not a non-parametric one (Kaplan-Meier etc.), which RBD blocks "
         "don't take."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
+    joint_unit: Optional["JointUnit"] = Field(None, description=(
+        "With a saved condition-based (joint) model: the unit this block is (non-repairable diagrams)."))
+
+
+class JointUnit(BaseModel):
+    """One unit of a joint model: a running unit's id, or its values."""
+    id: Optional[str] = Field(None, description="A running unit of the model (list kind models, model_type joint).")
+    age: Optional[float] = Field(None, ge=0, description="Or: its age now, since new.")
+    readings: Optional[list[list[float]]] = Field(None, max_length=2000, description="Its readings, [[age, value]].")
+    covariates: Optional[dict[str, float]] = Field(None, description="Its covariates, {name: value}.")
+
+
+BlockModel.model_rebuild()
 
 
 class SchedulePhase(BaseModel):
@@ -4172,8 +4437,8 @@ def analyze_rbd(
 def get_job(
     ctx: Context,
     job_id: Annotated[str, Field(description=(
-        "A job_id returned by rbd_analysis (analyze, sensitivity, optimise_intervals) or life_data_analysis "
-        "alt_use_level."))],
+        "A job_id returned by rbd_analysis (analyze, sensitivity, optimise_intervals), life_data_analysis "
+        "alt_use_level or fit_joint, or models fit_joint."))],
 ) -> dict[str, Any]:
     """A queued calculation (an availability simulation, a what-to-improve or interval search, an ALT's
     bootstrap bounds): status queued (queue_position), running, done (the result, as the action that queued it
@@ -4183,11 +4448,26 @@ def get_job(
     if job is None or job.get("uid") != user["uid"]:
         raise ToolError("Job not found.")
     out: dict[str, Any] = {"job_id": job["_id"], "status": job.get("status"), "kind": job.get("kind")}
+    if job.get("kind") == rbd_jobs_service.KIND_JOINT_FIT:
+        # life_data_analysis / models fit_joint: the fit, and the saved model's id when it was kept.
+        if job.get("status") == "done":
+            done = joint_service.job_result(job)
+            return {**out, "available": True, **_joint_answer(done.get("model_id"), done.get("results") or {})}
+        if job.get("status") == "failed":
+            return {**out, "available": False, "message": job.get("error") or rbd_jobs_service.FAILED_ERROR}
+        return {**out, "available": False, **_job_pending(db, job)}
     if job.get("kind") == rbd_jobs_service.KIND_ALT_BOUNDS:
         # life_data_analysis alt_use_level's bootstrap bounds (#231); rbd_id holds the ALT model.
         out.update(model_id=job.get("rbd_id"), url=_url(f"/modelling/alt/{job.get('rbd_id')}"))
         if job.get("status") == "done":
             return {**out, "available": True, "bounds": _alt_bounds_summary(job.get("result") or {})}
+        if job.get("status") == "failed":
+            return {**out, "available": False, "message": job.get("error") or rbd_jobs_service.FAILED_ERROR}
+        return {**out, "available": False, **_job_pending(db, job)}
+    if job.get("kind") == rbd_jobs_service.KIND_CALENDAR:
+        # strategy calendar_replacement's sampled run.
+        if job.get("status") == "done":
+            return {**out, "available": True, **_calendar_summary(job.get("result") or {}, False)}
         if job.get("status") == "failed":
             return {**out, "available": False, "message": job.get("error") or rbd_jobs_service.FAILED_ERROR}
         return {**out, "available": False, **_job_pending(db, job)}
@@ -5250,6 +5530,115 @@ def optimal_replacement(
     return _maybe_curve(out, include_curve)
 
 
+class CalendarShut(BaseModel):
+    name: str = Field(description="The shut's name, e.g. annual shutdown.")
+    cost: float = Field(ge=0, description="What replacing the part at this shut costs.")
+    every: Optional[float] = Field(default=None, gt=0, description="It comes every this many every_unit...")
+    every_unit: Optional[Literal["days", "weeks", "months", "years"]] = Field(default=None,
+                                                                             description="... (default days)")
+    start: Optional[str] = Field(default=None, description="... from this date (YYYY-MM-DD; default today).")
+    dates: Optional[list[str]] = Field(default=None, description="Or its dates (YYYY-MM-DD) instead of every.")
+
+
+_SHUTS = Annotated[list[CalendarShut], Field(description="The shuts (opportunities to replace cheaply), each "
+                                                         "every N days/weeks/months/years from a start, or on dates.")]
+_FAILURE_COST = Annotated[float, Field(gt=0, description="Cost of a replacement at a failure.")]
+_ANYTIME_COST = Annotated[Optional[float], Field(ge=0, description="Cost of a planned replacement between shuts; "
+                                                                   "omit when only shuts allow one.")]
+_TODAY = Annotated[Optional[str], Field(description="Today's date (YYYY-MM-DD), time 0; default the server's.")]
+
+
+def _calendar_inputs(db, uid: str, model_id, distribution_id, params, unit, shuts, failure_cost, anytime_cost,
+                     today, max_age) -> dict:
+    inputs = _dist_inputs(db, uid, model_id, distribution_id, params, unit)
+    return {**inputs, "opportunities": [sh.model_dump(exclude_none=True) for sh in shuts or []],
+            "failure_cost": failure_cost, "anytime_cost": anytime_cost, "today": today, "max_age": max_age}
+
+
+def _calendar_summary(out: dict, include_schedule: bool) -> dict:
+    """A calendar answer for an agent: the schedule's used rows unless asked
+    for all of them."""
+    rows = out.get("schedule") or []
+    if include_schedule:
+        return out
+    kinds = {ln.get("kind") for ln in out.get("rule") or [] if ln.get("used")}
+    used = [r for r in rows if (r.get("chance") or 0) >= 1e-3 or r.get("kind") in kinds]
+    return {**{k: v for k, v in out.items() if k != "schedule"}, "schedule": used,
+            "schedule_note": (f"{len(used)} of {len(rows)} shuts up to {out.get('schedule_until')}: those the rule "
+                              "uses or where a replacement is likely; include_schedule=true lists them all.")}
+
+
+def calendar_replacement(
+    ctx: Context,
+    shuts: _SHUTS,
+    failure_cost: _FAILURE_COST,
+    unit: _UNIT = None,
+    model_id: _MODEL_ID = None,
+    distribution_id: _DIST_ID = None,
+    params: _PARAMS = None,
+    anytime_cost: _ANYTIME_COST = None,
+    today: _TODAY = None,
+    max_age: Annotated[Optional[float], Field(gt=0, description="Oldest age considered (model units).")] = None,
+    method: Annotated[Literal["dp", "integration", "sampling"], Field(
+        description="dp (default) or integration: exact, free; sampling: Pro, long cycles.")] = "dp",
+    include_schedule: Annotated[bool, Field(description="List every shut in the next 12 months.")] = False,
+    wait_seconds: Annotated[float, Field(ge=0, le=60, description="sampling: wait this long for the job.")] = 20,
+) -> dict[str, Any]:
+    """The long-run best replacement rule over a calendar of shuts (today = time 0): the threshold age at each shut,
+    the cost against running to failure and plain age replacement, and the next 12 months by date."""
+    user, db = _caller(ctx), _db()
+    inputs = {**_calendar_inputs(db, user["uid"], model_id, distribution_id, params, unit, shuts, failure_cost,
+                                 anytime_cost, today, max_age), "method": method}
+    entitled = billing_service.premium_compute_allowed(db, user)
+    note = None
+    if method == "sampling" and not entitled:
+        _soft_refusal("pro_only")
+        inputs["method"] = "dp"
+        note = strategy_calendar_api.SAMPLING_PRO_PAYLOAD["detail"] + " This is the exact answer. " + _upgrade_path()
+    try:
+        code, out = strategy_calendar_api.run(db, user, inputs, entitled=entitled)
+    except (StrategyError, AnalysisError) as exc:
+        raise ToolError(str(exc)) from None
+    if code == 202:
+        job = _await_job(db, out["job"]["job_id"], wait_seconds)
+        if job is None or job.get("status") != "done":
+            if job is not None and job.get("status") == "failed":
+                raise ToolError(job.get("error") or rbd_jobs_service.FAILED_ERROR)
+            return {"available": False, **_job_pending(db, job or {"_id": out["job"]["job_id"]})}
+        out = job.get("result") or {}
+    elif code != 200:
+        raise ToolError(out.get("detail") or "The calculation couldn't run.")
+    out = _calendar_summary(out, include_schedule)
+    return {**out, "pro_note": note} if note else out
+
+
+def calendar_next_replacement(
+    ctx: Context,
+    age: Annotated[float, Field(ge=0, description="The unit in service's age today, in the model's unit.")],
+    shuts: _SHUTS,
+    failure_cost: _FAILURE_COST,
+    unit: _UNIT = None,
+    model_id: _MODEL_ID = None,
+    distribution_id: _DIST_ID = None,
+    params: _PARAMS = None,
+    anytime_cost: _ANYTIME_COST = None,
+    now_cost: Annotated[Optional[float], Field(ge=0, description="Cost of replacing it today (default the "
+                                                                 "any-day cost, or a shut's falling today).")] = None,
+    today: _TODAY = None,
+    max_age: Annotated[Optional[float], Field(gt=0, description="Oldest age considered (model units).")] = None,
+) -> dict[str, Any]:
+    """For one unit in service on a shut calendar: replace it now, at the next shut, between shuts or run it to failure,
+    each choice's cost and the age from which replacing now pays."""
+    user, db = _caller(ctx), _db()
+    inputs = _calendar_inputs(db, user["uid"], model_id, distribution_id, params, unit, shuts, failure_cost,
+                              anytime_cost, today, max_age)
+    try:
+        return strategy_calendar.calendar_next(inputs.pop("distribution_id"), inputs.pop("params"), age=age,
+                                               now_cost=now_cost, **inputs)
+    except StrategyError as exc:
+        raise ToolError(str(exc)) from None
+
+
 def failure_finding_interval(
     ctx: Context,
     target_availability: Annotated[float, Field(gt=0, lt=1, description="Required availability of the hidden "
@@ -5398,6 +5787,156 @@ def plan_demonstration_test(
         "design_reliability": design_reliability, "design_mtbf": design_mtbf, "producer_risk": producer_risk,
         "unit": unit or "", "b_life": b_life, **extra})
     return _lean_demonstration(out)
+
+
+# ---- Test planning beyond the demonstration test (SurPyval's test_planning) -------------
+# The demonstration test's own arguments, reused so each shows one description.
+_DEMO_ARG = {name: p.annotation for name, p in inspect.signature(plan_demonstration_test).parameters.items()}
+_PCT = Annotated[Optional[float], Field(gt=0, lt=1, description="A chance, e.g. 0.8.")]
+
+
+def _lean_plan(out: dict, drop: tuple = ()) -> dict:
+    """A test plan without the page's chart arrays."""
+    return {k: v for k, v in out.items() if k not in ("oc_curve", "curve", *drop) and v is not None}
+
+
+def plan_sequential_test(
+    ctx: Context,
+    method: Annotated[Literal["mtbf", "attribute"], Field(description=(
+        "'mtbf' (failures against total test time) or 'attribute' (failures against units "
+        "tested)."))] = "mtbf",
+    mtbf: _DEMO_ARG["mtbf"] = None,
+    reliability: _DEMO_ARG["reliability"] = None,
+    design_mtbf: _DEMO_ARG["design_mtbf"] = None,
+    design_reliability: _DEMO_ARG["design_reliability"] = None,
+    confidence: _DEMO_ARG["confidence"] = 0.9,
+    producer_risk: _DEMO_ARG["producer_risk"] = 0.1,
+    unit: _UNIT = None,
+    failures_seen: Annotated[Optional[int], Field(ge=0, description="Failures so far, to ask what the test says "
+                                                                    "now.")] = None,
+    time_seen: Annotated[Optional[float], Field(ge=0, description="Total test time so far (method mtbf).")] = None,
+    units_seen: Annotated[Optional[int], Field(ge=0, description="Units tested so far (method attribute).")] = None,
+) -> dict[str, Any]:
+    """A truncated sequential test of an MTBF or a reliability against a good design: accept/reject lines,
+    both risks as run, average length against the fixed-length test; with failures_seen, accept, reject or
+    continue."""
+    _caller(ctx)
+    out = test_planning_service.sequential_test(
+        method=method, mtbf=mtbf, good_mtbf=design_mtbf, reliability=reliability,
+        good_reliability=design_reliability, confidence=confidence, producer_risk=producer_risk, unit=unit,
+        failures_seen=failures_seen, time_seen=time_seen, units_seen=units_seen)
+    b = out.pop("boundaries")
+    if method == "mtbf":
+        rows = [{"failures": f, "accept_at_time": a, "reject_by_time": r}
+                for f, a, r in zip(b["failures"], b["accept"], b["reject"])]
+    else:  # one row wherever a line steps, not one per unit
+        rows, last = [], None
+        for n, a, r in zip(b["units"], b["accept"], b["reject"]):
+            if (a, r) != last:
+                rows.append({"from_units": n, "accept_if_failures_at_most": a, "reject_at_failures": r})
+                last = (a, r)
+    return {**_lean_plan(out), "boundaries": rows}
+
+
+def plan_life_test(
+    ctx: Context,
+    params: Annotated[list[Param], Field(min_length=2, max_length=2, description=(
+        "Planning values in SurPyval names: weibull [alpha, beta], lognormal [mu, sigma]."))],
+    distribution: Annotated[Literal["weibull", "lognormal"], Field(description=(
+        "weibull or lognormal."))] = "weibull",
+    solve_for: Annotated[Literal["precision", "units", "length"], Field(description=(
+        "precision (of units), units (for within_pct) or length (for units and within_pct)."))]
+    = "precision",
+    units: _DEMO_ARG["units"] = None,
+    within_pct: Annotated[Optional[float], Field(gt=0, le=1000, description=(
+        "The precision wanted, as ± percent: 20 = the interval within a factor of 1.2."))] = None,
+    test_end: Annotated[Literal["time", "failures", "all"], Field(description=(
+        "When the test stops: at censor_time, when failure_fraction have failed, or when all have."))] = "time",
+    censor_time: Annotated[Optional[float], Field(gt=0, description="When the test stops (the test length).")]
+    = None,
+    failure_fraction: _PCT = None,
+    quantity: Annotated[Literal["b_life", "mean"], Field(description="Estimate the B-life or the mean.")]
+    = "b_life",
+    b_life: Annotated[Optional[float], Field(gt=0, lt=100)] = 10,
+    confidence: _DEMO_ARG["confidence"] = 0.9,
+    unit: _UNIT = None,
+) -> dict[str, Any]:
+    """How precisely a life test estimates a B-life or the mean from planning values, or the units or test
+    length for a precision."""
+    _caller(ctx)
+    out = test_planning_service.life_test(
+        solve_for=solve_for, distribution=distribution, params=[p.model_dump() for p in params], units=units,
+        precision=within_pct, test_end=test_end, censor_time=censor_time, failure_fraction=failure_fraction,
+        quantity=quantity, b_life=b_life, confidence=confidence, unit=unit)
+    return _lean_plan(out)
+
+
+def plan_accelerated_test(
+    ctx: Context,
+    life_params: Annotated[list[Param], Field(min_length=2, max_length=2, description=(
+        "The life model's planning values: arrhenius and eyring [a, b], inverse_power [a, n]."))],
+    shape: _DEMO_ARG["shape"],
+    use_stress: Annotated[list[float], Field(min_length=1, max_length=1, description=(
+        "The use stress, e.g. [323] (kelvin for the thermal models)."))],
+    censor_time: Annotated[float, Field(gt=0, description="When the test stops (the test length).")],
+    life_model: Annotated[Literal["arrhenius", "eyring", "inverse_power"], Field(
+        description="The life-stress model.")] = "arrhenius",
+    distribution: Annotated[Literal["weibull", "lognormal"], Field(description=(
+        "weibull or lognormal."))] = "weibull",
+    high_stress: Annotated[Optional[float], Field(description="The highest stress the test may use.")] = None,
+    units: _DEMO_ARG["units"] = None,
+    levels: Annotated[Optional[int], Field(ge=2, le=6, description=(
+        "Stress levels: 2 the optimum plan, 3+ a compromise plan."))] = 2,
+    stresses: Annotated[Optional[list[float]], Field(min_length=1, max_length=10, description=(
+        "A test of your own: its stresses (with units_at) instead of high_stress and units."))] = None,
+    units_at: Annotated[Optional[list[int]], Field(min_length=1, max_length=10)] = None,
+    b_life: Annotated[Optional[float], Field(gt=0, lt=100)] = 10,
+    confidence: _DEMO_ARG["confidence"] = 0.9,
+    unit: _UNIT = None,
+) -> dict[str, Any]:
+    """An accelerated life test plan from planning values: stresses, units at each, expected failures and the
+    B-life's precision at the use stress (or the precision of your own test)."""
+    _caller(ctx)
+    check = stresses is not None or units_at is not None
+    out = test_planning_service.accelerated_test(
+        mode="check" if check else "plan", distribution=distribution, life_model=life_model,
+        life_params=[p.model_dump() for p in life_params], shape=shape, use_stress=use_stress[0],
+        high_stress=high_stress, units=units, censor_time=censor_time, levels=levels, stresses=stresses,
+        units_at=units_at, b_life=b_life, confidence=confidence, unit=unit)
+    return _lean_plan(out, ("stresses", "units", "fractions", "expected_failures", "life_params"))
+
+
+def plan_comparison(
+    ctx: Context,
+    kind: Annotated[Literal["logrank", "rate_ratio"], Field(description=(
+        "logrank: old and new units side by side; rate_ratio: one fleet's failure rate before and after a "
+        "change."))],
+    solve_for: Annotated[Literal["sample_size", "power", "exposure", "detectable"], Field(description=(
+        "logrank sample_size or power; rate_ratio exposure, detectable or power."))],
+    hazard_ratio: Annotated[Optional[float], Field(gt=0, description="New over old failure rate, e.g. 0.6.")]
+    = None,
+    event_probability: _PCT = None,
+    units_per_group: Annotated[Optional[int], Field(ge=2)] = None,
+    failures_before: Annotated[Optional[int], Field(ge=1)] = None,
+    exposure_before: Annotated[Optional[float], Field(gt=0, description="Operating time the failures_before "
+                                                                         "came in.")] = None,
+    exposure_after: Annotated[Optional[float], Field(gt=0)] = None,
+    rate_ratio: Annotated[Optional[float], Field(gt=0, description="The change to detect: rate after over "
+                                                                   "before, e.g. 0.5.")] = None,
+    power: _PCT = 0.8,
+    confidence: _DEMO_ARG["confidence"] = 0.95,
+    one_sided: Optional[bool] = False,
+    unit: _UNIT = None,
+) -> dict[str, Any]:
+    """Did the change work? A log-rank test's failures, units and power, or a before/after failure-rate
+    test's exposure, smallest detectable change and power."""
+    _caller(ctx)
+    out = test_planning_service.comparison(
+        kind=kind, solve_for=solve_for, hazard_ratio=hazard_ratio, event_probability=event_probability,
+        units_per_group=units_per_group, power=power, confidence=confidence, one_sided=bool(one_sided),
+        failures_before=failures_before, exposure_before=exposure_before, exposure_after=exposure_after,
+        rate_ratio=rate_ratio, unit=unit)
+    return _lean_plan(out)
 
 
 def _demo_shape_from_model(db, uid: str, model_id: str, bound: str) -> dict:
@@ -5873,7 +6412,7 @@ def compare_groups(
         df, time_column=time_column, group_column=group_column, censor_column=censor_column,
         count_column=count_column, cause_column=cause_column, c_invert=c_invert,
         # Inline data: errors name the arguments, not the frame's columns (#211).
-        names={"c": "`censored`", "n": "`counts`"} if data is not None else None)
+        names={"c": "`censored`", "n": "`counts`", "e": "`cause`"} if data is not None else None)
     result = compare_groups_service.compare_groups(
         prepared, groups=groups, reference=reference, tau=tau, unit=unit, group_column=label)
     verdict = result["verdict"]
@@ -7739,7 +8278,7 @@ _action_tool("list", _READ, "List saved items", "kind", """The user's saved item
 
 _action_tool("life_data_analysis", _READ, "Analyse life data", "action", """Life data analysis that saves
     nothing: fit distributions, evaluate a saved model, check a requirement, compare groups, extrapolate an
-    accelerated test, plan a demonstration test. Censoring: 0 = failed, 1 = still running, -1 = left-, 2 =
+    accelerated test, plan a test (guide topic test_planning). Censoring: 0 = failed, 1 = still running, -1 = left-, 2 =
     interval-censored (guide topic life_data). To keep a fit, use models.""", {
     "fit": _act(fit_distribution),
     "fit_per_demand": _act(fit_per_demand),
@@ -7748,9 +8287,15 @@ _action_tool("life_data_analysis", _READ, "Analyse life data", "action", """Life
     "compare_groups": _act(compare_groups),
     "alt_use_level": _act(alt_use_level),
     "plan_demonstration_test": _act(plan_demonstration_test),
+    "plan_sequential_test": _act(plan_sequential_test),
+    "plan_life_test": _act(plan_life_test),
+    "plan_accelerated_test": _act(plan_accelerated_test),
+    "plan_comparison": _act(plan_comparison),
+    "fit_joint": _act(fit_joint),
+    "predict_joint": _act(predict_joint),
 }, docs={
     "model_id": ("A saved model id (list kind models): a life model for reliability_at and check_life_requirement, "
-                 "an ALT model (models fit_alt) for alt_use_level."),
+                 "an ALT model (models fit_alt) for alt_use_level, a joint model for predict_joint."),
     "dataset_id": "A saved dataset (list kind datasets) instead of inline data (fit_per_demand: a row per batch).",
     "censored": ("Per time in data: 0 = failed, 1 = still running, -1 = left-censored, 2 = interval-censored (the "
                  "upper bound in data_right); omit when every time is a failure. compare_groups: 0 and 1 only."),
@@ -7777,6 +8322,8 @@ _action_tool("strategy", _READ, "Maintenance strategy", "action", """Maintenance
     "failure_finding_interval": _act(failure_finding_interval),
     "optimal_overhaul": _act(optimal_overhaul),
     "fleet_forecast": _act(fleet_forecast),
+    "calendar_replacement": _act(calendar_replacement),
+    "next_replacement": _act(calendar_next_replacement),
 }, docs={"model_id": ("A saved model id (list kind models): a plain life model for optimal_replacement and "
                      "failure_finding_interval (or distribution_id + params instead), a recurrent one for "
                      "optimal_overhaul.")})
@@ -7805,6 +8352,7 @@ _action_tool("models", _WRITE, "Save and change models", "action", """Save model
     "save": _act(save_model),
     "fit_alt": _act(fit_alt_model),
     "fit_recurrent": _act(fit_recurrent_model),
+    "fit_joint": _act(fit_joint_model),
     "update": _act(update_model),
     "delete": _act(delete_model),
 }, docs={

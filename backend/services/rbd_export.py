@@ -52,7 +52,7 @@ from backend.services import rbd_analysis, rbd_ccf, rbd_next_failure, rbd_repeat
 from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.23", "repyability": "0.13"}
+_DEFAULT_VERSIONS = {"surpyval": "0.25", "repyability": "0.15"}
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
 # Names the script itself uses at module level; block variables avoid them
@@ -301,6 +301,15 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
             "Set its parameters here, e.g. "
             "surv.Weibull.from_params([alpha, beta]) for the covariates you "
             "want."
+        )
+    if kind == "joint":
+        raise _Missing(
+            f"Block '{label}' is a condition-based block ({what}): one unit "
+            "of a joint model fitted in Reliafy, given its readings. Its "
+            "model lives only in your workspace. Fit it with SurPyval "
+            "(the model's own Download as Python does) and put the unit in "
+            "the diagram as repyability.JointNode(model, Z=..., markers=..., "
+            "age=...)."
         )
     if kind == "nonparametric":
         raise _Missing(

@@ -139,6 +139,80 @@ def test_gray_test_per_failure_mode():
     assert "competing" in one_mode["competing_risks"]["reason"]
 
 
+def _pump_modes() -> pd.DataFrame:
+    from backend.services import samples
+    return pd.read_csv(io.BytesIO(samples._PUMP_MODES_CSV))
+
+
+def test_a_blank_mode_is_a_unit_still_running_as_in_the_fit():
+    """The pump-modes sample has no status column: 22 pumps with a blank mode
+    are still running. They were once counted as failures (a "(no mode
+    given)" mode), so every pump read as failed."""
+    from backend import competing_risks as cr
+
+    df = _pump_modes()
+    assert df["failure_mode"].isna().sum() == 22
+    res = _run(df, time_column="hours", group_column="site", cause_column="failure_mode", unit="hours")
+    g = {s["group"]: s for s in res["groups"]}
+    assert (g["A"]["units"], g["A"]["failures"], g["A"]["censored"]) == (36, 20, 16)
+    assert (g["B"]["units"], g["B"]["failures"], g["B"]["censored"]) == (36, 30, 6)
+    assert g["A"]["median"] == pytest.approx(4850.0)
+    assert g["A"]["rmst"] == pytest.approx(4953.9, abs=0.1)
+    assert g["B"]["rmst"] == pytest.approx(2991.9, abs=0.1)
+    assert res["logrank"]["statistic"] == pytest.approx(15.521, abs=1e-3)
+    assert res["rmst_differences"][0]["difference"] == pytest.approx(-1962.0, abs=0.1)
+    modes = [r["mode"] for r in res["competing_risks"]["results"]]
+    assert modes == ["bearing wear", "seal leak", "impeller damage"]
+
+    # The same numbers as the competing-risks fit's own statuses and Gray's test.
+    prep = cr.prepare(df, {"x": "hours", "e": "failure_mode", "g": "site"})
+    fit_gray = {r["cause"]: r for r in cr._gray(prep, res["tau"], "site", " hours")["results"]}
+    for r in res["competing_risks"]["results"]:
+        assert r["statistic"] == pytest.approx(fit_gray[r["mode"]]["statistic"])
+    km_b = sp.KaplanMeier.fit(prep["x"][prep["group"] == "B"], c=prep["c"][prep["group"] == "B"])
+    assert g["B"]["rmst"] == pytest.approx(float(km_b.rmst(tau=res["tau"])["rmst"]))
+
+
+def test_explicit_blank_modes_with_and_without_a_status_column():
+    # Blank, empty and whitespace-only cells are all "no mode".
+    df = pd.DataFrame({"t": [5, 7, 9, 11, 4, 6, 8, 12, 13, 14],
+                       "site": ["A"] * 5 + ["B"] * 5,
+                       "mode": ["seal", None, "bearing", "", "seal", "bearing", "  ", "seal", None, "bearing"]})
+    res = _run(df, time_column="t", group_column="site", cause_column="mode")
+    g = {s["group"]: s for s in res["groups"]}
+    assert (g["A"]["failures"], g["A"]["censored"]) == (3, 2)
+    assert (g["B"]["failures"], g["B"]["censored"]) == (3, 2)
+    ref = sp.logrank(df["t"].to_numpy(float), df["site"].to_numpy(),
+                     c=np.array([0, 1, 0, 1, 0, 0, 1, 0, 1, 0]))
+    assert res["logrank"]["statistic"] == pytest.approx(ref.statistic)
+    assert {r["mode"] for r in res["competing_risks"]["results"]} == {"seal", "bearing"}
+
+    # With a status column: a running unit's mode is ignored, and a failure
+    # with no mode is refused, as the fit refuses it.
+    ok = df.assign(mode=["seal", "seal", "bearing", "", "seal", "bearing", "", "seal", "", "bearing"],
+                   c=[0, 1, 0, 1, 0, 0, 1, 0, 1, 0])
+    res = _run(ok, time_column="t", group_column="site", censor_column="c", cause_column="mode")
+    assert {s["group"]: s["failures"] for s in res["groups"]} == {"A": 3, "B": 3}
+    with pytest.raises(CompareGroupsError, match="1 row failed with no failure mode in “mode”"):
+        _run(ok.assign(c=0 * ok["c"]).iloc[:4], time_column="t", group_column="site", censor_column="c",
+             cause_column="mode")
+
+
+def test_mcp_inline_blank_causes_are_still_running(mcp_env):
+    from backend.tests.test_mcp import _call, _err, _ok
+
+    tok = mcp_env.token["user-a"]
+    data = [5, 7, 9, 11, 4, 6, 8, 12]
+    group = ["A"] * 4 + ["B"] * 4
+    cause = ["seal", None, "bearing", None, "seal", "bearing", None, "seal"]
+    out = _ok(_call(tok, "life_data_analysis", {"action": "compare_groups", "data": data, "group": group,
+                                                "cause": cause}))
+    assert {g["group"]: g["censored"] for g in out["groups"]} == {"A": 2, "B": 1}
+    msg = _err(_call(tok, "life_data_analysis", {"action": "compare_groups", "data": data, "group": group,
+                                                 "cause": cause, "censored": [0] * 8}))
+    assert "no failure mode in `cause`" in msg
+
+
 # ---- refusals, in words ---------------------------------------------------------------------
 
 @pytest.mark.parametrize("df, kw, expect", [

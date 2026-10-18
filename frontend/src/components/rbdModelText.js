@@ -2,6 +2,7 @@
 // "Weibull · η 4,000 h · β 2" on the block, and the means the block dialog
 // echoes under its inputs. Display only: the analysis reads the parameters.
 import { formatNumber } from "../format.js";
+import { jointBlockLine } from "../joint.js";
 
 // "h" for Hours, "d" for Days … ; anything else (Cycles, a custom unit) as typed.
 const ABBR = {
@@ -84,6 +85,7 @@ export function lifeLine(model, unit, { short = false } = {}) {
   const u = unitAbbr(unit);
   const withU = (v) => `${n3(v)}${u ? ` ${u}` : ""}`;
   if (model.kind === "regression") return `${model.distribution} · covariates`;
+  if (model.kind === "joint") return jointBlockLine(model, u); // a condition-based unit
   const k = distKey(model);
   if (k === "mixture") return model.distribution || "Mixture of failure modes"; // #318
   if (k === "exponential") {

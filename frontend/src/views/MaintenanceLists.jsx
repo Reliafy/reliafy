@@ -231,7 +231,7 @@ export function MaintenanceLocation() {
           ))}</ul>
         </section>
       )}
-      <MaintenancePhotos targetId={loc.id} targetName={loc.name} photos={loc.photos} onChanged={refresh} />
+      <MaintenancePhotos targetId={loc.id} targetKind="Location" targetName={loc.name} photos={loc.photos} onChanged={refresh} />
       {loc.coordinates && <p className="lib-date">Coordinates: {loc.coordinates.lat}, {loc.coordinates.lon}</p>}
       {modal === "child" && <NewLocationModal locations={all} parentId={loc.id} onClose={() => setModal(null)}
                                               onDone={(l) => { setModal(null); navigate(`/maintenance/locations/${l.id}`); }} />}

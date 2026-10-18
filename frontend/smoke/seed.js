@@ -6,6 +6,46 @@
 // through the API. Skipped against a deployed site.
 import { request } from "@playwright/test";
 
+// A deterministic fleet: 40 pumps, a vibration path each, those whose
+// vibration starts high failing sooner; still running at day 120 otherwise.
+export function jointFleet() {
+  let state = 12345;
+  const rand = () => ((state = (state * 1103515245 + 12345) % 2147483648) + 0.5) / 2147483648;
+  const normal = () => Math.sqrt(-2 * Math.log(rand())) * Math.cos(2 * Math.PI * rand());
+  const life = ["pump,age,running,load"];
+  const reads = ["pump,age,vibration"];
+  for (let k = 0; k < 40; k += 1) {
+    const start = 2 + 0.4 * normal();
+    const rate = 0.02 + 0.005 * normal();
+    const load = k % 2;
+    const t = 100 * Math.sqrt(-Math.log(rand())) * Math.exp(-0.9 * (start - 2) - 0.3 * load);
+    const end = Math.min(t, 120);
+    life.push(`P${k},${end.toFixed(3)},${t >= 120 ? 1 : 0},${load}`);
+    for (let age = 0; age < end; age += 10) {
+      reads.push(`P${k},${age},${(start + rate * age + 0.2 * normal()).toFixed(4)}`);
+    }
+  }
+  return { lifetimes: life.join("\n"), readings: reads.join("\n") };
+}
+
+async function seedJointModel(post) {
+  const { lifetimes, readings } = jointFleet();
+  const life = await post("/api/datasets/paste", { name: "Smoke test pump lives", content: lifetimes });
+  const reads = await post("/api/datasets/paste", { name: "Smoke test pump vibration", content: readings });
+  await post("/api/joint/models", {
+    name: "Smoke test pumps (condition-based)",
+    lifetimes_dataset_id: life.id,
+    readings_dataset_id: reads.id,
+    mapping: { id: "pump", x: "age", c: "running" },
+    readings_mapping: { id: "pump", age: "age", value: "vibration" },
+    covariates: ["load"],
+    path_model: "linear",
+    unit: "Days",
+    marker: "vibration",
+    marker_unit: "mm/s",
+  });
+}
+
 export default async function seed(config) {
   if (process.env.SMOKE_BASE_URL) return;
   const api = await request.newContext({ baseURL: config.projects[0].use.baseURL });
@@ -56,6 +96,10 @@ export default async function seed(config) {
     }
     await send("PUT")(`${m}/classes/costs`, { position_class: pump, planned_cost: 400, failure_cost: 4000 });
     await post(`${m}/classes/fit`, { position_class: pump });
+
+    // A condition-based risk model: a small fleet of pumps, each with its
+    // vibration read every 10 days, fitted in-process (billing is off here).
+    await seedJointModel(post);
 
     // One availability run, for the run history pages.
     const rbd = await (await api.get("/api/rbds/sample-rbd-instrument-air-availability")).json();

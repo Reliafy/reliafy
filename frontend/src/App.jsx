@@ -98,7 +98,15 @@ export default function App() {
             {!AUTH_DISABLED && <Route path="/guides/:slug" element={<GuidePage />} />}
             {!AUTH_DISABLED && <Route path="/reference" element={<ReferenceIndex />} />}
             {!AUTH_DISABLED && <Route path="/reference/:family" element={<ReferenceFamily />} />}
-            {!AUTH_DISABLED && <Route path="/api-docs" element={<ApiDocsPublicPage />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs" element={<ApiDocsPublicPage page="" />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs/authentication" element={<ApiDocsPublicPage page="authentication" />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs/tools" element={<ApiDocsPublicPage page="tools" />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs/examples" element={<ApiDocsPublicPage page="examples" />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs/cli" element={<ApiDocsPublicPage page="cli" />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs/python" element={<ApiDocsPublicPage page="python" />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs/files" element={<ApiDocsPublicPage page="files" />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs/mcp" element={<ApiDocsPublicPage page="mcp" />} />}
+            {!AUTH_DISABLED && <Route path="/api-docs/v1-routes" element={<ApiDocsPublicPage page="v1-routes" />} />}
             {!AUTH_DISABLED &&
               PRODUCT_PAGES.map((p) => (
                 <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />

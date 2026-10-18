@@ -56,8 +56,18 @@ KIND_ALT_BOUNDS = "alt_bounds"
 # What to improve's other measures (#225): a heavy uncertainty run (Sobol
 # indices, figures over time over draws; see rbd_measures). Never stored.
 KIND_MEASURES = "measures"
+# A life or accelerated test plan checked by simulation (Test planning;
+# backend.routers.test_planning submits it). Never stored.
+KIND_TEST_PRECISION = "test_precision"
+# Replacement over a shutdown calendar, sampled (Strategy › Replacement).
+# No diagram: ``rbd_id`` is None. Never stored.
+KIND_CALENDAR = "calendar_replacement"
+# A condition-based (joint) model's fit: the model is saved when the job
+# finishes (``pending``), and the job's view gives its id.
+KIND_JOINT_FIT = "joint_fit"
 # Kinds whose finished result is shown as it came back.
-_PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS, KIND_MEASURES)
+_PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS, KIND_MEASURES, KIND_TEST_PRECISION,
+                       KIND_CALENDAR)
 ACTIVE = ("queued", "running")
 FINISHED = ("done", "failed")
 
@@ -216,6 +226,10 @@ def finish(db, job_id: str, status: str, *, result: Optional[dict] = None, error
             from backend.services import rbd_runs
 
             rbd_runs.on_finished(db, job, update["result"], timings, engines)
+        if job.get("kind") == KIND_JOINT_FIT:
+            from backend.services import joint as joint_service
+
+            joint_service.on_job_done(db, job, update["result"])
     elif job.get("quick"):
         free_sims.refund(db, job.get("uid"), job.get("free_sim_day"))
     return True
@@ -315,7 +329,11 @@ def view(db, job: dict, entitled: bool) -> dict:
 
         out.update(rbd_runs.progress(db, job))
     if job.get("status") == "done":
-        if job.get("kind") in _PLAIN_RESULT_KINDS:
+        if job.get("kind") == KIND_JOINT_FIT:
+            from backend.services import joint as joint_service
+
+            out["result"] = joint_service.job_result(job)
+        elif job.get("kind") in _PLAIN_RESULT_KINDS:
             out["result"] = generic_engine_fields({**(job.get("result") or {}), "job_id": job["_id"]})
         else:
             out["result"] = job_payload(job, entitled)
@@ -582,4 +600,38 @@ def _alt_bounds_accepted(db, job: dict) -> dict:
         "status": job.get("status"),
         "job": {"job_id": job["_id"], "status": job["status"], "queue_position": queue_position(db, job),
                 "kind": KIND_ALT_BOUNDS},
+    }
+
+
+# ---- Replacement over a shutdown calendar, sampled ------------------------------------
+
+def run_calendar(db, *, uid: str, request: dict, cache_key: str) -> tuple[int, dict]:
+    """Run (or queue) a sampled calendar-replacement request (``request``
+    from :func:`compute_core.calendar_request`). Returns ``(status,
+    payload)``: 200 with the result (in-process when no queue is configured,
+    or a finished identical job), 202 with a job to poll, 503 when the queue
+    can't take it."""
+    if not compute_queue.configured():
+        return 200, compute_core.run(KIND_CALENDAR, request)
+    existing = find_reusable(db, uid, cache_key, False, include_done=True)
+    if existing is not None:
+        if existing["status"] == "done":
+            return 200, {**(existing.get("result") or {}), "job_id": existing["_id"]}
+        return 202, _calendar_accepted(db, existing)
+    job = create(db, uid=uid, kind=KIND_CALENDAR, request=request, cache_key=cache_key, rbd_id=None,
+                 quick=False, store=False)
+    try:
+        compute_queue.enqueue(job["_id"], KIND_CALENDAR, request)
+    except compute_queue.QueueError as exc:
+        finish(db, job["_id"], "failed", error=str(exc) or QUEUE_UNAVAILABLE)
+        return 503, {"detail": QUEUE_UNAVAILABLE, "code": "compute_unavailable"}
+    return 202, _calendar_accepted(db, job)
+
+
+def _calendar_accepted(db, job: dict) -> dict:
+    return {
+        "kind": KIND_CALENDAR,
+        "status": job.get("status"),
+        "job": {"job_id": job["_id"], "status": job["status"], "queue_position": queue_position(db, job),
+                "kind": KIND_CALENDAR},
     }

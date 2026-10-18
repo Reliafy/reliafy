@@ -71,7 +71,7 @@ export function requirementVerdict(check, unit = "") {
 // The verdict's plain text (a title attribute, a test).
 export const verdictText = (v) => (v ? v.segments.map(([t]) => t).join("") : "");
 
-export const DEMO_PATH = "/strategy/demonstration-test";
+export const DEMO_PATH = "/strategy/test-planning";
 
 // The demonstration test, pre-filled with a requirement (#295): ``b`` (the x
 // in Bx), ``life``, ``confidence`` (%), the model's ``unit``, and β's

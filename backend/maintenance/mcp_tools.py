@@ -439,6 +439,10 @@ ATTACHMENTS: Table = {
         longitude (a work order's go on its position). source manual (default) or photo: use a photo's location
         only when the user has said to."""),
     "remove_photo": ("photo_id", "", "Remove a photo (the history keeps that it was there; the image is deleted)."),
+    "link_photo": ("photo_id target_id", "", """Show a photo on another position, location, item or work order too
+        (a nameplate from a work order, on its position)."""),
+    "unlink_photo": ("photo_id target_id", "", "Take a photo off one place it shows (not its last: move or remove it)."),
+    "move_photo": ("photo_id target_id", "from_id", "Move a photo to target_id: off from_id, or else off everywhere else."),
     "add_document": ("url", "target_id position_class title kind", """Link a document (an http(s) url: a manual,
         datasheet, invoice, drawing, certificate) to an item or position (target_id), or to a position class
         (one datasheet every pump of that model shares). Use this rather than links in notes. kind: manual,
@@ -1330,7 +1334,8 @@ def register() -> None:
     @tool("maintenance_attachments", _WRITE, "Photos, coordinates and document links", ATTACHMENTS)
     def maintenance_attachments(action: _choice(ATTACHMENTS), ctx: Context,
                                 target_id: Annotated[str | None, Field(description=(
-                                    "photo_link: a position, location, item or work order. set_coordinates: a "
+                                    "photo_link, link_photo, unlink_photo, move_photo: a position, location, "
+                                    "item or work order. set_coordinates: a "
                                     "position, item, location or work order. add_document: an item or "
                                     "position."))] = None,
                                 caption: str | None = None, lat: float | None = None, lon: float | None = None,
@@ -1338,7 +1343,8 @@ def register() -> None:
                                 url: str | None = None, title: str | None = None,
                                 kind: Literal["manual", "datasheet", "invoice", "drawing", "certificate",
                                               "other"] | None = None,
-                                position_class: str | None = None, document_id: str | None = None) -> dict[str, Any]:
+                                position_class: str | None = None, document_id: str | None = None,
+                                from_id: str | None = None) -> dict[str, Any]:
         """What's attached to the register: photos (added by the user from a phone through a link;
         stored without location or camera details), coordinates, and links to documents. To look at a
         photo: maintenance_view_photo."""
@@ -1351,6 +1357,12 @@ def register() -> None:
             return run(m.set_coordinates, target_id, lat, lon, _d(source, "manual"))
         if action == "remove_photo":
             return run(remove_photo, m, photo_id)
+        if action == "link_photo":
+            return run(m.link_photo, photo_id, target_id)
+        if action == "unlink_photo":
+            return run(m.unlink_photo, photo_id, target_id)
+        if action == "move_photo":
+            return run(m.move_photo, photo_id, target_id, from_id)
         if action == "add_document":
             return run(m.add_document, url, title or "", _d(kind, "other"), target_id, position_class)
         return run(m.remove_document, document_id)

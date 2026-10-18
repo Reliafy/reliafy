@@ -24,6 +24,8 @@ function parseFrontmatter(raw) {
   if (!match) return { meta: {}, body: raw };
   const meta = {};
   for (const line of match[1].split(/\r?\n/)) {
+    // A "# ..." line is a comment for whoever edits the guide.
+    if (line.trimStart().startsWith("#")) continue;
     const idx = line.indexOf(":");
     if (idx === -1) continue;
     const key = line.slice(0, idx).trim();

@@ -3057,40 +3057,51 @@ FUNCTIONS = [
 ]
 
 
+#: SurPyval's warning (0.25) for an additive-hazards model asked about points
+#: outside its support, where it returns nan.
+_OUTSIDE_SUPPORT = "outside the model's support"
+
+
 def _eval_functions(model, grid, Z=None) -> dict:
     """Evaluate sf/ff/hf/Hf/df over ``grid`` (optionally at covariates ``Z``).
 
     Additive-hazards models allow the hazard — and thus the cumulative hazard —
-    to go negative, which makes sf = exp(-H) exceed 1 (an impossible reliability).
-    We do NOT silently clamp that away: the fit is unreliable and the user should
-    pick a different model form. Instead we flag it with ``curves["warning"]`` so
-    the calculator can show it, while returning the true (out-of-range) values.
+    to go negative, which would make sf = exp(-H) exceed 1 (an impossible
+    reliability). Since SurPyval 0.25 those points are outside the model's
+    support and come back ``nan`` with a warning (they used to come back as
+    sf > 1). We don't clamp either: we flag it with ``curves["warning"]`` so
+    the calculator can show it, and leave the points out (or, from a model
+    that still returns them, the out-of-range values).
     """
     grid = np.asarray(grid, dtype=float)
     curves = {"x": grid.tolist()}
     raw = {}
+    outside = False
     for fn in ("sf", "ff", "hf", "Hf", "df"):
         func = getattr(model, fn, None)
         if func is None:
             # Buckley-James has no hazard or density (#179): those are absent.
             curves[fn] = None
             continue
-        with np.errstate(all="ignore"):
+        with np.errstate(all="ignore"), warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", RuntimeWarning)
             y = np.asarray(func(grid) if Z is None else func(grid, Z), dtype=float)
+        outside = outside or any(_OUTSIDE_SUPPORT in str(w.message) for w in caught)
         raw[fn] = y
         # JSON can't carry inf/nan; null them so the frontend skips those points.
         curves[fn] = [None if not np.isfinite(v) else float(v) for v in y]
 
     Hf, sf = raw["Hf"], raw["sf"]
-    negative_hazard = bool(
+    negative_hazard = outside or bool(
         (np.isfinite(Hf) & (Hf < -1e-9)).any() or (np.isfinite(sf) & (sf > 1.0 + 1e-6)).any()
     )
     if negative_hazard:
         curves["warning"] = (
-            "The cumulative hazard goes negative here, so the reliability rises "
-            "above 1 — which is impossible. This additive-hazards fit is unreliable "
-            "at these covariate values; try a proportional-hazards (…_ph / cox_ph) "
-            "or accelerated-failure-time (…_aft) model instead."
+            "The cumulative hazard would go negative here, so the reliability would "
+            "rise above 1 — which is impossible. This additive-hazards fit isn't a "
+            "distribution at these covariate values, and those points aren't shown; "
+            "try a proportional-hazards (…_ph / cox_ph) or accelerated-failure-time "
+            "(…_aft) model instead."
         )
     return curves
 

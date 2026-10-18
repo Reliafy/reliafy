@@ -27,10 +27,21 @@ export function terminals(graph) {
 }
 
 // A network's connections drawn without arrows: a link works both ways.
+// Every edge gets markerEnd / markerStart set to undefined as its own keys,
+// not only the edges that carry an arrow: React Flow lays its
+// defaultEdgeOptions (which add the arrow) under each edge as
+// {...defaults, ...edge}, so an edge with no marker of its own (one loaded,
+// imported or inserted without it) would otherwise get the default arrow.
 export function undirectedEdges(edges) {
-  return (edges || []).map((e) =>
-    e.markerEnd ? { ...e, markerEnd: undefined, className: ((e.className || "") + " rbd-link").trim() } : e
-  );
+  return (edges || []).map((e) => {
+    const cls = (e.className || "").split(/\s+/).filter(Boolean);
+    return {
+      ...e,
+      markerEnd: undefined,
+      markerStart: undefined,
+      className: (cls.includes("rbd-link") ? cls : [...cls, "rbd-link"]).join(" "),
+    };
+  });
 }
 
 const isIo = (n) => n?.type === "input" || n?.type === "output";
