@@ -18,7 +18,7 @@ export const GUIDE_COVERAGE = [
   { feature: "Recurrent events (repairable systems)", href: "/modelling/recurrent" },
   { feature: "Accelerated life models", href: "/modelling/alt" },
   { feature: "Degradation models", href: "/modelling/degradation" },
-  { feature: "Condition-based risk (joint models)", href: "/modelling/joint" },
+  { feature: "Condition monitoring (remaining life from readings)", href: "/modelling/joint" },
   { feature: "Per-demand (one-shot) models", href: "/modelling/new?mode=perdemand" },
   // Data.
   { feature: "Data (datasets)", href: "/modelling/data" },

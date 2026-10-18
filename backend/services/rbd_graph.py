@@ -413,7 +413,7 @@ def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None
             "kind": "joint",
             "modelId": saved.id,
             "name": saved.name,
-            "distribution": "Condition-based risk",
+            "distribution": "Condition monitoring",
             "unit": r.get("unit") or "",
             "joint_unit": _joint_unit(joint_unit, saved, where),
         }

@@ -62,7 +62,7 @@ function ColumnSelect({ label, value, onChange, columns, optional = false }) {
   );
 }
 
-// A new condition-based risk model: two tables, their columns, the covariates
+// A new condition monitoring model: two tables, their columns, the covariates
 // and the reading's path; Check data, then Fit (Pro, a job on the calculation
 // service).
 export default function JointNewPage() {
@@ -199,8 +199,8 @@ export default function JointNewPage() {
   return (
     <div className="app joint-new">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Condition-based risk", to: "/modelling/joint" }]}
-        title="New condition-based risk model"
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Condition monitoring", to: "/modelling/joint" }]}
+        title="New condition monitoring model"
         meta="Fits how a reading drifts on each unit and how the risk of failing rises with it, together."
       />
 

@@ -8971,7 +8971,7 @@ input.rbd-rename {
   .detail-panel .life-reading .life-reading-action { min-height: 44px; }
 }
 
-/* Condition-based risk (joint models of readings and failures). */
+/* Condition monitoring (joint models of readings and failures). */
 .joint-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
 .joint-table-pick { min-width: 0; }
 .joint-table-pick .preview-wrap { margin-top: 10px; max-width: 100%; overflow-x: auto; }

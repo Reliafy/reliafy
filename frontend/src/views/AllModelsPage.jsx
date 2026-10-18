@@ -11,7 +11,7 @@ import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
 export const MODELLING_HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
 // The Modelling section's landing page: every saved model — life data,
-// recurrent, accelerated life, degradation, condition-based risk — in one
+// recurrent, accelerated life, degradation, condition monitoring — in one
 // list, filterable by type. Each type's own list is a child page.
 export default function AllModelsPage() {
   const navigate = useNavigate();
@@ -41,7 +41,7 @@ export default function AllModelsPage() {
     <div className="app">
       <SectionHeader
         title="Modelling"
-        purpose="Every model you've fitted: life data, recurrent events, accelerated life, degradation and condition-based risk."
+        purpose="Every model you've fitted: life data, recurrent events, accelerated life, degradation and remaining life from condition readings."
         help={MODELLING_HELP}
         primary={<button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>}
       />

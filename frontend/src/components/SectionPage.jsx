@@ -100,16 +100,23 @@ export function SectionEmpty({ title, body, action, help }) {
 //   head      the <th> cells; render(row) returns its <tr>
 //   empty     { title, body, action } for SectionEmpty, with help
 //   className extra class on the table's wrapper (e.g. "ds-lib")
+//   tagsOf    optional (row) => its tags: chips that filter the list (a row must
+//             have every chip that's on)
 export function SectionList({
-  rows, noun, fields, types, typeOf, head, render, empty, help, placeholder, className = "",
+  rows, noun, fields, types, typeOf, tagsOf, head, render, empty, help, placeholder, className = "",
 }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
+  const [on, setOn] = useState([]);
   if (rows === null || rows === undefined) return <div className="card empty">Loading…</div>;
   if (!rows.length) return <SectionEmpty {...empty} help={help} />;
   const [one, many] = noun;
   const visible = rows.filter((r) =>
-    (!type || typeOf(r) === type) && matches(query, ...(fields ? fields(r) : [r.name]), r.id));
+    (!type || typeOf(r) === type)
+    && (!on.length || on.every((t) => (tagsOf(r) || []).includes(t)))
+    && matches(query, ...(fields ? fields(r) : [r.name]), r.id));
+  const allTags = tagsOf ? [...new Set(rows.flatMap((r) => tagsOf(r) || []))] : [];
+  const toggle = (t) => setOn((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
   const present = types ? types.filter((t) => rows.some((r) => typeOf(r) === t.value)) : [];
   return (
     <>
@@ -131,6 +138,18 @@ export function SectionList({
         )}
         <ListSearch value={query} onChange={setQuery} placeholder={placeholder || `Search ${many}…`} />
       </div>
+      {allTags.length > 0 && (
+        <div className="section-tags" role="group" aria-label="Filter by what it holds">
+          {allTags.map((t) => (
+            <button key={t} type="button" aria-pressed={on.includes(t)}
+              className={"chip chip-btn " + (on.includes(t) ? "chip-accent" : "chip-neutral")}
+              onClick={() => toggle(t)}>
+              {t}
+            </button>
+          ))}
+          {on.length > 0 && <button type="button" className="linkish" onClick={() => setOn([])}>Clear</button>}
+        </div>
+      )}
       <div className={"lib" + (className ? " " + className : "")}>
         <table className="lib-table">
           <thead><tr>{head}</tr></thead>

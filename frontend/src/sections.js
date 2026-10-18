@@ -21,7 +21,7 @@ export const NAV = [
       { to: "/modelling/recurrent", label: "Recurrent" },
       { to: "/modelling/alt", label: "Accelerated life" },
       { to: "/modelling/degradation", label: "Degradation" },
-      { to: "/modelling/joint", label: "Condition-based risk" },
+      { to: "/modelling/joint", label: "Condition monitoring" },
     ],
   },
   { key: "rbds", to: "/rbds", label: "RBDs" },

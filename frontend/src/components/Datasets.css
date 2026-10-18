@@ -156,3 +156,9 @@
 .ds-more > summary { cursor: pointer; color: var(--acc); font-weight: 500; width: max-content; }
 .ds-more[open] > summary { margin-bottom: var(--sp-2); }
 .ds-more-body { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* What a dataset holds (#261): tags under its name, and the list's tag filter. */
+.ds-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 4px 0 0 30px; }
+.ds-usefor { font-size: 12px; color: var(--muted); }
+.section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.section-tags .linkish { font-size: 12px; }

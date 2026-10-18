@@ -82,6 +82,7 @@ export default function DatasetsHome() {
         rows={datasets}
         noun={["dataset", "datasets"]}
         className="ds-lib"
+        tagsOf={(d) => d.tags}
         help={HELP}
         empty={{
           title: "No datasets yet",
@@ -106,6 +107,12 @@ export default function DatasetsHome() {
                 </Link>
                 {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}
               </div>
+              {(d.tags?.length > 0 || d.use_for?.length > 0) && (
+                <div className="ds-tags">
+                  {(d.tags || []).map((t) => <Chip key={t}>{t}</Chip>)}
+                  {d.use_for?.length > 0 && <span className="ds-usefor">For: {d.use_for.join(" · ")}</span>}
+                </div>
+              )}
             </td>
             <td className="lib-n">{(d.n_rows ?? 0).toLocaleString()}</td>
             <td className="lib-opt">

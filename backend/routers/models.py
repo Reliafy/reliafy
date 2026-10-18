@@ -87,6 +87,7 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
         "n_columns": len(dataset.columns or []),
         "n_models": n_models,
         "checksum": dataset.checksum,
+        **datasets_service.dataset_tags(dataset),
         "created_at": dataset.created_at.isoformat(),
         "is_sample": samples_service.is_sample(dataset.owner_id),
         "read_only": not access_service.can_write(ctx, dataset.owner_id),

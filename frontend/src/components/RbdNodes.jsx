@@ -125,7 +125,7 @@ const fmtParam = (v) =>
 
 export function modelSummary(model) {
   // A condition-based block: one unit of a joint model, given its readings.
-  if (model.kind === "joint") return `${model.name || "Condition-based risk"} · ${jointBlockLine(model)}`;
+  if (model.kind === "joint") return `${model.name || "Remaining life from condition"} · ${jointBlockLine(model)}`;
   // Proportional-hazards models depend on covariates entered on the calculator;
   // summarise by the covariate names rather than the baseline parameters.
   if (model.kind === "regression") {
