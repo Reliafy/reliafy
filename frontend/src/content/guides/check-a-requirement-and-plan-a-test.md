@@ -110,7 +110,7 @@ characteristic** chart below plots the chance of passing against the design's
 true reliability, with the target and the good design marked: the two risks of
 the test, in one picture.
 
-**Save analysis** keeps the plan under **Strategy → Saved analyses**, so the
+**Save analysis** keeps the plan under **Strategy**, so the
 reasoning behind the test is on record when someone asks why it's 19 units.
 
 ## Without a model

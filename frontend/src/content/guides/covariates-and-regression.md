@@ -35,7 +35,7 @@ tested at 60, 80 and 100 °C and at two loads.
 
 ## Add the covariates
 
-Start a new model under **Modelling → Life data** and choose **Fit to data**.
+Start a new model under **Modelling → Life models** and choose **Fit to data**.
 Map the time and status columns in the **Data** step as usual (see
 [fit your first life model](/guides/fit-your-first-model)). Then open
 **Advanced (regression): covariates** and tick each covariate column. Give each

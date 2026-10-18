@@ -75,7 +75,7 @@ proof-tested block's interval, test coverage and test duration all count.
 
 Press **Save analysis** under the answer, give it a name, and press **Save**.
 The result is recomputed on the server from your inputs and stored, and it
-appears under **Strategy → [Saved analyses](/strategy)**.
+appears on the [Strategy](/strategy) page.
 
 A saved failure-finding analysis is the evidence an RCM study expects for a
 *Failure-finding task*. In the study's decision dialog, choose the failure mode's

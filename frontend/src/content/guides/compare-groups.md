@@ -24,7 +24,7 @@ Reliafy answers that three ways:
 
 ## Compare the groups in a dataset
 
-Open the dataset under [Datasets](/datasets) and press **Compare groups** at the
+Open the dataset under [Modelling → Data](/modelling/data) and press **Compare groups** at the
 top of the page. The panel on the right asks for:
 
 - **Time column**: the time to failure or removal.
@@ -129,7 +129,7 @@ curves cross and which leads on each side of the crossing. It shows both
 medians, both reliability curves, and under **Details** the B10 life, median and
 MTTF of each. When both sides are data, the log-rank test says whether the
 difference is significant. Press **Save** to keep the comparison under
-**Strategy → Saved analyses**.
+**Strategy**.
 
 Use it when the two groups live in different files, or when one side is a
 vendor's published model and the other is your own field data.
