@@ -283,7 +283,7 @@ export default function BillingPage() {
             </ul>
             <p className="muted-line">
               The daily limit resets at 00:00 UTC.{" "}
-              {mcpOn && <>Connect Claude or another MCP client from the <a href="/api-docs#mcp">API docs</a>. </>}
+              {mcpOn && <>Connect Claude or another MCP client from the <a href="/api-docs/mcp">API docs</a>. </>}
               Pro removes the daily limit and fits in Reliafy.
             </p>
             {!mcpOn && <McpOnRequest />}

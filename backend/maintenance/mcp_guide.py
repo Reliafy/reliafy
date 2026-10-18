@@ -71,7 +71,9 @@ maintenance_get kind manufacturer_match with the maker as written (maintenance_m
 new) -> find the model in maintenance_list kind parts (manufacturer_id filter) or maintenance_parts create \
 (part_number = the model number, with item_class_id and manufacturer_id) -> maintenance_items set_part -> \
 maintenance_items set_attributes with the ratings read -> maintenance_items update for the serial, the other \
-nameplate fields and dates. Say what you read and what you couldn't.
+nameplate fields and dates. Say what you read and what you couldn't. A photo can show in several places: \
+maintenance_attachments link_photo puts a work order's nameplate photo on the position (and its location) too; \
+move_photo fixes one added to the wrong place.
 5. Spares: maintenance_parts create, stock (receive at a store location), add_to_position (the position's parts \
 list; critical spares with min_on_hand).
 6. Topology, as you build: maintenance_topology connect for what feeds what (supply, power, signal), and \

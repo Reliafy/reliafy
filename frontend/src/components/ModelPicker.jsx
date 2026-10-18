@@ -2,6 +2,7 @@ import Select from "./Select.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getDistributions, listModels, getModel, rbdBlockModel, rbdMeanForms } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
 import { formatNumber } from "../format.js";
@@ -30,11 +31,14 @@ const GIVEN_LABEL = {
 // false opens on "Saved model" with none chosen.
 // ``initialSavedId`` opens on that saved model and emits it (a link's preset).
 // ``wt`` is a guided walkthrough's anchor (walkthroughs.js).
+// ``joint`` (an RBD block's life model: ``{repairable}``) adds "Condition-based":
+// one unit of a condition-based risk model, given its readings.
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
-                                      preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt }) {
+                                      preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt,
+                                      joint = null }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
-    value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
+    joint && value?.kind === "joint" ? "joint" : value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
   );
   const [dists, setDists] = useState([]);
   const [saved, setSaved] = useState([]);
@@ -212,16 +216,22 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
           setSource(v);
           if (v === "mean") toMean();
           else if (v === "params") emitParams(distId, pvals);
+          else if (v === "joint") onChange(null);
           else onPickSaved(savedId);
         }}
         options={[
           ...(meanEntry ? [{ value: "mean", label: "Mean" }] : []),
           { value: "params", label: "Parameters" },
           { value: "saved", label: "Saved model" },
+          ...(joint ? [{ value: "joint", label: "Condition-based", title: "One unit of a condition-based risk model, given its readings" }] : []),
         ]}
       />
 
-      {source === "mean" ? (
+      {source === "joint" ? (
+        <JointBlockSource value={value} onChange={onChange} repairable={!!joint?.repairable} />
+      ) : null}
+
+      {source === "joint" ? null : source === "mean" ? (
         <>
           {distSelect(meanDists, meanDistId, (id) => {
             const need = forms?.[id]?.given || [];

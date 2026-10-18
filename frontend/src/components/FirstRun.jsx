@@ -76,7 +76,7 @@ function AgentLine() {
   return (
     <p className="first-run-agent">
       Work from Claude or another AI agent?{" "}
-      <a href="/api-docs#mcp" onClick={() => trackEvent("first_run_agent")}>
+      <a href="/api-docs/mcp" onClick={() => trackEvent("first_run_agent")}>
         Connect it over MCP
       </a>
     </p>
@@ -111,7 +111,8 @@ export function StartHere({ info, sampleModelId = null }) {
         Other models:{" "}
         <Link to="/modelling/recurrent/new">Recurrent events</Link> ·{" "}
         <Link to="/modelling/alt/new">Accelerated life</Link> ·{" "}
-        <Link to="/modelling/degradation">Degradation</Link>
+        <Link to="/modelling/degradation">Degradation</Link> ·{" "}
+        <Link to="/modelling/joint/new">Condition-based risk</Link>
       </p>
       {first && (
         <p className="first-run-more">

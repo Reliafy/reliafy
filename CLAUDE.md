@@ -65,6 +65,15 @@ Adding to the smoke suite:
   `frontend/smoke/api.spec.js`: signed out it must answer 401, not 404, which
   catches a router that wasn't mounted.
 
+How-to guides (`frontend/src/content/guides/`):
+
+- `src/guideChecks.test.js` fails on a dead internal link (a route the router
+  doesn't know, a missing guide, post, image or `#anchor`) and on a feature page
+  in `GUIDE_COVERAGE` (`src/guideCoverage.js`) that no guide links to. A new
+  main page goes in that list, with a new or updated guide that links to it.
+- Screenshots come from `frontend/scripts/capture-guides.mjs` (re-run weekly by
+  `guide-screenshots.yml`); add a step there for each new image.
+
 Add or extend tests for any behaviour you change.
 
 ## Python and dependencies

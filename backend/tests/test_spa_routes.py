@@ -45,7 +45,7 @@ def test_llms_txt_is_served_as_text(site):
 @pytest.mark.parametrize("path", [
     "/modelling", "/modelling/m/abc", "/rbds/b/123", "/datasets/list", "/strategy/replacement",
     "/fleet/tracking/f1", "/rcm/studies/s1", "/settings", "/team", "/admin", "/billing", "/tokens", "/changes",
-    "/login", "/oauth/consent", "/p/sometoken", "/unsubscribe", "/api-docs", "/terms", "/privacy",
+    "/login", "/oauth/consent", "/p/sometoken", "/unsubscribe", "/api-docs", "/api-docs/tools", "/api-docs/mcp", "/terms", "/privacy",
     "/blog", "/blog/a-post-not-prerendered-yet", "/learn/weibull", "/guides/x", "/reference/weibull",
     "/whats-new/october-2026", "/rcm-software", "/weibull-analysis-software",
 ])

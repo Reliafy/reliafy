@@ -122,6 +122,7 @@ const ITEMS = [
       { to: "/modelling/recurrent", label: "Recurrent" },
       { to: "/modelling/alt", label: "Accelerated life" },
       { to: "/modelling/degradation", label: "Degradation" },
+      { to: "/modelling/joint", label: "Condition-based risk" },
     ],
   },
   {
@@ -138,7 +139,7 @@ const ITEMS = [
       { to: "/strategy/replacement", label: "Optimal replacement" },
       { to: "/strategy/compare", label: "Compare two models" },
       { to: "/strategy/failure-finding", label: "Failure finding" },
-      { to: "/strategy/demonstration-test", label: "Demonstration test" },
+      { to: "/strategy/test-planning", label: "Test planning" },
     ],
   },
   {

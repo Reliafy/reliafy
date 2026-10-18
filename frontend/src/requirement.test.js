@@ -46,7 +46,7 @@ test("unknown: no bounds, an amber caveat with the estimate", () => {
 
 test("the demonstration test link round-trips (saved model)", () => {
   const link = demoLink({ b: 10, life: 50000, confidence: 90, unit: "Cycles", modelId: "m-1" });
-  assert.ok(link.startsWith("/strategy/demonstration-test?"));
+  assert.ok(link.startsWith("/strategy/test-planning?"));
   const p = parseDemoPrefill(link.split("?")[1]);
   assert.deepEqual(p, { target: "b_life", bLife: "10", missionTime: "50000", confidence: "90", unit: "Cycles", modelId: "m-1" });
 });

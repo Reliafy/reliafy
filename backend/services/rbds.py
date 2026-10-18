@@ -461,7 +461,7 @@ def _t_sim(t_simulation) -> float | None:
 # than from the parameters stored on the block (rbd_analysis._build_distribution):
 # proportional-hazards / regression models. (Non-parametric blocks are refused,
 # so never analysed.) A load-sharing block's load-life model is resolved too.
-_RESOLVED_KINDS = frozenset({"regression"})
+_RESOLVED_KINDS = frozenset({"regression", "joint"})
 
 
 def _ref_id(model) -> str | None:

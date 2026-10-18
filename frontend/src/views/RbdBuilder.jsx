@@ -1878,6 +1878,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           groups={groupNames}
           safety={repairable && !!policies.safety_function}
           capacity={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
+          jointBlock={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
           onClose={() => {
             setModal(null);
             setModalNodeId(null);

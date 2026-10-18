@@ -1,9 +1,10 @@
-"""SurPyval 0.23 adoption (#238): the renamed names, the newly refused
-data, and the expectations that moved.
+"""SurPyval 0.25 (with RePyability 0.15): the pins, the renamed names, the
+newly refused data, and the expectations that moved since 0.23.
 
-Every call into SurPyval goes through its 0.23 names, so these run clean with
-``-W error::DeprecationWarning`` for SurPyval's own deprecations; saved models
-keep Reliafy's (and old SurPyval's) keys and still load.
+Every call into SurPyval goes through its current names, so these run clean
+with SurPyval's own deprecations as errors (the suite does that everywhere:
+``conftest.py``); saved models keep Reliafy's (and old SurPyval's) keys and
+still load.
 """
 
 import copy
@@ -26,10 +27,12 @@ from backend.services import strategy  # noqa: E402
 
 
 def _no_surpyval_deprecations():
-    """Turn SurPyval's deprecations (all say "removed in v0.24") into errors."""
+    """Turn SurPyval's deprecations ("... removed in v0.26", and the dated
+    data-format converters' FutureWarning) into errors."""
     ctx = warnings.catch_warnings()
     ctx.__enter__()
     warnings.filterwarnings("error", message=r".*removed in v0\.2", category=DeprecationWarning)
+    warnings.filterwarnings("error", message=r".*removed in the first release on or after", category=FutureWarning)
     return ctx
 
 
@@ -42,13 +45,13 @@ def strict():
         ctx.__exit__(None, None, None)
 
 
-def test_the_pins_are_surpyval_0_23_and_repyability_0_13():
-    """Reliafy stays on SurPyval 0.23, the version RePyability 0.13 targets."""
+def test_the_pins_are_surpyval_0_25_and_repyability_0_15():
+    """Reliafy runs SurPyval 0.25, the version RePyability 0.15 targets."""
     import repyability
 
-    assert sp.__version__ == "0.23"
-    assert repyability.__version__ == "0.13"
-    assert rbd_export.detect_versions() == {"surpyval": "0.23", "repyability": "0.13"}
+    assert sp.__version__ == "0.25"
+    assert repyability.__version__ == "0.15"
+    assert rbd_export.detect_versions() == {"surpyval": "0.25", "repyability": "0.15"}
 
 
 # ---------------------------------------------------------------------------
@@ -278,8 +281,9 @@ def test_the_mixture_workaround_agrees_with_surpyval_0_23():
 
 
 # ---------------------------------------------------------------------------
-# Growth projection with BC modes: 0.23 takes the demonstrated intensity from
-# the unadjusted Crow-AMSAA shape, and projects from one failure too
+# Growth projection with BC modes: since 0.24 the demonstrated intensity is
+# from the bias-corrected shape, (N - 1) / N of the MLE, as the handbook's
+# example has it (SurPyval #730), so one failure is refused
 # ---------------------------------------------------------------------------
 # MIL-HDBK-189's test-fix-find-test example: one system to T = 400, 56
 # failures: 10 A, 14 BC (BC17..BC28), 32 BD (BD1..BD16).
@@ -308,25 +312,23 @@ def test_bc_mode_projection_on_the_handbook_example():
     out = rec.growth_projection(df, GROWTH_MAP, fef, bc=bc, test_end=400)
     assert out["failures"] == {"A": 10, "BC": 14, "BD": 32}
     assert out["demonstrated_basis"] == "crow_amsaa"
-    assert out["demonstrated"]["mtbf"] == pytest.approx(7.70690, abs=1e-5)
-    assert out["projected"]["mtbf"] == pytest.approx(11.00604, abs=1e-5)
+    # The handbook's own values (0.23 gave 7.70690 and 11.00604).
+    assert out["demonstrated"]["mtbf"] == pytest.approx(7.84708, abs=1e-5)
+    assert out["projected"]["mtbf"] == pytest.approx(11.29418, abs=1e-5)
 
 
-def test_bc_modes_with_one_failure_still_project():
-    from surpyval.recurrent import CrowAMSAA
-
+def test_bc_modes_with_one_failure_say_why_they_cant_project():
     from backend import recurrent as rec
 
     df = pd.DataFrame({"sys": "P1", "t": [50.0], "m": ["seal"]})
-    out = rec.growth_projection(df, GROWTH_MAP, {}, bc=["seal"], test_end=400)
-    ref = CrowAMSAA.projection([50.0, 400.0], ["seal", None], {}, bc=["seal"], c=[0, 1])
-    assert out["projected"]["mtbf"] == pytest.approx(ref.projected_mtbf, rel=1e-12)
+    with pytest.raises(FitError, match="at least 2 failures"):
+        rec.growth_projection(df, GROWTH_MAP, {}, bc=["seal"], test_end=400)
 
 
-def test_cox_has_no_qf_and_no_metrics_at_the_covariate_means():
-    """SurPyval 0.23 gives CoxPH no ``qf``: no median / B10 / MTTF for a Cox
-    model (its B10 would be an event time on a curve that often stops short
-    of 0)."""
+def test_cox_has_no_metrics_at_the_covariate_means():
+    """No median / B10 / MTTF for a Cox model: its B10 would be an event time
+    on a step curve that often stops short of 0. (SurPyval 0.24 gave CoxPH a
+    step-curve ``qf``; Reliafy still doesn't quote it.)"""
     rng = np.random.default_rng(5)
     n = 60
     z = rng.normal(size=n)
@@ -334,6 +336,5 @@ def test_cox_has_no_qf_and_no_metrics_at_the_covariate_means():
     df = pd.DataFrame({"t": t, "c": (rng.uniform(size=n) < 0.2).astype(int), "z": z})
     r = fitting.fit("cox_ph", df, {"x": "t", "c": "c"}, ["z"])
     model = fitting._MODEL_STORE[r["functions"]["model_id"]]["model"]
-    assert not callable(getattr(model, "qf", None))
     assert "at_covariate_means" not in r and r["metrics_note"] == fitting.REGRESSION_METRICS_NOTE
     assert fitting.regression_metrics_at_defaults(model, r["functions"]["covariates"]) is None

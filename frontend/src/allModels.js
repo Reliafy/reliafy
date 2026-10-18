@@ -7,6 +7,8 @@ import {
   deleteAltModel,
   listRecurrentModels,
   deleteRecurrentModel,
+  listJointModels,
+  deleteJointModel,
 } from "./api.js";
 import { distColor } from "./instrument.js";
 import { CATEGORY } from "./plotTheme.js";
@@ -20,13 +22,15 @@ export const TYPE_LABEL = {
   degradation: "Degradation",
   alt: "Accelerated life",
   recurrent: "Recurrent",
+  joint: "Condition-based risk",
 };
 
 export const distLabel = (d = "") => String(d).replace(/\s*\(.*$/, "").replace(/\s+PH$/, "");
 
 export async function loadAllModels() {
-  const [lm, dm, am, rm] = await Promise.all([
+  const [lm, dm, am, rm, jm] = await Promise.all([
     listModels(), listDegradationModels(), listAltModels(), listRecurrentModels(),
+    listJointModels().catch(() => ({ models: [] })),
   ]);
   const common = (m) => ({
     id: m.id,
@@ -70,12 +74,23 @@ export async function loadAllModels() {
     created_at: m.created_at,
     to: `/modelling/recurrent/${m.id}`,
   }));
-  return [...life, ...deg, ...acc, ...rec].sort((a, b) => (a.created_at > b.created_at ? -1 : 1));
+  const joint = (jm.models || []).map((m) => ({
+    ...common(m),
+    type: "joint",
+    // e.g. "vibration · Linear path"
+    detail: [m.marker, m.path_model && `${m.path_model} path`].filter(Boolean).join(" · ") || "—",
+    noMax: m.fit_ok === false,
+    color: CATEGORY.blue,
+    created_at: m.created_at,
+    to: `/modelling/joint/${m.id}`,
+  }));
+  return [...life, ...deg, ...acc, ...rec, ...joint].sort((a, b) => (a.created_at > b.created_at ? -1 : 1));
 }
 
 export function deleteAnyModel(row) {
   if (row.type === "life") return deleteModel(row.id);
   if (row.type === "degradation") return deleteDegradationModel(row.id);
   if (row.type === "alt") return deleteAltModel(row.id);
+  if (row.type === "joint") return deleteJointModel(row.id);
   return deleteRecurrentModel(row.id);
 }

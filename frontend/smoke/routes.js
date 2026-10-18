@@ -19,7 +19,7 @@ function routesIn(file) {
     const gate = gates.length ? gates[gates.length - 1][1] : null;
     previous = m.index + m[0].length;
     for (const path of m[1] ? [m[1]] : productPaths()) {
-      found.push({ path, gate, redirect: /<Navigate\b|<TrackingRedirect\b/.test(m[2]) });
+      found.push({ path, gate, redirect: /<Navigate\b|<\w+Redirect\b/.test(m[2]) });
     }
   }
   return found;
@@ -70,6 +70,8 @@ export const DETAIL_IDS = {
   "/modelling/degradation/:id": ["/api/degradation/models", list("models")],
   "/modelling/recurrent/:id": ["/api/recurrent/models", list("models")],
   "/modelling/alt/:id": ["/api/alt/models", list("models")],
+  // A condition-based risk model: smoke/seed.js fits one.
+  "/modelling/joint/:id": ["/api/joint/models", list("models")],
   "/rbds/b/:id": ["/api/rbds", list("rbds")],
   "/rbds/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
   "/datasets/d/:id": ["/api/datasets", list("datasets")],
@@ -95,6 +97,7 @@ const CHART_PAGES = {
   "/modelling/degradation/:id": true,
   "/modelling/recurrent/:id": true,
   "/modelling/alt/:id": true,
+  "/modelling/joint/:id": true,
   "/fleet/forecasts/:id": true,
   "/fleet/tracking/:fleetId": true,
   // A class with a fitted model shows its failure forecast (#407).

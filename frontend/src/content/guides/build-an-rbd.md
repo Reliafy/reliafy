@@ -194,5 +194,5 @@ in the toolbar and the results lead with the PFDavg and the SIL instead — see
 [verifying a safety function](/guides/verify-a-safety-function).
 
 You can also build diagrams from Claude or another AI agent: connect it to
-Reliafy over [MCP](/api-docs#mcp) and it can create, edit and analyse diagrams in
+Reliafy over [MCP](/api-docs/mcp) and it can create, edit and analyse diagrams in
 your workspace.

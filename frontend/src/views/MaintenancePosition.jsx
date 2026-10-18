@@ -149,11 +149,15 @@ export default function MaintenancePosition() {
       <ConditionsCard target={{ id: p.id, name: p.name, kind: "Position" }} view={p} onChanged={refresh} />
 
       {p.fitted?.item && (
-        <MaintenancePhotos title={`Photos of the ${p.fitted.item.name}`} targetId={p.fitted.item.id}
-                           targetName={p.fitted.item.name} photos={p.item_photos} onChanged={refresh} />
+        <MaintenancePhotos title={`Photos of the ${p.fitted.item.name}`} targetId={p.fitted.item.id} targetKind="Item"
+                           targetName={p.fitted.item.name} photos={p.item_photos} onChanged={refresh}
+                           related={[{ id: p.id, kind: "Position", name: p.name },
+                             p.location && { ...p.location, kind: "Location" }]} />
       )}
-      <MaintenancePhotos title={p.fitted?.item ? `Photos of the ${p.name} position` : "Photos"} targetId={p.id}
-                         targetName={p.name} photos={p.photos} onChanged={refresh} />
+      <MaintenancePhotos title={p.fitted?.item ? `Photos of the ${p.name} position` : "Photos"} targetId={p.id} targetKind="Position"
+                         targetName={p.name} photos={p.photos} onChanged={refresh}
+                         related={[p.location && { ...p.location, kind: "Location" },
+                           p.fitted?.item && { ...p.fitted.item, kind: "Item" }]} />
       <DocumentsCard documents={p.documents} target={{ target_id: p.id }} onChanged={refresh}
                      title={p.fitted?.item ? `Documents for the ${p.name} position` : "Documents"} />
       {p.coordinates && (

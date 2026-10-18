@@ -18,12 +18,14 @@
 // The hard canvas gestures (drag-to-wire, right-click menus) are NOT scripted —
 // instead each RBD guide seeds a real saved diagram through the API and the
 // harness screenshots its builder and results. Add new shots to sampleShots
-// (sample data only) or fixtureShots (seeded fixtures) below.
+// (sample data only) or fixtureShots (seeded fixtures) below. The condition-based
+// risk shots fit the smoke suite's demo fleet (smoke/seed.js) as a fixture.
 
 import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { mkdir, stat } from "node:fs/promises";
+import { jointFleet } from "../smoke/seed.js";
 
 const BASE = process.env.BASE_URL || "http://localhost:8000";
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../public/guides/img");
@@ -194,6 +196,45 @@ async function seedTwoValveSif() {
   return (await api("/rbds", { name: "Safety function — two shutdown valves", graph })).id;
 }
 
+// Condition-based risk: the smoke suite's demo fleet (40 pumps, vibration read
+// every 10 days; smoke/seed.js), fitted as a joint model, and a diagram with two
+// of its running pumps in parallel as condition-based blocks.
+async function seedJointModel() {
+  const { lifetimes, readings } = jointFleet();
+  const life = await api("/datasets/paste", { name: "Pump lives", content: lifetimes });
+  const reads = await api("/datasets/paste", { name: "Pump vibration", content: readings });
+  const fit = await api("/joint/models", {
+    name: "Feed pumps (condition-based)",
+    lifetimes_dataset_id: life.id, readings_dataset_id: reads.id,
+    mapping: { id: "pump", x: "age", c: "running" },
+    readings_mapping: { id: "pump", age: "age", value: "vibration" },
+    covariates: ["load"], path_model: "linear", unit: "Days", marker: "vibration", marker_unit: "mm/s",
+  });
+  const modelId = fit.model_id;
+  const block = (id, unitId, y) => ({
+    id, type: "component", position: { x: 240, y },
+    data: { label: `Pump ${unitId}`,
+            model: { source: "joint", kind: "joint", modelId, name: "Feed pumps (condition-based)",
+                     distribution: "Condition-based risk", unit: "Days", joint_unit: { id: unitId } } },
+  });
+  const graph = {
+    unit: "Days",
+    nodes: [
+      { id: "input", type: "input", position: { x: 0, y: 160 }, data: { label: "Input" } },
+      block("pa", "P8", 80), block("pb", "P38", 240),
+      comp("valve", "Header valve", { col: 2.2, alpha: 2000, beta: 1.5 }),
+      { id: "output", type: "output", position: { x: 720, y: 160 }, data: { label: "Output" } },
+    ],
+    edges: [
+      { id: "e1", source: "input", target: "pa" }, { id: "e2", source: "input", target: "pb" },
+      { id: "e3", source: "pa", target: "valve" }, { id: "e4", source: "pb", target: "valve" },
+      { id: "e5", source: "valve", target: "output" },
+    ],
+  };
+  const rbd = await api("/rbds", { name: "Feed pump train", graph });
+  return { modelId, rbdId: rbd.id, datasetIds: [life.id, reads.id] };
+}
+
 // A model of the user's own (samples can't be shared), for the Share dialog.
 async function seedOwnModel() {
   const form = new FormData();
@@ -218,6 +259,12 @@ async function press(page, name) {
     if (await loc.count()) return loc.first().click();
   }
   throw new Error(`No control named ${name}`);
+}
+
+// Choose an option of a custom Select (components/Select.jsx) by its label.
+async function chooseOption(page, label, option) {
+  await page.getByRole("combobox", { name: label }).first().click(); await wait(300);
+  await page.getByRole("option", { name: option }).first().click(); await wait(300);
 }
 
 // Open the builder's ⋯ menu and choose an item.
@@ -335,7 +382,7 @@ async function main() {
         await m.locator(".req-verdict").waitFor({ timeout: 20000 }); await wait(600);
       } },
     { file: "req-02-plan.png",
-      url: `/strategy/demonstration-test?b=10&life=500&conf=90&unit=Hours&model=${S.bearings}`, settle: 2500,
+      url: `/strategy/test-planning?b=10&life=500&conf=90&unit=Hours&model=${S.bearings}`, settle: 2500,
       async act(page) {
         await press(page, /Lower bound 1\.88/);
         await page.getByLabel(/Test length per unit/).fill("2");
@@ -346,6 +393,14 @@ async function main() {
         await page.locator(".result-summary").first().evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 232));
         await wait(600);
       } },
+    // The Sequential test tab, on its own worked example.
+    { file: "req-03-sequential.png", url: "/strategy/test-planning/sequential", settle: 1500,
+      async act(page) {
+        await page.getByRole("button", { name: /^Compute$/ }).click();
+        await page.locator(".result-summary").first().waitFor({ timeout: 30000 }); await wait(1500);
+        await page.locator(".result-summary").first().evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 120));
+        await wait(600);
+      } },
     // --- Accelerated life ---
     { file: "alt-01-new.png", url: "/modelling/alt/new", settle: 1200 },
     { file: "alt-02-lifestress.png", url: `/modelling/alt/${S.altModel}`, settle: 2500 },
@@ -354,6 +409,15 @@ async function main() {
     { file: "alt-04-uselevel.png", url: `/modelling/alt/${S.altModel}`, settle: 1800,
       async act(page) { await press(page, /^Use-level calculator$/); await wait(1200);
                         await page.getByRole("button", { name: /Compute at use level/i }).click().catch(() => {}); await wait(3000); } },
+    // Planning the next accelerated test from the sample fit, at a use stress of 20 kV.
+    { file: "alt-05-plan.png", url: `/strategy/test-planning/accelerated?model=${S.altModel}`, settle: 2000,
+      async act(page) {
+        await page.getByLabel("Use stress").fill("20");
+        await page.getByRole("button", { name: /^Compute$/ }).click();
+        await page.locator(".result-summary").first().waitFor({ timeout: 30000 }); await wait(1500);
+        await page.locator(".result-summary").first().evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 120));
+        await wait(600);
+      } },
     // --- Recurrent events ---
     { file: "recurrent-01-new.png", url: "/modelling/recurrent/new", settle: 1200 },
     { file: "recurrent-02-mcf.png", url: `/modelling/recurrent/${S.recurrent}`, settle: 2500 },
@@ -369,6 +433,28 @@ async function main() {
         await page.getByLabel(/Planned replacement cost/).fill("1000");
         await page.getByLabel(/Unplanned/).fill("8000");
         await page.getByRole("button", { name: /^Compute$/ }).click(); await wait(3000);
+      } },
+    // Shutdown calendar: Weibull α 365 days, β 2; a shut every 180 days at 100,
+    // a failure 400, a change between shuts 150 → replace if older than 138 days.
+    { file: "replacement-02-calendar.png", url: "/strategy/replacement?mode=calendar", settle: 1800,
+      async act(page) {
+        await press(page, /^Parameters$/); await wait(400);
+        const params = page.locator(".picker .param-field input");
+        await params.nth(0).fill("365");
+        await params.nth(1).fill("2");
+        await chooseOption(page, "Model time unit", /^Days$/);
+        const shut = page.getByRole("group", { name: "Shut 1" });
+        await shut.getByLabel("Name").fill("Shutdown");
+        await shut.getByLabel("Replacing at it costs").fill("100");
+        await shut.getByLabel(/Every how many/).fill("180");
+        await chooseOption(page, "Every unit", /^days$/);
+        await page.getByLabel(/Failure \(unplanned\) cost/).fill("400");
+        await page.getByLabel(/Replacing between shuts costs/).fill("150");
+        await page.getByRole("button", { name: /^Compute$/ }).click();
+        await page.getByText(/older than 138 days/).first().waitFor({ timeout: 30000 }); await wait(1500);
+        await page.locator(".cal-result, [data-wt=cal-result]").first()
+          .evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 100)).catch(() => {});
+        await wait(600);
       } },
     // --- Fleet failures and spares ---
     { file: "fleet-01-forecast.png", url: `/fleet/forecasts/${S.fleet}`, settle: 3000 },
@@ -415,6 +501,24 @@ async function main() {
     { file: "ccf-04-impact.png", url: `/rbds/b/${fx.ccfId}`, settle: 900, act: calculate },
     // Safety function: a second valve alongside the first, in a common-cause group.
     { file: "sif-03-two-valves.png", url: `/rbds/b/${fx.sifId}`, settle: 1600, act: arrange },
+    // Condition-based risk: the new-model page with the demo fleet's two tables,
+    // the risk table, one unit's view, and a unit as an RBD block.
+    { file: "cbr-01-new.png", url: "/modelling/joint/new", settle: 1500,
+      async act(page) {
+        await chooseOption(page, "Lifetimes: one row per unit", /^Pump lives/);
+        await chooseOption(page, "Readings: one row per reading", /^Pump vibration/);
+        await page.getByLabel("load changes the risk").check();
+        await page.getByLabel("load changes the path").check();
+        await wait(800);
+      } },
+    { file: "cbr-02-risk.png", url: `/modelling/joint/${fx.joint.modelId}`, settle: 3000 },
+    { file: "cbr-03-unit.png", url: `/modelling/joint/${fx.joint.modelId}`, settle: 3000,
+      async act(page) {
+        await page.locator("#joint-unit-view").evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 80));
+        await page.locator(".joint-unit-sum").waitFor({ timeout: 20000 }); await wait(2000);
+      } },
+    { file: "cbr-04-rbd.png", url: `/rbds/b/${fx.joint.rbdId}`, settle: 1600,
+      async act(page) { await page.locator(".rbd-comp", { hasText: "Pump P8" }).dblclick(); await wait(1500); } },
     // Sharing: the Share dialog on a model of your own.
     { file: "share-01-dialog.png", url: `/modelling/m/${fx.ownModelId}`, settle: 2500,
       async act(page) {
@@ -457,7 +561,7 @@ async function main() {
   await shoot(pick(sampleShots));
 
   // Phase 2 — create fixtures, shoot, then always remove them.
-  const wanted = pick(fixtureShots({ loadshare: {} }));
+  const wanted = pick(fixtureShots({ loadshare: {}, joint: {} }));
   let fx = null;
   if (wanted.length) {
     fx = {
@@ -467,19 +571,23 @@ async function main() {
       loadshare: await seedLoadSharingRbd(),
       sifId: await seedTwoValveSif(),
       ownModelId: await seedOwnModel(),
+      joint: await seedJointModel(),
     };
     try {
       await shoot(pick(fixtureShots(fx)));
     } finally {
       await browser.close();
       // Never leave fixtures behind in the database the app is serving.
-      for (const id of [fx.repairableId, fx.ccfId, fx.ccfUngroupedId, fx.loadshare.rbdId, fx.sifId]) {
+      for (const id of [fx.repairableId, fx.ccfId, fx.ccfUngroupedId, fx.loadshare.rbdId, fx.sifId, fx.joint.rbdId]) {
         await fetch(`${BASE}/api/rbds/${id}`, { method: "DELETE" }).catch(() => {});
       }
       for (const id of [fx.loadshare.modelId, fx.ownModelId]) {
         await fetch(`${BASE}/api/models/${id}`, { method: "DELETE" }).catch(() => {});
       }
-      await fetch(`${BASE}/api/datasets/${fx.loadshare.datasetId}`, { method: "DELETE" }).catch(() => {});
+      await fetch(`${BASE}/api/joint/models/${fx.joint.modelId}`, { method: "DELETE" }).catch(() => {});
+      for (const id of [fx.loadshare.datasetId, ...fx.joint.datasetIds]) {
+        await fetch(`${BASE}/api/datasets/${id}`, { method: "DELETE" }).catch(() => {});
+      }
     }
   } else {
     await browser.close();

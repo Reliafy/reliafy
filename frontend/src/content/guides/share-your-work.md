@@ -54,7 +54,7 @@ inside it belongs to the team rather than to you — datasets, models, diagrams,
 studies. Members see it all, and the switcher moves you between your personal
 workspace and any teams you belong to.
 
-Invite people from the team's settings by email address. They join when they
+Invite people from the [team's settings](/team) by email address. They join when they
 accept the invitation, signed in with that address (the invitation waits in
 their Settings, and in a new account made with that address); until then you
 see the address and "Pending".
@@ -70,9 +70,10 @@ as many reviewers as they like without everyone needing a plan.
 ## Copying an ID
 
 Every saved artifact has an ID: **⋯ → Copy ID** on its page copies it. That's
-what you use with the [API](/api-docs) or the Python client to fetch a specific
+what you use with the [API](/api-docs/tools) or the Python client to fetch a specific
 model programmatically — useful when you're pulling results into a notebook, a
-report, or another system.
+report, or another system. [Use Reliafy from scripts](/guides/use-the-api-and-cli)
+walks through it.
 
 ## Which one to use
 

@@ -35,7 +35,7 @@ const withModel = (path, id, extra = {}) => {
 export function nextStepLink(step, id, { unit = "" } = {}) {
   if (step === "replacement") return withModel("/strategy/replacement", id);
   if (step === "fleet") return withModel("/fleet", id, { new: "1" });
-  if (step === "test") return withModel("/strategy/demonstration-test", id, unit ? { unit } : {});
+  if (step === "test") return withModel("/strategy/test-planning", id, unit ? { unit } : {});
   return null;
 }
 

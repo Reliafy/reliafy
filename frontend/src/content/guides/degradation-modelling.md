@@ -69,7 +69,7 @@ life of **3,210 hours**: 90% of pads survive that long, at 90% confidence.
 
 The population model is useful, but the real payoff is per-asset.
 
-Under **Fleet → Degradation tracking** (or **Track items** on the model's page),
+Under **Fleet →** [Degradation tracking](/fleet/tracking) (or **Track items** on the model's page),
 register the individual assets you care about — Truck 07's front-left pad, specifically — and record measurements against
 them as you take them. Each new reading updates that asset's own projection: its
 current trajectory, when it's forecast to cross the threshold, and how much
