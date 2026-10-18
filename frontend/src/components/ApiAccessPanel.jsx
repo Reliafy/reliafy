@@ -94,7 +94,8 @@ export default function ApiAccessPanel() {
         Personal tokens for scripts, cron jobs and AI agents. Give each token only what it
         needs: a token that only pushes data can't read your analyses. The{" "}
         <Link className="evidence-link" to="/api-docs">API reference</Link> has every
-        endpoint with copyable examples.
+        endpoint with copyable examples; <Link className="evidence-link" to="/api-docs/authentication">Tokens
+        and errors</Link> explains the scopes.
       </p>
 
       {!allowed && (

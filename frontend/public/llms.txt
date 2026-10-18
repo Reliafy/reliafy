@@ -13,7 +13,7 @@ Conventions agents should follow:
 ## Connect an agent
 
 - [MCP server](https://reliafy.com/mcp): remote Model Context Protocol server over Streamable HTTP. Sign in with OAuth (discovered from the server; dynamic client registration supported) or send a personal token as `Authorization: Bearer rlf_...`.
-- [Use Reliafy from Claude (MCP)](https://reliafy.com/api-docs#mcp): how to connect from claude.ai, the Claude apps, Claude Code and other MCP clients, and what every tool does.
+- [Use Reliafy from Claude (MCP)](https://reliafy.com/api-docs/mcp): how to connect from claude.ai, the Claude apps, Claude Code and other MCP clients, and what every tool does.
 - [OAuth protected-resource metadata](https://reliafy.com/.well-known/oauth-protected-resource/mcp): the MCP server's authorization discovery document.
 
 ## API

@@ -38,7 +38,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, MaintenanceTabs, OUTCOME_LABELS,
+  DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, OUTCOME_LABELS,
   PositionPicker,
   RoughDateField, flatten, fmtDate, fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
@@ -98,7 +98,6 @@ export default function MaintenancePosition() {
         }
         primary={<button onClick={() => setModal("wo")}>New work order</button>}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
 
       <section className="card">
@@ -149,11 +148,15 @@ export default function MaintenancePosition() {
       <ConditionsCard target={{ id: p.id, name: p.name, kind: "Position" }} view={p} onChanged={refresh} />
 
       {p.fitted?.item && (
-        <MaintenancePhotos title={`Photos of the ${p.fitted.item.name}`} targetId={p.fitted.item.id}
-                           targetName={p.fitted.item.name} photos={p.item_photos} onChanged={refresh} />
+        <MaintenancePhotos title={`Photos of the ${p.fitted.item.name}`} targetId={p.fitted.item.id} targetKind="Item"
+                           targetName={p.fitted.item.name} photos={p.item_photos} onChanged={refresh}
+                           related={[{ id: p.id, kind: "Position", name: p.name },
+                             p.location && { ...p.location, kind: "Location" }]} />
       )}
-      <MaintenancePhotos title={p.fitted?.item ? `Photos of the ${p.name} position` : "Photos"} targetId={p.id}
-                         targetName={p.name} photos={p.photos} onChanged={refresh} />
+      <MaintenancePhotos title={p.fitted?.item ? `Photos of the ${p.name} position` : "Photos"} targetId={p.id} targetKind="Position"
+                         targetName={p.name} photos={p.photos} onChanged={refresh}
+                         related={[p.location && { ...p.location, kind: "Location" },
+                           p.fitted?.item && { ...p.fitted.item, kind: "Item" }]} />
       <DocumentsCard documents={p.documents} target={{ target_id: p.id }} onChanged={refresh}
                      title={p.fitted?.item ? `Documents for the ${p.name} position` : "Documents"} />
       {p.coordinates && (

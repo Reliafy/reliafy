@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { NAV, activeNav } from "../sections.js";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
@@ -69,13 +70,6 @@ const MaintenanceIcon = () => (
   </svg>
 );
 
-const DatasetsIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <ellipse cx="12" cy="6" rx="8" ry="3" />
-    <path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
-  </svg>
-);
-
 const AgentIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <rect x="4" y="7" width="16" height="12" rx="2" />
@@ -107,70 +101,27 @@ const BillingIcon = () => (
   </svg>
 );
 
-// Routed sections highlight via NavLink (some have nested children that appear
-// when the section is active). A section opens on its list (#312); when a
-// child names that same page, the child is the one highlighted. A section
-// without children stays highlighted on its detail pages.
-const ITEMS = [
-  {
-    to: "/modelling",
-    label: "Modelling",
-    icon: <ModellingIcon />,
-    children: [
-      { to: "/modelling/models", label: "All models" },
-      { to: "/modelling/life", label: "Life data" },
-      { to: "/modelling/recurrent", label: "Recurrent" },
-      { to: "/modelling/alt", label: "Accelerated life" },
-      { to: "/modelling/degradation", label: "Degradation" },
-    ],
-  },
-  {
-    to: "/rbds",
-    label: "RBDs",
-    icon: <RbdIcon />,
-  },
-  {
-    to: "/strategy",
-    label: "Strategy",
-    icon: <StrategyIcon />,
-    children: [
-      { to: "/strategy", label: "Saved analyses" },
-      { to: "/strategy/replacement", label: "Optimal replacement" },
-      { to: "/strategy/compare", label: "Compare two models" },
-      { to: "/strategy/failure-finding", label: "Failure finding" },
-      { to: "/strategy/demonstration-test", label: "Demonstration test" },
-    ],
-  },
-  {
-    to: "/fleet",
-    label: "Fleet",
-    icon: <FleetIcon />,
-    children: [
-      { to: "/fleet", label: "Failure forecasts" },
-      { to: "/fleet/tracking", label: "Degradation tracking" },
-    ],
-  },
-  {
-    to: "/rcm",
-    label: "RCM",
-    icon: <RcmSectionIcon />,
-  },
-  {
-    to: "/maintenance",
-    label: "Maintenance",
-    icon: <MaintenanceIcon />,
-  },
-  {
-    to: "/agent",
-    label: "Reliability Agent",
-    icon: <AgentIcon />,
-  },
-  {
-    to: "/datasets",
-    label: "Datasets",
-    icon: <DatasetsIcon />,
-  },
-];
+const HomeIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3.5 11 12 4l8.5 7" />
+    <path d="M5.5 9.5V20h13V9.5" />
+    <path d="M10 20v-5.5h4V20" />
+  </svg>
+);
+
+// The menu itself is data (sections.js, with its tests); here each section
+// gets its icon. A section's children show under it while it's the current
+// section; the current page is highlighted, the child when there is one.
+const ICONS = {
+  home: <HomeIcon />,
+  modelling: <ModellingIcon />,
+  rbds: <RbdIcon />,
+  strategy: <StrategyIcon />,
+  fleet: <FleetIcon />,
+  rcm: <RcmSectionIcon />,
+  maintenance: <MaintenanceIcon />,
+  agent: <AgentIcon />,
+};
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -190,10 +141,11 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
     if (!maintenanceEnabled) return;
     getMaintenanceAccess().then((a) => setMaintenanceAllowed(!!a.allowed));
   }, [maintenanceEnabled]);
-  const items = ITEMS.filter((it) => (it.to !== "/agent" || agentEnabled)
-    && (it.to !== "/maintenance" || (maintenanceEnabled && maintenanceAllowed)));
+  const items = NAV.filter((it) => (it.gate !== "agent" || agentEnabled)
+    && (it.gate !== "maintenance" || (maintenanceEnabled && maintenanceAllowed)));
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const current = activeNav(pathname);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -284,44 +236,29 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
       </div>
       <nav className="sidebar-nav">
         {items.map((it) => {
-          // Forthcoming sections (no route) render as a disabled "soon" item.
-          if (!it.to) {
-            return (
-              <span
-                key={it.label}
-                className="side-item disabled"
-                title={`${it.label} — coming soon`}
-              >
-                <span className="side-icon">{it.icon}</span>
-                {!collapsed && <span className="side-label">{it.label}</span>}
-                {!collapsed && <span className="side-soon">Soon</span>}
-              </span>
-            );
-          }
-          const sectionActive = pathname.startsWith(it.to);
-          const childIsRoot = (it.children || []).some((c) => c.to === it.to);
+          const sectionActive = current.section === it.key;
           return (
             <div key={it.to}>
-              <NavLink
+              <Link
                 to={it.to}
-                end={!!it.children}
-                className={({ isActive }) => "side-item" + (isActive && (collapsed || !childIsRoot) ? " active" : "")}
+                className={"side-item" + (sectionActive && (collapsed || !current.child) ? " active" : "")}
+                aria-current={sectionActive && !current.child && pathname === it.to ? "page" : undefined}
                 title={it.label}
               >
-                <span className="side-icon">{it.icon}</span>
+                <span className="side-icon">{ICONS[it.key]}</span>
                 {!collapsed && <span className="side-label">{it.label}</span>}
-              </NavLink>
+              </Link>
               {!collapsed && it.children && sectionActive && (
                 <div className="side-children">
                   {it.children.map((c) => (
-                    <NavLink
+                    <Link
                       key={c.to}
                       to={c.to}
-                      end={c.to === it.to}
-                      className={({ isActive }) => "side-subitem" + (isActive ? " active" : "")}
+                      className={"side-subitem" + (current.child === c.to ? " active" : "")}
+                      aria-current={pathname === c.to ? "page" : undefined}
                     >
                       {c.label}
-                    </NavLink>
+                    </Link>
                   ))}
                 </div>
               )}

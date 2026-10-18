@@ -30,6 +30,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from backend.services import repy_compat
+
 REPEAT_KEY = "repeat_of"
 # Marks a copy wherever it is named (canvas, results, errors).
 REPEAT_MARK = "↺"
@@ -119,7 +121,7 @@ def core_search_fits(edges, reliabilities: dict, repeats: dict, k: dict,
     ``_Reduction``, with every appearance of a repeated component pinned out
     of the modules), then its path-set search (``min_path_sets``) is replayed
     on the core, counting the work and stopping at the budget."""
-    from repyability.rbd.modular import _SINK, _Reduction
+    _Reduction, _SINK = repy_compat.modular_reduction()
     from repyability.rbd.non_repairable_rbd import NonRepairableRBD
 
     # The same drawing with every copy standing alone: no repeated nodes, so

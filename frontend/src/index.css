@@ -5360,6 +5360,59 @@ button.cal-chip.wide { min-height: 44px; padding: 6px 10px; font-size: var(--fs-
   flex-shrink: 0;
 }
 
+/* The live tool list (read from /api/v1/openapi.json). */
+.api-tools { margin-top: 0.4rem; }
+.api-tool { border: 1px solid var(--line); border-radius: var(--r); margin-top: 0.5rem; }
+.api-tool > summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: var(--fs-14);
+}
+.api-tool > summary code { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+.api-tool-meta { font-size: var(--fs-12); color: var(--muted); min-width: 0; }
+.api-tool[open] > summary { border-bottom: 1px solid var(--line2); }
+.api-tool > .api-list { padding: 4px 12px 10px 1.9rem; gap: 8px; }
+.api-tool .api-path { font-size: var(--fs-12); }
+.api-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: var(--fs-12);
+  border-radius: var(--r-sm);
+  background: var(--acc-t);
+  color: var(--acc-d);
+}
+.api-args { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 3px; }
+.api-args code { font-family: var(--mono); font-size: var(--fs-12); overflow-wrap: anywhere; }
+.api-tool-flat {
+  padding: 8px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: var(--fs-14);
+}
+.api-tool-flat code { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+/* An endpoint that folds: the head (path and description) is the summary. */
+.api-fold > summary { cursor: pointer; list-style: none; position: relative; padding-right: 22px; }
+.api-fold > summary::-webkit-details-marker { display: none; }
+.api-fold > summary::after {
+  content: "+";
+  position: absolute;
+  right: 2px;
+  top: 0;
+  color: var(--muted);
+  font-size: var(--fs-16);
+}
+.api-fold[open] > summary::after { content: "−"; }
+.api-fold > summary .api-ep-desc { margin-bottom: 0; }
+.api-fold[open] > summary .api-ep-desc { margin-bottom: 0.5rem; }
+.api-list code, .muted-line code { overflow-wrap: anywhere; }
+
 /* Public link section in the share dialog. */
 .pl-section {
   margin-top: 1rem;
@@ -5950,6 +6003,79 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 @media (max-width: 760px) {
   .api-doc-page { padding: 32px 22px 24px; }
+}
+
+/* The API docs' pages: a sub-navigation down the left, a menu on a phone,
+   and previous / next links under each page. */
+.api-docs {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+.api-docs-main { min-width: 0; }
+.api-docs-main > header:first-child { margin-top: 0; }
+.api-docs-main > .card:first-of-type { margin-top: 0; }
+.api-docs-head { margin-top: 0; }
+.api-docs-nav { position: sticky; top: 80px; }
+.api-docs-menu { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.api-docs-menu a {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: var(--fs-14);
+  color: var(--muted);
+  text-decoration: none;
+}
+.api-docs-menu a:hover { color: var(--ink); background: var(--acc-hover); }
+.api-docs-menu a.active { color: var(--acc); background: var(--acc-t); font-weight: 600; }
+.api-docs-select { display: none; }
+.api-docs-select span { font-size: var(--fs-13); color: var(--muted); }
+.api-docs-select select { flex: 1; min-width: 0; font-size: var(--fs-14); }
+.api-docs-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 0.6rem;
+}
+.api-docs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  text-decoration: none;
+  color: var(--ink);
+}
+.api-docs-card:hover { border-color: var(--acc-line); background: var(--acc-hover); }
+.api-docs-card b { color: var(--acc); font-size: var(--fs-14); }
+.api-docs-card span { color: var(--muted); font-size: var(--fs-13); line-height: 1.45; }
+.api-docs-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 1.25rem;
+}
+.api-docs-pager a {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  text-decoration: none;
+  min-width: 0;
+}
+.api-docs-pager a:hover { border-color: var(--acc-line); }
+.api-docs-pager span { font-size: var(--fs-12); color: var(--muted); }
+.api-docs-pager b { color: var(--acc); font-size: var(--fs-14); }
+.api-docs-next { margin-left: auto; text-align: right; }
+@media (max-width: 860px) {
+  .api-docs { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .api-docs-nav { position: static; }
+  .api-docs-menu { display: none; }
+  .api-docs-select { display: flex; align-items: center; gap: 10px; }
 }
 
 .blog-back,
@@ -6556,11 +6682,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .price-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 18px;
   align-items: stretch;
 }
-@media (max-width: 900px) { .price-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1180px) { .price-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .price-grid { grid-template-columns: 1fr; } }
 
 .price-card {
   position: relative;
@@ -8843,3 +8970,77 @@ input.rbd-rename {
   .detail-panel .gofr.next-step { min-height: 44px; }
   .detail-panel .life-reading .life-reading-action { min-height: 44px; }
 }
+
+/* Condition-based risk (joint models of readings and failures). */
+.joint-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+.joint-table-pick { min-width: 0; }
+.joint-table-pick .preview-wrap { margin-top: 10px; max-width: 100%; overflow-x: auto; }
+.joint-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.joint-row > :first-child { flex: 1 1 200px; min-width: 0; }
+.joint-fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; margin: 8px 0; }
+.joint-fields .dist-field { flex: 1 1 180px; min-width: 0; max-width: 280px; }
+.joint-fields .dist-field input { width: 100%; box-sizing: border-box; }
+.joint-h3 { font-size: 0.95rem; margin: 16px 0 6px; }
+.joint-check { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; flex-wrap: wrap; }
+.joint-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.joint-check-out { margin-top: 12px; }
+.joint-result > .card, .joint-result > section { margin-bottom: 16px; }
+.joint-answer { border-left: 3px solid var(--accent, #2f6df6); }
+.joint-warn { color: var(--warn, #b45309); }
+.joint-params .joint-part th { text-align: left; padding-top: 12px; font-weight: 600; }
+.joint-params td.muted { min-width: 220px; }
+.joint-risk tr.is-selected td { background: rgba(47, 109, 246, 0.06); }
+.joint-hr { margin: 0; padding-left: 20px; }
+.joint-hr li { margin: 4px 0; }
+.joint-unit { display: flex; flex-direction: column; gap: 12px; }
+.joint-enter { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
+.joint-enter .dist-field { flex: 1 1 160px; min-width: 0; max-width: 240px; }
+.joint-enter .dist-field input { width: 100%; box-sizing: border-box; }
+.joint-readings { flex-basis: 100% !important; max-width: 360px !important; }
+.joint-readings textarea { width: 100%; box-sizing: border-box; font-family: var(--mono, monospace); }
+.joint-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.joint-charts > div { min-width: 0; }
+.joint-block-src { display: flex; flex-direction: column; gap: 10px; }
+.rbd-joint-note { margin: 4px 0; }
+/* Wide tables scroll on their own on a phone (as .maint-scroll in Maintenance.css,
+   which these pages don't load). */
+.joint-result .maint-scroll, .joint-new .maint-scroll { overflow-x: auto; position: relative; max-width: 100%; }
+.joint-result > section, .joint-result > .card { min-width: 0; }
+.joint-fields .dist-field input, .joint-enter .dist-field input, .joint-readings textarea {
+  background: var(--surf); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink);
+  padding: 0.5rem 0.65rem; font-size: var(--fs-14);
+}
+.joint-fields .dist-field input:focus, .joint-enter .dist-field input:focus, .joint-readings textarea:focus {
+  outline: none; border-color: var(--acc); box-shadow: var(--focus);
+}
+.joint-covs th:not(:first-child), .joint-covs td:not(:first-child) { text-align: center; }
+.joint-covs th:first-child, .joint-covs td:first-child { text-align: left; }
+
+/* One template for every section's pages (components/SectionPage.jsx). */
+.section-tablebar { flex-wrap: wrap; }
+.section-tablebar .section-type-filter { min-width: 170px; }
+.section-nomatch { margin: 14px 4px; font-size: var(--fs-13); color: var(--muted); }
+.section-empty .section-empty-action { margin-top: 1rem; }
+.section-empty .section-empty-more { margin-top: 1rem; font-size: var(--fs-13); color: var(--muted); }
+.section-empty .section-empty-more button.link { font-size: var(--fs-13); }
+@media (max-width: 720px) {
+  .section-tablebar .grow { display: none; }
+  .section-tablebar .count { flex-basis: 100%; }
+  .section-tablebar .search { flex: 1 1 140px; min-width: 0; width: auto; }
+  .section-tablebar .search input { min-width: 0; width: 100%; }
+}
+/* A menu button as a page's main action ("+ New analysis ▾"). */
+.ovm-label { gap: 6px; padding: 0 14px; white-space: nowrap; }
+a.ovm-item { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+a.ovm-item svg { width: 15px; height: 15px; flex: none; }
+.ovm-label + .ovm-menu { min-width: 210px; }
+@media (max-width: 720px) {
+  /* The header's actions sit at the left on a phone: open rightwards. */
+  .ovm-label + .ovm-menu { left: 0; right: auto; }
+}
+
+/* Home. */
+.home .wc-panel { margin-top: 24px; }
+.home-note { font-size: var(--fs-13); color: var(--muted); text-align: right; }
+.home-none { margin: 0; padding: 14px 16px; font-size: var(--fs-14); color: var(--muted); }
+.home .start-compact { margin-top: 28px; }

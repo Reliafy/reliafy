@@ -65,7 +65,7 @@ function interpCurve(x, y, xq) {
 
 // Only let the assistant route to real in-app pages.
 const NAV_PREFIXES = [
-  "/modelling", "/rbds", "/datasets", "/strategy", "/fleet", "/rcm", "/team", "/changes",
+  "/home", "/modelling", "/rbds", "/datasets", "/strategy", "/fleet", "/rcm", "/team", "/changes",
 ];
 export function isAllowedPath(path) {
   return typeof path === "string" && path.startsWith("/") && NAV_PREFIXES.some(

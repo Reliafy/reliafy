@@ -9,6 +9,14 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  ["POST", "/api/test-planning/sequential"], // Test planning
+  ["POST", "/api/test-planning/life"],
+  ["POST", "/api/test-planning/accelerated"],
+  ["POST", "/api/test-planning/comparison"],
+  ["POST", "/api/test-planning/simulate"],
+  ["POST", "/api/strategy/calendar-replacement"], // replacement over a shutdown calendar
+  ["POST", "/api/strategy/calendar-next"],
+  ["POST", "/api/maintenance/photos/smoke/move"], // a photo on several places
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407
@@ -24,12 +32,16 @@ const SIGNED_IN = [
   ["GET", "/api/fleet/fleets"],
   ["GET", "/api/strategy/analyses"],
   ["GET", "/api/models"],
+  ["GET", "/api/joint/models"],
   ["GET", "/api/datasets"],
   ["GET", "/api/me"],
+  ["GET", "/api/v1/tools"], // every MCP tool action over REST
+  ["POST", "/api/v1/list/models"],
+  ["POST", "/api/v1/maintenance/photos"],
 ];
 
 // Public: these answer anyone.
-const PUBLIC = ["/api/health", "/api/config", "/api/distributions"];
+const PUBLIC = ["/api/health", "/api/config", "/api/distributions", "/api/v1/openapi.json"];
 
 let auth;
 test.beforeAll(async ({ request }) => {

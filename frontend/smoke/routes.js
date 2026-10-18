@@ -19,7 +19,7 @@ function routesIn(file) {
     const gate = gates.length ? gates[gates.length - 1][1] : null;
     previous = m.index + m[0].length;
     for (const path of m[1] ? [m[1]] : productPaths()) {
-      found.push({ path, gate, redirect: /<Navigate\b|<TrackingRedirect\b/.test(m[2]) });
+      found.push({ path, gate, redirect: /<Navigate\b|<\w+Redirect\b/.test(m[2]) });
     }
   }
   return found;
@@ -70,8 +70,12 @@ export const DETAIL_IDS = {
   "/modelling/degradation/:id": ["/api/degradation/models", list("models")],
   "/modelling/recurrent/:id": ["/api/recurrent/models", list("models")],
   "/modelling/alt/:id": ["/api/alt/models", list("models")],
+  // A condition-based risk model: smoke/seed.js fits one.
+  "/modelling/joint/:id": ["/api/joint/models", list("models")],
   "/rbds/b/:id": ["/api/rbds", list("rbds")],
   "/rbds/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
+  "/modelling/data/:id": ["/api/datasets", list("datasets")],
+  // An old dataset link: redirects to /modelling/data/<id>.
   "/datasets/d/:id": ["/api/datasets", list("datasets")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
   "/fleet/tracking/:fleetId": ["/api/fleet/tracked", list("fleets")],
@@ -95,6 +99,7 @@ const CHART_PAGES = {
   "/modelling/degradation/:id": true,
   "/modelling/recurrent/:id": true,
   "/modelling/alt/:id": true,
+  "/modelling/joint/:id": true,
   "/fleet/forecasts/:id": true,
   "/fleet/tracking/:fleetId": true,
   // A class with a fitted model shows its failure forecast (#407).
@@ -107,3 +112,15 @@ export function expectsChart(path, record = {}) {
   const rule = CHART_PAGES[path];
   return typeof rule === "function" ? rule(record) : Boolean(rule);
 }
+
+// Old addresses that must keep working after the menu moved them (#nav):
+// [opened, where it lands]. Emails, shares and API or MCP results saved
+// before the move carry the old ones.
+export const REDIRECTS = [
+  ["/", "/home"],
+  ["/modelling/models", "/modelling"],
+  ["/datasets", "/modelling/data"],
+  ["/datasets/list", "/modelling/data"],
+  ["/datasets/d/sample-ds-bearings", "/modelling/data/sample-ds-bearings"],
+  ["/datasets/d/sample-ds-bearings?compare=arm", "/modelling/data/sample-ds-bearings?compare=arm"],
+];

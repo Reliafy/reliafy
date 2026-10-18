@@ -7,11 +7,14 @@ import ChatPanel from "./components/ChatPanel.jsx";
 import VerifyEmailBanner from "./components/VerifyEmailBanner.jsx";
 import { WalkthroughProvider } from "./components/Walkthrough.jsx";
 const BillingPage = lazy(() => import("./views/BillingPage.jsx"));
-const ModellingDashboard = lazy(() => import("./views/ModellingDashboard.jsx"));
+const HomePage = lazy(() => import("./views/HomePage.jsx"));
 const ModellingHome = lazy(() => import("./views/ModellingHome.jsx"));
 const AllModelsPage = lazy(() => import("./views/AllModelsPage.jsx"));
 const NewModelPage = lazy(() => import("./views/NewModelPage.jsx"));
 const ModelPage = lazy(() => import("./views/ModelPage.jsx"));
+const JointHome = lazy(() => import("./views/JointHome.jsx"));
+const JointNewPage = lazy(() => import("./views/JointNewPage.jsx"));
+const JointModelPage = lazy(() => import("./views/JointModelPage.jsx"));
 const DegradationHome = lazy(() => import("./views/DegradationHome.jsx"));
 const DegradationModelPage = lazy(() => import("./views/DegradationModelPage.jsx"));
 const RecurrentHome = lazy(() => import("./views/RecurrentHome.jsx"));
@@ -31,7 +34,7 @@ const DatasetPage = lazy(() => import("./views/DatasetPage.jsx"));
 const StrategyReplacement = lazy(() => import("./views/StrategyReplacement.jsx"));
 const StrategyCompare = lazy(() => import("./views/StrategyCompare.jsx"));
 const StrategyFailureFinding = lazy(() => import("./views/StrategyFailureFinding.jsx"));
-const StrategyDemonstration = lazy(() => import("./views/StrategyDemonstration.jsx"));
+const StrategyTestPlanning = lazy(() => import("./views/StrategyTestPlanning.jsx"));
 const StrategyAnalyses = lazy(() => import("./views/StrategyAnalyses.jsx"));
 const StrategyTracking = lazy(() => import("./views/StrategyTracking.jsx"));
 const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
@@ -73,6 +76,21 @@ import { useWorkspace } from "./WorkspaceProvider.jsx";
 function TrackingRedirect() {
   useParams();
   return <Navigate to="/fleet/tracking" replace />;
+}
+
+// The Demonstration test page became Test planning's Demonstration tab: old
+// links (a model's "Plan a test", bookmarks) keep their query string.
+// Datasets moved into Modelling as "Data": old links (emails, shares, API
+// and MCP results saved before the move) keep their query string and hash.
+function DatasetRedirect() {
+  const { id } = useParams();
+  const { search, hash, state } = useLocation();
+  return <Navigate to={`/modelling/data${id ? `/${encodeURIComponent(id)}` : ""}${search}${hash}`} state={state} replace />;
+}
+
+function DemonstrationTestRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/strategy/test-planning${search}`} replace />;
 }
 
 // The desktop rail's collapsed/expanded choice is remembered per device.
@@ -162,9 +180,13 @@ export default function AppShell() {
           <ErrorBoundary>
           <Suspense fallback={<div className="card empty view-loading">Loading…</div>}>
           <Routes>
-            <Route path="/" element={<Navigate to="/modelling" replace />} />
-            <Route path="/modelling" element={<ModellingDashboard />} />
-            <Route path="/modelling/models" element={<AllModelsPage />} />
+            <Route path="/" element={<Navigate to="/home" replace />} />
+            <Route path="/home" element={<HomePage />} />
+            {/* Modelling opens on the full model list; "All models" was that list. */}
+            <Route path="/modelling" element={<AllModelsPage />} />
+            <Route path="/modelling/models" element={<Navigate to="/modelling" replace />} />
+            <Route path="/modelling/data" element={<DatasetsHome />} />
+            <Route path="/modelling/data/:id" element={<DatasetPage />} />
             <Route path="/modelling/life" element={<ModellingHome />} />
             <Route path="/modelling/new" element={<NewModelPage />} />
             <Route path="/modelling/degradation" element={<DegradationHome />} />
@@ -175,6 +197,9 @@ export default function AppShell() {
             <Route path="/modelling/alt" element={<AltHome />} />
             <Route path="/modelling/alt/new" element={<AltNewPage />} />
             <Route path="/modelling/alt/:id" element={<AltModelPage />} />
+            <Route path="/modelling/joint" element={<JointHome />} />
+            <Route path="/modelling/joint/new" element={<JointNewPage />} />
+            <Route path="/modelling/joint/:id" element={<JointModelPage />} />
             <Route path="/modelling/m/:id" element={<ModelPage />} />
             {/* Each section opens on its list (#312); the old list URLs redirect. */}
             <Route path="/rbds" element={<RbdHome />} />
@@ -184,14 +209,19 @@ export default function AppShell() {
             <Route path="/rbds/runs" element={<RbdRuns />} />
             <Route path="/rbds/runs/compare" element={<RbdRunsCompare />} />
             <Route path="/rbds/runs/:runId" element={<RbdRunsDetail />} />
-            <Route path="/datasets" element={<DatasetsHome />} />
-            <Route path="/datasets/list" element={<Navigate to="/datasets" replace />} />
-            <Route path="/datasets/d/:id" element={<DatasetPage />} />
+            <Route path="/datasets" element={<DatasetRedirect />} />
+            <Route path="/datasets/list" element={<DatasetRedirect />} />
+            <Route path="/datasets/d/:id" element={<DatasetRedirect />} />
             <Route path="/strategy" element={<StrategyAnalyses />} />
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
             <Route path="/strategy/failure-finding" element={<StrategyFailureFinding />} />
-            <Route path="/strategy/demonstration-test" element={<StrategyDemonstration />} />
+            <Route path="/strategy/test-planning" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/test-planning/sequential" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/test-planning/life" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/test-planning/accelerated" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/test-planning/comparison" element={<StrategyTestPlanning />} />
+            <Route path="/strategy/demonstration-test" element={<DemonstrationTestRedirect />} />
             <Route path="/strategy/tracking" element={<Navigate to="/fleet/tracking" replace />} />
             <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
             <Route path="/fleet" element={<FleetForecasts />} />
@@ -218,7 +248,15 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/maintenance/parts/:id" element={<MaintenancePart />} />}
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/api-docs" element={<ApiDocsPage />} />
+            <Route path="/api-docs" element={<ApiDocsPage page="" />} />
+            <Route path="/api-docs/authentication" element={<ApiDocsPage page="authentication" />} />
+            <Route path="/api-docs/tools" element={<ApiDocsPage page="tools" />} />
+            <Route path="/api-docs/examples" element={<ApiDocsPage page="examples" />} />
+            <Route path="/api-docs/cli" element={<ApiDocsPage page="cli" />} />
+            <Route path="/api-docs/python" element={<ApiDocsPage page="python" />} />
+            <Route path="/api-docs/files" element={<ApiDocsPage page="files" />} />
+            <Route path="/api-docs/mcp" element={<ApiDocsPage page="mcp" />} />
+            <Route path="/api-docs/v1-routes" element={<ApiDocsPage page="v1-routes" />} />
             {/* API tokens moved into Settings; keep old links working. */}
             <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
             <Route path="/admin" element={<AdminPage />} />
@@ -229,7 +267,7 @@ export default function AppShell() {
             <Route
               path="*"
               element={unmatchedRoute(config) === "redirect"
-                ? <Navigate to="/modelling" replace />
+                ? <Navigate to="/home" replace />
                 : <div className="card empty view-loading">Loading…</div>}
             />
           </Routes>

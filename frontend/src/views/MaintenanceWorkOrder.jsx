@@ -6,7 +6,7 @@ import {
   setWorkStatus, updateWorkOrder,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { FailureModePicker, Field, FormModal, MaintenanceTabs, NotesCard, fmtDate, today } from "../components/MaintenanceParts.jsx";
+import { FailureModePicker, Field, FormModal, NotesCard, fmtDate, today } from "../components/MaintenanceParts.jsx";
 import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { partChoices, stockText } from "../maintenanceSpares.js";
@@ -58,7 +58,6 @@ export default function MaintenanceWorkOrder() {
           </>
         ) : null}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       {modal === "edit" && <EditWorkOrder wo={wo} onClose={() => setModal(null)} onDone={(d) => { setWo(d); setModal(null); }} />}
       {modal === "cancel" && <CancelWorkOrder wo={wo} onClose={() => setModal(null)} onDone={(d) => { setWo(d); setModal(null); }} />}
@@ -113,8 +112,10 @@ export default function MaintenanceWorkOrder() {
                  onAppend={async (text) => setWo(await updateWorkOrder(wo.id, { append_note: text }))} />
       {wo.status !== "cancelled" && <CostsCard wo={wo} onChanged={setWo} />}
 
-      <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetName={wo.subject?.name || wo.position?.name}
-                         photos={wo.photos || []} onChanged={refresh} />
+      <MaintenancePhotos title="Photos (before, after, damage)" targetId={wo.id} targetKind="WorkOrder" targetName={wo.subject?.name || wo.position?.name}
+                         photos={wo.photos || []} onChanged={refresh}
+                         related={[wo.subject, wo.position && { ...wo.position, kind: "Position" },
+                           wo.location && { ...wo.location, kind: "Location" }]} />
 
       {wo.status === "cancelled" ? (
         <section className="card"><p>Cancelled {fmtDate(wo.closed)}{wo.cancel_reason ? `: ${wo.cancel_reason}` : ""}.</p></section>

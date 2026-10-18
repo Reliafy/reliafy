@@ -121,6 +121,21 @@ function AsOfNote({ result, idToLabel }) {
   );
 }
 
+// Condition-based blocks (one unit of a joint model, given its readings) run
+// from their unit's age now, whatever the rest of the diagram does.
+function JointAgesNote({ result }) {
+  const blocks = (result.nodes || []).filter((n) => n.joint_age != null);
+  if (!blocks.length) return null;
+  const unit = result.unit ? ` ${unitInText(result.unit)}` : "";
+  return (
+    <p className="muted-line rbd-joint-note" role="note">
+      Condition-based {blocks.length === 1 ? "block" : "blocks"}{" "}
+      {blocks.map((b) => `${b.label} (runs from age ${fmtLife(b.joint_age)}${unit})`).join(", ")}:{" "}
+      {blocks.length === 1 ? "its" : "their"} reliability is from now, given {blocks.length === 1 ? "its" : "their"} readings.
+    </p>
+  );
+}
+
 // Reliability results (non-repairable RBD): headline MTTF / B-lives, the
 // system + per-node R(t)/F(t) curves, importance measures, and the structural
 // path/cut sets. Also used by the public read-only view.
@@ -215,6 +230,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
         <p className="muted-line" key={w}>⚠ {w}</p>
       ))}
       {now && <AsOfNote result={result} idToLabel={idToLabel} />}
+      <JointAgesNote result={result} />
       <DesignLife result={result} />
       <div className="params">
         <div className="stat">
@@ -1382,8 +1398,16 @@ export default function RbdCalculator({
   const stateBlocks = useMemo(
     () =>
       (graph.nodes || [])
-        .filter((n) => n.type === "component" && !["working", "failed"].includes(n.data?.state))
+        // A condition-based block is already as of now (its unit's age from
+        // its readings): another age would condition it twice.
+        .filter((n) => n.type === "component" && !["working", "failed"].includes(n.data?.state)
+          && n.data?.model?.kind !== "joint")
         .map((n) => ({ id: n.id, label: n.data?.label || n.id })),
+    [graph.nodes]
+  );
+
+  const jointBlocks = useMemo(
+    () => (graph.nodes || []).filter((n) => n.data?.model?.kind === "joint").map((n) => n.data?.label || n.id),
     [graph.nodes]
   );
 
@@ -1787,6 +1811,12 @@ export default function RbdCalculator({
             unitLabel={unitLabel}
             repairable={false}
           />
+          {jointBlocks.length > 0 && (
+            <p className="hint" style={{ margin: "4px 0 0" }}>
+              Already as of now: {jointBlocks.join(", ")} (condition-based, at {jointBlocks.length === 1 ? "its" : "each"}{" "}
+              unit's age from its readings).
+            </p>
+          )}
           {action}
         </div>
       )}

@@ -22,20 +22,23 @@ and the costs never mix a with-common-cause value with one without. A safety
 function's PFDavg needs only the long run (:func:`long_run_refusal`), so it
 keeps its groups wherever the long-run chain covers them (#136).
 
-One figure is the exception (#328): RePyability 0.13 doesn't work out the
-exact long-run failure frequency (nor the mean up and down times built on
+One figure could be the exception (#328): RePyability 0.13 didn't work out
+the exact long-run failure frequency (nor the mean up and down times built on
 it) with groups whose members' proof tests — or other blocks' block
-replacements — take time. Every other figure takes the groups there, so they
-stay in, and only that figure is left out, with its reason
-(:func:`frequency_refusal`); the simulation's estimate of it, which takes the
-groups, still stands.
+replacements — take time. Since 0.14 (its #293) it does, so the groups stay
+in every figure there too. Where RePyability still refuses that one figure,
+only it is left out, with its reason (:func:`frequency_refusal`), and the
+simulation's estimate of it, which takes the groups, stands.
 
 With limited repair crews RePyability 0.13 refuses the groups itself, in
 every exact figure (#251 there; 0.12's crew chain dropped them), and the
 long-run check below refuses there too.
 
 The functions take an RBD and its pins only, so "Download as Python" copies
-them into its script (:func:`export_source`) and decides as the app does.
+them into its script (:func:`export_source`) and decides as the app does. So
+they import RePyability's checks themselves (``repyability.rbd._ccf_groups``
+since 0.14) rather than through ``repy_compat``, which the script doesn't
+have; ``test_repy_compat.py`` checks those names are still there.
 """
 
 from __future__ import annotations
@@ -46,11 +49,13 @@ import inspect
 def long_run_refusal(rbd, working_nodes=(), broken_nodes=()):
     """None when RePyability's long-run values take ``rbd``'s common-cause
     groups in (with these blocks pinned), else its reason."""
+    from repyability.rbd import _ccf_groups
+
     if not getattr(rbd, "ccf_groups", None):
         return None
     try:
-        rbd._require_free_members(set(working_nodes or ()), set(broken_nodes or ()))
-        rbd._require_ccf_long_run()
+        _ccf_groups._require_free_members(rbd, set(working_nodes or ()), set(broken_nodes or ()))
+        _ccf_groups._require_ccf_long_run(rbd)
     except NotImplementedError as exc:
         return str(exc)
     return None
@@ -62,12 +67,14 @@ def common_cause_refusal(rbd, working_nodes=(), broken_nodes=(), state=None):
     the simulation, from ``state`` (node -> NodeState; None: every block new)
     with these blocks pinned — else the reason it doesn't. The exact
     long-run failure frequency is :func:`frequency_refusal`'s (#328)."""
+    from repyability.rbd import _ccf_groups
+
     reason = long_run_refusal(rbd, working_nodes, broken_nodes)
     if reason is not None or not getattr(rbd, "ccf_groups", None):
         return reason
     try:
-        rbd._require_groups_over_time(dict(state or {}))
-        rbd._require_groups_simulated(state or None)
+        _ccf_groups._require_groups_over_time(rbd, dict(state or {}))
+        _ccf_groups._require_groups_simulated(rbd, state or None)
     except NotImplementedError as exc:
         return str(exc)
     return None
@@ -78,10 +85,12 @@ def frequency_refusal(rbd):
     frequency (and so its mean up and down times) with its common-cause
     groups, else its reason: planned outages at tests or block replacements
     that take time aren't worked out with the groups yet (#328)."""
+    from repyability.rbd import _ccf_groups
+
     if not getattr(rbd, "ccf_groups", None):
         return None
     try:
-        rbd._require_ccf_frequencies()
+        _ccf_groups._require_ccf_frequencies(rbd)
     except NotImplementedError as exc:
         return str(exc)
     return None

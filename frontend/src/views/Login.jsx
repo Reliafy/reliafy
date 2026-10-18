@@ -29,7 +29,7 @@ export default function Login() {
   const destination =
     nextParam.startsWith("/") && !nextParam.startsWith("//") && !nextParam.includes("\\")
       ? nextParam
-      : "/modelling";
+      : "/home";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);

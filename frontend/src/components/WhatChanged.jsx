@@ -42,21 +42,24 @@ export function ChangeList({ rows }) {
 
 const PANEL_ROWS = 4;
 
-// The Modelling home's panel: the last 30 days in one sentence, then the few
-// changes that matter most, and a link to the full page. Hidden while the
-// workspace has nothing of its own.
-export default function WhatChangedPanel() {
-  const [data, setData] = useState(null);
+// Home's panel: the last 30 days in one sentence, then the few changes that
+// matter most, and a link to the full page. Hidden while the workspace has
+// nothing of its own. ``data`` (GET /api/changes), when the page already has
+// it; otherwise the panel fetches it.
+export default function WhatChangedPanel({ data: given }) {
+  const [fetched, setFetched] = useState(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
+    if (given !== undefined) return undefined;
     let live = true;
     getWorkspaceChanges()
-      .then((d) => live && setData(d))
+      .then((d) => live && setFetched(d))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, []);
+  }, [given]);
+  const data = given !== undefined ? given : fetched;
   // Nothing saved in this workspace yet: "Start here" says what to do.
   if (failed || !data || !data.counts?.items) return null;
   const rows = changeRows(data);

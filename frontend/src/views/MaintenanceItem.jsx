@@ -12,7 +12,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import {
-  DocumentsCard, Field, FormModal, LocationPicker, MaintenanceTabs, NotesCard, PositionPicker, RoughDateField, flatten, fmtDate,
+  DocumentsCard, Field, FormModal, LocationPicker, NotesCard, PositionPicker, RoughDateField, flatten, fmtDate,
   fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue, roughDateValue } from "../maintenanceFields.js";
@@ -68,7 +68,6 @@ export default function MaintenanceItem() {
         }
         primary={<button onClick={() => setModal("edit")}>Edit details</button>}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
 
       <section className="card">
@@ -120,7 +119,9 @@ export default function MaintenanceItem() {
                  onAppend={async (text) => setItem(await updateMaintenanceItem(item.id, { append_note: text }))} />
       <DocumentsCard documents={item.documents} target={{ target_id: item.id }} onChanged={refresh} />
 
-      <MaintenancePhotos title="Photos" targetId={item.id} targetName={item.name} photos={item.photos} onChanged={refresh} />
+      <MaintenancePhotos title="Photos" targetId={item.id} targetKind="Item" targetName={item.name} photos={item.photos} onChanged={refresh}
+                         related={[item.fitted_to && { ...item.fitted_to, kind: "Position" },
+                           item.location && { ...item.location, kind: "Location" }]} />
 
       <TasksCard subject={{ kind: "item", id: item.id, name: item.name }} tasks={item.tasks || []}
                  counters={(item.measurements || []).filter((mp) => mp.kind === "counter")} onChanged={refresh}

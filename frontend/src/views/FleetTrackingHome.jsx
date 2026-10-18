@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
 import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
 import { listTrackedFleets, createTrackedFleet, deleteTrackedFleet, listDegradationModels } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
-import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 import { unitInText } from "../components/unitText.js";
 
 
@@ -33,13 +32,14 @@ function HealthChips({ tracking }) {
   );
 }
 
-// Index of tracked fleets: one row per degradation model with its live
+const HELP = { guide: "degradation-modelling" };
+
+// Fleet › Degradation tracking: the tracked fleets: one row per degradation model with its live
 // health rollup. Opening a row goes to that model's tracking page.
 export default function FleetTrackingHome() {
   const navigate = useNavigate();
   const [fleets, setFleets] = useState(null);
   const [models, setModels] = useState([]);
-  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState("");
@@ -95,87 +95,65 @@ export default function FleetTrackingHome() {
   };
 
   const open = (id) => navigate(`/fleet/tracking/${id}`);
-  const visible = (fleets || []).filter((f) => matches(query, f.name, f.model_name, f.id));
+  const newTracked = <button onClick={openCreate}><PlusIcon /> New tracked fleet</button>;
 
   return (
     <div className="app">
-      <PageHeader
-        crumbs={[{ label: "Fleet" }]}
+      <SectionHeader
+        section="fleet"
         title="Degradation tracking"
-        meta="Each item's remaining life against a degradation model; open a fleet to log inspections."
-        primary={<button onClick={openCreate}><PlusIcon /> New tracked fleet</button>}
+        purpose="Each item's remaining life against a degradation model; open a fleet to log inspections."
+        help={HELP}
+        primary={newTracked}
       />
 
       {error && <div className="card error">{error}</div>}
 
-      {fleets === null ? (
-        <div className="card empty">Loading…</div>
-      ) : fleets.length === 0 ? (
-        <div className="card empty">
-          <h2>Nothing tracked yet</h2>
-          <p>
-            Name a fleet, pick the degradation model it runs against, and
-            register the items you have in service — or{" "}
-            <Link to="/modelling/degradation" className="evidence-link">fit a model</Link> first.
-          </p>
-          <button style={{ marginTop: "1rem" }} onClick={openCreate}>
-            <PlusIcon /> New tracked fleet
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="tablebar">
-            {query && (
-              <span className="count">
-                {visible.length} of {fleets.length} tracked fleet{fleets.length === 1 ? "" : "s"}
-              </span>
-            )}
-            <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search tracked fleets…" />
-          </div>
-          <div className="lib">
-            <table className="lib-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "26%" }}>Tracked fleet</th>
-                  <th className="lib-opt" style={{ width: "20%" }}>Model</th>
-                  <th className="lib-opt" style={{ width: 70 }}>Items</th>
-                  <th>Health</th>
-                  <th className="lib-opt" style={{ width: 160 }}>Next predicted failure</th>
-                  <th className="lib-opt">Updated</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                <SampleGroups rows={visible} cols={7} render={(f) => (
-                  <tr key={f.id} className="lib-row" onClick={() => open(f.id)}>
-                    <td>
-                      <div className="lib-name">
-                        {itemName(f)}
-                        {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
-                      </div>
-                    </td>
-                    <td className="lib-date lib-opt">
-                      {f.model_name
-                        ? itemName({ name: f.model_name, is_sample: f.is_sample || String(f.model_id).startsWith("sample-") })
-                        : "—"}
-                    </td>
-                    <td className="lib-n lib-opt">{f.n_items}</td>
-                    <td><HealthChips tracking={f.tracking} /></td>
-                    <td className="lib-n lib-opt">
-                      {f.tracking?.next_crossing != null
-                        ? `${fmt(f.tracking.next_crossing)}${f.unit ? ` ${unitInText(f.unit)}` : ""}`
-                        : "—"}
-                    </td>
-                    <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
-                    <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
-                  </tr>
-                )} />
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <SectionList
+        rows={fleets}
+        noun={["tracked fleet", "tracked fleets"]}
+        fields={(f) => [f.name, f.model_name]}
+        help={HELP}
+        empty={{
+          title: "Nothing tracked yet",
+          body: <>Name a fleet, pick the degradation model it runs against, and register the items you have in
+            service — or <Link to="/modelling/degradation" className="evidence-link">fit a model</Link> first.</>,
+          action: newTracked,
+        }}
+        head={[
+          <th key="f" style={{ width: "26%" }}>Tracked fleet</th>,
+          <th key="m" className="lib-opt" style={{ width: "20%" }}>Model</th>,
+          <th key="i" className="lib-opt" style={{ width: 70 }}>Items</th>,
+          <th key="h">Health</th>,
+          <th key="n" className="lib-opt" style={{ width: 160 }}>Next predicted failure</th>,
+          <th key="u" className="lib-opt">Updated</th>,
+          <th key="a"><span className="sr-only">Actions</span></th>,
+        ]}
+        render={(f) => (
+          <tr key={f.id} className="lib-row" onClick={() => open(f.id)}>
+            <td>
+              <div className="lib-name">
+                {itemName(f)}
+                {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
+              </div>
+            </td>
+            <td className="lib-date lib-opt">
+              {f.model_name
+                ? itemName({ name: f.model_name, is_sample: f.is_sample || String(f.model_id).startsWith("sample-") })
+                : "—"}
+            </td>
+            <td className="lib-n lib-opt">{f.n_items}</td>
+            <td><HealthChips tracking={f.tracking} /></td>
+            <td className="lib-n lib-opt">
+              {f.tracking?.next_crossing != null
+                ? `${fmt(f.tracking.next_crossing)}${f.unit ? ` ${unitInText(f.unit)}` : ""}`
+                : "—"}
+            </td>
+            <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
+            <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
+          </tr>
+        )}
+      />
       {modalOpen && (
         <Modal
           title="New tracked fleet"

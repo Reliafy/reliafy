@@ -63,13 +63,29 @@ COLLECTIONS = {
     "recurrent_models": ("Repairable-system model", "/modelling/recurrent/"),
     "alt_models": ("Accelerated test model", "/modelling/alt/"),
     "degradation_models": ("Degradation model", "/modelling/degradation/"),
-    "datasets": ("Dataset", "/datasets/d/"),
+    "datasets": ("Dataset", "/modelling/data/"),
     "rbds": ("Block diagram", "/rbds/b/"),
     "fleets": ("Failure forecast", "/fleet/forecasts/"),
     "tracked_fleets": ("Tracked fleet", "/fleet/tracking/"),
     "rcm_studies": ("RCM study", "/rcm/studies/"),
     "strategy_analyses": ("Strategy analysis", "/strategy/analyses/"),
 }
+
+# Documents in ``models`` that aren't life models (``kind``): their own label and page.
+MODEL_KINDS = {
+    "joint": ("Condition-based risk model", "/modelling/joint/"),
+}
+
+
+def _label_and_prefix(coll: str, doc: dict) -> tuple[str, str]:
+    """The row label and url prefix for a document, by its collection and (for models) kind."""
+    if coll == "models" and doc.get("kind") in MODEL_KINDS:
+        return MODEL_KINDS[doc["kind"]]
+    return COLLECTIONS[coll]
+
+
+def _model_url(doc: dict | None, mid: str) -> str:
+    return _label_and_prefix("models", doc or {})[1] + mid
 
 NOT_COMPARED = [
     {"what": "Failures recorded against the forecast",
@@ -279,12 +295,13 @@ def _items(db, owners, since, until, uid) -> tuple[list, list, dict]:
     """New and changed items, newest first, and every in-scope id by collection."""
     new, changed = [], []
     ids: dict[str, dict[str, dict]] = {}
-    for coll, (label, prefix) in COLLECTIONS.items():
+    for coll in COLLECTIONS:
         ids[coll] = {}
         for doc in db[coll].find({"owner_id": {"$in": owners}},
                                  {"name": 1, "created_at": 1, "updated_at": 1, "updated_by": 1,
-                                  "functions": 1}):
+                                  "functions": 1, "kind": 1}):
             ids[coll][doc["_id"]] = doc
+            label, prefix = _label_and_prefix(coll, doc)
             created, updated = _aware(doc.get("created_at")), _aware(doc.get("updated_at"))
             row = {"collection": coll, "type": label, "id": doc["_id"], "name": doc.get("name") or "Untitled",
                    "url": prefix + doc["_id"]}
@@ -361,7 +378,7 @@ def _refits(db, model_docs: dict, since, until) -> tuple[list, dict]:
         comparable = any(before.get(k) is not None and after.get(k) is not None for k in ("b10", "mttf"))
         doc = model_docs[mid]
         out.append({
-            "id": mid, "name": doc.get("name") or "Untitled", "url": COLLECTIONS["models"][1] + mid,
+            "id": mid, "name": doc.get("name") or "Untitled", "url": _model_url(doc, mid),
             "at": _iso(rows[-1]["at"]), "refits": len(rows), "unit": after.get("unit") or before.get("unit") or "",
             "before": {k: before.get(k) for k in ("distribution", "n", "b10", "mttf")},
             "after": {k: after.get(k) for k in ("distribution", "n", "b10", "mttf")},
@@ -476,7 +493,7 @@ def _rcm(db, study_docs: dict, model_docs: dict, refit_rows: dict, owners) -> li
                         "study_id": sid, "study": sdoc.get("name") or "Untitled",
                         "url": COLLECTIONS["rcm_studies"][1] + sid,
                         "mode": mode.get("text"), "outcome": decision.get("outcome"),
-                        "evidence": model.get("name"), "evidence_url": COLLECTIONS["models"][1] + evidence["id"],
+                        "evidence": model.get("name"), "evidence_url": _model_url(model, evidence["id"]),
                         "at": _iso(rows[-1]["at"]), "status_before": before, "status": now_status,
                         "status_changed": before is not None and before != now_status,
                     })

@@ -31,9 +31,9 @@ export default class ErrorBoundary extends Component {
             <button onClick={() => window.location.reload()}>Reload</button>
             <button
               className="secondary"
-              onClick={() => { window.location.href = "/modelling"; }}
+              onClick={() => { window.location.href = "/home"; }}
             >
-              Go to dashboard
+              Go to Home
             </button>
           </div>
         </div>

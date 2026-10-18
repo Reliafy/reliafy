@@ -8,12 +8,13 @@ pandas
 numpy
 # SurPyval from PyPI, pinned to the version the RePyability below targets
 # (each tagged release is published to PyPI from its tag).
-# 0.23 is a breaking release (names 0.22 deprecated now raise; the LFP
-# proportion is ``lfp_p``; ``covariance()`` replaces ``cov_matrix``): #238.
-surpyval==0.23
+# 0.25 removes the names 0.24 deprecated (e.g. ``ProportionalIntensityNHPP``
+# takes ``baseline``, not ``dist``) and deprecates the top-level converters
+# and ``RecurrentEventData`` (now ``EventHistoryData``).
+surpyval==0.25
 # RePyability is installed --no-deps in the Dockerfile (and CI), pinned to a
-# git commit (tag v0.13, which requires SurPyval 0.23), so the SurPyval
-# pin above stays authoritative: it declares surpyval>=0.23 (uncapped), but
+# git commit (tag v0.15, which requires SurPyval 0.25), so the SurPyval
+# pin above stays authoritative: it declares surpyval>=0.25 (uncapped), but
 # --no-deps also stops pip re-resolving it to a newer surpyval. backend/tests/test_rbd_analysis.py exercises the pairing,
 # so a real break would fail the suite rather than reach production.
 # RePyability's runtime deps (numpy/scipy via surpyval, networkx, tqdm) are
@@ -67,6 +68,13 @@ openpyxl==3.1.5
 simpleeval==1.0.8
 # Photos in Reliafy Maintenance: cleaned and re-encoded (backend/maintenance/photos.py).
 pillow>=10.0
+# HEIC/HEIF photos (an iPhone's default), decoded to JPEG on arrival. pi-heif
+# is the decode-only build of pillow-heif (BSD-3-Clause): its wheels bundle
+# libheif and libde265 (both LGPL-3.0) and, unlike pillow-heif's, no x265
+# encoder (GPL). Binary wheels for Linux x86_64 and macOS arm64: no system
+# libraries needed. The tests encode their HEIC fixture with pillow-heif, a
+# test-only install (CI, CONTRIBUTING.md), never in the image.
+pi-heif
 # Time zone rules for workspaces' calendar days (backend/services/time_zones.py):
 # zoneinfo reads them from here when the image has no system tz database (the
 # slim base image may not).

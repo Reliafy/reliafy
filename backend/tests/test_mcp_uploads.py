@@ -196,7 +196,7 @@ def test_create_upload_says_what_to_do_when_the_put_cant_get_through(env):
     fallback = link["fallback"]
     assert "proxy 403" in fallback and "don't retry" in fallback
     assert "datasets upload csv" in fallback and "uploads import_rbd content" in fallback and "200 KB" in fallback
-    assert fallback.endswith("(Datasets: https://reliafy.example/datasets/list).")
+    assert fallback.endswith("(Modelling › Data: https://reliafy.example/modelling/data).")
     rbd = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "plant.rsgz"}))
     assert "RBDs › Import: https://reliafy.example/rbds/list" in rbd["fallback"]
 
@@ -489,7 +489,7 @@ def test_excel_dataset_needs_a_sheet_then_maps_columns(env):
         "mapping": {"time": "Run hours", "failed": "Failed?"}}))
     assert out["target"] == "dataset" and out["sheet"] == "Lives"
     assert out["columns"] == ["time", "failed"] and out["n_rows"] == 12
-    assert out["name"] == "bearings - Lives" and out["url"].endswith(f"/datasets/d/{out['id']}")
+    assert out["name"] == "bearings - Lives" and out["url"].endswith(f"/modelling/data/{out['id']}")
     assert set(out) >= {"id", "name", "n_rows", "columns", "preview", "url"}  # as datasets upload
     assert _no_uploads_left(env.db)
 

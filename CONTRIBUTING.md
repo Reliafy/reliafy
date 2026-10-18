@@ -9,7 +9,7 @@ Backend (Python 3.11):
 ```
 python3.11 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt pytest
+pip install -r requirements.txt pytest pillow-heif
 AUTH_DISABLED=true uvicorn backend.main:app --port 8000 --reload
 ```
 
@@ -32,8 +32,9 @@ no keys.
 pytest backend/tests
 ```
 
-Please add or extend tests for behaviour you change. CI runs the backend test
-suite and a frontend production build on every PR.
+Please add or extend tests for behaviour you change, and run them locally
+before opening a PR. CI (the backend suite, the frontend build and tests, and
+the browser smoke suite) runs on the `dev` → `main` release PR.
 
 ### Browser smoke tests
 
@@ -68,7 +69,7 @@ link.
 
 ## Pull requests
 
-- Branch from `main`; keep PRs focused on one change.
+- Branch from `dev` and open PRs into `dev`; keep PRs focused on one change.
 - Match the style of the surrounding code.
 - Cloud-only code (billing, the metered assistant, Firebase auth) must stay
   **dormant by default**: it only activates via env configuration, and the

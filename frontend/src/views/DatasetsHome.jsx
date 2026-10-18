@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { listDatasets, deleteDataset } from "../api.js";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
-import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { datasetPath } from "../sections.js";
 import "../components/Datasets.css";
+
+const HELP = { guide: "fit-your-first-model" };
 
 const FileIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -15,13 +17,12 @@ const FileIcon = () => (
   </svg>
 );
 
-// Landing page for the Datasets section: list uploaded CSVs, upload new, open
-// or delete. Datasets are content-addressed, so re-uploading a file reuses it.
+// Modelling › Data: the datasets, uploaded, pasted or typed in; open, add or
+// delete. Datasets are content-addressed, so re-uploading a file reuses it.
 export default function DatasetsHome() {
   const navigate = useNavigate();
   const location = useLocation();
   const [datasets, setDatasets] = useState(null);
-  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
 
@@ -46,7 +47,7 @@ export default function DatasetsHome() {
   const onCreated = (ds, typedName) => {
     setNewOpen(false);
     refresh();
-    navigate(`/datasets/d/${ds.id}`, ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
+    navigate(datasetPath(ds.id), ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
   };
 
   const onDelete = async (d) => {
@@ -62,79 +63,62 @@ export default function DatasetsHome() {
     }
   };
 
-  const open = (id) => navigate(`/datasets/d/${id}`);
-  const loading = datasets === null;
-  const visible = (datasets || []).filter((d) => matches(query, d.name, d.id));
+  const open = (id) => navigate(datasetPath(id));
+  const newDataset = <button onClick={() => setNewOpen(true)}><PlusIcon /> New dataset</button>;
 
   return (
     <div className="app">
-      <PageHeader
-        title="Datasets"
-        meta="Stored once and reused by every model fitted from them."
-        primary={<button onClick={() => setNewOpen(true)}><PlusIcon /> New dataset</button>}
+      <SectionHeader
+        section="modelling"
+        title="Data"
+        purpose="Your datasets, stored once and reused by every model fitted from them."
+        help={HELP}
+        primary={newDataset}
       />
 
       {error && <div className="card error">{error}</div>}
 
-      {loading ? (
-        <div className="card empty">Loading…</div>
-      ) : datasets.length === 0 ? (
-        <div className="card empty">
-          <h2>No datasets yet</h2>
-          <p>Upload a CSV or Excel file, paste from a spreadsheet, type data into a form, or fit a model to create one.</p>
-          <button style={{ marginTop: "1rem" }} onClick={() => setNewOpen(true)}>
-            <PlusIcon /> New dataset
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="tablebar">
-            {/* A count only says something while it filters. */}
-            {query.trim() && <span className="count">{visible.length} of {datasets.length} datasets</span>}
-            <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search datasets…" />
-          </div>
-
-          <div className="lib ds-lib">
-            <table className="lib-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "46%" }}>Dataset</th>
-                  <th style={{ width: 90 }}>Rows</th>
-                  <th className="lib-opt" style={{ width: 170 }}><span className="sr-only">Used by</span></th>
-                  <th className="lib-opt">Added</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                <SampleGroups rows={visible} cols={5} render={(d) => (
-                  <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>
-                    <td>
-                      <div className="ds-name">
-                        <span className="ds-ic"><FileIcon /></span>
-                        {/* A real link, so the row opens from the keyboard too. */}
-                        <Link className="lib-name ds-row-link" to={`/datasets/d/${d.id}`} onClick={(e) => e.stopPropagation()}>
-                          {itemName(d)}
-                        </Link>
-                        {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}
-                      </div>
-                    </td>
-                    <td className="lib-n">{(d.n_rows ?? 0).toLocaleString()}</td>
-                    <td className="lib-opt">
-                      {d.n_models > 0 && (
-                        <span className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</span>
-                      )}
-                    </td>
-                    <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
-                    {/* The row opens the dataset, so no separate Open button. */}
-                    <RowActions item={d} onDelete={() => onDelete(d)} />
-                  </tr>
-                )} />
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <SectionList
+        rows={datasets}
+        noun={["dataset", "datasets"]}
+        className="ds-lib"
+        help={HELP}
+        empty={{
+          title: "No datasets yet",
+          body: "Upload a CSV or Excel file, paste from a spreadsheet, type data into a form, or fit a model to create one.",
+          action: newDataset,
+        }}
+        head={[
+          <th key="d" style={{ width: "46%" }}>Dataset</th>,
+          <th key="r" style={{ width: 90 }}>Rows</th>,
+          <th key="u" className="lib-opt" style={{ width: 170 }}><span className="sr-only">Used by</span></th>,
+          <th key="t" className="lib-opt">Added</th>,
+          <th key="a"><span className="sr-only">Actions</span></th>,
+        ]}
+        render={(d) => (
+          <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>
+            <td>
+              <div className="ds-name">
+                <span className="ds-ic"><FileIcon /></span>
+                {/* A real link, so the row opens from the keyboard too. */}
+                <Link className="lib-name ds-row-link" to={datasetPath(d.id)} onClick={(e) => e.stopPropagation()}>
+                  {itemName(d)}
+                </Link>
+                {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}
+              </div>
+            </td>
+            <td className="lib-n">{(d.n_rows ?? 0).toLocaleString()}</td>
+            <td className="lib-opt">
+              {d.n_models > 0 && (
+                <span className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</span>
+              )}
+            </td>
+            <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
+            {/* The row opens the dataset, so no separate Open button. */}
+            <RowActions item={d} onDelete={() => onDelete(d)} />
+          </tr>
+        )}
+      />
 
       {newOpen && (
         <NewDatasetModal onClose={() => setNewOpen(false)} onCreated={onCreated} />

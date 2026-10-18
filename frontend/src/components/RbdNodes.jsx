@@ -4,6 +4,7 @@ import { maintenanceChips } from "./RbdBlockCosts.jsx";
 import { unitInText } from "./unitText.js";
 import { formatPercent } from "../format.js";
 import { lifeLine, repairLine } from "./rbdModelText.js";
+import { jointBlockLine } from "../joint.js";
 
 // The React Flow node components of a reliability block diagram, shared by the
 // builder (interactive) and the public read-only view (/p/:token). Pure
@@ -123,6 +124,8 @@ const fmtParam = (v) =>
   Math.abs(v) >= 1e-3 || v === 0 ? Number(v).toPrecision(4) : Number(v).toExponential(2);
 
 export function modelSummary(model) {
+  // A condition-based block: one unit of a joint model, given its readings.
+  if (model.kind === "joint") return `${model.name || "Condition-based risk"} · ${jointBlockLine(model)}`;
   // Proportional-hazards models depend on covariates entered on the calculator;
   // summarise by the covariate names rather than the baseline parameters.
   if (model.kind === "regression") {

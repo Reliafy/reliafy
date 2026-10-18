@@ -11,9 +11,10 @@ Everything here is SurPyval's:
 
 * ``CompetingRisks`` (Aalen-Johansen) gives each mode's cumulative incidence
   and, fitted with ``how="Kaplan-Meier"``, the all-cause failure probability;
-  ``KaplanMeier``'s ``cb`` bounds the all-cause curve (Greenwood). SurPyval
-  0.23 has no variance for a single mode's incidence, so each mode's curve
-  comes without a band (``mode_bounds`` false, and the app says so);
+  ``KaplanMeier``'s ``cb`` bounds the all-cause curve (Greenwood). Each
+  mode's band is ``CompetingRisks.cb`` (Aalen's variance, as R's
+  ``cmprsk::cuminc``; SurPyval 0.24 and later); where there is none the
+  curve comes without a band (``mode_bounds`` false, and the app says so);
 * ``gray_test`` compares one mode's incidence across groups of units (sites,
   suppliers) when a group column is given;
 * ``CompetingRisksProportionalHazards`` (the advanced choice, with covariates)
@@ -38,7 +39,7 @@ import numpy as np
 import pandas as pd
 from surpyval import CompetingRisks, CompetingRisksProportionalHazards, CoxPH, FineGray, KaplanMeier, gray_test
 
-from backend.services.compare_groups import _label, _named, _p_text
+from backend.services.compare_groups import FailureModeError, _label, _named, _p_text, statuses_from_modes
 from backend.services.strategy import fmt_num
 from backend.units import unit_in_text
 
@@ -145,17 +146,14 @@ def prepare(df: pd.DataFrame, mapping: dict) -> dict:
             raise CompetingRisksError(
                 "Failure modes take units that failed and units still running only: left- or "
                 "interval-censored rows can't be split by mode.")
-        c = c.astype(int)
-        unnamed = int(sum(1 for i in range(len(c)) if c[i] == 0 and cause[i] is None))
-        if unnamed:
-            raise CompetingRisksError(
-                f"{_rows(unnamed)} failed with no failure mode in “{mapping[CAUSE_KEY]}”. Fill in each "
-                "failure's mode, or mark those units still running.")
-        # A unit still running has no mode, whatever the column says.
-        cause = [None if c[i] == 1 else cause[i] for i in range(len(c))]
     else:
-        # No status column: a blank mode is a unit still running.
-        c = np.array([1 if v is None else 0 for v in cause], dtype=int)
+        c = None
+    # A blank mode is a unit still running when there is no status column;
+    # the same helper sets compare groups' statuses, so the two agree.
+    try:
+        c, cause = statuses_from_modes(cause, c, f"“{mapping[CAUSE_KEY]}”")
+    except FailureModeError as exc:
+        raise CompetingRisksError(str(exc)) from exc
 
     if mapping.get("n"):
         n = pd.to_numeric(df[mapping["n"]], errors="coerce").to_numpy(dtype=float)
@@ -207,8 +205,8 @@ def _incidence(model, cause, t) -> np.ndarray:
 
 
 def _cif_bounds(model, cause, t) -> Optional[np.ndarray]:
-    """A mode's pointwise 95% bounds, where SurPyval gives them (its
-    ``CompetingRisks`` in 0.23 has no ``cb``): None otherwise."""
+    """A mode's pointwise 95% bounds, where SurPyval gives them
+    (``CompetingRisks.cb``, since 0.24): None otherwise."""
     cb = getattr(model, "cb", None)
     if not callable(cb):
         return None

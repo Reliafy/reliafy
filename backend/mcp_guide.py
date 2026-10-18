@@ -31,11 +31,24 @@ confidence for bounds, quoted with the point values; covariates or a covariate_s
 models). Bounds are null, with bounds_note saying why, where a model has none: never invent them.
 - Requirements: life_data_analysis check_life_requirement ("B10 >= 50,000 at 90% confidence": meets only on \
 the B-life's lower bound) and life_data_analysis plan_demonstration_test (units, test time and failures \
-allowed; b_life, shape_model_id, producer_risk). Relay plan warnings.
+allowed; b_life, shape_model_id, producer_risk). Relay plan warnings. Other test plans: guide topic test_planning.
 - One-shot items (a valve that must open): life_data_analysis fit_per_demand (batches of demands and \
 failures; exact bounds); models fit with demand_batches saves one.
 - "Is A better than B?": life_data_analysis compare_groups (split by a column or give a group per time; \
-log-rank, RMST difference, Gray's test per mode, a verdict to relay). Nothing is fitted."""),
+log-rank, RMST difference, Gray's test per mode, a verdict to relay). Nothing is fitted.
+- Condition-based risk (a joint model, Pro): a reading taken again and again on each unit (vibration, wear, oil \
+debris) and the units' lives, fitted together. Two datasets: lifetimes, one row per unit (unit_id_column, \
+age_column = age since new at failure or when last seen running, censor_column, optional entry_age_column and \
+numeric covariates; age_right_column for units found failed between two ages, flag 2), and readings, one row \
+per reading (reading_unit_column, reading_age_column since new, reading_value_column). Ages are since new, in \
+one time unit (say it). hazard_covariates change the failure rate at a given reading; path_covariates change \
+how the reading drifts; one may be in both. path_model: linear unless the readings clearly curve. \
+life_data_analysis fit_joint reports; models fit_joint saves. The fit runs on the calculation service (8-40 s): \
+it may come back as a job (get kind job). Quote each hazard ratio with its 95% CI, as its text says.
+- A running unit's risk: life_data_analysis predict_joint (unit_id, or age_now + readings + unit_covariates): \
+survival over the horizons with bounds, and the median remaining life. Never quote a mean life for these \
+units: a reading that levels off can leave a chance of never failing, so the mean can be infinite; "not \
+reached" means the median is beyond any finite age."""),
 
     "units": ("Time units for data, models and diagrams.", """\
 Units.
@@ -62,6 +75,26 @@ mission reliability, the acceleration factor against a test stress, with bounds:
 bootstrap (Pro, runs as a job: get kind job until done; not for interval or left-censored data). Quote the \
 bounds with the values: an ALT answer is an extrapolation, and with few failures (a warning says so) no bound \
 holds its stated confidence."""),
+
+    "test_planning": ("Planning tests: demonstration, sequential, life, accelerated and before/after comparisons.", """\
+Test planning: every plan is exact or numerical and saves nothing (life_data_analysis actions). Each answer \
+leads with a plain summary: relay it, with the assumptions that matter.
+- Show a target is met: plan_demonstration_test (fixed length; method attribute or mtbf; with a good design and \
+producer_risk it keeps both risks). plan_sequential_test decides as failures come in, usually sooner: it needs \
+the target and a good design (design_mtbf / design_reliability), and with failures_seen plus time_seen (or \
+units_seen) says accept, reject or continue. Budget for its longest run (max_time / max_units).
+- Estimate a life: plan_life_test from planning values (params, the shape matters most): the precision of a \
+B-life or the mean for units on test (solve_for precision), the units for a precision (units, within_pct: 20 = \
+±20%) or how long to run (length). test_end time (censor_time), failures (failure_fraction) or all.
+- Accelerated tests: plan_accelerated_test from planning values of the life model (life_params; a similar \
+part's models fit_alt gives them) and shape: stresses, units at each and expected failures up to high_stress \
+(levels 2 = optimum, 3 = compromise, which can show the model is wrong), or the precision of your own stresses \
+and units_at. Relay warnings: stresses with under 3 expected failures make the precision optimistic.
+- Did the change work? plan_comparison. kind logrank: old and new units side by side (hazard_ratio new/old, \
+event_probability = chance a unit fails during the study): sample_size or power. kind rate_ratio: one fleet \
+before and after (failures_before in exposure_before): exposure after needed for a rate_ratio, the smallest \
+detectable drop for exposure_after, or power. A null exposure_after means no exposure is enough: say so.
+- Checking a plan by simulation is in the app (Pro), not here."""),
 
     "repairable": ("Recurrent-event (repairable-system) models.", """\
 Repairable systems: many failures per system.
@@ -99,6 +132,11 @@ tests), costs (downtime_rate, horizon, discount_rate) and production (capacity d
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
 - Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network), \
 covariate_schedules on a block with a saved regression model.
+- Condition-based block (non-repairable diagrams only, one component block per unit): model = \
+{saved_model_id: <joint model id>, joint_unit: {id: <running unit id>}} or joint_unit {age, readings: [[age, \
+value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \
+unit's survival to age + t given its readings. Don't give it an age in current_state (it is already as of \
+now). Repairable diagrams, exports to RePyability JSON and Download as Python refuse it (it lives in Reliafy).
 - Edit, don't rebuild: rbd edit with one batch of ops (add_node / remove_node / update_node / add_edge / \
 remove_edge / set / add_ccf / remove_ccf), all or nothing; dry_run checks first; if_updated_at refuses if the \
 diagram changed. Samples are read-only: rbd clone first. get kind rbd reads a diagram's full graph.
@@ -135,13 +173,25 @@ with rbd edit.
 (SurPyval + RePyability) with the run command; export_json: RePyability's JSON (uploads import_rbd takes it \
 back)."""),
 
-    "strategy": ("Replacement, proof-test and overhaul intervals; shape uncertainty.", """\
+    "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
 Maintenance strategy (strategy).
 - strategy optimal_replacement: the cost-optimal age-replacement interval from a life model (model_id, or \
 distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper.
 - strategy failure_finding_interval: the proof-test interval keeping a hidden protective function (relief valve, trip, \
 standby unit) at a target availability.
 - strategy optimal_overhaul: the overhaul interval of a repairable system from a minimal-repair recurrent model.
+- strategy calendar_replacement: when replacing costs less at shuts (annual, quarterly, weekly stops) than between \
+them, the long-run best rule: at each shut, replace the part if it is older than a threshold age (the threshold \
+depends on when the next cheaper shut comes). Give the model in a time unit, the shuts (name, cost, every N \
+days/weeks/months/years from a start date, or dates), failure_cost and anytime_cost (a planned replacement between \
+shuts; omit when only shuts allow one). Today is time 0; months are 365.25/12 days. Back: cost_rate (per model \
+unit) and cost_per_year, the rule in words, by_kind (replacements and cost a year per shut kind and failures), \
+comparisons (run to failure, age replacement ignoring the shuts, every shut of a kind) and the next 12 months' \
+shuts with each one's threshold and chance of a replacement. method dp (default) and integration (no anytime_cost) \
+are exact and free; sampling (Pro) is for calendars whose cycle is very long, with cost_rate_se. Quote the unit.
+- strategy next_replacement: the same calendar plus the age of the unit in service today: replace it now, at the \
+next shut of each kind, between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
+(from that age replacing now beats waiting).
 - With a saved Weibull (or Crow-AMSAA) model fitted to data, shape_uncertainty gives the answer at each end of \
 the shape's 95% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
 (for a protective function, the shorter interval is the safe side).

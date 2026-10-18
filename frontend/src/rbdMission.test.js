@@ -32,6 +32,22 @@ test("a network's links lose their arrows", () => {
   assert.match(e.className, /rbd-link/);
 });
 
+test("a network link with no marker of its own doesn't pick up the default arrow", () => {
+  // React Flow (v11 setEdges) lays defaultEdgeOptions under each edge.
+  const defaults = { type: "smoothstep", markerEnd: { type: "arrowclosed", width: 18, height: 18 } };
+  const shown = undirectedEdges([
+    { id: "plain", source: "a", target: "b" },
+    { id: "styled", source: "b", target: "c", className: "rbd-link hot", markerStart: { type: "arrow" } },
+  ]).map((e) => ({ ...defaults, ...e }));
+  for (const e of shown) {
+    assert.equal(e.markerEnd, undefined, e.id);
+    assert.equal(e.markerStart, undefined, e.id);
+    assert.equal(e.type, "smoothstep");
+  }
+  assert.equal(shown[1].className, "rbd-link hot");
+  assert.equal(shown[0].className, "rbd-link");
+});
+
 test("a network is connected either way round", () => {
   const graph = { nodes, edges: [{ source: "c1", target: "input" }, { source: "output", target: "c1" }] };
   assert.equal(networkGap(graph), null);

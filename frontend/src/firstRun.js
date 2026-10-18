@@ -11,7 +11,7 @@ import {
 
 // First-run state (#194): a workspace with no models, datasets or diagrams of
 // its own gets three one-click starts instead of an empty list. "Own" is the
-// ModellingDashboard rule — anything not flagged ``is_sample`` — so shared
+// Home rule — anything not flagged ``is_sample`` — so shared
 // samples never count, and items shared with you do.
 
 // The starts point at these samples when the workspace can see them.

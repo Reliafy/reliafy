@@ -24,13 +24,19 @@ export function itemName(item) {
   return item?.is_sample ? name.replace(/\s*\(sample\)\s*$/i, "") : name;
 }
 
-// Table rows: the user's own items first, then the shared samples under one
-// "Samples" heading row. ``cols`` is the table's column count.
+// Table rows: the user's own items first, under "Yours", then the shared
+// samples under "Samples" (always labelled: they aren't the user's). "Yours"
+// shows only above samples, where it tells the two apart. ``cols`` is the table's column count.
 export function SampleGroups({ rows, cols, render }) {
   const own = rows.filter((r) => !r.is_sample);
   const samples = rows.filter((r) => r.is_sample);
   return (
     <>
+      {own.length > 0 && samples.length > 0 && (
+        <tr className="lib-group">
+          <th colSpan={cols} scope="colgroup">Yours</th>
+        </tr>
+      )}
       {own.map(render)}
       {samples.length > 0 && (
         <tr className="lib-group">

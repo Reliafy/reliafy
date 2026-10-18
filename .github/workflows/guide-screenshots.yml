@@ -6,10 +6,12 @@ name: Guide screenshots
 # runs frontend/scripts/capture-guides.mjs, and when any image changed opens
 # (or updates) a pull request for a person to look over. A changed image never
 # fails the run; a capture step that breaks does, after the pull request.
+#
+# It runs by hand, as a release step: dispatch it on the release branch before
+# releasing, and its pull request goes into that branch (--base "$GITHUB_REF_NAME").
+# There is no schedule.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * 1" # Mondays, 03:00 UTC
 
 # Pushing the branch and opening the pull request are all it writes.
 permissions:
@@ -36,8 +38,8 @@ jobs:
           cache-dependency-path: requirements.lock
       - run: pip install --require-hashes -r requirements.lock && pip install --no-deps "firebase-admin==7.7.0"
       # RePyability isn't in requirements.txt: like the Dockerfile and ci.yml,
-      # install the pinned commit (v0.13) --no-deps so it can't re-resolve surpyval.
-      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@debbb6ff2928034e273b609db9b09901cf6e6119"
+      # install the pinned commit (v0.15) --no-deps so it can't re-resolve surpyval.
+      - run: pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@af15a3eccd4806cafed95a0c8fa9b0d1ebcc4010"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
@@ -93,10 +95,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
-          git commit -m "Guide screenshots: refresh from the scheduled capture"
+          git commit -m "Guide screenshots: refresh from the release capture"
           git push --force origin "$BRANCH"
           body=$(printf '%s\n\n%s\n\n%s\n' \
-            "The scheduled capture (frontend/scripts/capture-guides.mjs) produced screenshots that differ from the ones on ${GITHUB_REF_NAME}. Look them over against the guides in frontend/src/content/guides/: a change may be a real UI change the guide's text should follow, or only rendering noise." \
+            "The release capture (frontend/scripts/capture-guides.mjs) produced screenshots that differ from the ones on ${GITHUB_REF_NAME}. Look them over against the guides in frontend/src/content/guides/: a change may be a real UI change the guide's text should follow, or only rendering noise." \
             "Changed:" \
             "$changed")
           if [ "$(gh pr view "$BRANCH" --json state --jq .state 2>/dev/null)" = "OPEN" ]; then

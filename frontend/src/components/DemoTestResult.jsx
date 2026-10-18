@@ -96,6 +96,13 @@ function WhenShown({ children }) {
 function planSentence(result, unit) {
   const r = result.failures;
   const time = (v) => <b>{formatWithUnit(v, unit)}</b>;
+  if (result.method === "mtbf" && result.failure_terminated) {
+    // Failure-terminated: run to the r-th failure; pass if it comes late enough.
+    return (
+      <>Run until failure <b>{r}</b>; pass if it comes after {time(result.total_test_time)} of total test time
+        {result.units ? <> (about {formatWithUnit(result.test_time_per_unit, unit)} on each of {formatNumber(result.units, { sig: 7 })} units)</> : null}.</>
+    );
+  }
   if (result.method === "mtbf") {
     const pass = r === 0 ? <>pass with <b>no</b> failures</> : <>pass with <b>≤ {r}</b> failure{r === 1 ? "" : "s"}</>;
     return result.units ? (

@@ -21,7 +21,7 @@ the way can fail again inside the horizon.
 
 ## Read a forecast
 
-Open **Fleet → Failure forecasts** and the sample, **Delivery trucks — bearing
+Open **Fleet** and the sample, **Delivery trucks — bearing
 forecast**: eight trucks' wheel bearings, against the sample *Bearing life —
 Weibull* model. The line under the title says what it assumes: **500 hours of
 use a month per item · 12 months · failed items replaced**.
@@ -67,13 +67,38 @@ Whether to stock to the expectation or the top of the range is a cost
 decision: the price of a stock-out (a truck off the road) against the cost of
 holding four more bearings.
 
+### How many to hold on the shelf
+
+A year's demand isn't the same as the stock to keep. What you need on the shelf
+is enough to cover the time it takes a new part to arrive. The **Spares: how
+many to hold** card under the chart works that out on a forecast of your own:
+
+- **Lead time** — how long a reorder takes to arrive, in the forecast's periods.
+  It's the one field you must fill in.
+- **Service level** — the chance of getting through the lead time without
+  running out. **95%** is the default.
+- **Review every** — leave it at 0 to reorder as each part is used; set it if
+  you only order once a month or a quarter.
+- **Parts per failure**, **In stock now** and **Cost each** — optional. With
+  the stock you hold now, the card says the chance it runs out and how many to
+  order.
+- **Repairable: failed ones are repaired and come back** — for rotable parts,
+  with the **Repair turnaround**.
+
+Press **Save & forecast**. For the delivery trucks with a two-month lead time,
+the answer is **Hold 11: a 95% chance of no stock-out over the lead time
+(2 months). Order one for one: replace each as it's used.** With 5 in stock now,
+it says the chance of running out is close to 100%, and to order 6. The figures
+come from simulating the fleet, so they count replacements that fail again.
+**Export spares plan (CSV)** downloads the plan.
+
 **Export CSV** downloads the forecast for a purchasing system or a budget sheet:
 each item's expected failures and chance of failing, the fleet's expectation and
 its range, and each month's expectation and range.
 
 ## Build your own forecast
 
-1. On **Fleet → Failure forecasts**, press **New forecast**. Give it a name,
+1. On **Fleet**, press **New forecast**. Give it a name,
    choose the **Equipment** — **Replaceable** (a life, regression or ALT model)
    or **Repairable** (a recurrent model) — and the **Model**. With a regression
    or ALT model each item is forecast at its own conditions or stress.

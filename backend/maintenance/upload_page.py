@@ -52,7 +52,7 @@ def render(doc: dict | None, problem: str | None, with_nonce: bool = False):
 <p class="muted">{html.escape(kind.capitalize())} · up to {left} more photos with this link.
 Nameplates, labels and the whole unit all help.</p>
 <label class="pick" for="files">Take or choose photos</label>
-<input id="files" type="file" accept="image/*" multiple>
+<input id="files" type="file" accept="image/*,.heic,.heif" multiple>
 <div id="ask" class="card ask" hidden></div>
 <div class="card"><ul id="list"><li class="muted" id="empty">No photos yet.</li></ul></div>
 <p class="muted">Photos are stored without their location or camera details.</p>

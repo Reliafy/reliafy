@@ -1,21 +1,18 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AltLibrary from "./AltLibrary.jsx";
 import { listAltModels, deleteAltModel } from "../api.js";
-import { FirstRunStrip } from "../components/FirstRun.jsx";
-import { useFirstRun } from "../firstRun.js";
-import PageHeader from "../components/ui/PageHeader.jsx";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
 
-// Accelerated life (ALT) models — mirrors the life-data and recurrent lists:
-// header + "New model", then the saved-model list. The fit flow lives on its
-// own page (/modelling/alt/new).
+const HELP = { guide: "accelerated-life-testing" };
+
+// Modelling › Accelerated life: ALT models. The fit flow lives on its own
+// page (/modelling/alt/new).
 export default function AltHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
   const [error, setError] = useState(null);
-  // No models, datasets or diagrams of their own yet (samples don't count).
-  const firstRun = useFirstRun(models ? models.some((m) => !m.is_sample) : undefined);
 
   const refresh = () => listAltModels().then((r) => setModels(r.models)).catch(() => setModels([]));
   useEffect(() => { refresh(); }, []);
@@ -33,24 +30,31 @@ export default function AltHome() {
     }
   };
 
+  const newModel = <button onClick={() => navigate("/modelling/alt/new")}><PlusIcon /> New model</button>;
   return (
     <div className="app">
-      <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }]}
+      <SectionHeader
+        section="modelling"
         title="Accelerated life"
-        meta="Failure times at elevated stress, extrapolated to your use level."
-        primary={<button onClick={() => navigate("/modelling/alt/new")}><PlusIcon /> New model</button>}
+        purpose={<>Failure times at elevated stress, extrapolated to your use level. Planning a test first?{" "}
+          <Link to="/strategy/test-planning/accelerated">Plan an accelerated test</Link>.</>}
+        help={HELP}
+        actions={null}
+        primary={newModel}
       />
-
-      <FirstRunStrip info={firstRun} />
 
       {error && <div className="card error">{error}</div>}
 
       <AltLibrary
-        models={models || []}
-        loading={models === null}
+        models={models}
         onOpen={(id) => navigate(`/modelling/alt/${id}`)}
         onDelete={onDelete}
+        help={HELP}
+        empty={{
+          title: "No accelerated-life models yet",
+          body: "Fit one from failure times at two or more stress levels and save it to see it here.",
+          action: newModel,
+        }}
       />
     </div>
   );

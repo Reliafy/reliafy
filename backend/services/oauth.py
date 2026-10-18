@@ -122,7 +122,7 @@ def protected_resource_metadata() -> dict:
         "scopes_supported": [SCOPE],
         "bearer_methods_supported": ["header"],
         "resource_name": "Reliafy",
-        "resource_documentation": f"{issuer()}/api-docs",
+        "resource_documentation": f"{issuer()}/api-docs/mcp",
     }
 
 

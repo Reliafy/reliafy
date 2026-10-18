@@ -20,11 +20,14 @@ So, below:
   a planned replacement (UC-6, `ReplacementPlan`, being reworked as a
   comparison of options);
 - **requirements for the forecaster here**, answered by hand only:
-  forecasting a system's work by month (UC-1), shut, off-schedule and
-  failure prices (UC-7), costs over a timeline with their range (UC-8)
+  forecasting a system's work by month (UC-1), costs over a timeline
+  with their range (UC-8)
   and by financial year with their outcomes (UC-9). Where the code
   examples below import from `repyability.maintenance`, they are
-  RePyability's model-time pieces.
+  RePyability's model-time pieces;
+- **built here on RePyability's calendar policy:** shut, off-schedule and
+  failure prices (UC-7), laid on real dates by
+  `backend/services/strategy_calendar.py`.
 
 The use cases follow as they were recorded.
 
@@ -127,8 +130,8 @@ Keep to the project's rules (`CLAUDE.md`):
   )
   state = {
       "pump": NodeState(age=5200.0),
-      "valve": NodeState(age=7000.0, phase=7000.0),
-      "sensor": NodeState(age=3000.0, phase=3000.0),
+      "valve": NodeState(age=7000.0, since_scheduled=7000.0),
+      "sensor": NodeState(age=3000.0, since_scheduled=3000.0),
   }
   ends = month * np.arange(1, 13)
   events = rbd.expected_events(ends, state=state)
@@ -214,8 +217,8 @@ Keep to the project's rules (`CLAUDE.md`):
       },
   )
   # 82 days from 11 Oct to 1 Jan (the window [0, t) leaves its end out);
-  # phase: 4 days since the last time, 7 Oct
-  rbd.expected_events(82.0, state={"task": NodeState(phase=4.0)}).node_preventive
+  # since_scheduled: 4 days since the last time, 7 Oct
+  rbd.expected_events(82.0, state={"task": NodeState(since_scheduled=4.0)}).node_preventive
   # -> {'task': 12.0}
   ```
 
@@ -554,7 +557,13 @@ Keep to the project's rules (`CLAUDE.md`):
 
 ### UC-7: "Replacing at a scheduled shut is cheaper than a planned replacement off the schedule. What's the best way to replace the bearing?"
 
-- **Status:** answered by hand; design proposed, not built.
+- **Status:** built. RePyability 0.15's calendar policy
+  (`NonRepairable.optimal_calendar_policy`, its UC-13) answers it in model
+  time; Reliafy lays the shuts on real dates: Strategy › Optimal
+  replacement › *Shutdown calendar*, `POST /api/strategy/calendar-replacement`
+  and `calendar-next`, and the MCP `strategy` actions
+  `calendar_replacement` and `next_replacement`
+  (`backend/services/strategy_calendar.py`). See *As built* at the end.
 - **Who asks, and why:** the planner of UC-6. The plant has planned shuts
   every 180 days (the schedule). Replacing the bearing in a shut is
   cheaper and easier than a planned replacement that needs its own
@@ -635,6 +644,50 @@ Keep to the project's rules (`CLAUDE.md`):
   worthwhile only for young bearings. With the off-schedule price ($150)
   at the shuts, as in UC-6, skipping always paid.
 
+- **As built (the policy over dates, today = time 0):**
+
+  ```python
+  from backend.services.strategy_calendar import calendar_next, calendar_replacement
+
+  bearing = [{"name": "alpha", "value": 365.0}, {"name": "beta", "value": 2.0}]
+  shuts = [{"name": "shut", "cost": 100, "every": 180, "every_unit": "days",
+            "start": "2027-03-17"}]
+  out = calendar_replacement("weibull", bearing, unit="Days", today="2026-10-18",
+                             opportunities=shuts, failure_cost=400, anytime_cost=150)
+  out["cost_rate"]                 # 0.9903 a day: policy 4's 0.990
+  out["rule"][0]["text"]           # "At the shut: replace the part if it is older than 138 days."
+  [(c["label"], round(c["cost_rate"], 3)) for c in out["comparisons"]]
+  # run to failure 1.237, age replacement at 298 days 1.117, every shut 1.056
+  out["schedule"][0]               # 17 Mar 2027, threshold 138 days, long-run chance 0.78
+
+  now = calendar_next("weibull", bearing, age=200, unit="Days", today="2026-10-18",
+                      opportunities=shuts, failure_cost=400, anytime_cost=150)
+  now["recommendation"]
+  # "Keep it: replace it at the shut on 17 Mar 2027. Replacing now becomes the
+  #  best choice from an age of 264 days."
+  ```
+
+  - **Dates to model time:** today is 0, at the start of the day; a model in
+    hours, days, weeks, months or years converts at 24 hours, 7 days,
+    365.25/12 days and 365.25 days a unit. A shut "every N months" is
+    periodic in model time (an average month) and shown on its real
+    calendar dates; dates before today are left out, and a plan of dates is
+    repeated after its last (RePyability's `tail="repeat"`).
+  - **The open questions above, as decided:** undiscounted (the long run);
+    ages, not condition thresholds, worked out for any life; and policy 5
+    (a shut by age, or off the schedule at an age) exactly, as the
+    threshold the policy gives on days with no shut. At these prices it is
+    never used, as found by hand.
+  - **Methods:** the grid (`dp`) and continuous time (`integration`, with no
+    replacement between shuts) are exact and free; `sampling`, for shut
+    patterns that take very long to repeat, is Pro and runs on the compute
+    service. A limited failure population is refused for now (RePyability
+    sizes the calendar from an age the life never reaches).
+  - **Checks** (`backend/tests/test_strategy_calendar.py`): RePyability's
+    UC-13 figures through the app to 1e-12, the table above, UC-12 with the
+    shuts' policy, the date conversion (hours, months, irregular dates),
+    gating, the job, MCP and the routes.
+
 ### UC-8: "Those cost rates are good, but what does that actually look like over a timeline, and what is the range of those costs over time?"
 
 - **Status:** answered by hand; design proposed, not built.
@@ -682,7 +735,7 @@ Keep to the project's rules (`CLAUDE.md`):
 - **How it is solved:**
   - **The mean:** `RepairableRBD.expected_cost(t, state=...)` at each
     date, exact, from the bearing's state today (its age, and the days
-    since the last shut: `NodeState(age=224, phase=159)`). The policies
+    since the last shut: `NodeState(age=224, since_scheduled=159)`). The policies
     are UC-7's: replacement on condition at the shuts for the best one,
     block replacement for every shut.
   - **The range:** simulated, as a range must be (the README: "the answer
