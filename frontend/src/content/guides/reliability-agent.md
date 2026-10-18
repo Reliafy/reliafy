@@ -66,12 +66,13 @@ against.
 ## What it can and can't build
 
 It creates **datasets**, **life models** (the full range — censoring, truncation,
-covariates, the offset/zero-inflation/limited-failure-population modifiers), and
-**RBDs** — including repairable diagrams that report availability, and
-common-cause groups on redundant stages.
+covariates, the offset/zero-inflation/limited-failure-population modifiers),
+**recurrent-event models** for repairable systems, **accelerated life models**,
+**degradation models**, and **RBDs** — including repairable diagrams that report
+availability, and common-cause groups on redundant stages.
 
-It doesn't create degradation models, RCM studies, or fleet objects yet. If you
-ask, it'll say so rather than improvising.
+It doesn't create RCM studies, fleet forecasts or condition-based risk models
+yet. If you ask, it'll say so rather than improvising.
 
 ## Conversations are saved
 

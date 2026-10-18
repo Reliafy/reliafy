@@ -17,16 +17,24 @@ export const GUIDE_COVERAGE = [
   { feature: "Accelerated life models", href: "/modelling/alt" },
   { feature: "Degradation models", href: "/modelling/degradation" },
   { feature: "Condition-based risk (joint models)", href: "/modelling/joint" },
+  { feature: "Per-demand (one-shot) models", href: "/modelling/new?mode=perdemand" },
   // Data.
   { feature: "Datasets", href: "/datasets" },
   // System modelling.
   { feature: "Reliability block diagrams", href: "/rbds" },
+  { feature: "RBD builder (targets, design, phases, production, outages)", href: "/rbds/b" },
+  { feature: "Simulation run history", href: "/rbds/runs" },
   // Strategy.
+  { feature: "Saved strategy analyses", href: "/strategy" },
   { feature: "Optimal replacement by age", href: "/strategy/replacement" },
   { feature: "Replacement over a shutdown calendar", href: "/strategy/replacement?mode=calendar" },
+  { feature: "Compare two models", href: "/strategy/compare" },
   { feature: "Failure-finding interval", href: "/strategy/failure-finding" },
   { feature: "Test planning", href: "/strategy/test-planning" },
+  { feature: "Test planning: sequential test", href: "/strategy/test-planning/sequential" },
+  { feature: "Test planning: life test precision", href: "/strategy/test-planning/life" },
   { feature: "Test planning: accelerated test", href: "/strategy/test-planning/accelerated" },
+  { feature: "Test planning: comparison", href: "/strategy/test-planning/comparison" },
   // Fleets.
   { feature: "Fleet failure and spares forecasts", href: "/fleet" },
   { feature: "Degradation tracking", href: "/fleet/tracking" },
@@ -34,6 +42,7 @@ export const GUIDE_COVERAGE = [
   { feature: "RCM studies", href: "/rcm" },
   // Sharing and teams.
   { feature: "Teams", href: "/team" },
+  { feature: "What changed in the workspace", href: "/changes" },
   // Agents, MCP and the API.
   { feature: "Reliability Agent", href: "/agent" },
   { feature: "Claude (MCP) connector", href: "/api-docs/mcp" },

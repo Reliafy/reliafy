@@ -35,6 +35,21 @@ once. Send the password separately from the link (the link by email, the
 password by message). Each link
 can be revoked on its own, and you can make several, one per audience.
 
+### Several items on one page: a report
+
+When the story needs more than one item — the fitted model, the diagram built
+on it and the replacement interval that follows — put them in one report. In
+the Share dialog, choose **Add to a report…** at the bottom. Give the report a
+**Title** and an **Author or organisation**, write an **Introduction**, and add
+the other items under **Sections** with **Add an item**, each with an optional
+note. Reorder them with the arrows, then **Save report**.
+
+Nothing is public until you create a link: once the report is saved, the same
+**Create public link** controls appear under it, and the page is laid out ready
+to print. **Draft notes** has the assistant word the introduction from the
+items' saved figures (it uses AI credits); read it through before publishing,
+and it flags any figure it can't find in the saved results.
+
 ## Sharing with a named person — for a specific colleague
 
 In the same dialog, **Share with (email)** shares that one artifact with someone
@@ -49,7 +64,7 @@ yet, creating one with that email address picks up the share automatically.
 The other two are for showing finished work. A **team** is for doing work
 together.
 
-Create one from the workspace switcher at the top right, and everything created
+Create one from the workspace switcher at the top right (**＋ New team…**), and everything created
 inside it belongs to the team rather than to you — datasets, models, diagrams,
 studies. Members see it all, and the switcher moves you between your personal
 workspace and any teams you belong to.
@@ -66,6 +81,8 @@ ask you to re-send anything.
 A note on plans: creating a team and editing team content needs Pro, but invited
 members can view team content on a free account. So a Pro engineer can bring in
 as many reviewers as they like without everyone needing a plan.
+[Work as a team](/guides/work-as-a-team) walks through creating a team,
+inviting people and what each member can do.
 
 ## Copying an ID
 

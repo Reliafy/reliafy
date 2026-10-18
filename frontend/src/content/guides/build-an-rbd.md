@@ -89,13 +89,13 @@ from typical values still tells you where the weak points are.
 Plain series/parallel covers a lot, but real systems need more, and the canvas
 has block types for the common cases:
 
-- **k-out-of-n voting** — the system needs at least *k* of the *n* branches
+- **Voting node (MooN)** — k-out-of-n voting: the system needs at least *k* of the *n* branches
   feeding the gate. Three sensors where any two must agree is a 2-of-3.
-- **Standby** — spares that sit dormant (cold) or lightly loaded (hot) until
+- **Standby group** — spares that sit dormant (cold) or lightly loaded (hot) until
   switched in. The risk here is the *switching*: a cold spare's chance of
   starting is 1 (a perfect switch-over) until you set it, and 0.95–0.99 is
   typical for generators and pumps.
-- **Series / parallel blocks** — a shorthand for *n* identical units, so you
+- **Series (n identical)** and **Parallel (n identical)** — a shorthand for *n* identical units, so you
   don't draw twenty identical blocks by hand.
 - **Sub-system** — embeds another saved RBD as a single block, so you can build
   a diagram of pumping stations where each station is its own diagram.
@@ -145,8 +145,10 @@ whole exercise.
 
 The other tabs ask other questions of the same diagram: **Fault tree** draws it
 as a fault tree, **Design** works out how many copies of each block give the most
-reliability within a budget or reach a target at the least cost, and **Targets** sets a reliability target for the
-whole system and works out what each block needs to meet it.
+reliability within a budget or reach a target at the least cost, **Targets** sets a reliability target for the
+whole system and works out what each block needs to meet it, and **Outage
+history** checks the diagram against the outages it really had (see
+[checking a diagram against its outage history](/guides/outage-history)).
 
 ## Take it with you: download as Python
 
@@ -166,9 +168,9 @@ swap in a different SurPyval) and run the file. The script's header
 lists the exact commands for the versions Reliafy runs:
 
 ```
-pip install "surpyval==0.23"
+pip install "surpyval==0.25"
 pip install networkx tqdm
-pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.13"
+pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.15"
 python my_diagram.py
 ```
 
@@ -192,6 +194,11 @@ curve — see [modelling system availability](/guides/repairable-availability).
 If the diagram is a safety instrumented function, switch on **Safety function**
 in the toolbar and the results lead with the PFDavg and the SIL instead — see
 [verifying a safety function](/guides/verify-a-safety-function).
+
+If the diagram already exists in another tool, you don't have to redraw it:
+[import it](/guides/import-a-diagram) from BlockSim, Open-PSA, Galileo or an
+Excel workbook. For a network, where the question is whether two points stay
+connected, see [modelling a network](/guides/network-reliability).
 
 You can also build diagrams from Claude or another AI agent: connect it to
 Reliafy over [MCP](/api-docs/mcp) and it can create, edit and analyse diagrams in

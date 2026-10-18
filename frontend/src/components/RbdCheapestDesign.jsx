@@ -98,7 +98,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
       {priced.length === 0 && (
         <div className="card note" role="status">
           Give at least one block a <b>purchase price</b> (double-click it on the Builder tab →
-          Cost &amp; maintenance), and set the <b>system downtime cost</b> under Costs, so extra copies can be
+          Costs), and set the <b>system downtime cost</b> under Costs, so extra copies can be
           weighed against the downtime they save.
         </div>
       )}
