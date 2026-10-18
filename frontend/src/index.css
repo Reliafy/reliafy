@@ -9039,6 +9039,6 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 
 /* Home. */
 .home .wc-panel { margin-top: 24px; }
-.home-count { font-size: var(--fs-13); color: var(--muted); }
-.home-note { margin: 0 0 8px; font-size: var(--fs-13); color: var(--muted); }
+.home-note { font-size: var(--fs-13); color: var(--muted); text-align: right; }
+.home-none { margin: 0; padding: 14px 16px; font-size: var(--fs-14); color: var(--muted); }
 .home .start-compact { margin-top: 28px; }

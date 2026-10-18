@@ -23,12 +23,12 @@ import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
 // section's own page reports its errors.
 const quiet = (p, key) => p.then((d) => (key ? d[key] : d) || []).catch(() => []);
 
-function HomeList({ id, title, count, rows, children }) {
+function HomeList({ id, title, note, rows, children }) {
   return (
     <section className="wc-panel home-list" aria-labelledby={id}>
       <div className="recent-models-head">
         <h2 id={id}>{title}</h2>
-        {count != null && <span className="home-count">{count}</span>}
+        {note && <span className="home-note">{note}</span>}
       </div>
       <div className="wc-card">
         {children}
@@ -109,15 +109,17 @@ export default function HomePage() {
 
           <WhatChangedPanel data={changes === undefined ? null : changes} />
 
-          {attention.length > 0 && (
+          {/* Once the changes are in: "nothing" before then would be a guess. */}
+          {changes !== undefined && (
             <HomeList id="home-attention" title="Needs attention" rows={attention.slice(0, ATTENTION_ROWS)}
-                      count={attention.length > ATTENTION_ROWS ? `${ATTENTION_ROWS} of ${attention.length}` : null} />
+                      note={attention.length > ATTENTION_ROWS ? `${ATTENTION_ROWS} of ${attention.length}` : null}>
+              {attention.length === 0 && <p className="home-none">Nothing needs you right now.</p>}
+            </HomeList>
           )}
 
           {recent.length > 0 && (
-            <HomeList id="home-recent" title="Recent" rows={recent.slice(0, RECENT_ROWS)}>
-              <p className="home-note">Your most recently saved or edited work.</p>
-            </HomeList>
+            <HomeList id="home-recent" title="Recent" rows={recent.slice(0, RECENT_ROWS)}
+                      note="Your work, most recently saved or edited first" />
           )}
 
           {!nearEmpty && <StartHereCompact sampleModelId={sampleModelId} />}

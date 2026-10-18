@@ -76,13 +76,13 @@ export function MaintenanceItems() {
         <div className="card empty"><p>No items yet. Fit one to a position.</p></div>
       ) : (
         <>
-          <div className="tablebar">
+          <div className="tablebar section-tablebar">
             <span className="count">{visible.length} of {items.length} items</span>
             <span className="grow" />
             <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />
             <ListSearch value={query} onChange={setQuery} placeholder="Search items…" />
           </div>
-          <div className="lib">
+          <div className="lib maint-scroll">
             <table className="lib-table">
               <thead><tr><th>Item</th>{showClass && <th>Class</th>}<th>Make and model</th><th>Serial</th><th>Fitted to</th><th>Location</th></tr></thead>
               <tbody>
@@ -696,7 +696,7 @@ export function MaintenanceParts() {
       {error && <div className="card error">{error}</div>}
       {parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
       {parts?.length > 0 && (
-        <div className="tablebar" style={{ flexWrap: "wrap" }}>
+        <div className="tablebar section-tablebar">
           <span className="count">{`${parts.length} part${parts.length === 1 ? "" : "s"}`}</span>
           <SegmentedControl size="sm" label="Show" value={view} onChange={setView} style={{ flex: "none" }}
                             options={[{ value: "list", label: "List" }, { value: "structure", label: "Structure" }]} />
