@@ -440,8 +440,10 @@ def detect_tags(df: pd.DataFrame) -> dict:
     # the rows are periods of changing covariates (start/stop).
     if repeat:
         tags.add("Repeat failures")
-    elif "Measurements" not in tags and (censor or times):
-        tags.add("Lifetime data")  # one life per unit (or per start/stop period)
+    elif censor or times:
+        # One life per unit (or per start/stop period); readings over a unit's
+        # life are lifetime data too, unless the unit is repaired between them.
+        tags.add("Lifetime data")
     use_for: list[str] = []
     covs = "Covariates" in tags
     if "Measurements" in tags:

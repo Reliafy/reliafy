@@ -29,7 +29,7 @@ def test_recurrent_events():
 def test_readings_are_measurements():
     rows = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u] for u in range(4) for k in range(4)]
     out = tags(rows, ["bearing", "hours", "vibration_mm_s"])
-    assert out["tags"] == ["Measurements"]
+    assert out["tags"] == ["Lifetime data", "Measurements"]
     assert "Condition monitoring (the readings)" in out["use_for"]
 
 
