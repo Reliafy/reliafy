@@ -1,0 +1,25 @@
+/* PercentField: a "%" inside the input, and the "Did you mean…?" line. */
+.pct-field > label { color: inherit; font-weight: inherit; }
+.pct-input { position: relative; display: inline-flex; align-items: center; width: fit-content; }
+.calc-t .pct-input input,
+.param-field .pct-input input,
+.login-field .pct-input input { padding-right: 1.7rem; }
+.pct-suffix {
+  position: absolute;
+  right: 0.6rem;
+  color: var(--muted);
+  font-size: var(--fs-14);
+  pointer-events: none;
+}
+.pct-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-width: 220px;
+  color: var(--ink);
+  font-size: var(--fs-13);
+  font-weight: 400;
+}
+.pct-msg-error { color: var(--danger); }
+.pct-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.pct-btn { padding: 0.3rem 0.6rem; font-size: var(--fs-13); min-height: 32px; }

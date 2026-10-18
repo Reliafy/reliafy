@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { getRbdJob, simulateTestPlan, testPlan } from "../api.js";
+import { percentApiMessage } from "../percent.js";
 
 export function Field({ label, value, onChange, type = "number", ...props }) {
   return (
@@ -52,7 +53,7 @@ export function usePlan(kind) {
       setInputs(body);
     } catch (e) {
       if (mine !== ticket.current) return;
-      setError(e.message);
+      setError(percentApiMessage(e.message));
       setResult(null);
       setInputs(null);
     } finally {
@@ -130,7 +131,7 @@ export function SimulationCheck({ kind, inputs }) {
     } catch (e) {
       setBusy(false);
       if (e.status === 402 && e.code === "pro_required") setNeedsPro(true);
-      else setError(e.message);
+      else setError(percentApiMessage(e.message));
     }
   };
 

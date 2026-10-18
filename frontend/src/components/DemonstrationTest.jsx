@@ -7,6 +7,7 @@ import { betaSource, bLabel } from "../requirement.js";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import { percentApiMessage } from "../percent.js";
 
 const num = (s) => (s === "" || s == null ? null : Number(s));
 const frac = (s) => (s === "" || s == null ? null : Number(s) / 100);
@@ -115,7 +116,7 @@ export default function DemonstrationTest({ initial = null }) {
       setResult(res);
       setInputs(body);
     } catch (err) {
-      setError(err.message);
+      setError(percentApiMessage(err.message));
       setResult(null);
       setInputs(null);
     } finally {
