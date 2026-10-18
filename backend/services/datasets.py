@@ -370,7 +370,7 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
 TAGS = ("Lifetime data", "Repeat failures", "Covariates", "Time-varying covariates", "Measurements")
 _CENSOR_NAME_RE = re.compile(r"(^c$|censor|status|failed|event|^c_)", re.IGNORECASE)
 _TIME_NAME_RE = re.compile(
-    r"(^x$|^t$|^xl$|^xr$|^tl$|^tr$|hour|time|age|day|week|month|year|cycle|km|mile|start|stop|end|date)",
+    r"(^x$|^t$|^xl$|^xr$|^tl$|^tr$|hour|time|age|day|week|month|year|cycle|km|mile|start|stop|end|date|observ)",
     re.IGNORECASE)
 _START_RE = re.compile(r"(start|entry|^tl$|from)", re.IGNORECASE)
 _STOP_RE = re.compile(r"(stop|end|exit|^tr$|until)", re.IGNORECASE)
@@ -418,8 +418,16 @@ def detect_tags(df: pd.DataFrame) -> dict:
     # A text column unique on every row names the rows (a serial, a tag): not a covariate.
     extra = [str(c) for c in df.columns if str(c) not in (unit, censor, *times)
              and not (not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique(dropna=True) == len(df))]
+    # Events of a repairable unit: its time rises row by row and the rows are
+    # events, not start/stop periods (repeated_units tells them from readings).
+    ru = repeated_units(df) if unit else None
+    repeat = bool(ru and ru["kind"] == "recurrent" and not start_stop
+                  and (censor or not any(pd.api.types.is_numeric_dtype(df[c]) for c in extra
+                                         if (df.groupby(unit)[c].nunique(dropna=True) > 1).any())))
     for c in extra:
         varies = bool(unit) and bool((df.groupby(unit)[c].nunique(dropna=True) > 1).any())
+        if varies and repeat and not pd.api.types.is_numeric_dtype(df[c]):
+            continue  # an event's own detail (its cause or failure mode)
         if not varies:
             tags.add("Covariates")
         elif censor:
@@ -430,7 +438,7 @@ def detect_tags(df: pd.DataFrame) -> dict:
             tags.add("Time-varying covariates")
     # Several rows per unit with a status column are recurrent events, unless
     # the rows are periods of changing covariates (start/stop).
-    if unit and censor and not start_stop and "Time-varying covariates" not in tags:
+    if repeat:
         tags.add("Repeat failures")
     elif "Measurements" not in tags and (censor or times):
         tags.add("Lifetime data")  # one life per unit (or per start/stop period)
@@ -440,7 +448,7 @@ def detect_tags(df: pd.DataFrame) -> dict:
         use_for += ["Degradation", "Condition monitoring (the readings)"]
     elif censor and unit and ("Time-varying covariates" in tags or start_stop):
         use_for.append("Life model with time-varying covariates")
-    elif censor and unit:
+    elif repeat:
         use_for.append("Repeat failures model" + (" with covariates" if covs else ""))
     elif censor or times:
         use_for.append("Life model" + (" with covariates" if covs else ""))
