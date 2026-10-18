@@ -11,6 +11,8 @@
 // `href` is a path the router knows (checked too); a query string on it must
 // appear on the guide's link (a mode such as ?mode=calendar).
 export const GUIDE_COVERAGE = [
+  // Where the app opens.
+  { feature: "Home", href: "/home" },
   // Life data and the other model types.
   { feature: "Fit a life model (life data)", href: "/modelling/new" },
   { feature: "Recurrent events (repairable systems)", href: "/modelling/recurrent" },
@@ -19,7 +21,7 @@ export const GUIDE_COVERAGE = [
   { feature: "Condition-based risk (joint models)", href: "/modelling/joint" },
   { feature: "Per-demand (one-shot) models", href: "/modelling/new?mode=perdemand" },
   // Data.
-  { feature: "Datasets", href: "/datasets" },
+  { feature: "Data (datasets)", href: "/modelling/data" },
   // System modelling.
   { feature: "Reliability block diagrams", href: "/rbds" },
   { feature: "RBD builder (targets, design, phases, production, outages)", href: "/rbds/b" },

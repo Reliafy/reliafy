@@ -38,7 +38,7 @@ on the [What's new](https://reliafy.com/whats-new) page.
 - **Maintenance strategy** — rank candidate distributions against your data,
   compare two designs head-to-head, and find the cost-optimal
   preventive-replacement interval.
-- **Datasets** — upload a CSV once and reuse it across models; saved models
+- **Data** (under Modelling) — upload a CSV once and reuse it across models; saved models
   reopen instantly.
 
 ## Quickstart (self-hosted)

@@ -686,9 +686,9 @@ async function main() {
         await page.getByRole("option", { name: /Bearing life — Weibull/ }).first().click(); await wait(500);
       } },
     // --- Verify a safety function: the starter, as it opens and calculated ---
-    { file: "sif-01-starter.png", url: "/modelling", settle: 1500,
+    { file: "sif-01-starter.png", url: "/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); } },
-    { file: "sif-02-results.png", url: "/modelling", settle: 1500,
+    { file: "sif-02-results.png", url: "/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
     // --- RCM study: the sample, with its evidence statuses ---
     { file: "rcm-01-study.png", url: "/rcm/studies/sample-rcm-truck", settle: 2000 },

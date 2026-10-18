@@ -21,11 +21,12 @@ import {
   updateMaintenanceLocation,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, Field, FormModal, LifeTable, MaintenanceTabs, Proposals, fmtDate,
+  DocumentsCard, Field, FormModal, LifeTable, Proposals, fmtDate,
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
@@ -69,20 +70,19 @@ export function MaintenanceItems() {
     i.item_class?.name, i.manufacturer_entry?.name));
   return (
     <div className="app">
-      <PageHeader crumbs={crumbs} title="Items" meta="Every physical thing: where it's fitted, where it is." />
-      <MaintenanceTabs />
+      <SectionHeader section="maintenance" title="Items" purpose="Every physical thing: where it's fitted, where it is." />
       {error && <div className="card error">{error}</div>}
       {items === null ? <div className="card empty">Loading…</div> : items.length === 0 && !filtered ? (
         <div className="card empty"><p>No items yet. Fit one to a position.</p></div>
       ) : (
         <>
-          <div className="tablebar">
+          <div className="tablebar section-tablebar">
             <span className="count">{visible.length} of {items.length} items</span>
             <span className="grow" />
             <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />
             <ListSearch value={query} onChange={setQuery} placeholder="Search items…" />
           </div>
-          <div className="lib">
+          <div className="lib maint-scroll">
             <table className="lib-table">
               <thead><tr><th>Item</th>{showClass && <th>Class</th>}<th>Make and model</th><th>Serial</th><th>Fitted to</th><th>Location</th></tr></thead>
               <tbody>
@@ -149,10 +149,9 @@ export function MaintenanceLocations() {
   }, []);
   return (
     <div className="app">
-      <PageHeader crumbs={crumbs} title="Locations"
-                  meta="Physical places: sites, areas, rooms and stores. Positions are located in them; spares are placed in them."
+      <SectionHeader section="maintenance" title="Locations"
+                  purpose="Physical places: sites, areas, rooms and stores. Positions are located in them; spares are placed in them."
                   primary={<button onClick={() => setModal(true)}><PlusIcon /> New location</button>} />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       {data === null ? <div className="card empty">Loading…</div> : data.tree.length === 0 ? (
         <div className="card empty"><p>No locations yet. Add the house, its rooms, the shed.</p></div>
@@ -196,7 +195,6 @@ export function MaintenanceLocation() {
         </>}
         primary={<button onClick={() => setModal("rename")}>Rename</button>}
       />
-      <MaintenanceTabs />
       <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
                  emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
                    + "building or area check: it raises one work order here, and can list every position here to check."} />
@@ -313,9 +311,8 @@ export function MaintenanceClasses() {
   }, [open]);
   return (
     <div className="app">
-      <PageHeader crumbs={crumbs} title="Classes"
-                  meta="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to." />
-      <MaintenanceTabs />
+      <SectionHeader section="maintenance" title="Classes"
+                  purpose="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to." />
       {error && <div className="card error">{error}</div>}
       <h2 className="maint-section">Position classes</h2>
       {classes === null ? <div className="card empty">Loading…</div> : classes.length === 0 ? (
@@ -690,17 +687,16 @@ export function MaintenanceParts() {
   }, [load]);
   return (
     <div className="app">
-      <PageHeader crumbs={crumbs} title="Parts" meta="The parts catalogue, what parts are made of, and what's in stock where."
+      <SectionHeader section="maintenance" title="Parts" purpose="The parts catalogue, what parts are made of, and what's in stock where."
                   actions={<>
                     <button className="secondary" onClick={() => setModal("bom")}>Import a BOM</button>
                     <button className="secondary" onClick={() => setModal("levels")}>Indenture levels</button>
                   </>}
                   primary={<button onClick={() => setModal("new")}><PlusIcon /> New part</button>} />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       {parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
       {parts?.length > 0 && (
-        <div className="tablebar" style={{ flexWrap: "wrap" }}>
+        <div className="tablebar section-tablebar">
           <span className="count">{`${parts.length} part${parts.length === 1 ? "" : "s"}`}</span>
           <SegmentedControl size="sm" label="Show" value={view} onChange={setView} style={{ flex: "none" }}
                             options={[{ value: "list", label: "List" }, { value: "structure", label: "Structure" }]} />

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { addMaintenanceDocument, decideProposal, removeMaintenanceDocument } from "../api.js";
 import {
   DOCUMENT_KINDS, PRECISIONS, datedText, daysText, roughDateInput, roughDateValue, safeHref,
@@ -216,25 +216,6 @@ export const OUTCOME_LABELS = {
 };
 
 // The Maintenance section's own tabs.
-export function MaintenanceTabs() {
-  const tabs = [
-    { to: "/maintenance", label: "Overview", end: true },
-    { to: "/maintenance/items", label: "Items" },
-    { to: "/maintenance/locations", label: "Locations" },
-    { to: "/maintenance/parts", label: "Parts" },
-    { to: "/maintenance/classes", label: "Classes" },
-  ];
-  return (
-    <nav className="maint-tabs" aria-label="Maintenance">
-      {tabs.map((t) => (
-        <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => (isActive ? "active" : "")}>
-          {t.label}
-        </NavLink>
-      ))}
-    </nav>
-  );
-}
-
 export function LifeTable({ rows, showPosition = false, onFix }) {
   return (
     <div className="maint-scroll"><table className="lib-table">

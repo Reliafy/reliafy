@@ -644,7 +644,7 @@ SPA_ROOTS = frozenset({
     "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",
     "reliability-analysis-software",
     # The signed-in app.
-    "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
+    "home", "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
     "tokens", "admin", "billing", "changes", "maintenance",
 })
 
@@ -734,7 +734,7 @@ _NOT_FOUND_HTML = """<!doctype html>
 <main>
   <h1>Page not found</h1>
   <p>There's nothing at this address. It may have moved, or the link may be mistyped.</p>
-  <p><a href="/">Go to the home page</a> &middot; <a href="/modelling">Open the app</a> &middot;
+  <p><a href="/">Go to the home page</a> &middot; <a href="/home">Open the app</a> &middot;
      <a href="/blog">Read the blog</a></p>
 </main>
 </body>

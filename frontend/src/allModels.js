@@ -14,16 +14,25 @@ import { distColor } from "./instrument.js";
 import { CATEGORY } from "./plotTheme.js";
 
 // Every saved model — life data, accelerated life, recurrent, degradation — as
-// one list of rows, newest first. Shared by the All models list and the
-// Modelling home's "Your recent models".
+// one list of rows, newest first. Shared by the Modelling list and Home's
+// "Recent".
 
 export const TYPE_LABEL = {
-  life: "Life data",
+  life: "Life model",
   degradation: "Degradation",
   alt: "Accelerated life",
   recurrent: "Recurrent",
   joint: "Condition-based risk",
 };
+
+// The Modelling list's type filter: the same names as the menu's children.
+export const TYPE_FILTERS = [
+  { value: "life", label: "Life models" },
+  { value: "recurrent", label: "Recurrent" },
+  { value: "alt", label: "Accelerated life" },
+  { value: "degradation", label: "Degradation" },
+  { value: "joint", label: "Condition-based risk" },
+];
 
 export const distLabel = (d = "") => String(d).replace(/\s*\(.*$/, "").replace(/\s+PH$/, "");
 

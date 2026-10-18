@@ -2920,7 +2920,7 @@ def list_datasets(ctx: Context) -> dict[str, Any]:
     user, db = _caller(ctx), _db()
     return {"datasets": [
         {"id": d.id, "name": d.name, "n_rows": d.n_rows, "columns": [c["name"] for c in d.columns],
-         "created_at": d.created_at.isoformat(), "url": _url(f"/datasets/d/{d.id}")}
+         "created_at": d.created_at.isoformat(), "url": _url(f"/modelling/data/{d.id}")}
         for d in datasets_service.list_datasets(db, user["uid"])
     ]}
 
@@ -2967,7 +2967,7 @@ def upload_dataset(
     if upload is not None:
         uploads_service.delete(db, upload["_id"])
     out = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
-           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}"),
+           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/modelling/data/{ds.id}"),
            "header_guess": guess}
     if hint:
         out["hint"] = hint
@@ -3030,7 +3030,7 @@ def get_dataset(
         "offset": offset,
         "rows": rows,
         "next_offset": end if end < total else None,
-        "url": _url(f"/datasets/d/{ds.id}"),
+        "url": _url(f"/modelling/data/{ds.id}"),
     }
     if ds.notes:
         out["notes"] = ds.notes
@@ -6407,7 +6407,7 @@ def compare_groups(
                             f"(group_column). Columns: {', '.join(names)}.")
         df = datasets_service.load_dataframe(dataset)
         label = group_column
-        url = _url(f"/datasets/d/{dataset.id}?compare={quote(group_column)}")
+        url = _url(f"/modelling/data/{dataset.id}?compare={quote(group_column)}")
     prepared = compare_groups_service.prepare(
         df, time_column=time_column, group_column=group_column, censor_column=censor_column,
         count_column=count_column, cause_column=cause_column, c_invert=c_invert,
@@ -6870,8 +6870,8 @@ _UPLOAD_FALLBACK_URL = (
     "If the PUT to url can't connect, or a proxy refuses its host (e.g. CONNECT tunnel failed, 403), send the "
     "same PUT once to url_fallback (curl_fallback) instead: the same single-use link on {site}, slower for large "
     "files. The link is only used up when a PUT reaches Reliafy, so a refused first attempt doesn't spend it. ")
-_UPLOAD_APP_PAGES = {"rbd_import": ("/rbds/list", "RBDs › Import"), "dataset": ("/datasets/list", "Datasets"),
-                     "excel": ("/datasets/list", "Datasets, RCM or RBDs › Import"),
+_UPLOAD_APP_PAGES = {"rbd_import": ("/rbds/list", "RBDs › Import"), "dataset": ("/modelling/data", "Modelling › Data"),
+                     "excel": ("/modelling/data", "Modelling › Data, RCM or RBDs › Import"),
                      "outage_log": ("/rbds/list", "the diagram's Outage history tab")}
 # Inline content (uploads import_rbd): small text formats only — anything larger goes
 # through uploads create rather than the agent's context.
@@ -7330,7 +7330,7 @@ def _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row) -> dic
     uploads_service.delete(db, doc["_id"])
     out = {"target": "dataset", "sheet": table.sheet, "header_row": table.header_row,
            "id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
-           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/datasets/d/{ds.id}")}
+           "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/modelling/data/{ds.id}")}
     if table.notes:
         out["notes"] = table.notes
     if header_row is None and table.header_row == 0:
@@ -8108,7 +8108,7 @@ def update_dataset(
     if ds is None:
         raise ToolError("Dataset not found.")
     return {"updated": _changed(name, notes), "dataset_id": ds.id, "name": ds.name, "notes": ds.notes,
-            "url": _url(f"/datasets/d/{ds.id}")}
+            "url": _url(f"/modelling/data/{ds.id}")}
 
 
 # ---------------------------------------------------------------------------

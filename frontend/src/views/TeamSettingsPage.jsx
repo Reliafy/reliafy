@@ -145,7 +145,7 @@ export default function TeamSettingsPage() {
       await leaveTeam(team.id);
       setWorkspaceId("personal");
       refreshTeams();
-      navigate("/modelling");
+      navigate("/home");
     } catch (err) {
       setError(err.message);
     }
@@ -157,7 +157,7 @@ export default function TeamSettingsPage() {
       await deleteTeam(team.id);
       setWorkspaceId("personal");
       refreshTeams();
-      navigate("/modelling");
+      navigate("/home");
     } catch (err) {
       setError(err.message);
       setDeleting(false);

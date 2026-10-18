@@ -282,7 +282,7 @@ rf.push_lives(dataset_id, file="new_failures.csv")      # appends, then refits i
           { name: "csv", type: "str", req: false, desc: "Raw CSV text (with a header). Provide this or data." },
           { name: "data", type: "dict", req: false, desc: "Column arrays, e.g. {\"hours\": [...], \"failed\": [...]}." },
         ]}
-        returns={`{ "id": "d3…", "name": "Bearings", "n_rows": 8, "columns": ["hours","failed"], "url": "/datasets/d/…" }`}
+        returns={`{ "id": "d3…", "name": "Bearings", "n_rows": 8, "columns": ["hours","failed"], "url": "/modelling/data/…" }`}
       />
 
       <h3>reliafy.strategy</h3>
@@ -445,7 +445,7 @@ function HttpDocs({ base }) {
   -H "Authorization: Bearer rlf_..." -H "Content-Type: application/json" \\
   -d '{"name": "Bearings", "csv": "hours,failed\\n120,1\\n340,0"}'`}
         returns={`{ "id": "d3…", "name": "Bearings", "n_rows": 2,
-  "columns": ["hours", "failed"], "url": "/datasets/d/d3…" }`}
+  "columns": ["hours", "failed"], "url": "/modelling/data/d3…" }`}
       />
 
       <Endpoint

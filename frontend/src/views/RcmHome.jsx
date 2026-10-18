@@ -4,12 +4,10 @@ import Modal from "../components/Modal.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { listRcmStudies, createRcmStudy, deleteRcmStudy } from "../api.js";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
-import { ShowMeHow } from "../components/Walkthrough.jsx";
-import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 
 const ImportIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -17,12 +15,13 @@ const ImportIcon = () => (
   </svg>
 );
 
-// RCM studies list: rollup badge strip per study, create modal, free-plan cap
+const HELP = { walkthrough: "rcm" };
+
+// The RCM section's landing page, its studies: rollup badge strip per study, create modal, free-plan cap
 // nudge on 402.
 export default function RcmHome() {
   const navigate = useNavigate();
   const [studies, setStudies] = useState(null);
-  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [capHit, setCapHit] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -73,20 +72,21 @@ export default function RcmHome() {
   };
 
   const open = (id) => navigate(`/rcm/studies/${id}`);
-  const visible = (studies || []).filter((s) => matches(query, s.name, s.system, s.id));
+  const newStudy = <button onClick={() => { setCreateError(null); setModalOpen(true); }}><PlusIcon /> New study</button>;
 
   return (
     <div className="app">
-      <PageHeader
-        title="RCM studies"
-        meta={<>Every maintenance decision links to the analysis behind it, re-checked each time you open the study. <ShowMeHow id="rcm" /></>}
+      <SectionHeader
+        title="RCM"
+        purpose="Your RCM studies: every maintenance decision links to the analysis behind it, re-checked each time you open the study."
+        help={HELP}
         actions={
           <button className="secondary" onClick={() => setImportOpen(true)}
                   title="Create a study from an FMEA / RCM worksheet in Excel">
             <ImportIcon /> Import from Excel
           </button>
         }
-        primary={<button onClick={() => { setCreateError(null); setModalOpen(true); }}><PlusIcon /> New study</button>}
+        primary={newStudy}
       />
 
       {error && <div className="card error">{error}</div>}
@@ -99,60 +99,44 @@ export default function RcmHome() {
         </div>
       )}
 
-      {studies === null ? (
-        <div className="card empty">Loading…</div>
-      ) : studies.length === 0 ? (
-        <div className="card empty">
-          <h2>No RCM studies</h2>
-          <p>Create one and build the function → failure → mode worksheet. <ShowMeHow id="rcm" /></p>
-          <button style={{ marginTop: "1rem" }} onClick={() => setModalOpen(true)}>
-            <PlusIcon /> New study
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="tablebar">
-            <span className="count">{visible.length} of {studies.length} studies</span>
-            <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search studies…" />
-          </div>
-          <div className="lib">
-            <table className="lib-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "34%" }}>Study</th>
-                  <th className="lib-opt">System</th>
-                  <th>Evidence</th>
-                  <th className="lib-opt">Updated</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                <SampleGroups rows={visible} cols={5} render={(s) => (
-                  <tr key={s.id} className="lib-row" onClick={() => open(s.id)}>
-                    <td>
-                      <div className="lib-name">
-                        {itemName(s)}
-                        {s.shared_by && <Chip title={`Shared by ${s.shared_by}`}>Shared</Chip>}
-                      </div>
-                    </td>
-                    <td className="lib-date lib-opt">{s.system || "—"}</td>
-                    <td>
-                      {s.rollup?.decided ? (
-                        <RollupBadges rollup={s.rollup} />
-                      ) : (
-                        <span className="lib-date">{s.rollup?.modes ? `${s.rollup.modes} modes` : "Empty"}</span>
-                      )}
-                    </td>
-                    <td className="lib-date lib-opt">{relativeTime(s.updated_at || s.created_at)}</td>
-                    <RowActions item={s} onOpen={() => open(s.id)} onDelete={() => onDelete(s)} />
-                  </tr>
-                )} />
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <SectionList
+        rows={studies}
+        noun={["study", "studies"]}
+        fields={(s) => [s.name, s.system]}
+        help={HELP}
+        empty={{
+          title: "No RCM studies yet",
+          body: "Create one and build the function → failure → mode worksheet, or import one from Excel.",
+          action: newStudy,
+        }}
+        head={[
+          <th key="s" style={{ width: "34%" }}>Study</th>,
+          <th key="y" className="lib-opt">System</th>,
+          <th key="e">Evidence</th>,
+          <th key="u" className="lib-opt">Updated</th>,
+          <th key="a"><span className="sr-only">Actions</span></th>,
+        ]}
+        render={(s) => (
+          <tr key={s.id} className="lib-row" onClick={() => open(s.id)}>
+            <td>
+              <div className="lib-name">
+                {itemName(s)}
+                {s.shared_by && <Chip title={`Shared by ${s.shared_by}`}>Shared</Chip>}
+              </div>
+            </td>
+            <td className="lib-date lib-opt">{s.system || "—"}</td>
+            <td>
+              {s.rollup?.decided ? (
+                <RollupBadges rollup={s.rollup} />
+              ) : (
+                <span className="lib-date">{s.rollup?.modes ? `${s.rollup.modes} modes` : "Empty"}</span>
+              )}
+            </td>
+            <td className="lib-date lib-opt">{relativeTime(s.updated_at || s.created_at)}</td>
+            <RowActions item={s} onOpen={() => open(s.id)} onDelete={() => onDelete(s)} />
+          </tr>
+        )}
+      />
 
       {importOpen && (
         <RcmImportModal

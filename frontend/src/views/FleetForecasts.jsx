@@ -2,13 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
 import Select from "../components/Select.jsx";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { listFleets, createFleet, deleteFleet, listModels, listAltModels, listRecurrentModels } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
-import { ShowMeHow } from "../components/Walkthrough.jsx";
-import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 import { formatNumber } from "../format.js";
 import { modelFromSearch, plainName } from "../modelNext.js";
 
@@ -26,12 +24,13 @@ function expectedCell(f) {
   return `≈ ${formatNumber(f.expected)} in ${periods} ${word}`;
 }
 
-// Fleet forecasts, the Fleet section's root: one row per fleet with its live
-// expected-failure headline.
+const HELP = { walkthrough: "fleet", guide: "forecast-fleet-failures-and-spares" };
+
+// The Fleet section's landing page: the failure forecasts, one row per fleet
+// with its live expected-failure headline. Degradation tracking is its child.
 export default function FleetForecasts() {
   const navigate = useNavigate();
   const [fleets, setFleets] = useState(null);
-  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [capHit, setCapHit] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -136,15 +135,15 @@ export default function FleetForecasts() {
   };
 
   const open = (id) => navigate(`/fleet/forecasts/${id}`);
-  const visible = (fleets || []).filter((f) => matches(query, f.name, f.id));
+  const newForecast = <button onClick={() => openCreate()}><PlusIcon /> New forecast</button>;
 
   return (
     <div className="app">
-      <PageHeader
-        crumbs={[{ label: "Fleet" }]}
-        title="Failure forecasts"
-        meta={<>How many failures a fleet will see over a horizon, from your fitted models. <ShowMeHow id="fleet" /></>}
-        primary={<button onClick={() => openCreate()}><PlusIcon /> New forecast</button>}
+      <SectionHeader
+        title="Fleet"
+        purpose="Failure forecasts: how many failures a fleet will see over a horizon, from your fitted models."
+        help={HELP}
+        primary={newForecast}
       />
 
       {error && <div className="card error">{error}</div>}
@@ -157,58 +156,37 @@ export default function FleetForecasts() {
         </div>
       )}
 
-      {fleets === null ? (
-        <div className="card empty">Loading…</div>
-      ) : fleets.length === 0 ? (
-        <div className="card empty">
-          <h2>No fleet forecasts</h2>
-          <p>Create one from a saved life model and list the items you have in service. <ShowMeHow id="fleet" /></p>
-          <button style={{ marginTop: "1rem" }} onClick={() => openCreate()}>
-            <PlusIcon /> New forecast
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="tablebar">
-            {query && (
-              <span className="count">
-                {visible.length} of {fleets.length} forecast{fleets.length === 1 ? "" : "s"}
-              </span>
-            )}
-            <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search forecasts…" />
-          </div>
-          <div className="lib">
-            <table className="lib-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "34%" }}>Forecast</th>
-                  <th className="lib-opt" style={{ width: 80 }}>Items</th>
-                  <th>Expected failures</th>
-                  <th className="lib-opt">Updated</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                <SampleGroups rows={visible} cols={5} render={(f) => (
-                  <tr key={f.id} className="lib-row" onClick={() => open(f.id)}>
-                    <td>
-                      <div className="lib-name">
-                        {itemName(f)}
-                        {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
-                      </div>
-                    </td>
-                    <td className="lib-n lib-opt">{f.n_items}</td>
-                    <td className="lib-n">{expectedCell(f)}</td>
-                    <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
-                    <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
-                  </tr>
-                )} />
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <SectionList
+        rows={fleets}
+        noun={["forecast", "forecasts"]}
+        help={HELP}
+        empty={{
+          title: "No failure forecasts yet",
+          body: "Create one from a saved life model and list the items you have in service.",
+          action: newForecast,
+        }}
+        head={[
+          <th key="f" style={{ width: "34%" }}>Forecast</th>,
+          <th key="i" className="lib-opt" style={{ width: 80 }}>Items</th>,
+          <th key="e">Expected failures</th>,
+          <th key="u" className="lib-opt">Updated</th>,
+          <th key="a"><span className="sr-only">Actions</span></th>,
+        ]}
+        render={(f) => (
+          <tr key={f.id} className="lib-row" onClick={() => open(f.id)}>
+            <td>
+              <div className="lib-name">
+                {itemName(f)}
+                {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
+              </div>
+            </td>
+            <td className="lib-n lib-opt">{f.n_items}</td>
+            <td className="lib-n">{expectedCell(f)}</td>
+            <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
+            <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
+          </tr>
+        )}
+      />
 
       {modalOpen && (
         <Modal

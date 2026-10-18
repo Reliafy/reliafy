@@ -66,7 +66,7 @@ export default function DatasetPage() {
     if (!window.confirm(`Delete dataset “${ds.name}”?`)) return;
     try {
       await deleteDataset(id);
-      navigate("/datasets");
+      navigate("/modelling/data");
     } catch (e) {
       setError(e.message);
     }
@@ -95,7 +95,7 @@ export default function DatasetPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Datasets", to: "/datasets" }]}
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Data", to: "/modelling/data" }]}
         title={ds ? itemName(ds) : "Dataset"}
         badges={ds?.is_sample && <Chip>Sample</Chip>}
         meta={ds && (

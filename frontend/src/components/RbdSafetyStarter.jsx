@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { SectionStarter } from "./SectionPage.jsx";
 import { openGuide } from "./HelpButton.jsx";
 
 const ShieldIcon = () => (
@@ -9,26 +9,24 @@ const ShieldIcon = () => (
   </svg>
 );
 
-// "Verify a safety function (SIL / PFDavg)" (#298), on the home, RBD and
-// Strategy pages: one slim card that opens the starter diagram — sensors
-// voting 1oo2, a logic solver and a final element — in safety mode, unsaved.
+// "Verify a safety function (SIL / PFDavg)" (#298): the RBD and Strategy
+// pages' starter banner. It opens the starter diagram — sensors voting 1oo2,
+// a logic solver and a final element — in safety mode, unsaved.
 export default function SafetyStarterCard() {
   return (
-    <div className="sif-card">
-      <span className="sif-card-ic"><ShieldIcon /></span>
-      <div className="sif-card-body">
-        <b>Verify a safety function (SIL / PFDavg)</b>
-        <span>
-          Sensors voting 1oo2, a logic solver and a final element: the PFDavg, the SIL it reaches (IEC 61511) and
-          which element dominates.{" "}
-          <button type="button" className="link" onClick={() => openGuide("verify-a-safety-function")}>
-            How it works
-          </button>
-        </span>
-      </div>
-      <Link className="sif-card-cta" to="/rbds/b" state={{ starter: "safety" }}>
-        Open the starter →
-      </Link>
-    </div>
+    <SectionStarter
+      icon={<ShieldIcon />}
+      title="Verify a safety function (SIL / PFDavg)"
+      body={<>
+        Sensors voting 1oo2, a logic solver and a final element: the PFDavg, the SIL it reaches (IEC 61511) and
+        which element dominates.{" "}
+        <button type="button" className="link" onClick={() => openGuide("verify-a-safety-function")}>
+          How it works
+        </button>
+      </>}
+      to="/rbds/b"
+      state={{ starter: "safety" }}
+      cta="Open the starter"
+    />
   );
 }
