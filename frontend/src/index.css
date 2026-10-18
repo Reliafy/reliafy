@@ -9044,3 +9044,13 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 .home-note { font-size: var(--fs-13); color: var(--muted); text-align: right; }
 .home-none { margin: 0; padding: 14px 16px; font-size: var(--fs-14); color: var(--muted); }
 .home .start-compact { margin-top: 28px; }
+
+/* Section landing pages: a compact header. The menu already says which
+   section you're in, so the one-word breadcrumb only shows on a phone. */
+.page-header.section-header .title-row h1 { font-size: var(--fs-24, 24px); }
+.page-header.section-header .ph-meta { margin-top: 2px; font-size: var(--fs-13); }
+.page-header.section-header + * { margin-top: 12px; }
+@media (min-width: 900px) {
+  .page-header.section-header .crumb { display: none; }
+  .page-header.section-header { align-items: center; }
+}
