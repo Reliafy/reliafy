@@ -367,7 +367,7 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
 
 # What a dataset holds, as tags on the Data list (planning #261). Detected
 # from the columns; the "use for" line says which analyses take it.
-TAGS = ("Recurrent", "Censoring", "Covariates", "Time-varying covariates", "Measurements")
+TAGS = ("Repeat failures", "Censoring", "Covariates", "Time-varying covariates", "Measurements")
 _CENSOR_NAME_RE = re.compile(r"(^c$|censor|status|failed|event|^c_)", re.IGNORECASE)
 _TIME_NAME_RE = re.compile(
     r"(^x$|^t$|^xl$|^xr$|^tl$|^tr$|hour|time|age|day|week|month|year|cycle|km|mile|start|stop|end|date)",
@@ -433,7 +433,7 @@ def detect_tags(df: pd.DataFrame) -> dict:
     # Several rows per unit with a status column are recurrent events, unless
     # the rows are periods of changing covariates (start/stop).
     if unit and censor and not start_stop and "Time-varying covariates" not in tags:
-        tags.add("Recurrent")
+        tags.add("Repeat failures")
     use_for: list[str] = []
     covs = "Covariates" in tags
     if "Measurements" in tags:
@@ -441,7 +441,7 @@ def detect_tags(df: pd.DataFrame) -> dict:
     elif censor and unit and ("Time-varying covariates" in tags or start_stop):
         use_for.append("Life model with time-varying covariates")
     elif censor and unit:
-        use_for.append("Recurrent (repairable) model" + (" with covariates" if covs else ""))
+        use_for.append("Repeat failures model" + (" with covariates" if covs else ""))
     elif censor or times:
         use_for.append("Life model" + (" with covariates" if covs else ""))
         use_for.append("Condition monitoring (the lifetimes)")

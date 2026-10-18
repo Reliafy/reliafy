@@ -22,8 +22,8 @@ def test_life_data_with_and_without_covariates():
 def test_recurrent_events():
     rows = [[f"HT-{u}", 1000 * k, 0 if k < 3 else 1, 180 + 40 * (u % 2)] for u in range(4) for k in range(1, 4)]
     out = tags(rows, ["truck", "engine_hours", "censored", "payload_t"])
-    assert out["tags"] == ["Recurrent", "Censoring", "Covariates"]
-    assert out["use_for"] == ["Recurrent (repairable) model with covariates"]
+    assert out["tags"] == ["Repeat failures", "Censoring", "Covariates"]
+    assert out["use_for"] == ["Repeat failures model with covariates"]
 
 
 def test_readings_are_measurements():
