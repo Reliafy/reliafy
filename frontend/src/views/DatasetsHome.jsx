@@ -7,6 +7,7 @@ import Chip from "../components/ui/Chip.jsx";
 import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { datasetPath } from "../sections.js";
+import { fitOptions } from "../datasetFit.js";
 import "../components/Datasets.css";
 
 const HELP = { guide: "fit-your-first-model" };
@@ -16,6 +17,27 @@ const FileIcon = () => (
     <path d="M14 3v5h5M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
   </svg>
 );
+
+function FitButton({ d }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const options = fitOptions(d);
+  const go = (to) => (e) => { e.stopPropagation(); navigate(to); };
+  return (
+    <div className="ds-fit" onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="secondary ds-fit-go" title={options[0].label} onClick={go(options[0].to)}>Fit</button>
+      {options.length > 1 && (
+        <button type="button" className="secondary ds-fit-more" aria-haspopup="menu" aria-expanded={open}
+          aria-label="More ways to fit" onClick={() => setOpen((o) => !o)}>▾</button>
+      )}
+      {open && (
+        <div className="ds-fit-menu" role="menu" onMouseLeave={() => setOpen(false)}>
+          {options.map((o) => <button type="button" key={o.label} role="menuitem" onClick={go(o.to)}>{o.label}</button>)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Modelling › Data: the datasets, uploaded, pasted or typed in; open, add or
 // delete. Datasets are content-addressed, so re-uploading a file reuses it.
@@ -94,6 +116,7 @@ export default function DatasetsHome() {
           <th key="h" className="lib-opt">Holds</th>,
           <th key="r" style={{ width: 200 }}>Units</th>,
           <th key="u" className="lib-opt" style={{ width: 170 }}><span className="sr-only">Used by</span></th>,
+          <th key="f" style={{ width: 90 }}><span className="sr-only">Fit</span></th>,
           <th key="t" className="lib-opt">Added</th>,
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
@@ -118,6 +141,7 @@ export default function DatasetsHome() {
                 <span className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</span>
               )}
             </td>
+            <td><FitButton d={d} /></td>
             <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
             {/* The row opens the dataset, so no separate Open button. */}
             <RowActions item={d} onDelete={() => onDelete(d)} />
