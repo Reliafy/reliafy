@@ -6412,7 +6412,7 @@ def compare_groups(
         df, time_column=time_column, group_column=group_column, censor_column=censor_column,
         count_column=count_column, cause_column=cause_column, c_invert=c_invert,
         # Inline data: errors name the arguments, not the frame's columns (#211).
-        names={"c": "`censored`", "n": "`counts`"} if data is not None else None)
+        names={"c": "`censored`", "n": "`counts`", "e": "`cause`"} if data is not None else None)
     result = compare_groups_service.compare_groups(
         prepared, groups=groups, reference=reference, tau=tau, unit=unit, group_column=label)
     verdict = result["verdict"]

@@ -31,9 +31,11 @@ top of the page. The panel on the right asks for:
 - **Split by**: the column that names each unit's group.
 - **Censor column (optional)**: which units failed and which are still
   running. Tick **1 = failed here (invert it)** if your file uses 1 for a
-  failure. With no censor column, every row counts as a failure.
+  failure. With no censor column, every row counts as a failure, unless you
+  choose a failure-mode column.
 - **Failure mode (optional)**: to test each mode separately as well (see
-  below).
+  below). With no censor column, a row with a blank mode is a unit still
+  running, just as when you fit a competing-risks model.
 - **Unit**, and an optional **Window** (more on that shortly).
 
 Press **Compare**. The sample *Valve seal life vs. temperature & load* split by
@@ -96,6 +98,11 @@ mode: does the groups' chance of failing *from that mode* differ, with the other
 modes still acting? A new supplier might cure seal leaks without touching
 bearing wear, and the all-cause test can hide that. The
 [competing risks](/guides/competing-risks) guide covers failure modes in full.
+
+A blank mode means the unit is still running, so it counts as censored in the
+curves and tests too, as it does in a competing-risks fit. With a censor column
+as well, a unit marked still running has no mode, whatever the column says,
+and a failure with no mode is an error to fix in the data.
 
 ### Make it a fair comparison
 

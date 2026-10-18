@@ -160,7 +160,7 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
           </label>
           <label className="calc-t">
             <span>Censor column (optional)</span>
-            <Select value={censorCol} onChange={pickCensor} options={optional("— none: all failed —")} />
+            <Select value={censorCol} onChange={pickCensor} options={optional(causeCol ? "— none: a blank mode is still running —" : "— none: all failed —")} />
           </label>
           {censorCol && (
             <label className="map-invert cg-invert">

@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 from surpyval import CompetingRisks, CompetingRisksProportionalHazards, CoxPH, FineGray, KaplanMeier, gray_test
 
-from backend.services.compare_groups import _label, _named, _p_text
+from backend.services.compare_groups import FailureModeError, _label, _named, _p_text, statuses_from_modes
 from backend.services.strategy import fmt_num
 from backend.units import unit_in_text
 
@@ -146,17 +146,14 @@ def prepare(df: pd.DataFrame, mapping: dict) -> dict:
             raise CompetingRisksError(
                 "Failure modes take units that failed and units still running only: left- or "
                 "interval-censored rows can't be split by mode.")
-        c = c.astype(int)
-        unnamed = int(sum(1 for i in range(len(c)) if c[i] == 0 and cause[i] is None))
-        if unnamed:
-            raise CompetingRisksError(
-                f"{_rows(unnamed)} failed with no failure mode in “{mapping[CAUSE_KEY]}”. Fill in each "
-                "failure's mode, or mark those units still running.")
-        # A unit still running has no mode, whatever the column says.
-        cause = [None if c[i] == 1 else cause[i] for i in range(len(c))]
     else:
-        # No status column: a blank mode is a unit still running.
-        c = np.array([1 if v is None else 0 for v in cause], dtype=int)
+        c = None
+    # A blank mode is a unit still running when there is no status column;
+    # the same helper sets compare groups' statuses, so the two agree.
+    try:
+        c, cause = statuses_from_modes(cause, c, f"“{mapping[CAUSE_KEY]}”")
+    except FailureModeError as exc:
+        raise CompetingRisksError(str(exc)) from exc
 
     if mapping.get("n"):
         n = pd.to_numeric(df[mapping["n"]], errors="coerce").to_numpy(dtype=float)
