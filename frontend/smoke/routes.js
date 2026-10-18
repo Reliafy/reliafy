@@ -123,5 +123,4 @@ export const REDIRECTS = [
   ["/datasets/list", "/modelling/data"],
   ["/datasets/d/sample-ds-bearings", "/modelling/data/sample-ds-bearings"],
   ["/datasets/d/sample-ds-bearings?compare=arm", "/modelling/data/sample-ds-bearings?compare=arm"],
-  ["/no-such-page", "/home"],
 ];

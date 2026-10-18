@@ -9025,7 +9025,8 @@ input.rbd-rename {
 @media (max-width: 720px) {
   .section-tablebar .grow { display: none; }
   .section-tablebar .count { flex-basis: 100%; }
-  .section-tablebar .search { flex: 1; min-width: 0; width: auto; }
+  .section-tablebar .search { flex: 1 1 140px; min-width: 0; width: auto; }
+  .section-tablebar .search input { min-width: 0; width: 100%; }
 }
 /* A menu button as a page's main action ("+ New analysis ▾"). */
 .ovm-label { gap: 6px; padding: 0 14px; white-space: nowrap; }
