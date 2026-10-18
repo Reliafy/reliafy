@@ -45,7 +45,12 @@ export function SectionHeader({ section, title, purpose, help, primary, actions,
       className="section-header"
       crumbs={parent ? [{ label: parent.label, to: parent.to }] : []}
       title={title}
-      meta={(purpose || help) && <>{purpose}{purpose && help ? " " : null}<ShowMe help={help} /></>}
+      meta={(purpose || help) && (
+        <span className="sh-purpose">
+          {purpose && <span className="sh-purpose-text" title={typeof purpose === "string" ? purpose : undefined}>{purpose}</span>}
+          <ShowMe help={help} />
+        </span>
+      )}
       primary={primary}
       actions={actions}
       menu={menu}

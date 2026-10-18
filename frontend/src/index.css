@@ -9054,3 +9054,14 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
   .page-header.section-header .crumb { display: none; }
   .page-header.section-header { align-items: center; }
 }
+/* The purpose and "Show me how" stay on one line on a wide screen: a long
+   purpose is cut with an ellipsis (its full text on hover) before the link wraps. */
+.page-header.section-header .ph-meta { max-width: none; }
+.sh-purpose { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; }
+.sh-purpose .wt-launch { flex: none; white-space: nowrap; }
+@media (min-width: 900px) {
+  .sh-purpose-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 899px) {
+  .sh-purpose { display: inline; }
+}
