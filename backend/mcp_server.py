@@ -364,6 +364,9 @@ no limit. The Free plan gets a few tool calls a month to try it (every tool exce
 within the Free storage limits). When a tool answers that a limit or plan stops it, tell the user plainly \
 what it says — the limit, when it resets and how to upgrade — and don't retry it. If they want to upgrade, \
 upgrade_link gives them a payment link to open themselves; nothing is charged until they complete it.
+
+If a tool gets in your way (an error, a confusing result, something missing), report it with report_problem \
+and tell the user you did; report_problem status says later whether it's fixed.
 """
 
 mcp = MCPServer(
@@ -422,7 +425,8 @@ _FLEET_TOOLS = {"list.fleets", "strategy.fleet_forecast", "list.fleet_alerts", "
 PRO_ONLY_TOOLS = _FIT_TOOLS | _FLEET_TOOLS
 # Never gated or counted: the way to Pro, seeing where the allowance stands
 # and the how-tos must work when a limit is hit.
-UNGATED_TOOLS = {"upgrade_link", "get.account", "guide"}
+UNGATED_TOOLS = {"upgrade_link", "get.account", "guide", "report_problem.report", "report_problem.status",
+                 "report_problem.triage", "report_problem.update"}
 # Not counted against the allowance: the in-connection stand-in for the
 # upload PUT, which isn't a tool call either (uploads create, which made the
 # slot, and the import that reads it are counted).
@@ -8249,6 +8253,87 @@ guide.__doc__ = (
     "to follow. Read the topic before a task you haven't done here yet. Topics: "
     + "; ".join(f"{name} ({summary.rstrip('.')})" for name, (summary, _) in mcp_guide.TOPICS.items()) + ".")
 _tool("guide", _READ, "How to use Reliafy")(guide)
+
+# ---- Problems agents report (agent_reports) --------------------------------------------------
+
+_REPORT = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False,
+                          open_world_hint=False)
+_ReportKind = Literal["error", "confusing_result", "missing_capability", "wrong_default", "docs", "other"]
+_ReportStatus = Literal["new", "acknowledged", "fixed", "wont_fix", "duplicate"]
+
+
+def _report_call(fn, *args, **kwargs):
+    from backend.services import agent_reports
+
+    try:
+        return fn(*args, **kwargs)
+    except agent_reports.Invalid as exc:
+        raise ToolError(str(exc)) from None
+    except LookupError as exc:
+        raise ToolError(str(exc)) from None
+
+
+def report_problem_report(
+    ctx: Context,
+    kind: _ReportKind,
+    summary: Annotated[str, Field(description="One line: what went wrong.")],
+    tool: Optional[str] = None,
+    report_action: Annotated[Optional[str], Field(description="The tool's action (or kind) involved.")] = None,
+    trying: Annotated[Optional[str], Field(description="What you were trying to do for the user.")] = None,
+    expected: Optional[str] = None,
+    happened: Annotated[Optional[str], Field(description="What happened instead (the error text, if any).")] = None,
+    detail: Annotated[Optional[str], Field(description="Anything else that helps reproduce it, e.g. the arguments.")] = None,
+) -> dict[str, Any]:
+    """File a report when a tool got in your way; returns its report_id. Tell the user."""
+    from backend.services import agent_reports
+
+    user = _caller(ctx)
+    out = _report_call(agent_reports.create, _db(), user["uid"], kind=kind, summary=summary, tool=tool,
+                       action=report_action, trying=trying, expected=expected, happened=happened, detail=detail,
+                       client=(getattr(ctx, "client_id", None) or None))
+    out["next"] = "report_problem status with this report_id shows whether it's been looked at and fixed."
+    return out
+
+
+def report_problem_status(ctx: Context, report_id: Optional[str] = None) -> dict[str, Any]:
+    """A report you filed (or your latest): new, acknowledged, fixed (fixed_in: the release), wont_fix or duplicate."""
+    from backend.services import agent_reports
+
+    return _report_call(agent_reports.mine, _db(), _caller(ctx)["uid"], report_id)
+
+
+def _operator(ctx: Context) -> None:
+    if not billing_service.is_admin_user(_caller(ctx)):
+        raise ToolError("Only Reliafy's operators can do that.")
+
+
+def report_problem_triage(ctx: Context, status: Optional[_ReportStatus] = None) -> dict[str, Any]:
+    """Operators: every user's reports, newest first."""
+    from backend.services import agent_reports
+
+    _operator(ctx)
+    return {**agent_reports.all_reports(_db(), status), "data_notice": DATA_NOTICE}
+
+
+def report_problem_update(
+    ctx: Context, report_id: str, status: Optional[_ReportStatus] = None,
+    note: Annotated[Optional[str], Field(description="Shown to the reporter.")] = None,
+    fixed_in: Annotated[Optional[str], Field(description="The release that fixed it, e.g. a date.")] = None,
+) -> dict[str, Any]:
+    """Operators: set a report's status, note and fixed_in."""
+    from backend.services import agent_reports
+
+    _operator(ctx)
+    return _report_call(agent_reports.update, _db(), report_id, status=status, note=note, fixed_in=fixed_in)
+
+
+_action_tool("report_problem", _REPORT, "Report a problem with these tools", "action", """Tell Reliafy's \
+developers when a tool got in your way, and check later whether it's fixed.""", {
+    "report": _act(report_problem_report),
+    "status": _act(report_problem_status),
+    "triage": _act(report_problem_triage),
+    "update": _act(report_problem_update),
+})
 
 _action_tool("get", _READ, "Read one saved item", "kind", """One saved item in full, by kind and id (ids come
     from list and from the tools that save). Reads change nothing.""", {
