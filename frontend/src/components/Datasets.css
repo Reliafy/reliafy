@@ -177,7 +177,9 @@
 .ds-menu-h + button, .ds-menu-h ~ button:not(.ds-menu-del) { padding-left: 18px; }
 .ds-menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
 .ds-menu .ds-menu-del { color: var(--danger, #c0392b); }
+.ds-units-h { width: 200px; }
 @media (max-width: 640px) {
+  .ds-units-h { width: 34%; }
   .section-tags { margin-left: 0; }
   .ds-units { white-space: normal; font-size: 12px; }
 }

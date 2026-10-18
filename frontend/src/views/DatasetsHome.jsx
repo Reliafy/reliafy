@@ -136,7 +136,7 @@ export default function DatasetsHome() {
         head={[
           <th key="d">Dataset</th>,
           <th key="h" className="lib-opt" style={{ width: 270 }}>Holds</th>,
-          <th key="r" style={{ width: 200 }}>Units</th>,
+          <th key="r" className="ds-units-h">Units</th>,
           <th key="t" className="lib-opt" style={{ width: 100 }}>Added</th>,
           <th key="a" style={{ width: 48 }}><span className="sr-only">Actions</span></th>,
         ]}
