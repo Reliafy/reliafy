@@ -86,3 +86,15 @@ The agent runs a real sandbox on a frontier model, so it consumes AI credits
 based on the work it does — meaningfully more than the assistant. Viewing past
 conversations is free; only sending a message costs anything. Your credit
 balance is shown at the top of the page.
+
+## Other ways to automate
+
+The agent works inside Reliafy. To drive the same analyses from outside it,
+there are two other routes:
+
+- **Claude, or another AI assistant, through MCP.** Connect it to Reliafy and
+  ask in conversation; it uses your workspace's tools directly. See
+  [Claude (MCP)](/api-docs/mcp).
+- **Your own scripts.** The API, the `reliafy` command line and the Python
+  client run the same tools from a notebook or a nightly job. See
+  [use Reliafy from scripts](/guides/use-the-api-and-cli).

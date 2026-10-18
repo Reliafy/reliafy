@@ -111,6 +111,43 @@ Treat the acceleration factor as a sanity check too. If it comes out
 implausibly large, you're either extrapolating much further than the data
 supports or you've fitted the wrong relationship.
 
+## Plan the next accelerated test
+
+A fit also tells you how to run the next test better. Under the results of a
+saved model, **Plan the next accelerated test from this fit** opens
+**Strategy → Test planning** on the
+[Accelerated test](/strategy/test-planning/accelerated) tab, with the fit's
+life-stress model, its coefficients, its shape and units already filled in, and
+the highest stress you tested as the **Highest test stress**.
+
+The trade-off it settles is simple. A higher stress gives failures quickly, but
+the further the test stress is from normal use, the further the answer is
+extrapolated, and the less precise it is. The plan picks the lowest test stress
+and splits the units between the stresses so the life at use comes out as
+precisely as the test allows.
+
+Give the **Use stress** and press **Compute**. For the sample insulating-fluid
+model (failures against voltage, in minutes), a use stress of **20 kV**, 40
+units and a 1,000-minute test give:
+
+> Test **34 at 23.6 kV**, **6 at 36 kV**, each for 1,000 minutes. Expect about
+> 16.9 failures in all. The test estimates B10 at the use stress (20 kV: 2,504
+> minutes on these planning values) to within a factor of 2.79 at 90%
+> confidence.
+
+![The accelerated test plan, started from a fitted model](/guides/img/alt-05-plan.png)
+
+Most units go to the lower stress: it is closer to use, but fewer of its units
+fail, so it needs more of them. The highest stress needs only a few, because
+they fail quickly. **Stress levels** offers 3 or 4
+levels instead of 2: a little less precise, but the middle level shows whether
+the life-stress model really holds. **Check a test of my own** works out what a
+test you have already designed would give.
+
+Plans take one stress, a Weibull or lognormal distribution, and the Arrhenius,
+Eyring or inverse power law model. Without a fit, open the tab directly and type
+planning values from a similar part.
+
 ## Where to go next
 
 The relationships, the activation-energy interpretation, and a worked

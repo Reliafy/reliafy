@@ -60,7 +60,7 @@ re-uploading.
 
 ![The new-model flow: drop a CSV or pick a saved dataset](/guides/img/fit-01-new.png)
 
-If your file has no header row, upload it under **Datasets → New dataset** and
+If your file has no header row, upload it under [Datasets](/datasets) → **New dataset** and
 tick **No header row**: Reliafy names the columns `col 1`, `col 2`, … so the
 first row stays data rather than being eaten as titles.
 
