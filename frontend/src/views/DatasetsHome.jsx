@@ -10,6 +10,8 @@ import { datasetPath } from "../sections.js";
 import { fitOptions } from "../datasetFit.js";
 import useMenuDismiss from "../components/useMenuDismiss.js";
 import "../components/Datasets.css";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { guide: "fit-your-first-model" };
 
@@ -87,11 +89,9 @@ export default function DatasetsHome() {
     navigate(datasetPath(ds.id), ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
   };
 
+  const confirm = useConfirm();
   const onDelete = async (d) => {
-    const msg = d.is_sample
-      ? `Remove the sample “${itemName(d)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete dataset “${d.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(d, "dataset", { name: itemName(d) })))) return;
     try {
       await deleteDataset(d.id);
       refresh();

@@ -10,6 +10,8 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 import { dtypeLabel, nameSaysDistribution } from "../datasetGuess.js";
 import "../components/Datasets.css";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 // Where each kind of model fitted to a dataset opens.
 const MODEL_PATH = {
@@ -62,8 +64,9 @@ export default function DatasetPage() {
     if (location.state?.reused) window.history.replaceState({}, "");
   }, [location.state]);
 
+  const confirm = useConfirm();
   const onDelete = async () => {
-    if (!window.confirm(`Delete dataset “${ds.name}”?`)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(ds, "dataset", { name: itemName(ds) })))) return;
     try {
       await deleteDataset(id);
       navigate("/modelling/data");

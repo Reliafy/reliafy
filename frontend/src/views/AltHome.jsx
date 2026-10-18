@@ -4,6 +4,8 @@ import AltLibrary from "./AltLibrary.jsx";
 import { listAltModels, deleteAltModel } from "../api.js";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { guide: "accelerated-life-testing" };
 
@@ -17,11 +19,9 @@ export default function AltHome() {
   const refresh = () => listAltModels().then((r) => setModels(r.models)).catch(() => setModels([]));
   useEffect(() => { refresh(); }, []);
 
+  const confirm = useConfirm();
   const onDelete = async (m) => {
-    const msg = m.is_sample
-      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${m.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(m, "model", { name: itemName(m) })))) return;
     try {
       await deleteAltModel(m.id);
       refresh();

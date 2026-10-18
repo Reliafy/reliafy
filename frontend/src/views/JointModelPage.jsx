@@ -7,6 +7,8 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 // A saved condition monitoring model: the result view, Download as Python,
 // rename, share and delete.
@@ -21,8 +23,9 @@ export default function JointModelPage() {
     getJointModel(id).then(setModel).catch((e) => setError(e.message));
   }, [id]);
 
+  const confirm = useConfirm();
   const onDelete = async () => {
-    if (!window.confirm(model.read_only ? `Remove “${model.name}” from your view?` : `Delete “${model.name}”?`)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     try {
       await deleteJointModel(id);
       navigate("/modelling/joint");

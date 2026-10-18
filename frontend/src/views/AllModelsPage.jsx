@@ -7,6 +7,8 @@ import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { useActivation } from "../components/FirstRun.jsx";
 import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 export const MODELLING_HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
@@ -24,11 +26,9 @@ export default function AllModelsPage() {
   useEffect(() => load(), [load]);
   useActivation(rows);
 
+  const confirm = useConfirm();
   const onDelete = async (row) => {
-    const msg = row.is_sample
-      ? `Remove the sample “${itemName(row)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${row.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(row, "model", { name: itemName(row) })))) return;
     try {
       await deleteAnyModel(row);
       load();

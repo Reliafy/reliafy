@@ -22,6 +22,7 @@ import {
 } from "../api.js";
 import { AUTH_DISABLED } from "../firebase.js";
 import Tabs from "../components/ui/Tabs.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -170,8 +171,9 @@ export default function SettingsPage() {
       setSamplesBusy("");
     }
   };
+  const confirm = useConfirm();
   const onRemoveAll = async () => {
-    if (!window.confirm("Remove all sample data from your workspace? The samples stay available to restore any time.")) return;
+    if (!(await confirm({ title: "Remove all sample data?", body: "The sample datasets, models, diagrams and studies leave your workspace. Your own work isn't touched, and Restore sample data brings them back any time.", confirmLabel: "Remove samples" }))) return;
     setSamplesBusy("remove");
     try {
       await removeSamples();

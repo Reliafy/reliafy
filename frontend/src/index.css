@@ -2161,6 +2161,15 @@ h1 .chip,
   margin-left: auto;
 }
 
+/* The app's confirm dialog (ConfirmProvider.jsx). */
+.confirm-body {
+  margin: 0;
+  line-height: 1.5;
+}
+.modal-foot > .row.confirm-actions {
+  gap: 8px;
+}
+
 /* Stepper */
 .steps {
   display: flex;

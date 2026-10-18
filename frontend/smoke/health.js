@@ -32,6 +32,12 @@ export const test = base.extend({
       const text = `${msg.text()}${where ? ` (${where})` : ""}`;
       if (!BENIGN_CONSOLE.some((re) => re.test(text))) problems.push(`console: ${text}`);
     });
+    // The browser's own dialogs are never used (the app has its own confirm
+    // dialog): one opening is a failure, dismissed so the test doesn't hang.
+    page.on("dialog", (dialog) => {
+      problems.push(`native ${dialog.type()} dialog: ${dialog.message()}`);
+      dialog.dismiss().catch(() => {});
+    });
     // A server error behind the page is a failure even if the page copes.
     page.on("response", (res) => {
       if (res.status() >= 500) problems.push(`${res.status()} from ${res.request().method()} ${res.url()}`);

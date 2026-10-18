@@ -168,3 +168,25 @@ test("move a photo from a work order to its position", async ({ page, problems }
   await expect(page.getByRole("img", { name: "Smoke nameplate" })).toBeVisible();
   await expectHealthy(page, problems, { label: "position with the moved photo" });
 });
+
+// Deletes ask in the app's own dialog, never the browser's: it names the
+// action, says what happens (a sample comes back from Settings), starts on
+// Cancel, and Escape or Cancel leaves everything as it was.
+test("removing a sample asks in the app's confirm dialog", async ({ page, problems }) => {
+  await open(page, "/rbds");
+  const remove = page.getByRole("button", { name: "Remove from my view" }).first();
+  const row = page.getByRole("row").filter({ has: remove }).first();
+  await remove.click();
+  const dialog = page.getByRole("alertdialog", { name: "Remove this sample?" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Settings › Sample data");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await expect(dialog.getByRole("button", { name: "Remove sample" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await remove.click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(row).toBeVisible();
+  expect(problems).toEqual([]);
+});

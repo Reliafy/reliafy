@@ -8,6 +8,8 @@ import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 import { CompareIcon, CostIcon, StrategyIcon, TestIcon } from "../components/icons.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -42,11 +44,9 @@ export default function StrategyAnalyses() {
   }, []);
   useEffect(() => refresh(), [refresh]);
 
+  const confirm = useConfirm();
   const onDelete = async (a) => {
-    const msg = a.is_sample
-      ? `Remove the sample “${itemName(a)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete analysis “${a.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(a, "analysis", { name: itemName(a) })))) return;
     try {
       await deleteStrategyAnalysis(a.id);
       refresh();

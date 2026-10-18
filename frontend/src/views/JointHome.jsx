@@ -6,6 +6,8 @@ import { CATEGORY } from "../plotTheme.js";
 import Chip from "../components/ui/Chip.jsx";
 import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const JOINT_COLOR = CATEGORY.blue;
 const HELP = { guide: "condition-based-risk" };
@@ -20,11 +22,9 @@ export default function JointHome() {
   const refresh = () => listJointModels().then((r) => setModels(r.models)).catch(() => setModels([]));
   useEffect(() => { refresh(); }, []);
 
+  const confirm = useConfirm();
   const onDelete = async (m) => {
-    const msg = m.is_sample
-      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${m.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(m, "model", { name: itemName(m) })))) return;
     try {
       await deleteJointModel(m.id);
       refresh();

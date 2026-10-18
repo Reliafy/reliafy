@@ -16,6 +16,8 @@ import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { itemName } from "../components/LibRows";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteConfirm } from "../confirm.js";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -106,8 +108,9 @@ export default function StrategyTracking() {
     }
   };
 
+  const confirm = useConfirm();
   const onDeleteItem = async (it) => {
-    if (!window.confirm(`Delete tracked item “${it.name}”?`)) return;
+    if (!(await confirm(deleteConfirm({ kind: "tracked item", name: it.name })))) return;
     await deleteTrackedItem(it.model_id, it.id);
     refresh();
   };

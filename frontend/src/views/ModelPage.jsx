@@ -10,6 +10,8 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 import ModelNextSteps from "../components/ModelNextSteps.jsx";
 import { rememberModel } from "../modelNext.js";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 // Reopen a saved model by id and render its cached results. The answer card
 // names the distribution, so the header doesn't.
@@ -32,8 +34,9 @@ export default function ModelPage() {
       .catch((err) => setError(err.message));
   }, [id]);
 
+  const confirm = useConfirm();
   const onDelete = async () => {
-    if (!window.confirm(`Delete “${model.name}”?`)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     await deleteModel(id);
     navigate("/modelling/life");
   };

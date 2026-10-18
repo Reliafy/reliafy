@@ -9,6 +9,8 @@ import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { walkthrough: "rbd", guide: "build-an-rbd" };
 
@@ -81,11 +83,9 @@ export default function RbdHome() {
 
   useEffect(() => refresh(), [refresh]);
 
+  const confirm = useConfirm();
   const onDelete = async (r) => {
-    const msg = r.is_sample
-      ? `Remove the sample “${itemName(r)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete RBD “${r.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(r, "diagram", { name: itemName(r) })))) return;
     try {
       await deleteRbd(r.id);
       refresh();
