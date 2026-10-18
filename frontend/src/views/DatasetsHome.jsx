@@ -136,7 +136,8 @@ export default function DatasetsHome() {
         head={[
           <th key="d">Dataset</th>,
           <th key="h" className="lib-opt" style={{ width: 270 }}>Holds</th>,
-          <th key="r" className="ds-units-h">Units</th>,
+          <th key="r" className="ds-units-h">Size</th>,
+          <th key="tu" className="lib-opt" style={{ width: 90 }}>Time unit</th>,
           <th key="t" className="lib-opt" style={{ width: 100 }}>Added</th>,
           <th key="a" style={{ width: 48 }}><span className="sr-only">Actions</span></th>,
         ]}
@@ -159,6 +160,7 @@ export default function DatasetsHome() {
               {d.summary || `${(d.n_rows ?? 0).toLocaleString()} rows`}
               {d.n_models > 0 && <div className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</div>}
             </td>
+            <td className="lib-opt ds-tu">{d.time_unit ? `${d.time_unit}s` : <span className="ds-tu-none">—</span>}</td>
             <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
             <RowMenu d={d} onRename={onRename} onDelete={onDelete} />
           </tr>

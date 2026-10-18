@@ -183,3 +183,5 @@
   .section-tags { margin-left: 0; }
   .ds-units { white-space: normal; font-size: 12px; }
 }
+.ds-tu { font-size: 13px; color: var(--muted); }
+.ds-tu-none { color: var(--faint); }

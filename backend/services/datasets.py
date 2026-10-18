@@ -456,7 +456,31 @@ def detect_tags(df: pd.DataFrame) -> dict:
         use_for.append("Life model" + (" with covariates" if covs else ""))
         use_for.append("Condition monitoring (the lifetimes)")
     out_tags = [t for t in TAGS if t in tags]
-    return {"tags": out_tags, "use_for": use_for, "summary": _summary(df, unit, censor, out_tags)}
+    return {"tags": out_tags, "use_for": use_for, "summary": _summary(df, unit, censor, out_tags),
+            "time_unit": _time_unit(times)}
+
+
+# Units a life or usage axis is measured in, as SurPyval names them.
+_TIME_UNITS = frozenset({"second", "minute", "hour", "day", "week", "month", "year",
+                         "cycle", "kilometer", "mile", "meter"})
+
+
+def _time_unit(times: list[str]) -> str | None:
+    """The unit the time column names, as SurPyval normalises it ("engine_hours"
+    → "hour"), or None. A suggestion for fitting; the model stores the unit."""
+    try:
+        from surpyval.utils.units import normalise_unit
+    except ImportError:  # an older SurPyval: no units
+        return None
+    for col in times:
+        for word in re.split(r"[_\s\-()/]+", col):
+            try:
+                u = normalise_unit(word) if word else None
+            except Exception:  # noqa: BLE001 - not a unit
+                u = None
+            if u in _TIME_UNITS:
+                return u
+    return None
 
 
 _GENERIC_ID_RE = re.compile(r"^(id|ids|unit|units|item|items|serial|sn|tag|no|number|name|asset_id|unit_id|item_id)$", re.IGNORECASE)
@@ -521,7 +545,7 @@ def dataset_tags(dataset: Dataset) -> dict:
         try:
             _TAG_CACHE[key] = detect_tags(load_dataframe(dataset))
         except Exception:  # noqa: BLE001 - an unreadable file just has no tags
-            _TAG_CACHE[key] = {"tags": [], "use_for": [], "summary": ""}
+            _TAG_CACHE[key] = {"tags": [], "use_for": [], "summary": "", "time_unit": None}
         if len(_TAG_CACHE) > 5000:
             _TAG_CACHE.pop(next(iter(_TAG_CACHE)))
     return _TAG_CACHE[key]
