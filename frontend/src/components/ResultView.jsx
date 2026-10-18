@@ -50,6 +50,11 @@ const baselineOf = (result) => ({
 // Models saved before #233 carry a Wilson 95% interval and no confidence /
 // method; newer ones carry exact (Clopper-Pearson) bounds at their confidence,
 // the one-sided reliability bound and, from several batches, the batches.
+// What a per-demand figure is for. Failure finding takes a life model over
+// time, not a per-demand probability, so do not point there.
+const PER_DEMAND_USE = "For one-shot and protective equipment: the chance it works when called on. "
+  + "A failure-finding interval needs a life model over time instead.";
+
 function PerDemandPanel({ result }) {
   const d = result.per_demand || {};
   const color = distColor(result.distribution);
@@ -109,21 +114,18 @@ function PerDemandPanel({ result }) {
           Success run — {d.demands} demand{d.demands === 1 ? "" : "s"} with zero failures
           demonstrates reliability <b>≥ {pct(d.success_run.reliability_lower)}</b> at{" "}
           {Math.round(d.success_run.confidence * 100)}% confidence (one-sided lower bound,
-          R ≥ (1 − C)<sup>1/n</sup>). For one-shot and protective equipment — feeds
-          failure-finding intervals.
+          R ≥ (1 − C)<sup>1/n</sup>). {PER_DEMAND_USE}
         </p>
       ) : exact ? (
         <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
           Estimated from {d.failures} failure{d.failures === 1 ? "" : "s"} in {d.demands} demands
           {batches.length > 1 ? `, pooled over ${batches.length} batches (one failure probability for all)` : ""}.
-          Bounds are exact (Clopper-Pearson) at {c}% confidence. For one-shot and protective
-          equipment — feeds failure-finding intervals.
+          Bounds are exact (Clopper-Pearson) at {c}% confidence. {PER_DEMAND_USE}
         </p>
       ) : (
         <p className="muted-line" style={{ margin: "0.5rem 0 0" }}>
           Estimated from {d.failures} failure{d.failures === 1 ? "" : "s"} in {d.demands} demands
-          (Binomial, Wilson 95% interval). For one-shot and protective equipment — feeds
-          failure-finding intervals.
+          (Binomial, Wilson 95% interval). {PER_DEMAND_USE}
         </p>
       )}
     </>
