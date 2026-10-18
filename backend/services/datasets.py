@@ -367,7 +367,7 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
 
 # What a dataset holds, as tags on the Data list (planning #261). Detected
 # from the columns; the "use for" line says which analyses take it.
-TAGS = ("Repeat failures", "Censoring", "Covariates", "Time-varying covariates", "Measurements")
+TAGS = ("Lifetime data", "Repeat failures", "Covariates", "Time-varying covariates", "Measurements")
 _CENSOR_NAME_RE = re.compile(r"(^c$|censor|status|failed|event|^c_)", re.IGNORECASE)
 _TIME_NAME_RE = re.compile(
     r"(^x$|^t$|^xl$|^xr$|^tl$|^tr$|hour|time|age|day|week|month|year|cycle|km|mile|start|stop|end|date)",
@@ -418,8 +418,6 @@ def detect_tags(df: pd.DataFrame) -> dict:
     # A text column unique on every row names the rows (a serial, a tag): not a covariate.
     extra = [str(c) for c in df.columns if str(c) not in (unit, censor, *times)
              and not (not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique(dropna=True) == len(df))]
-    if censor:
-        tags.add("Censoring")
     for c in extra:
         varies = bool(unit) and bool((df.groupby(unit)[c].nunique(dropna=True) > 1).any())
         if not varies:
@@ -434,6 +432,8 @@ def detect_tags(df: pd.DataFrame) -> dict:
     # the rows are periods of changing covariates (start/stop).
     if unit and censor and not start_stop and "Time-varying covariates" not in tags:
         tags.add("Repeat failures")
+    elif "Measurements" not in tags and (censor or times):
+        tags.add("Lifetime data")  # one life per unit (or per start/stop period)
     use_for: list[str] = []
     covs = "Covariates" in tags
     if "Measurements" in tags:

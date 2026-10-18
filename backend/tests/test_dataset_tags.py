@@ -11,18 +11,18 @@ def tags(rows, cols):
 
 def test_life_data_with_and_without_covariates():
     plain = tags([[f"P-{i}", 100 + i, i % 2] for i in range(10)], ["pump", "hours", "censored"])
-    assert plain["tags"] == ["Censoring"]
+    assert plain["tags"] == ["Lifetime data"]
     assert plain["use_for"][0] == "Life model"
     cov = tags([[f"P-{i}", 100 + i, i % 2, 60 + i % 3, "North"] for i in range(10)],
                ["pump", "hours", "censored", "load_pct", "site"])
-    assert cov["tags"] == ["Censoring", "Covariates"]
+    assert cov["tags"] == ["Lifetime data", "Covariates"]
     assert cov["use_for"][0] == "Life model with covariates"
 
 
 def test_recurrent_events():
     rows = [[f"HT-{u}", 1000 * k, 0 if k < 3 else 1, 180 + 40 * (u % 2)] for u in range(4) for k in range(1, 4)]
     out = tags(rows, ["truck", "engine_hours", "censored", "payload_t"])
-    assert out["tags"] == ["Repeat failures", "Censoring", "Covariates"]
+    assert out["tags"] == ["Repeat failures", "Covariates"]
     assert out["use_for"] == ["Repeat failures model with covariates"]
 
 
@@ -37,5 +37,5 @@ def test_start_stop_rows_with_changing_load():
     rows = [[f"TX-{u}", 2000 * k, 2000 * (k + 1), 1 if k < 2 else 0, [55, 70, 85][(u + k) % 3]]
             for u in range(4) for k in range(3)]
     out = tags(rows, ["transformer", "start_hours", "stop_hours", "censored", "load_pct"])
-    assert out["tags"] == ["Censoring", "Time-varying covariates"]
+    assert out["tags"] == ["Lifetime data", "Time-varying covariates"]
     assert out["use_for"] == ["Life model with time-varying covariates"]
