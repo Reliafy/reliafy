@@ -18,8 +18,7 @@ const FileIcon = () => (
   </svg>
 );
 
-// Each row: a quick "Fit" for the usual fit, and a ⋯ menu with every fit, the
-// data (open, rename) and delete.
+// Each row's ⋯ menu: every fit for this data, the data (open, rename) and delete.
 function RowMenu({ d, onRename, onDelete }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -28,7 +27,6 @@ function RowMenu({ d, onRename, onDelete }) {
   return (
     <td className="lib-actions">
       <div className="ds-acts" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setOpen(false)}>
-        <button type="button" className="ds-fit-go" title={options[0].label} onClick={act(() => navigate(options[0].to))}>Fit</button>
         <button type="button" className="ds-more" aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
           onClick={() => setOpen((o) => !o)}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></svg>
@@ -139,7 +137,7 @@ export default function DatasetsHome() {
           <th key="h" className="lib-opt" style={{ width: 270 }}>Holds</th>,
           <th key="r" style={{ width: 200 }}>Units</th>,
           <th key="t" className="lib-opt" style={{ width: 100 }}>Added</th>,
-          <th key="a" style={{ width: 96 }}><span className="sr-only">Actions</span></th>,
+          <th key="a" style={{ width: 48 }}><span className="sr-only">Actions</span></th>,
         ]}
         render={(d) => (
           <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>

@@ -1,5 +1,5 @@
-// What a dataset can be fitted with, from its tags (#261): the first is the
-// Fit button, the rest are in its menu.
+// What a dataset can be fitted with, from its tags (#261), usual fit first:
+// the Data list's row menu.
 export function fitOptions(d) {
   const id = encodeURIComponent(d.id);
   const t = d.tags || [];

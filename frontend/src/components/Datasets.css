@@ -165,7 +165,6 @@
 .ds-units { font-size: 13px; white-space: nowrap; color: var(--muted); }
 .ds-acts { position: relative; display: inline-flex; align-items: center; gap: 4px; }
 .ds-acts > button { background: none; border: 1px solid transparent; border-radius: 6px; min-height: 0; box-shadow: none; padding: 3px 8px; font-size: 13px; }
-.ds-acts .ds-fit-go { color: var(--acc-d, inherit); font-weight: 500; border-color: var(--line); background: var(--surf); padding: 3px 12px; }
 .ds-acts .ds-more { color: var(--muted); fill: currentColor; padding: 3px 5px; }
 .ds-acts > button:hover { background: var(--surf-2); }
 .ds-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 260px;
