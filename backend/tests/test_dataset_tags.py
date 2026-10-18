@@ -19,17 +19,17 @@ def test_life_data_with_and_without_covariates():
     assert cov["use_for"][0] == "Life model with covariates"
 
 
-def test_recurrent_events_are_items():
+def test_recurrent_events():
     rows = [[f"HT-{u}", 1000 * k, 0 if k < 3 else 1, 180 + 40 * (u % 2)] for u in range(4) for k in range(1, 4)]
     out = tags(rows, ["truck", "engine_hours", "censored", "payload_t"])
-    assert out["tags"] == ["Items", "Censoring", "Covariates"]
+    assert out["tags"] == ["Recurrent", "Censoring", "Covariates"]
     assert out["use_for"] == ["Recurrent (repairable) model with covariates"]
 
 
 def test_readings_are_measurements():
     rows = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u] for u in range(4) for k in range(4)]
     out = tags(rows, ["bearing", "hours", "vibration_mm_s"])
-    assert out["tags"] == ["Items", "Measurements"]
+    assert out["tags"] == ["Measurements"]
     assert "Condition monitoring (the readings)" in out["use_for"]
 
 
@@ -37,5 +37,5 @@ def test_start_stop_rows_with_changing_load():
     rows = [[f"TX-{u}", 2000 * k, 2000 * (k + 1), 1 if k < 2 else 0, [55, 70, 85][(u + k) % 3]]
             for u in range(4) for k in range(3)]
     out = tags(rows, ["transformer", "start_hours", "stop_hours", "censored", "load_pct"])
-    assert out["tags"] == ["Items", "Censoring", "Time-varying covariates"]
+    assert out["tags"] == ["Censoring", "Time-varying covariates"]
     assert out["use_for"] == ["Life model with time-varying covariates"]
