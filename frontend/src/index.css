@@ -6682,11 +6682,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .price-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 18px;
   align-items: stretch;
 }
-@media (max-width: 900px) { .price-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1180px) { .price-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .price-grid { grid-template-columns: 1fr; } }
 
 .price-card {
   position: relative;
