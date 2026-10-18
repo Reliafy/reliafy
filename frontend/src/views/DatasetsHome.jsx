@@ -35,6 +35,7 @@ function RowMenu({ d, onRename, onDelete }) {
           <div className="ds-menu" role="menu">
             <div className="ds-menu-h">Fit a model</div>
             {options.map((o) => <button type="button" key={o.label} role="menuitem" onClick={act(() => navigate(o.to))}>{o.label}</button>)}
+            <div className="ds-menu-sep" />
             <div className="ds-menu-h">Data</div>
             <button type="button" role="menuitem" onClick={act(() => navigate(datasetPath(d.id)))}>Open and view the data</button>
             {!d.read_only && <button type="button" role="menuitem" onClick={act(() => onRename(d))}>Rename</button>}
