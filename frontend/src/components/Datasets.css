@@ -157,16 +157,17 @@
 .ds-more[open] > summary { margin-bottom: var(--sp-2); }
 .ds-more-body { display: flex; flex-direction: column; gap: var(--sp-2); }
 
-/* What a dataset holds (#261): a Holds column, and the list's tag filter. */
-.ds-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+/* What a dataset holds (#261): small tags on one line, the units count, and Fit. */
+.ds-tags { display: flex; flex-wrap: nowrap; gap: 4px; overflow: hidden; }
+.ds-tags .chip { font-size: 11px; padding: 1px 6px; white-space: nowrap; }
 .section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
 .section-tags .linkish { font-size: 12px; }
-.ds-units { font-size: 13px; white-space: nowrap; }
-.ds-fit { position: relative; display: inline-flex; gap: 2px; }
-.ds-fit-menu { position: absolute; right: 0; top: 100%; z-index: 20; min-width: 240px; margin-top: 4px;
+.ds-units { font-size: 13px; white-space: nowrap; color: var(--muted); }
+.ds-fit { position: relative; display: inline-flex; border: 1px solid var(--line); border-radius: 6px; background: var(--surf); }
+.ds-fit button { background: none; border: 0; color: var(--acc-d, inherit); font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: 6px; min-height: 0; box-shadow: none; }
+.ds-fit .ds-fit-more { padding: 3px 7px; border-left: 1px solid var(--line); border-radius: 0 6px 6px 0; color: var(--muted); }
+.ds-fit button:hover { background: var(--surf-2); }
+.ds-fit-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 250px;
   display: flex; flex-direction: column; background: var(--surf); border: 1px solid var(--line);
-  border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12); padding: 4px; }
-.ds-fit button { padding: 4px 12px; font-size: 13px; }
-.ds-fit .ds-fit-more { padding: 4px 6px; }
-.ds-fit-menu button { text-align: left; background: none; border: 0; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: inherit; }
-.ds-fit-menu button:hover, .ds-fit-menu button:focus { background: var(--surf-2); }
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; }
+.ds-fit-menu button { text-align: left; color: inherit; font-weight: 400; padding: 8px 10px; border-left: 0; }

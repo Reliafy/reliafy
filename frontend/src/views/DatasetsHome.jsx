@@ -18,20 +18,24 @@ const FileIcon = () => (
   </svg>
 );
 
+// One control: "Fit" opens the usual fit; the chevron (only when there's a
+// choice) lists every fit for this data.
 function FitButton({ d }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const options = fitOptions(d);
   const go = (to) => (e) => { e.stopPropagation(); navigate(to); };
   return (
-    <div className="ds-fit" onClick={(e) => e.stopPropagation()}>
-      <button type="button" className="secondary ds-fit-go" title={options[0].label} onClick={go(options[0].to)}>Fit</button>
+    <div className="ds-fit" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setOpen(false)}>
+      <button type="button" className="ds-fit-go" title={options[0].label} onClick={go(options[0].to)}>Fit</button>
       {options.length > 1 && (
-        <button type="button" className="secondary ds-fit-more" aria-haspopup="menu" aria-expanded={open}
-          aria-label="More ways to fit" onClick={() => setOpen((o) => !o)}>▾</button>
+        <button type="button" className="ds-fit-more" aria-haspopup="menu" aria-expanded={open}
+          aria-label="More ways to fit" onClick={() => setOpen((o) => !o)}>
+          <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
       )}
       {open && (
-        <div className="ds-fit-menu" role="menu" onMouseLeave={() => setOpen(false)}>
+        <div className="ds-fit-menu" role="menu">
           {options.map((o) => <button type="button" key={o.label} role="menuitem" onClick={go(o.to)}>{o.label}</button>)}
         </div>
       )}
@@ -112,11 +116,11 @@ export default function DatasetsHome() {
           action: newDataset,
         }}
         head={[
-          <th key="d" style={{ width: "34%" }}>Dataset</th>,
-          <th key="h" className="lib-opt">Holds</th>,
+          <th key="d" style={{ width: "32%" }}>Dataset</th>,
+          <th key="h" className="lib-opt" style={{ width: "30%" }}>Holds</th>,
           <th key="r" style={{ width: 200 }}>Units</th>,
           <th key="u" className="lib-opt" style={{ width: 170 }}><span className="sr-only">Used by</span></th>,
-          <th key="f" style={{ width: 90 }}><span className="sr-only">Fit</span></th>,
+          <th key="f" style={{ width: 80 }}><span className="sr-only">Fit</span></th>,
           <th key="t" className="lib-opt">Added</th>,
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
