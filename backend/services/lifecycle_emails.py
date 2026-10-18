@@ -152,7 +152,7 @@ Three ways to start:
 2. [Paste failure times](/modelling/new?mode=paste) from a spreadsheet and fit a distribution. Put a 1 next to any unit that's still running.
 3. [Open a sample block diagram](/rbds/b/sample-rbd-pump-station), a controller and two pumps, and change it to match your system.
 
-If you use Claude or another AI agent, you can [connect it to Reliafy over MCP](/api-docs#mcp) and work from there.
+If you use Claude or another AI agent, you can [connect it to Reliafy over MCP](/api-docs/mcp) and work from there.
 
 Reply to this email if you get stuck or something doesn't work. It comes to me.
 

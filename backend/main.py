@@ -665,7 +665,8 @@ def is_spa_route(full_path: str) -> bool:
 # page (BlogPost, WhatsNewPost, LearnArticle, GuidePage, ReferenceFamily): an
 # unknown or not-yet-dated slug gets that page from the shell, with a 404.
 CONTENT_COLLECTIONS = frozenset({"blog", "whats-new", "learn", "guides", "reference"})
-# Single prerendered pages: nothing lives beneath them.
+# Single prerendered pages: nothing lives beneath them but their own
+# prerendered pages (the API docs' /api-docs/<page>), served before this check.
 CONTENT_PAGES = frozenset({
     "api-docs", "terms", "privacy",
     "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",

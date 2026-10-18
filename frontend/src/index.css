@@ -5388,6 +5388,30 @@ button.cal-chip.wide { min-height: 44px; padding: 6px 10px; font-size: var(--fs-
 }
 .api-args { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 3px; }
 .api-args code { font-family: var(--mono); font-size: var(--fs-12); overflow-wrap: anywhere; }
+.api-tool-flat {
+  padding: 8px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: var(--fs-14);
+}
+.api-tool-flat code { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+/* An endpoint that folds: the head (path and description) is the summary. */
+.api-fold > summary { cursor: pointer; list-style: none; position: relative; padding-right: 22px; }
+.api-fold > summary::-webkit-details-marker { display: none; }
+.api-fold > summary::after {
+  content: "+";
+  position: absolute;
+  right: 2px;
+  top: 0;
+  color: var(--muted);
+  font-size: var(--fs-16);
+}
+.api-fold[open] > summary::after { content: "−"; }
+.api-fold > summary .api-ep-desc { margin-bottom: 0; }
+.api-fold[open] > summary .api-ep-desc { margin-bottom: 0.5rem; }
+.api-list code, .muted-line code { overflow-wrap: anywhere; }
 
 /* Public link section in the share dialog. */
 .pl-section {
@@ -5979,6 +6003,79 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 @media (max-width: 760px) {
   .api-doc-page { padding: 32px 22px 24px; }
+}
+
+/* The API docs' pages: a sub-navigation down the left, a menu on a phone,
+   and previous / next links under each page. */
+.api-docs {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+.api-docs-main { min-width: 0; }
+.api-docs-main > header:first-child { margin-top: 0; }
+.api-docs-main > .card:first-of-type { margin-top: 0; }
+.api-docs-head { margin-top: 0; }
+.api-docs-nav { position: sticky; top: 80px; }
+.api-docs-menu { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.api-docs-menu a {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: var(--fs-14);
+  color: var(--muted);
+  text-decoration: none;
+}
+.api-docs-menu a:hover { color: var(--ink); background: var(--acc-hover); }
+.api-docs-menu a.active { color: var(--acc); background: var(--acc-t); font-weight: 600; }
+.api-docs-select { display: none; }
+.api-docs-select span { font-size: var(--fs-13); color: var(--muted); }
+.api-docs-select select { flex: 1; min-width: 0; font-size: var(--fs-14); }
+.api-docs-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 0.6rem;
+}
+.api-docs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  text-decoration: none;
+  color: var(--ink);
+}
+.api-docs-card:hover { border-color: var(--acc-line); background: var(--acc-hover); }
+.api-docs-card b { color: var(--acc); font-size: var(--fs-14); }
+.api-docs-card span { color: var(--muted); font-size: var(--fs-13); line-height: 1.45; }
+.api-docs-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 1.25rem;
+}
+.api-docs-pager a {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  text-decoration: none;
+  min-width: 0;
+}
+.api-docs-pager a:hover { border-color: var(--acc-line); }
+.api-docs-pager span { font-size: var(--fs-12); color: var(--muted); }
+.api-docs-pager b { color: var(--acc); font-size: var(--fs-14); }
+.api-docs-next { margin-left: auto; text-align: right; }
+@media (max-width: 860px) {
+  .api-docs { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .api-docs-nav { position: static; }
+  .api-docs-menu { display: none; }
+  .api-docs-select { display: flex; align-items: center; gap: 10px; }
 }
 
 .blog-back,

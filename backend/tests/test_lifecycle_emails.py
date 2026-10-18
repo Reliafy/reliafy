@@ -136,7 +136,7 @@ def test_welcome_on_first_verified_sign_in_once(as_user, on, test_db):
     assert f"/modelling/m/sample-model-bearings-weibull?{UTM_WELCOME}" in text
     assert f"/modelling/new?mode=paste&{UTM_WELCOME}" in text
     assert f"/rbds/b/sample-rbd-pump-station?{UTM_WELCOME}" in text
-    assert f"/api-docs?{UTM_WELCOME}#mcp" in text
+    assert f"/api-docs/mcp?{UTM_WELCOME}" in text
     assert "It comes to me." in text
     assert f"Unsubscribe: https://reliafy.com/unsubscribe?t={token}\n" in text
     assert f'href="https://reliafy.com/unsubscribe?t={token}"' in _html(msg)

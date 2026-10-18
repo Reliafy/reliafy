@@ -140,5 +140,7 @@ as 0 = failed, 1 = still running; if yours is 1 = failed, add `--c-invert`.
   may do.
 - Supported distributions for `push`: Weibull, Exponential, Normal, LogNormal,
   Gamma, LogLogistic, Exponentiated Weibull, Gumbel, Logistic.
-- The API in full: [docs/api.md](https://github.com/Reliafy/reliafy/blob/main/docs/api.md).
+- The API in full: [docs/api.md](https://github.com/Reliafy/reliafy/blob/main/docs/api.md),
+  and online: [the Python client](https://reliafy.com/api-docs/python) and
+  [the command line](https://reliafy.com/api-docs/cli).
 - Changes: [CHANGELOG.md](https://github.com/Reliafy/reliafy/blob/main/python/CHANGELOG.md).

@@ -76,7 +76,7 @@ function AgentLine() {
   return (
     <p className="first-run-agent">
       Work from Claude or another AI agent?{" "}
-      <a href="/api-docs#mcp" onClick={() => trackEvent("first_run_agent")}>
+      <a href="/api-docs/mcp" onClick={() => trackEvent("first_run_agent")}>
         Connect it over MCP
       </a>
     </p>

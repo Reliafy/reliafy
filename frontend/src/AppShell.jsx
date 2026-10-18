@@ -236,7 +236,15 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/maintenance/parts/:id" element={<MaintenancePart />} />}
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/api-docs" element={<ApiDocsPage />} />
+            <Route path="/api-docs" element={<ApiDocsPage page="" />} />
+            <Route path="/api-docs/authentication" element={<ApiDocsPage page="authentication" />} />
+            <Route path="/api-docs/tools" element={<ApiDocsPage page="tools" />} />
+            <Route path="/api-docs/examples" element={<ApiDocsPage page="examples" />} />
+            <Route path="/api-docs/cli" element={<ApiDocsPage page="cli" />} />
+            <Route path="/api-docs/python" element={<ApiDocsPage page="python" />} />
+            <Route path="/api-docs/files" element={<ApiDocsPage page="files" />} />
+            <Route path="/api-docs/mcp" element={<ApiDocsPage page="mcp" />} />
+            <Route path="/api-docs/v1-routes" element={<ApiDocsPage page="v1-routes" />} />
             {/* API tokens moved into Settings; keep old links working. */}
             <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
             <Route path="/admin" element={<AdminPage />} />

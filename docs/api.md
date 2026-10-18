@@ -7,6 +7,8 @@ export pipeline, and sending files and photos.
 > **Pro feature.** On Reliafy Cloud, API tokens need a Pro plan.
 > (Self-hosted instances have it unconditionally — there are no plans.)
 
+The same reference, page by page, is on the website: <https://reliafy.com/api-docs>.
+
 ## Authentication
 
 Create a personal token in the app under **API access** (sidebar → Account).

@@ -70,7 +70,7 @@ as many reviewers as they like without everyone needing a plan.
 ## Copying an ID
 
 Every saved artifact has an ID: **⋯ → Copy ID** on its page copies it. That's
-what you use with the [API](/api-docs) or the Python client to fetch a specific
+what you use with the [API](/api-docs/tools) or the Python client to fetch a specific
 model programmatically — useful when you're pulling results into a notebook, a
 report, or another system.
 
