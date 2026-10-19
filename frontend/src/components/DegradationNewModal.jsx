@@ -109,6 +109,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
     setLoading(true);
     try {
       const full = await getDataset(d.id);
+      if (!d.name) setSourceName(full.name || "");
       const columns = full.preview_columns || [];
       setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows, n_unique: full.n_unique });
       setMapping({ i: columns[0] || "", x: columns[1] || "", y: columns[2] || "" });
