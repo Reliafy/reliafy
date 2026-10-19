@@ -141,11 +141,15 @@ def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acc
     shared_by = shares_service.shared_by_map(session, ctx.uid, "datasets") if ctx.is_personal else {}
     # Models of every kind fitted to each dataset ("Used by N models").
     counts = datasets_service.dependent_counts(session, ctx.read_owners, ctx.hidden)
+    datasets = datasets_service.list_datasets(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
+    # Lifetimes and readings that go together for condition monitoring.
+    pairs = datasets_service.condition_pairs(datasets)
     return {
         "datasets": [
             {**_dataset_summary(d, ctx, n_models=counts.get(d.id, 0)),
+             **({"pairs_with": pairs[d.id]} if d.id in pairs else {}),
              **({"shared_by": shared_by[d.id]} if d.id in shared_by else {})}
-            for d in datasets_service.list_datasets(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
+            for d in datasets
         ]
     }
 
