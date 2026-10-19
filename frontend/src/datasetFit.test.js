@@ -22,3 +22,9 @@ test("repeat failures and lone measurements open their own fits", () => {
   assert.equal(fitOptions({ id: "b", tags: ["Repairable"] })[0].to, "/modelling/recurrent/new?dataset=b");
   assert.deepEqual(fitOptions({ id: "c", tags: ["Non-repairable", "Measurements"] }).map((x) => x.label), ["Degradation model"]);
 });
+
+test("several partners: one entry, this table filled, the other picked on the page", () => {
+  const o = fitOptions({ id: "R", tags: ["Measurements"], pairs_with: [{ id: "L1", name: "A" }, { id: "L2", name: "B" }] });
+  assert.deepEqual(o.map((x) => x.label), ["Degradation model", "Condition monitoring"]);
+  assert.equal(o[1].to, "/modelling/joint/new?readings=R");
+});

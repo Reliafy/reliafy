@@ -7,22 +7,17 @@ export function fitOptions(d) {
   const t = d.tags || [];
   if (t.includes("Repairable")) return [{ label: "Repairable model", to: `/modelling/recurrent/new?dataset=${id}` }];
   const pairs = d.pairs_with || [];
-  const many = pairs.length > 1;
-  if (t.includes("Measurements")) {
-    return [
-      { label: "Degradation model", to: `/modelling/degradation?dataset=${id}` },
-      ...pairs.map((p) => ({
-        label: many ? `Condition monitoring with ${p.name}` : "Condition monitoring",
-        to: `/modelling/joint/new?lifetimes=${encodeURIComponent(p.id)}&readings=${id}`,
-      })),
-    ];
-  }
+  const readings = t.includes("Measurements");
+  // One entry: with one partner both tables are filled; with several, this one
+  // is, and the other is picked on the page.
+  const cm = pairs.length === 0 ? [] : [{
+    label: "Condition monitoring",
+    to: pairs.length === 1
+      ? (readings ? `/modelling/joint/new?lifetimes=${encodeURIComponent(pairs[0].id)}&readings=${id}`
+        : `/modelling/joint/new?lifetimes=${id}&readings=${encodeURIComponent(pairs[0].id)}`)
+      : `/modelling/joint/new?${readings ? "readings" : "lifetimes"}=${id}`,
+  }];
+  if (readings) return [{ label: "Degradation model", to: `/modelling/degradation?dataset=${id}` }, ...cm];
   const covs = t.includes("Covariates") || t.includes("Time-varying covariates");
-  return [
-    { label: covs ? "Life model with covariates" : "Life model", to: `/modelling/new?dataset=${id}` },
-    ...pairs.map((p) => ({
-      label: many ? `Condition monitoring with ${p.name}` : "Condition monitoring",
-      to: `/modelling/joint/new?lifetimes=${id}&readings=${encodeURIComponent(p.id)}`,
-    })),
-  ];
+  return [{ label: covs ? "Life model with covariates" : "Life model", to: `/modelling/new?dataset=${id}` }, ...cm];
 }
