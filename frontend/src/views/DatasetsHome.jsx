@@ -8,6 +8,7 @@ import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { datasetPath } from "../sections.js";
 import { fitOptions } from "../datasetFit.js";
+import useMenuDismiss from "../components/useMenuDismiss.js";
 import "../components/Datasets.css";
 
 const HELP = { guide: "fit-your-first-model" };
@@ -18,45 +19,14 @@ const FileIcon = () => (
   </svg>
 );
 
-const LEAVE_PX = 60;
-
-// How far (px) a point is outside the box around the given elements (0 inside).
-function outsideBy(els, x, y) {
-  const rs = [...els].map((el) => el.getBoundingClientRect());
-  if (!rs.length) return Infinity;
-  const left = Math.min(...rs.map((r) => r.left)), right = Math.max(...rs.map((r) => r.right));
-  const top = Math.min(...rs.map((r) => r.top)), bottom = Math.max(...rs.map((r) => r.bottom));
-  return Math.max(left - x, x - right, top - y, y - bottom, 0);
-}
-
 // Each row's ⋯ menu: every fit for this data, the data (open, rename) and delete.
 function RowMenu({ d, onRename, onDelete }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const closeMenu = useCallback(() => setOpen(false), []);
   const options = fitOptions(d);
-  // Open until the mouse is well clear of it (more than LEAVE_PX past the menu
-  // and its button), a click elsewhere, or Escape. Crossing the gap to an item
-  // never closes it.
-  useEffect(() => {
-    if (!open) return undefined;
-    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
-    const far = (e) => {
-      if (e.pointerType !== "mouse" || !ref.current) return;
-      if (outsideBy(ref.current.querySelectorAll(".ds-more, .ds-menu"), e.clientX, e.clientY) > LEAVE_PX) setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    document.addEventListener("touchstart", away);
-    document.addEventListener("keydown", esc);
-    document.addEventListener("pointermove", far);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("touchstart", away);
-      document.removeEventListener("keydown", esc);
-      document.removeEventListener("pointermove", far);
-    };
-  }, [open]);
+  useMenuDismiss(open, closeMenu, ref);
   const act = (fn) => (e) => { e.stopPropagation(); setOpen(false); fn(); };
   return (
     <td className="lib-actions">

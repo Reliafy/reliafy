@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import useMenuDismiss from "./useMenuDismiss.js";
 
 // Compact overflow ("…") menu for a page's secondary actions (share, delete).
-// Closes on outside click. Children are the menu items (e.g. .ovm-item buttons).
+// Closes like every menu (useMenuDismiss): outside click, Escape, or the mouse well clear. Children are the menu items (e.g. .ovm-item buttons).
 // The items stay mounted while the menu is closed (only hidden), so an item
 // that opens a dialog of its own (ShareButton) keeps it open after the click
 // that closes the menu.
@@ -11,12 +12,8 @@ import { useEffect, useRef, useState } from "react";
 export default function OverflowMenu({ children, label, ariaLabel }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useMenuDismiss(open, close, ref);
   return (
     <div className="ovm" ref={ref}>
       {label ? (
