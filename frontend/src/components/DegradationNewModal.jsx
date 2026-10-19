@@ -24,7 +24,8 @@ const STEPS = ["Source", "Data", "Model"];
 // "Brake pad wear (sample)" / "wear.csv" → "Brake pad wear" / "wear".
 const baseName = (s) => String(s || "").replace(/\s*\(sample\)\s*$/i, "").replace(/\.(csv|xlsx?|xlsm)$/i, "").trim();
 
-export default function DegradationNewModal({ onClose, onSaved }) {
+// initialDataset: {id, name} to start from (the Data list's Fit menu).
+export default function DegradationNewModal({ onClose, onSaved, initialDataset = null }) {
   const [step, setStep] = useState(1);
   // An Excel workbook becomes a CSV of the chosen sheet before anything else.
   const { toCsv, modal: sheetModal } = useSpreadsheet();
@@ -108,6 +109,7 @@ export default function DegradationNewModal({ onClose, onSaved }) {
     setLoading(true);
     try {
       const full = await getDataset(d.id);
+      if (!d.name) setSourceName(full.name || "");
       const columns = full.preview_columns || [];
       setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows, n_unique: full.n_unique });
       setMapping({ i: columns[0] || "", x: columns[1] || "", y: columns[2] || "" });
@@ -118,6 +120,11 @@ export default function DegradationNewModal({ onClose, onSaved }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (initialDataset?.id) pickDataset(initialDataset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDataset?.id]);
 
   const onDrop = (e) => {
     e.preventDefault();

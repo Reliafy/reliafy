@@ -1,4 +1,4 @@
-"""Condition-based risk: joint models of readings and failures (SurPyval's
+"""Condition monitoring: joint models of readings and failures (SurPyval's
 ``JointPH``), saved as models of kind ``joint``, fitted as a compute job,
 and used as non-repairable RBD blocks (RePyability's ``JointNode``).
 

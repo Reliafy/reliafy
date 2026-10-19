@@ -8,7 +8,7 @@ import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 
-// A saved condition-based risk model: the result view, Download as Python,
+// A saved condition monitoring model: the result view, Download as Python,
 // rename, share and delete.
 export default function JointModelPage() {
   const { id } = useParams();
@@ -43,10 +43,10 @@ export default function JointModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Condition-based risk", to: "/modelling/joint" }]}
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Condition monitoring", to: "/modelling/joint" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
-        meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""} · condition-based risk</>}
+        meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""} · condition monitoring</>}
         id={model?.id}
         actions={model && (
           <button type="button" className="secondary" onClick={onPython}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import useMenuDismiss from "../components/useMenuDismiss.js";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
   Background,
@@ -227,21 +228,12 @@ function policyFields(policies) {
 }
 
 // A toolbar dropdown (#314): the trigger, and a menu of .ovm-item buttons that
-// closes on an outside click or on choosing an item. Items stay mounted.
+// closes like every menu (useMenuDismiss) or on choosing an item. Items stay mounted.
 function ToolbarMenu({ label, title, aria, caret = true, className = "", wt, children }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return undefined;
-    const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useMenuDismiss(open, close, ref);
   return (
     <div className={"ovm rbd-tb-menu " + className} ref={ref} data-wt={wt}>
       <button
@@ -1092,6 +1084,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   // clamp it into the viewport — which flips it up when it would run off the
   // bottom (and left when it would run off the right edge).
   const menuRef = useRef(null);
+  useMenuDismiss(Boolean(menu), closeMenu, menuRef);
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!menu || !el) return;
@@ -1620,7 +1613,6 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           ref={menuRef}
           className="rbd-menu"
           style={{ top: menu.y, left: menu.x }}
-          onMouseLeave={closeMenu}
         >
           {menu.kind === "pane" && (
             <>

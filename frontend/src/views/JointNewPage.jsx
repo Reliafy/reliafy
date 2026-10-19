@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
@@ -62,7 +62,7 @@ function ColumnSelect({ label, value, onChange, columns, optional = false }) {
   );
 }
 
-// A new condition-based risk model: two tables, their columns, the covariates
+// A new condition monitoring model: two tables, their columns, the covariates
 // and the reading's path; Check data, then Fit (Pro, a job on the calculation
 // service).
 export default function JointNewPage() {
@@ -87,6 +87,7 @@ export default function JointNewPage() {
   const [job, setJob] = useState(null);
   const [needsPro, setNeedsPro] = useState(null);
   const alive = useRef(true);
+  const [params] = useSearchParams();
 
   useEffect(() => {
     alive.current = true;
@@ -131,6 +132,14 @@ export default function JointNewPage() {
       if (!marker) setMarker(g.value);
     } catch (err) { setError(err.message); }
   };
+
+  // A link from the Data list can pick either table (?lifetimes=, ?readings=).
+  useEffect(() => {
+    const l = params.get("lifetimes"), r = params.get("readings");
+    if (l) pickLife(l);
+    if (r) pickReads(r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const mapping = interval
     ? { id: map.id, xl: map.xl, xr: map.xr, c: map.c, tl: map.tl }
@@ -199,8 +208,8 @@ export default function JointNewPage() {
   return (
     <div className="app joint-new">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Condition-based risk", to: "/modelling/joint" }]}
-        title="New condition-based risk model"
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Condition monitoring", to: "/modelling/joint" }]}
+        title="New condition monitoring model"
         meta="Fits how a reading drifts on each unit and how the risk of failing rises with it, together."
       />
 

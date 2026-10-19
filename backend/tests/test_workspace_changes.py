@@ -102,7 +102,7 @@ def test_a_condition_based_model_is_labelled_and_linked_as_one(client):
     put(db, "models", "pump-life", A, ago(days=1), results=WEIBULL_RESULTS)
     out = changes(client)
     rows = {r["id"]: (r["type"], r["url"]) for r in out["new"]}
-    assert rows["pump-risk"] == ("Condition-based risk model", "/modelling/joint/pump-risk")
+    assert rows["pump-risk"] == ("Condition monitoring model", "/modelling/joint/pump-risk")
     assert rows["pump-life"] == ("Life model", "/modelling/m/pump-life")
 
 

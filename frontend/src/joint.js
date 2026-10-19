@@ -1,4 +1,4 @@
-// Condition-based risk (joint models of readings and failures): the pure
+// Condition monitoring: remaining life from condition readings (joint models of readings and failures): the pure
 // helpers behind the new-model page, the results page and the RBD block —
 // first guesses for the two tables' columns, the covariate parts, the risk
 // table's words and a block's one line. `node --test src/` covers them.
@@ -101,16 +101,16 @@ export function riskTone(p) {
 
 export const isJointModel = (model) => model?.kind === "joint";
 
-// A joint block's one line on the canvas: "Condition-based · unit P12" or
-// "Condition-based · age 120 h, 3 readings".
+// A joint block's one line on the canvas: "Condition monitoring · unit P12" or
+// "Condition monitoring · age 120 h, 3 readings".
 export function jointBlockLine(model, unitAbbr = "") {
   const u = model?.joint_unit || {};
-  if (u.id != null && u.id !== "") return `Condition-based · unit ${u.id}`;
+  if (u.id != null && u.id !== "") return `Condition monitoring · unit ${u.id}`;
   if (u.age != null) {
     const n = (u.markers || []).length;
-    return `Condition-based · age ${formatNumber(u.age)}${unitAbbr ? ` ${unitAbbr}` : ""}, ${n} reading${n === 1 ? "" : "s"}`;
+    return `Condition monitoring · age ${formatNumber(u.age)}${unitAbbr ? ` ${unitAbbr}` : ""}, ${n} reading${n === 1 ? "" : "s"}`;
   }
-  return "Condition-based · pick a unit";
+  return "Condition monitoring · pick a unit";
 }
 
 // The RBD block's model for a joint model and a unit (a fitted running unit's
@@ -121,7 +121,7 @@ export function jointBlockModel(model, unit) {
     kind: "joint",
     modelId: model.id,
     name: model.name,
-    distribution: "Condition-based risk",
+    distribution: "Remaining life from condition",
     unit: model.unit || model.results?.unit || "",
     joint_unit: unit,
   };

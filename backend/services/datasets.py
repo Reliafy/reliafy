@@ -365,6 +365,192 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
     return None
 
 
+# What a dataset holds, as tags on the Data list (planning #261). Detected
+# from the columns; the "use for" line says which analyses take it.
+TAGS = ("Lifetime data", "Repeat failures", "Covariates", "Time-varying covariates", "Measurements")
+_CENSOR_NAME_RE = re.compile(r"(^c$|censor|status|failed|event|^c_)", re.IGNORECASE)
+_TIME_NAME_RE = re.compile(
+    r"(^x$|^t$|^xl$|^xr$|^tl$|^tr$|hour|time|age|day|week|month|year|cycle|km|mile|start|stop|end|date|observ)",
+    re.IGNORECASE)
+_START_RE = re.compile(r"(start|entry|^tl$|from)", re.IGNORECASE)
+_STOP_RE = re.compile(r"(stop|end|exit|^tr$|until)", re.IGNORECASE)
+
+
+def _unit_column(df: pd.DataFrame) -> str | None:
+    """A unit-like text column whose values repeat (several rows per unit)."""
+    numeric = {c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])}
+    for g in df.columns:
+        if g in numeric:
+            continue
+        col = df[g].dropna().astype(str)
+        if col.empty:
+            continue
+        sizes = col.groupby(col).size()
+        if len(sizes) == len(col) or (sizes >= 2).mean() < 0.5:
+            continue
+        digits = sizes.index.to_series().str.contains(r"\d").mean()
+        if _UNIT_NAME_RE.search(str(g)) or digits >= 0.8:
+            return str(g)
+    return None
+
+
+def _censor_column(df: pd.DataFrame) -> str | None:
+    for c in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[c]):
+            continue
+        vals = set(df[c].dropna().unique().tolist())
+        if vals and vals <= {0, 1, -1, 2} and (_CENSOR_NAME_RE.search(str(c)) or vals <= {0, 1}):
+            return str(c)
+    return None
+
+
+def detect_tags(df: pd.DataFrame) -> dict:
+    """``{"tags": [...], "use_for": [...]}`` for a dataset's columns."""
+    tags: set[str] = set()
+    unit = _unit_column(df)
+    censor = _censor_column(df)
+    times = [str(c) for c in df.columns
+             if str(c) not in (unit, censor) and pd.api.types.is_numeric_dtype(df[c]) and _TIME_NAME_RE.search(str(c))]
+    if not times:  # the first numeric column is the time
+        times = [str(c) for c in df.columns if str(c) not in (unit, censor)
+                 and pd.api.types.is_numeric_dtype(df[c])][:1]
+    start_stop = any(_START_RE.search(t) for t in times) and any(_STOP_RE.search(t) for t in times)
+    # A text column unique on every row names the rows (a serial, a tag): not a covariate.
+    extra = [str(c) for c in df.columns if str(c) not in (unit, censor, *times)
+             and not (not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique(dropna=True) == len(df))]
+    # Events of a repairable unit: its time rises row by row and the rows are
+    # events, not start/stop periods (repeated_units tells them from readings).
+    ru = repeated_units(df) if unit else None
+    repeat = bool(ru and ru["kind"] == "recurrent" and not start_stop
+                  and (censor or not any(pd.api.types.is_numeric_dtype(df[c]) for c in extra
+                                         if (df.groupby(unit)[c].nunique(dropna=True) > 1).any())))
+    for c in extra:
+        varies = bool(unit) and bool((df.groupby(unit)[c].nunique(dropna=True) > 1).any())
+        if varies and repeat and not pd.api.types.is_numeric_dtype(df[c]):
+            continue  # an event's own detail (its cause or failure mode)
+        if not varies:
+            tags.add("Covariates")
+        elif censor:
+            tags.add("Time-varying covariates")
+        elif pd.api.types.is_numeric_dtype(df[c]):
+            tags.add("Measurements")
+        else:
+            tags.add("Time-varying covariates")
+    # Several rows per unit with a status column are recurrent events, unless
+    # the rows are periods of changing covariates (start/stop).
+    if repeat:
+        tags.add("Repeat failures")
+    elif censor or times:
+        # One life per unit (or per start/stop period); readings over a unit's
+        # life are lifetime data too, unless the unit is repaired between them.
+        tags.add("Lifetime data")
+    use_for: list[str] = []
+    covs = "Covariates" in tags
+    if "Measurements" in tags:
+        use_for += ["Degradation", "Condition monitoring (the readings)"]
+    elif censor and unit and ("Time-varying covariates" in tags or start_stop):
+        use_for.append("Life model with time-varying covariates")
+    elif repeat:
+        use_for.append("Repeat failures model" + (" with covariates" if covs else ""))
+    elif censor or times:
+        use_for.append("Life model" + (" with covariates" if covs else ""))
+        use_for.append("Condition monitoring (the lifetimes)")
+    out_tags = [t for t in TAGS if t in tags]
+    return {"tags": out_tags, "use_for": use_for, "summary": _summary(df, unit, censor, out_tags),
+            "time_unit": _time_unit(times)}
+
+
+# Units a life or usage axis is measured in, as SurPyval names them.
+_TIME_UNITS = frozenset({"second", "minute", "hour", "day", "week", "month", "year",
+                         "cycle", "kilometer", "mile", "meter"})
+
+
+def _time_unit(times: list[str]) -> str | None:
+    """The unit the time column names, as SurPyval normalises it ("engine_hours"
+    → "hour"), or None. A suggestion for fitting; the model stores the unit."""
+    try:
+        from surpyval.utils.units import normalise_unit
+    except ImportError:  # an older SurPyval: no units
+        return None
+    for col in times:
+        for word in re.split(r"[_\s\-()/]+", col):
+            try:
+                u = normalise_unit(word) if word else None
+            except Exception:  # noqa: BLE001 - not a unit
+                u = None
+            if u in _TIME_UNITS:
+                return u
+    return None
+
+
+_GENERIC_ID_RE = re.compile(r"^(id|ids|unit|units|item|items|serial|sn|tag|no|number|name|asset_id|unit_id|item_id)$", re.IGNORECASE)
+
+
+def _plural(word: str, n: int) -> str:
+    if n == 1:
+        return word
+    if word.endswith("y") and word[-2:-1] not in "aeiou":
+        return word[:-1] + "ies"
+    if word.endswith(("s", "x", "ch", "sh")):
+        return word + "es"
+    return word + "s"
+
+
+def _noun(col: str | None) -> str:
+    """What a row's unit is called, from its ID column ("pump" → pumps)."""
+    if not col:
+        return "unit"
+    word = re.sub(r"[_\s-]*(id|no|number|serial|sn|tag)$", "", str(col).strip(), flags=re.IGNORECASE)
+    word = re.sub(r"[_-]+", " ", word).strip().lower()
+    if not word or _GENERIC_ID_RE.match(word) or len(word) > 20:
+        return "unit"
+    return word[:-1] if word.endswith("s") and not word.endswith("ss") else word
+
+
+def _id_column(df: pd.DataFrame, unit: str | None) -> str | None:
+    if unit:
+        return unit
+    for c in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique(dropna=True) == len(df):
+            return str(c)
+    return None
+
+
+def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[str]) -> str:
+    """The list's count: units of the dataset's own noun, and what happened to them,
+    e.g. "40 pumps · 19 failed", "10 trucks · 71 failures", "30 bearings · 193 readings"."""
+    idc = _id_column(df, unit)
+    noun = _noun(idc)
+    n_units = int(df[unit].nunique(dropna=True)) if unit else len(df)
+    units = f"{n_units:,} {_plural(noun, n_units)}"
+    failed = int((df[censor] == 0).sum()) if censor else None
+    if "Measurements" in tags:
+        return f"{units} · {len(df):,} readings"
+    if "Repeat failures" in tags:
+        n = failed if failed is not None else len(df)
+        return f"{units} · {n:,} {_plural('failure', n)}"
+    if failed is None:
+        return f"{units} · all failed" if "Lifetime data" in tags else units
+    return f"{units} · {failed:,} failed"
+
+
+_TAG_CACHE: dict[str, dict] = {}
+
+
+def dataset_tags(dataset: Dataset) -> dict:
+    """``detect_tags`` for a saved dataset, cached by its content (datasets
+    are content-addressed, so the checksum names the file)."""
+    key = dataset.checksum or dataset.id
+    if key not in _TAG_CACHE:
+        try:
+            _TAG_CACHE[key] = detect_tags(load_dataframe(dataset))
+        except Exception:  # noqa: BLE001 - an unreadable file just has no tags
+            _TAG_CACHE[key] = {"tags": [], "use_for": [], "summary": "", "time_unit": None}
+        if len(_TAG_CACHE) > 5000:
+            _TAG_CACHE.pop(next(iter(_TAG_CACHE)))
+    return _TAG_CACHE[key]
+
+
 def profile(dataset: Dataset) -> dict:
     """What the dataset page needs beyond the preview: each column's count of
     distinct values (to pick a sensible "split by") and whether the rows are

@@ -35,7 +35,7 @@ export default function RecurrentHome() {
     <div className="app">
       <SectionHeader
         section="modelling"
-        title="Recurrent events"
+        title="Repeat failures"
         purpose="Repairable systems: is the failure rate improving or worsening?"
         help={HELP}
         primary={newModel}

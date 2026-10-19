@@ -39,7 +39,7 @@ const KIND_LABEL = {
   rcm_studies: "RCM study",
   fleets: "Fleet failure forecast",
   rbds: "Reliability block diagram",
-  recurrent_models: "Recurrent-event model",
+  recurrent_models: "Repeat failures model",
   reports: "Report",
 };
 

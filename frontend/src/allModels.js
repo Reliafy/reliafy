@@ -21,17 +21,17 @@ export const TYPE_LABEL = {
   life: "Life model",
   degradation: "Degradation",
   alt: "Accelerated life",
-  recurrent: "Recurrent",
-  joint: "Condition-based risk",
+  recurrent: "Repeat failures",
+  joint: "Remaining life from condition",
 };
 
 // The Modelling list's type filter: the same names as the menu's children.
 export const TYPE_FILTERS = [
   { value: "life", label: "Life models" },
-  { value: "recurrent", label: "Recurrent" },
+  { value: "recurrent", label: "Repeat failures" },
   { value: "alt", label: "Accelerated life" },
   { value: "degradation", label: "Degradation" },
-  { value: "joint", label: "Condition-based risk" },
+  { value: "joint", label: "Condition monitoring" },
 ];
 
 export const distLabel = (d = "") => String(d).replace(/\s*\(.*$/, "").replace(/\s+PH$/, "");

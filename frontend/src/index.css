@@ -8971,7 +8971,7 @@ input.rbd-rename {
   .detail-panel .life-reading .life-reading-action { min-height: 44px; }
 }
 
-/* Condition-based risk (joint models of readings and failures). */
+/* Condition monitoring (joint models of readings and failures). */
 .joint-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
 .joint-table-pick { min-width: 0; }
 .joint-table-pick .preview-wrap { margin-top: 10px; max-width: 100%; overflow-x: auto; }
@@ -9044,3 +9044,24 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 .home-note { font-size: var(--fs-13); color: var(--muted); text-align: right; }
 .home-none { margin: 0; padding: 14px 16px; font-size: var(--fs-14); color: var(--muted); }
 .home .start-compact { margin-top: 28px; }
+
+/* Section landing pages: a compact header. The menu already says which
+   section you're in, so the one-word breadcrumb only shows on a phone. */
+.page-header.section-header .title-row h1 { font-size: var(--fs-24, 24px); }
+.page-header.section-header .ph-meta { margin-top: 2px; font-size: var(--fs-13); }
+.page-header.section-header + * { margin-top: 12px; }
+@media (min-width: 900px) {
+  .page-header.section-header .crumb { display: none; }
+  .page-header.section-header { align-items: center; }
+}
+/* The purpose and "Show me how" stay on one line on a wide screen: a long
+   purpose is cut with an ellipsis (its full text on hover) before the link wraps. */
+.page-header.section-header .ph-meta { max-width: none; }
+.sh-purpose { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; }
+.sh-purpose .wt-launch { flex: none; white-space: nowrap; }
+@media (min-width: 900px) {
+  .sh-purpose-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 899px) {
+  .sh-purpose { display: inline; }
+}

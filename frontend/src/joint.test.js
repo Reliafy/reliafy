@@ -54,8 +54,8 @@ test("block model and line", () => {
   assert.equal(m.kind, "joint");
   assert.equal(m.unit, "Days"); // the time unit, as every block model's
   assert.deepEqual(m.joint_unit, { id: "P3" });
-  assert.equal(jointBlockLine(m), "Condition-based · unit P3");
-  assert.equal(jointBlockLine({ joint_unit: { age: 50, markers: [[0, 1]] } }, "d"), "Condition-based · age 50 d, 1 reading");
+  assert.equal(jointBlockLine(m), "Condition monitoring · unit P3");
+  assert.equal(jointBlockLine({ joint_unit: { age: 50, markers: [[0, 1]] } }, "d"), "Condition monitoring · age 50 d, 1 reading");
 });
 
 test("parameters grouped by part", () => {

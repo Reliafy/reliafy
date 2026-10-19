@@ -15,10 +15,10 @@ export const GUIDE_COVERAGE = [
   { feature: "Home", href: "/home" },
   // Life data and the other model types.
   { feature: "Fit a life model (life data)", href: "/modelling/new" },
-  { feature: "Recurrent events (repairable systems)", href: "/modelling/recurrent" },
+  { feature: "Repeat failures (repairable systems)", href: "/modelling/recurrent" },
   { feature: "Accelerated life models", href: "/modelling/alt" },
   { feature: "Degradation models", href: "/modelling/degradation" },
-  { feature: "Condition-based risk (joint models)", href: "/modelling/joint" },
+  { feature: "Condition monitoring (remaining life from readings)", href: "/modelling/joint" },
   { feature: "Per-demand (one-shot) models", href: "/modelling/new?mode=perdemand" },
   // Data.
   { feature: "Data (datasets)", href: "/modelling/data" },
