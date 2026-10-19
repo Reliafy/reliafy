@@ -64,23 +64,3 @@ def test_time_unit_from_the_time_column():
     assert tags(rows, ["truck", "engine_hours", "censored"])["time_unit"] == "hour"
     assert tags([[1.0, 0], [2.0, 1]], ["x", "c"])["time_unit"] is None
 
-
-def test_lifetimes_and_readings_pair_by_their_unit_ids():
-    from types import SimpleNamespace
-
-    from backend.services import datasets as svc
-
-    def ds(id_, name, csv, owner="u1"):
-        return SimpleNamespace(id=id_, name=name, checksum=id_, data=csv.encode(), owner_id=owner)
-
-    life = ds("L", "Bearing lifetimes", "bearing,hours,censored\n" + "\n".join(f"B-{i},{100+i},{i % 2}" for i in range(6)))
-    reads = ds("R", "Bearing readings", "bearing,hours,vibration\n" + "\n".join(
-        f"B-{i},{h},{2 + h / 1000}" for i in range(6) for h in (0, 1000, 2000)))
-    other = ds("O", "Pump lifetimes", "pump,hours,censored\n" + "\n".join(f"P-{i},{100+i},0" for i in range(6)))
-    pairs = svc.condition_pairs([life, reads, other])
-    assert pairs == {"L": [{"id": "R", "name": "Bearing readings"}], "R": [{"id": "L", "name": "Bearing lifetimes"}]}
-    assert "_ids" not in svc.dataset_tags(life)
-    # The same unit ids in someone else's (a sample's, a colleague's) readings: no pair.
-    theirs = ds("T", "Their readings", "bearing,hours,vibration\n" + "\n".join(
-        f"B-{i},{h},{2 + h / 1000}" for i in range(6) for h in (0, 1000, 2000)), owner="sample")
-    assert "T" not in svc.condition_pairs([life, theirs])

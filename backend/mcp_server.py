@@ -2923,10 +2923,9 @@ def list_datasets(ctx: Context) -> dict[str, Any]:
     """Saved datasets with their columns and row counts."""
     user, db = _caller(ctx), _db()
     datasets = datasets_service.list_datasets(db, user["uid"])
-    pairs = datasets_service.condition_pairs(datasets)
     return {"datasets": [
         {"id": d.id, "name": d.name, "n_rows": d.n_rows, "columns": [c["name"] for c in d.columns],
-         **datasets_service.dataset_tags(d), **({"pairs_with": pairs[d.id]} if d.id in pairs else {}),
+         **datasets_service.dataset_tags(d),
          "created_at": d.created_at.isoformat(), "url": _url(f"/modelling/data/{d.id}")}
         for d in datasets
     ]}

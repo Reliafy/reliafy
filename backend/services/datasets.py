@@ -457,10 +457,8 @@ def detect_tags(df: pd.DataFrame) -> dict:
         use_for.append("Life model" + (" with covariates" if covs else ""))
         use_for.append("Condition monitoring (the lifetimes)")
     out_tags = [t for t in TAGS if t in tags]
-    idc = _id_column(df, unit)
-    ids = frozenset(df[idc].dropna().astype(str).head(20_000)) if idc else frozenset()
     return {"tags": out_tags, "use_for": use_for, "summary": _summary(df, unit, censor, out_tags),
-            "time_unit": _time_unit(times), "_ids": ids}
+            "time_unit": _time_unit(times)}
 
 
 # Units a life or usage axis is measured in, as SurPyval names them.
@@ -548,45 +546,11 @@ def dataset_tags(dataset: Dataset) -> dict:
         try:
             _TAG_CACHE[key] = detect_tags(load_dataframe(dataset))
         except Exception:  # noqa: BLE001 - an unreadable file just has no tags
-            _TAG_CACHE[key] = {"tags": [], "use_for": [], "summary": "", "time_unit": None, "_ids": frozenset()}
+            _TAG_CACHE[key] = {"tags": [], "use_for": [], "summary": "", "time_unit": None}
         if len(_TAG_CACHE) > 5000:
             _TAG_CACHE.pop(next(iter(_TAG_CACHE)))
-    return {k: v for k, v in _TAG_CACHE[key].items() if not k.startswith("_")}
+    return _TAG_CACHE[key]
 
-
-def _unit_ids(dataset: Dataset) -> frozenset:
-    dataset_tags(dataset)
-    return _TAG_CACHE[dataset.checksum or dataset.id].get("_ids", frozenset())
-
-
-def condition_pairs(datasets: list[Dataset]) -> dict[str, list[dict]]:
-    """Which lifetimes and readings datasets go together for condition
-    monitoring: a Non-repairable set and a Measurements set whose unit ids mostly
-    match (at least half of the smaller set's). ``{dataset id: [{id, name}]}``,
-    both ways round; a dataset with no partner isn't in it. Only datasets with
-    the same owner pair."""
-    lives, reads = [], []
-    for d in datasets:
-        tags = dataset_tags(d)["tags"]
-        if "Measurements" in tags:
-            reads.append(d)
-        elif "Non-repairable" in tags:
-            lives.append(d)
-    out: dict[str, list[dict]] = {}
-    for life in lives:
-        a = _unit_ids(life)
-        if not a:
-            continue
-        for read in reads:
-            # Only one owner's datasets pair (both yours, both samples, both one
-            # colleague's): an id that happens to match someone else's isn't a match.
-            if getattr(read, "owner_id", None) != getattr(life, "owner_id", None):
-                continue
-            b = _unit_ids(read)
-            if b and len(a & b) >= 0.5 * min(len(a), len(b)):
-                out.setdefault(life.id, []).append({"id": read.id, "name": read.name})
-                out.setdefault(read.id, []).append({"id": life.id, "name": life.name})
-    return out
 
 
 def profile(dataset: Dataset) -> dict:
