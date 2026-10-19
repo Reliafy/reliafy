@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import DegradationNewModal from "../components/DegradationNewModal.jsx";
 import { listDegradationModels, deleteDegradationModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
@@ -15,7 +15,10 @@ const HELP = { guide: "degradation-modelling" };
 export default function DegradationHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
+  // ?dataset= (the Data list's Fit menu) opens the new-model flow on that dataset.
+  const fromData = params.get("dataset");
+  const [modalOpen, setModalOpen] = useState(Boolean(fromData));
   const [error, setError] = useState(null);
 
   const refresh = useCallback(() => {
@@ -92,7 +95,11 @@ export default function DegradationHome() {
       />
 
       {modalOpen && (
-        <DegradationNewModal onClose={() => setModalOpen(false)} onSaved={(m) => open(m.id)} />
+        <DegradationNewModal
+          initialDataset={fromData ? { id: fromData, name: "" } : null}
+          onClose={() => { setModalOpen(false); if (fromData) setParams({}, { replace: true }); }}
+          onSaved={(m) => open(m.id)}
+        />
       )}
     </div>
   );

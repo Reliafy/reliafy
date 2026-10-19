@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { listDatasets, deleteDataset, renameDataset } from "../api.js";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
@@ -22,11 +22,26 @@ const FileIcon = () => (
 function RowMenu({ d, onRename, onDelete }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const ref = useRef(null);
   const options = fitOptions(d);
+  // Open until a click elsewhere or Escape: moving the mouse never closes it.
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("touchstart", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("touchstart", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
   const act = (fn) => (e) => { e.stopPropagation(); setOpen(false); fn(); };
   return (
     <td className="lib-actions">
-      <div className="ds-acts" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setOpen(false)}>
+      <div className="ds-acts" ref={ref} onClick={(e) => e.stopPropagation()}>
         <button type="button" className="ds-more" aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
           onClick={() => setOpen((o) => !o)}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></svg>

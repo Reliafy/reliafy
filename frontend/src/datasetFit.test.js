@@ -12,4 +12,5 @@ test("lifetime data fits a life model first, condition monitoring second", () =>
 test("repeat failures and measurements open their own fits", () => {
   assert.equal(fitOptions({ id: "b", tags: ["Repeat failures"] })[0].to, "/modelling/recurrent/new?dataset=b");
   assert.equal(fitOptions({ id: "c", tags: ["Lifetime data", "Measurements"] })[0].to, "/modelling/joint/new?readings=c");
+  assert.equal(fitOptions({ id: "c", tags: ["Measurements"] })[1].to, "/modelling/degradation?dataset=c");
 });

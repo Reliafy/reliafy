@@ -7,7 +7,7 @@ export function fitOptions(d) {
   if (t.includes("Measurements")) {
     return [
       { label: "Condition monitoring (as the readings)", to: `/modelling/joint/new?readings=${id}` },
-      { label: "Degradation model", to: "/modelling/degradation" },
+      { label: "Degradation model", to: `/modelling/degradation?dataset=${id}` },
     ];
   }
   const life = [{ label: t.includes("Covariates") || t.includes("Time-varying covariates") ? "Life model with covariates" : "Life model", to: `/modelling/new?dataset=${id}` }];
