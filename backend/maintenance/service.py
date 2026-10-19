@@ -43,8 +43,9 @@ reading is dated by the day it falls on there. Unset, that's the server's zone
 from __future__ import annotations
 
 import math
+import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
 
@@ -755,7 +756,8 @@ def _point_added(s: GraphStore, org: str, p: dict) -> None:
 def _reading_added(s: GraphStore, org: str, p: dict) -> None:
     """reading.added, and the older meter.read / condition.read: a manual reading."""
     point_id = p.get("point_id") or p.get("meter_id")
-    s.put_node(org, p["id"], "Reading", {"on": p["on"], "value": p["value"], "note": p.get("note", "")})
+    s.put_node(org, p["id"], "Reading", {"on": p["on"], "value": p["value"], "note": p.get("note", ""),
+                                         **_timed(p)})
     s.put_edge(org, "OF", p["id"], point_id)
     point = s.node(org, point_id)
     # Up to now readings came in date order. One dated on or before the latest
@@ -764,6 +766,12 @@ def _reading_added(s: GraphStore, org: str, p: dict) -> None:
         _reread_tasks(s, org, point_id, p["on"])
     else:
         s.patch_node(org, point_id, {"latest_on": p["on"]})
+
+
+def _timed(p: dict) -> dict:
+    """A reading's time of day and precision (#264). Events before them carry
+    neither: a date, known to the day."""
+    return {k: p[k] for k in ("at", "precision") if p.get(k)}
 
 
 def _reading_voided(s: GraphStore, org: str, p: dict) -> None:
@@ -779,9 +787,10 @@ def _reading_corrected(s: GraphStore, org: str, p: dict) -> None:
     point_id = s.out(org, p["id"], "OF")[0]["id"]
     s.patch_node(org, p["id"], {"voided": True, "voided_on": p["corrected_on"], "voided_reason": p["reason"],
                                 "replaced_by": p["new_id"]})
-    s.put_node(org, p["new_id"], "Reading", {"on": p["on"], "value": p["value"], "note": old.get("note", ""),
+    s.put_node(org, p["new_id"], "Reading", {"on": p["on"], "value": p["value"],
+                                             "note": p["note"] if "note" in p else old.get("note", ""),
                                              "replaces": p["id"], "reason": p["reason"],
-                                             "corrected_on": p["corrected_on"]})
+                                             "corrected_on": p["corrected_on"], **_timed(p)})
     s.put_edge(org, "OF", p["new_id"], point_id)
     point = s.node(org, point_id)
     if p["on"] > (point.get("latest_on") or ""):
@@ -836,6 +845,100 @@ USAGE_UNITS = ("hours", "cycles", "km", "miles", "starts", "tonnes", "litres")
 POINT_KINDS = ("counter", "condition")
 POINT_SOURCES = ("manual", "automated")
 
+# How precisely a reading's time is known (#264): a reading known only to the
+# month stays a month. Readings before this have a date only: "day".
+READING_PRECISIONS = ("year", "month", "day", "hour", "minute", "second", "us", "ns")
+_TIME_RE = re.compile(
+    r"^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:[T ](\d{2})(?::(\d{2})(?::(\d{2})(?:[.,](\d{1,9}))?)?)?"
+    r"(Z|[+-]\d{2}:?\d{2})?)?)?)?$")
+
+
+def _reading_time(at, precision, tz, now: datetime) -> tuple[str, str | None, str]:
+    """``(on, at, precision)`` for a reading's time. ``at`` is "2026", "2026-10",
+    "2026-10-19", or a time of day ("2026-10-19T10:14", seconds and up to nine
+    decimals allowed; with Z or an offset, else the workspace's zone). ``on`` is
+    the workspace day it falls on (a year or month: its first day); ``at`` the
+    moment in UTC, "YYYY-MM-DDTHH:MM:SS[.fff…]Z", for a time of day, else None.
+    ``precision`` defaults to what was given and may only be coarser."""
+    m = _TIME_RE.match(str(at).strip())
+    if not m:
+        raise Invalid(f"“{at}” isn't a time: write 2026-10-19T10:14 (or 2026-10-19, 2026-10 or 2026).")
+    y, mo, d, hh, mi, ss, frac, off = m.groups()
+    given = ("year" if mo is None else "month" if d is None else "day" if hh is None else
+             "hour" if mi is None else "minute" if ss is None else "second" if not frac else
+             "us" if len(frac) <= 6 else "ns")
+    precision = precision or given
+    if precision not in READING_PRECISIONS:
+        raise Invalid(f"precision must be one of: {', '.join(READING_PRECISIONS)}.")
+    if READING_PRECISIONS.index(precision) > READING_PRECISIONS.index(given):
+        raise Invalid(f"“{at}” is only given to the {given}; it can't be more precise than that.")
+    try:
+        day = date(int(y), int(mo or 1), int(d or 1))
+    except ValueError:
+        raise Invalid(f"“{at}” isn't a real date.") from None
+    if READING_PRECISIONS.index(precision) <= READING_PRECISIONS.index("day"):
+        if precision == "year":
+            day = day.replace(month=1, day=1)
+        elif precision == "month":
+            day = day.replace(day=1)
+        if day > now.astimezone(tz or timezone.utc).date():
+            raise Invalid("A reading can't be in the future.")
+        return day.isoformat(), None, precision
+    zone_ = tz or timezone.utc
+    if off == "Z":
+        zone_ = timezone.utc
+    elif off:
+        sign = 1 if off[0] == "+" else -1
+        digits = off[1:].replace(":", "")
+        zone_ = timezone(sign * timedelta(hours=int(digits[:2]), minutes=int(digits[2:])))
+    try:
+        local = datetime(int(y), int(mo), int(d), int(hh), int(mi or 0), int(ss or 0), tzinfo=zone_)
+    except ValueError:
+        raise Invalid(f"“{at}” isn't a real time.") from None
+    moment = local.astimezone(timezone.utc)
+    if moment > now + timedelta(minutes=2):
+        raise Invalid("A reading can't be in the future.")
+    digits = {"us": 6, "ns": 9}.get(precision, 0)
+    frac = ((frac or "") + "0" * 9)[:digits]
+    keep = {"hour": 13, "minute": 16}.get(precision)
+    stamp = moment.strftime("%Y-%m-%dT%H:%M:%S")
+    if keep:  # the units it isn't known to are zero
+        stamp = stamp[:keep] + ":00:00"[: 19 - keep]
+    stamp += ("." + frac if frac else "") + "Z"
+    return time_zones.day_of(moment, tz), stamp, precision
+
+
+def _rkey(r: dict) -> tuple:
+    """Readings in time order: by day, then by the time of day where it's known."""
+    return (r["on"], r.get("at") or "", r["value"])
+
+
+def _moment(r: dict) -> datetime:
+    if r.get("at"):
+        return datetime.fromisoformat(r["at"][:19]).replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(r["on"]).replace(tzinfo=timezone.utc)
+
+
+def _elapsed_days(a: dict, b: dict) -> float:
+    """Days from reading a to reading b: exact where both have a time of day."""
+    if a.get("at") and b.get("at"):
+        return (_moment(b) - _moment(a)).total_seconds() / 86_400
+    return float((date.fromisoformat(b["on"]) - date.fromisoformat(a["on"])).days)
+
+
+def _when(r: dict, tz) -> str:
+    """A reading's time as people read it, to its precision, in the workspace's zone."""
+    precision = r.get("precision") or "day"
+    if not r.get("at"):
+        return r["on"][: {"year": 4, "month": 7}.get(precision, 10)]
+    local = _moment(r).astimezone(tz or timezone.utc)
+    shown = local.strftime("%Y-%m-%d %H:%M:%S")[: {"hour": 13, "minute": 16}.get(precision, 19)]
+    if precision == "hour":
+        shown += ":00"
+    if precision in ("us", "ns"):
+        shown += "." + r["at"][20:-1]
+    return shown
+
 
 def _is_calendar(unit: str) -> bool:
     return (_norm_unit(unit) or "days") in CALENDAR_UNITS
@@ -843,7 +946,7 @@ def _is_calendar(unit: str) -> bool:
 
 def _manual_readings(s: GraphStore, org: str, point_id: str) -> list[dict]:
     rows = [r for r in s.inn(org, point_id, "OF") if r["label"] == "Reading" and not r.get("voided")]
-    return sorted(rows, key=lambda r: (r["on"], r["value"]))
+    return sorted(rows, key=_rkey)
 
 
 def _readings(s: GraphStore, org: str, point: dict, tz=None) -> list[dict]:
@@ -878,7 +981,7 @@ def _rate(readings: list[dict]) -> float | None:
     cutoff = (date.fromisoformat(last["on"]) - timedelta(days=365)).isoformat()
     window = [r for r in readings if r["on"] >= cutoff]
     first = window[0] if len(window) > 1 else readings[-2]
-    days = (date.fromisoformat(last["on"]) - date.fromisoformat(first["on"])).days
+    days = _elapsed_days(first, last)
     return (last["value"] - first["value"]) / days if days > 0 else None
 
 
@@ -3152,40 +3255,52 @@ class Maintenance:
             return None
         return _number(value, "alarm limit", -MAX_AMOUNT, MAX_AMOUNT)
 
-    def record_reading(self, point_id: str, value, on=None, note="") -> dict:
+    def record_reading(self, point_id: str, value, on=None, note="", at=None, precision=None) -> dict:
         """A manual reading. A counter's only go up. A condition reading past an alarm
-        limit opens an inspection (one at a time per point)."""
+        limit opens an inspection (one at a time per point). ``at`` gives its time of
+        day (or a coarser time), ``precision`` how well it's known (#264)."""
         point = self._get(point_id, "MeasurementPoint")
         if point.get("source") == "automated":
             raise Invalid(f"{point['name']} is fed automatically (tag {point.get('tag')}); its readings come in "
                           "through the feed.")
-        value, day = self._checked_reading(point, value, on)
+        value, day, timed = self._checked_reading(point, value, on, at=at, precision=precision)
         self._emit("reading.added", {"id": new_id(), "point_id": point_id, "on": day, "value": value,
-                                     "note": _text(note, "note")})
+                                     "note": _text(note, "note"), **timed})
         if point.get("kind") == "condition":
             self._check_alarm(point_id, value, day)
         return self.point(point_id)
 
-    def _checked_reading(self, point: dict, value, on, instead_of: str | None = None) -> tuple[float, str]:
-        """A manual reading's value and date, checked: not in the future, and a
-        counter's in order with its other readings (leaving out ``instead_of``, the
-        reading it would replace)."""
+    def _checked_reading(self, point: dict, value, on, instead_of: str | None = None, at=None,
+                         precision=None) -> tuple[float, str, dict]:
+        """A manual reading's value, day and time (``{at, precision}`` when given),
+        checked: not in the future, and a counter's in order with its other readings
+        (leaving out ``instead_of``, the reading it would replace)."""
         value = _number(value, "reading", -MAX_AMOUNT, MAX_AMOUNT)
-        day = _day(on, today=self.today())
+        timed: dict = {}
+        if at not in (None, ""):
+            day, stamp, prec = _reading_time(at, precision, self.tz, time_zones.now())
+            if on not in (None, "") and _day(on, today=self.today()) != day:
+                raise Invalid(f"on ({on}) and at ({at}) disagree: give the time in at alone.")
+            timed = {"precision": prec} | ({"at": stamp} if stamp else {})
+        else:
+            if precision not in (None, "", "day"):
+                raise Invalid("Give the time in at (e.g. 2026-10-19T10:14) to say how precisely it's known.")
+            day = _day(on, today=self.today())
         if day > self.today():
             raise Invalid("A reading can't be in the future.")
         if point.get("kind") == "counter":
             if value < 0:
                 raise Invalid("A counter can't be negative.")
             readings = [r for r in _manual_readings(self.s, self.org, point["id"]) if r["id"] != instead_of]
-            before = [r for r in readings if r["on"] <= day]
-            after = [r for r in readings if r["on"] > day]
+            key = (day, timed.get("at") or "")
+            before = [r for r in readings if (r["on"], r.get("at") or "") <= key]
+            after = [r for r in readings if (r["on"], r.get("at") or "") > key]
             if before and value < before[-1]["value"]:
                 raise Invalid(f"It's lower than the reading of {before[-1]['value']:g} on {before[-1]['on']}. "
                               "If the counter was replaced, add a new one.")
             if after and value > after[0]["value"]:
                 raise Invalid(f"It's higher than the later reading of {after[0]['value']:g} on {after[0]['on']}.")
-        return value, day
+        return value, day, timed
 
     def ingest(self, rows) -> dict:
         """Automated readings from a feed: rows of {tag, value, time?}. Each lands in the
@@ -3267,22 +3382,32 @@ class Maintenance:
                                       "reason": _text(reason, "reason", required=True)})
         return self.point(self.s.out(self.org, reading_id, "OF")[0]["id"])
 
-    def correct_reading(self, reading_id: str, value=None, on=None, reason="") -> dict:
-        """Correct a manual reading's value, or move it to the date it was really
-        read: the original is struck out and the corrected one recorded in its place,
-        each linked to the other, with the reason."""
+    def correct_reading(self, reading_id: str, value=None, on=None, reason="", at=None, precision=None,
+                        note=None) -> dict:
+        """Correct a manual reading's value, or move it to the day or time it was
+        really read (``at``, with its ``precision``), or fix its note: the original is
+        struck out and the corrected one recorded in its place, each linked to the
+        other, with the reason."""
         old = self._get(reading_id, "Reading")
         if old.get("voided"):
             raise Invalid("That reading was struck out; correct the one that replaced it.")
         reason = _text(reason, "reason", required=True)
         point = self._get(self.s.out(self.org, reading_id, "OF")[0]["id"], "MeasurementPoint")
-        new_value, day = self._checked_reading(point, old["value"] if value in (None, "") else value,
-                                               on or old["on"], instead_of=reading_id)
-        if new_value == old["value"] and day == old["on"]:
-            raise Invalid("That's the reading as it is: give the right value, the right date, or both.")
+        if at in (None, "") and on in (None, "") and old.get("at"):
+            at, precision = old["at"], precision or old.get("precision")
+        new_value, day, timed = self._checked_reading(
+            point, old["value"] if value in (None, "") else value, on or (None if at else old["on"]),
+            instead_of=reading_id, at=at, precision=precision)
+        new_note = None if note is None else _text(note, "note")
+        unchanged = (new_value == old["value"] and day == old["on"] and timed.get("at") == old.get("at")
+                     and (timed.get("precision") or "day") == (old.get("precision") or "day")
+                     and (new_note is None or new_note == old.get("note", "")))
+        if unchanged:
+            raise Invalid("That's the reading as it is: give the right value, time, note, or all of them.")
         new = new_id()
         self._emit("reading.corrected", {"id": reading_id, "new_id": new, "on": day, "value": new_value,
-                                         "reason": reason, "corrected_on": self.today()})
+                                         "reason": reason, "corrected_on": self.today(), **timed,
+                                         **({"note": new_note} if new_note is not None else {})})
         if point.get("kind") == "condition":
             latest = _manual_readings(self.s, self.org, point["id"])[-1]
             if latest["id"] == new:
@@ -3294,16 +3419,18 @@ class Maintenance:
         marked: status 'ok', 'correction' (it replaces another: replaces, reason),
         'voided' (void_reason, voided_on) or 'replaced' (by a correction: replaced_by)."""
         rows = sorted((r for r in self.s.inn(self.org, point_id, "OF") if r["label"] == "Reading"),
-                      key=lambda r: (r["on"], r["value"]))[-limit:]
+                      key=_rkey)[-limit:]
         by_id = {r["id"]: r for r in rows}
 
         def brief(rid):
             r = by_id.get(rid) or self.s.node(self.org, rid) or {}
-            return {"id": rid, "at": r.get("on"), "value": r.get("value")}
+            return {"id": rid, "at": r.get("at") or r.get("on"), "when": r.get("on") and _when(r, self.tz),
+                    "value": r.get("value")}
 
         out = []
         for r in reversed(rows):
-            entry = {"id": r["id"], "at": r["on"], "value": r["value"], "note": r.get("note", "")}
+            entry = {"id": r["id"], "at": r.get("at") or r["on"], "on": r["on"], "when": _when(r, self.tz),
+                     "precision": r.get("precision") or "day", "value": r["value"], "note": r.get("note", "")}
             if r.get("voided"):
                 entry |= {"status": "replaced" if r.get("replaced_by") else "voided",
                           "voided_on": r.get("voided_on"), "void_reason": r.get("voided_reason", "")}
@@ -3329,7 +3456,8 @@ class Maintenance:
             current = latest and {"value": latest["value"], "at": latest["t"]}
             recent = [{"at": r["t"], "value": r["value"]} for r in self.s.series.recent(self.org, point_id, 50)]
         else:
-            current = last and {"value": last["value"], "at": last["on"]}
+            current = last and {"value": last["value"], "at": last.get("at") or last["on"],
+                                "when": _when(last, self.tz), "precision": last.get("precision") or "day"}
             recent = self._reading_trail(point_id)
         above, below = mp.get("alarm_above"), mp.get("alarm_below")
         status = "ok"
@@ -3340,6 +3468,7 @@ class Maintenance:
         out = {"id": point_id, "name": mp["name"], "kind": mp.get("kind", "counter"), "unit": mp.get("unit", ""),
                "source": mp.get("source", "manual"), "tag": mp.get("tag", ""), "alarm_above": above,
                "alarm_below": below, "reading": current and current["value"], "read_at": current and current["at"],
+               "read_when": current and current.get("when"), "read_precision": current and current.get("precision"),
                "status": status, "readings": recent}
         on = self.s.out(self.org, point_id, "ON")
         # What it measures: a position (position), or an item (item: it travels with it).
@@ -3349,11 +3478,13 @@ class Maintenance:
         if out["kind"] == "counter":
             rate = _rate(readings)
             out["rate_per_day"] = rate and round(rate, 3)
+            if rate and len(readings) >= 2 and _elapsed_days(readings[-2], readings[-1]) < 2:
+                out["rate_per_hour"] = round(rate / 24, 4)  # readings hours apart: per hour reads better
         else:
             trend = projection = None
             recent_days = readings[-6:]
             if len(recent_days) >= 3:
-                xs = [(date.fromisoformat(r["on"]) - date.fromisoformat(recent_days[0]["on"])).days for r in recent_days]
+                xs = [_elapsed_days(recent_days[0], r) for r in recent_days]
                 ys = [r["value"] for r in recent_days]
                 n = len(xs)
                 mx, my = sum(xs) / n, sum(ys) / n
@@ -3361,6 +3492,8 @@ class Maintenance:
                 if sxx > 0:
                     slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
                     trend = round(slope, 4)
+                    if xs[-1] < 2:  # readings within a couple of days: give the hourly trend too
+                        out["trend_per_hour"] = round(slope / 24, 4)
                     target = above if slope > 0 and above is not None else \
                         below if slope < 0 and below is not None else None
                     if status == "ok" and target is not None:
