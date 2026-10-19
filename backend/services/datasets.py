@@ -367,7 +367,7 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
 
 # What a dataset holds, as tags on the Data list (planning #261). Detected
 # from the columns; the "use for" line says which analyses take it.
-TAGS = ("Lifetime data", "Repeat failures", "Covariates", "Time-varying covariates", "Measurements")
+TAGS = ("Non-repairable", "Repairable", "Covariates", "Time-varying covariates", "Measurements")
 _CENSOR_NAME_RE = re.compile(r"(^c$|censor|status|failed|event|^c_)", re.IGNORECASE)
 _TIME_NAME_RE = re.compile(
     r"(^x$|^t$|^xl$|^xr$|^tl$|^tr$|hour|time|age|day|week|month|year|cycle|km|mile|start|stop|end|date|observ)",
@@ -439,11 +439,11 @@ def detect_tags(df: pd.DataFrame) -> dict:
     # Several rows per unit with a status column are recurrent events, unless
     # the rows are periods of changing covariates (start/stop).
     if repeat:
-        tags.add("Repeat failures")
+        tags.add("Repairable")
     elif censor or times:
         # One life per unit (or per start/stop period); readings over a unit's
         # life are lifetime data too, unless the unit is repaired between them.
-        tags.add("Lifetime data")
+        tags.add("Non-repairable")
     use_for: list[str] = []
     covs = "Covariates" in tags
     if "Measurements" in tags:
@@ -451,7 +451,7 @@ def detect_tags(df: pd.DataFrame) -> dict:
     elif censor and unit and ("Time-varying covariates" in tags or start_stop):
         use_for.append("Life model with time-varying covariates")
     elif repeat:
-        use_for.append("Repeat failures model" + (" with covariates" if covs else ""))
+        use_for.append("Repairable model" + (" with covariates" if covs else ""))
     elif censor or times:
         use_for.append("Life model" + (" with covariates" if covs else ""))
         use_for.append("Condition monitoring (the lifetimes)")
@@ -528,11 +528,11 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
     failed = int((df[censor] == 0).sum()) if censor else None
     if "Measurements" in tags:
         return f"{units} · {len(df):,} readings"
-    if "Repeat failures" in tags:
+    if "Repairable" in tags:
         n = failed if failed is not None else len(df)
         return f"{units} · {n:,} {_plural('failure', n)}"
     if failed is None:
-        return f"{units} · all failed" if "Lifetime data" in tags else units
+        return f"{units} · all failed" if "Non-repairable" in tags else units
     return f"{units} · {failed:,} failed"
 
 
@@ -560,7 +560,7 @@ def _unit_ids(dataset: Dataset) -> frozenset:
 
 def condition_pairs(datasets: list[Dataset]) -> dict[str, list[dict]]:
     """Which lifetimes and readings datasets go together for condition
-    monitoring: a Lifetime data set and a Measurements set whose unit ids mostly
+    monitoring: a Non-repairable set and a Measurements set whose unit ids mostly
     match (at least half of the smaller set's). ``{dataset id: [{id, name}]}``,
     both ways round; a dataset with no partner isn't in it."""
     lives, reads = [], []
@@ -568,7 +568,7 @@ def condition_pairs(datasets: list[Dataset]) -> dict[str, list[dict]]:
         tags = dataset_tags(d)["tags"]
         if "Measurements" in tags:
             reads.append(d)
-        elif "Lifetime data" in tags:
+        elif "Non-repairable" in tags:
             lives.append(d)
     out: dict[str, list[dict]] = {}
     for life in lives:

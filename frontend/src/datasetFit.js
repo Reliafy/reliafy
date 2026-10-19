@@ -5,7 +5,7 @@
 export function fitOptions(d) {
   const id = encodeURIComponent(d.id);
   const t = d.tags || [];
-  if (t.includes("Repeat failures")) return [{ label: "Repeat failures model", to: `/modelling/recurrent/new?dataset=${id}` }];
+  if (t.includes("Repairable")) return [{ label: "Repairable model", to: `/modelling/recurrent/new?dataset=${id}` }];
   const pairs = d.pairs_with || [];
   const many = pairs.length > 1;
   if (t.includes("Measurements")) {
