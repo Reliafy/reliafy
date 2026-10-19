@@ -46,7 +46,7 @@ import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import { roughDateValue } from "../maintenanceFields.js";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import Modal from "../components/Modal.jsx";
-import { isStruck, liveReadings, readingStatusText } from "../maintenanceReadings.js";
+import { isStruck, liveReadings, readingClock, readingStatusText, readingWhen } from "../maintenanceReadings.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PART_ROLES, roleLabel, stockText } from "../maintenanceSpares.js";
 import { TasksCard } from "../components/MaintenanceTasks.jsx";
@@ -839,7 +839,7 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
                   <div className="lib-date">{c.kind === "counter" ? "counts use" : "condition"} · {c.source === "automated" ? `feed: ${c.tag}` : "read by hand"}</div></td>
                 <td>{c.reading != null ? `${c.reading} ${c.unit}` : "—"}
                   {c.status !== "ok" && <span className="maint-overdue"> {c.status}</span>}
-                  <div className="lib-date">{c.read_at ? fmtDate(c.read_at.slice(0, 10)) : ""}</div></td>
+                  <div className="lib-date">{c.read_at ? readingWhen({ when: c.read_when, precision: c.read_precision, at: c.read_at }, fmtDate) : ""}</div></td>
                 <td><Sparkline point={c} /></td>
                 <td className="lib-date">
                   {c.kind === "counter"
@@ -916,12 +916,15 @@ function PointModal({ target, onClose, onDone }) {
 function PointReadingModal({ point, onClose, onDone }) {
   const [value, setValue] = useState("");
   const [on, setOn] = useState(today());
+  // The time of day it was read, now by default: clear it when it isn't known.
+  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   return (
     <FormModal title={`Reading: ${point.name}`} submitLabel="Save" canSubmit={value !== ""} onClose={onClose}
-               onSubmit={async () => onDone(await recordMeasurementReading(point.id, Number(value), on))}>
+               onSubmit={async () => onDone(await recordMeasurementReading(point.id, Number(value), on, time ? `${on}T${time}` : undefined))}>
       <Field label={`Reading${point.unit ? ` (${point.unit})` : ""}`}><input type="number" step="any" autoFocus value={value}
              placeholder={point.reading != null ? `last: ${point.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
       <Field label="Read on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
+      <Field label="At (clear it if not known)"><input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
     </FormModal>
   );
 }
@@ -935,13 +938,17 @@ function ReadingsModal({ point: initial, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const unit = point.unit ? ` ${point.unit}` : "";
-  const start = (r, mode) => { setError(null); setEdit({ id: r.id, mode, value: String(r.value), on: r.at, reason: "" }); };
+  const start = (r, mode) => {
+    setError(null);
+    setEdit({ id: r.id, mode, value: String(r.value), on: r.on || r.at.slice(0, 10), time: readingClock(r), reason: "" });
+  };
   const save = async () => {
     setBusy(true); setError(null);
     try {
       setPoint(edit.mode === "void"
         ? await voidMeasurementReading(edit.id, edit.reason)
-        : await correctMeasurementReading(edit.id, { value: Number(edit.value), on: edit.on, reason: edit.reason }));
+        : await correctMeasurementReading(edit.id, { value: Number(edit.value), on: edit.on,
+          at: edit.time ? `${edit.on}T${edit.time}` : undefined, reason: edit.reason }));
       setEdit(null);
     } catch (e) { setError(e.message); }
     setBusy(false);
@@ -959,7 +966,7 @@ function ReadingsModal({ point: initial, onClose }) {
           <tbody>
             {point.readings.map((r) => (
               <tr key={r.id}>
-                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{fmtDate(r.at)}</td>
+                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{readingWhen(r, fmtDate)}</td>
                 <td className={isStruck(r) ? "maint-reading-struck" : ""}>{r.value}{unit}</td>
                 <td className="lib-date">{readingStatusText(r, fmtDate) || r.note || ""}</td>
                 <td>{!isStruck(r) && (
@@ -981,6 +988,7 @@ function ReadingsModal({ point: initial, onClose }) {
                 <input type="number" inputMode="decimal" step="any" value={edit.value} onChange={set("value")} />
               </Field>
               <Field label="Really read on"><input type="date" value={edit.on} max={today()} onChange={set("on")} /></Field>
+              <Field label="At (optional)"><input type="time" value={edit.time} onChange={set("time")} /></Field>
             </>}
             <Field label={edit.mode === "void" ? "Why it's struck out" : "Why it's corrected"}>
               <input autoFocus value={edit.reason} placeholder={edit.mode === "void" ? "e.g. entered twice" : "e.g. an old reading entered as today"}

@@ -302,13 +302,14 @@ MEASUREMENTS: Table = {
         with an ingest-scope token)."""),
     "update_point": ("point_id", "name alarm_above alarm_below clear_alarm_above clear_alarm_below tag", """Rename
         a point, set or clear its alarm limits, or change an automated point's tag."""),
-    "record": ("point_id value", "on note", """A manual reading (the hour meter says 12,340). Counters only go
-        up; on backdates it. Returns the point: latest, rate or trend, status, any alarm work order."""),
+    "record": ("point_id value", "at on note precision", """A manual reading (the hour meter says 12,340).
+        Counters only go up. at is when it was read, to the minute or finer (or on, a day); a time of day orders
+        readings taken the same day. Returns the point: latest, rate or trend, status, any alarm work order."""),
     "void": ("reading_id reason", "", """Strike out a reading entered by mistake (a duplicate, the wrong meter),
         saying why; rates, due dates and alarms leave it out. Returns the point."""),
-    "correct": ("reading_id reason", "value on", """Correct a reading's value (a typo) or date (entered as
-        today: move it to the day it was read): the original is struck out and the correction recorded in its
-        place. Returns the point."""),
+    "correct": ("reading_id reason", "value at on precision note", """Correct a reading's value (a typo),
+        time (at, or on for a day) or note: the original is struck out and the correction recorded in its place.
+        Returns the point."""),
 }
 
 LOCATIONS: Table = {
@@ -1033,7 +1034,15 @@ def register() -> None:
                                      "record: the day it was read (default today; a past date backdates it). "
                                      "correct: the date it was really read (default unchanged)."))] = None,
                                  note: str | None = None, reading_id: str | None = None,
-                                 reason: str | None = None) -> dict[str, Any]:
+                                 reason: str | None = None,
+                                 at: Annotated[str | None, Field(description=(
+                                     "When it was read: 2026-10-19T10:14 (seconds and up to nine decimals "
+                                     "allowed; Z or an offset, else the workspace's time zone), or a coarser "
+                                     "2026-10-19, 2026-10 or 2026."))] = None,
+                                 precision: Annotated[
+                                     Literal["year", "month", "day", "hour", "minute", "second", "us", "ns"] | None,
+                                     Field(description="How precisely the time is known (default: as given)."),
+                                 ] = None) -> dict[str, Any]:
         """Measurement points (counters such as run hours, and condition measures with alarm limits) on a
         position or an item, and their manual readings. Counters drive tasks by use; condition alarms
         open inspections. Reading ids are in maintenance_get kind measurement_point."""
@@ -1053,10 +1062,10 @@ def register() -> None:
                 kwargs["tag"] = tag
             return run(m.update_point, point_id, **kwargs)
         if action == "record":
-            return run(m.record_reading, point_id, value, on, note or "")
+            return run(m.record_reading, point_id, value, on, note or "", at, precision)
         if action == "void":
             return run(m.void_reading, reading_id, reason)
-        return run(m.correct_reading, reading_id, value, on, reason)
+        return run(m.correct_reading, reading_id, value, on, reason, at, precision, note)
 
     @tool("maintenance_locations", _WRITE, "Create and change locations", LOCATIONS)
     def maintenance_locations(action: _choice(LOCATIONS), ctx: Context, location_id: str | None = None,
