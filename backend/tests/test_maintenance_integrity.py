@@ -174,10 +174,10 @@ def test_a_stale_reading_entered_as_today_moves_to_its_true_date(m):
     # Newest first by the date read: the original (today), then its correction.
     original, corrected = point["readings"][0], point["readings"][1]
     assert (corrected["status"], corrected["at"], corrected["value"]) == ("correction", _ago(200), 3774)
-    assert corrected["replaces"] == {"id": stale["id"], "at": TODAY, "value": 3774}
+    assert corrected["replaces"] == {"id": stale["id"], "at": TODAY, "when": TODAY, "value": 3774}
     assert corrected["reason"] == "an old reading, entered as today" and corrected["corrected_on"] == TODAY
     assert (original["status"], original["id"], original["voided_on"]) == ("replaced", stale["id"], TODAY)
-    assert original["replaced_by"] == {"id": corrected["id"], "at": _ago(200), "value": 3774}
+    assert original["replaced_by"] == {"id": corrected["id"], "at": _ago(200), "when": _ago(200), "value": 3774}
     assert point["reading"] == 3774 and point["read_at"] == _ago(200)
 
     point = m.record_reading(meter, 4774)

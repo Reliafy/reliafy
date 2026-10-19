@@ -2546,16 +2546,17 @@ export function addMeasurementPoint(positionId, body) {
 export function addItemMeasurementPoint(itemId, body) {
   return postJson(`/api/maintenance/items/${itemId}/points`, body);
 }
-export function recordMeasurementReading(pointId, value, on) {
-  return postJson(`/api/maintenance/points/${pointId}/readings`, { value, on });
+// ``at`` (optional) is when it was read, e.g. "2026-10-19T10:14" (#264).
+export function recordMeasurementReading(pointId, value, on, at) {
+  return postJson(`/api/maintenance/points/${pointId}/readings`, at ? { value, at } : { value, on });
 }
 // Strike out a manual reading, or correct its value and/or date; each with a
 // reason. Both return the point, its readings list marking what was changed.
 export function voidMeasurementReading(readingId, reason) {
   return postJson(`/api/maintenance/readings/${readingId}/void`, { reason });
 }
-export function correctMeasurementReading(readingId, { value, on, reason }) {
-  return postJson(`/api/maintenance/readings/${readingId}/correct`, { value, on, reason });
+export function correctMeasurementReading(readingId, { value, on, at, reason }) {
+  return postJson(`/api/maintenance/readings/${readingId}/correct`, at ? { value, at, reason } : { value, on, reason });
 }
 
 // ---- item classes and the manufacturer register (Reliafy Maintenance; optional) ----

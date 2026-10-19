@@ -513,7 +513,8 @@ def update_point(point_id: str, body: dict = Body(...), m: Maintenance = Depends
 
 @router.post("/points/{point_id}/readings")
 def record_reading(point_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.record_reading, point_id, body.get("value"), body.get("on"), body.get("note", ""))
+    return _run(m.record_reading, point_id, body.get("value"), body.get("on"), body.get("note", ""),
+                body.get("at"), body.get("precision"))
 
 
 @router.post("/readings/{reading_id}/void")
@@ -528,7 +529,8 @@ def correct_reading(reading_id: str, body: dict = Body(...),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Correct a manual reading's value and/or date (``value``, ``on``), with the reason
     (required): the original is struck out and the corrected one recorded. Returns the point."""
-    return _run(m.correct_reading, reading_id, body.get("value"), body.get("on"), body.get("reason", ""))
+    return _run(m.correct_reading, reading_id, body.get("value"), body.get("on"), body.get("reason", ""),
+                body.get("at"), body.get("precision"), body.get("note"))
 
 
 @router.get("/settings")
