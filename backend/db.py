@@ -95,6 +95,8 @@ def init_db() -> None:
     """
     db = get_db()
     db.datasets.create_index([("owner_id", 1), ("checksum", 1)])
+    db.agent_reports.create_index([("owner_id", 1), ("created_at", -1)])
+    db.agent_reports.create_index([("status", 1), ("created_at", -1)])
     db.datasets.create_index([("owner_id", 1), ("created_at", -1)])
     db.models.create_index([("owner_id", 1), ("dataset_id", 1)])
     db.models.create_index([("owner_id", 1), ("created_at", -1)])

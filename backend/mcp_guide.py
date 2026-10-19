@@ -278,7 +278,12 @@ RCM evidence changes, moved simulations. Start from its sentence; report not_com
 - Deleting: models delete, datasets delete, rbd delete — permanent, own items only. Only on the user's \
 explicit request: confirm by name first, and relay what the response lists as affected. A dataset a model was \
 fitted to, or a model a fleet runs on, can't be deleted until those are dealt with.
-- Every saved item has a url: give it to the user so they can open it in Reliafy."""),
+- Every saved item has a url: give it to the user so they can open it in Reliafy.
+- When a tool gets in your way (an error, a result that makes no sense, an action that's missing, a default \
+that's wrong, a guide that's unclear), report_problem report it: kind, a one-line summary, the tool and \
+action, what you were trying, what you expected and what happened. Tell the user you did. It never counts \
+against a plan. report_problem status (with the report_id, or none for your latest) says later whether it was \
+acknowledged or fixed, and in which release; when it's fixed, try again."""),
 
     "plans": ("Free, Pro and the limits; what to do when one stops a call.", """\
 Plans and limits.

@@ -36,6 +36,8 @@ READ_TOOLS = {"guide", "get", "list", "life_data_analysis", "repairable_analysis
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
 WRITE_TOOLS = {"models", "datasets", "rbd", "uploads", "rcm", "sharing", "fleet"}
+# Writes Reliafy's own feedback store, never the workspace: neither read-only nor destructive.
+REPORT_TOOLS = {"report_problem"}
 
 
 # MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.
@@ -183,7 +185,7 @@ def test_free_user_gets_403_when_billing_is_on(env, monkeypatch):
     # Pro gets in.
     env.db.users.update_one({"_id": A}, {"$set": {"plan": "pro"}})
     tools = _run(env.token[A], lambda c: c.list_tools())
-    assert len(tools.tools) == len(READ_TOOLS | WRITE_TOOLS)
+    assert len(tools.tools) == len(READ_TOOLS | WRITE_TOOLS | REPORT_TOOLS)
 
 
 def test_self_hosted_is_always_allowed_and_last_used_is_recorded(env):
@@ -210,7 +212,7 @@ def test_bearer_resolvers_are_pluggable(env, monkeypatch):
 
 def test_tools_list_has_every_tool_with_annotations(env):
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    assert set(tools) == READ_TOOLS | WRITE_TOOLS
+    assert set(tools) == READ_TOOLS | WRITE_TOOLS | REPORT_TOOLS
     for name, tool in tools.items():
         a = tool.annotations
         assert a.open_world_hint is (name in OPEN_WORLD_TOOLS), name
