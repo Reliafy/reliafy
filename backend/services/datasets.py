@@ -440,9 +440,10 @@ def detect_tags(df: pd.DataFrame) -> dict:
     # the rows are periods of changing covariates (start/stop).
     if repeat:
         tags.add("Repairable")
-    elif censor or times:
-        # One life per unit (or per start/stop period); readings over a unit's
-        # life are lifetime data too, unless the unit is repaired between them.
+    elif censor or (times and "Measurements" not in tags):
+        # One life per unit (or per start/stop period). Readings alone have no
+        # failure times, so they're only non-repairable life data when the file
+        # also says which units failed (a status column).
         tags.add("Non-repairable")
     use_for: list[str] = []
     covs = "Covariates" in tags
