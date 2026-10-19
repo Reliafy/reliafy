@@ -563,7 +563,8 @@ def condition_pairs(datasets: list[Dataset]) -> dict[str, list[dict]]:
     """Which lifetimes and readings datasets go together for condition
     monitoring: a Non-repairable set and a Measurements set whose unit ids mostly
     match (at least half of the smaller set's). ``{dataset id: [{id, name}]}``,
-    both ways round; a dataset with no partner isn't in it."""
+    both ways round; a dataset with no partner isn't in it. Only datasets with
+    the same owner pair."""
     lives, reads = [], []
     for d in datasets:
         tags = dataset_tags(d)["tags"]
@@ -577,6 +578,10 @@ def condition_pairs(datasets: list[Dataset]) -> dict[str, list[dict]]:
         if not a:
             continue
         for read in reads:
+            # Only one owner's datasets pair (both yours, both samples, both one
+            # colleague's): an id that happens to match someone else's isn't a match.
+            if getattr(read, "owner_id", None) != getattr(life, "owner_id", None):
+                continue
             b = _unit_ids(read)
             if b and len(a & b) >= 0.5 * min(len(a), len(b)):
                 out.setdefault(life.id, []).append({"id": read.id, "name": read.name})
