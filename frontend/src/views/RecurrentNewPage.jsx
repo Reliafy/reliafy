@@ -279,7 +279,7 @@ export default function RecurrentNewPage() {
         <div>
           <div className="crumb">
             <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/recurrent")}>Repeat failures</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/modelling/recurrent")}>Repairable models</button> /{" "}
             <b>New model</b>
           </div>
           <h1>

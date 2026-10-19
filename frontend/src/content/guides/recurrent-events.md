@@ -4,7 +4,7 @@ task: "How do I tell whether a fleet is getting better or worse over time?"
 category: "Life data modelling"
 prerequisites: "A long-format history of repair events: which system, when it failed."
 related_href: "/modelling/recurrent/new"
-related_label: "Open repeat failures"
+related_label: "Open repairable models"
 order: 16
 ---
 
@@ -54,7 +54,7 @@ Three optional columns add more:
 
 ## Fitting
 
-Go to **Modelling → Repeat failures** and press **New model**. Pick your data, map
+Go to **Modelling → Repairable models** and press **New model**. Pick your data, map
 the columns, and choose a model. The default kind, **Minimal repair**, offers:
 
 - **Crow-AMSAA (NHPP)** — the standard reliability-growth model, and the right

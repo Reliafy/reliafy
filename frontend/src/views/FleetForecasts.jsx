@@ -231,7 +231,7 @@ export default function FleetForecasts() {
               />
             </label>
             <label className="login-field">
-              <span>{modelKind === "recurrent" ? "Repeat failures model" : "Model"}</span>
+              <span>{modelKind === "recurrent" ? "Repairable model" : "Model"}</span>
               <Select
                 value={modelId}
                 onChange={setModelId}
@@ -241,7 +241,7 @@ export default function FleetForecasts() {
             </label>
             <p className="muted-line">
               {modelKind === "recurrent"
-                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Repeat failures first if you don't have one yet."
+                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Repairable models first if you don't have one yet."
                 : "The forecast evaluates this model at each item's age (and, for a regression or ALT model, at each item's own conditions) — fit one under Modelling first if you don't have one yet."}
             </p>
           </div>
