@@ -63,3 +63,20 @@ def test_time_unit_from_the_time_column():
     rows = [[f"HT-{u}", 1000 * k + 37 * u, 0] for u in range(3) for k in range(1, 3)]
     assert tags(rows, ["truck", "engine_hours", "censored"])["time_unit"] == "hour"
     assert tags([[1.0, 0], [2.0, 1]], ["x", "c"])["time_unit"] is None
+
+
+def test_lifetimes_and_readings_pair_by_their_unit_ids():
+    from types import SimpleNamespace
+
+    from backend.services import datasets as svc
+
+    def ds(id_, name, csv):
+        return SimpleNamespace(id=id_, name=name, checksum=id_, data=csv.encode())
+
+    life = ds("L", "Bearing lifetimes", "bearing,hours,censored\n" + "\n".join(f"B-{i},{100+i},{i % 2}" for i in range(6)))
+    reads = ds("R", "Bearing readings", "bearing,hours,vibration\n" + "\n".join(
+        f"B-{i},{h},{2 + h / 1000}" for i in range(6) for h in (0, 1000, 2000)))
+    other = ds("O", "Pump lifetimes", "pump,hours,censored\n" + "\n".join(f"P-{i},{100+i},0" for i in range(6)))
+    pairs = svc.condition_pairs([life, reads, other])
+    assert pairs == {"L": [{"id": "R", "name": "Bearing readings"}], "R": [{"id": "L", "name": "Bearing lifetimes"}]}
+    assert "_ids" not in svc.dataset_tags(life)
