@@ -1,30 +1,11 @@
-// The Data list's row menu: which fits each kind of dataset offers (#261).
+// The Data list's row menu: which fit each kind of dataset offers (#261).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fitOptions } from "./datasetFit.js";
 
-test("lifetime data alone fits a life model, and no condition monitoring", () => {
-  const o = fitOptions({ id: "a", tags: ["Non-repairable", "Covariates"] });
-  assert.deepEqual(o.map((x) => x.label), ["Life model with covariates"]);
-  assert.equal(o[0].to, "/modelling/new?dataset=a");
-});
-
-test("with matching readings, condition monitoring opens with both tables", () => {
-  const life = fitOptions({ id: "L", tags: ["Non-repairable"], pairs_with: [{ id: "R", name: "Readings" }] });
-  assert.deepEqual(life.map((x) => x.label), ["Life model", "Condition monitoring"]);
-  assert.equal(life[1].to, "/modelling/joint/new?lifetimes=L&readings=R");
-  const reads = fitOptions({ id: "R", tags: ["Non-repairable", "Measurements"], pairs_with: [{ id: "L", name: "Lifetimes" }] });
-  assert.deepEqual(reads.map((x) => x.label), ["Degradation model", "Condition monitoring"]);
-  assert.equal(reads[1].to, "/modelling/joint/new?lifetimes=L&readings=R");
-});
-
-test("repeat failures and lone measurements open their own fits", () => {
+test("each dataset offers the fits that take it alone", () => {
+  assert.deepEqual(fitOptions({ id: "a", tags: ["Non-repairable", "Covariates"] }),
+    [{ label: "Life model with covariates", to: "/modelling/new?dataset=a" }]);
   assert.equal(fitOptions({ id: "b", tags: ["Repairable"] })[0].to, "/modelling/recurrent/new?dataset=b");
-  assert.deepEqual(fitOptions({ id: "c", tags: ["Non-repairable", "Measurements"] }).map((x) => x.label), ["Degradation model"]);
-});
-
-test("several partners: one entry, this table filled, the other picked on the page", () => {
-  const o = fitOptions({ id: "R", tags: ["Measurements"], pairs_with: [{ id: "L1", name: "A" }, { id: "L2", name: "B" }] });
-  assert.deepEqual(o.map((x) => x.label), ["Degradation model", "Condition monitoring"]);
-  assert.equal(o[1].to, "/modelling/joint/new?readings=R");
+  assert.deepEqual(fitOptions({ id: "c", tags: ["Measurements"] }).map((x) => x.label), ["Degradation model"]);
 });
