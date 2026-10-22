@@ -10,8 +10,8 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 import { dtypeLabel, nameSaysDistribution } from "../datasetGuess.js";
 import "../components/Datasets.css";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
-import { deleteOrRemoveConfirm } from "../confirm.js";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 
 // Where each kind of model fitted to a dataset opens.
 const MODEL_PATH = {
@@ -65,6 +65,7 @@ export default function DatasetPage() {
   }, [location.state]);
 
   const confirm = useConfirm();
+  const askText = useAskText();
   const onDelete = async () => {
     if (!(await confirm(deleteOrRemoveConfirm(ds, "dataset", { name: itemName(ds) })))) return;
     try {
@@ -85,7 +86,7 @@ export default function DatasetPage() {
       setError(e.message);
     }
   };
-  const onRename = () => rename(window.prompt("Dataset name", ds.name));
+  const onRename = async () => rename(await askText(renamePrompt({ kind: "dataset", name: ds.name })));
 
   const fit = ds && fitAction(ds);
   // Compare treats each row as a unit, so it's not offered for unit histories

@@ -20,7 +20,8 @@ import Button from "../components/ui/Button.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, renamePrompt } from "../confirm.js";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -90,6 +91,8 @@ export default function TeamSettingsPage() {
       .catch((e) => setError(e.message));
   }, [workspace]);
   useEffect(() => refresh(), [refresh]);
+  const confirm = useConfirm();
+  const askText = useAskText();
 
   if (workspace === "personal") return <NoTeam />;
   if (error && !team) return <div className="app"><div className="card error">{error}</div></div>;
@@ -119,10 +122,10 @@ export default function TeamSettingsPage() {
   };
 
   const onRename = async () => {
-    const name = window.prompt("Team name", team.name);
-    if (!name || !name.trim() || name.trim() === team.name) return;
+    const name = changedText(await askText(renamePrompt({ kind: "team", name: team.name })), team.name);
+    if (!name) return;
     try {
-      await renameTeam(team.id, name.trim());
+      await renameTeam(team.id, name);
       refresh();
       refreshTeams();
     } catch (err) {
@@ -130,7 +133,6 @@ export default function TeamSettingsPage() {
     }
   };
 
-  const confirm = useConfirm();
   const onRemoveMember = async (m) => {
     if (!(await confirm({ title: "Remove from the team?", body: `${m.email || m.name} loses access to this team's workspace straight away. You can invite them again later.`, confirmLabel: "Remove member" }))) return;
     try {

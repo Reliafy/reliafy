@@ -9,8 +9,8 @@ import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
-import { deleteOrRemoveConfirm } from "../confirm.js";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 
 const HELP = { walkthrough: "rbd", guide: "build-an-rbd" };
 
@@ -84,6 +84,7 @@ export default function RbdHome() {
   useEffect(() => refresh(), [refresh]);
 
   const confirm = useConfirm();
+  const askText = useAskText();
   const onDelete = async (r) => {
     if (!(await confirm(deleteOrRemoveConfirm(r, "diagram", { name: itemName(r) })))) return;
     try {
@@ -224,10 +225,14 @@ export default function RbdHome() {
               {!r.read_only && (
                 <button className="act" title="Rename" aria-label="Rename" onClick={async (e) => {
                   e.stopPropagation();
-                  const name = window.prompt("Diagram name", r.name);
-                  if (name && name.trim() && name.trim() !== r.name) {
-                    await renameRbd(r.id, name.trim());
-                    refresh();
+                  const name = changedText(await askText(renamePrompt({ kind: "diagram", name: r.name })), r.name);
+                  if (name) {
+                    try {
+                      await renameRbd(r.id, name);
+                      refresh();
+                    } catch (err) {
+                      setError(err.message);
+                    }
                   }
                 }}>
                   <PencilIcon />

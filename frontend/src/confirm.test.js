@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   normaliseConfirm, deleteConfirm, removeSampleConfirm, removeSharedConfirm, deleteOrRemoveConfirm,
+  normalisePrompt, renamePrompt, changedText,
 } from "./confirm.js";
 
 test("normaliseConfirm fills defaults", () => {
@@ -44,18 +45,65 @@ test("deleteOrRemoveConfirm picks by is_sample", () => {
   assert.equal(deleteOrRemoveConfirm({ name: "a", read_only: true }, "model").confirmLabel, "Remove from view");
 });
 
-// The browser's own dialog never comes back.
-test("no window.confirm or window.alert in the app", () => {
+test("renamePrompt starts on the current name and names the action", () => {
+  const p = normalisePrompt(renamePrompt({ kind: "dataset", name: "Pump bearings" }));
+  assert.equal(p.title, "Rename this dataset");
+  assert.equal(p.label, "Dataset name");
+  assert.equal(p.value, "Pump bearings");
+  assert.equal(p.confirmLabel, "Rename dataset");
+  assert.equal(p.destructive, false);
+  assert.equal(normalisePrompt(renamePrompt({ kind: "team" })).value, "");
+  assert.throws(() => normalisePrompt({ title: "Rename", confirmLabel: "Rename" }), /needs a label/);
+  assert.throws(() => normalisePrompt({ title: "Rename", label: "Name", confirmLabel: "OK" }), /Label the confirm button/);
+});
+
+test("changedText keeps only a new, non-blank name", () => {
+  assert.equal(changedText(null, "a"), null);
+  assert.equal(changedText("   ", "a"), null);
+  assert.equal(changedText(" a ", "a"), null);
+  assert.equal(changedText("  New name ", "a"), "New name");
+  assert.equal(changedText("b", undefined), "b");
+});
+
+// The browser's own dialogs (confirm, alert, prompt) never come back: every
+// question goes through ConfirmProvider. A bare confirm(...) is only allowed
+// where `confirm` is the app's (from useConfirm, or passed in).
+const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+
+function nativeDialogCalls(src) {
+  const code = stripComments(src);
+  const found = [];
+  const native = /\b(?:window|globalThis|self|top|parent)\s*\.\s*(confirm|alert|prompt)\s*\(/g;
+  for (const m of code.matchAll(native)) found.push(m[0]);
+  const bare = /(^|[^\w.$])(alert|prompt)\s*\(/gm;
+  for (const m of code.matchAll(bare)) found.push(m[0].trim());
+  const ownConfirm = /\bconst\s+confirm\s*=|function\s+confirm\s*\(|[({,]\s*confirm\s*[,})=]/.test(code);
+  if (!ownConfirm) {
+    for (const m of code.matchAll(/(^|[^\w.$])confirm\s*\(/gm)) found.push(m[0].trim());
+  }
+  return found;
+}
+
+test("the guard spots native dialogs and lets the app's own through", () => {
+  assert.deepEqual(nativeDialogCalls('if (window.confirm("Sure?")) go();').length, 1);
+  assert.deepEqual(nativeDialogCalls('const n = window.prompt("Name", x);').length, 1);
+  assert.deepEqual(nativeDialogCalls('alert("Saved");').length, 1);
+  assert.deepEqual(nativeDialogCalls("if (!confirm(`Delete ${x}?`)) return;").length, 1);
+  assert.deepEqual(nativeDialogCalls("globalThis.alert(1)").length, 1);
+  assert.deepEqual(nativeDialogCalls("const confirm = useConfirm();\nif (!(await confirm(req))) return;"), []);
+  assert.deepEqual(nativeDialogCalls("// window.confirm is never used\nconst a = 1;"), []);
+  assert.deepEqual(nativeDialogCalls('const url = "https://x/y"; // alert("x")'), []);
+});
+
+test("no browser confirm, alert or prompt anywhere in the app", () => {
   const offenders = [];
   const walk = (dir) => {
     for (const f of readdirSync(dir)) {
       const p = join(dir, f);
       if (statSync(p).isDirectory()) walk(p);
-      else if (/\.(jsx?|mjs)$/.test(f) && !f.endsWith(".test.js")) {
-        const src = readFileSync(p, "utf8");
-        if (/\bwindow\.(confirm|alert)\s*\(/.test(src) || /(^|[^\w.])(confirm|alert)\s*\(\s*[`"']/m.test(src)) {
-          offenders.push(p);
-        }
+      else if (/\.(jsx?|mjs|tsx?)$/.test(f) && !/\.test\.[jt]s$/.test(f)) {
+        const calls = nativeDialogCalls(readFileSync(p, "utf8"));
+        if (calls.length) offenders.push(`${p}: ${calls.join(", ")}`);
       }
     }
   };

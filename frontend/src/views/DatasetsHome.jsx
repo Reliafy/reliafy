@@ -10,8 +10,8 @@ import { datasetPath } from "../sections.js";
 import { fitOptions } from "../datasetFit.js";
 import useMenuDismiss from "../components/useMenuDismiss.js";
 import "../components/Datasets.css";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
-import { deleteOrRemoveConfirm } from "../confirm.js";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 
 const HELP = { guide: "fit-your-first-model" };
 
@@ -26,14 +26,17 @@ function RowMenu({ d, onRename, onDelete }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const trigger = useRef(null);
   const closeMenu = useCallback(() => setOpen(false), []);
   const options = fitOptions(d);
   useMenuDismiss(open, closeMenu, ref);
-  const act = (fn) => (e) => { e.stopPropagation(); setOpen(false); fn(); };
+  // Focus goes back to the "More actions" button before the menu closes, so a
+  // dialog opened from it (rename, delete) returns focus there.
+  const act = (fn) => (e) => { e.stopPropagation(); trigger.current?.focus(); setOpen(false); fn(); };
   return (
     <td className="lib-actions">
       <div className="ds-acts" ref={ref} onClick={(e) => e.stopPropagation()}>
-        <button type="button" className="ds-more" aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
+        <button type="button" ref={trigger} className="ds-more" aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
           onClick={() => setOpen((o) => !o)}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></svg>
         </button>
@@ -90,6 +93,7 @@ export default function DatasetsHome() {
   };
 
   const confirm = useConfirm();
+  const askText = useAskText();
   const onDelete = async (d) => {
     if (!(await confirm(deleteOrRemoveConfirm(d, "dataset", { name: itemName(d) })))) return;
     try {
@@ -101,10 +105,10 @@ export default function DatasetsHome() {
   };
 
   const onRename = async (d) => {
-    const name = window.prompt("Dataset name", d.name);
-    if (!name || !name.trim() || name.trim() === d.name) return;
+    const name = changedText(await askText(renamePrompt({ kind: "dataset", name: d.name })), d.name);
+    if (!name) return;
     try {
-      await renameDataset(d.id, name.trim());
+      await renameDataset(d.id, name);
       refresh();
     } catch (err) {
       setError(err.message);

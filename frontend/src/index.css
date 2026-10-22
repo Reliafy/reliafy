@@ -2169,6 +2169,46 @@ h1 .chip,
 .modal-foot > .row.confirm-actions {
   gap: 8px;
 }
+.confirm-body + .confirm-field {
+  margin-top: 14px;
+}
+.confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.confirm-field > span {
+  font-size: var(--fs-13);
+  color: var(--muted);
+  font-weight: 500;
+}
+.confirm-field input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  font-size: var(--fs-14);
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--bg);
+}
+.confirm-field input:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: var(--focus);
+}
+/* On a phone the two buttons share the row and stay big enough to tap. */
+@media (max-width: 480px) {
+  .modal-foot > .row.confirm-actions {
+    flex: 1 1 100%;
+  }
+  .modal-foot > .row.confirm-actions > button {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
+}
 
 /* Stepper */
 .steps {

@@ -1,8 +1,10 @@
 // The app's confirm dialog: what it says. The dialog itself is
 // components/ConfirmProvider.jsx (`const confirm = useConfirm();
 // if (!(await confirm(deleteConfirm({ kind: "diagram", name })))) return;`).
-// The browser's own window.confirm is never used: it can't explain the
-// consequence, can't be styled, and labels the action "OK".
+// The browser's own window.confirm, window.alert and window.prompt are never
+// used: they can't explain the consequence, can't be styled, and label the
+// action "OK". A name to type (rename) asks with useAskText() and
+// renamePrompt() instead of window.prompt.
 
 // Words that don't say what the button does.
 const VAGUE = new Set(["ok", "okay", "yes", "confirm", "continue", "sure"]);
@@ -22,6 +24,34 @@ export function normaliseConfirm(opts = {}) {
     confirmLabel,
     cancelLabel: String(opts.cancelLabel || "Cancel"),
     destructive: opts.destructive !== false,
+  };
+}
+
+// Fill in defaults for a question with a text box (a rename). Resolves to the
+// trimmed text, or null when cancelled.
+export function normalisePrompt(opts = {}) {
+  const base = normaliseConfirm({ ...opts, destructive: false });
+  const label = String(opts.label || "").trim();
+  if (!label) throw new Error("A text question needs a label for its box.");
+  return { ...base, label, value: opts.value == null ? "" : String(opts.value) };
+}
+
+// The text typed, trimmed; null when it's blank or unchanged (nothing to do).
+export function changedText(answer, before) {
+  if (answer == null) return null;
+  const text = String(answer).trim();
+  if (!text || text === String(before ?? "").trim()) return null;
+  return text;
+}
+
+// Renaming something: the box starts on the current name.
+export function renamePrompt({ kind, name }) {
+  const Kind = kind.charAt(0).toUpperCase() + kind.slice(1);
+  return {
+    title: `Rename this ${kind}`,
+    label: `${Kind} name`,
+    value: name || "",
+    confirmLabel: `Rename ${kind}`,
   };
 }
 

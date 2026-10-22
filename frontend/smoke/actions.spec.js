@@ -190,3 +190,45 @@ test("removing a sample asks in the app's confirm dialog", async ({ page, proble
   await expect(row).toBeVisible();
   expect(problems).toEqual([]);
 });
+
+// Renaming asks in the app's dialog too (never window.prompt): the box starts
+// on the current name with it selected, Enter saves, and the delete dialog
+// says what goes and that it can't be undone. The copy is kept (not deleted)
+// so the detail-page sweep running alongside never opens a diagram that's gone.
+test("rename a diagram, and the delete dialog, in the app's own dialogs", async ({ page, problems }) => {
+  const sample = await (await page.request.get("/api/rbds/sample-rbd-pump-station")).json();
+  const saved = await page.request.post("/api/rbds", {
+    data: { name: "Smoke dialog diagram", graph: sample.graph, id: null, expected_updated_at: null },
+  });
+  expect(saved.ok(), await saved.text()).toBeTruthy();
+
+  await open(page, "/rbds");
+  const row = page.getByRole("row").filter({ hasText: "Smoke dialog diagram" });
+  await row.getByRole("button", { name: "Rename" }).click();
+  const ask = page.getByRole("dialog", { name: "Rename this diagram" });
+  const box = ask.getByRole("textbox", { name: "Diagram name" });
+  await expect(box).toBeFocused();
+  await expect(box).toHaveValue("Smoke dialog diagram");
+  await page.keyboard.press("Escape");
+  await expect(ask).toHaveCount(0);
+  await expect(row).toBeVisible();
+
+  await row.getByRole("button", { name: "Rename" }).click();
+  await box.fill("  ");
+  await expect(ask.getByRole("button", { name: "Rename diagram" })).toBeDisabled();
+  await box.fill("Smoke dialog diagram, renamed");
+  await page.keyboard.press("Enter");
+  await expect(ask).toHaveCount(0);
+  const renamed = page.getByRole("row").filter({ hasText: "Smoke dialog diagram, renamed" });
+  await expect(renamed).toBeVisible();
+
+  await renamed.getByRole("button", { name: "Delete", exact: true }).click();
+  const del = page.getByRole("alertdialog", { name: "Delete this diagram?" });
+  await expect(del).toContainText("“Smoke dialog diagram, renamed” will be deleted. This can't be undone.");
+  await expect(del.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await expect(del.getByRole("button", { name: "Delete diagram" })).toBeVisible();
+  await page.locator(".confirm-overlay").click({ position: { x: 5, y: 5 } });
+  await expect(del).toHaveCount(0);
+  await expect(renamed).toBeVisible();
+  expect(problems).toEqual([]);
+});

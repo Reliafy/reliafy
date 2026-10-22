@@ -16,8 +16,8 @@ import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { itemName } from "../components/LibRows";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
-import { deleteConfirm } from "../confirm.js";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteConfirm, renamePrompt } from "../confirm.js";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -62,6 +62,8 @@ export default function StrategyTracking() {
       .catch((e) => setError(e.message));
   }, [fleetId, navigate]);
   useEffect(() => { setFleet(null); refresh(); }, [refresh]);
+  const confirm = useConfirm();
+  const askText = useAskText();
 
   // Recompute the selected item's crossing prediction at the chosen confidence.
   // At 95% the stored prediction already applies, so no round-trip is needed.
@@ -98,17 +100,16 @@ export default function StrategyTracking() {
     : null;
 
   const onRename = async () => {
-    const name = window.prompt("Fleet name", fleet.name);
-    if (!name || !name.trim() || name.trim() === fleet.name) return;
+    const name = changedText(await askText(renamePrompt({ kind: "fleet", name: fleet.name })), fleet.name);
+    if (!name) return;
     try {
-      const updated = await renameTrackedFleet(fleetId, name.trim());
+      const updated = await renameTrackedFleet(fleetId, name);
       setFleet((f) => ({ ...f, name: updated.name }));
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const confirm = useConfirm();
   const onDeleteItem = async (it) => {
     if (!(await confirm(deleteConfirm({ kind: "tracked item", name: it.name })))) return;
     await deleteTrackedItem(it.model_id, it.id);
