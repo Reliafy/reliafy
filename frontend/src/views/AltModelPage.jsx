@@ -8,6 +8,8 @@ import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 import { altPlanLink, altPrefill } from "../testPlanning.js";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 // A saved Accelerated Life model — mirrors the other model pages: title and
 // saved meta, then the result view (answer card, life-stress plot, use-level
@@ -23,8 +25,9 @@ export default function AltModelPage() {
     getAltModel(id).then(setModel).catch((e) => setError(e.message));
   }, [id]);
 
+  const confirm = useConfirm();
   const onDelete = async () => {
-    if (!window.confirm(`Delete “${model.name}”?`)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     await deleteAltModel(id);
     navigate("/modelling/alt");
   };

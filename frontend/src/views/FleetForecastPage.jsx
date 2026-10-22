@@ -5,6 +5,8 @@ import { ACCENT, INK, sentence } from "../plotTheme.js";
 import Select from "../components/Select.jsx";
 import FleetAlertsCard from "../components/FleetAlertsCard.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
+import { useAskText } from "../components/ConfirmProvider.jsx";
+import { changedText, renamePrompt } from "../confirm.js";
 import { getFleet, putFleetItems, renameFleet } from "../api.js";
 import { toCsv } from "../csv.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -87,6 +89,7 @@ export default function FleetForecastPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [conflict, setConflict] = useState(false);
+  const askText = useAskText();
   // The assumptions line opens into its form (#311); a new forecast starts open.
   const [editing, setEditing] = useState(false);
 
@@ -181,10 +184,10 @@ export default function FleetForecastPage() {
   };
 
   const onRename = async () => {
-    const name = window.prompt("Forecast name", fleet.name);
-    if (!name || !name.trim() || name.trim() === fleet.name) return;
+    const name = changedText(await askText(renamePrompt({ kind: "forecast", name: fleet.name })), fleet.name);
+    if (!name) return;
     try {
-      const updated = await renameFleet(id, name.trim());
+      const updated = await renameFleet(id, name);
       setFleet((f) => ({ ...f, name: updated.name }));
     } catch (err) {
       setError(err.message);

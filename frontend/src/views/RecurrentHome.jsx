@@ -4,6 +4,8 @@ import RecurrentLibrary from "./RecurrentLibrary.jsx";
 import { listRecurrentModels, deleteRecurrentModel } from "../api.js";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { guide: "recurrent-events" };
 
@@ -17,11 +19,9 @@ export default function RecurrentHome() {
   const refresh = () => listRecurrentModels().then((r) => setModels(r.models)).catch(() => setModels([]));
   useEffect(() => { refresh(); }, []);
 
+  const confirm = useConfirm();
   const onDelete = async (m) => {
-    const msg = m.is_sample
-      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${m.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(m, "model", { name: itemName(m) })))) return;
     try {
       await deleteRecurrentModel(m.id);
       refresh();

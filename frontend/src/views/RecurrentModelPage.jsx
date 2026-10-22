@@ -9,6 +9,8 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 // A saved recurrent-event model, laid out like the non-repairable model page (#65): title
 // and saved meta, then one card of tabs: the MCF plot with its panel, the
@@ -25,8 +27,9 @@ export default function RecurrentModelPage() {
     getRecurrentModel(id).then(setModel).catch((e) => setError(e.message));
   }, [id]);
 
+  const confirm = useConfirm();
   const onDelete = async () => {
-    if (!window.confirm(`Delete “${model.name}”?`)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     await deleteRecurrentModel(id);
     navigate("/modelling/recurrent");
   };

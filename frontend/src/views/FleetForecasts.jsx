@@ -9,6 +9,8 @@ import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 import { formatNumber } from "../format.js";
 import { modelFromSearch, plainName } from "../modelNext.js";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 // A forecast's row figure: "≈ 40.3 in 12 months", or why there isn't one.
 function expectedCell(f) {
@@ -121,11 +123,9 @@ export default function FleetForecasts() {
     }
   };
 
+  const confirm = useConfirm();
   const onDelete = async (f) => {
-    const msg = f.is_sample
-      ? `Remove the sample “${itemName(f)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete fleet “${f.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(f, "fleet", { name: itemName(f) })))) return;
     try {
       await deleteFleet(f.id);
       refresh();

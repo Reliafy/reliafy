@@ -7,6 +7,8 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 
 // A saved condition monitoring model: the result view, Download as Python,
 // rename, share and delete.
@@ -21,8 +23,10 @@ export default function JointModelPage() {
     getJointModel(id).then(setModel).catch((e) => setError(e.message));
   }, [id]);
 
+  const confirm = useConfirm();
+  const askText = useAskText();
   const onDelete = async () => {
-    if (!window.confirm(model.read_only ? `Remove “${model.name}” from your view?` : `Delete “${model.name}”?`)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     try {
       await deleteJointModel(id);
       navigate("/modelling/joint");
@@ -30,9 +34,9 @@ export default function JointModelPage() {
   };
 
   const onRename = async () => {
-    const name = window.prompt("Rename the model", model.name);
-    if (!name || !name.trim() || name.trim() === model.name) return;
-    try { setModel(await updateJointModel(id, { name: name.trim() })); } catch (e) { setError(e.message); }
+    const name = changedText(await askText(renamePrompt({ kind: "model", name: model.name })), model.name);
+    if (!name) return;
+    try { setModel(await updateJointModel(id, { name })); } catch (e) { setError(e.message); }
   };
 
   const onPython = async () => {

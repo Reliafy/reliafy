@@ -6,6 +6,7 @@ import {
   createPublicLink, listPublicLinks, updatePublicLink, revokePublicLink,
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
+import { useConfirm } from "./ConfirmProvider.jsx";
 
 // The report composer (#30) loads only when someone opens it.
 const ReportComposer = lazy(() => import("./ReportComposer.jsx"));
@@ -310,8 +311,9 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
     }
   };
 
+  const confirm = useConfirm();
   const onRevoke = async (s) => {
-    if (!window.confirm(`Stop sharing with ${s.email}?`)) return;
+    if (!(await confirm({ title: "Stop sharing?", body: `${s.email} won't be able to open this any more. You can share it with them again later.`, confirmLabel: "Stop sharing" }))) return;
     await revokeShare(s.id);
     refresh();
   };

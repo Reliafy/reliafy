@@ -5,6 +5,8 @@ import DecisionModal from "../components/DecisionModal.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
+import { useAskText } from "../components/ConfirmProvider.jsx";
+import { changedText, renamePrompt } from "../confirm.js";
 import { getRcmStudy, getRcmOptions, putRcmTree, renameRcmStudy } from "../api.js";
 import { toCsv } from "../csv.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -55,6 +57,7 @@ export default function RcmStudyPage() {
   const [conflict, setConflict] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [imported, setImported] = useState(null); // { counts, warnings } of the last import
+  const askText = useAskText();
 
   useEffect(() => {
     getRcmStudy(id)
@@ -125,10 +128,10 @@ export default function RcmStudyPage() {
   };
 
   const onRename = async () => {
-    const name = window.prompt("Study name", study.name);
-    if (!name || !name.trim() || name.trim() === study.name) return;
+    const name = changedText(await askText(renamePrompt({ kind: "study", name: study.name })), study.name);
+    if (!name) return;
     try {
-      const updated = await renameRcmStudy(id, name.trim());
+      const updated = await renameRcmStudy(id, name);
       setStudy((s) => ({ ...s, name: updated.name }));
     } catch (err) {
       setError(err.message);

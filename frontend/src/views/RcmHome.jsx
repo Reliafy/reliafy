@@ -8,6 +8,8 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const ImportIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -58,11 +60,9 @@ export default function RcmHome() {
     }
   };
 
+  const confirm = useConfirm();
   const onDelete = async (s) => {
-    const msg = s.is_sample
-      ? `Remove the sample “${itemName(s)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete study “${s.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(s, "study", { name: itemName(s) })))) return;
     try {
       await deleteRcmStudy(s.id);
       refresh();

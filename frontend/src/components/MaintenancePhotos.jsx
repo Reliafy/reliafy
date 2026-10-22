@@ -19,6 +19,7 @@ import {
 } from "../maintenancePhotoPlaces.js";
 import Modal from "./Modal.jsx";
 import { Field, FormModal, flatten, fmtDate } from "./MaintenanceParts.jsx";
+import { useConfirm } from "./ConfirmProvider.jsx";
 
 // What the picker can choose from, loaded once per kind when it's first asked for.
 const LOADERS = {
@@ -169,15 +170,16 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
     }
   };
 
+  const confirm = useConfirm();
   const remove = async (p) => {
-    if (!window.confirm("Remove this photo?")) return;
+    if (!(await confirm({ title: "Remove this photo?", body: "It comes off everywhere it's shown. This can't be undone.", confirmLabel: "Remove photo" }))) return;
     await removeMaintenancePhoto(p.id).catch((e) => setError(e.message));
     setOpen(null);
     onChanged?.();
   };
 
   const unlink = async (p, place) => {
-    if (!window.confirm(`Take this photo off ${place.name || "there"}? It stays everywhere else.`)) return;
+    if (!(await confirm({ title: "Take this photo off here?", body: `It comes off ${place.name || "this place"} but stays everywhere else it's shown.`, confirmLabel: "Take photo off" }))) return;
     try {
       await unlinkMaintenancePhoto(p.id, place.id);
       setOpen(place.id === targetId ? null : { ...p, also_on: p.also_on.filter((x) => x.id !== place.id) });

@@ -6,6 +6,8 @@ import { deleteModel } from "../api.js";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
@@ -15,11 +17,9 @@ export default function ModellingHome() {
   const { models, loading, refresh } = useModels();
   const [error, setError] = useState(null);
 
+  const confirm = useConfirm();
   const onDelete = async (m) => {
-    const msg = m.is_sample
-      ? `Remove the sample “${itemName(m)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete “${m.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(m, "model", { name: itemName(m) })))) return;
     try {
       await deleteModel(m.id);
       refresh();
