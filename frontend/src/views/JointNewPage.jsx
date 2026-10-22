@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
+import { usableDatasets } from "../datasetFit.js";
 import PreviewTable from "../components/PreviewTable.jsx";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import Units from "../components/Units.jsx";
@@ -16,7 +17,9 @@ const POLL_MS = 2000;
 
 // One of the two tables: an existing dataset, or a new one uploaded or pasted
 // (the Data library's own dialog). Loads its columns and first rows.
-function TablePicker({ title, hint, datasets, value, onPick }) {
+function TablePicker({ title, hint, datasets, role, value, onPick }) {
+  // Only the saved datasets this table can be (a lifetimes table, or a readings table).
+  const choices = usableDatasets(role, datasets);
   const [modal, setModal] = useState(false);
   return (
     <div className="joint-table-pick">
@@ -30,7 +33,7 @@ function TablePicker({ title, hint, datasets, value, onPick }) {
           ariaLabel={title}
           options={[
             { value: "", label: "— choose a dataset —" },
-            ...datasets.map((d) => ({ value: d.id, label: d.name, hint: d.n_rows != null ? `${d.n_rows} rows` : undefined })),
+            ...choices.map((d) => ({ value: d.id, label: d.name, hint: d.n_rows != null ? `${d.n_rows} rows` : undefined })),
           ]}
         />
         <button type="button" className="secondary" onClick={() => setModal(true)}>Upload or paste…</button>
@@ -223,12 +226,12 @@ export default function JointNewPage() {
           <TablePicker
             title="Lifetimes: one row per unit"
             hint="Its id, its age at failure (or now, if still running), whether it failed, and any covariates."
-            datasets={datasets} value={life} onPick={pickLife}
+            datasets={datasets} role="lifetimes" value={life} onPick={pickLife}
           />
           <TablePicker
             title="Readings: one row per reading"
             hint="The unit's id, its age when read, and the value read."
-            datasets={datasets} value={reads} onPick={pickReads}
+            datasets={datasets} role="readings" value={reads} onPick={pickReads}
           />
         </div>
       </div>

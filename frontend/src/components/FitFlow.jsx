@@ -20,6 +20,7 @@ import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import CompetingRisksStep, { CR_OPTIONS } from "./CompetingRisksStep.jsx";
 import { groupProblem, withGroup } from "../moreModels.js";
+import { usableDatasets } from "../datasetFit.js";
 import ResultView from "./ResultView.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { TvcToggle } from "./TvcColumns.jsx";
@@ -638,10 +639,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
           )}
           {sheetModal}
 
-          {datasets.length > 0 && (
+          {usableDatasets("life", datasets).length > 0 && (
             <div className="recent">
               <div className="recent-h">Or use a saved dataset</div>
-              {datasets.slice(0, 5).map((d) => (
+              {usableDatasets("life", datasets).slice(0, 5).map((d) => (
                 <button
                   key={d.id}
                   type="button"

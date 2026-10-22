@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
+import { usableDatasets } from "../datasetFit.js";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import RefLink from "../components/RefLink.jsx";
@@ -353,10 +354,10 @@ export default function RecurrentNewPage() {
               {sheetModal}
             </div>
 
-            {datasets.length > 0 && (
+            {usableDatasets("repairable", datasets).length > 0 && (
               <div className="recent">
                 <div className="recent-h">Or use a saved dataset</div>
-                {datasets.slice(0, 5).map((d) => (
+                {usableDatasets("repairable", datasets).slice(0, 5).map((d) => (
                   <button key={d.id} type="button" className="recent-row" disabled={loading}
                           onClick={() => pickDataset(d)}>
                     <span className="recent-ic">
