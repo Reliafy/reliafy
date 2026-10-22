@@ -9,6 +9,7 @@ import {
   roughDateInput, roughDateValue, safeHref,
 } from "../maintenanceFields.js";
 import { locationOptions } from "../maintenanceLocations.js";
+import { SHORT_TEXT, lengthNote } from "../maintenanceText.js";
 import Modal from "./Modal.jsx";
 
 // Shared pieces for the Reliafy Maintenance pages.
@@ -36,11 +37,16 @@ export function flatten(tree, depth = 0, out = []) {
   return out;
 }
 
-export function Field({ label, children }) {
+// `text`: the input's value, for a field with a length limit (a name or a title):
+// a count shows as it nears `max`, and past it, what to do (`hint`).
+export function Field({ label, children, text, max = SHORT_TEXT, hint }) {
+  const note = text === undefined ? null : lengthNote(text, max, hint);
   return (
     <label className="login-field">
       <span>{label}</span>
       {children}
+      {note && <small className={note.over ? "maint-length maint-length-over" : "maint-length"}
+                      role={note.over ? "alert" : undefined}>{note.text}</small>}
     </label>
   );
 }

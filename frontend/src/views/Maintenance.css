@@ -411,3 +411,16 @@ button.maint-toggle {
     display: block;
   }
 }
+
+/* A name or title nearing its length limit, and past it. */
+.maint-length {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.maint-length-over {
+  color: var(--danger);
+  font-weight: 600;
+}

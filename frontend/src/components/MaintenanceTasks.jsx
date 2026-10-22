@@ -6,6 +6,7 @@ import {
 import { PlusIcon } from "./LibRows.jsx";
 import { DueChip, Field, FormModal, TASK_SOURCES, everyText, fmtDate, today } from "./MaintenanceParts.jsx";
 import { subjectPath, taskUnits, whileStoredText } from "../maintenanceSubjects.js";
+import { TASK_HINT, tooLong } from "../maintenanceText.js";
 
 // What a task on each kind of subject is for, under the Add task form.
 const SUBJECT_NOTES = {
@@ -26,7 +27,8 @@ export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters
 
   const workOrderFor = async (task) => {
     try {
-      const wo = await openWorkOrder({ title: task.name, type: "preventive", task_id: task.id, due: task.next_due });
+      // No title: the server makes it from the task's name, shortened if it's long.
+      const wo = await openWorkOrder({ type: "preventive", task_id: task.id, due: task.next_due });
       navigate(`/maintenance/work-orders/${wo.id}`);
     } catch (e) {
       setError(e.message);
@@ -92,7 +94,7 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title={`Add a task to ${subject.name}`} submitLabel="Add task" canSubmit={!!f.name.trim() && Number(f.interval) > 0}
+    <FormModal title={`Add a task to ${subject.name}`} submitLabel="Add task" canSubmit={!!f.name.trim() && !tooLong(f.name) && Number(f.interval) > 0}
                onClose={onClose} onSubmit={async () => onDone(await createSubjectTask(subject, {
                  name: f.name, interval: Number(f.interval), unit: f.unit, outcome: f.outcome || null,
                  also_interval: f.also ? Number(f.also) : null, also_unit: f.also ? f.also_unit : null,
@@ -102,7 +104,7 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
                  ...(kind === "item" ? { while_stored: f.while_stored } : {}),
                  ...(kind === "location" ? { include_positions: f.include_positions } : {}),
                }))}>
-      <Field label="Task"><input autoFocus value={f.name} onChange={set("name")}
+      <Field label="Task" text={f.name} hint={TASK_HINT}><input autoFocus value={f.name} onChange={set("name")}
              placeholder={kind === "item" ? "e.g. Calibrate, Statutory inspection, Overhaul"
                : kind === "location" ? "e.g. Area walkdown, Ex inspection" : "e.g. Replace sacrificial anode"} /></Field>
       <Field label="Every">
@@ -189,7 +191,7 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
   const [includePositions, setIncludePositions] = useState(!!task.include_positions);
   const [busy, setBusy] = useState(false);
   return (
-    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && Number(interval) > 0} onClose={onClose}
+    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && !tooLong(name) && Number(interval) > 0} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenanceTask(task.id, {
                  name, interval: Number(interval), unit, also_interval: also ? Number(also) : 0, also_unit: alsoUnit,
                  instructions, checklist: checklist.split("\n").map((x) => x.trim()).filter(Boolean), trade,
@@ -201,7 +203,7 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
       {kind !== "position" && task.subject && (
         <p className="lib-date">On the {kind} <Link to={subjectPath(task.subject)}>{task.subject.name}</Link>.</p>
       )}
-      <Field label="Task"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Task" text={name} hint={TASK_HINT}><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Every">
         <div className="maint-row" style={{ marginTop: 0 }}>
           <input type="number" inputMode="decimal" min="0" step="any" value={interval} onChange={(e) => setInterval(e.target.value)} style={{ width: "6rem" }} />

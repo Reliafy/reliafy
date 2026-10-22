@@ -21,6 +21,7 @@ import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
 import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
+import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 
 // One quiet line when the workspace has no time zone and this device isn't on
 // UTC: the dates here follow UTC until it's set.
@@ -280,13 +281,13 @@ export function NewPositionModal({ positions, parentId = null, onClose, onCreate
     <FormModal
       title="New position"
       submitLabel="Create position"
-      canSubmit={!!name.trim()}
+      canSubmit={!!name.trim() && !tooLong(name)}
       onClose={onClose}
       onSubmit={async () => onCreated(await createMaintenancePosition({
         name, tag, position_class: positionClass, parent_id: parent,
       }))}
     >
-      <Field label="Name">
+      <Field label="Name" text={name} hint={DESCRIPTION_HINT}>
         <input autoFocus value={name} placeholder="e.g. Hot water system" onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="Inside">

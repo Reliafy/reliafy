@@ -174,14 +174,14 @@ def test_one_organisations_trouble_doesnt_stop_the_daily_run(store, monkeypatch)
     first, second = Maintenance(store, "aaa"), Maintenance(store, "zzz")
     for org in (first, second):
         _task(org, org.create_position("P")["id"])
-    real = Maintenance.generate_work_orders
+    real = Maintenance.generate
 
     def generate(self, horizon_days=30):
         if self.org == "aaa":
             raise OverflowError("date value out of range")
         return real(self, horizon_days)
 
-    monkeypatch.setattr(Maintenance, "generate_work_orders", generate)
+    monkeypatch.setattr(Maintenance, "generate", generate)
     result = daily.run(mongomock.MongoClient()["daily_limits"], store)
     assert result["failed"] == 1 and result["work_orders"] == 1
     assert len(second.work_orders()) == 1

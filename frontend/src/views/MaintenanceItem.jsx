@@ -23,6 +23,7 @@ import { ItemKindCard, useKinds } from "../components/MaintenanceItemClasses.jsx
 import { ConditionsCard } from "../components/MaintenanceConditions.jsx";
 import { ItemPartStructureCard } from "../components/MaintenanceStructure.jsx";
 import "./Maintenance.css";
+import { tooLong } from "../maintenanceText.js";
 
 const ITEM_DATES = [
   { key: "purchase_date", label: "Bought" },
@@ -195,8 +196,8 @@ function EditItemModal({ item, onClose, onDone }) {
     onDone(await updateMaintenanceItem(item.id, { ...f, nameplate }));
   };
   return (
-    <FormModal title="Edit item" submitLabel="Save" canSubmit={!!f.name.trim()} onClose={onClose} onSubmit={submit}>
-      <Field label="Name"><input value={f.name} onChange={set("name")} /></Field>
+    <FormModal title="Edit item" submitLabel="Save" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose} onSubmit={submit}>
+      <Field label="Name" text={f.name} hint="put the detail in the notes"><input value={f.name} onChange={set("name")} /></Field>
       <Field label="Manufacturer"><input value={f.manufacturer} onChange={set("manufacturer")} /></Field>
       <Field label="Model"><input value={f.model} onChange={set("model")} /></Field>
       <Field label="Serial"><input value={f.serial} onChange={set("serial")} /></Field>
@@ -334,10 +335,10 @@ function PlaceModal({ item, onClose, onDone }) {
 function ChildModal({ item, onClose, onDone }) {
   const [name, setName] = useState("");
   return (
-    <FormModal title={`A position inside ${item.name}`} submitLabel="Create" canSubmit={!!name.trim()} onClose={onClose}
+    <FormModal title={`A position inside ${item.name}`} submitLabel="Create" canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
                onSubmit={async () => onDone(await createMaintenancePosition({ name, parent_id: item.id }))}>
       <p className="lib-date">It travels with {item.name}: whatever is fitted to it goes where the item goes.</p>
-      <Field label="Name"><input autoFocus value={name} placeholder="e.g. Turbo 1" onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Name" text={name}><input autoFocus value={name} placeholder="e.g. Turbo 1" onChange={(e) => setName(e.target.value)} /></Field>
     </FormModal>
   );
 }

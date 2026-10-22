@@ -88,7 +88,8 @@ Planning the maintenance.
 - From RCM, where the user has a study: rcm create saves one given as JSON (list kind rcm_studies finds \
 existing ones), then maintenance_positions from_rcm (a new position with the study's failure modes and a task \
 for every decision with an interval) or apply_rcm (onto an existing position; run it again after the study \
-changes: it adds what's new and updates changed tasks).
+changes: it adds what's new and updates changed tasks). A decision's task text over 200 characters gives the \
+task a shortened name, with the full text in its instructions.
 - Directly (a maker's manual, a regulation, own practice): maintenance_tasks create, on exactly one subject:
   - position_id, the usual one: the job, whatever does it. 'Lubricate the pump', 'test the protection relay'. \
 It stays with the slot and counts again from each new item fitted.
@@ -108,7 +109,10 @@ then."""),
     "run": ("Generate and close work orders: failure modes, parts, labour, corrections.", """\
 Running the work.
 - maintenance_work_orders generate opens a preventive work order for every task due within horizon_days \
-(default 30) that has none open. open raises one by hand on exactly one of position_id, item_id, location_id \
+(default 30) that has none open; a task that can't have one is listed in skipped, with why, and the rest go \
+ahead. Names and titles are at most 200 characters: put detail in instructions, notes or a description. A \
+work order from a task with no title gets the task's name (shortened if long; the full name heads the notes). \
+open raises one by hand on exactly one of position_id, item_id, location_id \
 (corrective when something's wrong).
 - Along the way: status (planned, in_progress, waiting), update (assignee, planned_for, due, trade), \
 append_note for a finding, check to tick a checklist line.
