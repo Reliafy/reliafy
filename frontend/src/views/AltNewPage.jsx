@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select.jsx";
+import { usableDatasets } from "../datasetFit.js";
 import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
@@ -212,10 +213,10 @@ export default function AltNewPage() {
                      onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
               {sheetModal}
             </div>
-            {datasets.length > 0 && (
+            {usableDatasets("accelerated", datasets).length > 0 && (
               <div className="recent">
                 <div className="recent-h">Or use a saved dataset</div>
-                {datasets.slice(0, 5).map((d) => (
+                {usableDatasets("accelerated", datasets).slice(0, 5).map((d) => (
                   <button key={d.id} type="button" className="recent-row" disabled={loading} onClick={() => pickDataset(d)}>
                     <span className="recent-ic">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">

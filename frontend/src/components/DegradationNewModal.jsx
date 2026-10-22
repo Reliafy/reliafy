@@ -8,6 +8,7 @@ import {
   SPREADSHEET_ACCEPT,
 } from "../api.js";
 import { TIME_UNITS, distinctCount, guessMeasurementUnit, guessTimeUnit, usableForDegradation } from "../degradation.js";
+import { usableDatasets } from "../datasetFit.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
@@ -62,7 +63,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
   const name = nameTyped ?? `${baseName(sourceName) || "Degradation"} — ${
     path !== "best" && pathName ? `${pathName.toLowerCase()} degradation` : "degradation"}`;
   // Only the saved datasets the fit can use: item id, time and measurement.
-  const usable = datasets.filter(usableForDegradation);
+  const usable = usableDatasets("degradation", datasets.filter(usableForDegradation));
 
   // Distinct ids in the mapped item column over every row (the fit needs at
   // least 2 items); null when unknown, and then the wizard says nothing.

@@ -13,3 +13,28 @@ export function fitOptions(d) {
   const covs = t.includes("Covariates") || t.includes("Time-varying covariates");
   return [{ label: covs ? "Non-repairable model with covariates" : "Non-repairable model", to: `/modelling/new?dataset=${id}` }];
 }
+
+// The saved datasets a "new model" flow can use, from their tags: each flow
+// offers only these. Datasets with no tags field (an older server) are kept.
+//   life        Non-repairable model (with or without covariates)
+//   repairable  Repairable model
+//   accelerated accelerated-life model: lifetimes with a stress covariate
+//   degradation measurements with no outcome column
+//   lifetimes   condition monitoring's lifetimes (or one table holding both)
+//   readings    condition monitoring's readings (or one table holding both)
+const USABLE = {
+  life: (t) => t.includes("Non-repairable"),
+  repairable: (t) => t.includes("Repairable"),
+  accelerated: (t) => t.includes("Non-repairable") && t.includes("Covariates"),
+  degradation: (t) => t.includes("Measurements") && !t.includes("Non-repairable"),
+  lifetimes: (t) => t.includes("Non-repairable"),
+  readings: (t) => t.includes("Measurements"),
+};
+
+export function usableFor(kind, d) {
+  if (!Array.isArray(d?.tags)) return true;
+  const rule = USABLE[kind];
+  return rule ? rule(d.tags) : true;
+}
+
+export const usableDatasets = (kind, datasets) => (datasets || []).filter((d) => usableFor(kind, d));
