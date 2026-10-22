@@ -424,13 +424,17 @@ def detect_tags(df: pd.DataFrame) -> dict:
     repeat = bool(ru and ru["kind"] == "recurrent" and not start_stop
                   and (censor or not any(pd.api.types.is_numeric_dtype(df[c]) for c in extra
                                          if (df.groupby(unit)[c].nunique(dropna=True) > 1).any())))
+    # The outcome written once per unit (on its last row) with readings on the
+    # other rows is life data plus measurements, not changing covariates.
+    outcome_once = bool(unit and censor) and bool(
+        df[censor].notna().sum() < len(df) and df[censor].notna().groupby(df[unit]).sum().max() <= 1)
     for c in extra:
         varies = bool(unit) and bool((df.groupby(unit)[c].nunique(dropna=True) > 1).any())
         if varies and repeat and not pd.api.types.is_numeric_dtype(df[c]):
             continue  # an event's own detail (its cause or failure mode)
         if not varies:
             tags.add("Covariates")
-        elif censor:
+        elif censor and not (outcome_once and pd.api.types.is_numeric_dtype(df[c])):
             tags.add("Time-varying covariates")
         elif pd.api.types.is_numeric_dtype(df[c]):
             tags.add("Measurements")
@@ -449,6 +453,8 @@ def detect_tags(df: pd.DataFrame) -> dict:
     covs = "Covariates" in tags
     if "Measurements" in tags:
         use_for += ["Degradation", "Condition monitoring (the readings)"]
+        if censor:
+            use_for.append("Life model")
     elif censor and unit and ("Time-varying covariates" in tags or start_stop):
         use_for.append("Life model with time-varying covariates")
     elif repeat:

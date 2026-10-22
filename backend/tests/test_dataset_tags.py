@@ -64,3 +64,13 @@ def test_time_unit_from_the_time_column():
     assert tags(rows, ["truck", "engine_hours", "censored"])["time_unit"] == "hour"
     assert tags([[1.0, 0], [2.0, 1]], ["x", "c"])["time_unit"] is None
 
+
+
+def test_outcome_once_per_unit_with_readings_is_life_data_with_measurements():
+    rows = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u, None if k < 3 else u % 2] for u in range(4) for k in range(4)]
+    out = tags(rows, ["bearing", "hours", "vibration_mm_s", "censored"])
+    assert out["tags"] == ["Non-repairable", "Measurements"]
+    assert "Life model" in out["use_for"]
+    # Status on every row means the readings are changing covariates instead.
+    every = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u, 1 if k < 3 else 0] for u in range(4) for k in range(4)]
+    assert "Time-varying covariates" in tags(every, ["bearing", "hours", "vibration_mm_s", "censored"])["tags"]
