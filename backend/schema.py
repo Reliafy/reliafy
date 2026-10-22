@@ -260,7 +260,7 @@ def fleet_model_kind(doc: dict) -> str:
 
 class Fleet(BaseModel):
     """A fleet failure forecast: in-service items running against one saved
-    life model. Items and settings live in the document; the forecast itself
+    non-repairable model. Items and settings live in the document; the forecast itself
     (expected failures over the horizon) is computed at read time from the
     linked model — never stored — so it always reflects the current fit.
     """
@@ -275,7 +275,7 @@ class Fleet(BaseModel):
     # What model_id is, and so how the fleet is forecast — one field:
     #   "life"       a plain life distribution (``models``): first failures
     #                or failures with replacement;
-    #   "regression" a regression life model (``models``, #234): first
+    #   "regression" a regression non-repairable model (``models``, #234): first
     #                failures, each item at its own covariates;
     #   "alt"        an ALT model (``alt_models``, #234): first failures,
     #                each item at its own stress;

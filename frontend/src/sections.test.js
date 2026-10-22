@@ -11,7 +11,7 @@ test("a section's landing page is never also one of its children", () => {
 test("Data comes first under Modelling, and Datasets is no longer a section", () => {
   const modelling = NAV.find((s) => s.key === "modelling");
   assert.equal(modelling.children[0].to, "/modelling/data");
-  assert.equal(modelling.children[1].label, "Life models");
+  assert.equal(modelling.children[1].label, "Non-repairable models");
   assert.ok(!NAV.some((s) => s.to === "/datasets"));
   assert.ok(!modelling.children.some((c) => c.to === "/modelling/models"));
 });

@@ -1930,7 +1930,7 @@ export function listFleets() {
   return request("/api/fleet/fleets");
 }
 
-// ``modelKind``: what ``modelId`` is — "life" (a saved life model; the server
+// ``modelKind``: what ``modelId`` is — "life" (a saved non-repairable model; the server
 // stores "regression" when it's a regression model, #234), "alt" (an ALT
 // model, #234) or "recurrent" (a recurrent-event model — repairable items,
 // every failure counted; #235).

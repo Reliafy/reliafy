@@ -59,7 +59,7 @@ EXPORT_NOTES = (
     "file's \"reliafy\" part, which RePyability ignores.",
     "Links to saved models and sub-system diagrams are kept there too; RePyability gets each block's own "
     "parameters and each sub-system as a nested diagram.",
-    "Blocks pinned working or failed keep their life model; the pins are a what-if for the analysis — pass "
+    "Blocks pinned working or failed keep their non-repairable model; the pins are a what-if for the analysis — pass "
     "them to RePyability as working_nodes / broken_nodes.",
     "A safety function's settings and the ownership horizon of a repairable diagram are Reliafy's only.",
 )
@@ -108,7 +108,7 @@ class _Exporter:
         self.subsystems: dict[str, dict] = {}
         self.common_cause: Optional[dict] = None
 
-    # -- life models ------------------------------------------------------
+    # -- non-repairable models ------------------------------------------------------
     def spec(self, model: Optional[dict]) -> Optional[dict]:
         """A model spec with a saved model's parameters filled in (the
         block's own snapshot wins, as in the analysis)."""
@@ -119,7 +119,7 @@ class _Exporter:
         :class:`_Missing`."""
         spec = self.spec(model)
         if not spec:
-            raise _Missing(f"“{label}” has no life model")
+            raise _Missing(f"“{label}” has no non-repairable model")
         kind = spec.get("kind")
         if kind in _UNSUPPORTED:
             raise _Missing(f"“{label}” uses {_UNSUPPORTED[kind]}")
@@ -316,8 +316,8 @@ class _Exporter:
     def message(self) -> str:
         shown = "; ".join(self.problems[:8])
         more = f" (and {len(self.problems) - 8} more)" if len(self.problems) > 8 else ""
-        return (f"RePyability's JSON holds each block's own life model, so these blocks can't go in it: "
-                f"{shown}{more}. Give them a parametric life model, or use Download as Python instead.")
+        return (f"RePyability's JSON holds each block's own non-repairable model, so these blocks can't go in it: "
+                f"{shown}{more}. Give them a parametric non-repairable model, or use Download as Python instead.")
 
 
 def _rbd_dict(rbd_type: str, *, edges, input_node=None, output_node=None, k=None,

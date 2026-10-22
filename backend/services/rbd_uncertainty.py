@@ -149,7 +149,7 @@ def _matches(model: dict, live) -> bool:
 
 
 def _drawn_model(model: dict, params: list) -> dict:
-    """The block's life model with draw ``params`` in place of its own."""
+    """The block's non-repairable model with draw ``params`` in place of its own."""
     dist = DISTRIBUTIONS[model["distribution_id"]]["dist"]
     names = list(getattr(dist, "parameter_names", []) or [])
     return {
@@ -161,7 +161,7 @@ def _drawn_model(model: dict, params: list) -> dict:
 
 
 def _model_slots(node: dict) -> list[str]:
-    """The ``data`` keys holding a life model the node is built from."""
+    """The ``data`` keys holding a non-repairable model the node is built from."""
     ntype = node.get("type")
     if ntype in ("component", "series", "parallel"):
         return ["model"]

@@ -171,7 +171,7 @@ def test_rbd_subsystem_resolves_in_grantor_scope_and_hides_its_id(client):
 def test_rbd_unanalysable_diagram_still_renders(client):
     client.act_as(A)
     graph = _rbd_graph()
-    graph["nodes"][2]["data"]["model"] = None  # controller has no life model
+    graph["nodes"][2]["data"]["model"] = None  # controller has no non-repairable model
     rbd_id = _save_rbd(client, name="Draft", graph=graph)
     token = _link_rbd(client, rbd_id)
     client.act_as(None)
@@ -179,7 +179,7 @@ def test_rbd_unanalysable_diagram_still_renders(client):
     assert r.status_code == 200
     a = r.json()["artifact"]
     assert a["analysis"] is None
-    assert "life model" in a["analysis_error"]
+    assert "non-repairable model" in a["analysis_error"]
     assert len(a["graph"]["nodes"]) == 5
 
 

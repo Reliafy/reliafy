@@ -4,7 +4,7 @@ A Python port of ``frontend/src/rbdGraph.js`` (``normalizeRbdGraph`` /
 ``compactGraph``) so programmatic callers — the MCP server — speak the same
 compact node format as the in-app assistant and get diagrams that open on the
 builder canvas exactly as if the assistant had drawn them: input/output
-handles, fleshed-out life models and a tidy left-to-right layered layout.
+handles, fleshed-out non-repairable models and a tidy left-to-right layered layout.
 
 Compact node (what an assistant writes and reads)::
 
@@ -33,7 +33,7 @@ component node with ``"repeat_of": "<id of the component it repeats>"`` and
 no model of its own (see :mod:`backend.services.rbd_repeats`).
 
 A node may instead carry the persisted ``data: {...}`` object; both are
-accepted. ``model.saved_model_id`` references a saved plain life model; it is
+accepted. ``model.saved_model_id`` references a saved plain non-repairable model; it is
 resolved (owner-scoped) into the same shape the builder's model picker stores.
 A repairable diagram may carry ``"costs": {"downtime_rate": 500, "horizon":
 87600}`` (see :mod:`backend.services.rbd_maintenance` for the cost and
@@ -500,7 +500,7 @@ def _inline_disagrees(model: dict, saved: dict) -> bool:
 
 
 def normalize_model(model, where: str, resolve_saved_model=None) -> dict:
-    """A compact life model (inline, or a ``saved_model_id``) in the persisted shape."""
+    """A compact non-repairable model (inline, or a ``saved_model_id``) in the persisted shape."""
     return _model(model, where, resolve_saved_model)
 
 
@@ -712,7 +712,7 @@ def compact_graph(graph: dict) -> dict:
 
 
 def placeholder_labels(graph: dict) -> list[str]:
-    """Labels of blocks whose life model is a guessed placeholder."""
+    """Labels of blocks whose non-repairable model is a guessed placeholder."""
     return [
         (n.get("data") or {}).get("label") or n.get("id")
         for n in graph.get("nodes") or []

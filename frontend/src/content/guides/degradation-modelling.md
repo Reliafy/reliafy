@@ -99,5 +99,5 @@ The modelling approaches and worked examples are covered in the blog post on
 [degradation analysis](/blog/degradation-analysis-predicting-failure).
 
 If you'd rather predict from failure history than from condition readings,
-[fit a life model](/guides/fit-your-first-model) instead — the two are
+[fit a non-repairable model](/guides/fit-your-first-model) instead — the two are
 complementary, and plenty of equipment justifies both.

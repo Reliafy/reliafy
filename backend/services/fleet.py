@@ -55,7 +55,7 @@ class FleetValidationError(ValueError):
 
 METHODS = ("renewals", "single")
 # What a fleet's model_id is (Fleet.model_kind, see backend.schema): a plain
-# life distribution, a regression life model or an ALT model (first failures,
+# life distribution, a regression non-repairable model or an ALT model (first failures,
 # each item at its own covariates or stress, #234), or a recurrent-event
 # (repairable-system) model whose every failure is counted (#235).
 MODEL_KINDS = FLEET_MODEL_KINDS
@@ -263,7 +263,7 @@ def _clean_items(items) -> list[dict]:
 def create_fleet(db, name: str, model_id: str, owner_id: str, model_kind: str | None = None) -> Fleet:
     """A new fleet on ``model_id``. ``model_kind`` says which collection it's
     in: "alt" (an ALT model), "recurrent" (a recurrent-event model), or "life"
-    (the default) for a saved life model — stored as "regression" when that
+    (the default) for a saved non-repairable model — stored as "regression" when that
     model is a regression model."""
     if not (name or "").strip():
         raise FleetValidationError("The fleet needs a name.")
@@ -287,7 +287,7 @@ def create_fleet(db, name: str, model_id: str, owner_id: str, model_kind: str | 
     else:
         model = models_service.get_model(db, model_id, owner_id)
         if model is None:
-            raise FleetValidationError("Life model not found.")
+            raise FleetValidationError("Non-repairable model not found.")
         if (model.results or {}).get("kind") == "regression":
             model_kind = "regression"
             settings["method"] = "single"
@@ -385,13 +385,13 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
         return _compute_recurrent(db, fleet, owners, spares_opts)
     if kind == "alt":
         return _compute_covariate(db, fleet, owners, None, item_periods, spares_opts)
-    # "life" or "regression": a saved life model. Its own fit decides which
+    # "life" or "regression": a saved non-repairable model. Its own fit decides which
     # forecast runs, so a fleet stored as "life" on a model that is now a
     # regression model (or the reverse) still forecasts correctly.
     model = models_service.get_model(db, fleet.model_id, owners)
     if model is None:
         return {"status": "stale",
-                "reason": "The linked life model no longer exists."}
+                "reason": "The linked non-repairable model no longer exists."}
     results = model.results or {}
     if results.get("kind") == "regression":
         return _compute_covariate(db, fleet, owners, model, item_periods, spares_opts)

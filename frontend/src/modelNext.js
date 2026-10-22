@@ -1,4 +1,4 @@
-// Next steps from a fitted life model (#294): which tools can take it, the
+// Next steps from a fitted non-repairable model (#294): which tools can take it, the
 // links that open them with the model chosen, the model a Strategy tool
 // starts on, a saved model as a picker / RBD block value, and the block a
 // model becomes when it's added to a diagram. Pure functions (plus a guarded

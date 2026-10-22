@@ -2,7 +2,7 @@
 
 The differentiator of Reliafy's RCM is that every maintenance decision links
 to the quantitative analysis that justifies it, and the link is *checked* on
-every read: an RTF-because-random decision whose life model now shows wear-out
+every read: an RTF-because-random decision whose non-repairable model now shows wear-out
 is flagged **contradicted**, not silently trusted. Statuses are therefore never
 stored — :func:`resolve` recomputes them from the linked artifacts each time a
 study is loaded.
@@ -434,7 +434,7 @@ def _resolve_decision(decision: dict, fetch) -> dict:
 
 
 def _check_randomness(model) -> dict:
-    """Evidence check for RTF-because-random against a saved life model."""
+    """Evidence check for RTF-because-random against a saved non-repairable model."""
     results = model.results or {}
     if results.get("kind") == "regression":
         return {"status": "inconclusive",
@@ -493,7 +493,7 @@ def _check_replacement(analysis, want_beneficial: bool) -> dict:
 
 def _type_label(etype: str) -> str:
     return {
-        "model": "life model",
+        "model": "non-repairable model",
         "strategy_analysis": "saved strategy analysis",
         "degradation_model": "degradation model",
     }.get(etype, etype)

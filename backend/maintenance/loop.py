@@ -1,4 +1,4 @@
-"""Closing the loop: the work done refits the life models, and the models
+"""Closing the loop: the work done refits the non-repairable models, and the models
 propose the plan.
 
 * :func:`fit_class_model` pools every fitment of a class of position (one row
@@ -36,7 +36,7 @@ def _in_unit(days: float, unit: str) -> float:
 
 
 def fit_class_model(m: Maintenance, db, position_class: str, distribution: str = "weibull") -> dict:
-    """Fit and save a life model for a class from its pooled fitments."""
+    """Fit and save a non-repairable model for a class from its pooled fitments."""
     from backend.services import datasets as datasets_service
     from backend.services import models as models_service
 
@@ -109,7 +109,7 @@ def propose(m: Maintenance, position_class: str) -> list[dict]:
 
     node = m.s.node(m.org, class_id(m.org, position_class))
     if not node or not node.get("model"):
-        raise Invalid(f"Fit a life model for {position_class} first.")
+        raise Invalid(f"Fit a non-repairable model for {position_class} first.")
     model = node["model"]
     made = []
     for position in m.s.nodes(m.org, "Position"):
@@ -193,7 +193,7 @@ def refit_stale(m: Maintenance, db) -> list[str]:
 def economics(m: Maintenance, position_class: str, interval: float | None = None, unit: str = "months",
               horizon_years: float = 10, discount_rate: float = 0.07) -> dict:
     """What the class's replacement plan costs a year, against the best interval and
-    running to failure, from its life model and costs: and, given an interval, what that
+    running to failure, from its non-repairable model and costs: and, given an interval, what that
     would cost (a what-if). Each with its net present cost over the horizon."""
     import numpy as np
 
@@ -201,7 +201,7 @@ def economics(m: Maintenance, position_class: str, interval: float | None = None
 
     node = m.s.node(m.org, class_id(m.org, position_class))
     if not node or not node.get("model"):
-        raise Invalid(f"Fit a life model for {position_class} first.")
+        raise Invalid(f"Fit a non-repairable model for {position_class} first.")
     if node.get("planned_cost") is None or node.get("failure_cost") is None:
         raise Invalid(f"Set {position_class}'s costs (a planned replacement and a failure) first.")
     if not 0 <= float(discount_rate) < 1 or not 0 < float(horizon_years) <= 100:

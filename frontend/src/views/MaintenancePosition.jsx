@@ -782,7 +782,7 @@ function RbdCard({ p, onChanged }) {
         </div>
       </div>
       {error && <div className="card error">{error}</div>}
-      <p className="lib-date">The positions inside {p.name} become blocks, wired by their connections, with redundancy groups as k of n. Blocks take their class's fitted life model.</p>
+      <p className="lib-date">The positions inside {p.name} become blocks, wired by their connections, with redundancy groups as k of n. Blocks take their class's fitted non-repairable model.</p>
       {result?.notes?.length > 0 && <ul className="maint-list">{result.notes.map((n, i) => <li key={i} className="lib-date">{n}</li>)}</ul>}
     </section>
   );

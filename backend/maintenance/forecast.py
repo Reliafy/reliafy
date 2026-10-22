@@ -1,7 +1,7 @@
 """Failure forecast per position class (#407): from the register itself.
 
 Every position of a class with an item fitted is one unit of a fleet running on
-the class's fitted life model (:func:`loop.fit_class_model`). Its age is how
+the class's fitted non-repairable model (:func:`loop.fit_class_model`). Its age is how
 long the item has been in that position: days on the calendar for a model in
 calendar units (the same life the class's life data counts), else the use the
 position's counter in the model's unit has added since the item went in. It
@@ -247,7 +247,7 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
     node = m.s.node(m.org, class_id(m.org, name)) or {}
     model = node.get("model")
     if not model:
-        raise Invalid(f"Fit a life model for {name} first (maintenance_reliability fit_class_model).")
+        raise Invalid(f"Fit a non-repairable model for {name} first (maintenance_reliability fit_class_model).")
     unit = svc._norm_unit(model.get("unit")) or "days"
     calendar = unit in svc.CALENDAR_UNITS
     if (model.get("extras") or {}).get("p") is not None:

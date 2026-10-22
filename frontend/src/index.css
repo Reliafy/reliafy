@@ -781,7 +781,7 @@ h6 {
   flex: 0 0 auto;
 }
 
-/* One card, as on the life model page: the tabs, then each tab's content
+/* One card, as on the non-repairable model page: the tabs, then each tab's content
    directly in it. The Builder's canvas runs to the card's edges. */
 .card.rbd-wrap {
   --wrap-pad: 1.5rem;
@@ -1305,7 +1305,7 @@ h6 {
   box-shadow: var(--shadow-card);
 }
 
-/* Placeholder life model (assistant starting-point values, data.model.placeholder) */
+/* Placeholder non-repairable model (assistant starting-point values, data.model.placeholder) */
 .react-flow__node .rbd-comp.placeholder,
 .react-flow__node .rbd-block.placeholder {
   border-style: dashed;
@@ -2481,7 +2481,7 @@ h1 .chip,
   margin-top: 0;
 }
 
-/* A fitted life model's reading, quietly under its parameters (#311). */
+/* A fitted non-repairable model's reading, quietly under its parameters (#311). */
 .detail-panel .life-reading {
   padding: 12px 16px;
   border: 1px solid var(--line);
@@ -8213,11 +8213,11 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 
 /* RBD junction — a k-node with n = 1, drawn as a bare dot rather than a full
    "1-out-of-k voting" block. Same node type and same maths (a perfectly reliable
-   gate); it only merges branches, so it needs no room for a life model. */
+   gate); it only merges branches, so it needs no room for a non-repairable model. */
 .rbd-junction {
   position: relative;
   box-sizing: border-box;
-  /* A bare dot: it carries no life model and no number, so anything drawn
+  /* A bare dot: it carries no non-repairable model and no number, so anything drawn
      inside it would only invite the question "what does that mean?". The
      node is a block's height, the dot at its middle, so the paths through it
      stay level with the blocks beside it. */
@@ -8804,7 +8804,7 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
   .detail-panel .aside {
     width: auto;
   }
-  /* A life model's answer first (#292): the reading, then its numbers,
+  /* A non-repairable model's answer first (#292): the reading, then its numbers,
      then the plot. */
   .detail-panel.life-panel .aside { order: -1; }
   .detail-panel.life-panel .life-reading { order: -1; }
@@ -8957,7 +8957,7 @@ input.rbd-rename {
 }
 
 /* ---- "Use this model" (#294) ------------------------------------------- */
-/* Quiet next steps at the foot of a life model's panel: link rows, ink text. */
+/* Quiet next steps at the foot of a non-repairable model's panel: link rows, ink text. */
 .detail-panel .next-steps .gofh { font-size: var(--fs-13); color: var(--muted); font-weight: 500; }
 .detail-panel .gofr.next-step { color: var(--acc); font-weight: 500; }
 .detail-panel .gofr.next-step:disabled { cursor: progress; opacity: 0.7; }

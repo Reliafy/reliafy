@@ -1,4 +1,4 @@
-"""More life models (#179, #72, #63), in the registries' own shape.
+"""More non-repairable models (#179, #72, #63), in the registries' own shape.
 
 * Bounded distributions (Beta, Beta4, Uniform): fitted like any plain
   distribution, but kept out of Best fit and the mixtures — a support that

@@ -12,11 +12,11 @@ def tags(rows, cols):
 def test_life_data_with_and_without_covariates():
     plain = tags([[f"P-{i}", 100 + i, i % 2] for i in range(10)], ["pump", "hours", "censored"])
     assert plain["tags"] == ["Non-repairable"]
-    assert plain["use_for"][0] == "Life model"
+    assert plain["use_for"][0] == "Non-repairable model"
     cov = tags([[f"P-{i}", 100 + i, i % 2, 60 + i % 3, "North"] for i in range(10)],
                ["pump", "hours", "censored", "load_pct", "site"])
     assert cov["tags"] == ["Non-repairable", "Covariates"]
-    assert cov["use_for"][0] == "Life model with covariates"
+    assert cov["use_for"][0] == "Non-repairable model with covariates"
 
 
 def test_recurrent_events():
@@ -38,7 +38,7 @@ def test_start_stop_rows_with_changing_load():
             for u in range(4) for k in range(3)]
     out = tags(rows, ["transformer", "start_hours", "stop_hours", "censored", "load_pct"])
     assert out["tags"] == ["Non-repairable", "Time-varying covariates"]
-    assert out["use_for"] == ["Life model with time-varying covariates"]
+    assert out["use_for"] == ["Non-repairable model with time-varying covariates"]
 
 
 def test_repairable_without_a_status_column():
@@ -70,7 +70,7 @@ def test_outcome_once_per_unit_with_readings_is_life_data_with_measurements():
     rows = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u, None if k < 3 else u % 2] for u in range(4) for k in range(4)]
     out = tags(rows, ["bearing", "hours", "vibration_mm_s", "censored"])
     assert out["tags"] == ["Non-repairable", "Measurements"]
-    assert "Life model" in out["use_for"]
+    assert "Non-repairable model" in out["use_for"]
     # Status on every row means the readings are changing covariates instead.
     every = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u, 1 if k < 3 else 0] for u in range(4) for k in range(4)]
     assert "Time-varying covariates" in tags(every, ["bearing", "hours", "vibration_mm_s", "censored"])["tags"]

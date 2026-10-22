@@ -8,7 +8,7 @@ related_label: "Fit a model"
 order: 9
 ---
 
-A plain life model gives one answer for every unit. Real units don't all run
+A plain non-repairable model gives one answer for every unit. Real units don't all run
 the same way. Seals on a hot line fail sooner than seals on a cool one, and a
 pump at 90% duty wears faster than one at 60%. A regression model, also called
 a covariate model, measures how much each of those factors changes life. You
@@ -35,9 +35,9 @@ tested at 60, 80 and 100 °C and at two loads.
 
 ## Add the covariates
 
-Start a new model under **Modelling → Life models** and choose **Fit to data**.
+Start a new model under **Modelling → Non-repairable models** and choose **Fit to data**.
 Map the time and status columns in the **Data** step as usual (see
-[fit your first life model](/guides/fit-your-first-model)). Then open
+[fit your first non-repairable model](/guides/fit-your-first-model)). Then open
 **Advanced (regression): covariates** and tick each covariate column. Give each
 one a unit if you like (°C, kN); it's shown with its input and its coefficient.
 

@@ -540,13 +540,13 @@ def _life_values(model, life_params) -> dict:
     for n in names:
         v = by.get(n)
         if _blank(v):
-            raise StrategyError(f"Give the life model's planning values: {', '.join(names)}.")
+            raise StrategyError(f"Give the non-repairable model's planning values: {', '.join(names)}.")
         try:
             out[n] = float(v)
         except (TypeError, ValueError):
-            raise StrategyError(f"The life model's {n} must be a number.") from None
+            raise StrategyError(f"The non-repairable model's {n} must be a number.") from None
         if not np.isfinite(out[n]):
-            raise StrategyError(f"The life model's {n} must be a finite number.")
+            raise StrategyError(f"The non-repairable model's {n} must be a finite number.")
     return out
 
 

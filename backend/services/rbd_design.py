@@ -152,7 +152,7 @@ def _beta_text(group: dict) -> str:
 
 def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
     """The designed blocks, checked: id, label, current copies, what a copy of
-    each type uses, the life model of each type, and the redundancy options."""
+    each type uses, the non-repairable model of each type, and the redundancy options."""
     nodes = _check_graph(graph)
     repeated = set(rbd_repeats.find_repeats(list(nodes.values()))[0].values())
     groups = _group_index(graph)
@@ -190,7 +190,7 @@ def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
                 "standby, k-out-of-n, load-sharing and series blocks stay as drawn."
             )
         if not data.get("model"):
-            raise DesignError(f"“{label}” has no life model — set one to design it.")
+            raise DesignError(f"“{label}” has no non-repairable model — set one to design it.")
         group = groups.get(bid)
         if group is not None and ((graph.get("ccf_groups") or [])[group] or {}).get("mgl"):
             # Its letters fix the group's size (#84): a copy can't join it.
@@ -245,7 +245,7 @@ def _parse_blocks(graph: dict, raw_blocks) -> list[dict]:
                 raise DesignError(f"“{label}”: each alternative type must be an object.")
             name = str(alt.get("name") or f"Type {i + 1}")
             if not alt.get("model"):
-                raise DesignError(f"“{label}”: set a life model for the “{name}” type.")
+                raise DesignError(f"“{label}”: set a non-repairable model for the “{name}” type.")
             types.append({
                 "name": name,
                 "model": alt["model"],
@@ -293,7 +293,7 @@ def _build(graph: dict, resolve_model, resolve_subsystem):
 
 
 def _type_model(block: dict, ty: dict, resolve_model):
-    """The life model of an alternative component type."""
+    """The non-repairable model of an alternative component type."""
     try:
         return rbd_analysis._build_distribution(
             ty["model"], f"“{block['label']}” ({ty['name']})", resolve_model

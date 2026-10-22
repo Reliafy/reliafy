@@ -50,7 +50,7 @@ export const WALKTHROUGHS = {
     steps: [
       {
         target: '[data-wt="repl-model"]',
-        text: "Start from a life model: here, the bearing sample's Weibull fit.",
+        text: "Start from a non-repairable model: here, the bearing sample's Weibull fit.",
       },
       {
         target: '[data-wt="repl-costs"]',
@@ -123,7 +123,7 @@ export const WALKTHROUGHS = {
     steps: [
       {
         target: '[data-wt="fleet-model"]',
-        text: "A forecast runs every item in a fleet against one life model, here the bearing Weibull.",
+        text: "A forecast runs every item in a fleet against one non-repairable model, here the bearing Weibull.",
       },
       {
         target: '[data-wt="fleet-assume"]',

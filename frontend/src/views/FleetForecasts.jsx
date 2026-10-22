@@ -162,7 +162,7 @@ export default function FleetForecasts() {
         help={HELP}
         empty={{
           title: "No failure forecasts yet",
-          body: "Create one from a saved life model and list the items you have in service.",
+          body: "Create one from a saved non-repairable model and list the items you have in service.",
           action: newForecast,
         }}
         head={[

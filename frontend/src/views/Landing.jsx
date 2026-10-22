@@ -210,7 +210,7 @@ export default function Landing() {
           <div className="landing-eyebrow">Reliability engineering platform</div>
           <h1>From failure data to maintenance decisions.</h1>
           <p>
-            Reliafy turns your reliability data into fitted life models, reliability
+            Reliafy turns your reliability data into fitted non-repairable models, reliability
             block diagrams, and cost-optimal maintenance strategies — all in one
             place.
           </p>
@@ -239,7 +239,7 @@ export default function Landing() {
           <h2>Maintenance decisions that prove themselves.</h2>
           <p>
             Every decision in an RCM study links to the analysis behind it: a
-            run-to-failure call cites the life model that shows failures are
+            run-to-failure call cites the non-repairable model that shows failures are
             random, a fixed interval cites the cost-optimal replacement
             analysis, condition monitoring cites the degradation model.
           </p>

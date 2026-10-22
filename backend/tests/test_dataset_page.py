@@ -105,7 +105,7 @@ def test_used_by_counts_every_model_kind(client):
     samples.seed_samples(client.db)
     listed = {d["id"]: d for d in client.get("/api/datasets").json()["datasets"]}
     # The compressor history feeds a recurrent model, the brake wear a
-    # degradation model: both count, not only life models.
+    # degradation model: both count, not only non-repairable models.
     assert listed["sample-ds-compressor-events"]["n_models"] >= 1
     assert listed["sample-ds-brake-wear"]["n_models"] >= 1
     detail = client.get("/api/datasets/sample-ds-compressor-events").json()

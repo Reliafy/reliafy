@@ -2,7 +2,7 @@
 title: "Find the optimal replacement interval"
 task: "How often should I replace this component to minimise cost?"
 category: "Maintenance strategy"
-prerequisites: "A fitted life model, and the cost of a planned replacement versus an unplanned failure."
+prerequisites: "A fitted non-repairable model, and the cost of a planned replacement versus an unplanned failure."
 related_href: "/strategy/replacement"
 related_label: "Open optimal replacement"
 order: 20
@@ -79,7 +79,7 @@ That's the **Shutdown calendar** mode. On **Strategy → Optimal replacement**,
 switch the **Replacement mode** from **Age replacement** to
 [Shutdown calendar](/strategy/replacement?mode=calendar), then give it:
 
-- **Life model** — a saved model, or **Parameters** to type a distribution, and
+- **Non-repairable model** — a saved model, or **Parameters** to type a distribution, and
   the **Model time unit** (days, weeks, months, …), so the shut dates can be
   turned into model time.
 - **Shuts** — each with what **Replacing at it costs** and when it comes: every

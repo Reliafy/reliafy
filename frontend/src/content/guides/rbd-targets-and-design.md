@@ -2,7 +2,7 @@
 title: "Set a system target and design to meet it"
 task: "My system must reach 99% at 500 hours: what does each block need, and where should the redundancy go?"
 category: "Reliability block diagrams"
-prerequisites: "A diagram whose blocks all have life models (and, for a repairable one, repair times)."
+prerequisites: "A diagram whose blocks all have non-repairable models (and, for a repairable one, repair times)."
 related_href: "/rbds"
 related_label: "Open your RBDs"
 order: 34

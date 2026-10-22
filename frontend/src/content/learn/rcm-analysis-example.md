@@ -1,7 +1,7 @@
 ---
 title: "RCM analysis example: a pump system, worked end to end"
 description: "A complete reliability centred maintenance example — functions, functional failures, failure modes, consequences, and task selection for a cooling-water pump — with the worksheet filled in and the reasoning shown."
-cta_text: "Reliafy's RCM worksheets link every decision to the life model or analysis that justifies it — and flag the decision when new data contradicts it. The sample study is a pump system just like this one."
+cta_text: "Reliafy's RCM worksheets link every decision to the non-repairable model or analysis that justifies it — and flag the decision when new data contradicts it. The sample study is a pump system just like this one."
 cta_label: "Open the RCM sample study"
 cta_href: "/rcm-software"
 ---
@@ -51,7 +51,7 @@ The core discipline: one row per *mode* (the physical cause), not per
 symptom, with an honest note on what the failure data actually shows. This
 is where most binder-RCM goes soft — the pattern of each mode gets asserted
 from memory rather than fitted from data, and every decision downstream
-inherits the guess. Fit a life model per mode where the records allow it
+inherits the guess. Fit a non-repairable model per mode where the records allow it
 ([with the suspensions counted](/learn/censored-data-suspensions), or the
 fit is worthless).
 
@@ -91,7 +91,7 @@ replacement-interval analysis on the bearing model.
 a fixed interval wasteful — you'd replace many good seals to catch the few
 early ones. Seal distress telegraphs itself (flush-line temperature, drip
 rate). Decision: **on-condition task** — weekly visual + flush monitoring,
-renewal on onset. Evidence: the seal life model plus the observability of
+renewal on onset. Evidence: the seal non-repairable model plus the observability of
 the mode.
 
 **M3 — Motor windings (β ≈ 1.0).** Random failures. This is the entry that
@@ -120,9 +120,9 @@ ageing on both units.
 
 | Mode | Pattern (evidence) | Consequence | Decision | Interval |
 |---|---|---|---|---|
-| M1 Bearing wear | Wear-out, β 2.8 (life model + cost analysis) | Operational | Fixed-interval renewal | 8,500 h |
-| M2 Seal wear | Wear-out, β 2.1, high scatter (life model) | Env./operational | On-condition (flush + visual) | Weekly check |
-| M3 Motor windings | Random, β 1.0 (life model) | Operational | Run to failure | — |
+| M1 Bearing wear | Wear-out, β 2.8 (non-repairable model + cost analysis) | Operational | Fixed-interval renewal | 8,500 h |
+| M2 Seal wear | Wear-out, β 2.1, high scatter (non-repairable model) | Env./operational | On-condition (flush + visual) | Weekly check |
+| M3 Motor windings | Random, β 1.0 (non-repairable model) | Operational | Run to failure | — |
 | M4 Impeller erosion | Measurable degradation (head trend) | Operational | On-condition (head trend) | Quarterly / monthly in season |
 | M5 Standby start | Hidden (demand data) | Hidden → operational | Failure-finding test (alternate duty) | Monthly |
 

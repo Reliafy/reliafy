@@ -15,7 +15,7 @@ most RCM worksheets is that the answer is an opinion in a cell. Nobody can see
 the analysis behind it, and nobody notices when the data change.
 
 An RCM study in Reliafy keeps the usual worksheet, but each decision can link to
-the analysis that justifies it: a life model, a degradation model or a saved
+the analysis that justifies it: a non-repairable model, a degradation model or a saved
 strategy analysis. Reliafy checks the link every time you open the study, and
 marks each decision **Supported**, **Contradicted** or **Inconclusive**.
 
@@ -115,7 +115,7 @@ unit. Use the same unit as the analysis you link. If the units disagree, the
 decision is marked inconclusive rather than converted.
 
 **3. Link the evidence.** The dialog lists only the evidence the decision
-expects: your life models with their β verdicts, your degradation models, or
+expects: your non-repairable models with their β verdicts, your degradation models, or
 your saved analyses of the right kind. Pick one and press **Apply**. Then press
 **Save study**.
 
@@ -149,7 +149,7 @@ The chips under the study's title count the statuses for the whole study, and
 the RCM list shows the same counts for every study. A study with no red and no
 amber is one whose every decision you can defend.
 
-The check runs again every time the study opens. Refit a linked life model with
+The check runs again every time the study opens. Refit a linked non-repairable model with
 new failures and the status follows the new fit. A decision that was supported
 last quarter can turn red this quarter, and the study tells you.
 

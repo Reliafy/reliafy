@@ -7,7 +7,7 @@ import { formatNumber, formatPercent } from "../format.js";
 // The degradation model page's "Induced life" tab (#63): the failure-time
 // distribution the path model itself implies (Lu-Meeker: path parameters
 // drawn from the fitted population, each extended to the threshold), beside
-// the life model fitted to the items' crossing times. The two agreeing is
+// the non-repairable model fitted to the items' crossing times. The two agreeing is
 // evidence the model hangs together. Every number comes from the server.
 const PLOT_HEIGHT = 470;
 

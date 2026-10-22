@@ -20,12 +20,12 @@ tool's description lists its actions and what each needs.
 Data rules: dates are calendar days in the workspace's time zone; a date known roughly keeps its precision \
 ('2022', '2022-03'), never an invented day. A fitted item is where its position is: set the position's \
 location, never place a fitted item. Name a failure mode whenever something failed; never record a failure as \
-planned. Changes the life models propose are the user's to accept. Imports and tidy-ups dry-run first: show the \
+planned. Changes the non-repairable models propose are the user's to accept. Imports and tidy-ups dry-run first: show the \
 result, then run them.
 System questions from the register: when positions back each other up ('duty and standby', 'either is enough') \
 record it with maintenance_topology create_group as you build, not later. For a system's reliability, \
 maintenance_topology generate_rbd builds the RBD from the positions (then rbd_analysis analyze); don't hand-build \
-one with rbd create. A life model for a maintenance class comes from maintenance_reliability fit_class_model \
+one with rbd create. A non-repairable model for a maintenance class comes from maintenance_reliability fit_class_model \
 (it reads the fitment history itself and proposes intervals), not from life_data_analysis.
 """
 

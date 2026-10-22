@@ -4225,7 +4225,7 @@ class Maintenance:
         a law or standard ('statutory'), your own practice ('manual') or elsewhere
         ('other'). It's scheduled and raises work orders like a task from RCM. outcome
         says what kind of task it is (as an RCM decision would): fixed_interval (replace
-        or restore: the class's life model proposes its interval and plan_economics costs
+        or restore: the class's non-repairable model proposes its interval and plan_economics costs
         it), failure_finding, on_condition, or None for other routine work.
 
         What it's on (exactly one):

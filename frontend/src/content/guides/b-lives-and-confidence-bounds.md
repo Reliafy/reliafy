@@ -2,7 +2,7 @@
 title: "Read B-lives and confidence bounds"
 task: "How long until 10% have failed, and how sure can I be?"
 category: "Life data modelling"
-prerequisites: "A fitted life model. The sample bearing model works for following along."
+prerequisites: "A fitted non-repairable model. The sample bearing model works for following along."
 related_href: "/modelling/m/sample-model-bearings-weibull"
 related_label: "Open the sample bearing model"
 order: 6

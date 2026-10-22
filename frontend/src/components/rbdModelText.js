@@ -77,7 +77,7 @@ export function modelMedian(model) {
 const GREEK = { alpha: "α", beta: "β", mu: "μ", sigma: "σ", failure_rate: "λ" };
 const n3 = (v) => formatNumber(v, { sig: 3 });
 
-// One short line for a life model: "λ 1e-6/h", "Weibull · η 12,000 h · β 1.6",
+// One short line for a non-repairable model: "λ 1e-6/h", "Weibull · η 12,000 h · β 1.6",
 // "Lognormal · mean 13.6 h". ``short`` leaves out the "Weibull" its η and β
 // already say ("η 12,000 h · β 1.6"), for a block's one line on the canvas.
 export function lifeLine(model, unit, { short = false } = {}) {

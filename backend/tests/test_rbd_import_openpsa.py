@@ -216,7 +216,7 @@ def test_cardinality_up_to_n_is_atleast():
 def test_fixed_probability_events_import_without_a_life_model():
     """#188: a fixed-probability event (human error, failure on demand) no
     longer rejects the file. Reliafy has no fixed-probability block, so the
-    event becomes a block with NO life model, named in the notes with its
+    event becomes a block with NO non-repairable model, named in the notes with its
     probability; nothing is invented for it."""
     xml = ('<opsa-mef><define-gate name="T"><or><gate name="Pumps"/><basic-event name="MCC"/>'
            '<basic-event name="Valve"/></or></define-gate>'
@@ -234,11 +234,11 @@ def test_fixed_probability_events_import_without_a_life_model():
     assert by_label(d.graph, "PA")["model"]["distribution_id"] == "exponential"
     (note,) = [w for w in d.warnings if "fixed probability" in w]
     assert "2 basic event(s)" in note and "“Motor control centre” (p = 0.01)" in note
-    assert "“Valve” (p = 0.0237)" in note and "WITHOUT a life model" in note
+    assert "“Valve” (p = 0.0237)" in note and "WITHOUT a non-repairable model" in note
     # The structure is intact; only the missing models stop the analysis.
     check = rbd_analysis.validate_graph(normalize_graph(d.graph))
     assert not check["valid"]
-    assert all("has no life model" in e for e in check["errors"]) and len(check["errors"]) == 2
+    assert all("has no non-repairable model" in e for e in check["errors"]) and len(check["errors"]) == 2
 
     with pytest.raises(RbdImportError, match="isn't between 0 and 1"):
         load('<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or>'

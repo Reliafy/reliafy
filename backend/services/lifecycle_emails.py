@@ -183,7 +183,7 @@ Here are three things in the RBD builder that are easy to miss.
 
 {_DAY3_TIPS}
 
-Two more for when you're building your own: a block can use a life model fitted to your own failure data, and the Design tab finds the cheapest redundancy that meets a reliability target. The [RBD guide](/guides/build-an-rbd) covers both.
+Two more for when you're building your own: a block can use a non-repairable model fitted to your own failure data, and the Design tab finds the cheapest redundancy that meets a reliability target. The [RBD guide](/guides/build-an-rbd) covers both.
 
 Reply if you get stuck. It comes to me.
 

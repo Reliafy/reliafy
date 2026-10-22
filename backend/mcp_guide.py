@@ -86,7 +86,7 @@ units_seen) says accept, reject or continue. Budget for its longest run (max_tim
 - Estimate a life: plan_life_test from planning values (params, the shape matters most): the precision of a \
 B-life or the mean for units on test (solve_for precision), the units for a precision (units, within_pct: 20 = \
 ±20%) or how long to run (length). test_end time (censor_time), failures (failure_fraction) or all.
-- Accelerated tests: plan_accelerated_test from planning values of the life model (life_params; a similar \
+- Accelerated tests: plan_accelerated_test from planning values of the non-repairable model (life_params; a similar \
 part's models fit_alt gives them) and shape: stresses, units at each and expected failures up to high_stress \
 (levels 2 = optimum, 3 = compromise, which can show the model is wrong), or the precision of your own stresses \
 and units_at. Relay warnings: stresses with under 3 expected failures make the precision optimistic.
@@ -175,7 +175,7 @@ back)."""),
 
     "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
 Maintenance strategy (strategy).
-- strategy optimal_replacement: the cost-optimal age-replacement interval from a life model (model_id, or \
+- strategy optimal_replacement: the cost-optimal age-replacement interval from a non-repairable model (model_id, or \
 distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper.
 - strategy failure_finding_interval: the proof-test interval keeping a hidden protective function (relief valve, trip, \
 standby unit) at a target availability.
@@ -233,7 +233,7 @@ fallback says where).
 5. Import with the upload_id: uploads import_rbd (diagrams; save=false previews with edges and cut sets; only \
 picks diagrams by name; time_unit when the file states none), uploads import_excel (target dataset, rcm or \
 rbd_template), datasets upload, or rbd upload_outage_log.
-Relay the import notes: they say what was approximated. Blocks imported without a life model (needs_model) \
+Relay the import notes: they say what was approximated. Blocks imported without a non-repairable model (needs_model) \
 need one before analysis: ask the user, don't invent values."""),
 
     "rcm": ("RCM / FMEA studies as structured JSON.", """\

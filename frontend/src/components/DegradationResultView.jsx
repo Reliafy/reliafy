@@ -121,7 +121,7 @@ function buildRelTraces(curves, xTitle, rel, pointLife, designLife) {
   return { data, layout };
 }
 
-// The fitted degradation model in the life model page's shape (#311): tabs
+// The fitted degradation model in the non-repairable model page's shape (#311): tabs
 // first, each a chart with a side panel. Path plot: the per-item paths against
 // the threshold, beside the Parameters card and the design life. Reliability:
 // the population curve with its band, beside the confidence and reliability
@@ -179,7 +179,7 @@ export default function DegradationResultView({ results, modelId, name = null })
   const paths = buildPathTraces(r, xTitle, yTitle, tUnit, mUnit);
   const relTraces = curves ? buildRelTraces(curves, xTitle, rel, pointLife, designLife) : null;
 
-  // The life model's parameters by their plain names (shape before scale).
+  // The non-repairable model's parameters by their plain names (shape before scale).
   const lifeAsResult = { distribution: life.distribution, distribution_id: life.distribution_id, unit: r.unit };
   const order = ["beta", "alpha", "mu", "sigma"];
   const params = [...(life.params || [])].sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
@@ -261,7 +261,7 @@ export default function DegradationResultView({ results, modelId, name = null })
               {reading(false)}
               <p className="life-method">
                 Each item's {(r.path_model?.name || "fitted").toLowerCase()} path is extended to the threshold;
-                {" "}{life.distribution || "the life model"} is fitted to those crossing times. Hover a point for its item.
+                {" "}{life.distribution || "the non-repairable model"} is fitted to those crossing times. Hover a point for its item.
               </p>
             </div>
           </div>
@@ -307,7 +307,7 @@ export default function DegradationResultView({ results, modelId, name = null })
               {cbError && <div className="life-reading caveat">{cbError}</div>}
               {reading(true)}
               <p className="life-method">
-                Population reliability from the fitted life model, with a {fmt(confPct, 0)}% two-stage
+                Population reliability from the fitted non-repairable model, with a {fmt(confPct, 0)}% two-stage
                 confidence band. The band widens the fewer items were tracked: it is the uncertainty in
                 the population curve itself, not scatter between items.
               </p>
@@ -318,7 +318,7 @@ export default function DegradationResultView({ results, modelId, name = null })
 
       <ResultDetails summary="Pseudo failure times">
         <p className="rs-note" style={{ marginTop: 0 }}>
-          When each item's fitted path crosses the threshold. The life model is fitted to these.
+          When each item's fitted path crosses the threshold. The non-repairable model is fitted to these.
         </p>
         <ScrollCue className="rs-table-wrap">
           <table className="mini-table">

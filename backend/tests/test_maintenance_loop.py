@@ -1,4 +1,4 @@
-"""Reliafy Maintenance: the records refit a class's life model, and the model
+"""Reliafy Maintenance: the records refit a class's non-repairable model, and the model
 proposes task intervals that someone accepts or rejects."""
 
 from datetime import date, timedelta

@@ -18,7 +18,7 @@ import { CATEGORY } from "./plotTheme.js";
 // "Recent".
 
 export const TYPE_LABEL = {
-  life: "Life model",
+  life: "Non-repairable model",
   degradation: "Degradation",
   alt: "Accelerated life",
   recurrent: "Repairable model",
@@ -27,7 +27,7 @@ export const TYPE_LABEL = {
 
 // The Modelling list's type filter: the same names as the menu's children.
 export const TYPE_FILTERS = [
-  { value: "life", label: "Life models" },
+  { value: "life", label: "Non-repairable models" },
   { value: "recurrent", label: "Repairable models" },
   { value: "alt", label: "Accelerated life" },
   { value: "degradation", label: "Degradation" },

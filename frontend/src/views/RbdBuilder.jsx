@@ -1001,7 +1001,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   }, [setNodes, setEdges, fitWhenMeasured]);
 
   // Replace the canvas with an assistant-provided graph: normalise it (handles,
-  // edge styling, life models) and lay it out left-to-right, then keep the new
+  // edge styling, non-repairable models) and lay it out left-to-right, then keep the new
   // id counter clear of any ids it introduced.
   const applyGraph = useCallback((graph) => {
     const norm = normalizeRbdGraph(graph);
@@ -1060,7 +1060,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     }
   }, [rbdId, imported, openRbd, loadGraph, addModel, onModelAdded]);
 
-  // Assign a life model (saved or from parameters) to the node the modal targets.
+  // Assign a non-repairable model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
     ({ model, repair, extras, label }) => {
       setNodes((nds) =>
@@ -1688,7 +1688,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
                         closeMenu();
                       }}
                     >
-                      {menu.repeat ? "Edit life model (original)" : "Edit life model"}
+                      {menu.repeat ? "Edit non-repairable model (original)" : "Edit non-repairable model"}
                     </button>
                     {(menu.nodeType === "series" ||
                       menu.nodeType === "parallel") && (

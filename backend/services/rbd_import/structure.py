@@ -14,7 +14,7 @@ persisted (normalised) graph and returns:
   standby switching and sub-systems' insides aren't expanded — a block is one
   event here.
 
-Pure graph work: no life models are read, so it also describes a diagram
+Pure graph work: no non-repairable models are read, so it also describes a diagram
 whose blocks still need one. Sizes are bounded (:data:`MAX_BLOCKS`,
 :data:`MAX_CUT_SETS`); past them the field is ``None``.
 """

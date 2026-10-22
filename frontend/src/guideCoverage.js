@@ -14,7 +14,7 @@ export const GUIDE_COVERAGE = [
   // Where the app opens.
   { feature: "Home", href: "/home" },
   // Life data and the other model types.
-  { feature: "Fit a life model (life data)", href: "/modelling/new" },
+  { feature: "Fit a non-repairable model (life data)", href: "/modelling/new" },
   { feature: "Repairable models (repairable systems)", href: "/modelling/recurrent" },
   { feature: "Accelerated life models", href: "/modelling/alt" },
   { feature: "Degradation models", href: "/modelling/degradation" },

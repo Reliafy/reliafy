@@ -110,7 +110,7 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Failed to profile dataset: %s", exc)
         profile = {"distinct": {}, "repeated_units": None}
-    # ALT, recurrent and degradation models fitted to it (life models are
+    # ALT, recurrent and degradation models fitted to it (non-repairable models are
     # "models", with their distribution).
     others = [
         {"kind": d["kind"], "collection": d["collection"], "id": d["id"], "name": d["name"],
@@ -719,7 +719,7 @@ def life_model(
 def compare_model(
     model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
-    """Best fit's ranking of every plain distribution on a saved life model's
+    """Best fit's ranking of every plain distribution on a saved non-repairable model's
     own data (#293), best first. Saves nothing."""
     model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:

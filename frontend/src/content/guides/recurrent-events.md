@@ -142,7 +142,7 @@ spares order or a maintenance budget.
 ## Where to go next
 
 If the same equipment also has a wear-out story at the component level, fit those
-as ordinary [life models](/guides/fit-your-first-model) — the two views answer
+as ordinary [non-repairable models](/guides/fit-your-first-model) — the two views answer
 different questions and are complementary, not competing.
 
 If you're deciding whether to keep repairing or overhaul, the **Overhaul** tab

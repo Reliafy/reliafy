@@ -37,7 +37,7 @@ modes and 22 still running.
 
 ## Fit by failure mode
 
-Go to **Modelling → Life models**, start a new model and choose **Fit to data**.
+Go to **Modelling → Non-repairable models**, start a new model and choose **Fit to data**.
 Pick your file or dataset. In the **Data** step, choose the mode column as
 **Failure mode (optional)**. The step reminds you that *a blank mode is a unit
 still running*.
@@ -133,7 +133,7 @@ about 1.14¹⁰ ≈ 3.7, while seals and impellers don't care.
 - To compare groups without splitting by mode, or to plan a trial of a fix, see
   [find out whether a change made a difference](/guides/compare-groups).
 - To fit a single distribution to all failures together, see
-  [fit your first life model](/guides/fit-your-first-model).
+  [fit your first non-repairable model](/guides/fit-your-first-model).
 - For covariates without failure modes, see
   [fit a model with covariates](/guides/covariates-and-regression).
 

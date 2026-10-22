@@ -285,7 +285,7 @@ def test_shared_recurrent_model(client, monkeypatch):
     assert row["read_only"] is True and row["shared_by"] == "a@x.com"
     detail = client.get(f"/api/recurrent/models/{rm['id']}").json()
     assert detail["read_only"] is True and detail["results"]["model"]["id"] == "crow_amsaa"
-    # The referenced dataset comes along (as for life models).
+    # The referenced dataset comes along (as for non-repairable models).
     assert client.get(f"/api/datasets/{rm['dataset_id']}").status_code == 200
     r = client.post(f"/api/recurrent/models/{rm['id']}/predict", json={"horizon": 400})
     assert r.status_code == 200 and r.json()["expected_events"] > 0

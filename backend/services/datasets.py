@@ -454,13 +454,13 @@ def detect_tags(df: pd.DataFrame) -> dict:
     if "Measurements" in tags:
         use_for += ["Degradation", "Condition monitoring (the readings)"]
         if censor:
-            use_for.append("Life model")
+            use_for.append("Non-repairable model")
     elif censor and unit and ("Time-varying covariates" in tags or start_stop):
-        use_for.append("Life model with time-varying covariates")
+        use_for.append("Non-repairable model with time-varying covariates")
     elif repeat:
         use_for.append("Repairable model" + (" with covariates" if covs else ""))
     elif censor or times:
-        use_for.append("Life model" + (" with covariates" if covs else ""))
+        use_for.append("Non-repairable model" + (" with covariates" if covs else ""))
         use_for.append("Condition monitoring (the lifetimes)")
     out_tags = [t for t in TAGS if t in tags]
     return {"tags": out_tags, "use_for": use_for, "summary": _summary(df, unit, censor, out_tags),

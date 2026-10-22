@@ -53,7 +53,7 @@ Double-click a block to open it, or double-click its name to rename it in place
   the block by it.
 - **Failure** — the dangerous undetected failures. Enter them as a **Mean**
   (the mean time to a dangerous failure, 1/λDU) or as **Parameters**
-  (Exponential, failure rate λ per hour). In a safety function the life model is
+  (Exponential, failure rate λ per hour). In a safety function the non-repairable model is
   labelled λDU.
 - **Proof test** — how often the element is tested, when its first test is (to
   stagger redundant channels' tests) and the test's coverage (below 100% when

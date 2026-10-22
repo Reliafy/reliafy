@@ -55,7 +55,7 @@ days, weeks, months or years).
 **Crews and groups…** in the same menu sets how many **Repair crews** work at
 once (blank is unlimited) and each maintenance group's **Set-up cost per
 stop**. With fewer crews than jobs, a failed block waits for a crew. That is
-realistic, but for most life models it means the figures are simulated
+realistic, but for most non-repairable models it means the figures are simulated
 rather than exact.
 
 ## 3. Read the cost of ownership

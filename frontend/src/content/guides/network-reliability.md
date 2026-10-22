@@ -2,7 +2,7 @@
 title: "Model a network: will two points stay connected?"
 task: "How reliable is the connection between two points of a pipeline, grid or communications network, where flow can go either way?"
 category: "Reliability block diagrams"
-prerequisites: "A sketch of the network: the points that can fail, how they link up, and a life model for each."
+prerequisites: "A sketch of the network: the points that can fail, how they link up, and a non-repairable model for each."
 related_href: "/rbds/b"
 related_label: "Open the RBD builder"
 order: 39
@@ -34,7 +34,7 @@ supports none of those, and it isn't repairable.
 Open **RBDs → New diagram** and set the menu beside **Unit** in the toolbar to
 **Network**. The canvas works as usual, with three differences in meaning:
 
-- Each **block** is a point that can fail, with a life model. A pipe segment or
+- Each **block** is a point that can fail, with a non-repairable model. A pipe segment or
   a line that can fail is drawn as a block between the points it joins.
 - Each **connection** is a link that works both ways and never fails. Its
   direction on the canvas is ignored: wire it whichever way is easier.
@@ -43,7 +43,7 @@ Open **RBDs → New diagram** and set the menu beside **Unit** in the toolbar to
   instead.
 
 Add blocks with **+ Add block** or a right-click on the canvas, and set each
-block's life model by double-clicking it, as in any diagram. Junctions and
+block's non-repairable model by double-clicking it, as in any diagram. Junctions and
 voting nodes aren't offered: in a network, a point where lines meet is just a
 connection.
 

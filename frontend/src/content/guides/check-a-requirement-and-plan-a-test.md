@@ -2,7 +2,7 @@
 title: "Check a requirement and plan a test"
 task: "Does my model meet B10 ≥ 500 hours at 90% confidence, and if not, what test would show it?"
 category: "Maintenance strategy"
-prerequisites: "A B-life requirement and, ideally, a fitted life model of the item."
+prerequisites: "A B-life requirement and, ideally, a fitted non-repairable model of the item."
 related_href: "/strategy/test-planning"
 related_label: "Open test planning"
 order: 21
@@ -13,7 +13,7 @@ hours, at 90% confidence*. That's two questions. Do the data you have already
 show it? And if they don't, how many units do you have to test, for how long,
 to show it?
 
-Reliafy answers the first from a fitted life model and the second on the
+Reliafy answers the first from a fitted non-repairable model and the second on the
 **Test planning** page, and one leads straight into the other. This guide
 uses the sample bearing model (a Weibull fit to 30 failure times) and the
 requirement B10 ≥ 500 hours at 90% confidence.

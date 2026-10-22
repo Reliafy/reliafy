@@ -10,7 +10,7 @@ import {
 
 const sig = (v, n = 3) => formatNumber(v, { sig: n });
 
-// The side panel beside a recurrent model's MCF plot (#65), as a life model's
+// The side panel beside a recurrent model's MCF plot (#65), as a non-repairable model's
 // (#311): its parameters by their plain names with their intervals, the data
 // and a row that opens the fit statistics; then the rates now (or, for
 // imperfect repair, each system's next failure); then a quiet one-line

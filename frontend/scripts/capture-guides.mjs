@@ -255,7 +255,7 @@ async function seedOwnModel() {
 
 // A small Galileo dynamic fault tree, written here (no vendor file): a supply
 // with a cold spare, three pumps voting 2-of-3, and a valve with only a fixed
-// failure probability, which imports without a life model and says so.
+// failure probability, which imports without a non-repairable model and says so.
 const GALILEO_FEED = [
   'toplevel "Feed system";',
   '"Feed system" or "Supply" "Pumps" "Valve";',

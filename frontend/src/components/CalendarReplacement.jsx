@@ -103,7 +103,7 @@ export default function CalendarReplacement() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form cal-form">
-        <ModelPicker key={wanted || ""} label="Life model" value={model} onChange={pickModel} preferSaved
+        <ModelPicker key={wanted || ""} label="Non-repairable model" value={model} onChange={pickModel} preferSaved
                      wanted={wanted} />
         <div className="strategy-costs">
           <label className="calc-t">

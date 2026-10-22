@@ -8,7 +8,7 @@ related_label: "Open condition monitoring"
 order: 18
 ---
 
-A life model treats every unit of a type alike: two pumps of the same age carry
+A non-repairable model treats every unit of a type alike: two pumps of the same age carry
 the same risk. But you know they don't. One pump's vibration has crept up for
 months; the other's is as steady as the day it went in. **Condition
 monitoring** in Reliafy uses those readings. It learns from your fleet how the reading drifts and

@@ -460,7 +460,7 @@ def _covariate_row(fields: list, values: dict | None) -> tuple[dict, list[dict]]
 
 
 def evaluate_at(db, model: Model, times, owner_id, covariates: dict | None = None) -> dict:
-    """Evaluate a saved life model's reliability functions at ``times``.
+    """Evaluate a saved non-repairable model's reliability functions at ``times``.
 
     Parametric models are evaluated from the distribution itself — plain and
     discrete ones rebuilt from their stored parameters, regression
