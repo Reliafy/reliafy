@@ -70,6 +70,15 @@ if AUTH_DISABLED and os.environ.get("K_SERVICE"):
         "AUTH_DISABLED for this deployment."
     )
 
+# A private test site: when ALLOWED_EMAILS is set (comma-separated), only those
+# verified addresses may use the API; every other signed-in account gets a 403.
+# Empty (the default) leaves sign-in open, as on reliafy.com.
+ALLOWED_EMAILS = {
+    e.strip().lower()
+    for e in os.environ.get("ALLOWED_EMAILS", "").split(",")
+    if e.strip()
+}
+
 # ---- Client address ----------------------------------------------------------
 # Rate limits and the visitor hash key on the client IP taken from
 # X-Forwarded-For (see backend/request_ip.py). Set TRUST_X_FORWARDED_FOR=false
