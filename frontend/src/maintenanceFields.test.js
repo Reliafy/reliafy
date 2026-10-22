@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  costText, costValue, datedText, daysText, moneyText, roughDateInput, roughDateValue, safeHref,
+  costText, costValue, datedText, daysText, documentFileProblem, fileSizeText, moneyText, roughDateInput,
+  roughDateValue, safeHref,
 } from "./maintenanceFields.js";
 
 test("a rough date is shown as it's known, never as a made-up day", () => {
@@ -49,4 +50,21 @@ test("costs read with their currency, source and date", () => {
   assert.equal(costText(null), "—");
   assert.equal(costValue({ amount: "" }), null);
   assert.deepEqual(costValue({ amount: "800", currency: "AUD" }), { amount: 800, currency: "AUD", source: "", as_of: null });
+});
+
+test("only a PDF within 20 MB is sent, and the reason says what to do", () => {
+  assert.equal(documentFileProblem({ name: "manual.pdf", type: "application/pdf", size: 2048 }), null);
+  assert.equal(documentFileProblem({ name: "MANUAL.PDF", type: "", size: 2048 }), null);
+  assert.match(documentFileProblem({ name: "photo.jpg", type: "image/jpeg", size: 10 }), /Only PDF files/);
+  assert.match(documentFileProblem({ name: "a.pdf", type: "application/pdf", size: 0 }), /empty/);
+  assert.match(documentFileProblem({ name: "a.pdf", type: "application/pdf", size: 21 * 1048576 }),
+    /21.0 MB; the most is 20 MB/);
+  assert.match(documentFileProblem(null), /Choose a PDF/);
+});
+
+test("file sizes read plainly", () => {
+  assert.equal(fileSizeText(300), "1 KB");
+  assert.equal(fileSizeText(820 * 1024), "820 KB");
+  assert.equal(fileSizeText(3.4 * 1048576), "3.4 MB");
+  assert.equal(fileSizeText(undefined), "");
 });

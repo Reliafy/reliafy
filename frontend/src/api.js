@@ -2360,6 +2360,26 @@ export function addMaintenanceDocument(body) {
 export function removeMaintenanceDocument(id) {
   return request(`/api/maintenance/documents/${id}`, { method: "DELETE" });
 }
+
+// PDFs kept in the workspace, on the same targets as links: the request body is
+// the file. Reading one needs the session, so the viewer shows it from a blob.
+export function uploadMaintenanceDocument(target, file, { title = "", kind = "other" } = {}) {
+  const q = new URLSearchParams({ ...target, title, kind, filename: file.name || "document.pdf" });
+  return request(`/api/maintenance/documents/upload?${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/pdf" },
+    body: file,
+  });
+}
+export async function getMaintenanceDocumentBlob(id) {
+  const res = await authedFetch(`/api/maintenance/documents/${id}/file`);
+  if (!res.ok) {
+    throw new Error(res.status === 404 ? "This PDF isn't there any more. Refresh the page."
+      : `The PDF didn't load (${res.status}). Try again.`);
+  }
+  const blob = await res.blob();
+  return blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
+}
 export function setClassReplacementCost(positionClass, replacementCost) {
   return request("/api/maintenance/classes/replacement-cost", {
     method: "PUT", headers: { "Content-Type": "application/json" },

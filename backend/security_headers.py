@@ -18,7 +18,8 @@ What the policy allows, and why:
   images), and any ``https:`` source (Google profile photos; markdown images).
 * connections: our own API, the Firebase Auth / Secure Token REST endpoints,
   and ``CSP_CONNECT_EXTRA`` (the cross-origin SSE stream host).
-* frames: the Firebase auth domain's sign-in iframe (``CSP_FRAME_EXTRA``).
+* frames: the Firebase auth domain's sign-in iframe (``CSP_FRAME_EXTRA``), and
+  ``blob:`` (a maintenance PDF shown in the browser's own viewer).
 * workers: ``blob:`` (libraries that spin up inline workers).
 * forms post only to ourselves; no plugins; ``<base>`` pinned to ourselves.
 
@@ -37,7 +38,7 @@ def content_security_policy() -> str:
     connect = ["'self'", "https://identitytoolkit.googleapis.com",
                "https://securetoken.googleapis.com", "https://www.googleapis.com",
                "https://apis.google.com", *config.CSP_CONNECT_EXTRA]
-    frames = ["'self'", "https://accounts.google.com", "https://apis.google.com",
+    frames = ["'self'", "blob:", "https://accounts.google.com", "https://apis.google.com",
               *config.CSP_FRAME_EXTRA]
     directives = {
         "default-src": ["'self'"],

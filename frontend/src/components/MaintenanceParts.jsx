@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { addMaintenanceDocument, decideProposal, removeMaintenanceDocument } from "../api.js";
 import {
-  DOCUMENT_KINDS, PRECISIONS, datedText, daysText, roughDateInput, roughDateValue, safeHref,
+  addMaintenanceDocument, decideProposal, getMaintenanceDocumentBlob, removeMaintenanceDocument,
+  uploadMaintenanceDocument,
+} from "../api.js";
+import {
+  DOCUMENT_KINDS, MAX_DOCUMENT_MB, PRECISIONS, datedText, daysText, documentFileProblem, fileSizeText,
+  roughDateInput, roughDateValue, safeHref,
 } from "../maintenanceFields.js";
 import { locationOptions } from "../maintenanceLocations.js";
 import Modal from "./Modal.jsx";
@@ -75,38 +79,119 @@ export function roughDate(day, precision) {
   return { text: roughDateInput(day, precision || "exact"), precision: precision || "exact" };
 }
 
-// Links to documents (manuals, datasheets, invoices) on an item, a position or a
-// class. Only http(s) links open; they open in a new tab with no referrer.
-export function DocumentsCard({ title = "Documents", documents, target, onChanged }) {
-  const [adding, setAdding] = useState(false);
-  const [f, setF] = useState({ url: "", title: "", kind: "manual" });
+// A PDF kept in the workspace, in the browser's own PDF viewer: fetched with the
+// session (the file route needs it), shown from a blob URL in a frame, with
+// "Open in a new tab" and "Download". Phones (which often won't show a PDF in
+// a frame) get the buttons and a note instead.
+export function DocumentViewer({ doc, onClose }) {
+  const [url, setUrl] = useState(null);
   const [error, setError] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    let made = null;
+    getMaintenanceDocumentBlob(doc.id)
+      .then((blob) => {
+        made = URL.createObjectURL(blob);
+        if (alive) setUrl(made);
+      })
+      .catch((e) => alive && setError(e.message));
+    return () => {
+      alive = false;
+      // A tab opened from it may still be reading it: let it go a minute later.
+      if (made) setTimeout(() => URL.revokeObjectURL(made), 60_000);
+    };
+  }, [doc.id]);
+  const name = doc.file_name || `${doc.title || "document"}.pdf`;
+  const download = () => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+  return (
+    <Modal title={doc.title || "Document"} onClose={onClose} className="modal-xl maint-pdf-modal"
+           footer={<>
+             <button className="secondary" disabled={!url} onClick={() => window.open(url, "_blank", "noopener")}>
+               Open in a new tab
+             </button>
+             <button className="secondary" disabled={!url} onClick={download}>Download</button>
+             <button onClick={onClose}>Close</button>
+           </>}>
+      <p className="lib-date maint-pdf-meta">
+        {[doc.kind, fileSizeText(doc.size), doc.added_on && `added ${fmtDate(doc.added_on)}`].filter(Boolean).join(" · ")}
+      </p>
+      {error ? <div className="card error">{error}</div>
+        : !url ? <p className="lib-date" role="status">Loading the PDF…</p>
+          : <iframe className="maint-pdf-frame" src={url} title={`PDF: ${doc.title || name}`} />}
+      {url && (
+        <p className="lib-date maint-pdf-phone">
+          On a phone, use Open in a new tab to read it in your phone's PDF viewer, or Download to keep a copy.
+        </p>
+      )}
+    </Modal>
+  );
+}
+
+// Documents (manuals, datasheets, invoices) on an item, a position or a class:
+// links to web addresses, and PDFs kept here (opened in the viewer). Only
+// http(s) links open; they open in a new tab with no referrer.
+export function DocumentsCard({ title = "Documents", documents, target, onChanged }) {
+  const blank = { url: "", title: "", kind: "manual", file: null };
+  const [adding, setAdding] = useState(null); // "pdf" | "link" | null
+  const [f, setF] = useState(blank);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [viewing, setViewing] = useState(null);
+  const [confirming, setConfirming] = useState(null);
+  const fileProblem = adding === "pdf" && f.file ? documentFileProblem(f.file) : null;
+  const close = () => { setAdding(null); setF(blank); setError(null); };
   const add = async () => {
     setError(null);
+    setBusy(true);
     try {
-      await addMaintenanceDocument({ ...target, ...f });
-      setAdding(false);
-      setF({ url: "", title: "", kind: "manual" });
+      if (adding === "pdf") {
+        await uploadMaintenanceDocument(target, f.file, { title: f.title, kind: f.kind });
+      } else {
+        await addMaintenanceDocument({ ...target, url: f.url, title: f.title, kind: f.kind });
+      }
+      close();
       onChanged?.();
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
   const remove = async (id) => {
     setError(null);
+    setConfirming(null);
     try { await removeMaintenanceDocument(id); onChanged?.(); } catch (e) { setError(e.message); }
   };
+  const ready = adding === "pdf" ? !!f.file && !fileProblem : !!f.url.trim();
   return (
     <section className="card">
       <div className="maint-head">
         <h2>{title}</h2>
-        {!adding && <button className="secondary" onClick={() => setAdding(true)}>Add a link</button>}
+        {!adding && (
+          <div className="maint-row" style={{ marginTop: 0 }}>
+            <button className="secondary" onClick={() => setAdding("link")}>Add a link</button>
+            <button onClick={() => setAdding("pdf")}>Add a PDF</button>
+          </div>
+        )}
       </div>
       {error && <div className="card error">{error}</div>}
       {adding && (
         <div className="maint-action">
           <div className="rcm-form">
-            <Field label="Link (https://…)"><input autoFocus type="url" value={f.url} placeholder="https://example.com/manual.pdf"
-                   onChange={(e) => setF({ ...f, url: e.target.value })} /></Field>
-            <Field label="Title (optional)"><input value={f.title} placeholder="e.g. Owner's manual"
+            {adding === "pdf" ? (
+              <Field label={`PDF file (at most ${MAX_DOCUMENT_MB} MB)`}>
+                <input autoFocus type="file" accept="application/pdf,.pdf"
+                       onChange={(e) => setF({ ...f, file: e.target.files?.[0] || null })} />
+              </Field>
+            ) : (
+              <Field label="Link (https://…)"><input autoFocus type="url" value={f.url} placeholder="https://example.com/manual.pdf"
+                     onChange={(e) => setF({ ...f, url: e.target.value })} /></Field>
+            )}
+            <Field label="Title (optional)"><input value={f.title}
+                   placeholder={adding === "pdf" ? "Default: the file name" : "e.g. Owner's manual"}
                    onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
             <Field label="Kind">
               <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>
@@ -114,28 +199,43 @@ export function DocumentsCard({ title = "Documents", documents, target, onChange
               </select>
             </Field>
           </div>
+          {fileProblem && <p className="maint-overdue" role="alert">{fileProblem}</p>}
           <div className="maint-row">
-            <button onClick={add} disabled={!f.url.trim()}>Add</button>
-            <button className="secondary" onClick={() => { setAdding(false); setError(null); }}>Cancel</button>
+            <button onClick={add} disabled={!ready || busy}>{busy ? "Uploading…" : adding === "pdf" ? "Upload" : "Add"}</button>
+            <button className="secondary" onClick={close} disabled={busy}>Cancel</button>
           </div>
         </div>
       )}
       {(documents || []).length === 0 ? (
-        !adding && <p className="lib-date">No documents. Link the manual, datasheet or invoice (a web address).</p>
+        !adding && <p className="lib-date">No documents. Add the manual, datasheet or invoice: a PDF, or a link to one.</p>
       ) : (
-        <ul className="maint-list">
+        <ul className="maint-list maint-docs">
           {documents.map((d) => {
-            const href = safeHref(d.url);
+            const href = d.stored ? null : safeHref(d.url);
             return (
               <li key={d.id}>
-                {href ? <a href={href} target="_blank" rel="noopener noreferrer">{d.title}</a> : d.title}
-                <span className="lib-date"> · {d.kind}</span>{" "}
-                <button className="crumb-link" onClick={() => remove(d.id)}>remove</button>
+                {d.stored
+                  ? <button className="link maint-doc-title" onClick={() => setViewing(d)}>{d.title}</button>
+                  : href ? <a href={href} target="_blank" rel="noopener noreferrer">{d.title}</a> : d.title}
+                <span className="lib-date">
+                  {" "}· {d.kind}{d.stored ? ` · PDF, ${fileSizeText(d.size)}` : " · link"}
+                </span>{" "}
+                {confirming === d.id ? (
+                  <span className="maint-confirm" role="group" aria-label={`Remove ${d.title}?`}>
+                    <span>{d.stored ? "Remove it? The PDF is deleted." : "Remove this link?"}</span>
+                    <button className="sm danger secondary" autoFocus onClick={() => remove(d.id)}>Remove</button>
+                    <button className="sm secondary" onClick={() => setConfirming(null)}>Keep</button>
+                  </span>
+                ) : (
+                  <button className="crumb-link" onClick={() => setConfirming(d.id)}
+                          aria-label={`Remove ${d.title}`}>remove</button>
+                )}
               </li>
             );
           })}
         </ul>
       )}
+      {viewing && <DocumentViewer doc={viewing} onClose={() => setViewing(null)} />}
     </section>
   );
 }

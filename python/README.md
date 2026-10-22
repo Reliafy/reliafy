@@ -88,6 +88,8 @@ rf.upload_dataset("bearings.xlsx", name="Bearings")      # CSV or .xlsx
 rf.import_rbd("plant.xml")                               # BlockSim, Open-PSA, Galileo, RePyability
 rf.import_excel("fmea.xlsx", target="rcm")
 rf.add_photo("nameplate.jpg", target_id="…")             # Reliafy Maintenance
+rf.add_document("manual.pdf", target_id="…", kind="manual")  # a PDF, at most 20 MB
+rf.download_document(document_id, "manual.pdf")
 
 reliafy.push_usage(fleet_id, [{"name": "Truck 01", "current_use": 5230}])
 reliafy.push_readings([{"tag": "PT-101", "value": 4.2}])
@@ -110,6 +112,8 @@ reliafy import rbd plant.xml
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption Nameplate
 reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
 reliafy photo move PHOTO_ID --to POSITION_ID      # only there
+reliafy document add manual.pdf --to ITEM_ID --kind manual
+reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
 ```
@@ -117,8 +121,8 @@ reliafy ingest readings readings.csv
 Values are read as their argument's type: text, numbers, `true`/`false`, JSON
 for lists and objects (`--times 100,500,1000` works too), and `@file` reads a
 file. `--args '{…}'` gives all the arguments as one JSON object. Add `--json`
-for JSON output. `reliafy photo add` reports each file and exits non-zero if
-any failed.
+for JSON output. `reliafy photo add` and `reliafy document add` report each
+file and exit non-zero if any failed.
 
 `reliafy fit` never guesses what a flag column means: Reliafy reads censoring
 as 0 = failed, 1 = still running; if yours is 1 = failed, add `--c-invert`.

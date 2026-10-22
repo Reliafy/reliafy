@@ -109,7 +109,7 @@ MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
 | Call | Does |
 |---|---|
 | `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
-| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `uploads create` (no other credentials; at most 30 MB). Then import it: `datasets upload`, `uploads import_rbd`, `uploads import_excel` or `rbd upload_outage_log` with that `upload_id`. |
+| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `uploads create` (no other credentials; at most 30 MB). Then import it: `datasets upload`, `uploads import_rbd`, `uploads import_excel` or `rbd upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance_attachments add_document`. |
 
 ---
 
@@ -134,6 +134,7 @@ rf.call("life_data_analysis", "fit", data=[120, 340, 510], censored=[0, 0, 1])
 rf.call("rbd_analysis", "analyze", rbd_id="…", wait=True)   # waits for a job
 rf.upload_dataset("bearings.xlsx", name="Bearings")
 rf.add_photo("nameplate.jpg", target_id="…")
+rf.add_document("manual.pdf", target_id="…", kind="manual")
 rf.push_usage(fleet_id, [{"name": "Truck 01", "current_use": 5230}])
 ```
 
@@ -152,6 +153,8 @@ reliafy import rbd plant.xml
 reliafy photo add IMG_*.jpg --to POSITION_ID --caption "Nameplate"
 reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
 reliafy photo move PHOTO_ID --to POSITION_ID      # only there
+reliafy document add manual.pdf --to ITEM_ID --kind manual
+reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
 ```

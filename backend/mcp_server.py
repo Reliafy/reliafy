@@ -6878,7 +6878,8 @@ _UPLOAD_FALLBACK_URL = (
     "files. The link is only used up when a PUT reaches Reliafy, so a refused first attempt doesn't spend it. ")
 _UPLOAD_APP_PAGES = {"rbd_import": ("/rbds/list", "RBDs › Import"), "dataset": ("/modelling/data", "Modelling › Data"),
                      "excel": ("/modelling/data", "Modelling › Data, RCM or RBDs › Import"),
-                     "outage_log": ("/rbds/list", "the diagram's Outage history tab")}
+                     "outage_log": ("/rbds/list", "the diagram's Outage history tab"),
+                     "document": ("/maintenance", "the record's Documents card")}
 # Inline content (uploads import_rbd): small text formats only — anything larger goes
 # through uploads create rather than the agent's context.
 INLINE_MAX_BYTES = 200 * 1024
@@ -6886,7 +6887,7 @@ _OUTLINE_NODES = 100    # node list per imported diagram
 _IMPORT_NOTES = 30      # import notes per diagram
 _RCM_VALUES = 20        # unmapped consequence / decision values listed
 
-_Purpose = Literal["rbd_import", "excel", "dataset", "outage_log"]
+_Purpose = Literal["rbd_import", "excel", "dataset", "outage_log", "document"]
 _RbdFormat = Literal["blocksim", "openpsa", "galileo", "excel", "repyability"]
 _UPLOAD_ID = Annotated[str, Field(min_length=1, max_length=64, description="An upload_id from uploads create.")]
 
@@ -7004,7 +7005,8 @@ def create_upload(
         ".json diagram file, "
         "then uploads import_rbd); excel (an .xlsx workbook — a data sheet, an RCM/FMEA worksheet or Reliafy's RBD "
         "template — then uploads import_excel); dataset (CSV or .xlsx life data, then datasets upload); outage_log "
-        "(CSV or .xlsx, then rbd upload_outage_log)."))],
+        "(CSV or .xlsx, then rbd upload_outage_log); document (a PDF to keep in the workspace, where your account "
+        "can, at most 20 MB)."))],
     filename: Annotated[str, Field(min_length=1, max_length=255, description=(
         "The file's name with its extension, e.g. pump-skid.rsgz or fmea.xlsx."))],
     size_bytes: Annotated[Optional[int], Field(ge=1, description=(
@@ -7014,6 +7016,11 @@ def create_upload(
     PUT from a shell that can read the file, then import with upload_id. If the PUT can't connect, retry once on
     url_fallback; if that fails too, follow the response's fallback (guide topic uploads)."""
     user, db = _caller(ctx), _db()
+    if purpose == "document":
+        from backend.maintenance.access import allowed
+
+        if not (config.MAINTENANCE_ENABLED and allowed(user)):
+            raise ToolError("Keeping documents isn't available on your account.")
     doc, token = uploads_service.create(
         db, user["uid"], purpose, filename, size_bytes,
         plan=_usage_plan(user), client=usage_service.client_of(user))

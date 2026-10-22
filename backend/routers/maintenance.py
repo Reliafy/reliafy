@@ -19,6 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from backend import config
 from backend.db import get_db, get_session, is_simulated
 from backend.maintenance.access import allowed
+from backend.maintenance import documents as documents_mod
 from backend.maintenance import photos as photos_mod
 from backend.maintenance.service import PROJECTORS, Invalid, LimitReached, Maintenance, NotFound, summary
 from backend.maintenance.store import new_id
@@ -34,6 +35,7 @@ public_router = APIRouter()
 
 _store: GraphStore | None = None
 _photo_store = None
+_document_store = None
 _store_lock = threading.Lock()
 
 
@@ -54,6 +56,85 @@ def get_photo_store():
 
 def photo_links() -> photos_mod.PhotoLinks:
     return photos_mod.PhotoLinks(get_db())
+
+
+def get_document_store():
+    global _document_store
+    with _store_lock:
+        if _document_store is None:
+            _document_store = (documents_mod.MongoDocumentStore(get_db()) if _use_mongo() else
+                               documents_mod.FileDocumentStore(os.path.join(
+                                   os.path.dirname(os.path.abspath(config.MAINTENANCE_DB_PATH)), "documents")))
+        return _document_store
+
+
+def ingest_document(m: Maintenance, raw: bytes, filename: str = "", title: str = "", kind: str = "other",
+                    target_id: str | None = None, position_class: str | None = None) -> dict:
+    """Check, store and record one PDF on an item, a position or a position
+    class. Its bytes are kept as they came (see documents.py)."""
+    import hashlib
+
+    m.check_stored_document(len(raw or b""), kind, target_id, position_class)
+    documents_mod.check_pdf(raw)
+    m.check_limits()
+    document_id = new_id()
+    store = get_document_store()
+    store.put(document_id, raw)
+    try:
+        return m.add_stored_document(document_id, documents_mod.file_name(filename), len(raw),
+                                     hashlib.sha256(raw).hexdigest(), title, kind, target_id, position_class)
+    except Exception:
+        store.delete(document_id)
+        raise
+
+
+def remove_document(m: Maintenance, document_id: str) -> dict:
+    """Remove a document; a stored PDF's bytes are deleted too (the history
+    keeps that it was there)."""
+    stored = bool(m.document(document_id).get("stored"))
+    out = m.remove_document(document_id)
+    if stored:
+        get_document_store().delete(document_id)
+    return out
+
+
+def served_document(m: Maintenance, document_id: str) -> tuple[dict, bytes] | None:
+    """A stored PDF and its bytes, if it's in this workspace and hasn't been
+    removed."""
+    try:
+        d = m.stored_document(document_id)
+    except NotFound:
+        return None
+    data = get_document_store().get(d["id"])
+    return (d, data) if data is not None else None
+
+
+def document_links() -> documents_mod.DocumentLinks:
+    return documents_mod.DocumentLinks(get_db())
+
+
+def document_link(base: str, m: Maintenance, document_id: str) -> dict:
+    """A stored PDF as a reader sees it, with links to open and download it
+    that work for documents.LINK_MINUTES with no sign-in (for an agent)."""
+    out = m.document(document_id)
+    if out.get("removed") or not out.get("stored"):
+        return out
+    doc, token = document_links().create(m.org, document_id)
+    url = f"{base.rstrip('/')}/api/maintenance/document-links/{doc['_id']}?t={token}"
+    return {**out, "open_url": url, "download_url": url + "&download=1",
+            "links_expire_at": doc["expires_at"].isoformat()}
+
+
+async def _read_document_body(request: Request) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > documents_mod.MAX_UPLOAD_BYTES:
+        raise documents_mod.too_big()
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > documents_mod.MAX_UPLOAD_BYTES:
+            raise documents_mod.too_big()
+    return bytes(body)
 
 
 def ingest_photo(m: Maintenance, target_id: str, raw: bytes, caption: str = "", via: str = "app") -> dict:
@@ -397,9 +478,33 @@ def add_document(body: dict = Body(...), m: Maintenance = Depends(maintenance_wr
                 body.get("target_id"), body.get("position_class"))
 
 
+@router.post("/documents/upload")
+async def upload_document(request: Request, target_id: str | None = None, position_class: str | None = None,
+                          title: str = "", kind: str = "other", filename: str = "",
+                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Keep a PDF (the request body) on an item or position (target_id) or a
+    class (position_class)."""
+    try:
+        raw = await _read_document_body(request)
+    except documents_mod.BadDocument as err:
+        return JSONResponse(status_code=413, content={"detail": str(err)})
+    return await run_in_threadpool(_run, ingest_document, m, raw, filename, title, kind or "other",
+                                   target_id or None, position_class or None)
+
+
+@router.get("/documents/{document_id}/file")
+def get_document_file(document_id: str, download: bool = False, m: Maintenance = Depends(maintenance)) -> Response:
+    found = served_document(m, document_id)
+    if found is None:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+    d, data = found
+    return Response(content=data, media_type=documents_mod.CONTENT_TYPE,
+                    headers=documents_mod.headers(d.get("file_name") or "", download))
+
+
 @router.delete("/documents/{document_id}")
-def remove_document(document_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.remove_document, document_id)
+def delete_document(document_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(remove_document, m, document_id)
 
 
 @router.post("/classes/fit")
@@ -1311,6 +1416,27 @@ def upload_page(link_id: str, t: str = "") -> HTMLResponse:
     headers["Content-Security-Policy"] = (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; "
                                           "img-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'")
     return HTMLResponse(html, headers=headers)
+
+
+@public_router.get("/api/maintenance/document-links/{link_id}", include_in_schema=False)
+def open_document_link(link_id: str, t: str = "", download: bool = False) -> Response:
+    """A stored PDF through a download link (documents.DocumentLinks): the
+    link's token is the credential. Anything wrong is the same 404."""
+    missing = JSONResponse(status_code=404, content={"detail": "This link isn't valid or has expired (links last "
+                                                               f"{documents_mod.LINK_MINUTES} minutes). Read the "
+                                                               "document again for a new one."},
+                           headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+    if not config.MAINTENANCE_ENABLED or not t or len(t) > 100:
+        return missing
+    link = document_links().get(link_id, t)
+    if link is None:
+        return missing
+    found = served_document(Maintenance(get_store(), link["org"], None), link["document_id"])
+    if found is None:
+        return missing
+    d, data = found
+    return Response(content=data, media_type=documents_mod.CONTENT_TYPE,
+                    headers=documents_mod.headers(d.get("file_name") or "", download, cache="no-store"))
 
 
 def _reserve(link_id: str, t: str) -> tuple[dict | None, JSONResponse | None]:

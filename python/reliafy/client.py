@@ -60,7 +60,7 @@ def _version() -> str:
 
         return version("reliafy-client")
     except Exception:  # noqa: BLE001
-        return "0.3.0"
+        return "0.3.1"
 
 
 class Client:
@@ -222,7 +222,7 @@ class Client:
         """Send a file to Reliafy without reading it into memory: ``uploads
         create``, then the file streamed to the single-use link. Returns the
         upload (``upload_id``…), ready to import. ``purpose``: dataset,
-        excel, rbd_import or outage_log."""
+        excel, rbd_import, outage_log or document (a PDF)."""
         size = os.path.getsize(path)
         link = self.call("uploads", "create", purpose=purpose, filename=os.path.basename(path), size_bytes=size)
         last: ReliafyError | None = None
@@ -278,6 +278,41 @@ class Client:
                     "Content-Type": ctype, "Content-Length": str(size)})
             except ReliafyError as exc:
                 raise self._tools_api(exc) from None
+
+    def add_document(self, path: str, target_id: str | None = None, *, position_class: str | None = None,
+                     title: str | None = None, kind: str | None = None) -> dict:
+        """Keep a PDF (at most 20 MB) on a maintenance item or position
+        (``target_id``) or a position class, streamed from disk. ``kind``:
+        manual, datasheet, invoice, drawing, certificate or other. Reliafy
+        Maintenance only."""
+        up = self.upload_file(path, "document")
+        return self.call("maintenance_attachments", "add_document", upload_id=up["upload_id"], target_id=target_id,
+                         position_class=position_class, title=title, kind=kind)
+
+    def download_document(self, document_id: str, path: str | None = None) -> str:
+        """Save a PDF kept in Reliafy Maintenance to ``path`` (default: its own
+        file name, in the current folder). Returns the path written."""
+        doc = self.call("maintenance_get", "document", id=document_id)
+        url = doc.get("download_url")
+        if not url:
+            raise ReliafyError("That document is a link, not a stored PDF: open its url instead.")
+        if _origin(url) != _origin(self.base_url):  # only ever from the server this client talks to
+            parts = urllib.parse.urlsplit(url)
+            url = f"{self.base_url}{parts.path}?{parts.query}"
+        target = path or os.path.basename(doc.get("file_name") or f"{document_id}.pdf")
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT.format(version=_version())})
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp, open(target, "wb") as out:
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+        except urllib.error.HTTPError as exc:
+            raise ReliafyError(f"Reliafy returned {exc.code} for the document.", exc.code) from None
+        except urllib.error.URLError as exc:
+            raise ReliafyError(f"Couldn't reach Reliafy at {url.split('?')[0]}: {exc.reason}") from None
+        return target
 
     # ---- ingest (the ingest scope) -----------------------------------------
 
