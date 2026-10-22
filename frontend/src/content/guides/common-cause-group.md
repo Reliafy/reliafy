@@ -79,7 +79,7 @@ that themselves take time, for one, the PFDavg includes the group while the
 other figures leave it out for now.
 
 A note on symmetry: the β-factor model assumes the grouped units are
-*identical*. If their life models differ, Reliafy flags it when you validate —
+*identical*. If their non-repairable models differ, Reliafy flags it when you validate —
 give them the same model for a result that means anything.
 
 ## Read the impact

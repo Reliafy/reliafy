@@ -10,7 +10,7 @@ import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 
-// A saved recurrent-event model, laid out like the life model page (#65): title
+// A saved recurrent-event model, laid out like the non-repairable model page (#65): title
 // and saved meta, then one card of tabs: the MCF plot with its panel, the
 // calculator, the model's own views, the overhaul interval and the growth
 // projection.

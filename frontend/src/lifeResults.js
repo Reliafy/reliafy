@@ -1,4 +1,4 @@
-// Plain-words helpers for a fitted life model's results (#288, #292, #293):
+// Plain-words helpers for a fitted non-repairable model's results (#288, #292, #293):
 // the distribution comparison and its verdicts, the best-fit sentence, a
 // confidence bound in words, and the time at a reliability read off a curve.
 // Pure functions, so `node --test` covers them.

@@ -9,7 +9,7 @@ import { bLabel, betaSource, demoLink, requirementVerdict, verdictText } from ".
 import { unitInText } from "./unitText.js";
 import "./Requirement.css";
 
-// "Does it meet B10 ≥ 50,000 at 90% confidence?" on a fitted life model
+// "Does it meet B10 ≥ 50,000 at 90% confidence?" on a fitted non-repairable model
 // (#295): a row at the foot of the Life card that opens a small form, and
 // then carries the verdict. The B-life's lower bound comes from the model's
 // life path (SurPyval's); the confidence is the page's shared one. "Plan a

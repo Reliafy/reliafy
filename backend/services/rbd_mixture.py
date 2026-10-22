@@ -49,7 +49,7 @@ class MixtureError(ValueError):
 
 
 def is_mixture(model) -> bool:
-    """Whether a block's life model is a mixture."""
+    """Whether a block's non-repairable model is a mixture."""
     return isinstance(model, dict) and model.get("distribution_id") == MIXTURE_ID
 
 

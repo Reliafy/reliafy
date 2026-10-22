@@ -65,7 +65,7 @@ export default function OptimalReplacement() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker key={wanted || ""} label="Life model" value={model} onChange={pickModel} preferSaved wanted={wanted}
+        <ModelPicker key={wanted || ""} label="Non-repairable model" value={model} onChange={pickModel} preferSaved wanted={wanted}
                      wt="repl-model" />
         {isRegression && (
           <p className="hint">

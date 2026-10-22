@@ -9,7 +9,7 @@ What is compared, and from what:
 
 * new and changed items: each artifact's ``created_at`` / ``updated_at``;
 * refits whose answer moved: ``model_refits``, written by every refit of a
-  saved life model (:func:`record_refit`, from ``models.update_fit``) with the
+  saved non-repairable model (:func:`record_refit`, from ``models.update_fit``) with the
   fit's B10, MTTF and randomness verdict before and after — the engine's own
   numbers from the saved results, nothing recomputed;
 * fleet forecasts whose expected failures moved: ``fleet_forecasts``, the
@@ -17,7 +17,7 @@ What is compared, and from what:
   arriving through the API (:func:`note_forecast`, at most one a day unless it
   changed), against the fleet's live forecast now;
 * fleet alerts that fired: ``fleet_alert_events``;
-* RCM evidence that changed: decisions whose linked life model was refitted
+* RCM evidence that changed: decisions whose linked non-repairable model was refitted
   in the period, with the evidence status before (where the stored fit
   decides it) and now;
 * availability simulations whose answer moved: a diagram's newest finished run
@@ -59,7 +59,7 @@ LOG_DAYS = 800
 
 # collection -> (label, url prefix)
 COLLECTIONS = {
-    "models": ("Life model", "/modelling/m/"),
+    "models": ("Non-repairable model", "/modelling/m/"),
     "recurrent_models": ("Repairable-system model", "/modelling/recurrent/"),
     "alt_models": ("Accelerated test model", "/modelling/alt/"),
     "degradation_models": ("Degradation model", "/modelling/degradation/"),
@@ -71,7 +71,7 @@ COLLECTIONS = {
     "strategy_analyses": ("Strategy analysis", "/strategy/analyses/"),
 }
 
-# Documents in ``models`` that aren't life models (``kind``): their own label and page.
+# Documents in ``models`` that aren't non-repairable models (``kind``): their own label and page.
 MODEL_KINDS = {
     "joint": ("Condition monitoring model", "/modelling/joint/"),
 }
@@ -92,7 +92,7 @@ NOT_COMPARED = [
      "why": "Failure forecasts store each item's use, not the failures it had, so actual failures "
             "can't be set against what was forecast."},
     {"what": "Other models' refits",
-     "why": "Only life models keep their earlier answer when refitted. Repairable-system, accelerated "
+     "why": "Only non-repairable models keep their earlier answer when refitted. Repairable-system, accelerated "
             "test and degradation models keep just their latest fit."},
     {"what": "Block diagram answers other than availability simulations",
      "why": "Reliability, MTTF and the other diagram results are worked out when you open them and "
@@ -162,7 +162,7 @@ def fit_answer(results: dict | None) -> dict:
 
 
 def record_refit(db, model_id: str, owner_id: str, before_results, after_results, now=None) -> None:
-    """Log one refit of a saved life model (best-effort: never fails the refit)."""
+    """Log one refit of a saved non-repairable model (best-effort: never fails the refit)."""
     try:
         if owner_id == SAMPLE_OWNER:
             return
@@ -457,7 +457,7 @@ def _alerts(db, fleet_docs: dict, since, until) -> list:
 
 
 def _rcm(db, study_docs: dict, model_docs: dict, refit_rows: dict, owners) -> list:
-    """Decisions whose linked life model was refitted in the period."""
+    """Decisions whose linked non-repairable model was refitted in the period."""
     from backend.db import from_doc
     from backend.schema import RcmStudy
     from backend.services import rcm as rcm_service

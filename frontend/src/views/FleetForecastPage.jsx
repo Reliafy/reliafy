@@ -328,7 +328,7 @@ export default function FleetForecastPage() {
 
       {forecast.status === "stale" && (
         <div className="card upgrade-nudge">
-          <p>{forecast.reason || "The linked life model is unavailable."}</p>
+          <p>{forecast.reason || "The linked non-repairable model is unavailable."}</p>
         </div>
       )}
 

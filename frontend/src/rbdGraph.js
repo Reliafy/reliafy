@@ -1,7 +1,7 @@
 // Pure helpers for reliability-block-diagram graphs, shared by the RBD builder
 // and the AI assistant. Turns a minimal {nodes, edges} description (as the agent
 // produces, or as the canvas holds) into the React-Flow / persisted shape:
-// input/output handles on the sides, edges styled, life models fleshed out, and
+// input/output handles on the sides, edges styled, non-repairable models fleshed out, and
 // a tidy left-to-right layered layout so the agent never has to place nodes.
 
 const COL_GAP = 280;

@@ -25,7 +25,7 @@ Mapped to Reliafy:
 * ``prob=0`` / ``lambda=0`` events never fail and drop out; ``prob=1`` events
   have failed from the start;
 * any other ``prob=`` with no life distribution (a fixed failure probability)
-  -> a block *without* a life model, listed in the import notes with its
+  -> a block *without* a non-repairable model, listed in the import notes with its
   probability, as Open-PSA's fixed-probability events are (#188). Reliafy
   blocks have no fixed-probability model, and inventing a failure rate would
   change the answer, so the user sets one before analysing;
@@ -378,7 +378,7 @@ def _event(name: str, attrs: dict[str, str], warnings: list[str],
             return ft.Leaf(name, constant=False), None, dorm
         elif p == 1:
             return ft.Leaf(name, constant=True), None, dorm
-        # No time model: a block without a life model, which the user must
+        # No time model: a block without a non-repairable model, which the user must
         # set before analysing — never an invented rate (as Open-PSA, #188).
         if fixed is not None:
             fixed[name] = p
@@ -526,7 +526,7 @@ def _convert(top: str, gates, events, stem: str) -> ImportedDiagram:
             f"{n} basic event(s) have a fixed probability and no failure-time model: "
             f"{', '.join(shown[:10])}{more_txt}. Reliafy blocks need a life distribution, so "
             f"{'it was' if n == 1 else 'they were'} imported as "
-            f"block{'' if n == 1 else 's'} WITHOUT a life model — set one (e.g. an "
+            f"block{'' if n == 1 else 's'} WITHOUT a non-repairable model — set one (e.g. an "
             "exponential failure rate) before analysing. Nothing was assumed for "
             f"{'it' if n == 1 else 'them'}.")
 

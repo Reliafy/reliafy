@@ -5,7 +5,7 @@ import { MORE_DESCRIPTIONS, pickerGroups } from "../moreModels.js";
 // Short blurbs shown under the dropdown for context (keyed by distribution id).
 const DESCRIPTIONS = {
   best: "Fits every distribution and keeps the lowest-AIC winner — let the data decide.",
-  weibull: "Two-parameter (α scale, β shape). The most common life model.",
+  weibull: "Two-parameter (α scale, β shape). The most common non-repairable model.",
   exponential: "Single rate parameter; constant hazard.",
   normal: "Gaussian location–scale model.",
   lognormal: "Normal on the log scale; right-skewed lifetimes.",

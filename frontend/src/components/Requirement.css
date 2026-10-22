@@ -1,4 +1,4 @@
-/* A B-life requirement (#295): the check on a life model (RequirementCheck.jsx),
+/* A B-life requirement (#295): the check on a non-repairable model (RequirementCheck.jsx),
    β from a saved model (DemoShapeSource.jsx) and the plan's β warning
    (DemoTestResult.jsx). */
 /* The row sits with the B-lives, as compact as they are; the panel's other

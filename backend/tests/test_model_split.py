@@ -1,4 +1,4 @@
-"""A life model's data in words, "5 failed, 7 running" (#303).
+"""A non-repairable model's data in words, "5 failed, 7 running" (#303).
 
 A fit records how many units failed and how many were still running
 (``split``), counted off the inputs SurPyval is given; a saved model opened

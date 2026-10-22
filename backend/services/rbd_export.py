@@ -25,7 +25,7 @@ perfectly reliable node with ``k``, beta-factor common-cause groups, nested
 sub-systems as nested RBDs, pinned blocks via ``working_nodes`` /
 ``broken_nodes``. Anything a plain script can't reproduce (a fitted
 proportional-hazards / non-parametric / load-sharing model, an unresolvable
-sub-system, a block with no life model) becomes a clearly marked placeholder
+sub-system, a block with no non-repairable model) becomes a clearly marked placeholder
 that raises with an explanation instead of silently computing something else.
 
 The output is deterministic for a given graph and ``exported_at``: nodes and
@@ -241,7 +241,7 @@ _PARAM_UNITS = {
 
 
 # ---------------------------------------------------------------------------
-# Life models -> SurPyval expressions
+# Non-repairable models -> SurPyval expressions
 # ---------------------------------------------------------------------------
 class _Missing(Exception):
     """A block whose model can't be reproduced in a plain script."""
@@ -284,11 +284,11 @@ def _describe(model: dict) -> str:
 
 
 def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
-    """``(expression, description)`` for a plain parametric life model, else
+    """``(expression, description)`` for a plain parametric non-repairable model, else
     raise :class:`_Missing` with a user-facing explanation."""
     if not model:
         raise _Missing(
-            f"Block '{label}' has no life model in Reliafy. Set its "
+            f"Block '{label}' has no non-repairable model in Reliafy. Set its "
             "distribution here, e.g. surv.Weibull.from_params([alpha, beta])."
         )
     kind = model.get("kind")
@@ -337,7 +337,7 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
     if entry is None or attr is None:
         raise _Missing(
             f"Block '{label}' uses a distribution ('{what}') Reliafy can't "
-            "analyse in an RBD. Set a supported life model here."
+            "analyse in an RBD. Set a supported non-repairable model here."
         )
     params = model.get("params") or []
     try:
@@ -1037,8 +1037,8 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
                         resolve_subsystem) -> str:
     L = script.lines
     L.append("# " + "-" * 75)
-    L.append("# Blocks: one life model per block, built exactly as Reliafy "
-             "builds them.")
+    L.append("# Blocks: one non-repairable model per block, built exactly as")
+    L.append("# Reliafy builds them.")
     L.append("# " + "-" * 75)
     s = script.diagram(graph, frozenset(), top=True)
     script.imports.add("NonRepairableRBD")
@@ -1370,9 +1370,9 @@ def _repairable_body(script: _Script, graph) -> str:
 
     L = script.lines
     L.append("# " + "-" * 75)
-    L.append("# Blocks: each component fails by its life model and is "
-             "restored by its")
-    L.append("# repair-time model (a NonRepairable component in RePyability).")
+    L.append("# Blocks: each component fails by its non-repairable model and")
+    L.append("# is restored by its repair-time model (a NonRepairable")
+    L.append("# component in RePyability).")
     L.append("# " + "-" * 75)
     script.imports.update({"NodeState", "NonRepairable", "RepairableRBD"})
     nodes = graph.get("nodes") or []
@@ -1425,7 +1425,7 @@ def _repairable_body(script: _Script, graph) -> str:
             script.missing(var, (
                 f"Block '{label}' is a '{ntype}' block, which Reliafy doesn't "
                 "support in repairable (availability) diagrams - use "
-                "component and standby blocks (each with a life model and a "
+                "component and standby blocks (each with a non-repairable model and a "
                 "repair time) and k-of-n gates."
             ), label)
             comps.append((nid, var, label))

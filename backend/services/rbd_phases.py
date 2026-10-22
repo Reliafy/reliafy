@@ -55,12 +55,12 @@ SIM_MISSIONS = 20_000
 SIM_SEED = 1
 SIM_CONFIDENCE = 0.95
 
-STRESS_NOTE = ("Each block keeps one life model through the whole mission: a stress level per phase isn't "
+STRESS_NOTE = ("Each block keeps one non-repairable model through the whole mission: a stress level per phase isn't "
                "modelled.")
 #: With covariate schedules (#52): those blocks follow their schedule through
 #: the phases (it is a function of mission time); the others keep one model.
 SCHEDULE_NOTE = ("Blocks with a covariate schedule follow it through the mission, so their stress changes "
-                 "with time as the schedule says; the other blocks keep one life model throughout.")
+                 "with time as the schedule says; the other blocks keep one non-repairable model throughout.")
 
 
 class PhaseError(ValueError):

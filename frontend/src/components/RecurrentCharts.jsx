@@ -8,7 +8,7 @@ import { formatNumber } from "../format.js";
 import { effectTone, familyOf, growthReading, pct, ratioCiText, ratioText } from "../recurrentResults.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 
-// The charts of a recurrent model's tabs (#65), each in the life model's
+// The charts of a recurrent model's tabs (#65), each in the non-repairable model's
 // layout: the chart on the left, in a tight card with no title above it and
 // its legend inside, and a panel on the right.
 

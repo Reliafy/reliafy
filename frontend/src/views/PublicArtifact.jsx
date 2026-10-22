@@ -32,7 +32,7 @@ import "./PublicPage.css";
 // (PublicPage.css, printFit.js).
 
 const KIND_LABEL = {
-  models: "Fitted life model",
+  models: "Fitted non-repairable model",
   datasets: "Dataset",
   degradation_models: "Degradation model",
   strategy_analyses: "Strategy analysis",
@@ -52,7 +52,7 @@ function FleetView({ a }) {
   return (
     <>
       {f.status === "stale" && (
-        <div className="card note">{f.reason || "The linked life model is unavailable."}</div>
+        <div className="card note">{f.reason || "The linked non-repairable model is unavailable."}</div>
       )}
       {f.status === "ok" && (
         <div className="stats">

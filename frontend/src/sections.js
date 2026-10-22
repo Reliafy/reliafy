@@ -16,8 +16,8 @@ export const NAV = [
     label: "Modelling",
     children: [
       { to: "/modelling/data", label: "Data" },
-      // A life model's own page and the fit flow sit outside its list's URL.
-      { to: "/modelling/life", label: "Life models", also: ["/modelling/m", "/modelling/new"] },
+      // A non-repairable model's own page and the fit flow sit outside its list's URL.
+      { to: "/modelling/life", label: "Non-repairable models", also: ["/modelling/m", "/modelling/new"] },
       { to: "/modelling/recurrent", label: "Repairable models" },
       { to: "/modelling/alt", label: "Accelerated life" },
       { to: "/modelling/degradation", label: "Degradation" },

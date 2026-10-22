@@ -214,7 +214,7 @@ def test_export_names_blocks_without_a_model_but_not_pinned_ones():
     graph = {"nodes": [_node("input", "input", "Input"), _node("a", "component", "Empty"),
                        _node("b", "component", "Pinned", state="working"), _node("output", "output", "Output")],
              "edges": _edges(("input", "a"), ("a", "b"), ("b", "output"))}
-    with pytest.raises(rbd_json.ExportError, match="“Empty” has no life model"):
+    with pytest.raises(rbd_json.ExportError, match="“Empty” has no non-repairable model"):
         rbd_json.to_document(graph, "x")
     graph["nodes"][1]["data"]["model"] = _w(100, 2)
     doc = rbd_json.to_document(graph, "x")
@@ -476,7 +476,7 @@ def test_what_reliafy_cant_hold_is_listed_and_left_without_a_model():
     assert "“c” was imported without" not in notes
     c = next(n for n in d.graph["nodes"] if n["id"] == "c" or n["data"].get("label") == "c")
     assert c["data"]["model"]["distribution_id"] == "uniform"
-    assert "“deg” was imported without a life model — its model is a degrading" in notes
+    assert "“deg” was imported without a non-repairable model — its model is a degrading" in notes
     # Two of three running (#84): a standby block with k = 2 and one spare.
     two = next(n for n in d.graph["nodes"] if n["data"].get("label") == "two")
     assert two["type"] == "standby" and two["data"]["k"] == 2 and two["data"]["spares"] == 1

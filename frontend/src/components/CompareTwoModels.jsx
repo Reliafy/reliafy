@@ -31,7 +31,7 @@ function parseColumn(text, col, censorCol) {
   return ci >= 0 ? { x, c } : { x };
 }
 
-// Editor for one side of the comparison: a parametric life model, or a CSV of
+// Editor for one side of the comparison: a parametric non-repairable model, or a CSV of
 // raw times fit non-parametrically (Kaplan–Meier).
 // Both sides start on "Saved model" (#294): side A with the one a link asked
 // for (``wanted``) or the one used last chosen, side B for the user to pick. A saved model names its side, unless
@@ -152,7 +152,7 @@ async function buildSpec(side, fallback) {
     return { label, kind: "nonparametric", x: parsed.x, c: parsed.c || null };
   }
   const m = side.model;
-  if (!m || !m.distribution_id) throw new Error(`${label}: choose a life model.`);
+  if (!m || !m.distribution_id) throw new Error(`${label}: choose a non-repairable model.`);
   if (m.kind === "regression")
     throw new Error(`${label}: proportional-hazards models aren't supported here.`);
   return {

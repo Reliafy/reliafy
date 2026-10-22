@@ -9,7 +9,7 @@ import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
 
 const HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
-// Modelling › Life models: the life-data models list.
+// Modelling › Non-repairable models: the life-data models list.
 export default function ModellingHome() {
   const navigate = useNavigate();
   const { models, loading, refresh } = useModels();
@@ -33,7 +33,7 @@ export default function ModellingHome() {
     <div className="app">
       <SectionHeader
         section="modelling"
-        title="Life models"
+        title="Non-repairable models"
         purpose="Life distributions and proportional-hazards models fitted to failure and running times."
         help={HELP}
         primary={newModel}
@@ -49,7 +49,7 @@ export default function ModellingHome() {
         onDelete={onDelete}
         help={HELP}
         empty={{
-          title: "No life models yet",
+          title: "No non-repairable models yet",
           body: "Upload or paste failure times, fit a distribution and save it to see it here.",
           action: newModel,
         }}

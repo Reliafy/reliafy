@@ -47,10 +47,10 @@ The notes are the part to read carefully. Two are common:
   usually per hour: type *Hours* in the toolbar's **Unit** box, or whatever the
   source model used. Reliafy never rescales the parameters, so the unit only
   labels them; it has to match.
-- **A block with no life model.** A basic event with only a fixed failure
+- **A block with no non-repairable model.** A basic event with only a fixed failure
   probability (the valve above, *p* = 0.001) has no failure time to model.
   Reliafy won't invent a failure rate for it, because that would change the
-  answer. It imports as a block marked *No life model*: double-click it and set
+  answer. It imports as a block marked *No non-repairable model*: double-click it and set
   one, such as an exponential failure rate, before you calculate.
 
 Press **Validate** once you've dealt with the notes. It names any block still

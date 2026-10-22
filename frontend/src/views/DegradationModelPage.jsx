@@ -8,7 +8,7 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows.jsx";
 import { relativeTime } from "../instrument.js";
 
-// One saved degradation model, in the life model page's shape: the header,
+// One saved degradation model, in the non-repairable model page's shape: the header,
 // then one card with the tabs, each chart beside its side panel. The fleet of
 // tracked items lives under Fleet → Degradation tracking ("Track items").
 export default function DegradationModelPage() {

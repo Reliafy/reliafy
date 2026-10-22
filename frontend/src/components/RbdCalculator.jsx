@@ -1355,7 +1355,7 @@ export default function RbdCalculator({
   const blocked = !!validation && !checkStale && !validation.can_calculate;
   const hpu = hoursPerUnit(graph.unit);
 
-  // Blocks whose life model is a guessed starting point (the assistant marks
+  // Blocks whose non-repairable model is a guessed starting point (the assistant marks
   // them placeholder:true). The numbers run fine; the results just aren't real.
   const placeholderCount = useMemo(
     () => (graph.nodes || []).filter((n) => n.data?.model?.placeholder).length,

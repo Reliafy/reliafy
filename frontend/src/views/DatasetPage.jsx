@@ -19,7 +19,7 @@ const MODEL_PATH = {
 };
 const KIND_LABEL = { "ALT model": "ALT", "recurrent model": "Repairable", "degradation model": "Degradation" };
 
-// The next step for this data: a life model, or — when the rows are unit
+// The next step for this data: a non-repairable model, or — when the rows are unit
 // histories — the recurrent or degradation fit.
 function fitAction(ds) {
   const kind = ds.profile?.repeated_units?.kind;

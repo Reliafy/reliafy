@@ -41,7 +41,7 @@ def _digest(work_orders: list[dict], overdue: list[dict], proposals=(), short_sp
             lines.append(f"  {t['name']} ({(t.get('subject') or t.get('position') or {}).get('name', '')}), "
                          f"due {t['next_due']}")
     if proposals:
-        lines += ["", "The records changed a life model, and it proposes:"]
+        lines += ["", "The records changed a non-repairable model, and it proposes:"]
         for pr in proposals:
             to = pr.get("proposed")
             change = f"every {to['interval']:g} {to['unit']}" if to else "run to failure"

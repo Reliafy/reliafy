@@ -40,7 +40,7 @@ TOOL_NAMES: list[str] = []
 # The graph query tools: a narrower audience than the rest (graph_query_allowed).
 GRAPH_TOOL_NAMES: list[str] = []
 _ORIGINAL: dict = {}
-# Calls (tool.action) that fit a life model on the server: Pro only, like the MCP
+# Calls (tool.action) that fit a non-repairable model on the server: Pro only, like the MCP
 # server's other fitting tools (added to its plan gating when registered).
 PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
 # Calls that can take a while: they share the MCP server's heavy-call slots.
@@ -149,7 +149,7 @@ LIST_KINDS: Table = {
     "conditions": ("", "format", """The condition register as a tree, with where each is applied (format json or
         csv: for import)."""),
     "photos": ("target_id", "", "The photos of a position, location, item or work order (ids, captions, dates)."),
-    "proposals": ("", "status", """Changes the life models propose (a task's interval, or retiring a task),
+    "proposals": ("", "status", """Changes the non-repairable models propose (a task's interval, or retiring a task),
         each with its reason; status pending (default), accepted, rejected, superseded or all. Show them to the
         user and let them decide (maintenance_proposals)."""),
     "spares_cover": ("", "include_unlisted", """Where the spares don't cover the plant: short (critical spares
@@ -258,7 +258,7 @@ TASKS: Table = {
 }
 
 PROPOSALS: Table = {
-    "accept": ("proposal_id", "note", """Apply a change the life models proposed (maintenance_list kind
+    "accept": ("proposal_id", "note", """Apply a change the non-repairable models proposed (maintenance_list kind
         proposals). Only when the user says so."""),
     "reject": ("proposal_id", "note", "Turn a proposed change down, optionally saying why."),
 }
@@ -825,7 +825,7 @@ def register() -> None:
                                  "ad-hoc one."))] = None,
                              fitment_id: str | None = None, note: str | None = None) -> dict[str, Any]:
         """Fitments: an item in a position from one date to another, and how it ended. They are the
-        history every life model is fitted to, so name a failure mode whenever an item failed:
+        history every non-repairable model is fitted to, so name a failure mode whenever an item failed:
         recording a failure as planned corrupts the life data. Replacing an item as part of work goes
         through maintenance_work_orders close (a replace action), not here. Example, a pump fitted
         sometime in 2022: {action: 'fit', position_id: '<id>', item_name: 'Pool pump', manufacturer:
@@ -951,7 +951,7 @@ def register() -> None:
     @tool("maintenance_proposals", _WRITE, "Accept or reject a proposed plan change", PROPOSALS)
     def maintenance_proposals(action: _choice(PROPOSALS), proposal_id: str, ctx: Context,
                               note: str | None = None) -> dict[str, Any]:
-        """Decide a change the life models proposed to the maintenance plan (a task's interval, or
+        """Decide a change the non-repairable models proposed to the maintenance plan (a task's interval, or
         retiring a task): maintenance_list kind proposals shows them with their reasons. The user
         decides: accept only when they have said so."""
         return run(m_for(ctx).decide_proposal, proposal_id, action == "accept", note or "")
@@ -1163,14 +1163,14 @@ def register() -> None:
 
     # ---- closing the loop -------------------------------------------------------------
 
-    @tool("maintenance_reliability", _WRITE, "Position class costs and life models", RELIABILITY)
+    @tool("maintenance_reliability", _WRITE, "Position class costs and non-repairable models", RELIABILITY)
     def maintenance_reliability(action: _choice(RELIABILITY), position_class: str, ctx: Context,
                                 planned_cost: float | None = None, failure_cost: float | None = None,
                                 availability_target: float | None = None, replacement_cost: ReplacementCost = None,
                                 clear_replacement_cost: bool | None = None,
                                 distribution: Literal["weibull", "best", "lognormal", "exponential", "gamma"] | None
                                 = None) -> dict[str, Any]:
-        """A position class's costs and its fitted life model: what turns the history into proposed task
+        """A position class's costs and its fitted non-repairable model: what turns the history into proposed task
         intervals (maintenance_guide topic learn). Read the pooled data first with maintenance_get kind
         class_life_data; plan_economics there costs the plan."""
         m = m_for(ctx)

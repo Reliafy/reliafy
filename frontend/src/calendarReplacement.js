@@ -58,7 +58,7 @@ const num = (v) => (v === "" || v == null ? null : Number(v));
 
 // The request body from the form, or { error } saying what's missing.
 export function buildRequest({ model, unit, today, shuts, failureCost, anytimeCost, maxAge, method }) {
-  if (!model || !model.distribution_id) return { error: "Choose a life model." };
+  if (!model || !model.distribution_id) return { error: "Choose a non-repairable model." };
   if (model.kind === "regression") return { error: "Pick a plain distribution: regression models aren't supported here." };
   if (!timeUnit(unit)) return { error: "Choose the model's time unit: the shut dates are turned into model time with it." };
   if (num(failureCost) == null || !(Number(failureCost) > 0)) return { error: "Enter what a failure costs." };

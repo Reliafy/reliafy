@@ -349,7 +349,7 @@ def test_other_unexportable_blocks_are_marked_placeholders():
     assert "non-parametric model" in code
     assert "LoadSharingModel" in code  # the how-to-rebuild hint
     assert "couldn't be included in this export" in code
-    assert "has no life model in Reliafy" in code
+    assert "has no non-repairable model in Reliafy" in code
     # A pinned block the script can't model stands in (like the app) instead
     # of stopping the script; it's forced failed via BROKEN_NODES.
     assert "pinned_ph = PerfectReliability" in code

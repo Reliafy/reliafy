@@ -37,7 +37,7 @@ test("needs attention is empty with nothing to go on", () => {
 
 test("recent: own items only, newest save first, each linked to its page", () => {
   const rows = recentRows({
-    models: [{ id: "m1", type: "life", kind: "Life model", name: "Bearings", to: "/modelling/m/m1", created_at: "2026-10-03" },
+    models: [{ id: "m1", type: "life", kind: "Non-repairable model", name: "Bearings", to: "/modelling/m/m1", created_at: "2026-10-03" },
       { id: "m2", type: "life", name: "Sample", is_sample: true, to: "/modelling/m/m2", created_at: "2026-10-09" }],
     datasets: [{ id: "d1", name: "Lives", n_rows: 1, created_at: "2026-10-05" }],
     rbds: [{ id: "r1", name: "Pump train", n_nodes: 5, created_at: "2026-09-01", updated_at: "2026-10-07" }],
@@ -45,7 +45,7 @@ test("recent: own items only, newest save first, each linked to its page", () =>
   });
   assert.deepEqual(rows.map((r) => r.url), ["/rbds/b/r1", "/modelling/data/d1", "/modelling/m/m1", "/rcm/studies/s1"]);
   assert.equal(rows[1].detail, "1 row");
-  assert.equal(rows[2].kind, "Life model");
+  assert.equal(rows[2].kind, "Non-repairable model");
 });
 
 test("a workspace date reads as that calendar day", () => {

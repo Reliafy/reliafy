@@ -50,10 +50,10 @@ const baselineOf = (result) => ({
 // Models saved before #233 carry a Wilson 95% interval and no confidence /
 // method; newer ones carry exact (Clopper-Pearson) bounds at their confidence,
 // the one-sided reliability bound and, from several batches, the batches.
-// What a per-demand figure is for. Failure finding takes a life model over
+// What a per-demand figure is for. Failure finding takes a non-repairable model over
 // time, not a per-demand probability, so do not point there.
 const PER_DEMAND_USE = "For one-shot and protective equipment: the chance it works when called on. "
-  + "A failure-finding interval needs a life model over time instead.";
+  + "A failure-finding interval needs a non-repairable model over time instead.";
 
 function PerDemandPanel({ result }) {
   const d = result.per_demand || {};

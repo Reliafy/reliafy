@@ -165,7 +165,7 @@ def test_static_tree_unreliability_matches_published_value(name, model, referenc
 
 def test_static_tree_plain_probabilities_import_as_blocks_needing_a_model():
     """A static tree's prob= events have no time model: each imports as a
-    block WITHOUT a life model (nothing invented), named in the notes."""
+    block WITHOUT a non-repairable model (nothing invented), named in the notes."""
     (d,) = galileo.parse(PRESSURE_TANK.encode(), "model.dft")
     blocks = [n for n in d.graph["nodes"] if n.get("type") == "component"]
     assert len(blocks) == 6 and not any(n.get("model") for n in blocks)

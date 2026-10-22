@@ -57,7 +57,7 @@ export default function AltNewPage() {
   const lm = useMemo(() => lifeModels.find((m) => m.id === lifeModel), [lifeModels, lifeModel]);
   const nStress = lm?.n_stress || 1;
 
-  // Keep the stress-column slots in sync with the chosen life model's arity.
+  // Keep the stress-column slots in sync with the chosen non-repairable model's arity.
   useEffect(() => {
     setStress((cur) => {
       const next = cur.slice(0, nStress);

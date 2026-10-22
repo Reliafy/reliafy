@@ -1,4 +1,4 @@
-"""More life models (#179, #72, #63): every number checked against SurPyval
+"""More non-repairable models (#179, #72, #63): every number checked against SurPyval
 called directly, through the fit, the REST API, the saved model and MCP.
 
 Bounded distributions (Beta, Beta4, Uniform), discretized distributions,

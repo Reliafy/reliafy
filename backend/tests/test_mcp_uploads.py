@@ -431,7 +431,7 @@ def test_import_preview_shows_the_structure_and_asks_for_the_unit(env):
 
 def test_open_psa_fixed_probability_events_import_as_blocks_needing_a_model(env):
     """#188: a fixed-probability basic event no longer rejects the file. It
-    becomes a block with no life model, listed in needs_model; the rest of
+    becomes a block with no non-repairable model, listed in needs_model; the rest of
     the tree imports as usual and nothing is invented."""
     xml = ('<opsa-mef><define-gate name="Top"><or><gate name="Pumps"/><basic-event name="MCC"/></or>'
            '</define-gate><define-gate name="Pumps"><and><basic-event name="PA"/><basic-event name="PB"/>'
@@ -451,7 +451,7 @@ def test_open_psa_fixed_probability_events_import_as_blocks_needing_a_model(env)
 
 def test_galileo_prob_events_import_as_blocks_needing_a_model(env):
     """Galileo ``prob=`` events get the same treatment as Open-PSA's: saved as
-    a block with no life model, listed in needs_model; nothing invented."""
+    a block with no non-repairable model, listed in needs_model; nothing invented."""
     dft = PUMPS_DFT.replace('"MCC" lambda=1e-5;', '"MCC" prob=0.01;')
     out = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "content": dft, "format": "galileo",
                                               "time_unit": "Hours"}))

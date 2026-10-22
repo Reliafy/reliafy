@@ -695,7 +695,7 @@ class _Converter:
         if model is not None:
             node["model"] = model
         elif why:
-            self.warn(f"“{label}” was imported without a life model — {why}. Set it on the block before analysing.")
+            self.warn(f"“{label}” was imported without a non-repairable model — {why}. Set it on the block before analysing.")
         if repair is not None:
             node["_repair"] = repair
         if b.get("off"):
@@ -709,7 +709,7 @@ class _Converter:
         return self.add_node(base, node)
 
     def _placeholder(self, base: str, label: str, why: str) -> tuple[list[str], str]:
-        self.warn(f"“{label}” was imported as a plain block without a life model — {why}. Set it before analysing.")
+        self.warn(f"“{label}” was imported as a plain block without a non-repairable model — {why}. Set it before analysing.")
         nid = self.add_node(base, {"type": "component", "label": label})
         return [nid], nid
 
@@ -817,7 +817,7 @@ class _Converter:
             n = len(members)
             if req > n:
                 return self._placeholder(base, label, f"it needs {req} of its {n} units")
-            # BlockSim takes a unit's life model as its life carrying the
+            # BlockSim takes a unit's non-repairable model as its life carrying the
             # container's whole load, and scales each survivor's life by its
             # share (checked against example 4: R(8760 h) = 0.973517 and B10 =
             # 14715.6 h reproduced exactly). For identical exponential units the
@@ -883,7 +883,7 @@ class _Converter:
                 return self._placeholder(base, label, f"its standby unit “{s['name']}” — {swhy or 'has no failure model'}")
             smodels.append(smodel)
         if any(m != smodels[0] for m in smodels):
-            return self._placeholder(base, label, "its standby units have different life models; Reliafy's standby block uses one model for all spares")
+            return self._placeholder(base, label, "its standby units have different non-repairable models; Reliafy's standby block uses one model for all spares")
 
         # Quiescent (dormant) behaviour of the spares, as a dormancy factor:
         # 0 cold (no dormant failures), 1 hot (dormant = active), in between
@@ -1240,7 +1240,7 @@ def parse(data: bytes, filename: str) -> list[ImportedDiagram]:
 
 
 def _dormancy_factor(active: Optional[dict], dormant: Optional[dict]) -> Optional[float]:
-    """The dormancy factor that turns a spare's active life model into its
+    """The dormancy factor that turns a spare's active non-repairable model into its
     dormant (quiescent) one under cumulative exposure — dormant life = active
     life / factor — when the dormant model is a time-scaled copy: same
     exponential family (rate ratio), Weibull with the same shape (scale

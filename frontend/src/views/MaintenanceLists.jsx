@@ -383,7 +383,7 @@ function ClassPanel({ name, onChanged }) {
   return (
     <>
       <section className="card">
-        <div className="maint-head"><h2>{name}: life model and costs</h2></div>
+        <div className="maint-head"><h2>{name}: non-repairable model and costs</h2></div>
         {error && <div className="card error">{error}</div>}
         <div className="rcm-form">
           <Field label="A planned replacement costs"><input type="number" inputMode="decimal" min="0" step="any" value={costs.planned_cost}
@@ -400,7 +400,7 @@ function ClassPanel({ name, onChanged }) {
             <option value="lognormal">Lognormal</option><option value="exponential">Exponential</option>
           </select>
           <button onClick={fit} disabled={busy === "fit" || c.failures < 2}>
-            {busy === "fit" ? "Fitting…" : model ? "Refit the life model" : "Fit a life model"}
+            {busy === "fit" ? "Fitting…" : model ? "Refit the non-repairable model" : "Fit a non-repairable model"}
           </button>
           {c.failures < 2 && <span className="lib-date">Needs at least 2 failures on record ({c.failures} so far).</span>}
         </div>

@@ -63,7 +63,7 @@ export default function FailureFinding() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker label="Life model of the hidden function" value={model} onChange={pickModel} preferSaved wanted={wanted} />
+        <ModelPicker label="Non-repairable model of the hidden function" value={model} onChange={pickModel} preferSaved wanted={wanted} />
         {isRegression && (
           <p className="hint">Pick a plain distribution — proportional-hazards models aren't supported here.</p>
         )}

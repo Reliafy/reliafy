@@ -46,7 +46,7 @@ test("the request: shuts every N units or on dates, the any-day cost optional", 
 test("the request says what's missing", () => {
   const base = { model: MODEL, unit: "Days", today: "2026-10-18", shuts: [{ ...newShut("2026-10-18"), cost: "1" }],
                  failureCost: "400", anytimeCost: "" };
-  assert.match(buildRequest({ ...base, model: null }).error, /life model/);
+  assert.match(buildRequest({ ...base, model: null }).error, /non-repairable model/);
   assert.match(buildRequest({ ...base, unit: "Cycles" }).error, /time unit/);
   assert.match(buildRequest({ ...base, failureCost: "" }).error, /failure/);
   assert.match(buildRequest({ ...base, shuts: [{ ...newShut("x"), cost: "" }] }).error, /costs/);

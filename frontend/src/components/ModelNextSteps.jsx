@@ -5,7 +5,7 @@ import Select from "./Select.jsx";
 import { getModel, listRbds } from "../api.js";
 import { nextStepLink, nextStepsFor, plainName, savedModelRef } from "../modelNext.js";
 
-// "Use this model" (#294): the tools a fitted life model feeds, each opened
+// "Use this model" (#294): the tools a fitted non-repairable model feeds, each opened
 // with the model chosen. A quiet card at the foot of the panel beside the
 // plot (``variant="card"``), or items for the saved model's ⋯ menu
 // (``variant="menu"``). A saved model is ``modelId``; a fit not saved yet

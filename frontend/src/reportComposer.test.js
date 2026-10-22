@@ -6,7 +6,7 @@ import {
 } from "./reportComposer.js";
 import { printZoom } from "./printFit.js";
 
-const item = (id, extra = {}) => ({ collection: "models", artifact_id: id, name: `M${id}`, kind: "Life model", ...extra });
+const item = (id, extra = {}) => ({ collection: "models", artifact_id: id, name: `M${id}`, kind: "Non-repairable model", ...extra });
 
 test("an item is added once, and not past the limit", () => {
   let s = addSection([], item("a"));

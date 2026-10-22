@@ -1,5 +1,5 @@
 ---
-title: "Fit your first life model from a CSV"
+title: "Fit your first non-repairable model from a CSV"
 task: "How do I turn a spreadsheet of failure times into a fitted reliability model?"
 category: "Getting started"
 prerequisites: "A CSV with a column of failure times. Censored units are welcome but not required."
@@ -8,7 +8,7 @@ related_label: "Fit a model"
 order: 1
 ---
 
-Everything else in Reliafy is built on a fitted life model, so this is the place
+Everything else in Reliafy is built on a fitted non-repairable model, so this is the place
 to start. The input is modest: a column of numbers saying how long things lasted.
 The output is a distribution you can ask questions of — what fraction survive to
 5,000 hours, when will 10% have failed, what's the mean life, and is this thing
@@ -53,7 +53,7 @@ censoring covers most real cases.
 
 Reliafy opens on [Home](/home): what changed, what needs attention and your
 recent work, with **Start here** cards while your workspace is new. From there,
-go to **Modelling → Life models** and press **New model**, then choose **Upload a
+go to **Modelling → Non-repairable models** and press **New model**, then choose **Upload a
 CSV or Excel file** (or **Paste values**). The fit runs in four steps, shown
 along the bottom: **Source**, **Data**, **Model** and **Result**. For the
 source, drop a CSV or Excel file straight onto the page, paste a column of

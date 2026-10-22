@@ -9,7 +9,7 @@ const VERDICT_LABEL = {
 };
 
 // Picker for the analysis backing an RCM decision, filtered to the evidence
-// type the chosen outcome expects. Life models surface their randomness
+// type the chosen outcome expects. Non-repairable models surface their randomness
 // verdicts so users can pick a defensible one for RTF decisions.
 export default function EvidencePicker({ expectedType, analysisKind, value, onChange }) {
   const [options, setOptions] = useState(null);
@@ -58,7 +58,7 @@ export default function EvidencePicker({ expectedType, analysisKind, value, onCh
   if (options === null) return <p className="muted-line">Loading evidence options…</p>;
   if (options.length === 0) {
     const what = {
-      model: "life models (fit one under Modelling)",
+      model: "non-repairable models (fit one under Modelling)",
       strategy_analysis: analysisKind === "failure_finding"
         ? "saved failure-finding analyses (run the Strategy tool and save it)"
         : "saved replacement analyses (run Optimal replacement and save it)",

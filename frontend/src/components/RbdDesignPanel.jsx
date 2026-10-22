@@ -327,7 +327,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
 
       {designable.length === 0 ? (
         <p className="hint">
-          Add components with life models on the Builder tab — each one can then be given copies.
+          Add components with non-repairable models on the Builder tab — each one can then be given copies.
         </p>
       ) : (
         <ScrollCue className="rbd-design-scroll">
@@ -416,7 +416,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                         <span className="rbd-design-type-name">
                           <input value={ty.name} disabled={off} onChange={(e) => updateType(n.id, i, { name: e.target.value })} aria-label="Type name" />
                           <button type="button" className="link" disabled={off} onClick={() => setModelFor({ id: n.id, index: i })}>
-                            {ty.model ? modelSummary(ty.model) : "Set life model"}
+                            {ty.model ? modelSummary(ty.model) : "Set non-repairable model"}
                           </button>
                         </span>
                       </td>
@@ -451,7 +451,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
           {Object.entries(
             fixed.reduce((groups, n) => {
               const kind = repeated.has(n.id) ? "repeated block"
-                : DESIGNABLE.has(n.type) ? "no life model" : KIND_NAMES[n.type] || n.type;
+                : DESIGNABLE.has(n.type) ? "no non-repairable model" : KIND_NAMES[n.type] || n.type;
               return { ...groups, [kind]: [...(groups[kind] || []), n.data?.label || n.id] };
             }, {})
           )

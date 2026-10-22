@@ -152,7 +152,7 @@ export function RegressionCoefficients({ result }) {
 }
 
 // Royston-Parmar: the fitted curve over the data's own Kaplan-Meier curve,
-// beside the life model's usual panel.
+// beside the non-repairable model's usual panel.
 export function FlexibleSurvival({ result, split = null, level = 90, onLevel = null, name = null,
                                   modelId = null }) {
   const c = result.functions?.curves || {};

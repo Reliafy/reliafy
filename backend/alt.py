@@ -49,7 +49,7 @@ _LM = _al.LIFE_MODELS
 
 
 # Life-stress relationships offered, keyed by the id used in the API/URL.
-# ``model`` is the SurPyval life model; ``n_stress`` is how many stress columns
+# ``model`` is the SurPyval non-repairable model; ``n_stress`` is how many stress columns
 # it consumes; ``log_y`` hints the life-vs-stress plot should use a log life
 # axis (multiplicative acceleration). Ordered single-stress first, then dual.
 #
@@ -966,7 +966,7 @@ def _quantiles(model, Zuse: np.ndarray, probs: list) -> list:
 
 def parameter_bounds(model) -> list:
     """``(lower, upper)`` for every entry of ``model.params``: the
-    distribution's support bounds, then the bounds SurPyval's life model
+    distribution's support bounds, then the bounds SurPyval's non-repairable model
     declares for its coefficients (``phi_bounds``: Arrhenius' ``b``, the
     inverse power law's ``a`` and the dual models' constants are positive).
     Unknown entries are unbounded."""
@@ -977,7 +977,7 @@ def parameter_bounds(model) -> list:
         if callable(phi):
             phi = phi(np.asarray(model.data.Z))
         bounds = dist_bounds + list(phi or [])
-    except Exception:  # noqa: BLE001 - e.g. a model without a life model
+    except Exception:  # noqa: BLE001 - e.g. a model without a non-repairable model
         bounds = []
     bounds = [tuple(b) if b is not None else (None, None) for b in bounds]
     return (bounds + [(None, None)] * len(names))[:max(len(names), len(bounds))]

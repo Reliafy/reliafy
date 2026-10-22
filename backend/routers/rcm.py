@@ -59,7 +59,7 @@ OUTCOME_OPTIONS = [
     {"id": "rtf", "label": "Run-to-failure",
      "expected_evidence": None,  # depends on rtf_basis
      "fields": ["rtf_basis", "task"],
-     "hint": "Let it fail, then fix it. Justify with either a life model showing random failures, or a replacement analysis showing prevention isn't economic."},
+     "hint": "Let it fail, then fix it. Justify with either a non-repairable model showing random failures, or a replacement analysis showing prevention isn't economic."},
     {"id": "failure_finding", "label": "Failure-finding task",
      "expected_evidence": "strategy_analysis",
      "fields": ["task", "interval"],

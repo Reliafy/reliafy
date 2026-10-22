@@ -461,7 +461,7 @@ SAMPLE_MODELS = [
 
 # A small but representative diagram: a controller in series with two redundant
 # pumps in parallel (input -> controller -> {Pump A | Pump B} -> output). Each
-# component carries an inline Weibull life model so the RBD is self-contained
+# component carries an inline Weibull non-repairable model so the RBD is self-contained
 # (it doesn't depend on any saved model). Shape matches what the React Flow
 # builder produces, so it opens, analyses, and edits like any user diagram.
 def _weibull(alpha: float, beta: float) -> dict:
@@ -512,7 +512,7 @@ def _pump_station_graph() -> dict:
 #     compressors — they share suction, power and maintenance, so 10 % of
 #     compressor failures are assumed to take all three out together.
 #   * "availability" is repairable: every component carries a Lognormal
-#     repair-time model on top of its life model, and the dryers become a
+#     repair-time model on top of its non-repairable model, and the dryers become a
 #     1-out-of-2 gate (standby isn't supported in availability mode), so the
 #     result is steady-state uptime rather than a survival curve.
 # ---------------------------------------------------------------------------
@@ -1304,7 +1304,7 @@ def _seed_rcm_study(db) -> None:
             description=(
                 "A worked RCM study with every decision linked to its evidence. "
                 "Note the legacy run-to-failure decision flagged as CONTRADICTED — "
-                "its own life model shows wear-out, not random failure."
+                "its own non-repairable model shows wear-out, not random failure."
             ),
             owner_id=SAMPLE_OWNER,
             functions=rcm_service.clean_tree(functions),

@@ -2,7 +2,7 @@
 title: "Set a failure-finding (proof-test) interval"
 task: "How often should I test a protective device whose failure I can't see until it's needed?"
 category: "Maintenance strategy"
-prerequisites: "A life model of the protective device, as a saved fit or a failure rate you can type in, and the availability you need from it."
+prerequisites: "A non-repairable model of the protective device, as a saved fit or a failure rate you can type in, and the availability you need from it."
 related_href: "/strategy/failure-finding"
 related_label: "Open failure finding"
 order: 23
@@ -17,12 +17,12 @@ test for it.
 A failure-finding interval answers *how often to test*. Test too rarely and the
 device spends too long broken without anyone knowing. Test too often and you
 pay for tests that find nothing. Reliafy works the interval out from the
-device's life model and the availability you need from it.
+device's non-repairable model and the availability you need from it.
 
 ## Enter the device's life
 
-Open **Strategy → Failure finding**. Under **Life model of the hidden
-function**, choose where the life model comes from:
+Open **Strategy → Failure finding**. Under **Non-repairable model of the hidden
+function**, choose where the non-repairable model comes from:
 
 - **Saved model** — a fit from your own failure data.
 - **Parameters** — a distribution and its parameters typed in, for a handbook

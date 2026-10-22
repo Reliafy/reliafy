@@ -11,5 +11,5 @@ export function fitOptions(d) {
   }
   if (t.includes("Measurements")) return [{ label: "Degradation model", to: `/modelling/degradation?dataset=${id}` }];
   const covs = t.includes("Covariates") || t.includes("Time-varying covariates");
-  return [{ label: covs ? "Life model with covariates" : "Life model", to: `/modelling/new?dataset=${id}` }];
+  return [{ label: covs ? "Non-repairable model with covariates" : "Non-repairable model", to: `/modelling/new?dataset=${id}` }];
 }

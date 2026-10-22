@@ -118,7 +118,7 @@ export const PRODUCT_PAGES = [
     path: "/rcm-software",
     title: "RCM Software — Link Maintenance Decisions to Failure Evidence | Reliafy",
     description:
-      "RCM software where every maintenance decision cites the life model, replacement analysis, or degradation model behind it — and gets flagged when new data contradicts it.",
+      "RCM software where every maintenance decision cites the non-repairable model, replacement analysis, or degradation model behind it — and gets flagged when new data contradicts it.",
     eyebrow: "Reliability centred maintenance",
     h1: "Reliability centred maintenance, backed by your failure data",
     lede:
@@ -138,7 +138,7 @@ export const PRODUCT_PAGES = [
           Most RCM tools are structured note-taking: the worksheet records that the team chose a
           fixed 6-month interval, but not <em>why</em>, and nothing ever checks the why again. In
           Reliafy, each decision links to the analysis behind it — a run-to-failure call cites the
-          fitted life model showing failures are random; a fixed interval cites the cost-optimal
+          fitted non-repairable model showing failures are random; a fixed interval cites the cost-optimal
           replacement analysis; an on-condition task cites the degradation model; a failure-finding
           interval cites the availability calculation.
         </p>
@@ -163,7 +163,7 @@ export const PRODUCT_PAGES = [
         <h2>Built on real analyses, in the same tool</h2>
         <p>
           The evidence isn't imported from somewhere else — you fit the{" "}
-          <Link to="/weibull-analysis-software">life models</Link>, replacement intervals, and
+          <Link to="/weibull-analysis-software">non-repairable models</Link>, replacement intervals, and
           degradation models in the same platform, from the same datasets. Teams work in a shared
           workspace, and single studies can be shared view-only with anyone, referenced evidence
           included. Walk through a{" "}
@@ -201,7 +201,7 @@ export const PRODUCT_PAGES = [
 
         <h2>Blocks backed by fitted models, not typed-in numbers</h2>
         <p>
-          Each block links to a life model <Link to="/weibull-analysis-software">fitted from your
+          Each block links to a non-repairable model <Link to="/weibull-analysis-software">fitted from your
           own failure data</Link> — Weibull, Lognormal, Gamma, proportional hazards — rather than a
           reliability number typed in from a datasheet. When you refit a model with new data, every
           diagram that uses it reflects the update. Mixed time units across blocks are detected and
@@ -239,7 +239,7 @@ export const PRODUCT_PAGES = [
     eyebrow: "Reliability engineering platform",
     h1: "The open reliability analysis platform",
     lede:
-      "One place for the whole chain: fit life models from failure data, build system diagrams, choose maintenance strategies, and track the fleet you're running today. Open source at the core; hosted when you want zero setup.",
+      "One place for the whole chain: fit non-repairable models from failure data, build system diagrams, choose maintenance strategies, and track the fleet you're running today. Open source at the core; hosted when you want zero setup.",
     hero: <HeroPlot />,
     jsonld: (p) => softwareJsonLd("Reliafy", p.description, p.path),
     body: (
@@ -277,7 +277,7 @@ export const PRODUCT_PAGES = [
           </li>
           <li>
             <strong>Fleet failure forecasting</strong> — "how many failures next year?" answered
-            from your own life model and each item's current age, for spares and budget planning.
+            from your own non-repairable model and each item's current age, for spares and budget planning.
           </li>
         </ul>
 

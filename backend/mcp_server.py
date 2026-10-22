@@ -2036,7 +2036,7 @@ def save_model(
         "Optional notes kept with the model, e.g. how it was fitted (method, censoring, SurPyval "
         "version)."))] = None,
 ) -> dict[str, Any]:
-    """Save a life model from a distribution and parameters fitted elsewhere (e.g. locally with
+    """Save a non-repairable model from a distribution and parameters fitted elsewhere (e.g. locally with
     SurPyval: surpyval.Weibull.fit(x=times, c=censored), then its params), by SurPyval names, in the unit they
     were fitted in. It works wherever a fitted model does, but without its data it has no confidence bounds."""
     user, db = _caller(ctx), _db()
@@ -2195,7 +2195,7 @@ def _reliability_along(db, m, times, owners, schedule, covariates, conditional_a
 
 def reliability_at(
     ctx: Context,
-    model_id: Annotated[str, Field(description="A saved life model id (list kind models).")],
+    model_id: Annotated[str, Field(description="A saved non-repairable model id (list kind models).")],
     times: Annotated[list[float], Field(min_length=1, max_length=200,
                                         description="Times to evaluate at, in the model's unit.")],
     conditional_age: Annotated[Optional[float], Field(
@@ -2218,7 +2218,7 @@ def reliability_at(
                     "(SurPyval's sf_tvc) instead of at fixed covariates, and adds mean_life along it. Use "
                     "instead of `covariates`.")] = None,
 ) -> dict[str, Any]:
-    """A saved life model at given times: R(t), F(t), hazard, cumulative hazard and density;
+    """A saved non-repairable model at given times: R(t), F(t), hazard, cumulative hazard and density;
     conditional_age adds the chance a unit that age survives a further t. Parametric models are exact,
     non-parametric and mixtures interpolated (method says which). confidence adds two-sided bounds on R(t) and
     F(t) (null with bounds_note where a model has none). Regression models take covariates (or a
@@ -2358,7 +2358,7 @@ def check_life_requirement(
     confidence: Annotated[float, Field(gt=0, lt=1, description="The confidence the requirement must be shown "
                                                                "at, e.g. 0.9.")] = 0.9,
 ) -> dict[str, Any]:
-    """Does a saved life model meet a B-life requirement ('B10 >= 50,000 cycles at 90%
+    """Does a saved non-repairable model meet a B-life requirement ('B10 >= 50,000 cycles at 90%
     confidence')? The verdict (meets / does_not_meet / unknown without bounds) turns on the B-life's one-sided
     lower bound, never the estimate; relay its summary. Not met on the bound: plan_demonstration_test sizes a
     test to show it."""
@@ -3112,7 +3112,7 @@ class BlockModel(BaseModel):
         "With mean: weibull {beta}, lognormal {sigma} (the log-spread), normal {sigma}, gamma {alpha}, "
         "loglogistic {beta} (above 1); exponential needs none."))
     saved_model_id: Optional[str] = Field(None, description=(
-        "A saved life model id (list kind models) instead of inline params: a parametric (or proportional-hazards) "
+        "A saved non-repairable model id (list kind models) instead of inline params: a parametric (or proportional-hazards) "
         "model — a saved mixture fit included — not a non-parametric one (Kaplan-Meier etc.), which RBD blocks "
         "don't take."))
     placeholder: bool = Field(False, description="True ONLY for a guessed starting-point value the user must replace.")
@@ -3269,7 +3269,7 @@ class RbdNode(BaseModel):
                     "subsystem = embed a saved RBD. Repairable diagrams take component, standby and knode (a vote "
                     "can sit anywhere, e.g. two 2-of-3 stages in series).")
     label: Optional[str] = None
-    model: Optional[BlockModel] = Field(None, description="Life model (component, series, parallel, standby).")
+    model: Optional[BlockModel] = Field(None, description="Non-repairable model (component, series, parallel, standby).")
     repair: Optional[BlockModel] = Field(None, description="Repairable diagrams only: time-to-repair distribution "
                                                            "(component, standby).")
     n: Optional[int] = Field(None, description="series/parallel: number of identical units; knode: number REQUIRED to work.")
@@ -3290,7 +3290,7 @@ class RbdNode(BaseModel):
     preventive: Optional[Preventive] = Field(None, description=(
         "Repairable component: scheduled (age/block) or condition-based replacement. Not with inspection."))
     inspection: Optional[ProofTest] = Field(None, description=(
-        "Repairable component: its failures are HIDDEN until a proof test finds them (any life model). "
+        "Repairable component: its failures are HIDDEN until a proof test finds them (any non-repairable model). "
         "Not with preventive."))
     maintenance_group: Optional[str] = Field(None, description=(
         "Repairable component: a maintenance group name — members share the group's set-up cost (rbd create/"
@@ -3340,7 +3340,7 @@ class StageComponent(BaseModel):
     label: str
     distribution: Optional[str] = Field(None, description="Inline distribution id (see params). Give this OR model_id.")
     params: Optional[list[Param]] = None
-    model_id: Optional[str] = Field(None, description="A saved plain life model id instead of inline params.")
+    model_id: Optional[str] = Field(None, description="A saved plain non-repairable model id instead of inline params.")
     repair_distribution: Optional[str] = Field(None, description="Repairable RBDs only: time-to-repair distribution id.")
     repair_params: Optional[list[Param]] = None
     placeholder: bool = Field(False, description="True ONLY for guessed starting-point values.")
@@ -4437,7 +4437,7 @@ def analyze_rbd(
         logger.exception("rbd_analysis analyze failed for %s", rbd.id)
         raise ToolError(f"Reliafy couldn't analyse “{rbd.name}” ({type(exc).__name__}). Check its structure "
                         "with get kind rbd: exactly one input and one output node, every block on a path between "
-                        "them, and a life model on every block.") from exc
+                        "them, and a non-repairable model on every block.") from exc
 
 
 def get_job(
@@ -5415,7 +5415,7 @@ def optimise_maintenance_intervals(
 
 def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None,
                  params: list[Param] | None, unit: str | None) -> dict:
-    """distribution_id + params (+ the fit's extras), given inline or taken from a saved plain life model."""
+    """distribution_id + params (+ the fit's extras), given inline or taken from a saved plain non-repairable model."""
     if model_id and (distribution_id or params):
         raise ToolError("Give exactly one of model_id or distribution_id + params, not both.")
     if model_id:
@@ -5437,7 +5437,7 @@ def _dist_inputs(db, uid: str, model_id: str | None, distribution_id: str | None
             "params": [p.model_dump() for p in params], "unit": unit or ""}
 
 
-_MODEL_ID = Annotated[Optional[str], Field(description="A saved life model id (list kind models). Give this OR "
+_MODEL_ID = Annotated[Optional[str], Field(description="A saved non-repairable model id (list kind models). Give this OR "
                                                         "distribution_id + params.")]
 _DIST_ID = Annotated[Optional[str], Field(description="Inline distribution id, e.g. weibull.")]
 _PARAMS = Annotated[Optional[list[Param]], Field(description="Inline params, e.g. [{name: alpha, value: 1200}, "
@@ -5880,7 +5880,7 @@ def plan_life_test(
 def plan_accelerated_test(
     ctx: Context,
     life_params: Annotated[list[Param], Field(min_length=2, max_length=2, description=(
-        "The life model's planning values: arrhenius and eyring [a, b], inverse_power [a, n]."))],
+        "The non-repairable model's planning values: arrhenius and eyring [a, b], inverse_power [a, n]."))],
     shape: _DEMO_ARG["shape"],
     use_stress: Annotated[list[float], Field(min_length=1, max_length=1, description=(
         "The use stress, e.g. [323] (kelvin for the thermal models)."))],
@@ -5954,7 +5954,7 @@ def _demo_shape_from_model(db, uid: str, model_id: str, bound: str) -> dict:
         raise ToolError("Model not found.")
     r = m.results or {}
     if m.kind != "distribution" or (r.get("distribution_id") or m.distribution_id) != "weibull":
-        raise ToolError(f"“{m.name}” isn't a Weibull life model, so it has no shape β to plan with.")
+        raise ToolError(f"“{m.name}” isn't a Weibull non-repairable model, so it has no shape β to plan with.")
     found = _weibull_beta_ci(db, uid, model_id, {"distribution_id": "weibull"})
     beta = next((p["value"] for p in r.get("params") or [] if p.get("name") == "beta"), None)
     if found is None:
@@ -7090,7 +7090,7 @@ def _lean_outline(graph: dict, check: dict) -> dict:
     return out
 
 
-# Blocks that carry a life model of their own (not junctions, sub-systems or
+# Blocks that carry a non-repairable model of their own (not junctions, sub-systems or
 # repeated copies).
 _MODEL_FREE_TYPES = ("input", "output", "knode", "subsystem")
 _STAND_IN_MODEL = {"source": "params", "distribution": "Exponential", "distribution_id": "exponential",
@@ -7102,7 +7102,7 @@ _UNIT_ASK = ("The file doesn't state a time unit, so the diagram's unit is blank
 
 
 def _modelless_blocks(graph: dict) -> list[dict]:
-    """Imported blocks with no life model (a BlockSim block Reliafy can't
+    """Imported blocks with no non-repairable model (a BlockSim block Reliafy can't
     represent, an Open-PSA or Galileo fixed-probability event): the user sets one."""
     return [n for n in graph.get("nodes") or []
             if n.get("type") not in _MODEL_FREE_TYPES and not (n.get("data") or {}).get("model")
@@ -7111,7 +7111,7 @@ def _modelless_blocks(graph: dict) -> list[dict]:
 
 def _check_import(db, graph: dict, owners) -> dict:
     """validate_graph for an imported diagram. One whose only problem is
-    blocks still needing a life model is importable — it's checked with a
+    blocks still needing a non-repairable model is importable — it's checked with a
     stand-in model on each (never saved) and comes back with ``needs_model``."""
     check = rbds_service.validate_graph(db, graph, owners)
     if check.get("valid", False):
@@ -7208,7 +7208,7 @@ def _save_imported(db, user: dict, diagrams, *, name: Optional[str], save: bool,
             item["analysable"] = False
             item["needs_model"] = check["needs_model"][:_OUTLINE_NODES]
             item["needs_model_note"] = (
-                "These blocks have no life model (the import notes say why), so the diagram can't be analysed "
+                "These blocks have no non-repairable model (the import notes say why), so the diagram can't be analysed "
                 "until each gets one: rbd edit with the user's data, or the user sets them in the builder. "
                 "Don't invent values.")
         item["import_notes"] = d.warnings[:_IMPORT_NOTES]
@@ -7494,7 +7494,7 @@ _RCM_ID_NOTE = ("Its id from get kind rcm_study, to change that node with rcm up
 class RcmEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["model", "strategy_analysis", "degradation_model"] = Field(description=(
-        "model: a saved life model (list kind models) — evidence for rtf with rtf_basis random; strategy_analysis: a "
+        "model: a saved non-repairable model (list kind models) — evidence for rtf with rtf_basis random; strategy_analysis: a "
         "saved optimal-replacement or failure-finding analysis — for fixed_interval, failure_finding or rtf "
         "uneconomic; degradation_model: for on_condition."))
     id: str = Field(min_length=1, max_length=64, description="The linked item's id (the user's own or a sample).")
@@ -7897,7 +7897,7 @@ def _share_brief(db, link: dict) -> dict:
 
 def share_link(
     ctx: Context,
-    kind: Annotated[_ShareKind, Field(description="What to share: model (a fitted life model), dataset, rbd, "
+    kind: Annotated[_ShareKind, Field(description="What to share: model (a fitted non-repairable model), dataset, rbd, "
                                                   "degradation_model, strategy_analysis, rcm_study, fleet, "
                                                   "recurrent_model (a repairable-system model) or report (made "
                                                   "with sharing create_report).")],
@@ -8381,7 +8381,7 @@ _action_tool("life_data_analysis", _READ, "Analyse life data", "action", """Life
     "fit_joint": _act(fit_joint),
     "predict_joint": _act(predict_joint),
 }, docs={
-    "model_id": ("A saved model id (list kind models): a life model for reliability_at and check_life_requirement, "
+    "model_id": ("A saved model id (list kind models): a non-repairable model for reliability_at and check_life_requirement, "
                  "an ALT model (models fit_alt) for alt_use_level, a joint model for predict_joint."),
     "dataset_id": "A saved dataset (list kind datasets) instead of inline data (fit_per_demand: a row per batch).",
     "censored": ("Per time in data: 0 = failed, 1 = still running, -1 = left-censored, 2 = interval-censored (the "
@@ -8411,7 +8411,7 @@ _action_tool("strategy", _READ, "Maintenance strategy", "action", """Maintenance
     "fleet_forecast": _act(fleet_forecast),
     "calendar_replacement": _act(calendar_replacement),
     "next_replacement": _act(calendar_next_replacement),
-}, docs={"model_id": ("A saved model id (list kind models): a plain life model for optimal_replacement and "
+}, docs={"model_id": ("A saved model id (list kind models): a plain non-repairable model for optimal_replacement and "
                      "failure_finding_interval (or distribution_id + params instead), a recurrent one for "
                      "optimal_overhaul.")})
 

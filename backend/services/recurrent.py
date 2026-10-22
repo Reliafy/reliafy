@@ -116,7 +116,7 @@ def rename_model(db, model_id: str, name: str, owner_id: str) -> RecurrentModelD
 
 def set_notes(db, model_id: str, notes: str, owner_id: str) -> RecurrentModelDoc:
     """Set (or, with ``""``, clear) an owned recurrent model's notes (in its
-    spec, as for life models). Never touches the fit."""
+    spec, as for non-repairable models). Never touches the fit."""
     doc = get_model(db, model_id, owner_id)
     if doc is None or doc.owner_id != owner_id:
         raise ModelNotFound(model_id)

@@ -1,4 +1,4 @@
-"""A life model's data in words (#303): how many units failed and how many
+"""A non-repairable model's data in words (#303): how many units failed and how many
 were still running, so a saved model's panel says "5 failed, 7 running" as
 a fresh fit does, not "12 observations".
 

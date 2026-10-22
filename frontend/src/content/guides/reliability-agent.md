@@ -20,7 +20,7 @@ The Reliability Agent is a different thing from the assistant in the corner of
 the screen. The assistant answers questions about the app. The agent **does the
 work**: it runs Python in a sandbox with surpyval and repyability installed,
 analyses your data for real, and then writes the results into your workspace as
-saved datasets, life models, and reliability block diagrams.
+saved datasets, non-repairable models, and reliability block diagrams.
 
 It's genuinely useful for the case where you know what you want but not how to
 get there — "here's a messy CSV of failures, work out the best distribution and
@@ -70,7 +70,7 @@ against.
 
 ## What it can and can't build
 
-It creates **datasets**, **life models** (the full range — censoring, truncation,
+It creates **datasets**, **non-repairable models** (the full range — censoring, truncation,
 covariates, the offset/zero-inflation/limited-failure-population modifiers),
 **recurrent-event models** for repairable systems, **accelerated life models**,
 **degradation models**, and **RBDs** — including repairable diagrams that report

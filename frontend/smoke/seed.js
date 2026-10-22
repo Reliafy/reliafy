@@ -2,7 +2,7 @@
 // seeds Maintenance or an RBD simulation run, so make one of each here (a
 // position from the sample RCM study, a location, an item fitted to the
 // position, a work order, a part and an assembly of it, the starter item classes, a position
-// class with a fitted life model and a spare with a lead time, and one availability run)
+// class with a fitted non-repairable model and a spare with a lead time, and one availability run)
 // through the API. Skipped against a deployed site.
 import { request } from "@playwright/test";
 
@@ -72,7 +72,7 @@ export default async function seed(config) {
     await send("PUT")(`${m}/items/${item.id}/part`, { part_id: brakes.id });
     await post(`${m}/item-classes/starter`, { dry_run: false });
 
-    // A position class with a fitted life model, so its page draws the failure
+    // A position class with a fitted non-repairable model, so its page draws the failure
     // forecast (#407): three pumps, each with two past failures and an item in
     // now, a critical replacement part with one in stock, and the class's costs.
     const ago = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);

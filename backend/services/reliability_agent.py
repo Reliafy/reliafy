@@ -62,7 +62,7 @@ SYSTEM_PROMPT = (
     "data, try candidate distributions, check goodness-of-fit, decide the best "
     "model. Show the key numbers you computed.\n"
     "3. PLAN: state exactly what you will save to Reliafy as a short numbered "
-    "list — EVERY dataset, life model, and RBD you intend to create, each with "
+    "list — EVERY dataset, non-repairable model, and RBD you intend to create, each with "
     "its distribution/columns or structure. There may be one, or many, of each.\n"
     "4. REQUEST APPROVAL: right after the plan, call the request_approval tool "
     "with a one-line summary of what you'll build. That shows the user an Approve "
@@ -87,7 +87,7 @@ SYSTEM_PROMPT = (
     "ordered list of STAGES in series, each stage holding one or more COMPONENTS "
     "in parallel, with an optional k_of_n (k of the n components needed; omit or 1 "
     "= redundancy where any one suffices, n = all required in series). Each "
-    "component's life model is either an inline distribution + params or a "
+    "component's non-repairable model is either an inline distribution + params or a "
     "model_id from a create_life_model call. Reliafy lays it out (input → stages → "
     "output), validates, and saves it. An RBD is EITHER non-repairable (default — "
     "reliability over time) OR repairable (repairable=true — analysed for "
@@ -101,7 +101,7 @@ SYSTEM_PROMPT = (
     "UPLOADED DATA IS OPTIONAL. If the user gives no data (e.g. 'research this "
     "pump / truck type and build an RBD'), research the typical components and "
     "their failure distributions/parameters and build the RBD from those inline — "
-    "an RBD needs no dataset. (Life models still need a dataset to fit.)\n\n"
+    "an RBD needs no dataset. (Non-repairable models still need a dataset to fit.)\n\n"
     "SCOPE: you can read and create datasets and every kind of model in the "
     "Modelling section — life, recurrent, accelerated-life and degradation — plus "
     "RBDs. RCM studies, fleet tracking and strategy analyses are not available to "
@@ -260,7 +260,7 @@ def tools() -> list:
             "type": "custom",
             "name": "create_life_model",
             "description": (
-                "Fit and save a life model to a dataset in the user's Reliafy "
+                "Fit and save a non-repairable model to a dataset in the user's Reliafy "
                 "workspace. Reliafy performs the fit with surpyval (probability plot, "
                 "parameters, CIs, goodness-of-fit). Supports full surpyval inputs: "
                 "exact/censored/interval data, counts, truncation, the offset / "
@@ -345,7 +345,7 @@ def tools() -> list:
                     "time_column": {"type": "string", "description": "Failure/censoring time column (surpyval x)."},
                     "stress_columns": {
                         "type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 2,
-                        "description": "One or two stress columns. Must match the life model's stress count, "
+                        "description": "One or two stress columns. Must match the non-repairable model's stress count, "
                                        "and for two-stress models the FIRST is the thermal one.",
                     },
                     "distribution": {"type": "string", "enum": list(alt_fit.ALT_DISTRIBUTIONS),
@@ -402,7 +402,7 @@ def tools() -> list:
                 "in series, each stage holding one or more COMPONENTS in parallel "
                 "(redundancy), with an optional k_of_n voting requirement. Reliafy lays "
                 "it out (input → stages → output), validates it, and saves it. Each "
-                "component needs a life model — either an inline distribution + params "
+                "component needs a non-repairable model — either an inline distribution + params "
                 "(e.g. researched/typical values; NO dataset required) or a model_id "
                 "from create_life_model.\n\n"
                 "An RBD is EITHER non-repairable (default — analysed for reliability "
@@ -433,9 +433,9 @@ def tools() -> list:
                                         "type": "object",
                                         "properties": {
                                             "label": {"type": "string", "description": "Component name."},
-                                            "distribution": {"type": "string", "description": "Inline life model: a plain surpyval distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, gumbel, logistic. Pair with params. Give this OR model_id."},
+                                            "distribution": {"type": "string", "description": "Inline non-repairable model: a plain surpyval distribution id — weibull, exponential, normal, lognormal, gamma, loglogistic, expo_weibull, gumbel, logistic. Pair with params. Give this OR model_id."},
                                             "params": {"type": "array", "description": "Distribution parameters by surpyval name, e.g. [{\"name\":\"alpha\",\"value\":900},{\"name\":\"beta\",\"value\":1.4}] for weibull.", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "number"}}, "required": ["name", "value"]}},
-                                            "model_id": {"type": "string", "description": "Alternatively, a saved plain life model id (from create_life_model) to use for this component instead of inline params."},
+                                            "model_id": {"type": "string", "description": "Alternatively, a saved plain non-repairable model id (from create_life_model) to use for this component instead of inline params."},
                                             "repair_distribution": {"type": "string", "description": "Repairable RBDs only: the time-to-repair distribution id (e.g. lognormal, exponential, weibull, normal, gamma). Pair with repair_params."},
                                             "repair_params": {"type": "array", "description": "Repairable RBDs only: repair-time distribution parameters by surpyval name, e.g. [{\"name\":\"mu\",\"value\":1.5},{\"name\":\"sigma\",\"value\":0.4}] for a lognormal MTTR.", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "number"}}, "required": ["name", "value"]}},
                                         },
@@ -467,7 +467,7 @@ def tools() -> list:
                     "summary": {
                         "type": "string",
                         "description": "One line naming what you'll build, e.g. "
-                        "'1 dataset + 2 Weibull life models' or '1 dataset, 1 model, 1 RBD'.",
+                        "'1 dataset + 2 Weibull non-repairable models' or '1 dataset, 1 model, 1 RBD'.",
                     },
                 },
                 "required": ["summary"],
@@ -625,7 +625,7 @@ _RBD_COL_W = 220  # horizontal spacing between stages in the laid-out diagram
 def _rbd_component_model(db, uid: str, comp: dict) -> dict:
     """Node ``data.model`` for one RBD component — either an inline distribution
     + params (researched/typical values, no dataset needed) or the fitted params
-    of a saved plain life model referenced by ``model_id``."""
+    of a saved plain non-repairable model referenced by ``model_id``."""
     from backend import fitting
     from backend.services import models as models_service
 
@@ -914,7 +914,7 @@ def _execute_tool(db, uid: str, name: str, inp: dict) -> dict:
             params = [{"name": p["name"], "value": p["value"]} for p in (r.get("params") or [])]
             return {"ok": True, "model_id": model.id, "distribution": r.get("distribution"),
                     "params": params,
-                    "summary": f"Created life model “{model.name}” — {r.get('distribution')}."}
+                    "summary": f"Created non-repairable model “{model.name}” — {r.get('distribution')}."}
 
         if name == "create_recurrent_model":
             from backend.services import recurrent as recurrent_service

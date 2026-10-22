@@ -2,13 +2,13 @@
 title: "Forecast fleet failures and spares"
 task: "How many failures will my fleet see next year, and how many spares should I hold?"
 category: "Maintenance strategy"
-prerequisites: "A fitted life model of the part, and each item's current age or use."
+prerequisites: "A fitted non-repairable model of the part, and each item's current age or use."
 related_href: "/fleet"
 related_label: "Open failure forecasts"
 order: 22
 ---
 
-A life model tells you about one part. A fleet is many of them, each at a
+A non-repairable model tells you about one part. A fleet is many of them, each at a
 different age, each running at its own pace. The question a planner actually
 has is about all of them together: *how many will fail in the next twelve
 months?* That number sizes the spares order, the maintenance budget and the
@@ -135,7 +135,7 @@ report in automatically.
 
 ## Where to go next
 
-The forecast is only as good as the life model under it, so
+The forecast is only as good as the non-repairable model under it, so
 [fit the model](/guides/fit-your-first-model) to your own failure data where you
 can. If the part is replaced on a schedule rather than at failure, find the
 [optimal replacement interval](/guides/optimal-replacement-interval) first: it

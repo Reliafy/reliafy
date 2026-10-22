@@ -96,14 +96,14 @@ def test_new_and_changed_items_are_the_workspaces_own(client):
 
 def test_a_condition_based_model_is_labelled_and_linked_as_one(client):
     # Joint models live in ``models`` with kind "joint": the feed must not call
-    # them life models or link them to the life-model page (which can't open them).
+    # them non-repairable models or link them to the life-model page (which can't open them).
     db = client.db
     put(db, "models", "pump-risk", A, ago(days=2), kind="joint")
     put(db, "models", "pump-life", A, ago(days=1), results=WEIBULL_RESULTS)
     out = changes(client)
     rows = {r["id"]: (r["type"], r["url"]) for r in out["new"]}
     assert rows["pump-risk"] == ("Condition monitoring model", "/modelling/joint/pump-risk")
-    assert rows["pump-life"] == ("Life model", "/modelling/m/pump-life")
+    assert rows["pump-life"] == ("Non-repairable model", "/modelling/m/pump-life")
 
 
 def test_an_empty_period_says_nothing_changed(client):

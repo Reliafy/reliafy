@@ -44,13 +44,13 @@ can't build something Reliafy can't solve.
 This is the part that's genuinely different from a normal RBD. A repairable
 component is characterised by two things:
 
-- **A life model** — how long it runs before it fails.
+- **A non-repairable model** — how long it runs before it fails.
 - **A repair-time distribution** — how long it takes to get back into service.
 
 Availability depends on the *ratio* of those two, so the repair side matters
 just as much as the failure side. A pump that fails monthly but is swapped in
 twenty minutes can be more available than one that fails yearly but takes a
-week to source parts for. A diagram with only life models can't tell you that,
+week to source parts for. A diagram with only non-repairable models can't tell you that,
 which is why Reliafy insists on both.
 
 Double-click a component to set them, each as a **Mean**, **Parameters** or a
@@ -64,7 +64,7 @@ When the repair time doesn't matter (or you have no data for it), tick
 down. **Every block repaired instantly** in the toolbar's **⋯** menu does the
 same for the whole diagram.
 
-![The component dialog with a Weibull life model and a lognormal repair-time distribution](/guides/img/availability-04-models.png)
+![The component dialog with a Weibull non-repairable model and a lognormal repair-time distribution](/guides/img/availability-04-models.png)
 
 Wire the diagram up as you normally would: drag from the input handle through
 your components to the output, with redundant units in parallel. Or select a
@@ -77,7 +77,7 @@ partner already wired in.
 
 Hit **Validate** at the right of the toolbar. In availability mode this checks
 the thing that actually blocks the calculation — that every component has *both*
-a life model and a repair time — and it will name any block that's missing one.
+a non-repairable model and a repair time — and it will name any block that's missing one.
 Once it passes, the button reads **✓ Valid**; click it to see how the figures
 will be found. For this diagram the long-run figures are exact and nothing needs
 simulating.

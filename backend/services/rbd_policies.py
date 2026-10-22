@@ -149,7 +149,7 @@ def standby_errors(data: dict, label: str) -> list[str]:
     if not _same_model(data.get("model"), data.get("standbyModel")):
         errors.append(
             f"“{label}”: in a repairable diagram a standby group's units are identical — remove the "
-            "spares' own life model (each unit fails and is repaired by the block's models).")
+            "spares' own non-repairable model (each unit fails and is repaired by the block's models).")
     for key in _STANDBY_EXTRAS:
         if data.get(key) not in (None, "", {}):
             what = {"preventive": "scheduled replacement", "inspection": "proof tests",
