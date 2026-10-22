@@ -49,6 +49,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
 
+from backend import config
 from backend.maintenance.store import GraphStore, new_id
 from backend.services import time_zones
 from backend.services.rcm import _norm_unit
@@ -400,6 +401,7 @@ def warranty_view(w: dict | None, on: str | None = None) -> dict | None:
 DOCUMENT_KINDS = ("manual", "datasheet", "invoice", "drawing", "certificate", "other")
 MAX_DOCUMENTS = 20_000  # per organisation
 MAX_DOCUMENTS_EACH = 100  # on one item, position or class
+MAX_STORED_DOCUMENTS = 500  # PDFs kept in one organisation's workspace (documents.py has their size cap)
 MAX_URL = 2000
 
 
@@ -1206,6 +1208,19 @@ def _document_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_edge(org, "OF", p["id"], target)
 
 
+def _document_uploaded(s: GraphStore, org: str, p: dict) -> None:
+    """A PDF kept in the workspace (its bytes are outside the graph, see
+    documents.py), on an item, a position or a position class, like a link."""
+    target = p.get("target_id")
+    if p.get("class_name"):
+        _class_upsert(s, org, {"name": p["class_name"]}, {})
+        target = class_id(org, p["class_name"])
+    s.put_node(org, p["id"], "Document", {"title": p["title"], "url": None, "kind": p["kind"],
+                                          "added_on": p["on"], "removed": False, "stored": True,
+                                          "file_name": p["file_name"], "size": p["size"], "sha256": p["sha256"]})
+    s.put_edge(org, "OF", p["id"], target)
+
+
 def _class_model_fitted(s: GraphStore, org: str, p: dict) -> None:
     _class_upsert(s, org, p, {"model": {k: p.get(k) for k in (
         "model_id", "distribution", "params", "extras", "unit", "fitted_on", "failures", "suspensions")}})
@@ -1516,6 +1531,7 @@ PROJECTORS = {
     "class.updated": _class_updated,
     "document.added": _document_added,
     "document.removed": _flag("removed"),
+    "document.uploaded": _document_uploaded,
     "proposal.made": _proposal_made,
     "proposal.decided": _proposal_decided,
     "interface.added": _interface_added,
@@ -5809,23 +5825,77 @@ class Maintenance:
                                       "on": self.today()})
         return self.document(did)
 
+    def check_stored_document(self, size: int, kind="other", target_id=None, position_class=None) -> tuple[dict, str]:
+        """Before a PDF's bytes are stored: what it's for (as for a link), its
+        kind, and room for it in the workspace (MAX_STORED_DOCUMENTS of them,
+        STORED_DOCUMENT_BYTES in all). Returns what add_stored_document needs."""
+        ref, node_id = self._document_target(target_id, position_class)
+        if kind not in DOCUMENT_KINDS:
+            raise Invalid(f"The kind is one of {', '.join(DOCUMENT_KINDS)}.")
+        if len(self.documents_of(node_id)) >= MAX_DOCUMENTS_EACH:
+            raise LimitReached(f"At most {MAX_DOCUMENTS_EACH} documents on one item, position or class.")
+        if self.limited:
+            kept = [d for d in self.s.nodes(self.org, "Document") if not d.get("removed")]
+            if len(kept) >= MAX_DOCUMENTS:
+                raise LimitReached(f"This maintenance workspace can hold at most {MAX_DOCUMENTS:,} documents.")
+            stored = [d for d in kept if d.get("stored")]
+            if len(stored) >= MAX_STORED_DOCUMENTS:
+                raise LimitReached(f"This maintenance workspace can keep at most {MAX_STORED_DOCUMENTS:,} PDFs. "
+                                   "Remove some you no longer need, or add a link (a web address) instead.")
+            used = sum(d.get("size") or 0 for d in stored)
+            if used + size > config.MAINTENANCE_DOCUMENT_BYTES:
+                room = max(0, config.MAINTENANCE_DOCUMENT_BYTES - used) / 1048576
+                raise LimitReached(
+                    f"This maintenance workspace keeps at most {config.MAINTENANCE_DOCUMENT_BYTES / 1048576:.0f} MB "
+                    f"of PDFs and has {room:.1f} MB left. Remove PDFs you no longer need, or add a link (a web "
+                    "address) instead.")
+        return ref, node_id
+
+    def add_stored_document(self, document_id: str, file_name: str, size: int, sha256: str, title="",
+                            kind="other", target_id=None, position_class=None) -> dict:
+        """Record a PDF whose bytes are already stored (see documents.py) on an
+        item, a position or a class of position."""
+        ref, _ = self.check_stored_document(size, kind, target_id, position_class)
+        name = file_name[:-4] if file_name.lower().endswith(".pdf") else file_name
+        title = _text(title, "title") or name[:SHORT_TEXT]
+        self._emit("document.uploaded", {"id": document_id, **ref, "title": title, "kind": kind,
+                                         "file_name": file_name, "size": int(size), "sha256": sha256,
+                                         "on": self.today()})
+        return self.document(document_id)
+
     def remove_document(self, document_id: str) -> dict:
         if self._get(document_id, "Document").get("removed"):
             raise Invalid("That document was already removed.")
         self._emit("document.removed", {"id": document_id, "on": self.today()})
         return {"removed": document_id}
 
+    _DOCUMENT_FIELDS = ("id", "title", "url", "kind", "added_on")
+    _STORED_FIELDS = ("file_name", "size")
+
+    def _document_view(self, d: dict, fields: tuple) -> dict:
+        out = {k: d.get(k) for k in fields} | {"stored": bool(d.get("stored"))}
+        if d.get("stored"):
+            out |= {k: d.get(k) for k in self._STORED_FIELDS} | {"content_type": "application/pdf"}
+        return out
+
     def document(self, document_id: str) -> dict:
         d = self._get(document_id, "Document")
         of = self.s.out(self.org, document_id, "OF")
-        return {k: d.get(k) for k in ("id", "title", "url", "kind", "added_on", "removed")} | {
+        return self._document_view(d, (*self._DOCUMENT_FIELDS, "removed")) | {
             "of": of and {"id": of[0]["id"], "kind": of[0]["label"], "name": of[0].get("name")},
         }
+
+    def stored_document(self, document_id: str) -> dict:
+        """A PDF kept in this workspace that hasn't been removed (NotFound otherwise)."""
+        d = self.s.node(self.org, str(document_id or ""), "Document")
+        if d is None or d.get("removed") or not d.get("stored"):
+            raise NotFound(document_id)
+        return d
 
     def documents_of(self, node_id: str) -> list[dict]:
         found = [d for d in self.s.inn(self.org, node_id, "OF") if d["label"] == "Document" and not d.get("removed")]
         found.sort(key=lambda d: (DOCUMENT_KINDS.index(d["kind"]), d["title"].lower(), d["id"]))
-        return [{k: d.get(k) for k in ("id", "title", "url", "kind", "added_on")} for d in found]
+        return [self._document_view(d, self._DOCUMENT_FIELDS) for d in found]
 
     # ---- photos and coordinates ------------------------------------------------------
 

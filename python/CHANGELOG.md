@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1
+
+- PDFs in Reliafy Maintenance: `Client.add_document(path, target_id=…)` keeps
+  a PDF (at most 20 MB) on an item, a position or (`position_class=…`) a
+  position class; `Client.download_document(document_id, path)` saves one.
+  On the command line: `reliafy document add FILE.pdf --to ID` (or
+  `--class NAME`, with `--title` and `--kind`) and `reliafy document get ID
+  -o FILE.pdf`.
+- `upload_file` takes the purpose `document` (a PDF).
+
 ## 0.3.0
 
 Needs a Reliafy server with the tools API (`GET /api/v1/tools` answers) for

@@ -9,6 +9,8 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  ["POST", "/api/maintenance/documents/upload"], // PDFs kept in maintenance
+  ["GET", "/api/maintenance/documents/smoke/file"],
   ["POST", "/api/test-planning/sequential"], // Test planning
   ["POST", "/api/test-planning/life"],
   ["POST", "/api/test-planning/accelerated"],

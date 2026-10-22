@@ -121,6 +121,8 @@ GET_KINDS: Table = {
     "photo_link": ("id", "", """id = a link_id from maintenance_attachments photo_link. The photos added
         through it so far, and any location a photo carried with the user's answer (saved / declined / null =
         not answered). Unanswered: ask the user before set_coordinates; never save it unasked."""),
+    "document": ("id", "", """A document on an item, position or class. A stored PDF has open_url and
+        download_url: no sign-in, for 15 minutes; read it again for new ones."""),
     "manufacturer_match": ("text", "", """Which register entry a maker as written ('K.S.B.', 'KSB AG') is:
         by name or alias, case, accents, punctuation and company form (AG, Ltd) aside. match is null when none
         is certain; candidates are near misses to ask the user about. Use before maintenance_manufacturers
@@ -444,12 +446,14 @@ ATTACHMENTS: Table = {
         (a nameplate from a work order, on its position)."""),
     "unlink_photo": ("photo_id target_id", "", "Take a photo off one place it shows (not its last: move or remove it)."),
     "move_photo": ("photo_id target_id", "from_id", "Move a photo to target_id: off from_id, or else off everywhere else."),
-    "add_document": ("url", "target_id position_class title kind", """Link a document (an http(s) url: a manual,
+    "add_document": ("", "url upload_id target_id position_class title kind", """Add a document (a manual,
         datasheet, invoice, drawing, certificate) to an item or position (target_id), or to a position class
-        (one datasheet every pump of that model shares). Use this rather than links in notes. kind: manual,
-        datasheet, invoice, drawing, certificate, other (default)."""),
+        (one datasheet every pump of that model shares): a link (url, http(s)) or a PDF to keep here (upload_id
+        from uploads create, purpose document). Use this rather than links in notes. kind: manual, datasheet,
+        invoice, drawing, certificate, other (default)."""),
     "remove_document": ("document_id", "",
-                        "Remove a document link (ids in the documents on the item, position or class)."),
+                        "Remove a document (ids in the documents on the item, position or class); a kept PDF is "
+                        "deleted."),
 }
 
 WORKSPACE: Table = {
@@ -491,7 +495,8 @@ def register() -> None:
     from backend.maintenance.access import allowed, graph_query_allowed
     from backend.maintenance.service import Invalid, Maintenance, NotFound, summary
     from backend.mcp_server import _READ, _WRITE, _caller, _db, _reader, _tool, mcp
-    from backend.routers.maintenance import get_store, link_payload, photo_links, remove_photo, served_photo
+    from backend.routers.maintenance import (document_link, get_store, ingest_document, link_payload, photo_links,
+                                             remove_document, remove_photo, served_photo)
     from backend.schema import RcmStudy
     from backend.services import access as access_service
     from backend.services import time_zones
@@ -534,6 +539,9 @@ def register() -> None:
                 return fn(*args, **kwargs)
             return _tool(name, annotations, title, call_key=lambda kwargs: f"{name}.{kwargs[selector]}")(checked)
         return decorator
+
+    def base_url(ctx: Context) -> str:
+        return config.PUBLIC_BASE_URL or str(ctx.request_context.request.base_url).rstrip("/")
 
     def none_is_null(value):
         """'none' (or '') for an id that can be taken away: null."""
@@ -649,6 +657,8 @@ def register() -> None:
             return run(go)
         if kind == "manufacturer_match":
             return run(m.match_manufacturer, text)
+        if kind == "document":
+            return run(document_link, base_url(ctx), m, rid)
         read = {"position": m.position, "item": m.item, "work_order": m.work_order, "location": m.location,
                 "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
@@ -1340,13 +1350,15 @@ def register() -> None:
 
     # ---- photos, documents and the workspace -------------------------------------------
 
-    @tool("maintenance_attachments", _WRITE, "Photos, coordinates and document links", ATTACHMENTS)
+    @tool("maintenance_attachments", _WRITE, "Photos, coordinates and documents", ATTACHMENTS)
     def maintenance_attachments(action: _choice(ATTACHMENTS), ctx: Context,
                                 target_id: Annotated[str | None, Field(description=(
                                     "photo_link, link_photo, unlink_photo, move_photo: a position, location, "
                                     "item or work order. set_coordinates: a "
                                     "position, item, location or work order. add_document: an item or "
                                     "position."))] = None,
+                                upload_id: Annotated[str | None, Field(max_length=64, description=(
+                                    "add_document: a PDF sent with uploads create (purpose document)."))] = None,
                                 caption: str | None = None, lat: float | None = None, lon: float | None = None,
                                 source: Literal["photo", "manual"] | None = None, photo_id: str | None = None,
                                 url: str | None = None, title: str | None = None,
@@ -1355,13 +1367,11 @@ def register() -> None:
                                 position_class: str | None = None, document_id: str | None = None,
                                 from_id: str | None = None) -> dict[str, Any]:
         """What's attached to the register: photos (added by the user from a phone through a link;
-        stored without location or camera details), coordinates, and links to documents. To look at a
+        stored without location or camera details), coordinates, and documents (links or PDFs). To look at a
         photo: maintenance_view_photo."""
         m = m_for(ctx)
         if action == "photo_link":
-            request = ctx.request_context.request
-            base = config.PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
-            return run(lambda: link_payload(base, m, m.photo_target(target_id), (caption or "")[:200]))
+            return run(lambda: link_payload(base_url(ctx), m, m.photo_target(target_id), (caption or "")[:200]))
         if action == "set_coordinates":
             return run(m.set_coordinates, target_id, lat, lon, _d(source, "manual"))
         if action == "remove_photo":
@@ -1373,8 +1383,23 @@ def register() -> None:
         if action == "move_photo":
             return run(m.move_photo, photo_id, target_id, from_id)
         if action == "add_document":
-            return run(m.add_document, url, title or "", _d(kind, "other"), target_id, position_class)
-        return run(m.remove_document, document_id)
+            if bool(url) == bool(upload_id):
+                raise ToolError("Give either url (a web address to link) or upload_id (a PDF sent with uploads "
+                                "create, purpose document): exactly one.")
+            if url:
+                return run(m.add_document, url, title or "", _d(kind, "other"), target_id, position_class)
+            from backend.services import uploads as uploads_service
+
+            db, uid = _db(), _caller(ctx)["uid"]
+            try:
+                upload, data = uploads_service.read(db, upload_id, uid)
+            except uploads_service.UploadError as err:
+                raise ToolError(str(err)) from None
+            saved = run(ingest_document, m, data, upload.get("filename") or "", title or "", _d(kind, "other"),
+                        target_id, position_class)
+            uploads_service.delete(db, upload["_id"])
+            return saved
+        return run(remove_document, m, document_id)
 
     @tool("maintenance_workspace", _WRITE, "Workspace settings and history import", WORKSPACE)
     def maintenance_workspace(action: _choice(WORKSPACE), ctx: Context,

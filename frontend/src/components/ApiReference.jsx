@@ -173,6 +173,7 @@ rf.spec()      # the OpenAPI spec`}</Code>
 rf.import_rbd("plant.xml")                              # BlockSim, Open-PSA, Galileo, RePyability, the Excel template
 rf.import_excel("fmea.xlsx", target="rcm")              # dataset, rcm or rbd
 rf.add_photo("nameplate.jpg", target_id="…")            # Reliafy Maintenance users
+rf.add_document("manual.pdf", target_id="…")             # a PDF on an item or position (at most 20 MB)
 
 rf.push_usage(fleet_id, [{"name": "Truck 01", "current_use": 5230}])
 rf.push_measurements(tracked_fleet_id, file="readings.csv")
@@ -956,7 +957,7 @@ function Files({ base }) {
       <Endpoint
         method="PUT"
         path="/api/uploads/{upload_id}?t=…"
-        desc="Send a file to the single-use link from uploads create (at most 30 MB; the link’s t is the credential, no other sign-in). Then import it by its upload_id: datasets upload, uploads import_rbd, uploads import_excel or rbd upload_outage_log."
+        desc="Send a file to the single-use link from uploads create (at most 30 MB; the link’s t is the credential, no other sign-in). Then import it by its upload_id: datasets upload, uploads import_rbd, uploads import_excel or rbd upload_outage_log. Reliafy Maintenance users can also send a PDF (purpose document, at most 20 MB) and keep it on an item or position with maintenance_attachments add_document."
         example={`curl -X POST ${base}/api/v1/uploads/create -H "Authorization: Bearer $RELIAFY_TOKEN" \\
   -H "Content-Type: application/json" -d '{"purpose": "rbd_import", "filename": "plant.xml"}'   # → url, upload_id
 curl -X PUT --data-binary @plant.xml "UPLOAD_URL"
@@ -983,7 +984,7 @@ reliafy photo unlink PHOTO_ID --from LOCATION_ID`}
       />
       <p className="muted-line">
         From Python: <code>rf.upload_dataset</code>, <code>rf.import_rbd</code>,{" "}
-        <code>rf.import_excel</code> and <code>rf.add_photo</code> (see{" "}
+        <code>rf.import_excel</code>, <code>rf.add_photo</code> and <code>rf.add_document</code> (see{" "}
         <Link className="evidence-link" to={`${apiDocsPath("python")}#files`}>the Python client</Link>).
       </p>
     </div>
@@ -1042,8 +1043,8 @@ reliafy ingest lives new_failures.csv --dataset DATASET_ID
 reliafy photo add IMG_*.jpg --to POSITION_ID   # Reliafy Maintenance users`}</Code>
       <ul className="api-list">
         <li><code>reliafy fit</code> never guesses what a flag column means: Reliafy reads 0 = failed, 1 = still running. If yours is 1 = failed, add <code>--c-invert</code>.</li>
-        <li>Reliafy Maintenance users also have <code>reliafy ingest readings</code> and <code>reliafy photo link|move|unlink</code>.</li>
-        <li><code>reliafy photo add</code> reports each file and exits non-zero if any failed.</li>
+        <li>Reliafy Maintenance users also have <code>reliafy ingest readings</code>, <code>reliafy photo link|move|unlink</code>, and <code>reliafy document add FILE.pdf --to ID</code> / <code>reliafy document get ID -o FILE.pdf</code> for PDFs.</li>
+        <li><code>reliafy photo add</code> and <code>reliafy document add</code> report each file and exit non-zero if any failed.</li>
       </ul>
     </div>
   );

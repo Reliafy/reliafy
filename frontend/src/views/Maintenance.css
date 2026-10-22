@@ -365,3 +365,49 @@ button.maint-toggle {
   padding: 0 0.3rem;
   font-weight: 600;
 }
+
+/* Documents: links, and PDFs kept here (opened in the viewer). */
+.maint-docs li {
+  overflow-wrap: anywhere;
+}
+
+.maint-doc-title {
+  text-align: left;
+}
+
+/* "Remove it?" asked in the row itself. */
+.maint-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.25rem;
+}
+
+.maint-pdf-meta {
+  margin-top: 0;
+}
+
+.maint-pdf-frame {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surf-2);
+}
+
+.maint-pdf-phone {
+  display: none;
+}
+
+/* Phones rarely show a PDF in a frame: the buttons open their own viewer. */
+@media (max-width: 600px) {
+  .maint-pdf-frame {
+    display: none;
+  }
+
+  .maint-pdf-phone {
+    display: block;
+  }
+}

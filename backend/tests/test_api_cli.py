@@ -33,7 +33,7 @@ def server(monkeypatch, tmp_path):
 
     from backend import config, db
     from backend.main import app
-    from backend.maintenance import mcp_tools, photos
+    from backend.maintenance import documents, mcp_tools, photos
     from backend.maintenance.service import PROJECTORS
     from backend.maintenance.store import GraphStore
     from backend.routers import ingest as ingest_router
@@ -49,6 +49,7 @@ def server(monkeypatch, tmp_path):
     monkeypatch.setattr(db, "_simulated", True)
     monkeypatch.setattr(router, "_store", GraphStore(":memory:", PROJECTORS))
     monkeypatch.setattr(router, "_photo_store", photos.FilePhotoStore(str(tmp_path / "photos")))
+    monkeypatch.setattr(router, "_document_store", documents.FileDocumentStore(str(tmp_path / "documents")))
     ingest_router._hits.clear()
     test_db.users.insert_one({"_id": UID, "email": "cli@example.org", "name": "CLI", "email_verified": True})
     test_db.users.insert_one({"_id": OTHER, "email": "o@example.org", "name": "O", "email_verified": True})
@@ -228,6 +229,34 @@ def test_cli_photo_heic_link_and_move(server, capsys):
     assert rf.call("maintenance_get", "position", id=b)["photos"] == []
     code, _, err = run(capsys, "photo", "link", photo_id)
     assert code == 1 and "--to" in err
+
+
+def test_cli_document_add_and_get(server, capsys):
+    from backend.tests.test_maintenance_documents import pdf
+
+    tmp = server["tmp"]
+    rf = Client()
+    pid = rf.call("maintenance_positions", "create", name="Pump A", position_class="Pump")["id"]
+    (tmp / "Pump manual.pdf").write_bytes(pdf())
+    (tmp / "notes.pdf").write_bytes(b"<html>not a pdf</html>")
+    code, out, _ = run(capsys, "document", "add", str(tmp / "Pump manual.pdf"), str(tmp / "notes.pdf"),
+                       "--to", pid, "--kind", "manual", "--json")
+    rows = json.loads(out)
+    assert code == 1 and [r["ok"] for r in rows] == [True, False] and "isn't a PDF" in rows[1]["detail"]
+    code, out, _ = run(capsys, "document", "add", str(tmp / "Pump manual.pdf"), "--class", "Pump",
+                       "--title", "Pump datasheet", "--kind", "datasheet")
+    assert code == 0 and "1 of 1 added" in out, out
+    docs = rf.call("maintenance_get", "position", id=pid)["documents"]
+    assert [(d["title"], d["kind"], d["stored"]) for d in docs] == [("Pump manual", "manual", True)]
+
+    code, out, _ = run(capsys, "document", "get", docs[0]["id"], "-o", str(tmp / "copy.pdf"), "--json")
+    assert code == 0 and json.loads(out)["saved_to"] == str(tmp / "copy.pdf")
+    assert (tmp / "copy.pdf").read_bytes() == pdf()
+    code, _, err = run(capsys, "document", "add", str(tmp / "Pump manual.pdf"))
+    assert code == 1 and "--to" in err
+    linked = rf.call("maintenance_attachments", "add_document", url="https://example.com/a.pdf", target_id=pid)
+    code, _, err = run(capsys, "document", "get", linked["id"])
+    assert code == 1 and "a link" in err
 
 
 class _OldServer(BaseHTTPRequestHandler):

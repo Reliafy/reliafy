@@ -11,6 +11,8 @@
     reliafy photo add IMG_01.jpg IMG_02.HEIC --to POSITION_ID
     reliafy photo link PHOTO_ID --to LOCATION_ID      # show it there too
     reliafy photo move PHOTO_ID --to POSITION_ID      # only there
+    reliafy document add manual.pdf --to ITEM_ID --kind manual
+    reliafy document get DOCUMENT_ID -o manual.pdf
     reliafy ingest usage fleet.csv --fleet FLEET_ID
     reliafy ingest readings readings.csv
 
@@ -37,7 +39,7 @@ from reliafy.client import Client, ReliafyError, ServerTooOld, _version
 
 SPEC_TTL_S = 24 * 3600
 BUILTINS = ("login", "logout", "whoami", "tools", "spec", "call", "push", "fit", "upload", "import", "photo",
-            "ingest", "help")
+            "document", "ingest", "help")
 
 
 # ---- output --------------------------------------------------------------------
@@ -470,6 +472,41 @@ def _photo_links(client: Client, ns) -> int:
     return 0
 
 
+def cmd_document(client: Client, ns) -> int:
+    """document add FILE.pdf … (kept on an item, a position or a class) and
+    document get ID (saved as a file)."""
+    if ns.verb == "get":
+        if len(ns.files) != 1:
+            raise ReliafyError("document get takes one document id.")
+        path = client.download_document(ns.files[0], ns.output)
+        render({"document_id": ns.files[0], "saved_to": path}, ns.json)
+        return 0
+    if bool(ns.to) == bool(ns.position_class):
+        raise ReliafyError("document add needs --to ITEM_OR_POSITION_ID or --class POSITION_CLASS (one of them).")
+    if ns.output:
+        raise ReliafyError("-o is for document get.")
+    files = _expand(ns.files)
+    failed = 0
+    results = []
+    for path in files:
+        try:
+            doc = client.add_document(path, ns.to, position_class=ns.position_class,
+                                      title=ns.title if len(files) == 1 else None, kind=ns.kind)
+            results.append({"file": path, "ok": True, "document_id": doc.get("id"), "detail": ""})
+        except (ReliafyError, OSError) as exc:
+            if isinstance(exc, ServerTooOld):
+                raise
+            failed += 1
+            results.append({"file": path, "ok": False, "document_id": None,
+                            "detail": str(getattr(exc, "detail", None) or exc)})
+    if ns.json:
+        render(results, True)
+    else:
+        table(results)
+        print(f"\n{len(files) - failed} of {len(files)} added.")
+    return 1 if failed else 0
+
+
 def cmd_ingest(client: Client, ns) -> int:
     if ns.what == "usage":
         if not ns.fleet:
@@ -491,7 +528,8 @@ def cmd_ingest(client: Client, ns) -> int:
 
 def builtin_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="reliafy", description="Reliafy from the command line: every tool action, files, photos and ingest.",
+        prog="reliafy", description="Reliafy from the command line: every tool action, files, photos, documents "
+                                    "and ingest.",
         epilog="Any tool action: reliafy <tool> <action> --arg value … (reliafy tools lists them; add --help).",
         formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     p.add_argument("--version", action="version", version=f"reliafy-client {_version()}")
@@ -547,6 +585,15 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--from", dest="from_id", help="unlink: where to take it off. move: only off this one "
                                                    "(default: off everywhere else).")
     sp.add_argument("--caption")
+    sp = add("document", cmd_document, "Keep PDFs on a maintenance item, position or position class, or save "
+                                       "one to a file.")
+    sp.add_argument("verb", choices=["add", "get"])
+    sp.add_argument("files", nargs="+", help="add: PDF files (globs work; at most 20 MB each). get: a document id.")
+    sp.add_argument("--to", help="add: the item or position id.")
+    sp.add_argument("--class", dest="position_class", help="add: a position class (instead of --to).")
+    sp.add_argument("--title", help="add: the title (one file; default: the file name).")
+    sp.add_argument("--kind", choices=["manual", "datasheet", "invoice", "drawing", "certificate", "other"])
+    sp.add_argument("-o", "--output", help="get: where to save it (default: its own file name).")
     sp = add("ingest", cmd_ingest, "Push usage, readings, measurements or life data from a CSV file.")
     sp.add_argument("what", choices=["usage", "readings", "measurements", "lives"])
     sp.add_argument("file")

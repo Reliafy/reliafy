@@ -217,7 +217,7 @@ the user once per crossing; at most 10 per fleet, own fleets only."""),
     "uploads": ("Sending files: the upload link, its fallbacks, inspecting and importing.", """\
 Files (BlockSim / Open-PSA / Galileo / RePyability diagrams, Excel workbooks, CSVs of failure times or \
 outages). Never read a file into your context to paste it while the upload link works.
-1. uploads create (purpose: rbd_import, excel, dataset or outage_log; filename): a single-use URL (15 minutes) \
+1. uploads create (purpose: rbd_import, excel, dataset, outage_log, or document for a PDF to keep; filename): a single-use URL (15 minutes) \
 and a ready curl PUT. Run it from a shell that can read the file.
 2. If the PUT can't connect or a proxy refuses the host (e.g. CONNECT 403), retry the same PUT once on \
 url_fallback (curl_fallback): the same link on reliafy.com, slower for large files, still unused after a \

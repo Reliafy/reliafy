@@ -80,7 +80,7 @@ from backend import config
 logger = logging.getLogger(__name__)
 
 # What an upload is for: the tool that will read it, and so its size cap.
-PURPOSES = ("rbd_import", "excel", "dataset", "outage_log")
+PURPOSES = ("rbd_import", "excel", "dataset", "outage_log", "document")
 
 # Cloud Run refuses an HTTP/1 request body over 32 MiB before it reaches the
 # app, so no upload may be larger than this, whatever the importer allows
@@ -157,6 +157,10 @@ def max_bytes_for(purpose: str, filename: str) -> int:
         cap = excel.MAX_FILE_BYTES
     elif purpose in ("dataset", "outage_log"):
         cap = excel.MAX_FILE_BYTES if _ext(filename) in _EXCEL_EXT else config.MAX_UPLOAD_BYTES
+    elif purpose == "document":
+        from backend.maintenance.documents import MAX_UPLOAD_BYTES as DOCUMENT_MAX
+
+        cap = DOCUMENT_MAX
     else:
         raise UploadError(f"purpose must be one of {', '.join(PURPOSES)}.")
     return min(cap, HARD_MAX_BYTES)
@@ -184,7 +188,10 @@ def create(db, uid: str, purpose: str, filename: str, size_bytes: Optional[int] 
         if size_bytes > cap:
             raise UploadError(
                 f"The file is {size_bytes / 1048576:.1f} MB; uploads for {purpose} are limited to "
-                f"{cap / 1048576:.0f} MB. Export just the part you need (one project, one sheet) and upload that.")
+                f"{cap / 1048576:.0f} MB. " + (
+                    "Make the PDF smaller (save it again with reduced size, or split it), or link to it with a web "
+                    "address instead." if purpose == "document" else
+                    "Export just the part you need (one project, one sheet) and upload that."))
     token = secrets.token_urlsafe(32)
     now = _now()
     doc = {
@@ -279,7 +286,8 @@ def status_refusal(doc: dict) -> tuple[int, str]:
 def next_step(purpose: Optional[str]) -> str:
     """What to call once the file has arrived."""
     tool = {"rbd_import": "uploads import_rbd", "excel": "uploads import_excel", "dataset": "datasets upload",
-            "outage_log": "rbd upload_outage_log"}.get(purpose or "", "the import")
+            "outage_log": "rbd upload_outage_log",
+            "document": "maintenance_attachments add_document"}.get(purpose or "", "the import")
     return f"Uploaded. Now call {tool} with this upload_id (get kind upload first to see sheets and columns)."
 
 
@@ -416,7 +424,7 @@ def write_part(db, upload_id: str, uid: str, index: int, data: bytes, last: bool
 
 def detect_format(head: bytes) -> str:
     """What the bytes are, from their first few KB (magic bytes, then text
-    shape): ``xlsx``, ``zip``, ``rsgz`` (gzip — a BlockSim pack), ``rsr``
+    shape): ``pdf``, ``xlsx``, ``zip``, ``rsgz`` (gzip — a BlockSim pack), ``rsr``
     (an Access/Jet database — a BlockSim project), ``xls`` (an OLE compound
     file: legacy Excel or an encrypted workbook), ``xml``, ``repyability``
     (RePyability JSON), ``galileo``,
@@ -424,6 +432,8 @@ def detect_format(head: bytes) -> str:
     from backend.services.rbd_import import blocksim, galileo, repyability
 
     head = head or b""
+    if head.startswith(b"%PDF-"):
+        return "pdf"
     if head.startswith(b"PK\x03\x04"):
         return "xlsx" if (b"xl/" in head or b"[Content_Types].xml" in head) else "zip"
     if head[:2] == b"\x1f\x8b":
@@ -530,6 +540,9 @@ def inspect(doc: dict, data: bytes) -> dict:
         return {"kind": "diagram_file", **preview_diagrams(data, doc.get("filename") or "")}
     if fmt in ("csv", "text"):
         return {"kind": "table", **_inspect_text(data)}
+    if fmt == "pdf":
+        return {"kind": "pdf", "note": "A PDF: keep it on a maintenance record with maintenance_attachments "
+                                       "add_document and this upload_id."}
     return {"kind": "unknown", "note": "Reliafy doesn't recognise this file's format."}
 
 

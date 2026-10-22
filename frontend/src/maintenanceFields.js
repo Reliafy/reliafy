@@ -77,3 +77,29 @@ export function costValue({ amount, currency, source, as_of: asOf }) {
   if (amount === "" || amount == null) return null;
   return { amount: Number(amount), currency: currency || "", source: source || "", as_of: asOf || null };
 }
+
+// PDFs kept in the workspace (not links): the most one can be, and what's wrong
+// with a chosen file before it's sent (null when nothing is). The server checks
+// again, by the bytes.
+export const MAX_DOCUMENT_MB = 20;
+
+export function documentFileProblem(file) {
+  if (!file) return "Choose a PDF file.";
+  const name = String(file.name || "");
+  if (file.type !== "application/pdf" && !/\.pdf$/i.test(name)) {
+    return "Only PDF files can be kept here. For anything else, add a link instead.";
+  }
+  if (!file.size) return "That file is empty. Choose the PDF again.";
+  if (file.size > MAX_DOCUMENT_MB * 1024 * 1024) {
+    return `That PDF is ${(file.size / 1048576).toFixed(1)} MB; the most is ${MAX_DOCUMENT_MB} MB. `
+      + "Save it again with a smaller size, or add a link instead.";
+  }
+  return null;
+}
+
+// A size people read: "820 KB", "3.4 MB".
+export function fileSizeText(bytes) {
+  if (!(bytes >= 0)) return "";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
