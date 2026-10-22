@@ -1037,8 +1037,8 @@ def _nonrepairable_body(script: _Script, graph, resolve_model,
                         resolve_subsystem) -> str:
     L = script.lines
     L.append("# " + "-" * 75)
-    L.append("# Blocks: one non-repairable model per block, built exactly as Reliafy "
-             "builds them.")
+    L.append("# Blocks: one non-repairable model per block, built exactly as")
+    L.append("# Reliafy builds them.")
     L.append("# " + "-" * 75)
     s = script.diagram(graph, frozenset(), top=True)
     script.imports.add("NonRepairableRBD")
@@ -1370,9 +1370,9 @@ def _repairable_body(script: _Script, graph) -> str:
 
     L = script.lines
     L.append("# " + "-" * 75)
-    L.append("# Blocks: each component fails by its non-repairable model and is "
-             "restored by its")
-    L.append("# repair-time model (a NonRepairable component in RePyability).")
+    L.append("# Blocks: each component fails by its non-repairable model and")
+    L.append("# is restored by its repair-time model (a NonRepairable")
+    L.append("# component in RePyability).")
     L.append("# " + "-" * 75)
     script.imports.update({"NodeState", "NonRepairable", "RepairableRBD"})
     nodes = graph.get("nodes") or []
