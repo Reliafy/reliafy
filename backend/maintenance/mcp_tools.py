@@ -284,7 +284,7 @@ WORK_ORDERS: Table = {
     "cancel": ("work_order_id", "reason", """Cancel one that won't be done (a duplicate, raised by mistake);
         reason kept as cancel_reason. Work that was done: close."""),
     "generate": ("", "horizon_days", """Open a preventive work order for every task due within horizon_days
-        (default 30, at most 366) that has none open, on the task's subject."""),
+        (default 30, at most 366) that has none open, on the task's subject; skipped: any it couldn't, and why."""),
     "labour": ("work_order_id hours", "who rate on note", "Hours worked, by whom, at an hourly rate if known."),
     "part_used": ("work_order_id", "part quantity unit_cost part_number note part_id from_location_id", """A part
         or consumable used: free text (part) or a catalogue part (part_id, from the work order's
@@ -1020,7 +1020,7 @@ def register() -> None:
         if action == "cancel":
             return run(m.cancel_work_order, work_order_id, reason or "")
         if action == "generate":
-            return {"work_orders": run(m.generate_work_orders, max(0, min(_d(horizon_days, 30), 366)))}
+            return run(m.generate, max(0, min(_d(horizon_days, 30), 366)))
         if action == "labour":
             return run(m.log_labour, work_order_id, hours, who or "", rate, on, note or "")
         if action == "part_used":

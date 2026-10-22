@@ -26,7 +26,7 @@ import io
 import re
 from datetime import date
 
-from backend.maintenance.service import MAX_ITEMS, MAX_POSITIONS, Invalid, Maintenance, new_id
+from backend.maintenance.service import MAX_ITEMS, MAX_POSITIONS, Invalid, Maintenance, _text, new_id
 
 MAX_ROWS = 5000
 MAX_COLS = 50
@@ -164,6 +164,16 @@ def parse(rows: list[dict]) -> list[dict]:
             path = _path(get("position"))
             if not path:
                 raise Invalid(f"Row {i}: the position is blank.")
+            # The same limits as adding each by hand, checked before anything is written.
+            try:
+                for part in path:
+                    _text(part, "position's name")
+                for f, what in (("class", "class"), ("item", "item's name"), ("serial", "serial"),
+                                ("manufacturer", "manufacturer"), ("model", "model"),
+                                ("part_number", "part number"), ("failure_mode", "failure mode")):
+                    _text(get(f), what)
+            except Invalid as err:
+                raise Invalid(f"Row {i}: {err}") from None
             fitted, removed = _date(get("fitted"), "fitted", i), _date(get("removed"), "removed", i)
             item = get("item")
             if (fitted or removed) and not item:

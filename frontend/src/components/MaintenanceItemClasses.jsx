@@ -14,6 +14,7 @@ import {
   ATTRIBUTE_KINDS, attributeRows, attributeText, attributeValueText, attributesBody, flattenClasses, importSummary,
   subtreeIds, viaText,
 } from "../maintenanceItemClasses.js";
+import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 
 // ---- pickers ---------------------------------------------------------------------------
 
@@ -359,9 +360,9 @@ function NewClassModal({ parentId, classes, onClose, onDone }) {
   const [f, setF] = useState({ name: "", parent_id: parentId, code: "", level: "", description: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title="New item class" submitLabel="Create" canSubmit={!!f.name.trim()} onClose={onClose}
+    <FormModal title="New item class" submitLabel="Create" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose}
                onSubmit={async () => onDone(await createItemClass(f))}>
-      <Field label="Name"><input autoFocus value={f.name} placeholder="e.g. Centrifugal pump" onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name} hint={DESCRIPTION_HINT}><input autoFocus value={f.name} placeholder="e.g. Centrifugal pump" onChange={set("name")} /></Field>
       <Field label="Inside"><ClassPicker classes={classes} value={f.parent_id} emptyLabel="Nothing (top level)"
                                          onChange={(v) => setF({ ...f, parent_id: v })} /></Field>
       <Field label="Code (optional: your own, e.g. to map to a standard you hold)"><input value={f.code} onChange={set("code")} /></Field>
@@ -375,9 +376,9 @@ function EditClassModal({ c, onClose, onDone }) {
   const [f, setF] = useState({ name: c.name, code: c.code, level: c.level, description: c.description });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title={`Edit ${c.name}`} submitLabel="Save" canSubmit={!!f.name.trim()} onClose={onClose}
+    <FormModal title={`Edit ${c.name}`} submitLabel="Save" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose}
                onSubmit={async () => onDone(await updateItemClass(c.id, f))}>
-      <Field label="Name"><input value={f.name} onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name} hint={DESCRIPTION_HINT}><input value={f.name} onChange={set("name")} /></Field>
       <Field label="Code"><input value={f.code} onChange={set("code")} /></Field>
       <Field label="Level"><input value={f.level} onChange={set("level")} /></Field>
       <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>

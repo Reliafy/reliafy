@@ -12,6 +12,7 @@ import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { partChoices, stockText } from "../maintenanceSpares.js";
 import { actionKinds, itemAtText, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
+import { tooLong } from "../maintenanceText.js";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -301,9 +302,9 @@ function EditWorkOrder({ wo, onClose, onDone }) {
   const [planned, setPlanned] = useState(wo.planned_for || "");
   const [trade, setTrade] = useState(wo.trade || "");
   return (
-    <FormModal title="Edit work order" submitLabel="Save" canSubmit={!!title.trim()} onClose={onClose}
+    <FormModal title="Edit work order" submitLabel="Save" canSubmit={!!title.trim() && !tooLong(title)} onClose={onClose}
                onSubmit={async () => onDone(await updateWorkOrder(wo.id, { title, due, assignee, planned_for: planned, trade }))}>
-      <Field label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+      <Field label="Title" text={title} hint="put the detail in the notes"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
       <Field label="Who may do it: trade, licence or competency"><input value={trade} placeholder="e.g. Licensed electrician"
              onChange={(e) => setTrade(e.target.value)} /></Field>
       <Field label="Assigned to"><input value={assignee} placeholder="a name" onChange={(e) => setAssignee(e.target.value)} /></Field>

@@ -284,6 +284,16 @@ def test_maintenance_tools_only_for_its_users(maint):
     assert not any("/maintenance_" in p for p in spec_b["paths"])
 
 
+def test_maintenance_names_over_the_limit_say_what_to_do(maint):
+    pos = maint.post("/api/v1/maintenance_positions/create", {"name": "Filter"}).json()
+    r = maint.post("/api/v1/maintenance_tasks/create", {"position_id": pos["id"], "name": "x" * 397, "interval": 1})
+    assert r.status_code >= 400
+    assert "The task's name is at most 200 characters; this one is 397. Shorten it and put the detail in the " \
+           "task's instructions." in r.text
+    r = maint.post("/api/v1/maintenance_work_orders/generate", {})
+    assert r.status_code == 200 and r.json()["skipped"] == [] and r.json()["work_orders"] == []
+
+
 def _jpeg() -> bytes:
     img = Image.new("RGB", (320, 240), (200, 30, 30))
     exif = Image.Exif()

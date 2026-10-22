@@ -52,6 +52,7 @@ import { PART_ROLES, roleLabel, stockText } from "../maintenanceSpares.js";
 import { TasksCard } from "../components/MaintenanceTasks.jsx";
 import { ConditionsCard, ConnectionConditions } from "../components/MaintenanceConditions.jsx";
 import "./Maintenance.css";
+import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -441,9 +442,9 @@ function NewWorkOrderModal({ positionId, onClose, onDone }) {
   const [type, setType] = useState("corrective");
   const [due, setDue] = useState("");
   return (
-    <FormModal title="New work order" submitLabel="Open work order" canSubmit={!!title.trim()} onClose={onClose}
+    <FormModal title="New work order" submitLabel="Open work order" canSubmit={!!title.trim() && !tooLong(title)} onClose={onClose}
                onSubmit={async () => onDone(await openWorkOrder({ position_id: positionId, title, type, due: due || null }))}>
-      <Field label="What needs doing"><input autoFocus value={title} placeholder="e.g. No hot water" onChange={(e) => setTitle(e.target.value)} /></Field>
+      <Field label="What needs doing" text={title} hint="add the detail to the notes once it's open"><input autoFocus value={title} placeholder="e.g. No hot water" onChange={(e) => setTitle(e.target.value)} /></Field>
       <Field label="Type">
         <select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="corrective">Corrective (something's wrong)</option>
@@ -486,9 +487,9 @@ function EditPositionModal({ p, onClose, onDone }) {
   const [f, setF] = useState({ name: p.name, tag: p.tag || "", position_class: p.position_class || "", description: p.description || "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title="Edit position" submitLabel="Save" canSubmit={!!f.name.trim()} onClose={onClose}
+    <FormModal title="Edit position" submitLabel="Save" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenancePosition(p.id, f))}>
-      <Field label="Name"><input value={f.name} onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name} hint={DESCRIPTION_HINT}><input value={f.name} onChange={set("name")} /></Field>
       <Field label="Tag"><input value={f.tag} onChange={set("tag")} /></Field>
       <Field label="Class (to compare like positions)"><input value={f.position_class} onChange={set("position_class")} /></Field>
       <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>
@@ -874,7 +875,7 @@ function PointModal({ target, onClose, onDone }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const counter = f.kind === "counter";
   return (
-    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && (f.source === "manual" || !!f.tag.trim())}
+    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && !tooLong(f.name) && (f.source === "manual" || !!f.tag.trim())}
                onClose={onClose} onSubmit={async () => onDone(await (target.kind === "item" ? addItemMeasurementPoint : addMeasurementPoint)(target.id, {
                  ...f, alarm_above: counter ? null : f.alarm_above, alarm_below: counter ? null : f.alarm_below,
                }))}>
@@ -884,7 +885,7 @@ function PointModal({ target, onClose, onDone }) {
           <option value="counter">Counts use (run hours, cycles, km)</option>
         </select>
       </Field>
-      <Field label="Name"><input value={f.name} placeholder={counter ? "e.g. Hour meter" : "e.g. Vibration"} onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name}><input value={f.name} placeholder={counter ? "e.g. Hour meter" : "e.g. Vibration"} onChange={set("name")} /></Field>
       {counter ? (
         <Field label="Counts"><select value={f.unit} onChange={set("unit")}>
           <option value="">Choose…</option>

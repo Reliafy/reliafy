@@ -1012,3 +1012,23 @@ def test_product_structure_over_mcp(env):
     assert positions["dry_run"] and positions["counts"]["create"] == 3
     assert not made["dry_run"] and made["counts"]["create"] == 3
     assert stray.is_error and "ref" in stray.content[0].text
+
+
+def test_an_over_long_name_is_refused_with_what_to_do_and_generate_lists_skipped(env):
+    """The same limit and message as the app; generate's result has a skipped list."""
+
+    async def flow(client):
+        pid = _ok(await _do(client, "maintenance_positions", "create", name="Filter"))["id"]
+        refused = await _do(client, "maintenance_tasks", "create", position_id=pid, name="x" * 397, interval=1)
+        titled = await _do(client, "maintenance_work_orders", "open", position_id=pid, title="y" * 250)
+        _ok(await _do(client, "maintenance_tasks", "create", position_id=pid, name="Check", interval=1,
+                      last_done="2020-01-01"))
+        made = _ok(await _do(client, "maintenance_work_orders", "generate"))
+        return refused, titled, made
+
+    refused, titled, made = _session(env["token"], flow)
+    assert refused.is_error and (
+        "The task's name is at most 200 characters; this one is 397. Shorten it and put the detail in the "
+        "task's instructions.") in refused.content[0].text
+    assert titled.is_error and "at most 200 characters; this one is 250" in titled.content[0].text
+    assert made["skipped"] == [] and len(made["work_orders"]) == 1

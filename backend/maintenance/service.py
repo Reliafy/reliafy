@@ -42,9 +42,11 @@ reading is dated by the day it falls on there. Unset, that's the server's zone
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import time
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
@@ -53,6 +55,8 @@ from backend import config
 from backend.maintenance.store import GraphStore, new_id
 from backend.services import time_zones
 from backend.services.rcm import _norm_unit
+
+logger = logging.getLogger(__name__)
 
 # Outcomes that schedule a task; the others (run to failure, redesign,
 # accept) give a failure mode with no task.
@@ -153,16 +157,84 @@ def _day(value, what: str = "date", today: str | None = None) -> str:
     return day
 
 
+# What to do with text that's too long, by the field it's for: a name or a title
+# is a short label, and the detail has a home of its own.
+_SHORTEN = {
+    "task's name": "Shorten it and put the detail in the task's instructions.",
+    "title": "Shorten it and put the detail in the notes.",
+    "position's name": "Shorten it and put the detail in the description.",
+    "copy's name": "Shorten it and put the detail in the description.",
+    "location's name": "Shorten it and put the detail in the description.",
+    "item's name": "Shorten it and put the detail in the item's notes.",
+    "item class's name": "Shorten it and put the detail in the description.",
+    "condition's name": "Shorten it and put the detail in the description.",
+}
+
+
+def _too_long(what: str, length: int, limit: int) -> str:
+    """The message for text over its limit: the limit, how long it is, and what to do."""
+    return f"The {what} is at most {limit} characters; this one is {length}. {_SHORTEN.get(what, 'Shorten it.')}"
+
+
 def _text(value, what: str, required: bool = False, max_len: int | None = None) -> str:
     """Text from a request: trimmed, and at most ``max_len`` characters (by
-    default SHORT_TEXT, or LONG_TEXT for descriptions, notes and the like)."""
+    default SHORT_TEXT, or LONG_TEXT for descriptions, notes and the like).
+    The one check every name, title and note goes through."""
     text = str(value or "").strip()
     if required and not text:
         raise Invalid(f"The {what} is required.")
     limit = max_len or (LONG_TEXT if what in _LONG_FIELDS else SHORT_TEXT)
     if len(text) > limit:
-        raise Invalid(f"The {what} is at most {limit} characters.")
+        raise Invalid(_too_long(what, len(text), limit))
     return text
+
+
+def _joined(ch: str) -> bool:
+    """A character that belongs with the one before it (an accent, a variation
+    selector, a skin tone, an emoji tag or joiner): never cut just before it."""
+    return bool(unicodedata.combining(ch)) or ch in "\u200d\ufe0e\ufe0f" \
+        or 0x1F3FB <= ord(ch) <= 0x1F3FF or 0xE0020 <= ord(ch) <= 0xE007F
+
+
+def shortened(text, limit: int = SHORT_TEXT) -> tuple[str, bool]:
+    """Text made to fit ``limit`` characters where it's derived (a work order's title
+    from its task's name, a task's name from an RCM decision), so it never fails
+    for being too long. Text that fits comes back as it is. Longer text is cut at
+    the last word boundary that leaves room for a trailing "…" (at a hard cut when
+    a single word runs past half the limit), never inside a character with its
+    accents, and on one line. Returns (text, whether it was cut)."""
+    text = str(text or "").strip()
+    if len(text) <= limit:
+        return text, False
+    room = limit - 1  # the "…"
+    cut = room
+    if not text[room].isspace():
+        space = max((i for i in range(room - 1, -1, -1) if text[i].isspace()), default=-1)
+        if space >= room // 2:
+            cut = space
+    while 0 < cut and (_joined(text[cut]) or text[cut - 1] == "\u200d"):
+        cut -= 1
+    head = " ".join(text[:cut].split()).rstrip(",;:-–—(/").rstrip()  # one line
+    return (head or text[:cut]) + "…", True
+
+
+def derived_title(name, room: int = LONG_TEXT) -> tuple[str, str]:
+    """A title made from a name, and the line for the top of its notes: the full
+    name when the title had to be shortened (at most ``room`` characters), else ""."""
+    title, cut = shortened(name)
+    return title, shortened(name, room)[0] if cut else ""
+
+
+def _with_first(line: str, text: str, limit: int = LONG_TEXT) -> str:
+    """``line`` at the top of ``text`` (a blank line between), within ``limit``:
+    the line is shortened to make room, never the text after it."""
+    text = str(text or "").strip()
+    if not line:
+        return text
+    if not text:
+        return shortened(line, limit)[0]
+    room = limit - len(text) - 2
+    return text if room < 2 else f"{shortened(line, room)[0]}\n\n{text}"
 
 
 def _number(value, what: str, low: float, high: float):
@@ -1670,8 +1742,8 @@ class Maintenance:
         """Change a position's name, tag, class or description, move it (parent_id), or
         set where it is (location_id; None or "" clears it: it's where its parent is)."""
         self._get(id, "Position")
-        allowed = {k: _text(v, k) for k, v in changes.items()
-                   if k in ("name", "tag", "position_class", "description") and v is not None}
+        what = {"name": "position's name", "tag": "tag", "position_class": "class", "description": "description"}
+        allowed = {k: _text(v, what[k]) for k, v in changes.items() if k in what and v is not None}
         if "name" in allowed and not allowed["name"]:
             raise Invalid("The position's name is required.")
         if "parent_id" in changes:
@@ -1749,7 +1821,7 @@ class Maintenance:
             plan.append((src, new_pid, label, parent, modes, tasks, listings, self._own_location(src["id"])))
             for child in sorted(self.s.inn(self.org, src["id"], "PART_OF"), key=lambda c: c["name"].lower()):
                 if child["label"] == "Position":
-                    read(child, new_id(), child["name"], new_pid)
+                    read(child, new_id(), shortened(child["name"])[0], new_pid)
 
         new = new_id()
         read(source, new, new_name, parent_id or None)
@@ -1773,14 +1845,18 @@ class Maintenance:
                 })
             for task in tasks:
                 mitigates = self.s.out(self.org, task["id"], "MITIGATES")
+                # A name longer than names may be now (from before the limit) is
+                # shortened on the copy, the whole of it kept in the instructions.
+                name, full = derived_title(task.get("name"))
                 self._emit("task.added", {
                     "id": new_id(), "position_id": pid,
                     "failure_mode_id": mitigates and mode_ids.get(mitigates[0]["id"]),
                     "start": today,
-                    **{k: task.get(k) for k in ("name", "outcome", "interval", "unit", "rcm_mode_id", "study_id")},
+                    **{k: task.get(k) for k in ("outcome", "interval", "unit", "rcm_mode_id", "study_id")},
                     # Not point_id: the copy has no measurement points yet.
                     **{k: task[k] for k in _TASK_EXTRAS if k in task and k != "point_id"},
-                })
+                    "name": name,
+                } | ({"instructions": _with_first(full, task.get("instructions"))} if full else {}))
             for listing in listings:
                 self._emit("position_part.listed", {
                     "id": new_id(), "position_id": pid, "part_id": self.s.out(self.org, listing["id"], "LISTS")[0]["id"],
@@ -2278,7 +2354,12 @@ class Maintenance:
                     outcome = decision.get("outcome")
                     if outcome not in SCHEDULED_OUTCOMES or not decision.get("interval"):
                         continue
-                    name = decision.get("task") or f"{SCHEDULED_OUTCOMES[outcome]}: {mode.get('text', '')}"
+                    # The decision's task is free text, often a paragraph: the task's name is
+                    # its opening words, and the whole of it goes in the instructions.
+                    said = (str(decision.get("task") or "").strip()
+                            or f"{SCHEDULED_OUTCOMES[outcome]}: {mode.get('text', '')}")
+                    name, cut = shortened(said)
+                    full = shortened(said, LONG_TEXT)[0] if cut else ""
                     unit = _norm_unit(decision.get("interval_unit")) or "days"
                     interval = _interval(decision["interval"], unit, f"interval for {str(name)[:80]}")
                     existing = tasks.get(mode["id"])
@@ -2287,11 +2368,18 @@ class Maintenance:
                             "id": new_id(), "position_id": position_id, "failure_mode_id": fm_id,
                             "name": name, "outcome": outcome, "interval": interval, "unit": unit,
                             "start": today, "rcm_mode_id": mode["id"], "study_id": study.id,
-                        })
+                        } | ({"instructions": full} if full else {}))
                         added_tasks += 1
                     else:
                         changes = {k: v for k, v in (("name", name), ("interval", interval), ("unit", unit),
                                                      ("outcome", outcome)) if existing.get(k) != v}
+                        # The full text replaces instructions that are empty or an earlier
+                        # study text (the old name was cut from them); never your own.
+                        had = (existing.get("instructions") or "").strip()
+                        old = str(existing.get("name") or "")
+                        stem = old.removesuffix("…").strip() if old.endswith("…") or len(old) > SHORT_TEXT else ""
+                        if full and had != full and (not had or (stem and had.startswith(stem))):
+                            changes["instructions"] = full
                         if changes:
                             self._emit("task.updated", {"id": existing["id"], "changes": changes})
                             updated_tasks += 1
@@ -2300,9 +2388,9 @@ class Maintenance:
 
     def position_from_rcm(self, study, parent_id=None) -> dict:
         """A new position named for the study's system, with its tasks."""
-        name = (study.system or "").strip() or study.name
-        position = self.create_position(name, parent_id=parent_id,
-                                        description=f"From the RCM study “{study.name}”.")
+        name, full = derived_title((study.system or "").strip() or study.name)
+        made_from = f"From the RCM study “{shortened(study.name)[0]}”."
+        position = self.create_position(name, parent_id=parent_id, description=_with_first(full, made_from))
         result = self.apply_rcm(position["id"], study)
         return {**result, "position": self.position(position["id"])}
 
@@ -3236,7 +3324,8 @@ class Maintenance:
         pid = new_id()
         self._emit("point.added", {
             "id": pid, **on, "kind": kind, "source": source, "tag": tag, "unit": unit,
-            "name": _text(name, "name") or (f"{unit.capitalize()} counter" if kind == "counter" else "Condition"),
+            "name": _text(name, "point's name")
+            or (f"{unit.capitalize()} counter" if kind == "counter" else "Condition"),
             "alarm_above": above, "alarm_below": below, "on": self.today()})
         return self.point(pid)
 
@@ -3244,7 +3333,7 @@ class Maintenance:
         point = self._get(point_id, "MeasurementPoint")
         changes = {}
         if name is not None:
-            changes["name"] = _text(name, "name", required=True)
+            changes["name"] = _text(name, "point's name", required=True)
         if alarm_above is not ...:
             changes["alarm_above"] = self._amount_or_none(alarm_above)
         if alarm_below is not ...:
@@ -3381,12 +3470,12 @@ class Maintenance:
         wid = new_id()
         on = {"position_id": position["id"]} if position["label"] == "Position" else \
             {"subject": {"kind": position["label"].lower(), "id": position["id"]}}
+        title, full = derived_title(f"{point['name']} {value:g}{(' ' + point['unit']) if point.get('unit') else ''}: "
+                                    f"{'above' if status == 'high' else 'below'} the {limit:g} alarm limit")
         self._emit("work_order.opened", {
-            "id": wid, "number": self._next_number(), "type": "inspection", **on,
-            "title": f"{point['name']} {value:g}{(' ' + point['unit']) if point.get('unit') else ''}: "
-                     f"{'above' if status == 'high' else 'below'} the {limit:g} alarm limit",
-            "task_id": None, "due": day, "notes": "Raised by a reading past an alarm limit.", "on": day,
-            "alarm_point_id": point_id})
+            "id": wid, "number": self._next_number(), "type": "inspection", **on, "title": title,
+            "task_id": None, "due": day, "notes": _with_first(full, "Raised by a reading past an alarm limit."),
+            "on": day, "alarm_point_id": point_id})
         return {"id": wid, "point": point["name"], "position": position["name"]}
 
     def void_reading(self, reading_id: str, reason) -> dict:
@@ -3630,7 +3719,7 @@ class Maintenance:
         rows = []
         for position, _, _ in self._positions_at(self._location_ids_in(location_id)):
             path = " › ".join([a["name"] for a in self._position_path(position["id"])] + [position["name"]])
-            rows.append({"position_id": position["id"], "text": path[:SHORT_TEXT]})
+            rows.append({"position_id": position["id"], "text": shortened(path)[0]})
         return sorted(rows, key=lambda r: r["text"].lower())[:MAX_LOCATION_POSITIONS]
 
     def open_work_order(self, position_id: str | None, title, type="corrective", task_id=None, due=None,
@@ -3640,8 +3729,14 @@ class Maintenance:
         From a task with no subject given, the task's. trade: who may do the work ("licensed
         electrician"); from a task, the task's trade unless one is given. include_positions
         (a location's work order): a checklist line for each position there, to walk down
-        (by default, as the task says)."""
+        (by default, as the task says).
+
+        From a task with no title given (or the task's own name), the title is the task's
+        name, shortened to fit when it's long, with the full name at the top of the notes."""
         task = self._get(task_id, "Task") if task_id else None
+        if task and str(title or "").strip() in ("", str(task.get("name") or "").strip()):
+            title, full = derived_title(task.get("name") or "Task")
+            notes = _with_first(full, _text(notes, "notes"))
         if task and not any((position_id, item_id, location_id)):
             subject = _subject(self.s, self.org, task)
             kind = subject["label"].lower()
@@ -3665,16 +3760,34 @@ class Maintenance:
           | ({"round": self._round(node["id"])} if include_positions else {}))
         return self.work_order(wid)
 
-    def generate_work_orders(self, horizon_days: int = 30) -> list[dict]:
+    def generate(self, horizon_days: int = 30) -> dict:
         """A work order for every task due within the horizon that has none open, on the
-        task's subject: its position, its item (wherever it is) or its location."""
-        made = []
+        task's subject: its position, its item (wherever it is) or its location.
+
+        Each task stands alone: one that can't have its work order is skipped, and the
+        others still get theirs. Returns {work_orders, skipped: [{task: {id, name}, why}]}.
+        A request that can't be done as asked (Invalid) is the workspace's to fix and is
+        only reported; anything else is also logged as an error, for us to look at."""
+        made, skipped = [], []
         for task in self.due_tasks(horizon_days):
             if task["open_work_order"] or not task.get("subject"):
                 continue
-            made.append(self.open_work_order(None, task["name"], type="preventive", task_id=task["id"],
-                                             due=task["next_due"]))
-        return made
+            try:
+                made.append(self.open_work_order(None, None, type="preventive", task_id=task["id"],
+                                                 due=task["next_due"]))
+            except Invalid as err:
+                logger.warning("maintenance: no work order for task %s in %s: %s", task["id"], self.org, err)
+                skipped.append({"task": {"id": task["id"], "name": shortened(task["name"])[0]}, "why": str(err)})
+            except Exception:  # noqa: BLE001 - one task's trouble mustn't stop the others
+                logger.exception("maintenance: work order for task %s in %s failed", task["id"], self.org)
+                skipped.append({"task": {"id": task["id"], "name": shortened(task["name"])[0]},
+                                "why": "Something went wrong opening its work order. We've been told; "
+                                       "the other tasks went ahead."})
+        return {"work_orders": made, "skipped": skipped}
+
+    def generate_work_orders(self, horizon_days: int = 30) -> list[dict]:
+        """The work orders generate() opened (its skipped tasks aside)."""
+        return self.generate(horizon_days)["work_orders"]
 
     def _work_position(self, subject: dict) -> str | None:
         """The position a work order's work is done at: its own, or for an item's, the
@@ -3828,7 +3941,8 @@ class Maintenance:
         item = self._get(item_id, "Item")
         if changes.get("notes") is not None and str(changes["notes"]).strip() == (item.get("notes") or ""):
             changes.pop("notes")  # unchanged (a form sending everything back)
-        out = {k: _text(v, k) for k, v in changes.items() if k in self.ITEM_FIELDS and v is not None}
+        out = {k: _text(v, "item's name" if k == "name" else k) for k, v in changes.items()
+               if k in self.ITEM_FIELDS and v is not None}
         for key, check in self.ITEM_DETAILS.items():
             if key in changes:
                 value = check(changes[key], self.today())

@@ -48,6 +48,7 @@ import {
   FORECAST_PERIODS, horizonText, money, moneyRange, periodLabels, rangeText, spareCover,
 } from "../maintenanceForecast.js";
 import "./Maintenance.css";
+import { tooLong } from "../maintenanceText.js";
 
 const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
 
@@ -126,9 +127,9 @@ export function NewLocationModal({ locations, parentId = null, onClose, onDone }
   const [name, setName] = useState("");
   const [parent, setParent] = useState(parentId || "");
   return (
-    <FormModal title="New location" submitLabel="Create" canSubmit={!!name.trim()} onClose={onClose}
+    <FormModal title="New location" submitLabel="Create" canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
                onSubmit={async () => onDone(await createMaintenanceLocation({ name, parent_id: parent || null }))}>
-      <Field label="Name"><input autoFocus value={name} placeholder="e.g. Laundry, Garage, Store A" onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Name" text={name}><input autoFocus value={name} placeholder="e.g. Laundry, Garage, Store A" onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Inside">
         <select value={parent} onChange={(e) => setParent(e.target.value)}>
           <option value="">None (top level)</option>
@@ -283,9 +284,9 @@ function RenameLocation({ loc, onClose, onDone }) {
   const [name, setName] = useState(loc.name);
   const [description, setDescription] = useState(loc.description || "");
   return (
-    <FormModal title="Rename location" submitLabel="Save" canSubmit={!!name.trim()} onClose={onClose}
+    <FormModal title="Rename location" submitLabel="Save" canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenanceLocation(loc.id, { name, description }))}>
-      <Field label="Name"><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Name" text={name}><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Description"><input value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
     </FormModal>
   );
