@@ -87,6 +87,7 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
         "n_columns": len(dataset.columns or []),
         "n_models": n_models,
         "checksum": dataset.checksum,
+        **datasets_service.dataset_tags(dataset),
         "created_at": dataset.created_at.isoformat(),
         "is_sample": samples_service.is_sample(dataset.owner_id),
         "read_only": not access_service.can_write(ctx, dataset.owner_id),
@@ -140,11 +141,12 @@ def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acc
     shared_by = shares_service.shared_by_map(session, ctx.uid, "datasets") if ctx.is_personal else {}
     # Models of every kind fitted to each dataset ("Used by N models").
     counts = datasets_service.dependent_counts(session, ctx.read_owners, ctx.hidden)
+    datasets = datasets_service.list_datasets(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
     return {
         "datasets": [
             {**_dataset_summary(d, ctx, n_models=counts.get(d.id, 0)),
              **({"shared_by": shared_by[d.id]} if d.id in shared_by else {})}
-            for d in datasets_service.list_datasets(session, ctx.list_owners, ctx.hidden, shared=set(shared_by))
+            for d in datasets
         ]
     }
 

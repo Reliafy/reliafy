@@ -1,4 +1,4 @@
-"""Condition-based risk models (joint models of readings and failures) API.
+"""Condition monitoring models (joint models of readings and failures) API.
 
 Saved in ``models`` with ``kind: "joint"`` (see ``backend.services.joint``).
 The fit is Pro and heavy: with the compute queue configured it answers 202
@@ -78,7 +78,7 @@ def check(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx =
 
 @router.post("/joint/models")
 def fit_model(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """Fit and save a condition-based risk model (Pro). ``body``:
+    """Fit and save a condition monitoring model (Pro). ``body``:
     ``name``, ``lifetimes_dataset_id``, ``readings_dataset_id``, ``mapping``
     ``{id, x | xl+xr, c, tl?}``, ``readings_mapping`` ``{id, age, value}``,
     ``covariates``, ``hazard_covariates?``, ``path_covariates?`` (a list, or

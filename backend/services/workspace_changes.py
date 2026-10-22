@@ -73,7 +73,7 @@ COLLECTIONS = {
 
 # Documents in ``models`` that aren't life models (``kind``): their own label and page.
 MODEL_KINDS = {
-    "joint": ("Condition-based risk model", "/modelling/joint/"),
+    "joint": ("Condition monitoring model", "/modelling/joint/"),
 }
 
 

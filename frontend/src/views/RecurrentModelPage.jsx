@@ -48,7 +48,7 @@ export default function RecurrentModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Recurrent events", to: "/modelling/recurrent" }]}
+        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Repairable models", to: "/modelling/recurrent" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}</>}

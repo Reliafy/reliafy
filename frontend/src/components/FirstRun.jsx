@@ -111,10 +111,10 @@ export function StartHere({ info, sampleModelId = null }) {
       </div>
       <p className="first-run-more">
         Other models:{" "}
-        <Link to="/modelling/recurrent/new">Recurrent events</Link> ·{" "}
+        <Link to="/modelling/recurrent/new">Repairable models</Link> ·{" "}
         <Link to="/modelling/alt/new">Accelerated life</Link> ·{" "}
         <Link to="/modelling/degradation">Degradation</Link> ·{" "}
-        <Link to="/modelling/joint/new">Condition-based risk</Link>
+        <Link to="/modelling/joint/new">Condition monitoring</Link>
       </p>
       {first && (
         <p className="first-run-more">

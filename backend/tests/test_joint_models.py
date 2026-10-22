@@ -1,4 +1,4 @@
-"""Condition-based risk: joint models of readings and failures (SurPyval's
+"""Condition monitoring: joint models of readings and failures (SurPyval's
 ``JointPH``), saved as models of kind ``joint``, fitted as a compute job,
 and used as non-repairable RBD blocks (RePyability's ``JointNode``).
 
@@ -349,3 +349,20 @@ def test_an_rbd_with_a_saved_joint_model_analyses_and_refuses_exports(client):
     assert js.status_code == 422 and "condition-based (joint) model" in js.json()["detail"]
     py = client.get(f"/api/rbds/{rid}/export.py")
     assert py.status_code == 200 and "condition-based block" in py.text and "JointNode" in py.text
+
+
+def test_one_table_of_readings_and_outcomes_is_both_inputs(client):
+    client.act_as(PRO)
+    L, R = fleet(n=40)
+    last = R.groupby("unit")["age"].transform("max")
+    one = R.merge(L[["unit", "running"]], on="unit")
+    one["outcome"] = one["running"].where(one["age"] == last.reindex(one.index).values)
+    one = one[["unit", "age", "value", "outcome"]]
+    pasted = client.post("/api/datasets/paste", json={"name": "Pumps in one", "content": one.to_csv(index=False)})
+    assert pasted.status_code == 200, pasted.text
+    ds = pasted.json()["id"]
+    r = client.post("/api/joint/check", json={
+        "lifetimes_dataset_id": ds, "readings_dataset_id": ds, "mapping": {"id": "unit", "x": "age", "c": "outcome"},
+        "readings_mapping": READ_MAP})
+    assert r.status_code == 200, r.text
+    assert r.json()["n_units"] == one["unit"].nunique()

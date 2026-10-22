@@ -1,4 +1,4 @@
-"""Condition-based risk models (joint models of readings and failures): saving,
+"""Condition monitoring models (joint models of readings and failures): saving,
 fitting as a compute job, and the live model.
 
 A joint model is a saved model (``models``, ``kind: "joint"``) fitted to two
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 KIND = "joint"
 PRO_PAYLOAD = {
-    "detail": ("Condition-based risk models fit two models at once on the calculation service, so fitting "
+    "detail": ("Condition monitoring models fit two models at once on the calculation service, so fitting "
                "one is part of Pro. Opening a saved one is free."),
     "code": "pro_required",
     "upgrade": True,
@@ -88,12 +88,23 @@ def spec_from(body: dict) -> dict:
     }
 
 
+def _outcome_rows(table, mapping: dict):
+    """One table holding both: its rows with an outcome (the censoring flag
+    filled in) are the lifetimes, one per unit; every row is a reading."""
+    c = mapping.get("c")
+    if not c or c not in table.columns:
+        raise FitError("Pick the censoring column: the rows where it is filled in are each unit's outcome.")
+    return table[table[c].notna()]
+
+
 def items_for(db, spec: dict, owners) -> tuple[list, dict]:
     """The units of a spec's datasets, grouped (:func:`joint.build_items`)."""
     life_ds = _dataset(db, spec.get("lifetimes_dataset_id"), owners, "lifetimes")
     read_ds = _dataset(db, spec.get("readings_dataset_id"), owners, "readings")
     life = datasets_service.load_dataframe(life_ds)
     readings = datasets_service.load_dataframe(read_ds)
+    if life_ds.id == read_ds.id:
+        life = _outcome_rows(life, spec.get("mapping") or {})
     return joint.build_items(life, readings, spec.get("mapping") or {}, spec.get("readings_mapping") or {},
                              spec.get("covariates") or [], bool(spec.get("c_invert")))
 
@@ -177,7 +188,7 @@ def _save(db, pending: dict, out: dict) -> Model:
     spec = dict(pending.get("spec") or {})
     model = Model(
         id=uuid.uuid4().hex,
-        name=pending.get("name") or "Condition-based risk",
+        name=pending.get("name") or "Condition monitoring",
         owner_id=pending.get("owner_id"),
         dataset_id=spec.get("lifetimes_dataset_id") or "",
         kind=KIND,

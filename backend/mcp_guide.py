@@ -36,7 +36,7 @@ allowed; b_life, shape_model_id, producer_risk). Relay plan warnings. Other test
 failures; exact bounds); models fit with demand_batches saves one.
 - "Is A better than B?": life_data_analysis compare_groups (split by a column or give a group per time; \
 log-rank, RMST difference, Gray's test per mode, a verdict to relay). Nothing is fitted.
-- Condition-based risk (a joint model, Pro): a reading taken again and again on each unit (vibration, wear, oil \
+- Condition monitoring: remaining life from condition readings (a joint model, Pro): a reading taken again and again on each unit (vibration, wear, oil \
 debris) and the units' lives, fitted together. Two datasets: lifetimes, one row per unit (unit_id_column, \
 age_column = age since new at failure or when last seen running, censor_column, optional entry_age_column and \
 numeric covariates; age_right_column for units found failed between two ages, flag 2), and readings, one row \
@@ -132,7 +132,7 @@ tests), costs (downtime_rate, horizon, discount_rate) and production (capacity d
 common_cause_beta on a stage, or edit add_ccf (mgl for 3+ members).
 - Non-repairable extras: phases (a phased mission), network (an undirected two-terminal network), \
 covariate_schedules on a block with a saved regression model.
-- Condition-based block (non-repairable diagrams only, one component block per unit): model = \
+- Condition monitoring block (non-repairable diagrams only, one component block per unit): model = \
 {saved_model_id: <joint model id>, joint_unit: {id: <running unit id>}} or joint_unit {age, readings: [[age, \
 value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \
 unit's survival to age + t given its readings. Don't give it an age in current_state (it is already as of \
