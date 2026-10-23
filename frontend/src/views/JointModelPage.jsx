@@ -10,7 +10,7 @@ import { itemName } from "../components/LibRows.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 
-// A saved condition monitoring model: the result view, Download as Python,
+// A saved condition and life model: the result view, Download as Python,
 // rename, share and delete.
 export default function JointModelPage() {
   const { id } = useParams();
@@ -47,10 +47,10 @@ export default function JointModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Model", to: "/models" }, { label: "Condition monitoring", to: "/models/joint" }]}
+        crumbs={[{ label: "Model", to: "/models" }, { label: "Condition and life", to: "/models/joint" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
-        meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""} · condition monitoring</>}
+        meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""} · condition and life</>}
         id={model?.id}
         actions={model && (
           <button type="button" className="secondary" onClick={onPython}

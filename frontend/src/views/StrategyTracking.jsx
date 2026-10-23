@@ -49,7 +49,7 @@ export default function StrategyTracking() {
 
   const refresh = useCallback(() => {
     if (!fleetId) {
-      navigate("/models/tracking", { replace: true });
+      navigate("/risk", { replace: true });
       return;
     }
     getTrackedFleet(fleetId)
@@ -147,7 +147,7 @@ export default function StrategyTracking() {
     <div className="app">
       <PageHeader
         className="trk-header"
-        crumbs={[{ label: "Model", to: "/models" }, { label: "Degradation tracking", to: "/models/tracking" }]}
+        crumbs={[{ label: "Risk", to: "/risk" }]}
         title={itemName(fleet)}
         badges={fleet.is_sample && <Chip>Sample</Chip>}
         meta={
@@ -172,7 +172,7 @@ export default function StrategyTracking() {
         {fleet.is_sample && (
           <div className="ph-meta">
             A shared sample: items you register here are yours. For real assets,{" "}
-            <Link to="/models/tracking" className="evidence-link">create your own fleet</Link>.
+            <Link to="/risk" className="evidence-link">create your own fleet</Link>.
           </div>
         )}
       </PageHeader>

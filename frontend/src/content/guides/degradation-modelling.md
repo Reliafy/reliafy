@@ -70,7 +70,7 @@ life of **3,210 hours**: 90% of pads survive that long, at 90% confidence.
 
 The population model is useful, but the real payoff is per-asset.
 
-Under **Model →** [Degradation tracking](/models/tracking) (or **Track items** on the model's page),
+Under **Risk →** [Condition monitoring](/risk) (or **Track items** on the model's page),
 register the individual assets you care about — Truck 07's front-left pad, specifically — and record measurements against
 them as you take them. Each new reading updates that asset's own projection: its
 current trajectory, when it's forecast to cross the threshold, and how much
@@ -80,7 +80,7 @@ That's the loop that makes condition monitoring worth the effort. A reading take
 on Tuesday can change a replacement date by Wednesday, for one named asset,
 rather than feeding a fleet-wide average that nobody acts on.
 
-![Per-asset degradation tracking, with projected threshold crossings](/guides/img/degradation-02-tracking.png)
+![Condition monitoring: each tracked asset with its projected threshold crossing](/guides/img/degradation-02-tracking.png)
 
 ## A caution about extrapolation
 

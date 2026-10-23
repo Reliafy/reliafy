@@ -114,7 +114,7 @@ export function StartHere({ info, sampleModelId = null }) {
         <Link to="/models/recurrent/new">Repairable models</Link> ·{" "}
         <Link to="/models/alt/new">Accelerated life</Link> ·{" "}
         <Link to="/models/degradation">Degradation</Link> ·{" "}
-        <Link to="/models/joint/new">Condition monitoring</Link>
+        <Link to="/models/joint/new">Condition and life</Link>
       </p>
       {first && (
         <p className="first-run-more">

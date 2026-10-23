@@ -198,7 +198,7 @@ def _pro_only_message(tool: str) -> str:
                 "0 = failed, 1 = still running). Or upgrade to Pro at "
                 f"{_billing_url()} (or call upgrade_link for a payment link) to fit and save it here.")
     if tool in ("life_data_analysis.fit_joint", "models.fit_joint"):
-        return (f"Condition monitoring (joint) models are part of Reliafy Pro ({PRO_PRICE}) and aren't included on "
+        return (f"Condition and life (joint) models are part of Reliafy Pro ({PRO_PRICE}) and aren't included on "
                 "this plan. Fit one locally with SurPyval instead (pip install surpyval; "
                 "WeibullJointPH.fit_from_df(df, x_col=..., markers_col=..., c_col=...), one row per unit with its "
                 "readings as {age: value} — 0 = failed, 1 = still running). Or upgrade to Pro at "
@@ -2684,7 +2684,7 @@ def alt_use_level(
 
 
 # ---------------------------------------------------------------------------
-# Condition monitoring: joint models of a marker's readings and units' lives
+# Condition and life: joint models of a marker's readings and units' lives
 # ---------------------------------------------------------------------------
 
 _JointLifeDataset = Annotated[Optional[str], Field(description=(
@@ -2801,7 +2801,7 @@ def fit_joint(
     marker_unit: Annotated[Optional[str], Field(description="The readings' unit, e.g. 'mm/s'.")] = None,
     c_invert: _FitInvert = False,
 ) -> dict[str, Any]:
-    """Fit a condition monitoring (joint) model: how a reading drifts with age and how it raises the failure rate,
+    """Fit a condition and life (joint) model: how a reading drifts with age and how it raises the failure rate,
     from a lifetimes and a readings dataset; reports parameters with 95% CIs, hazard ratios and the riskiest running
     units. Pro; saves nothing (models fit_joint keeps it). guide topic life_data."""
     for arg, value in (("lifetimes_dataset_id", lifetimes_dataset_id), ("readings_dataset_id", readings_dataset_id),
@@ -2838,7 +2838,7 @@ def fit_joint_model(
     marker_unit: Annotated[Optional[str], Field(description="The readings' unit, e.g. 'mm/s'.")] = None,
     c_invert: _FitInvert = False,
 ) -> dict[str, Any]:
-    """Fit and save a condition monitoring (joint) model, as life_data_analysis fit_joint does, for
+    """Fit and save a condition and life (joint) model, as life_data_analysis fit_joint does, for
     life_data_analysis predict_joint and RBD blocks. Pro."""
     for arg, value in (("lifetimes_dataset_id", lifetimes_dataset_id), ("readings_dataset_id", readings_dataset_id),
                        ("unit_id_column", unit_id_column), ("age_column", age_column),

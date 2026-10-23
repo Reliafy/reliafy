@@ -1,4 +1,4 @@
-"""Condition monitoring over MCP: life_data_analysis fit_joint / predict_joint,
+"""Condition and life over MCP: life_data_analysis fit_joint / predict_joint,
 models fit_joint, list / get of joint models, the fit's job, and a joint
 block in an RBD built with the rbd tool. The fits are the app's
 (backend.joint, checked in test_joint_models). The helpers and ``env``

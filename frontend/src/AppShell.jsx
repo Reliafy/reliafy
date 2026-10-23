@@ -203,6 +203,10 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
             <Route path="/maintenance/rcm" element={<RcmHome />} />
             <Route path="/maintenance/rcm/:id" element={<RcmStudyPage />} />
+            {/* Risk: models in use. Condition monitoring is the tracked items
+                against their degradation models. */}
+            <Route path="/risk" element={<FleetTrackingHome />} />
+            <Route path="/risk/:fleetId" element={<StrategyTracking />} />
 
             {/* Analyse: the calculations. */}
             <Route path="/data" element={<DatasetsHome />} />
@@ -223,8 +227,6 @@ export default function AppShell() {
             <Route path="/models/joint" element={<JointHome />} />
             <Route path="/models/joint/new" element={<JointNewPage />} />
             <Route path="/models/joint/:id" element={<JointModelPage />} />
-            <Route path="/models/tracking" element={<FleetTrackingHome />} />
-            <Route path="/models/tracking/:fleetId" element={<StrategyTracking />} />
             <Route path="/strategy" element={<StrategyAnalyses />} />
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
@@ -242,7 +244,6 @@ export default function AppShell() {
             {/* Blank pages for menu entries not built yet (plannedPages.js). */}
             <Route path="/requirements" element={<PlannedPage id="requirements" />} />
             <Route path="/failures" element={<PlannedPage id="failures" />} />
-            <Route path="/risk" element={<PlannedPage id="risk" />} />
             <Route path="/asset-register/fleets" element={<PlannedPage id="fleets" />} />
             <Route path="/maintenance/inbox" element={<PlannedPage id="inbox" />} />
             <Route path="/data/library" element={<PlannedPage id="library" />} />

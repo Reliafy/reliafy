@@ -2700,7 +2700,7 @@ export function downloadConditions(format = "csv") {
   return downloadFile(`/api/maintenance/conditions/export?format=${format}`, `conditions.${format}`);
 }
 
-// ---- Condition monitoring (joint models of readings and failures) ------------
+// ---- Condition and life (joint models of readings and failures) ------------
 // Saved models of kind "joint": fitted to a lifetimes dataset (one row per
 // unit) and a readings dataset (one row per reading). The fit is Pro and runs
 // as a job when the calculation service is on (202 {job}: poll getRbdJob).

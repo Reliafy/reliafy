@@ -252,7 +252,7 @@ function UnitView({ modelId, results, name, unitId, onUnitId }) {
   );
 }
 
-// A fitted condition monitoring model: the answer (the running units at the
+// A fitted condition and life model: the answer (the running units at the
 // highest risk), the risk table, a unit's updating prediction, the reading's
 // path, a new unit's survival, the hazard ratios and the parameters.
 export default function JointResultView({ results, modelId, name }) {

@@ -4,7 +4,7 @@ task: "Which of my running units is most likely to fail next, given its vibratio
 category: "Life data modelling"
 prerequisites: "A Pro plan to fit a model. Failure and running ages for a set of units, and condition readings taken on them over time."
 related_href: "/models/joint/new"
-related_label: "Open condition monitoring"
+related_label: "Open condition and life"
 order: 18
 ---
 
@@ -63,11 +63,11 @@ were already in service when your records began can take an **Entry age**.
 
 ## Fit the model
 
-Go to **Model →** [Condition monitoring](/models/joint) and press **New
+Go to **Model →** [Condition and life](/models/joint) and press **New
 model**. Under **1. Your two tables**, choose the two datasets, or upload or
 paste each one. Reliafy guesses the columns under **2. Columns**; check them.
 
-![A new condition monitoring model: the columns of the two tables, and load ticked as a covariate](/guides/img/cbr-01-new.png)
+![A new condition and life model: the columns of the two tables, and load ticked as a covariate](/guides/img/cbr-01-new.png)
 
 ### Covariates: risk or reading?
 
@@ -149,7 +149,7 @@ reliability reflects the condition of the actual units in it. In a
 non-repairable diagram, open a block, choose **Condition-based** as its life
 model, pick the model, and then **A running unit** (or **Enter a unit**).
 
-![A block that is one unit of a condition monitoring model](/guides/img/cbr-04-rbd.png)
+![A block that is one unit of a condition and life model](/guides/img/cbr-04-rbd.png)
 
 The block's reliability runs from the unit's age now, given its readings, and
 the results say so: *Pump P8 (runs from age 120 days)*. Two worn pumps in

@@ -9,7 +9,7 @@ import { MOVED, movedTo } from "./redirects.js";
 import { PLANNED } from "./plannedPages.js";
 import { appRoutes, hasParam } from "../smoke/routes.js";
 
-const ALL = { maintenance: true, agent: true };
+const ALL = { maintenance: true, agent: true, risk: true };
 const PREVIEW = { ...ALL, preview: true };
 const ids = (entries) => entries.map((e) => e.id);
 const everyLink = (entries) => entries.flatMap((e) => [e.to, ...(e.children || []).map((c) => c.to)]);
@@ -21,7 +21,7 @@ const REACHED_FROM = {
   "/models/new": "Model › New model, Home's starts, a dataset's Fit menu",
   "/models/recurrent/new": "Model › Repairable › New model",
   "/models/alt/new": "Model › Accelerated life › New model",
-  "/models/joint/new": "Model › Condition monitoring › New model",
+  "/models/joint/new": "Model › Condition and life › New model",
   "/systems/b": "Systems › New diagram, Home's starts",
   "/systems/runs/compare": "Systems › Simulation runs › Compare",
   "/strategy/test-planning/sequential": "Test planning's tabs",
@@ -56,11 +56,12 @@ test("the menu is Home, then Design, Operate and Analyse, then Reports and the A
   const groups = groupBySection(buildMenu({ has: ALL }).main);
   assert.deepEqual(groups.map((g) => g.section?.label || g.key), ["home", "Design", "Operate", "Analyse", "end"]);
   assert.deepEqual(groups.map((g) => ids(g.entries)), [
-    ["home"], ["systems"], ["assets", "maintenance"], ["data", "models", "strategy", "forecasts"], ["reports", "agent"],
+    ["home"], ["systems"], ["assets", "maintenance", "risk"], ["data", "models", "strategy", "forecasts"],
+    ["reports", "agent"],
   ]);
   const labels = buildMenu({ has: ALL }).main.map((e) => e.label);
-  assert.deepEqual(labels, ["Home", "Systems", "Assets", "Maintenance", "Data", "Model", "Strategy", "Forecasts",
-    "Reports", "Reliability Agent"]);
+  assert.deepEqual(labels, ["Home", "Systems", "Assets", "Maintenance", "Risk", "Data", "Model", "Strategy",
+    "Forecasts", "Reports", "Reliability Agent"]);
 });
 
 test("each entry's children, as agreed", () => {
@@ -71,7 +72,8 @@ test("each entry's children, as agreed", () => {
   assert.deepEqual(kids("maintenance"), ["RCM studies"]);
   assert.deepEqual(kids("data"), []);
   assert.deepEqual(kids("models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
-    "Condition monitoring", "Degradation tracking"]);
+    "Condition and life"]);
+  assert.deepEqual(kids("risk"), []);
   assert.deepEqual(kids("strategy"), ["Optimal replacement", "Compare two models", "Failure finding", "Test planning"]);
   assert.deepEqual(kids("forecasts"), []);
 });
@@ -98,6 +100,35 @@ test("without Reliafy Maintenance: no Assets, and Maintenance is the RCM studies
   assert.equal(liveEntries(ALL).find((e) => e.id === "maintenance").to, "/maintenance");
 });
 
+test("Risk shows where the workspace uses it, and opens straight on Condition monitoring", () => {
+  // Uses it: tracked items, or a degradation or condition-and-life model (the
+  // server's /api/me/roles `uses`), or the menu preview is on.
+  assert.ok(!ids(liveEntries({ maintenance: true, agent: true })).includes("risk"));
+  for (const has of [{ risk: true }, ALL, PREVIEW]) {
+    const risk = liveEntries(has).find((e) => e.id === "risk");
+    assert.equal(risk.label, "Risk");
+    assert.equal(risk.section, "operate");
+    // Its one page so far is its landing: no children, nothing repeated.
+    assert.equal(risk.to, "/risk");
+    assert.equal(risk.children, undefined);
+  }
+  // A Risk landing of its own, when there is one, puts Condition monitoring under it.
+  const later = liveEntries({ risk: true, riskOverview: true }).find((e) => e.id === "risk");
+  assert.deepEqual(later.children.map((c) => c.label), ["Condition monitoring"]);
+  // The analyst, planner and fleet manager use it.
+  for (const role of ["analyst", "planner", "fleet"]) {
+    assert.ok(ROLES.find((r) => r.id === role).entries.includes("risk"), role);
+  }
+  // Its pages light it; the old Degradation tracking addresses land on them.
+  const live = liveEntries(ALL);
+  assert.equal(activeEntry(live, "/risk").id, "risk");
+  assert.equal(activeEntry(live, "/risk/f1").id, "risk");
+  assert.deepEqual(crumbsFor(live, "risk", "/risk"), []);
+  assert.deepEqual(crumbsFor(live, "risk", "/risk/f1"), [{ label: "Risk", to: "/risk" }]);
+  assert.equal(movedTo("/models/tracking/f1"), "/risk/f1");
+  assert.equal(itemPath("tracked_fleets", "f1"), "/risk/f1");
+});
+
 test("no placeholder entries: Requirements and Failures stay hidden until their pages exist", () => {
   for (const has of [{}, ALL]) {
     const live = ids(liveEntries(has));
@@ -115,13 +146,13 @@ test("no roles shows everything the workspace has, nothing under More", () => {
 test("a technician sees Home, Maintenance and Assets; the rest is under More", () => {
   const { main, more } = buildMenu({ roles: ["technician"], has: ALL });
   assert.deepEqual(ids(main), ["home", "maintenance", "assets"]);
-  assert.deepEqual(ids(more), ["systems", "data", "models", "strategy", "forecasts", "reports", "agent"]);
+  assert.deepEqual(ids(more), ["systems", "risk", "data", "models", "strategy", "forecasts", "reports", "agent"]);
   assert.equal(main[1].to, "/maintenance");
 });
 
 test("a fleet manager leads with Forecasts, then the assets and their maintenance", () => {
   const { main } = buildMenu({ roles: ["fleet"], has: ALL });
-  assert.deepEqual(ids(main), ["home", "assets", "maintenance", "forecasts", "models", "data", "reports"]);
+  assert.deepEqual(ids(main), ["home", "assets", "risk", "maintenance", "forecasts", "models", "data", "reports"]);
   assert.deepEqual(homeCards(["fleet"]), ["fleets", "due"]);
 });
 
@@ -133,8 +164,8 @@ test("picking every role shows everything", () => {
 
 test("shown entries keep their sections, in role order within each", () => {
   const { main } = buildMenu({ roles: ["planner", "analyst"], has: ALL });
-  assert.deepEqual(ids(main), ["home", "systems", "maintenance", "assets", "forecasts", "strategy", "data", "models",
-    "reports", "agent"]);
+  assert.deepEqual(ids(main), ["home", "systems", "maintenance", "assets", "risk", "forecasts", "strategy", "data",
+    "models", "reports", "agent"]);
   assert.deepEqual(groupBySection(main).map((g) => g.key), ["home", "design", "operate", "analyse", "end"]);
 });
 
@@ -165,8 +196,9 @@ test("a page lights its entry, and its child, on landing, child and detail pages
   assert.deepEqual(at("/models/life"), ["models", "Non-repairable"]);
   assert.deepEqual(at("/models/m/abc"), ["models", "Non-repairable"]);
   assert.deepEqual(at("/models/new"), ["models", "Non-repairable"]);
-  assert.deepEqual(at("/models/joint/x"), ["models", "Condition monitoring"]);
-  assert.deepEqual(at("/models/tracking/f1"), ["models", "Degradation tracking"]);
+  assert.deepEqual(at("/models/joint/x"), ["models", "Condition and life"]);
+  assert.deepEqual(at("/risk"), ["risk", null]);
+  assert.deepEqual(at("/risk/f1"), ["risk", null]);
   assert.deepEqual(at("/data"), ["data", null]);
   assert.deepEqual(at("/data/d1"), ["data", null]);
   assert.deepEqual(at("/systems/b/r1"), ["systems", null]);
@@ -264,11 +296,13 @@ const OLD_TO_NEW = [
   ["/fleet", "/forecasts"],
   ["/fleet/forecasts", "/forecasts"],
   ["/fleet/forecasts/x", "/forecasts/x"],
-  ["/fleet/tracking", "/models/tracking"],
-  ["/fleet/tracking/x", "/models/tracking/x"],
+  ["/fleet/tracking", "/risk"],
+  ["/fleet/tracking/x", "/risk/x"],
+  ["/models/tracking", "/risk"],
+  ["/models/tracking/x", "/risk/x"],
   ["/strategy/analyses", "/strategy"],
-  ["/strategy/tracking", "/models/tracking"],
-  ["/strategy/tracking/x", "/models/tracking"],
+  ["/strategy/tracking", "/risk"],
+  ["/strategy/tracking/x", "/risk"],
   ["/strategy/demonstration-test", "/strategy/test-planning"],
   ["/rcm", "/maintenance/rcm"],
   ["/rcm/studies", "/maintenance/rcm"],
@@ -323,7 +357,7 @@ test("no link in the app's own code points at an earlier address", () => {
 });
 
 test("not-yet-built entries show only where the menu preview is on", () => {
-  const unbuilt = ["requirements", "failures", "risk"];
+  const unbuilt = ["requirements", "failures"];
   const plain = liveEntries(ALL);
   for (const id of unbuilt) assert.ok(!plain.some((e) => e.id === id), id);
   const preview = liveEntries(PREVIEW);

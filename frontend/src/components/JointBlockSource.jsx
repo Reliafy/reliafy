@@ -6,7 +6,7 @@ import { getJointModel, listJointModels } from "../api.js";
 import { formatNumber } from "../format.js";
 import { jointBlockModel, parseReadings, readingsText } from "../joint.js";
 
-// An RBD block that is one unit of a condition monitoring (joint) model: a
+// An RBD block that is one unit of a condition and life (joint) model: a
 // running unit of the fit, or one entered (its age now, readings, covariates).
 // Its reliability runs from the unit's age now. ``repairable`` diagrams can't
 // take it (a replacement unit has none of its readings): a note says so.
@@ -63,7 +63,7 @@ export default function JointBlockSource({ value, onChange, repairable = false }
   if (repairable) {
     return (
       <p className="muted-line" role="status">
-        A condition monitoring block is one unit in service now, given its readings. A repairable diagram replaces a
+        A condition and life block is one unit in service now, given its readings. A repairable diagram replaces a
         failed unit with a new one that has none of those readings, so it can't take one: use it in a
         non-repairable diagram, or give this block a life distribution.
       </p>
@@ -72,7 +72,7 @@ export default function JointBlockSource({ value, onChange, repairable = false }
   if (models && !models.length) {
     return (
       <p className="muted-line">
-        No condition monitoring models yet. <Link to="/models/joint/new">Fit one</Link> from your units' readings.
+        No condition and life models yet. <Link to="/models/joint/new">Fit one</Link> from your units' readings.
       </p>
     );
   }
@@ -86,7 +86,7 @@ export default function JointBlockSource({ value, onChange, repairable = false }
           value={modelId}
           onChange={(id) => { setModelId(id); setUnitId(""); }}
           placeholder="— choose —"
-          ariaLabel="Condition monitoring model"
+          ariaLabel="Condition and life model"
           options={[{ value: "", label: "— choose —" }, ...(models || []).map((m) => ({ value: m.id, label: m.name, hint: m.marker }))]}
         />
       </label>

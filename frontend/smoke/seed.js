@@ -97,7 +97,7 @@ export default async function seed(config) {
     await send("PUT")(`${m}/classes/costs`, { position_class: pump, planned_cost: 400, failure_cost: 4000 });
     await post(`${m}/classes/fit`, { position_class: pump });
 
-    // A condition-based risk model: a small fleet of pumps, each with its
+    // A condition and life model: a small fleet of pumps, each with its
     // vibration read every 10 days, fitted in-process (billing is off here).
     await seedJointModel(post);
 

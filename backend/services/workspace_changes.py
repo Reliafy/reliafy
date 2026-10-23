@@ -66,14 +66,14 @@ COLLECTIONS = {
     "datasets": ("Dataset", "/data/"),
     "rbds": ("Block diagram", "/systems/b/"),
     "fleets": ("Failure forecast", "/forecasts/"),
-    "tracked_fleets": ("Tracked fleet", "/models/tracking/"),
+    "tracked_fleets": ("Tracked fleet", "/risk/"),
     "rcm_studies": ("RCM study", "/maintenance/rcm/"),
     "strategy_analyses": ("Strategy analysis", "/strategy/analyses/"),
 }
 
 # Documents in ``models`` that aren't non-repairable models (``kind``): their own label and page.
 MODEL_KINDS = {
-    "joint": ("Condition monitoring model", "/models/joint/"),
+    "joint": ("Condition and life model", "/models/joint/"),
 }
 
 

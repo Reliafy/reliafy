@@ -2,8 +2,8 @@
 //
 // The menu moved to Design · Operate · Analyse: Modelling became Models and
 // Data, RBDs became Systems, Fleet became Forecasts (its degradation tracking
-// moved to Models), RCM moved under Maintenance, and Reliafy Maintenance's
-// register moved to Assets. Links saved before then (emails, share notices,
+// moved to Models, then to Operate › Risk as Condition monitoring), RCM moved
+// under Maintenance, and Reliafy Maintenance's register moved to Assets. Links saved before then (emails, share notices,
 // bookmarks, API and MCP results, guides and posts) must keep working, so
 // every old address redirects to its page's new one with the same ids, query
 // and #hash (AppShell.jsx draws a route for each row).
@@ -45,17 +45,21 @@ export const MOVED = [
   { path: "/rbds/runs", to: "/systems/runs" },
   { path: "/rbds/runs/compare", to: "/systems/runs/compare" },
   { path: "/rbds/runs/:runId", to: "/systems/runs/:runId" },
-  // Fleet → Analyse › Forecasts; its degradation tracking → Models.
+  // Fleet → Analyse › Forecasts; its degradation tracking → Operate › Risk.
   { path: "/fleet", to: "/forecasts" },
   { path: "/fleet/forecasts", to: "/forecasts" },
   { path: "/fleet/forecasts/:id", to: "/forecasts/:id" },
-  { path: "/fleet/tracking", to: "/models/tracking" },
-  { path: "/fleet/tracking/:fleetId", to: "/models/tracking/:fleetId" },
+  { path: "/fleet/tracking", to: "/risk" },
+  { path: "/fleet/tracking/:fleetId", to: "/risk/:fleetId" },
+  // Degradation tracking, once a child of Model → Operate › Risk:
+  // the tracked items are a model in use, now Condition monitoring.
+  { path: "/models/tracking", to: "/risk" },
+  { path: "/models/tracking/:fleetId", to: "/risk/:fleetId" },
   // Older Strategy addresses. Tracking bookmarks carried a MODEL id, and
   // fleets have their own ids now, so they open the tracking list.
   { path: "/strategy/analyses", to: "/strategy" },
-  { path: "/strategy/tracking", to: "/models/tracking" },
-  { path: "/strategy/tracking/:modelId", to: "/models/tracking" },
+  { path: "/strategy/tracking", to: "/risk" },
+  { path: "/strategy/tracking/:modelId", to: "/risk" },
   // The Demonstration test page is Test planning's first tab.
   { path: "/strategy/demonstration-test", to: "/strategy/test-planning" },
   // RCM → Operate › Maintenance › RCM studies.

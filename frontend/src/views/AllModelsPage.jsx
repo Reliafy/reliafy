@@ -13,7 +13,7 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 export const MODELLING_HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
 // The Models section's landing page: every saved model — life data,
-// recurrent, accelerated life, degradation, condition monitoring — in one
+// recurrent, accelerated life, degradation, condition and life — in one
 // list, filterable by type. Each type's own list is a child page.
 export default function AllModelsPage() {
   const navigate = useNavigate();
@@ -41,7 +41,7 @@ export default function AllModelsPage() {
     <div className="app">
       <SectionHeader
         title="Models"
-        purpose="Every model you've fitted: non-repairable, repairable, accelerated life, degradation and condition monitoring."
+        purpose="Every model you've fitted: non-repairable, repairable, accelerated life, degradation, and condition and life."
         help={MODELLING_HELP}
         primary={<button onClick={() => navigate("/models/new")}><PlusIcon /> New model</button>}
       />

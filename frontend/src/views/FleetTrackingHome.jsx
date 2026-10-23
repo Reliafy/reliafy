@@ -10,6 +10,7 @@ import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 import { unitInText } from "../components/unitText.js";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
+import { useRoles } from "../RolesProvider.jsx";
 
 
 const fmt = (v) =>
@@ -36,10 +37,12 @@ function HealthChips({ tracking }) {
 
 const HELP = { guide: "degradation-modelling" };
 
-// Model › Degradation tracking: the tracked fleets: one row per degradation model with its live
-// health rollup. Opening a row goes to that model's tracking page.
+// Risk › Condition monitoring: the items in service, tracked against a
+// degradation model, a fleet per row with its live health rollup. Opening a
+// row goes to that fleet's page (its items, readings and remaining life).
 export default function FleetTrackingHome() {
   const navigate = useNavigate();
+  const { noteUse } = useRoles();
   const [fleets, setFleets] = useState(null);
   const [models, setModels] = useState([]);
   const [error, setError] = useState(null);
@@ -51,9 +54,13 @@ export default function FleetTrackingHome() {
 
   const refresh = useCallback(() => {
     listTrackedFleets()
-      .then((d) => setFleets(d.fleets || []))
+      .then((d) => {
+        setFleets(d.fleets || []);
+        // A workspace with fleets of its own uses Risk: show it in the menu.
+        if ((d.fleets || []).some((f) => !f.is_sample)) noteUse("risk");
+      })
       .catch((e) => setError(e.message));
-  }, []);
+  }, [noteUse]);
   useEffect(() => refresh(), [refresh]);
 
   const openCreate = async () => {
@@ -75,7 +82,8 @@ export default function FleetTrackingHome() {
     setCreateError(null);
     try {
       const fleet = await createTrackedFleet(name.trim(), pickedId);
-      navigate(`/models/tracking/${fleet.id}`);
+      noteUse("risk");
+      navigate(`/risk/${fleet.id}`);
     } catch (err) {
       setCreateError(err.message);
     } finally {
@@ -94,15 +102,15 @@ export default function FleetTrackingHome() {
     }
   };
 
-  const open = (id) => navigate(`/models/tracking/${id}`);
+  const open = (id) => navigate(`/risk/${id}`);
   const newTracked = <button onClick={openCreate}><PlusIcon /> New tracked fleet</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        section="models"
-        title="Degradation tracking"
-        purpose="Each item's remaining life against a degradation model; open a fleet to log inspections."
+        section="risk"
+        title="Condition monitoring"
+        purpose="Items in service: latest condition, predicted remaining life and alarms."
         help={HELP}
         primary={newTracked}
       />

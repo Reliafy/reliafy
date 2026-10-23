@@ -1,4 +1,4 @@
-"""Condition monitoring models (joint models of readings and failures): saving,
+"""Condition and life models (joint models of readings and failures): saving,
 fitting as a compute job, and the live model.
 
 A joint model is a saved model (``models``, ``kind: "joint"``) fitted to two
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 KIND = "joint"
 PRO_PAYLOAD = {
-    "detail": ("Condition monitoring models fit two models at once on the calculation service, so fitting "
+    "detail": ("Condition and life models fit two models at once on the calculation service, so fitting "
                "one is part of Pro. Opening a saved one is free."),
     "code": "pro_required",
     "upgrade": True,
@@ -188,7 +188,7 @@ def _save(db, pending: dict, out: dict) -> Model:
     spec = dict(pending.get("spec") or {})
     model = Model(
         id=uuid.uuid4().hex,
-        name=pending.get("name") or "Condition monitoring",
+        name=pending.get("name") or "Condition and life",
         owner_id=pending.get("owner_id"),
         dataset_id=spec.get("lifetimes_dataset_id") or "",
         kind=KIND,

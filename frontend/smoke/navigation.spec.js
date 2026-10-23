@@ -7,7 +7,10 @@ import { test, expect, open, expectHealthy } from "./health.js";
 
 test.describe.configure({ mode: "serial" });
 
-const EVERYTHING = ["Home", "Systems", "Assets", "Maintenance", "Data", "Model", "Strategy", "Forecasts", "Reports"];
+// Risk shows because the workspace uses it: smoke/seed.js fits a condition and
+// life model.
+const EVERYTHING = ["Home", "Systems", "Assets", "Maintenance", "Risk", "Data", "Model", "Strategy", "Forecasts",
+  "Reports"];
 
 const setRoles = async (request, roles) => {
   const res = await request.put("/api/me/roles", { data: { roles } });
@@ -59,7 +62,7 @@ test("no roles: every entry under Design, Operate and Analyse, nothing under Mor
   await expect(page).toHaveURL(/\/models$/);
   const kids = mainMenu(page).locator(".side-children .side-subitem");
   await expect(kids).toHaveText(["Non-repairable", "Repairable", "Accelerated life", "Degradation",
-    "Condition monitoring", "Degradation tracking"]);
+    "Condition and life"]);
   await expect(mainMenu(page).getByRole("link", { name: "Model", exact: true })).toHaveAttribute("aria-current", "page");
   // A child page: the child lit, and its entry named above the title.
   await mainMenu(page).getByRole("link", { name: "Repairable", exact: true }).click();
@@ -73,6 +76,19 @@ test("no roles: every entry under Design, Operate and Analyse, nothing under Mor
   await open(page, "/maintenance/rcm");
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RCM studies");
   await expect(page.locator(".crumb")).toHaveText("Maintenance");
+  // Operate › Risk opens straight on Condition monitoring (its only page so
+  // far, so no children); a tracked fleet's page lights Risk and names it.
+  await mainMenu(page).getByRole("link", { name: "Risk", exact: true }).click();
+  await expect(page).toHaveURL(/\/risk$/);
+  await expect(page.getByRole("heading", { name: "Condition monitoring", level: 1 })).toBeVisible();
+  await expect(mainMenu(page).getByRole("link", { name: "Risk", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(mainMenu(page).locator(".side-children")).toHaveCount(0);
+  await open(page, "/risk/sample-tracked-trucks");
+  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Risk");
+  await expect(page.locator(".crumb")).toHaveText("Risk");
+  // Degradation tracking's old address lands there.
+  await open(page, "/models/tracking/sample-tracked-trucks");
+  await expect(page).toHaveURL(/\/risk\/sample-tracked-trucks$/);
   await expectHealthy(page, problems, { label: "models" });
 });
 

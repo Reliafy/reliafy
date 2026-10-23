@@ -129,7 +129,7 @@ function JointAgesNote({ result }) {
   const unit = result.unit ? ` ${unitInText(result.unit)}` : "";
   return (
     <p className="muted-line rbd-joint-note" role="note">
-      Condition monitoring {blocks.length === 1 ? "block" : "blocks"}{" "}
+      Condition and life {blocks.length === 1 ? "block" : "blocks"}{" "}
       {blocks.map((b) => `${b.label} (runs from age ${fmtLife(b.joint_age)}${unit})`).join(", ")}:{" "}
       {blocks.length === 1 ? "its" : "their"} reliability is from now, given {blocks.length === 1 ? "its" : "their"} readings.
     </p>
@@ -1813,7 +1813,7 @@ export default function RbdCalculator({
           />
           {jointBlocks.length > 0 && (
             <p className="hint" style={{ margin: "4px 0 0" }}>
-              Already as of now: {jointBlocks.join(", ")} (condition monitoring, at {jointBlocks.length === 1 ? "its" : "each"}{" "}
+              Already as of now: {jointBlocks.join(", ")} (condition and life, at {jointBlocks.length === 1 ? "its" : "each"}{" "}
               unit's age from its readings).
             </p>
           )}
