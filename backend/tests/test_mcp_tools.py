@@ -14,7 +14,7 @@ from backend.tests.test_mcp import _err, _ok, _run
 from backend.tests.test_mcp_plans import FREE, PRO, WEIBULL, _call, _calls_used, env  # noqa: F401
 
 READS = {"guide", "get", "list", "life_data_analysis", "repairable_analysis", "strategy", "rbd_analysis",
-         "upgrade_link"}
+         "library", "upgrade_link"}
 WRITES = {"models", "datasets", "rbd", "uploads", "rcm", "sharing", "fleet"}
 REPORTS = {"report_problem"}  # writes Reliafy's own feedback, never the workspace
 
@@ -29,7 +29,7 @@ def test_fifteen_tools_reads_apart_from_writes(env):
     from backend import mcp_server
 
     tools = _tools(env.oauth[PRO])
-    assert set(tools) == READS | WRITES | REPORTS and len(tools) == 16
+    assert set(tools) == READS | WRITES | REPORTS and len(tools) == 17
     for name, tool in tools.items():
         a = tool.annotations
         assert a.read_only_hint is (name in READS) and a.destructive_hint is (name in WRITES), name
@@ -40,8 +40,9 @@ def test_fifteen_tools_reads_apart_from_writes(env):
     assert {mcp_server.TABLES[n][0] for n in set(mcp_server.TABLES) - {"get", "list"}} == {"action"}
     # Every one of the 66 old tools is an action now, but upgrade_link (still a tool of its own).
     # + 4 test plans, + strategy calendar_replacement, next_replacement, + joint models' fit_joint,
-    # predict_joint and models fit_joint, + report_problem's report, status, triage and update.
-    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 78
+    # predict_joint and models fit_joint, + report_problem's report, status, triage and update,
+    # + library's search, get and sources.
+    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 81
 
 
 def test_every_action_is_in_its_tool_description_and_schema(env):
@@ -257,10 +258,10 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
     try:
         names = {t.name for t in anyio.run(mcp_server.mcp.list_tools)}
         # 21 maintenance tools, and the 2 graph query tools (listed per user only to the owner).
-        assert len(names) == 16 + 21 + 2 and READS | WRITES <= names
+        assert len(names) == 17 + 21 + 2 and READS | WRITES <= names
         assert "maintenance_reliability.fit_class_model" in mcp_server.PRO_ONLY_TOOLS & mcp_server._FIT_TOOLS
         assert "maintenance_workspace.import_history" in mcp_server.HEAVY_TOOLS
         assert {"maintenance_graph_query", "maintenance_graph_schema"} <= mcp_server.HEAVY_TOOLS & names
     finally:
         mcp_tools.unregister()
-    assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 16
+    assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 17

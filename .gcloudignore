@@ -32,5 +32,7 @@ frontend/dist/
 
 # Local data + caches (not needed in the image)
 data/
+# ...but the reliability data library's records are part of the app.
+!backend/library/data/
 .pytest_cache/
 *.pyc

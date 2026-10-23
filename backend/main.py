@@ -90,6 +90,7 @@ from backend.routers import walkthroughs as walkthroughs_router
 from backend.routers import lifecycle as lifecycle_router
 from backend.routers import content_jobs as content_jobs_router
 from backend.routers import feeds as feeds_router
+from backend.routers import library as library_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
 from backend.routers import uploads as uploads_router
@@ -279,6 +280,7 @@ app.include_router(workspace_changes_router.router)
 app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
+app.include_router(library_router.router)
 
 # MCP (Model Context Protocol) server for AI assistants — token-authed, and
 # registered before the SPA catch-all so GET/POST/DELETE /mcp reach it.

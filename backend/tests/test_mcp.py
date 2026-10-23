@@ -32,7 +32,7 @@ FLAGS = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0]  # 0 = failed, 1 = still running
 # A few tools, each doing one area's work by action (or kind): reads and
 # calculations apart from writes (backend/mcp_server.py, "Tools with actions").
 READ_TOOLS = {"guide", "get", "list", "life_data_analysis", "repairable_analysis", "strategy", "rbd_analysis",
-              "upgrade_link"}
+              "library", "upgrade_link"}
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
 WRITE_TOOLS = {"models", "datasets", "rbd", "uploads", "rcm", "sharing", "fleet"}

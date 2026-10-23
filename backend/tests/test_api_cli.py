@@ -145,6 +145,20 @@ def test_cli_login_tools_and_generic_commands(server, capsys, monkeypatch):
     assert code == 0 and not os.path.exists(os.path.join(os.environ["RELIAFY_CONFIG_DIR"], "config.json"))
 
 
+def test_cli_and_client_search_the_library(server, capsys):
+    code, out, _ = run(capsys, "library", "search", "--query", "motor-driven pump fails to start")
+    assert code == 0 and "total: 4" in out and "results (4):" in out and "nrc-inl-2020:mdp-fts-ns" in out
+    code, out, _ = run(capsys, "library", "get", "--id", "nrc-inl-2020:mdp-fts-ns", "--json")
+    rec = json.loads(out)["record"]
+    assert code == 0 and rec["licence"]["id"] == "us-government-work" and rec["citation"]["table"] == "Table 1"
+    code, out, _ = run(capsys, "library", "sources")
+    assert code == 0 and "total_records: 300" in out
+    code, _, err = run(capsys, "library", "get", "--id", "nope")
+    assert code == 1 and "not found" in err
+    found = Client().call("library", "search", query="check valve", kind="rate", page_size=2)
+    assert found["total"] == 5 and len(found["results"]) == 2
+
+
 def test_cli_fit_upload_import_push_ingest(server, capsys):
     tmp = server["tmp"]
     data = tmp / "bearings.csv"

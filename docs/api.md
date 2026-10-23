@@ -23,7 +23,7 @@ Each token has **scopes**, chosen when you create it:
 | Scope | Allows |
 |---|---|
 | `ingest` (Push data) | the `/api/ingest/*` endpoints and `/api/import/models` |
-| `read` | `/api/v1` reads and calculations: the read-only tools (`guide`, `get`, `list`, `life_data_analysis`, `repairable_analysis`, `strategy`, `rbd_analysis`, `upgrade_link`, and Reliafy Maintenance's reads) |
+| `read` | `/api/v1` reads and calculations: the read-only tools (`guide`, `get`, `list`, `life_data_analysis`, `repairable_analysis`, `strategy`, `rbd_analysis`, `library`, `upgrade_link`, and Reliafy Maintenance's reads) |
 | `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`models`, `datasets`, `rbd`, `uploads`, `rcm`, `sharing`, `fleet`, Reliafy Maintenance's writes), and photo uploads |
 
 A request outside the token's scopes gets `403`. A token that only has
@@ -110,6 +110,26 @@ MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
 |---|---|
 | `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
 | `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `uploads create` (no other credentials; at most 30 MB). Then import it: `datasets upload`, `uploads import_rbd`, `uploads import_excel` or `rbd upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance_attachments add_document`. |
+
+### The reliability data library
+
+Published generic failure data (failure rates and probabilities of failure
+on demand), each record cited with its source and licence. It's the same for
+everyone, so it's readable without an account:
+
+| Call | Does |
+|---|---|
+| `GET /api/library/search?q=…&source=…&equipment_type=…&kind=…&page=1&page_size=25` | Matching records, best first, 25 a page (at most 100), with `total`, `pages` and `counts` by equipment type, kind and source. `kind` is `rate`, `per_demand` or `life`. |
+| `GET /api/library/records/{id}` | One record in full (values, spread, evidence, conditions, citation, licence and notes) and `block_model`: the model an RBD block would use. |
+| `GET /api/library/sources` | The sources, their licences and what each holds. |
+
+The same reads are the `library` tool: `POST /api/v1/library/search`
+(`query`, `source`, `equipment_type`, `kind`, `page`, `page_size`), `POST
+/api/v1/library/get` (`id`) and `POST /api/v1/library/sources`, and on the
+command line `reliafy library search --query "motor-driven pump"`. These are
+generic estimates (today: U.S. nuclear power plant industry averages), not
+your own equipment's data; show each record's `licence.attribution` with its
+numbers. The record format and the sources: [library.md](library.md).
 
 ---
 
