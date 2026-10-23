@@ -121,7 +121,7 @@ export function jointBlockModel(model, unit) {
     kind: "joint",
     modelId: model.id,
     name: model.name,
-    distribution: "Remaining life from condition",
+    distribution: "Condition monitoring",
     unit: model.unit || model.results?.unit || "",
     joint_unit: unit,
   };
