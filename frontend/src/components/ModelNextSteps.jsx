@@ -3,24 +3,15 @@ import { useNavigate } from "react-router-dom";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import { getModel, listRbds } from "../api.js";
-import { nextStepLink, nextStepsFor, plainName, savedModelRef } from "../modelNext.js";
+import { STEP_LABELS, STEP_WHAT, nextStepLink, nextStepsFor, plainName, savedModelRef, stepsFor } from "../modelNext.js";
 
 // "Use this model" (#294): the tools a fitted non-repairable model feeds, each opened
-// with the model chosen. A quiet card at the foot of the panel beside the
-// plot (``variant="card"``), or items for the saved model's ⋯ menu
-// (``variant="menu"``). A saved model is ``modelId``; a fit not saved yet
-// passes ``onUse`` (() => Promise<saved id>), which saves it first.
-// ``skip`` leaves steps out (the replacement interval, when it already sits
-// beside the wear-out reading).
-
-export const STEP_LABELS = {
-  replacement: "Find the best replacement interval",
-  fleet: "Forecast a fleet",
-  test: "Plan a demonstration test",
-  rbd: "Add to an RBD",
-};
-// The panel is narrow: one line a row.
-const SHORT = { ...STEP_LABELS, replacement: "Find a replacement interval" };
+// with the model chosen. One quiet button in the panel beside the plot
+// (``variant="button"``) that opens a dialog listing them, each with what you
+// get there, or items for the saved model's ⋯ menu (``variant="menu"``). A
+// saved model is ``modelId``; a fit not saved yet passes ``onUse``
+// (() => Promise<saved id>), which saves it first.
+// ``skip`` leaves steps out.
 
 // Open a step: resolve the model's id (saving a fresh fit), then navigate.
 export function useNextStep({ result, modelId = null, onUse = null }) {
@@ -61,11 +52,11 @@ export function useNextStep({ result, modelId = null, onUse = null }) {
   return { open, busy, error: rbdOpen ? null : error, modal };
 }
 
-export default function ModelNextSteps({ result, modelId = null, onUse = null, skip = [], variant = "card" }) {
+export default function ModelNextSteps({ result, modelId = null, onUse = null, skip = [], variant = "button" }) {
+  const [listOpen, setListOpen] = useState(false);
   const { open, busy, error, modal } = useNextStep({ result, modelId, onUse });
   if (!modelId && !onUse) return null;
-  const can = nextStepsFor(result);
-  const steps = Object.keys(STEP_LABELS).filter((s) => can[s] && !skip.includes(s));
+  const steps = stepsFor(result, skip);
   if (!steps.length) return null;
 
   if (variant === "menu") {
@@ -80,23 +71,45 @@ export default function ModelNextSteps({ result, modelId = null, onUse = null, s
       </>
     );
   }
+  // The diagram picker replaces the list rather than opening over it.
+  const pick = (s) => {
+    if (s === "rbd") setListOpen(false);
+    open(s);
+  };
   return (
-    <div className="gof-card next-steps">
-      <div className="gofh">Use this model</div>
-      {steps.map((s) => (
-        <button key={s} type="button" className="gofr gofr-link next-step" onClick={() => open(s)} disabled={!!busy}>
-          <span>{busy === s ? "Opening…" : SHORT[s]}</span>
-          <span className="gv" aria-hidden="true">›</span>
-        </button>
-      ))}
-      {!modelId && <p className="next-steps-note">Saves the model first, under the name beside Save.</p>}
-      {error && <p className="error next-steps-note" role="alert">{error}</p>}
+    <>
+      <button type="button" className="secondary use-model-btn" onClick={() => setListOpen(true)}
+              aria-haspopup="dialog">
+        <span>Use this model</span>
+        <span aria-hidden="true">›</span>
+      </button>
+      {listOpen && (
+        <Modal title="Use this model" className="modal-sm use-model-modal" onClose={() => setListOpen(false)}
+               locked={!!busy && busy !== "rbd"}>
+          <p className="muted-line use-model-intro">Open a tool with this model already chosen.</p>
+          <ul className="use-model-list">
+            {steps.map((s) => (
+              <li key={s}>
+                <button type="button" className="use-model-step" onClick={() => pick(s)} disabled={!!busy}>
+                  <span className="use-model-step-name">
+                    {busy === s ? "Opening…" : STEP_LABELS[s]}
+                    <span aria-hidden="true"> ›</span>
+                  </span>
+                  <span className="use-model-step-what">{STEP_WHAT[s]}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!modelId && <p className="muted-line use-model-note">Saves the model first, under the name beside Save.</p>}
+          {error && <p className="error use-model-note" role="alert">{error}</p>}
+        </Modal>
+      )}
       {modal}
-    </div>
+    </>
   );
 }
 
-// The replacement-interval action beside the wear-out reading.
+// The replacement-interval action under the wear-out reading.
 export function ReplacementLink({ result, modelId = null, onUse = null }) {
   const { open, busy, error } = useNextStep({ result, modelId, onUse });
   if ((!modelId && !onUse) || !nextStepsFor(result).replacement) return null;

@@ -15,8 +15,9 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 
 // The side panel beside a fitted life distribution's plot (#311): its
 // parameters by their plain names with their intervals, the data, and a quiet
-// one-line reading of what the fit says — the answer next to the chart, not
-// stacked above the tabs.
+// row with what the fit says (the failure pattern or the median life) that
+// opens its reading in words — the answer next to the chart, not stacked
+// above the tabs. The B-lives card (LifeCard) sits in the Calculator's rail.
 
 function distId(result) {
   if (result.distribution_id && result.distribution_id !== "best") return result.distribution_id;
@@ -49,7 +50,15 @@ const HOW_CI = "95% intervals. A positive parameter's interval is taken on the l
 
 // What the fit says, as a short title and one line: the failure pattern when
 // the shape says one (Weibull, exponential), otherwise the median life.
-function verdict(result) {
+// ``label`` and ``short`` are the panel row that opens it ("Failure pattern ·
+// Wear-out", "Median life · 1,240 hours").
+export function verdict(result) {
+  const v = verdictText(result);
+  if (!v) return null;
+  return { label: "Failure pattern", short: v.title, ...v };
+}
+
+function verdictText(result) {
   const id = distId(result);
   const unit = result.unit ? ` ${unitInText(result.unit)}` : "";
   const byName = Object.fromEntries((result.params || []).map((p) => [p.name, p]));
@@ -79,13 +88,14 @@ function verdict(result) {
   if (median != null && id === "lognormal") {
     // μ and σ are on log time (#292): say what they mean in time.
     return {
-      title: "Median life",
+      title: "Median life", label: "Median life", short: `${formatNumber(median)}${unit}`,
       text: <><b>{formatNumber(median)}{unit}</b> (e<sup>μ</sup>): half have failed by then. μ and σ are the
         mean and spread of log(time), not of time.</>,
     };
   }
   if (median != null) {
-    return { title: "Median life", text: <><b>{formatNumber(median)}{unit}</b>: half have failed by then.</> };
+    return { title: "Median life", label: "Median life", short: `${formatNumber(median)}${unit}`,
+             text: <><b>{formatNumber(median)}{unit}</b>: half have failed by then.</> };
   }
   return null;
 }
@@ -187,7 +197,10 @@ function TauInput({ tau, unit, onChange }) {
   );
 }
 
-function LifeCard({ result, level, onLevel, modelId = null, name = null }) {
+// B-lives and the mean life with their lower bounds, the confidence chooser
+// and the requirement check: in the Calculator tab's rail (and beside the plot
+// only for a result with no calculator).
+export function LifeCard({ result, level, onLevel, modelId = null, name = null }) {
   const [tau, setTau] = useState(null);
   const { life, pending } = useLife(result, level, tau);
   if (!life) return null;
@@ -341,14 +354,18 @@ function CompareDistributions({ result, compare, onPick }) {
 }
 
 // ``split`` ({ failed, running, other }) when the caller can count the data.
-// ``children`` (the plot) goes on the left; the panel sits on the right.
 // ``level`` / ``onLevel``: the confidence (%) of the life card's lower bounds,
 // shared with the calculator. ``compare`` / ``onPick``: see CompareDistributions.
 // ``modelId`` / ``name``: the saved model, for the requirement check's test plan
 // and "Use this model" (#294); ``onUse`` (a fit not saved yet) saves it first.
+// ``lifeCard``: show the B-lives card here too (a result with no Calculator
+// tab, where it would otherwise have no home). ``onShowLife`` opens the
+// Calculator tab, where the card is.
 export default function LifeAside({ result, split = null, bestFit = false, level = 90, onLevel = null,
-                                   compare = null, onPick = null, modelId = null, name = null, onUse = null }) {
+                                   compare = null, onPick = null, modelId = null, name = null, onUse = null,
+                                   lifeCard = false, onShowLife = null }) {
   const [statsOpen, setStatsOpen] = useState(false);
+  const [readingOpen, setReadingOpen] = useState(false);
   const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
   const id = distId(result);
   // Shape before scale: the reading turns on the shape.
@@ -362,7 +379,7 @@ export default function LifeAside({ result, split = null, bestFit = false, level
   const method = result.options?.how && result.options.how !== "MLE" ? result.options.how : null;
   const caveat = result.fit_warning && !result.no_finite_maximum;
   const nonparametric = result.kind === "nonparametric";
-  const showLife = (result.kind === "distribution" || result.kind === "flexible" || nonparametric)
+  const showLife = lifeCard && (result.kind === "distribution" || result.kind === "flexible" || nonparametric)
     && !result.no_finite_maximum;
   return (
     <div className="aside">
@@ -403,6 +420,14 @@ export default function LifeAside({ result, split = null, bestFit = false, level
             <span className="gv">{formatNumber(p.value)}</span>
           </div>
         ))}
+        {/* What the fit says, one quiet row; its reading in words opens on click. */}
+        {reading && (
+          <button type="button" className="gofr gofr-link life-reading-row" onClick={() => setReadingOpen(true)}
+                  aria-haspopup="dialog" aria-label={`${reading.label}: ${reading.short}. What this means`}>
+            <span className="gk">{reading.label}</span>
+            <span className="gv">{reading.short} ›</span>
+          </button>
+        )}
         {data && (
           <div className="gofr">
             <span className="gk">Data</span>
@@ -416,18 +441,23 @@ export default function LifeAside({ result, split = null, bestFit = false, level
           </button>
         )}
       </div>
-      {showLife && <LifeCard result={result} level={level} onLevel={onLevel} modelId={modelId} name={name} />}
       {caveat && <div className="life-reading caveat">{result.fit_warning}</div>}
-      {reading && (
-        <div className="life-reading">
-          <div className="life-reading-title">{reading.title}</div>
-          <div>{reading.text}</div>
-          {reading.action === "replacement" && <ReplacementLink result={result} modelId={modelId} onUse={onUse} />}
-        </div>
+      <ModelNextSteps result={result} modelId={modelId} onUse={onUse} />
+      {onShowLife && (
+        <button type="button" className="link life-more" onClick={onShowLife}>
+          B-lives and mean life: Calculator ›
+        </button>
       )}
-      <ModelNextSteps result={result} modelId={modelId} onUse={onUse}
-                      skip={reading?.action === "replacement" ? ["replacement"] : []} />
+      {showLife && <LifeCard result={result} level={level} onLevel={onLevel} modelId={modelId} name={name} />}
       {method && <p className="life-method">{method} fit.</p>}
+      {readingOpen && reading && (
+        <Modal title={reading.title} className="modal-sm reading-modal" onClose={() => setReadingOpen(false)}
+               footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+                 <button type="button" onClick={() => setReadingOpen(false)}>Done</button></div>}>
+          <p className="reading-text">{reading.text}</p>
+          {reading.action === "replacement" && <ReplacementLink result={result} modelId={modelId} onUse={onUse} />}
+        </Modal>
+      )}
       {statsOpen && (
         <Modal title="Fit statistics" onClose={() => setStatsOpen(false)}
                footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}>

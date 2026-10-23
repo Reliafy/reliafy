@@ -586,13 +586,20 @@ async function main() {
     // --- Censored data (the pump model is right-censored) ---
     { file: "censored-01-model.png", url: `/models/m/${S.pumps}`, settle: 2500 },
     // --- B-lives and confidence bounds ---
+    // The Life card sits in the Calculator's rail, under its inputs.
     { file: "blife-01-life-card.png", url: `/models/m/${S.bearings}`, settle: 2500,
-      async act(page) { await page.locator(".sel-trigger", { hasText: /lower bound/ }).click(); await wait(500); } },
+      async act(page) {
+        await modelCalculator(page);
+        await page.locator(".life-rail").evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 160));
+        await wait(400);
+        await page.locator(".sel-trigger", { hasText: /lower bound/ }).click(); await wait(500);
+      } },
     { file: "blife-02-calculator.png", url: `/models/m/${S.bearings}`, settle: 2000,
       async act(page) { await modelCalculator(page); await press(page, /^Time at reliability$/); await wait(2000); } },
     // --- Check a requirement and plan a demonstration test ---
     { file: "req-01-check.png", url: `/models/m/${S.bearings}`, settle: 2500,
       async act(page) {
+        await modelCalculator(page);
         await page.getByRole("button", { name: /Check a requirement/ }).click(); await wait(600);
         const m = page.locator(".req-modal");
         await m.locator("input").nth(0).fill("10");

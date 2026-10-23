@@ -20,8 +20,9 @@ the two costs, you can find it rather than argue about it.
 
 ## What you need
 
-Go to **Strategy → Optimal replacement**, or press **Find a replacement
-interval** under **Use this model** on a saved model's page. It opens on **Saved
+Go to **Strategy → Optimal replacement**, or, on a saved model's page, press
+**Use this model** and choose **Find the best replacement interval** (a
+wear-out model also offers it when you click its **Failure pattern**). It opens on **Saved
 model** with that model (or the one you used last) chosen and its time unit
 filled in; pick another, or choose **Parameters** to type a distribution's
 parameters. Then supply two numbers:

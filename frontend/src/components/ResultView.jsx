@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ProbabilityPlot from "./ProbabilityPlot.jsx";
 import SurvivalPlot from "./SurvivalPlot.jsx";
 import Calculator, { initCalcState } from "./Calculator.jsx";
@@ -7,7 +7,7 @@ import ModelValidation from "./ModelValidation.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
 import CompetingRisksResult from "./CompetingRisksResult.jsx";
-import LifeAside, { paramView } from "./LifeSummary.jsx";
+import LifeAside, { LifeCard, paramView } from "./LifeSummary.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { distColor } from "../instrument.js";
 import { formatNumber } from "../format.js";
@@ -212,6 +212,25 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   if (!isNonparametric && !isDiscrete && !isFlexible && !hasPlot)
     tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
 
+  // The B-lives card (#288) sits in the Calculator's rail; a result with no
+  // calculator keeps it beside the plot.
+  const hasCalc = tabs.some((t) => t.id === "calc");
+  const showLife = (result.kind === "distribution" || isFlexible || isNonparametric) && !result.no_finite_maximum;
+  // The panel's "B-lives and mean life" link: the Calculator tab, scrolled to
+  // the card, with focus on it (the link it came from is gone).
+  const lifeRail = useRef(null);
+  const [toLife, setToLife] = useState(false);
+  const showLifeTab = hasCalc && showLife ? () => { setTab("calc"); setToLife(true); } : null;
+  useEffect(() => {
+    if (!toLife || tab !== "calc") return;
+    setToLife(false);
+    const el = lifeRail.current;
+    if (el) {
+      el.focus({ preventScroll: true });
+      el.scrollIntoView({ block: "nearest" });
+    }
+  }, [toLife, tab]);
+
   // PH models show their baseline parameters in the calculator's side rail;
   // every other kind leads with the answer card.
   const paramsInRail = isRegression && !!result.functions;
@@ -276,7 +295,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
       <div className="tab-panel">
         {tab === "survival" && isFlexible && (
           <FlexibleSurvival result={result} split={split} level={level} onLevel={setLevel} name={name}
-                            modelId={modelId} />
+                            modelId={modelId} lifeCard={!hasCalc} onShowLife={showLifeTab} />
         )}
         {tab === "survival" && !isFlexible && (
           <div className="detail-panel life-panel">
@@ -285,7 +304,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
                             download={`${name || result.distribution} — survival curve`} />
             </div>
             <LifeAside result={result} split={split} level={level} onLevel={setLevel}
-                       modelId={modelId} name={name} onUse={onUse} />
+                       modelId={modelId} name={name} onUse={onUse} lifeCard={!hasCalc} onShowLife={showLifeTab} />
           </div>
         )}
         {tab === "plot" && (
@@ -296,7 +315,8 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
             </div>
             {!isRegression && (
               <LifeAside result={result} split={split} bestFit={bestFit} level={level} onLevel={setLevel}
-                         compare={compare} onPick={onPick} modelId={modelId} name={name} onUse={onUse} />
+                         compare={compare} onPick={onPick} modelId={modelId} name={name} onUse={onUse}
+                         lifeCard={!hasCalc} onShowLife={showLifeTab} />
             )}
           </div>
         )}
@@ -313,6 +333,12 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
             nextIdRef={calcNextId}
             name={name || result.distribution}
             paramLabel={isRegression ? (p) => paramView(baselineOf(result), p).label : null}
+            rail={showLife && (
+              <div className="detail-panel life-rail" ref={lifeRail} tabIndex={-1} role="region"
+                   aria-label="B-lives and mean life">
+                <LifeCard result={result} level={level} onLevel={setLevel} modelId={modelId} name={name} />
+              </div>
+            )}
           />
         )}
         {tab === "coef" && (result.tvc ? <TvcCoefficients result={result} />

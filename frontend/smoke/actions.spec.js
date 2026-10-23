@@ -260,3 +260,34 @@ test("rename a diagram, and the delete dialog, in the app's own dialogs", async 
   await expect(renamed).toBeVisible();
   expect(problems).toEqual([]);
 });
+
+// A non-repairable model's panel stays short: the failure pattern and "Use this
+// model" open in dialogs, and the B-lives with the requirement check sit on the
+// Calculator tab.
+test("a model's failure pattern, Use this model and B-lives", async ({ page, problems }) => {
+  await open(page, "/models/m/sample-model-bearings-weibull");
+  const pattern = page.getByRole("button", { name: /^Failure pattern: Wear-out/ });
+  await pattern.click();
+  const reading = page.getByRole("dialog", { name: "Wear-out" });
+  await expect(reading).toContainText("β is above 1 at 95% confidence");
+  await expect(reading.getByRole("button", { name: /Find the best replacement interval/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(reading).toBeHidden();
+  await expect(pattern).toBeFocused();
+
+  await page.getByRole("button", { name: /^Use this model/ }).click();
+  const use = page.getByRole("dialog", { name: "Use this model" });
+  for (const step of ["Find the best replacement interval", "Forecast a fleet", "Plan a demonstration test", "Add to an RBD"]) {
+    await expect(use.getByRole("button", { name: new RegExp(step) })).toBeVisible();
+  }
+  await use.getByRole("button", { name: /Plan a demonstration test/ }).click();
+  await expect(page).toHaveURL(/\/strategy\/test-planning\?.*model=sample-model-bearings-weibull/);
+
+  await open(page, "/models/m/sample-model-bearings-weibull");
+  await page.getByRole("button", { name: /B-lives and mean life/ }).click();
+  const life = page.getByRole("region", { name: "B-lives and mean life" });
+  await expect(life.getByText("B10", { exact: true })).toBeVisible();
+  await expect(life.getByText("MTTF (mean)")).toBeVisible();
+  await expect(life.getByRole("button", { name: /Check a requirement/ })).toBeVisible();
+  await expectHealthy(page, problems, { label: "model calculator", chart: true });
+});
