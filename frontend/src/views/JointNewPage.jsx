@@ -211,7 +211,7 @@ export default function JointNewPage() {
   return (
     <div className="app joint-new">
       <PageHeader
-        crumbs={[{ label: "Models", to: "/models" }, { label: "Condition monitoring", to: "/models/joint" }]}
+        crumbs={[{ label: "Model", to: "/models" }, { label: "Condition monitoring", to: "/models/joint" }]}
         title="New condition monitoring model"
         meta="Fits how a reading drifts on each unit and how the risk of failing rises with it, together."
       />

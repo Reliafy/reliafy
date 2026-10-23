@@ -47,7 +47,7 @@ export default function JointModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Models", to: "/models" }, { label: "Condition monitoring", to: "/models/joint" }]}
+        crumbs={[{ label: "Model", to: "/models" }, { label: "Condition monitoring", to: "/models/joint" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""} · condition monitoring</>}

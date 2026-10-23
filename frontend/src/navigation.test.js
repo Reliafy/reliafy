@@ -16,10 +16,10 @@ const PAGES = new Set(appRoutes().filter((r) => !r.redirect).map((r) => r.path))
 // Pages that aren't in the menu themselves, and where they're opened from.
 const REACHED_FROM = {
   "/": "redirects to Home",
-  "/models/new": "Models › New model, Home's starts, a dataset's Fit menu",
-  "/models/recurrent/new": "Models › Repairable models › New model",
-  "/models/alt/new": "Models › Accelerated life › New model",
-  "/models/joint/new": "Models › Condition monitoring › New model",
+  "/models/new": "Model › New model, Home's starts, a dataset's Fit menu",
+  "/models/recurrent/new": "Model › Repairable › New model",
+  "/models/alt/new": "Model › Accelerated life › New model",
+  "/models/joint/new": "Model › Condition monitoring › New model",
   "/systems/b": "Systems › New diagram, Home's starts",
   "/systems/runs/compare": "Systems › Simulation runs › Compare",
   "/strategy/test-planning/sequential": "Test planning's tabs",
@@ -57,7 +57,7 @@ test("the menu is Home, then Design, Operate and Analyse, then Reports and the A
     ["home"], ["systems"], ["assets", "maintenance"], ["data", "models", "strategy", "forecasts"], ["reports", "agent"],
   ]);
   const labels = buildMenu({ has: ALL }).main.map((e) => e.label);
-  assert.deepEqual(labels, ["Home", "Systems", "Assets", "Maintenance", "Data", "Models", "Strategy", "Forecasts",
+  assert.deepEqual(labels, ["Home", "Systems", "Assets", "Maintenance", "Data", "Model", "Strategy", "Forecasts",
     "Reports", "Reliability Agent"]);
 });
 
@@ -68,7 +68,7 @@ test("each entry's children, as agreed", () => {
   assert.deepEqual(kids("assets"), ["Items", "Locations", "Parts and stock", "Classes"]);
   assert.deepEqual(kids("maintenance"), ["RCM studies"]);
   assert.deepEqual(kids("data"), []);
-  assert.deepEqual(kids("models"), ["Non-repairable models", "Repairable models", "Accelerated life", "Degradation",
+  assert.deepEqual(kids("models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
     "Condition monitoring", "Degradation tracking"]);
   assert.deepEqual(kids("strategy"), ["Optimal replacement", "Compare two models", "Failure finding", "Test planning"]);
   assert.deepEqual(kids("forecasts"), []);
@@ -160,9 +160,9 @@ test("a page lights its entry, and its child, on landing, child and detail pages
   };
   assert.deepEqual(at("/home"), ["home", null]);
   assert.deepEqual(at("/models"), ["models", null]);
-  assert.deepEqual(at("/models/life"), ["models", "Non-repairable models"]);
-  assert.deepEqual(at("/models/m/abc"), ["models", "Non-repairable models"]);
-  assert.deepEqual(at("/models/new"), ["models", "Non-repairable models"]);
+  assert.deepEqual(at("/models/life"), ["models", "Non-repairable"]);
+  assert.deepEqual(at("/models/m/abc"), ["models", "Non-repairable"]);
+  assert.deepEqual(at("/models/new"), ["models", "Non-repairable"]);
   assert.deepEqual(at("/models/joint/x"), ["models", "Condition monitoring"]);
   assert.deepEqual(at("/models/tracking/f1"), ["models", "Degradation tracking"]);
   assert.deepEqual(at("/data"), ["data", null]);
@@ -189,9 +189,9 @@ test("a page lights its entry, and its child, on landing, child and detail pages
 test("a page's breadcrumbs: its entry, then its child, from the live menu", () => {
   const live = liveEntries(ALL);
   assert.deepEqual(crumbsFor(live, "models", "/models"), []);
-  assert.deepEqual(crumbsFor(live, "models", "/models/life"), [{ label: "Models", to: "/models" }]);
+  assert.deepEqual(crumbsFor(live, "models", "/models/life"), [{ label: "Model", to: "/models" }]);
   assert.deepEqual(crumbsFor(live, "models", "/models/m/x", "/models/life"),
-    [{ label: "Models", to: "/models" }, { label: "Non-repairable models", to: "/models/life" }]);
+    [{ label: "Model", to: "/models" }, { label: "Non-repairable", to: "/models/life" }]);
   assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/rcm/s", "/maintenance/rcm"),
     [{ label: "Maintenance", to: "/maintenance" }, { label: "RCM studies", to: "/maintenance/rcm" }]);
   // Without Reliafy Maintenance, Maintenance is the RCM studies: one crumb, to a page the user has.

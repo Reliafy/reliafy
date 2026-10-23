@@ -9,7 +9,7 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { guide: "accelerated-life-testing" };
 
-// Models › Accelerated life: ALT models. The fit flow lives on its own
+// Model › Accelerated life: ALT models. The fit flow lives on its own
 // page (/models/alt/new).
 export default function AltHome() {
   const navigate = useNavigate();

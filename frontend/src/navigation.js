@@ -66,10 +66,10 @@ export const ENTRIES = [
 
   { id: "data", section: "analyse", label: "Data", to: "/data" },
   {
-    id: "models", section: "analyse", label: "Models", to: "/models",
+    id: "models", section: "analyse", label: "Model", to: "/models",
     children: [
-      { to: "/models/life", label: "Non-repairable models", also: ["/models/m", "/models/new"] },
-      { to: "/models/recurrent", label: "Repairable models" },
+      { to: "/models/life", label: "Non-repairable", also: ["/models/m", "/models/new"] },
+      { to: "/models/recurrent", label: "Repairable" },
       { to: "/models/alt", label: "Accelerated life" },
       { to: "/models/degradation", label: "Degradation" },
       { to: "/models/joint", label: "Condition monitoring" },

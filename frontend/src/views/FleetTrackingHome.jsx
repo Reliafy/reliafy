@@ -36,7 +36,7 @@ function HealthChips({ tracking }) {
 
 const HELP = { guide: "degradation-modelling" };
 
-// Models › Degradation tracking: the tracked fleets: one row per degradation model with its live
+// Model › Degradation tracking: the tracked fleets: one row per degradation model with its live
 // health rollup. Opening a row goes to that model's tracking page.
 export default function FleetTrackingHome() {
   const navigate = useNavigate();

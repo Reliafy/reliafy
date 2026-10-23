@@ -184,7 +184,7 @@ export default function AltNewPage() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/models")}>Models</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/models")}>Model</button> /{" "}
             <button className="crumb-link" onClick={() => navigate("/models/alt")}>Accelerated life</button> /{" "}
             <b>New model</b>
           </div>

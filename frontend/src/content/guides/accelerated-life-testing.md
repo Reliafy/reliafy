@@ -46,7 +46,7 @@ the same.
 
 ## Choosing the model
 
-Go to **Models → Accelerated life → New model**. The flow asks for the
+Go to **Model → Accelerated life → New model**. The flow asks for the
 **model before the data**, which is deliberate — the life-stress relationship
 determines how many stress columns you'll be mapping.
 

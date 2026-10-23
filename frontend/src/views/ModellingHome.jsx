@@ -11,7 +11,7 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
-// Models › Non-repairable models: the life-data models list.
+// Model › Non-repairable: the life-data models list.
 export default function ModellingHome() {
   const navigate = useNavigate();
   const { models, loading, refresh } = useModels();
