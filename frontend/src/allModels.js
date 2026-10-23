@@ -22,7 +22,7 @@ export const TYPE_LABEL = {
   degradation: "Degradation",
   alt: "Accelerated life",
   recurrent: "Repairable model",
-  joint: "Remaining life from condition",
+  joint: "Condition monitoring",
 };
 
 // The Models list's type filter: the same names as the menu's children.
