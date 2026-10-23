@@ -74,13 +74,13 @@ export const DETAIL_IDS = {
   "/models/degradation/:id": ["/api/degradation/models", list("models")],
   "/models/recurrent/:id": ["/api/recurrent/models", list("models")],
   "/models/alt/:id": ["/api/alt/models", list("models")],
-  // A condition monitoring model: smoke/seed.js fits one.
+  // A condition and life model: smoke/seed.js fits one.
   "/models/joint/:id": ["/api/joint/models", list("models")],
   "/systems/b/:id": ["/api/rbds", list("rbds")],
   "/systems/runs/:runId": ["/api/rbd-runs", list("runs", "run_id")],
   "/data/:id": ["/api/datasets", list("datasets")],
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
-  "/models/tracking/:fleetId": ["/api/fleet/tracked", list("fleets")],
+  "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],
   "/forecasts/:id": ["/api/fleet/fleets", list("fleets")],
   "/maintenance/rcm/:id": ["/api/rcm/studies", list("studies")],
   "/asset-register/positions/:id": ["/api/maintenance/overview", list("tree")],
@@ -112,7 +112,7 @@ const CHART_PAGES = {
   "/models/alt/:id": true,
   "/models/joint/:id": true,
   "/forecasts/:id": true,
-  "/models/tracking/:fleetId": true,
+  "/risk/:fleetId": true,
   // A class with a fitted model shows its failure forecast (#407).
   "/asset-register/classes/:name": (cls) => Boolean(cls.model),
   // A failure-finding analysis is one interval: no chart.

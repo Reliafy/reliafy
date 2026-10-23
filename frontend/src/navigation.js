@@ -26,8 +26,10 @@ export const SECTIONS = [
 
 // `needs` names what an entry or child needs: "maintenance" (Reliafy
 // Maintenance is on and the user may use it), "agent" (the Reliability Agent
-// is on), "preview" (the deployment shows the menu's not-yet-built entries as
-// blank pages, plannedPages.js; nothing else has them, so they stay hidden).
+// is on), "risk" (the workspace uses it: it tracks items or has a degradation
+// or condition-and-life model; or the menu preview is on), "preview" (the
+// deployment shows the menu's not-yet-built entries as blank pages,
+// plannedPages.js; nothing else has them, so they stay hidden).
 //
 // `landingNeeds`: the entry's own landing page needs that; without it the
 // entry opens on its first child instead, and that child isn't repeated
@@ -71,7 +73,15 @@ export const ENTRIES = [
     ],
   },
   { id: "failures", section: "operate", label: "Failures", to: "/failures", needs: "preview" },
-  { id: "risk", section: "operate", label: "Risk", to: "/risk", needs: "preview" },
+  // Risk: models in use on the items in service. Condition monitoring (the
+  // tracked items' latest condition, remaining life and alarms) is its only
+  // page so far, so Risk opens straight on it ("riskOverview": no Risk
+  // landing page yet). Risk pages added later go after it as children, and it
+  // isn't repeated under Risk.
+  {
+    id: "risk", section: "operate", label: "Risk", to: "/risk", needs: "risk", landingNeeds: "riskOverview",
+    children: [{ to: "/risk", label: "Condition monitoring" }],
+  },
 
   {
     id: "data", section: "analyse", label: "Data", to: "/data",
@@ -84,8 +94,7 @@ export const ENTRIES = [
       { to: "/models/recurrent", label: "Repairable" },
       { to: "/models/alt", label: "Accelerated life" },
       { to: "/models/degradation", label: "Degradation" },
-      { to: "/models/joint", label: "Condition monitoring" },
-      { to: "/models/tracking", label: "Degradation tracking" },
+      { to: "/models/joint", label: "Condition and life" },
     ],
   },
   {
@@ -110,7 +119,7 @@ export const ENTRIES = [
 export const ROLES = [
   {
     id: "analyst", label: "Reliability engineer / analyst",
-    entries: ["data", "models", "strategy", "forecasts", "systems", "reports", "agent"],
+    entries: ["data", "models", "strategy", "forecasts", "risk", "systems", "reports", "agent"],
     home: ["recent-models", "recent-data"],
   },
   {
@@ -254,7 +263,7 @@ export const COLLECTION_PATHS = {
   strategy_analyses: "/strategy/analyses/",
   rcm_studies: "/maintenance/rcm/",
   fleets: "/forecasts/",
-  tracked_fleets: "/models/tracking/",
+  tracked_fleets: "/risk/",
 };
 
 export function itemPath(collection, id) {

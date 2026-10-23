@@ -8,9 +8,9 @@ test("each dataset offers the fits that take it alone", () => {
     [{ label: "Non-repairable model with covariates", to: "/models/new?dataset=a" }]);
   assert.equal(fitOptions({ id: "b", tags: ["Repairable"] })[0].to, "/models/recurrent/new?dataset=b");
   assert.deepEqual(fitOptions({ id: "c", tags: ["Measurements"] }).map((x) => x.label), ["Degradation model"]);
-  // Life data and readings in one table go to condition monitoring, with the table as both inputs.
+  // Life data and readings in one table go to condition and life, with the table as both inputs.
   assert.deepEqual(fitOptions({ id: "d", tags: ["Non-repairable", "Measurements"] }),
-    [{ label: "Condition monitoring model", to: "/models/joint/new?lifetimes=d&readings=d" }]);
+    [{ label: "Condition and life model", to: "/models/joint/new?lifetimes=d&readings=d" }]);
 });
 
 test("each new-model flow offers only the datasets it can use", async () => {

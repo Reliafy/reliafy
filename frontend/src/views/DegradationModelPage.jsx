@@ -10,7 +10,7 @@ import { relativeTime } from "../instrument.js";
 
 // One saved degradation model, in the non-repairable model page's shape: the header,
 // then one card with the tabs, each chart beside its side panel. The fleet of
-// tracked items lives under Model → Degradation tracking ("Track items").
+// tracked items lives under Risk → Condition monitoring ("Track items").
 export default function DegradationModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -49,7 +49,7 @@ export default function DegradationModelPage() {
           </>
         }
         primary={
-          <button onClick={() => navigate("/models/tracking")}>
+          <button onClick={() => navigate("/risk")}>
             Track items{nItems > 0 ? ` (${nItems})` : ""}
           </button>
         }

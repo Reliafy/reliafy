@@ -32,7 +32,7 @@ const GIVEN_LABEL = {
 // ``initialSavedId`` opens on that saved model and emits it (a link's preset).
 // ``wt`` is a guided walkthrough's anchor (walkthroughs.js).
 // ``joint`` (an RBD block's non-repairable model: ``{repairable}``) adds "Condition-based":
-// one unit of a condition monitoring model, given its readings.
+// one unit of a condition and life model, given its readings.
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
                                       preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt,
                                       joint = null }) {
@@ -223,7 +223,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
           ...(meanEntry ? [{ value: "mean", label: "Mean" }] : []),
           { value: "params", label: "Parameters" },
           { value: "saved", label: "Saved model" },
-          ...(joint ? [{ value: "joint", label: "Condition monitoring", title: "One unit of a condition monitoring model (remaining life from its readings)" }] : []),
+          ...(joint ? [{ value: "joint", label: "Condition and life", title: "One unit of a condition and life model (remaining life from its readings)" }] : []),
         ]}
       />
 

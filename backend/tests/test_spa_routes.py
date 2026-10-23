@@ -45,10 +45,10 @@ def test_llms_txt_is_served_as_text(site):
 @pytest.mark.parametrize("path", [
     "/home", "/models", "/models/m/abc", "/data", "/data/d1", "/systems/b/123", "/systems/structure",
     "/asset-register", "/asset-register/items/i1", "/maintenance", "/maintenance/rcm/s1", "/forecasts/f1",
-    "/models/tracking/f1", "/reports", "/strategy/replacement",
+    "/risk", "/risk/f1", "/reports", "/strategy/replacement",
     # Earlier addresses: the app redirects them, so the server must still serve it.
     "/modelling", "/modelling/m/abc", "/modelling/data", "/modelling/data/d1", "/rbds/b/123", "/datasets/list",
-    "/datasets/d/d1", "/fleet/tracking/f1", "/rcm/studies/s1", "/maintenance/items/i1",
+    "/datasets/d/d1", "/fleet/tracking/f1", "/models/tracking/f1", "/rcm/studies/s1", "/maintenance/items/i1",
     "/settings", "/team", "/admin", "/billing", "/tokens", "/changes",
     "/login", "/oauth/consent", "/p/sometoken", "/unsubscribe", "/api-docs", "/api-docs/tools", "/api-docs/mcp", "/terms", "/privacy",
     "/blog", "/blog/a-post-not-prerendered-yet", "/learn/weibull", "/guides/x", "/reference/weibull",

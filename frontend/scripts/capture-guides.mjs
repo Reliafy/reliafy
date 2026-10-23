@@ -642,7 +642,7 @@ async function main() {
     { file: "recurrent-02-mcf.png", url: `/models/recurrent/${S.recurrent}`, settle: 2500 },
     // --- Degradation ---
     { file: "degradation-01-model.png", url: `/models/degradation/${S.degradation}`, settle: 2500 },
-    { file: "degradation-02-tracking.png", url: "/models/tracking", settle: 2000 },
+    { file: "degradation-02-tracking.png", url: "/risk", settle: 2000 },
     // --- Optimal replacement: the bearing model, 1,000 planned vs 8,000 failure ---
     // The tool opens on "Saved model"; ?model= chooses the bearing fit, as a
     // model page's "Use this model" does (#294).

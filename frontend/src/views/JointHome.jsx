@@ -12,7 +12,7 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 const JOINT_COLOR = CATEGORY.blue;
 const HELP = { guide: "condition-based-risk" };
 
-// Condition monitoring models (joint models of readings and failures): the
+// Condition and life models (joint models of readings and failures): the
 // list, like the other model types'. The fit lives on /models/joint/new.
 export default function JointHome() {
   const navigate = useNavigate();
@@ -52,7 +52,7 @@ export default function JointHome() {
         fields={(m) => [m.name, m.marker, m.path_model]}
         help={HELP}
         empty={{
-          title: "No condition monitoring models yet",
+          title: "No condition and life models yet",
           body: "Fit one from two tables: your units (each one's age at failure, or now, and whether it failed) and their readings (unit, age, value).",
           action: newModel,
         }}

@@ -61,6 +61,21 @@ def of_user(db, uid: str) -> dict:
     return {"roles": roles, "offer": offer}
 
 
+def uses(db, owner: str | None) -> dict:
+    """What the workspace (``owner``: a uid, or "team:<id>") has made, for the
+    menu entries that show only once a workspace uses them. ``risk``: any
+    tracked fleet, degradation model or condition-and-life (joint) model of its
+    own; the shared samples don't count. One indexed lookup each."""
+    if not owner:
+        return {"risk": False}
+    risk = (
+        db.tracked_fleets.find_one({"owner_id": owner}, {"_id": 1}) is not None
+        or db.degradation_models.find_one({"owner_id": owner}, {"_id": 1}) is not None
+        or db.models.find_one({"owner_id": owner, "kind": "joint"}, {"_id": 1}) is not None
+    )
+    return {"risk": risk}
+
+
 def save(db, uid: str, roles) -> dict:
     """Save the user's roles (``[]``: everything shown); the question is answered."""
     cleaned = clean(roles)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Header
 from fastapi.responses import JSONResponse
 
 from backend.auth import current_user_doc
@@ -80,10 +80,20 @@ def put_time_zone(time_zone: str | None = Body(default=None, embed=True),
 
 
 @router.get("/me/roles")
-def get_roles(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
-    """What the user does: ``{"roles": [...], "offer": bool}``. No roles is
-    everything shown; ``offer`` says to ask (once, new users)."""
-    return roles_service.of_user(session, user["uid"])
+def get_roles(user: dict = Depends(current_user_doc), session=Depends(get_session),
+              x_workspace_id: str | None = Header(default=None)) -> dict:
+    """What the user does, and what the active workspace uses: together they
+    shape the menu. ``{"roles": [...], "offer": bool, "uses": {"risk": bool}}``.
+    No roles is everything shown; ``offer`` says to ask (once, new users);
+    ``uses`` turns on the entries a workspace sees only once it has used them."""
+    out = roles_service.of_user(session, user["uid"])
+    workspace = (x_workspace_id or access_service.PERSONAL).strip() or access_service.PERSONAL
+    owner = user["uid"]
+    if workspace != access_service.PERSONAL:
+        teams = access_service.user_teams(session, user["uid"])
+        owner = access_service.team_principal(workspace) if any(t["_id"] == workspace for t in teams) else None
+    out["uses"] = roles_service.uses(session, owner)
+    return out
 
 
 @router.put("/me/roles")

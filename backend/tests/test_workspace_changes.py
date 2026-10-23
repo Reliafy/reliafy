@@ -102,7 +102,7 @@ def test_a_condition_based_model_is_labelled_and_linked_as_one(client):
     put(db, "models", "pump-life", A, ago(days=1), results=WEIBULL_RESULTS)
     out = changes(client)
     rows = {r["id"]: (r["type"], r["url"]) for r in out["new"]}
-    assert rows["pump-risk"] == ("Condition monitoring model", "/models/joint/pump-risk")
+    assert rows["pump-risk"] == ("Condition and life model", "/models/joint/pump-risk")
     assert rows["pump-life"] == ("Non-repairable model", "/models/m/pump-life")
 
 
@@ -125,6 +125,7 @@ def test_readings_on_tracked_items_change_their_fleet(client):
                                      "created_at": ago(days=90), "updated_at": at})
     (row,) = changes(client)["changed"]
     assert row["id"] == "brake-fleet" and row["detail"] == "new readings on 2 items"
+    assert row["url"] == "/risk/brake-fleet"
 
 
 # ---- Refits ----------------------------------------------------------------------------

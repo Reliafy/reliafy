@@ -21,16 +21,6 @@ export const PLANNED = {
       "\"Did the change work?\": a before-and-after check on the failure rate",
     ],
   },
-  risk: {
-    title: "Risk",
-    purpose: "Live risk from your block diagrams, kept current by what is fitted and what the sensors say.",
-    will: [
-      "Diagrams whose blocks follow the item fitted at their position",
-      "Condition-monitoring alarms and remaining life per block",
-      "What to fix first, recalculated as readings arrive",
-      "Positions most at risk in the next 30 days",
-    ],
-  },
   fleets: {
     section: "assets",
     title: "Fleets",

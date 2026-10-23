@@ -18,7 +18,7 @@ export const GUIDE_COVERAGE = [
   { feature: "Repairable models (repairable systems)", href: "/models/recurrent" },
   { feature: "Accelerated life models", href: "/models/alt" },
   { feature: "Degradation models", href: "/models/degradation" },
-  { feature: "Condition monitoring (remaining life from readings)", href: "/models/joint" },
+  { feature: "Condition and life (remaining life from readings)", href: "/models/joint" },
   { feature: "Per-demand (one-shot) models", href: "/models/new?mode=perdemand" },
   // Data.
   { feature: "Data (datasets)", href: "/data" },
@@ -39,7 +39,7 @@ export const GUIDE_COVERAGE = [
   { feature: "Test planning: comparison", href: "/strategy/test-planning/comparison" },
   // Fleets.
   { feature: "Fleet failure and spares forecasts", href: "/forecasts" },
-  { feature: "Degradation tracking", href: "/models/tracking" },
+  { feature: "Condition monitoring (tracked items)", href: "/risk" },
   // RCM.
   { feature: "RCM studies", href: "/maintenance/rcm" },
   // Sharing, reports and teams.

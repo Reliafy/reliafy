@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useLocation } from "react-router-dom";
 import { dismissRolesOffer, getMaintenanceAccess, getMyRoles, setMyRoles } from "./api.js";
 import { useAppConfig } from "./ConfigProvider.jsx";
+import { useWorkspace } from "./WorkspaceProvider.jsx";
 import { buildMenu, crumbsFor, liveEntries } from "./navigation.js";
 
 const RolesContext = createContext({
@@ -11,6 +12,7 @@ const RolesContext = createContext({
   saveRoles: () => Promise.resolve(),
   dismissOffer: () => Promise.resolve(),
   has: {},
+  noteUse: () => {},
   live: liveEntries({}),
   menu: { main: liveEntries({}), more: [] },
 });
@@ -19,17 +21,30 @@ const RolesContext = createContext({
 // the sidebar, section headers, Home and the Settings picker. `has` is what
 // this workspace has (navigation.js `needs`); `live` is every entry it has,
 // whatever the roles (for breadcrumbs and in-page tabs).
+//
+// `uses` is what the active workspace has used, for entries it sees only then
+// (Risk: tracked items, degradation or condition-and-life models); it comes
+// with the roles and is fetched again on a workspace switch. A page that
+// makes the first such thing calls `noteUse("risk")` so the entry appears
+// without a reload.
 export function RolesProvider({ children }) {
+  const { workspace } = useWorkspace();
   const [state, setState] = useState({ roles: [], offer: false, loaded: false });
+  const [uses, setUses] = useState({});
   useEffect(() => {
     let alive = true;
     getMyRoles()
-      .then((d) => alive && setState({ roles: d.roles || [], offer: !!d.offer, loaded: true }))
+      .then((d) => {
+        if (!alive) return;
+        setState({ roles: d.roles || [], offer: !!d.offer, loaded: true });
+        setUses(d.uses || {});
+      })
       .catch(() => alive && setState({ roles: [], offer: false, loaded: true }));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [workspace]);
+  const noteUse = useCallback((key) => setUses((u) => (u[key] ? u : { ...u, [key]: true })), []);
 
   const { reliability_agent: agentEnabled, maintenance: maintenanceEnabled, menu_preview: previewOn } = useAppConfig();
   // Reliafy Maintenance is for its operators only: the same check its pages make.
@@ -55,13 +70,16 @@ export function RolesProvider({ children }) {
   }, []);
 
   const value = useMemo(() => {
-    const has = { maintenance: !!(maintenanceEnabled && maintenanceAllowed), agent: !!agentEnabled, preview: !!previewOn };
+    const has = {
+      maintenance: !!(maintenanceEnabled && maintenanceAllowed), agent: !!agentEnabled, preview: !!previewOn,
+      risk: !!(uses.risk || previewOn),
+    };
     return {
-      ...state, saveRoles, dismissOffer, has,
+      ...state, saveRoles, dismissOffer, has, noteUse,
       live: liveEntries(has),
       menu: buildMenu({ roles: state.roles, has }),
     };
-  }, [state, saveRoles, dismissOffer, maintenanceEnabled, maintenanceAllowed, agentEnabled, previewOn]);
+  }, [state, saveRoles, dismissOffer, noteUse, uses, maintenanceEnabled, maintenanceAllowed, agentEnabled, previewOn]);
   return <RolesContext.Provider value={value}>{children}</RolesContext.Provider>;
 }
 

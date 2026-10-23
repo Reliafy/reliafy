@@ -41,10 +41,10 @@ export function attentionRows({ changes = null, tracked = [], maintenance = null
     const t = f.tracking || {};
     if (t.replace > 0) {
       rows.push({ key: `track-${f.id}`, kind: "Degradation", tone: "danger", name: f.name,
-        url: `/models/tracking/${f.id}`, detail: `${plural(t.replace, "item")} to replace now`, at: null });
+        url: `/risk/${f.id}`, detail: `${plural(t.replace, "item")} to replace now`, at: null });
     } else if (t.plan > 0) {
       rows.push({ key: `track-${f.id}`, kind: "Degradation", tone: "warning", name: f.name,
-        url: `/models/tracking/${f.id}`, detail: `${plural(t.plan, "item")} to plan a replacement for`, at: null });
+        url: `/risk/${f.id}`, detail: `${plural(t.plan, "item")} to plan a replacement for`, at: null });
     }
   }
   for (const t of maintenance?.due || []) {
@@ -89,7 +89,7 @@ export function recentRows({
     ...own(analyses).map((a) => ({ key: `sa-${a.id}`, kind: "Strategy analysis", name: a.name,
       url: `/strategy/analyses/${a.id}`, detail: a.headline || null, at: when(a) })),
     ...own(tracked).map((f) => ({ key: `track-${f.id}`, kind: "Tracked fleet", name: f.name,
-      url: `/models/tracking/${f.id}`, detail: f.model_name || null, at: when(f) })),
+      url: `/risk/${f.id}`, detail: f.model_name || null, at: when(f) })),
   ];
   return rows.map((r) => ({ ...r, tone: null })).sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
 }

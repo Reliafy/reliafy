@@ -22,7 +22,7 @@ export const TYPE_LABEL = {
   degradation: "Degradation",
   alt: "Accelerated life",
   recurrent: "Repairable model",
-  joint: "Condition monitoring",
+  joint: "Condition and life",
 };
 
 // The Models list's type filter: the same names as the menu's children.
@@ -31,7 +31,7 @@ export const TYPE_FILTERS = [
   { value: "recurrent", label: "Repairable models" },
   { value: "alt", label: "Accelerated life" },
   { value: "degradation", label: "Degradation" },
-  { value: "joint", label: "Condition monitoring" },
+  { value: "joint", label: "Condition and life" },
 ];
 
 export const distLabel = (d = "") => String(d).replace(/\s*\(.*$/, "").replace(/\s+PH$/, "");
