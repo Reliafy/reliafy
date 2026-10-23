@@ -279,6 +279,12 @@ RETURN ends, collect(CASE WHEN x IS NULL THEN NULL ELSE {{id: x.id, label: x.lab
 """
 _OUT = _ENDS.format(arrow="-[r]->")
 _INN = _ENDS.format(arrow="<-[r]-")
+# Every edge of one type in an organisation, by its ends' ids.
+_PAIRS = """
+MATCH (a:Node {ns: $ns, org: $org})-[r]->(b:Node {ns: $ns, org: $org})
+WHERE type(r) = $type
+RETURN a.id AS src, b.id AS dst
+"""
 # One edge's properties, found by its ends.
 _EDGE = """
 MATCH (:Node {ns: $ns, org: $org, id: $src})-[r]->(:Node {ns: $ns, org: $org, id: $dst})
@@ -642,6 +648,16 @@ class Neo4jGraphStore:
     def inn(self, org: str, dst: str, type: str) -> list[dict]:
         """Nodes at the start of ``dst``'s incoming ``type`` edges."""
         return self._ends(org, dst, type, False)
+
+    def pairs(self, org: str, type: str) -> list[tuple[str, str]]:
+        """(src, dst) for every ``type`` edge in the organisation: a whole tree's
+        links in one read, rather than one ``out`` per node."""
+        found = [(r["src"], r["dst"]) for r in self.conn.run(_PAIRS, {"ns": self.ns, "org": org, "type": type})]
+        pending = self._pending()
+        if pending is None or not pending.edges:
+            return found
+        mine = {(k[2], k[3]): e["op"] for k, e in pending.edges.items() if k[0] == org and k[1] == type}
+        return [p for p in found if p not in mine] + [p for p, op in mine.items() if op == "put"]
 
     def edge(self, org: str, type: str, src: str, dst: str) -> dict | None:
         """The properties of the ``type`` edge from ``src`` to ``dst`` (None: there's none)."""

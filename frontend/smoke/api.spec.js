@@ -28,6 +28,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/graph/schema"], // #423
   ["GET", "/api/maintenance/conditions"], // #428
   ["GET", "/api/maintenance/overview"],
+  ["GET", "/api/maintenance/tree"], // the asset tree pane
   ["GET", "/api/maintenance/places"], // Assets: the top-level places
   ["GET", "/api/maintenance/work-orders"],
   ["GET", "/api/rbd-runs"],

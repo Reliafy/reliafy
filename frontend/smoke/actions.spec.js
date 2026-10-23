@@ -47,10 +47,12 @@ test("the assets are the top-level places, and the positions at none stay reacha
 
   await rest.getByRole("link", { name: "Not at a place yet" }).click();
   await expect(page).toHaveURL(/\/asset-register\/positions\?place=none$/);
-  await expect(page.getByRole("heading", { name: "Positions not at a place yet" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Smoke pump 1", exact: true })).toBeVisible();
+  await expect(page.locator(".tp-notice")).toContainText("Not at a location yet");
+  await expect(page.getByRole("treeitem", { name: /^Smoke pump 1\b/ })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: /^Delivery truck/ })).toHaveCount(0); // at the depot
   await page.getByRole("link", { name: "Show every position" }).click();
   await expect(page.getByRole("heading", { name: "Positions", exact: true })).toBeVisible();
+  await expect(page.locator(".tp-notice")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "positions" });
 
   await open(page, "/asset-register");

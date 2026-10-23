@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  NOT_PLACED_PATH, assetsSummary, dueText, insideText, openWorkPath, placePath, treeOf, treeSize,
+  NOT_PLACED_PATH, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "./maintenanceAssets.js";
 
 test("a place's page, its open work and the positions at no place", () => {
@@ -18,23 +18,6 @@ test("what's inside and what's due, in words", () => {
   assert.deepEqual(dueText({ due: 3, overdue: 1, next_due: "2026-10-01" }, (d) => `on ${d}`),
     { text: "3 due", overdue: "1 overdue" });
   assert.deepEqual(dueText({ due: 1, overdue: 0, next_due: "2026-11-04" }), { text: "1 due, next 2026-11-04", overdue: "" });
-});
-
-test("the positions tree cut to those at no place", () => {
-  const tree = [
-    { id: "car", children: [{ id: "tyres", children: [] }, { id: "towbar", children: [] }] },
-    { id: "pool", children: [{ id: "pump", children: [] }] },
-    { id: "dishwasher", children: [] },
-  ];
-  // The towbar has a place of its own (in the garage); the pool and its pump are in the pool area.
-  const cut = treeOf(tree, ["car", "tyres", "dishwasher"]);
-  assert.deepEqual(cut, [
-    { id: "car", children: [{ id: "tyres", children: [] }] },
-    { id: "dishwasher", children: [] },
-  ]);
-  assert.equal(treeSize(cut), 3);
-  assert.equal(treeSize(tree), 6);
-  assert.deepEqual(treeOf(tree, []), []);
 });
 
 test("the list's summary line", () => {
