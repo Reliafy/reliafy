@@ -23,8 +23,8 @@ const INTRO = {
 // Strategy › Test planning: planning reliability tests before they're run,
 // one tab per kind of test (each tab its own path, so it can be linked).
 // The Demonstration tab keeps the old Demonstration test page's links: a
-// model's "Plan a test to demonstrate this" (#295) opens it with the
-// requirement in the query string.
+// requirement in the query string (b, life, conf, unit; #295) pre-fills it,
+// and "Use this model" (#294) brings a model's β and unit.
 export default function StrategyTestPlanning() {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();

@@ -13,33 +13,33 @@ hours, at 90% confidence*. That's two questions. Do the data you have already
 show it? And if they don't, how many units do you have to test, for how long,
 to show it?
 
-Reliafy answers the first from a fitted non-repairable model and the second on the
-**Test planning** page, and one leads straight into the other. This guide
+Reliafy answers the first from a fitted non-repairable model's **Calculator**
+and the second on the **Test planning** page, and the model leads straight into
+the plan. This guide
 uses the sample bearing model (a Weibull fit to 30 failure times) and the
 requirement B10 ≥ 500 hours at 90% confidence.
 
 ## Check the requirement against the model
 
-Open the model and choose the **Calculator** tab. At the foot of the **Life**
-card, under the calculator's inputs, is a **Requirement** row: click **Check**. Enter the B-life as the percent failed (**10** for B10) and the
-**Required life** (**500** hours). The **Confidence** is the Life card's, 90%
-here. Press **Check**.
+Open the model and choose the **Calculator** tab. In its inputs, choose **Time
+at reliability** and click **B10** (reliability 90%). Keep **Confidence bound**
+at **Lower** and **Confidence level %** at **90**, the requirement's
+confidence. The answer is the B10 life with its lower bound:
 
-The requirement is judged on the **lower bound**, not the estimate, so a pass
-holds at that confidence:
+> Time when reliability falls to 90% (the B10 life): **582 hours** — we're 90%
+> sure it's at least 467 hours
 
-> ✕ **Does not meet**: at 90% confidence B10 ≥ 467 hours, below the 500
-> required. Best estimate 582.
->
-> The best estimate meets it, but these data can't show it at 90% confidence
-> yet: more data or a demonstration test could.
+![The calculator's B10 life and its 90% lower bound](/guides/img/blife-02-calculator.png)
 
-![The requirement check: B10 ≥ 500 hours is not shown at 90% confidence](/guides/img/req-01-check.png)
+Judge the requirement on the **lower bound**, not the estimate, so a pass holds
+at that confidence: the requirement is met when the bound is at or above the
+life required. Here the bound, 467 hours, is below the 500 required, so these
+data **don't show** B10 ≥ 500 hours at 90% confidence.
 
 This is the common, frustrating case: the bearings probably *are* good enough
-(582 > 500), but 30 failures can't prove it at 90%. Try 450 hours instead and the
-verdict is **Meets**: 467 is at or above 450. The row on the Life card keeps the
-answer (*B10 ≥ 500 · Does not meet*) while you stay on the model.
+(the best estimate, 582, is above 500), but 30 failures can't prove it at 90%
+yet. More data or a demonstration test could. Against 450 hours the same
+answer passes: 467 is at or above 450.
 
 A lower confidence would pass sooner, but the confidence is part of the
 requirement, so change it only if the specification allows. To see how the
@@ -47,12 +47,14 @@ bounds move with confidence, read [B-lives and confidence bounds](/guides/b-live
 
 ## Plan a test to demonstrate it
 
-When the verdict is *Does not meet*, **Plan a test to demonstrate this** opens
+When the bound falls short, plan a test. On the model's page, press **Use this
+model** and choose **Plan a demonstration test**: it opens
 [Test planning](/strategy/test-planning) on its **Demonstration** tab with the
-requirement already filled in: a
-pass/fail test of **B10 ≥ 500 hours at 90%**, in hours, solving for the number
-of units to test. It also offers the model's Weibull shape: *β from Bearing life
-— Weibull (sample): 2.5, 95% interval 1.88–3.32*.
+model's unit and its Weibull shape, *β from Bearing life — Weibull (sample):
+2.5, 95% interval 1.88–3.32*. Set **Requirement** to **B-life (e.g. B10 ≥ a
+life)**, then the **B-life (% failed)** to **10**, the **Life required** to
+**500** and the **Confidence (%)** to **90**: a pass/fail test of **B10 ≥ 500
+hours at 90%**, solving for the number of units to test.
 
 Press **Compute** with **Failures allowed** at **0** and a **Test length per
 unit** of **1** (× the life):
