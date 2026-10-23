@@ -57,6 +57,7 @@ const ICONS = {
   requirements: icon(<><path d="M9 6h11M9 12h11M9 18h11" /><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17" /></>),
   assets: icon(<><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z" /><path d="M4 7.5 12 12l8-4.5M12 12v9" /></>),
   maintenance: icon(<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />),
+  risk: icon(<><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z" /><path d="M8 12.5h2l1.4-3 2.2 6 1.4-3H16" /></>),
   failures: icon(<><path d="M12 4 3 20h18z" /><path d="M12 10v4.5M12 17.5h.01" /></>),
   data: icon(<><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" /></>),
   models: icon(<path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />),
