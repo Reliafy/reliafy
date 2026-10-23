@@ -7,7 +7,7 @@
 // finally failed). `mcp` is the MCP connector's switch: on unless the server
 // says it's off (it's on for every self-hosted install by default).
 export const DEFAULT_CONFIG = {
-  auth: true, ai: false, billing: false, reliability_agent: false, mcp: true, loaded: false,
+  auth: true, ai: false, billing: false, reliability_agent: false, mcp: true, menu_preview: false, loaded: false,
 };
 
 // Who to ask for the MCP connector while it's switched off.
