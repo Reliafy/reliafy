@@ -9,8 +9,8 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { guide: "accelerated-life-testing" };
 
-// Modelling › Accelerated life: ALT models. The fit flow lives on its own
-// page (/modelling/alt/new).
+// Models › Accelerated life: ALT models. The fit flow lives on its own
+// page (/models/alt/new).
 export default function AltHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
@@ -30,11 +30,11 @@ export default function AltHome() {
     }
   };
 
-  const newModel = <button onClick={() => navigate("/modelling/alt/new")}><PlusIcon /> New model</button>;
+  const newModel = <button onClick={() => navigate("/models/alt/new")}><PlusIcon /> New model</button>;
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="models"
         title="Accelerated life"
         purpose={<>Failure times at elevated stress, extrapolated to your use level. Planning a test first?{" "}
           <Link to="/strategy/test-planning/accelerated">Plan an accelerated test</Link>.</>}
@@ -47,7 +47,7 @@ export default function AltHome() {
 
       <AltLibrary
         models={models}
-        onOpen={(id) => navigate(`/modelling/alt/${id}`)}
+        onOpen={(id) => navigate(`/models/alt/${id}`)}
         onDelete={onDelete}
         help={HELP}
         empty={{

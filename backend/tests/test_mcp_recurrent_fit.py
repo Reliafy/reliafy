@@ -36,7 +36,7 @@ def test_fit_recurrent_model_inline_crow_amsaa_matches_the_app_and_saves(env):
         "observed_to": 5000, "causes": df.failure_mode.tolist(), "unit": "hours"}))
     ref, _ = rec.fit(df, {"i": "compressor", "x": "hours", "t": "test_end", "mode": "failure_mode"}, "crow_amsaa",
                      "hours", gof_test=False)
-    assert out["saved"] and out["url"].endswith(f"/modelling/recurrent/{out['model_id']}")
+    assert out["saved"] and out["url"].endswith(f"/models/recurrent/{out['model_id']}")
     assert [p["value"] for p in out["params"]] == pytest.approx([p["value"] for p in ref["params"]])
     assert out["growth"] == "deteriorating" and out["family"] == "nhpp"
     assert [c["cause"] for c in out["by_cause"]] == ["valve", "bearing", "seal", "electrical"]

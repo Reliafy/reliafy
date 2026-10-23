@@ -80,8 +80,8 @@ export default function MaintenancePosition() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: "/maintenance" }, ...p.path.map((a) => ({
-          label: a.name, to: a.kind === "Item" ? `/maintenance/items/${a.id}` : `/maintenance/positions/${a.id}` }))]}
+        crumbs={[{ label: "Assets", to: "/asset-register" }, ...p.path.map((a) => ({
+          label: a.name, to: a.kind === "Item" ? `/asset-register/items/${a.id}` : `/asset-register/positions/${a.id}` }))]}
         title={p.name}
         meta={[p.tag, p.position_class, p.description].filter(Boolean).join(" · ") || "Position"}
         id={p.id}
@@ -112,7 +112,7 @@ export default function MaintenancePosition() {
         </div>
         {p.fitted ? (
           <p>
-            <strong>{p.fitted.item ? <Link to={`/maintenance/items/${p.fitted.item.id}`}>{p.fitted.item.name}</Link> : "?"}</strong>
+            <strong>{p.fitted.item ? <Link to={`/asset-register/items/${p.fitted.item.id}`}>{p.fitted.item.name}</Link> : "?"}</strong>
             {p.fitted.item?.serial && <span className="lib-date"> · serial {p.fitted.item.serial}</span>}
             <span className="lib-date"> · since {fmtDated(p.fitted.from, p.fitted.from_precision)}</span>
           </p>
@@ -130,11 +130,11 @@ export default function MaintenancePosition() {
         </div>
         {p.location ? (
           <p>
-            <Link to={`/maintenance/locations/${p.location.id}`}>{p.location.display}</Link>
+            <Link to={`/asset-register/locations/${p.location.id}`}>{p.location.display}</Link>
             {p.location.inherited && p.location.inherited_from && (
               <span className="lib-date">
                 {" · "}{p.location.inherited_from.kind === "Item" ? "from " : "inherited from "}
-                <Link to={`/maintenance/${p.location.inherited_from.kind === "Item" ? "items" : "positions"}/${p.location.inherited_from.id}`}>
+                <Link to={`/asset-register/${p.location.inherited_from.kind === "Item" ? "items" : "positions"}/${p.location.inherited_from.id}`}>
                   {p.location.inherited_from.name}</Link>
                 {p.location.inherited_from.kind === "Item" ? ", the item it's inside" : ""}
               </span>
@@ -245,7 +245,7 @@ export default function MaintenancePosition() {
         <section className="card">
           <div className="maint-head"><h2>Positions inside</h2></div>
           <ul className="maint-list">
-            {p.children.map((c) => <li key={c.id}><Link to={`/maintenance/positions/${c.id}`}>{c.name}</Link></li>)}
+            {p.children.map((c) => <li key={c.id}><Link to={`/asset-register/positions/${c.id}`}>{c.name}</Link></li>)}
           </ul>
         </section>
       )}
@@ -272,7 +272,7 @@ export default function MaintenancePosition() {
       )}
       {modal === "child" && (
         <NewPositionModal positions={positions} parentId={id} onClose={() => setModal(null)}
-                          onCreated={(c) => navigate(`/maintenance/positions/${c.id}`)} />
+                          onCreated={(c) => navigate(`/asset-register/positions/${c.id}`)} />
       )}
     </div>
   );
@@ -543,7 +543,7 @@ function PartsListCard({ p, onChanged }) {
       {error && <div className="card error">{error}</div>}
       {list.length === 0 ? (
         <p className="lib-date">No parts listed. Add the part that replaces what's fitted, and the kits and
-          consumables its maintenance uses, from the <Link to="/maintenance/parts">parts catalogue</Link>.</p>
+          consumables its maintenance uses, from the <Link to="/asset-register/parts">parts catalogue</Link>.</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
           <thead><tr><th>Part</th><th>Role</th><th>Per job</th><th>Stock</th><th>Compatibility notes</th><th><span className="sr-only">Change</span></th></tr></thead>
@@ -602,7 +602,7 @@ function PartEntryModal({ p, entry, onClose, onDone }) {
       {!entry && (
         <Field label="Part">
           {catalogue === null ? <span className="lib-date">Loading…</span> : catalogue.length === 0 ? (
-            <span className="lib-date">The catalogue is empty: add parts on the <Link to="/maintenance/parts">Parts</Link> page first.</span>
+            <span className="lib-date">The catalogue is empty: add parts on the <Link to="/asset-register/parts">Parts</Link> page first.</span>
           ) : (
             <select autoFocus value={f.part_id} onChange={set("part_id")}>
               <option value="">Choose…</option>
@@ -667,13 +667,13 @@ function ConnectionsCard({ p, onChanged }) {
       ) : (
         <ul className="maint-list">
           {upstream.map((c) => (
-            <li key={c.id}>From <Link to={`/maintenance/positions/${c.from.id}`}>{c.from.name}</Link>
+            <li key={c.id}>From <Link to={`/asset-register/positions/${c.from.id}`}>{c.from.name}</Link>
               <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
               <ConnectionConditions connection={c} name={`${c.from.name} → ${p.name}`} onChanged={onChanged} />{" "}
               <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
           ))}
           {downstream.map((c) => (
-            <li key={c.id}>To <Link to={`/maintenance/positions/${c.to.id}`}>{c.to.name}</Link>
+            <li key={c.id}>To <Link to={`/asset-register/positions/${c.to.id}`}>{c.to.name}</Link>
               <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
               <ConnectionConditions connection={c} name={`${p.name} → ${c.to.name}`} onChanged={onChanged} />{" "}
               <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
@@ -778,7 +778,7 @@ function RbdCard({ p, onChanged }) {
       <div className="maint-head">
         <h2>Reliability block diagram</h2>
         <div className="maint-row" style={{ marginTop: 0 }}>
-          {rbdId && <Link to={`/rbds/b/${rbdId}`}>Open the RBD</Link>}
+          {rbdId && <Link to={`/systems/b/${rbdId}`}>Open the RBD</Link>}
           <button onClick={make} disabled={busy}>{busy ? "Generating…" : rbdId ? "Regenerate from the plant" : "Generate from the plant"}</button>
         </div>
       </div>

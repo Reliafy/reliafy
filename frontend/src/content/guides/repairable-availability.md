@@ -3,7 +3,7 @@ title: "Model system availability (repairable RBD)"
 task: "How do I build a repairable reliability block diagram and read its availability?"
 category: "Reliability block diagrams"
 prerequisites: "A system you can sketch as blocks, and a failure and repair estimate for each block."
-related_href: "/rbds/b"
+related_href: "/systems/b"
 related_label: "Open the RBD builder"
 order: 30
 ---
@@ -24,7 +24,7 @@ time) or **repairable** (analysed for availability). It's a single choice for
 the whole diagram, because it changes what each block needs and what the results
 mean — you can't mix the two in one diagram.
 
-Open **RBDs → New diagram**, and set the menu beside **Unit** in the toolbar to
+Open **Systems → New diagram**, and set the menu beside **Unit** in the toolbar to
 *Repairable*. (Non-repairable diagrams give you reliability over time; repairable
 ones give you availability — hover the menu for the reminder.)
 

@@ -72,7 +72,7 @@ export default function JointBlockSource({ value, onChange, repairable = false }
   if (models && !models.length) {
     return (
       <p className="muted-line">
-        No condition monitoring models yet. <Link to="/modelling/joint/new">Fit one</Link> from your units' readings.
+        No condition monitoring models yet. <Link to="/models/joint/new">Fit one</Link> from your units' readings.
       </p>
     );
   }

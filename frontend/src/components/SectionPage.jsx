@@ -7,7 +7,7 @@ import { ShowMeHow } from "./Walkthrough.jsx";
 import { openGuide } from "./HelpButton.jsx";
 import { getWalkthrough } from "../walkthroughs.js";
 import { SampleGroups } from "./LibRows.jsx";
-import { SECTIONS } from "../sections.js";
+import { useNavCrumbs } from "../RolesProvider.jsx";
 
 // One template for every section's landing page and its children's pages:
 //
@@ -19,7 +19,7 @@ import { SECTIONS } from "../sections.js";
 //            one empty state that points at the samples and the guide.
 //
 // A section's own landing page has no label above its title; a child page
-// (Modelling › Non-repairable models) shows its section there, linked.
+// (Models › Non-repairable models) shows its menu entry there, linked.
 
 // "Show me how": the section's walkthrough when it has one (it opens a sample
 // and points at each step), else its how-to guide in the Help drawer.
@@ -36,14 +36,15 @@ export function ShowMe({ help, children = "Show me how" }) {
   );
 }
 
-//   section  key in SECTIONS: set on a child page, so its section shows above the title
+//   section  the menu entry's id (navigation.js): on a child page its label
+//            shows above the title, linked (none on the entry's landing page)
 //   title, purpose, help ({ walkthrough?, guide? }), primary, actions, menu
 export function SectionHeader({ section, title, purpose, help, primary, actions, menu, children }) {
-  const parent = section ? SECTIONS[section] : null;
+  const crumbs = useNavCrumbs(section);
   return (
     <PageHeader
       className="section-header"
-      crumbs={parent ? [{ label: parent.label, to: parent.to }] : []}
+      crumbs={section ? crumbs : []}
       title={title}
       meta={(purpose || help) && (
         <span className="sh-purpose">

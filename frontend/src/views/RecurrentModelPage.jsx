@@ -31,7 +31,7 @@ export default function RecurrentModelPage() {
   const onDelete = async () => {
     if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     await deleteRecurrentModel(id);
-    navigate("/modelling/recurrent");
+    navigate("/models/recurrent");
   };
 
   const r = model?.results || {};
@@ -51,7 +51,7 @@ export default function RecurrentModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Repairable models", to: "/modelling/recurrent" }]}
+        crumbs={[{ label: "Models", to: "/models" }, { label: "Repairable models", to: "/models/recurrent" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}</>}

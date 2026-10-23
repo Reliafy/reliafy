@@ -110,7 +110,7 @@ export function changeRows(data) {
   }
   for (const s of (data.simulations || []).filter((x) => x.moved)) {
     rows.push({ key: `sim-${s.id}`, kind: "Simulation moved", tone: null, name: s.name,
-      url: s.before?.run_id ? `/rbds/runs/compare?ids=${s.before.run_id},${s.run_id}` : `/rbds/runs/${s.run_id}`,
+      url: s.before?.run_id ? `/systems/runs/compare?ids=${s.before.run_id},${s.run_id}` : `/systems/runs/${s.run_id}`,
       detail: simulationDetail(s), at: s.at });
   }
   for (const n of data.new || []) {

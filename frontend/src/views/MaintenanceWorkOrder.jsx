@@ -74,7 +74,7 @@ export default function MaintenanceWorkOrder() {
       {wo.warranty && (
         <div className="maint-ask">
           <p><strong>Under warranty.</strong>{" "}
-            {wo.warranty.item && <Link to={`/maintenance/items/${wo.warranty.item.id}`}>{wo.warranty.item.name}</Link>}
+            {wo.warranty.item && <Link to={`/asset-register/items/${wo.warranty.item.id}`}>{wo.warranty.item.name}</Link>}
             {" "}was in warranty when this was raised (until {fmtDate(wo.warranty.ends_on)}). Check the warranty before paying for the work.</p>
           {wo.warranty.coverage && <p className="lib-date">Covers: {wo.warranty.coverage}</p>}
           {wo.warranty.terms && <p className="lib-date" style={{ whiteSpace: "pre-wrap" }}>{wo.warranty.terms}</p>}
@@ -104,7 +104,7 @@ export default function MaintenanceWorkOrder() {
               <input type="checkbox" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
                      onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
               <span style={c.done ? { textDecoration: "line-through", color: "var(--muted)" } : null}>
-                {c.position_id ? <Link to={`/maintenance/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
+                {c.position_id ? <Link to={`/asset-register/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
             </label>
           ))}
         </section>

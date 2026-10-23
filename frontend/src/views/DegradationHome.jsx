@@ -11,9 +11,9 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { guide: "degradation-modelling" };
 
-// Modelling › Degradation: list, create (a 3-step modal that
+// Models › Degradation: list, create (a 3-step modal that
 // fits, saves and opens the new model's page), open, delete. Lives inside the
-// Modelling section.
+// Models section.
 export default function DegradationHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
@@ -42,13 +42,13 @@ export default function DegradationHome() {
     }
   };
 
-  const open = (id) => navigate(`/modelling/degradation/${id}`);
+  const open = (id) => navigate(`/models/degradation/${id}`);
   const newModel = <button onClick={() => setModalOpen(true)}><PlusIcon /> New model</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="models"
         title="Degradation models"
         purpose="How assets wear toward a failure threshold. Track individual items under Fleet."
         help={HELP}

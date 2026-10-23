@@ -4,14 +4,14 @@
 export function fitOptions(d) {
   const id = encodeURIComponent(d.id);
   const t = d.tags || [];
-  if (t.includes("Repairable")) return [{ label: "Repairable model", to: `/modelling/recurrent/new?dataset=${id}` }];
+  if (t.includes("Repairable")) return [{ label: "Repairable model", to: `/models/recurrent/new?dataset=${id}` }];
   // Life data and readings in one table: condition monitoring takes it for both.
   if (t.includes("Measurements") && t.includes("Non-repairable")) {
-    return [{ label: "Condition monitoring model", to: `/modelling/joint/new?lifetimes=${id}&readings=${id}` }];
+    return [{ label: "Condition monitoring model", to: `/models/joint/new?lifetimes=${id}&readings=${id}` }];
   }
-  if (t.includes("Measurements")) return [{ label: "Degradation model", to: `/modelling/degradation?dataset=${id}` }];
+  if (t.includes("Measurements")) return [{ label: "Degradation model", to: `/models/degradation?dataset=${id}` }];
   const covs = t.includes("Covariates") || t.includes("Time-varying covariates");
-  return [{ label: covs ? "Non-repairable model with covariates" : "Non-repairable model", to: `/modelling/new?dataset=${id}` }];
+  return [{ label: covs ? "Non-repairable model with covariates" : "Non-repairable model", to: `/models/new?dataset=${id}` }];
 }
 
 // The saved datasets a "new model" flow can use, from their tags: each flow

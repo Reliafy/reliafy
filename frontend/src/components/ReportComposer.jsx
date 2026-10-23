@@ -42,7 +42,9 @@ function fromReport(r) {
   };
 }
 
-export default function ReportComposer({ initial, onClose }) {
+// `initial`: the item it was opened from (none from Reports); `openId`: a
+// report of the user's to open (Reports' Edit).
+export default function ReportComposer({ initial = null, openId = "", onClose }) {
   const { ai } = useAppConfig();
   const [reports, setReports] = useState(null);
   const [items, setItems] = useState(null);
@@ -79,6 +81,12 @@ export default function ReportComposer({ initial, onClose }) {
     setForm({ ...base, sections });
     setDirty(!id || sections.length !== base.sections.length);
   };
+
+  // Opened on one of the user's reports: choose it once the list is in.
+  useEffect(() => {
+    if (openId && reports?.some((r) => r.id === openId)) choose(openId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId, reports === null]);
 
   const groups = useMemo(() => pickerGroups(items, form.sections), [items, form.sections]);
   const byKey = useMemo(

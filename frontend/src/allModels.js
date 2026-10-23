@@ -14,7 +14,7 @@ import { distColor } from "./instrument.js";
 import { CATEGORY } from "./plotTheme.js";
 
 // Every saved model — life data, accelerated life, recurrent, degradation — as
-// one list of rows, newest first. Shared by the Modelling list and Home's
+// one list of rows, newest first. Shared by the Models list and Home's
 // "Recent".
 
 export const TYPE_LABEL = {
@@ -25,7 +25,7 @@ export const TYPE_LABEL = {
   joint: "Remaining life from condition",
 };
 
-// The Modelling list's type filter: the same names as the menu's children.
+// The Models list's type filter: the same names as the menu's children.
 export const TYPE_FILTERS = [
   { value: "life", label: "Non-repairable models" },
   { value: "recurrent", label: "Repairable models" },
@@ -55,7 +55,7 @@ export async function loadAllModels() {
     noMax: !!m.no_finite_maximum,
     color: distColor(m.distribution),
     created_at: m.created_at,
-    to: `/modelling/m/${m.id}`,
+    to: `/models/m/${m.id}`,
   }));
   const deg = (dm.models || []).map((m) => ({
     ...common(m),
@@ -63,7 +63,7 @@ export async function loadAllModels() {
     detail: m.path_model || "—",
     color: CATEGORY.violet,
     created_at: m.updated_at || m.created_at,
-    to: `/modelling/degradation/${m.id}`,
+    to: `/models/degradation/${m.id}`,
   }));
   const acc = (am.models || []).map((m) => ({
     ...common(m),
@@ -73,7 +73,7 @@ export async function loadAllModels() {
     noMax: !!m.no_finite_maximum,
     color: CATEGORY.teal,
     created_at: m.created_at,
-    to: `/modelling/alt/${m.id}`,
+    to: `/models/alt/${m.id}`,
   }));
   const rec = (rm.models || []).map((m) => ({
     ...common(m),
@@ -81,7 +81,7 @@ export async function loadAllModels() {
     detail: m.model || "—",
     color: CATEGORY.amber,
     created_at: m.created_at,
-    to: `/modelling/recurrent/${m.id}`,
+    to: `/models/recurrent/${m.id}`,
   }));
   const joint = (jm.models || []).map((m) => ({
     ...common(m),
@@ -91,7 +91,7 @@ export async function loadAllModels() {
     noMax: m.fit_ok === false,
     color: CATEGORY.blue,
     created_at: m.created_at,
-    to: `/modelling/joint/${m.id}`,
+    to: `/models/joint/${m.id}`,
   }));
   return [...life, ...deg, ...acc, ...rec, ...joint].sort((a, b) => (a.created_at > b.created_at ? -1 : 1));
 }

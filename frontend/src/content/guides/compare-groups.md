@@ -3,7 +3,7 @@ title: "Find out whether a change made a difference"
 task: "Is the new supplier, design or site really better, or is the difference just luck?"
 category: "Life data modelling"
 prerequisites: "A dataset with a time column and a column that says which group each unit is in (supplier, site, design revision). A status column if some units are still running."
-related_href: "/datasets"
+related_href: "/data"
 related_label: "Open your datasets"
 order: 8
 ---
@@ -24,7 +24,7 @@ Reliafy answers that three ways:
 
 ## Compare the groups in a dataset
 
-Open the dataset under [Modelling → Data](/modelling/data) and press **Compare groups** at the
+Open the dataset under [Data](/data) and press **Compare groups** at the
 top of the page. The panel on the right asks for:
 
 - **Time column**: the time to failure or removal.

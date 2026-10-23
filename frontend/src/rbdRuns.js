@@ -93,8 +93,8 @@ export function jobStatusLine(job) {
   return quote ? `${head}${wait}. Then ${quote}.` : `${head}${wait}…`;
 }
 
-// "/rbds/runs?rbd=…": a diagram's runs.
-export const runsPath = (rbdId = null) => (rbdId ? `/rbds/runs?rbd=${encodeURIComponent(rbdId)}` : "/rbds/runs");
+// "/systems/runs?rbd=…": a diagram's runs.
+export const runsPath = (rbdId = null) => (rbdId ? `/systems/runs?rbd=${encodeURIComponent(rbdId)}` : "/systems/runs");
 
 // The runs list's one quiet line on how long runs are kept (#282): the
 // server's words, with an upgrade link on the free plan. Null until loaded.

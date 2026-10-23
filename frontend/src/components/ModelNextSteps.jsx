@@ -39,7 +39,7 @@ export function useNextStep({ result, modelId = null, onUse = null }) {
       if (!id) throw new Error("Save the model first.");
       if (step === "rbd") {
         const full = await getModel(id);
-        navigate(rbdId ? `/rbds/b/${rbdId}` : "/rbds/b", { state: { addModel: savedModelRef({ ...full, id }) } });
+        navigate(rbdId ? `/systems/b/${rbdId}` : "/systems/b", { state: { addModel: savedModelRef({ ...full, id }) } });
       } else {
         navigate(nextStepLink(step, id, { unit: result?.unit || "" }));
       }

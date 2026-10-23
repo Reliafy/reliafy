@@ -192,7 +192,7 @@ and **no changes**.
 
 Updates `current_use` (and optionally the per-item usage `rate`) on a
 failure-forecast fleet, then recomputes the forecast. The fleet id is in the
-app URL: `/fleet/forecasts/<fleet_id>`.
+app URL: `/forecasts/<fleet_id>`.
 
 CSV columns: `name` (or `id`), `current_use`, optional `rate`.
 
@@ -215,7 +215,7 @@ Response: `{"fleet": "...", "updated_items": 2, "forecast": {"status": "ok", "ex
 
 Appends `(time, value)` readings to items in a tracked fleet and re-predicts
 each item's remaining life. The id is in the app URL:
-`/fleet/tracking/<tracked_fleet_id>`.
+`/models/tracking/<tracked_fleet_id>`.
 
 CSV columns: `item` (name or `id`), `time`, `value`.
 

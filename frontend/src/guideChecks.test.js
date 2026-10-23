@@ -138,14 +138,14 @@ export function deadReason(href) {
 
 test("guides: the link finder sees inline, multi-line, image and HTML links", () => {
   const body = "See [the\nguide](/guides/x) and ![shot](/guides/img/a.png \"t\").\n"
-    + "`[not](/code)`\n```\n[nor](/block)\n```\n<a href=\"/rbds\">RBDs</a> [web](https://x.test)";
-  assert.deepEqual(linksIn(body).map((l) => l.href), ["/guides/x", "/guides/img/a.png", "https://x.test", "/rbds"]);
+    + "`[not](/code)`\n```\n[nor](/block)\n```\n<a href=\"/systems\">Systems</a> [web](https://x.test)";
+  assert.deepEqual(linksIn(body).map((l) => l.href), ["/guides/x", "/guides/img/a.png", "https://x.test", "/systems"]);
 });
 
 test("guides: the dead-link check knows routes, redirects, content and anchors", () => {
   assert.equal(deadReason("/strategy/test-planning/accelerated?model=abc"), null);
   assert.equal(deadReason("/strategy/demonstration-test"), null); // a redirect
-  assert.equal(deadReason("/modelling/joint/some-id"), null);
+  assert.equal(deadReason("/models/joint/some-id"), null);
   assert.equal(deadReason("/api-docs/cli"), null);
   assert.equal(deadReason("/api-docs#mcp"), null); // an old anchor, redirected
   assert.equal(deadReason("/api-docs/tools#tool-list"), null);
@@ -175,7 +175,7 @@ test("guides: the coverage list names pages the router knows", () => {
 });
 
 // A guide link covers an entry when it opens the entry's page or one under
-// it (/rbds/b covers /rbds), with at least the entry's query values.
+// it (/systems/b covers /systems), with at least the entry's query values.
 export function covers(entryHref, linkHref) {
   const want = new URL(entryHref, "https://reliafy.test");
   const got = new URL(linkHref, "https://reliafy.test");
@@ -188,9 +188,9 @@ export function covers(entryHref, linkHref) {
 }
 
 test("guides: a link covers its page, pages under it and a page's mode", () => {
-  assert.ok(covers("/rbds", "/rbds/b"));
-  assert.ok(covers("/modelling/alt", "/modelling/alt/new"));
-  assert.ok(!covers("/modelling/alt", "/modelling/alternative"));
+  assert.ok(covers("/systems", "/systems/b"));
+  assert.ok(covers("/models/alt", "/models/alt/new"));
+  assert.ok(!covers("/models/alt", "/models/alternative"));
   assert.ok(covers("/strategy/replacement?mode=calendar", "/strategy/replacement?model=x&mode=calendar"));
   assert.ok(!covers("/strategy/replacement?mode=calendar", "/strategy/replacement"));
 });

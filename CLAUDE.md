@@ -18,7 +18,9 @@ This file doesn't repeat them: it says what isn't obvious from the code.
 - `frontend/` — React + Vite.
   - `src/views/` — pages; `src/components/` — shared pieces; `src/*.js` — logic
     with `*.test.js` beside it.
-  - Routes are declared in `src/App.jsx` and `src/AppShell.jsx`.
+  - Routes are declared in `src/App.jsx` and `src/AppShell.jsx`; the menu
+    (entries, roles) in `src/navigation.js`; earlier addresses and where they
+    now go in `src/redirects.js`.
   - `smoke/` — Playwright browser smoke suite (`npm run smoke`).
 - `docs/` — API and maintenance design notes (graph, feeds, scheduling).
 - `tools/lock_requirements.sh` — regenerates `requirements.lock`.
@@ -53,7 +55,7 @@ Run in this order:
    - Set `SMOKE_PORT` when anything else might be on 8765 (another worktree,
      another agent): two servers on one port test the wrong code.
    - `CI=1` stops it reusing a server already running and forbids `.only`.
-   - `--no-build` reuses the last build; `-g "/rbds"` runs one part.
+   - `--no-build` reuses the last build; `-g "/systems"` runs one part.
 
 Adding to the smoke suite:
 
@@ -150,6 +152,10 @@ always be rebuilt. See [docs/maintenance-graph.md](docs/maintenance-graph.md).
 - UI PRs include screenshots at desktop width and at 400 px.
 - Navigation: describe the menu generically or read it from the router
   (`App.jsx`, `AppShell.jsx`). Don't document routes that don't exist on `dev`.
+- A page that moves keeps its old address working: add a row to
+  `src/redirects.js` (`navigation.test.js` walks the whole table, and the
+  smoke suite opens every row with real ids). A new first path segment also
+  goes in `SPA_ROOTS` (`backend/main.py`).
 
 ## Domain conventions
 

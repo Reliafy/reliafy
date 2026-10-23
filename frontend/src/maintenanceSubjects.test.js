@@ -7,9 +7,9 @@ import {
 } from "./maintenanceSubjects.js";
 
 test("each subject has its own page and API path", () => {
-  assert.equal(subjectPath({ kind: "item", id: "i1" }), "/maintenance/items/i1");
-  assert.equal(subjectPath({ kind: "location", id: "l1" }), "/maintenance/locations/l1");
-  assert.equal(subjectPath({ kind: "position", id: "p1" }), "/maintenance/positions/p1");
+  assert.equal(subjectPath({ kind: "item", id: "i1" }), "/asset-register/items/i1");
+  assert.equal(subjectPath({ kind: "location", id: "l1" }), "/asset-register/locations/l1");
+  assert.equal(subjectPath({ kind: "position", id: "p1" }), "/asset-register/positions/p1");
   assert.equal(subjectPath(null), null);
   assert.equal(subjectApiPath({ kind: "item", id: "i1" }, "tasks"), "/api/maintenance/items/i1/tasks");
   assert.equal(subjectApiPath({ kind: "location", id: "l1" }, "tasks"), "/api/maintenance/locations/l1/tasks");

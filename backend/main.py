@@ -644,8 +644,10 @@ SPA_ROOTS = frozenset({
     "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",
     "reliability-analysis-software",
     # The signed-in app.
-    "home", "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
-    "tokens", "admin", "billing", "changes", "maintenance",
+    "home", "systems", "asset-register", "maintenance", "data", "models", "strategy", "forecasts", "reports",
+    "agent", "team", "settings", "tokens", "admin", "billing", "changes",
+    # Its earlier addresses, which redirect (frontend/src/redirects.js).
+    "modelling", "rbds", "datasets", "fleet", "rcm",
 })
 
 
@@ -788,7 +790,7 @@ def spa_response(full_path: str, dist: Path, share_live=None) -> Response:
     (``/blog/<slug>``, ``/learn/<slug>``…) gets the shell with a 404, so the
     app's own "not found" page shows; anything else under a content root
     (``/terms/x``, ``/blog/a/b``) gets the plain 404 page. The app's own
-    routes with ids (``/modelling/m/<id>``…) keep the shell and a 200: only
+    routes with ids (``/models/m/<id>``…) keep the shell and a 200: only
     the browser knows whether the signed-in user has that id. With
     ``share_live`` (the live app passes :func:`share_link_live`), a share page
     ``/p/<token>`` whose link is unknown, expired or revoked gets the shell

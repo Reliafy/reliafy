@@ -142,11 +142,11 @@ export default function AltNewPage() {
         datasetId: result.dataset_id, mapping, stress: stress.slice(0, nStress),
         distribution, lifeModel, unit,
       });
-      navigate(`/modelling/alt/${saved.id}`);
+      navigate(`/models/alt/${saved.id}`);
     } catch (err) { setError(err.message); setSaving(false); }
   };
 
-  const goBack = () => { setError(null); if (step === 1) return navigate("/modelling/alt"); setStep((s) => s - 1); };
+  const goBack = () => { setError(null); if (step === 1) return navigate("/models/alt"); setStep((s) => s - 1); };
 
   const stepper = (
     <div className="steps">
@@ -184,8 +184,8 @@ export default function AltNewPage() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/alt")}>Accelerated life</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/models")}>Models</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/models/alt")}>Accelerated life</button> /{" "}
             <b>New model</b>
           </div>
           <h1>New accelerated-life model</h1>

@@ -1,5 +1,5 @@
 // A fit left without saving (#434): remembered in this browser so the next
-// visit to Modelling can offer to save it. Kept per workspace; the data comes
+// visit to Models can offer to save it. Kept per workspace; the data comes
 // along when it is small (an upload or a paste) so one click can save the
 // model and its data; a fit of a saved dataset needs only the dataset's id.
 // Storage can be missing or throw (a private window): then nothing is kept.

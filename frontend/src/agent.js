@@ -65,7 +65,7 @@ function interpCurve(x, y, xq) {
 
 // Only let the assistant route to real in-app pages.
 const NAV_PREFIXES = [
-  "/home", "/modelling", "/rbds", "/datasets", "/strategy", "/fleet", "/rcm", "/team", "/changes",
+  "/home", "/models", "/systems", "/data", "/strategy", "/forecasts", "/maintenance/rcm", "/reports", "/team", "/changes",
 ];
 export function isAllowedPath(path) {
   return typeof path === "string" && path.startsWith("/") && NAV_PREFIXES.some(
@@ -300,13 +300,13 @@ export function makeExecutor({ navigate, onChange, confirm }) {
       }
       case "get_current_rbd": {
         const canvas = getRbdCanvas();
-        if (!canvas) return { open: false, message: "The RBD builder isn't open. Navigate to /rbds/b (or use set_current_rbd, which opens it)." };
+        if (!canvas) return { open: false, message: "The RBD builder isn't open. Navigate to /systems/b (or use set_current_rbd, which opens it)." };
         return { open: true, graph: compactGraph(canvas.getGraph()) };
       }
       case "set_current_rbd": {
         let canvas = getRbdCanvas();
         if (!canvas) {
-          navigate("/rbds/b");
+          navigate("/systems/b");
           canvas = await waitForRbdCanvas();
         }
         if (!canvas) return { ok: false, error: "Couldn't open the RBD builder." };

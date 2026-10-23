@@ -3,7 +3,7 @@ title: "Fit a model with covariates (regression)"
 task: "How much do temperature, load or duty change how long my equipment lasts?"
 category: "Life data modelling"
 prerequisites: "Life data with one or more columns that might affect life: a temperature, a load, a duty, a site. For a load that changes during a unit's life, one row per stretch at each value."
-related_href: "/modelling/new"
+related_href: "/models/new"
 related_label: "Fit a model"
 order: 9
 ---
@@ -35,7 +35,7 @@ tested at 60, 80 and 100 °C and at two loads.
 
 ## Add the covariates
 
-Start a new model under **Modelling → Non-repairable models** and choose **Fit to data**.
+Start a new model under **Models → Non-repairable models** and choose **Fit to data**.
 Map the time and status columns in the **Data** step as usual (see
 [fit your first non-repairable model](/guides/fit-your-first-model)). Then open
 **Advanced (regression): covariates** and tick each covariate column. Give each

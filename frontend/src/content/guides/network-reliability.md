@@ -3,7 +3,7 @@ title: "Model a network: will two points stay connected?"
 task: "How reliable is the connection between two points of a pipeline, grid or communications network, where flow can go either way?"
 category: "Reliability block diagrams"
 prerequisites: "A sketch of the network: the points that can fail, how they link up, and a non-repairable model for each."
-related_href: "/rbds/b"
+related_href: "/systems/b"
 related_label: "Open the RBD builder"
 order: 39
 ---
@@ -31,7 +31,7 @@ supports none of those, and it isn't repairable.
 
 ## Build it
 
-Open **RBDs → New diagram** and set the menu beside **Unit** in the toolbar to
+Open **Systems → New diagram** and set the menu beside **Unit** in the toolbar to
 **Network**. The canvas works as usual, with three differences in meaning:
 
 - Each **block** is a point that can fail, with a non-repairable model. A pipe segment or

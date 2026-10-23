@@ -196,9 +196,9 @@ def test_create_upload_says_what_to_do_when_the_put_cant_get_through(env):
     fallback = link["fallback"]
     assert "proxy 403" in fallback and "don't retry" in fallback
     assert "datasets upload csv" in fallback and "uploads import_rbd content" in fallback and "200 KB" in fallback
-    assert fallback.endswith("(Modelling › Data: https://reliafy.example/modelling/data).")
+    assert fallback.endswith("(Data: https://reliafy.example/data).")
     rbd = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "plant.rsgz"}))
-    assert "RBDs › Import: https://reliafy.example/rbds/list" in rbd["fallback"]
+    assert "Systems › Import: https://reliafy.example/systems" in rbd["fallback"]
 
     async def tools(client):
         return {t.name: t for t in (await client.list_tools()).tools}
@@ -257,7 +257,7 @@ def test_galileo_upload_inspect_import_then_cleanup(env):
     assert out["saved"] is True
     (d,) = out["diagrams"]
     assert d["name"] == "Sensor train" and d["source_format"] == "Galileo DFT"
-    assert d["url"].endswith(f"/rbds/b/{d['id']}")
+    assert d["url"].endswith(f"/systems/b/{d['id']}")
     assert {"S1", "S2", "S3", "Ctrl"} <= {n["label"] for n in d["nodes"]}
     assert "graph" not in d  # lean: never the whole graph
     assert env.db.rbds.find_one({"_id": d["id"], "owner_id": A}) is not None
@@ -489,7 +489,7 @@ def test_excel_dataset_needs_a_sheet_then_maps_columns(env):
         "mapping": {"time": "Run hours", "failed": "Failed?"}}))
     assert out["target"] == "dataset" and out["sheet"] == "Lives"
     assert out["columns"] == ["time", "failed"] and out["n_rows"] == 12
-    assert out["name"] == "bearings - Lives" and out["url"].endswith(f"/modelling/data/{out['id']}")
+    assert out["name"] == "bearings - Lives" and out["url"].endswith(f"/data/{out['id']}")
     assert set(out) >= {"id", "name", "n_rows", "columns", "preview", "url"}  # as datasets upload
     assert _no_uploads_left(env.db)
 
@@ -504,7 +504,7 @@ def test_excel_rcm_worksheet_into_a_new_then_an_existing_study(env):
     assert out["target"] == "rcm" and out["appended"] is False
     assert out["counts"]["functions"] == 1 and out["counts"]["failures"] == 2 and out["counts"]["modes"] == 3
     assert out["mapping"]["mode"] == "Failure mode" and "Severity" in out["extra_columns"]
-    assert out["url"].endswith(f"/rcm/studies/{out['study_id']}")
+    assert out["url"].endswith(f"/maintenance/rcm/{out['study_id']}")
     study = env.db.rcm_studies.find_one({"_id": out["study_id"]})
     assert study["owner_id"] == A and study["name"] == "Cooling water pump"
     assert _no_uploads_left(env.db)

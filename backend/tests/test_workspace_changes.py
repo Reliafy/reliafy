@@ -84,7 +84,7 @@ def test_new_and_changed_items_are_the_workspaces_own(client):
     put(db, "models", "a-sample", SAMPLE_OWNER, ago(days=1))
     out = changes(client)
     assert [(r["collection"], r["id"], r["url"]) for r in out["new"]] == [
-        ("models", "pump-model", "/modelling/m/pump-model")]
+        ("models", "pump-model", "/models/m/pump-model")]
     assert [(r["id"], r.get("by")) for r in out["changed"]] == [("skid-diagram", "Bob")]
     assert out["counts"]["items"] == 4
     assert out["sentence"] == "In the last 30 days: 1 item was added and 1 changed."
@@ -102,8 +102,8 @@ def test_a_condition_based_model_is_labelled_and_linked_as_one(client):
     put(db, "models", "pump-life", A, ago(days=1), results=WEIBULL_RESULTS)
     out = changes(client)
     rows = {r["id"]: (r["type"], r["url"]) for r in out["new"]}
-    assert rows["pump-risk"] == ("Condition monitoring model", "/modelling/joint/pump-risk")
-    assert rows["pump-life"] == ("Non-repairable model", "/modelling/m/pump-life")
+    assert rows["pump-risk"] == ("Condition monitoring model", "/models/joint/pump-risk")
+    assert rows["pump-life"] == ("Non-repairable model", "/models/m/pump-life")
 
 
 def test_an_empty_period_says_nothing_changed(client):
@@ -162,7 +162,7 @@ def test_a_refit_on_new_data_moves_b10_and_mttf_by_the_engines_numbers(client):
     assert moved["MTTF"]["after"] == pytest.approx(float(after.mean()), rel=1e-6)
     assert moved["B10"]["change"] == pytest.approx(after.qf(0.1) / before.qf(0.1) - 1, rel=1e-6)
     assert refit["before"]["n"] == 30 and refit["after"]["n"] == 60
-    assert refit["url"] == f"/modelling/m/{model.id}"
+    assert refit["url"] == f"/models/m/{model.id}"
     # The appended dataset shows as changed; the refitted model is listed once, as a refit.
     assert [r["id"] for r in out["changed"]] == [dataset.id]
     assert out["counts"]["refits_moved"] == 1
@@ -292,7 +292,7 @@ def test_rcm_evidence_whose_model_was_refitted_shows_its_status_before_and_now(c
     (row,) = out["rcm_evidence"]
     assert (row["mode"], row["status_before"], row["status"], row["status_changed"]) == (
         "Seal leak", "supported", "contradicted", True)
-    assert row["url"] == "/rcm/studies/pump-study" and row["evidence_url"] == "/modelling/m/seal-model"
+    assert row["url"] == "/maintenance/rcm/pump-study" and row["evidence_url"] == "/models/m/seal-model"
     # The refit itself reports the pattern it changed.
     (refit,) = out["refits"]
     assert {"measure": "Failure pattern", "before": "random", "after": "wear-out"} in refit["moved"]
@@ -427,7 +427,7 @@ def test_the_assistant_calls_the_tool_and_words_its_answer_from_the_computed_fac
     r = client.post("/api/assistant/step", json={"messages": [question, call, result]})
     assert r.status_code == 200, r.text
     assert r.json()["message"]["content"][0]["text"] == (
-        "In the last 30 days: 1 item was added. The new one is Pump Model (/modelling/m/pump-model).")
+        "In the last 30 days: 1 item was added. The new one is Pump Model (/models/m/pump-model).")
     assert all("workspace_changes" in names for names, _ in seen)
 
 

@@ -36,7 +36,7 @@ function HealthChips({ tracking }) {
 
 const HELP = { guide: "degradation-modelling" };
 
-// Fleet › Degradation tracking: the tracked fleets: one row per degradation model with its live
+// Models › Degradation tracking: the tracked fleets: one row per degradation model with its live
 // health rollup. Opening a row goes to that model's tracking page.
 export default function FleetTrackingHome() {
   const navigate = useNavigate();
@@ -75,7 +75,7 @@ export default function FleetTrackingHome() {
     setCreateError(null);
     try {
       const fleet = await createTrackedFleet(name.trim(), pickedId);
-      navigate(`/fleet/tracking/${fleet.id}`);
+      navigate(`/models/tracking/${fleet.id}`);
     } catch (err) {
       setCreateError(err.message);
     } finally {
@@ -94,13 +94,13 @@ export default function FleetTrackingHome() {
     }
   };
 
-  const open = (id) => navigate(`/fleet/tracking/${id}`);
+  const open = (id) => navigate(`/models/tracking/${id}`);
   const newTracked = <button onClick={openCreate}><PlusIcon /> New tracked fleet</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        section="fleet"
+        section="models"
         title="Degradation tracking"
         purpose="Each item's remaining life against a degradation model; open a fleet to log inspections."
         help={HELP}
@@ -117,7 +117,7 @@ export default function FleetTrackingHome() {
         empty={{
           title: "Nothing tracked yet",
           body: <>Name a fleet, pick the degradation model it runs against, and register the items you have in
-            service — or <Link to="/modelling/degradation" className="evidence-link">fit a model</Link> first.</>,
+            service — or <Link to="/models/degradation" className="evidence-link">fit a model</Link> first.</>,
           action: newTracked,
         }}
         head={[
@@ -196,7 +196,7 @@ export default function FleetTrackingHome() {
             </label>
             <p className="muted-line">
               One model can back any number of fleets. Don't have a model yet?{" "}
-              <Link to="/modelling/degradation" className="evidence-link" onClick={() => setModalOpen(false)}>
+              <Link to="/models/degradation" className="evidence-link" onClick={() => setModalOpen(false)}>
                 Fit a degradation model
               </Link>{" "}
               from your inspection history first.

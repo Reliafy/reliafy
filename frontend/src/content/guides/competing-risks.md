@@ -3,7 +3,7 @@ title: "Analyse failures by failure mode (competing risks)"
 task: "My units fail in several different ways. Which mode matters most, and when?"
 category: "Life data modelling"
 prerequisites: "Life data with a column naming each failure's mode (blank for a unit still running)."
-related_href: "/modelling/m/sample-model-pump-modes"
+related_href: "/models/m/sample-model-pump-modes"
 related_label: "Open the sample by-mode model"
 order: 7
 ---
@@ -37,7 +37,7 @@ modes and 22 still running.
 
 ## Fit by failure mode
 
-Go to **Modelling → Non-repairable models**, start a new model and choose **Fit to data**.
+Go to **Models → Non-repairable models**, start a new model and choose **Fit to data**.
 Pick your file or dataset. In the **Data** step, choose the mode column as
 **Failure mode (optional)**. The step reminds you that *a blank mode is a unit
 still running*.

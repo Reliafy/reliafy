@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { NAV, activeNav } from "../sections.js";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
 import { publicUrl } from "../firebase.js";
-import { getMaintenanceAccess } from "../api.js";
+import { useRoles } from "../RolesProvider.jsx";
+import { childActive, entryActive, groupBySection } from "../navigation.js";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -20,62 +20,6 @@ export function initials(user) {
   const letters = parts.length >= 2 ? parts[0][0] + parts[1][0] : base.slice(0, 2);
   return letters.toUpperCase();
 }
-
-// Collapsible left navigation — the Instrument "Workspace" rail.
-// Icons mirror the Instrument design (1.7px hairline strokes).
-const ModellingIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />
-  </svg>
-);
-
-const RbdIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="3" y="4" width="6" height="6" rx="1" />
-    <rect x="15" y="4" width="6" height="6" rx="1" />
-    <rect x="9" y="14" width="6" height="6" rx="1" />
-    <path d="M9 7h6M6 10v4M18 10v4" />
-  </svg>
-);
-
-const StrategyIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="8.5" />
-    <path d="M12 12l4-2.5M12 12v4.5" />
-    <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
-  </svg>
-);
-
-const FleetIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3 16V7a1 1 0 0 1 1-1h9v10" />
-    <path d="M13 9h4l3 3.5V16h-2.5" />
-    <circle cx="7.5" cy="17.5" r="1.8" />
-    <circle cx="16.5" cy="17.5" r="1.8" />
-    <path d="M9.3 17.5h5.4M3 16h2.7" />
-  </svg>
-);
-
-const RcmSectionIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="5" y="4" width="14" height="17" rx="2" />
-    <path d="M9 4V3h6v1" />
-    <path d="m8.5 12 2 2 4-4.5" />
-  </svg>
-);
-
-const MaintenanceIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />
-  </svg>
-);
-
-const AgentIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="4" y="7" width="16" height="12" rx="2" />
-    <path d="M12 7V4M9 12h.01M15 12h.01M9 16h6" />
-  </svg>
-);
 
 const ApiIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -101,27 +45,91 @@ const BillingIcon = () => (
   </svg>
 );
 
-const HomeIcon = () => (
+// The menu's icons, by entry id (navigation.js). Instrument hairline strokes.
+const icon = (paths) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3.5 11 12 4l8.5 7" />
-    <path d="M5.5 9.5V20h13V9.5" />
-    <path d="M10 20v-5.5h4V20" />
+    {paths}
   </svg>
 );
-
-// The menu itself is data (sections.js, with its tests); here each section
-// gets its icon. A section's children show under it while it's the current
-// section; the current page is highlighted, the child when there is one.
 const ICONS = {
-  home: <HomeIcon />,
-  modelling: <ModellingIcon />,
-  rbds: <RbdIcon />,
-  strategy: <StrategyIcon />,
-  fleet: <FleetIcon />,
-  rcm: <RcmSectionIcon />,
-  maintenance: <MaintenanceIcon />,
-  agent: <AgentIcon />,
+  home: icon(<><path d="M4 11.5 12 5l8 6.5" /><path d="M6 10v9h12v-9" /><path d="M10 19v-5h4v5" /></>),
+  systems: icon(<><rect x="3" y="4" width="6" height="6" rx="1" /><rect x="15" y="4" width="6" height="6" rx="1" /><rect x="9" y="14" width="6" height="6" rx="1" /><path d="M9 7h6M6 10v4M18 10v4" /></>),
+  requirements: icon(<><path d="M9 6h11M9 12h11M9 18h11" /><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17" /></>),
+  assets: icon(<><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z" /><path d="M4 7.5 12 12l8-4.5M12 12v9" /></>),
+  maintenance: icon(<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />),
+  failures: icon(<><path d="M12 4 3 20h18z" /><path d="M12 10v4.5M12 17.5h.01" /></>),
+  data: icon(<><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" /></>),
+  models: icon(<path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />),
+  strategy: icon(<><circle cx="12" cy="12" r="8.5" /><path d="M12 12l4-2.5M12 12v4.5" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></>),
+  forecasts: icon(<><path d="M4 19h16" /><path d="M4 15l4-4 3 3 5-6" /><path d="M16 8h3v3" strokeDasharray="2 2" /></>),
+  reports: icon(<><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4M10 12h5M10 16h5" /></>),
+  agent: icon(<><rect x="4" y="7" width="16" height="12" rx="2" /><path d="M12 7V4M9 12h.01M15 12h.01M9 16h6" /></>),
 };
+const MoreIcon = () => icon(<><circle cx="6" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="18" cy="12" r="1.2" fill="currentColor" /></>);
+
+// One menu entry, with its children while it's the open section. The entry is
+// highlighted on its section's pages that no child names (a detail page), and
+// always on the collapsed rail, where the children are hidden.
+function MenuEntry({ entry, collapsed, pathname }) {
+  const active = entryActive(entry, pathname);
+  const children = entry.children || [];
+  const childOn = children.some((c) => childActive(c, pathname));
+  const lit = active && (collapsed || !childOn);
+  return (
+    <div>
+      <Link
+        to={entry.to}
+        className={"side-item" + (lit ? " active" : "")}
+        aria-current={pathname === entry.to ? "page" : undefined}
+        title={entry.label}
+      >
+        <span className="side-icon">{ICONS[entry.id]}</span>
+        {!collapsed && <span className="side-label">{entry.label}</span>}
+      </Link>
+      {!collapsed && active && children.length > 0 && (
+        <div className="side-children">
+          {children.map((c) => {
+            const on = childActive(c, pathname);
+            return (
+              <Link
+                key={c.to}
+                to={c.to}
+                className={"side-subitem" + (on ? " active" : "")}
+                aria-current={pathname === c.to ? "page" : undefined}
+              >
+                {c.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Entries under their section headings (Design, Operate, Analyse; Home and
+// Reports/Agent have none). On the collapsed rail a heading is a hairline.
+function MenuGroups({ entries, collapsed, pathname, idPrefix }) {
+  return groupBySection(entries).map((g) => {
+    const headingId = g.section && !collapsed ? `${idPrefix}-${g.section.id}` : undefined;
+    return (
+      <div
+        key={g.key}
+        className={"side-group" + (g.key === "end" ? " side-group-end" : "")}
+        role={g.section ? "group" : undefined}
+        aria-labelledby={headingId}
+        aria-label={g.section && collapsed ? g.section.label : undefined}
+      >
+        {g.section && (
+          collapsed
+            ? <div className="side-rule" aria-hidden="true" />
+            : <div className="side-section" id={headingId}>{g.section.label}</div>
+        )}
+        {g.entries.map((e) => <MenuEntry key={e.id} entry={e} collapsed={collapsed} pathname={pathname} />)}
+      </div>
+    );
+  });
+}
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -132,20 +140,19 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 export default function Sidebar({ collapsed, onToggle, phone = false, open = false, onClose }) {
   const asideRef = useRef(null);
   const { user, signOut } = useAuth();
-  const { ai, billing, reliability_agent: agentEnabled, maintenance: maintenanceEnabled } = useAppConfig();
+  const { ai, billing, reliability_agent: agentEnabled } = useAppConfig();
   // Credits only buy AI use; without it the page is plain billing.
   const billingLabel = ai || agentEnabled ? "Billing & credits" : "Billing";
-  // The Reliability Agent surface is behind a feature flag (hidden until ready).
-  const [maintenanceAllowed, setMaintenanceAllowed] = useState(false);
-  useEffect(() => {
-    if (!maintenanceEnabled) return;
-    getMaintenanceAccess().then((a) => setMaintenanceAllowed(!!a.allowed));
-  }, [maintenanceEnabled]);
-  const items = NAV.filter((it) => (it.gate !== "agent" || agentEnabled)
-    && (it.gate !== "maintenance" || (maintenanceEnabled && maintenanceAllowed)));
+  // The menu (navigation.js): what the user's roles use, then "More".
+  const { menu } = useRoles();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const current = activeNav(pathname);
+  // "More" opens by itself when the page shown is one of its entries.
+  const moreActive = menu.more.some((e) => entryActive(e, pathname));
+  const [moreOpen, setMoreOpen] = useState(moreActive);
+  useEffect(() => {
+    if (moreActive) setMoreOpen(true);
+  }, [moreActive]);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -234,37 +241,30 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
           </button>
         )}
       </div>
-      <nav className="sidebar-nav">
-        {items.map((it) => {
-          const sectionActive = current.section === it.key;
-          return (
-            <div key={it.to}>
-              <Link
-                to={it.to}
-                className={"side-item" + (sectionActive && (collapsed || !current.child) ? " active" : "")}
-                aria-current={sectionActive && !current.child && pathname === it.to ? "page" : undefined}
-                title={it.label}
-              >
-                <span className="side-icon">{ICONS[it.key]}</span>
-                {!collapsed && <span className="side-label">{it.label}</span>}
-              </Link>
-              {!collapsed && it.children && sectionActive && (
-                <div className="side-children">
-                  {it.children.map((c) => (
-                    <Link
-                      key={c.to}
-                      to={c.to}
-                      className={"side-subitem" + (current.child === c.to ? " active" : "")}
-                      aria-current={pathname === c.to ? "page" : undefined}
-                    >
-                      {c.label}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <nav className="sidebar-nav" aria-label="Main">
+        <MenuGroups entries={menu.main} collapsed={collapsed} pathname={pathname} idPrefix="side" />
+        {menu.more.length > 0 && (
+          <>
+            <button
+              type="button"
+              className={"side-item side-more" + (moreActive && !moreOpen ? " active" : "")}
+              aria-expanded={moreOpen}
+              aria-controls="side-more"
+              onClick={() => setMoreOpen((o) => !o)}
+              aria-label="More"
+              title={moreOpen ? "Hide the rest of the menu" : "More: the rest of the menu"}
+            >
+              <span className="side-icon"><MoreIcon /></span>
+              {!collapsed && <span className="side-label">More</span>}
+              {!collapsed && <span className="side-more-caret" aria-hidden="true">{moreOpen ? "▴" : "▾"}</span>}
+            </button>
+            {moreOpen && (
+              <div id="side-more" className="side-more-list">
+                <MenuGroups entries={menu.more} collapsed={collapsed} pathname={pathname} idPrefix="side-more" />
+              </div>
+            )}
+          </>
+        )}
       </nav>
 
       <div className="side-grow" />

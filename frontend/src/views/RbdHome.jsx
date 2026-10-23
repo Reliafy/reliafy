@@ -36,7 +36,7 @@ const ImportIcon = () => (
   </svg>
 );
 
-// Landing page for the RBDs section: list saved diagrams, open or create new.
+// Design › Systems: the saved block diagrams; open one or create a new one.
 export default function RbdHome() {
   const navigate = useNavigate();
   const [rbds, setRbds] = useState(null);
@@ -49,7 +49,7 @@ export default function RbdHome() {
   const [excelMapping, setExcelMapping] = useState(null); // {file, message}: a workbook to map by hand
 
   // Open an imported diagram in the builder, unsaved (the builder's Save keeps it).
-  const openImported = (d) => navigate("/rbds/b", { state: { imported: d } });
+  const openImported = (d) => navigate("/systems/b", { state: { imported: d } });
 
   const onImportFile = async (e) => {
     const file = e.target.files?.[0];
@@ -111,8 +111,8 @@ export default function RbdHome() {
     }
   };
 
-  const open = (id) => navigate(`/rbds/b/${id}`);
-  const newDiagram = <button onClick={() => navigate("/rbds/b")}><PlusIcon /> New diagram</button>;
+  const open = (id) => navigate(`/systems/b/${id}`);
+  const newDiagram = <button onClick={() => navigate("/systems/b")}><PlusIcon /> New diagram</button>;
 
   return (
     <div className="app">
@@ -124,8 +124,8 @@ export default function RbdHome() {
         onChange={onImportFile}
       />
       <SectionHeader
-        title="RBDs"
-        purpose="Reliability block diagrams: system reliability, availability and importance."
+        title="Systems"
+        purpose="Your systems as reliability block diagrams: reliability, availability and what matters most."
         help={HELP}
         actions={
           <button

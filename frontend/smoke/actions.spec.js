@@ -3,16 +3,16 @@
 import { test, expect, open, expectHealthy } from "./health.js";
 
 test("fit and save a Weibull model from a sample dataset", async ({ page, problems }) => {
-  await open(page, "/modelling/data/sample-ds-bearings");
+  await open(page, "/data/sample-ds-bearings");
   await page.getByRole("button", { name: "Fit a model" }).click();
-  await expect(page).toHaveURL(/\/modelling\/new\?dataset=sample-ds-bearings/);
+  await expect(page).toHaveURL(/\/models\/new\?dataset=sample-ds-bearings/);
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Fit Weibull" }).click();
   await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
   await expectHealthy(page, problems, { label: "fitted model", chart: true });
 
   await page.getByRole("button", { name: "Save model" }).click();
-  await page.waitForURL(/\/modelling\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
+  await page.waitForURL(/\/models\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: /Weibull/ })).toBeVisible();
   await expectHealthy(page, problems, { label: "saved model", chart: true });
 });
@@ -20,7 +20,7 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
 // #31: a class with a fitted model and a spare with a lead time shows how many to
 // hold, and the chance a typed stock runs out (smoke/seed.js makes the class).
 test("a class's spares stock levels and the what-if", async ({ page, problems }) => {
-  await open(page, `/maintenance/classes/${encodeURIComponent("Smoke test pump")}`);
+  await open(page, `/asset-register/classes/${encodeURIComponent("Smoke test pump")}`);
   const stocking = page.getByTestId("spares-stocking");
   await expect(stocking.getByRole("heading", { name: "Stock to hold" })).toBeVisible({ timeout: 30_000 });
   const row = stocking.getByRole("row", { name: /SMOKE-PUMP/ });
@@ -43,7 +43,7 @@ const HEADERLESS = [
 ].join("\n") + "\n";
 
 async function uploadAndFit(page) {
-  await open(page, "/modelling/new?mode=data");
+  await open(page, "/models/new?mode=data");
   await page.locator('input[type="file"]').setInputFiles({
     name: "raw.csv", mimeType: "text/csv", buffer: Buffer.from(HEADERLESS),
   });
@@ -66,7 +66,7 @@ async function uploadAndFit(page) {
 }
 
 async function expectSavedWithData(page) {
-  await page.waitForURL(/\/modelling\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
+  await page.waitForURL(/\/models\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: /Weibull/ })).toBeVisible();
   const id = page.url().split("/").pop();
   const model = await (await page.request.get(`/api/models/${id}`)).json();
@@ -83,16 +83,16 @@ test("a headerless CSV is detected, fitted and saved with its data in one click"
   await expectHealthy(page, problems, { label: "saved model", chart: true });
 });
 
-test("a fit left unsaved is offered for saving on the next visit to Modelling", async ({ page, problems }) => {
+test("a fit left unsaved is offered for saving on the next visit to Models", async ({ page, problems }) => {
   await uploadAndFit(page);
-  await open(page, "/modelling");
+  await open(page, "/models");
   await expect(page.getByText("You left a fit without saving it")).toBeVisible();
   await page.getByRole("button", { name: "Save it and its data" }).click();
   await expectSavedWithData(page);
   // Saved: no reminder now.
-  await open(page, "/modelling");
+  await open(page, "/models");
   await expect(page.getByText("You left a fit without saving it")).toHaveCount(0);
-  await expectHealthy(page, problems, { label: "modelling home" });
+  await expectHealthy(page, problems, { label: "models home" });
 });
 
 // Strategy › Replacement, shutdown calendar: shuts every 180 days at 100, 150
@@ -164,7 +164,7 @@ test("move a photo from a work order to its position", async ({ page, problems }
 
   const position = await (await page.request.get(`/api/maintenance/positions/${wo.position.id}`)).json();
   expect(position.photos.map((p) => p.id)).toContain(photoId);
-  await open(page, `/maintenance/positions/${wo.position.id}`);
+  await open(page, `/asset-register/positions/${wo.position.id}`);
   await expect(page.getByRole("img", { name: "Smoke nameplate" })).toBeVisible();
   await expectHealthy(page, problems, { label: "position with the moved photo" });
 });
@@ -173,7 +173,7 @@ test("move a photo from a work order to its position", async ({ page, problems }
 // action, says what happens (a sample comes back from Settings), starts on
 // Cancel, and Escape or Cancel leaves everything as it was.
 test("removing a sample asks in the app's confirm dialog", async ({ page, problems }) => {
-  await open(page, "/rbds");
+  await open(page, "/systems");
   const remove = page.getByRole("button", { name: "Remove from my view" }).first();
   const row = page.getByRole("row").filter({ has: remove }).first();
   await remove.click();
@@ -202,7 +202,7 @@ test("rename a diagram, and the delete dialog, in the app's own dialogs", async 
   });
   expect(saved.ok(), await saved.text()).toBeTruthy();
 
-  await open(page, "/rbds");
+  await open(page, "/systems");
   const row = page.getByRole("row").filter({ hasText: "Smoke dialog diagram" });
   await row.getByRole("button", { name: "Rename" }).click();
   const ask = page.getByRole("dialog", { name: "Rename this diagram" });

@@ -16,7 +16,7 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   if (upload) {
     list.push({
       key: "upload",
-      to: "/modelling/new?mode=data",
+      to: "/models/new?mode=data",
       icon: <UploadIcon />,
       title: "Upload a CSV or Excel file",
       body: "A column of times to failure, and a 0/1 column for units still running if you have one.",
@@ -26,7 +26,7 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   }
   list.push({
     key: "paste",
-    to: "/modelling/new?mode=paste",
+    to: "/models/new?mode=paste",
     onClick: () => trackEvent("first_run_paste"),
     icon: <PasteIcon />,
     title: "Paste failure times",
@@ -37,7 +37,7 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   if (sampleModelId) {
     list.push({
       key: "sample",
-      to: `/modelling/m/${sampleModelId}`,
+      to: `/models/m/${sampleModelId}`,
       onClick: () => trackEvent("first_run_sample"),
       icon: <WaveIcon />,
       title: "Open a sample model",
@@ -52,7 +52,7 @@ function starts({ sampleModelId, sampleRbdId }, { upload = false } = {}) {
   list.push({
     key: "rbd",
     // The sample diagram opens with its walkthrough, once per user (#32).
-    to: sampleRbdId ? withLaunch(`/rbds/b/${sampleRbdId}`, "rbd", { auto: true }) : "/rbds/b",
+    to: sampleRbdId ? withLaunch(`/systems/b/${sampleRbdId}`, "rbd", { auto: true }) : "/systems/b",
     onClick: () => trackEvent("first_run_rbd"),
     icon: <RbdIcon />,
     title: "Build a block diagram",
@@ -111,10 +111,10 @@ export function StartHere({ info, sampleModelId = null }) {
       </div>
       <p className="first-run-more">
         Other models:{" "}
-        <Link to="/modelling/recurrent/new">Repairable models</Link> ·{" "}
-        <Link to="/modelling/alt/new">Accelerated life</Link> ·{" "}
-        <Link to="/modelling/degradation">Degradation</Link> ·{" "}
-        <Link to="/modelling/joint/new">Condition monitoring</Link>
+        <Link to="/models/recurrent/new">Repairable models</Link> ·{" "}
+        <Link to="/models/alt/new">Accelerated life</Link> ·{" "}
+        <Link to="/models/degradation">Degradation</Link> ·{" "}
+        <Link to="/models/joint/new">Condition monitoring</Link>
       </p>
       {first && (
         <p className="first-run-more">

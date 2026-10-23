@@ -3,7 +3,7 @@ title: "Add a common-cause group"
 task: "How do I couple redundant components that share a failure cause?"
 category: "Reliability block diagrams"
 prerequisites: "An RBD with two or more redundant components that share a cause."
-related_href: "/rbds/b"
+related_href: "/systems/b"
 related_label: "Open the RBD builder"
 order: 31
 ---

@@ -9,6 +9,7 @@ from backend.auth import current_user_doc
 from backend.db import get_session
 from backend.services import access as access_service
 from backend.services import billing as billing_service
+from backend.services import roles as roles_service
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
 from backend.services import teams as teams_service
@@ -76,3 +77,27 @@ def put_time_zone(time_zone: str | None = Body(default=None, embed=True),
         return {"time_zone": time_zones.set_personal(session, user["uid"], time_zone)}
     except time_zones.BadTimeZone as err:
         return JSONResponse(status_code=422, content={"detail": str(err)})
+
+
+@router.get("/me/roles")
+def get_roles(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
+    """What the user does: ``{"roles": [...], "offer": bool}``. No roles is
+    everything shown; ``offer`` says to ask (once, new users)."""
+    return roles_service.of_user(session, user["uid"])
+
+
+@router.put("/me/roles")
+def put_roles(roles: list | None = Body(default=None, embed=True),
+              user: dict = Depends(current_user_doc), session=Depends(get_session)):
+    """Save the roles, in the order picked (the first is the primary role);
+    ``[]`` shows everything."""
+    try:
+        return roles_service.save(session, user["uid"], roles)
+    except roles_service.BadRoles as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+
+
+@router.post("/me/roles/dismiss")
+def dismiss_roles_offer(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
+    """"Not now" to the one-time question: it isn't asked again."""
+    return roles_service.dismiss_offer(session, user["uid"])

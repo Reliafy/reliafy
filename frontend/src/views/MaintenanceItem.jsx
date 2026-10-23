@@ -55,7 +55,7 @@ export default function MaintenanceItem() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: "/maintenance" }, { label: "Items", to: "/maintenance/items" }]}
+        crumbs={[{ label: "Assets", to: "/asset-register" }, { label: "Items", to: "/asset-register/items" }]}
         title={item.name}
         meta={[item.manufacturer, item.model, item.serial && `serial ${item.serial}`].filter(Boolean).join(" · ") || "Item"}
         id={item.id}
@@ -75,10 +75,10 @@ export default function MaintenanceItem() {
         <div className="maint-head"><h2>Details</h2></div>
         <dl className="maint-plate">
           <dt>Fitted to</dt>
-          <dd>{item.fitted_to ? <Link to={`/maintenance/positions/${item.fitted_to.id}`}>{item.fitted_to.name}</Link> : "Not fitted"}</dd>
+          <dd>{item.fitted_to ? <Link to={`/asset-register/positions/${item.fitted_to.id}`}>{item.fitted_to.name}</Link> : "Not fitted"}</dd>
           <dt>Location</dt>
           <dd>
-            {where.locationId ? <Link to={`/maintenance/locations/${where.locationId}`}>{where.label}</Link> : where.label || "—"}
+            {where.locationId ? <Link to={`/asset-register/locations/${where.locationId}`}>{where.label}</Link> : where.label || "—"}
             {where.note && <span className="lib-date"> · {where.note}</span>}
           </dd>
           {item.part_number && <><dt>Part number</dt><dd>{item.part_number}</dd></>}
@@ -140,7 +140,7 @@ export default function MaintenanceItem() {
             <tbody>
               {item.history.map((h) => (
                 <tr key={h.id}>
-                  <td>{h.position && <Link to={`/maintenance/positions/${h.position.id}`}>{h.position.name}</Link>}</td>
+                  <td>{h.position && <Link to={`/asset-register/positions/${h.position.id}`}>{h.position.name}</Link>}</td>
                   <td className="lib-date">{fmtDated(h.from, h.from_precision)}</td>
                   <td className="lib-date">{h.to ? fmtDated(h.to, h.to_precision) : "still fitted"}</td>
                   <td className="lib-date">{h.end_reason === "failure"
@@ -163,7 +163,7 @@ export default function MaintenanceItem() {
           <ul className="maint-list">
             {item.positions.map((p) => (
               <li key={p.id}>
-                <Link to={`/maintenance/positions/${p.id}`}>{p.name}</Link>
+                <Link to={`/asset-register/positions/${p.id}`}>{p.name}</Link>
                 <span className="lib-date"> · {p.item ? p.item.name : "nothing fitted"}</span>
               </li>
             ))}
@@ -176,7 +176,7 @@ export default function MaintenanceItem() {
       {modal === "move" && <MoveModal item={item} onClose={() => setModal(null)} onDone={(d) => { setItem(d); setModal(null); }} />}
       {modal === "place" && <PlaceModal item={item} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "child" && (
-        <ChildModal item={item} onClose={() => setModal(null)} onDone={(p) => navigate(`/maintenance/positions/${p.id}`)} />
+        <ChildModal item={item} onClose={() => setModal(null)} onDone={(p) => navigate(`/asset-register/positions/${p.id}`)} />
       )}
     </div>
   );

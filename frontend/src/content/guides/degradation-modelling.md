@@ -3,7 +3,7 @@ title: "Predict failure from condition measurements"
 task: "How do I turn wear or degradation readings into a remaining-life prediction?"
 category: "Life data modelling"
 prerequisites: "Repeated measurements of a degrading quantity on several items, and a threshold that counts as failure."
-related_href: "/modelling/degradation"
+related_href: "/models/degradation"
 related_label: "Open degradation models"
 order: 17
 ---
@@ -48,7 +48,7 @@ This is a judgement call, and it's yours to make. It's usually a standard, a
 manufacturer's limit, or the point past which secondary damage begins. It's worth
 being deliberate about, because everything downstream is expressed relative to it.
 
-Go to **Modelling → Degradation → New model**, pick your dataset, choose the
+Go to **Models → Degradation → New model**, pick your dataset, choose the
 item id, time and measurement columns, and set the **Failure threshold** along
 with the **Time unit** and **Measurement unit** so the outputs are labelled
 properly.
@@ -70,7 +70,7 @@ life of **3,210 hours**: 90% of pads survive that long, at 90% confidence.
 
 The population model is useful, but the real payoff is per-asset.
 
-Under **Fleet →** [Degradation tracking](/fleet/tracking) (or **Track items** on the model's page),
+Under **Models →** [Degradation tracking](/models/tracking) (or **Track items** on the model's page),
 register the individual assets you care about — Truck 07's front-left pad, specifically — and record measurements against
 them as you take them. Each new reading updates that asset's own projection: its
 current trajectory, when it's forecast to cross the threshold, and how much

@@ -12,6 +12,7 @@ import { toCsv } from "../csv.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows";
+import { useNavCrumbs } from "../RolesProvider.jsx";
 
 function exportCsv(study, functions) {
   const header = [
@@ -46,6 +47,8 @@ function exportCsv(study, functions) {
 // One RCM study: the worksheet tree lives in local state while editing; Save
 // PUTs the whole tree and comes back with freshly resolved evidence statuses.
 export default function RcmStudyPage() {
+  // Maintenance › RCM studies (or, without Reliafy Maintenance, Maintenance alone: it is the RCM studies).
+  const crumbs = useNavCrumbs("maintenance", "/maintenance/rcm");
   const { id } = useParams();
   const [study, setStudy] = useState(null);
   const [functions, setFunctions] = useState([]);
@@ -146,7 +149,7 @@ export default function RcmStudyPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "RCM", to: "/rcm" }]}
+        crumbs={crumbs}
         title={itemName(study)}
         badges={
           <>

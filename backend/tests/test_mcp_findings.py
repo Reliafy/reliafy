@@ -789,7 +789,7 @@ def test_delete_tools_follow_the_apps_rules(samples):
 
     fleet = fleet_service.create_fleet(samples.db, "Pump fleet", mid, A)
     msg = _err(_call(a, "models", {"action": "delete", "model_id": mid}))
-    assert "can't be deleted" in msg and "Pump fleet" in msg and f"/fleet/forecasts/{fleet.id}" in msg
+    assert "can't be deleted" in msg and "Pump fleet" in msg and f"/forecasts/{fleet.id}" in msg
     assert samples.db.models.find_one({"_id": mid}) is not None
     fleet_service.delete_fleet(samples.db, fleet.id, A)
 

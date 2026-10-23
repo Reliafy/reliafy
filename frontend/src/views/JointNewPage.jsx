@@ -174,7 +174,7 @@ export default function JointNewPage() {
       setJob(j);
       if (j.status === "done") {
         const id = j.result?.model_id;
-        if (id) navigate(`/modelling/joint/${id}`);
+        if (id) navigate(`/models/joint/${id}`);
         else setError("The fit finished but the model wasn't saved. Try again.");
         return;
       }
@@ -189,7 +189,7 @@ export default function JointNewPage() {
       const out = await fitJointModel({
         ...body, name: name.trim(), path_model: path, unit, marker: marker.trim(), marker_unit: markerUnit.trim(),
       });
-      if (out.model_id) navigate(`/modelling/joint/${out.model_id}`);
+      if (out.model_id) navigate(`/models/joint/${out.model_id}`);
       else if (out.job?.job_id) {
         setJob(out.job);
         await poll(out.job.job_id);
@@ -211,7 +211,7 @@ export default function JointNewPage() {
   return (
     <div className="app joint-new">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Condition monitoring", to: "/modelling/joint" }]}
+        crumbs={[{ label: "Models", to: "/models" }, { label: "Condition monitoring", to: "/models/joint" }]}
         title="New condition monitoring model"
         meta="Fits how a reading drifts on each unit and how the risk of failing rises with it, together."
       />

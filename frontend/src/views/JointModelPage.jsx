@@ -29,7 +29,7 @@ export default function JointModelPage() {
     if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     try {
       await deleteJointModel(id);
-      navigate("/modelling/joint");
+      navigate("/models/joint");
     } catch (e) { setError(e.message); }
   };
 
@@ -47,7 +47,7 @@ export default function JointModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Condition monitoring", to: "/modelling/joint" }]}
+        crumbs={[{ label: "Models", to: "/models" }, { label: "Condition monitoring", to: "/models/joint" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""} · condition monitoring</>}

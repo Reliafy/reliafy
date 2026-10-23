@@ -34,7 +34,7 @@ def test_fit_alt_model_inline_inspection_data_matches_the_app(env):
         "censored": df["flag"].tolist(), "stresses": [[t] for t in df["tempK"]], "stress_names": ["Temperature (K)"],
         "unit": "hours"}))
     ref, _ = alt.fit(df, {"xl": "lo", "xr": "hi", "c": "flag"}, ["tempK"], "weibull", "arrhenius")
-    assert out["saved"] and out["url"].endswith(f"/modelling/alt/{out['model_id']}")
+    assert out["saved"] and out["url"].endswith(f"/models/alt/{out['model_id']}")
     assert _values(out["shape_params"]) == pytest.approx(_values(ref["params"]))
     assert _values(out["life_stress_coefficients"]) == pytest.approx(_values(ref["coefficients"]))
     assert out["interval_censored"] is True and out["bounds_methods"] == ["wald", "lr"]
