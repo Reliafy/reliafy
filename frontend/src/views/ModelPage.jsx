@@ -47,7 +47,7 @@ export default function ModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Models", to: "/models" }, { label: "Non-repairable models", to: "/models/life" }]}
+        crumbs={[{ label: "Model", to: "/models" }, { label: "Non-repairable", to: "/models/life" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{model.unit ? ` · ${model.unit}` : ""}</>}

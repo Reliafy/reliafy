@@ -62,7 +62,7 @@ export default function EvidencePicker({ expectedType, analysisKind, value, onCh
       strategy_analysis: analysisKind === "failure_finding"
         ? "saved failure-finding analyses (run the Strategy tool and save it)"
         : "saved replacement analyses (run Optimal replacement and save it)",
-      degradation_model: "degradation models (create one under Models → Degradation)",
+      degradation_model: "degradation models (create one under Model → Degradation)",
     }[expectedType];
     return <p className="muted-line">No {what} available yet.</p>;
   }

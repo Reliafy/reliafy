@@ -83,7 +83,7 @@ export default function NewModelPage() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Models", to: "/models" }, { label: "Non-repairable models", to: "/models/life" }]}
+        crumbs={[{ label: "Model", to: "/models" }, { label: "Non-repairable", to: "/models/life" }]}
         title={heading}
         meta={sub}
       />

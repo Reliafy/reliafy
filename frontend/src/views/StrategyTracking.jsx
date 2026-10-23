@@ -147,7 +147,7 @@ export default function StrategyTracking() {
     <div className="app">
       <PageHeader
         className="trk-header"
-        crumbs={[{ label: "Models", to: "/models" }, { label: "Degradation tracking", to: "/models/tracking" }]}
+        crumbs={[{ label: "Model", to: "/models" }, { label: "Degradation tracking", to: "/models/tracking" }]}
         title={itemName(fleet)}
         badges={fleet.is_sample && <Chip>Sample</Chip>}
         meta={

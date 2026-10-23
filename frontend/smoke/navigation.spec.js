@@ -7,7 +7,7 @@ import { test, expect, open, expectHealthy } from "./health.js";
 
 test.describe.configure({ mode: "serial" });
 
-const EVERYTHING = ["Home", "Systems", "Assets", "Maintenance", "Data", "Models", "Strategy", "Forecasts", "Reports"];
+const EVERYTHING = ["Home", "Systems", "Assets", "Maintenance", "Data", "Model", "Strategy", "Forecasts", "Reports"];
 
 const setRoles = async (request, roles) => {
   const res = await request.put("/api/me/roles", { data: { roles } });
@@ -55,20 +55,20 @@ test("no roles: every entry under Design, Operate and Analyse, nothing under Mor
   await page.locator("a.brand").click();
   await expect(page).toHaveURL(/\/home$/);
   // A section shows its pages while it's open; the landing page isn't one of them.
-  await mainMenu(page).getByRole("link", { name: "Models", exact: true }).click();
+  await mainMenu(page).getByRole("link", { name: "Model", exact: true }).click();
   await expect(page).toHaveURL(/\/models$/);
   const kids = mainMenu(page).locator(".side-children .side-subitem");
-  await expect(kids).toHaveText(["Non-repairable models", "Repairable models", "Accelerated life", "Degradation",
+  await expect(kids).toHaveText(["Non-repairable", "Repairable", "Accelerated life", "Degradation",
     "Condition monitoring", "Degradation tracking"]);
-  await expect(mainMenu(page).getByRole("link", { name: "Models", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(mainMenu(page).getByRole("link", { name: "Model", exact: true })).toHaveAttribute("aria-current", "page");
   // A child page: the child lit, and its entry named above the title.
-  await mainMenu(page).getByRole("link", { name: "Repairable models", exact: true }).click();
+  await mainMenu(page).getByRole("link", { name: "Repairable", exact: true }).click();
   await expect(page).toHaveURL(/\/models\/recurrent$/);
-  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Repairable models");
-  await expect(page.locator(".crumb")).toHaveText("Models");
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Repairable");
+  await expect(page.locator(".crumb")).toHaveText("Model");
   // A detail page lights its child too.
   await open(page, "/models/m/sample-model-bearings-weibull");
-  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Non-repairable models");
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Non-repairable");
   // Operate: Maintenance (due and work orders), with RCM studies under it.
   await open(page, "/maintenance/rcm");
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RCM studies");
@@ -89,14 +89,14 @@ test("switching roles in Settings: technician, then every role, then none", asyn
   await moreButton(page).click();
   const more = page.locator("#side-more");
   await expect(more.getByRole("link", { name: "Systems" })).toBeVisible();
-  await expect(more.getByRole("link", { name: "Models", exact: true })).toBeVisible();
+  await expect(more.getByRole("link", { name: "Model", exact: true })).toBeVisible();
   await mainMenu(page).getByRole("link", { name: "Maintenance" }).click();
   await expect(page).toHaveURL(/\/maintenance$/);
   await expect(page.getByRole("heading", { name: "Open work orders" })).toBeVisible();
   // A page under More keeps More open, with that page lit.
   await open(page, "/models");
-  await expect(page.locator("#side-more").getByRole("link", { name: "Models", exact: true })).toBeVisible();
-  await expect(page.locator("#side-more .side-item.active")).toHaveText("Models");
+  await expect(page.locator("#side-more").getByRole("link", { name: "Model", exact: true })).toBeVisible();
+  await expect(page.locator("#side-more .side-item.active")).toHaveText("Model");
 
   // Home leads with today's work orders.
   await open(page, "/home");

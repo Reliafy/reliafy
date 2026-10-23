@@ -11,7 +11,7 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { guide: "degradation-modelling" };
 
-// Models › Degradation: list, create (a 3-step modal that
+// Model › Degradation: list, create (a 3-step modal that
 // fits, saves and opens the new model's page), open, delete. Lives inside the
 // Models section.
 export default function DegradationHome() {

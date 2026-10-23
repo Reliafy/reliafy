@@ -6155,7 +6155,7 @@ def growth_projection(
     if user.get("mcp_plan", "pro") != "pro":
         raise Refusal(
             f"A growth projection from inline data fits a Crow-AMSAA model in Reliafy, part of Reliafy Pro "
-            f"({PRO_PRICE}). Fit the test data in the Reliafy app (Models › Repairable models, mapping the "
+            f"({PRO_PRICE}). Fit the test data in the Reliafy app (Model › Repairable, mapping the "
             "failure-mode column) and pass that model's id instead, or upgrade at "
             f"{_billing_url()} (or call upgrade_link).", "pro_only")
     if modes is None or len(modes) != len(x):

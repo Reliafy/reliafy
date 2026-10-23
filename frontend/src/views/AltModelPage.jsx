@@ -37,7 +37,7 @@ export default function AltModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Models", to: "/models" }, { label: "Accelerated life", to: "/models/alt" }]}
+        crumbs={[{ label: "Model", to: "/models" }, { label: "Accelerated life", to: "/models/alt" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}</>}

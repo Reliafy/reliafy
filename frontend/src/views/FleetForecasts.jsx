@@ -250,7 +250,7 @@ export default function FleetForecasts() {
             </label>
             <p className="muted-line">
               {modelKind === "recurrent"
-                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Models › Repairable models first if you don't have one yet."
+                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Model › Repairable first if you don't have one yet."
                 : "The forecast evaluates this model at each item's age (and, for a regression or ALT model, at each item's own conditions) — fit one under Models first if you don't have one yet."}
             </p>
           </div>

@@ -18,7 +18,7 @@ them into a failure probability per demand with exact confidence bounds.
 
 ## Enter the counts
 
-Go to **Models → Non-repairable models**, press **New model**, choose **Enter
+Go to **Model → Non-repairable**, press **New model**, choose **Enter
 parameters** and pick **Per-demand (Binomial)** from the distributions. Give
 the model a name.
 

@@ -9,7 +9,7 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { guide: "recurrent-events" };
 
-// Models › Repairable models: repairable-system models. The fit flow lives on its
+// Model › Repairable: repairable-system models. The fit flow lives on its
 // own page (/models/recurrent/new).
 export default function RecurrentHome() {
   const navigate = useNavigate();

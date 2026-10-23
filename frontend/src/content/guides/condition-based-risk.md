@@ -63,7 +63,7 @@ were already in service when your records began can take an **Entry age**.
 
 ## Fit the model
 
-Go to **Models →** [Condition monitoring](/models/joint) and press **New
+Go to **Model →** [Condition monitoring](/models/joint) and press **New
 model**. Under **1. Your two tables**, choose the two datasets, or upload or
 paste each one. Reliafy guesses the columns under **2. Columns**; check them.
 
