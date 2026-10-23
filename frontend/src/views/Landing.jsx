@@ -6,6 +6,7 @@ import HeroPlot from "../components/HeroPlot.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import { ENTERPRISE_CONTACT, PRO_PRICE } from "../pricing.js";
+import { HERO } from "../siteCopy.js";
 
 const CheckIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -207,13 +208,9 @@ export default function Landing() {
 
       <section className="landing-hero">
         <div className="landing-hero-text">
-          <div className="landing-eyebrow">Reliability engineering platform</div>
-          <h1>From failure data to maintenance decisions.</h1>
-          <p>
-            Reliafy turns your reliability data into fitted non-repairable models, reliability
-            block diagrams, and cost-optimal maintenance strategies — all in one
-            place.
-          </p>
+          <div className="landing-eyebrow">{HERO.eyebrow}</div>
+          <h1>{HERO.h1}</h1>
+          <p>{HERO.lede}</p>
           <div className="landing-cta">
             <Link className="cta cta-solid lg" to={primaryHref}>{primaryLabel}</Link>
           </div>
@@ -310,8 +307,11 @@ export default function Landing() {
       <section className="landing-pricing" id="pricing">
         <div className="landing-pricing-head">
           <div className="landing-eyebrow">Pricing</div>
-          <h2>Free to run yourself. Effortless in the cloud.</h2>
-          <p>The core is open source and always will be. The cloud adds accounts, the AI assistant, and zero setup.</p>
+          <h2>Plans for one engineer or a whole organisation.</h2>
+          <p>
+            The core is open source and always will be: run it yourself at no cost, or start on
+            Cloud Free and move to Pro when the work grows. The cloud adds accounts, teams, the AI assistant and zero setup.
+          </p>
         </div>
         <div className="price-grid">
           {TIERS(primaryHref, mcpOn).map((t) => (
@@ -343,7 +343,7 @@ export default function Landing() {
       </section>
 
       <section className="landing-band">
-        <h2>Built for reliability engineers.</h2>
+        <h2>Built for the people who keep assets running.</h2>
         <p>Upload a CSV, fit a model, build a system, and decide when to act — in one place.</p>
         <Link className="cta cta-solid lg" to={primaryHref}>{primaryLabel}</Link>
       </section>

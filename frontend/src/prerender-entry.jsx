@@ -28,6 +28,7 @@ import { articles } from "./learn.js";
 import { guides } from "./guides.js";
 import { families as refFamilies, totalEntries } from "./reference.js";
 import { linkedinFeed, socialPost } from "./contentFeed.js";
+import { HOME_DESCRIPTION, HOME_TITLE, SITE, homeJsonLd } from "./siteCopy.js";
 
 // Short LinkedIn posts (#367). Globbed here, in the build-time bundle only:
 // they're never part of the website's own bundle or pages.
@@ -36,8 +37,6 @@ const socialFiles = import.meta.glob("./content/social/*.md", {
   import: "default",
   eager: true,
 });
-
-const SITE = "https://reliafy.com";
 
 // Every prerendered route with its head metadata (title, description, and
 // optional JSON-LD structured data). Future-dated blog posts and updates are
@@ -49,9 +48,9 @@ export function routes() {
   const base = [
     {
       path: "/",
-      title: "Reliafy — open-source reliability engineering",
-      description:
-        "Fit Weibull and other life distributions, build reliability block diagrams, and turn failure data into maintenance decisions. Open source and self-hostable, or ready in seconds in the cloud.",
+      title: HOME_TITLE,
+      description: HOME_DESCRIPTION,
+      jsonld: homeJsonLd(),
     },
     {
       path: "/blog",
