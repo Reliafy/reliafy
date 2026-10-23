@@ -9107,9 +9107,8 @@ button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--ink); backgr
   .detail-panel .aside {
     width: auto;
   }
-  /* A non-repairable model's answer first (#292): the reading, then its numbers,
-     then the plot. */
-  .detail-panel.life-panel .aside { order: -1; }
+  /* A non-repairable model on a phone: the plot first, then the panel under it
+     (the reading leads the panel). */
   .detail-panel.life-panel .life-reading { order: -1; }
   /* RBD builder: a tighter frame, and a compact toolbar so the diagram keeps
      most of the canvas. */
