@@ -93,7 +93,6 @@ html.print-layout .public-page .card { box-shadow: none; }
   .public-page .tabs,
   .public-page .seg,
   .public-page .life-help,
-  .public-page .req-row,
   .public-page details:not([open]) { display: none !important; }
   .public-page .gofr-link,
   .public-page .gofr-link * { color: inherit !important; }

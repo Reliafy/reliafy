@@ -10,6 +10,7 @@ import { formatNumber, formatPercent } from "../format.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
 import RegressionLife from "./RegressionLife.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import Chip from "./ui/Chip.jsx";
 import { unitInText } from "./unitText.js";
 
 // The calculator's inputs (covariate combinations, active function, evaluation
@@ -33,8 +34,7 @@ export function initCalcState(functions) {
     xMax: "",
     // Confidence bounds config + the last-fetched band of each series, by its
     // id (keyed to avoid refetching): a regression model has one per
-    // covariate combination (#54). 90% one-sided lower by default, as the
-    // life card's B-lives (#288).
+    // covariate combination (#54). 90% one-sided lower by default (#288).
     ci: { level: 90, bound: "lower", bands: {} },
     // "value": a function at a time; "time": the time at a reliability (#288).
     mode: "value",
@@ -51,6 +51,8 @@ const tint = (hex) => {
   return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},0.12)` : undefined;
 };
 const MAX_SERIES = 6;
+// The usual B-lives, one click each in "Time at reliability": [R %, label].
+const B_LIVES = [[99, "B1"], [95, "B5"], [90, "B10"], [50, "B50"]];
 
 // Linear interpolation of y at xq from the (x, y) grid; null y points are
 // treated as gaps. Returns null outside the grid or across a gap.
@@ -165,10 +167,8 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
 // each re-evaluated by the backend and overlaid on the chart.
-// ``rail``: more cards for the side rail, under the inputs (a non-repairable
-// model's B-lives card).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
-                                     paramLabel = null, rail = null }) {
+                                     paramLabel = null }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -581,6 +581,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                   ]}
                 />
                 {timeMode ? (
+                  <>
                   <label className="calc-t">
                     <span>Reliability %</span>
                     <input
@@ -592,6 +593,15 @@ export default function Calculator({ functions, unit, params, state, setState, n
                       onChange={(e) => setRTarget(e.target.value)}
                     />
                   </label>
+                  <div className="chip-row calc-blives" role="group" aria-label="B-lives">
+                    {B_LIVES.map(([r, b]) => (
+                      <Chip key={b} tone={rNum === r ? "accent" : "neutral"} onClick={() => setRTarget(r)}
+                            aria-pressed={rNum === r} title={`Reliability ${r}%: the ${b} life`}>
+                        {b}
+                      </Chip>
+                    ))}
+                  </div>
+                  </>
                 ) : (
                 <>
                 <label className="calc-t">
@@ -697,7 +707,6 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </details>
               </div>
             </div>
-            {rail}
             {hasCov && (
             <aside className={"calc-rail-card calc-cov-rail" + (railOpen ? "" : " collapsed")}>
             <div className="calc-cov-rail-head">

@@ -15,8 +15,8 @@ const frac = (s) => (s === "" || s == null ? null : Number(s) / 100);
 // Demonstration test planner: how many units to test, for how long, with how
 // many failures allowed, to show a reliability (or a B-life) at a confidence
 // (SurPyval's test planning). Needs no saved model; ``initial`` (from
-// requirement.js's parseDemoPrefill) starts it from a model's requirement
-// (#295): the B-life, its life, the confidence, the model's unit and its β.
+// requirement.js's parseDemoPrefill) starts it from a link: a requirement
+// (#295: the B-life, its life, the confidence), the model's unit and its β.
 export default function DemonstrationTest({ initial = null }) {
   const [method, setMethod] = useState("attribute");
   const [solveFor, setSolveFor] = useState("units");

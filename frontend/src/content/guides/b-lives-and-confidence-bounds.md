@@ -23,12 +23,21 @@ different when the data can only promise 467.
 This guide reads both from the sample bearing model: a Weibull fit to 30
 bearing failure times, with shape β = 2.50 and scale α = 1,440 hours.
 
-## The B-lives at a glance
+## Read a B-life
 
-Open the model and choose the **Calculator** tab (or **B-lives and mean life**
-under the panel beside the plot). The **Life** card, under the calculator's
-inputs, lists the B1, B5, B10 and B50 lives and the mean life, each with its
-**lower bound** beside it:
+Open the model and choose the **Calculator** tab. In its inputs, choose **Time
+at reliability**. A B-life is the time by which reliability falls to a level:
+B10 is the time reliability falls to 90%, B1 to 99% and B50 to 50%. Type the
+reliability you want to keep, or click **B1**, **B5**, **B10** or **B50** under
+it. The answer is stated in words above the curve:
+
+> Time when reliability falls to 90% (the B10 life): **582 hours** — we're 90%
+> sure it's at least 467 hours
+
+![The calculator solving for the B10 life with a lower bound](/guides/img/blife-02-calculator.png)
+
+Click through the four and you have the usual B-lives, each with its **lower
+bound**:
 
 | | Estimate | 90% lower bound |
 |---|---|---|
@@ -36,30 +45,21 @@ inputs, lists the B1, B5, B10 and B50 lives and the mean life, each with its
 | B5 | 436 hours | ≥ 333 |
 | B10 | 582 hours | ≥ 467 |
 | B50 (median) | 1,240 hours | ≥ 1,110 |
-| MTTF (mean) | 1,270 hours | ≥ 1,150 |
-
-![The Life card: B-lives with their lower bounds, and the confidence chooser](/guides/img/blife-01-life-card.png)
 
 Read the B10 row as: *our best estimate is that 10% fail by 582 hours, and we're
 90% sure that 10% haven't failed before 467*. The bound is the number to plan
 with when an early failure is expensive; the estimate is the number to expect.
+The time is the model's own: SurPyval's quantile of the fitted distribution,
+and its bound from the fit's uncertainty.
 
-The chooser at the top of the card sets the confidence: **80%, 90%, 95% or 99%
-lower bound**. A higher confidence moves the bound further from the estimate —
-you're asking for more certainty, so you get a more cautious number. The same
-confidence is used everywhere on the page, including the requirement check.
+For a percentage the chips don't cover, type the reliability: 97.5% for a B2.5,
+99.9% for a B0.1.
 
-## Any B-life, any bound
+## Choose the bound
 
-For a percentage the card doesn't list, choose **Time at reliability** in the
-calculator's inputs. Enter the reliability you want to keep — 90% for B10,
-99% for B1, 97.5% for a B2.5 — and the answer is stated in words above the
-curve:
-
-> Time when reliability falls to 90% (the B10 life): **582 hours** — we're 90%
-> sure it's at least 467 hours
-
-![The calculator solving for the B10 life with a lower bound](/guides/img/blife-02-calculator.png)
+**Confidence level %** sets the confidence, 90% to start with. A higher
+confidence moves the bound further from the estimate — you're asking for more
+certainty, so you get a more cautious number.
 
 **Confidence bound** chooses which bound you get:
 

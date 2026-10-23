@@ -2629,15 +2629,18 @@ h1 .chip,
 /* The calculator's two questions, across its inputs card (#288). */
 .calc-eval-body .calc-mode { display: flex; width: 100%; }
 .calc-eval-body .calc-mode .seg-btn { flex: 1 1 auto; }
+/* One click to a usual B-life, under the reliability it sets. */
+.calc-eval-body .calc-blives { margin-top: -4px; }
+.calc-eval-body .calc-blives .chip-btn { min-width: 40px; justify-content: center; line-height: 24px; }
 @media (max-width: 720px) {
   .calc-eval-body .calc-mode .seg-btn { min-height: 44px; }
-  .life-card-head .life-conf.sel-trigger { min-height: 40px; }
+  .calc-eval-body .calc-blives .chip-btn { min-height: 40px; min-width: 52px; }
 }
 .detail-panel .life-help { font-size: var(--fs-12); font-weight: 400; }
-/* B-lives and MTTF, each with its lower bound (#288): one line a row. */
+/* A card's heading with a control or a note at its right, and rows of a
+   value with its bound (a recurrent model's MTBF, a failure mode's share). */
 .detail-panel .life-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 8px; padding-bottom: 7px; }
 .detail-panel .life-card-head .gof-sub { margin-left: 6px; }
-.life-card-head .life-conf.sel-trigger { padding: 4px 8px; font-size: var(--fs-12); font-weight: 400; }
 .detail-panel .gofr.life-row { display: grid; grid-template-columns: 1fr auto minmax(4.4em, auto); gap: 10px; padding-top: 4px; padding-bottom: 4px; }
 .detail-panel.life-panel .aside { gap: 12px; }
 .detail-panel .life-row .gv { text-align: right; }
@@ -9283,8 +9286,6 @@ input.rbd-rename {
 .reading-modal .reading-text b { font-weight: 600; }
 .reading-modal .life-reading-action { display: inline-block; margin-top: 12px; font-size: var(--fs-14); font-weight: 500; text-align: left; }
 .reading-modal .life-reading-error { display: block; margin-top: 4px; font-size: var(--fs-12); }
-/* The B-lives card in the Calculator's rail: the same card as beside the plot. */
-.detail-panel.life-rail { display: block; margin-top: 0; }
 @media (max-width: 720px) {
   .detail-panel .use-model-btn { min-height: 44px; }
   .reading-modal .life-reading-action { min-height: 44px; }
@@ -9389,7 +9390,3 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 
 /* A dialog takes focus as it opens (so the keyboard is in it): no ring on the box itself. */
 .modal:focus { outline: none; }
-.detail-panel .life-more { align-self: flex-start; font-size: var(--fs-13); text-align: left; }
-@media (max-width: 720px) { .detail-panel .life-more { min-height: 44px; } }
-.detail-panel.life-rail:focus { outline: none; }
-.detail-panel.life-rail:focus-visible .life-card { box-shadow: var(--focus); }

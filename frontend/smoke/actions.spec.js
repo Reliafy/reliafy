@@ -262,8 +262,8 @@ test("rename a diagram, and the delete dialog, in the app's own dialogs", async 
 });
 
 // A non-repairable model's panel stays short: the failure pattern and "Use this
-// model" open in dialogs, and the B-lives with the requirement check sit on the
-// Calculator tab.
+// model" open in dialogs, and a B-life is the Calculator's "Time at
+// reliability" (R = 90% is the B10 life), with its bound.
 test("a model's failure pattern, Use this model and B-lives", async ({ page, problems }) => {
   await open(page, "/models/m/sample-model-bearings-weibull");
   const pattern = page.getByRole("button", { name: /^Failure pattern: Wear-out/ });
@@ -284,10 +284,17 @@ test("a model's failure pattern, Use this model and B-lives", async ({ page, pro
   await expect(page).toHaveURL(/\/strategy\/test-planning\?.*model=sample-model-bearings-weibull/);
 
   await open(page, "/models/m/sample-model-bearings-weibull");
-  await page.getByRole("button", { name: /B-lives and mean life/ }).click();
-  const life = page.getByRole("region", { name: "B-lives and mean life" });
-  await expect(life.getByText("B10", { exact: true })).toBeVisible();
-  await expect(life.getByText("MTTF (mean)")).toBeVisible();
-  await expect(life.getByRole("button", { name: /Check a requirement/ })).toBeVisible();
+  // The panel no longer carries the B-lives, nor a link to them.
+  await expect(page.getByRole("button", { name: /B-lives and mean life/ })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Calculator" }).click();
+  await page.getByRole("radio", { name: "Time at reliability" }).click();
+  const answer = page.locator(".calc-answer");
+  await expect(answer).toContainText("(the B10 life)");
+  // The model's own quantile with its one-sided lower bound, in words.
+  await expect(answer).toContainText(/we're 90% sure it's at least [\d,]+ hours/);
+  await page.getByRole("group", { name: "B-lives" }).getByRole("button", { name: "B50" }).click();
+  await expect(answer).toContainText("(the B50 life)");
+  await expect(page.getByLabel("Reliability %")).toHaveValue("50");
+  await expect(page.getByRole("region", { name: "B-lives and mean life" })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "model calculator", chart: true });
 });

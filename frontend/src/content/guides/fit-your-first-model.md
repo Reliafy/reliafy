@@ -11,7 +11,7 @@ order: 1
 Everything else in Reliafy is built on a fitted non-repairable model, so this is the place
 to start. The input is modest: a column of numbers saying how long things lasted.
 The output is a distribution you can ask questions of — what fraction survive to
-5,000 hours, when will 10% have failed, what's the mean life, and is this thing
+5,000 hours, when will 10% have failed, what's the median life, and is this thing
 wearing out or failing randomly.
 
 ## What your data needs to look like
@@ -123,7 +123,7 @@ beside the plot:
   replacement interval, a fleet forecast, a demonstration test and a block in
   an RBD, each with a line on what you get there.
 
-The B-lives and the mean life are on the **Calculator** tab (see below).
+B-lives (B10 and the like) are on the **Calculator** tab (see below).
 
 ![A fitted Weibull model: probability plot, parameters and the failure pattern](/guides/img/fit-02-result.png)
 
@@ -152,11 +152,10 @@ interval sits above 1, so the **Failure pattern** row reads *Wear-out*, and
 clicking it says *β is above 1 at 95% confidence*.
 
 The **Calculator** tab lets you ask the model direct questions: reliability (or
-any other function) at a given time, or the time by which a given fraction will
-have failed — each with a confidence bound, stated in words. Beside it, the
-**Life** card lists the B1, B5, B10 and B50 lives and the mean life (MTTF), each
-with its lower confidence bound, and a **Requirement** row to check a B-life
-requirement against them. The
+any other function) at a given time, or, with **Time at reliability**, the time
+by which a given fraction will have failed — the B-lives, with **B1**, **B5**,
+**B10** and **B50** one click each. Every answer comes with a confidence bound,
+stated in words. The
 [B-lives and confidence bounds](/guides/b-lives-and-confidence-bounds) guide
 reads them in detail.
 

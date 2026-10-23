@@ -1,7 +1,7 @@
 /* Regression models: the life card at a covariate row (#54) and the checks
    of the model's assumption (#61). */
 
-/* The life card in the calculator's rail, rows as the non-repairable model page's. */
+/* The life card in the calculator's rail: a B-life, its estimate and its lower bound a row. */
 .rl-card .rl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .rl-card .rl-head .combo-dot { display: inline-block; margin: 0 6px 0 0; vertical-align: -1px; }
 .rl-card .gofr.rl-row {
