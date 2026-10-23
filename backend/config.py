@@ -79,6 +79,10 @@ ALLOWED_EMAILS = {
     if e.strip()
 }
 
+# Shows the menu's placeholder entries (pages not built yet) so its structure
+# can be tried; set on a private test site only. Off by default.
+MENU_PREVIEW = _truthy(os.environ.get("MENU_PREVIEW"))
+
 # ---- Client address ----------------------------------------------------------
 # Rate limits and the visitor hash key on the client IP taken from
 # X-Forwarded-For (see backend/request_ip.py). Set TRUST_X_FORWARDED_FOR=false

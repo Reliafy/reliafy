@@ -7,7 +7,8 @@
 // Rules the tests hold it to (navigation.test.js):
 // - Design and Operate hold things and records; Analyse holds calculations.
 // - An entry shows only where the workspace has it (`needs`), and never as a
-//   placeholder for a page that doesn't exist yet (Requirements, Failures).
+//   placeholder for a page that doesn't exist yet, except where a deployment
+//   turns the menu preview on (`needs: "preview"`, see plannedPages.js).
 // - An entry opens on its own landing page; its children are sub-types or
 //   filtered views of it, never a second copy of the landing page.
 //
@@ -25,8 +26,8 @@ export const SECTIONS = [
 
 // `needs` names what an entry or child needs: "maintenance" (Reliafy
 // Maintenance is on and the user may use it), "agent" (the Reliability Agent
-// is on). "requirements" and "failures" are pages not built yet: nothing has
-// them, so their entries stay hidden until they exist.
+// is on), "preview" (the deployment shows the menu's not-yet-built entries as
+// blank pages, plannedPages.js; nothing else has them, so they stay hidden).
 //
 // `landingNeeds`: the entry's own landing page needs that; without it the
 // entry opens on its first child instead, and that child isn't repeated
@@ -43,9 +44,11 @@ export const ENTRIES = [
     children: [
       { to: "/systems/runs", label: "Simulation runs" },
       { to: "/systems/structure", label: "Product structure", needs: "maintenance" },
+      { to: "/systems/fault-trees", label: "Fault trees", needs: "preview" },
+      { to: "/systems/fmeca", label: "FMECA", needs: "preview" },
     ],
   },
-  { id: "requirements", section: "design", label: "Requirements", to: "/requirements", needs: "requirements" },
+  { id: "requirements", section: "design", label: "Requirements", to: "/requirements", needs: "preview" },
 
   {
     id: "assets", section: "operate", label: "Assets", to: "/asset-register", needs: "maintenance",
@@ -54,17 +57,23 @@ export const ENTRIES = [
       { to: "/asset-register/locations", label: "Locations" },
       { to: "/asset-register/parts", label: "Parts and stock" },
       { to: "/asset-register/classes", label: "Classes" },
+      { to: "/asset-register/fleets", label: "Fleets", needs: "preview" },
     ],
   },
   {
     id: "maintenance", section: "operate", label: "Maintenance", to: "/maintenance", landingNeeds: "maintenance",
     children: [
       { to: "/maintenance/rcm", label: "RCM studies" },
+      { to: "/maintenance/inbox", label: "Field inbox", needs: "preview" },
     ],
   },
-  { id: "failures", section: "operate", label: "Failures", to: "/failures", needs: "failures" },
+  { id: "failures", section: "operate", label: "Failures", to: "/failures", needs: "preview" },
+  { id: "risk", section: "operate", label: "Risk", to: "/risk", needs: "preview" },
 
-  { id: "data", section: "analyse", label: "Data", to: "/data" },
+  {
+    id: "data", section: "analyse", label: "Data", to: "/data",
+    children: [{ to: "/data/library", label: "Library", needs: "preview" }],
+  },
   {
     id: "models", section: "analyse", label: "Model", to: "/models",
     children: [
@@ -108,7 +117,7 @@ export const ROLES = [
   },
   {
     id: "planner", label: "Maintenance engineer / planner",
-    entries: ["maintenance", "assets", "forecasts", "strategy", "failures", "reports"],
+    entries: ["maintenance", "assets", "risk", "forecasts", "strategy", "failures", "reports"],
     home: ["due"],
   },
   {
@@ -120,7 +129,7 @@ export const ROLES = [
     // Looks after many items in service (trucks, pumps, aircraft): their
     // forecasts, the items' condition, and what's due on them.
     id: "fleet", label: "Fleet manager",
-    entries: ["forecasts", "assets", "maintenance", "models", "data", "reports"],
+    entries: ["forecasts", "assets", "risk", "maintenance", "models", "data", "reports"],
     home: ["fleets", "due"],
   },
   {

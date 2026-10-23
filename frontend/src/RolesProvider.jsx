@@ -31,7 +31,7 @@ export function RolesProvider({ children }) {
     };
   }, []);
 
-  const { reliability_agent: agentEnabled, maintenance: maintenanceEnabled } = useAppConfig();
+  const { reliability_agent: agentEnabled, maintenance: maintenanceEnabled, menu_preview: previewOn } = useAppConfig();
   // Reliafy Maintenance is for its operators only: the same check its pages make.
   const [maintenanceAllowed, setMaintenanceAllowed] = useState(false);
   useEffect(() => {
@@ -55,13 +55,13 @@ export function RolesProvider({ children }) {
   }, []);
 
   const value = useMemo(() => {
-    const has = { maintenance: !!(maintenanceEnabled && maintenanceAllowed), agent: !!agentEnabled };
+    const has = { maintenance: !!(maintenanceEnabled && maintenanceAllowed), agent: !!agentEnabled, preview: !!previewOn };
     return {
       ...state, saveRoles, dismissOffer, has,
       live: liveEntries(has),
       menu: buildMenu({ roles: state.roles, has }),
     };
-  }, [state, saveRoles, dismissOffer, maintenanceEnabled, maintenanceAllowed, agentEnabled]);
+  }, [state, saveRoles, dismissOffer, maintenanceEnabled, maintenanceAllowed, agentEnabled, previewOn]);
   return <RolesContext.Provider value={value}>{children}</RolesContext.Provider>;
 }
 

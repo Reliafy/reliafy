@@ -9,6 +9,7 @@ import { WalkthroughProvider } from "./components/Walkthrough.jsx";
 const BillingPage = lazy(() => import("./views/BillingPage.jsx"));
 const HomePage = lazy(() => import("./views/HomePage.jsx"));
 const ReportsPage = lazy(() => import("./views/ReportsPage.jsx"));
+const PlannedPage = lazy(() => import("./views/PlannedPage.jsx"));
 const ModellingHome = lazy(() => import("./views/ModellingHome.jsx"));
 const AllModelsPage = lazy(() => import("./views/AllModelsPage.jsx"));
 const NewModelPage = lazy(() => import("./views/NewModelPage.jsx"));
@@ -235,6 +236,16 @@ export default function AppShell() {
             {/* The fleets' forecasts and (Reliafy Maintenance) the position classes'. */}
             <Route path="/forecasts" element={<FleetForecasts />} />
             <Route path="/forecasts/:id" element={<FleetForecastPage />} />
+
+            {/* Blank pages for menu entries not built yet (plannedPages.js). */}
+            <Route path="/requirements" element={<PlannedPage id="requirements" />} />
+            <Route path="/failures" element={<PlannedPage id="failures" />} />
+            <Route path="/risk" element={<PlannedPage id="risk" />} />
+            <Route path="/asset-register/fleets" element={<PlannedPage id="fleets" />} />
+            <Route path="/maintenance/inbox" element={<PlannedPage id="inbox" />} />
+            <Route path="/data/library" element={<PlannedPage id="library" />} />
+            <Route path="/systems/fault-trees" element={<PlannedPage id="fault-trees" />} />
+            <Route path="/systems/fmeca" element={<PlannedPage id="fmeca" />} />
 
             <Route path="/reports" element={<ReportsPage />} />
             {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}

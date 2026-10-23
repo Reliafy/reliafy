@@ -6,9 +6,11 @@ import {
   groupBySection, homeCards, itemPath, liveEntries,
 } from "./navigation.js";
 import { MOVED, movedTo } from "./redirects.js";
+import { PLANNED } from "./plannedPages.js";
 import { appRoutes, hasParam } from "../smoke/routes.js";
 
 const ALL = { maintenance: true, agent: true };
+const PREVIEW = { ...ALL, preview: true };
 const ids = (entries) => entries.map((e) => e.id);
 const everyLink = (entries) => entries.flatMap((e) => [e.to, ...(e.children || []).map((c) => c.to)]);
 const PAGES = new Set(appRoutes().filter((r) => !r.redirect).map((r) => r.path));
@@ -36,7 +38,7 @@ const REACHED_FROM = {
 };
 
 test("every page in the app is in the menu or opened from a page that is", () => {
-  const menu = new Set(everyLink(liveEntries(ALL)));
+  const menu = new Set(everyLink(liveEntries(PREVIEW)));
   const missing = [...PAGES]
     .filter((p) => !hasParam(p) && !p.startsWith("/api-docs/"))
     .filter((p) => !menu.has(p) && !REACHED_FROM[p]);
@@ -44,7 +46,7 @@ test("every page in the app is in the menu or opened from a page that is", () =>
 });
 
 test("every menu link is a page of the app", () => {
-  for (const has of [{}, ALL]) {
+  for (const has of [{}, ALL, PREVIEW]) {
     for (const to of everyLink(liveEntries(has))) assert.ok(PAGES.has(to), to);
   }
 });
@@ -313,4 +315,27 @@ test("no link in the app's own code points at an earlier address", () => {
   };
   walk(new URL("./", import.meta.url));
   assert.deepEqual(bad, []);
+});
+
+test("not-yet-built entries show only where the menu preview is on", () => {
+  const unbuilt = ["requirements", "failures", "risk"];
+  const plain = liveEntries(ALL);
+  for (const id of unbuilt) assert.ok(!plain.some((e) => e.id === id), id);
+  const preview = liveEntries(PREVIEW);
+  for (const id of unbuilt) assert.ok(preview.some((e) => e.id === id), id);
+  const kids = (list, id) => list.find((e) => e.id === id).children?.map((c) => c.label) || [];
+  assert.deepEqual(kids(plain, "systems"), ["Simulation runs", "Product structure"]);
+  assert.deepEqual(kids(preview, "systems"), ["Simulation runs", "Product structure", "Fault trees", "FMECA"]);
+  assert.deepEqual(kids(preview, "assets"), ["Items", "Locations", "Parts and stock", "Classes", "Fleets"]);
+  assert.deepEqual(kids(preview, "maintenance"), ["RCM studies", "Field inbox"]);
+  assert.deepEqual(kids(preview, "data"), ["Library"]);
+  assert.deepEqual(kids(plain, "data"), []);
+});
+
+test("every placeholder page has its text, and its entry in the preview menu", () => {
+  const links = new Set(everyLink(liveEntries(PREVIEW)));
+  for (const [id, page] of Object.entries(PLANNED)) {
+    assert.ok(page.title && page.purpose && page.will.length, id);
+    assert.ok([...links].some((to) => to.endsWith("/" + id) || to.endsWith("/" + (id === "inbox" ? "inbox" : id))), id);
+  }
 });

@@ -324,6 +324,8 @@ def app_config() -> dict:
         "mcp": mcp_switch.enabled(get_db()),
         # Reliafy Maintenance (local only for now).
         "maintenance": bool(config.MAINTENANCE_ENABLED),
+        # Placeholder menu entries, on a private test site only.
+        "menu_preview": bool(config.MENU_PREVIEW),
     }
 
 
@@ -646,6 +648,8 @@ SPA_ROOTS = frozenset({
     # The signed-in app.
     "home", "systems", "asset-register", "maintenance", "data", "models", "strategy", "forecasts", "reports",
     "agent", "team", "settings", "tokens", "admin", "billing", "changes",
+    # Placeholder pages (frontend/src/plannedPages.js).
+    "requirements", "failures", "risk",
     # Its earlier addresses, which redirect (frontend/src/redirects.js).
     "modelling", "rbds", "datasets", "fleet", "rcm",
 })
