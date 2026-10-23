@@ -7,7 +7,6 @@ import {
   getMaintenanceSettings,
   importMaintenanceSheet,
   listMaintenanceLocations,
-  listMaintenancePlaces,
   listMaintenanceWorkOrders,
   setMaintenanceSettings,
   listRcmStudies,
@@ -21,7 +20,6 @@ import {
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
 import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js";
-import { treeOf, treeSize } from "../maintenanceAssets.js";
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 
@@ -41,13 +39,9 @@ function TimeZoneNudge({ zone }) {
   );
 }
 
-// Two of Reliafy Maintenance's pages, from one overview: Operate › Maintenance
-// (`part="work"`: proposed changes, critical spares short, what's due and the
-// open work orders) and Operate › Assets › Positions (`part="positions"`: the
-// plant as a tree of positions with what's fitted in each; ?place=none: only
-// the positions at no place yet, from the Assets list's last row).
-export default function MaintenanceHome({ part = "work" }) {
-  const assets = part === "positions";
+// Operate › Maintenance: proposed changes, critical spares short, what's due and
+// the open work orders. (The positions tree is AssetExplorer.)
+export default function MaintenanceHome() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -58,8 +52,6 @@ export default function MaintenanceHome({ part = "work" }) {
   // Open work orders by area: ?location=<id> (that location and those inside it).
   const [params, setParams] = useSearchParams();
   const locationId = params.get("location") || "";
-  const notPlaced = assets && params.get("place") === "none";
-  const [notPlacedIds, setNotPlacedIds] = useState(null);
   const [locations, setLocations] = useState(null);
   const [inArea, setInArea] = useState(null);
   const refresh = useCallback(() => {
@@ -75,12 +67,6 @@ export default function MaintenanceHome({ part = "work" }) {
     listMaintenanceWorkOrders({ status: "open", locationId })
       .then((d) => setInArea(d.work_orders)).catch((e) => setError(e.message));
   }, [locationId, data]);
-  useEffect(() => {
-    setNotPlacedIds(null);
-    if (!notPlaced) return;
-    listMaintenancePlaces().then((v) => setNotPlacedIds(v.not_placed.position_ids))
-      .catch((e) => setError(e.message));
-  }, [notPlaced, data]);
   const openWork = locationId ? inArea : data?.open_work_orders;
   useEffect(() => {
     getMaintenanceSettings().then((s) => setDigest(s.digest)).catch(() => {});
@@ -108,16 +94,12 @@ export default function MaintenanceHome({ part = "work" }) {
   return (
     <div className="app">
       <SectionHeader
-        section={assets ? "assets" : undefined}
-        title={assets ? "Positions" : "Maintenance"}
-        purpose={assets
-          ? "Every position in your plant, and what's fitted in each."
-          : "What's due from your RCM studies' tasks, the work orders, and the changes proposed."}
+        title="Maintenance"
+        purpose="What's due from your RCM studies' tasks, the work orders, and the changes proposed."
         actions={<>
           <button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>
           <button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>
         </>}
-        primary={assets ? <button onClick={() => setModal("position")}><PlusIcon /> New position</button> : undefined}
       />
       {error && <div className="card error">{error}</div>}
       {data && <TimeZoneNudge zone={data.time_zone} />}
@@ -134,7 +116,6 @@ export default function MaintenanceHome({ part = "work" }) {
         </div>
       ) : (
         <>
-          {!assets && (<>
           <Proposals proposals={data.proposals} onDecided={refresh} />
           {data.critical_spares?.length > 0 && (
             <section className="card">
@@ -217,37 +198,8 @@ export default function MaintenanceHome({ part = "work" }) {
               </table></div>
             )}
           </section>
-          </>)}
 
-          {assets && (
-          <section className="card">
-            {notPlaced && (
-              <p className="maint-filter-note">
-                <span className="maint-badge">Not at a place yet</span>
-                <span className="lib-date">{notPlacedIds === null ? "Loading…"
-                  : `${treeSize(treeOf(data.tree, notPlacedIds))} of ${data.summary.positions} positions. `
-                    + "Set a place on a position's page; the positions inside it follow."}</span>
-                <Link to="/asset-register/positions" replace>Show every position</Link>
-              </p>
-            )}
-            <div className="maint-head">
-              <h2>{notPlaced ? "Positions not at a place yet" : "Positions"}</h2>
-              {!notPlaced && (
-                <span className="lib-date">
-                  {data.summary.positions} positions · {data.summary.items} items · {data.summary.tasks} tasks
-                </span>
-              )}
-            </div>
-            {notPlaced && notPlacedIds !== null && notPlacedIds.length === 0 ? (
-              <p className="lib-date">Every position is at a place. <Link to="/asset-register">See the assets</Link>.</p>
-            ) : (
-              <ul className="maint-tree">
-                {(notPlaced ? treeOf(data.tree, notPlacedIds) : data.tree).map((node) => <TreeNode key={node.id} node={node} />)}
-              </ul>
-            )}
-          </section>
-          )}
-          {!assets && digest !== null && (
+          {digest !== null && (
             <label className="maint-row lib-date" style={{ gap: "0.5rem" }}>
               <input type="checkbox" checked={digest} onChange={(e) => toggleDigest(e.target.checked)} />
               Email me when new work orders are raised for tasks coming due
@@ -289,25 +241,6 @@ function SubjectCell({ subject, at, link = true }) {
   );
 }
 
-function TreeNode({ node }) {
-  return (
-    <li>
-      <div className="maint-node">
-        <Link to={`/asset-register/positions/${node.id}`} className="maint-node-name">{node.name}</Link>
-        {node.tag && <span className="lib-date">{node.tag}</span>}
-        <span className="maint-node-item">{node.item
-          ? <Link to={`/asset-register/items/${node.item.id}`}>{node.item.name}</Link>
-          : <span className="lib-date">nothing fitted</span>}</span>
-        {node.next_due && <span className="lib-date">next due {fmtDate(node.next_due)}</span>}
-        {node.open_work_orders > 0 && <span className="maint-badge">{node.open_work_orders} open</span>}
-      </div>
-      {node.children.length > 0 && (
-        <ul>{node.children.map((c) => <TreeNode key={c.id} node={c} />)}</ul>
-      )}
-    </li>
-  );
-}
-
 export function NewPositionModal({ positions, parentId = null, onClose, onCreated }) {
   const [name, setName] = useState("");
   const [tag, setTag] = useState("");
@@ -339,7 +272,7 @@ export function NewPositionModal({ positions, parentId = null, onClose, onCreate
   );
 }
 
-function FromRcmModal({ positions, onClose, onCreated }) {
+export function FromRcmModal({ positions, onClose, onCreated }) {
   const [studies, setStudies] = useState(null);
   const [studyId, setStudyId] = useState("");
   const [parent, setParent] = useState(null);
@@ -373,7 +306,7 @@ function FromRcmModal({ positions, onClose, onCreated }) {
   );
 }
 
-function ImportModal({ onClose, onDone }) {
+export function ImportModal({ onClose, onDone }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const check = async () => setPreview(await importMaintenanceSheet(file, true));

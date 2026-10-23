@@ -14,7 +14,7 @@ const baseURL = deployed || `http://127.0.0.1:${port}`;
 export default defineConfig({
   testDir: "smoke",
   // Local: the whole app. Deployed: only what works signed out.
-  testMatch: deployed ? ["public.spec.js", "api.spec.js"] : ["pages.spec.js", "navigation.spec.js", "rbd.spec.js", "actions.spec.js", "testplanning.spec.js", "api.spec.js"],
+  testMatch: deployed ? ["public.spec.js", "api.spec.js"] : ["pages.spec.js", "navigation.spec.js", "rbd.spec.js", "actions.spec.js", "assettree.spec.js", "testplanning.spec.js", "api.spec.js"],
   globalSetup: "./smoke/seed.js",
   fullyParallel: true,
   workers: process.env.CI ? 4 : undefined,

@@ -51,7 +51,7 @@ const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx")
 const MaintenanceWorkOrder = lazy(() => import("./views/MaintenanceWorkOrder.jsx"));
 const MaintenanceItem = lazy(() => import("./views/MaintenanceItem.jsx"));
 const MaintenanceItems = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceItems })));
-const MaintenanceLocations = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocations })));
+const AssetExplorer = lazy(() => import("./views/AssetExplorer.jsx"));
 const MaintenanceLocation = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocation })));
 const MaintenanceClasses = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceClasses })));
 const MaintenancePartsPage = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceParts })));
@@ -189,17 +189,17 @@ export default function AppShell() {
                 their maintenance. ("/assets" is where the server keeps the
                 build's files, so the register lives at /asset-register.) */}
             {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceAssets />} />}
-            {maintenanceEnabled && <Route path="/asset-register/positions" element={<MaintenanceHome part="positions" />} />}
+            {maintenanceEnabled && <Route path="/asset-register/positions" element={<AssetExplorer arrange="positions" />} />}
             {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}
             {maintenanceEnabled && <Route path="/asset-register/items" element={<MaintenanceItems />} />}
             {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}
-            {maintenanceEnabled && <Route path="/asset-register/locations" element={<MaintenanceLocations />} />}
+            {maintenanceEnabled && <Route path="/asset-register/locations" element={<AssetExplorer arrange="locations" />} />}
             {maintenanceEnabled && <Route path="/asset-register/locations/:id" element={<MaintenanceLocation />} />}
             {maintenanceEnabled && <Route path="/asset-register/classes" element={<MaintenanceClasses />} />}
             {maintenanceEnabled && <Route path="/asset-register/classes/:name" element={<MaintenanceClasses />} />}
             {maintenanceEnabled && <Route path="/asset-register/parts" element={<MaintenancePartsPage />} />}
             {maintenanceEnabled && <Route path="/asset-register/parts/:id" element={<MaintenancePart />} />}
-            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome part="work" />} />}
+            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
             <Route path="/maintenance/rcm" element={<RcmHome />} />
             <Route path="/maintenance/rcm/:id" element={<RcmStudyPage />} />

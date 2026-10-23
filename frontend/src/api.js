@@ -2151,6 +2151,12 @@ export function getMaintenanceOverview() {
   return request("/api/maintenance/overview");
 }
 
+// The asset trees for the tree pane: every position once, flat, with its status,
+// plus the locations, the spares placed at them and the items with no home.
+export function getMaintenanceTree() {
+  return request("/api/maintenance/tree");
+}
+
 // Work orders, newest first: status "open" for every one not yet done; locationId for
 // those on positions at that location or a location inside it.
 export function listMaintenanceWorkOrders({ status, locationId } = {}) {

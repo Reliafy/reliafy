@@ -111,21 +111,6 @@ export function MaintenanceItems() {
 
 // ---- locations -------------------------------------------------------------------------
 
-function LocNode({ node }) {
-  return (
-    <li>
-      <div className="maint-node">
-        <Link className="maint-node-name" to={`/asset-register/locations/${node.id}`}>{node.name}</Link>
-        {node.all_positions > 0 && (
-          <span className="lib-date">{node.all_positions} position{node.all_positions === 1 ? "" : "s"}</span>
-        )}
-        {node.all_items > 0 && <span className="lib-date">{node.all_items} item{node.all_items === 1 ? "" : "s"} placed</span>}
-      </div>
-      {node.children.length > 0 && <ul>{node.children.map((c) => <LocNode key={c.id} node={c} />)}</ul>}
-    </li>
-  );
-}
-
 // A new location. `asset`: a new asset, a top-level place (no "Inside" to pick).
 export function NewLocationModal({ locations, parentId = null, asset = false, onClose, onDone }) {
   const [name, setName] = useState("");
@@ -151,31 +136,6 @@ export function NewLocationModal({ locations, parentId = null, asset = false, on
         </Field>
       )}
     </FormModal>
-  );
-}
-
-export function MaintenanceLocations() {
-  const navigate = useNavigate();
-  const [data, setData] = useState(null);
-  const [modal, setModal] = useState(false);
-  const [error, setError] = useState(null);
-  useEffect(() => {
-    listMaintenanceLocations().then(setData).catch((e) => setError(e.message));
-  }, []);
-  return (
-    <div className="app">
-      <SectionHeader section="assets" title="Locations"
-                  purpose="Physical places: sites, areas, rooms and stores. Positions are located in them; spares are placed in them."
-                  primary={<button onClick={() => setModal(true)}><PlusIcon /> New location</button>} />
-      {error && <div className="card error">{error}</div>}
-      {data === null ? <div className="card empty">Loading…</div> : data.tree.length === 0 ? (
-        <div className="card empty"><p>No locations yet. Add the house, its rooms, the shed.</p></div>
-      ) : (
-        <section className="card"><ul className="maint-tree">{data.tree.map((n) => <LocNode key={n.id} node={n} />)}</ul></section>
-      )}
-      {modal && <NewLocationModal locations={data?.locations || []} onClose={() => setModal(false)}
-                                  onDone={(l) => navigate(`/asset-register/locations/${l.id}`)} />}
-    </div>
   );
 }
 
