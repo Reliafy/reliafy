@@ -61,12 +61,19 @@ def library_search(
 
 
 @router.get("/records/{record_id}")
-def library_record(record_id: str, request: Request) -> JSONResponse:
+def library_record(
+    record_id: str,
+    request: Request,
+    environment: Optional[str] = Query(default=None, max_length=8, description=(
+        "For a handbook rate: the environment the part works in, e.g. GF (ground, fixed).")),
+) -> JSONResponse:
     """One record in full, with the model a block would use."""
     limited = _limited(request)
     if limited:
         return limited
     try:
-        return JSONResponse(content=service.detail(record_id), headers=_CACHE)
+        return JSONResponse(content=service.detail(record_id, environment=environment), headers=_CACHE)
     except service.LibraryNotFound as exc:
         return JSONResponse(status_code=404, content={"detail": str(exc)})
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})

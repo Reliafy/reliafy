@@ -127,6 +127,7 @@ reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
 reliafy library search --query "check valve" --kind rate   # published failure data
 reliafy library get --id nrc-inl-2020:ckv-fto
+reliafy library get --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed
 ```
 
 Values are read as their argument's type: text, numbers, `true`/`false`, JSON

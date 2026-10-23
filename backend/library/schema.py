@@ -4,10 +4,11 @@ pass (the tests run it over every data file, and the importers run it before
 writing one). docs/library.md describes the fields in words.
 
 One schema for every source. NRC / INL industry averages (a gamma or beta
-spread), handbook prediction models such as MIL-HDBK-217F (a point rate with
-conditions) and Weibull tables (beta and eta, maybe a range) differ in
-``kind``, ``basis``, ``distribution.family`` and which optional fields they
-fill, never in the shape of a record. Why one shape: search, the API and the
+spread), handbook prediction models such as MIL-HDBK-217F (a point base rate,
+its environment factors and the handbook factors it leaves out) and Weibull
+tables (beta and eta, maybe a range) differ in ``kind``, ``basis``,
+``distribution.family`` and which optional fields they fill, never in the
+shape of a record. Why one shape: search, the API and the
 conversions to block models read every source the same way, and a new source
 is a data file, not a schema change.
 """
@@ -104,6 +105,33 @@ EQUIPMENT_TYPES = {
     "vessel_tank": "Tanks and accumulators",
     "pipe": "Pipes and orifices",
     "heat_exchanger": "Heat exchangers",
+    "resistor": "Resistors",
+    "capacitor": "Capacitors",
+    "inductive": "Transformers and coils (electronic)",
+    "semiconductor": "Diodes, transistors and other semiconductors",
+    "switch": "Switches (electronic)",
+    "connector": "Connectors, sockets and connections",
+    "electronic_other": "Other electronic parts (filters, vibrators, microwave parts)",
+}
+
+#: The use environments of MIL-HDBK-217F (its Table 3-2), by the handbook's
+#: own symbol: the name, and what it covers in our words. A handbook record's
+#: ``environment_factors`` are keyed by these.
+ENVIRONMENTS: dict[str, tuple[str, str]] = {
+    "GB": ("Ground, benign", "Indoors with temperature and humidity controlled: labs, offices, computer rooms."),
+    "GF": ("Ground, fixed", "Permanent racks with adequate cooling, perhaps in unheated buildings."),
+    "GM": ("Ground, mobile", "On wheeled or tracked vehicles, or carried by hand."),
+    "NS": ("Naval, sheltered", "Below deck or sheltered on surface ships; inside submarines."),
+    "NU": ("Naval, unsheltered", "On deck, exposed to the weather, or immersed in salt water."),
+    "AIC": ("Airborne, inhabited, cargo", "Crewed compartments of transport and cargo aircraft."),
+    "AIF": ("Airborne, inhabited, fighter", "Crewed compartments of fighters and other high-performance aircraft."),
+    "AUC": ("Airborne, uninhabited, cargo", "Uncrewed bays of transport and cargo aircraft."),
+    "AUF": ("Airborne, uninhabited, fighter", "Uncrewed bays of fighters and other high-performance aircraft."),
+    "ARW": ("Airborne, rotary winged", "On helicopters, inside or outside."),
+    "SF": ("Space, flight", "In orbit or in space, not in powered flight or re-entry."),
+    "MF": ("Missile, flight", "Powered flight of missiles, and unpowered free flight."),
+    "ML": ("Missile, launch", "Missile and space-vehicle launch, re-entry and landing."),
+    "CL": ("Cannon, launch", "Guided projectiles fired from a cannon, from launch to impact."),
 }
 
 #: How far a record's stated mean may sit from its parameters' mean. The
@@ -113,6 +141,11 @@ MEAN_TOLERANCE = 0.02
 #: The same for the stated 5th, 50th and 95th percentiles (checked where the
 #: family has a spread).
 QUANTILE_TOLERANCE = 0.02
+
+
+#: How far (relatively) a handbook record's rate as printed (per million
+#: hours) may sit from its value per hour: the same number in other units.
+BASE_RATE_TOLERANCE = 1e-9
 
 
 def param_dict(distribution: dict) -> dict[str, float]:
@@ -219,6 +252,10 @@ def problems(rec: dict) -> list[str]:
     if family == "beta" and kind == "per_demand" and mean_of(family, params) >= 1:
         bad("a probability must be below 1")
 
+    _prediction_problems(rec, bad)
+    if out:
+        return out
+
     summary = rec.get("summary") or {}
     mean = summary.get("mean")
     if not _finite_positive(mean):
@@ -238,3 +275,41 @@ def problems(rec: dict) -> list[str]:
         if not _finite_positive(stated) or abs(implied_q - stated) > QUANTILE_TOLERANCE * stated:
             bad(f"{key} {stated!r} disagrees with its parameters' {implied_q:.4g}")
     return out
+
+
+def _prediction_problems(rec: dict, bad) -> None:
+    """A handbook prediction model's extra fields: what the handbook's full
+    model is and which of its factors the record leaves out (so nothing
+    presents a base rate as the whole prediction), and its environment
+    factors, keyed by the handbook's environments. Calls ``bad`` for each
+    problem."""
+    factors = rec.get("environment_factors")
+    if factors is not None:
+        values = factors.get("values") if isinstance(factors, dict) else None
+        if not isinstance(values, dict) or not values or not factors.get("symbol"):
+            bad("environment_factors needs a symbol and values by environment")
+        else:
+            unknown = sorted(set(values) - set(ENVIRONMENTS))
+            if unknown:
+                bad(f"unknown environments {', '.join(unknown)} in environment_factors")
+            for code, value in values.items():
+                if not _finite_positive(value):
+                    bad(f"environment factor {code} must be a positive number")
+    if rec.get("basis") != "prediction_model":
+        if factors is not None:
+            bad("only a prediction model has environment_factors")
+        return
+    pred = rec.get("prediction")
+    if not isinstance(pred, dict) or not str(pred.get("formula") or "").strip():
+        bad("a prediction model needs prediction.formula, the handbook's full model")
+        return
+    not_applied = pred.get("not_applied")
+    if not isinstance(not_applied, list) or not all(
+            isinstance(f, dict) and f.get("symbol") and f.get("name") for f in not_applied):
+        bad("prediction.not_applied must list each factor left out (symbol and name), or be empty")
+    base = pred.get("per_million_hours")
+    value = param_dict(rec.get("distribution") or {}).get("value")
+    if not _finite_positive(base):
+        bad("prediction.per_million_hours must be a positive number")
+    elif value is not None and abs(base * 1e-6 - value) > BASE_RATE_TOLERANCE * value:
+        bad(f"{base:g} per million hours disagrees with the value {value:g} per hour")

@@ -35,6 +35,7 @@ percentile that disagrees with its parameters, fails the build.
 | Source | Records | Basis | Licence |
 |---|---|---|---|
 | `nrc-inl-2020`: NRC / INL industry-average parameter estimates, 2020 update (INL/EXT-21-65055, Table 1) | 300 | field data | U.S. Government work |
+| `mil-hdbk-217f-n2`: MIL-HDBK-217F with Notice 2, base failure rates and environment factors | 158 | prediction model | U.S. Government work (Distribution Statement A) |
 
 ### NRC / INL industry averages (2020 update)
 
@@ -64,6 +65,51 @@ median, mean, 95th percentile and the parameters.
   hour of running. Each record says which (`units.time_basis`).
 - Where the source's text or its d-or-h column disagrees with the code or the
   distribution, the record keeps the source's text and says so in `notes`.
+
+### MIL-HDBK-217F, Notice 2
+
+*Military Handbook: Reliability Prediction of Electronic Equipment*
+(MIL-HDBK-217F, U.S. Department of Defense, 2 December 1991) as amended by
+Notice 2 (28 February 1995). Both carry Distribution Statement A: approved
+for public release, distribution unlimited. Its part stress models give each
+electronic part type a base failure rate λb (failures per million hours) and
+multiply it by factors: temperature, electrical stress, quality and the
+environment the equipment works in (πE, for 14 environments from ground,
+benign to cannon, launch).
+
+- Import: download "Revision F" and "Revision F Change Notice 2" of
+  MIL-HDBK-217 from ASSIST
+  (<https://quicksearch.dla.mil/qsDocDetails.aspx?ident_number=53939>) by
+  hand into one folder as `MIL-HDBK-217F.pdf` and
+  `MIL-HDBK-217F-NOTICE-2.pdf`, then `python -m
+  backend.scripts.import_mil_hdbk_217f FOLDER --retrieved YYYY-MM-DD` (needs
+  `pdfplumber`). The PDFs aren't committed.
+- The handbook is a scanned 1990s document whose OCR text misreads digits,
+  so the importer doesn't parse it: its tables were typed from the page
+  images. Before writing, the script checks each PDF's content fingerprint
+  (ASSIST stamps every download with its time, so the file's own SHA-256
+  changes from one download to the next; the fingerprint leaves out only that
+  stamp) and that every typed number appears in the OCR text of its page,
+  apart from the misreads it lists, each checked by eye.
+- One record per part type (a resistor or capacitor style, a diode type, a
+  switch type...): the base rate, stored per hour, and the section's πE
+  table in `environment_factors`. Reliafy uses λb × πE and nothing more; each
+  record names the handbook's full model and the factors it leaves out
+  (`prediction.not_applied`), and says so in its notes. For connections,
+  fuses and a few miscellaneous parts λb × πE (or a fixed rate) is the
+  handbook's whole model.
+- Kept: 158 part types from sections 6 (diodes, transistors, thyristors,
+  optoelectronics), 9 to 15 (resistors, capacitors, transformers and coils,
+  elapsed time meters, solid state relays, switches, circuit breakers,
+  connectors, sockets), 17 (connections) and 18, 21 to 23 (panel meters,
+  filters, fuses, miscellaneous parts). Left out, each with its reason in the
+  data file's `skipped`: parts whose base rate isn't one number (a formula of
+  temperature, frequency, voltage or complexity: microcircuits, mechanical
+  relays, high-frequency transistors, crystals, lamps, motors and others) or
+  is per junction, hole or kilometre; tubes and lasers; and the parts count
+  method (Appendix A).
+- The handbook's spelling and words stay in `source_text`; names are in
+  British spelling.
 
 ## A record
 
@@ -112,17 +158,22 @@ median, mean, 95th percentile and the parameters.
 | `summary` | `mean` (required), and where the source gives them `median`, `p05`, `p95`, `error_factor`. |
 | `units` | `value`: `per_hour`, `per_hour_per_foot` (pipe), `per_demand`, or a life's time unit (`hours`, `cycles`). `time_basis` for a rate: `operating` (hours of running) or `calendar`. `as_given`: the source's unit in words. |
 | `evidence` | What the estimate rests on, where the source gives it: failures, demands or exposure (with its unit), components, sites, period, data source, estimation method. |
-| `conditions` | Where and how it applies: industry, operating mode (standby / running), system, plant type, rating, service; a handbook's environment and quality factors go here too. |
+| `conditions` | Where and how it applies: industry, operating mode (standby / running), system, plant type, rating, service; a handbook's section, specification and style. |
+| `environment_factors` | A handbook record only: `symbol` (πE), the `table` and `page`, `values` by environment symbol (`schema.ENVIRONMENTS`: GB ground, benign … CL cannon, launch) and `not_given`, the environments the handbook has no factor for. |
+| `prediction` | A prediction model only (required): the handbook's `formula`, the number as printed (`per_million_hours`), `not_applied` (each factor left out, symbol and name; empty when λb × πE is the whole model) and `quality_factor_range`. |
 | `source_text` | The source's own description of the row, as given (short; never more than the row). |
 | `citation` | Title, publisher, report number, edition, year, table, page (the report's printed page), data sheet, URL, the date retrieved. |
 | `licence` | The licence's id (one of `schema.LICENCES`), its name and the attribution text to show with the numbers. |
 | `notes` | Anything a careful reader should know about this row: estimated rather than counted, a corrected unit, a source typo. |
 
+A MIL-HDBK-217F record has the same shape: `kind: rate`, `basis:
+prediction_model`, `distribution.family: point` (the base rate per hour, no
+spread), `units.as_given: failures per million hours`, `failure_mode` "Any
+failure" (the handbook's rate covers every mode), with `prediction` and
+`environment_factors` as above.
+
 ### Later sources, same shape
 
-- **MIL-HDBK-217F** (electronics, prediction model): `kind: rate`, `basis:
-  prediction_model`, `distribution.family: point`, the base rate converted
-  to per hour, the environment and quality in `conditions`.
 - **NSWC-11** (mechanical, prediction model): the same, with the model's
   reference and its correction factors in `conditions`.
 - **A Weibull table**: `kind: life`, `distribution.family: weibull` with
@@ -135,11 +186,13 @@ Pure functions from a record to a model a block can use. Each result names
 its record (id, version, citation, licence) and carries a badge saying it's
 a generic estimate, so a block never presents it as the user's own data.
 
-- `rate_to_exponential(record, time_unit, time_basis, operating_hours_per_year, length_ft, point)`:
+- `rate_to_exponential(record, time_unit, time_basis, operating_hours_per_year, length_ft, point, environment)`:
   an exponential with `failure_rate` in the block's time unit, and the rate
   at the 5th and 95th percentiles. Moving between a calendar rate and a
   running-hours rate needs the hours a year the component runs; a pipe's
-  rate needs its length.
+  rate needs its length; a handbook rate with environment factors needs
+  `environment` (a symbol such as `GF`), and is then λb × πE, with an
+  assumption naming the factors left out.
 - `spread(record, point)`: the point value (mean, or median) and the 5th and
   95th percentiles, computed from the parameters.
 - `demand_to_per_demand(record, demands_per_year, time_unit, point)`: the
@@ -150,5 +203,15 @@ a generic estimate, so a block never presents it as the user's own data.
 - `to_block_model(record, **options)`: whichever of these fits the record.
 
 A combination that can't convert (a rate as a per-demand probability, a
-calendar rate as running hours without the hours a year) raises
-`ConversionError`, saying what to give or use instead.
+calendar rate as running hours without the hours a year, a handbook rate
+without an environment or in one the handbook gives no factor for) raises
+`ConversionError`, saying what to give or use instead. `library get` (and
+`GET /api/library/records/{id}`) takes `environment` too; without it, a
+handbook record's `environments` lists the rate in each.
+
+## Plans
+
+Library lookups (`library search`, `get` and `sources`) are never counted
+against the Free plan's monthly tool calls, or any other plan's allowance:
+they're published reference data, readable without an account at
+`/api/library`, not calculations.

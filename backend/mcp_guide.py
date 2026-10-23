@@ -156,8 +156,16 @@ demand), and the evidence (failures, demands or hours).
 - In an RBD block: a rate is an exponential (failure_rate = the mean, x 24 per day, x 8,760 per year). A \
 per-demand probability p is a cold-standby spare's startProb (1 - p), or a proof-tested item's failure on test. \
 Converting a calendar rate to hours of running needs the hours a year it runs: ask the user, never guess.
-- These are generic estimates (NRC/INL: U.S. nuclear power plants), never the user's own data: say so, cite the \
-record (licence.attribution), put the source in the block's label and suggest replacing it with their own data.
+- Handbook records (basis prediction_model, MIL-HDBK-217F: electronic parts) are a base failure rate per part \
+type, not counted failures, and never mixed with field data. The rate depends on where the part works: library \
+get with environment (GB ground, benign; GF ground, fixed; GM ground, mobile; NS naval, sheltered; AIC \
+airborne, inhabited, cargo; and so on: the record's environments list each with its rate) gives the block model, \
+base rate x the environment factor. Ask the user which environment; never guess. Say plainly that the handbook's \
+other factors (temperature, stress, quality: prediction.not_applied) aren't applied and can move the rate a lot.
+- These are generic estimates (NRC/INL: U.S. nuclear power plants; MIL-HDBK-217F: a 1995 prediction handbook), \
+never the user's own data: say so, cite the record (licence.attribution), put the source in the block's label \
+and suggest replacing it with their own data.
+- Library lookups are never counted against the Free plan's tool calls.
 """),
     "rbd_analysis": ("Analysing RBDs: figures, simulation, jobs and the other analyses.", """\
 Analysing RBDs (rbd_analysis).
@@ -307,7 +315,7 @@ Plans and limits.
 to try it (every tool except fitting and fleets, within the Free storage limits; availability simulation and \
 some design searches are Pro too). A retired Agent plan keeps a daily quota until it ends.
 - get kind account: the plan, the calls used and left (and when they reset), storage against the limits, \
-whether simulation is included. It, guide, upgrade_link and uploads send_part are never counted.
+whether simulation is included. It, guide, upgrade_link, uploads send_part and library lookups are never counted.
 - When a tool says a limit or the plan stops it, tell the user plainly what it says — the limit, when it \
 resets, how to upgrade — and don't retry. Calls refused that way aren't counted.
 - Without Pro, fit locally with SurPyval (pip install surpyval; 0 = failed, 1 = still running) and save the \

@@ -136,7 +136,8 @@ def test_plan_gating_goes_by_action(env):
     assert _calls_used(env.db, FREE) == 3
     assert {"get.account", "guide", "upgrade_link", "report_problem.report", "report_problem.status",
             "report_problem.triage", "report_problem.update"} == mcp_server.UNGATED_TOOLS
-    assert mcp_server.UNCOUNTED_TOOLS == {"uploads.send_part"}
+    assert mcp_server.UNCOUNTED_TOOLS == {"uploads.send_part", "library", "library.search", "library.get",
+                                          "library.sources"}
     assert mcp_server.PRO_ONLY_TOOLS == {"life_data_analysis.fit", "models.fit", "models.fit_alt",
                                          "models.fit_recurrent", "list.fleets", "strategy.fleet_forecast",
                                          "list.fleet_alerts", "fleet.create_alert",

@@ -430,8 +430,11 @@ UNGATED_TOOLS = {"upgrade_link", "get.account", "guide", "report_problem.report"
                  "report_problem.triage", "report_problem.update"}
 # Not counted against the allowance: the in-connection stand-in for the
 # upload PUT, which isn't a tool call either (uploads create, which made the
-# slot, and the import that reads it are counted).
-UNCOUNTED_TOOLS = {"uploads.send_part"}
+# slot, and the import that reads it are counted); and the reliability data
+# library's lookups, on every plan: published reference data, public at
+# /api/library without an account, and no calculation ("library" alone is a
+# call whose action didn't parse, refused before it runs).
+UNCOUNTED_TOOLS = {"uploads.send_part", "library", "library.search", "library.get", "library.sources"}
 
 
 class Refusal(ToolError):
@@ -8199,12 +8202,12 @@ def get_account(ctx: Context) -> dict[str, Any]:
         note = "Reliafy Pro: unlimited tool calls and storage."
     elif plan == "free":
         note = (f"Reliafy Free: {quota:,} tool calls a month to try Reliafy from an AI agent (get kind account, "
-                "guide, upgrade_link and uploads send_part aren't counted), within the storage limits shown. "
-                "Fitting and fleets are Pro-only.")
+                "guide, upgrade_link, uploads send_part and library lookups aren't counted), within the storage "
+                "limits shown. Fitting and fleets are Pro-only.")
     else:
         note = (f"Reliafy Agent (a retired plan, kept until the subscription ends): {quota:,} tool calls a day "
-                "(get kind account, guide, upgrade_link and uploads send_part aren't counted) and the storage limits "
-                "shown. Fitting and fleets are Pro-only.")
+                "(get kind account, guide, upgrade_link, uploads send_part and library lookups aren't counted) and "
+                "the storage limits shown. Fitting and fleets are Pro-only.")
     return {
         "plan": plan,
         "plan_name": _PLAN_NAMES[plan],
@@ -8519,26 +8522,32 @@ def library_search(
     page: Annotated[int, Field(ge=1)] = 1,
     page_size: Annotated[int, Field(ge=1, le=library_service.MAX_PAGE_SIZE)] = library_service.DEFAULT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    """Find failure rates and per-demand probabilities by component and failure mode."""
+    """Rates and per-demand probabilities by component and failure mode."""
     return library_service.search(query, source=source, equipment_type=equipment_type, kind=kind, page=page,
                                   page_size=page_size)
 
 
-def library_get(ctx: Context, record_id: str) -> dict[str, Any]:
-    """One record in full, with its citation, licence and the block model to use."""
+def library_get(
+    ctx: Context, record_id: str,
+    environment: Annotated[Optional[str], Field(
+        description="For a handbook rate (MIL-HDBK-217F): where the part works, e.g. GB (ground, benign), GF "
+                    "(ground, fixed), NS (naval, sheltered); the record lists them.")] = None,
+) -> dict[str, Any]:
+    """One record in full: citation, licence, the block model to use."""
     try:
-        return library_service.detail(record_id)
+        return library_service.detail(record_id, environment=environment)
     except library_service.LibraryNotFound as exc:
         raise ToolError(str(exc)) from None
 
 
 def library_sources(ctx: Context) -> dict[str, Any]:
-    """The sources, their licences and what each holds."""
+    """The sources, their licences and contents."""
     return library_service.sources()
 
 
-_action_tool("library", _READ, "Search published failure data", "action", """Published generic failure
-    data, each record cited (guide topic library). Not the user's own data: say so when you use one.""", {
+_action_tool("library", _READ, "Search published failure data", "action", """Published failure data,
+    each record cited (guide topic library); not the user's own: say so. Never counted in the Free
+    allowance.""", {
     "search": _act(library_search),
     "get": _act(library_get, id="record_id"),
     "sources": _act(library_sources),

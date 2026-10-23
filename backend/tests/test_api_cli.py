@@ -152,7 +152,11 @@ def test_cli_and_client_search_the_library(server, capsys):
     rec = json.loads(out)["record"]
     assert code == 0 and rec["licence"]["id"] == "us-government-work" and rec["citation"]["table"] == "Table 1"
     code, out, _ = run(capsys, "library", "sources")
-    assert code == 0 and "total_records: 300" in out
+    assert code == 0 and "total_records: 458" in out
+    code, out, _ = run(capsys, "library", "get", "--id", "mil-hdbk-217f-n2:9-1-rc-11", "--environment", "GF",
+                       "--json")
+    model = json.loads(out)["block_model"]
+    assert code == 0 and model["environment"]["code"] == "GF" and abs(model["failure_rate"] - 6.8e-9) < 1e-15
     code, _, err = run(capsys, "library", "get", "--id", "nope")
     assert code == 1 and "not found" in err
     found = Client().call("library", "search", query="check valve", kind="rate", page_size=2)
