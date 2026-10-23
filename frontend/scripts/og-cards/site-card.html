@@ -1,0 +1,66 @@
+<!doctype html><meta charset="utf-8">
+<!-- Source for the site-wide social card, public/og-card.png (see README.md). -->
+<style>
+  * { margin:0; box-sizing:border-box; font-family:-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif; }
+  body { width:1200px; height:630px; background:#fbfbf9; display:flex; flex-direction:column; }
+  .main { flex:1; display:flex; padding:56px 72px 24px; gap:56px; }
+  .left { flex:1.05; display:flex; flex-direction:column; }
+  .brand { display:flex; align-items:center; gap:14px; margin-bottom:44px; }
+  .mark { width:52px; height:52px; border-radius:14px; background:#2f6df6; display:grid; place-items:center; }
+  .mark svg { width:32px; height:32px; }
+  .brand-name { font-size:30px; font-weight:800; color:#16181d; }
+  .eyebrow { color:#2f6df6; font-weight:700; letter-spacing:.12em; font-size:19px; margin-bottom:18px; }
+  h1 { font-size:58px; line-height:1.08; font-weight:800; color:#16181d; letter-spacing:-0.015em; }
+  .sub { margin-top:22px; font-size:24px; line-height:1.45; color:#5b616b; max-width:470px; }
+  .panel { flex:1; align-self:center; background:#fff; border:1px solid #e7e5de; border-radius:16px;
+           box-shadow:0 10px 30px rgba(15,23,42,.07); padding:26px 28px; }
+  .ptitle { font-size:13px; letter-spacing:.14em; color:#9aa0aa; font-weight:700; margin-bottom:10px; }
+  .grid { stroke:#ecebe6; stroke-width:1; }
+  .axis { stroke:#9aa0aa; stroke-width:1.2; }
+  .band { fill:#2f6df6; opacity:.1; }
+  .fit { stroke:#2f6df6; stroke-width:3; fill:none; }
+  .dot { fill:#16181d; }
+  .tick { font:13px "SFMono-Regular",Menlo,Consolas,monospace; fill:#8a909a; }
+  .foot { display:flex; justify-content:space-between; align-items:center;
+          padding:20px 72px 26px; border-top:1px solid #ecebe6; }
+  .url { color:#2f6df6; font-weight:700; font-size:22px; }
+  .tag { color:#9aa0aa; font-size:21px; }
+</style>
+<body>
+  <div class="main">
+    <div class="left">
+      <div class="brand">
+        <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M3 14c2.5 0 2.5-8 5-8s2.5 12 5 12 2.5-6 5-6h3"/></svg></div>
+        <div class="brand-name">Reliafy</div>
+      </div>
+      <div class="eyebrow">RELIABILITY ENGINEERING</div>
+      <h1>Transform how you manage your assets.</h1>
+      <div class="sub">Know when to replace, inspect and restock, from your own failure and condition data.</div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">WEIBULL PROBABILITY PLOT</div>
+      <svg viewBox="0 0 440 290" width="100%">
+        <g class="grid">
+          <line x1="44" y1="30" x2="430" y2="30"/><line x1="44" y1="80" x2="430" y2="80"/>
+          <line x1="44" y1="130" x2="430" y2="130"/><line x1="44" y1="180" x2="430" y2="180"/>
+          <line x1="44" y1="225" x2="430" y2="225"/>
+        </g>
+        <text x="10" y="35" class="tick">90</text><text x="10" y="85" class="tick">50</text>
+        <text x="10" y="135" class="tick">10</text><text x="18" y="185" class="tick">2</text>
+        <text x="12" y="230" class="tick">.5</text>
+        <path class="band" d="M44 214 L240 106 L430 6 L430 40 L240 130 L44 236 Z"/>
+        <path class="fit" d="M44 226 L430 20"/>
+        <g class="dot">
+          <circle cx="72" cy="216" r="5"/><circle cx="110" cy="196" r="5"/><circle cx="150" cy="186" r="5"/>
+          <circle cx="188" cy="162" r="5"/><circle cx="226" cy="140" r="5"/><circle cx="266" cy="130" r="5"/>
+          <circle cx="304" cy="106" r="5"/><circle cx="342" cy="84" r="5"/><circle cx="380" cy="66" r="5"/>
+          <circle cx="414" cy="38" r="5"/>
+        </g>
+        <line class="axis" x1="44" y1="250" x2="430" y2="250"/><line class="axis" x1="44" y1="20" x2="44" y2="250"/>
+        <text x="60" y="275" class="tick">100</text><text x="200" y="275" class="tick">1k</text>
+        <text x="344" y="275" class="tick">10k</text>
+      </svg>
+    </div>
+  </div>
+  <div class="foot"><div class="url">reliafy.com</div><div class="tag">Weibull · RBDs · RCM · failure forecasts</div></div>
+</body>

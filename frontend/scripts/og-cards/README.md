@@ -6,3 +6,7 @@ Each HTML file here is the source for a 1200x630 og:image under
 `image: /blog/<name>.png` in the post's frontmatter. Posts without an
 `image` fall back to the site-wide `/og-card.png` — the point of a per-post
 card is that LinkedIn previews stop all looking identical.
+
+`site-card.html` is the source for that site-wide fallback,
+`public/og-card.png`: regenerate it the same way when the site's
+positioning changes (keep its words in step with `src/siteCopy.js`).
