@@ -143,6 +143,22 @@ diagram changed. Samples are read-only: rbd clone first. get kind rbd reads a di
 - rbd upload_outage_log attaches a real outage log (asset, start, end; blank end = still down) to the user's \
 diagram; rbd_analysis system_history reads it back."""),
 
+    "library": ("Published failure data: units, citing it, using it in a block.", """\
+The reliability data library (library search / get / sources): published generic failure data. Each record is \
+one component and failure mode from one source, with its citation and licence.
+- library search finds records by words (component, failure mode, system: "motor-driven pump fails to start"), \
+filtered by source, equipment_type and kind (rate, per_demand, life); 25 a page, best first, with counts. \
+library get gives a record in full, with block_model: the model a block would use.
+- Read the units. A rate is per hour: per hour of running (fails to run) or per calendar hour (leaks, spurious \
+operation, running or not). per_demand is a probability on each demand (a start, an opening), not a rate.
+- Quote the mean with its 5th to 95th percentile range (the source's spread: gamma for a rate, beta for a \
+demand), and the evidence (failures, demands or hours).
+- In an RBD block: a rate is an exponential (failure_rate = the mean, x 24 per day, x 8,760 per year). A \
+per-demand probability p is a cold-standby spare's startProb (1 - p), or a proof-tested item's failure on test. \
+Converting a calendar rate to hours of running needs the hours a year it runs: ask the user, never guess.
+- These are generic estimates (NRC/INL: U.S. nuclear power plants), never the user's own data: say so, cite the \
+record (licence.attribution), put the source in the block's label and suggest replacing it with their own data.
+"""),
     "rbd_analysis": ("Analysing RBDs: figures, simulation, jobs and the other analyses.", """\
 Analysing RBDs (rbd_analysis).
 - analyze, non-repairable: reliability curve (~21 points; `times` gives exact values in reliability_at), MTTF, \

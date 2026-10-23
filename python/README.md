@@ -73,6 +73,15 @@ rf.tools()                                      # what you may call
 rf.spec()                                       # the OpenAPI spec
 ```
 
+Published failure data from Reliafy's reliability data library, each record
+cited with its licence:
+
+```python
+found = rf.call("library", "search", query="motor-driven pump fails to start")
+record = rf.call("library", "get", id=found["results"][0]["id"])
+record["block_model"]                           # the model an RBD block would use
+```
+
 Shortcuts for the common things: `rf.list(kind)`, `rf.get(kind, id)`,
 `rf.fit(data, distribution=…, censored=…, save_as=…)`,
 `rf.reliability(model_id, times)`, `rf.guide(topic)`.
@@ -116,6 +125,8 @@ reliafy document add manual.pdf --to ITEM_ID --kind manual
 reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
+reliafy library search --query "check valve" --kind rate   # published failure data
+reliafy library get --id nrc-inl-2020:ckv-fto
 ```
 
 Values are read as their argument's type: text, numbers, `true`/`false`, JSON

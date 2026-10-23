@@ -145,6 +145,8 @@ frontend/test-results/
 
 # Persisted app data (SQLite DB + dataset files)
 data/
+# ...but the reliability data library's records ship with the app.
+!backend/library/data/
 
 # Local env helpers and OS/tooling noise
 env_vars.sh

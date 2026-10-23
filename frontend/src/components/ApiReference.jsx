@@ -1054,7 +1054,7 @@ reliafy photo add IMG_*.jpg --to POSITION_ID   # Reliafy Maintenance users`}</Co
 // few tools, each doing one area's work by action (or, for get and list, kind).
 // Reads and calculations are separate from the tools that change your workspace.
 const MCP_TOOLS = [
-  { name: "guide", desc: "Short how-tos by topic — life data and censoring, units, accelerated tests, repairable systems, building RBDs, analysing them, strategy, fleets, uploads, RCM, sharing, the workspace, plans — so the agent reads the one it needs before a task. Never counted against the allowance." },
+  { name: "guide", desc: "Short how-tos by topic — life data and censoring, units, accelerated tests, repairable systems, building RBDs, analysing them, strategy, fleets, uploads, RCM, sharing, published failure data, the workspace, plans — so the agent reads the one it needs before a task. Never counted against the allowance." },
   { name: "get", desc: "One saved item in full, by kind and id.", actions: [
     ["model", "A saved life or recurrent model — distribution, parameters with confidence intervals, goodness of fit, MTTF and B-lives with lower bounds. Regression models add how good the model is (Harrell’s C, the integrated Brier score, the time-dependent AUC) and whether it holds (the proportional-hazards test with a plain verdict; for Cox PH robust standard errors, the tie method and strata). A model fitted by failure mode reports each mode’s share with 95% intervals and Gray’s test. Recurrent models give the growth verdict, ROCOF and MTBF with bounds and the trend tests."],
     ["dataset", "A dataset’s columns and rows, a page at a time."],
@@ -1101,6 +1101,11 @@ const MCP_TOOLS = [
     ["allocate_targets", "What reliability, availability or MTTF / MTTR each block needs for the system to meet a target. Exact and free."],
     ["system_history", "The observed availability from an outage log, each outage with the block that caused it, and the blocks ranked by downtime share."],
     ["export_python / export_json", "A standalone SurPyval + RePyability script, or RePyability’s JSON (rbd_from_json loads it; uploads import_rbd brings it back)."],
+  ] },
+  { name: "library", desc: "Published generic failure data, each record cited with its source and licence; free to read without an account at /api/library too.", actions: [
+    ["search", "Failure rates and probabilities of failure on demand by component and failure mode (“motor-driven pump fails to start”), filtered by source, equipment type and kind, 25 a page with counts."],
+    ["get", "One record in full: the mean with its 5th to 95th percentile spread, the evidence behind it (failures, demands or hours), conditions, citation and licence, and the model an RBD block would use."],
+    ["sources", "The sources, their licences and what each holds. Today: the NRC / INL industry averages for U.S. nuclear power plant components (2020 update)."],
   ] },
   { name: "models", desc: "Save and change models (Claude asks before running it).", actions: [
     ["fit", "The same fit as life_data_analysis fit, saved as a model; with demand_batches, a per-demand model. Pro."],
