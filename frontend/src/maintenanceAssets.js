@@ -1,0 +1,56 @@
+// Operate › Assets: the assets are the top-level places (a house, a site, a
+// plant), each counting what's anywhere inside it. Positions at no place stay
+// reachable from one row at the end of the list, which opens the Positions page
+// filtered to them.
+
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+// Where the "Not at a place yet" row goes: the Positions page, filtered.
+export const NOT_PLACED_PATH = "/asset-register/positions?place=none";
+
+// A place's page.
+export const placePath = (id) => `/asset-register/locations/${id}`;
+
+// The open work orders in a place's area (Maintenance, filtered by location).
+export const openWorkPath = (id) => `/maintenance?location=${encodeURIComponent(id)}`;
+
+// What's inside a place, in words: "4 places inside" ("" for none).
+export function insideText(place) {
+  return place?.locations ? `${plural(place.locations, "place")} inside` : "";
+}
+
+// What's due in the next horizon days (overdue included), in words: { text,
+// overdue }. text: "Nothing due", "3 due, next 4 Nov 2026", or "3 due" when some
+// are overdue (overdue: "1 overdue"; the next date would be a past one).
+export function dueText(row, fmtDate = (d) => d) {
+  if (!row?.due) return { text: "Nothing due", overdue: "" };
+  if (row.overdue) return { text: `${row.due} due`, overdue: `${row.overdue} overdue` };
+  return { text: `${row.due} due${row.next_due ? `, next ${fmtDate(row.next_due)}` : ""}`, overdue: "" };
+}
+
+// The positions tree (the overview's) cut to the positions in `ids` (those at no
+// place). A position at a place takes its whole branch there (its children
+// inherit it), so a branch is dropped where it's at a place; one at no place
+// keeps the children at no place too.
+export function treeOf(tree, ids) {
+  const keep = new Set(ids || []);
+  const walk = (nodes) => (nodes || [])
+    .filter((n) => keep.has(n.id))
+    .map((n) => ({ ...n, children: walk(n.children) }));
+  return walk(tree);
+}
+
+// How many positions a tree holds.
+export function treeSize(tree) {
+  return (tree || []).reduce((n, node) => n + 1 + treeSize(node.children), 0);
+}
+
+// The list's summary line: "2 assets · 30 positions" (with the ones at no place).
+export function assetsSummary(view) {
+  if (!view) return "";
+  const places = view.places || [];
+  const placed = places.reduce((n, p) => n + (p.positions || 0), 0);
+  const rest = view.not_placed?.positions || 0;
+  return [plural(places.length, "asset"), plural(placed + rest, "position"),
+    rest ? `${rest} not at a place yet` : null].filter(Boolean).join(" · ");
+}

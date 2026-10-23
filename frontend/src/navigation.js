@@ -50,9 +50,12 @@ export const ENTRIES = [
   },
   { id: "requirements", section: "design", label: "Requirements", to: "/requirements", needs: "preview" },
 
+  // Assets opens on the assets themselves: the top-level places (a house, a
+  // site). Positions is every position, Locations the whole tree of places.
   {
     id: "assets", section: "operate", label: "Assets", to: "/asset-register", needs: "maintenance",
     children: [
+      { to: "/asset-register/positions", label: "Positions" },
       { to: "/asset-register/items", label: "Items" },
       { to: "/asset-register/locations", label: "Locations" },
       { to: "/asset-register/parts", label: "Parts and stock" },

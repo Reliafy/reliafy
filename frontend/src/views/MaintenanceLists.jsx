@@ -18,6 +18,7 @@ import {
   listMaintenanceParts,
   setMaintenanceReorder,
   listMaintenanceLocations,
+  listMaintenanceWorkOrders,
   updateMaintenanceLocation,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
@@ -31,6 +32,8 @@ import {
 import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
 import { countsText, inheritedText, itemWhere } from "../maintenanceLocations.js";
+import { openWorkPath } from "../maintenanceAssets.js";
+import { subjectBadge } from "../maintenanceSubjects.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import {
   ClassPicker, ItemClassesSection, KindFilters, PartKindModal, useKinds,
@@ -123,19 +126,30 @@ function LocNode({ node }) {
   );
 }
 
-export function NewLocationModal({ locations, parentId = null, onClose, onDone }) {
+// A new location. `asset`: a new asset, a top-level place (no "Inside" to pick).
+export function NewLocationModal({ locations, parentId = null, asset = false, onClose, onDone }) {
   const [name, setName] = useState("");
   const [parent, setParent] = useState(parentId || "");
   return (
-    <FormModal title="New location" submitLabel="Create" canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
-               onSubmit={async () => onDone(await createMaintenanceLocation({ name, parent_id: parent || null }))}>
-      <Field label="Name" text={name}><input autoFocus value={name} placeholder="e.g. Laundry, Garage, Store A" onChange={(e) => setName(e.target.value)} /></Field>
-      <Field label="Inside">
-        <select value={parent} onChange={(e) => setParent(e.target.value)}>
-          <option value="">None (top level)</option>
-          {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
-        </select>
+    <FormModal title={asset ? "New asset" : "New location"} submitLabel="Create"
+               canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
+               onSubmit={async () => onDone(await createMaintenanceLocation({ name, parent_id: (!asset && parent) || null }))}>
+      {asset && (
+        <p className="lib-date">An asset is a place you look after: a house, a site, a plant. Add the rooms or
+          areas inside it from its page, then say where each position is.</p>
+      )}
+      <Field label="Name" text={name}>
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+               placeholder={asset ? "e.g. 12 Smith Street, North mine site" : "e.g. Laundry, Garage, Store A"} />
       </Field>
+      {!asset && (
+        <Field label="Inside">
+          <select value={parent} onChange={(e) => setParent(e.target.value)}>
+            <option value="">None (top level: an asset)</option>
+            {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
+          </select>
+        </Field>
+      )}
     </FormModal>
   );
 }
@@ -181,26 +195,31 @@ export function MaintenanceLocation() {
   }, []);
   if (error && !loc) return <div className="app"><div className="card error">{error}</div></div>;
   if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
+  // The header leaves out the open work: it's its own card below, the whole area's
+  // (positions, items there now and the place itself), not only the positions'.
   return (
     <div className="app">
       <PageHeader
-        crumbs={[...crumbs, { label: "Locations", to: "/asset-register/locations" },
-          ...loc.path.map((a) => ({ label: a.name, to: `/asset-register/locations/${a.id}` }))]}
-        title={loc.name} meta={[loc.description, countsText(loc.counts)].filter(Boolean).join(" · ") || "Location"} id={loc.id}
-        actions={<>
-          {loc.counts.open_work_orders > 0 && (
-            <button className="secondary" onClick={() => navigate(`/maintenance?location=${loc.id}`)}>
-              Open work orders here ({loc.counts.open_work_orders})</button>
-          )}
-          <button className="secondary" onClick={() => setModal("child")}><PlusIcon /> Location inside</button>
-        </>}
+        crumbs={[...crumbs, ...loc.path.map((a) => ({ label: a.name, to: `/asset-register/locations/${a.id}` }))]}
+        title={loc.name} id={loc.id}
+        meta={[loc.description, countsText({ ...loc.counts, open_work_orders: 0 })].filter(Boolean).join(" · ")
+          || (loc.path.length ? "Location" : "Asset")}
+        actions={<button className="secondary" onClick={() => setModal("child")}><PlusIcon /> Location inside</button>}
         primary={<button onClick={() => setModal("rename")}>Rename</button>}
       />
-      <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
-                 emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
-                   + "building or area check: it raises one work order here, and can list every position here to check."} />
-      {(loc.work_orders || []).length > 0 && <WorkOrdersCard workOrders={loc.work_orders} />}
-      <ConditionsCard target={{ id: loc.id, name: loc.name, kind: "Location" }} view={loc} onChanged={refresh} />
+      {loc.children.length > 0 && (
+        <section className="card">
+          <div className="maint-head"><h2>Inside it</h2></div>
+          <ul className="maint-list">{loc.children.map((c) => (
+            <li key={c.id}><Link to={`/asset-register/locations/${c.id}`}>{c.name}</Link>
+              {(c.positions > 0 || c.items > 0) && (
+                <span className="lib-date"> · {[c.positions && `${c.positions} position${c.positions === 1 ? "" : "s"}`,
+                  c.items && `${c.items} item${c.items === 1 ? "" : "s"} placed`].filter(Boolean).join(", ")}</span>
+              )}</li>
+          ))}</ul>
+        </section>
+      )}
+      <OpenWorkHere loc={loc} />
       <LocationPositions loc={loc} />
       <section className="card">
         <div className="maint-head"><h2>Items placed here</h2></div>
@@ -218,24 +237,55 @@ export function MaintenanceLocation() {
           </ul>
         )}
       </section>
-      {loc.children.length > 0 && (
-        <section className="card">
-          <div className="maint-head"><h2>Inside it</h2></div>
-          <ul className="maint-list">{loc.children.map((c) => (
-            <li key={c.id}><Link to={`/asset-register/locations/${c.id}`}>{c.name}</Link>
-              {(c.positions > 0 || c.items > 0) && (
-                <span className="lib-date"> · {[c.positions && `${c.positions} position${c.positions === 1 ? "" : "s"}`,
-                  c.items && `${c.items} item${c.items === 1 ? "" : "s"} placed`].filter(Boolean).join(", ")}</span>
-              )}</li>
-          ))}</ul>
-        </section>
-      )}
+      <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
+                 emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
+                   + "building or area check: it raises one work order here, and can list every position here to check."} />
+      {(loc.work_orders || []).length > 0 && <WorkOrdersCard workOrders={loc.work_orders} />}
+      <ConditionsCard target={{ id: loc.id, name: loc.name, kind: "Location" }} view={loc} onChanged={refresh} />
       <MaintenancePhotos targetId={loc.id} targetKind="Location" targetName={loc.name} photos={loc.photos} onChanged={refresh} />
       {loc.coordinates && <p className="lib-date">Coordinates: {loc.coordinates.lat}, {loc.coordinates.lon}</p>}
       {modal === "child" && <NewLocationModal locations={all} parentId={loc.id} onClose={() => setModal(null)}
                                               onDone={(l) => { setModal(null); navigate(`/asset-register/locations/${l.id}`); }} />}
       {modal === "rename" && <RenameLocation loc={loc} onClose={() => setModal(null)} onDone={(d) => { setLoc(d); setModal(null); }} />}
     </div>
+  );
+}
+
+// The open work orders in a place's area: on the positions there, the items there
+// now and the place itself (or a place inside it). The first few, and a link to all.
+const OPEN_HERE = 8;
+function OpenWorkHere({ loc }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(null);
+  useEffect(() => {
+    listMaintenanceWorkOrders({ status: "open", locationId: loc.id })
+      .then((d) => setOpen(d.work_orders)).catch(() => setOpen([]));
+  }, [loc]);
+  return (
+    <section className="card">
+      <div className="maint-head">
+        <h2>Open work here</h2>
+        {open?.length > OPEN_HERE && <Link to={openWorkPath(loc.id)} className="lib-date">All {open.length}</Link>}
+      </div>
+      {open === null ? <p className="lib-date">Loading…</p> : open.length === 0 ? (
+        <p className="lib-date">No open work orders here.</p>
+      ) : (
+        <div className="maint-scroll"><table className="lib-table">
+          <thead><tr><th>#</th><th>Title</th><th>On</th><th>Due</th></tr></thead>
+          <tbody>
+            {open.slice(0, OPEN_HERE).map((w) => (
+              <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
+                <td>{w.number}</td>
+                <td>{w.title}</td>
+                <td>{w.subject?.name}{subjectBadge(w.subject) && <> <span className="maint-badge">{subjectBadge(w.subject)}</span></>}
+                  {w.location && ![loc.id, w.subject?.id].includes(w.location.id) && <div className="lib-date">{w.location.name}</div>}</td>
+                <td className="lib-date">{fmtDate(w.due)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      )}
+    </section>
   );
 }
 

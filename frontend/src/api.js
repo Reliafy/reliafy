@@ -2207,6 +2207,11 @@ export function listMaintenanceLocations() {
   return request("/api/maintenance/locations");
 }
 
+// The assets: the top-level places with what each holds, and the positions at none.
+export function listMaintenancePlaces() {
+  return request("/api/maintenance/places");
+}
+
 export function createMaintenanceLocation(body) {
   return postJson("/api/maintenance/locations", body);
 }

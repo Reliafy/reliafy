@@ -6883,7 +6883,7 @@ _UPLOAD_FALLBACK_URL = (
 _UPLOAD_APP_PAGES = {"rbd_import": ("/systems", "Systems › Import"), "dataset": ("/data", "Data"),
                      "excel": ("/data", "Data, RCM studies or Systems › Import"),
                      "outage_log": ("/systems", "the diagram's Outage history tab"),
-                     "document": ("/asset-register", "the record's Documents card")}
+                     "document": ("/asset-register/positions", "the record's Documents card")}
 # Inline content (uploads import_rbd): small text formats only — anything larger goes
 # through uploads create rather than the agent's context.
 INLINE_MAX_BYTES = 200 * 1024

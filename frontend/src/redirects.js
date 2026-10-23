@@ -64,7 +64,7 @@ export const MOVED = [
   { path: "/rcm/studies/:id", to: "/maintenance/rcm/:id" },
   // Reliafy Maintenance's register → Operate › Assets. (/maintenance itself
   // stays: it's the due tasks and work orders now; the positions tree is
-  // Assets' landing page.)
+  // Assets › Positions, and Assets opens on the top-level places.)
   { path: "/maintenance/positions/:id", to: "/asset-register/positions/:id" },
   { path: "/maintenance/items", to: "/asset-register/items" },
   { path: "/maintenance/items/:id", to: "/asset-register/items/:id" },
