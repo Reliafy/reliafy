@@ -1102,10 +1102,10 @@ const MCP_TOOLS = [
     ["system_history", "The observed availability from an outage log, each outage with the block that caused it, and the blocks ranked by downtime share."],
     ["export_python / export_json", "A standalone SurPyval + RePyability script, or RePyability’s JSON (rbd_from_json loads it; uploads import_rbd brings it back)."],
   ] },
-  { name: "library", desc: "Published generic failure data, each record cited with its source and licence; free to read without an account at /api/library too.", actions: [
+  { name: "library", desc: "Published generic failure data, each record cited with its source and licence; free to read without an account at /api/library too. Never counted against the allowance.", actions: [
     ["search", "Failure rates and probabilities of failure on demand by component and failure mode (“motor-driven pump fails to start”), filtered by source, equipment type and kind, 25 a page with counts."],
-    ["get", "One record in full: the mean with its 5th to 95th percentile spread, the evidence behind it (failures, demands or hours), conditions, citation and licence, and the model an RBD block would use."],
-    ["sources", "The sources, their licences and what each holds. Today: the NRC / INL industry averages for U.S. nuclear power plant components (2020 update)."],
+    ["get", "One record in full: the mean with its 5th to 95th percentile spread, the evidence behind it (failures, demands or hours), conditions, citation and licence, and the model an RBD block would use. For a handbook rate, give the environment the part works in (e.g. GF, ground, fixed)."],
+    ["sources", "The sources, their licences and what each holds. Today: the NRC / INL industry averages for U.S. nuclear power plant components (2020 update), and base failure rates for electronic parts from MIL-HDBK-217F, Notice 2."],
   ] },
   { name: "models", desc: "Save and change models (Claude asks before running it).", actions: [
     ["fit", "The same fit as life_data_analysis fit, saved as a model; with demand_batches, a per-demand model. Pro."],
@@ -1167,8 +1167,9 @@ function McpDocs({ tokenNote }) {
           On Reliafy Cloud, using Reliafy from AI agents (MCP) is part of <b>Pro</b> (US$19/month):
           every tool, no limit and unlimited storage. <b>Free</b> gives you 20 tool calls a month to
           try it — every tool except fitting, fleets and availability simulation, within the Free
-          storage limits; the calls reset on the 1st of each month (UTC). Past them, each tool says
-          so, and <code>upgrade_link</code> gives you a link to subscribe.
+          storage limits; the calls reset on the 1st of each month (UTC). Looking things up in the
+          reliability data library doesn’t count. Past them, each tool says so, and{" "}
+          <code>upgrade_link</code> gives you a link to subscribe.
         </p>
 
         <h3>Claude on the web, desktop and mobile</h3>

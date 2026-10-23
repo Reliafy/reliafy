@@ -78,7 +78,7 @@ The REST calls are gated exactly as over MCP:
 | Who | Gets |
 |---|---|
 | Pro, operators, self-hosted | every tool, no allowance |
-| A signed-in Free account (session) | the same monthly allowance of tool calls as over MCP, without fitting, fleets and simulations |
+| A signed-in Free account (session) | the same monthly allowance of tool calls as over MCP, without fitting, fleets and simulations; `guide`, `get account`, `upgrade_link` and `library` lookups aren't counted |
 | An API token on an account without Pro | `402` |
 | Reliafy Maintenance tools | only accounts with Reliafy Maintenance (today: operators); everyone else gets `404` and doesn't see them in `/api/v1/tools` or the spec |
 
@@ -120,16 +120,19 @@ everyone, so it's readable without an account:
 | Call | Does |
 |---|---|
 | `GET /api/library/search?q=…&source=…&equipment_type=…&kind=…&page=1&page_size=25` | Matching records, best first, 25 a page (at most 100), with `total`, `pages` and `counts` by equipment type, kind and source. `kind` is `rate`, `per_demand` or `life`. |
-| `GET /api/library/records/{id}` | One record in full (values, spread, evidence, conditions, citation, licence and notes) and `block_model`: the model an RBD block would use. |
+| `GET /api/library/records/{id}?environment=…` | One record in full (values, spread, evidence, conditions, citation, licence and notes) and `block_model`: the model an RBD block would use. A handbook rate (MIL-HDBK-217F) depends on the environment the part works in: give `environment` (e.g. `GF`, ground, fixed) for its block model; without it, `environments` lists the rate in each. |
 | `GET /api/library/sources` | The sources, their licences and what each holds. |
 
 The same reads are the `library` tool: `POST /api/v1/library/search`
 (`query`, `source`, `equipment_type`, `kind`, `page`, `page_size`), `POST
-/api/v1/library/get` (`id`) and `POST /api/v1/library/sources`, and on the
-command line `reliafy library search --query "motor-driven pump"`. These are
-generic estimates (today: U.S. nuclear power plant industry averages), not
-your own equipment's data; show each record's `licence.attribution` with its
-numbers. The record format and the sources: [library.md](library.md).
+/api/v1/library/get` (`id`, `environment`) and `POST
+/api/v1/library/sources`, and on the command line `reliafy library search
+--query "motor-driven pump"`. Library lookups are never counted against the
+Free plan's tool calls. These are generic estimates (today: U.S. nuclear
+power plant industry averages, and base failure rates for electronic parts
+from the MIL-HDBK-217F prediction handbook), not your own equipment's data;
+show each record's `licence.attribution` with its numbers. The record format
+and the sources: [library.md](library.md).
 
 ---
 

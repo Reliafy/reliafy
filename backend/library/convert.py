@@ -12,6 +12,10 @@ no database, no RBD code.
   probability of a cold-standby spare, and, given how often it's demanded, an
   equivalent rate in time.
 - A Weibull record (beta and eta) is a Weibull (:func:`life_to_model`).
+- A handbook base rate with environment factors (MIL-HDBK-217F) needs the
+  environment the part works in: the rate is the base rate times that
+  environment's factor, and the result says which of the handbook's other
+  factors it leaves out.
 
 Every result names its record (id, version, citation, licence) and carries a
 badge saying it's a generic estimate, so a block never presents it as the
@@ -52,9 +56,12 @@ def _origin(rec: dict) -> dict:
 
 
 def _badge(rec: dict) -> str:
-    return (f"Generic estimate from published data ({rec['citation'].get('report') or rec['source']}, "
-            f"{rec['citation']['table']}), not your equipment's own: replace it with your own failure data "
-            "when you have it.")
+    where = f"{rec['citation'].get('report') or rec['source']}, {rec['citation']['table']}"
+    if rec.get("basis") == "prediction_model":
+        return (f"Handbook prediction ({where}), not failures counted in service or your equipment's own: "
+                "replace it with your own failure data when you have it.")
+    return (f"Generic estimate from published data ({where}), not your equipment's own: replace it with your "
+            "own failure data when you have it.")
 
 
 def spread(rec: dict, point: Point = "mean") -> dict:
@@ -88,15 +95,60 @@ def _hours_rate(rec: dict, value: Optional[float], length_ft: Optional[float]) -
     return value
 
 
+def environment_choices(rec: dict) -> str:
+    """The environments a handbook record has factors for, as 'GB (ground,
+    benign), GF (ground, fixed), ...'."""
+    values = (rec.get("environment_factors") or {}).get("values") or {}
+    return ", ".join(f"{code} ({schema.ENVIRONMENTS[code][0].lower()})" for code in schema.ENVIRONMENTS
+                     if code in values)
+
+
+def environment_factor(rec: dict, environment: Optional[str]) -> Optional[dict]:
+    """The record's factor for ``environment`` (a handbook symbol such as
+    'GF'; any case), as {code, name, factor}; None for a record without
+    environment factors. Raises :class:`ConversionError` when the record
+    needs an environment and none is given, or the one given isn't one it
+    has a factor for."""
+    factors = rec.get("environment_factors")
+    if not factors:
+        if environment is not None:
+            raise ConversionError(f"'{rec['label']}' doesn't depend on the environment: leave out environment.")
+        return None
+    if environment is None or not str(environment).strip():
+        raise ConversionError(f"'{rec['label']}' is a handbook rate that depends on where the part works: give "
+                              f"environment, one of {environment_choices(rec)}.")
+    code = str(environment).strip().upper()
+    if code not in schema.ENVIRONMENTS:
+        raise ConversionError(f"Unknown environment '{environment}'. Use one of {environment_choices(rec)}.")
+    if code not in factors["values"]:
+        raise ConversionError(f"The handbook gives no environment factor for {code} "
+                              f"({schema.ENVIRONMENTS[code][0].lower()}) for '{rec['label']}'. Use one of "
+                              f"{environment_choices(rec)}.")
+    return {"code": code, "name": schema.ENVIRONMENTS[code][0], "factor": factors["values"][code]}
+
+
+def _handbook_assumption(rec: dict, env: dict) -> str:
+    pred = rec.get("prediction") or {}
+    said = (f"Rate = {pred.get('per_million_hours', 0):g} per million hours × πE {env['factor']:g} for "
+            f"{env['name'].lower()} ({env['code']}).")
+    left_out = pred.get("not_applied") or []
+    if not left_out:
+        return said + " That's the handbook's whole model for this part."
+    names = ", ".join(f"{f['symbol']} ({f['name']})" for f in left_out)
+    return (said + f" The handbook's other factors aren't applied: {names}. Real rates depend on them; work them "
+            "out from the handbook for your design if it matters.")
+
+
 def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optional[str] = None,
                         operating_hours_per_year: Optional[float] = None, length_ft: Optional[float] = None,
-                        point: Point = "mean") -> dict:
+                        point: Point = "mean", environment: Optional[str] = None) -> dict:
     """An exponential model (failure_rate in ``time_unit``) from a rate record.
 
     ``time_basis``: the block's clock, 'operating' (hours of running) or
     'calendar'; by default the record's own. Changing it needs
     ``operating_hours_per_year`` (how many hours a year the component runs).
-    A pipe's rate is per foot: give ``length_ft``."""
+    A pipe's rate is per foot: give ``length_ft``. A handbook rate with
+    environment factors needs ``environment`` (e.g. 'GF', ground, fixed)."""
     if rec["kind"] != "rate":
         hint = " Use demand_to_per_demand." if rec["kind"] == "per_demand" else " Use life_to_model."
         raise ConversionError(f"'{rec['label']}' is a {rec['kind'].replace('_', ' ')} value, not a rate.{hint}")
@@ -110,16 +162,17 @@ def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optiona
                                   "in feet.")
     elif length_ft is not None:
         raise ConversionError(f"'{rec['label']}' isn't a rate per foot of pipe: leave out length_ft.")
-    factor = 1.0
-    assumptions: list[str] = []
+    env = environment_factor(rec, environment)
+    factor = env["factor"] if env else 1.0
+    assumptions: list[str] = [_handbook_assumption(rec, env)] if env else []
     if target != own_basis:
         if not operating_hours_per_year or not 0 < operating_hours_per_year <= HOURS_PER_YEAR:
             raise ConversionError(
                 f"'{rec['label']}' is per {'calendar hour' if own_basis == 'calendar' else 'hour of running'}; "
                 f"to use it per {'hour of running' if target == 'operating' else 'calendar hour'} give "
                 "operating_hours_per_year (0 to 8760), the hours a year the component runs.")
-        factor = (HOURS_PER_YEAR / operating_hours_per_year if own_basis == "calendar"
-                  else operating_hours_per_year / HOURS_PER_YEAR)
+        factor *= (HOURS_PER_YEAR / operating_hours_per_year if own_basis == "calendar"
+                   else operating_hours_per_year / HOURS_PER_YEAR)
         assumptions.append(f"Runs {operating_hours_per_year:g} hours a year (of 8,760).")
     per_unit = hours_per_unit(time_unit)
     if units_mod.normalize_unit(time_unit) in ("month", "year"):
@@ -133,7 +186,7 @@ def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optiona
         return None if v is None else v * factor * per_unit
 
     rate = scale(sp["point"])
-    return {
+    out = {
         "model": {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": rate}]},
         "unit": units_mod.canonical_unit(time_unit),
         "time_basis": target,
@@ -145,6 +198,9 @@ def rate_to_exponential(rec: dict, time_unit: str = "hours", time_basis: Optiona
         "badge": _badge(rec),
         "source": _origin(rec),
     }
+    if env:
+        out["environment"] = env
+    return out
 
 
 def demand_to_per_demand(rec: dict, demands_per_year: Optional[float] = None, time_unit: str = "hours",
@@ -207,6 +263,9 @@ def life_to_model(rec: dict) -> dict:
 
 def to_block_model(rec: dict, **options) -> dict:
     """The record as a block model, by its kind (options go to the converter)."""
+    if rec["kind"] != "rate" and "environment" in options:
+        if options.pop("environment") is not None:
+            raise ConversionError(f"'{rec['label']}' doesn't depend on the environment: leave out environment.")
     if rec["kind"] == "rate":
         return rate_to_exponential(rec, **options)
     if rec["kind"] == "per_demand":

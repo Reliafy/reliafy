@@ -70,7 +70,8 @@ def _library() -> dict[str, Any]:
             "name": _words(r["name"]),
             "mode": _words(f"{r['failure_mode']['name']} {r['failure_mode']['code']}"),
             "equipment": _words(f"{schema.EQUIPMENT_TYPES[r['equipment_type']]} {r['equipment_type']}"),
-            "conditions": _words(" ".join(str(v) for k, v in cond.items() if k != "industry")),
+            "conditions": _words(" ".join(str(v) for k, v in cond.items() if k != "industry")
+                                 + " " + _environment_words(r)),
             "text": _words(r.get("source_text", "")),
         })
     for src in sources.values():
@@ -80,6 +81,14 @@ def _library() -> dict[str, Any]:
         src["equipment_types"] = _count(mine, "equipment_type")
         src["components"] = len({r["name"] for r in mine})
     return {"sources": sources, "records": records, "by_id": by_id, "index": index}
+
+
+def _environment_words(rec: dict) -> str:
+    """A handbook record's environments, by symbol and name, so a search
+    for 'naval' or 'missile launch' finds the parts that have a factor for
+    it."""
+    values = (rec.get("environment_factors") or {}).get("values") or {}
+    return " ".join(f"{code} {schema.ENVIRONMENTS[code][0]}" for code in values)
 
 
 def _count(records: list[dict], key: str) -> dict[str, int]:
@@ -146,6 +155,7 @@ def brief(rec: dict) -> dict:
         "basis": rec["basis"], "source": src.get("short_name", rec["source"]),
         "citation": f"{rec['citation'].get('report') or rec['citation']['title']}, "
                     f"{rec['citation']['table']}, p. {rec['citation']['page']}",
+        **({"environment_factors": rec["environment_factors"]["values"]} if rec.get("environment_factors") else {}),
     }
 
 
@@ -203,19 +213,34 @@ def get(record_id: str) -> dict:
     return rec
 
 
-def detail(record_id: str) -> dict:
+def detail(record_id: str, environment: Optional[str] = None) -> dict:
     """A record with what a block would use: the default conversion (see
-    :mod:`backend.library.convert`), or why it needs more input."""
+    :mod:`backend.library.convert`), or why it needs more input. A handbook
+    record with environment factors converts for ``environment`` (e.g.
+    'GF'); without one, ``environments`` lists the rate in each, so the
+    caller can choose. A bad ``environment`` raises ValueError."""
     from backend.library import convert
 
     rec = get(record_id)
-    try:
-        model = convert.to_block_model(rec)
-    except convert.ConversionError as exc:
-        model = {"needs": str(exc)}
+    if environment is not None:
+        try:
+            model = convert.to_block_model(rec, environment=environment)
+        except convert.ConversionError as exc:
+            raise ValueError(str(exc)) from None
+    else:
+        try:
+            model = convert.to_block_model(rec)
+        except convert.ConversionError as exc:
+            model = {"needs": str(exc)}
     src = _library()["sources"].get(rec["source"], {})
-    return {"record": rec, "units": units_text(rec), "block_model": model,
-            "caveats": src.get("caveats") or []}
+    out = {"record": rec, "units": units_text(rec), "block_model": model, "caveats": src.get("caveats") or []}
+    values = (rec.get("environment_factors") or {}).get("values")
+    if values:
+        out["environments"] = [
+            {"code": code, "name": schema.ENVIRONMENTS[code][0], "factor": values[code],
+             "failure_rate_per_hour": schema.param_dict(rec["distribution"])["value"] * values[code]}
+            for code in schema.ENVIRONMENTS if code in values]
+    return out
 
 
 def sources() -> dict:
@@ -233,4 +258,6 @@ def sources() -> dict:
         "equipment_types": schema.EQUIPMENT_TYPES,
         "kinds": schema.KINDS,
         "bases": schema.BASES,
+        "environments": {code: {"name": name, "covers": covers}
+                         for code, (name, covers) in schema.ENVIRONMENTS.items()},
     }
