@@ -1,5 +1,5 @@
 // A tiny bridge so the AI assistant (mounted in the app shell) can read and
-// drive the live RBD builder canvas (mounted on /rbds/b) without prop-drilling
+// drive the live RBD builder canvas (mounted on /systems/b) without prop-drilling
 // through the router. The builder registers its canvas API on mount and clears
 // it on unmount; the agent's tools look it up here.
 let canvas = null;

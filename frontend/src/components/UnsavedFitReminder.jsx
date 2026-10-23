@@ -11,7 +11,7 @@ export function useUnsavedFitScope() {
   return `${user?.uid || "local"}:${getWorkspace()}`;
 }
 
-// A gentle reminder on the Modelling pages (#434): a fit was left without
+// A gentle reminder on the Models pages (#434): a fit was left without
 // saving. One click saves it (and its data) when the data came along;
 // otherwise it offers to fit it again. Dismiss forgets it.
 export default function UnsavedFitReminder() {
@@ -35,7 +35,7 @@ export default function UnsavedFitReminder() {
         ...fit.opts, ...(fit.datasetId ? { datasetId: fit.datasetId } : {}),
       });
       forgetUnsavedFit(scope);
-      navigate(`/modelling/m/${model.id}`);
+      navigate(`/models/m/${model.id}`);
     } catch (err) {
       setError(err.message);
       setSaving(false);
@@ -54,7 +54,7 @@ export default function UnsavedFitReminder() {
             {saving ? "Saving…" : fit.datasetId ? "Save it" : "Save it and its data"}
           </button>
         ) : (
-          <button type="button" onClick={() => { forgetUnsavedFit(scope); navigate("/modelling/new?mode=data"); }}>
+          <button type="button" onClick={() => { forgetUnsavedFit(scope); navigate("/models/new?mode=data"); }}>
             Fit it again
           </button>
         )}

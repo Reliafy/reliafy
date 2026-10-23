@@ -3,7 +3,7 @@ title: "Forecast fleet failures and spares"
 task: "How many failures will my fleet see next year, and how many spares should I hold?"
 category: "Maintenance strategy"
 prerequisites: "A fitted non-repairable model of the part, and each item's current age or use."
-related_href: "/fleet"
+related_href: "/forecasts"
 related_label: "Open failure forecasts"
 order: 22
 ---
@@ -21,7 +21,7 @@ the way can fail again inside the horizon.
 
 ## Read a forecast
 
-Open **Fleet** and the sample, **Delivery trucks — bearing
+Open **Forecasts** and the sample, **Delivery trucks — bearing
 forecast**: eight trucks' wheel bearings, against the sample *Bearing life —
 Weibull* model. The line under the title says what it assumes: **500 hours of
 use a month per item · 12 months · failed items replaced**.
@@ -98,7 +98,7 @@ its range, and each month's expectation and range.
 
 ## Build your own forecast
 
-1. On **Fleet**, press **New forecast**. Give it a name,
+1. On **Forecasts**, press **New forecast**. Give it a name,
    choose the **Equipment** — **Replaceable** (a life, regression or ALT model)
    or **Repairable** (a recurrent model) — and the **Model**. With a regression
    or ALT model each item is forecast at its own conditions or stress.

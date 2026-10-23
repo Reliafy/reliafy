@@ -14,18 +14,18 @@ export const GUIDE_COVERAGE = [
   // Where the app opens.
   { feature: "Home", href: "/home" },
   // Life data and the other model types.
-  { feature: "Fit a non-repairable model (life data)", href: "/modelling/new" },
-  { feature: "Repairable models (repairable systems)", href: "/modelling/recurrent" },
-  { feature: "Accelerated life models", href: "/modelling/alt" },
-  { feature: "Degradation models", href: "/modelling/degradation" },
-  { feature: "Condition monitoring (remaining life from readings)", href: "/modelling/joint" },
-  { feature: "Per-demand (one-shot) models", href: "/modelling/new?mode=perdemand" },
+  { feature: "Fit a non-repairable model (life data)", href: "/models/new" },
+  { feature: "Repairable models (repairable systems)", href: "/models/recurrent" },
+  { feature: "Accelerated life models", href: "/models/alt" },
+  { feature: "Degradation models", href: "/models/degradation" },
+  { feature: "Condition monitoring (remaining life from readings)", href: "/models/joint" },
+  { feature: "Per-demand (one-shot) models", href: "/models/new?mode=perdemand" },
   // Data.
-  { feature: "Data (datasets)", href: "/modelling/data" },
+  { feature: "Data (datasets)", href: "/data" },
   // System modelling.
-  { feature: "Reliability block diagrams", href: "/rbds" },
-  { feature: "RBD builder (targets, design, phases, production, outages)", href: "/rbds/b" },
-  { feature: "Simulation run history", href: "/rbds/runs" },
+  { feature: "Reliability block diagrams", href: "/systems" },
+  { feature: "RBD builder (targets, design, phases, production, outages)", href: "/systems/b" },
+  { feature: "Simulation run history", href: "/systems/runs" },
   // Strategy.
   { feature: "Saved strategy analyses", href: "/strategy" },
   { feature: "Optimal replacement by age", href: "/strategy/replacement" },
@@ -38,11 +38,12 @@ export const GUIDE_COVERAGE = [
   { feature: "Test planning: accelerated test", href: "/strategy/test-planning/accelerated" },
   { feature: "Test planning: comparison", href: "/strategy/test-planning/comparison" },
   // Fleets.
-  { feature: "Fleet failure and spares forecasts", href: "/fleet" },
-  { feature: "Degradation tracking", href: "/fleet/tracking" },
+  { feature: "Fleet failure and spares forecasts", href: "/forecasts" },
+  { feature: "Degradation tracking", href: "/models/tracking" },
   // RCM.
-  { feature: "RCM studies", href: "/rcm" },
-  // Sharing and teams.
+  { feature: "RCM studies", href: "/maintenance/rcm" },
+  // Sharing, reports and teams.
+  { feature: "Reports (reports, saved analyses, shared links)", href: "/reports" },
   { feature: "Teams", href: "/team" },
   { feature: "What changed in the workspace", href: "/changes" },
   // Agents, MCP and the API.

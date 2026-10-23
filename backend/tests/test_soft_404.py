@@ -96,7 +96,7 @@ def _is_404_shell(r) -> bool:
 
 # ---- unknown roots: the plain 404 page, as since #118 ---------------------------
 
-@pytest.mark.parametrize("path", ["/totally-made-up", "/models/abc", "/wp-login.php", "/Bloggs/past"])
+@pytest.mark.parametrize("path", ["/totally-made-up", "/widgets/abc", "/wp-login.php", "/Bloggs/past"])
 def test_unknown_roots_are_404_pages(site, path):
     r = site.get(path)
     assert r.status_code == 404, path
@@ -164,9 +164,13 @@ def test_without_the_content_index_slugs_keep_the_shell(site, dist):
 # ---- the app's own routes ---------------------------------------------------------
 
 @pytest.mark.parametrize("path", [
+    "/models", "/models/m/abc123", "/models/recurrent/r1", "/systems/b/123", "/systems/runs/run9",
+    "/data/d1", "/home", "/models/tracking/f1", "/forecasts/f2", "/strategy/analyses/s1",
+    "/maintenance/rcm/s1", "/asset-register/positions/p1", "/reports",
+    # Earlier addresses, which the app redirects.
     "/modelling", "/modelling/m/abc123", "/modelling/recurrent/r1", "/rbds/b/123", "/rbds/runs/run9",
-    "/datasets/d/d1", "/home", "/modelling/data/d1", "/fleet/tracking/f1", "/fleet/forecasts/f2", "/strategy/analyses/s1",
-    "/rcm/studies/s1", "/settings", "/login", "/oauth/consent", "/unsubscribe",
+    "/datasets/d/d1", "/modelling/data/d1", "/fleet/tracking/f1", "/fleet/forecasts/f2", "/rcm/studies/s1",
+    "/settings", "/login", "/oauth/consent", "/unsubscribe",
 ])
 def test_app_routes_with_ids_keep_the_shell_and_a_200(site, path):
     r = site.get(path)

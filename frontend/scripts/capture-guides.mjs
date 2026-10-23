@@ -580,18 +580,18 @@ async function main() {
   // list pages like Saved models, which real users would never see.
   const sampleShots = [
     // --- Fit your first model ---
-    { file: "fit-01-new.png", url: "/modelling/new?mode=data", settle: 1200 },
-    { file: "fit-02-result.png", url: `/modelling/m/${S.bearings}`, settle: 2500 },
-    { file: "fit-03-calculator.png", url: `/modelling/m/${S.bearings}`, settle: 2000, act: modelCalculator },
+    { file: "fit-01-new.png", url: "/models/new?mode=data", settle: 1200 },
+    { file: "fit-02-result.png", url: `/models/m/${S.bearings}`, settle: 2500 },
+    { file: "fit-03-calculator.png", url: `/models/m/${S.bearings}`, settle: 2000, act: modelCalculator },
     // --- Censored data (the pump model is right-censored) ---
-    { file: "censored-01-model.png", url: `/modelling/m/${S.pumps}`, settle: 2500 },
+    { file: "censored-01-model.png", url: `/models/m/${S.pumps}`, settle: 2500 },
     // --- B-lives and confidence bounds ---
-    { file: "blife-01-life-card.png", url: `/modelling/m/${S.bearings}`, settle: 2500,
+    { file: "blife-01-life-card.png", url: `/models/m/${S.bearings}`, settle: 2500,
       async act(page) { await page.locator(".sel-trigger", { hasText: /lower bound/ }).click(); await wait(500); } },
-    { file: "blife-02-calculator.png", url: `/modelling/m/${S.bearings}`, settle: 2000,
+    { file: "blife-02-calculator.png", url: `/models/m/${S.bearings}`, settle: 2000,
       async act(page) { await modelCalculator(page); await press(page, /^Time at reliability$/); await wait(2000); } },
     // --- Check a requirement and plan a demonstration test ---
-    { file: "req-01-check.png", url: `/modelling/m/${S.bearings}`, settle: 2500,
+    { file: "req-01-check.png", url: `/models/m/${S.bearings}`, settle: 2500,
       async act(page) {
         await page.getByRole("button", { name: /Check a requirement/ }).click(); await wait(600);
         const m = page.locator(".req-modal");
@@ -621,11 +621,11 @@ async function main() {
         await wait(600);
       } },
     // --- Accelerated life ---
-    { file: "alt-01-new.png", url: "/modelling/alt/new", settle: 1200 },
-    { file: "alt-02-lifestress.png", url: `/modelling/alt/${S.altModel}`, settle: 2500 },
-    { file: "alt-03-probplot.png", url: `/modelling/alt/${S.altModel}`, settle: 1800,
+    { file: "alt-01-new.png", url: "/models/alt/new", settle: 1200 },
+    { file: "alt-02-lifestress.png", url: `/models/alt/${S.altModel}`, settle: 2500 },
+    { file: "alt-03-probplot.png", url: `/models/alt/${S.altModel}`, settle: 1800,
       async act(page) { await press(page, /^Probability plot$/); await wait(1800); } },
-    { file: "alt-04-uselevel.png", url: `/modelling/alt/${S.altModel}`, settle: 1800,
+    { file: "alt-04-uselevel.png", url: `/models/alt/${S.altModel}`, settle: 1800,
       async act(page) { await press(page, /^Use-level calculator$/); await wait(1200);
                         await page.getByRole("button", { name: /Compute at use level/i }).click().catch(() => {}); await wait(3000); } },
     // Planning the next accelerated test from the sample fit, at a use stress of 20 kV.
@@ -638,11 +638,11 @@ async function main() {
         await wait(600);
       } },
     // --- Recurrent events ---
-    { file: "recurrent-01-new.png", url: "/modelling/recurrent/new", settle: 1200 },
-    { file: "recurrent-02-mcf.png", url: `/modelling/recurrent/${S.recurrent}`, settle: 2500 },
+    { file: "recurrent-01-new.png", url: "/models/recurrent/new", settle: 1200 },
+    { file: "recurrent-02-mcf.png", url: `/models/recurrent/${S.recurrent}`, settle: 2500 },
     // --- Degradation ---
-    { file: "degradation-01-model.png", url: `/modelling/degradation/${S.degradation}`, settle: 2500 },
-    { file: "degradation-02-tracking.png", url: "/fleet/tracking", settle: 2000 },
+    { file: "degradation-01-model.png", url: `/models/degradation/${S.degradation}`, settle: 2500 },
+    { file: "degradation-02-tracking.png", url: "/models/tracking", settle: 2000 },
     // --- Optimal replacement: the bearing model, 1,000 planned vs 8,000 failure ---
     // The tool opens on "Saved model"; ?model= chooses the bearing fit, as a
     // model page's "Use this model" does (#294).
@@ -676,8 +676,8 @@ async function main() {
         await wait(600);
       } },
     // --- Fleet failures and spares ---
-    { file: "fleet-01-forecast.png", url: `/fleet/forecasts/${S.fleet}`, settle: 3000 },
-    { file: "fleet-02-new.png", url: "/fleet", settle: 1500,
+    { file: "fleet-01-forecast.png", url: `/forecasts/${S.fleet}`, settle: 3000 },
+    { file: "fleet-02-new.png", url: "/forecasts", settle: 1500,
       async act(page) {
         await page.getByRole("button", { name: /New forecast/ }).click(); await wait(800);
         const m = page.locator(".modal").last();
@@ -686,12 +686,12 @@ async function main() {
         await page.getByRole("option", { name: /Bearing life — Weibull/ }).first().click(); await wait(500);
       } },
     // --- Verify a safety function: the starter, as it opens and calculated ---
-    { file: "sif-01-starter.png", url: "/rbds", settle: 1500,
+    { file: "sif-01-starter.png", url: "/systems", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); } },
-    { file: "sif-02-results.png", url: "/rbds", settle: 1500,
+    { file: "sif-02-results.png", url: "/systems", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
     // --- RCM study: the sample, with its evidence statuses ---
-    { file: "rcm-01-study.png", url: "/rcm/studies/sample-rcm-truck", settle: 2000 },
+    { file: "rcm-01-study.png", url: "/maintenance/rcm/sample-rcm-truck", settle: 2000 },
     // --- Failure-finding interval: a trip failing once a year (λ = 1/8,760 h), 99% ---
     { file: "ff-01-result.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) {
@@ -704,7 +704,7 @@ async function main() {
       } },
     // --- Import a diagram: a Galileo file through RBDs → Import. It opens
     // unsaved with its import notes, so nothing is left behind. ---
-    { file: "import-01-notes.png", url: "/rbds", settle: 1500,
+    { file: "import-01-notes.png", url: "/systems", settle: 1500,
       async act(page) {
         await page.locator('input[type="file"]').first().setInputFiles({
           name: "feed-system.dft", mimeType: "text/plain", buffer: Buffer.from(GALILEO_FEED),
@@ -713,7 +713,7 @@ async function main() {
         await arrange(page);
       } },
     // --- Compare groups: the sample seals split by load ---
-    { file: "cmp-01-groups.png", url: "/datasets/d/sample-ds-seal-alt?compare=load", settle: 1500,
+    { file: "cmp-01-groups.png", url: "/data/sample-ds-seal-alt?compare=load", settle: 1500,
       async act(page) {
         await page.locator(".cg-run").click();
         await page.locator(".cg-result").waitFor({ timeout: 20000 }); await wait(1500);
@@ -731,16 +731,16 @@ async function main() {
       } },
     // --- Competing risks: the Model step with a failure-mode column, the
     // sample by-mode model, and its Gray's test by site ---
-    { file: "crisk-01-model-step.png", url: "/modelling/new?dataset=sample-ds-pump-modes", settle: 1500,
+    { file: "crisk-01-model-step.png", url: "/models/new?dataset=sample-ds-pump-modes", settle: 1500,
       async act(page) {
         await chooseOption(page, "Failure mode (optional)", /^failure_mode/);
         await page.getByRole("button", { name: /^Next$/ }).click(); await wait(1200);
       } },
-    { file: "crisk-02-incidence.png", url: "/modelling/m/sample-model-pump-modes", settle: 2500 },
-    { file: "crisk-03-by-site.png", url: "/modelling/m/sample-model-pump-modes", settle: 2500,
+    { file: "crisk-02-incidence.png", url: "/models/m/sample-model-pump-modes", settle: 2500 },
+    { file: "crisk-03-by-site.png", url: "/models/m/sample-model-pump-modes", settle: 2500,
       async act(page) { await page.locator("button.gofr-link").click(); await wait(1000); } },
     // --- Covariates: ticking them, the PH coefficients, a changing-load schedule ---
-    { file: "cov-01-covariates.png", url: "/modelling/new?dataset=sample-ds-seal-alt", settle: 1500,
+    { file: "cov-01-covariates.png", url: "/models/new?dataset=sample-ds-seal-alt", settle: 1500,
       async act(page) {
         await page.getByText("Advanced (regression): covariates").click(); await wait(400);
         await page.locator(".cov-chip", { hasText: "temp_C" }).click();
@@ -748,18 +748,18 @@ async function main() {
         await page.locator(".cov-chip", { hasText: "temp_C" }).evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 420));
         await wait(500);
       } },
-    { file: "cov-02-coefficients.png", url: "/modelling/m/sample-model-seal-weibull-ph", settle: 2500,
+    { file: "cov-02-coefficients.png", url: "/models/m/sample-model-seal-weibull-ph", settle: 2500,
       async act(page) { await press(page, /^Coefficients$/); await wait(1200); } },
-    { file: "cov-03-schedule.png", url: "/modelling/m/sample-model-pump-load-weibull-ph", settle: 3000 },
+    { file: "cov-03-schedule.png", url: "/models/m/sample-model-pump-load-weibull-ph", settle: 3000 },
     // --- One-shot devices: the per-demand form, and a model made from it
     // (deleted straight after its shot) ---
-    { file: "demand-01-new.png", url: "/modelling/new?mode=perdemand", settle: 1200,
+    { file: "demand-01-new.png", url: "/models/new?mode=perdemand", settle: 1200,
       async act(page) { await fillPerDemand(page); } },
-    { file: "demand-02-result.png", url: "/modelling/new?mode=perdemand", settle: 1200,
+    { file: "demand-02-result.png", url: "/models/new?mode=perdemand", settle: 1200,
       async act(page) {
         await fillPerDemand(page);
         await page.getByRole("button", { name: /^Create model$/ }).click();
-        await page.waitForURL(/\/modelling\/m\//, { timeout: 20000 }); await wait(2000);
+        await page.waitForURL(/\/models\/m\//, { timeout: 20000 }); await wait(2000);
         this.modelId = new URL(page.url()).pathname.split("/").pop();
       },
       async cleanup() {
@@ -790,7 +790,7 @@ async function main() {
   // Shots needing purpose-built fixtures (created below, deleted afterwards).
   const fixtureShots = (fx) => [
     // --- RCM study: deciding a failure mode, with the sample analysis as evidence ---
-    { file: "rcm-02-decision.png", url: `/rcm/studies/${fx.rcmStudyId}`, settle: 1500,
+    { file: "rcm-02-decision.png", url: `/maintenance/rcm/${fx.rcmStudyId}`, settle: 1500,
       async act(page) {
         await page.getByText("+ Decision").first().click(); await wait(600);
         const m = page.locator(".decision-modal");
@@ -810,34 +810,34 @@ async function main() {
         await page.getByText("colleague@example.com").waitFor({ timeout: 20000 }); await wait(800);
       } },
     // --- Load-sharing ---
-    { file: "loadshare-01-config.png", url: `/rbds/b/${fx.loadshare.rbdId}`, settle: 1600,
+    { file: "loadshare-01-config.png", url: `/systems/b/${fx.loadshare.rbdId}`, settle: 1600,
       async act(page) { await page.locator(".rbd-loadshare").dblclick(); await wait(1500); } },
     // --- Build an RBD (the seeded sample diagram) ---
-    { file: "rbd-01-builder.png", url: "/rbds/b/sample-rbd-pump-station", settle: 2000, act: arrange },
-    { file: "rbd-02-results.png", url: "/rbds/b/sample-rbd-pump-station", settle: 1200, act: calculate },
+    { file: "rbd-01-builder.png", url: "/systems/b/sample-rbd-pump-station", settle: 2000, act: arrange },
+    { file: "rbd-02-results.png", url: "/systems/b/sample-rbd-pump-station", settle: 1200, act: calculate },
     // Availability guide.
-    { file: "availability-01-new.png", url: "/rbds/b", settle: 900 },
-    { file: "availability-02-system.png", url: `/rbds/b/${fx.repairableId}`, settle: 1200,
+    { file: "availability-01-new.png", url: "/systems/b", settle: 900 },
+    { file: "availability-02-system.png", url: `/systems/b/${fx.repairableId}`, settle: 1200,
       async act(page) { await page.locator(".rbd-mode-select .sel-trigger, .sel-trigger", { hasText: /^Repairable$/ }).first().click(); await wait(700); } },
-    { file: "availability-03-add.png", url: `/rbds/b/${fx.repairableId}`, settle: 1200,
+    { file: "availability-03-add.png", url: `/systems/b/${fx.repairableId}`, settle: 1200,
       async act(page) { await page.getByRole("button", { name: "Add block" }).click(); await wait(600); } },
-    { file: "availability-04-models.png", url: `/rbds/b/${fx.repairableId}`, settle: 1400,
+    { file: "availability-04-models.png", url: `/systems/b/${fx.repairableId}`, settle: 1400,
       async act(page) { await page.locator(".rbd-comp", { hasText: "Controller" }).dblclick(); await wait(900); } },
-    { file: "availability-05-wired.png", url: `/rbds/b/${fx.repairableId}`, settle: 1400, act: arrange },
-    { file: "availability-06-validate.png", url: `/rbds/b/${fx.repairableId}`, settle: 900, act: validateAndShowCheck },
-    { file: "availability-07-results.png", url: `/rbds/b/${fx.repairableId}`, settle: 900, act: calculate },
+    { file: "availability-05-wired.png", url: `/systems/b/${fx.repairableId}`, settle: 1400, act: arrange },
+    { file: "availability-06-validate.png", url: `/systems/b/${fx.repairableId}`, settle: 900, act: validateAndShowCheck },
+    { file: "availability-07-results.png", url: `/systems/b/${fx.repairableId}`, settle: 900, act: calculate },
     // Common-cause guide.
-    { file: "ccf-01-select.png", url: `/rbds/b/${fx.ccfUngroupedId}`, settle: 1400,
+    { file: "ccf-01-select.png", url: `/systems/b/${fx.ccfUngroupedId}`, settle: 1400,
       async act(page) { await arrange(page); await selectPumps(page); } },
-    { file: "ccf-02-beta.png", url: `/rbds/b/${fx.ccfUngroupedId}`, settle: 1400,
+    { file: "ccf-02-beta.png", url: `/systems/b/${fx.ccfUngroupedId}`, settle: 1400,
       async act(page) { await arrange(page); await selectPumps(page); await page.getByRole("button", { name: /Common-cause group/i }).click(); await wait(900); } },
-    { file: "ccf-03-grouped.png", url: `/rbds/b/${fx.ccfId}`, settle: 1400, act: arrange },
-    { file: "ccf-04-impact.png", url: `/rbds/b/${fx.ccfId}`, settle: 900, act: calculate },
+    { file: "ccf-03-grouped.png", url: `/systems/b/${fx.ccfId}`, settle: 1400, act: arrange },
+    { file: "ccf-04-impact.png", url: `/systems/b/${fx.ccfId}`, settle: 900, act: calculate },
     // Safety function: a second valve alongside the first, in a common-cause group.
-    { file: "sif-03-two-valves.png", url: `/rbds/b/${fx.sifId}`, settle: 1600, act: arrange },
+    { file: "sif-03-two-valves.png", url: `/systems/b/${fx.sifId}`, settle: 1600, act: arrange },
     // Condition-based risk: the new-model page with the demo fleet's two tables,
     // the risk table, one unit's view, and a unit as an RBD block.
-    { file: "cbr-01-new.png", url: "/modelling/joint/new", settle: 1500,
+    { file: "cbr-01-new.png", url: "/models/joint/new", settle: 1500,
       async act(page) {
         await chooseOption(page, "Lifetimes: one row per unit", /^Pump lives/);
         await chooseOption(page, "Readings: one row per reading", /^Pump vibration/);
@@ -845,27 +845,27 @@ async function main() {
         await page.getByLabel("load changes the path").check();
         await wait(800);
       } },
-    { file: "cbr-02-risk.png", url: `/modelling/joint/${fx.joint.modelId}`, settle: 3000 },
-    { file: "cbr-03-unit.png", url: `/modelling/joint/${fx.joint.modelId}`, settle: 3000,
+    { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000 },
+    { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000,
       async act(page) {
         await page.locator("#joint-unit-view").evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 80));
         await page.locator(".joint-unit-sum").waitFor({ timeout: 20000 }); await wait(2000);
       } },
-    { file: "cbr-04-rbd.png", url: `/rbds/b/${fx.joint.rbdId}`, settle: 1600,
+    { file: "cbr-04-rbd.png", url: `/systems/b/${fx.joint.rbdId}`, settle: 1600,
       async act(page) { await page.locator(".rbd-comp", { hasText: "Pump P8" }).dblclick(); await wait(1500); } },
     // Sharing: the Share dialog on a model of your own.
-    { file: "share-01-dialog.png", url: `/modelling/m/${fx.ownModelId}`, settle: 2500,
+    { file: "share-01-dialog.png", url: `/models/m/${fx.ownModelId}`, settle: 2500,
       async act(page) {
         await page.locator(".page-header .ovm button").first().click(); await wait(400);
         await page.getByRole("button", { name: /^Share$/ }).click(); await wait(1200);
       } },
     // --- Outage history: a year of real outages on a saved pump station ---
-    { file: "outage-01-history.png", url: `/rbds/b/${fx.outageId}`, settle: 1600,
+    { file: "outage-01-history.png", url: `/systems/b/${fx.outageId}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-tabs .tab", { hasText: /^Outage history$/ }).click();
         await page.locator(".rbd-avail-hero").waitFor({ timeout: 30000 }); await wait(2500);
       } },
-    { file: "outage-02-fit.png", url: `/rbds/b/${fx.outageId}`, settle: 1600,
+    { file: "outage-02-fit.png", url: `/systems/b/${fx.outageId}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-tabs .tab", { hasText: /^Outage history$/ }).click();
         await page.locator(".rbd-avail-hero").waitFor({ timeout: 30000 }); await wait(1000);
@@ -875,29 +875,29 @@ async function main() {
         await wait(800);
       } },
     // --- Network: the builder, then the Calculator at 10 years ---
-    { file: "network-01-builder.png", url: `/rbds/b/${fx.networkId}`, settle: 2000 },
-    { file: "network-02-result.png", url: `/rbds/b/${fx.networkId}`, settle: 1600,
+    { file: "network-01-builder.png", url: `/systems/b/${fx.networkId}`, settle: 2000 },
+    { file: "network-02-result.png", url: `/systems/b/${fx.networkId}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-tabs .tab", { hasText: /^Calculator$/ }).click(); await wait(600);
         await page.locator(".rbd-network-controls input[type=number]").fill("10");
         await page.getByText(/stay connected/).first().waitFor({ timeout: 30000 }); await wait(2000);
       } },
     // --- Targets and design (rbd-targets-and-design) ---
-    { file: "targets-01-allocate.png", url: `/rbds/b/${fx.design?.train}`, settle: 1600,
+    { file: "targets-01-allocate.png", url: `/systems/b/${fx.design?.train}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Targets");
         await page.getByLabel("Mission time (hours)").fill("500");
         await page.getByRole("button", { name: /^Allocate$/ }).click();
         await page.locator(".rbd-targets-result").waitFor({ timeout: 30000 }); await wait(800);
       } },
-    { file: "targets-02-availability.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "targets-02-availability.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Targets");
         await page.getByRole("button", { name: /^Allocate$/ }).click();
         await page.locator(".rbd-targets-result").waitFor({ timeout: 30000 }); await wait(800);
         await scrollTo(page.locator(".rbd-targets-result"), 260);
       } },
-    { file: "targets-03-design.png", url: `/rbds/b/${fx.design?.train}`, settle: 1600,
+    { file: "targets-03-design.png", url: `/systems/b/${fx.design?.train}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Design");
         await press(page, "Cheapest to reach a target"); await wait(300);
@@ -907,7 +907,7 @@ async function main() {
         await page.locator(".rbd-design-result").waitFor({ timeout: 60000 }); await wait(1500);
         await scrollTo(page.locator(".rbd-design-result"), 120);
       } },
-    { file: "targets-04-cheapest.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "targets-04-cheapest.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Design");
         await page.getByRole("button", { name: /^Find the cheapest design$/ }).click();
@@ -915,12 +915,12 @@ async function main() {
         await scrollTo(page.locator(".rbd-cheapest-result"), 120);
       } },
     // --- Phased missions ---
-    { file: "phases-01-editor.png", url: `/rbds/b/${fx.design?.flight}`, settle: 1600,
+    { file: "phases-01-editor.png", url: `/systems/b/${fx.design?.flight}`, settle: 1600,
       async act(page) {
         await builderMenu(page, /^Phased mission/); await wait(800);
         await page.locator(".rbd-phase-needs summary").nth(1).click(); await wait(500);
       } },
-    { file: "phases-02-result.png", url: `/rbds/b/${fx.design?.flight}`, settle: 1400,
+    { file: "phases-02-result.png", url: `/systems/b/${fx.design?.flight}`, settle: 1400,
       async act(page) {
         await calculate(page);
         await page.locator(".rbd-mission-body").waitFor({ timeout: 30000 }); await wait(1500);
@@ -928,7 +928,7 @@ async function main() {
         await scrollTo(page.locator(".rbd-mission"), 40);
       } },
     // --- Production availability ---
-    { file: "production-01-capacity.png", url: `/rbds/b/${fx.design?.solar}`, settle: 1600,
+    { file: "production-01-capacity.png", url: `/systems/b/${fx.design?.solar}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-comp", { hasText: "Inverter 1" }).dblclick(); await wait(1200);
         // Scroll the dialog's body to its end, where the Capacity section is.
@@ -939,7 +939,7 @@ async function main() {
         });
         await wait(500);
       } },
-    { file: "production-02-result.png", url: `/rbds/b/${fx.design?.solar}`, settle: 1400,
+    { file: "production-02-result.png", url: `/systems/b/${fx.design?.solar}`, settle: 1400,
       async act(page) {
         await calculate(page);
         await page.locator(".rbd-production-body").waitFor({ timeout: 30000 }); await wait(1000);
@@ -947,28 +947,28 @@ async function main() {
         await scrollTo(page.locator(".rbd-production"), 40);
       } },
     // --- Costs, intervals and what to improve ---
-    { file: "costs-01-block.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "costs-01-block.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await page.locator(".rbd-comp", { hasText: "Pump A" }).dblclick(); await wait(1000);
         await page.locator(".modal summary", { hasText: /^Costs/ }).first().evaluate((el) => el.scrollIntoView({ block: "center" }));
         await wait(500);
       } },
-    { file: "costs-02-diagram.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "costs-02-diagram.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) { await builderMenu(page, /^Costs…/); await wait(800); } },
-    { file: "costs-03-ownership.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1400,
+    { file: "costs-03-ownership.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1400,
       async act(page) {
         await calculate(page);
         await page.locator("summary", { hasText: /^Details$/ }).last().click(); await wait(1500);
         await scrollTo(page.locator(".ds-section-h", { hasText: "Cost of ownership" }), 40);
       } },
-    { file: "costs-04-intervals.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1600,
+    { file: "costs-04-intervals.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
         await rbdTab(page, "Design");
         await page.getByRole("button", { name: /^Choose intervals$/ }).click();
         await page.locator(".rbd-intervals .rbd-compare-verdict").waitFor({ timeout: 90000 }); await wait(1000);
         await scrollTo(page.locator(".rbd-intervals"), 40);
       } },
-    { file: "costs-05-improve.png", url: `/rbds/b/${fx.design?.repairable}`, settle: 1400,
+    { file: "costs-05-improve.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1400,
       async act(page) {
         await calculate(page);
         await page.locator(".rbd-improve").getByRole("radio", { name: "Cost" }).click();

@@ -11,7 +11,7 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
-// Modelling › Non-repairable models: the life-data models list.
+// Models › Non-repairable models: the life-data models list.
 export default function ModellingHome() {
   const navigate = useNavigate();
   const { models, loading, refresh } = useModels();
@@ -28,11 +28,11 @@ export default function ModellingHome() {
     }
   };
 
-  const newModel = <button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>;
+  const newModel = <button onClick={() => navigate("/models/new")}><PlusIcon /> New model</button>;
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="models"
         title="Non-repairable models"
         purpose="Life distributions and proportional-hazards models fitted to failure and running times."
         help={HELP}
@@ -45,7 +45,7 @@ export default function ModellingHome() {
 
       <ModelLibrary
         models={loading ? null : models}
-        onOpen={(id) => navigate(`/modelling/m/${id}`)}
+        onOpen={(id) => navigate(`/models/m/${id}`)}
         onDelete={onDelete}
         help={HELP}
         empty={{

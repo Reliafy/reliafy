@@ -34,7 +34,7 @@ const withModel = (path, id, extra = {}) => {
 // The tool pages, opened with the saved model ``id`` chosen.
 export function nextStepLink(step, id, { unit = "" } = {}) {
   if (step === "replacement") return withModel("/strategy/replacement", id);
-  if (step === "fleet") return withModel("/fleet", id, { new: "1" });
+  if (step === "fleet") return withModel("/forecasts", id, { new: "1" });
   if (step === "test") return withModel("/strategy/test-planning", id, unit ? { unit } : {});
   return null;
 }

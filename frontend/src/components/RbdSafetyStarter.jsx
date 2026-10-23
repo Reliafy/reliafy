@@ -24,7 +24,7 @@ export default function SafetyStarterCard() {
           How it works
         </button>
       </>}
-      to="/rbds/b"
+      to="/systems/b"
       state={{ starter: "safety" }}
       cta="Open the starter"
     />

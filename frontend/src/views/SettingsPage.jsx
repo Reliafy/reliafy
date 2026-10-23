@@ -7,6 +7,7 @@ import ConnectedAppsPanel from "../components/ConnectedAppsPanel.jsx";
 import McpOnRequest from "../components/McpOnRequest.jsx";
 import TeamInvites from "../components/TeamInvites.jsx";
 import TimeZonePicker from "../components/TimeZonePicker.jsx";
+import { RolesCard } from "../components/RolePicker.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { initials } from "../components/Sidebar.jsx";
 import Button from "../components/ui/Button.jsx";
@@ -206,6 +207,9 @@ export default function SettingsPage() {
               </div>
             </div>
           </Card>
+
+          {/* What do you do: shapes the menu's order and what Home leads with. */}
+          <RolesCard style={{ marginTop: "1rem" }} />
 
           <Card style={{ marginTop: "1rem" }}>
             <CardHeader

@@ -8,6 +8,7 @@ import VerifyEmailBanner from "./components/VerifyEmailBanner.jsx";
 import { WalkthroughProvider } from "./components/Walkthrough.jsx";
 const BillingPage = lazy(() => import("./views/BillingPage.jsx"));
 const HomePage = lazy(() => import("./views/HomePage.jsx"));
+const ReportsPage = lazy(() => import("./views/ReportsPage.jsx"));
 const ModellingHome = lazy(() => import("./views/ModellingHome.jsx"));
 const AllModelsPage = lazy(() => import("./views/AllModelsPage.jsx"));
 const NewModelPage = lazy(() => import("./views/NewModelPage.jsx"));
@@ -63,6 +64,8 @@ const ChangesPage = lazy(() => import("./views/ChangesPage.jsx"));
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { unmatchedRoute } from "./appConfig.js";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
+import { RolesProvider } from "./RolesProvider.jsx";
+import { MOVED, fillMoved } from "./redirects.js";
 
 // The authenticated app shell. This module is code-split: App.jsx
 // lazy-imports it, so the public/marketing pages ship without the app bundle.
@@ -71,26 +74,13 @@ import { useWorkspace } from "./WorkspaceProvider.jsx";
 // Flow) arrive with the pages that use them. The chart module is prefetched
 // once the browser is idle so the first chart page doesn't wait for it.
 
-// Old bookmarks carried MODEL ids; fleets are their own ids now, so the
-// safest landing is the tracking index.
-function TrackingRedirect() {
-  useParams();
-  return <Navigate to="/fleet/tracking" replace />;
-}
-
-// The Demonstration test page became Test planning's Demonstration tab: old
-// links (a model's "Plan a test", bookmarks) keep their query string.
-// Datasets moved into Modelling as "Data": old links (emails, shares, API
-// and MCP results saved before the move) keep their query string and hash.
-function DatasetRedirect() {
-  const { id } = useParams();
+// An earlier address (redirects.js): to the page's new place, with the same
+// ids, query, #hash and navigation state.
+function Moved({ to }) {
+  const params = useParams();
   const { search, hash, state } = useLocation();
-  return <Navigate to={`/modelling/data${id ? `/${encodeURIComponent(id)}` : ""}${search}${hash}`} state={state} replace />;
-}
-
-function DemonstrationTestRedirect() {
-  const { search } = useLocation();
-  return <Navigate to={`/strategy/test-planning${search}`} replace />;
+  const encoded = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, encodeURIComponent(v ?? "")]));
+  return <Navigate to={fillMoved(to, encoded) + search + hash} state={state} replace />;
 }
 
 // The desktop rail's collapsed/expanded choice is remembered per device.
@@ -161,6 +151,7 @@ export default function AppShell() {
     return () => window.clearTimeout(id);
   }, []);
   return (
+    <RolesProvider>
     <WalkthroughProvider>
       <NavBar
         menuOpen={phone && menuOpen}
@@ -182,36 +173,55 @@ export default function AppShell() {
           <Routes>
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="/home" element={<HomePage />} />
-            {/* Modelling opens on the full model list; "All models" was that list. */}
-            <Route path="/modelling" element={<AllModelsPage />} />
-            <Route path="/modelling/models" element={<Navigate to="/modelling" replace />} />
-            <Route path="/modelling/data" element={<DatasetsHome />} />
-            <Route path="/modelling/data/:id" element={<DatasetPage />} />
-            <Route path="/modelling/life" element={<ModellingHome />} />
-            <Route path="/modelling/new" element={<NewModelPage />} />
-            <Route path="/modelling/degradation" element={<DegradationHome />} />
-            <Route path="/modelling/degradation/:id" element={<DegradationModelPage />} />
-            <Route path="/modelling/recurrent" element={<RecurrentHome />} />
-            <Route path="/modelling/recurrent/new" element={<RecurrentNewPage />} />
-            <Route path="/modelling/recurrent/:id" element={<RecurrentModelPage />} />
-            <Route path="/modelling/alt" element={<AltHome />} />
-            <Route path="/modelling/alt/new" element={<AltNewPage />} />
-            <Route path="/modelling/alt/:id" element={<AltModelPage />} />
-            <Route path="/modelling/joint" element={<JointHome />} />
-            <Route path="/modelling/joint/new" element={<JointNewPage />} />
-            <Route path="/modelling/joint/:id" element={<JointModelPage />} />
-            <Route path="/modelling/m/:id" element={<ModelPage />} />
-            {/* Each section opens on its list (#312); the old list URLs redirect. */}
-            <Route path="/rbds" element={<RbdHome />} />
-            <Route path="/rbds/list" element={<Navigate to="/rbds" replace />} />
-            <Route path="/rbds/b" element={<RbdBuilder />} />
-            <Route path="/rbds/b/:id" element={<RbdBuilder />} />
-            <Route path="/rbds/runs" element={<RbdRuns />} />
-            <Route path="/rbds/runs/compare" element={<RbdRunsCompare />} />
-            <Route path="/rbds/runs/:runId" element={<RbdRunsDetail />} />
-            <Route path="/datasets" element={<DatasetRedirect />} />
-            <Route path="/datasets/list" element={<DatasetRedirect />} />
-            <Route path="/datasets/d/:id" element={<DatasetRedirect />} />
+
+            {/* Design: systems as designed. */}
+            <Route path="/systems" element={<RbdHome />} />
+            <Route path="/systems/b" element={<RbdBuilder />} />
+            <Route path="/systems/b/:id" element={<RbdBuilder />} />
+            <Route path="/systems/runs" element={<RbdRuns />} />
+            <Route path="/systems/runs/compare" element={<RbdRunsCompare />} />
+            <Route path="/systems/runs/:runId" element={<RbdRunsDetail />} />
+            {maintenanceEnabled && <Route path="/systems/structure" element={<MaintenancePartsPage view="structure" />} />}
+
+            {/* Operate: the assets as maintained (Reliafy Maintenance), and
+                their maintenance. ("/assets" is where the server keeps the
+                build's files, so the register lives at /asset-register.) */}
+            {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceHome part="assets" />} />}
+            {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}
+            {maintenanceEnabled && <Route path="/asset-register/items" element={<MaintenanceItems />} />}
+            {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}
+            {maintenanceEnabled && <Route path="/asset-register/locations" element={<MaintenanceLocations />} />}
+            {maintenanceEnabled && <Route path="/asset-register/locations/:id" element={<MaintenanceLocation />} />}
+            {maintenanceEnabled && <Route path="/asset-register/classes" element={<MaintenanceClasses />} />}
+            {maintenanceEnabled && <Route path="/asset-register/classes/:name" element={<MaintenanceClasses />} />}
+            {maintenanceEnabled && <Route path="/asset-register/parts" element={<MaintenancePartsPage />} />}
+            {maintenanceEnabled && <Route path="/asset-register/parts/:id" element={<MaintenancePart />} />}
+            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome part="work" />} />}
+            {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
+            <Route path="/maintenance/rcm" element={<RcmHome />} />
+            <Route path="/maintenance/rcm/:id" element={<RcmStudyPage />} />
+
+            {/* Analyse: the calculations. */}
+            <Route path="/data" element={<DatasetsHome />} />
+            <Route path="/data/:id" element={<DatasetPage />} />
+            {/* Models opens on every model; its children are the types. */}
+            <Route path="/models" element={<AllModelsPage />} />
+            <Route path="/models/life" element={<ModellingHome />} />
+            <Route path="/models/new" element={<NewModelPage />} />
+            <Route path="/models/m/:id" element={<ModelPage />} />
+            <Route path="/models/degradation" element={<DegradationHome />} />
+            <Route path="/models/degradation/:id" element={<DegradationModelPage />} />
+            <Route path="/models/recurrent" element={<RecurrentHome />} />
+            <Route path="/models/recurrent/new" element={<RecurrentNewPage />} />
+            <Route path="/models/recurrent/:id" element={<RecurrentModelPage />} />
+            <Route path="/models/alt" element={<AltHome />} />
+            <Route path="/models/alt/new" element={<AltNewPage />} />
+            <Route path="/models/alt/:id" element={<AltModelPage />} />
+            <Route path="/models/joint" element={<JointHome />} />
+            <Route path="/models/joint/new" element={<JointNewPage />} />
+            <Route path="/models/joint/:id" element={<JointModelPage />} />
+            <Route path="/models/tracking" element={<FleetTrackingHome />} />
+            <Route path="/models/tracking/:fleetId" element={<StrategyTracking />} />
             <Route path="/strategy" element={<StrategyAnalyses />} />
             <Route path="/strategy/replacement" element={<StrategyReplacement />} />
             <Route path="/strategy/compare" element={<StrategyCompare />} />
@@ -221,31 +231,15 @@ export default function AppShell() {
             <Route path="/strategy/test-planning/life" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/accelerated" element={<StrategyTestPlanning />} />
             <Route path="/strategy/test-planning/comparison" element={<StrategyTestPlanning />} />
-            <Route path="/strategy/demonstration-test" element={<DemonstrationTestRedirect />} />
-            <Route path="/strategy/tracking" element={<Navigate to="/fleet/tracking" replace />} />
-            <Route path="/strategy/tracking/:modelId" element={<TrackingRedirect />} />
-            <Route path="/fleet" element={<FleetForecasts />} />
-            <Route path="/fleet/tracking" element={<FleetTrackingHome />} />
-            <Route path="/fleet/tracking/:fleetId" element={<StrategyTracking />} />
-            <Route path="/fleet/forecasts" element={<Navigate to="/fleet" replace />} />
-            <Route path="/fleet/forecasts/:id" element={<FleetForecastPage />} />
-            <Route path="/strategy/analyses" element={<Navigate to="/strategy" replace />} />
             <Route path="/strategy/analyses/:id" element={<StrategyAnalysisPage />} />
+            {/* The fleets' forecasts and (Reliafy Maintenance) the position classes'. */}
+            <Route path="/forecasts" element={<FleetForecasts />} />
+            <Route path="/forecasts/:id" element={<FleetForecastPage />} />
+
+            <Route path="/reports" element={<ReportsPage />} />
             {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}
-            <Route path="/rcm" element={<RcmHome />} />
-            <Route path="/rcm/studies" element={<Navigate to="/rcm" replace />} />
-            <Route path="/rcm/studies/:id" element={<RcmStudyPage />} />
-            {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
-            {maintenanceEnabled && <Route path="/maintenance/positions/:id" element={<MaintenancePosition />} />}
-            {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
-            {maintenanceEnabled && <Route path="/maintenance/items" element={<MaintenanceItems />} />}
-            {maintenanceEnabled && <Route path="/maintenance/items/:id" element={<MaintenanceItem />} />}
-            {maintenanceEnabled && <Route path="/maintenance/locations" element={<MaintenanceLocations />} />}
-            {maintenanceEnabled && <Route path="/maintenance/locations/:id" element={<MaintenanceLocation />} />}
-            {maintenanceEnabled && <Route path="/maintenance/classes" element={<MaintenanceClasses />} />}
-            {maintenanceEnabled && <Route path="/maintenance/classes/:name" element={<MaintenanceClasses />} />}
-            {maintenanceEnabled && <Route path="/maintenance/parts" element={<MaintenancePartsPage />} />}
-            {maintenanceEnabled && <Route path="/maintenance/parts/:id" element={<MaintenancePart />} />}
+
+            {/* Account. */}
             <Route path="/team" element={<TeamSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/api-docs" element={<ApiDocsPage page="" />} />
@@ -257,11 +251,14 @@ export default function AppShell() {
             <Route path="/api-docs/files" element={<ApiDocsPage page="files" />} />
             <Route path="/api-docs/mcp" element={<ApiDocsPage page="mcp" />} />
             <Route path="/api-docs/v1-routes" element={<ApiDocsPage page="v1-routes" />} />
-            {/* API tokens moved into Settings; keep old links working. */}
-            <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/changes" element={<ChangesPage />} />
             {billing && <Route path="/billing" element={<BillingPage />} />}
+
+            {/* Earlier addresses, each to its page's new place (redirects.js). */}
+            {MOVED.map((m) => <Route key={m.path} path={m.path} element={<Moved to={m.to} />} />)}
+            {/* API tokens moved into Settings; keep old links working. */}
+            <Route path="/tokens" element={<Navigate to="/settings?tab=api" replace />} />
             {/* Until the config loads, /billing and /agent aren't registered:
                 wait rather than redirect a direct load of them. */}
             <Route
@@ -277,5 +274,6 @@ export default function AppShell() {
         {ai && <ChatPanel />}
       </div>
     </WalkthroughProvider>
+    </RolesProvider>
   );
 }

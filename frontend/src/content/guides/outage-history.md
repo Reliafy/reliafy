@@ -3,7 +3,7 @@ title: "Check a diagram against its real outage history"
 task: "I have a log of real outages. What availability did the system actually achieve, and does my diagram agree?"
 category: "Reliability block diagrams"
 prerequisites: "A saved diagram of the system, and a log of its blocks' outages: which block, when it went down, when it came back."
-related_href: "/rbds"
+related_href: "/systems"
 related_label: "Open the RBDs page"
 order: 38
 ---
@@ -142,7 +142,7 @@ people you share the diagram with or on a public link.
 
 A different kind of history: every availability simulation you run on a
 repairable diagram is recorded. On the **Calculator** tab, open **Details**
-after a simulation and follow **Run history**. The **[Simulation runs](/rbds/runs)** page
+after a simulation and follow **Run history**. The **[Simulation runs](/systems/runs)** page
 lists them, newest first, with the availability over the window, the method,
 the runtime and who ran each one, from the app or a connected AI agent.
 

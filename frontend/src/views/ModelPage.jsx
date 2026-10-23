@@ -38,7 +38,7 @@ export default function ModelPage() {
   const onDelete = async () => {
     if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     await deleteModel(id);
-    navigate("/modelling/life");
+    navigate("/models/life");
   };
 
   // A competing-risks fit (#177) is refitted from the wizard, not edited here.
@@ -47,7 +47,7 @@ export default function ModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Life data models", to: "/modelling/life" }]}
+        crumbs={[{ label: "Models", to: "/models" }, { label: "Non-repairable models", to: "/models/life" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{model.unit ? ` · ${model.unit}` : ""}</>}

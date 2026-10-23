@@ -381,7 +381,7 @@ export function Proposals({ proposals, onDecided, showPosition = true }) {
         <div key={p.id} className="maint-proposal">
           <p>
             <strong>{p.task?.name}</strong>
-            {showPosition && p.position && <> on <Link to={`/maintenance/positions/${p.position.id}`}>{p.position.name}</Link></>}
+            {showPosition && p.position && <> on <Link to={`/asset-register/positions/${p.position.id}`}>{p.position.name}</Link></>}
             {": "}
             {p.kind === "interval"
               ? <>every {p.current.interval} {p.current.unit} → <strong>every {p.proposed.interval} {p.proposed.unit}</strong></>

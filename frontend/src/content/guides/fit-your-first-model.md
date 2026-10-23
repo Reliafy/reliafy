@@ -3,7 +3,7 @@ title: "Fit your first non-repairable model from a CSV"
 task: "How do I turn a spreadsheet of failure times into a fitted reliability model?"
 category: "Getting started"
 prerequisites: "A CSV with a column of failure times. Censored units are welcome but not required."
-related_href: "/modelling/new"
+related_href: "/models/new"
 related_label: "Fit a model"
 order: 1
 ---
@@ -52,8 +52,10 @@ censoring covers most real cases.
 ## Loading it in
 
 Reliafy opens on [Home](/home): what changed, what needs attention and your
-recent work, with **Start here** cards while your workspace is new. From there,
-go to **Modelling → Non-repairable models** and press **New model**, then choose **Upload a
+recent work, with **Start here** cards while your workspace is new. (Tell it
+what you do under [Settings](/settings) → **What do you do?** and the menu puts
+what you use first, and Home leads with it.) From there,
+go to **Models → Non-repairable models** and press **New model**, then choose **Upload a
 CSV or Excel file** (or **Paste values**). The fit runs in four steps, shown
 along the bottom: **Source**, **Data**, **Model** and **Result**. For the
 source, drop a CSV or Excel file straight onto the page, paste a column of
@@ -63,7 +65,7 @@ re-uploading.
 
 ![The new-model flow: drop a CSV or pick a saved dataset](/guides/img/fit-01-new.png)
 
-If your file has no header row, upload it under [Modelling › Data](/modelling/data) → **New dataset** and
+If your file has no header row, upload it under [Data](/data) → **New dataset** and
 tick **No header row**: Reliafy names the columns `col 1`, `col 2`, … so the
 first row stays data rather than being eaten as titles.
 

@@ -10,7 +10,7 @@ test("kinds read in words and link to their pages", () => {
   assert.equal(normaliseKind("work_order"), "WorkOrder");
   assert.equal(normaliseKind("nonsense"), null);
   assert.equal(placePath({ id: "w1", kind: "WorkOrder" }), "/maintenance/work-orders/w1");
-  assert.equal(placePath({ id: "l1", kind: "location" }), "/maintenance/locations/l1");
+  assert.equal(placePath({ id: "l1", kind: "location" }), "/asset-register/locations/l1");
   assert.equal(placePath({ id: "x", kind: "Document" }), null);
 });
 

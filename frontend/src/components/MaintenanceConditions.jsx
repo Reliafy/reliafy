@@ -128,7 +128,7 @@ function ConditionModal({ target, view, entry, onClose, onDone }) {
       {!entry && (
         <Field label="Condition">
           {register === null ? <span className="lib-date">Loading…</span> : register.length === 0 ? (
-            <span className="lib-date">The register is empty: add conditions on the <Link to="/maintenance/classes">Classes</Link> page first.</span>
+            <span className="lib-date">The register is empty: add conditions on the <Link to="/asset-register/classes">Classes</Link> page first.</span>
           ) : (
             <select autoFocus value={conditionId} onChange={(e) => setConditionId(e.target.value)}>
               <option value="">Choose…</option>

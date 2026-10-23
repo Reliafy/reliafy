@@ -501,7 +501,7 @@ def _type_label(etype: str) -> str:
 
 def _link_path(etype: str, artifact_id: str) -> str:
     return {
-        "model": f"/modelling/m/{artifact_id}",
+        "model": f"/models/m/{artifact_id}",
         "strategy_analysis": f"/strategy/analyses/{artifact_id}",
-        "degradation_model": f"/modelling/degradation/{artifact_id}",
+        "degradation_model": f"/models/degradation/{artifact_id}",
     }[etype]

@@ -68,14 +68,14 @@ test("routeMatches: same path and every query value the route sets", () => {
   assert.equal(routeMatches(r, "/strategy/replacement", "?model=m2&planned=200"), false);
   assert.equal(routeMatches(r, "/strategy/replacement", ""), false);
   assert.equal(routeMatches(r, "/strategy", "?model=m1&planned=200"), false);
-  assert.equal(routeMatches("/rcm/studies/s", "/rcm/studies/s", "?anything=1"), true);
+  assert.equal(routeMatches("/maintenance/rcm/s", "/maintenance/rcm/s", "?anything=1"), true);
 });
 
 test("launch links: href, parse and strip", () => {
-  assert.equal(launchHref("rcm"), "/rcm/studies/sample-rcm-truck?walkthrough=rcm");
+  assert.equal(launchHref("rcm"), "/maintenance/rcm/sample-rcm-truck?walkthrough=rcm");
   assert.equal(
     launchHref("fit", { auto: true }),
-    "/modelling/new?dataset=sample-ds-bearings&walkthrough=fit&auto=1"
+    "/models/new?dataset=sample-ds-bearings&walkthrough=fit&auto=1"
   );
   assert.equal(launchHref("nope"), null);
   assert.deepEqual(parseLaunch("?walkthrough=rbd&auto=1"), { id: "rbd", auto: true });
@@ -88,12 +88,12 @@ test("launch links: href, parse and strip", () => {
 
 test("withLaunch: only on the walkthrough's own page", () => {
   assert.equal(
-    withLaunch("/rbds/b/sample-rbd-pump-station", "rbd", { auto: true }),
-    "/rbds/b/sample-rbd-pump-station?walkthrough=rbd&auto=1"
+    withLaunch("/systems/b/sample-rbd-pump-station", "rbd", { auto: true }),
+    "/systems/b/sample-rbd-pump-station?walkthrough=rbd&auto=1"
   );
   // Another diagram gets no walkthrough.
-  assert.equal(withLaunch("/rbds/b/sample-other", "rbd", { auto: true }), "/rbds/b/sample-other");
-  assert.equal(withLaunch("/rbds/b/x", "nope"), "/rbds/b/x");
+  assert.equal(withLaunch("/systems/b/sample-other", "rbd", { auto: true }), "/systems/b/sample-other");
+  assert.equal(withLaunch("/systems/b/x", "nope"), "/systems/b/x");
 });
 
 const STEPS = [{}, { next: "click" }, {}, {}];

@@ -3,7 +3,7 @@ title: "Share models and diagrams with other people"
 task: "How do I show a colleague my analysis, or work on it as a team?"
 category: "Getting started"
 prerequisites: "Something saved — a model, diagram, or analysis."
-related_href: "/modelling"
+related_href: "/models"
 related_label: "Open saved models"
 order: 45
 ---
@@ -49,6 +49,12 @@ Nothing is public until you create a link: once the report is saved, the same
 to print. **Draft notes** has the assistant word the introduction from the
 items' saved figures (it uses AI credits); read it through before publishing,
 and it flags any figure it can't find in the saved results.
+
+### Everything you've shared, in one place
+
+[Reports](/reports) in the menu lists your reports (open one to edit it, or
+press **New report** to start one there), your saved analyses, and every live
+share link with what it shows, so you can see at a glance what's out there.
 
 ## Sharing with a named person — for a specific colleague
 

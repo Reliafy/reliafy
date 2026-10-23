@@ -3,7 +3,7 @@ title: "Run an RCM study with every decision backed by evidence"
 task: "How do I record failure modes, choose a maintenance task for each, and show the analysis behind it?"
 category: "Maintenance strategy"
 prerequisites: "A system to study. Fitted models or saved strategy analyses to cite help, but you can start without them."
-related_href: "/rcm"
+related_href: "/maintenance/rcm"
 related_label: "Open RCM studies"
 order: 25
 ---
@@ -21,7 +21,7 @@ marks each decision **Supported**, **Contradicted** or **Inconclusive**.
 
 ## Start from the sample
 
-Open **RCM** in the sidebar. The list shows the sample *Delivery truck — RCM
+Open [RCM studies](/maintenance/rcm), under **Maintenance** in the menu. The list shows the sample *Delivery truck — RCM
 demo*, with its evidence summarised as chips: *3 supported, 1 contradicted*.
 Open it to see a finished study.
 
@@ -50,7 +50,7 @@ The sample is read-only. To work on your own, create a study.
 
 ## Create a study
 
-On the RCM page, press **New study**. Give it a **Name**, and optionally the
+On the RCM studies page, press **New study**. Give it a **Name**, and optionally the
 **System** it covers and a **Description** of the scope, operating context and
 assumptions. Press **Create study** and the empty worksheet opens.
 
@@ -69,7 +69,7 @@ On the Free plan you can keep one RCM study. Pro has no limit.
 ### Or import an existing worksheet
 
 If your FMEA or RCM worksheet already lives in Excel, press **Import from
-Excel** on the RCM page instead. Drop the workbook in, pick the sheet, and map
+Excel** on the RCM studies page instead. Drop the workbook in, pick the sheet, and map
 its columns: **Function**, **Functional failure**, **Failure mode**,
 **Effects**, **Consequence**, **Decision / task type**, **Task**, **Interval**
 and **Interval unit**. Only **Failure mode** is required. Blank function and

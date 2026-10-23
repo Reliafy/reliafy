@@ -148,9 +148,9 @@ Thanks for signing up. I'm Derryn, and I built Reliafy.
 
 Three ways to start:
 
-1. [Open a sample model](/modelling/m/sample-model-bearings-weibull): a Weibull fit to 30 bearing failure times, with its plots and B-lives.
-2. [Paste failure times](/modelling/new?mode=paste) from a spreadsheet and fit a distribution. Put a 1 next to any unit that's still running.
-3. [Open a sample block diagram](/rbds/b/sample-rbd-pump-station), a controller and two pumps, and change it to match your system.
+1. [Open a sample model](/models/m/sample-model-bearings-weibull): a Weibull fit to 30 bearing failure times, with its plots and B-lives.
+2. [Paste failure times](/models/new?mode=paste) from a spreadsheet and fit a distribution. Put a 1 next to any unit that's still running.
+3. [Open a sample block diagram](/systems/b/sample-rbd-pump-station), a controller and two pumps, and change it to match your system.
 
 If you use Claude or another AI agent, you can [connect it to Reliafy over MCP](/api-docs/mcp) and work from there.
 
@@ -172,7 +172,7 @@ Most people start Reliafy with a block diagram, so here are three things in the 
 
 {_DAY3_TIPS}
 
-The [instrument air sample](/rbds/b/sample-rbd-instrument-air-availability) is a good one to try them on, and the [RBD guide](/guides/build-an-rbd) walks through building your own.
+The [instrument air sample](/systems/b/sample-rbd-instrument-air-availability) is a good one to try them on, and the [RBD guide](/guides/build-an-rbd) walks through building your own.
 
 Reply if you get stuck. It comes to me.
 

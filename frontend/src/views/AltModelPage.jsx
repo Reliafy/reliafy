@@ -29,7 +29,7 @@ export default function AltModelPage() {
   const onDelete = async () => {
     if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
     await deleteAltModel(id);
-    navigate("/modelling/alt");
+    navigate("/models/alt");
   };
 
   const r = model?.results || {};
@@ -37,7 +37,7 @@ export default function AltModelPage() {
   return (
     <div className="app model-page">
       <PageHeader
-        crumbs={[{ label: "Modelling", to: "/modelling" }, { label: "Accelerated life", to: "/modelling/alt" }]}
+        crumbs={[{ label: "Models", to: "/models" }, { label: "Accelerated life", to: "/models/alt" }]}
         title={model ? itemName(model) : "Model"}
         badges={model?.is_sample && <Chip>Sample</Chip>}
         meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}</>}

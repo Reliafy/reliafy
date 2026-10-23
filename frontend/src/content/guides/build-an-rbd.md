@@ -3,7 +3,7 @@ title: "Build a reliability block diagram"
 task: "How do I model a system of components and get its overall reliability?"
 category: "Reliability block diagrams"
 prerequisites: "Non-repairable models for the components — either saved fits or parameters you can type in."
-related_href: "/rbds/b"
+related_href: "/systems/b"
 related_label: "Open the RBD builder"
 order: 10
 ---
@@ -23,7 +23,7 @@ pipework.
 
 ## Laying out the diagram
 
-Open **RBDs → New diagram**. Every diagram runs from an **input** node to an
+Open **Systems → New diagram**. Every diagram runs from an **input** node to an
 **output** node, and the system works whenever there's a complete path between
 them.
 

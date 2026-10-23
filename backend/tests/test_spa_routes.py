@@ -43,8 +43,13 @@ def test_llms_txt_is_served_as_text(site):
 
 
 @pytest.mark.parametrize("path", [
-    "/home", "/modelling", "/modelling/m/abc", "/modelling/data", "/modelling/data/d1", "/rbds/b/123", "/datasets/list", "/datasets/d/d1", "/strategy/replacement",
-    "/fleet/tracking/f1", "/rcm/studies/s1", "/settings", "/team", "/admin", "/billing", "/tokens", "/changes",
+    "/home", "/models", "/models/m/abc", "/data", "/data/d1", "/systems/b/123", "/systems/structure",
+    "/asset-register", "/asset-register/items/i1", "/maintenance", "/maintenance/rcm/s1", "/forecasts/f1",
+    "/models/tracking/f1", "/reports", "/strategy/replacement",
+    # Earlier addresses: the app redirects them, so the server must still serve it.
+    "/modelling", "/modelling/m/abc", "/modelling/data", "/modelling/data/d1", "/rbds/b/123", "/datasets/list",
+    "/datasets/d/d1", "/fleet/tracking/f1", "/rcm/studies/s1", "/maintenance/items/i1",
+    "/settings", "/team", "/admin", "/billing", "/tokens", "/changes",
     "/login", "/oauth/consent", "/p/sometoken", "/unsubscribe", "/api-docs", "/api-docs/tools", "/api-docs/mcp", "/terms", "/privacy",
     "/blog", "/blog/a-post-not-prerendered-yet", "/learn/weibull", "/guides/x", "/reference/weibull",
     "/whats-new/october-2026", "/rcm-software", "/weibull-analysis-software",
@@ -89,7 +94,7 @@ def test_never_leaves_dist(site, path):
 def _route_roots() -> set[str]:
     """The first segment of every route path the React app declares."""
     roots = set()
-    for name in ("src/App.jsx", "src/AppShell.jsx", "src/productPages.jsx"):
+    for name in ("src/App.jsx", "src/AppShell.jsx", "src/productPages.jsx", "src/redirects.js"):
         text = (FRONTEND / name).read_text()
         for path in re.findall(r'path(?:=|:\s*)"(/[^"]*)"', text):
             first = path.strip("/").split("/", 1)[0]
@@ -101,7 +106,7 @@ def _route_roots() -> set[str]:
 def test_spa_roots_match_the_apps_routes():
     """Every route the app draws gets the shell; nothing else does."""
     roots = _route_roots()
-    assert {"modelling", "rbds", "blog", "login", "rcm-software"} <= roots  # the parse works
+    assert {"models", "systems", "modelling", "rbds", "blog", "login", "rcm-software"} <= roots  # the parse works
     assert roots == set(main.SPA_ROOTS)
 
 

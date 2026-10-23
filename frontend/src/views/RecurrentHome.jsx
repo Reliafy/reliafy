@@ -9,8 +9,8 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const HELP = { guide: "recurrent-events" };
 
-// Modelling › Recurrent: repairable-system models. The fit flow lives on its
-// own page (/modelling/recurrent/new).
+// Models › Repairable models: repairable-system models. The fit flow lives on its
+// own page (/models/recurrent/new).
 export default function RecurrentHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
@@ -30,11 +30,11 @@ export default function RecurrentHome() {
     }
   };
 
-  const newModel = <button onClick={() => navigate("/modelling/recurrent/new")}><PlusIcon /> New model</button>;
+  const newModel = <button onClick={() => navigate("/models/recurrent/new")}><PlusIcon /> New model</button>;
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="models"
         title="Repairable models"
         purpose="Repairable systems: is the failure rate improving or worsening?"
         help={HELP}
@@ -45,7 +45,7 @@ export default function RecurrentHome() {
 
       <RecurrentLibrary
         models={models}
-        onOpen={(id) => navigate(`/modelling/recurrent/${id}`)}
+        onOpen={(id) => navigate(`/models/recurrent/${id}`)}
         onDelete={onDelete}
         help={HELP}
         empty={{

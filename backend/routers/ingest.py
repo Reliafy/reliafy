@@ -281,7 +281,7 @@ async def import_model(
         "name": model.name,
         "distribution": (model.results or {}).get("distribution", model.distribution_id),
         "params_only": bool((model.results or {}).get("params_only")),
-        "url": f"/modelling/m/{model.id}",
+        "url": f"/models/m/{model.id}",
     })
 
 

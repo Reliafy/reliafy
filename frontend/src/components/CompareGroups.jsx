@@ -29,8 +29,8 @@ const fmtP = (p) => (p == null ? "—" : p < 0.001 ? "< 0.001" : p < 0.01 ? p.to
 
 // Where to fit a model to rows that are unit histories, not one row per unit.
 const HISTORY_FIT = {
-  recurrent: { to: "/modelling/recurrent/new", label: "fit a recurrent model", what: "repair history" },
-  degradation: { to: "/modelling/degradation", label: "fit a degradation model", what: "measurements" },
+  recurrent: { to: "/models/recurrent/new", label: "fit a recurrent model", what: "repair history" },
+  degradation: { to: "/models/degradation", label: "fit a degradation model", what: "measurements" },
 };
 
 export default function CompareGroups({ dataset, splitBy, onClose }) {

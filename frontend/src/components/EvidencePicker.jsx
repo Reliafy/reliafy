@@ -58,11 +58,11 @@ export default function EvidencePicker({ expectedType, analysisKind, value, onCh
   if (options === null) return <p className="muted-line">Loading evidence options…</p>;
   if (options.length === 0) {
     const what = {
-      model: "non-repairable models (fit one under Modelling)",
+      model: "non-repairable models (fit one under Models)",
       strategy_analysis: analysisKind === "failure_finding"
         ? "saved failure-finding analyses (run the Strategy tool and save it)"
         : "saved replacement analyses (run Optimal replacement and save it)",
-      degradation_model: "degradation models (create one under Modelling → Degradation)",
+      degradation_model: "degradation models (create one under Models → Degradation)",
     }[expectedType];
     return <p className="muted-line">No {what} available yet.</p>;
   }

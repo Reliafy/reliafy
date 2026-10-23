@@ -38,7 +38,7 @@ def test_fit_joint_reports_and_models_fit_joint_saves(env):
 
     saved = _ok(_call(a, "models", {"action": "fit_joint", "name": "Pumps", **args}))
     mid = saved["model_id"]
-    assert saved["url"].endswith(f"/modelling/joint/{mid}")
+    assert saved["url"].endswith(f"/models/joint/{mid}")
     assert [p["value"] for p in saved["parameters"]] == pytest.approx([p["value"] for p in report["parameters"]])
 
     listed = _ok(_call(a, "list", {"kind": "models", "model_type": "joint"}))

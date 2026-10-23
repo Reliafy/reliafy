@@ -486,7 +486,7 @@ def _live_covariate_model(db, fleet: Fleet, owners, model):
         fields = [{"name": s["column"], "label": s.get("label") or s["column"], "type": "number",
                    "default": None} for s in stresses]
         info = {"model_name": doc.name, "model_id": doc.id, "model_kind": "alt",
-                "unit": results.get("unit", ""), "model_url": f"/modelling/alt/{doc.id}",
+                "unit": results.get("unit", ""), "model_url": f"/models/alt/{doc.id}",
                 "notice": results.get("no_finite_maximum")}
         return live, fields, info
     try:
@@ -497,7 +497,7 @@ def _live_covariate_model(db, fleet: Fleet, owners, model):
         return stale("The linked regression model can't be evaluated (its dataset is no longer available).")
     results = model.results or {}
     info = {"model_name": model.name, "model_id": model.id, "model_kind": "regression",
-            "unit": results.get("unit", ""), "model_url": f"/modelling/m/{model.id}",
+            "unit": results.get("unit", ""), "model_url": f"/models/m/{model.id}",
             "notice": results.get("no_finite_maximum")}
     return entry["model"], list(entry.get("fields") or []), info
 

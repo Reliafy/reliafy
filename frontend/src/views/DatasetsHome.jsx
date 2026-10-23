@@ -6,7 +6,7 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
-import { datasetPath } from "../sections.js";
+import { datasetPath } from "../navigation.js";
 import { fitOptions } from "../datasetFit.js";
 import useMenuDismiss from "../components/useMenuDismiss.js";
 import "../components/Datasets.css";
@@ -59,7 +59,7 @@ function RowMenu({ d, onRename, onDelete }) {
   );
 }
 
-// Modelling › Data: the datasets, uploaded, pasted or typed in; open, add or
+// Analyse › Data: the datasets, uploaded, pasted or typed in; open, add or
 // delete. Datasets are content-addressed, so re-uploading a file reuses it.
 export default function DatasetsHome() {
   const navigate = useNavigate();
@@ -121,7 +121,7 @@ export default function DatasetsHome() {
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="data"
         title="Data"
         purpose="Your datasets, stored once and reused by every model fitted from them."
         help={HELP}

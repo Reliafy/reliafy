@@ -13,7 +13,7 @@ const JOINT_COLOR = CATEGORY.blue;
 const HELP = { guide: "condition-based-risk" };
 
 // Condition monitoring models (joint models of readings and failures): the
-// list, like the other model types'. The fit lives on /modelling/joint/new.
+// list, like the other model types'. The fit lives on /models/joint/new.
 export default function JointHome() {
   const navigate = useNavigate();
   const [models, setModels] = useState(null);
@@ -33,13 +33,13 @@ export default function JointHome() {
     }
   };
 
-  const open = (id) => navigate(`/modelling/joint/${id}`);
-  const newModel = <button onClick={() => navigate("/modelling/joint/new")}><PlusIcon /> New model</button>;
+  const open = (id) => navigate(`/models/joint/${id}`);
+  const newModel = <button onClick={() => navigate("/models/joint/new")}><PlusIcon /> New model</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        section="modelling"
+        section="models"
         title="Remaining life from condition readings"
         purpose="Combine readings (vibration, wear, oil debris) and failure history to see each unit's risk and remaining life."
         help={HELP}

@@ -3,7 +3,7 @@ title: "Model load-sharing redundancy"
 task: "How do I model redundant units that share a load, where survivors get stressed?"
 category: "Reliability block diagrams"
 prerequisites: "Failure data gathered at two or more load levels, so you can fit a load-life model."
-related_href: "/rbds/b"
+related_href: "/systems/b"
 related_label: "Open the RBD builder"
 order: 32
 ---
@@ -27,7 +27,7 @@ the load per unit goes up.
 So before you can add a load-sharing block, you need an
 **accelerated-failure-time (AFT) model with load as its single covariate**. In
 practice that means failure data gathered at more than one load level. Fit it
-under **Modelling → New model → Fit to data**: in the Data step choose your
+under **Models → New model → Fit to data**: in the Data step choose your
 failure times as **Time to failure or removal**, open **Advanced (regression):
 covariates** and add your load column; then in the Model step choose an AFT
 model — **Weibull AFT** is the usual starting point.

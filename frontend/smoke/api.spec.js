@@ -9,6 +9,8 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  ["GET", "/api/me/roles"], // what the user does: the menu's order and Home's cards
+  ["GET", "/api/public-links"], // Reports: every shared link
   ["POST", "/api/maintenance/documents/upload"], // PDFs kept in maintenance
   ["GET", "/api/maintenance/documents/smoke/file"],
   ["POST", "/api/test-planning/sequential"], // Test planning

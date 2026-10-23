@@ -104,7 +104,7 @@ def test_0_2_functions_still_work(server):
 
     reliafy.configure(token=server["token"], base_url=server["base"])
     url = reliafy.push_params("weibull", [1200.0, 2.5], name="From a report", unit="hours")
-    assert url.startswith(server["base"] + "/modelling/m/")
+    assert url.startswith(server["base"] + "/models/m/")
     assert any(m["name"] == "From a report" for m in reliafy.models.list())
     ds = reliafy.data.upload("Bearings", csv="hours,failed\n120,1\n340,1\n510,0\n700,1")
     assert ds["n_rows"] == 4

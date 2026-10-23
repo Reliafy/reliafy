@@ -148,7 +148,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
     try {
       const name = (rbds || []).find((d) => d.id === rbdId)?.name || "Diagram";
       const saved = await saveRbd(`${name.replace(/\s*\(sample\)\s*$/i, "")} (copy)`, graph, null, null);
-      navigate(`/rbds/b/${saved.id}`, { state: { compareWith: rbdId } });
+      navigate(`/systems/b/${saved.id}`, { state: { compareWith: rbdId } });
     } catch (err) {
       setError(err.message);
       setCopying(false);

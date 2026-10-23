@@ -12,7 +12,7 @@ import { deleteOrRemoveConfirm } from "../confirm.js";
 
 export const MODELLING_HELP = { walkthrough: "fit", guide: "fit-your-first-model" };
 
-// The Modelling section's landing page: every saved model — life data,
+// The Models section's landing page: every saved model — life data,
 // recurrent, accelerated life, degradation, condition monitoring — in one
 // list, filterable by type. Each type's own list is a child page.
 export default function AllModelsPage() {
@@ -40,10 +40,10 @@ export default function AllModelsPage() {
   return (
     <div className="app">
       <SectionHeader
-        title="Modelling"
-        purpose="Every model you've fitted: life data, recurrent events, accelerated life, degradation and remaining life from condition readings."
+        title="Models"
+        purpose="Every model you've fitted: non-repairable, repairable, accelerated life, degradation and condition monitoring."
         help={MODELLING_HELP}
-        primary={<button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>}
+        primary={<button onClick={() => navigate("/models/new")}><PlusIcon /> New model</button>}
       />
 
       {/* A fit left without saving, with its one-click save (#434). */}
@@ -64,7 +64,7 @@ export default function AllModelsPage() {
         empty={{
           title: "No saved models yet",
           body: "Fit a model to life data, repairs, an accelerated test, wear readings or condition readings, and save it to see it here.",
-          action: <button onClick={() => navigate("/modelling/new")}><PlusIcon /> New model</button>,
+          action: <button onClick={() => navigate("/models/new")}><PlusIcon /> New model</button>,
         }}
         head={[
           <th key="m" style={{ width: "36%" }}>Model</th>,

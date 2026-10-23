@@ -276,7 +276,7 @@ def test_save_persists_and_lists_and_matches_rest_reliability(env):
     saved = _ok(_call(env.token[A], "models", {"action": "fit",
         "data": TIMES, "censored": FLAGS, "unit": "hours", "name": "MCP bearings"}))
     mid = saved["model_id"]
-    assert saved["saved"] and saved["url"].endswith(f"/modelling/m/{mid}")
+    assert saved["saved"] and saved["url"].endswith(f"/models/m/{mid}")
     assert env.db.models.find_one({"_id": mid})["owner_id"] == A
     assert env.db.datasets.find_one({"_id": saved["dataset_id"]})["owner_id"] == A
 

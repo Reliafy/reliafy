@@ -89,7 +89,7 @@ Things a team does differently from your personal workspace:
 - **Who changed what.** Pages such as an RCM study say who edited them last. If
   two people edit the same study at once, the second save is refused rather
   than overwriting the first, and offers to reload the latest version.
-- **What changed.** The **What changed** panel on the Modelling home, and its
+- **What changed.** The **What changed** panel on Home, and its
   **[See all changes](/changes)** page, list what changed in the workspace over the last 30
   days, the last 7 days or since your last visit: new and edited items with who
   edited them, refits whose answer moved, forecasts that moved, alerts that

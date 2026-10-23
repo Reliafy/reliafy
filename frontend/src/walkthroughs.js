@@ -21,7 +21,7 @@ export const SHEET_MAX_WIDTH = 600;
 export const WALKTHROUGHS = {
   fit: {
     title: "Fit a model",
-    route: "/modelling/new?dataset=sample-ds-bearings",
+    route: "/models/new?dataset=sample-ds-bearings",
     steps: [
       {
         target: ['[data-wt="fit-data"] .ds-summary', '[data-wt="fit-data"]'],
@@ -39,7 +39,7 @@ export const WALKTHROUGHS = {
       },
       {
         target: ['[data-wt="fit-result"] .gof-card', '[data-wt="fit-result"]'],
-        text: "The answer: a shape β above 1 means failures rise with age; name the model and save it to use in Strategy and Fleet.",
+        text: "The answer: a shape β above 1 means failures rise with age; name the model and save it to use in Strategy and Forecasts.",
         wait: 15000,
       },
     ],
@@ -70,7 +70,7 @@ export const WALKTHROUGHS = {
   },
   rbd: {
     title: "Build a block diagram",
-    route: "/rbds/b/sample-rbd-pump-station",
+    route: "/systems/b/sample-rbd-pump-station",
     steps: [
       {
         target: '[data-wt="rbd-canvas"]',
@@ -97,7 +97,7 @@ export const WALKTHROUGHS = {
   },
   rcm: {
     title: "An RCM study",
-    route: "/rcm/studies/sample-rcm-truck",
+    route: "/maintenance/rcm/sample-rcm-truck",
     steps: [
       {
         target: '[data-wt="rcm-function"]',
@@ -119,7 +119,7 @@ export const WALKTHROUGHS = {
   },
   fleet: {
     title: "A fleet forecast",
-    route: "/fleet/forecasts/sample-fleet-trucks",
+    route: "/forecasts/sample-fleet-trucks",
     steps: [
       {
         target: '[data-wt="fleet-model"]',

@@ -3,7 +3,7 @@ title: "Fit an accelerated life model and extrapolate to use conditions"
 task: "How do I use high-stress test data to predict life at normal operating conditions?"
 category: "Life data modelling"
 prerequisites: "Failure times gathered at two or more stress levels (three is better), with the stress recorded per unit."
-related_href: "/modelling/alt/new"
+related_href: "/models/alt/new"
 related_label: "Open accelerated life"
 order: 15
 ---
@@ -46,7 +46,7 @@ the same.
 
 ## Choosing the model
 
-Go to **Modelling → Accelerated life → New model**. The flow asks for the
+Go to **Models → Accelerated life → New model**. The flow asks for the
 **model before the data**, which is deliberate — the life-stress relationship
 determines how many stress columns you'll be mapping.
 

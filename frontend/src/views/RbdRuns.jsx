@@ -46,12 +46,12 @@ export default function RbdRuns() {
   const diagram = diagrams.find((d) => d.rbd_id === rbdId);
   const toggle = (id) =>
     setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-MAX_COMPARE)));
-  const compare = () => navigate(`/rbds/runs/compare?ids=${picked.join(",")}`);
+  const compare = () => navigate(`/systems/runs/compare?ids=${picked.join(",")}`);
 
   return (
     <div className="app rbd-runs">
       <PageHeader
-        crumbs={[{ label: "RBDs", to: "/rbds" }, ...(rbdId ? [{ label: diagram?.name || "Diagram", to: `/rbds/b/${rbdId}` }] : [])]}
+        crumbs={[{ label: "Systems", to: "/systems" }, ...(rbdId ? [{ label: diagram?.name || "Diagram", to: `/systems/b/${rbdId}` }] : [])]}
         title="Simulation runs"
         meta="Availability simulations from the app and your connectors."
         primary={
@@ -88,7 +88,7 @@ export default function RbdRuns() {
         <div className="card empty">
           <h2>No simulation runs yet</h2>
           <p>Run a simulation from a repairable diagram&rsquo;s Calculator tab to see it here.</p>
-          {rbdId && <p><Link to={`/rbds/b/${rbdId}`}>Open the diagram</Link></p>}
+          {rbdId && <p><Link to={`/systems/b/${rbdId}`}>Open the diagram</Link></p>}
         </div>
       ) : (
         <div className="lib">
@@ -110,7 +110,7 @@ export default function RbdRuns() {
                 const a = availabilityText(r.availability);
                 const chip = statusChip(r.status);
                 return (
-                  <tr key={r.run_id} className="lib-row" onClick={() => navigate(`/rbds/runs/${r.run_id}`)}>
+                  <tr key={r.run_id} className="lib-row" onClick={() => navigate(`/systems/runs/${r.run_id}`)}>
                     <td className="rbd-runs-pick" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"

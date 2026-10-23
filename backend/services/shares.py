@@ -28,13 +28,13 @@ PENDING_PREFIX = "pending:"
 
 
 _LINK_PATHS = {
-    "datasets": "/modelling/data/{id}",
-    "models": "/modelling/m/{id}",
-    "rbds": "/rbds/b/{id}",
-    "degradation_models": "/modelling/degradation/{id}",
-    "recurrent_models": "/modelling/recurrent/{id}",
+    "datasets": "/data/{id}",
+    "models": "/models/m/{id}",
+    "rbds": "/systems/b/{id}",
+    "degradation_models": "/models/degradation/{id}",
+    "recurrent_models": "/models/recurrent/{id}",
     "strategy_analyses": "/strategy/analyses/{id}",
-    "rcm_studies": "/rcm/studies/{id}",
+    "rcm_studies": "/maintenance/rcm/{id}",
 }
 
 
@@ -81,7 +81,7 @@ def create_share(db, collection: str, artifact_id: str, email: str, grantor: dic
             recipient = None
     recipient_uid = recipient["_id"] if recipient is not None else _pending_uid(email_lc)
 
-    link_path = _LINK_PATHS.get(collection, "/modelling").format(id=artifact_id)
+    link_path = _LINK_PATHS.get(collection, "/models").format(id=artifact_id)
     existing = db.shares.find_one({"artifact_id": artifact_id, "recipient_uid": recipient_uid})
     if existing is None:
         share = {

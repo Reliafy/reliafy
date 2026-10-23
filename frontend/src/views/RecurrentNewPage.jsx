@@ -212,7 +212,7 @@ export default function RecurrentNewPage() {
       const saved = await saveRecurrentModel(name.trim(), result.dataset_id ? null : file, {
         datasetId: result.dataset_id, mapping: map, model, unit, options, windows,
       });
-      navigate(`/modelling/recurrent/${saved.id}`);
+      navigate(`/models/recurrent/${saved.id}`);
     } catch (err) {
       setError(err.message);
       setSaving(false);
@@ -279,8 +279,8 @@ export default function RecurrentNewPage() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/recurrent")}>Repairable models</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/models")}>Models</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/models/recurrent")}>Repairable models</button> /{" "}
             <b>New model</b>
           </div>
           <h1>
@@ -319,7 +319,7 @@ export default function RecurrentNewPage() {
 
       {mode === "params" && (
         <RecurrentParamsPanel
-          onCreated={(m) => navigate(`/modelling/recurrent/${m.id}`)}
+          onCreated={(m) => navigate(`/models/recurrent/${m.id}`)}
           onBack={() => setMode(null)}
         />
       )}

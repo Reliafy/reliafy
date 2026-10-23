@@ -419,7 +419,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   };
 
   // A fit on the Result step is kept in this browser until it's saved, so the
-  // next visit to Modelling can offer to save it (#434).
+  // next visit to Models can offer to save it (#434).
   const fitScope = useUnsavedFitScope();
   const remembered = useRef(0);
 

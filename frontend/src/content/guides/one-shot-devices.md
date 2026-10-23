@@ -3,7 +3,7 @@ title: "Model a one-shot device (reliability per demand)"
 task: "My relief valve has to open when called on. How reliable is it per demand?"
 category: "Life data modelling"
 prerequisites: "How many times the device was called on (demands) and how many times it failed, as one count or one row per batch."
-related_href: "/modelling/new?mode=perdemand"
+related_href: "/models/new?mode=perdemand"
 related_label: "Create a per-demand model"
 order: 11
 ---
@@ -18,7 +18,7 @@ them into a failure probability per demand with exact confidence bounds.
 
 ## Enter the counts
 
-Go to **Modelling → Non-repairable models**, press **New model**, choose **Enter
+Go to **Models → Non-repairable models**, press **New model**, choose **Enter
 parameters** and pick **Per-demand (Binomial)** from the distributions. Give
 the model a name.
 

@@ -47,7 +47,7 @@ export default function RcmHome() {
     setCreateError(null);
     try {
       const study = await createRcmStudy(name.trim(), system.trim(), description.trim());
-      navigate(`/rcm/studies/${study.id}`);
+      navigate(`/maintenance/rcm/${study.id}`);
     } catch (err) {
       if (err.code === "cap") {
         setModalOpen(false);
@@ -71,13 +71,14 @@ export default function RcmHome() {
     }
   };
 
-  const open = (id) => navigate(`/rcm/studies/${id}`);
+  const open = (id) => navigate(`/maintenance/rcm/${id}`);
   const newStudy = <button onClick={() => { setCreateError(null); setModalOpen(true); }}><PlusIcon /> New study</button>;
 
   return (
     <div className="app">
       <SectionHeader
-        title="RCM"
+        section="maintenance"
+        title="RCM studies"
         purpose="Your RCM studies: every maintenance decision links to the analysis behind it, re-checked each time you open the study."
         help={HELP}
         actions={
@@ -141,7 +142,7 @@ export default function RcmHome() {
       {importOpen && (
         <RcmImportModal
           onClose={() => setImportOpen(false)}
-          onImported={(study) => navigate(`/rcm/studies/${study.id}`)}
+          onImported={(study) => navigate(`/maintenance/rcm/${study.id}`)}
         />
       )}
 
