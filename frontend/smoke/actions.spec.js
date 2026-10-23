@@ -298,3 +298,94 @@ test("a model's failure pattern, Use this model and B-lives", async ({ page, pro
   await expect(page.getByRole("region", { name: "B-lives and mean life" })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "model calculator", chart: true });
 });
+
+// The Model characteristics tab: the mean life with its bound at the page's
+// confidence (shared with the Calculator), a Kaplan-Meier estimate's mean to a
+// time, and "none, and why" where the mean is infinite.
+async function saveModel(page, body) {
+  const res = await page.request.post("/api/models", { multipart: body });
+  expect(res.ok()).toBeTruthy();
+  return (await res.json()).id;
+}
+const chars = (page) => page.getByRole("region", { name: "Mean life" });
+
+test("Model characteristics: the mean life and its bound", async ({ page, problems }) => {
+  await open(page, "/models/m/sample-model-bearings-weibull");
+  await page.getByRole("tab", { name: "Model characteristics" }).click();
+  await expect(chars(page)).toContainText("Mean life (MTTF)");
+  await expect(chars(page)).toContainText(/1,270 hours\s*≥ 1,150 hours at 90%/);
+  await expect(chars(page)).toContainText("Here the median is 1,240 hours");
+  // A level chosen here is the Calculator's too, and the link opens Time at reliability.
+  await page.getByRole("combobox", { name: "Confidence of the lower bound" }).click();
+  await page.getByRole("option", { name: "95% lower bound" }).click();
+  await expect(chars(page)).toContainText(/at 95%/);
+  await page.getByRole("button", { name: /B-lives: use Time at reliability/ }).click();
+  await expect(page.locator(".calc-answer")).toContainText("(the B10 life)");
+  await expect(page.getByLabel("Confidence level %")).toHaveValue("95");
+
+  // An exponential's mean, and Kaplan-Meier's counted to a time.
+  const pumps = { dataset_id: "sample-ds-pumps", x: "months", c: "censored", c_invert: "0", unit: "months" };
+  const expo = await saveModel(page, { ...pumps, name: "Smoke mean exponential", distribution: "exponential" });
+  await open(page, `/models/m/${expo}`);
+  await page.getByRole("tab", { name: "Model characteristics" }).click();
+  await expect(chars(page)).toContainText(/Mean life \(MTTF\)\s*35\.1 months\s*≥ [\d.]+ months at 90%/);
+  const km = await saveModel(page, { ...pumps, name: "Smoke mean Kaplan-Meier", distribution: "kaplan_meier" });
+  await open(page, `/models/m/${km}`);
+  await page.getByRole("tab", { name: "Model characteristics" }).click();
+  await page.getByLabel(/Count up to/).fill("20");
+  await expect(chars(page)).toContainText(/Mean to 20 months\s*[\d.]+ months\s*≥ [\d.]+ months at 90%/);
+  await expect(chars(page)).toContainText("counting only up to that time");
+
+  // An infinite mean: none, and why; never Infinity.
+  const heavy = await page.request.post("/api/models/from-params", {
+    data: { name: "Smoke heavy tail", distribution: "loglogistic", unit: "hours",
+            params: [{ name: "alpha", value: 1000 }, { name: "beta", value: 0.8 }] },
+  });
+  await open(page, `/models/m/${(await heavy.json()).id}`);
+  await page.getByRole("tab", { name: "Model characteristics" }).click();
+  await expect(chars(page)).toContainText("None");
+  await expect(chars(page)).toContainText("no finite mean life");
+  await expect(chars(page)).not.toContainText(/Infinity|NaN/);
+  // No tab for a regression model (its own life card is in the Calculator).
+  await open(page, "/models/m/sample-model-seal-weibull-ph");
+  await expect(page.getByRole("tab", { name: "Model characteristics" })).toHaveCount(0);
+  await expectHealthy(page, problems, { label: "model characteristics" });
+});
+
+// A shared page's viewer can't ask the model's life path (it needs sign-in):
+// the saved 90% figures stand, and another level says why.
+test("Model characteristics on a page that can't ask for another level", async ({ page, problems }) => {
+  await page.route("**/life", (r) => r.fulfill({ status: 401, contentType: "application/json",
+                                                 body: '{"detail":"Not authenticated"}' }));
+  await open(page, "/models/m/sample-model-bearings-weibull");
+  await page.getByRole("tab", { name: "Model characteristics" }).click();
+  await expect(chars(page)).toContainText(/1,270 hours\s*≥ 1,150 hours at 90%/);
+  await page.getByRole("combobox", { name: "Confidence of the lower bound" }).click();
+  await page.getByRole("option", { name: "99% lower bound" }).click();
+  await expect(chars(page)).toContainText("needs you signed in to a copy of this model");
+  await expect(chars(page)).toContainText(/≥ 1,150 hours at 90%/);
+  expect(problems.filter((p) => !/status of 401\b/.test(p))).toEqual([]);
+});
+
+// The calculator's axis limits open in a dialog, apply as you type, and the
+// range shows beside the button.
+test("the calculator's Axes dialog", async ({ page, problems }) => {
+  await open(page, "/models/m/sample-model-bearings-weibull");
+  await page.getByRole("tab", { name: "Calculator" }).click();
+  const axes = page.getByRole("button", { name: "Axes" });
+  await expect(page.locator(".calc-axis-now")).toHaveText("Auto");
+  await axes.click();
+  const dialog = page.getByRole("dialog", { name: "Axes" });
+  await dialog.getByLabel("From").fill("0");
+  await dialog.getByLabel("To").fill("4000");
+  await expect(page.locator(".calc-axis-now")).toHaveText("0 to 4,000 hours");
+  await dialog.getByRole("button", { name: "Done" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(axes).toBeFocused();
+  await axes.click();
+  await page.getByRole("dialog", { name: "Axes" }).getByRole("button", { name: "Reset to auto" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".calc-axis-now")).toHaveText("Auto");
+  await expectHealthy(page, problems, { label: "calculator axes", chart: true });
+});

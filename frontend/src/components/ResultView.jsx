@@ -8,6 +8,8 @@ import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import CiNote from "./CiNote.jsx";
 import CompetingRisksResult from "./CompetingRisksResult.jsx";
 import LifeAside, { paramView } from "./LifeSummary.jsx";
+import ModelCharacteristics from "./ModelCharacteristics.jsx";
+import { hasMeanLife } from "../meanLife.js";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { distColor } from "../instrument.js";
 import { formatNumber } from "../format.js";
@@ -183,6 +185,9 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   // fitting another model in the workspace) reset them for the new model.
   const [calc, setCalc] = useState(() => initCalcState(result.functions));
   const calcNextId = useRef(1);
+  // One confidence for the calculator's bounds and the mean life's (#288).
+  const level = Number(calc.ci.level);
+  const setLevel = (v) => setCalc((st) => ({ ...st, ci: { ...st.ci, level: v } }));
   // Covariates that change over time (#60): the schedule calculator's inputs.
   const [tvcCalc, setTvcCalc] = useState(() => (result.tvc ? initTvcState(result) : null));
   const [prevResult, setPrevResult] = useState(result);
@@ -208,6 +213,12 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   if (result.tvc) tabs = tabs.filter((t) => t.id !== "check");
   if (!isNonparametric && !isDiscrete && !isFlexible && !hasPlot)
     tabs = tabs.filter((t) => t.id !== "plot" && t.id !== "gof");
+  // The mean life (MTTF, or a non-parametric estimate's mean to a horizon)
+  // and, later, the model's other characteristics.
+  if (hasMeanLife(result)) tabs = [...tabs, { id: "chars", label: "Model characteristics" }];
+  const hasCalc = tabs.some((t) => t.id === "calc");
+  // "B-lives: use Time at reliability": the Calculator in that mode.
+  const showBLives = hasCalc && !result.tvc ? () => { setCalc((st) => ({ ...st, mode: "time" })); setTab("calc"); } : null;
 
   // PH models show their baseline parameters in the calculator's side rail;
   // every other kind leads with the answer card.
@@ -309,6 +320,9 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
             name={name || result.distribution}
             paramLabel={isRegression ? (p) => paramView(baselineOf(result), p).label : null}
           />
+        )}
+        {tab === "chars" && (
+          <ModelCharacteristics result={result} level={level} onLevel={setLevel} onBLives={showBLives} />
         )}
         {tab === "coef" && (result.tvc ? <TvcCoefficients result={result} />
           : <RegressionCoefficients result={result} />)}

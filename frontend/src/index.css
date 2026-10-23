@@ -2629,6 +2629,26 @@ h1 .chip,
 /* The calculator's two questions, across its inputs card (#288). */
 .calc-eval-body .calc-mode { display: flex; width: 100%; }
 .calc-eval-body .calc-mode .seg-btn { flex: 1 1 auto; }
+/* The Model characteristics tab: labelled rows in the Parameters card's style
+   (the mean life first), its reading under them and the way to the B-lives. */
+.detail-panel.model-chars { flex-direction: column; align-items: flex-start; gap: 12px; }
+.detail-panel .model-chars-card { width: 100%; max-width: 560px; }
+.detail-panel .model-chars-h { margin: 0; font-size: inherit; font-weight: inherit; }
+.model-chars-card .model-chars-conf.sel-trigger { padding: 4px 8px; font-size: var(--fs-12); font-weight: 400; }
+.detail-panel .gofr.model-chars-input { padding-top: 8px; padding-bottom: 10px; }
+.model-chars-input .calc-t { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
+.model-chars-input .calc-t span { color: var(--muted); }
+.model-chars-input .calc-t input { width: 8em; }
+.model-chars-what { padding: 12px 16px 14px; font-size: var(--fs-13); line-height: 1.5; color: var(--muted); }
+.model-chars-what p { margin: 0; }
+.model-chars-what p + p { margin-top: 8px; }
+.model-chars-what b { color: var(--ink); font-weight: 600; }
+.detail-panel .model-chars-blives { font-size: var(--fs-13); text-align: left; }
+@media (max-width: 720px) {
+  .model-chars-card .model-chars-conf.sel-trigger { min-height: 40px; }
+  .model-chars-input .calc-t input { min-height: 40px; }
+  .detail-panel .model-chars-blives { min-height: 44px; }
+}
 /* One click to a usual B-life, under the reliability it sets. */
 .calc-eval-body .calc-blives { margin-top: -4px; }
 .calc-eval-body .calc-blives .chip-btn { min-width: 40px; justify-content: center; line-height: 24px; }
@@ -3614,21 +3634,42 @@ h1 .chip,
   font-variant-numeric: tabular-nums;
 }
 
-/* Axis limits, folded at the foot of the calculator's options. */
-.calc-axis > summary {
-  cursor: pointer;
-  font-size: var(--fs-13);
-  font-weight: 500;
-  color: var(--muted);
+/* Axis limits: a button at the foot of the calculator's options that opens
+   the Axes dialog, with the range now beside it. */
+.calc-axis {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
-.calc-axis > summary:hover {
+.calc-axis-btn {
+  font-size: var(--fs-13);
+  padding: 0.35rem 0.8rem;
+}
+.calc-axis-now {
+  font-size: var(--fs-13);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.calc-axis-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.calc-axis-group legend {
+  padding: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
   color: var(--ink);
 }
+.calc-axis-group .muted-line {
+  margin: 4px 0 12px;
+}
 .calc-axis-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 .calc-axis-body .calc-cov {
   width: 100%;
@@ -3636,10 +3677,9 @@ h1 .chip,
 .calc-axis-body .calc-cov input {
   width: 100%;
 }
-.calc-axis-reset {
-  align-self: flex-start;
-  font-size: var(--fs-13);
-  padding: 0.35rem 0.7rem;
+@media (max-width: 720px) {
+  .calc-axis-btn { min-height: 44px; }
+  .calc-axis-body .calc-cov input { min-height: 44px; }
 }
 .cov-rail-toggle {
   background: transparent;
