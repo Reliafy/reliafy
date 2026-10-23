@@ -25,8 +25,10 @@ bearing failure times, with shape β = 2.50 and scale α = 1,440 hours.
 
 ## The B-lives at a glance
 
-Open the model. The **Life** card beside the probability plot lists the B1, B5,
-B10 and B50 lives and the mean life, each with its **lower bound** beside it:
+Open the model and choose the **Calculator** tab (or **B-lives and mean life**
+under the panel beside the plot). The **Life** card, under the calculator's
+inputs, lists the B1, B5, B10 and B50 lives and the mean life, each with its
+**lower bound** beside it:
 
 | | Estimate | 90% lower bound |
 |---|---|---|
@@ -49,8 +51,8 @@ confidence is used everywhere on the page, including the requirement check.
 
 ## Any B-life, any bound
 
-For a percentage the card doesn't list, use the **Calculator** tab and choose
-**Time at reliability**. Enter the reliability you want to keep — 90% for B10,
+For a percentage the card doesn't list, choose **Time at reliability** in the
+calculator's inputs. Enter the reliability you want to keep — 90% for B10,
 99% for B1, 97.5% for a B2.5 — and the answer is stated in words above the
 curve:
 

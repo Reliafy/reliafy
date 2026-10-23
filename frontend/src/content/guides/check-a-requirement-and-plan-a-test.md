@@ -20,8 +20,8 @@ requirement B10 ≥ 500 hours at 90% confidence.
 
 ## Check the requirement against the model
 
-Open the model. At the foot of the **Life** card is a **Requirement** row:
-click **Check**. Enter the B-life as the percent failed (**10** for B10) and the
+Open the model and choose the **Calculator** tab. At the foot of the **Life**
+card, under the calculator's inputs, is a **Requirement** row: click **Check**. Enter the B-life as the percent failed (**10** for B10) and the
 **Required life** (**500** hours). The **Confidence** is the Life card's, 90%
 here. Press **Check**.
 

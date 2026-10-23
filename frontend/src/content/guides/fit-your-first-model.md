@@ -115,13 +115,17 @@ beside the plot:
 - **Parameters** — each fitted parameter with its 95% interval, the number of
   observations, and **Fit statistics** (the AIC, which opens the log-likelihood,
   AIC, AICc and BIC, and a comparison with every other distribution).
-- **Life** — the B1, B5, B10 and B50 lives and the mean life (MTTF), each with
-  its lower confidence bound, and a **Requirement** row to check a B-life
-  requirement against them.
-- A short **verdict** on what the fit means: for a Weibull, wear-out,
-  early-life failures or random failures, judged on β's interval.
+- **Failure pattern** — what the fit means in a word: for a Weibull, wear-out,
+  early-life failures or random failures, judged on β's interval. Click it for
+  the reading in a sentence. (For a distribution with no shape to read, such as
+  the lognormal, the row gives the **Median life** instead.)
+- **Use this model** — opens a list of the tools that take this model: a
+  replacement interval, a fleet forecast, a demonstration test and a block in
+  an RBD, each with a line on what you get there.
 
-![A fitted Weibull model: probability plot, parameters, B-lives and the verdict](/guides/img/fit-02-result.png)
+The B-lives and the mean life are on the **Calculator** tab (see below).
+
+![A fitted Weibull model: probability plot, parameters and the failure pattern](/guides/img/fit-02-result.png)
 
 The **probability plot** is the one to look at first. It puts your data on paper
 where a good fit is a straight line. If the points track the line, the
@@ -143,13 +147,16 @@ number worth understanding**:
   to make sense.
 
 That single parameter often changes the maintenance decision more than anything
-else on the page, which is why the verdict card spells it out. The bearings'
-whole interval sits above 1, so the card reads *Wear-out: β is above 1 at 95%
-confidence*.
+else on the page, which is why the panel spells it out. The bearings' whole
+interval sits above 1, so the **Failure pattern** row reads *Wear-out*, and
+clicking it says *β is above 1 at 95% confidence*.
 
 The **Calculator** tab lets you ask the model direct questions: reliability (or
 any other function) at a given time, or the time by which a given fraction will
-have failed — each with a confidence bound, stated in words. The
+have failed — each with a confidence bound, stated in words. Beside it, the
+**Life** card lists the B1, B5, B10 and B50 lives and the mean life (MTTF), each
+with its lower confidence bound, and a **Requirement** row to check a B-life
+requirement against them. The
 [B-lives and confidence bounds](/guides/b-lives-and-confidence-bounds) guide
 reads them in detail.
 

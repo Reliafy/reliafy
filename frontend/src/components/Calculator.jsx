@@ -165,8 +165,10 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
 // each re-evaluated by the backend and overlaid on the chart.
+// ``rail``: more cards for the side rail, under the inputs (a non-repairable
+// model's B-lives card).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
-                                     paramLabel = null }) {
+                                     paramLabel = null, rail = null }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -695,6 +697,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </details>
               </div>
             </div>
+            {rail}
             {hasCov && (
             <aside className={"calc-rail-card calc-cov-rail" + (railOpen ? "" : " collapsed")}>
             <div className="calc-cov-rail-head">
