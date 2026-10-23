@@ -526,6 +526,12 @@ class GraphStore:
             "WHERE e.org = ? AND e.dst = ? AND e.type = ?", (org, dst, type))
         return [self._node(r) for r in rows]
 
+    def pairs(self, org: str, type: str) -> list[tuple[str, str]]:
+        """(src, dst) for every ``type`` edge in the organisation: a whole tree's
+        links in one read, rather than one ``out`` per node."""
+        rows = self._all("SELECT src, dst FROM edges WHERE org = ? AND type = ?", (org, type))
+        return [(r["src"], r["dst"]) for r in rows]
+
     def edge(self, org: str, type: str, src: str, dst: str) -> dict | None:
         """The properties of the ``type`` edge from ``src`` to ``dst`` (None: there's none)."""
         if not isinstance(src, str) or not isinstance(dst, str):

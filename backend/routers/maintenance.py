@@ -295,6 +295,14 @@ def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     })
 
 
+@router.get("/tree")
+def tree(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The asset trees for the app's tree pane: every position once, flat, with what
+    each row shows (status, and everything inside it rolled up), the locations, the
+    spares placed at them and the items with no home."""
+    return _run(lambda: {"summary": summary(m), **m.tree_rows()})
+
+
 @router.get("/events")
 def events(limit: int = 100, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {"events": m.s.events(m.org, max(1, min(limit, 500)))})

@@ -572,7 +572,8 @@ def register() -> None:
     @tool("maintenance_overview", _READ, "Maintenance overview")
     def maintenance_overview(ctx: Context) -> dict[str, Any]:
         """The maintenance workspace at a glance: counts, the tree of positions (the functional
-        hierarchy, each with what's fitted, its task count, next due date and open work orders),
+        hierarchy, each with what's fitted, its task count, next due date and open work orders, and
+        status and inside: overdue, open work and alarms on it and everything below it),
         tasks due in the next 30 days, open work orders, critical_spares (critical spares below the
         minimum their position keeps on hand), time_zone (IANA name; null = UTC, unset) and today (the
         workspace's: a date left out anywhere defaults to it). Start here; use the ids with

@@ -6205,29 +6205,279 @@ class Maintenance:
             "position": position and {"id": position[0]["id"], "name": position[0]["name"]},
         }
 
-    def tree(self) -> list[dict]:
-        positions = [p for p in self.s.nodes(self.org, "Position") if not p.get("retired")]
-        children: dict[str | None, list] = {}
-        for p in positions:
-            parent = self._parent(p["id"])
-            children.setdefault(parent["id"] if parent else None, []).append(p)
+    def _tree_read(self) -> dict:
+        """The whole register read in bulk for the asset trees: a fixed number of
+        store reads (nodes by label, edges by type), whatever its size, plus one
+        per task by use and one per condition point with alarm limits.
 
-        def build(p):
-            fitted = self.current_fitment(p["id"])
-            item = fitted and self.s.inn(self.org, fitted["id"], "IN")
-            tasks = [self._task_view(t) for t in self._tasks_on(p["id"])]
-            dues = sorted(t["next_due"] for t in tasks if t["next_due"])
-            wos = [w for w in self.s.inn(self.org, p["id"], "ON") if w["label"] == "WorkOrder"]
-            return {
-                "id": p["id"], "name": p["name"], "tag": p.get("tag", ""),
-                "position_class": p.get("position_class", ""),
-                "item": self._item_brief(item[0] if item else None),
-                "tasks": len(tasks), "next_due": dues[0] if dues else None,
-                "open_work_orders": sum(1 for w in wos if w["status"] in OPEN_STATUSES),
-                "children": [build(c) for c in sorted(children.get(p["id"], []), key=lambda c: c["name"].lower())],
+        positions: {id: row} for every live position. A row's parent is the
+        position it sits in. A position carried by an item (an engine's turbo)
+        sits in the position its item is fitted to, with carried_by naming the
+        item; with the item fitted nowhere, its parent is None. status is what's
+        on the position and on the item fitted there now: overdue tasks, open
+        work orders, condition points past an alarm limit, and the next due date.
+        location: where it is (set on it, or inherited, then inherited is True).
+        Also: the locations, the items placed at one now (spares), the items
+        neither fitted nor placed (unhomed), and the status of what's on each
+        location and on each item that isn't fitted."""
+        s, org, today = self.s, self.org, self.today()
+        every = {p["id"]: p for p in s.nodes(org, "Position")}
+        live = {pid: p for pid, p in every.items() if not p.get("retired")}
+        items = {i["id"]: i for i in s.nodes(org, "Item")}
+        locations = {loc["id"]: loc for loc in s.nodes(org, "Location")}
+        fitments = {f["id"]: f for f in s.nodes(org, "Fitment") if not f.get("voided")}
+        placements = {p["id"]: p for p in s.nodes(org, "Placement")}
+        part_of: dict[str, str] = {}
+        for src, dst in s.pairs(org, "PART_OF"):
+            part_of.setdefault(src, dst)
+        located_at: dict[str, str] = {}
+        for src, dst in s.pairs(org, "LOCATED_AT"):
+            located_at.setdefault(src, dst)
+        at = dict(s.pairs(org, "AT"))  # fitment -> position, placement -> location
+        holder = {dst: src for src, dst in s.pairs(org, "IN")}  # fitment or placement -> its item
+        on: dict[str, str] = {}
+        for src, dst in s.pairs(org, "ON"):
+            on.setdefault(src, dst)
+
+        # What's fitted where now, and where each item that isn't fitted is placed.
+        fitted_item: dict[str, str] = {}  # position -> item
+        fitted_at: dict[str, str] = {}  # item -> position
+        last_out: dict[str, str] = {}  # item -> the day it last came out of a position
+        for fid, f in fitments.items():
+            item_id, pos_id = holder.get(fid), at.get(fid)
+            if not item_id or not pos_id:
+                continue
+            if f.get("to") is None:
+                fitted_item[pos_id], fitted_at[item_id] = item_id, pos_id
+            elif f["to"] > last_out.get(item_id, ""):
+                last_out[item_id] = f["to"]
+        open_placement: dict[str, dict] = {}
+        for pid, pl in placements.items():
+            item_id = holder.get(pid)
+            if item_id and pl.get("to") is None:
+                here = open_placement.get(item_id)
+                if here is None or pl["from"] > here["from"]:
+                    open_placement[item_id] = pl
+        placed_at: dict[str, str] = {}  # item -> location (as _placement_now)
+        for item_id, pl in open_placement.items():
+            if item_id in fitted_at or (item_id in last_out and pl["from"] < last_out[item_id]):
+                continue
+            if at.get(pl["id"]) in locations:
+                placed_at[item_id] = at[pl["id"]]
+
+        # Where each position sits in the tree.
+        parent: dict[str, str | None] = {}
+        carried: dict[str, str] = {}
+        for pid in live:
+            up = part_of.get(pid)
+            if up in items:
+                carried[pid] = up
+                up = fitted_at.get(up)
+            parent[pid] = up if up in live else None
+
+        # Where each position is: as _located (set on it, else up the tree, through a
+        # fitted item to its position, or an unfitted item's placement).
+        located: dict[str, tuple[str | None, str | None]] = {}
+
+        def locate(pid: str) -> tuple[str | None, str | None]:
+            chain, node, found, seen = [], pid, (None, None), set()
+            while node and node not in seen:
+                if node in located:
+                    found = located[node]
+                    break
+                seen.add(node)
+                if node in every:
+                    chain.append(node)
+                    if located_at.get(node) in locations:
+                        found = (located_at[node], node)
+                        break
+                    node = part_of.get(node)
+                elif node in items:
+                    if node in fitted_at:
+                        node = fitted_at[node]
+                        continue
+                    if node in placed_at:
+                        found = (placed_at[node], node)
+                    break
+                else:
+                    break
+            for c in chain:
+                located[c] = found
+            return found
+
+        # What's on each thing (a position, an item, a location): overdue tasks and
+        # the next due date, open work orders, points past an alarm limit.
+        status: dict[str, dict] = {}
+        tasks: dict[str, int] = {}
+
+        def on_node(node_id: str) -> dict:
+            return status.setdefault(node_id, _blank_status())
+
+        for t in s.nodes(org, "Task"):
+            subject = on.get(t["id"])
+            if t.get("retired") or not subject:
+                continue
+            tasks[subject] = tasks.get(subject, 0) + 1
+            due = self._tree_task_due(t, "Item" if subject in items else "")
+            if due:
+                st = on_node(subject)
+                st["next_due"] = min(st["next_due"] or due, due)
+                st["overdue"] += due < today
+        for w in s.nodes(org, "WorkOrder"):
+            if w["status"] in OPEN_STATUSES and on.get(w["id"]):
+                on_node(on[w["id"]])["open_work"] += 1
+        for mp in s.nodes(org, "MeasurementPoint"):
+            above, below = mp.get("alarm_above"), mp.get("alarm_below")
+            if not on.get(mp["id"]) or (above is None and below is None):
+                continue
+            value = self._latest_value(mp)
+            if value is not None and ((above is not None and value >= above) or (below is not None and value <= below)):
+                on_node(on[mp["id"]])["alarms"] += 1
+
+        rows = {}
+        for pid, p in live.items():
+            loc_id, source = locate(pid)
+            item = items.get(fitted_item.get(pid, ""))
+            up = carried.get(pid)
+            own = status.get(pid) or _blank_status()
+            rows[pid] = {
+                "id": pid, "name": p["name"], "tag": p.get("tag", ""),
+                "position_class": p.get("position_class", ""), "parent_id": parent[pid],
+                "carried_by": {"id": up, "name": items[up].get("name", "")} if up else None,
+                "item": self._item_brief(item),
+                "location_id": located_at.get(pid) if located_at.get(pid) in locations else None,
+                "location": {"id": loc_id, "name": locations[loc_id]["name"], "inherited": source != pid}
+                if loc_id else None,
+                # On it and on the item fitted there now (whose tasks show on its page).
+                "status": _add_status(_blank_status(), own, status.get(item["id"]) if item else None),
+                # The position's own, as the tree always gave them.
+                "tasks": tasks.get(pid, 0), "own_next_due": own["next_due"], "own_open": own["open_work"],
             }
+        return {
+            "positions": rows,
+            "locations": [{"id": lid, "name": loc["name"],
+                           "parent_id": part_of.get(lid) if part_of.get(lid) in locations else None,
+                           "status": status.get(lid)} for lid, loc in locations.items()],
+            "spares": [{"id": iid, "name": items[iid].get("name", ""), "serial": items[iid].get("serial", ""),
+                        "location_id": lid, "status": status.get(iid)} for iid, lid in placed_at.items()],
+            "unhomed": [{"id": iid, "name": i.get("name", ""), "serial": i.get("serial", ""), "status": status.get(iid)}
+                        for iid, i in items.items() if iid not in fitted_at and iid not in placed_at],
+        }
 
-        return [build(p) for p in sorted(children.get(None, []), key=lambda c: c["name"].lower())]
+    def _tree_task_due(self, task: dict, subject_label: str) -> str | None:
+        """A task's next due date, as _task_view gives it, without its store reads
+        for a plain calendar limit."""
+        limits = [(task["interval"], task["unit"])]
+        if task.get("also_interval") and task.get("also_unit"):
+            limits.append((task["also_interval"], task["also_unit"]))
+        dues = []
+        for interval, unit in limits:
+            if _is_calendar(unit) and not (subject_label == "Item" and task.get("while_stored") == "pause"):
+                due = add_interval(task.get("last_done") or task["start"], interval, unit)
+            else:
+                due = self._due_by(task, interval, unit)["next_due"]
+            if due:
+                dues.append(due)
+        return min(dues) if dues else None
+
+    def _latest_value(self, mp: dict) -> float | None:
+        """A measurement point's latest reading (None: no readings yet)."""
+        if mp.get("source") == "automated":
+            latest = self.s.series.latest(self.org, mp["id"])
+            return latest and latest["value"]
+        readings = _manual_readings(self.s, self.org, mp["id"])
+        return readings[-1]["value"] if readings else None
+
+    @staticmethod
+    def _tree_rollup(rows: dict) -> tuple[dict, dict]:
+        """Children by parent id, sorted by name (None: the tops, leaving out the
+        positions carried by an item fitted nowhere), and for every row what's
+        inside it, everything below counted: positions, empty slots (a class and
+        nothing fitted), overdue, open work, alarms and the next due date."""
+        kids: dict[str | None, list] = {}
+        for r in rows.values():
+            kids.setdefault(r["parent_id"], []).append(r["id"])
+        for ids in kids.values():
+            ids.sort(key=lambda i: rows[i]["name"].lower())
+        inside: dict[str, dict] = {}
+        order, stack = [], [r for r in kids.get(None, [])]
+        while stack:  # depth first, then back up: no recursion limit on deep trees
+            node = stack.pop()
+            order.append(node)
+            stack.extend(kids.get(node, []))
+        for node in reversed(order):
+            acc = {"positions": 0, "empty": 0, **_blank_status()}
+            for c in kids.get(node, []):
+                row, below = rows[c], inside[c]
+                acc["positions"] += 1 + below["positions"]
+                acc["empty"] += below["empty"] + (1 if row["position_class"] and not row["item"] else 0)
+                _add_status(acc, row["status"], below)
+            inside[node] = acc
+        kids[None] = [r for r in kids.get(None, []) if not rows[r]["carried_by"]]
+        return kids, inside
+
+    def tree(self) -> list[dict]:
+        """The positions as a tree, tops first, siblings by name. Each node: what's
+        fitted, its task count, next due date and open work orders (its own), and:
+        fitted; status (on it and on the item fitted there: overdue, open_work,
+        alarms, next_due); inside (the same for everything below it, with positions
+        and empty slots); location (where it is; inherited when set above it); and
+        carried_by, for a position an item carries (it sits in the position its item
+        is fitted to; with the item fitted nowhere it isn't in the tree)."""
+        rows = self._tree_read()["positions"]
+        kids, inside = self._tree_rollup(rows)
+
+        out, stack = [], []
+        # Built without recursion too: a node's children are filled after it.
+        for top in kids[None]:
+            out.append(None)
+            stack.append((top, out, len(out) - 1))
+        while stack:
+            pid, into, at_ = stack.pop()
+            r = rows[pid]
+            node = {
+                "id": pid, "name": r["name"], "tag": r["tag"], "position_class": r["position_class"],
+                "item": r["item"], "tasks": r["tasks"], "next_due": r["own_next_due"],
+                "open_work_orders": r["own_open"],
+                "fitted": r["item"] is not None, "status": r["status"], "inside": inside[pid],
+                "location": r["location"], "carried_by": r["carried_by"],
+                "children": [None] * len(kids.get(pid, [])),
+            }
+            into[at_] = node
+            stack.extend((c, node["children"], i) for i, c in enumerate(kids.get(pid, [])))
+        return out
+
+    def tree_rows(self) -> dict:
+        """The asset trees for the app's tree pane, flat: every live position once
+        (id, name, parent_id, and when set: tag, position_class, item, location_id
+        (set on it), location (where it is), carried_by, status, inside), with the
+        locations, the items placed at one now (spares) and the items neither fitted
+        nor placed (unhomed). Empty fields are left out: a big register stays small."""
+        read = self._tree_read()
+        rows = read["positions"]
+        _, inside = self._tree_rollup(rows)
+
+        def lean(d: dict | None) -> dict | None:
+            return {k: v for k, v in d.items() if v} or None if d else None
+
+        positions = []
+        for pid, r in rows.items():
+            row = {"id": pid, "name": r["name"], "parent_id": r["parent_id"]}
+            for key in ("tag", "position_class", "location_id", "location", "carried_by"):
+                if r[key]:
+                    row[key] = r[key]
+            if r["item"]:
+                row["item"] = {k: r["item"][k] for k in ("id", "name", "serial") if r["item"].get(k)}
+            for key, value in (("status", lean(r["status"])), ("inside", lean(inside.get(pid)))):
+                if value:
+                    row[key] = value
+            positions.append(row)
+
+        def thing(d: dict) -> dict:
+            return {k: v for k, v in {**d, "status": lean(d["status"])}.items() if v or k == "parent_id"}
+
+        return {"today": self.today(), "positions": positions, "locations": [thing(x) for x in read["locations"]],
+                "spares": [thing(x) for x in read["spares"]], "unhomed": [thing(x) for x in read["unhomed"]]}
 
     def position(self, id: str) -> dict:
         p = self._get(id, "Position")
@@ -6497,6 +6747,22 @@ class Maintenance:
                 **extra,
             })
         return sorted(rows, key=lambda r: r["from"])
+
+
+def _blank_status() -> dict:
+    return {"overdue": 0, "open_work": 0, "alarms": 0, "next_due": None}
+
+
+def _add_status(into: dict, *more: dict | None) -> dict:
+    """Adds counts (overdue, open work, alarms) into ``into``; keeps the earliest next due."""
+    for st in more:
+        if not st:
+            continue
+        for k in ("overdue", "open_work", "alarms"):
+            into[k] += st[k]
+        if st["next_due"] and (into["next_due"] is None or st["next_due"] < into["next_due"]):
+            into["next_due"] = st["next_due"]
+    return into
 
 
 def summary(m: Maintenance) -> dict:
