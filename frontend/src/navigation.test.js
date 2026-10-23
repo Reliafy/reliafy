@@ -67,7 +67,7 @@ test("each entry's children, as agreed", () => {
   const live = liveEntries(ALL);
   const kids = (id) => live.find((e) => e.id === id).children?.map((c) => c.label) || [];
   assert.deepEqual(kids("systems"), ["Simulation runs", "Product structure"]);
-  assert.deepEqual(kids("assets"), ["Items", "Locations", "Parts and stock", "Classes"]);
+  assert.deepEqual(kids("assets"), ["Positions", "Items", "Locations", "Parts and stock", "Classes"]);
   assert.deepEqual(kids("maintenance"), ["RCM studies"]);
   assert.deepEqual(kids("data"), []);
   assert.deepEqual(kids("models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
@@ -175,7 +175,11 @@ test("a page lights its entry, and its child, on landing, child and detail pages
   assert.deepEqual(at("/strategy/analyses/x"), ["strategy", null]);
   assert.deepEqual(at("/forecasts/f"), ["forecasts", null]);
   assert.deepEqual(at("/asset-register/items/i1"), ["assets", "Items"]);
-  assert.deepEqual(at("/asset-register/positions/p1"), ["assets", null]);
+  // Assets opens on the top-level places; a position's page is under Positions.
+  assert.deepEqual(at("/asset-register"), ["assets", null]);
+  assert.deepEqual(at("/asset-register/positions"), ["assets", "Positions"]);
+  assert.deepEqual(at("/asset-register/positions/p1"), ["assets", "Positions"]);
+  assert.deepEqual(at("/asset-register/locations/l1"), ["assets", "Locations"]);
   assert.deepEqual(at("/maintenance/work-orders/w1"), ["maintenance", null]);
   assert.deepEqual(at("/maintenance/rcm/s1"), ["maintenance", "RCM studies"]);
   assert.deepEqual(at("/reports"), ["reports", null]);
@@ -202,6 +206,7 @@ test("a page's breadcrumbs: its entry, then its child, from the live menu", () =
   assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/rcm/s", "/maintenance/rcm"),
     [{ label: "Maintenance", to: "/maintenance/rcm" }]);
   assert.deepEqual(crumbsFor(none, "assets", "/asset-register/items"), []);
+  assert.deepEqual(crumbsFor(live, "assets", "/asset-register/positions"), [{ label: "Assets", to: "/asset-register" }]);
 });
 
 test("Home leads with the primary role's cards; none without roles", () => {
@@ -326,7 +331,7 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   const kids = (list, id) => list.find((e) => e.id === id).children?.map((c) => c.label) || [];
   assert.deepEqual(kids(plain, "systems"), ["Simulation runs", "Product structure"]);
   assert.deepEqual(kids(preview, "systems"), ["Simulation runs", "Product structure", "Fault trees", "FMECA"]);
-  assert.deepEqual(kids(preview, "assets"), ["Items", "Locations", "Parts and stock", "Classes", "Fleets"]);
+  assert.deepEqual(kids(preview, "assets"), ["Positions", "Items", "Locations", "Parts and stock", "Classes", "Fleets"]);
   assert.deepEqual(kids(preview, "maintenance"), ["RCM studies", "Field inbox"]);
   assert.deepEqual(kids(preview, "data"), ["Library"]);
   assert.deepEqual(kids(plain, "data"), []);

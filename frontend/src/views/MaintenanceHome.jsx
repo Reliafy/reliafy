@@ -7,6 +7,7 @@ import {
   getMaintenanceSettings,
   importMaintenanceSheet,
   listMaintenanceLocations,
+  listMaintenancePlaces,
   listMaintenanceWorkOrders,
   setMaintenanceSettings,
   listRcmStudies,
@@ -20,6 +21,7 @@ import {
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { browserTimeZone, shouldSuggestTimeZone } from "../workspaceDate.js";
 import { itemAtText, subjectBadge, subjectPath } from "../maintenanceSubjects.js";
+import { treeOf, treeSize } from "../maintenanceAssets.js";
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 
@@ -39,12 +41,13 @@ function TimeZoneNudge({ zone }) {
   );
 }
 
-// Reliafy Maintenance's two landing pages, from one overview: Operate ›
-// Maintenance (`part="work"`: proposed changes, critical spares short, what's
-// due and the open work orders) and Operate › Assets (`part="assets"`: the
-// plant as a tree of positions with what's fitted in each).
+// Two of Reliafy Maintenance's pages, from one overview: Operate › Maintenance
+// (`part="work"`: proposed changes, critical spares short, what's due and the
+// open work orders) and Operate › Assets › Positions (`part="positions"`: the
+// plant as a tree of positions with what's fitted in each; ?place=none: only
+// the positions at no place yet, from the Assets list's last row).
 export default function MaintenanceHome({ part = "work" }) {
-  const assets = part === "assets";
+  const assets = part === "positions";
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -55,6 +58,8 @@ export default function MaintenanceHome({ part = "work" }) {
   // Open work orders by area: ?location=<id> (that location and those inside it).
   const [params, setParams] = useSearchParams();
   const locationId = params.get("location") || "";
+  const notPlaced = assets && params.get("place") === "none";
+  const [notPlacedIds, setNotPlacedIds] = useState(null);
   const [locations, setLocations] = useState(null);
   const [inArea, setInArea] = useState(null);
   const refresh = useCallback(() => {
@@ -70,6 +75,12 @@ export default function MaintenanceHome({ part = "work" }) {
     listMaintenanceWorkOrders({ status: "open", locationId })
       .then((d) => setInArea(d.work_orders)).catch((e) => setError(e.message));
   }, [locationId, data]);
+  useEffect(() => {
+    setNotPlacedIds(null);
+    if (!notPlaced) return;
+    listMaintenancePlaces().then((v) => setNotPlacedIds(v.not_placed.position_ids))
+      .catch((e) => setError(e.message));
+  }, [notPlaced, data]);
   const openWork = locationId ? inArea : data?.open_work_orders;
   useEffect(() => {
     getMaintenanceSettings().then((s) => setDigest(s.digest)).catch(() => {});
@@ -97,9 +108,10 @@ export default function MaintenanceHome({ part = "work" }) {
   return (
     <div className="app">
       <SectionHeader
-        title={assets ? "Assets" : "Maintenance"}
+        section={assets ? "assets" : undefined}
+        title={assets ? "Positions" : "Maintenance"}
         purpose={assets
-          ? "Your plant as positions, and what's fitted in each."
+          ? "Every position in your plant, and what's fitted in each."
           : "What's due from your RCM studies' tasks, the work orders, and the changes proposed."}
         actions={<>
           <button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>
@@ -209,15 +221,30 @@ export default function MaintenanceHome({ part = "work" }) {
 
           {assets && (
           <section className="card">
+            {notPlaced && (
+              <p className="maint-filter-note">
+                <span className="maint-badge">Not at a place yet</span>
+                <span className="lib-date">{notPlacedIds === null ? "Loading…"
+                  : `${treeSize(treeOf(data.tree, notPlacedIds))} of ${data.summary.positions} positions. `
+                    + "Set a place on a position's page; the positions inside it follow."}</span>
+                <Link to="/asset-register/positions" replace>Show every position</Link>
+              </p>
+            )}
             <div className="maint-head">
-              <h2>Positions</h2>
-              <span className="lib-date">
-                {data.summary.positions} positions · {data.summary.items} items · {data.summary.tasks} tasks
-              </span>
+              <h2>{notPlaced ? "Positions not at a place yet" : "Positions"}</h2>
+              {!notPlaced && (
+                <span className="lib-date">
+                  {data.summary.positions} positions · {data.summary.items} items · {data.summary.tasks} tasks
+                </span>
+              )}
             </div>
-            <ul className="maint-tree">
-              {data.tree.map((node) => <TreeNode key={node.id} node={node} />)}
-            </ul>
+            {notPlaced && notPlacedIds !== null && notPlacedIds.length === 0 ? (
+              <p className="lib-date">Every position is at a place. <Link to="/asset-register">See the assets</Link>.</p>
+            ) : (
+              <ul className="maint-tree">
+                {(notPlaced ? treeOf(data.tree, notPlacedIds) : data.tree).map((node) => <TreeNode key={node.id} node={node} />)}
+              </ul>
+            )}
           </section>
           )}
           {!assets && digest !== null && (

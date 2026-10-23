@@ -46,6 +46,7 @@ const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx
 const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
 const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
 const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
+const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
 const MaintenanceWorkOrder = lazy(() => import("./views/MaintenanceWorkOrder.jsx"));
 const MaintenanceItem = lazy(() => import("./views/MaintenanceItem.jsx"));
@@ -187,7 +188,8 @@ export default function AppShell() {
             {/* Operate: the assets as maintained (Reliafy Maintenance), and
                 their maintenance. ("/assets" is where the server keeps the
                 build's files, so the register lives at /asset-register.) */}
-            {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceHome part="assets" />} />}
+            {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceAssets />} />}
+            {maintenanceEnabled && <Route path="/asset-register/positions" element={<MaintenanceHome part="positions" />} />}
             {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}
             {maintenanceEnabled && <Route path="/asset-register/items" element={<MaintenanceItems />} />}
             {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}

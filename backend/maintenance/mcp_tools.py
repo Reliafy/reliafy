@@ -142,6 +142,8 @@ LIST_KINDS: Table = {
         manufacturer_entry. Filters as items."""),
     "locations": ("", "", """The physical tree, each with positions (located there, set or inherited) and
         items (placed there), and all_positions / all_items counting the locations inside it."""),
+    "places": ("", "", """The assets: each top-level location with the positions, items, open work orders
+        and tasks due in 30 days inside it; not_placed: the same for positions with no location."""),
     "position_classes": ("", "", """Each position class with its positions, fitments and failures, costs,
         default replacement cost and document links."""),
     "item_classes": ("", "format", """format tree (default): the item class tree with code, level,
@@ -695,6 +697,11 @@ def register() -> None:
             return {"parts": run(m.parts, item_class_id, manufacturer_id)}
         if kind == "locations":
             return {"tree": run(m.location_tree)}
+        if kind == "places":
+            found = run(m.places)
+            # Counts only: the app's filter needs the ids, an agent can find them by name.
+            found["not_placed"].pop("position_ids", None)
+            return found
         if kind == "position_classes":
             return {"classes": run(m.position_classes)}
         if kind == "item_classes":

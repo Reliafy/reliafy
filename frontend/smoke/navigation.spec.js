@@ -202,7 +202,7 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
 });
 
 const PHONE_PAGES = [
-  "/home", "/systems", "/asset-register", "/asset-register/parts", "/maintenance", "/maintenance/rcm", "/data",
+  "/home", "/systems", "/asset-register", "/asset-register/positions", "/asset-register/parts", "/maintenance", "/maintenance/rcm", "/data",
   "/models", "/strategy", "/forecasts", "/reports", "/settings",
 ];
 

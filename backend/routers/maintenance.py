@@ -800,6 +800,14 @@ def list_locations(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(lambda: {"locations": m.locations(), "tree": m.location_tree()})
 
 
+@router.get("/places")
+def list_places(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The assets: each top-level location with the positions, items, open work orders
+    and tasks due in 30 days anywhere inside it; not_placed: the positions with no
+    location (and their ids)."""
+    return _run(m.places)
+
+
 @router.get("/locations/{location_id}")
 def get_location(location_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.location, location_id)

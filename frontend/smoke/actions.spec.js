@@ -33,6 +33,34 @@ test("a class's spares stock levels and the what-if", async ({ page, problems })
   await expectHealthy(page, problems, { label: "class stock levels", chart: true });
 });
 
+// Assets opens on the top-level places, each with what's inside it; the positions
+// at no place are the last row, opening Positions filtered to them (smoke/seed.js
+// puts one position in the depot and leaves the pumps at no place).
+test("the assets are the top-level places, and the positions at none stay reachable", async ({ page, problems }) => {
+  await open(page, "/asset-register");
+  await expect(page.getByRole("heading", { name: "Assets", exact: true })).toBeVisible();
+  const depot = page.getByRole("row").filter({ has: page.getByRole("link", { name: "Smoke test depot", exact: true }) });
+  await expect(depot).toBeVisible();
+  const rest = page.getByRole("row").filter({ has: page.getByRole("link", { name: "Not at a place yet" }) });
+  await expect(rest).toBeVisible();
+  await expectHealthy(page, problems, { label: "assets" });
+
+  await rest.getByRole("link", { name: "Not at a place yet" }).click();
+  await expect(page).toHaveURL(/\/asset-register\/positions\?place=none$/);
+  await expect(page.getByRole("heading", { name: "Positions not at a place yet" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Smoke pump 1", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Show every position" }).click();
+  await expect(page.getByRole("heading", { name: "Positions", exact: true })).toBeVisible();
+  await expectHealthy(page, problems, { label: "positions" });
+
+  await open(page, "/asset-register");
+  await depot.getByRole("link", { name: "Smoke test depot", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Smoke test depot" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open work here" })).toBeVisible();
+  await expect(page.getByText("Smoke test inspection")).toBeVisible();
+  await expectHealthy(page, problems, { label: "an asset's page" });
+});
+
 // #434, the first run: a CSV saved without a header row. Its first row is
 // all numbers, so it's read as data (col 1, col 2) and said so; the column of
 // decimals can't be made the count; the fit is saved, with its data, in one

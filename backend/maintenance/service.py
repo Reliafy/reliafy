@@ -5620,6 +5620,60 @@ class Maintenance:
 
         return [build(loc) for loc in sorted(children.get(None, []), key=lambda c: c["name"].lower())]
 
+    def places(self, horizon_days: int = 30) -> dict:
+        """The assets: each top-level location (a place with nothing above it: a house,
+        a site, a plant), with what it holds anywhere inside it: locations, positions
+        (set or inherited), items (fitted to those positions, or placed there), open
+        work orders (in its area, as work_orders' location_id) and tasks due within the
+        horizon (due, overdue, next_due). not_placed: the same for the positions with
+        no location, set or inherited, and the work on them; position_ids lists them."""
+        until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
+
+        def blank() -> dict:
+            return {"positions": 0, "items": 0, "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None}
+
+        roots = sorted((loc for loc in self.s.nodes(self.org, "Location") if self._parent(loc["id"]) is None),
+                       key=lambda loc: loc["name"].lower())
+        out = {r["id"]: {"id": r["id"], "name": r["name"], "description": r.get("description", ""),
+                         "locations": len(self._location_ids_in(r["id"])) - 1, **blank()} for r in roots}
+        not_placed = {**blank(), "position_ids": []}
+
+        def bucket(loc: dict | None) -> dict:
+            if not loc:
+                return not_placed
+            path = self._location_path(loc["id"])
+            return out.get(path[0]["id"] if path else loc["id"], not_placed)
+
+        for p in self.s.nodes(self.org, "Position"):
+            if p.get("retired"):
+                continue
+            loc = self._located(p["id"])[0]
+            b = bucket(loc)
+            b["positions"] += 1
+            if loc is None:
+                not_placed["position_ids"].append(p["id"])
+            if self.current_fitment(p["id"]):
+                b["items"] += 1
+        for item in self.s.nodes(self.org, "Item"):
+            placed = self._placement_now(item["id"])
+            if placed:
+                bucket(placed[1])["items"] += 1
+        for w in self.s.nodes(self.org, "WorkOrder"):
+            subject = w["status"] in OPEN_STATUSES and self.s.out(self.org, w["id"], "ON")
+            if subject:
+                bucket(self._wo_area(subject[0]))["open_work_orders"] += 1
+        for task in self.s.nodes(self.org, "Task"):
+            subject = not task.get("retired") and _subject(self.s, self.org, task)
+            if not subject or subject.get("retired"):
+                continue
+            view = self._task_view(task)
+            if view["next_due"] and view["next_due"] <= until:
+                b = bucket(self._wo_area(subject))
+                b["due"] += 1
+                b["overdue"] += 1 if view["overdue"] else 0
+                b["next_due"] = min(filter(None, (b["next_due"], view["next_due"])))
+        return {"places": list(out.values()), "not_placed": not_placed, "horizon_days": horizon_days}
+
     def position_classes(self) -> list[dict]:
         """Each class of position ('Centrifugal pump'), with how many positions and
         how much life data it pools."""

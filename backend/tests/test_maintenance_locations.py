@@ -360,3 +360,76 @@ def test_locations_through_the_api(api):
     assert cleared["location"] is None
     assert api.post(f"{base}/locations/adopt-placements", json={}).json() == {"dry_run": True, "changes": [],
                                                                              "skipped": []}
+
+
+# ---- the assets: top-level places ------------------------------------------------------------
+
+def _home(m):
+    """A house the way people set one up: one top-level place with places inside it,
+    positions located at different levels, and positions at no place at all."""
+    home = m.create_location("96 Example Street")["id"]
+    house = m.create_location("House", parent_id=home)["id"]
+    lower = m.create_location("Lower floor", parent_id=house)["id"]
+    bedroom = m.create_location("Bedroom 3", parent_id=lower)["id"]
+    pool_area = m.create_location("Pool area", parent_id=home)["id"]
+    m.create_location("Shed", parent_id=home)
+    pool = m.create_position("Swimming pool", location_id=pool_area)["id"]
+    pump = m.create_position("Pool pump", parent_id=pool)["id"]  # inherits the pool area
+    aircon = m.create_position("Air conditioner", location_id=bedroom)["id"]
+    car = m.create_position("Family car")["id"]  # at no place
+    tyres = m.create_position("Tyres", parent_id=car)["id"]
+    dishwasher = m.create_position("Dishwasher")["id"]
+    return {"home": home, "house": house, "bedroom": bedroom, "pool_area": pool_area, "pool": pool,
+            "pump": pump, "aircon": aircon, "car": car, "tyres": tyres, "dishwasher": dishwasher}
+
+
+def test_the_assets_are_the_top_level_places_with_everything_inside_counted(m):
+    h = _home(m)
+    m.fit(h["pump"], new_item={"name": "Pump", "serial": "P1"})
+    m.fit(h["aircon"], new_item={"name": "Split system"})
+    m.fit(h["tyres"], new_item={"name": "Tyre set"})
+    spare = m.create_item("Spare filter")["id"]
+    m.place_item(spare, h["pool_area"])
+    m.open_work_order(h["pump"], "Noisy")
+    m.open_work_order(None, "Check the gutters", location_id=h["house"])
+    m.open_work_order(h["car"], "Service")
+    m.create_task(h["aircon"], "Clean the filters", 1, "weeks")  # due within 30 days
+    m.create_task(h["pool"], "Test the water", 6, "months", last_done=_ago(400))  # overdue
+    m.create_task(h["pump"], "Replace the seal", 2, "years")  # not due yet
+    m.create_task(h["dishwasher"], "Clean the filter", 2, "weeks")
+
+    view = m.places()
+    assert view["horizon_days"] == 30
+    [home] = view["places"]
+    assert {k: home[k] for k in ("name", "locations", "positions", "items", "open_work_orders", "due", "overdue")} == {
+        "name": "96 Example Street", "locations": 5, "positions": 3, "items": 3, "open_work_orders": 2,
+        "due": 2, "overdue": 1}
+    assert home["next_due"] == min(t["next_due"] for t in m.due_tasks(30) if t["name"] != "Clean the filter")
+    rest = view["not_placed"]
+    assert {k: rest[k] for k in ("positions", "items", "open_work_orders", "due", "overdue")} == {
+        "positions": 3, "items": 1, "open_work_orders": 1, "due": 1, "overdue": 0}
+    assert set(rest["position_ids"]) == {h["car"], h["tyres"], h["dishwasher"]}
+
+    # A second property is a second asset; placing the car there moves it (and its tyres) across.
+    other = m.create_location("Beach house")["id"]
+    m.create_location("Garage", parent_id=other)
+    m.update_position(h["car"], location_id=other)
+    view = m.places()
+    assert [(p["name"], p["positions"], p["items"], p["open_work_orders"], p["locations"]) for p in view["places"]] == [
+        ("96 Example Street", 3, 3, 2, 5), ("Beach house", 2, 1, 1, 1)]
+    assert view["not_placed"]["position_ids"] == [h["dishwasher"]]
+
+    # A retired position doesn't count.
+    m.retire_position(h["dishwasher"], "Sold")
+    assert m.places()["not_placed"]["positions"] == 0
+    # A place moved to the top level becomes an asset, taking what's inside it.
+    m.update_location(h["bedroom"], parent_id=None)
+    assert [(p["name"], p["positions"]) for p in m.places()["places"]] == [
+        ("96 Example Street", 2), ("Beach house", 2), ("Bedroom 3", 1)]
+
+
+def test_no_places_means_no_assets_and_every_position_is_not_placed(m):
+    pid = m.create_position("Pump")["id"]
+    assert m.places() == {"places": [], "horizon_days": 30, "not_placed": {
+        "positions": 1, "items": 0, "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None,
+        "position_ids": [pid]}}

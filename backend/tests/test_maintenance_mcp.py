@@ -755,6 +755,10 @@ def test_positions_and_locations_through_mcp(env):
         assert loc["systems"][0]["system"]["name"] == "MCC-3" and loc["counts"]["fitted_items"] == 1
         tree = _ok(await _list(client, "locations"))["tree"]
         assert tree[0]["all_positions"] == 2
+        places = _ok(await _list(client, "places"))
+        assert [(p["name"], p["positions"], p["items"], p["open_work_orders"]) for p in places["places"]] == [
+            ("Site", 2, 1, 1)]
+        assert places["not_placed"]["positions"] == 0 and "position_ids" not in places["not_placed"]
         moved = _ok(await _do(client, "maintenance_positions", "update", position_id=feeder["id"], location_id=site))
         assert moved["location"]["name"] == "Site" and not moved["location"]["inherited"]
         cleared = _ok(await _do(client, "maintenance_positions", "update", position_id=feeder["id"],
