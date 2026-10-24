@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "../fullScreen.js";
 import { guidesByCategory, getGuide } from "../guides.js";
 import { getEntry } from "../reference.js";
 import { publicUrl } from "../firebase.js";
@@ -124,7 +125,7 @@ export default function HelpButton({ openSlug = null }) {
             </div>
           </aside>
         </>,
-        document.body
+        portalHost()
       )}
     </>
   );

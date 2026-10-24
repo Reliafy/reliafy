@@ -65,6 +65,13 @@ different units. The menu beside it says what kind of diagram this is:
 (availability) or **Network**. The **⋯** menu at the right holds the rest,
 including **Auto-arrange** to tidy the layout.
 
+For a big diagram, press **Full screen** in the top-right corner of the canvas
+(or press `F`; on a phone it's the arrows icon there). The toolbar and canvas
+then fill the screen, and everything works as it does on the page, block dialogs
+included. The diagram's name and whether it's saved stay in the toolbar. **Exit
+full screen** at the toolbar's right end (or Escape) takes you back, with the
+diagram just as you left it. The results tabs stay on the page.
+
 ## Giving blocks their non-repairable models
 
 Double-click a block to open it. **Name** comes first: call the block what your

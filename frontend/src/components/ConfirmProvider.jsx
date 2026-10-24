@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "../fullScreen.js";
 import { buttonClass } from "./ui/Button.jsx";
 import { normaliseConfirm, normalisePrompt } from "../confirm.js";
 
@@ -172,6 +173,6 @@ function ConfirmDialog({ request, onAnswer }) {
         </div>
       </form>
     </div>,
-    document.body
+    portalHost()
   );
 }
