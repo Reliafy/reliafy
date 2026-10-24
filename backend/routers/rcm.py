@@ -134,7 +134,9 @@ def create_study(
 def list_studies(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
     shared_by = shares_service.shared_by_map(session, ctx.uid, "rcm_studies") if ctx.is_personal else {}
     out = []
-    for study in rcm_service.list_studies(session, ctx.list_owners, ctx.hidden, shared=set(shared_by)):
+    # The sample study stays off the list until it's decided what it becomes; its address still opens.
+    for study in rcm_service.list_studies(session, ctx.list_owners, ctx.hidden, shared=set(shared_by),
+                                        include_samples=False):
         # Resolve as the study's own owner too, so a shared study's evidence
         # statuses match what its author sees.
         resolved = rcm_service.resolve(session, study, [*ctx.read_owners, study.owner_id], ctx.hidden)

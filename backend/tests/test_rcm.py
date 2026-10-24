@@ -279,6 +279,8 @@ def test_sample_study_seeds_with_contradicted_demo(session, monkeypatch):
         assert client.get("/api/rcm/studies/sample-rcm-truck").status_code == 404
         app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True}
         assert client.get("/api/rcm/studies/sample-rcm-truck").status_code == 200
+        # Off the list (until it's decided what the sample becomes), still open by its address.
+        assert "sample-rcm-truck" not in [x["id"] for x in client.get("/api/rcm/studies").json()["studies"]]
     finally:
         app.dependency_overrides.clear()
 

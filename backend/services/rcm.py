@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 
+from backend import config
 from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.schema import RcmStudy
@@ -110,13 +111,16 @@ def create_study(db, name: str, system: str, description: str, owner_id: str) ->
     return study
 
 
-def list_studies(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset()) -> list[RcmStudy]:
+def list_studies(db, owner_id: str | list[str], hidden=frozenset(), shared=frozenset(),
+                 include_samples: bool = True) -> list[RcmStudy]:
+    """The studies a user can see, newest first. The sample study can be left out of
+    a list (``include_samples=False``); it still opens by its own address."""
     return [
         from_doc(RcmStudy, d)
         for d in db.rcm_studies.find(
             _list_query(owner_id, shared)
         ).sort("created_at", -1)
-        if d["_id"] not in hidden
+        if d["_id"] not in hidden and (include_samples or d.get("owner_id") != config.SAMPLE_OWNER)
     ]
 
 
