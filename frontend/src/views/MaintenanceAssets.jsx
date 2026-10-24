@@ -7,13 +7,13 @@ import { PlusIcon } from "../components/LibRows.jsx";
 import { fmtDate } from "../components/MaintenanceParts.jsx";
 import { NewLocationModal } from "./MaintenanceLists.jsx";
 import {
-  NOT_PLACED_PATH, assetsSummary, dueText, insideText, openWorkPath, placePath,
+  NOT_PLACED_PATH, POSITIONS_PATH, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "../maintenanceAssets.js";
 import "./Maintenance.css";
 
 // Operate › Assets: the assets themselves, the top-level places (a house, a
 // site, a plant), each with what it holds anywhere inside it. The positions at
-// no place are one row at the end, opening the Positions page filtered to them.
+// no place are one row at the end, opening the Explorer filtered to them.
 export default function MaintenanceAssets() {
   const navigate = useNavigate();
   const [view, setView] = useState(null);
@@ -46,7 +46,7 @@ export default function MaintenanceAssets() {
             {rest?.positions > 0
               ? <>Your {rest.positions === 1 ? "position isn't" : `${rest.positions} positions aren't`} at a place
                 yet: <Link to={NOT_PLACED_PATH}>see {rest.positions === 1 ? "it" : "them"}</Link>.</>
-              : <>Or start with the <Link to="/asset-register/positions">positions</Link>: what each slot in your
+              : <>Or start with the <Link to={POSITIONS_PATH}>positions</Link>: what each slot in your
                 plant does.</>}
           </p>
         </div>

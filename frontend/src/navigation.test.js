@@ -5,7 +5,7 @@ import {
   ENTRIES, ROLES, ROLE_IDS, SECTIONS, activeEntry, buildMenu, childActive, crumbsFor, datasetPath, entryActive,
   groupBySection, homeCards, itemPath, liveEntries,
 } from "./navigation.js";
-import { MOVED, movedTo } from "./redirects.js";
+import { MOVED, movedHref, movedTo } from "./redirects.js";
 import { PLANNED } from "./plannedPages.js";
 import { appRoutes, hasParam } from "../smoke/routes.js";
 
@@ -67,8 +67,8 @@ test("the menu is Home, then Design, Operate and Analyse, then Reports and the A
 test("each entry's children, as agreed", () => {
   const live = liveEntries(ALL);
   const kids = (id) => live.find((e) => e.id === id).children?.map((c) => c.label) || [];
-  assert.deepEqual(kids("systems"), ["Simulation runs", "Product structure"]);
-  assert.deepEqual(kids("assets"), ["Positions", "Items", "Locations", "Parts and stock", "Classes"]);
+  assert.deepEqual(kids("systems"), ["RBDs", "Simulation runs", "Product structure"]);
+  assert.deepEqual(kids("assets"), ["Explorer", "Parts and stock", "Classes"]);
   assert.deepEqual(kids("maintenance"), ["RCM studies"]);
   assert.deepEqual(kids("data"), []);
   assert.deepEqual(kids("models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
@@ -81,7 +81,11 @@ test("each entry's children, as agreed", () => {
 test("an entry's landing page is never also one of its children", () => {
   for (const has of [{}, ALL]) {
     for (const e of liveEntries(has)) {
-      for (const c of e.children || []) assert.notEqual(c.to, e.to, `${e.label} repeats its landing page`);
+      // Only an entry that opens on its first child (Systems on its RBDs) lists it.
+      (e.children || []).forEach((c, i) => {
+        if (e.opensOnFirstChild && i === 0) assert.equal(c.to, e.to, `${e.label} opens on its first child`);
+        else assert.notEqual(c.to, e.to, `${e.label} repeats its landing page`);
+      });
     }
   }
 });
@@ -201,17 +205,23 @@ test("a page lights its entry, and its child, on landing, child and detail pages
   assert.deepEqual(at("/risk/f1"), ["risk", null]);
   assert.deepEqual(at("/data"), ["data", null]);
   assert.deepEqual(at("/data/d1"), ["data", null]);
-  assert.deepEqual(at("/systems/b/r1"), ["systems", null]);
+  // Systems opens on its RBDs; a diagram's page lights RBDs.
+  assert.deepEqual(at("/systems/rbds"), ["systems", "RBDs"]);
+  assert.deepEqual(at("/systems/b/r1"), ["systems", "RBDs"]);
+  assert.deepEqual(at("/systems/b"), ["systems", "RBDs"]);
+  assert.deepEqual(at("/systems/runs"), ["systems", "Simulation runs"]);
   assert.deepEqual(at("/systems/runs/x"), ["systems", "Simulation runs"]);
   assert.deepEqual(at("/strategy/test-planning/life"), ["strategy", "Test planning"]);
   assert.deepEqual(at("/strategy/analyses/x"), ["strategy", null]);
   assert.deepEqual(at("/forecasts/f"), ["forecasts", null]);
-  assert.deepEqual(at("/asset-register/items/i1"), ["assets", "Items"]);
-  // Assets opens on the top-level places; a position's page is under Positions.
+  // Assets opens on the top-level places; a position's, location's or item's
+  // page is under the Explorer, as the Explorer itself is.
   assert.deepEqual(at("/asset-register"), ["assets", null]);
-  assert.deepEqual(at("/asset-register/positions"), ["assets", "Positions"]);
-  assert.deepEqual(at("/asset-register/positions/p1"), ["assets", "Positions"]);
-  assert.deepEqual(at("/asset-register/locations/l1"), ["assets", "Locations"]);
+  assert.deepEqual(at("/asset-register/explorer"), ["assets", "Explorer"]);
+  assert.deepEqual(at("/asset-register/positions/p1"), ["assets", "Explorer"]);
+  assert.deepEqual(at("/asset-register/locations/l1"), ["assets", "Explorer"]);
+  assert.deepEqual(at("/asset-register/items/i1"), ["assets", "Explorer"]);
+  assert.deepEqual(at("/asset-register/parts/x"), ["assets", "Parts and stock"]);
   assert.deepEqual(at("/maintenance/work-orders/w1"), ["maintenance", null]);
   assert.deepEqual(at("/maintenance/rcm/s1"), ["maintenance", "RCM studies"]);
   assert.deepEqual(at("/reports"), ["reports", null]);
@@ -235,10 +245,27 @@ test("a page's breadcrumbs: its entry, then its child, from the live menu", () =
   // Without Reliafy Maintenance, Maintenance is the RCM studies: one crumb, to a page the user has.
   const none = liveEntries({});
   assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/rcm"), []);
+  // Systems opens on its RBDs: a diagram's crumb is RBDs alone; a run's starts at Systems.
+  assert.deepEqual(crumbsFor(live, "systems", "/systems/rbds", "/systems/rbds"), []);
+  assert.deepEqual(crumbsFor(live, "systems", "/systems/b/x", "/systems/rbds"), [{ label: "RBDs", to: "/systems/rbds" }]);
+  assert.deepEqual(crumbsFor(live, "systems", "/systems/runs/x", "/systems/runs"),
+    [{ label: "Systems", to: "/systems/rbds" }, { label: "Simulation runs", to: "/systems/runs" }]);
   assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/rcm/s", "/maintenance/rcm"),
     [{ label: "Maintenance", to: "/maintenance/rcm" }]);
-  assert.deepEqual(crumbsFor(none, "assets", "/asset-register/items"), []);
-  assert.deepEqual(crumbsFor(live, "assets", "/asset-register/positions"), [{ label: "Assets", to: "/asset-register" }]);
+  assert.deepEqual(crumbsFor(none, "assets", "/asset-register/explorer"), []);
+  assert.deepEqual(crumbsFor(live, "assets", "/asset-register/explorer"), [{ label: "Assets", to: "/asset-register" }]);
+});
+
+test("RBDs show for everyone who sees Systems, on every plan and in every role's lens", () => {
+  for (const has of [{}, ALL, PREVIEW]) {
+    for (const roles of [[], ...ROLE_IDS.map((r) => [r])]) {
+      const { main, more } = buildMenu({ roles, has });
+      const systems = [...main, ...more].find((e) => e.id === "systems");
+      assert.ok(systems, `Systems is in the menu for ${roles}`);
+      assert.equal(systems.to, "/systems/rbds");
+      assert.equal(systems.children[0].label, "RBDs", `${roles}`);
+    }
+  }
 });
 
 test("Home leads with the primary role's cards; none without roles", () => {
@@ -286,8 +313,8 @@ const OLD_TO_NEW = [
   ["/datasets", "/data"],
   ["/datasets/list", "/data"],
   ["/datasets/d/x", "/data/x"],
-  ["/rbds", "/systems"],
-  ["/rbds/list", "/systems"],
+  ["/rbds", "/systems/rbds"],
+  ["/rbds/list", "/systems/rbds"],
   ["/rbds/b", "/systems/b"],
   ["/rbds/b/x", "/systems/b/x"],
   ["/rbds/runs", "/systems/runs"],
@@ -308,14 +335,18 @@ const OLD_TO_NEW = [
   ["/rcm/studies", "/maintenance/rcm"],
   ["/rcm/studies/x", "/maintenance/rcm/x"],
   ["/maintenance/positions/x", "/asset-register/positions/x"],
-  ["/maintenance/items", "/asset-register/items"],
+  ["/maintenance/items", "/asset-register/explorer?arrange=items"],
   ["/maintenance/items/x", "/asset-register/items/x"],
-  ["/maintenance/locations", "/asset-register/locations"],
+  ["/maintenance/locations", "/asset-register/explorer?arrange=locations"],
   ["/maintenance/locations/x", "/asset-register/locations/x"],
   ["/maintenance/classes", "/asset-register/classes"],
   ["/maintenance/classes/x", "/asset-register/classes/x"],
   ["/maintenance/parts", "/asset-register/parts"],
   ["/maintenance/parts/x", "/asset-register/parts/x"],
+  ["/systems", "/systems/rbds"],
+  ["/asset-register/positions", "/asset-register/explorer?arrange=positions"],
+  ["/asset-register/items", "/asset-register/explorer?arrange=items"],
+  ["/asset-register/locations", "/asset-register/explorer?arrange=locations"],
 ];
 
 test("every earlier address redirects to its page's new place, with its id", () => {
@@ -324,22 +355,36 @@ test("every earlier address redirects to its page's new place, with its id", () 
   // Ids are carried as they come (already encoded in the address).
   assert.equal(movedTo("/maintenance/classes/Pool%20pump"), "/asset-register/classes/Pool%20pump");
   assert.equal(movedTo("/modelling/m/"), null);
-  // Addresses that didn't move.
-  for (const path of ["/home", "/strategy", "/strategy/replacement", "/maintenance", "/maintenance/work-orders/w"]) {
+  // Addresses that didn't move (a position's, item's or location's own page among them).
+  for (const path of ["/home", "/strategy", "/strategy/replacement", "/maintenance", "/maintenance/work-orders/w",
+    "/asset-register/positions/p1", "/asset-register/items/i1", "/asset-register/locations/l1"]) {
     assert.equal(movedTo(path), null, path);
   }
 });
 
+test("an earlier address keeps its query: the target's first, then the rest", () => {
+  // No query in the target: the old query and #hash exactly as they were.
+  assert.equal(movedHref("/data/x", "?compare=a%20b", "#bounds"), "/data/x?compare=a%20b#bounds");
+  // The old Positions, Items and Locations pages, with what their addresses carried.
+  assert.equal(movedHref("/asset-register/explorer?arrange=positions", "?place=none"),
+    "/asset-register/explorer?arrange=positions&place=none");
+  assert.equal(movedHref("/asset-register/explorer?arrange=positions", "?arrange=flat&sel=p1"),
+    "/asset-register/explorer?arrange=flat&sel=p1");
+  assert.equal(movedHref("/asset-register/explorer?arrange=locations", "?sel=l1", "#top"),
+    "/asset-register/explorer?arrange=locations&sel=l1#top");
+  assert.equal(movedHref("/asset-register/explorer?arrange=items", ""), "/asset-register/explorer?arrange=items");
+});
+
 test("every redirect lands on a page of the app, and no page is also a redirect", () => {
   for (const m of MOVED) {
-    assert.ok(PAGES.has(m.to), `${m.path} → ${m.to}, which isn't a page`);
+    assert.ok(PAGES.has(m.to.split("?")[0]), `${m.path} → ${m.to}, which isn't a page`);
     assert.ok(!PAGES.has(m.path), `${m.path} is both a page and a redirect`);
     for (const name of m.to.match(/:\w+/g) || []) assert.ok(m.path.includes(name), `${m.path} → ${m.to}`);
   }
 });
 
 test("no link in the app's own code points at an earlier address", () => {
-  const old = /["'`(](\/(?:modelling|rbds|datasets|fleet|rcm)(?:[/"'`?#)]|$)|\/maintenance\/(?:positions|items|locations|classes|parts)\b)/;
+  const old = /["'`(](\/(?:modelling|rbds|datasets|fleet|rcm)(?:[/"'`?#)]|$)|\/maintenance\/(?:positions|items|locations|classes|parts)\b|\/asset-register\/(?:positions|items|locations)(?:["'`?#)]|$))|(?:\bto[=:] ?\{?|navigate\(|href: )["'`]\/systems["'`?#]/;
   const bad = [];
   const walk = (dir) => {
     for (const name of readdirSync(dir)) {
@@ -363,9 +408,9 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   const preview = liveEntries(PREVIEW);
   for (const id of unbuilt) assert.ok(preview.some((e) => e.id === id), id);
   const kids = (list, id) => list.find((e) => e.id === id).children?.map((c) => c.label) || [];
-  assert.deepEqual(kids(plain, "systems"), ["Simulation runs", "Product structure"]);
-  assert.deepEqual(kids(preview, "systems"), ["Simulation runs", "Product structure", "Fault trees", "FMECA"]);
-  assert.deepEqual(kids(preview, "assets"), ["Positions", "Items", "Locations", "Parts and stock", "Classes", "Fleets"]);
+  assert.deepEqual(kids(plain, "systems"), ["RBDs", "Simulation runs", "Product structure"]);
+  assert.deepEqual(kids(preview, "systems"), ["RBDs", "Simulation runs", "Product structure", "Fault trees", "FMECA"]);
+  assert.deepEqual(kids(preview, "assets"), ["Explorer", "Parts and stock", "Classes", "Fleets"]);
   assert.deepEqual(kids(preview, "maintenance"), ["RCM studies", "Field inbox"]);
   assert.deepEqual(kids(preview, "data"), ["Library"]);
   assert.deepEqual(kids(plain, "data"), []);

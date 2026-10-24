@@ -23,7 +23,7 @@ pipework.
 
 ## Laying out the diagram
 
-Open **Systems → New diagram**. Every diagram runs from an **input** node to an
+Open **Systems → RBDs → New diagram**. Every diagram runs from an **input** node to an
 **output** node, and the system works whenever there's a complete path between
 them.
 

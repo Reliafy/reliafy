@@ -8,8 +8,8 @@ export const PLACE_KINDS = ["Position", "Location", "Item", "WorkOrder"];
 const WORDS = { Position: "position", Location: "location", Item: "item", WorkOrder: "work order" };
 // Each kind's pages: the register's under Assets, work orders under Maintenance.
 const PATHS = {
-  Position: "/asset-register/positions", Location: "/asset-register/locations", Item: "/asset-register/items",
-  WorkOrder: "/maintenance/work-orders",
+  Position: "/asset-register/positions/", Location: "/asset-register/locations/", Item: "/asset-register/items/",
+  WorkOrder: "/maintenance/work-orders/",
 };
 
 // "work order" for "WorkOrder"; also takes the lower-case kinds work order
@@ -28,7 +28,7 @@ export function normaliseKind(kind) {
 // The page a place is on, or null for a kind without one.
 export function placePath(place) {
   const k = normaliseKind(place?.kind);
-  return k && place.id ? `${PATHS[k]}/${place.id}` : null;
+  return k && place.id ? `${PATHS[k]}${place.id}` : null;
 }
 
 // "also on Pool pump and 2 more" under a thumbnail; "" when it's only here.

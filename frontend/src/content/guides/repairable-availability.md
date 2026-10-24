@@ -24,7 +24,7 @@ time) or **repairable** (analysed for availability). It's a single choice for
 the whole diagram, because it changes what each block needs and what the results
 mean — you can't mix the two in one diagram.
 
-Open **Systems → New diagram**, and set the menu beside **Unit** in the toolbar to
+Open **Systems → RBDs → New diagram**, and set the menu beside **Unit** in the toolbar to
 *Repairable*. (Non-repairable diagrams give you reliability over time; repairable
 ones give you availability — hover the menu for the reminder.)
 

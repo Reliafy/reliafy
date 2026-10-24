@@ -71,6 +71,7 @@ import useFullScreen from "../components/useFullScreen.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
 import { rbdSaveSnapshot, rbdSaveStatus } from "../rbdSaveState.js";
+import { RBDS_LABEL, RBDS_PATH } from "../navigation.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -2218,7 +2219,7 @@ export default function RbdBuilder() {
   return (
     <div className={"app rbd-app" + (tab === "builder" ? "" : " rbd-app-scroll")}>
       <PageHeader
-        crumbs={[{ label: "Systems", to: "/systems" }]}
+        crumbs={[{ label: RBDS_LABEL, to: RBDS_PATH }]}
         title={(meta.name || "").replace(SAMPLE_SUFFIX, "") || (id ? "" : "Untitled RBD")}
         badges={SAMPLE_SUFFIX.test(meta.name || "") && <Chip>Sample</Chip>}
         id={meta.id || id}
@@ -2271,7 +2272,7 @@ export default function RbdBuilder() {
             rbdId={id}
             imported={imported}
             onNew={() => navigate("/systems/b")}
-            onOpenLibrary={() => navigate("/systems")}
+            onOpenLibrary={() => navigate(RBDS_PATH)}
             onSaved={(savedId) => {
               keyRef.current.savedId = savedId;
               // Saved: the "added as a block — not saved yet" note no longer holds.

@@ -72,6 +72,24 @@ test("no roles: every entry under Design, Operate and Analyse, nothing under Mor
   // A detail page lights its child too.
   await open(page, "/models/m/sample-model-bearings-weibull");
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Non-repairable");
+  // Design › Systems opens on its RBDs, the first page under it, named the
+  // same in the menu and on the page; a diagram lights RBDs too.
+  await mainMenu(page).getByRole("link", { name: "Systems", exact: true }).click();
+  await expect(page).toHaveURL(/\/systems\/rbds$/);
+  await expect(mainMenu(page).locator(".side-children .side-subitem").first()).toHaveText("RBDs");
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RBDs");
+  await expect(page.getByRole("heading", { name: "Reliability block diagrams (RBDs)", level: 1 })).toBeVisible();
+  await mainMenu(page).getByRole("link", { name: "Simulation runs", exact: true }).click();
+  await expect(page).toHaveURL(/\/systems\/runs$/);
+  await mainMenu(page).getByRole("link", { name: "RBDs", exact: true }).click();
+  await expect(page).toHaveURL(/\/systems\/rbds$/);
+  await expect(page.getByRole("row").filter({ hasText: "Pump station" }).first()).toBeVisible();
+  await open(page, "/systems/b/sample-rbd-pump-station");
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RBDs");
+  await expect(page.locator(".crumb")).toHaveText("RBDs");
+  // The old address of the list still lands on it.
+  await open(page, "/systems");
+  await expect(page).toHaveURL(/\/systems\/rbds$/);
   // Operate: Maintenance (due and work orders), with RCM studies under it.
   await open(page, "/maintenance/rcm");
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RCM studies");
@@ -135,7 +153,7 @@ test("switching roles in Settings: technician, then every role, then none", asyn
 
 const LEADS = {
   analyst: "Your recent models",
-  design: "Your recent systems",
+  design: "Your recent RBDs",
   planner: "Due and at risk",
   technician: "Today's work orders",
   fleet: "Your fleets",
@@ -218,7 +236,8 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
 });
 
 const PHONE_PAGES = [
-  "/home", "/systems", "/asset-register", "/asset-register/positions", "/asset-register/locations", "/asset-register/parts", "/maintenance", "/maintenance/rcm", "/data",
+  "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
+  "/asset-register/explorer?arrange=items", "/asset-register/parts", "/maintenance", "/maintenance/rcm", "/data",
   "/models", "/strategy", "/forecasts", "/reports", "/settings",
 ];
 
@@ -241,7 +260,7 @@ test("the phone drawer, and no sideways scroll at 400 px", async ({ page, reques
   await drawer.getByRole("button", { name: "More" }).click();
   await expect(drawer).toBeVisible();
   await drawer.locator("#side-more").getByRole("link", { name: "Systems" }).click();
-  await expect(page).toHaveURL(/\/systems$/);
+  await expect(page).toHaveURL(/\/systems\/rbds$/);
   await expect(drawer).toHaveCount(0);
 
   for (const path of PHONE_PAGES) {

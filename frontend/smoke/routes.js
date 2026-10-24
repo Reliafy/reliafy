@@ -129,7 +129,8 @@ export function expectsChart(path, record = {}) {
 export function landing(route, id, suffix = "") {
   const params = {};
   for (const name of route.path.match(/:\w+/g) || []) params[name.slice(1)] = encodeURIComponent(id);
-  return fillMoved(route.target, params) + suffix;
+  // The path only: a target's own query (?arrange=items) isn't part of it.
+  return fillMoved(route.target, params).split("?")[0] + suffix;
 }
 
 // A few earlier addresses with a query or #hash, which must survive the move.
@@ -139,4 +140,6 @@ export const REDIRECTS_WITH_QUERY = [
   ["/modelling/m/sample-model-bearings-weibull?from=email#bounds", "/models/m/sample-model-bearings-weibull?from=email#bounds"],
   ["/rcm/studies/sample-rcm-truck?from=email", "/maintenance/rcm/sample-rcm-truck?from=email"],
   ["/strategy/demonstration-test?model=sample-model-bearings-weibull", "/strategy/test-planning?model=sample-model-bearings-weibull"],
+  ["/asset-register/positions?place=none", "/asset-register/explorer?arrange=positions&place=none"],
+  ["/maintenance/locations#top", "/asset-register/explorer?arrange=locations#top"],
 ];

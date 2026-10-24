@@ -6880,10 +6880,10 @@ _UPLOAD_FALLBACK_URL = (
     "If the PUT to url can't connect, or a proxy refuses its host (e.g. CONNECT tunnel failed, 403), send the "
     "same PUT once to url_fallback (curl_fallback) instead: the same single-use link on {site}, slower for large "
     "files. The link is only used up when a PUT reaches Reliafy, so a refused first attempt doesn't spend it. ")
-_UPLOAD_APP_PAGES = {"rbd_import": ("/systems", "Systems › Import"), "dataset": ("/data", "Data"),
-                     "excel": ("/data", "Data, RCM studies or Systems › Import"),
-                     "outage_log": ("/systems", "the diagram's Outage history tab"),
-                     "document": ("/asset-register/positions", "the record's Documents card")}
+_UPLOAD_APP_PAGES = {"rbd_import": ("/systems/rbds", "Systems › RBDs › Import"), "dataset": ("/data", "Data"),
+                     "excel": ("/data", "Data, RCM studies or Systems › RBDs › Import"),
+                     "outage_log": ("/systems/rbds", "the diagram's Outage history tab"),
+                     "document": ("/asset-register/explorer", "the record's Documents card")}
 # Inline content (uploads import_rbd): small text formats only — anything larger goes
 # through uploads create rather than the agent's context.
 INLINE_MAX_BYTES = 200 * 1024

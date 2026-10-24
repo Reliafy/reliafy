@@ -50,7 +50,6 @@ const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
 const MaintenanceWorkOrder = lazy(() => import("./views/MaintenanceWorkOrder.jsx"));
 const MaintenanceItem = lazy(() => import("./views/MaintenanceItem.jsx"));
-const MaintenanceItems = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceItems })));
 const AssetExplorer = lazy(() => import("./views/AssetExplorer.jsx"));
 const MaintenanceLocation = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocation })));
 const MaintenanceClasses = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceClasses })));
@@ -67,7 +66,7 @@ import { useAppConfig } from "./ConfigProvider.jsx";
 import { unmatchedRoute } from "./appConfig.js";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
 import { RolesProvider } from "./RolesProvider.jsx";
-import { MOVED, fillMoved } from "./redirects.js";
+import { MOVED, fillMoved, movedHref } from "./redirects.js";
 
 // The authenticated app shell. This module is code-split: App.jsx
 // lazy-imports it, so the public/marketing pages ship without the app bundle.
@@ -82,7 +81,7 @@ function Moved({ to }) {
   const params = useParams();
   const { search, hash, state } = useLocation();
   const encoded = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, encodeURIComponent(v ?? "")]));
-  return <Navigate to={fillMoved(to, encoded) + search + hash} state={state} replace />;
+  return <Navigate to={movedHref(fillMoved(to, encoded), search, hash)} state={state} replace />;
 }
 
 // The desktop rail's collapsed/expanded choice is remembered per device.
@@ -177,7 +176,7 @@ export default function AppShell() {
             <Route path="/home" element={<HomePage />} />
 
             {/* Design: systems as designed. */}
-            <Route path="/systems" element={<RbdHome />} />
+            <Route path="/systems/rbds" element={<RbdHome />} />
             <Route path="/systems/b" element={<RbdBuilder />} />
             <Route path="/systems/b/:id" element={<RbdBuilder />} />
             <Route path="/systems/runs" element={<RbdRuns />} />
@@ -189,11 +188,9 @@ export default function AppShell() {
                 their maintenance. ("/assets" is where the server keeps the
                 build's files, so the register lives at /asset-register.) */}
             {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceAssets />} />}
-            {maintenanceEnabled && <Route path="/asset-register/positions" element={<AssetExplorer arrange="positions" />} />}
+            {maintenanceEnabled && <Route path="/asset-register/explorer" element={<AssetExplorer />} />}
             {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}
-            {maintenanceEnabled && <Route path="/asset-register/items" element={<MaintenanceItems />} />}
             {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}
-            {maintenanceEnabled && <Route path="/asset-register/locations" element={<AssetExplorer arrange="locations" />} />}
             {maintenanceEnabled && <Route path="/asset-register/locations/:id" element={<MaintenanceLocation />} />}
             {maintenanceEnabled && <Route path="/asset-register/classes" element={<MaintenanceClasses />} />}
             {maintenanceEnabled && <Route path="/asset-register/classes/:name" element={<MaintenanceClasses />} />}

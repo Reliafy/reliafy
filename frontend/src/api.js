@@ -2209,6 +2209,11 @@ export function listMaintenanceItems({ itemClassId, manufacturerId } = {}) {
   return request(`/api/maintenance/items${qs ? `?${qs}` : ""}`);
 }
 
+// A new item ({name, serial}): not fitted; place it, or fit it, after.
+export function createMaintenanceItem(body) {
+  return postJson("/api/maintenance/items", body);
+}
+
 export function listMaintenanceLocations() {
   return request("/api/maintenance/locations");
 }

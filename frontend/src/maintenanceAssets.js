@@ -1,12 +1,17 @@
 // Operate › Assets: the assets are the top-level places (a house, a site, a
 // plant), each counting what's anywhere inside it. Positions at no place stay
-// reachable from one row at the end of the list, which opens the Positions page
-// filtered to them (AssetExplorer's ?place=none).
+// reachable from one row at the end of the list, which opens the Explorer
+// arranged by positions, filtered to them (AssetExplorer's ?place=none).
+
+import { explorerPath } from "./assetTree.js";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-// Where the "Not at a place yet" row goes: the Positions page, filtered.
-export const NOT_PLACED_PATH = "/asset-register/positions?place=none";
+// Where the "Not at a place yet" row goes: the Explorer's positions, filtered.
+export const NOT_PLACED_PATH = explorerPath("positions", { place: "none" });
+
+// The Explorer arranged by positions, for "start with the positions".
+export const POSITIONS_PATH = explorerPath("positions");
 
 // A place's page.
 export const placePath = (id) => `/asset-register/locations/${id}`;

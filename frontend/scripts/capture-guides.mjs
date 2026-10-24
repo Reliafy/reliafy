@@ -681,9 +681,9 @@ async function main() {
         await page.getByRole("option", { name: /Bearing life — Weibull/ }).first().click(); await wait(500);
       } },
     // --- Verify a safety function: the starter, as it opens and calculated ---
-    { file: "sif-01-starter.png", url: "/systems", settle: 1500,
+    { file: "sif-01-starter.png", url: "/systems/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); } },
-    { file: "sif-02-results.png", url: "/systems", settle: 1500,
+    { file: "sif-02-results.png", url: "/systems/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
     // --- RCM study: the sample, with its evidence statuses ---
     { file: "rcm-01-study.png", url: "/maintenance/rcm/sample-rcm-truck", settle: 2000 },
@@ -699,7 +699,7 @@ async function main() {
       } },
     // --- Import a diagram: a Galileo file through RBDs → Import. It opens
     // unsaved with its import notes, so nothing is left behind. ---
-    { file: "import-01-notes.png", url: "/systems", settle: 1500,
+    { file: "import-01-notes.png", url: "/systems/rbds", settle: 1500,
       async act(page) {
         await page.locator('input[type="file"]').first().setInputFiles({
           name: "feed-system.dft", mimeType: "text/plain", buffer: Buffer.from(GALILEO_FEED),

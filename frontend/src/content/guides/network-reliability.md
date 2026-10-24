@@ -31,7 +31,7 @@ supports none of those, and it isn't repairable.
 
 ## Build it
 
-Open **Systems → New diagram** and set the menu beside **Unit** in the toolbar to
+Open **Systems → RBDs → New diagram** and set the menu beside **Unit** in the toolbar to
 **Network**. The canvas works as usual, with three differences in meaning:
 
 - Each **block** is a point that can fail, with a non-repairable model. A pipe segment or

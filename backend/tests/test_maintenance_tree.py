@@ -98,6 +98,18 @@ def test_status_on_each_row_and_rolled_up_inside(m):
     assert truck["inside"]["open_work"] == 1
 
 
+def test_a_fitted_item_has_its_own_status_for_its_row_by_item(m):
+    """The Explorer's Items arrangement shows the item's own work, not its position's."""
+    ids = _plant(m)
+    m.open_work_order(ids["truck"], "Wash")  # on the truck position, not its engine
+    m.open_work_order(None, "Turbo overhaul", item_id=m.position(ids["turbo"])["fitted"]["item"]["id"])
+    rows = {r["name"]: r for r in m.tree_rows()["positions"]}
+    assert rows["Turbo 1"]["item"]["status"] == {"open_work": 1}
+    assert rows["Turbo 1"]["status"]["open_work"] == 1  # the position still counts it
+    assert "status" not in rows["Truck 14"]["item"]  # nothing on the engine itself
+    assert rows["Truck 14"]["status"]["open_work"] == 1
+
+
 def test_the_tree_agrees_with_each_position_page(m):
     ids = _plant(m)
     m.create_task(ids["pump"], "Grease", 3, "months")

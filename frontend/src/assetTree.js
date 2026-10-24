@@ -1,21 +1,56 @@
-// The asset tree pane's model (Operate › Assets › Positions and Locations): the
-// same positions arranged by the positions tree, by where they are, or as one
-// flat list; what's open; the filter that keeps the path to each match; the
-// rows that are drawn (only those on screen are in the page); the ancestors
-// pinned at the top while you scroll; and what's remembered on this device.
+// The asset tree pane's model (Operate › Assets › Explorer): the whole
+// register arranged by the positions tree, by where things are, by item, or as
+// one flat list of positions; what's open; the filter that keeps the path to
+// each match; the rows that are drawn (only those on screen are in the page);
+// the ancestors pinned at the top while you scroll; and what's remembered on
+// this device.
 //
 // Pure functions (no React), tested in assetTree.test.js. The rows come from
 // GET /api/maintenance/tree: every position once, with parent_id, its own
-// status (overdue, open_work, alarms, next_due) and where it is.
+// status (overdue, open_work, alarms, next_due), where it is and the item
+// fitted there; the locations; the items placed at one (spares); and the
+// items neither fitted nor placed (unhomed). The Items arrangement can also
+// take GET /api/maintenance/items, for each item's class, make and model.
+
+import { EXPLORER_PATH } from "./navigation.js";
 
 export const ARRANGEMENTS = [
-  { value: "positions", label: "Positions", title: "What each position does, inside what" },
-  { value: "locations", label: "Locations", title: "Where things are" },
-  { value: "flat", label: "Flat", title: "Every position in one list, A to Z" },
+  { value: "positions", label: "Positions", title: "What each position does, inside what", tree: "Positions" },
+  { value: "locations", label: "Locations", title: "Where things are", tree: "Locations" },
+  { value: "items", label: "Items", title: "Every item: fitted, spare, or with no home yet", tree: "Items" },
+  { value: "flat", label: "Flat", title: "Every position in one list, A to Z", tree: "Positions, A to Z" },
 ];
+const MODES = new Set(ARRANGEMENTS.map((a) => a.value));
 
-// Which arrangement each menu entry opens on, and back.
-export const ARRANGE_PATH = { positions: "/asset-register/positions", locations: "/asset-register/locations" };
+// The arrangement an address asks for (?arrange=), else the one used last
+// here, else Positions.
+export function arrangementOf(param, remembered) {
+  if (MODES.has(param)) return param;
+  return MODES.has(remembered) ? remembered : "positions";
+}
+
+// The Explorer's address for an arrangement, with any other query
+// ({sel, place}; empty values left out).
+export function explorerPath(mode = "positions", extra = {}) {
+  const q = new URLSearchParams({ arrange: mode });
+  for (const [k, v] of Object.entries(extra)) if (v) q.set(k, v);
+  return `${EXPLORER_PATH}?${q}`;
+}
+
+// The row to keep picked when the arrangement changes, if any: a position
+// stays itself (in Items, the item fitted there); an item stays itself (in
+// Positions and Flat, the position it's fitted to); a location stays itself
+// in Locations. null: nothing to carry over.
+export function carryOver(row, to) {
+  if (!row) return null;
+  if (row.type === "pos") return to === "items" ? row.ref.item?.id ?? null : row.key;
+  if (row.type === "item") {
+    if (to === "items" || to === "locations") return row.key;
+    return row.ref.fitted_to?.id ?? (to === "positions" ? row.key : null);
+  }
+  if (row.type === "loc") return to === "locations" ? row.key : null;
+  return null;
+}
 
 // Natural A–Z: "Zone 2" before "Zone 10", case ignored.
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
@@ -27,7 +62,7 @@ const blank = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null });
 // group), ref, parent, kids, depth, own, sum} keyed by id, and the tops.
 // Every position appears exactly once: one the arrangement has no place for
 // (it shouldn't happen) goes in a last group rather than going missing.
-export function buildDisplay(data, mode) {
+export function buildDisplay(data, mode, itemList = null) {
   const rows = new Map();
   const roots = [];
   const add = (key, type, ref, parent = null) => {
@@ -101,12 +136,14 @@ export function buildDisplay(data, mode) {
     };
     for (const l of locKids.get(null) || []) addLoc(l, null);
     const homeless = tops.filter((p) => !p.location_id);
-    const unhomed = (data?.unhomed || []).filter((it) => loose.has(it.id));
+    const unhomed = [...(data?.unhomed || [])];
     if (homeless.length || unhomed.length) {
       add("G:nohome", "group", { name: "No home yet", note: "Not at a location and not fitted" });
       for (const p of homeless) addPosTree(p, "G:nohome", true);
       for (const it of unhomed.sort(byName)) addItem(it, "G:nohome", true);
     }
+  } else if (mode === "items") {
+    addItems(data, itemList, add);
   } else if (mode === "flat") {
     for (const p of [...positions].sort(byName)) add(p.id, "pos", p, null);
   } else {
@@ -116,14 +153,71 @@ export function buildDisplay(data, mode) {
       for (const { item } of [...loose.values()].sort((a, b) => byName(a.item, b.item))) addItem(item, "G:loose", false);
     }
   }
-  // Anything left over still shows, in one last group.
-  const missing = positions.filter((p) => !rows.has(p.id));
+  // Anything left over still shows, in one last group (Items lists items only).
+  const missing = mode === "items" ? [] : positions.filter((p) => !rows.has(p.id));
   if (missing.length) {
     add("G:other", "group", { name: "Elsewhere", note: "Positions with no place in this arrangement" });
     for (const p of missing.sort(byName)) if (!rows.has(p.id)) add(p.id, "pos", p, "G:other");
   }
   rollUp(rows, roots);
-  return { rows, roots, positions: positions.length };
+  let items = 0;
+  for (const r of rows.values()) items += r.type === "item";
+  return { rows, roots, positions: positions.length, items };
+}
+
+// The Items arrangement: every item once, A to Z, in three groups: fitted to
+// a position now, at a location and not fitted (spares, and things away from
+// their positions), and neither (no home yet). Each item row carries what the
+// detail panel says about it: serial, the position it's fitted to, where it
+// is, and (from the items list, once loaded) its class, make and model.
+const ITEM_GROUPS = [
+  { key: "G:fitted", name: "Fitted", note: "Fitted to a position now" },
+  { key: "G:placed", name: "At a location, not fitted", note: "Spares, and items away from their positions" },
+  { key: "G:unhomed", name: "No home yet", note: "Not fitted and not at a location" },
+];
+
+function addItems(data, itemList, add) {
+  const more = new Map((itemList || []).map((i) => [i.id, i]));
+  const locName = new Map((data?.locations || []).map((l) => [l.id, l.name]));
+  const extra = (id) => {
+    const i = more.get(id);
+    if (!i) return {};
+    return {
+      item_class: i.item_class || null, manufacturer: i.manufacturer_entry?.name || i.manufacturer || "",
+      model: i.model || "", part_number: i.part_number || "",
+    };
+  };
+  const groups = { "G:fitted": [], "G:placed": [], "G:unhomed": [] };
+  const seen = new Set();
+  const put = (group, ref) => {
+    if (seen.has(ref.id)) return;
+    seen.add(ref.id);
+    groups[group].push({ ...ref, ...extra(ref.id) });
+  };
+  for (const p of data?.positions || []) {
+    if (!p.item) continue;
+    put("G:fitted", {
+      id: p.item.id, name: p.item.name, serial: p.item.serial || "", status: p.item.status,
+      fitted_to: { id: p.id, name: p.name }, place: p.location ? { id: p.location.id, name: p.location.name } : null,
+    });
+  }
+  for (const it of data?.spares || []) {
+    put("G:placed", { ...it, place: locName.has(it.location_id) ? { id: it.location_id, name: locName.get(it.location_id) } : null });
+  }
+  for (const it of data?.unhomed || []) put("G:unhomed", { ...it });
+  // An item in the items list that the tree doesn't have yet (made a moment
+  // ago): with no home, until the tree is read again.
+  for (const i of more.values()) {
+    if (!seen.has(i.id)) put(i.fitted_to ? "G:fitted" : i.location ? "G:placed" : "G:unhomed", {
+      id: i.id, name: i.name, serial: i.serial || "", fitted_to: i.fitted_to || null,
+      place: i.location ? { id: i.location.id, name: i.location.name } : null,
+    });
+  }
+  for (const g of ITEM_GROUPS) {
+    if (!groups[g.key].length) continue;
+    add(g.key, "group", { name: g.name, note: g.note });
+    for (const ref of groups[g.key].sort(byName)) add(ref.id, "item", ref, g.key);
+  }
 }
 
 // Depth, and each row's totals: its own status plus everything inside it.
@@ -167,10 +261,12 @@ export function levelSet(display, n, root = null) {
   return open;
 }
 
-// What a row's text is searched by: name, tag, the item's name and serial, class.
+// What a row's text is searched by: name, tag, the item's name and serial,
+// class; for an item, its serial, class, make, model and part number too.
 export function rowText(r) {
   const p = r.ref;
-  return [p.name, p.tag, p.item?.name, p.item?.serial, p.serial, p.position_class]
+  return [p.name, p.tag, p.item?.name, p.item?.serial, p.serial, p.position_class, p.item_class?.name,
+    p.manufacturer, p.model, p.part_number]
     .filter(Boolean).join(" ").toLowerCase();
 }
 
@@ -179,7 +275,7 @@ export const CHIPS = [
   { id: "overdue", label: "Overdue", test: (r) => r.own.overdue > 0 },
   { id: "open", label: "Open work", test: (r) => r.own.open_work > 0 },
   { id: "alarm", label: "Alarm", test: (r) => r.own.alarms > 0 },
-  { id: "empty", label: "Empty", title: "Positions with a class and nothing fitted", test: (r) => r.type === "pos" && !!r.ref.position_class && !r.ref.item },
+  { id: "empty", label: "Empty", title: "Positions with a class and nothing fitted", positionsOnly: true, test: (r) => r.type === "pos" && !!r.ref.position_class && !r.ref.item },
 ];
 
 // The filter: the rows that match the text and every chip that's on (and the
@@ -321,9 +417,9 @@ export function insideWords(r) {
     .filter(Boolean).join(" · ");
 }
 
-// What's remembered on this device, per workspace: the rows open in each
-// arrangement, the selection in each, the pane's width and whether it's
-// folded to a rail. Storage can throw (private mode, blocked site data), so
+// What's remembered on this device, per workspace: the arrangement used last,
+// the rows open in each arrangement, the selection in each, the pane's width
+// and whether it's folded to a rail. Storage can throw (private mode, blocked site data), so
 // every read and write is guarded and the page works without it.
 const KEY = (ws) => `reliafy.assetTree.${ws || "personal"}`;
 export const PANE = { min: 220, initial: 320, rail: 44 };
@@ -333,19 +429,21 @@ export function loadTreeState(ws, storage = globalThis.localStorage) {
     const raw = storage?.getItem(KEY(ws));
     const v = raw ? JSON.parse(raw) : {};
     return {
+      mode: MODES.has(v.mode) ? v.mode : null,
       open: Object.fromEntries(Object.entries(v.open || {}).map(([m, keys]) => [m, new Set(keys)])),
       selected: v.selected || {},
       width: Number.isFinite(v.width) ? v.width : PANE.initial,
       collapsed: !!v.collapsed,
     };
   } catch {
-    return { open: {}, selected: {}, width: PANE.initial, collapsed: false };
+    return { mode: null, open: {}, selected: {}, width: PANE.initial, collapsed: false };
   }
 }
 
 export function saveTreeState(ws, state, storage = globalThis.localStorage) {
   try {
     storage?.setItem(KEY(ws), JSON.stringify({
+      mode: state.mode || null,
       open: Object.fromEntries(Object.entries(state.open || {}).map(([m, set]) => [m, [...set]])),
       selected: state.selected || {},
       width: state.width,

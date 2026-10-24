@@ -3,7 +3,7 @@ title: "Check a diagram against its real outage history"
 task: "I have a log of real outages. What availability did the system actually achieve, and does my diagram agree?"
 category: "Reliability block diagrams"
 prerequisites: "A saved diagram of the system, and a log of its blocks' outages: which block, when it went down, when it came back."
-related_href: "/systems"
+related_href: "/systems/rbds"
 related_label: "Open the RBDs page"
 order: 38
 ---

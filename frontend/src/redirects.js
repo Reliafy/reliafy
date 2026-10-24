@@ -38,8 +38,8 @@ export const MOVED = [
   { path: "/datasets/list", to: "/data" },
   { path: "/datasets/d/:id", to: "/data/:id" },
   // RBDs → Design › Systems.
-  { path: "/rbds", to: "/systems" },
-  { path: "/rbds/list", to: "/systems" },
+  { path: "/rbds", to: "/systems/rbds" },
+  { path: "/rbds/list", to: "/systems/rbds" },
   { path: "/rbds/b", to: "/systems/b" },
   { path: "/rbds/b/:id", to: "/systems/b/:id" },
   { path: "/rbds/runs", to: "/systems/runs" },
@@ -68,16 +68,24 @@ export const MOVED = [
   { path: "/rcm/studies/:id", to: "/maintenance/rcm/:id" },
   // Reliafy Maintenance's register → Operate › Assets. (/maintenance itself
   // stays: it's the due tasks and work orders now; the positions tree is
-  // Assets › Positions, and Assets opens on the top-level places.)
+  // Assets › Explorer, and Assets opens on the top-level places.)
   { path: "/maintenance/positions/:id", to: "/asset-register/positions/:id" },
-  { path: "/maintenance/items", to: "/asset-register/items" },
+  { path: "/maintenance/items", to: "/asset-register/explorer?arrange=items" },
   { path: "/maintenance/items/:id", to: "/asset-register/items/:id" },
-  { path: "/maintenance/locations", to: "/asset-register/locations" },
+  { path: "/maintenance/locations", to: "/asset-register/explorer?arrange=locations" },
   { path: "/maintenance/locations/:id", to: "/asset-register/locations/:id" },
   { path: "/maintenance/classes", to: "/asset-register/classes" },
   { path: "/maintenance/classes/:name", to: "/asset-register/classes/:name" },
   { path: "/maintenance/parts", to: "/asset-register/parts" },
   { path: "/maintenance/parts/:id", to: "/asset-register/parts/:id" },
+  // Design › Systems opens on its RBDs, the list of diagrams, at their own address.
+  { path: "/systems", to: "/systems/rbds" },
+  // Assets › Positions, Items and Locations → one page, Assets › Explorer,
+  // arranged by each (their ?place=, ?sel= and ?arrange=flat come along).
+  // Each one's own pages (/asset-register/positions/:id and so on) stay.
+  { path: "/asset-register/positions", to: "/asset-register/explorer?arrange=positions" },
+  { path: "/asset-register/items", to: "/asset-register/explorer?arrange=items" },
+  { path: "/asset-register/locations", to: "/asset-register/explorer?arrange=locations" },
 ];
 
 // Where an old address goes: `pathname` (no query or hash) matched against
@@ -101,4 +109,21 @@ export function movedTo(pathname) {
 // `to` with each `:name` replaced by its (already URL-encoded) value.
 export function fillMoved(to, params) {
   return to.replace(/:(\w+)/g, (_, name) => params[name] ?? "");
+}
+
+// Where an old address lands with its own query (`search`, "?a=1" or "") and
+// #hash: `to`'s query first, then the old address's other keys, so
+// /asset-register/positions?arrange=flat&sel=p1 lands arranged flat (the old
+// Positions page's own arrangement) with p1 picked, and
+// /asset-register/locations?sel=l1 arranged by locations with l1 picked.
+// A `to` with no query keeps the old query exactly as it was.
+export function movedHref(to, search = "", hash = "") {
+  const [path, own] = to.split("?");
+  if (!own) return to + search + hash;
+  const q = new URLSearchParams(own);
+  const old = new URLSearchParams(search);
+  // The old Positions page's ?arrange=flat was its own arrangement: it wins.
+  if (old.get("arrange") === "flat" && q.get("arrange") === "positions") q.set("arrange", "flat");
+  for (const [k, v] of old) if (!q.has(k)) q.append(k, v);
+  return `${path}?${q}${hash}`;
 }

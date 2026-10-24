@@ -6352,6 +6352,8 @@ class Maintenance:
                 "status": _add_status(_blank_status(), own, status.get(item["id"]) if item else None),
                 # The position's own, as the tree always gave them.
                 "tasks": tasks.get(pid, 0), "own_next_due": own["next_due"], "own_open": own["open_work"],
+                # The fitted item's own (its tasks, work orders and points), for its row by item.
+                "item_status": status.get(item["id"]) if item else None,
             }
         return {
             "positions": rows,
@@ -6449,8 +6451,9 @@ class Maintenance:
 
     def tree_rows(self) -> dict:
         """The asset trees for the app's tree pane, flat: every live position once
-        (id, name, parent_id, and when set: tag, position_class, item, location_id
-        (set on it), location (where it is), carried_by, status, inside), with the
+        (id, name, parent_id, and when set: tag, position_class, item (with the
+        item's own status, when it has any), location_id (set on it), location
+        (where it is), carried_by, status, inside), with the
         locations, the items placed at one now (spares) and the items neither fitted
         nor placed (unhomed). Empty fields are left out: a big register stays small."""
         read = self._tree_read()
@@ -6468,6 +6471,9 @@ class Maintenance:
                     row[key] = r[key]
             if r["item"]:
                 row["item"] = {k: r["item"][k] for k in ("id", "name", "serial") if r["item"].get(k)}
+                item_status = lean(r["item_status"])
+                if item_status:
+                    row["item"]["status"] = item_status
             for key, value in (("status", lean(r["status"])), ("inside", lean(inside.get(pid)))):
                 if value:
                     row[key] = value
