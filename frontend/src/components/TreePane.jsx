@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import OverflowMenu from "./OverflowMenu.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import {
-  ARRANGEMENTS, CHIPS, PANE, clampWidth, findByPrefix, markersOf, pinnedRows, windowOf,
-} from "../assetTree.js";
+import { Chevron, Highlight, LevelButtons } from "./OutlineBits.jsx";
+import useOutlineNav from "./useOutlineNav.js";
+import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf } from "../assetTree.js";
 
 // The asset tree as a second-level menu beside the site menu: the outline
 // only (indent, arrow, name, at most three markers), with the filter, Arrange
@@ -36,20 +36,6 @@ function RowIcon({ r }) {
       {ICON[kind] || ICON.group}
     </svg>
   );
-}
-
-const Chevron = () => (
-  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-    <path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" />
-  </svg>
-);
-
-// The name with the filter's text marked.
-function Highlight({ text, query }) {
-  const q = query.trim();
-  const i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
-  if (i < 0) return text;
-  return <>{text.slice(0, i)}<mark>{text.slice(i, i + q.length)}</mark>{text.slice(i + q.length)}</>;
 }
 
 function Markers({ r }) {
@@ -106,104 +92,18 @@ export default function TreePane({
   onToggle, onLevel, onCloseAll, phone, width, onWidth, collapsed, onCollapse, onNew, newLabel, menu,
   notice, statusText, empty, scrollTo, onEnter,
 }) {
-  const scroller = useRef(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewH, setViewH] = useState(600);
   const H = phone ? 44 : 30;
-  const typed = useRef({ text: "", at: 0 });
-  const wantFocus = useRef(false);
+  const maxPins = phone ? 2 : 4;
+  const { scroller, onScroll, onKey, pins, reveal, drawn } = useOutlineNav({
+    display, list, index, open, focus, rowHeight: H, maxPins, onPick, onToggle, onEnter,
+    measureKey: `${collapsed}${phone}`, rowId: (key) => `tp-${key}`,
+  });
 
-  // The scroller's height, as the window and the pane change.
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (!el) return undefined;
-    const measure = () => setViewH(el.clientHeight || 600);
-    measure();
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [collapsed, phone]);
-
-  // One state update a frame, however fast the scroll events come.
-  const frame = useRef(0);
-  const onScroll = useCallback(() => {
-    if (frame.current) return;
-    frame.current = requestAnimationFrame(() => {
-      frame.current = 0;
-      if (scroller.current) setScrollTop(scroller.current.scrollTop);
-    });
-  }, []);
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
-
-  const pins = pinnedRows(display, list, index, scrollTop, H, phone ? 2 : 4);
-
-  // Keep a row in view below the pinned rows: on a key press, or when the page
-  // asks (scrollTo changes: a breadcrumb or a "Directly inside" row picked).
-  const reveal = useCallback((key, middle = false) => {
-    const el = scroller.current;
-    const i = index.get(key);
-    if (!el || i == null) return;
-    const pinsH = Math.min(pins.length, phone ? 2 : 4) * H;
-    if (middle && (i * H < el.scrollTop + pinsH || (i + 1) * H > el.scrollTop + el.clientHeight)) {
-      el.scrollTop = Math.max(0, i * H - el.clientHeight / 3);
-    } else if (i * H < el.scrollTop + pinsH) {
-      el.scrollTop = Math.max(0, i * H - pinsH - H);
-    } else if ((i + 1) * H > el.scrollTop + el.clientHeight) {
-      el.scrollTop = (i + 1) * H - el.clientHeight;
-    }
-    setScrollTop(el.scrollTop);
-  }, [index, pins.length, phone, H]);
-
+  // Keep a row in view when the page asks (scrollTo changes: a breadcrumb or
+  // a "Directly inside" row picked).
   useEffect(() => {
     if (scrollTo?.key) reveal(scrollTo.key, true);
   }, [scrollTo]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // After a key press moved the focus, the row (now drawn) takes it.
-  useEffect(() => {
-    if (!wantFocus.current || !focus) return;
-    wantFocus.current = false;
-    document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true });
-  });
-
-  const go = (key) => {
-    if (key == null) return;
-    wantFocus.current = true;
-    onPick(key, { keyboard: true });
-    reveal(key);
-  };
-
-  const onKey = (e) => {
-    if (e.target.closest("input, select, textarea")) return;
-    if (!list.length) return;
-    const i = focus != null && index.has(focus) ? index.get(focus) : 0;
-    const v = list[i];
-    const r = display.rows.get(v.key);
-    const page = Math.max(1, Math.floor((scroller.current?.clientHeight || 600) / H) - 1);
-    const key = e.key;
-    let handled = true;
-    if (key === "ArrowDown") go(list[Math.min(list.length - 1, i + 1)].key);
-    else if (key === "ArrowUp") go(list[Math.max(0, i - 1)].key);
-    else if (key === "Home") go(list[0].key);
-    else if (key === "End") go(list[list.length - 1].key);
-    else if (key === "PageDown") go(list[Math.min(list.length - 1, i + page)].key);
-    else if (key === "PageUp") go(list[Math.max(0, i - page)].key);
-    else if (key === "ArrowRight") {
-      if (r.kids.length && !open.has(v.key)) onToggle(v.key, true);
-      else if (r.kids.length && list[i + 1]) go(list[i + 1].key);
-    } else if (key === "ArrowLeft") {
-      if (r.kids.length && open.has(v.key)) onToggle(v.key, false);
-      else if (r.parent != null && index.has(r.parent)) go(r.parent);
-    } else if (key === "Enter") {
-      onEnter?.(v.key);
-    } else if (key.length === 1 && /\S/.test(key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const now = Date.now();
-      typed.current = { text: now - typed.current.at < 700 ? typed.current.text + key : key, at: now };
-      const from = typed.current.text.length > 1 ? i - 1 : i;
-      go(findByPrefix(display, list, (from + list.length) % list.length, typed.current.text));
-    } else handled = false;
-    if (handled) e.preventDefault();
-  };
 
   // Drag the edge to resize; ← → when it has focus; double-click resets.
   const startResize = (e) => {
@@ -232,12 +132,6 @@ export default function TreePane({
     );
   }
 
-  const [from, to] = windowOf(list.length, scrollTop, viewH, H);
-  const drawn = [];
-  for (let i = from; i < to; i++) drawn.push(i);
-  // The focused row is always drawn, so it keeps the keyboard focus when scrolled away.
-  const fi = focus != null ? index.get(focus) : undefined;
-  if (fi != null && (fi < from || fi >= to)) drawn.push(fi);
   const dim = (key) => filter && !filter.match.has(key);
 
   return (
@@ -264,19 +158,7 @@ export default function TreePane({
         </label>
         <SegmentedControl size="sm" className="tp-arrange" label="Arrange by" options={ARRANGEMENTS} value={mode} onChange={onMode} />
         {mode !== "flat" && mode !== "items" && (
-          <div className="tp-levels" role="group" aria-label="Open the tree to a level">
-            <span className="tp-levels-label" aria-hidden="true">Levels</span>
-            <div className="seg seg-sm">
-              {LEVELS.map((n) => (
-                <button key={n} type="button" className="seg-btn" onClick={() => onLevel(n)}
-                        aria-label={`Open to level ${n}`} title={`Open to level ${n}`}>{n}</button>
-              ))}
-              <button type="button" className="seg-btn" onClick={() => onLevel(Infinity)} aria-label="Open everything" title="Open everything">All</button>
-            </div>
-            <button type="button" className="tp-icon-btn" onClick={onCloseAll} aria-label="Close everything" title="Close everything">
-              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.4" fill="none" /><path d="M5.5 8h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-            </button>
-          </div>
+          <LevelButtons levels={LEVELS} onLevel={onLevel} onCloseAll={onCloseAll} />
         )}
         <div className="tp-chips" role="group" aria-label="Show only">
           {CHIPS.filter((c) => !c.positionsOnly || mode !== "items").map((c) => {

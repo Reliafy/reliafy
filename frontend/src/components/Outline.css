@@ -1,0 +1,90 @@
+/* What every outline shares (OutlineBits.jsx): the asset tree pane and the
+   RCM worksheet. The filter box, the level buttons, the open/close arrow,
+   the count on a closed row and the filter's words marked. */
+
+.tp-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 8px;
+  color: var(--muted);
+  background: var(--surf);
+}
+
+.tp-filter:focus-within {
+  border-color: var(--acc);
+  box-shadow: var(--focus);
+}
+
+.tp-filter input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  padding: 7px 0;
+  font-size: var(--fs-14);
+  background: transparent;
+}
+
+.tp-levels {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tp-levels-label {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.tp-levels .seg-btn {
+  min-width: 30px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-row mark,
+.rw-row mark {
+  background: var(--warn-bg);
+  color: inherit;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--warn-line);
+}
+
+.tp-chev,
+.tp-chev-sp {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--muted);
+}
+
+.tp-chev:hover {
+  background: var(--acc-t);
+  color: var(--acc);
+}
+
+.tp-chev svg {
+  transition: transform 0.12s;
+}
+
+.tp-chev.open svg {
+  transform: rotate(90deg);
+}
+
+.tp-cnt {
+  flex: none;
+  margin-left: 3px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
