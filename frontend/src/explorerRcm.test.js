@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
-import { cellRow, graftRcm, isRcmRow, openFor, positionOf } from "./explorerRcm.js";
+import { graftRcm, isRcmRow, openFor, positionOf, rowActions } from "./explorerRcm.js";
 import { failuresOn } from "./rcmWorksheet.js";
 
 const DATA = {
@@ -51,17 +51,25 @@ test("the RCM nested in the tree: functions, then failures, then modes, before t
   assert.equal(markersOf(d.rows.get("pump"), { rcm: true })[0].label, "2 positions not analysed yet here and inside");
 });
 
-test("the Add rows: only for the position being worked on, and not counted as inside", () => {
-  const d = graftRcm(buildDisplay(DATA, "positions"), RCM, { addFor: "pump" });
-  assert.deepEqual(d.rows.get("pump").kids, ["f1", "f2", "U:pump", "+fn:pump", "motor"]);
-  assert.deepEqual(d.rows.get("f2").kids, ["+fail:f2"]);
-  assert.deepEqual(d.rows.get("x2").kids, ["m3", "+mode:x2"]);
-  assert.deepEqual(d.rows.get("+mode:x2").ref, { add: "mode", text: "Add a failure mode", position_id: "pump", functional_failure_id: "x2" });
-  assert.deepEqual(cellRow(d.rows.get("x2")).kids, ["m3"]);
-  // A position with no RCM yet gets its Add a function row.
-  const m = graftRcm(buildDisplay(DATA, "positions"), RCM, { addFor: "motor" });
-  assert.deepEqual(m.rows.get("motor").kids, ["+fn:motor"]);
-  assert.equal(m.rows.get("+fn:pump"), undefined);
+test("no Add rows in the tree: adding is from each row's menu", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), RCM);
+  assert.ok(![...d.rows.keys()].some((k) => k.startsWith("+")));
+  assert.deepEqual(d.rows.get("f2").kids, []);
+  assert.deepEqual(d.rows.get("motor").kids, []);
+  const ids = (key, opts) => rowActions(d.rows.get(key), opts).map((a) => a.id);
+  assert.deepEqual(ids("pump"), ["add-fn"]);
+  assert.deepEqual(ids("motor"), ["add-fn"]); // a position with no RCM yet
+  assert.deepEqual(ids("f1"), ["add-fail", "rename", "delete"]);
+  assert.deepEqual(ids("x1"), ["add-mode", "rename", "delete"]);
+  assert.deepEqual(ids("m1"), ["decide", "rename", "delete"]);
+  assert.deepEqual(ids("U:pump"), []); // the "Not under a functional failure" heading has none
+  // On a phone the details panel edits the description, so no Edit description.
+  assert.deepEqual(ids("f1", { canRename: false }), ["add-fail", "delete"]);
+  const label = (key) => rowActions(d.rows.get(key)).map((a) => a.label);
+  assert.deepEqual(label("f1"), ["Add functional failure", "Edit description", "Delete function"]);
+  assert.equal(label("m2")[0], "Change the decision…");
+  assert.equal(label("m1")[0], "Decide…");
+  assert.deepEqual(rowActions(null), []);
 });
 
 test("levels count functions and failures; the one search and the chips reach the RCM rows", () => {

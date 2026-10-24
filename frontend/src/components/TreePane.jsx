@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import OverflowMenu from "./OverflowMenu.jsx";
+import RowMenu from "./RowMenu.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Chevron, Highlight, LevelButtons } from "./OutlineBits.jsx";
 import { Cell, CellEditor, LevelIcon, PhoneStatus, phoneLine } from "./RcmWorksheet.jsx";
@@ -24,7 +25,10 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 // takes the page's width, with two slim rows over it (the panel's heading,
 // then the filters). One scroll container, one set of rows, one selection;
 // the tree column stays put when the table scrolls sideways. On a phone each row is two lines (the name,
-// then the RCM's main columns in words).
+// then the RCM's main columns in words). Each row's actions (adding inside it,
+// editing, deleting, deciding) are in its menu (`rowMenu`): right-click the
+// row, press its ⋯ button (shown on hover and focus; always on a touch screen),
+// or Shift+F10 / the Menu key on the focused row.
 //
 // Presentational: the page (AssetExplorer) holds the state.
 
@@ -37,11 +41,10 @@ const ICON = {
   emptyslot: <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" strokeWidth="1.5" strokeDasharray="2 2" />,
   loc: <><path d="M8 14s4.5-4.2 4.5-7.5a4.5 4.5 0 1 0-9 0C3.5 9.8 8 14 8 14z" strokeWidth="1.5" /><circle cx="8" cy="6.5" r="1.6" fill="currentColor" stroke="none" /></>,
   item: <path d="M8 1.8 14 5v6L8 14.2 2 11V5z M2 5l6 3.2L14 5M8 8.2v6" strokeWidth="1.4" strokeLinejoin="round" />,
-  add: <path d="M8 3v10M3 8h10" strokeWidth="1.8" strokeLinecap="round" />,
 };
 
 function RowIcon({ r }) {
-  if (isRcmRow(r) && r.type !== "add") return <LevelIcon type={r.type === "unassigned" ? "fail" : r.type} className="tp-ic" />;
+  if (isRcmRow(r)) return <LevelIcon type={r.type === "unassigned" ? "fail" : r.type} className="tp-ic" />;
   let kind = r.type;
   // A position is a position: the icon only says whether an item is fitted.
   // The lines icon is for the pane's own headings ("No home yet" and so on).
@@ -70,7 +73,30 @@ function Markers({ r, rcm }) {
 
 // Bold: the pane's own headings, the places, and an item with positions on it.
 const heading = (r) => r.type === "group" || r.type === "loc" || (r.type === "item" && r.kids.length > 0);
-const label = (r) => (r.type === "add" || isRcmRow(r) ? r.ref.text : r.ref.name) || "(no name)";
+const label = (r) => (isRcmRow(r) ? r.ref.text : r.ref.name) || "(no name)";
+
+// What a row's menu is called, for screen readers: "Actions for Function: Pump water".
+const menuLabel = (r) => `Actions for ${isRcmRow(r) ? `${LEVEL_OF[r.type]?.label}: ` : ""}${label(r)}`;
+
+// The row's ⋯ button: the same menu as a right-click, for touch and for anyone
+// who doesn't know to right-click. Not a tab stop (the row is; Shift+F10 opens
+// the menu from it).
+function MoreButton({ r, open, onMenu }) {
+  return (
+    <button type="button" className={"tt-more" + (open ? " open" : "")} tabIndex={-1} aria-haspopup="menu" aria-expanded={open}
+            aria-label="Actions" title="Actions (or right-click the row)"
+            onDoubleClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              const b = e.currentTarget.getBoundingClientRect();
+              onMenu(r.key, { x: b.left, y: b.bottom + 2 });
+            }}>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+        <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+      </svg>
+    </button>
+  );
+}
 
 // A position's second line on a phone, on the RCM tab: its own failure modes.
 function posLine(r) {
@@ -82,10 +108,8 @@ function posLine(r) {
 // The tree's own part of a row: indent, arrow, icon, name, markers.
 function TreeBit({ r, v, open, phone, query, rcm, table }) {
   const has = r.kids.length > 0;
-  // What's inside, less the "Add …" rows.
-  const inner = r.kids.filter((k) => !k.startsWith("+")).length;
+  const inner = r.kids.length;
   const indent = Math.min(v.depth, phone ? 8 : 30) * 14;
-  const add = r.type === "add";
   return (
     <>
       <span className="tp-indent" style={{ width: indent }} />
@@ -93,8 +117,8 @@ function TreeBit({ r, v, open, phone, query, rcm, table }) {
         <span className={"tp-chev" + (open ? " open" : "")} aria-hidden="true"><Chevron /></span>
       ) : <span className="tp-chev-sp" />}
       <RowIcon r={r} />
-      {isRcmRow(r) && !add && <span className="sr-only">{LEVEL_OF[r.type]?.label}: </span>}
-      <span className={"tp-nm" + (add ? " tt-add" : "")} title={table && label(r).length > 40 ? label(r) : undefined}>
+      {isRcmRow(r) && <span className="sr-only">{LEVEL_OF[r.type]?.label}: </span>}
+      <span className="tp-nm" title={table && label(r).length > 40 ? label(r) : undefined}>
         <Highlight text={label(r)} query={query} />
       </span>
       {has && !open && inner > 0 && <span className="tp-cnt" title={`${inner} directly inside`}>{inner.toLocaleString("en-AU")}</span>}
@@ -103,10 +127,10 @@ function TreeBit({ r, v, open, phone, query, rcm, table }) {
   );
 }
 
-function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table }) {
+function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen }) {
   const has = r.kids.length > 0;
   const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (heading(r) ? " grp" : "")
-    + (table ? ` tt tt-${r.type}` : "");
+    + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "");
   const common = {
     className: cls,
     role: pinned ? undefined : table ? "row" : "treeitem",
@@ -121,21 +145,32 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     tabIndex: pinned ? undefined : focused ? 0 : -1,
     style: pinned ? { height, width: table && !phone ? table.total : undefined } : { top, height, width: table && !phone ? table.total : undefined },
     onClick: (e) => {
-      if (e.target.closest("input, select, a, button.rw-todo-btn")) return;
+      if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more")) return;
       if (e.target.closest(".tp-chev")) onToggle(r.key);
       else onPick(r.key, { go: true });
     },
+    // Right-click opens the row's menu (the browser's own stays on a field
+    // being edited in it, and on a row with no menu).
+    onContextMenu: onMenu ? (e) => {
+      if (e.target.closest("input, textarea, select, [contenteditable='true']")) return;
+      e.preventDefault();
+      // From the keyboard (the Menu key, Shift+F10) there's no pointer: under the row's name.
+      const kb = e.button !== 2 || (!e.clientX && !e.clientY);
+      onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY });
+    } : undefined,
   };
+  const more = onMenu && <MoreButton r={r} open={!!menuOpen} onMenu={onMenu} />;
   if (!table) {
     return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} /></div>;
   }
   if (phone) {
-    const line = r.type === "add" ? "" : r.type === "pos" ? posLine(r) : phoneLine(cellRow(r));
+    const line = r.type === "pos" ? posLine(r) : phoneLine(cellRow(r));
     return (
       <div {...common}>
         <div className="tt-l1">
           <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table />
-          {isRcmRow(r) && r.type !== "add" && <span className="tt-st"><PhoneStatus r={cellRow(r)} /></span>}
+          {isRcmRow(r) && <span className="tt-st"><PhoneStatus r={cellRow(r)} /></span>}
+          {more}
         </div>
         {line && <div className="tt-l2" style={{ paddingLeft: Math.min(v.depth, 8) * 14 + 40 }}>{line}</div>}
       </div>
@@ -149,9 +184,9 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
            onDoubleClick={table.canEditName(r) ? (e) => { e.stopPropagation(); table.onEdit(r.key, "name"); } : undefined}>
         {editCol === "name"
           ? <CellEditor col={NAME_COLUMN} r={cr} onCommit={(raw) => table.onCommit(r, "name", raw)} onCancel={table.onCancel} />
-          : <TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table />}
+          : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table />{more}</>}
       </div>
-      {r.type !== "add" && table.cols.map((c) => {
+      {table.cols.map((c) => {
         const rcmRow = isRcmRow(r);
         const can = rcmRow && !table.readOnly && c.edit && c.can(cr);
         return (
@@ -171,11 +206,18 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
   );
 }
 
+// Where a menu opened from the keyboard goes: under the start of the row's name.
+function cornerOf(row) {
+  const el = row.querySelector(".tp-nm") || row;
+  const b = el.getBoundingClientRect();
+  return { x: b.left, y: b.bottom + 2 };
+}
+
 export default function TreePane({
   title, treeLabel, display, list, index, open, filter, query, onQuery, chips, onChips, mode, onMode, focus, onPick,
   onToggle, onLevel, onCloseAll, phone, width, onWidth, collapsed, onCollapse, onNew, newLabel, menu,
   notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table = null, head = null, phoneTabs = null,
-  layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
+  layoutKey = "", anchorKey = null, side = null, arrangeLocked = null, rowMenu = null,
 }) {
   const H = phone ? (table ? 54 : 44) : 30;
   const maxPins = phone ? 2 : 4;
@@ -185,6 +227,32 @@ export default function TreePane({
     measureKey: `${collapsed}${phone}${!!table}${!!side}`, rowId: (key) => `tp-${key}`,
     nameOf: (r) => label(r),
   });
+
+  // A row's menu (rowMenu: {actions(r) → [{id, label}], onAction(r, id)}):
+  // {key, at} while it's open. Opening it picks the row; closing puts the
+  // focus back on the row.
+  const [rowOpen, setRowOpen] = useState(null);
+  const itemsFor = (key) => (rowMenu && display.rows.has(key) ? rowMenu.actions(display.rows.get(key)) : []);
+  const openMenu = (key, at) => {
+    if (!itemsFor(key).length) return;
+    if (key !== focus) onPick(key, {});
+    setRowOpen({ key, at });
+  };
+  const closeMenu = () => {
+    const key = rowOpen?.key;
+    setRowOpen(null);
+    if (key != null) document.getElementById(`tp-${key}`)?.focus({ preventScroll: true });
+  };
+  const keys = (e) => {
+    if (rowMenu && focus != null && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey))
+        && !e.target.closest("input, select, textarea, [contenteditable='true']")) {
+      e.preventDefault();
+      const row = document.getElementById(`tp-${focus}`);
+      if (row) openMenu(focus, cornerOf(row));
+      return;
+    }
+    onKey(e);
+  };
 
   // Keep a row in view when the page asks (scrollTo changes: a breadcrumb or
   // a "Directly inside" row picked).
@@ -315,6 +383,7 @@ export default function TreePane({
   );
 
   const rowProps = { phone, query, onToggle, rcm: rcmMarks, table };
+  const menuProps = (key) => (itemsFor(key).length ? { onMenu: openMenu, menuOpen: rowOpen?.key === key } : {});
   const columnHeads = !phone && (
     <div className="tt-head" role={wide ? "row" : undefined} aria-hidden={wide ? undefined : "true"}
          style={{ width: wide ? table.total : undefined, height: HEAD_H }}>
@@ -333,7 +402,7 @@ export default function TreePane({
     <aside className={"tp" + (table ? " tp-table" : "")} aria-label={title} style={phone || wide ? undefined : { width }}>
       {controls}
       <div className="tt-main">
-        <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); }} onKeyDown={onKey}
+        <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); }} onKeyDown={keys}
              role={table ? "treegrid" : "tree"} aria-label={table ? `${treeLabel || title} and their RCM` : treeLabel || title}
              aria-multiselectable="false">
           {columnHeads}
@@ -344,7 +413,7 @@ export default function TreePane({
                   const v = list[index.get(k)];
                   const r = display.rows.get(k);
                   return (
-                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned {...rowProps}
+                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned {...rowProps} {...menuProps(k)}
                          onPick={(key) => { onPick(key, {}); reveal(key, true); }} />
                   );
                 })}
@@ -357,7 +426,7 @@ export default function TreePane({
               const r = display.rows.get(v.key);
               return (
                 <Row key={v.key} v={v} r={r} top={i * H} height={H} open={open.has(v.key)} focused={v.key === focus}
-                     dim={dim(v.key)} onPick={onPick} {...rowProps} />
+                     dim={dim(v.key)} onPick={onPick} {...rowProps} {...menuProps(v.key)} />
               );
             })}
           </div>
@@ -365,6 +434,10 @@ export default function TreePane({
         </div>
         {side}
       </div>
+      {rowOpen && itemsFor(rowOpen.key).length > 0 && (
+        <RowMenu items={itemsFor(rowOpen.key)} at={rowOpen.at} label={menuLabel(display.rows.get(rowOpen.key))} anchorId={`tp-${rowOpen.key}`} onClose={closeMenu}
+                 onChoose={(id) => rowMenu.onAction(display.rows.get(rowOpen.key), id)} />
+      )}
       {!phone && (
         <div className="tp-edge" role="separator" aria-orientation="vertical" aria-label={table ? "Resize the tree column" : "Resize the tree"}
              aria-valuemin={PANE.min} aria-valuemax={Math.round(window.innerWidth * 0.6)} aria-valuenow={width}
