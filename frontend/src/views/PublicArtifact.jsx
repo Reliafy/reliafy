@@ -8,6 +8,7 @@ import ResultView from "../components/ResultView.jsx";
 import JointResultView from "../components/JointResultView.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
 import { answerParts } from "../modelFrame.js";
+import { degradationAnswer } from "../degradationFrame.js";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
@@ -134,8 +135,12 @@ function Body({ collection, a, token, unlock, framed = false }) {
       // A model in a report: the same tabs, in a card of their own height.
       return <div className="card mf-card mf-standalone">{view}</div>;
     }
-    case "degradation_models":
-      return <div className="card"><DegradationResultView results={a.results} name={a.name} /></div>;
+    case "degradation_models": {
+      const view = <DegradationResultView results={a.results} name={a.name} />;
+      // A shared page: the model frame's tabs; a model in a report: the same
+      // tabs, in a card of their own height.
+      return framed ? view : <div className="card mf-card mf-standalone">{view}</div>;
+    }
     case "recurrent_models":
       return <div className="card"><RecurrentResultView results={a.results} name={a.name} /></div>;
     case "strategy_analyses":
@@ -347,7 +352,19 @@ export default function PublicArtifact() {
             <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
           </ModelFrame>
         )}
-        {data && data.collection !== "reports" && !(data.collection === "models" && art(data).results?.kind !== "competing_risks") && (
+        {data && data.collection === "degradation_models" && (
+          // A shared degradation model: the same frame, read-only.
+          <ModelFrame
+            className="public-app"
+            crumbs={[{ label: `${KIND_LABEL.degradation_models} · shared by ${data.shared_by}` }]}
+            title={data.artifact.name}
+            answer={degradationAnswer(data.artifact.results)}
+          >
+            <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
+          </ModelFrame>
+        )}
+        {data && data.collection !== "reports" && data.collection !== "degradation_models"
+          && !(data.collection === "models" && art(data).results?.kind !== "competing_risks") && (
           <div className="app public-app">
             <header>
               <div>
