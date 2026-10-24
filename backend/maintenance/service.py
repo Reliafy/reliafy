@@ -107,7 +107,7 @@ SHORT_TEXT = 200  # names, titles, tags, serials
 LONG_TEXT = 4000  # descriptions, notes, instructions, reasons
 MAX_NOTES = 5 * LONG_TEXT  # an item's or work order's notes, grown by appended lines
 NOTE_HISTORY = 20  # earlier versions of a note kept on the node (the log keeps every one)
-_LONG_FIELDS = {"description", "notes", "note", "instructions", "reason"}
+_LONG_FIELDS = {"description", "operating context", "notes", "note", "instructions", "reason"}
 
 MAX_COPY_NODES = 500  # positions, failure modes and tasks made by one copy
 MAX_LOCATION_POSITIONS = 500  # positions listed on one location (the counts are of all)
@@ -590,6 +590,9 @@ def _position_created(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Position", {
         "name": p["name"], "tag": p.get("tag", ""), "position_class": p.get("position_class", ""),
         "description": p.get("description", ""), "created": p["on"],
+        # How it's used (load, environment, hours): only on events that carry it,
+        # so replaying older events gives the same node as before.
+        **({"operating_context": p["operating_context"]} if p.get("operating_context") else {}),
     })
     if p.get("parent_id"):
         s.put_edge(org, "PART_OF", p["id"], p["parent_id"])
@@ -1848,27 +1851,32 @@ class Maintenance:
     # ---- positions and locations -------------------------------------------------
 
     def create_position(self, name, tag="", parent_id=None, position_class="", description="",
-                        location_id=None) -> dict:
+                        location_id=None, operating_context="") -> dict:
         """A position. location_id: where it physically is (otherwise it's where its
-        parent is)."""
+        parent is). description: a short line on what it is; operating_context: how
+        it's used (the load, the environment, the hours it runs)."""
         name = _text(name, "position's name", required=True)
         if parent_id:
             self._parent_node(parent_id)
         location_id = self._location_ref(location_id)
+        context = _text(operating_context, "operating context")
         self._quota("Position", MAX_POSITIONS)
         pid = new_id()
         self._emit("position.created", {
             "id": pid, "name": name, "tag": _text(tag, "tag"), "parent_id": parent_id or None,
             "position_class": _text(position_class, "class"), "description": _text(description, "description"),
             "on": self.today(),
-        } | ({"location_id": location_id} if location_id else {}))
+        } | ({"location_id": location_id} if location_id else {})
+          | ({"operating_context": context} if context else {}))
         return self._get(pid, "Position")
 
     def update_position(self, id: str, **changes) -> dict:
-        """Change a position's name, tag, class or description, move it (parent_id), or
-        set where it is (location_id; None or "" clears it: it's where its parent is)."""
+        """Change a position's name, tag, class, description or operating context ("" clears
+        it), move it (parent_id), or set where it is (location_id; None or "" clears it:
+        it's where its parent is)."""
         self._get(id, "Position")
-        what = {"name": "position's name", "tag": "tag", "position_class": "class", "description": "description"}
+        what = {"name": "position's name", "tag": "tag", "position_class": "class", "description": "description",
+                "operating_context": "operating context"}
         allowed = {k: _text(v, what[k]) for k, v in changes.items() if k in what and v is not None}
         if "name" in allowed and not allowed["name"]:
             raise Invalid("The position's name is required.")
@@ -1960,7 +1968,8 @@ class Maintenance:
                 "id": pid, "name": label, "tag": "", "parent_id": parent,
                 "position_class": src.get("position_class", ""), "description": src.get("description", ""),
                 "on": today,
-            } | ({"location_id": place["id"]} if place else {}))
+            } | ({"location_id": place["id"]} if place else {})
+              | ({"operating_context": src["operating_context"]} if src.get("operating_context") else {}))
             mode_ids = {}
             for fm in modes:
                 mode_ids[fm["id"]] = new_id()
@@ -3076,10 +3085,12 @@ class Maintenance:
                 "tasks_added": added_tasks, "tasks_updated": updated_tasks}
 
     def position_from_rcm(self, study, parent_id=None) -> dict:
-        """A new position named for the study's system, with its tasks."""
+        """A new position named for the study's system, with its tasks. The study's
+        description (how the system is used) becomes the position's operating context."""
         name, full = derived_title((study.system or "").strip() or study.name)
         made_from = f"From the RCM study “{shortened(study.name)[0]}”."
-        position = self.create_position(name, parent_id=parent_id, description=_with_first(full, made_from))
+        position = self.create_position(name, parent_id=parent_id, description=_with_first(full, made_from),
+                                        operating_context=shortened(getattr(study, "description", ""), LONG_TEXT)[0])
         result = self.apply_rcm(position["id"], study)
         return {**result, "position": self.position(position["id"])}
 
@@ -7193,6 +7204,7 @@ class Maintenance:
         return {
             "id": p["id"], "name": p["name"], "tag": p.get("tag", ""),
             "position_class": p.get("position_class", ""), "description": p.get("description", ""),
+            "operating_context": p.get("operating_context", ""),
             "path": path, "retired": bool(p.get("retired")),
             # Where it is: set on it, or inherited (inherited_from says from what); None if unset.
             "location": self._location_view(id),

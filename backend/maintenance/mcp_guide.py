@@ -56,7 +56,8 @@ round or area inspection)."""),
     "register": ("Build locations and positions, fit items, the nameplate flow.", """\
 Building the register.
 1. Locations: maintenance_locations create (sites, areas, rooms, stores), nested with parent_id.
-2. Positions: maintenance_positions create, top down (parent_id), with position_class for like duties and \
+2. Positions: maintenance_positions create, top down (parent_id), with position_class for like duties, \
+operating_context for how it's used (load, environment, hours; the description stays one line on what it is) and \
 location_id where it physically is (set it on a system's top position; the ones inside inherit it). Many alike: \
 build one, then maintenance_positions copy (failure modes, tasks and parts lists come too). From an RCM study: \
 see the plan topic.

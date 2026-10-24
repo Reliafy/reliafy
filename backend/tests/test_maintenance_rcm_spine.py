@@ -271,7 +271,10 @@ def test_migration_dry_run_writes_nothing_then_moves_and_is_idempotent(m, db):
     assert [x["text"] for x in p["functions"][0]["failures"][0]["modes"]] == [
         "Bearing seizes", "Coupling fails", "Seal leaks"]
     assert p["unassigned"] == []
-    assert "A long note about the pump" in m.position(pid)["description"]
+    # The study's description is the position's operating context (from_rcm put it there; the
+    # migration matched it and added nothing), never appended to the description.
+    assert m.position(pid)["operating_context"] == applied.description.strip()
+    assert "A long note about the pump" not in m.position(pid)["description"]
     assert db.rcm_studies.find_one({"_id": "study-1"})["migrated_to"] == pid
     new = db.rcm_studies.find_one({"_id": "study-2"})["migrated_to"]
     assert m.position(new)["name"] == "Hot water"
@@ -285,6 +288,61 @@ def test_migration_dry_run_writes_nothing_then_moves_and_is_idempotent(m, db):
     index = rcm_migrate.applied_index(m.s)
     assert rcm_migrate.migrate_study(m.s, db, later, index)["events"] == []
     assert m.s.event_count(ORG) == events
+
+
+def test_position_from_rcm_puts_the_study_description_in_the_operating_context(m):
+    study = _pump()
+    p = m.position_from_rcm(study)["position"]
+    assert p["operating_context"] == study.description.strip()
+    assert p["description"] == "From the RCM study “Pump RCM”."
+    plain = _Study(_pump().functions, id="study-3", name="No context")
+    assert m.position_from_rcm(plain)["position"]["operating_context"] == ""
+    long = _Study(_pump().functions, id="study-4", description="Runs flat out in the dry season. " * 200)
+    made = m.position_from_rcm(long)["position"]
+    assert len(made["operating_context"]) <= 4000 and made["operating_context"].endswith("…")
+
+
+def test_migration_puts_the_study_description_in_the_operating_context_once(m, db):
+    study = _pump()
+    first = m.create_position("Cooling pump A", description="Centrifugal pump, 50 L/s")
+    second = m.create_position("Cooling pump B", description="Centrifugal pump, 50 L/s",
+                               operating_context="Standby; started weekly.")
+    third = m.create_position("Cooling pump C", description="Centrifugal pump, 50 L/s\n\n" + study.description)
+    for p in (first, second, third):
+        m.apply_rcm(p["id"], study)  # applying never touches the position's text
+    assert m.position(first["id"])["operating_context"] == ""
+    _studies(db, study)
+
+    [dry] = rcm_migrate.migrate(db, m.s, study_id=study.id)
+    assert [t for _, t, _ in dry["events"]].count("position.updated") == 2  # not the third: it's already there
+    assert "position's operating context" in rcm_migrate.report([dry], dry_run=True)
+    assert m.position(first["id"])["operating_context"] == ""  # a dry run writes nothing
+
+    rcm_migrate.migrate(db, m.s, study_id=study.id, dry_run=False)
+    said = study.description.strip()
+    a, b, c = (m.position(p["id"]) for p in (first, second, third))
+    assert a["operating_context"] == said and a["description"] == "Centrifugal pump, 50 L/s"
+    assert b["operating_context"] == f"Standby; started weekly.\n\n{said}"  # after what was there
+    assert c["operating_context"] == ""  # an earlier run put it in the description: matched, not repeated
+    _rebuilds_the_same(m)
+
+    # Again: nothing more, whether the study is marked or not.
+    events = m.s.event_count(ORG)
+    for p in (first, second, third):
+        rcm_migrate._context(m, p["id"], study)
+    assert m.s.event_count(ORG) == events
+
+
+def test_a_long_study_description_is_shortened_and_matched_on_a_second_run(m):
+    study = _Study(_pump().functions, description="Line one about the load.\nRuns in the heat. " * 120)
+    pid = m.create_position("Pump", description="A pump")["id"]
+    rcm_migrate._context(m, pid, study)
+    got = m.position(pid)["operating_context"]
+    assert len(got) <= 4000 and got.endswith("…")
+    events = m.s.event_count(ORG)
+    rcm_migrate._context(m, pid, study)
+    assert m.s.event_count(ORG) == events
+    assert rcm_migrate.present("", "anything") and not rcm_migrate.present("Runs at night", "Runs by day")
 
 
 def test_migration_of_a_sample_applied_in_a_workspace(m, db):

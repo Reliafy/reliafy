@@ -315,9 +315,11 @@ def events(limit: int = 100, m: Maintenance = Depends(maintenance)) -> JSONRespo
 
 @router.post("/positions")
 def create_position(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """A position; location_id (optional) says where it physically is."""
+    """A position; location_id (optional) says where it physically is, operating_context
+    (optional) how it's used."""
     return _run(m.create_position, body.get("name"), body.get("tag", ""), body.get("parent_id"),
-                body.get("position_class", ""), body.get("description", ""), body.get("location_id"))
+                body.get("position_class", ""), body.get("description", ""), body.get("location_id"),
+                body.get("operating_context", ""))
 
 
 @router.get("/positions/{position_id}")
@@ -331,8 +333,8 @@ def update_position(position_id: str, body: dict = Body(...),
     """Change a position; location_id sets where it is (null: it inherits its parent's)."""
     def go():
         m.update_position(position_id, **{k: body[k] for k in
-                                          ("name", "tag", "position_class", "description", "parent_id",
-                                           "location_id") if k in body})
+                                          ("name", "tag", "position_class", "description", "operating_context",
+                                           "parent_id", "location_id") if k in body})
         return m.position(position_id)
     return _run(go)
 

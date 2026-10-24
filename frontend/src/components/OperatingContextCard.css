@@ -1,0 +1,91 @@
+/* The operating context card on the Explorer's Summary tab (OperatingContextCard.jsx):
+   a full-width card under Facts and Work, its text clamped to about six lines. */
+.td-ctx + .td-card {
+  margin-top: 14px;
+}
+.td-ctx-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+}
+.td-ctx-head h3 {
+  margin: 0;
+}
+.td-ctx-head .tt-msg {
+  max-width: none;
+}
+.td-ctx-head .td-ctx-edit-btn {
+  margin-left: auto;
+}
+.td-card p.td-ctx-text {
+  margin: 0;
+  max-width: 80ch;
+  font-size: var(--fs-14);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.td-card p.td-ctx-text.open {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: none;
+  overflow: visible;
+}
+.td-ctx button.td-ctx-more {
+  margin-top: 4px;
+  min-height: 24px;
+}
+.td-ctx-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.td-ctx-empty p {
+  flex: 1 1 240px;
+}
+.td-ctx-edit textarea {
+  display: block;
+  width: 100%;
+  max-width: 80ch;
+  box-sizing: border-box;
+  min-height: 8.5em;
+  resize: vertical;
+  font: inherit;
+  font-size: var(--fs-14);
+  line-height: 1.5;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surf);
+  color: var(--ink);
+}
+.td-ctx-edit textarea:focus-visible {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: var(--focus);
+}
+.td-ctx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.td-card p.td-ctx-error {
+  margin: 0 0 8px;
+  color: var(--danger);
+  font-weight: 600;
+}
+@media (max-width: 720px), (hover: none) {
+  .td-ctx button.sm {
+    min-height: 40px;
+  }
+}

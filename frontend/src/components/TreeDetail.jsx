@@ -6,6 +6,7 @@ import ClampText from "./ClampText.jsx";
 import { DueChip, fmtDate, fmtDated } from "./MaintenanceParts.jsx";
 import { ancestorsOf, byName, insideWords, statusWords } from "../assetTree.js";
 import { shownTab, tabsFor } from "../explorerTabs.js";
+import OperatingContextCard from "./OperatingContextCard.jsx";
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
 // position: where it sits, what's fitted, its status in words, its work
@@ -249,6 +250,7 @@ function Summary({ row, display, today, onSelect, version }) {
         <Facts r={row} display={display} />
         {row.type === "pos" && <Work r={row} state={position} />}
       </div>
+      {row.type === "pos" && <OperatingContextCard positionId={row.key} state={position} />}
       <Inside r={row} display={display} today={today} onSelect={onSelect} />
     </>
   );

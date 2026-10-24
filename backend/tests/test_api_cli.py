@@ -272,6 +272,18 @@ def test_cli_moves_rcm_between_positions(server, capsys):
     assert rf.call("maintenance_get", "rcm", id=a, scope="this")["positions"][0]["unassigned"][0]["id"] == mode["id"]
 
 
+def test_cli_sets_and_clears_a_positions_operating_context(server, capsys):
+    rf = Client()
+    pid = rf.call("maintenance_positions", "create", name="Fan 3", operating_context="Dusty; runs on demand.")["id"]
+    assert rf.call("maintenance_get", "position", id=pid)["operating_context"] == "Dusty; runs on demand."
+    code, out, _ = run(capsys, "maintenance_positions", "update", "--position-id", pid,
+                       "--operating-context", "Indoors, 8 hours a day.", "--json")
+    assert code == 0 and json.loads(out)["operating_context"] == "Indoors, 8 hours a day."
+    code, out, _ = run(capsys, "maintenance_positions", "update", "--position-id", pid, "--operating-context", "",
+                       "--json")
+    assert code == 0 and json.loads(out)["operating_context"] == ""
+
+
 def test_cli_document_add_and_get(server, capsys):
     from backend.tests.test_maintenance_documents import pdf
 
