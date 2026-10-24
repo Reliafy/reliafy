@@ -17,6 +17,8 @@ import { menuMove } from "../treeControls.js";
 // Drawn in the shared portal host (so it shows in full screen, and isn't cut
 // off by the pane), under the button, kept on screen at phone width.
 //
+//   pinned   {name, onUnpin} while a branch is pinned: "Show whole tree" heads
+//            the menu; or null
 //   arrange  {value, options: [{value, label, title}], onChange} or null
 //   note     a line in place of Arrange by (why it isn't offered here), or null
 //   levels   {value (1..4, Infinity, 0, or null), onLevel(n), onCloseAll} or null
@@ -39,7 +41,7 @@ const Tick = ({ on }) => (
 );
 
 export default function TreeControlsMenu({
-  arrange = null, note = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [],
+  pinned = null, arrange = null, note = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [],
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
@@ -148,6 +150,14 @@ export default function TreeControlsMenu({
          style={pos ? { left: pos.left, top: pos.top, maxHeight: pos.maxHeight } : { left: 0, top: 0, visibility: "hidden" }}
          onKeyDown={onKeyDown} onFocus={(e) => { if (e.target.dataset?.id) last.current = e.target.dataset.id; }}
          onContextMenu={(e) => e.preventDefault()}>
+      {pinned && (
+        <>
+          <button type="button" role="menuitem" tabIndex={-1} data-id="unpin" className="ovm-item tm-item tm-plain"
+                  title={`Showing only ${pinned.name}: show the whole tree again`}
+                  onClick={() => { close(true); pinned.onUnpin(); }}>Show whole tree</button>
+          <div className="tm-sep" role="separator" />
+        </>
+      )}
       {arrange && (
         <div className="tm-sec" role="group" aria-labelledby={`${id}-arr`}>
           <div className="tm-label" id={`${id}-arr`}>Arrange by</div>
@@ -205,7 +215,7 @@ export default function TreeControlsMenu({
       <div className="tm-foot">
         {changed.length > 0 && (
           <button type="button" role="menuitem" tabIndex={-1} data-id="reset" data-row="foot" className="ovm-item tm-item tm-reset"
-                  title={`Back to Positions, level 2 and no filters (now: ${changed.map((c) => c.label).join(", ")})`} onClick={onReset}>
+                  title={`Back to the whole tree, Positions, level 2 and no filters (now: ${changed.map((c) => c.label).join(", ")})`} onClick={onReset}>
             Reset to the usual view
           </button>
         )}

@@ -11,6 +11,14 @@ export const Chevron = () => (
 );
 
 // The text with the filter's words marked.
+// A push pin: a branch of the tree pinned (only it shown).
+export const PinIcon = ({ size = 14 }) => (
+  <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.5"
+       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9.5 2 14 6.5l-1.6.6-2.6 2.6-.4 3L8 11.3 4.7 14.6M5.6 8l-1-1.4 3-.4 2.6-2.6.6-1.6M4.7 11.3 2 14" />
+  </svg>
+);
+
 export function Highlight({ text, query }) {
   const q = query.trim();
   const i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;

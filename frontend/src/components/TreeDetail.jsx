@@ -4,6 +4,7 @@ import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
 import ClampText from "./ClampText.jsx";
 import { DueChip, fmtDate, fmtDated } from "./MaintenanceParts.jsx";
+import { PinIcon } from "./OutlineBits.jsx";
 import { ancestorsOf, byName, insideWords, statusWords } from "../assetTree.js";
 import { shownTab, tabsFor } from "../explorerTabs.js";
 
@@ -260,8 +261,16 @@ function Summary({ row, display, today, onSelect, version }) {
 // way up and the name: the tabs. On the RCM tab (a wide screen) the two rows
 // sit beside the tree's own two over the table (TreePane's head and
 // headTabs); on the Summary tab they head the panel.
-export function SlimHeader({ display, row, onSelect, fullScreenButton, headingRef, meta, actions, message, primaryOpen = false }) {
-  const crumbs = ancestorsOf(display, row.key).map((k) => ({ key: k, label: display.rows.get(k).ref.name }));
+//
+// With a branch of the tree pinned, the way up still shows the whole path:
+// `above(key)` says which crumbs are above the pinned row (a click there moves
+// the pin up, `onCrumb` decides). `pin` ({on, onClick}): the pin button for
+// the row (pinned now when `on`), or null where it can't be pinned.
+export function SlimHeader({
+  display, row, onSelect, onCrumb = onSelect, above = null, pin = null, fullScreenButton, headingRef, meta, actions, message,
+  primaryOpen = false,
+}) {
+  const crumbs = ancestorsOf(display, row.key).map((k) => ({ key: k, label: display.rows.get(k).ref.name, above: !!above?.(k) }));
   const full = fullPagePath(row);
   const p = row.ref;
   return (
@@ -274,7 +283,8 @@ export function SlimHeader({ display, row, onSelect, fullScreenButton, headingRe
                 {crumbs.map((c, i) => (
                   <span key={c.key}>
                     {i > 0 && <span className="crumb-sep" aria-hidden="true"> / </span>}
-                    <button type="button" className="crumb-link" title={c.label} onClick={() => onSelect(c.key)}>{c.label}</button>
+                    <button type="button" className={"crumb-link" + (c.above ? " crumb-above" : "")}
+                            title={c.above ? `${c.label}: pin this branch instead` : c.label} onClick={() => onCrumb(c.key)}>{c.label}</button>
                   </span>
                 ))}
               </nav>
@@ -290,6 +300,14 @@ export function SlimHeader({ display, row, onSelect, fullScreenButton, headingRe
       </div>
       <div className="tt-actions">
         {actions}
+        {pin && (
+          <button type="button" className={"secondary sm tt-pin" + (pin.on ? " on" : "")} aria-pressed={pin.on}
+                  aria-label="Pin this branch"
+                  title={pin.on ? "Pinned: show the whole tree again" : "Pin this branch: show only it and what's inside it"}
+                  onClick={pin.onClick}>
+            <PinIcon size={16} />
+          </button>
+        )}
         {fullScreenButton}
         {full && <Link className={"td-open" + (primaryOpen ? " primary" : "")} to={full}>Open the full page</Link>}
       </div>
@@ -305,7 +323,7 @@ export function HeaderTabs({ row, tab, onTab }) {
 }
 
 const TreeDetail = forwardRef(function TreeDetail({
-  display, row, today, onSelect, back, version, empty, tab, onTab, fullScreenButton,
+  display, row, today, onSelect, onCrumb, above, pin, back, version, empty, tab, onTab, fullScreenButton,
 }, headingRef) {
   if (!row) return <div className="td">{back}{empty}</div>;
   const tabs = tabsFor(row);
@@ -313,7 +331,8 @@ const TreeDetail = forwardRef(function TreeDetail({
     <div className="td">
       {back}
       <div className="td-head">
-        <SlimHeader display={display} row={row} onSelect={onSelect} fullScreenButton={fullScreenButton} headingRef={headingRef}
+        <SlimHeader display={display} row={row} onSelect={onSelect} onCrumb={onCrumb || onSelect} above={above} pin={pin}
+                    fullScreenButton={fullScreenButton} headingRef={headingRef}
                     meta={KIND[row.type] ? <span className="tt-kind">{KIND[row.type]}</span> : null} primaryOpen />
         <HeaderTabs row={row} tab={tab} onTab={onTab} />
       </div>
