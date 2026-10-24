@@ -291,6 +291,8 @@ def replace_tree(db, study_id: str, functions, owner_id: str,
     study = get_study(db, study_id, owner_id)
     if study is None or study.owner_id != owner_id:
         raise StudyNotFound(study_id)
+    if study.migrated_to:
+        raise RcmValidationError("This study has moved onto its position in the asset tree: change its RCM there.")
     query = {"_id": study_id, "owner_id": owner_id}
     if expected_updated_at and study.updated_at is not None:
         if not access.timestamps_match(study.updated_at, expected_updated_at):
@@ -313,8 +315,11 @@ def replace_tree(db, study_id: str, functions, owner_id: str,
 
 # ---- Evidence resolution (live validation) -----------------------------------
 
-def resolve(db, study: RcmStudy, owner_id: str, hidden=frozenset()) -> dict:
-    """The study as a dict with per-decision evidence statuses and a rollup."""
+def evidence_fetcher(db, owner_id, hidden=frozenset()):
+    """fetch(type, id): the linked model or analysis a reader (``owner_id``) can
+    open, or None; each looked up once. Shared by studies and the RCM on the
+    maintenance positions (backend/maintenance/rcm_graph.py), so both check
+    evidence the same way."""
     memo: dict = {}
 
     def fetch(etype: str, eid: str):
@@ -332,6 +337,23 @@ def resolve(db, study: RcmStudy, owner_id: str, hidden=frozenset()) -> dict:
                 memo[key] = None
         return memo[key]
 
+    return fetch
+
+
+def blank_rollup() -> dict:
+    return {"modes": 0, "decided": 0, "supported": 0, "contradicted": 0,
+            "inconclusive": 0, "unevidenced": 0, "stale": 0}
+
+
+def resolve_decision(decision: dict, fetch) -> dict:
+    """A decision's evidence status ({status, reason or summary, artifact_name,
+    artifact_link_path, expected_evidence}) against what ``fetch`` finds."""
+    return _resolve_decision(decision, fetch)
+
+
+def resolve(db, study: RcmStudy, owner_id: str, hidden=frozenset()) -> dict:
+    """The study as a dict with per-decision evidence statuses and a rollup."""
+    fetch = evidence_fetcher(db, owner_id, hidden)
     rollup = {"modes": 0, "decided": 0, "supported": 0, "contradicted": 0,
               "inconclusive": 0, "unevidenced": 0, "stale": 0}
     doc = {

@@ -156,8 +156,10 @@ def test_rows_for_the_pane_are_lean_and_list_spares(m):
     out = m.tree_rows()
     assert len(out["positions"]) == 5
     seal = next(r for r in out["positions"] if r["id"] == ids["seal"])
+    # Nothing empty is sent; not_analysed only when RCM isn't done there yet (it isn't).
+    assert seal.pop("not_analysed") is True
     assert set(seal) == {"id", "name", "parent_id", "position_class", "inside"} or set(seal) == {
-        "id", "name", "parent_id", "position_class"}  # nothing empty is sent
+        "id", "name", "parent_id", "position_class"}
     assert out["spares"] == [{"id": spare["id"], "name": "Spare seal", "serial": "S-1", "location_id": store}]
     assert out["locations"] == [{"id": store, "name": "Store A", "parent_id": None}]
 

@@ -2,8 +2,11 @@ import { forwardRef, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getMaintenancePosition } from "../api.js";
 import PageHeader from "./ui/PageHeader.jsx";
+import Tabs from "./ui/Tabs.jsx";
+import ClampText from "./ClampText.jsx";
 import { DueChip, fmtDate, fmtDated } from "./MaintenanceParts.jsx";
 import { ancestorsOf, byName, insideWords, statusWords } from "../assetTree.js";
+import { shownTab, tabsFor } from "../explorerTabs.js";
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
 // position: where it sits, what's fitted, its status in words, its work
@@ -11,6 +14,10 @@ import { ancestorsOf, byName, insideWords, statusWords } from "../assetTree.js";
 // item: its serial, class, make and model, and where it is (the position it's
 // fitted to, or the place it's kept). "Open the full page" goes to the row's
 // own page, where it's edited (an item's history and fitments are there).
+//
+// The panel has tabs (explorerTabs.js): Summary (the above) for every row, and
+// RCM for a position. On the RCM tab the tree and the RCM are one table
+// (TreePane with its columns): this panel then gives only its heading.
 
 const OPEN = new Set(["open", "planned", "in_progress", "waiting"]);
 const KIND = { pos: "Position", loc: "Location", item: "Item", group: "" };
@@ -97,8 +104,8 @@ function Facts({ r, display }) {
   );
 }
 
-function Work({ r, version }) {
-  const { data, error } = usePosition(r.key, version);
+function Work({ r, state }) {
+  const { data, error } = state;
   const kids = r.kids.length > 0;
   let body;
   if (error) body = <p className="lib-date">Couldn't load its work: {error} Try again in a moment.</p>;
@@ -230,28 +237,64 @@ function Inside({ r, display, today, onSelect }) {
   );
 }
 
-const TreeDetail = forwardRef(function TreeDetail({ display, row, today, onSelect, back, version, empty }, headingRef) {
-  if (!row) return <div className="td">{back}{empty}</div>;
+function Summary({ row, display, today, onSelect, version }) {
+  const position = usePosition(row.type === "pos" ? row.key : null, version);
+  return (
+    <>
+      <StatusLine r={row} />
+      {row.type === "pos" && position.data?.description && (
+        <ClampText className="td-desc" text={position.data.description} title="Description" />
+      )}
+      <div className="td-grid">
+        <Facts r={row} display={display} />
+        {row.type === "pos" && <Work r={row} state={position} />}
+      </div>
+      <Inside r={row} display={display} today={today} onSelect={onSelect} />
+    </>
+  );
+}
+
+// The panel's heading: where the row is, its name and kind, the actions, and
+// the tabs. On the RCM tab the same heading sits beside the tree's controls,
+// over the table (AssetExplorer).
+export function DetailHeader({ display, row, onSelect, tab, onTab, fullScreenButton, headingRef, meta: more, actions }) {
   const crumbs = ancestorsOf(display, row.key).map((k) => ({ label: display.rows.get(k).ref.name, onClick: () => onSelect(k) }));
   const full = fullPagePath(row);
   const p = row.ref;
   const meta = [KIND[row.type], p.tag && <code key="tag">{p.tag}</code>].filter(Boolean);
+  const tabs = tabsFor(row);
+  const shown = shownTab(tab, row);
   return (
-    <div className="td">
-      {back}
+    <>
       <PageHeader
         className="td-header"
         crumbs={crumbs}
         title={<span ref={headingRef} tabIndex={-1} className="td-title">{p.name || "(no name)"}</span>}
-        meta={meta.length ? meta.reduce((acc, m, i) => (i ? [...acc, " · ", m] : [m]), []) : null}
+        meta={<>{meta.length ? meta.reduce((acc, m, i) => (i ? [...acc, " · ", m] : [m]), []) : null}{more}</>}
+        actions={<>{actions}{fullScreenButton}</>}
         primary={full && <Link className="td-open" to={full}>Open the full page</Link>}
       />
-      <StatusLine r={row} />
-      <div className="td-grid">
-        <Facts r={row} display={display} />
-        {row.type === "pos" && <Work r={row} version={version} />}
+      {tabs.length > 1 && (
+        <Tabs tabs={tabs} value={shown} onChange={onTab} label="What to show for this row" idPrefix="td" className="td-tabs" />
+      )}
+    </>
+  );
+}
+
+const TreeDetail = forwardRef(function TreeDetail({
+  display, row, today, onSelect, back, version, empty, tab, onTab, fullScreenButton,
+}, headingRef) {
+  if (!row) return <div className="td">{back}{empty}</div>;
+  const tabs = tabsFor(row);
+  return (
+    <div className="td">
+      {back}
+      <DetailHeader display={display} row={row} onSelect={onSelect} tab={tab} onTab={onTab}
+                    fullScreenButton={fullScreenButton} headingRef={headingRef} />
+      <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
+           aria-labelledby={tabs.length > 1 ? "td-tab-summary" : undefined}>
+        <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />
       </div>
-      <Inside r={row} display={display} today={today} onSelect={onSelect} />
     </div>
   );
 });

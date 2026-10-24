@@ -45,7 +45,7 @@ test("arranged by positions: natural order, carried positions under their item's
 test("roll-ups: a row's own status plus everything inside it", () => {
   const d = buildDisplay(DATA, "positions");
   const house = d.rows.get("house");
-  assert.deepEqual({ ...house.sum }, { overdue: 3, open_work: 1, alarms: 1, next_due: "2026-01-01", positions: 4, empty: 1 });
+  assert.deepEqual({ ...house.sum }, { overdue: 3, open_work: 1, alarms: 1, next_due: "2026-01-01", positions: 4, empty: 1, not_analysed: 0 });
   assert.equal(house.own.overdue, 0);
   assert.equal(insideWords(house), "4 positions · 1 empty");
   assert.deepEqual(markersOf(house).map((m) => [m.kind, m.text, m.label]), [
@@ -224,4 +224,21 @@ test("remembered per workspace, and still works when storage throws", () => {
   assert.doesNotThrow(() => saveTreeState("ws1", { open: {}, width: 300 }, broken));
   assert.equal(clampWidth(100, 1440), 220);
   assert.equal(clampWidth(2000, 1000), 600);
+});
+
+test("Not analysed: the chip finds positions with no RCM yet; the quiet marker counts them inside", () => {
+  const data = { ...DATA, positions: DATA.positions.map((p) => (["zone10", "seal"].includes(p.id) ? { ...p, not_analysed: true } : p)) };
+  const d = buildDisplay(data, "positions");
+  const f = computeFilter(d, { chips: ["unanalysed"] });
+  assert.deepEqual([...f.match].sort(), ["seal", "zone10"]);
+  assert.ok(f.keep.has("house") && f.keep.has("pool"));
+  const house = d.rows.get("house");
+  assert.equal(house.sum.not_analysed, 2);
+  // Quiet: shown only when asked for (the RCM tab open, or the chip on).
+  assert.ok(!markersOf(house).some((m) => m.kind === "rcm"));
+  assert.deepEqual(markersOf(house, { rcm: true }).find((m) => m.kind === "rcm"),
+    { kind: "rcm", text: "2", label: "2 positions not analysed yet inside", inside: true });
+  assert.deepEqual(markersOf(d.rows.get("zone10"), { rcm: true }).map((m) => [m.kind, m.text]), [["rcm", "○"]]);
+  // Items have none.
+  assert.equal(computeFilter(buildDisplay(data, "items"), { chips: ["unanalysed"] }).match.size, 0);
 });

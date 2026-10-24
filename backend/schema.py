@@ -203,6 +203,10 @@ class RcmStudy(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
     functions: list = Field(default_factory=list)
+    # Set once the study has been moved onto the maintenance positions (the
+    # position it went to; backend/maintenance/rcm_migrate.py): from then on it is
+    # read-only history, and its RCM is changed on the position.
+    migrated_to: Optional[str] = None
 
 
 class StrategyAnalysis(BaseModel):

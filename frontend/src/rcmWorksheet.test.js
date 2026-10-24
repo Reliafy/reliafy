@@ -4,7 +4,7 @@ import { flatten, levelSet } from "./outlineTree.js";
 import {
   COLUMN, DEFAULT_COLUMNS, NAME_COLUMN, addNode, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, patchNode, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder,
-  withOpen, worksheetCsvRows,
+  withOpen, worksheetCsvRows, decisionBody,
 } from "./rcmWorksheet.js";
 
 // A house pool pump, as the server sends it back (decisions resolved).
@@ -163,4 +163,17 @@ test("remembered on this device: columns, widths, row height and each study's op
   const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
   assert.equal(loadPrefs(broken).density, "comfortable");
   assert.doesNotThrow(() => savePrefs(p, broken));
+});
+
+// ---- the RCM in the Explorer's tree -----------------------------------------
+
+test("a decision goes back without the evidence check, a change applied", () => {
+  const d = { outcome: "fixed_interval", task: "Replace", interval: 6, interval_unit: "months", status: "supported",
+    summary: "ok", artifact_name: "A", evidence: { type: "strategy_analysis", id: "a" }, task_id: "t1" };
+  assert.deepEqual(decisionBody(d), { outcome: "fixed_interval", task: "Replace", interval: 6, interval_unit: "months",
+    evidence: { type: "strategy_analysis", id: "a" } });
+  assert.deepEqual(decisionBody(d, { interval: null }), { outcome: "fixed_interval", task: "Replace",
+    evidence: { type: "strategy_analysis", id: "a" } });
+  assert.equal(decisionBody({ outcome: "fixed_interval" }, { interval: 3 }).interval_unit, "hours");
+  assert.equal(decisionBody(null), null);
 });

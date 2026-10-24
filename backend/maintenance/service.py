@@ -756,6 +756,59 @@ def _failure_mode_merged(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, old, {"merged_into": into, "merged_on": p.get("on")})
 
 
+# ---- RCM on the positions: functions, functional failures, failure modes ----------
+# A position performs functions (PERFORMS); a function fails as functional
+# failures (FAILS_AS); a functional failure is caused by failure modes
+# (CAUSED_BY), the position's own (CAN_FAIL_AS). `order` keeps the order they
+# were written in.
+
+def _function_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Function", {
+        "text": p["text"], "standard": p.get("standard", ""), "order": p.get("order", 0),
+        "rcm_function_id": p.get("rcm_function_id"), "study_id": p.get("study_id"),
+    })
+    s.put_edge(org, "PERFORMS", p["position_id"], p["id"])
+
+
+def _functional_failure_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "FunctionalFailure", {
+        "text": p["text"], "order": p.get("order", 0),
+        "rcm_failure_id": p.get("rcm_failure_id"), "study_id": p.get("study_id"),
+    })
+    s.put_edge(org, "FAILS_AS", p["function_id"], p["id"])
+
+
+def _failure_mode_assigned(s: GraphStore, org: str, p: dict) -> None:
+    """A failure mode put under a functional failure (or under none: null)."""
+    for ff in s.inn(org, p["id"], "CAUSED_BY"):
+        s.delete_edge(org, "CAUSED_BY", ff["id"], p["id"])
+    if p.get("functional_failure_id"):
+        s.put_edge(org, "CAUSED_BY", p["functional_failure_id"], p["id"])
+        s.patch_node(org, p["id"], {"order": p.get("order", 0)})
+
+
+# A failure mode's RCM analysis, beyond what failure_mode.added carries.
+_ANALYSIS = ("effects", "notes", "rtf_basis", "evidence", "decision_notes", "task_note")
+
+
+def _study_analysis(mode: dict, fm: dict) -> dict:
+    """What an RCM study's failure mode says beyond its text (effects, notes,
+    consequence, the decision with its evidence) that the graph's mode ``fm``
+    doesn't say yet: the changes for a failure_mode.analysed event."""
+    decision = mode.get("decision") or {}
+    outcome = decision.get("outcome")
+    scheduled = outcome in SCHEDULED_OUTCOMES and decision.get("interval")
+    said = str(decision.get("task") or "").strip()
+    want = {
+        "effects": str(mode.get("effects") or "").strip(), "notes": str(mode.get("notes") or "").strip(),
+        "consequence": mode.get("consequence") or None, "outcome": outcome or None,
+        "rtf_basis": decision.get("rtf_basis") or None, "evidence": decision.get("evidence") or None,
+        "decision_notes": str(decision.get("notes") or "").strip(),
+        "task_note": "" if scheduled else shortened(said, LONG_TEXT)[0],
+    }
+    return {k: v for k, v in want.items() if fm.get(k) != v and not (fm.get(k) is None and v in ("", None))}
+
+
 # Task fields that only tasks added by hand (or edited since) carry: projected
 # only when the payload has them, so older events give the same tasks.
 _TASK_EXTRAS = ("source", "reference", "also_interval", "also_unit", "point_id", "instructions", "checklist",
@@ -1657,6 +1710,18 @@ PROJECTORS = {
     "part.component_added": _component_added,
     "part.component_updated": _component_updated,
     "part.component_removed": _component_removed,
+    # RCM on the positions: the functions a position performs, how each fails, and
+    # the failure modes that cause it; a failure mode's analysis (effects, notes,
+    # consequence and decision, with the evidence behind it); a mode taken out.
+    "function.added": _function_added,
+    "function.updated": _patch,
+    "function.removed": _flag("removed"),
+    "functional_failure.added": _functional_failure_added,
+    "functional_failure.updated": _patch,
+    "functional_failure.removed": _flag("removed"),
+    "failure_mode.assigned": _failure_mode_assigned,
+    "failure_mode.analysed": _patch,
+    "failure_mode.retired": _flag("retired"),
 }
 
 
@@ -1792,8 +1857,9 @@ class Maintenance:
 
     def copy_position(self, position_id: str, name, parent_id=None) -> dict:
         """Copy a position and everything inside it: the positions, their
-        failure modes, their tasks and their parts lists, and the locations set on them
-        (not items, stock or work orders). For a second pump station like the first, or a template."""
+        failure modes (with their RCM: functions, functional failures, decisions), their
+        tasks and their parts lists, and the locations set on them (not items, stock or
+        work orders). For a second pump station like the first, or a template."""
         source = self._get(position_id, "Position")
         new_name = _text(name, "copy's name", required=True)
         if parent_id:
@@ -1843,6 +1909,27 @@ class Maintenance:
                                               "rcm_mode_id", "study_id")},
                     **({"ad_hoc": True} if fm.get("ad_hoc") else {}),
                 })
+                analysis = {k: fm[k] for k in _ANALYSIS if fm.get(k)}
+                if analysis:
+                    self._emit("failure_mode.analysed", {"id": mode_ids[fm["id"]], "changes": analysis})
+            # Its RCM: the functions, how each fails, and the modes under each.
+            for fn in self._functions_of(src["id"]):
+                fn_id = new_id()
+                self._emit("function.added", {
+                    "id": fn_id, "position_id": pid, "text": fn["text"], "standard": fn.get("standard", ""),
+                    "order": fn.get("order") or 0,
+                } | ({"rcm_function_id": fn["rcm_function_id"], "study_id": fn.get("study_id")}
+                     if fn.get("rcm_function_id") else {}))
+                for ff in self._failures_of(fn["id"]):
+                    ff_id = new_id()
+                    self._emit("functional_failure.added", {
+                        "id": ff_id, "function_id": fn_id, "text": ff["text"], "order": ff.get("order") or 0,
+                    } | ({"rcm_failure_id": ff["rcm_failure_id"], "study_id": ff.get("study_id")}
+                         if ff.get("rcm_failure_id") else {}))
+                    for fm in self._ff_modes(ff["id"]):
+                        if fm["id"] in mode_ids:
+                            self._emit("failure_mode.assigned", {"id": mode_ids[fm["id"]], "functional_failure_id": ff_id,
+                                                                 "order": fm.get("order") or 0})
             for task in tasks:
                 mitigates = self.s.out(self.org, task["id"], "MITIGATES")
                 # A name longer than names may be now (from before the limit) is
@@ -2199,7 +2286,8 @@ class Maintenance:
 
     def _modes_on(self, position_id: str) -> list[dict]:
         """A position's failure modes, less those merged into another."""
-        return [fm for fm in self.s.out(self.org, position_id, "CAN_FAIL_AS") if not fm.get("merged_into")]
+        return [fm for fm in self.s.out(self.org, position_id, "CAN_FAIL_AS")
+                if not fm.get("merged_into") and not fm.get("retired")]
 
     def _mode_ref(self, position_id: str, failure_mode_id=None, failure_mode_text=None) -> tuple | None:
         """Check the failure mode a failure names (nothing is written): ("id", id)
@@ -2254,13 +2342,17 @@ class Maintenance:
                     found.setdefault(key, fm["text"])
         return sorted(found.values(), key=str.lower)[:MAX_LIST]
 
-    def add_failure_mode(self, position_id: str, text, function="", failure="", consequence="") -> dict:
+    def add_failure_mode(self, position_id: str, text, function="", failure="", consequence="",
+                         functional_failure_id=None) -> dict:
         """A failure mode on a position without an RCM study (how it fails: 'Bearing
-        worn', 'Seal leaking'). Failures and tasks can then name it."""
+        worn', 'Seal leaking'). Failures and tasks can then name it. With
+        functional_failure_id (one of the position's), it goes under that
+        functional failure in the position's RCM."""
         position = self._get(position_id, "Position")
         if position.get("retired"):
             raise Invalid("That position has been retired.")
         text = _text(text, "failure mode", required=True)
+        ff = self._ff_on(functional_failure_id, position_id) if functional_failure_id else None
         same = next((fm for fm in self._modes_on(position_id) if _same_text(fm["text"], text)), None)
         if same:
             raise Invalid(f"{same['text']} is already a failure mode here (id {same['id']}).")
@@ -2270,21 +2362,36 @@ class Maintenance:
             "failure": _text(failure, "functional failure"), "consequence": _text(consequence, "consequence") or None,
             "outcome": None, "rcm_mode_id": None, "study_id": None,
         })
+        if ff:
+            self._emit("failure_mode.assigned", {"id": fid, "functional_failure_id": ff["id"],
+                                                 "order": self._next_order(self._ff_modes(ff["id"]))})
         return self._mode_view(self._get(fid, "FailureMode"))
 
     def _live_mode(self, mode_id: str) -> tuple[dict, dict]:
         fm = self._get(mode_id, "FailureMode")
         if fm.get("merged_into"):
             raise Invalid("That failure mode was merged into another.")
+        if fm.get("retired"):
+            raise Invalid("That failure mode was deleted.")
         return fm, self.s.inn(self.org, mode_id, "CAN_FAIL_AS")[0]
 
-    def update_failure_mode(self, mode_id: str, text=None, function=None, failure=None, consequence=None) -> dict:
+    def update_failure_mode(self, mode_id: str, text=None, function=None, failure=None, consequence=None,
+                            effects=None, notes=None) -> dict:
         """Change a failure mode added by hand or typed in at a failure. Editing an
         ad-hoc mode confirms it as a formal one. (A mode from an RCM study is
-        changed in the study.)"""
+        changed in the study, until it's on the position's RCM: under one of its
+        functional failures.) effects and notes are its RCM analysis."""
         fm, position = self._live_mode(mode_id)
-        if fm.get("rcm_mode_id"):
+        if fm.get("rcm_mode_id") and not self._on_spine(mode_id):
             raise Invalid("That failure mode comes from an RCM study: change it in the study, and apply it again.")
+        analysed = {}
+        if effects is not None:
+            analysed["effects"] = _text(effects, "effects", max_len=LONG_TEXT)
+        if notes is not None:
+            analysed["notes"] = _text(notes, "notes")
+        analysed = {k: v for k, v in analysed.items() if (fm.get(k) or "") != v}
+        if analysed:
+            self._emit("failure_mode.analysed", {"id": mode_id, "changes": analysed})
         changes = {}
         if text is not None:
             changes["text"] = _text(text, "failure mode", required=True)
@@ -2320,13 +2427,381 @@ class Maintenance:
         self._emit("failure_mode.merged", {"id": mode_id, "into_id": into_mode_id, "on": self.today()})
         return self.position(position["id"])
 
+    # ---- RCM on the positions: functions, functional failures, decisions -----------
+    # The position tree is RCM's spine: a position performs functions, each fails
+    # as functional failures, each caused by some of the position's failure
+    # modes. A failure mode's decision (consequence, outcome, the evidence behind
+    # it) is on the mode, and its scheduled task MITIGATES it. Nothing here is a
+    # copy: the RCM tab is a view of this.
+
+    @staticmethod
+    def _next_order(nodes: list[dict]) -> int:
+        return max((int(n.get("order") or 0) for n in nodes), default=0) + 1
+
+    def _functions_of(self, position_id: str) -> list[dict]:
+        found = [f for f in self.s.out(self.org, position_id, "PERFORMS") if not f.get("removed")]
+        return sorted(found, key=lambda f: (f.get("order") or 0, f["text"].lower()))
+
+    def _failures_of(self, function_id: str) -> list[dict]:
+        found = [f for f in self.s.out(self.org, function_id, "FAILS_AS") if not f.get("removed")]
+        return sorted(found, key=lambda f: (f.get("order") or 0, f["text"].lower()))
+
+    def _ff_modes(self, ff_id: str) -> list[dict]:
+        found = [m for m in self.s.out(self.org, ff_id, "CAUSED_BY")
+                 if not m.get("merged_into") and not m.get("retired")]
+        return sorted(found, key=lambda m: (m.get("order") or 0, m["text"].lower()))
+
+    def _live_function(self, function_id: str) -> tuple[dict, dict]:
+        """A function that hasn't been deleted, and the position performing it."""
+        fn = self._get(function_id, "Function")
+        if fn.get("removed"):
+            raise Invalid("That function was deleted.")
+        return fn, self.s.inn(self.org, function_id, "PERFORMS")[0]
+
+    def _live_ff(self, ff_id: str) -> tuple[dict, dict, dict]:
+        """A functional failure that hasn't been deleted, its function and position."""
+        ff = self._get(ff_id, "FunctionalFailure")
+        if ff.get("removed"):
+            raise Invalid("That functional failure was deleted.")
+        fn, position = self._live_function(self.s.inn(self.org, ff_id, "FAILS_AS")[0]["id"])
+        return ff, fn, position
+
+    def _ff_on(self, ff_id: str, position_id: str) -> dict:
+        ff, _, position = self._live_ff(ff_id)
+        if position["id"] != position_id:
+            raise Invalid("That functional failure is on another position.")
+        return ff
+
+    def _on_spine(self, mode_id: str) -> bool:
+        """Whether a failure mode is under one of its position's functional failures."""
+        return any(not ff.get("removed") for ff in self.s.inn(self.org, mode_id, "CAUSED_BY"))
+
+    def add_function(self, position_id: str, text, standard="", rcm_function_id=None, study_id=None) -> dict:
+        """A function the position performs ('Pump 50 L/s of water at 4 bar'), with
+        its performance standard if any."""
+        position = self._get(position_id, "Position")
+        if position.get("retired"):
+            raise Invalid("That position has been retired.")
+        fid = new_id()
+        self._emit("function.added", {
+            "id": fid, "position_id": position_id, "text": _text(text, "function", required=True, max_len=LONG_TEXT),
+            "standard": _text(standard, "performance standard", max_len=LONG_TEXT),
+            "order": self._next_order(self.s.out(self.org, position_id, "PERFORMS")),
+        } | ({"rcm_function_id": rcm_function_id, "study_id": study_id} if rcm_function_id else {}))
+        return self._function_view(self._get(fid, "Function"))
+
+    def update_function(self, function_id: str, text=None, standard=None) -> dict:
+        fn, _ = self._live_function(function_id)
+        changes = {}
+        if text is not None:
+            changes["text"] = _text(text, "function", required=True, max_len=LONG_TEXT)
+        if standard is not None:
+            changes["standard"] = _text(standard, "performance standard", max_len=LONG_TEXT)
+        changes = {k: v for k, v in changes.items() if fn.get(k, "") != v}
+        if changes:
+            self._emit("function.updated", {"id": function_id, "changes": changes})
+        return self._function_view(self._get(function_id, "Function"))
+
+    def remove_function(self, function_id: str) -> dict:
+        """Delete a function and its functional failures. Their failure modes stay
+        on the position (unassigned), with their decisions, tasks and history."""
+        fn, position = self._live_function(function_id)
+        moved = 0
+        for ff in self._failures_of(function_id):
+            moved += self._drop_ff(ff)
+        self._emit("function.removed", {"id": function_id, "on": self.today()})
+        return {"removed": function_id, "position_id": position["id"], "failure_modes_unassigned": moved}
+
+    def add_functional_failure(self, function_id: str, text, rcm_failure_id=None, study_id=None) -> dict:
+        """A way the function fails ('No flow', 'Flow below 40 L/s')."""
+        self._live_function(function_id)
+        fid = new_id()
+        self._emit("functional_failure.added", {
+            "id": fid, "function_id": function_id,
+            "text": _text(text, "functional failure", required=True, max_len=LONG_TEXT),
+            "order": self._next_order(self.s.out(self.org, function_id, "FAILS_AS")),
+        } | ({"rcm_failure_id": rcm_failure_id, "study_id": study_id} if rcm_failure_id else {}))
+        return self._ff_view(self._get(fid, "FunctionalFailure"))
+
+    def update_functional_failure(self, ff_id: str, text) -> dict:
+        ff, _, _ = self._live_ff(ff_id)
+        value = _text(text, "functional failure", required=True, max_len=LONG_TEXT)
+        if value != ff["text"]:
+            self._emit("functional_failure.updated", {"id": ff_id, "changes": {"text": value}})
+        return self._ff_view(self._get(ff_id, "FunctionalFailure"))
+
+    def _drop_ff(self, ff: dict) -> int:
+        modes = self._ff_modes(ff["id"])
+        for mode in modes:
+            self._emit("failure_mode.assigned", {"id": mode["id"], "functional_failure_id": None})
+        self._emit("functional_failure.removed", {"id": ff["id"], "on": self.today()})
+        return len(modes)
+
+    def remove_functional_failure(self, ff_id: str) -> dict:
+        """Delete a functional failure. Its failure modes stay on the position
+        (unassigned), with their decisions, tasks and history."""
+        ff, _, position = self._live_ff(ff_id)
+        moved = self._drop_ff(ff)
+        return {"removed": ff_id, "position_id": position["id"], "failure_modes_unassigned": moved}
+
+    def assign_failure_mode(self, mode_id: str, functional_failure_id) -> dict:
+        """Put a failure mode under one of its position's functional failures (None:
+        under none, unassigned)."""
+        fm, position = self._live_mode(mode_id)
+        target = self._ff_on(functional_failure_id, position["id"]) if functional_failure_id else None
+        now = [ff["id"] for ff in self.s.inn(self.org, mode_id, "CAUSED_BY") if not ff.get("removed")]
+        if (target and now == [target["id"]]) or (not target and not now):
+            return self._mode_view(fm)
+        self._emit("failure_mode.assigned", {
+            "id": mode_id, "functional_failure_id": target and target["id"],
+        } | ({"order": self._next_order(self._ff_modes(target["id"]))} if target else {}))
+        return self._mode_view(self._get(mode_id, "FailureMode"))
+
+    def _mode_task(self, mode_id: str) -> dict | None:
+        """The live task that mitigates a failure mode (its decision's task)."""
+        tasks = [t for t in self.s.inn(self.org, mode_id, "MITIGATES") if t["label"] == "Task" and not t.get("retired")]
+        return tasks[0] if tasks else None
+
+    def decide_failure_mode(self, mode_id: str, consequence=..., decision=...) -> dict:
+        """A failure mode's RCM decision: its consequence and the decision (outcome,
+        rtf_basis, task, interval and interval_unit, notes, evidence: the saved model
+        or analysis behind it), checked as an RCM study checks it. A decision that
+        schedules a task (fixed interval, failure finding, on condition, with an
+        interval) gets one on the position, or changes the one it has; a decision
+        that doesn't retires it. decision None clears the decision."""
+        from backend.services import rcm as rcm_service
+
+        fm, position = self._live_mode(mode_id)
+        changes: dict = {}
+        if consequence is not ...:
+            consequence = consequence or None
+            if consequence is not None and consequence not in rcm_service.CONSEQUENCES:
+                raise Invalid(f"Unknown consequence '{consequence}'.")
+            changes["consequence"] = consequence
+        task = self._mode_task(mode_id)
+        if decision is not ...:
+            try:
+                cleaned = rcm_service._clean_decision(decision) if decision else None
+            except rcm_service.RcmValidationError as err:
+                raise Invalid(str(err)) from None
+            cleaned = cleaned or {}
+            said = str(cleaned.get("task") or "").strip()
+            outcome = cleaned.get("outcome")
+            scheduled = outcome in SCHEDULED_OUTCOMES and cleaned.get("interval")
+            changes |= {
+                "outcome": outcome, "rtf_basis": cleaned.get("rtf_basis"), "evidence": cleaned.get("evidence"),
+                "decision_notes": _text(cleaned.get("notes"), "notes"),
+                # What's done when no task is scheduled for it (run-to-failure's action on failure).
+                "task_note": "" if scheduled else shortened(said, LONG_TEXT)[0],
+            }
+        changes = {k: v for k, v in changes.items() if fm.get(k) != v and not (fm.get(k) is None and v == "")}
+        if changes:
+            self._emit("failure_mode.analysed", {"id": mode_id, "changes": changes})
+        if decision is not ...:
+            if scheduled:
+                name, full = shortened(said or f"{SCHEDULED_OUTCOMES[outcome]}: {fm['text']}")
+                full = shortened(said, LONG_TEXT)[0] if full else ""
+                unit = _norm_unit(cleaned.get("interval_unit")) or "days"
+                interval = _interval(cleaned["interval"], unit, f"interval for {str(name)[:80]}")
+                if task is None:
+                    self._emit("task.added", {
+                        "id": new_id(), "position_id": position["id"], "failure_mode_id": mode_id,
+                        "name": name, "outcome": outcome, "interval": interval, "unit": unit, "start": self.today(),
+                        "rcm_mode_id": fm.get("rcm_mode_id"), "study_id": fm.get("study_id"),
+                    } | ({"instructions": full} if full else {}))
+                else:
+                    wanted = {"name": name, "interval": interval, "unit": unit, "outcome": outcome}
+                    if full:
+                        wanted["instructions"] = full
+                    task_changes = {k: v for k, v in wanted.items() if task.get(k) != v}
+                    if task_changes:
+                        self._emit("task.updated", {"id": task["id"], "changes": task_changes})
+            elif task is not None:
+                self._emit("task.retired", {"id": task["id"], "on": self.today(),
+                                            "reason": "The failure mode's decision schedules no task now."})
+        return self.rcm_mode(mode_id)
+
+    def retire_failure_mode(self, mode_id: str) -> dict:
+        """Delete a failure mode from the position's RCM, with the task that mitigates
+        it. Failures already recorded against it keep it in their history."""
+        fm, position = self._live_mode(mode_id)
+        task = self._mode_task(mode_id)
+        if task is not None:
+            self._emit("task.retired", {"id": task["id"], "on": self.today(),
+                                        "reason": "Its failure mode was deleted."})
+        self._emit("failure_mode.retired", {"id": mode_id, "on": self.today()})
+        return {"removed": mode_id, "position_id": position["id"], "task_retired": task and task["id"]}
+
+    @staticmethod
+    def _function_view(fn: dict) -> dict:
+        return {"id": fn["id"], "text": fn["text"], "standard": fn.get("standard") or "",
+                "from_study": fn.get("study_id")}
+
+    @staticmethod
+    def _ff_view(ff: dict) -> dict:
+        return {"id": ff["id"], "text": ff["text"], "from_study": ff.get("study_id")}
+
+    @staticmethod
+    def _decision_of(fm: dict, task: dict | None) -> dict | None:
+        """A failure mode's decision in an RCM study's shape (outcome, rtf_basis,
+        task, interval, interval_unit, notes, evidence), from the mode and its task;
+        None when it has no outcome."""
+        if not fm.get("outcome"):
+            return None
+        d = {"outcome": fm["outcome"]}
+        if fm.get("rtf_basis"):
+            d["rtf_basis"] = fm["rtf_basis"]
+        if task is not None:
+            d["task"] = task.get("instructions") if str(task.get("name") or "").endswith("…") and \
+                task.get("instructions") else task.get("name") or ""
+            d["interval"] = task.get("interval")
+            d["interval_unit"] = task.get("unit")
+            d["task_id"] = task["id"]
+        elif fm.get("task_note"):
+            d["task"] = fm["task_note"]
+        if fm.get("decision_notes"):
+            d["notes"] = fm["decision_notes"]
+        d["evidence"] = fm.get("evidence") or None
+        return d
+
+    def _rcm_mode_view(self, fm: dict, task: dict | None) -> dict:
+        return {
+            "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
+            "consequence": fm.get("consequence"), "decision": self._decision_of(fm, task),
+            "from_study": fm.get("study_id"), "ad_hoc": bool(fm.get("ad_hoc")),
+            # Words an earlier failure mode kept for its function and failure (before
+            # functions were on the positions): a hint for where it belongs.
+            "was_under": " › ".join(x for x in (fm.get("function"), fm.get("failure")) if x) or None,
+        }
+
+    def rcm_mode(self, mode_id: str) -> dict:
+        fm = self._get(mode_id, "FailureMode")
+        return self._rcm_mode_view(fm, self._mode_task(mode_id))
+
+    def _rcm_index(self) -> dict:
+        """The whole RCM spine read in bulk (a fixed number of store reads): per
+        position its live functions, failure modes and, per mode, its functional
+        failure and task."""
+        s, org = self.s, self.org
+        fns = {f["id"]: f for f in s.nodes(org, "Function") if not f.get("removed")}
+        ffs = {f["id"]: f for f in s.nodes(org, "FunctionalFailure") if not f.get("removed")}
+        modes = {m["id"]: m for m in s.nodes(org, "FailureMode") if not m.get("merged_into") and not m.get("retired")}
+        tasks = {t["id"]: t for t in s.nodes(org, "Task") if not t.get("retired")}
+        fns_of: dict[str, list] = {}
+        for src, dst in s.pairs(org, "PERFORMS"):
+            if dst in fns:
+                fns_of.setdefault(src, []).append(fns[dst])
+        ffs_of: dict[str, list] = {}
+        for src, dst in s.pairs(org, "FAILS_AS"):
+            if dst in ffs and src in fns:
+                ffs_of.setdefault(src, []).append(ffs[dst])
+        modes_of: dict[str, list] = {}
+        for src, dst in s.pairs(org, "CAN_FAIL_AS"):
+            if dst in modes:
+                modes_of.setdefault(src, []).append(modes[dst])
+        ff_of: dict[str, str] = {}
+        for src, dst in s.pairs(org, "CAUSED_BY"):
+            if src in ffs and dst in modes:
+                ff_of[dst] = src
+        task_of: dict[str, dict] = {}
+        for src, dst in s.pairs(org, "MITIGATES"):
+            if src in tasks and dst in modes:
+                task_of.setdefault(dst, tasks[src])
+        order = lambda x: (x.get("order") or 0, x["text"].lower())  # noqa: E731
+        for d in (fns_of, ffs_of, modes_of):
+            for v in d.values():
+                v.sort(key=order)
+        return {"functions": fns_of, "failures": ffs_of, "modes": modes_of, "ff_of": ff_of, "task_of": task_of}
+
+    @staticmethod
+    def _analysed(index: dict, position_id: str) -> bool:
+        """A position is analysed once it has a function and every one of its
+        failure modes has a decision."""
+        return bool(index["functions"].get(position_id)) and all(
+            m.get("outcome") for m in index["modes"].get(position_id, []))
+
+    def _position_rcm(self, index: dict, pid: str) -> dict:
+        ff_of, task_of = index["ff_of"], index["task_of"]
+        by_ff: dict[str, list] = {}
+        unassigned = []
+        for fm in index["modes"].get(pid, []):
+            view = self._rcm_mode_view(fm, task_of.get(fm["id"]))
+            if fm["id"] in ff_of:
+                by_ff.setdefault(ff_of[fm["id"]], []).append(view)
+            else:
+                unassigned.append(view)
+        functions = []
+        for fn in index["functions"].get(pid, []):
+            failures = [{**self._ff_view(ff), "modes": by_ff.get(ff["id"], [])}
+                        for ff in index["failures"].get(fn["id"], [])]
+            functions.append({**self._function_view(fn), "failures": failures})
+        return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid)}
+
+    def rcm_all(self) -> dict:
+        """The RCM of every live position that has any (functions or failure
+        modes), for the asset tree's RCM tab: each position's functions ›
+        functional failures › failure modes and its unassigned modes, read in
+        bulk. Evidence statuses are added by the caller (rcm_graph.resolve)."""
+        index = self._rcm_index()
+        out = []
+        for p in self.s.nodes(self.org, "Position"):
+            pid = p["id"]
+            if p.get("retired") or not (index["functions"].get(pid) or index["modes"].get(pid)):
+                continue
+            out.append({"id": pid, "name": p["name"], "depth": 0, **self._position_rcm(index, pid)})
+        out.sort(key=lambda x: x["id"])
+        return {"positions": out}
+
+    def rcm_worksheet(self, position_id: str, scope: str = "below", limit: int = 2000) -> dict:
+        """A position's RCM, read from the graph: for the position (scope "this")
+        or it and every position inside it (scope "below", the default; at most
+        ``limit`` positions, depth first as the tree shows them), each position's
+        functions › functional failures › failure modes, with each mode's decision
+        (in an RCM study's shape) and task, and the modes under no functional
+        failure yet (unassigned). Evidence statuses are added by the caller
+        (rcm_graph.resolve): they need the saved models and analyses."""
+        if scope not in ("below", "this"):
+            raise Invalid("scope is below (this position and everything inside it) or this.")
+        root = self._get(position_id, "Position")
+        index = self._rcm_index()
+        order: list[tuple[str, int]] = [(position_id, 0)]
+        names = {position_id: root["name"]}
+        descriptions = {position_id: root.get("description") or ""}
+        if scope == "below":
+            rows = self._tree_read()["positions"]
+            kids, _ = self._tree_rollup(rows)
+            order, stack, seen = [], [(position_id, 0)], set()
+            while stack:
+                pid, depth = stack.pop()
+                if pid in seen:
+                    continue
+                seen.add(pid)
+                order.append((pid, depth))
+                stack.extend((c, depth + 1) for c in reversed(kids.get(pid, [])))
+            names = {pid: (rows[pid]["name"] if pid in rows else root["name"]) for pid, _ in order}
+            descriptions = {pid: (self.s.node(self.org, pid) or {}).get("description") or ""
+                            for pid, _ in order[:1]}
+        truncated = len(order) > limit
+        out = []
+        for pid, depth in order[:limit]:
+            out.append({"id": pid, "name": names[pid], "depth": depth,
+                        "description": descriptions.get(pid, ""), **self._position_rcm(index, pid)})
+        return {"position": {"id": root["id"], "name": root["name"]}, "scope": scope, "positions": out,
+                "truncated": truncated, "total_positions": len(order)}
+
     # ---- RCM -> failure modes and tasks ---------------------------------------------
 
     def apply_rcm(self, position_id: str, study) -> dict:
         """Bring an RCM study's failure modes and scheduled tasks onto a position.
 
-        Applying again adds what's new and updates changed tasks; nothing is
-        removed (work orders may already point at it)."""
+        Applying again adds what's new and updates changed tasks and decisions;
+        nothing is removed (work orders may already point at it). Each mode's
+        decision comes with it: consequence, outcome, run-to-failure basis, the
+        evidence linked (the saved model or analysis behind it), notes, effects,
+        and what's done when no task is scheduled. A study moved onto its
+        positions (migrated) is history: it can't be applied again."""
+        if getattr(study, "migrated_to", None):
+            raise Invalid("That RCM study has moved onto its position: change its RCM there.")
         self._get(position_id, "Position")
         today = self.today()
         modes = {m.get("rcm_mode_id"): m for m in self.s.out(self.org, position_id, "CAN_FAIL_AS")}
@@ -2349,8 +2824,12 @@ class Maintenance:
                             "rcm_mode_id": mode["id"], "study_id": study.id,
                         })
                         added_modes += 1
+                        fm = {"consequence": mode.get("consequence"), "outcome": decision.get("outcome")}
                     else:
                         fm_id = fm["id"]
+                    analysed = _study_analysis(mode, fm)
+                    if analysed:
+                        self._emit("failure_mode.analysed", {"id": fm_id, "changes": analysed})
                     outcome = decision.get("outcome")
                     if outcome not in SCHEDULED_OUTCOMES or not decision.get("interval"):
                         continue
@@ -6459,6 +6938,7 @@ class Maintenance:
         read = self._tree_read()
         rows = read["positions"]
         _, inside = self._tree_rollup(rows)
+        rcm = self._rcm_index()
 
         def lean(d: dict | None) -> dict | None:
             return {k: v for k, v in d.items() if v} or None if d else None
@@ -6477,6 +6957,9 @@ class Maintenance:
             for key, value in (("status", lean(r["status"])), ("inside", lean(inside.get(pid)))):
                 if value:
                     row[key] = value
+            # RCM not done here yet: no function, or a failure mode with no decision.
+            if not self._analysed(rcm, pid):
+                row["not_analysed"] = True
             positions.append(row)
 
         def thing(d: dict) -> dict:

@@ -8,7 +8,7 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { ancestorsOf, depthOf, filterOpen, flatten, levelSet, visiblePick } from "../outlineTree.js";
 import {
   CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, LEVELS, LEVEL_OF, NAME_COLUMN,
-  addNode, buildRcmDisplay, consequenceWords, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
+  addNode, buildRcmDisplay, consequenceWords, failuresOn, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
   intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder, withOpen,
 } from "../rcmWorksheet.js";
 import "./RcmWorksheet.css";
@@ -30,6 +30,10 @@ import "./RcmWorksheet.css";
 //
 // On a phone each row is two lines: the description and its status, then the
 // main columns in a line; the details panel opens as a sheet with the rest.
+//
+// The Explorer's RCM tab (the asset tree and the RCM as one table, TreePane)
+// uses the cells, the cell editor, the details panel and the column chooser
+// from here; there, edits are written at once (Details' `ops`).
 
 const ICONS = {
   fn: <path d="M3 3.5h10v9H3z M6.5 6v4l3.5-2z" strokeWidth="1.4" strokeLinejoin="round" />,
@@ -54,7 +58,7 @@ const CHECK_MARK = { contradicted: "✗", unsure: "?", stale: "–", supported: 
 const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
 
 // One cell's content (desktop).
-function Cell({ col, r, query, onDecision, readOnly }) {
+export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
   const d = r.ref.decision;
   const mode = r.type === "mode";
   switch (col.id) {
@@ -73,6 +77,15 @@ function Cell({ col, r, query, onDecision, readOnly }) {
         ? <span className="rw-sum rw-todo" title={`${n(r.sum.undecided, "failure mode")} inside with no decision yet`}>{r.sum.undecided.toLocaleString("en-AU")} to decide</span>
         : <span className="rw-sum rw-done">All decided</span>;
     case "check":
+      // linkChecks (the Explorer): the chip opens the model or analysis behind it.
+      if (mode && linkChecks && d?.status && d.artifact_link_path) {
+        return (
+          <Link to={d.artifact_link_path} className="rw-cklink" onClick={(e) => e.stopPropagation()}
+                title={`${d.artifact_name || "The evidence"}: ${d.summary || d.reason || ""}`.trim()}>
+            <RcmStatusBadge status={d.status} />
+          </Link>
+        );
+      }
       if (mode) return d?.status ? <RcmStatusBadge status={d.status} /> : null;
       // One kind inside: in words ("4 to check"); more: a mark and a count each.
       if (checkCounts(r).length === 1) {
@@ -116,7 +129,7 @@ function Cell({ col, r, query, onDecision, readOnly }) {
 
 // A cell being edited in place: Enter or leaving it keeps the change; Escape
 // drops it. A value the server would refuse stays open with the reason.
-function CellEditor({ col, r, onCommit, onCancel }) {
+export function CellEditor({ col, r, onCommit, onCancel }) {
   const d = r.ref.decision || {};
   const start = col.id === "name" ? r.ref.text || ""
     : col.id === "consequence" ? r.ref.consequence || ""
@@ -183,14 +196,14 @@ function NameCell({ r, v, open, query, phone, editing, onToggle, onCommit, onCan
 }
 
 // The phone's second line: the main columns, in words.
-function phoneLine(r) {
+export function phoneLine(r) {
   if (r.type !== "mode") return insideWords(r);
   const d = r.ref.decision;
   return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", intervalText(d), d?.task]
     .filter(Boolean).join(" · ");
 }
 
-function PhoneStatus({ r }) {
+export function PhoneStatus({ r }) {
   if (r.type === "mode") {
     const d = r.ref.decision;
     return d?.status ? <RcmStatusBadge status={d.status} /> : null;
@@ -266,7 +279,13 @@ function Row({
 
 // The details panel for the row picked: every field, the decision, adding
 // inside and deleting.
-function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef }) {
+// The kinds of row whose description is edited (not a position's, nor the
+// unassigned failure modes' heading, in the Explorer).
+export const EDITABLE = new Set(["fn", "fail", "mode"]);
+
+// With `ops` (the Explorer), a failure mode can be put under another of its
+// position's functional failures.
+export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops }) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
   const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k));
@@ -299,7 +318,7 @@ function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, 
       {r.type !== "mode" && <p className="rw-inside">{insideWords(r)}</p>}
 
       <div className="rw-fields">
-        {field("Description", "name", { area: true, help: r.type === "fn" ? "What the system must do" : r.type === "fail" ? "How it fails to do it" : "What causes the failure" })}
+        {EDITABLE.has(r.type) && field("Description", "name", { area: true, help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "fail" ? "How it fails to do it" : "What causes the failure" })}
         {r.type === "fn" && field("Performance standard", "standard", { help: "Optional, e.g. within 30 m from 60 km/h" })}
         {r.type === "mode" && field("Failure effects", "effects", { area: true })}
         {r.type === "mode" && (
@@ -314,6 +333,20 @@ function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, 
           </label>
         )}
         {r.type === "mode" && field("Mode notes", "notes", { area: true })}
+        {r.type === "mode" && ops && (
+          <label className="rw-field">
+            <span className="rw-flabel">Under</span>
+            {readOnly ? <span className="rw-fval">{display.rows.get(r.parent)?.ref.text}</span> : (
+              <select value={r.ref.functional_failure_id || ""} onChange={(e) => ops.assign(r, e.target.value || null)}>
+                <option value="">No functional failure yet</option>
+                {failuresOn(display, r.ref.position_id).map((f) => (
+                  <option key={f.id} value={f.id}>{f.function ? `${f.function} › ` : ""}{f.text}</option>
+                ))}
+              </select>
+            )}
+            {r.ref.was_under && !r.ref.functional_failure_id && <span className="rw-fhelp">It was noted as under: {r.ref.was_under}</span>}
+          </label>
+        )}
       </div>
 
       {r.type === "mode" && (
@@ -348,7 +381,9 @@ function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, 
               Add {r.type === "fn" ? "a functional failure" : "a failure mode"}
             </button>
           )}
-          <button type="button" className="secondary danger" onClick={() => onDelete(r)}>Delete this {level.label.toLowerCase()}</button>
+          {EDITABLE.has(r.type) && (
+            <button type="button" className="secondary danger" onClick={() => onDelete(r)}>Delete this {level.label.toLowerCase()}</button>
+          )}
         </div>
       )}
     </aside>
@@ -393,7 +428,7 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
 }
 
 // The column chooser: tick the columns to show; the description is always shown.
-function ColumnChooser({ cols, onCols }) {
+export function ColumnChooser({ cols, onCols }) {
   const [open, setOpen] = useState(false);
   const box = useRef(null);
   useEffect(() => {

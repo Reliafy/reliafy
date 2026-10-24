@@ -389,14 +389,114 @@ def create_location_task(location_id: str, body: dict = Body(...),
 
 @router.post("/positions/{position_id}/failure-modes")
 def add_failure_mode(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A failure mode; functional_failure_id puts it under one of the position's functional failures."""
     return _run(m.add_failure_mode, position_id, body.get("text"), body.get("function", ""), body.get("failure", ""),
-                body.get("consequence", ""))
+                body.get("consequence", ""), body.get("functional_failure_id"))
 
 
 @router.patch("/failure-modes/{mode_id}")
 def update_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.update_failure_mode, mode_id, **{k: body[k] for k in ("text", "function", "failure", "consequence")
+    return _run(m.update_failure_mode, mode_id, **{k: body[k] for k in ("text", "function", "failure", "consequence",
+                                                                         "effects", "notes")
                                                    if k in body})
+
+
+# ---- a position's RCM: functions, functional failures, decisions ------------------------
+
+def _rcm_read(session, ctx: AccessCtx, fn, *args) -> JSONResponse:
+    """A read of the RCM with the evidence checked as the reader sees it."""
+    from backend.maintenance import rcm_graph
+
+    def go():
+        out = fn(*args)
+        if "positions" in out:
+            return rcm_graph.resolve(session, out, ctx.read_owners, ctx.hidden)
+        return rcm_graph.mode_status(session, out, ctx.read_owners, ctx.hidden)
+    return _run(go)
+
+
+@router.get("/rcm")
+def workspace_rcm(session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every position's RCM (those with any), for the asset tree's RCM tab, with each
+    decision's evidence check as the reader sees it."""
+    return _rcm_read(session, ctx, m.rcm_all)
+
+
+@router.get("/positions/{position_id}/rcm")
+def position_rcm(position_id: str, scope: str = "below", session=Depends(get_session),
+                 ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The position's RCM from the graph (scope below: it and everything inside it; this: it alone):
+    functions › functional failures › failure modes, each mode's decision, task and evidence check."""
+    return _rcm_read(session, ctx, m.rcm_worksheet, position_id, scope)
+
+
+@router.post("/positions/{position_id}/functions")
+def add_function(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_function, position_id, body.get("text"), body.get("standard", ""))
+
+
+@router.patch("/functions/{function_id}")
+def update_function(function_id: str, body: dict = Body(...),
+                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_function, function_id, body.get("text"), body.get("standard"))
+
+
+@router.delete("/functions/{function_id}")
+def remove_function(function_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Delete a function and its functional failures; their failure modes stay, unassigned."""
+    return _run(m.remove_function, function_id)
+
+
+@router.post("/functions/{function_id}/failures")
+def add_functional_failure(function_id: str, body: dict = Body(...),
+                           m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_functional_failure, function_id, body.get("text"))
+
+
+@router.patch("/functional-failures/{ff_id}")
+def update_functional_failure(ff_id: str, body: dict = Body(...),
+                              m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_functional_failure, ff_id, body.get("text"))
+
+
+@router.delete("/functional-failures/{ff_id}")
+def remove_functional_failure(ff_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.remove_functional_failure, ff_id)
+
+
+@router.post("/failure-modes/{mode_id}/assign")
+def assign_failure_mode(mode_id: str, body: dict = Body(...),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Under one of its position's functional failures (functional_failure_id), or none (null)."""
+    return _run(m.assign_failure_mode, mode_id, body.get("functional_failure_id"))
+
+
+@router.put("/failure-modes/{mode_id}/decision")
+def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(get_session),
+                        ctx: AccessCtx = Depends(get_access),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The mode's consequence and decision ({outcome, rtf_basis, task, interval, interval_unit, notes,
+    evidence}; null clears it), checked as an RCM study's; the evidence must be one the writer can open."""
+    from backend.maintenance import rcm_graph
+
+    def go():
+        if "decision" in body and body["decision"]:
+            old = m.rcm_mode(mode_id).get("decision")
+            access_service.check_references(session, ctx, rcm_graph.evidence_refs(body["decision"]),
+                                            keep=rcm_graph.evidence_refs(old))
+        return m.decide_failure_mode(mode_id, body["consequence"] if "consequence" in body else ...,
+                                     body["decision"] if "decision" in body else ...)
+    try:
+        return _rcm_read(session, ctx, go)
+    except access_service.UnreadableReference as exc:
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc), "code": "unreadable_reference"})
+
+
+@router.delete("/failure-modes/{mode_id}")
+def retire_failure_mode(mode_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Delete it from the position's RCM, with its task (failures recorded against it keep it)."""
+    return _run(m.retire_failure_mode, mode_id)
 
 
 @router.post("/failure-modes/{mode_id}/merge")

@@ -92,6 +92,9 @@ GET_KINDS: Table = {
                                  "in one (rollup)."),
     "where_used": ("id", "", "The parts a part is in (with the quantity in one), and the positions and items "
                              "using it."),
+    "rcm": ("id", "scope", """A position's RCM: functions › functional failures › failure modes, each mode's
+        decision, task and evidence check, and modes under none (unassigned); scope below (default: it and
+        everything inside it) or this."""),
     "measurement_point": ("id", "", """Kind, source and tag, latest reading, rate (counter) or trend and the
         date it should reach an alarm limit (condition), status, recent readings (each with status ok,
         correction, voided or replaced; reading ids for maintenance_measurements void / correct)."""),
@@ -228,11 +231,26 @@ ITEMS: Table = {
 }
 
 FAILURE_MODES: Table = {
-    "add": ("position_id text", "function failure consequence", """A failure mode on a position without RCM:
-        how it fails ('Bearing worn'), optionally the function, the functional failure ('No flow') and the
-        consequence. Failures and tasks then name it by id."""),
-    "update": ("failure_mode_id", "text function failure consequence", """Edit one added by hand or typed in at
-        a failure (editing an ad-hoc mode confirms it). An RCM study's modes change in the study."""),
+    "add": ("position_id text", "functional_failure_id function failure consequence", """A failure mode on a
+        position: how it fails ('Bearing worn'); functional_failure_id puts it under one of the position's
+        functional failures. Failures and tasks then name it by id."""),
+    "update": ("failure_mode_id", "text effects notes function failure consequence", """Edit one (editing an
+        ad-hoc mode confirms it). A study's mode changes in the study until it's under a functional failure."""),
+    "decide": ("failure_mode_id", "consequence decision", """Its consequence and decision {outcome, rtf_basis,
+        task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it), checked as a study's; adds,
+        changes or retires its task. Returns it with the evidence check."""),
+    "assign": ("failure_mode_id", "functional_failure_id", "Put it under one of its position's functional "
+               "failures (left out: under none)."),
+    "retire": ("failure_mode_id", "", "Delete it from the position's RCM, with its task (recorded failures keep it)."),
+    "add_function": ("position_id text", "standard", "A function the position performs, with its performance "
+                     "standard."),
+    "update_function": ("function_id", "text standard", "Change a function's text or performance standard."),
+    "remove_function": ("function_id", "", "Delete a function and its functional failures; their modes stay, "
+                        "unassigned."),
+    "add_functional_failure": ("function_id text", "", "A way the function fails ('No flow')."),
+    "update_functional_failure": ("functional_failure_id text", "", "Change a functional failure's text."),
+    "remove_functional_failure": ("functional_failure_id", "", "Delete a functional failure; its modes stay, "
+                                  "unassigned."),
     "merge": ("failure_mode_id into_failure_mode_id", "", """Fold a mode into another on the same position (a
         duplicate, an ad-hoc one): its failures, findings and tasks move across. To link an ad-hoc mode to an
         RCM study's, apply the study, then merge into the study's. Returns the position."""),
@@ -639,11 +657,17 @@ def register() -> None:
                         lead_time_days: Annotated[float | None, Field(description=(
                             "A lead time for every spare (default: each part's own, else 30)."))] = None,
                         review_days: Annotated[float | None, Field(description=(
-                            "How often stock is checked (default 0)."))] = None) -> dict[str, Any]:
+                            "How often stock is checked (default 0)."))] = None,
+                        scope: Literal["below", "this"] | None = None) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance_overview, maintenance_list and the records themselves."""
         m = m_for(ctx)
         rid = id
+        if kind == "rcm":
+            from backend.maintenance import rcm_graph
+
+            sheet = run(m.rcm_worksheet, rid, _d(scope, "below"))
+            return rcm_graph.resolve(_db(), sheet, _reader(_caller(ctx)).read_owners)
         if kind == "photo_link":
             doc = photo_links().get(rid, org=m.org)
             if doc is None:
@@ -912,19 +936,61 @@ def register() -> None:
             return run(m.set_item_part, item_id, none_is_null(part_id))
         return run(m.set_item_attributes, item_id, values)
 
-    @tool("maintenance_failure_modes", _WRITE, "Add and edit failure modes", FAILURE_MODES)
+    @tool("maintenance_failure_modes", _WRITE, "Add and edit failure modes and a position's RCM", FAILURE_MODES)
     def maintenance_failure_modes(action: _choice(FAILURE_MODES), ctx: Context, position_id: str | None = None,
                                   failure_mode_id: str | None = None, into_failure_mode_id: str | None = None,
                                   text: str | None = None, function: str | None = None, failure: str | None = None,
-                                  consequence: str | None = None) -> dict[str, Any]:
-        """Failure modes: how a position fails. They come from RCM studies, are added here, or are typed
-        in at a failure (ad hoc). Failures (maintenance_fitments remove / add_past, maintenance_work_orders
-        close) and tasks name them by id."""
+                                  consequence: str | None = None, effects: str | None = None,
+                                  notes: str | None = None, function_id: str | None = None,
+                                  functional_failure_id: str | None = None, standard: str | None = None,
+                                  decision: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
+        each fails (functional failures) and the modes causing each, with each mode's decision. Modes come
+        from RCM studies, are added here, or are typed in at a failure (ad hoc). Failures
+        (maintenance_fitments remove / add_past, maintenance_work_orders close) and tasks name them by id.
+        Read it with maintenance_get kind rcm."""
         m = m_for(ctx)
         if action == "add":
-            return run(m.add_failure_mode, position_id, text, function or "", failure or "", consequence or "")
+            return run(m.add_failure_mode, position_id, text, function or "", failure or "", consequence or "",
+                       functional_failure_id)
         if action == "update":
-            return run(m.update_failure_mode, failure_mode_id, text, function, failure, consequence)
+            return run(m.update_failure_mode, failure_mode_id, text, function, failure, consequence, effects, notes)
+        if action == "decide":
+            user = _caller(ctx)
+            reader = _reader(user)
+
+            def go():
+                if decision:
+                    from backend.maintenance import rcm_graph
+
+                    old = m.rcm_mode(failure_mode_id).get("decision")
+                    access_service.check_references(_db(), reader, rcm_graph.evidence_refs(decision),
+                                                    keep=rcm_graph.evidence_refs(old))
+                return m.decide_failure_mode(failure_mode_id, consequence if consequence is not None else ...,
+                                             decision if decision is not None else ...)
+            try:
+                mode = run(go)
+            except access_service.UnreadableReference as err:
+                raise ToolError(str(err)) from None
+            from backend.maintenance import rcm_graph
+
+            return rcm_graph.mode_status(_db(), mode, reader.read_owners)
+        if action == "assign":
+            return run(m.assign_failure_mode, failure_mode_id, functional_failure_id)
+        if action == "retire":
+            return run(m.retire_failure_mode, failure_mode_id)
+        if action == "add_function":
+            return run(m.add_function, position_id, text, standard or "")
+        if action == "update_function":
+            return run(m.update_function, function_id, text, standard)
+        if action == "remove_function":
+            return run(m.remove_function, function_id)
+        if action == "add_functional_failure":
+            return run(m.add_functional_failure, function_id, text)
+        if action == "update_functional_failure":
+            return run(m.update_functional_failure, functional_failure_id, text)
+        if action == "remove_functional_failure":
+            return run(m.remove_functional_failure, functional_failure_id)
         return run(m.merge_failure_mode, failure_mode_id, into_failure_mode_id)
 
     Outcome = Literal["fixed_interval", "failure_finding", "on_condition"]

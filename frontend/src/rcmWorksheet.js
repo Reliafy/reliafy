@@ -18,6 +18,11 @@ export const LEVELS = [
   { type: "mode", label: "Failure mode", plural: "Failure modes", child: null },
 ];
 export const LEVEL_OF = Object.fromEntries(LEVELS.map((l, i) => [l.type, { ...l, depth: i }]));
+// The RCM in the Explorer's tree (explorerRcm.js) has two more kinds of row:
+// the positions themselves, and a position's failure modes under no
+// functional failure yet.
+LEVEL_OF.pos = { type: "pos", label: "Position", plural: "Positions", child: "functions", depth: 0 };
+LEVEL_OF.unassigned = { type: "unassigned", label: "Not under a functional failure", plural: "Unassigned", child: "modes", depth: 0 };
 
 export const OUTCOME_LABEL = {
   on_condition: "On-condition",
@@ -47,13 +52,13 @@ const RTF_LABEL = { random: "random", uneconomic: "not economic" };
 export const TASK_OUTCOMES = new Set(["on_condition", "fixed_interval", "rtf", "failure_finding"]);
 export const INTERVAL_OUTCOMES = new Set(["on_condition", "fixed_interval", "failure_finding"]);
 
-const blank = () => ({
+export const blank = () => ({
   modes: 0, undecided: 0, tasks: 0, hidden: 0, safety: 0,
   supported: 0, contradicted: 0, unsure: 0, stale: 0,
 });
 
 // A failure mode's own counts (each 0 or 1).
-function modeCounts(m) {
+export function modeCounts(m) {
   const d = m.decision;
   const s = d?.status;
   return {
@@ -109,8 +114,37 @@ export function buildRcmDisplay(functions) {
   return { rows, roots, counts };
 }
 
+// The functional failures on a position, for a failure mode's "Under" choice.
+export function failuresOn(display, positionId) {
+  const out = [];
+  for (const r of display.rows.values()) {
+    if (r.type === "fail" && r.ref.position_id === positionId) {
+      const fn = display.rows.get(r.parent);
+      out.push({ id: r.key, text: r.ref.text, function: fn?.ref.text || "" });
+    }
+  }
+  return out;
+}
+
+// A decision as the server takes it back: the fields a decision is made of,
+// without the evidence check the server added.
+export function decisionBody(d, patch = {}) {
+  if (!d) return null;
+  const out = {};
+  for (const k of ["outcome", "rtf_basis", "task", "interval", "interval_unit", "notes", "evidence"]) {
+    if (d[k] !== undefined && d[k] !== null && d[k] !== "") out[k] = d[k];
+  }
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null || v === "") delete out[k];
+    else out[k] = v;
+  }
+  if (out.interval != null && !out.interval_unit) out.interval_unit = "hours";
+  if (out.interval == null) delete out.interval_unit;
+  return out;
+}
+
 // A row's text (the node's description).
-export const nameOf = (r) => r.ref.text || "";
+export const nameOf = (r) => r.ref.text || r.ref.name || "";
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 

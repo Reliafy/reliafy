@@ -274,6 +274,68 @@ Critical, about US$290 a month at its minimum, or a self-managed Enterprise
 licence; Community Edition has none). Not built. Until then, keep both lists to
 the owner alone.
 
+## RCM on the positions
+
+The position tree is the spine of RCM. A position performs functions, each
+function fails in one or more ways (functional failures), and each functional
+failure is caused by some of the position's failure modes:
+
+```
+(:Position)-[:PERFORMS]->(:Function {text, standard})
+(:Function)-[:FAILS_AS]->(:FunctionalFailure {text})
+(:FunctionalFailure)-[:CAUSED_BY]->(:FailureMode)
+(:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
+(:Task)-[:MITIGATES]->(:FailureMode)                # the decision's task, as before
+```
+
+A failure mode's analysis and decision are properties on the mode
+(`effects`, `notes`, `consequence`, `outcome`, `rtf_basis`, `decision_notes`,
+`task_note` for a decision with no scheduled task, and `evidence`: the saved
+model or analysis behind it, `{type, id}`). The interval and unit of a
+scheduled decision are its task's. A failure mode under no functional failure
+still belongs to its position (the app lists it as unassigned).
+
+Events: `function.added` / `updated` / `removed`, `functional_failure.added`
+/ `updated` / `removed`, `failure_mode.assigned` (under a functional failure,
+or none), `failure_mode.analysed` and `failure_mode.retired`. Deleting a
+function or a functional failure leaves its failure modes on the position,
+unassigned; deleting a failure mode retires the task that mitigates it.
+
+The evidence check is the RCM study's own (`backend/services/rcm.py`): done on
+every read, never stored, so a decision gives the same status on a position
+as in a study. One difference: a study's interval with no unit skips the unit
+check, while on a position the task runs in days, so days are checked.
+
+The app's Assets › Explorer shows it on its RCM tab, where the asset tree and
+the RCM are one table: the tree (by positions) is the first column, each
+position's functions, functional failures and failure modes are nested in it,
+and every row has the RCM's columns. Adding a function, failure or mode there
+adds a row to the tree. A position
+with no function, or with a failure mode that has no decision, is marked "not
+analysed" in the tree.
+
+### Moving RCM studies onto the positions
+
+`backend/maintenance/rcm_migrate.py`, run by
+`python -m backend.scripts.migrate_rcm_studies`:
+
+1. Run it without `--apply` first. That is a dry run: the same steps on a
+   throwaway in-memory copy of the graph, printing what each study would
+   add. Nothing is written to the log or to the studies.
+2. Read the output, then run it again with `--apply` (`--owner` or `--study`
+   to do a few first).
+
+For each study it finds the positions the study was applied to (by the
+`study_id` and `rcm_mode_id` its failure modes and tasks carry, in any
+workspace) or, if it was never applied, makes a position for it in its
+owner's workspace (never for a sample). It applies the study once more (every
+mode and task, each decision with its evidence), adds the study's functions
+and functional failures, puts each failure mode under its functional failure,
+and adds the study's description to the position's. What's already there is
+matched, so a second run changes nothing. The study document is kept as it
+was, as read-only history, and marked `migrated_to` (the position): it can't
+be edited or applied again after that.
+
 ## Making Neo4j the primary store later
 
 Worth it when Neo4j is close to Cloud Run (AuraDB Professional in

@@ -29,6 +29,9 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/graph/schema"], // #423
   ["GET", "/api/maintenance/graph/design"], // the Data model page
   ["GET", "/api/maintenance/conditions"], // #428
+  ["GET", "/api/maintenance/rcm"], // the RCM in the Explorer's tree
+  ["GET", "/api/maintenance/positions/smoke/rcm"], // a position's RCM
+  ["PUT", "/api/maintenance/failure-modes/smoke/decision"],
   ["GET", "/api/maintenance/overview"],
   ["GET", "/api/maintenance/tree"], // the asset tree pane
   ["GET", "/api/maintenance/places"], // Assets: the top-level places

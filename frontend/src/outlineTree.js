@@ -31,6 +31,7 @@ export function depthOf(display) {
 export function filterRows(display, test) {
   const match = new Set();
   const keep = new Set();
+  const above = new Set(); // every row with a match somewhere inside it
   for (const r of display.rows.values()) {
     if (!test(r)) continue;
     match.add(r.key);
@@ -39,12 +40,15 @@ export function filterRows(display, test) {
       keep.add(p);
       p = display.rows.get(p).parent;
     }
+    for (let up = r.parent; up != null && !above.has(up); up = display.rows.get(up).parent) above.add(up);
   }
-  return { match, keep };
+  return { match, keep, above };
 }
 
-// While filtering, the rows on the way down to a match start open.
+// While filtering, the rows on the way down to a match start open, a match
+// with other matches inside it too.
 export function filterOpen(filter) {
+  if (filter.above) return new Set(filter.above);
   return new Set([...filter.keep].filter((k) => !filter.match.has(k)));
 }
 

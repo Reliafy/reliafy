@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { getMaintenanceTree, listMaintenanceItems } from "../api.js";
+import { getMaintenanceTree, getRcmOptions, listMaintenanceItems } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
-import TreeDetail from "../components/TreeDetail.jsx";
+import TreeDetail, { DetailHeader } from "../components/TreeDetail.jsx";
+import DecisionModal from "../components/DecisionModal.jsx";
+import { RollupBadges } from "../components/RcmStatusBadge.jsx";
+import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx";
+import Tabs from "../components/ui/Tabs.jsx";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import useTreeRcm from "../components/useTreeRcm.js";
+import { cellRow, graftRcm, isRcmRow, openFor, positionOf } from "../explorerRcm.js";
+import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
+import FullScreenButton from "../components/FullScreenButton.jsx";
+import useFullScreen from "../components/useFullScreen.js";
+import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
+import { shownTab, tabParam, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { NewItemModal, NewLocationModal } from "./MaintenanceLists.jsx";
@@ -31,6 +43,20 @@ import "./AssetExplorer.css";
 // list's last row): only the positions at no location yet. ?sel=<id>: open
 // with that row picked. The old Positions, Items and Locations addresses
 // redirect here (redirects.js).
+//
+// The panel has tabs (explorerTabs.js): ?tab=rcm opens a position's RCM, and
+// the tab stays as you walk the tree (rows without it show Summary); the
+// address keeps the position picked (?sel=).
+//
+// On the RCM tab the tree and the RCM are one table (TreePane with its
+// columns): the tree, arranged by positions, is the first column, each
+// position's functions › functional failures › failure modes nested in it,
+// and every row has the RCM's columns beside it; the panel's heading sits over
+// it. Picking a function, failure or mode opens its details beside the table;
+// "Add …" rows under the position picked (and the heading's Add function) add
+// to it, and the tree grows. On the Summary tab the tree is the positions alone
+// and the page about the row picked is beside it. Full screen (F, Esc to leave)
+// gives the tree and the panel the whole screen, as the RBD editor's.
 
 const HELP = { guide: "rcm-study" };
 
@@ -56,7 +82,10 @@ export default function AssetExplorer() {
   const { workspace } = useWorkspace();
   const phone = usePhone();
   const saved = useMemo(() => loadTreeState(workspace), [workspace]);
-  const mode = arrangementOf(params.get("arrange"), saved.mode);
+  const tab = tabParam(params.get("tab"));
+  const rcmOn = tab === "rcm";
+  // RCM is by position: on its tab the tree is arranged by positions.
+  const mode = rcmOn ? "positions" : arrangementOf(params.get("arrange"), saved.mode);
   const notPlaced = (mode === "positions" || mode === "flat") && params.get("place") === "none";
   const title = EXPLORER_LABEL;
   const treeLabel = ARRANGEMENTS.find((a) => a.value === mode).tree;
@@ -68,6 +97,13 @@ export default function AssetExplorer() {
     q.set("arrange", mode);
     navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
   }, [params, mode, navigate, location]);
+
+  const setQuery_ = useCallback((change) => {
+    const q = new URLSearchParams(params);
+    change(q);
+    if (q.toString() === params.toString()) return;
+    navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
+  }, [params, navigate, location]);
 
   const [data, setData] = useState(null);
   // The items list (class, make and model for each item), for the Items
@@ -85,6 +121,10 @@ export default function AssetExplorer() {
   const [scrollTo, setScrollTo] = useState(null);
   const [modal, setModal] = useState(null);
   const headingRef = useRef(null);
+  const detailsHeading = useRef(null);
+  const frame = useRef(null);
+  const fullBtn = useRef(null);
+  const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
   const pending = useRef(params.get("sel") || location.state?.treeReveal || null);
 
   const load = useCallback(() => {
@@ -97,6 +137,26 @@ export default function AssetExplorer() {
       .catch((e) => setError({ text: e.message, notAllowed: e.status === 404 || e.status === 403 }));
   }, []);
   useEffect(() => load(), [load]);
+
+  // The RCM tab: the RCM read into the tree, and what's being worked on.
+  const askText = useAskText();
+  const confirm = useConfirm();
+  const { rcm, error: rcmError, ops } = useTreeRcm({ on: rcmOn, onTreeChanged: load, askText });
+  const [rcmFocus, setRcmFocus] = useState(null); // a function, failure or mode picked (its position is selected)
+  const [panel, setPanel] = useState(false); // its details beside the table
+  const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
+  const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
+  const [options, setOptions] = useState(null);
+  const [rprefs, setRprefs] = useState(() => loadPrefs());
+  const [message, setMessage] = useState(null);
+  useEffect(() => {
+    if (rcmOn && !options) getRcmOptions().then(setOptions).catch(() => {});
+  }, [rcmOn, options]);
+  useEffect(() => {
+    const t = setTimeout(() => savePrefs(rprefs), 200);
+    return () => clearTimeout(t);
+  }, [rprefs]);
+  const say = (text, tone = "ok") => setMessage({ text, tone, at: Date.now() });
   const wantItems = mode === "items";
   useEffect(() => {
     if (!wantItems || !version) return undefined;
@@ -108,7 +168,9 @@ export default function AssetExplorer() {
     };
   }, [wantItems, version]);
 
-  const display = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
+  const base = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
+  const working = selected.positions;
+  const display = useMemo(() => (rcmOn && rcm ? graftRcm(base, rcm, { addFor: working }) : base), [base, rcmOn, rcm, working]);
   const filter = useMemo(() => (data ? computeFilter(display, {
     query, chips: mode === "items" ? chips.filter((c) => c !== "empty") : chips, extra: notPlaced ? (r) => r.type === "pos" && !r.ref.location : null,
   }) : null), [data, display, query, chips, notPlaced, mode]);
@@ -117,7 +179,69 @@ export default function AssetExplorer() {
   const baseOpen = openBy[mode] || defaultOpen;
   const open = filter ? fopen || filterOpen(filter) : baseOpen;
   const { list, index } = useMemo(() => flatten(display, open, filter), [display, open, filter]);
-  const focus = display.rows.has(selected[mode]) ? selected[mode] : list[0]?.key ?? null;
+  const focus = rcmOn && rcmFocus && display.rows.has(rcmFocus) ? rcmFocus
+    : display.rows.has(selected[mode]) ? selected[mode] : list[0]?.key ?? null;
+  const focusRow = focus != null ? display.rows.get(focus) : null;
+  // The position the selection is on (a function, failure or mode: its position).
+  const selPos = isRcmRow(focusRow) ? positionOf(focusRow) : focus;
+
+  // With a tab open beyond Summary, the address follows the row picked
+  // (?sel=), once the tree is in, so a link opens on it with that tab.
+  useEffect(() => {
+    if (!data || selPos == null || pending.current || tab === "summary") return;
+    if (params.get("sel") === selPos) return;
+    setQuery_((q) => q.set("sel", selPos));
+  }, [data, selPos, params, setQuery_, tab]);
+
+  // Opening the RCM tab opens the position picked down to its failure modes
+  // (once each time the tab opens; what's open after that is yours).
+  const openedRcm = useRef(false);
+  useEffect(() => {
+    if (!rcmOn) {
+      openedRcm.current = false;
+      return;
+    }
+    if (!rcm || openedRcm.current || !display.rows.has(selected.positions)) return;
+    openedRcm.current = true;
+    const more = openFor(display, selected.positions);
+    setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(display, 2)), ...more]) }));
+  }, [rcmOn, rcm, display, selected.positions]);
+
+  const setTab = (t) => {
+    if (t === tab) return;
+    setEditing(null);
+    if (t !== "rcm") {
+      // Back to Summary: the rows below positions go; the selection is the position they were on.
+      setRcmFocus(null);
+      setPanel(false);
+      setChips((c) => c.filter((x) => !["undecided", "hidden", "check"].includes(x)));
+    }
+    let keep = null;
+    if (t === "rcm" && mode !== "positions") {
+      keep = carryOver(focusRow, "positions");
+      if (keep) setSelected((s) => ({ ...s, positions: keep }));
+    }
+    setQuery_((q) => {
+      if (t === "summary") q.delete("tab");
+      else q.set("tab", t);
+      if (t === "rcm") q.set("arrange", "positions");
+    });
+  };
+
+  // F toggles full screen (not while typing, nor with a dialog or menu open,
+  // nor with a modifier: Ctrl+F still finds); Esc leaves it.
+  useEffect(() => {
+    if (phone) return undefined;
+    const onKey = (e) => {
+      if (!isFullScreenKey(e) || hasOpenLayer(document)) return;
+      // In the tree, letters jump to a row (type-ahead): F there isn't full screen.
+      if (e.target.closest?.("[role='tree'], [role='treegrid']")) return;
+      e.preventDefault();
+      toggleFull();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phone, toggleFull]);
 
   // Remembered on this device, a moment after each change, and on the way out.
   const latest = useRef(null);
@@ -146,7 +270,14 @@ export default function AssetExplorer() {
     const up = ancestorsOf(display, key);
     if (filter) setFopen((s) => new Set([...(s || filterOpen(filter)), ...up]));
     else setOpenBy((o) => ({ ...o, [mode]: new Set([...(o[mode] || defaultOpen), ...up]) }));
-    setSelected((s) => ({ ...s, [mode]: key }));
+    const r = display.rows.get(key);
+    if (isRcmRow(r)) {
+      setRcmFocus(key);
+      setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
+    } else {
+      setRcmFocus(null);
+      setSelected((s) => ({ ...s, [mode]: key }));
+    }
     setScrollTo({ key, at: Date.now() });
   }, [display, filter, mode, defaultOpen]);
 
@@ -168,8 +299,71 @@ export default function AssetExplorer() {
 
   const detailKey = phone ? location.state?.treeDetail : null;
   const pick = (key, opts = {}) => {
+    const r = display.rows.get(key);
+    if (r?.type === "add") {
+      if (opts.keyboard) setRcmFocus(key);
+      else runAdd(r);
+      return;
+    }
+    if (isRcmRow(r)) {
+      setRcmFocus(key);
+      setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
+      if (opts.go) setPanel(true);
+      return;
+    }
+    setRcmFocus(null);
     setSelected((s) => ({ ...s, [mode]: key }));
-    if (phone && opts.go) navigate(location.pathname + location.search, { state: { treeDetail: key } });
+    if (phone && opts.go && !rcmOn) navigate(location.pathname + location.search, { state: { treeDetail: key } });
+  };
+
+  // Adding from the tree (an "Add …" row), the heading or the details: the new
+  // row is picked and brought into view once the RCM is read again.
+  const runAdd = (r) => {
+    const kind = r.ref.add;
+    ops.add(kind, { positionId: r.ref.position_id, functionId: r.ref.function_id, failureId: r.ref.functional_failure_id ?? null })
+      .then((id) => {
+        if (!id) return;
+        pending.current = id;
+        setPanel(true);
+        say(`Added the ${kind === "fn" ? "function" : kind === "fail" ? "functional failure" : "failure mode"}.`);
+      }, (e) => say(e.message, "error"));
+  };
+  const addInside = (r) => runAdd({ ref: {
+    add: r.type === "fn" ? "fail" : "mode", position_id: r.ref.position_id,
+    function_id: r.type === "fn" ? r.ref.id : null, functional_failure_id: r.type === "fail" ? r.ref.id : null,
+  } });
+  const remove = async (r) => {
+    const level = LEVEL_OF[r.type].label.toLowerCase();
+    const ok = await confirm({ title: `Delete this ${level}?`, body: ops.removeText(r), confirmLabel: `Delete ${level}` });
+    if (!ok) return;
+    try {
+      await ops.remove(r);
+      setRcmFocus(isRcmRow(display.rows.get(r.parent)) ? r.parent : null);
+      say(`Deleted the ${level}.`);
+    } catch (e) {
+      say(e.message, "error");
+    }
+  };
+  // One cell changed: checked as the server checks it, then written.
+  const commit = (r, col, raw) => {
+    const res = checkValue(col, cellRow(r), raw);
+    if (res.error) {
+      say(res.error, "error");
+      return res.error;
+    }
+    ops.set(r, col, res.value).then(() => say("Saved."), (e) => say(e.message, "error"));
+    setEditing(null);
+    return true;
+  };
+  const saveDecision = async (answer) => {
+    const r = deciding;
+    setDeciding(null);
+    try {
+      await ops.decide(r, answer);
+      say("Saved the decision.");
+    } catch (e) {
+      say(e.message, "error");
+    }
   };
 
   const toggle = (key, force) => {
@@ -202,7 +396,9 @@ export default function AssetExplorer() {
     latest.current = { ...latest.current, mode: m, selected: nextSelected };
     saveTreeState(workspace, latest.current);
     pending.current = keep;
-    navigate(explorerPath(m), { state: keep ? { treeReveal: keep } : undefined });
+    // The tab comes along.
+    navigate(explorerPath(m, { tab: tab === "summary" ? null : tab }),
+             { state: keep ? { treeReveal: keep } : undefined });
   };
 
   // Ctrl+\ folds the pane away and back.
@@ -276,7 +472,11 @@ export default function AssetExplorer() {
 
   const placedCount = data ? display.positions : 0;
   const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
-  const statusText = !data ? "" : filter
+  const notAnalysed = data ? data.positions.filter((p) => p.not_analysed).length : 0;
+  const statusText = !data ? "" : rcmOn && !filter
+    ? (rcmError ? `The RCM didn't load: ${rcmError}` : !rcm ? `${n(placedCount, "position")} · loading the RCM…`
+      : `${n(placedCount, "position")} · ${notAnalysed.toLocaleString("en-AU")} not analysed · RCM is by position`)
+    : filter
     ? `${n(filter.match.size, "match", "matches")}, shown with what they're inside`
     : mode === "locations"
       ? `${n(data.locations.length, "location")} · ${n(placedCount, "position")}`
@@ -290,12 +490,56 @@ export default function AssetExplorer() {
   );
 
   const row = (phone ? detailKey : focus) != null ? display.rows.get(phone ? detailKey : focus) : null;
+  const posRow = selPos != null ? display.rows.get(selPos) : null;
+  const fullButton = !phone && <FullScreenButton ref={fullBtn} full={full} onClick={toggleFull} />;
+
+  // The RCM tab: the table's columns beside the tree, the heading over them,
+  // and the details of the function, failure or mode picked.
+  const cols = rprefs.cols.map((id) => COLUMN[id]).filter(Boolean);
+  const widths = {};
+  for (const c of cols) widths[c.id] = rprefs.widths[c.id] ?? c.width;
+  const table = rcmOn ? {
+    cols, widths, treeW: width, total: width + cols.reduce((t, c) => t + widths[c.id], 0),
+    editing, readOnly: false,
+    canEditName: (r) => EDITABLE.has(r.type),
+    onEdit: (key, col) => { setRcmFocus(key); setEditing({ key, col }); },
+    onCommit: commit, onCancel: () => setEditing(null), onDecision: (r) => setDeciding(r),
+  } : null;
+  const msg = message && <p className={"tt-msg " + message.tone} role="status">{message.text}</p>;
+  const head = rcmOn && posRow && posRow.type === "pos" && (
+    <div className="td tt-headpanel">
+      <DetailHeader display={display} row={posRow} onSelect={reveal} tab={tab} onTab={setTab} headingRef={headingRef}
+                    fullScreenButton={fullButton}
+                    meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
+                    actions={(
+                      <>
+                        <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
+                        <button type="button" className="sm" onClick={() => runAdd({ ref: { add: "fn", position_id: posRow.key } })}>Add function</button>
+                      </>
+                    )} />
+      {msg}
+    </div>
+  );
+  const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "add" ? cellRow(focusRow) : null;
+  const side = detailsRow && (
+    <div className="rw tt-side">
+      {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
+      <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={ops}
+               onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
+               onClose={() => { setPanel(false); document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }); }}
+               onSelect={(k) => reveal(k)} />
+    </div>
+  );
+  const phoneTabs = phone && posRow && posRow.type === "pos" && (
+    <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label="What to show" className="tp-tabs" />
+  );
   const back = phone && (
     <button type="button" className="secondary td-back" onClick={() => navigate(-1)}>‹ {title}</button>
   );
 
   return (
-    <div className={"tx" + (phone ? " phone" : "") + (phone && detailKey ? " show-detail" : "")}>
+    <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && detailKey && !rcmOn ? " show-detail" : "")
+      + (full ? " is-full" : "") + (rcmOn ? " tx-table" : "")}>
       <TreePane
         title={title}
         treeLabel={treeLabel}
@@ -332,9 +576,25 @@ export default function AssetExplorer() {
         statusText={statusText}
         empty={phone && (error || nothing) ? emptyDetail : paneEmpty}
         scrollTo={scrollTo}
-        onEnter={(key) => (phone ? pick(key, { go: true }) : headingRef.current?.focus())}
+        onEnter={(key) => {
+          const r = display.rows.get(key);
+          if (r?.type === "add") return runAdd(r);
+          if (isRcmRow(r)) {
+            setPanel(true);
+            return setTimeout(() => detailsHeading.current?.focus(), 0);
+          }
+          return phone ? pick(key, { go: true }) : headingRef.current?.focus();
+        }}
+        rcmMarks={rcmOn || chips.includes("unanalysed")}
+        table={table}
+        head={head}
+        side={side}
+        phoneTabs={phoneTabs}
+        layoutKey={tab}
+        anchorKey={selPos}
+        arrangeLocked={rcmOn ? "RCM is by position, so the RCM tab shows the positions tree" : null}
       />
-      <section className="tx-detail" aria-label="Details"
+      {!rcmOn && <section className="tx-detail" aria-label="Details"
                onKeyDown={(e) => {
                  if (e.key === "Escape" && !phone && focus) document.getElementById(`tp-${focus}`)?.focus();
                }}>
@@ -345,12 +605,13 @@ export default function AssetExplorer() {
                         setSelected((s) => ({ ...s, [mode]: k }));
                         return navigate(location.pathname + location.search, { state: { treeDetail: k }, replace: true });
                       }}
-                      back={back} version={version} empty={emptyDetail} />
+                      back={back} version={version} empty={emptyDetail}
+                      tab={tab} onTab={setTab} fullScreenButton={fullButton} />
         )}
-      </section>
+      </section>}
 
       {modal === "position" && (
-        <NewPositionModal positions={pickerList(data)} parentId={focus && display.rows.get(focus)?.type === "pos" ? focus : null}
+        <NewPositionModal positions={pickerList(data)} parentId={selPos && display.rows.get(selPos)?.type === "pos" ? selPos : null}
                           onClose={() => setModal(null)} onCreated={(p) => created(p.id)} />
       )}
       {modal === "location" && (
@@ -368,6 +629,14 @@ export default function AssetExplorer() {
       {modal === "rcm" && (
         <FromRcmModal positions={pickerList(data)} onClose={() => setModal(null)} onCreated={(r) => created(r.position.id)} />
       )}
+      {deciding && options && (
+        <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} />
+      )}
     </div>
   );
+}
+
+// A position's own evidence checks, for its heading on the RCM tab.
+function rollupOf(rcm, positionId) {
+  return (rcm.positions || []).find((p) => p.id === positionId)?.rollup || null;
 }
