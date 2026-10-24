@@ -249,6 +249,29 @@ def test_cli_photo_heic_link_and_move(server, capsys):
     assert code == 1 and "--to" in err
 
 
+def test_cli_moves_rcm_between_positions(server, capsys):
+    """The move actions over the REST API from the client and the command line."""
+    rf = Client()
+    a = rf.call("maintenance_positions", "create", name="Pump A")["id"]
+    b = rf.call("maintenance_positions", "create", name="Pump B")["id"]
+    fn = rf.call("maintenance_failure_modes", "add_function", position_id=a, text="Pump water")["id"]
+    ff = rf.call("maintenance_failure_modes", "add_functional_failure", function_id=fn, text="No flow")["id"]
+    mode = rf.call("maintenance_failure_modes", "add", position_id=a, text="Seal leaks", functional_failure_id=ff)
+    task = rf.call("maintenance_tasks", "create", position_id=a, name="Grease", interval=3)["id"]
+
+    code, out, _ = run(capsys, "maintenance_failure_modes", "move_function", "--function-id", fn,
+                       "--position-id", b, "--json")
+    assert code == 0 and json.loads(out)["failure_modes_moved"] == 1
+    code, out, _ = run(capsys, "maintenance_failure_modes", "move", "--failure-mode-id", mode["id"],
+                       "--position-id", a, "--json")
+    assert code == 0 and json.loads(out)["position_id"] == a
+    code, out, _ = run(capsys, "maintenance_tasks", "move", "--task-id", task, "--position-id", b, "--json")
+    assert code == 0 and json.loads(out)["id"] == task
+    code, _, err = run(capsys, "maintenance_tasks", "move", "--task-id", task, "--position-id", b)
+    assert code == 1 and "already on Pump B" in err
+    assert rf.call("maintenance_get", "rcm", id=a, scope="this")["positions"][0]["unassigned"][0]["id"] == mode["id"]
+
+
 def test_cli_document_add_and_get(server, capsys):
     from backend.tests.test_maintenance_documents import pdf
 

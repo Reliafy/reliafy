@@ -301,6 +301,56 @@ or none), `failure_mode.analysed` and `failure_mode.retired`. Deleting a
 function or a functional failure leaves its failure modes on the position,
 unassigned; deleting a failure mode retires the task that mitigates it.
 
+### Moving RCM to another position
+
+RCM written on the wrong position can be moved, keeping every id, decision,
+effect, note, evidence link and task date. Three events re-point the edges
+that tie a thing to its position (`PERFORMS`, `CAN_FAIL_AS`, `ON`); each names
+everything that moved with it, so a replay never works the rule out again:
+
+| Event | Payload | What moves |
+|---|---|---|
+| `function.moved` | `id, position_id, from_position_id, order, failure_mode_ids, task_ids, on` | the function, its functional failures, the live failure modes under them and those modes' live tasks |
+| `failure_mode.moved` | `id, position_id, from_position_id, functional_failure_id, order?, task_ids, on` | one mode with its decision and live tasks, under one of the new position's functional failures (or none) |
+| `task.moved` | `id, position_id, from_position_id, on` | one position's task |
+
+Who moved it and when are the event's `actor` and `at`, as for every event.
+A deleted or merged mode still under a moved functional failure stays on the
+old position (it's history there) and is taken from under the functional
+failure, so no edge crosses positions. Retired tasks stay where they were.
+
+A move is refused, with a message saying what to do instead, when:
+
+- the target isn't a position in the workspace, is retired, or is where the
+  thing already is; or the thing itself was deleted, merged or retired;
+- a failure mode has failures (fitments ended by it, not voided) or
+  inspection findings recorded against it, or other modes were merged into it:
+  that history belongs to the old position, so add the mode on the new one
+  instead;
+- the target already has a live mode of the same name, or the same RCM study's
+  mode;
+- a task has an open work order (close or cancel it first) or work done on it
+  (retire it and add a new task on the target); cancelled work orders don't
+  count;
+- a task goes by a counter on the old position (pick one on the target, or
+  clear it, first), or by use with a last-done reading from the old position's
+  counter (retire it and add a new task on the target);
+- a task prevents a failure mode that isn't moving with it and isn't on the
+  target. It isn't unlinked silently: move the mode (its tasks go with it), or
+  unlink the task first;
+- the target already has the task for the same RCM decision;
+- only an item's or a location's task: those don't move between positions.
+
+After a move, failures and work orders on the new position name the mode as
+usual (`_mode_ref` finds it there); naming it on the old position says where it
+went. Applying the RCM study it came from to the old position again adds the
+study's modes back there, as for any position without them.
+
+The events are new types, so no existing projection changes meaning and
+`PROJECTION_VERSION` stays. Code from before them logs an event it doesn't
+know and passes over it (see `GraphStore._project`), so during a rolling
+deploy an older instance shows the thing where it was until it's replaced.
+
 The evidence check is the RCM study's own (`backend/services/rcm.py`): done on
 every read, never stored, so a decision gives the same status on a position
 as in a study. One difference: a study's interval with no unit skips the unit

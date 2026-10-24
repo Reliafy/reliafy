@@ -131,3 +131,68 @@ def test_the_same_over_mcp(env):  # noqa: F811
         return True
 
     assert _session(env["token"], go)
+
+
+def test_move_rcm_over_the_routes(api):
+    M = "/api/maintenance"
+    a = api.post(f"{M}/positions", json={"name": "Pump A"}).json()
+    b = api.post(f"{M}/positions", json={"name": "Pump B"}).json()
+    fn = api.post(f"{M}/positions/{a['id']}/functions", json={"text": "Pump water"}).json()
+    ff = api.post(f"{M}/functions/{fn['id']}/failures", json={"text": "No flow"}).json()
+    mode = api.post(f"{M}/positions/{a['id']}/failure-modes",
+                    json={"text": "Bearing seizes", "functional_failure_id": ff["id"]}).json()
+    loose = api.post(f"{M}/positions/{a['id']}/failure-modes", json={"text": "Seal leaks"}).json()
+    task = api.post(f"{M}/positions/{a['id']}/tasks", json={"name": "Grease", "interval": 3, "unit": "months"}).json()
+
+    r = api.post(f"{M}/functions/{fn['id']}/move", json={"position_id": b["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["failure_modes_moved"] == 1 and r.json()["position_id"] == b["id"]
+    sheet = api.get(f"{M}/positions/{b['id']}/rcm?scope=this").json()["positions"][0]
+    assert sheet["functions"][0]["failures"][0]["modes"][0]["id"] == mode["id"]
+
+    ff_b = sheet["functions"][0]["failures"][0]["id"]
+    r = api.post(f"{M}/failure-modes/{loose['id']}/move", json={"position_id": b["id"], "functional_failure_id": ff_b})
+    assert r.status_code == 200 and r.json()["position_id"] == b["id"], r.text
+    r = api.post(f"{M}/tasks/{task['id']}/move", json={"position_id": b["id"]})
+    assert r.status_code == 200 and r.json()["id"] == task["id"], r.text
+
+    # Refusals are a 422 with what to do; a missing thing is a 404.
+    r = api.post(f"{M}/tasks/{task['id']}/move", json={"position_id": b["id"]})
+    assert r.status_code == 422 and "already on Pump B" in r.json()["detail"]
+    r = api.post(f"{M}/failure-modes/{mode['id']}/move", json={"position_id": a["id"], "functional_failure_id": ff_b})
+    assert r.status_code == 422 and "on Pump B, not Pump A" in r.json()["detail"]
+    assert api.post(f"{M}/functions/{fn['id']}/move", json={}).status_code == 422
+    assert api.post(f"{M}/functions/nope/move", json={"position_id": a["id"]}).status_code == 404
+
+
+def test_move_rcm_over_mcp(env):  # noqa: F811
+    async def go(client):
+        a = _ok(await _do(client, "maintenance_positions", "create", name="Pump A"))
+        b = _ok(await _do(client, "maintenance_positions", "create", name="Pump B"))
+        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=a["id"], text="Pump"))
+        ff = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn["id"],
+                           text="No flow"))
+        mode = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=a["id"], text="Seal",
+                             functional_failure_id=ff["id"]))
+        _ok(await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=mode["id"],
+                      decision={"outcome": "fixed_interval", "interval": 6, "interval_unit": "months",
+                                "task": "Replace seal"}))
+        moved = _ok(await _do(client, "maintenance_failure_modes", "move_function", function_id=fn["id"],
+                              position_id=b["id"]))
+        assert moved["failure_modes_moved"] == 1 and moved["tasks_moved"] == 1
+        back = _ok(await _do(client, "maintenance_failure_modes", "move", failure_mode_id=mode["id"],
+                             position_id=a["id"]))
+        assert back["position_id"] == a["id"] and back["decision"]["task"] == "Replace seal"
+        spare = _ok(await _do(client, "maintenance_tasks", "create", position_id=a["id"], name="Grease",
+                              interval=3))
+        task = _ok(await _do(client, "maintenance_tasks", "move", task_id=spare["id"], position_id=b["id"]))
+        assert task["id"] == spare["id"]
+        sheet = _ok(await _get(client, "rcm", a["id"], scope="this"))
+        assert sheet["positions"][0]["unassigned"][0]["id"] == mode["id"]
+        refused = await _do(client, "maintenance_tasks", "move", task_id=spare["id"], position_id=b["id"])
+        assert refused.is_error and "already on Pump B" in refused.content[0].text
+        missing = await _do(client, "maintenance_failure_modes", "move", failure_mode_id=mode["id"])
+        assert missing.is_error and "action 'move' needs position_id" in missing.content[0].text
+        return True
+
+    assert _session(env["token"], go)

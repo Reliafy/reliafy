@@ -499,6 +499,22 @@ def retire_failure_mode(mode_id: str, m: Maintenance = Depends(maintenance_write
     return _run(m.retire_failure_mode, mode_id)
 
 
+@router.post("/failure-modes/{mode_id}/move")
+def move_failure_mode(mode_id: str, body: dict = Body(...),
+                      m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """To another position (position_id), with its decision and tasks, under one of that
+    position's functional failures (functional_failure_id) or none."""
+    return _run(m.move_failure_mode, mode_id, body.get("position_id"), body.get("functional_failure_id"))
+
+
+@router.post("/functions/{function_id}/move")
+def move_function(function_id: str, body: dict = Body(...),
+                  m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """To another position (position_id), with its functional failures, their failure
+    modes and those modes' tasks."""
+    return _run(m.move_function, function_id, body.get("position_id"))
+
+
 @router.post("/failure-modes/{mode_id}/merge")
 def merge_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Fold this mode into another on the same position (into_id)."""
@@ -541,6 +557,12 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
             raise Invalid("Nothing to change.")
         return view
     return _run(go)
+
+
+@router.post("/tasks/{task_id}/move")
+def move_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """To another position (position_id): a position's task, with no work done on it yet."""
+    return _run(m.move_task, task_id, body.get("position_id"))
 
 
 @router.post("/tasks/{task_id}/retire")

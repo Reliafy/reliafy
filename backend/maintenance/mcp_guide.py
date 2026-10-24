@@ -107,6 +107,11 @@ position does, with its performance standard), add_functional_failure (how that 
 functional_failure_id (the failure modes causing it), then decide (consequence and decision with its evidence: \
 a fixed-interval, failure-finding or on-condition decision with an interval makes or changes the mode's task). \
 maintenance_get kind rcm reads it back with each evidence check (scope below: everything inside too).
+- RCM put on the wrong position: maintenance_failure_modes move_function (the function with its functional \
+failures, modes and their tasks) or move (one mode with its decision and tasks; functional_failure_id: one on \
+the new position), and maintenance_tasks move (a position's task). Ids, decisions and dates stay. Anything with \
+history stays put (failures or findings recorded against a mode, work done on a task, a task's use counted from \
+the old position's counter): the refusal says what to do instead.
 - Failure modes without RCM: maintenance_failure_modes add on the position; a task links to one with \
 failure_mode_id.
 - Tasks done before they were tracked here: maintenance_tasks set_last_done, so the next due date counts from \
