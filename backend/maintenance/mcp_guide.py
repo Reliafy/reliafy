@@ -102,6 +102,11 @@ Calendar units only; include_positions lists the positions there as checklist li
 (point_id picks one); also_interval + also_unit for whichever comes first. outcome: fixed_interval, \
 failure_finding (a hidden function), on_condition, or none for routine work. source (oem, statutory, manual, \
 other) with reference; trade (who may do it); last_done.
+- RCM on the position itself (the asset tree is its spine): maintenance_failure_modes add_function (what the \
+position does, with its performance standard), add_functional_failure (how that fails), add with \
+functional_failure_id (the failure modes causing it), then decide (consequence and decision with its evidence: \
+a fixed-interval, failure-finding or on-condition decision with an interval makes or changes the mode's task). \
+maintenance_get kind rcm reads it back with each evidence check (scope below: everything inside too).
 - Failure modes without RCM: maintenance_failure_modes add on the position; a task links to one with \
 failure_mode_id.
 - Tasks done before they were tracked here: maintenance_tasks set_last_done, so the next due date counts from \
