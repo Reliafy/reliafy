@@ -286,11 +286,11 @@ def test_import_into_a_sample_is_refused(client):
     from backend.services import samples
 
     samples.seed_samples(client.db)
-    sample = next(s for s in client.get("/api/rcm/studies").json()["studies"] if s["is_sample"])
-    before = client.get(f"/api/rcm/studies/{sample['id']}").json()["functions"]
-    r = _post(client, "/api/rcm/import", study_id=sample["id"], mode="append")
+    sample_id = "sample-rcm-truck"  # off the study list, but it opens by its id
+    before = client.get(f"/api/rcm/studies/{sample_id}").json()["functions"]
+    r = _post(client, "/api/rcm/import", study_id=sample_id, mode="append")
     assert r.status_code == 403
-    assert client.get(f"/api/rcm/studies/{sample['id']}").json()["functions"] == before
+    assert client.get(f"/api/rcm/studies/{sample_id}").json()["functions"] == before
 
 
 def test_import_rejects_unknown_mode(client):
