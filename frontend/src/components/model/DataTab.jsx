@@ -97,7 +97,7 @@ function Counts({ result, split, datasetId }) {
 }
 
 // The first rows of the saved dataset, when nothing better is in the result.
-function DatasetRows({ datasetId }) {
+export function DatasetRows({ datasetId }) {
   const [ds, setDs] = useState(null);
   const [error, setError] = useState(null);
   useEffect(() => {

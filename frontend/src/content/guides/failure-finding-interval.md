@@ -94,7 +94,7 @@ replace it, not when to test it: see
 [find the optimal replacement interval](/guides/optimal-replacement-interval).
 
 For a repairable system that is repaired as it fails and overhauled from time
-to time, the **Overhaul** tab of a recurrent model finds the overhaul interval
+to time, **Plan ahead › Overhaul interval** on a repairable model finds the overhaul interval
 that costs least. See [repairable systems](/guides/recurrent-events).
 
 For a safety instrumented function, where several devices vote and each has its

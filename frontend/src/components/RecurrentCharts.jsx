@@ -1,25 +1,25 @@
-import { useState } from "react";
 import Plot from "./Plot.jsx";
 import Chip from "./ui/Chip.jsx";
 import {
-  COLORWAY, DATA_INK, NEUTRAL_BAND_FILL, band, dataLine, dataPoints, fitLine, referenceShape,
+  COLORWAY, DATA_INK, NEUTRAL_BAND_FILL, band, dataLine, dataPoints, fitLine,
 } from "../plotTheme.js";
 import { formatNumber } from "../format.js";
-import { effectTone, familyOf, growthReading, pct, ratioCiText, ratioText } from "../recurrentResults.js";
-import ScrollCue from "./ui/ScrollCue.jsx";
+import { ciText, effectTone, familyOf } from "../recurrentResults.js";
+import { ForestChart } from "./model/Effects.jsx";
+import { PlotCard, PlotPanel, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 
-// The charts of a recurrent model's tabs (#65), each in the non-repairable model's
-// layout: the chart on the left, in a tight card with no title above it and
-// its legend inside, and a panel on the right.
+// The charts of a repairable model's tabs, each filling its box in the model
+// frame (components/model/): the mean cumulative function (all failures, or
+// by cause), the covariates' effects and each system's next failure.
 
 // Inside the plot, top left: a mean cumulative function rises from bottom
 // left to top right, so that corner is empty.
 const LEGEND_IN = {
   orientation: "v", x: 0.015, xanchor: "left", y: 0.985, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)",
 };
-const PLOT_HEIGHT = 500;
+const MARGIN = { t: 8, r: 12, b: 44 };
 
-const xTitle = (unit) => (unit ? `Time (${String(unit).toLowerCase()})` : "Time");
+export const xTitle = (unit) => (unit ? `Time (${String(unit).toLowerCase()})` : "Time");
 
 function bandTrace(obs, extra = {}) {
   return band({
@@ -44,7 +44,7 @@ export function McfPlot({ r, name }) {
     traces.push(dataPoints({
       x: obs.x, y: obs.mcf, mode: "lines+markers",
       line: { color: DATA_INK, width: 1.25, shape: "hv" },
-      marker: { size: 5, line: { width: 0 } }, name: "Observed MCF",
+      marker: { size: 5, line: { width: 0 } }, name: "Failures so far (per system)",
     }));
   }
   if (fam === "regression" && groups.length) {
@@ -54,79 +54,12 @@ export function McfPlot({ r, name }) {
     traces.push(fitLine({ x: fit.x, y: fit.mcf, name: label }));
   }
   const layout = {
-    height: PLOT_HEIGHT,
-    margin: { t: 8, r: 12, b: 44 },
+    margin: MARGIN,
     legend: LEGEND_IN,
     xaxis: { title: { text: xTitle(r.unit) }, rangemode: "tozero" },
     yaxis: { title: { text: "Cumulative failures per system (MCF)" }, rangemode: "tozero" },
   };
-  return <Plot data={traces} layout={layout} download={`${name || r.model?.name || "Recurrent model"} — MCF`} />;
-}
-
-// Failures by cause (#65): each cause's MCF, and the band of the one chosen.
-export function CausePanel({ r, name }) {
-  const bc = r.by_cause || {};
-  const causes = bc.causes || [];
-  const [chosen, setChosen] = useState(causes[0]?.label ?? null);
-  if (!causes.length) {
-    return <p className="muted-line">{bc.reason || "No causes in the data."}</p>;
-  }
-  const traces = [];
-  causes.forEach((c, k) => {
-    const color = COLORWAY[k % COLORWAY.length];
-    if (c.label === chosen && c.mcf.lower && c.mcf.upper) {
-      traces.push(bandTrace(c.mcf, { name: `${c.label}: 95% band`, fillcolor: hexA(color, 0.12) }));
-    }
-    traces.push(dataLine({
-      x: c.mcf.x, y: c.mcf.mcf, name: c.label,
-      line: { color, width: c.label === chosen ? 2.25 : 1.5, shape: "hv" },
-    }));
-  });
-  const layout = {
-    height: PLOT_HEIGHT,
-    margin: { t: 8, r: 12, b: 44 },
-    legend: LEGEND_IN,
-    xaxis: { title: { text: xTitle(r.unit) }, rangemode: "tozero" },
-    yaxis: { title: { text: "Cumulative failures per system" }, rangemode: "tozero" },
-  };
-  const current = causes.find((c) => c.label === chosen);
-  const reading = current?.fit ? growthReading(current.fit) : null;
-  return (
-    <div className="detail-panel life-panel">
-      <div className="plotwrap">
-        <Plot data={traces} layout={layout} download={`${name || "Recurrent model"} — MCF by cause`} />
-      </div>
-      <div className="aside rec-aside">
-        <div className="gof-card">
-          <div className="gofh life-card-head">
-            <span>Causes</span>
-            <span className="gof-sub">failures · growth shape β</span>
-          </div>
-          {causes.map((c, k) => (
-            <button type="button" key={c.label}
-                    className={"gofr rec-cause-row" + (c.label === chosen ? " on" : "")}
-                    aria-pressed={c.label === chosen} onClick={() => setChosen(c.label)}>
-              <span className="gk"><span className="rec-dot" style={{ background: COLORWAY[k % COLORWAY.length] }} />{c.label}</span>
-              <span className="gv-col">
-                <span className="gv">{c.failures} <span className="gof-sub">({pct(c.share)})</span></span>
-                {c.fit && <span className="param-ci">β {formatNumber(c.fit.beta, { sig: 3 })}</span>}
-              </span>
-            </button>
-          ))}
-        </div>
-        {current && reading && (
-          <div className="life-reading">
-            <div className="life-reading-title">{current.label}: {reading.title.toLowerCase()}</div>
-            <div>{reading.text}</div>
-          </div>
-        )}
-        <p className="life-method">
-          {bc.model || "Crow-AMSAA per cause"}{bc.aic != null ? ` · AIC ${formatNumber(bc.aic, { sig: 5 })}` : ""}.
-          {bc.note ? ` ${bc.note}` : ""} Choose a cause to see its 95% band.
-        </p>
-      </div>
-    </div>
-  );
+  return <Plot fill data={traces} layout={layout} download={`${name || r.model?.name || "Recurrent model"} — MCF`} />;
 }
 
 // "#2f6df6" → "rgba(47,109,246,a)".
@@ -136,96 +69,117 @@ function hexA(hex, a) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
-// Covariates (#65): each covariate's rate ratio with its 95% interval, on a
-// log scale with 1 (no effect) marked, and each one in words.
-export function CovariatePanel({ r, name }) {
-  const coefs = (r.coefficients || []).filter((c) => c.ratio != null);
-  const labels = coefs.map((c) => c.name.replace(": ", " "));
-  const traces = [{
-    type: "scatter",
-    mode: "markers",
-    x: coefs.map((c) => c.ratio),
-    y: labels,
-    marker: { color: DATA_INK, size: 10, line: { color: "#fff", width: 2 } },
-    error_x: {
-      type: "data", symmetric: false, thickness: 2, width: 0, color: DATA_INK,
-      array: coefs.map((c) => (c.ratio_ci ? c.ratio_ci[1] - c.ratio : 0)),
-      arrayminus: coefs.map((c) => (c.ratio_ci ? c.ratio - c.ratio_ci[0] : 0)),
-    },
-    hovertemplate: coefs.map((c) => `${c.name}: ${ratioText(c.ratio)}${c.ratio_ci ? ` (95% ${ratioCiText(c.ratio_ci)})` : ""}<extra></extra>`),
-    showlegend: false,
-  }];
+// Failures by cause: each cause's MCF, and the band of the one chosen (the
+// first when none is).
+export function CausesPlot({ r, name, chosen }) {
+  const causes = r.by_cause?.causes || [];
+  const pick = causes.some((c) => c.label === chosen) ? chosen : causes[0]?.label;
+  const traces = [];
+  causes.forEach((c, k) => {
+    const color = COLORWAY[k % COLORWAY.length];
+    if (c.label === pick && c.mcf.lower && c.mcf.upper) {
+      traces.push(bandTrace(c.mcf, { name: `${c.label}: 95% band`, fillcolor: hexA(color, 0.12) }));
+    }
+    traces.push(dataLine({
+      x: c.mcf.x, y: c.mcf.mcf, name: c.label,
+      line: { color, width: c.label === pick ? 2.25 : 1.5, shape: "hv" },
+    }));
+  });
   const layout = {
-    height: Math.max(220, 90 + 70 * coefs.length),
-    margin: { t: 8, r: 16, b: 44, l: 120 },
-    xaxis: { title: { text: "Failure rate ratio (log scale)" }, type: "log", showgrid: true },
-    yaxis: { type: "category", autorange: "reversed", showgrid: false },
-    shapes: [referenceShape({ x: 1 })],
+    margin: MARGIN,
+    legend: LEGEND_IN,
+    xaxis: { title: { text: xTitle(r.unit) }, rangemode: "tozero" },
+    yaxis: { title: { text: "Cumulative failures per system" }, rangemode: "tozero" },
   };
+  return <Plot fill data={traces} layout={layout} download={`${name || "Recurrent model"} — MCF by cause`} />;
+}
+
+// The Effects tab (covariate models): each covariate's rate ratio with its 95%
+// interval (1 is no effect), each one in words, and the baseline beside them.
+export function RecurrentEffects({ r, name }) {
+  const coefs = r.coefficients || [];
+  const rows = coefs.filter((c) => c.ratio != null).map((c) => ({
+    name: c.name.replace(": ", " "), ratio: c.ratio, lo: c.ratio_ci?.[0] ?? null, hi: c.ratio_ci?.[1] ?? null,
+  }));
   const cats = (r.covariates || []).filter((m) => m.kind === "category");
+  const shape = (r.params || []).find((p) => p.name === (r.baseline?.id === "duane" ? "alpha" : "beta"));
   return (
-    <div className="detail-panel life-panel">
-      <div className="plotwrap">
-        <Plot data={traces} layout={layout} download={`${name || "Recurrent model"} — covariate effects`} />
-        <p className="plot-caption">
-          Each point is how many times as often failures come, the line its 95% interval; the dashed line at 1 is
-          no effect.
-        </p>
-      </div>
-      <div className="aside rec-aside">
-        <div className="gof-card">
-          <div className="gofh">Effects</div>
-          {(r.coefficients || []).map((c) => (
-            <div className="rec-effect" key={c.name}>
-              <div className="rec-effect-head">
-                <span>{c.name.replace(": ", " ")}</span>
+    <PlotPanel
+      sideClassName="rec-side"
+      plot={
+        <PlotCard title="How many times as often failures come, for each covariate, with its 95% interval">
+          <ForestChart rows={rows} ratioLabel="failure rate ratio" name={name} download={`${name || "Recurrent model"} — covariate effects`} />
+        </PlotCard>
+      }
+      below={
+        <ScrollCard title="In words" className="mf-effects-table">
+          <ul className="mf-effects-words">
+            {coefs.map((c) => (
+              <li key={c.name} className="rec-effect-line">
                 {c.effect && (
                   <Chip tone={effectTone(c.effect)}>
                     {c.effect === "higher" ? "More failures" : c.effect === "lower" ? "Fewer failures" : "Unclear"}
                   </Chip>
                 )}
+                <span>{c.reading}</span>
+              </li>
+            ))}
+          </ul>
+        </ScrollCard>
+      }
+      side={
+        <>
+          <div className="gof-card">
+            <div className="gofh">Baseline</div>
+            <div className="gofr"><span className="gk">Model</span><span className="gv">{r.baseline?.name || "Crow-AMSAA"}</span></div>
+            {shape && (
+              <div className="gofr">
+                <span className="gk">Shape {r.baseline?.id === "duane" ? "α" : "β"}</span>
+                <span className="gv-col">
+                  <span className="gv">{formatNumber(shape.value, { sig: 3 })}</span>
+                  {ciText(shape.ci) && <span className="param-ci">95% {ciText(shape.ci)}</span>}
+                </span>
               </div>
-              <p>{c.reading}</p>
-            </div>
-          ))}
-        </div>
-        {cats.length > 0 && (
+            )}
+            {cats.map((m) => (
+              <div className="gofr" key={m.column}><span className="gk">{m.column} compared with</span><span className="gv">{m.reference}</span></div>
+            ))}
+          </div>
           <p className="life-method">
-            {cats.map((m) => `${m.column} is compared with ${m.reference}`).join("; ")} (the level most systems have).
-            Baseline: {r.baseline?.name || "Crow-AMSAA"}.
+            A ratio of 2 means failures come twice as often; 0.5, half as often. A text covariate is compared with the
+            level most systems have. Every coefficient is in the Data tab.
           </p>
-        )}
-      </div>
-    </div>
+        </>
+      }
+    />
   );
 }
 
-// Imperfect repair (#65): each system's chance of running a further time
-// without a failure, from where its history leaves it, soonest first.
-export function NextFailurePanel({ r, name }) {
+// Imperfect repair: each system's chance of running a further time without a
+// failure, from where its history leaves it, soonest first.
+export function NextFailureView({ r, name }) {
   const nf = r.next_failure || {};
   const unit = String(r.unit || "").trim().toLowerCase();
   const traces = (nf.curves || []).map((c, k) => fitLine({
     x: nf.x, y: c.sf, name: c.system, line: { color: COLORWAY[k % COLORWAY.length], width: 1.75 },
   }));
   const layout = {
-    height: PLOT_HEIGHT,
-    margin: { t: 8, r: 12, b: 44 },
+    margin: MARGIN,
     legend: { ...LEGEND_IN, x: 0.985, xanchor: "right" },
     xaxis: { title: { text: `Time from now${unit ? ` (${unit})` : ""}` }, rangemode: "tozero" },
     yaxis: { title: { text: "Chance of no failure yet" }, range: [0, 1.02], tickformat: ".0%" },
   };
   return (
-    <div className="detail-panel life-panel">
-      <div className="plotwrap">
-        <Plot data={traces} layout={layout} download={`${name || "Recurrent model"} — next failure`} />
-      </div>
-      <div className="aside rec-aside rec-aside-wide">
-        <div className="gof-card">
-          <div className="gofh life-card-head">
-            <span>Next failure{unit ? <span className="gof-sub">{unit} from now</span> : null}</span>
-          </div>
-          <ScrollCue className="rs-table-wrap rec-nf-scroll">
+    <TablePanel
+      className="rec-next"
+      main={
+        <PlotCard title="Each system's chance of running on without a failure">
+          <Plot fill data={traces} layout={layout} download={`${name || "Recurrent model"} — next failure`} />
+        </PlotCard>
+      }
+      side={
+        <>
+          <ScrollCard title="Next failure" sub={unit ? `${unit} from now, soonest first` : "soonest first"}>
             <table className="mini-table rec-nf-table">
               <thead><tr><th>System</th><th>Failures</th><th>Median</th><th>10% by</th></tr></thead>
               <tbody>
@@ -239,12 +193,12 @@ export function NextFailurePanel({ r, name }) {
                 ))}
               </tbody>
             </table>
-          </ScrollCue>
-        </div>
-        <p className="life-method">
-          Median: half the chance of a failure by then. 10% by: a 1-in-10 chance of a failure by then. {nf.note}
-        </p>
-      </div>
-    </div>
+          </ScrollCard>
+          <p className="life-method mf-flex-none">
+            Median: half the chance of a failure by then. 10% by: a 1-in-10 chance of a failure by then. {nf.note}
+          </p>
+        </>
+      }
+    />
   );
 }
