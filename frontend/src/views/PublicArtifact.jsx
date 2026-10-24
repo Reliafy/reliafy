@@ -129,9 +129,7 @@ function Body({ collection, a, token, unlock, framed = false }) {
       const view = a.kind === "joint"
         ? <JointResultView results={a.results} name={a.name} />
         : <ResultView result={a.results} name={a.name} split={a.results?.split || null} />;
-      if (framed || a.results?.kind === "competing_risks") {
-        return a.results?.kind === "competing_risks" ? <div className="card">{view}</div> : view;
-      }
+      if (framed) return view;
       // A model in a report: the same tabs, in a card of their own height.
       return <div className="card mf-card mf-standalone">{view}</div>;
     }
@@ -340,7 +338,7 @@ export default function PublicArtifact() {
             <ReportView report={data.artifact} sharedBy={data.shared_by} Item={Body} />
           </div>
         )}
-        {data && data.collection === "models" && art(data).results?.kind !== "competing_risks" && (
+        {data && data.collection === "models" && (
           // A shared model: the model page's frame, read-only (no actions).
           <ModelFrame
             className="public-app"
@@ -363,8 +361,7 @@ export default function PublicArtifact() {
             <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
           </ModelFrame>
         )}
-        {data && data.collection !== "reports" && data.collection !== "degradation_models"
-          && !(data.collection === "models" && art(data).results?.kind !== "competing_risks") && (
+        {data && data.collection !== "reports" && data.collection !== "models" && data.collection !== "degradation_models" && (
           <div className="app public-app">
             <header>
               <div>
