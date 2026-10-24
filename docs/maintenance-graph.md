@@ -306,8 +306,10 @@ every read, never stored, so a decision gives the same status on a position
 as in a study. One difference: a study's interval with no unit skips the unit
 check, while on a position the task runs in days, so days are checked.
 
-The app's Assets › Explorer shows it as the RCM tab of a position, for the
-position and everything inside it, or for the position alone. A position
+The app's Assets › Explorer shows it as the RCM tab of the position picked in
+the tree (the tree is the index: pick another position and the table follows);
+"Include positions inside" adds the functions of every position inside it,
+each naming its position. A position
 with no function, or with a failure mode that has no decision, is marked "not
 analysed" in the tree.
 

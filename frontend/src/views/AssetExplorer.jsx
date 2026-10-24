@@ -7,7 +7,7 @@ import TreeDetail from "../components/TreeDetail.jsx";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
-import { scopeParam, shownTab, tabParam } from "../explorerTabs.js";
+import { insideParam, shownTab, tabParam } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { NewItemModal, NewLocationModal } from "./MaintenanceLists.jsx";
@@ -38,7 +38,8 @@ import "./AssetExplorer.css";
 //
 // The panel has tabs (explorerTabs.js): ?tab=rcm opens a position's RCM, and
 // the tab stays as you walk the tree (rows without it show Summary); the
-// address keeps the row picked (?sel=) and the RCM's scope (?scope=this).
+// address keeps the row picked (?sel=) and whether the RCM includes the
+// positions inside it (?inside=1).
 // "Full width" folds the tree away for the RCM grid; Full screen (F, Esc to
 // leave) gives the tree and the panel the whole screen, as the RBD editor's.
 
@@ -86,7 +87,7 @@ export default function AssetExplorer() {
     navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
   }, [params, navigate, location]);
   const setTab = (t) => setQuery_((q) => (t === "summary" ? q.delete("tab") : q.set("tab", t)));
-  const setScope = (v) => setQuery_((q) => (v === "this" ? q.set("scope", "this") : q.delete("scope")));
+  const setInside = (on) => setQuery_((q) => (on ? q.set("inside", "1") : q.delete("inside")));
 
   const [data, setData] = useState(null);
   // The items list (class, make and model for each item), for the Items
@@ -110,7 +111,7 @@ export default function AssetExplorer() {
   const fullBtn = useRef(null);
   const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
   const tab = tabParam(params.get("tab"));
-  const scope = scopeParam(params.get("scope"));
+  const inside = insideParam(params.get("inside"));
   const pending = useRef(params.get("sel") || location.state?.treeReveal || null);
 
   const load = useCallback(() => {
@@ -264,8 +265,8 @@ export default function AssetExplorer() {
     latest.current = { ...latest.current, mode: m, selected: nextSelected };
     saveTreeState(workspace, latest.current);
     pending.current = keep;
-    // The tab and the RCM's scope come along.
-    navigate(explorerPath(m, { tab: tab === "summary" ? null : tab, scope: scope === "this" ? "this" : null }),
+    // The tab, and whether the RCM includes the positions inside, come along.
+    navigate(explorerPath(m, { tab: tab === "summary" ? null : tab, inside: inside ? "1" : null }),
              { state: keep ? { treeReveal: keep } : undefined });
   };
 
@@ -413,7 +414,7 @@ export default function AssetExplorer() {
                         return navigate(location.pathname + location.search, { state: { treeDetail: k }, replace: true });
                       }}
                       back={back} version={version} empty={emptyDetail}
-                      tab={tab} onTab={setTab} scope={scope} onScope={setScope} phone={phone}
+                      tab={tab} onTab={setTab} inside={inside} onInside={setInside} phone={phone}
                       wide={wide} onWide={onWide} onTreeChanged={load}
                       fullScreenButton={!phone && <FullScreenButton ref={fullBtn} full={full} onClick={toggleFull} />} />
         )}

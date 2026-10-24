@@ -7,7 +7,7 @@ import useOutlineNav from "./useOutlineNav.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { ancestorsOf, depthOf, filterOpen, flatten, levelSet, visiblePick } from "../outlineTree.js";
 import {
-  CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, LEVELS, LEVEL_OF, NAME_COLUMN, POSITION_LEVEL,
+  CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, LEVELS, LEVEL_OF, NAME_COLUMN, POSITION_COLUMN,
   addNode, buildRcmDisplay, consequenceWords, failuresOn, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
   intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder, withOpen,
 } from "../rcmWorksheet.js";
@@ -35,13 +35,15 @@ import "./RcmWorksheet.css";
 // position's RCM tab): given its `display` (buildPositionRcmDisplay) and `ops`,
 // each edit is written straight away (ops.set, add, remove, assign: the
 // graph's events, through the page) instead of being kept for a Save, and
-// there's no Undo.
+// there's no Undo. The Explorer's tree beside it is the index, so the grid
+// has no levels or chips of its own there, only a filter on its own text (the
+// tree's filter searches the positions); `positionColumn` adds the Position
+// column (the positions inside included).
 
 const ICONS = {
   fn: <path d="M3 3.5h10v9H3z M6.5 6v4l3.5-2z" strokeWidth="1.4" strokeLinejoin="round" />,
   fail: <><path d="M8 2.2 14.2 13H1.8z" strokeWidth="1.4" strokeLinejoin="round" /><path d="M8 6.5v3" strokeWidth="1.6" strokeLinecap="round" /><circle cx="8" cy="11.2" r=".9" fill="currentColor" stroke="none" /></>,
   mode: <path d="M9.2 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" strokeWidth="1.4" strokeLinejoin="round" />,
-  pos: <><rect x="2.5" y="2.5" width="11" height="11" rx="2.5" strokeWidth="1.5" /><circle cx="8" cy="8" r="2.3" fill="currentColor" stroke="none" /></>,
   unassigned: <path d="M3 4.5h10M3 8h10M3 11.5h6" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="2 1.6" />,
   task: <path d="M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1L2.4 10.7a1.4 1.4 0 0 0 2 2l4.3-4.3a3.2 3.2 0 0 0 4.1-3.9l-1.9 1.9-1.8-.4-.4-1.8z" strokeWidth="1.3" strokeLinejoin="round" />,
 };
@@ -317,9 +319,6 @@ function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, 
       )}
       <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef}>{nameOf(r) || <span className="rw-blank">(no description yet)</span>}</h2>
       {r.type !== "mode" && <p className="rw-inside">{insideWords(r)}</p>}
-      {r.type === "pos" && ops?.positionLink && (
-        <p className="rw-dline"><button type="button" className="link" onClick={() => ops.positionLink(r)}>Show this position in the tree</button></p>
-      )}
 
       <div className="rw-fields">
         {EDITABLE.has(r.type) && field("Description", "name", { area: true, help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "fail" ? "How it fails to do it" : "What causes the failure" })}
@@ -382,7 +381,7 @@ function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, 
         <div className="rw-panel-acts">
           {level.child && (
             <button type="button" className="secondary" onClick={() => onAdd(r)}>
-              Add {r.type === "pos" ? "a function" : r.type === "fn" ? "a functional failure" : "a failure mode"}
+              Add {r.type === "fn" ? "a functional failure" : "a failure mode"}
             </button>
           )}
           {EDITABLE.has(r.type) && (
@@ -466,6 +465,7 @@ function ColumnChooser({ cols, onCols }) {
 
 export default function RcmWorksheet({
   studyId, functions, readOnly, onChange, onDecision, onUndo, canUndo, phone, notice, display: given, ops, tools,
+  positionColumn = false,
 }) {
   const confirm = useConfirm();
   const display = useMemo(() => given || buildRcmDisplay(functions), [given, functions]);
@@ -521,7 +521,7 @@ export default function RcmWorksheet({
   const row = cur != null ? display.rows.get(cur) : null;
 
   const H = phone ? PHONE_H : HEIGHTS[prefs.density];
-  const cols = prefs.cols.map((id) => COLUMN[id]).filter(Boolean);
+  const cols = [...(positionColumn ? [POSITION_COLUMN] : []), ...prefs.cols.map((id) => COLUMN[id]).filter(Boolean)];
   const widths = { name: prefs.widths.name ?? NAME_COLUMN.width };
   for (const c of cols) widths[c.id] = prefs.widths[c.id] ?? c.width;
   const total = cols.reduce((s, c) => s + widths[c.id], widths.name);
@@ -589,7 +589,7 @@ export default function RcmWorksheet({
 
   const add = (r) => {
     if (ops) {
-      const what = !r || r.type === "pos" ? "function" : r.type === "fn" ? "functional failure" : "failure mode";
+      const what = !r ? "function" : r.type === "fn" ? "functional failure" : "failure mode";
       ops.add(r).then((id) => {
         if (!id) return;
         say(`Added a ${what}: describe it in the details.`);
@@ -703,11 +703,14 @@ export default function RcmWorksheet({
         <label className="tp-filter rw-filter">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
-                 placeholder="Filter: description, effects, task, notes" aria-label="Filter the worksheet" />
+                 placeholder={ops ? "Filter this table" : "Filter: description, effects, task, notes"}
+                 aria-label={ops ? "Filter this table: descriptions, effects, tasks, notes" : "Filter the worksheet"} title={ops ? "Descriptions, effects, tasks and notes in this table (the tree's filter finds positions)" : undefined} />
         </label>
-        <LevelButtons levels={Array.from({ length: Math.min(depth, LEVELS.length + (display.positions ? 1 : 0)) }, (_, i) => i + 1)}
-                      names={[...(display.positions ? [POSITION_LEVEL.plural] : []), ...LEVELS.map((l) => l.plural)]} onLevel={setLevel} onCloseAll={() => setOpen(new Set())}
-                      className="tp-levels rw-levels" />
+        {!ops && (
+          <LevelButtons levels={Array.from({ length: Math.min(depth, LEVELS.length) }, (_, i) => i + 1)}
+                        names={LEVELS.map((l) => l.plural)} onLevel={setLevel} onCloseAll={() => setOpen(new Set())}
+                        className="tp-levels rw-levels" />
+        )}
         <div className="rw-tools">
           {!readOnly && onUndo && (
             <button type="button" className="secondary rw-btn" onClick={() => { onUndo(); say("Undid the last change."); }} disabled={!canUndo}
@@ -723,7 +726,7 @@ export default function RcmWorksheet({
           {!readOnly && <button type="button" className="rw-btn" onClick={() => add(null)}>Add function</button>}
         </div>
       </div>
-      <div className="tp-chips rw-chips" role="group" aria-label="Show only">
+      {!ops && <div className="tp-chips rw-chips" role="group" aria-label="Show only">
         {CHIPS.map((ch) => {
           const on = chips.includes(ch.id);
           return (
@@ -733,10 +736,9 @@ export default function RcmWorksheet({
             </button>
           );
         })}
-      </div>
+      </div>}
       <div className="rw-sub">
         <p className="rw-legend" aria-label="What the icons mean">
-          {display.positions && <span><LevelIcon type="pos" /> Position</span>}
           {LEVELS.map((l) => <span key={l.type}><LevelIcon type={l.type} /> {l.label}</span>)}
           <span><LevelIcon type="task" /> Task</span>
           {!phone && <span className="rw-legend-note">A row with things inside it counts them; double-click a cell to edit it.</span>}

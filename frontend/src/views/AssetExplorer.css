@@ -642,12 +642,21 @@ a.td-open:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  gap: 4px 12px;
 }
-.prcm-sum {
-  margin: 0;
+label.prcm-inside {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--fs-13);
-  color: var(--muted);
+  white-space: nowrap;
+  min-height: 30px;
+  cursor: pointer;
+}
+label.prcm-inside input {
+  margin: 0;
+  width: 16px;
+  height: 16px;
 }
 .prcm-err {
   margin: 0;
@@ -760,22 +769,12 @@ button.td-wide {
     min-height: 420px;
     padding: 8px;
   }
-  .prcm-bar .seg {
-    flex: 1 1 100%;
-  }
 }
 
-/* The worksheet's tools in a panel: one line of chips (scrolling sideways in
-   their row), no legend note; the grid gets the height. */
+/* The worksheet's tools in a panel: no legend note; the grid gets the height. */
 .prcm .rw-filter {
   flex-basis: 200px;
   max-width: 300px;
-}
-.prcm .rw-chips {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  padding-bottom: 2px;
 }
 .prcm .rw-legend-note {
   display: none;

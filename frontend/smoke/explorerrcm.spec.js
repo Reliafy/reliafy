@@ -1,7 +1,9 @@
 // The Explorer's detail panel tabs (Operate › Assets › Explorer): Summary and
-// RCM; the RCM tab's grid over the position tree (scope, edits written at once,
-// the evidence check), that it fits the window, the "Not analysed" chip, Full
-// width, and full screen (F, Esc, a dialog on top, the selection and tab kept).
+// RCM; the RCM tab's table for the position picked in the tree (no position
+// rows, levels or chips of its own: the tree is the index), "Include positions
+// inside", edits written at once, the evidence check, that it fits the window,
+// the "Not analysed" chip, Full width, and full screen (F, Esc, a dialog on top,
+// the selection and tab kept).
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
 
@@ -59,16 +61,24 @@ test("the panel's tabs: Summary and RCM, in the address, kept while walking the 
   await expect(tabs.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
   await expect(page).toHaveURL(/tab=rcm/);
   await expect(grid(page)).toBeVisible();
-  await expect(grid(page).getByText(`Bearing seizes ${tag}`)).toBeVisible();
-  await expect(grid(page).getByText("Contradicted").first()).toBeVisible();
-  await expect(grid(page).getByText("Not under a functional failure").first()).toBeVisible();
+  // The plant itself has no functions yet; the table is the plant's only.
+  await expect(grid(page).getByText(/No functions yet/)).toBeVisible();
+  await expect(grid(page).getByText(`Bearing seizes ${tag}`)).toHaveCount(0);
 
-  // Walk down: the RCM tab stays.
+  // Walk down the tree: the RCM tab stays and the table follows.
   await row(page, `Rcm plant ${tag}`).focus();
   await page.keyboard.press("ArrowDown");
   await expect(row(page, `Rcm pump ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expect(panel(page).getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
   await expect(page).toHaveURL(new RegExp(`sel=${p.pump.id}`));
+  await expect(grid(page).getByText(`Bearing seizes ${tag}`)).toBeVisible();
+  await expect(grid(page).getByText("Contradicted").first()).toBeVisible();
+  await expect(grid(page).getByText("Not under a functional failure").first()).toBeVisible();
+  // The tree is the index: the table has no position rows, and no levels or chips of its own.
+  await expect(grid(page).getByText(`Rcm pump ${tag}`, { exact: true })).toHaveCount(0);
+  await expect(grid(page).getByText(`Rcm motor ${tag}`, { exact: true })).toHaveCount(0);
+  await expect(panel(page).getByRole("button", { name: "Needs a decision" })).toHaveCount(0);
+  await expect(panel(page).getByRole("group", { name: "Open the tree to a level" })).toHaveCount(0);
 
   // An item has Summary only (no tab row); a position again shows RCM.
   await open(page, `/asset-register/explorer?arrange=items&tab=rcm`);
@@ -85,7 +95,7 @@ for (const [w, h] of [[1440, 900], [1366, 768]]) {
     const tag = `f${w}${Date.now()}`;
     const p = await plant(request, tag);
     await page.setViewportSize({ width: w, height: h });
-    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}&tab=rcm`);
+    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm&inside=1`);
     await expect(grid(page)).toBeVisible();
     expect(await overflow(page)).toEqual({ down: 0, side: 0 });
     // The details panel opens beside the grid and it still fits.
@@ -113,16 +123,24 @@ test("at 400 px nothing scrolls sideways, on either tab", async ({ page, request
   await expectHealthy(page, problems, { label: "rcm at 400 px", root: ".tx-detail" });
 });
 
-test("scope, edits and the Not analysed chip", async ({ page, request, problems }) => {
+test("Include positions inside, edits and the Not analysed chip", async ({ page, request, problems }) => {
   const tag = `e${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}&tab=rcm`);
-  // This and inside (the default): the positions inside are rows of their own.
-  await expect(grid(page).getByText(`Rcm pump ${tag}`, { exact: true })).toBeVisible();
-  await page.getByRole("radio", { name: "This only" }).click();
-  await expect(page).toHaveURL(/scope=this/);
-  await expect(grid(page).getByText(`Rcm pump ${tag}`, { exact: true })).toHaveCount(0);
+  // The plant only (the default): it has no functions of its own.
   await expect(grid(page).getByText(/No functions yet/)).toBeVisible();
+  const inside = page.getByRole("checkbox", { name: "Include positions inside" });
+  await expect(inside).not.toBeChecked();
+  await inside.click(); // the address holds it, so the box follows a moment later
+  await expect(inside).toBeChecked();
+  await expect(page).toHaveURL(/inside=1/);
+  // The pump's function shows, naming its position in the Position column (no position rows).
+  await expect(grid(page).getByText(`Pump water ${tag}`)).toBeVisible();
+  await expect(grid(page).getByRole("columnheader", { name: /^Position/ })).toBeVisible();
+  await expect(grid(page).getByRole("gridcell", { name: `Rcm pump ${tag}`, exact: true }).first()).toBeVisible();
+  await inside.click();
+  await expect(inside).not.toBeChecked();
+  await expect(page).not.toHaveURL(/inside=1/);
 
   // Add a function to the plant: written at once, in the tree's own graph.
   await page.getByRole("button", { name: "Add function" }).first().click();
@@ -133,14 +151,13 @@ test("scope, edits and the Not analysed chip", async ({ page, request, problems 
   const sheet = await (await request.get(`${M}/positions/${p.top.id}/rcm?scope=this`)).json();
   expect(sheet.positions[0].functions.map((f) => f.text)).toEqual([`Hold the line together ${tag}`]);
 
-  // The Not analysed chip: the pump (a failure mode with no decision) and the
-  // motor (no function yet); the plant has a function now. The quiet marker says so.
+  // The Not analysed chip lives in the tree: the pump (a failure mode with no
+  // decision) and the motor (no function yet); the plant has a function now.
   await page.getByRole("button", { name: "Not analysed" }).click();
   await expect(page.getByRole("status").filter({ hasText: /matches, shown with what they're inside/ })).toBeVisible();
   await expect(row(page, `Rcm plant ${tag}`)).toHaveAccessibleName(/2 positions not analysed yet inside/);
   await expect(row(page, `Rcm pump ${tag}`)).toBeVisible();
   await expect(row(page, `Rcm pump ${tag}`).locator(".tp-mini.rcm")).toBeVisible();
-  await expect(row(page, `Rcm plant ${tag}`)).toBeVisible();
   await expectHealthy(page, problems, { label: "rcm edits" });
 });
 

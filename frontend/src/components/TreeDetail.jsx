@@ -263,7 +263,7 @@ const WideIcon = ({ on }) => (
 );
 
 const TreeDetail = forwardRef(function TreeDetail({
-  display, row, today, onSelect, back, version, empty, tab, onTab, scope, onScope, phone, wide, onWide,
+  display, row, today, onSelect, back, version, empty, tab, onTab, inside, onInside, phone, wide, onWide,
   fullScreenButton, onTreeChanged,
 }, headingRef) {
   if (!row) return <div className="td">{back}{empty}</div>;
@@ -301,8 +301,8 @@ const TreeDetail = forwardRef(function TreeDetail({
       <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
            aria-labelledby={tabs.length > 1 ? `td-tab-${shown}` : undefined}>
         {rcm ? (
-          <PositionRcm position={{ id: row.key, name: p.name }} scope={scope} onScope={onScope} phone={phone}
-                       onShowPosition={(id) => onSelect(id)} onChanged={onTreeChanged} />
+          <PositionRcm position={{ id: row.key, name: p.name }} inside={inside} onInside={onInside} phone={phone}
+                       onChanged={onTreeChanged} />
         ) : (
           <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />
         )}

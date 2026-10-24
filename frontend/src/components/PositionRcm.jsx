@@ -2,26 +2,27 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RcmWorksheet from "./RcmWorksheet.jsx";
 import DecisionModal from "./DecisionModal.jsx";
 import { RollupBadges } from "./RcmStatusBadge.jsx";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { useAskText } from "./ConfirmProvider.jsx";
 import {
   addFailureMode, addFunctionalFailure, addPositionFunction, assignFailureMode, decideFailureMode, getPositionRcm,
   getRcmOptions, removeFunctionalFailure, removePositionFunction, retireFailureMode, updateFailureMode,
   updateFunctionalFailure, updatePositionFunction,
 } from "../api.js";
-import { SCOPES } from "../explorerTabs.js";
 import { COLUMN, buildPositionRcmDisplay, decisionBody } from "../rcmWorksheet.js";
 
 // A position's RCM tab in the Explorer: the RCM worksheet's outline grid over
 // what the asset tree holds (functions › functional failures › failure modes,
-// each mode's decision, task and evidence check), for the position and
-// everything inside it, or the position alone. Every edit is written at once
-// as the graph's own events; nothing is a copy, so it can't drift from the
-// assets. It fits the panel's height: the grid scrolls in its card.
+// each mode's decision, task and evidence check) for the position picked in the
+// tree. The tree beside it is the index: pick a position there and the table
+// follows; "Include positions inside" adds theirs, each function naming its
+// position in a Position column. Every edit is written at once as the graph's
+// own events; nothing is a copy, so it can't drift from the assets. It fits the
+// panel's height: the grid scrolls in its card.
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
-export default function PositionRcm({ position, scope, onScope, phone, readOnly, onShowPosition, onChanged, tools }) {
+export default function PositionRcm({ position, inside, onInside, phone, readOnly, onChanged }) {
+  const scope = inside ? "below" : "this";
   const askText = useAskText();
   const [sheet, setSheet] = useState(null);
   const [error, setError] = useState(null);
@@ -38,7 +39,6 @@ export default function PositionRcm({ position, scope, onScope, phone, readOnly,
       .catch((e) => { if (n === latest.current) setError({ text: e.message, notAllowed: e.status === 404 || e.status === 403 }); });
   }, [position.id, scope]);
   useEffect(() => {
-    setSheet(null);
     load();
   }, [load]);
   useEffect(() => { getRcmOptions().then(setOptions).catch(() => {}); }, []);
@@ -106,8 +106,7 @@ export default function PositionRcm({ position, scope, onScope, phone, readOnly,
     assign(r, ffId) {
       return after(assignFailureMode(r.ref.id, ffId)).catch((e) => setError({ text: e.message }));
     },
-    positionLink: onShowPosition ? (r) => onShowPosition(r.ref.position_id) : null,
-  }), [after, askText, position.id, onShowPosition]);
+  }), [after, askText, position.id]);
 
   const saveDecision = async ({ consequence, decision }) => {
     const r = deciding;
@@ -119,14 +118,16 @@ export default function PositionRcm({ position, scope, onScope, phone, readOnly,
     }
   };
 
-  const counts = sheet ? {
-    positions: sheet.positions.length,
-    open: sheet.positions.filter((p) => !p.analysed).length,
-  } : null;
-
-  const scopeSwitch = (
-    <SegmentedControl size="sm" className="prcm-scope" label="Show the RCM of" value={scope}
-                      options={SCOPES} onChange={onScope} />
+  // The table's own line above it: the positions inside, and its evidence
+  // checks. Outside the grid, so the switch stays put while the table reloads.
+  const bar = (
+    <div className="prcm-bar">
+      <label className="prcm-inside" title="Add the functions of every position inside this one, each naming its position">
+        <input type="checkbox" checked={inside} onChange={(e) => onInside(e.target.checked)} />
+        Include positions inside
+      </label>
+      {sheet?.rollup && <RollupBadges rollup={sheet.rollup} />}
+    </div>
   );
 
   let body;
@@ -139,7 +140,9 @@ export default function PositionRcm({ position, scope, onScope, phone, readOnly,
         <button type="button" className="secondary" onClick={load}>Try again</button>
       </div>
     );
-  } else if (!sheet || sheet.position.id !== position.id || sheet.scope !== scope) {
+  } else if (!sheet || sheet.position.id !== position.id) {
+    // (Turning "Include positions inside" on or off keeps the table, and the
+    // switch, in place until the new one is in.)
     body = <div className="card empty prcm-loading">Loading the RCM…</div>;
   } else {
     body = (
@@ -152,9 +155,9 @@ export default function PositionRcm({ position, scope, onScope, phone, readOnly,
           readOnly={readOnly}
           phone={phone}
           onDecision={(r) => setDeciding(r)}
-          tools={tools}
+          positionColumn={inside && sheet.positions.length > 1}
           notice={sheet.truncated ? (
-            <p className="rw-legend">Showing the first {plural(sheet.positions.length, "position")} of {sheet.total_positions.toLocaleString("en-AU")}. Pick a position lower down, or show this one only.</p>
+            <p className="rw-legend">Showing the first {plural(sheet.positions.length, "position")} of {sheet.total_positions.toLocaleString("en-AU")} inside. Pick a position lower down in the tree.</p>
           ) : null}
         />
       </div>
@@ -163,17 +166,8 @@ export default function PositionRcm({ position, scope, onScope, phone, readOnly,
 
   return (
     <div className="prcm">
-      <div className="prcm-bar">
-        {scopeSwitch}
-        {counts && (
-          <p className="prcm-sum" role="status">
-            {scope === "below" ? `${plural(counts.positions, "position")} · ` : ""}
-            {counts.open ? `${counts.open.toLocaleString("en-AU")} not analysed yet` : "All analysed"}
-          </p>
-        )}
-        {sheet?.rollup && <RollupBadges rollup={sheet.rollup} />}
-        {error && sheet && <p className="prcm-err" role="alert">{error.text}</p>}
-      </div>
+      {bar}
+      {error && sheet && <p className="prcm-err" role="alert">{error.text}</p>}
       {body}
       {deciding && options && (
         <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} />

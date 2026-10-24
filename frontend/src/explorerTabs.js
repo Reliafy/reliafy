@@ -32,10 +32,6 @@ export function shownTab(wanted, row) {
   return tabsFor(row).some((t) => t.id === wanted) ? wanted : DEFAULT_TAB;
 }
 
-// An RCM tab's scope: "below" (this position and everything inside it, as an
-// RCM study covers a system) or "this" (the position alone). ?scope=this.
-export const SCOPES = [
-  { value: "below", label: "This and inside", title: "This position and every position inside it" },
-  { value: "this", label: "This only", title: "This position only" },
-];
-export const scopeParam = (value) => (value === "this" ? "this" : "below");
+// The RCM tab shows the position picked in the tree; ?inside=1 adds the
+// positions inside it ("Include positions inside").
+export const insideParam = (value) => value === "1";

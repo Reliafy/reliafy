@@ -18,12 +18,9 @@ export const LEVELS = [
   { type: "mode", label: "Failure mode", plural: "Failure modes", child: null },
 ];
 export const LEVEL_OF = Object.fromEntries(LEVELS.map((l, i) => [l.type, { ...l, depth: i }]));
-// The RCM on the positions (an Explorer position's RCM tab) has two more kinds
-// of row: each position in it (when there's more than one), and, under a
-// position, its failure modes under no functional failure yet.
-export const POSITION_LEVEL = { type: "pos", label: "Position", plural: "Positions", child: "functions" };
-LEVEL_OF.pos = { ...POSITION_LEVEL, depth: 0 };
-LEVEL_OF.unassigned = { type: "unassigned", label: "Not under a functional failure", plural: "Unassigned", child: "modes", depth: 1 };
+// The RCM on the positions (an Explorer position's RCM tab) has one more kind
+// of row: a position's failure modes under no functional failure yet.
+LEVEL_OF.unassigned = { type: "unassigned", label: "Not under a functional failure", plural: "Unassigned", child: "modes", depth: 0 };
 
 export const OUTCOME_LABEL = {
   on_condition: "On-condition",
@@ -116,15 +113,18 @@ export function buildRcmDisplay(functions) {
 }
 
 // The display for the RCM on the positions (GET /api/maintenance/positions/:id/rcm):
-// the same rows as a study's, keyed by the graph's own ids, each with the
-// position it's on (ref.position_id). With more than one position, each is a
-// row at the top (named by its path below the first: "Pump › Motor"), the
-// functions inside it; a position's failure modes under no functional failure
-// go under an "unassigned" row of their own, so nothing is hidden.
+// the same rows as a study's (function › functional failure › failure mode),
+// keyed by the graph's own ids, each with the position it's on
+// (ref.position_id). There are no position rows: the Explorer's tree beside
+// the table is the index. With the positions inside included, every function
+// (and each position's failure modes under no functional failure yet) names
+// its position by its path below the one picked ("Pump › Motor"), shown in a
+// Position column. A position's failure modes under no functional failure go
+// under an "unassigned" row of their own, so nothing is hidden.
 export function buildPositionRcmDisplay(sheet) {
   const rows = new Map();
   const roots = [];
-  const counts = { pos: 0, fn: 0, fail: 0, mode: 0, unassigned: 0 };
+  const counts = { fn: 0, fail: 0, mode: 0, unassigned: 0 };
   const add = (type, key, ref, parent) => {
     const depth = parent == null ? 0 : rows.get(parent).depth + 1;
     const r = { key, type, ref, at: null, parent, kids: [], depth, sum: blank() };
@@ -134,15 +134,12 @@ export function buildPositionRcmDisplay(sheet) {
     return r;
   };
   const positions = sheet?.positions || [];
-  const withPositions = positions.length > 1;
+  const many = positions.length > 1;
   const path = [];
   for (const p of positions) {
     path.length = Math.max(0, p.depth);
     path.push(p.name);
-    const label = p.depth === 0 ? p.name : path.slice(1).join(" › ");
-    const top = withPositions
-      ? add("pos", `P:${p.id}`, { id: p.id, text: label, name: p.name, position_id: p.id, analysed: p.analysed, rollup: p.rollup }, null).key
-      : null;
+    const where = many ? { position_path: p.depth === 0 ? p.name : path.slice(1).join(" › ") } : {};
     const modeRow = (m, parent, ffId) => {
       const r = add("mode", m.id, { ...m, position_id: p.id, functional_failure_id: ffId }, parent);
       r.sum = modeCounts(m);
@@ -152,19 +149,28 @@ export function buildPositionRcmDisplay(sheet) {
       }
     };
     for (const fn of p.functions || []) {
-      const f = add("fn", fn.id, { ...fn, position_id: p.id }, top);
+      const f = add("fn", fn.id, { ...fn, position_id: p.id, ...where }, null);
       for (const ff of fn.failures || []) {
         const x = add("fail", ff.id, { ...ff, position_id: p.id, function_id: fn.id }, f.key);
         for (const m of ff.modes || []) modeRow(m, x.key, ff.id);
       }
     }
     if ((p.unassigned || []).length) {
-      const u = add("unassigned", `U:${p.id}`, { id: `U:${p.id}`, text: "Not under a functional failure", position_id: p.id }, top);
+      const u = add("unassigned", `U:${p.id}`, { id: `U:${p.id}`, text: "Not under a functional failure", position_id: p.id, ...where }, null);
       for (const m of p.unassigned) modeRow(m, u.key, null);
     }
   }
-  return { rows, roots, counts, positions: withPositions };
+  return { rows, roots, counts, many };
 }
+
+// The Position column, with the positions inside included: which position each
+// function (or unassigned group) is on.
+export const POSITION_COLUMN = {
+  id: "position", label: "Position", width: 170,
+  title: "The position it's on, below the one picked in the tree",
+  text: (r) => (r.type === "fn" || r.type === "unassigned" ? r.ref.position_path || "" : ""),
+  sort: (r) => (r.type === "fn" || r.type === "unassigned" ? r.ref.position_path || null : null),
+};
 
 // The functional failures on a position, for a failure mode's "Under" choice.
 export function failuresOn(display, positionId) {
