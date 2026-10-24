@@ -1064,7 +1064,13 @@ def seed_samples(db) -> None:
         try:
             from backend import degradation as degradation_fit  # local: heavy import
 
-            model_exists = db.degradation_models.find_one({"_id": spec["id"]}) is not None
+            existing_deg = db.degradation_models.find_one({"_id": spec["id"]})
+            model_exists = existing_deg is not None
+            # Upgrade an older seed whose results predate newer payload fields
+            # (each reading's residual, which the model page's checks draw).
+            stale = model_exists and not all(
+                "residuals" in u for u in ((existing_deg.get("results") or {}).get("units") or [])
+            )
 
             def _needs_seed(it):
                 doc = db.tracked_items.find_one({"_id": it["id"]})
@@ -1079,7 +1085,7 @@ def seed_samples(db) -> None:
                 it for it in SAMPLE_TRACKED_ITEMS
                 if it["model_id"] == spec["id"] and _needs_seed(it)
             ]
-            if model_exists and not missing_items:
+            if model_exists and not missing_items and not stale:
                 continue
 
             ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
@@ -1104,6 +1110,9 @@ def seed_samples(db) -> None:
                 )
                 db.degradation_models.insert_one(to_doc(doc))
                 logger.info("Seeded sample degradation model %r.", spec["id"])
+            elif stale:
+                db.degradation_models.update_one({"_id": spec["id"]}, {"$set": {"results": payload}})
+                logger.info("Upgraded sample degradation model %r (newer result fields).", spec["id"])
 
             live = degradation_fit.get_live(cache_id)
             for it in missing_items:

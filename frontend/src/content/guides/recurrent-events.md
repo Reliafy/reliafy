@@ -82,10 +82,15 @@ want the calculator — handy for growth planning before you have data.
 
 ## Reading the result
 
-The **mean cumulative function (MCF)** plot is the heart of it: cumulative
-failures against time, with the observed step function and the fitted curve. Its
-*shape* is the finding. Curving upward means failures are accelerating; flattening
-means they're slowing; a straight line means a steady rate.
+A saved model opens on its page: the name, then one line with the answer (the
+verdict, the growth shape β with its interval, the MTBF now and the data),
+then tabs. Each tab fits the screen.
+
+**Failures over time** is the heart of it: the **mean cumulative function
+(MCF)**, cumulative failures per system against time, with the observed steps
+and the fitted curve. Its *shape* is the finding. Curving upward means failures
+are accelerating; flattening means they're slowing; a straight line means a
+steady rate.
 
 ![The mean cumulative function: observed steps against the fitted curve](/guides/img/recurrent-02-mcf.png)
 
@@ -103,54 +108,80 @@ interval rather than the point estimate: *deteriorating* only when the whole
 interval is above 1, *improving* only when it's all below, and *stable* when it
 includes 1 — the data can't tell the trend from a constant rate.
 
-Reliafy states the verdict in words alongside the number, plus the **ROCOF**
-(rate of occurrence of failures) and the instantaneous **MTBF** at the end of
-observation, each with 95% bounds — the honest MTBF for a repairable system,
-which is a *current* rate rather than a lifetime average. For a growth test it
-also gives the **demonstrated MTBF** as a 90% lower bound ("MTBF ≥ X at 90%"),
-using Crow's exact bounds from MIL-HDBK-189C when the test design allows.
+The panel beside the chart gives the **failure rate** (ROCOF, the rate of
+occurrence of failures) and the instantaneous **MTBF** at the end of
+observation — the honest MTBF for a repairable system, which is a *current*
+rate rather than a lifetime average. For a growth test it also gives the
+**demonstrated MTBF** as a 90% lower bound ("MTBF ≥ X at 90%"), using Crow's
+exact bounds from MIL-HDBK-189C when the test design allows. Below them, the
+verdict in words.
 
-Under **Fit statistics** in the panel beside the plot, two **trend tests** —
-Laplace and MIL-HDBK-189C — tell you whether the trend is statistically
-significant or whether you're reading noise. Worth checking before you take a
-deteriorating verdict to a capital-expenditure meeting. A **Cramér-von Mises
-goodness-of-fit test** checks the fitted model against the event times, and with
-several systems the **Systems against the model** table shows the ones failing
-more often than the fleet model expects — your bad actors.
+When the data names each failure's cause, the switch under the chart changes
+**All failures** to **By cause**: the MCF of each cause, with the 95% band of the
+one you pick, and each cause's own growth shape β. Often one failure mode is
+accelerating while the rest are steady.
 
-**By cause** shows the MCF of each cause with its 95% band, and each cause's own
-growth shape β: often one failure mode is accelerating while the rest are steady.
-
-**Covariates** (proportional intensity) gives each covariate's effect as a rate
-ratio, in words: "at site Inland, failures come about 2.2× as often as at
-Coastal". A text covariate is compared with the level most systems have; an
-interval that includes 1 means the data can't rule out no effect.
+**Effects** (covariate models only) gives each covariate's effect as a rate
+ratio, charted with its 95% interval and in words: "at site Inland, failures
+come about 2.2× as often as at Coastal". A text covariate is compared with the
+level most systems have; an interval that includes 1 means the data can't rule
+out no effect.
 
 **Imperfect repair** leads with the repair effectiveness in words — "each repair
 takes away about 79% of the age gained since the last repair", with 100% as good
-as new and 0% as bad as old — and the **repair test**'s verdict: perfect repair,
-minimal repair, or in between. **Next failure** shows each system's chance of
-running a further time without failing, from where its own history leaves it.
+as new and 0% as bad as old — and the repair test's verdict: perfect repair,
+minimal repair, or in between.
+
+## Can I trust it?
+
+The **Diagnostics** tab holds the checks, each titled with its question:
+
+- **Is the failure rate changing?** The Laplace and MIL-HDBK-189C **trend
+  tests** tell you whether the trend is statistically significant or whether
+  you're reading noise. Worth checking before you take a deteriorating verdict
+  to a capital-expenditure meeting. On a constant-rate model (HPP) a trend is a
+  problem: fit Crow-AMSAA instead.
+- **Is reliability growing?** The **Duane plot**: the cumulative MTBF against
+  time on log scales. Rising is growth.
+- **Do the failure times follow the model?** A **Cramér-von Mises** test of the
+  fitted model against the event times.
+- **Does any system fail more than the model expects?** Each system's failures
+  against what the model expects over its own window — your bad actors.
+- **Is repair as good as new, or as bad as old?** (imperfect repair) The repair
+  test.
+
+Beside them are the **fit statistics** (AIC, BIC, log-likelihood), to compare
+with another model fitted to the same data. **Data** lists what the model was
+fitted to (systems, failures, each system's count), how it was fitted, and
+every parameter with its interval.
 
 ## The calculator
 
-The calculator answers the planning questions directly: expected cumulative
-failures by a future time, the failure rate at a given point, and how many
-failures to expect in a specific window — which is the number that sizes a
-spares order or a maintenance budget.
+The **Calculator** answers the planning questions directly: expected failures
+by a future time, the failure rate or the MTBF at a given point, and — with a
+start time under **Over a window** — the failures to expect in that window, with
+the average rate and MTBF across it. That's the number that sizes a spares order
+or a maintenance budget.
+
+## Plan ahead
+
+**Plan ahead** holds the decisions, each where it applies:
+
+- **Next failure** (imperfect repair): each system's chance of running a further
+  time without failing, from where its own history leaves it.
+- **Growth projection**: for a growth test, the MTBF the system reaches once the
+  fixes for each failure mode are in (AMSAA-Crow, MIL-HDBK-189C). It needs a
+  column naming each failure's mode, and you mark each mode as not fixed (A),
+  fixed after the test (BD) or fixed during it (BC).
+- **Overhaul interval** (minimal repair): if you're deciding whether to keep
+  repairing or overhaul, the cost-optimal overhaul interval from the cost of a
+  repair and of an overhaul.
 
 ## Where to go next
 
 If the same equipment also has a wear-out story at the component level, fit those
 as ordinary [non-repairable models](/guides/fit-your-first-model) — the two views answer
 different questions and are complementary, not competing.
-
-If you're deciding whether to keep repairing or overhaul, the **Overhaul** tab
-on a minimal-repair model finds the cost-optimal overhaul interval. For a growth
-test, the **Growth projection** tab gives the MTBF the system reaches once the
-fixes for each failure mode are in (AMSAA-Crow, MIL-HDBK-189C). It needs a
-column naming each failure's mode, and you mark each mode as not fixed (A),
-fixed after the test (BD) or fixed during it (BC).
 
 A saved recurrent model can also drive a
 [fleet failure forecast](/guides/forecast-fleet-failures-and-spares) for

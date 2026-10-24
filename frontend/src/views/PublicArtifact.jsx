@@ -8,8 +8,10 @@ import ResultView from "../components/ResultView.jsx";
 import JointResultView from "../components/JointResultView.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
 import { answerParts } from "../modelFrame.js";
+import { degradationAnswer } from "../degradationFrame.js";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
+import { recurrentAnswer } from "../recurrentResults.js";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
@@ -128,16 +130,21 @@ function Body({ collection, a, token, unlock, framed = false }) {
       const view = a.kind === "joint"
         ? <JointResultView results={a.results} name={a.name} />
         : <ResultView result={a.results} name={a.name} split={a.results?.split || null} />;
-      if (framed || a.results?.kind === "competing_risks") {
-        return a.results?.kind === "competing_risks" ? <div className="card">{view}</div> : view;
-      }
+      if (framed) return view;
       // A model in a report: the same tabs, in a card of their own height.
       return <div className="card mf-card mf-standalone">{view}</div>;
     }
-    case "degradation_models":
-      return <div className="card"><DegradationResultView results={a.results} name={a.name} /></div>;
-    case "recurrent_models":
-      return <div className="card"><RecurrentResultView results={a.results} name={a.name} /></div>;
+    case "degradation_models": {
+      const view = <DegradationResultView results={a.results} name={a.name} />;
+      // A shared page: the model frame's tabs; a model in a report: the same
+      // tabs, in a card of their own height.
+      return framed ? view : <div className="card mf-card mf-standalone">{view}</div>;
+    }
+    case "recurrent_models": {
+      const view = <RecurrentResultView results={a.results} name={a.name} />;
+      // Framed on its own share page; in a report, the same tabs in a card of their own height.
+      return framed ? view : <div className="card mf-card mf-standalone">{view}</div>;
+    }
     case "strategy_analyses":
       return (
         <div className="card">
@@ -335,7 +342,7 @@ export default function PublicArtifact() {
             <ReportView report={data.artifact} sharedBy={data.shared_by} Item={Body} />
           </div>
         )}
-        {data && data.collection === "models" && art(data).results?.kind !== "competing_risks" && (
+        {data && data.collection === "models" && (
           // A shared model: the model page's frame, read-only (no actions).
           <ModelFrame
             className="public-app"
@@ -347,7 +354,29 @@ export default function PublicArtifact() {
             <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
           </ModelFrame>
         )}
-        {data && data.collection !== "reports" && !(data.collection === "models" && art(data).results?.kind !== "competing_risks") && (
+        {data && data.collection === "degradation_models" && (
+          // A shared degradation model: the same frame, read-only.
+          <ModelFrame
+            className="public-app"
+            crumbs={[{ label: `${KIND_LABEL.degradation_models} · shared by ${data.shared_by}` }]}
+            title={data.artifact.name}
+            answer={degradationAnswer(data.artifact.results)}
+          >
+            <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
+          </ModelFrame>
+        )}
+        {data && data.collection === "recurrent_models" && (
+          // A shared repairable model: the model page's frame, read-only.
+          <ModelFrame
+            className="public-app"
+            crumbs={[{ label: `${KIND_LABEL.recurrent_models} · shared by ${data.shared_by}` }]}
+            title={data.artifact.name}
+            answer={recurrentAnswer(art(data).results || {})}
+          >
+            <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
+          </ModelFrame>
+        )}
+        {data && data.collection !== "reports" && data.collection !== "models" && data.collection !== "degradation_models" && data.collection !== "recurrent_models" && (
           <div className="app public-app">
             <header>
               <div>

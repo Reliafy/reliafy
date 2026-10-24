@@ -1,5 +1,5 @@
 import Plot from "./Plot.jsx";
-import { COLORWAY, NEUTRAL_BAND_FILL, bandPair } from "../plotTheme.js";
+import { COLORWAY, DATA_INK, NEUTRAL_BAND_FILL, bandPair } from "../plotTheme.js";
 
 // Each failure mode's colour, in the fit's order (most failures first).
 export const causeColor = (i) => COLORWAY[i % COLORWAY.length];
@@ -15,7 +15,12 @@ const sum = (a, b) => a.map((v, i) => (v == null || b[i] == null ? null : v + b[
 // The cumulative incidence of each failure mode (#177): stacked, so the top
 // is the all-cause failure probability with its 95% band, or each mode on
 // its own with its band. Step curves, as SurPyval estimates them.
-export default function CompetingRisksPlot({ result, unit, stacked = true, download = null }) {
+// ``fill``: the chart takes its box's height (the model frame). ``showAll``
+// (each mode only): the chance of failing from any mode as a dashed line.
+// ``only``: draw just these modes (each mode only). ``shapes``: reference
+// lines (the calculator's time or chance).
+export default function CompetingRisksPlot({ result, unit, stacked = true, download = null, fill = false,
+                                             showAll = false, only = null, shapes = null }) {
   const c = result.curves || {};
   const x = c.x || [];
   const names = (result.causes || []).map((k) => k.name);
@@ -40,6 +45,7 @@ export default function CompetingRisksPlot({ result, unit, stacked = true, downl
     }
   } else {
     names.forEach((name, i) => {
+      if (only && !only.includes(name)) return;
       traces.push(...bandPair(x, c.lower?.[name] || [], c.upper?.[name] || [], {
         fillcolor: tint(causeColor(i), 0.12), line: { shape: "hv" }, showlegend: false, legendgroup: name,
       }));
@@ -49,9 +55,25 @@ export default function CompetingRisksPlot({ result, unit, stacked = true, downl
         hovertemplate: `${name}: %{y:.1%}<extra></extra>`,
       });
     });
+    // Any mode alone (the calculator): with its 95% band.
+    const anyAlone = showAll && only && only.length === 0;
+    if (anyAlone && (c.all_lower || []).some((v) => v != null)) {
+      traces.push(...bandPair(x, c.all_lower, c.all_upper, {
+        name: "95% CI, any mode", fillcolor: NEUTRAL_BAND_FILL, line: { shape: "hv" },
+      }));
+    }
+    if (showAll && (c.all || []).length) {
+      traces.push({
+        type: "scatter", mode: "lines", x, y: c.all, name: "any mode",
+        line: { color: DATA_INK, width: 1.5, dash: "dash", shape: "hv" },
+        hovertemplate: "any mode: %{y:.1%}<extra></extra>",
+      });
+    }
   }
+  const shown = only ? names.filter((n) => only.includes(n)) : names;
   const tops = stacked ? [...(c.all_upper || []), ...(c.all || [])]
-    : names.flatMap((n) => [...(c.upper?.[n] || []), ...(c.cif?.[n] || [])]);
+    : [...shown.flatMap((n) => [...(c.upper?.[n] || []), ...(c.cif?.[n] || [])]),
+       ...(showAll ? c.all || [] : []), ...(showAll && only && !only.length ? c.all_upper || [] : [])];
   const ymax = Math.min(1, Math.max(0.05, ...tops.filter((v) => v != null)) * 1.08);
   return (
     <Plot
@@ -60,10 +82,12 @@ export default function CompetingRisksPlot({ result, unit, stacked = true, downl
         height: 340,
         hovermode: "x unified",
         xaxis: { title: { text: unit ? `Time (${unit})` : "Time" }, rangemode: "tozero" },
-        yaxis: { title: { text: "Probability of failure" }, range: [0, ymax], tickformat: ".0%" },
+        yaxis: { title: { text: "Chance of failing" }, range: [0, ymax], tickformat: ".0%" },
         showlegend: true,
+        ...(shapes ? { shapes } : {}),
       }}
       download={download}
+      fill={fill}
     />
   );
 }
