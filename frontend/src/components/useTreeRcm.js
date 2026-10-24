@@ -73,7 +73,7 @@ export default function useTreeRcm({ on, onTreeChanged, askText }) {
       const modes = r.rsum?.modes || 0;
       const stay = modes ? `Its ${plural(modes, "failure mode")} stay on the position, not under a functional failure, with their tasks.` : "";
       if (r.type === "fn") {
-        const fails = r.kids.filter((k) => !k.startsWith("+")).length;
+        const fails = r.kids.length;
         return `${name} and its ${plural(fails, "functional failure")} go. ${stay}`;
       }
       if (r.type === "fail") return `${name} goes. ${stay}`;

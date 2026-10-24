@@ -6,12 +6,12 @@
 // positions alone, as it always was.
 //
 // Pure functions (no React), tested in explorerRcm.test.js: the tree with the
-// RCM grafted in, the "Add …" rows for the position being worked on, which
-// position a row is on, and the RCM chips.
+// RCM grafted in, which position a row is on, what each row's menu offers
+// (right-click, ⋯ or Shift+F10), and the RCM chips.
 
 import { blank as rcmBlank, modeCounts, rowText as rcmText } from "./rcmWorksheet.js";
 
-export const RCM_TYPES = new Set(["fn", "fail", "mode", "unassigned", "add"]);
+export const RCM_TYPES = new Set(["fn", "fail", "mode", "unassigned"]);
 export const isRcmRow = (r) => !!r && RCM_TYPES.has(r.type);
 
 const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, not_analysed: 0, positions: 0, empty: 0 });
@@ -20,11 +20,11 @@ const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, n
 // {positions: [{id, functions, unassigned}]}). Under a position: its functions
 // (each with its functional failures, each with its failure modes), then its
 // failure modes under no functional failure (an "unassigned" row), then the
-// positions inside it. `addFor` (a position id): that position's rows get the
-// "Add a function / functional failure / failure mode" rows. The display given
-// is left as it is; position rows gain `rsum` (their own failure modes'
-// counts) and `rcmKids` (how many of their kids are RCM rows).
-export function graftRcm(display, rcm, { addFor = null } = {}) {
+// positions inside it. Adding is from each row's menu (rowActions) and the
+// heading's Add function, not from rows in the tree. The display given is left
+// as it is; position rows gain `rsum` (their own failure modes' counts) and
+// `rcmKids` (how many of their kids are RCM rows).
+export function graftRcm(display, rcm) {
   const byPos = new Map((rcm?.positions || []).map((p) => [p.id, p]));
   const rows = new Map();
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
@@ -53,21 +53,17 @@ export function graftRcm(display, rcm, { addFor = null } = {}) {
       for (const k of Object.keys(row.rsum)) rsum[k] += row.rsum[k];
     };
     const d = r.depth;
-    const working = addFor === r.key;
     for (const fn of p?.functions || []) {
       if (!add(fn.id, "fn", { ...fn, position_id: r.key }, r.key, d + 1)) continue;
       for (const ff of fn.failures || []) {
         if (!add(ff.id, "fail", { ...ff, position_id: r.key, function_id: fn.id }, fn.id, d + 2)) continue;
         for (const m of ff.modes || []) modeRow(m, ff.id, d + 3, ff.id);
-        if (working) add(`+mode:${ff.id}`, "add", { add: "mode", text: "Add a failure mode", position_id: r.key, functional_failure_id: ff.id }, ff.id, d + 3);
       }
-      if (working) add(`+fail:${fn.id}`, "add", { add: "fail", text: "Add a functional failure", position_id: r.key, function_id: fn.id }, fn.id, d + 2);
     }
     if ((p?.unassigned || []).length) {
       const u = add(`U:${r.key}`, "unassigned", { id: `U:${r.key}`, text: "Not under a functional failure", position_id: r.key }, r.key, d + 1);
       if (u) for (const m of p.unassigned) modeRow(m, u.key, d + 2, null);
     }
-    if (working) add(`+fn:${r.key}`, "add", { add: "fn", text: "Add a function", position_id: r.key }, r.key, d + 1);
     r.kids = [...keys, ...r.kids];
     r.rcmKids = keys.length;
     r.rsum = rsum;
@@ -84,13 +80,35 @@ export function positionOf(r) {
 
 // A row as the RCM's cells read it: a position row's counts are its own
 // failure modes' (rsum), not the tree's status totals.
-// Its "Add …" rows aren't counted as what's inside it.
-export const cellRow = (r) => ({ ...r, sum: r.rsum || rcmBlank(), kids: r.kids.filter((k) => !k.startsWith("+")) });
+export const cellRow = (r) => ({ ...r, sum: r.rsum || rcmBlank() });
 
 // What the one search box matches on an RCM row: its description, standard,
 // effects, notes, and the decision's task and notes.
-export function rcmRowText(r) {
-  return r.type === "add" ? "" : rcmText(r);
+export const rcmRowText = (r) => rcmText(r);
+
+// What a row's menu offers on the RCM tab (right-click, its ⋯ button, or
+// Shift+F10 / the Menu key): adding inside it, and the actions the table and
+// the details already have for it. [] for a row with none (the "Not under a
+// functional failure" heading). `canRename`: the description is edited in
+// the table (not on a phone, where the details panel edits it).
+export function rowActions(r, { canRename = true } = {}) {
+  if (!r) return [];
+  const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
+  if (r.type === "pos") return [{ id: "add-fn", label: "Add function" }];
+  if (r.type === "fn") {
+    return [{ id: "add-fail", label: "Add functional failure" }, ...rename, { id: "delete", label: "Delete function", danger: true }];
+  }
+  if (r.type === "fail") {
+    return [{ id: "add-mode", label: "Add failure mode" }, ...rename, { id: "delete", label: "Delete functional failure", danger: true }];
+  }
+  if (r.type === "mode") {
+    return [
+      { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
+      ...rename,
+      { id: "delete", label: "Delete failure mode", danger: true },
+    ];
+  }
+  return [];
 }
 
 // The RCM's own chips (shown on the RCM tab, beside the tree's).
