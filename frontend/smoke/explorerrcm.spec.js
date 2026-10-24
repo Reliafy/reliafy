@@ -4,7 +4,8 @@
 // functional failures › failure modes nested in it, the RCM's columns beside
 // every row; adding from a row's menu (right-click, ⋯, Shift+F10) grows the
 // tree; the selected row stays put
-// across the tabs; it fits the window; the keyboard; the chips; full screen.
+// across the tabs; it fits the window; the keyboard; the tree's ⋯ menu (Arrange
+// by, the levels, Show only, Reset); full screen.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
 
@@ -57,6 +58,14 @@ const topOf = async (locator) => Math.round((await locator.boundingBox()).y);
 // A row's place in the tree's own scroll area (the area itself starts higher on
 // the RCM tab, whose controls are two slim rows).
 const placeOf = async (page, locator) => (await topOf(locator)) - (await topOf(page.locator(".tp-scroll")));
+// The tree's ⋯ menu: its button, and the menu once open.
+const menuButton = (page) => page.getByRole("button", { name: /^Tree options/ });
+const treeMenu = (page) => page.getByRole("menu", { name: "Tree options" });
+async function openTreeMenu(page) {
+  if (!(await treeMenu(page).isVisible())) await menuButton(page).click();
+  await expect(treeMenu(page)).toBeVisible();
+  return treeMenu(page);
+}
 
 test("RCM: the tree and the RCM are one table; Summary: the tree and the page; the row stays put", async ({ page, request, problems }) => {
   const tag = `t${Date.now()}`;
@@ -88,9 +97,13 @@ test("RCM: the tree and the RCM are one table; Summary: the tree and the page; t
   await trow(page, `^Function: Contain the water ${tag}`).locator(".tp-chev").click();
   await expect(trow(page, "Not under a functional failure").first()).toBeVisible();
   await expect(trow(page, `Coupling fails ${tag}`).getByText("Contradicted")).toBeVisible();
-  // RCM is by position: the other arrangements wait for Summary (the counts say so).
-  await expect(page.getByRole("radio", { name: "Locations" })).toHaveCount(0);
+  // RCM is by position: the other arrangements wait for Summary (the counts and the menu say so).
   await expect(page.locator(".tt-top .tp-status")).toContainText("RCM is by position");
+  const menu = await openTreeMenu(page);
+  await expect(menu.getByRole("menuitemradio", { name: "Locations" })).toHaveCount(0);
+  await expect(menu).toContainText("RCM is by position");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
 
   await page.getByRole("tab", { name: "Summary" }).click();
   await expect(tree(page)).toBeVisible();
@@ -122,17 +135,19 @@ test("adding from each row's menu grows the tree: a function, its failures and m
   const tag = `g${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.motor.id}&tab=rcm`);
-  // No "Add …" rows in the table: the motor's empty state points at Add function and the menu.
+  // No "Add …" rows in the table: the motor's own row says how to start (Add function, or a row's menu).
   await expect(table(page)).toBeVisible();
   await expect(table(page).getByText(/^Add a (function|functional failure|failure mode)$/)).toHaveCount(0);
-  await expect(page.locator(".tt-headslot .tt-hint")).toContainText("No functions yet: press Add function, then right-click a row");
+  await expect(trow(page, `^Rcm motor ${tag}`).locator(".tt-empty-hint"))
+    .toHaveText("No functions yet. Press Add function, or right-click a row to add inside it.");
+  await expect(page.locator(".tt-top")).not.toContainText("No functions yet");
   // The heading's Add function adds to the position picked.
   await page.locator(".tt-headslot").getByRole("button", { name: "Add function", exact: true }).click();
   await ask(page, "Add a function", `Turn the shaft ${tag}`);
   const fn = trow(page, `^Function: Turn the shaft ${tag}`);
   await expect(fn).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("complementary", { name: "Details" })).toBeVisible();
-  await expect(page.locator(".tt-headslot .tt-hint")).toHaveCount(0);
+  await expect(table(page).locator(".tt-empty-hint")).toHaveCount(0);
   // Right-click the position: Add function.
   await fromMenu(page, `^Rcm motor ${tag}`, `Rcm motor ${tag}`, "Add function");
   await ask(page, "Add a function", `Stay cool ${tag}`);
@@ -315,27 +330,46 @@ for (const [w, h] of [[1440, 900], [1366, 768]]) {
   });
 }
 
-test("the RCM tab's controls are two slim rows: the table gets the height; Columns opens over it", async ({ page, request, problems }) => {
+test("the RCM tab's heading is two slim rows: the way up and the name, then the tabs; Columns opens over it", async ({ page, request, problems }) => {
   const tag = `h${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 720 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.motor.id}&tab=rcm`);
   await expect(table(page)).toBeVisible();
   const bar = page.locator(".tt-headslot");
-  // One bar: the tabs, the position (its way up over its name) and the actions.
-  await expect(bar.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
+  // The bar: the position (its way up over its name) and the actions, Add function first and the one primary.
   await expect(bar.getByRole("heading", { name: `Rcm motor ${tag}` })).toBeVisible();
   await expect(bar.getByRole("navigation", { name: "Breadcrumb" })).toContainText(`Rcm pump ${tag}`);
   for (const name of ["Columns", "Add function", "Full screen"]) {
     await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
   }
   await expect(bar.getByRole("link", { name: "Open the full page" })).toBeVisible();
+  await expect(bar.locator(".tt-actions > button").first()).toHaveText("Add function");
+  await expect(bar.getByRole("tab")).toHaveCount(0);
+  // Under it, the tabs: below the way up and the name.
+  const tabs = page.locator(".tt-tabslot");
+  await expect(tabs.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
+  expect(await topOf(tabs.getByRole("tab", { name: "RCM" })))
+    .toBeGreaterThanOrEqual(Math.round((await bar.getByRole("heading").boundingBox()).y + (await bar.getByRole("heading").boundingBox()).height));
+  // No second row of tree controls: they're in the tree's ⋯ menu.
+  await expect(page.locator(".tt-top").getByRole("button", { name: "Open to level 1" })).toHaveCount(0);
+  await expect(page.locator(".tt-top").getByRole("button", { name: "Not analysed" })).toHaveCount(0);
   const heights = await page.evaluate(() => {
     const h = (s) => Math.round(document.querySelector(s).getBoundingClientRect().height);
     return { bar: h(".tt-bar"), all: h(".tt-top") };
   });
   expect(heights.bar).toBeLessThanOrEqual(56);
-  expect(heights.all).toBeLessThanOrEqual(100);
+  expect(heights.all).toBeLessThanOrEqual(92);
+  // The table keeps its height: at least 18 rows in view at 1280x720.
+  const rows = await page.evaluate(() => {
+    const sc = document.querySelector(".tp-scroll").getBoundingClientRect();
+    const head = document.querySelector(".tt-head").getBoundingClientRect().height;
+    return [...document.querySelectorAll(".tp-body .tp-row")].filter((r) => {
+      const b = r.getBoundingClientRect();
+      return b.top >= sc.top + head - 1 && b.bottom <= sc.bottom + 1;
+    }).length;
+  });
+  expect(rows).toBeGreaterThanOrEqual(Math.min(18, await page.locator(".tp-body .tp-row").count()));
   // The way up goes up.
   await bar.getByRole("navigation", { name: "Breadcrumb" }).getByRole("button", { name: `Rcm pump ${tag}` }).click();
   await expect(trow(page, `^Rcm pump ${tag}`)).toHaveAttribute("aria-selected", "true");
@@ -371,7 +405,7 @@ test("at 400 px nothing scrolls sideways, on either tab; a mode opens as a sheet
   await expectHealthy(page, problems, { label: "rcm at 400 px", root: ".tx" });
 });
 
-test("one search and one chip row: the RCM's text, Needs a decision, Not analysed", async ({ page, request, problems }) => {
+test("one search, and Show only in the tree's ⋯ menu: the RCM's text, Needs a decision, Not analysed", async ({ page, request, problems }) => {
   const tag = `c${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
@@ -379,18 +413,25 @@ test("one search and one chip row: the RCM's text, Needs a decision, Not analyse
   await expect(trow(page, `Failure mode: Seal leaks Low flow Contain the water ${tag}`)).toBeVisible();
   await expect(trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`)).toHaveCount(0);
   await page.getByRole("searchbox", { name: "Filter the tree and its RCM" }).fill("");
-  await page.getByRole("button", { name: "Needs a decision" }).click();
+  const menu = await openTreeMenu(page);
+  await menu.getByRole("menuitemcheckbox", { name: "Needs a decision" }).click();
   await expect(trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`)).toBeVisible();
   await expect(trow(page, `Coupling fails ${tag}`)).toHaveCount(0); // decided
-  await page.getByRole("button", { name: "Needs a decision" }).click();
-  await page.getByRole("button", { name: "Not analysed" }).click();
+  // It stays open for the next change.
+  await menu.getByRole("menuitemcheckbox", { name: "Needs a decision" }).click();
+  await menu.getByRole("menuitemcheckbox", { name: "Not analysed" }).click();
+  await menu.getByRole("menuitem", { name: "Done" }).click();
+  await expect(menu).toHaveCount(0);
   // The plant (no function), the pump (modes with no decision) and the motor
   // (no function): counted in the plant's quiet marker.
   await expect(trow(page, `^Rcm plant ${tag}`)).toHaveAccessibleName(/3 positions not analysed yet here and inside/);
   await expect(trow(page, `^Rcm plant ${tag}`).locator(".tp-mini.rcm")).toBeVisible();
-  // The RCM's own chips are for its tab only.
+  // The RCM's own filters are for its tab only.
   await page.getByRole("tab", { name: "Summary" }).click();
-  await expect(page.getByRole("button", { name: "Needs a decision" })).toHaveCount(0);
+  await openTreeMenu(page);
+  await expect(treeMenu(page).getByRole("menuitemcheckbox", { name: "Needs a decision" })).toHaveCount(0);
+  await expect(treeMenu(page).getByRole("menuitemcheckbox", { name: "Not analysed" })).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "rcm chips" });
 });
 
@@ -428,4 +469,110 @@ test("full screen: F, a dialog on top, Esc, the row and tab kept", async ({ page
   await expect(trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
   await expectHealthy(page, problems, { label: "explorer full screen", root: ".tx" });
+});
+
+test("the tree's ⋯ menu: the levels, a filter with its count on the button, Reset, and the keyboard", async ({ page, request, problems }) => {
+  await page.addInitScript(() => {
+    for (const k of ["requestFullscreen", "webkitRequestFullscreen"]) {
+      delete Element.prototype[k];
+      delete HTMLElement.prototype[k];
+    }
+    for (const k of ["exitFullscreen", "webkitExitFullscreen"]) delete Document.prototype[k];
+  });
+  const tag = `o${Date.now()}`;
+  const p = await plant(request, tag);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  for (const t of ["summary", "rcm"]) {
+    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}${t === "rcm" ? "&tab=rcm" : ""}`);
+    await expect(t === "rcm" ? table(page) : tree(page)).toBeVisible();
+    // The same pane on both tabs: the title, +, ⋯, the search box and the counts; the rest is in the menu.
+    await expect(menuButton(page)).toHaveAccessibleName("Tree options");
+    await expect(page.locator(".tp").getByRole("searchbox")).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Locations" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open to level 1" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Overdue", exact: true })).toHaveCount(0);
+  }
+
+  // Summary: the keyboard opens it and walks it.
+  await page.getByRole("tab", { name: "Summary" }).click();
+  await expect(tree(page)).toBeVisible();
+  await menuButton(page).focus();
+  await page.keyboard.press("Enter");
+  const menu = treeMenu(page);
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitemradio", { name: "Positions" })).toBeFocused(); // the first item
+  await expect(menu.getByRole("menuitemradio", { name: "Positions" })).toHaveAttribute("aria-checked", "true");
+  await expect(menu.getByRole("menuitemradio", { name: "Open to level 2" })).toHaveAttribute("aria-checked", "true"); // the usual
+  await page.keyboard.press("ArrowRight");
+  await expect(menu.getByRole("menuitemradio", { name: "Locations" })).toBeFocused();
+  await page.keyboard.press("ArrowDown"); // the next row: the levels, on the checked one
+  await expect(menu.getByRole("menuitemradio", { name: "Open to level 2" })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter"); // level 3
+  await expect(menu).toBeVisible(); // it stays open
+  await expect(menu.getByRole("menuitemradio", { name: "Open to level 3" })).toHaveAttribute("aria-checked", "true");
+  await expect(treeitem(page, `Rcm motor ${tag}`)).toBeVisible(); // level 3
+  await expect(menuButton(page)).toHaveAccessibleName("Tree options: 1 changed");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(menuButton(page)).toBeFocused();
+
+  // Close everything from the menu, then a row opened by hand: no level is ticked.
+  await openTreeMenu(page);
+  await menu.getByRole("menuitemradio", { name: "Close everything" }).click();
+  await expect(treeitem(page, `Rcm pump ${tag}`)).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await treeitem(page, `Rcm plant ${tag}`).locator(".tp-chev").click();
+  await expect(treeitem(page, `Rcm pump ${tag}`)).toBeVisible();
+  await expect(menuButton(page)).toHaveAccessibleName("Tree options");
+  await openTreeMenu(page);
+  await expect(menu.locator("[role=menuitemradio][aria-checked=true]")).toHaveText(["Positions"]);
+  await expect(menu.getByRole("menuitem", { name: "Reset to the usual view" })).toHaveCount(0);
+
+  // A filter: ticked, its count on the button and the words by the counts; a click outside closes the menu.
+  await menu.getByRole("menuitemcheckbox", { name: "Not analysed" }).click();
+  await expect(menu.getByRole("menuitemcheckbox", { name: "Not analysed" })).toHaveAttribute("aria-checked", "true");
+  await menu.getByRole("menuitemcheckbox", { name: "Open work" }).click(); // nothing has open work
+  await expect(menuButton(page)).toHaveAccessibleName("Tree options: 2 changed");
+  await expect(page.locator(".tm-count")).toHaveText("2");
+  await page.getByRole("heading", { name: "Explorer", exact: true }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator(".tp-status")).toContainText("Showing only Open work and Not analysed");
+  await expect(treeitem(page, `Rcm pump ${tag}`)).toHaveCount(0);
+  // Reset: back to the usual view, every row back.
+  await openTreeMenu(page);
+  await menu.getByRole("menuitem", { name: "Reset to the usual view" }).click();
+  await expect(menuButton(page)).toHaveAccessibleName("Tree options");
+  await expect(page.locator(".tm-count")).toHaveCount(0);
+  await expect(menu.getByRole("menuitemcheckbox", { name: "Not analysed" })).toHaveAttribute("aria-checked", "false");
+  await expect(menu).toBeVisible();
+  await expect(menu.locator(":focus")).toHaveCount(1); // the focus stays in the menu
+  await page.keyboard.press("End");
+  await expect(menu.getByRole("menuitem", { name: "Done" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(menu).toHaveCount(0);
+  await expect(menuButton(page)).toBeFocused();
+  await expect(treeitem(page, `Rcm pump ${tag}`)).toBeVisible();
+
+  // An arrangement other than Positions counts too, and Reset brings Positions back.
+  await openTreeMenu(page);
+  await menu.getByRole("menuitemradio", { name: "Flat" }).click();
+  await expect(page).toHaveURL(/arrange=flat/);
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitemradio", { name: "Open to level 1" })).toHaveCount(0); // no levels when flat
+  await expect(menuButton(page)).toHaveAccessibleName("Tree options: 1 changed");
+  await menu.getByRole("menuitem", { name: "Reset to the usual view" }).click();
+  await expect(page).toHaveURL(/arrange=positions/);
+  await page.keyboard.press("Escape");
+
+  // In full screen it opens inside it, and F doesn't leave while it's open.
+  await page.locator("body").click({ position: { x: 5, y: 300 } });
+  await page.keyboard.press("f");
+  await expect(page.locator(".tx.is-full")).toBeVisible();
+  await openTreeMenu(page);
+  expect(await page.evaluate(() => document.querySelector(".tx.is-full").contains(document.querySelector(".tm-menu")))).toBe(true);
+  await page.keyboard.press("Escape"); // the menu first
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator(".tx.is-full")).toBeVisible();
+  await expectHealthy(page, problems, { label: "tree menu", root: ".tx" });
 });

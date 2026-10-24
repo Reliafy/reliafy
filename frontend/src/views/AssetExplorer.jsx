@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { getMaintenanceTree, getRcmOptions, listMaintenanceItems } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
-import TreeDetail, { CompactHeader } from "../components/TreeDetail.jsx";
+import TreeDetail, { HeaderTabs, SlimHeader } from "../components/TreeDetail.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx";
@@ -20,8 +20,9 @@ import { ShowMe } from "../components/SectionPage.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { NewItemModal, NewLocationModal } from "./MaintenanceLists.jsx";
 import { FromRcmModal, ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
+import { DEFAULT_ARRANGEMENT, DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
-  ARRANGEMENTS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
+  ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
 import { EXPLORER_LABEL } from "../navigation.js";
@@ -119,6 +120,9 @@ export default function AssetExplorer() {
   const [collapsed, setCollapsed] = useState(saved.collapsed);
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState([]);
+  // The level each arrangement was last opened to from the ⋯ menu (null once
+  // rows are opened or closed one by one; the usual level before any).
+  const [levelBy, setLevelBy] = useState({});
   const [fopen, setFopen] = useState(null);
   const [scrollTo, setScrollTo] = useState(null);
   const [modal, setModal] = useState(null);
@@ -375,6 +379,7 @@ export default function AssetExplorer() {
   };
 
   const toggle = (key, force) => {
+    setLevelBy((l) => ({ ...l, [mode]: null }));
     const next = new Set(open);
     const want = force ?? !next.has(key);
     if (want) next.add(key);
@@ -384,6 +389,7 @@ export default function AssetExplorer() {
 
   // The levels: after closing, the pick moves up to the row it's hidden in.
   const setLevel = (n) => {
+    setLevelBy((l) => ({ ...l, [mode]: n }));
     let next = levelSet(display, n);
     if (filter) next = new Set([...next].filter((k) => filter.keep.has(k)));
     setOpenSet(next);
@@ -407,6 +413,24 @@ export default function AssetExplorer() {
     // The tab comes along.
     navigate(explorerPath(m, { tab: tab === "summary" ? null : tab }),
              { state: keep ? { treeReveal: keep } : undefined });
+  };
+
+  // What isn't as usual in the tree's ⋯ menu, and putting it back: Positions,
+  // the usual level, no Show only filters (the search box is on show, so it
+  // stays as typed).
+  const level = levelShown(levelBy, mode);
+  const levelsOn = mode !== "flat" && mode !== "items";
+  const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || rcmOn));
+  const changed = changedFromUsual({ mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn });
+  const resetView = () => {
+    setChips([]);
+    if (!rcmOn && mode !== DEFAULT_ARRANGEMENT) {
+      setLevelBy((l) => ({ ...l, [DEFAULT_ARRANGEMENT]: DEFAULT_LEVEL }));
+      onMode(DEFAULT_ARRANGEMENT);
+    } else if (levelsOn && level !== DEFAULT_LEVEL && typeof level === "number") {
+      setLevelBy((l) => ({ ...l, [mode]: DEFAULT_LEVEL }));
+      setOpenBy((o) => ({ ...o, [mode]: levelSet(display, DEFAULT_LEVEL) }));
+    }
   };
 
   // Ctrl+\ folds the pane away and back.
@@ -485,7 +509,7 @@ export default function AssetExplorer() {
     ? (rcmError ? `The RCM didn't load: ${rcmError}` : !rcm ? `${n(placedCount, "position")} · loading the RCM…`
       : `${n(placedCount, "position")} · ${notAnalysed.toLocaleString("en-AU")} not analysed · RCM is by position`)
     : filter
-    ? `${n(filter.match.size, "match", "matches")}, shown with what they're inside`
+    ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
     : mode === "locations"
       ? `${n(data.locations.length, "location")} · ${n(placedCount, "position")}`
       : mode === "items" ? n(display.items, "item") : n(placedCount, "position");
@@ -512,24 +536,22 @@ export default function AssetExplorer() {
     canEditName: (r) => EDITABLE.has(r.type),
     onEdit: (key, col) => { setRcmFocus(key); setEditing({ key, col }); },
     onCommit: commit, onCancel: () => setEditing(null), onDecision: (r) => setDeciding(r),
+    // The position picked, when it has no functions yet: its row says how to start.
+    hint: rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
   } : null;
   const msg = message && <p className={"tt-msg " + message.tone} role="status">{message.text}</p>;
   const head = rcmOn && posRow && posRow.type === "pos" && (
-    <CompactHeader display={display} row={posRow} onSelect={reveal} tab={tab} onTab={setTab} headingRef={headingRef}
-                   fullScreenButton={fullButton} message={msg}
-                   meta={rcm?.positions ? (
-                     <>
-                       <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span>
-                       {!posRow.rcmKids && <span className="tt-hint">No functions yet: press Add function, then right-click a row to add inside it.</span>}
-                     </>
-                   ) : null}
-                   actions={(
-                     <>
-                       <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
-                       <button type="button" className="sm" onClick={() => runAdd({ ref: { add: "fn", position_id: posRow.key } })}>Add function</button>
-                     </>
-                   )} />
+    <SlimHeader display={display} row={posRow} onSelect={reveal} headingRef={headingRef}
+                fullScreenButton={fullButton} message={msg}
+                meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
+                actions={(
+                  <>
+                    <button type="button" className="sm" onClick={() => runAdd({ ref: { add: "fn", position_id: posRow.key } })}>Add function</button>
+                    <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
+                  </>
+                )} />
   );
+  const headTabs = rcmOn && posRow && posRow.type === "pos" && <HeaderTabs row={posRow} tab={tab} onTab={setTab} />;
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) ? cellRow(focusRow) : null;
   const side = detailsRow && (
     <div className="rw tt-side">
@@ -568,7 +590,10 @@ export default function AssetExplorer() {
         onPick={pick}
         onToggle={toggle}
         onLevel={setLevel}
-        onCloseAll={() => setOpenSet(new Set())}
+        onCloseAll={() => {
+          setLevelBy((l) => ({ ...l, [mode]: 0 }));
+          setOpenSet(new Set());
+        }}
         phone={phone}
         width={width}
         onWidth={setWidth}
@@ -576,12 +601,13 @@ export default function AssetExplorer() {
         onCollapse={setCollapsed}
         onNew={data ? () => setModal(mode === "locations" ? "location" : mode === "items" ? "item" : "position") : null}
         newLabel={mode === "locations" ? "New location" : mode === "items" ? "New item" : "New position"}
-        menu={data && mode !== "locations" && mode !== "items" && (
-          <>
-            <button type="button" className="ovm-item" onClick={() => setModal("import")}>Import from a spreadsheet</button>
-            <button type="button" className="ovm-item" onClick={() => setModal("rcm")}>From an RCM study</button>
-          </>
-        )}
+        level={level}
+        changed={changed}
+        onReset={resetView}
+        menuActions={data && mode !== "locations" && mode !== "items" ? [
+          { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
+          { id: "rcm", label: "From an RCM study", onSelect: () => setModal("rcm") },
+        ] : []}
         notice={notice}
         statusText={statusText}
         empty={phone && (error || nothing) ? emptyDetail : paneEmpty}
@@ -598,6 +624,7 @@ export default function AssetExplorer() {
         table={table}
         rowMenu={rowMenu}
         head={head}
+        headTabs={headTabs}
         side={side}
         phoneTabs={phoneTabs}
         layoutKey={tab}

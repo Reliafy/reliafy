@@ -1,7 +1,6 @@
 import { forwardRef, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getMaintenancePosition } from "../api.js";
-import PageHeader from "./ui/PageHeader.jsx";
 import Tabs from "./ui/Tabs.jsx";
 import ClampText from "./ClampText.jsx";
 import { DueChip, fmtDate, fmtDated } from "./MaintenanceParts.jsx";
@@ -17,7 +16,8 @@ import { shownTab, tabsFor } from "../explorerTabs.js";
 //
 // The panel has tabs (explorerTabs.js): Summary (the above) for every row, and
 // RCM for a position. On the RCM tab the tree and the RCM are one table
-// (TreePane with its columns): this panel then gives only its heading.
+// (TreePane with its columns): this panel then gives only its heading
+// (SlimHeader and HeaderTabs).
 
 const OPEN = new Set(["open", "planned", "in_progress", "waiting"]);
 const KIND = { pos: "Position", loc: "Location", item: "Item", group: "" };
@@ -254,46 +254,18 @@ function Summary({ row, display, today, onSelect, version }) {
   );
 }
 
-// The panel's heading: where the row is, its name and kind, the actions, and
-// the tabs. On the RCM tab the same heading sits beside the tree's controls,
-// over the table (AssetExplorer).
-export function DetailHeader({ display, row, onSelect, tab, onTab, fullScreenButton, headingRef, meta: more, actions }) {
-  const crumbs = ancestorsOf(display, row.key).map((k) => ({ label: display.rows.get(k).ref.name, onClick: () => onSelect(k) }));
-  const full = fullPagePath(row);
-  const p = row.ref;
-  const meta = [KIND[row.type], p.tag && <code key="tag">{p.tag}</code>].filter(Boolean);
-  const tabs = tabsFor(row);
-  const shown = shownTab(tab, row);
-  return (
-    <>
-      <PageHeader
-        className="td-header"
-        crumbs={crumbs}
-        title={<span ref={headingRef} tabIndex={-1} className="td-title">{p.name || "(no name)"}</span>}
-        meta={<>{meta.length ? meta.reduce((acc, m, i) => (i ? [...acc, " · ", m] : [m]), []) : null}{more}</>}
-        actions={<>{actions}{fullScreenButton}</>}
-        primary={full && <Link className="td-open" to={full}>Open the full page</Link>}
-      />
-      {tabs.length > 1 && (
-        <Tabs tabs={tabs} value={shown} onChange={onTab} label="What to show for this row" idPrefix="td" className="td-tabs" />
-      )}
-    </>
-  );
-}
-
-// The RCM tab's heading: one slim bar over the table, so the table gets the
-// height. The tabs; the way up and the last thing done as small text over
-// the position's name, its tag and its checks; the actions on the right.
-export function CompactHeader({ display, row, onSelect, tab, onTab, fullScreenButton, headingRef, meta, actions, message }) {
+// The panel's heading, the same on both tabs: two slim rows. The first: the
+// way up (and the last thing done) as small text over the row's name, its
+// kind, tag and checks, with the actions on the right; the second, under the
+// way up and the name: the tabs. On the RCM tab (a wide screen) the two rows
+// sit beside the tree's own two over the table (TreePane's head and
+// headTabs); on the Summary tab they head the panel.
+export function SlimHeader({ display, row, onSelect, fullScreenButton, headingRef, meta, actions, message, primaryOpen = false }) {
   const crumbs = ancestorsOf(display, row.key).map((k) => ({ key: k, label: display.rows.get(k).ref.name }));
   const full = fullPagePath(row);
   const p = row.ref;
-  const tabs = tabsFor(row);
   return (
     <div className="tt-bar-head">
-      {tabs.length > 1 && (
-        <Tabs tabs={tabs} value={shownTab(tab, row)} onChange={onTab} label="What to show for this row" idPrefix="td" className="tt-tabs" />
-      )}
       <div className="tt-name">
         {(crumbs.length > 0 || message) && (
           <div className="tt-sub">
@@ -319,10 +291,17 @@ export function CompactHeader({ display, row, onSelect, tab, onTab, fullScreenBu
       <div className="tt-actions">
         {actions}
         {fullScreenButton}
-        {full && <Link className="td-open" to={full}>Open the full page</Link>}
+        {full && <Link className={"td-open" + (primaryOpen ? " primary" : "")} to={full}>Open the full page</Link>}
       </div>
     </div>
   );
+}
+
+// The panel's tabs (Summary, RCM), under its heading.
+export function HeaderTabs({ row, tab, onTab }) {
+  const tabs = tabsFor(row);
+  if (tabs.length < 2) return null;
+  return <Tabs tabs={tabs} value={shownTab(tab, row)} onChange={onTab} label="What to show for this row" idPrefix="td" className="tt-tabs" />;
 }
 
 const TreeDetail = forwardRef(function TreeDetail({
@@ -333,8 +312,11 @@ const TreeDetail = forwardRef(function TreeDetail({
   return (
     <div className="td">
       {back}
-      <DetailHeader display={display} row={row} onSelect={onSelect} tab={tab} onTab={onTab}
-                    fullScreenButton={fullScreenButton} headingRef={headingRef} />
+      <div className="td-head">
+        <SlimHeader display={display} row={row} onSelect={onSelect} fullScreenButton={fullScreenButton} headingRef={headingRef}
+                    meta={KIND[row.type] ? <span className="tt-kind">{KIND[row.type]}</span> : null} primaryOpen />
+        <HeaderTabs row={row} tab={tab} onTab={onTab} />
+      </div>
       <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
            aria-labelledby={tabs.length > 1 ? "td-tab-summary" : undefined}>
         <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />

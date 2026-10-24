@@ -86,52 +86,6 @@
   padding: 0 6px;
 }
 
-.tp-arrange {
-  display: flex;
-  width: 100%;
-}
-
-.tp-arrange .seg-btn {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding-inline: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tp-chips {
-  display: flex;
-  gap: 5px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.tp button.tp-chip {
-  flex: none;
-  min-height: 26px;
-  padding: 1px 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surf);
-  color: var(--ink);
-  box-shadow: none;
-  font-size: var(--fs-12);
-  font-weight: 500;
-}
-
-.tp button.tp-chip:hover:not(:disabled) {
-  border-color: var(--acc);
-  background: var(--acc-hover);
-}
-
-.tp button.tp-chip.on {
-  background: var(--acc-t);
-  border-color: var(--acc-line);
-  color: var(--acc-d);
-  font-weight: 600;
-}
-
 .tp-notice {
   margin: 0;
   font-size: var(--fs-13);
@@ -559,11 +513,6 @@ a.td-open:hover {
     height: 20px;
     font-size: 12px;
   }
-  .tx.phone .tp button.tp-chip,
-  .tx.phone .tp-levels .seg-btn,
-  .tx.phone .tp-arrange .seg-btn {
-    min-height: 36px;
-  }
   .tx.phone .tp button.tp-icon-btn {
     min-width: 36px;
     height: 36px;
@@ -640,9 +589,6 @@ a.rw-cklink:focus-visible {
   border-color: var(--line);
   font-weight: 500;
 }
-.tp button.tp-chip.rcm {
-  border-style: dashed;
-}
 
 /* The column headers: on the Summary tab the tree's own label (so its rows sit
    at the same height on both tabs), on the RCM tab every column's. */
@@ -681,9 +627,10 @@ a.rw-cklink:focus-visible {
 .tt-h .rw-cols .rw-btn, .tt-h .rw-cols > button { min-height: 22px; padding: 0 8px; font-size: var(--fs-12); }
 
 /* The RCM tab: the pane is the page's width, with two slim rows over the one
-   table (TreePane): the bar (the tree's title, then the panel's heading) and
-   the filters. Each row's first cell is as wide as the tree column, so the
-   rows line up with the table's columns. */
+   table (TreePane): the bar (the tree's title, then the panel's heading: the
+   way up over the name, and the actions) and under it the search box, then
+   the panel's tabs. Each row's first cell is as wide as the tree column, so
+   the rows line up with the table's columns. */
 .tx.tx-table .tp {
   flex: 1 1 auto;
   min-width: 0;
@@ -695,7 +642,7 @@ a.rw-cklink:focus-visible {
   min-width: 0;
 }
 .tt-bar,
-.tt-filters {
+.tt-row2 {
   display: flex;
   align-items: center;
   min-width: 0;
@@ -730,15 +677,18 @@ a.rw-cklink:focus-visible {
   min-width: 0;
   padding: 0 12px 0 6px;
 }
-/* The tabs fill the bar's height; the active one's underline is its edge. */
-.tt-bar-head .tabs-strip.tt-tabs {
+/* The tabs under the heading fill their row's height; the active one's
+   underline is the row's bottom edge. */
+.tabs-strip.tt-tabs {
   flex: none;
   margin: 0;
   display: flex;
+  align-self: stretch;
 }
-.tt-bar-head .tt-tabs .scroll-cue-body { display: flex; }
-.tt-bar-head .tt-tabs .tabs { background: none; align-items: stretch; }
-.tt-bar-head .tt-tabs .tab { display: flex; align-items: center; padding: 0 10px; }
+.tt-tabs .scroll-cue-body { display: flex; }
+.tt-tabs .tabs { background: none; align-items: stretch; }
+.tt-tabs .tab { display: flex; align-items: center; padding: 0 12px; }
+.tt-tabs .tab:first-child { padding-left: 6px; }
 .tt-name {
   flex: 1 1 9em; /* narrower than this and the actions go under */
   min-width: 9em;
@@ -831,23 +781,56 @@ a.rw-cklink:focus-visible {
   border: 1px solid var(--line);
 }
 .tt-actions a.td-open:hover { background: var(--surf-2); }
+/* On the Summary tab it's the one action, so the primary. */
+.tt-actions a.td-open.primary { background: var(--acc); border-color: var(--acc); color: var(--on-fill); }
+.tt-actions a.td-open.primary:hover { background: var(--acc-d); }
+.tt-kind { flex: none; font-size: var(--fs-12); color: var(--muted); }
+
+/* The Summary tab's heading: the same two slim rows as the RCM tab's (the way
+   up over the name, the actions; then the tabs), over the panel. */
+.td-head {
+  margin: 0 -32px 16px;
+  padding: 0 20px 0 26px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surf);
+}
+.td-head .tt-bar-head { padding: 0; min-height: 48px; border-bottom: 1px solid var(--line2); }
+.td-head .tt-h1 { font-size: var(--fs-20); }
+.td-head .tt-tabs { min-height: 40px; }
+.td-head .tt-tabs .tab:first-child { padding-left: 0; }
+.td > .td-head:first-child { margin-top: -22px; }
+.td-head .tt-crumb button.crumb-link { color: var(--muted); }
+.td-head .tt-crumb button.crumb-link:hover:not(:disabled) { color: var(--acc); }
+@media (max-width: 720px) {
+  .tx.phone .td-head { margin: 0 -16px 14px; padding: 0 16px; }
+  .tx.phone .td > .td-head:first-child { margin-top: -16px; }
+  /* The whole name on a phone: the actions go under it. */
+  .tx.phone .td-head .tt-name { flex-basis: 100%; }
+  .tx.phone .td-head .tt-name-row { flex-wrap: wrap; white-space: normal; }
+  .tx.phone .td-head .tt-actions { padding-top: 0; }
+}
 /* Full screen is the icon here (its name and the F key in the tooltip);
    "Exit full screen" stays spelt out. */
 .tt-actions .full-screen-btn:not(.is-full) { min-width: 32px; padding: 0 8px; justify-content: center; }
 .tt-actions .full-screen-btn:not(.is-full) .full-screen-word {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
 }
-.tt-filters {
+.tt-row2 {
   gap: 10px;
   min-height: 40px;
   padding-right: 12px;
+  align-items: stretch;
 }
-.tt-filters .tp-filter input { padding: 5px 0; }
-.tt-filters .tp-levels { flex: none; }
-.tt-filters .tp-levels .seg-btn { min-height: 28px; }
-.tt-filters button.tp-icon-btn { height: 28px; min-width: 28px; }
-.tt-filters .tp-chips { flex: 0 1 auto; min-width: 0; }
-.tt-filters .tp-notice { flex: none; }
+.tt-row2 .tt-cell .tp-filter { align-self: center; }
+.tt-row2 .tp-filter input { padding: 5px 0; }
+.tt-tabslot {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  padding-left: 6px;
+}
+.tt-row2 .tp-notice { flex: none; align-self: center; }
 /* The tree's title with its counts under it, small. */
 .tt-title {
   flex: 1 1 auto;
@@ -1029,13 +1012,18 @@ a.rw-cklink:focus-visible {
 @media (hover: none), (max-width: 700px) {
   .tt-more { opacity: 1; }
 }
-.tt-hint {
-  flex: 0 1 auto;
-  min-width: 0;
+/* The row of the position picked, on the RCM tab, when it has no functions
+   yet: how to start, across its columns. */
+.tp-row.tt .rw-c.tt-empty-hint {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--muted);
+  font-style: italic;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: var(--fs-12);
-  color: var(--muted);
 }
 
 /* A row's menu: the app's menu look (.ovm-menu), placed at the pointer. */
@@ -1047,3 +1035,100 @@ a.rw-cklink:focus-visible {
 }
 .row-menu .ovm-item:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; background: var(--acc-t); color: var(--acc); }
 .row-menu .ovm-item.danger:focus-visible { background: var(--danger-bg); color: var(--danger); }
+
+/* The tree's ⋯ menu (TreeControlsMenu): Arrange by, the levels, Close
+   everything, Show only, the pane's other actions; it stays open while you
+   change several. The button shows how many things aren't as usual. */
+.tp button.tm-trigger { position: relative; }
+.tm-trigger.changed { border-color: var(--acc-line); color: var(--acc-d); }
+.tm-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--acc);
+  color: var(--on-fill);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--surf);
+}
+.ovm-menu.tm-menu {
+  position: fixed;
+  right: auto;
+  z-index: 70;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 0;
+  padding: 6px;
+}
+.tm-sec { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.tm-label {
+  padding: 2px 6px 3px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+}
+.tm-note { margin: 0; padding: 6px; font-size: var(--fs-12); color: var(--muted); }
+.tm-seg {
+  display: flex;
+  margin: 0 4px 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.tm-menu button.tm-seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 4px;
+  border: none;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surf);
+  color: var(--ink);
+  box-shadow: none;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  justify-content: center;
+  text-align: center;
+}
+.tm-menu button.tm-seg-btn:first-child { border-left: none; }
+.tm-menu button.tm-seg-btn:hover:not(:disabled) { background: var(--acc-hover); color: var(--ink); }
+.tm-menu button.tm-seg-btn.on { background: var(--acc-t); color: var(--acc-d); font-weight: 600; }
+.tm-menu .tm-item { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.tm-menu .tm-item.on { font-weight: 600; }
+.tm-tick {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surf);
+  color: var(--on-fill);
+}
+.tm-tick.on { background: var(--acc); border-color: var(--acc); }
+.tm-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+.tm-foot { display: flex; gap: 4px; }
+.tm-menu .tm-reset { flex: 1 1 auto; min-width: 0; color: var(--acc-d); font-weight: 600; }
+.tm-menu .tm-done { flex: none; width: auto; margin-left: auto; justify-content: center; font-weight: 600; }
+.tm-menu button:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.tm-menu button.tm-seg-btn:focus-visible { outline-offset: -3px; }
+@media (max-width: 720px), (hover: none) {
+  .tm-menu button.tm-seg-btn, .tm-menu .tm-item { min-height: 40px; }
+  .tx.phone .tp button.tm-trigger { min-width: 40px; height: 36px; }
+}

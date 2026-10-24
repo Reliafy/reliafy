@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import OverflowMenu from "./OverflowMenu.jsx";
 import RowMenu from "./RowMenu.jsx";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { Chevron, Highlight, LevelButtons } from "./OutlineBits.jsx";
+import TreeControlsMenu from "./TreeControlsMenu.jsx";
+import { Chevron, Highlight } from "./OutlineBits.jsx";
 import { Cell, CellEditor, LevelIcon, PhoneStatus, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf } from "../assetTree.js";
@@ -10,8 +9,10 @@ import { cellRow, isRcmRow } from "../explorerRcm.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 
 // The asset tree as a second-level menu beside the site menu: the outline
-// (indent, arrow, name, at most three markers), with the filter, Arrange by,
-// the levels 1·2·3·4·All and Close everything at the top. Only the rows on
+// (indent, arrow, name, at most three markers), with the search box and the
+// counts at the top, and everything else about how the tree is shown (Arrange
+// by, the levels 1·2·3·4·All, Close everything, the Show only filters) in the
+// ⋯ menu beside its title (TreeControlsMenu), the same on both tabs. Only the rows on
 // screen are in the page, so a plant of thousands of positions scrolls and
 // opens smoothly; the rows the first one sits inside stay pinned at the top.
 // The keyboard follows the tree view pattern: ↑ ↓ Home End Page Up/Down, → ←
@@ -22,8 +23,9 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 // one table: its rows go on into each position's functions, functional
 // failures and failure modes (nested in the same tree), every row has the
 // RCM's columns beside it, the column headers sit at the top, and the pane
-// takes the page's width, with two slim rows over it (the panel's heading,
-// then the filters). One scroll container, one set of rows, one selection;
+// takes the page's width, with two slim rows over it: the tree's title and
+// counts, then the panel's heading (the way up over the position's name, its
+// actions); under them the search box, then the panel's tabs. One scroll container, one set of rows, one selection;
 // the tree column stays put when the table scrolls sideways. On a phone each row is two lines (the name,
 // then the RCM's main columns in words). Each row's actions (adding inside it,
 // editing, deleting, deciding) are in its menu (`rowMenu`): right-click the
@@ -98,8 +100,14 @@ function MoreButton({ r, open, onMenu }) {
   );
 }
 
+// What the RCM tab says on the row of the position picked when it has no
+// functions yet: how to start (the heading's Add function, or a row's menu).
+export const NO_FUNCTIONS = "No functions yet. Press Add function, or right-click a row to add inside it.";
+const NO_FUNCTIONS_PHONE = "No functions yet. Tap ⋯ to add one.";
+
 // A position's second line on a phone, on the RCM tab: its own failure modes.
-function posLine(r) {
+function posLine(r, hint) {
+  if (hint) return NO_FUNCTIONS_PHONE;
   const s = r.rsum;
   if (!s?.modes) return r.ref.not_analysed ? "Not analysed yet" : "";
   return `${s.modes.toLocaleString("en-AU")} failure mode${s.modes === 1 ? "" : "s"} · ${s.undecided ? `${s.undecided} to decide` : "all decided"}`;
@@ -164,7 +172,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} /></div>;
   }
   if (phone) {
-    const line = r.type === "pos" ? posLine(r) : phoneLine(cellRow(r));
+    const line = r.type === "pos" ? posLine(r, table.hint === r.key) : phoneLine(cellRow(r));
     return (
       <div {...common}>
         <div className="tt-l1">
@@ -186,7 +194,12 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
           ? <CellEditor col={NAME_COLUMN} r={cr} onCommit={(raw) => table.onCommit(r, "name", raw)} onCancel={table.onCancel} />
           : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table />{more}</>}
       </div>
-      {table.cols.map((c) => {
+      {table.hint === r.key && editCol == null ? (
+        <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-empty-hint"
+             style={{ width: table.cols.reduce((t, c) => t + table.widths[c.id], 0) }}>
+          {NO_FUNCTIONS}
+        </div>
+      ) : table.cols.map((c) => {
         const rcmRow = isRcmRow(r);
         const can = rcmRow && !table.readOnly && c.edit && c.can(cr);
         return (
@@ -215,9 +228,10 @@ function cornerOf(row) {
 
 export default function TreePane({
   title, treeLabel, display, list, index, open, filter, query, onQuery, chips, onChips, mode, onMode, focus, onPick,
-  onToggle, onLevel, onCloseAll, phone, width, onWidth, collapsed, onCollapse, onNew, newLabel, menu,
-  notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table = null, head = null, phoneTabs = null,
-  layoutKey = "", anchorKey = null, side = null, arrangeLocked = null, rowMenu = null,
+  onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
+  onNew, newLabel, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table = null,
+  head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
+  rowMenu = null,
 }) {
   const H = phone ? (table ? 54 : 44) : 30;
   const maxPins = phone ? 2 : 4;
@@ -309,6 +323,8 @@ export default function TreePane({
 
   const dim = (key) => filter && !filter.match.has(key);
   const wide = table && !phone;
+  const levelsOn = mode !== "flat" && mode !== "items";
+  const chipList = CHIPS.filter((c) => (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || table));
   const status = <p className="tp-status" role="status" title={statusText || undefined}>{statusText}</p>;
   const titleRow = (
     <div className="tp-title-row">
@@ -318,7 +334,13 @@ export default function TreePane({
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         </button>
       )}
-      {menu && <OverflowMenu>{menu}</OverflowMenu>}
+      <TreeControlsMenu
+        arrange={arrangeLocked ? null : { value: mode, options: ARRANGEMENTS, onChange: onMode }}
+        note={arrangeLocked}
+        levels={levelsOn ? { value: level, onLevel, onCloseAll } : null}
+        chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id) }))}
+        onChip={(id) => onChips(chips.includes(id) ? chips.filter((x) => x !== id) : [...chips, id])}
+        changed={changed} onReset={onReset} actions={menuActions} />
       {!phone && !table && (
         <button type="button" className="tp-icon-btn" onClick={() => onCollapse(true)}
                 aria-label="Fold the tree away" aria-expanded="true" title="Fold the tree away (Ctrl+\)">«</button>
@@ -333,38 +355,20 @@ export default function TreePane({
              aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
     </label>
   );
-  const levels = mode !== "flat" && mode !== "items" && (
-    <LevelButtons levels={LEVELS} onLevel={onLevel} onCloseAll={onCloseAll} />
-  );
-  const chipRow = (
-    <div className="tp-chips" role="group" aria-label="Show only">
-      {CHIPS.filter((c) => (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || table)).map((c) => {
-        const on = chips.includes(c.id);
-        return (
-          <button key={c.id} type="button" className={"tp-chip" + (on ? " on" : "") + (c.rcmOnly ? " rcm" : "")} aria-pressed={on} title={c.title}
-                  onClick={() => onChips(on ? chips.filter((x) => x !== c.id) : [...chips, c.id])}>
-            {c.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-  // The RCM tab on a wide screen: two slim rows over the table instead of
-  // the stacked controls, so the table gets the height. The first: the
-  // tree's title and its counts over the tree column, then the panel's
-  // heading (the tabs, the position and its actions). The second: the filter
-  // over the tree column, then the levels and the chips. Arrange by isn't
-  // offered here: the RCM is by position (the counts say so).
+  // The two slim rows over the RCM tab's table (a wide screen): the tree's
+  // title, counts and ⋯ over the tree column, beside the panel's heading (the
+  // way up over the position's name, and its actions); then the search box
+  // over the tree column, beside the panel's tabs. Elsewhere (the Summary tab,
+  // a phone) the title, the search box and the counts stack over the tree.
   const controls = wide ? (
     <div className="tt-top">
       <div className="tt-bar">
         <div className="tt-cell" style={{ width }}>{titleRow}</div>
         <div className="tt-headslot">{head}</div>
       </div>
-      <div className="tt-filters">
+      <div className="tt-row2">
         <div className="tt-cell" style={{ width }}>{search}</div>
-        {levels}
-        {chipRow}
+        <div className="tt-tabslot">{headTabs}</div>
         {notice}
       </div>
     </div>
@@ -373,10 +377,6 @@ export default function TreePane({
       {titleRow}
       {phoneTabs}
       {search}
-      <SegmentedControl size="sm" className="tp-arrange" label="Arrange by" value={mode} onChange={onMode}
-                        options={arrangeLocked ? ARRANGEMENTS.map((a) => (a.value === "positions" ? a : { ...a, disabled: true, title: arrangeLocked })) : ARRANGEMENTS} />
-      {levels}
-      {chipRow}
       {notice}
       {status}
     </div>
