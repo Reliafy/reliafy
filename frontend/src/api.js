@@ -1313,6 +1313,17 @@ export function evaluateAlt(id, useStress, refStress, opts = {}) {
   });
 }
 
+// The Diagnostics checks of a saved ALT model (SurPyval's diagnose()): the
+// common shape, the life model's fit, the other life models and, with a use
+// stress, how far it lies from the tested stresses.
+export function diagnoseAlt(id, useStress = null) {
+  return request(`/api/alt/models/${id}/diagnostics`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(useStress ? { use_stress: useStress } : {}),
+  });
+}
+
 // Confidence bounds at a use stress by method (wald | lr | bootstrap, #231):
 // the bounds, or (bootstrap with the compute queue) ``{ job }`` to poll at
 // getRbdJob. A 402 (code pro_required) means bootstrap needs Pro.
@@ -2263,6 +2274,16 @@ export function getMaintenanceAccess() {
     maintenanceAccess = request("/api/maintenance/access").catch(() => ({ allowed: false }));
   }
   return maintenanceAccess;
+}
+
+// The Data model page (graph access only): the live graph's labels and
+// relationships, and the stored design ({available: false, reason} without one).
+export function getGraphSchema() {
+  return request("/api/maintenance/graph/schema");
+}
+
+export function getGraphDesign() {
+  return request("/api/maintenance/graph/design");
 }
 
 // Photos (Reliafy Maintenance). The image endpoints need auth, so <img> tags

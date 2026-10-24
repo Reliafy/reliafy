@@ -48,12 +48,18 @@ export function RolesProvider({ children }) {
 
   const { reliability_agent: agentEnabled, maintenance: maintenanceEnabled, menu_preview: previewOn } = useAppConfig();
   // Reliafy Maintenance is for its operators only: the same check its pages make.
+  // Graph access (the Data model page) comes with the same answer.
   const [maintenanceAllowed, setMaintenanceAllowed] = useState(false);
+  const [graphAllowed, setGraphAllowed] = useState(false);
   useEffect(() => {
     if (!maintenanceEnabled) return undefined;
     let alive = true;
     getMaintenanceAccess()
-      .then((a) => alive && setMaintenanceAllowed(!!a.allowed))
+      .then((a) => {
+        if (!alive) return;
+        setMaintenanceAllowed(!!a.allowed);
+        setGraphAllowed(!!(a.allowed && a.graph));
+      })
       .catch(() => {});
     return () => {
       alive = false;
@@ -73,13 +79,15 @@ export function RolesProvider({ children }) {
     const has = {
       maintenance: !!(maintenanceEnabled && maintenanceAllowed), agent: !!agentEnabled, preview: !!previewOn,
       risk: !!(uses.risk || previewOn),
+      graph: !!(maintenanceEnabled && graphAllowed),
     };
     return {
       ...state, saveRoles, dismissOffer, has, noteUse,
       live: liveEntries(has),
       menu: buildMenu({ roles: state.roles, has }),
     };
-  }, [state, saveRoles, dismissOffer, noteUse, uses, maintenanceEnabled, maintenanceAllowed, agentEnabled, previewOn]);
+  }, [state, saveRoles, dismissOffer, noteUse, uses, maintenanceEnabled, maintenanceAllowed, graphAllowed, agentEnabled,
+    previewOn]);
   return <RolesContext.Provider value={value}>{children}</RolesContext.Provider>;
 }
 

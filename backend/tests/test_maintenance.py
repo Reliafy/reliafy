@@ -170,10 +170,10 @@ def test_api_is_off_unless_enabled_and_works_when_on(monkeypatch):
         assert client.get("/api/config").json()["maintenance"] is False
 
         monkeypatch.setattr(config, "MAINTENANCE_ENABLED", True)
-        assert client.get("/api/maintenance/access").json() == {"allowed": False}
+        assert client.get("/api/maintenance/access").json() == {"allowed": False, "graph": False}
         assert client.get("/api/maintenance/overview").status_code == 404  # not on the list
         monkeypatch.setattr(config, "MAINTENANCE_EMAILS", {"a@x.com"})
-        assert client.get("/api/maintenance/access").json() == {"allowed": True}
+        assert client.get("/api/maintenance/access").json() == {"allowed": True, "graph": False}
         study = client.post("/api/rcm/studies", json={"name": "Pool", "system": "Pool pump"}).json()
         client.put(f"/api/rcm/studies/{study['id']}/tree", json={"functions": [
             {"text": "Circulate water", "failures": [{"text": "No flow", "modes": [

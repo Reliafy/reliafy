@@ -8,7 +8,8 @@
 //   find   how to reach a model of it: { id } for a sample, or { name } for a
 //          model seedModelKinds() saves (add its fit there too), or { path,
 //          list, name } for a model in another collection (path is the page
-//          address with ":id"; list is the API route listing its models)
+//          address with ":id"; list is the API route listing its models), or
+//          { path, id } for a sample in another collection
 //   tabs   the tab names the page shows, in order (none: [] for a one-view page)
 // The spec then opens every tab at 1440×900 and at 400 px wide and fails on a
 // page that scrolls on the desktop or sideways on the phone.
@@ -42,6 +43,38 @@ export const MODEL_KINDS = [
   { slug: "condition-life",
     find: { path: "/models/joint/:id", list: "/api/joint/models", name: "Smoke test pumps (condition-based)" },
     tabs: ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"] },
+  // Accelerated life: one stress, and two (two life-stress charts side by side).
+  { slug: "alt-one-stress", find: { path: "/models/alt/:id", id: "sample-alt-fluid" },
+    tabs: ["Life-stress", "Probability plot", "Calculator", "Diagnostics", "Data"] },
+  { slug: "alt-two-stresses", find: { path: "/models/alt/:id", id: "sample-alt-seal" },
+    tabs: ["Life-stress", "Probability plot", "Calculator", "Diagnostics", "Data"] },
+  // Repairable (recurrent-event) models.
+  ...[
+    ["repairable-crow-amsaa", "Compressor fleet — Crow-AMSAA (sample)"],
+    ["repairable-duane", "Smoke kinds — Duane"],
+    ["repairable-hpp", "Smoke kinds — HPP"],
+    ["repairable-imperfect", "Compressor fleet — imperfect repair (sample)"],
+  ].map(([slug, name]) => ({
+    slug, find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name },
+    tabs: ["Failures over time", "Calculator", "Plan ahead", "Diagnostics", "Data"],
+  })),
+  { slug: "repairable-covariates",
+    find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name: "Slurry pumps — repair rate by site and duty (sample)" },
+    tabs: ["Failures over time", "Effects", "Calculator", "Plan ahead", "Diagnostics", "Data"] },
+  { slug: "repairable-params",
+    find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name: "Smoke kinds — repairable from parameters" },
+    tabs: ["Failures over time", "Calculator", "Plan ahead", "Data"] },
+  // Competing risks: life data by failure mode; with covariates, Effects too.
+  { slug: "competing-risks", find: { id: "sample-model-pump-modes" },
+    tabs: ["Failure modes", "Calculator", "Diagnostics", "Data"] },
+  { slug: "competing-risks-fine-gray", find: { name: "Smoke kinds — competing risks, Fine-Gray" },
+    tabs: ["Failure modes", "Effects", "Calculator", "Diagnostics", "Data"] },
+  { slug: "degradation",
+    find: { path: "/models/degradation/:id", list: "/api/degradation/models", name: "Brake pad wear — linear degradation (sample)" },
+    tabs: ["Paths", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
+  { slug: "degradation-best-path",
+    find: { path: "/models/degradation/:id", list: "/api/degradation/models", name: "Smoke kinds — degradation, best path" },
+    tabs: ["Paths", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
 ];
 
 // Whole counts to failure (cycles), a few still running, for a discrete fit.
@@ -92,6 +125,10 @@ export async function seedModelKinds(api) {
   await fit("Smoke kinds — discrete", { dataset_id: cycles.id, x: "cycles", c: "censored", unit: "cycles",
                                         distribution: "geometric" });
   await fit("Smoke kinds — Cox PH", { ...seal, distribution: "cox_ph", z: "temp_C" });
+  await fit("Smoke kinds — competing risks, Fine-Gray", {
+    dataset_id: "sample-ds-pump-modes", x: "hours", e: "failure_mode", g: "site", z: "duty_pct", unit: "hours",
+    distribution: "competing_risks_fine_gray",
+  });
   await fit("Smoke kinds — frailty", { dataset_id: units.id, x: "hours", c: "censored", group: "site",
                                        z: "temp_C", unit: "hours", distribution: "weibull_frailty" });
   await json("/api/models/from-params", {
@@ -99,12 +136,25 @@ export async function seedModelKinds(api) {
     params: [{ name: "alpha", value: 1200 }, { name: "beta", value: 2.2 }],
   });
   await json("/api/models/per-demand", { name: "Smoke kinds — per demand", demands: 400, failures: 3 });
+  // Repairable models the samples don't cover.
+  const events = { dataset_id: "sample-ds-compressor-events", i: "compressor", x: "hours", t: "test_end", unit: "hours" };
+  const rec = (name, form) => ok(api.post("/api/recurrent/models", { multipart: { name, ...form } }), name);
+  await rec("Smoke kinds — Duane", { ...events, model: "duane" });
+  await rec("Smoke kinds — HPP", { ...events, model: "hpp" });
+  await ok(api.post("/api/recurrent/from-params", { multipart: {
+    name: "Smoke kinds — repairable from parameters", model: "crow_amsaa", alpha: "1000", beta: "1.5",
+    horizon: "5000", unit: "hours" } }), "repairable from parameters");
+  // A degradation model whose path the fit chose (the path comparison check).
+  await ok(api.post("/api/degradation/models", { multipart: {
+    name: "Smoke kinds — degradation, best path", dataset_id: "sample-ds-brake-wear", i: "item", x: "hours",
+    y: "wear_mm", threshold: "8", path: "best", unit: "hours", measurement_unit: "mm",
+  } }), "Smoke kinds — degradation, best path");
 }
 
 // The page address of a kind's model on the server ``api`` talks to.
 export async function kindUrl(api, kind) {
   const f = kind.find;
-  if (f.id) return `/models/m/${f.id}`;
+  if (f.id) return (f.path || "/models/m/:id").replace(":id", f.id);
   const list = await (await api.get(f.list || "/api/models")).json();
   const rows = Array.isArray(list) ? list : list.models || list.items || [];
   const hit = rows.find((m) => m.name === f.name);

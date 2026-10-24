@@ -56,15 +56,21 @@ blank for now. Press **Fit by failure mode**, then **Save model**.
 
 ## Read the result
 
-The **Cumulative incidence** chart stacks the modes. Each band is one mode's
-share; the top edge is the chance of failing from any mode, with its 95% band in
-grey. Switch **Show** to **Each mode** to see each mode on its own, with its
-own band.
+The model page has tabs: **Failure modes**, **Calculator**, **Diagnostics** and
+**Data** (and **Effects** when the fit has covariates). The line under the
+model's name gives the answer: the number of modes, the leading mode's chance
+by a round time near the last failure, the chance of failing from any mode, and
+the data.
+
+The **Failure modes** chart stacks the modes. Each band is one mode's share; the
+top edge is the chance of failing from any mode, with its 95% band in grey.
+Switch **Show** to **Each mode** to see each mode on its own, with its own band.
 
 ![Each mode's cumulative incidence, stacked, with the share of units failing from each by 5,000 hours](/guides/img/crisk-02-incidence.png)
 
-The **Failure modes** panel reads the curves at one time. Type any time into
-**Units failed by**. For the sample at 5,000 hours:
+The **Failure modes** panel beside it reads the curves at that round time: each
+mode's share of the failures, the share of units that failed from it (with its
+95% interval) and its count. For the sample at 5,000 hours:
 
 | Mode | Units failed from it by 5,000 hours | 95% interval |
 |---|---|---|
@@ -78,6 +84,24 @@ hours.* That's the practical point. Early in life, seal leaks are the problem
 to fix. Later, bearing wear takes over, and that's what a replacement interval
 should target.
 
+### Ask the model a question
+
+The **Calculator** tab reads the same curves at any time you choose. **Chance
+by a time** gives each mode's chance of failing by then, with its 95% band, and
+the chance from any mode. **Time to a chance** turns it round: pick a mode (or
+**Any mode**) and a share of units, and it gives the time by which that share
+has failed, with its 95% range. If the curve never gets that high within the
+data, it says how far it gets by the last time in the data instead.
+
+### Can you trust it?
+
+The **Diagnostics** tab asks whether there's enough data behind each mode (a
+mode with fewer than five failures is flagged: read its curve as rough) and how
+sure each mode's chance is (each mode's 95% band side by side). No
+distribution is assumed, so there is no fit to test: the curves are the data's
+own. The **Data** tab has the counts, the chance of failing from each mode at
+every failure time, and how the model was fitted.
+
 ### Why not fit each mode separately?
 
 A common shortcut fits a distribution to one mode and treats every other
@@ -89,8 +113,9 @@ mode that actually ended its life.
 ## Do the modes differ between groups?
 
 Fit again with a column in **Compare groups (optional)**, such as `site`. The
-panel gains a **By site** row; click it for **Gray's test** on each mode. The
-sample model already has this:
+panel gains a **By site** row; click it to open **Diagnostics**, where **Do the
+modes differ by site?** has **Gray's test** on each mode. The sample model
+already has this:
 
 > Seal leak differs by site (Gray's test, p < 0.001): by 5,000 hours, 35% of
 > site B's units fail from it, against 6.2% of site A's.
@@ -113,8 +138,9 @@ two regressions by mode:
   with the other modes acting. Use it to predict *how many* units a mode will
   take.
 
-The result gains a **Coefficients** tab. With `duty_pct` as the covariate, the
-sample gives:
+The result gains an **Effects** tab: each mode's ratio on a chart with its 95%
+interval, and each effect in words. The **Data** tab lists every coefficient with
+its p-value. With `duty_pct` as the covariate, the sample gives:
 
 > Each +1 in duty_pct multiplies the bearing wear failure rate by 1.14.
 

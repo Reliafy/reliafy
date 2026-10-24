@@ -74,16 +74,24 @@ you have it — and fit.
 
 ## Reading the fit
 
-Two views matter, and they answer different questions.
+A saved model opens on five tabs: **Life-stress**, **Probability plot**,
+**Calculator**, **Diagnostics** and **Data**. The line under the model's name
+gives the answer in short: the life-stress model, the shape with its interval,
+how far the life moves across the tested levels and the failures it was fitted
+to.
 
-The **life–stress plot** is the ALT signature: characteristic life against
+The **Life-stress** tab is the ALT signature: characteristic life against
 stress, with each tested level marked and the fitted relationship drawn through
-them, extended *below* your lowest test stress toward use conditions. This is
-where you see whether the extrapolation is a short reach or a heroic one.
+them. Enter your **use stress** beside the chart: the line runs on to it, a star
+marks the life there, and the table gives the **acceleration factor** against
+each tested level. This is where you see whether the extrapolation is a short
+reach or a heroic one. A model with two stresses shows two charts side by side,
+one along each stress, with a line for each tested level of the other (on a
+phone, a switch picks one).
 
-![The life–stress plot with each tested level and the fitted relationship](/guides/img/alt-02-lifestress.png)
+![The Life-stress tab with each tested level and the fitted relationship](/guides/img/alt-02-lifestress.png)
 
-The **probability plot** is the honesty check. Each stress level's failures are
+The **Probability plot** is the honesty check. Each stress level's failures are
 drawn on the distribution's probability paper. A trustworthy fit shows the levels
 as **parallel straight lines** — parallel because the shape parameter is shared
 across stresses, straight because the distribution is right. If they fan out or
@@ -93,12 +101,20 @@ than in the field.
 
 ![The probability plot: parallel straight lines mean a trustworthy fit](/guides/img/alt-03-probplot.png)
 
+**Diagnostics** puts the same questions as tests, each with a one-line answer:
+is the shape the same at every stress, do the levels follow the life model,
+would another life model fit better, and how far is your use stress from the
+stresses you tested. **Data** lists each tested level (its units, failures and
+fitted life), how the model was fitted and every parameter with its interval.
+
 ## Extrapolating to use level
 
-Save the model and open the **use-level calculator**. Enter the stress your
+Save the model and open the **Calculator** tab. Enter the stress your
 equipment actually runs at — below your tested range, which is the whole point —
-and you get the extrapolated reliability curve, the characteristic life, mean
-life, and B-lives at that condition.
+and press **Compute at use level**: you get the extrapolated reliability curve,
+the characteristic life, mean life, and B-lives at that condition, with their
+bounds (Wald, likelihood ratio or, on Pro, bootstrap). The use stress is one for
+the whole page: the Life-stress tab and Diagnostics use the one you enter here.
 
 Give it a reference stress as well and you get the **acceleration factor**: the
 ratio of use life to test life. That's the number that makes test planning
@@ -106,16 +122,18 @@ concrete. At AF = 100, one hour on the bench stands for a hundred hours in
 service, so demonstrating a 10,000-hour field life means surviving about 100
 hours on test.
 
-![The use-level calculator: extrapolated life and the acceleration factor](/guides/img/alt-04-uselevel.png)
+![The Calculator: extrapolated life and the acceleration factor](/guides/img/alt-04-uselevel.png)
 
 Treat the acceleration factor as a sanity check too. If it comes out
 implausibly large, you're either extrapolating much further than the data
-supports or you've fitted the wrong relationship.
+supports or you've fitted the wrong relationship. Diagnostics' last check says
+how far beyond the tested range your use stress lies.
 
 ## Plan the next accelerated test
 
-A fit also tells you how to run the next test better. Under the results of a
-saved model, **Plan the next accelerated test from this fit** opens
+A fit also tells you how to run the next test better. On a saved one-stress
+model, **Plan the next test** (in the **⋯** menu, and under Diagnostics' last
+check) opens
 **Strategy → Test planning** on the
 [Accelerated test](/strategy/test-planning/accelerated) tab, with the fit's
 life-stress model, its coefficients, its shape and units already filled in, and

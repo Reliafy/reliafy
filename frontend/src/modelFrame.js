@@ -10,11 +10,13 @@
 import { formatNumber, formatPercent } from "./format.js";
 import { hasMeanLife, meanLifeAnswer } from "./meanLife.js";
 import { unitInText } from "./components/unitText.js";
+import { anyAt } from "./competingRisks.js";
 
 export const TAB_LABELS = {
   plot: "Probability plot",
   survival: "Survival curve",
   chance: "Chance by count",
+  modes: "Failure modes",
   effects: "Effects",
   risk: "Risk now",
   calc: "Calculator",
@@ -30,6 +32,8 @@ const TAB_ALIASES = {
   gof: "diag", fit: "diag", check: "diag", validation: "diag", diagnostics: "diag",
   coef: "effects", coefficients: "effects",
   characteristics: "chars", calculator: "calc", probability: "plot",
+  // A competing-risks page's old tab ("Cumulative incidence").
+  cif: "modes", incidence: "modes", "cumulative incidence": "modes",
 };
 
 const MAX_TABS = 6;
@@ -51,7 +55,10 @@ export function modelTabs(result) {
     case "per_demand":
       return [];
     case "competing_risks":
-      return null;
+      // Life data by failure mode: the curves, the regression by mode (with
+      // covariates), the calculator on the stored curves, the checks, the data.
+      ids = ["modes", r.regression?.coefficients?.length && "effects", r.curves?.x?.length && "calc", "diag", "data"];
+      break;
     case "joint":
       ids = ["risk", "calc", "effects", "diag", "data"];
       break;
@@ -189,6 +196,28 @@ export function answerParts(result, { split = null, saved = null } = {}) {
       const mid = r.horizons?.labels?.[1];
       if (top && mid) add(`highest risk: unit ${top.id}, ${formatPercent(top.risk?.[1])} in the next ${mid}`);
       add(r.fit_ok === false && "fit not verified");
+      break;
+    }
+    case "competing_risks": {
+      const causes = r.causes || [];
+      add(causes.length && `${causes.length} failure mode${causes.length === 1 ? "" : "s"}`);
+      add(r.regression && `${r.regression.model === "Cox" ? "cause-specific Cox" : "Fine-Gray"} by mode`);
+      const top = causes.reduce((a, b) => ((b.at?.cif || 0) > (a?.at?.cif || 0) ? b : a), null);
+      const when = r.horizon != null ? withUnit(r.horizon, r.unit) : null;
+      if (top?.at?.cif != null && when) {
+        const ci = top.at.lower != null && top.at.upper != null
+          ? ` (${formatPercent(top.at.lower)}–${formatPercent(top.at.upper)})` : "";
+        add(`${top.name} ${formatPercent(top.at.cif)} of units by ${when}${ci}`);
+        const any = anyAt(r, r.horizon);
+        if (causes.length > 1 && any.cif != null) {
+          const anyCi = any.lower != null && any.upper != null
+            ? ` (${formatPercent(any.lower)}–${formatPercent(any.upper)})` : "";
+          add(`any mode ${formatPercent(any.cif)}${anyCi}`);
+        }
+      }
+      if (r.failed != null) {
+        add(`${Number(r.failed).toLocaleString("en-US")} failed${r.running ? `, ${Number(r.running).toLocaleString("en-US")} running` : ""}`);
+      }
       break;
     }
     case "regression": {

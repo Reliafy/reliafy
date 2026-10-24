@@ -40,8 +40,16 @@ test("a tab that doesn't apply is left out, and a one-view model has none", () =
   // A regression saved without functions has no calculator.
   assert.deepEqual(labels(modelTabs({ kind: "regression" })), ["Effects", "Diagnostics", "Data"]);
   assert.deepEqual(modelTabs({ kind: "per_demand" }), []);
-  // Competing risks keeps its own page for now.
-  assert.equal(modelTabs({ kind: "competing_risks" }), null);
+  // Competing risks: Effects only with covariates, the Calculator only with
+  // stored curves.
+  const cr = { kind: "competing_risks", curves: { x: [0, 1] } };
+  assert.deepEqual(labels(modelTabs(cr)), ["Failure modes", "Calculator", "Diagnostics", "Data"]);
+  assert.deepEqual(labels(modelTabs({ ...cr, regression: { coefficients: [{ cause: "a", covariate: "z" }] } })),
+    ["Failure modes", "Effects", "Calculator", "Diagnostics", "Data"]);
+  assert.deepEqual(labels(modelTabs({ kind: "competing_risks" })), ["Failure modes", "Diagnostics", "Data"]);
+  // Its old tab ids still open the tab that holds them.
+  assert.equal(resolveTab(modelTabs(cr), "cif"), "modes");
+  assert.equal(resolveTab(modelTabs({ ...cr, regression: { coefficients: [{}] } }), "coef"), "effects");
   for (const r of [weibull, { kind: "joint" }, { kind: "regression", functions: fns }]) {
     assert.ok(modelTabs(r).length <= 6);
   }
@@ -96,6 +104,22 @@ test("other kinds answer in their own terms", () => {
   assert.equal(reg[3], "32 observations");
   assert.deepEqual(answerParts({ kind: "nonparametric", distribution: "Kaplan-Meier", unit: "Months",
     metrics: { b10: 9 }, split: { failed: 18, running: 7 } }), ["Kaplan-Meier", "B10 9 months", "18 failed, 7 running"]);
+  // By failure mode: the modes, the leading one at the horizon with its band,
+  // any mode with its band, the data.
+  const cr = {
+    kind: "competing_risks", unit: "Hours", horizon: 5000, failed: 50, running: 22,
+    causes: [
+      { name: "bearing wear", failures: 29, at: { cif: 0.4, lower: 0.28, upper: 0.52 } },
+      { name: "seal leak", failures: 15, at: { cif: 0.21, lower: 0.12, upper: 0.31 } },
+    ],
+    curves: { x: [0, 5000], all: [0, 0.69], all_lower: [0, 0.57], all_upper: [0, 0.8] },
+  };
+  assert.deepEqual(answerParts(cr), [
+    "2 failure modes", "bearing wear 40% of units by 5,000 hours (28%–52%)", "any mode 69% (57%–80%)",
+    "50 failed, 22 running",
+  ]);
+  const crReg = answerParts({ ...cr, regression: { model: "Fine-Gray" } });
+  assert.equal(crReg[1], "Fine-Gray by mode");
 });
 
 test("the data in words", () => {

@@ -6,6 +6,8 @@ import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
 import AltResultView from "../components/AltResultView.jsx";
+import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
+import { altAnswerParts } from "../altFrame.js";
 import {
   getAltOptions, getColumns, listDatasets, getDataset, fitAlt, saveAltModel, SPREADSHEET_ACCEPT,
 } from "../api.js";
@@ -337,10 +339,13 @@ export default function AltNewPage() {
                      onChange={(e) => setName(e.target.value)} />
             </label>
             <p className="muted-line" style={{ margin: 0 }}>
-              Review the life-stress fit below. Go <b>Back</b> to change anything and re-fit, or save it — the
-              use-level calculator is available once saved.
+              Review the fit below. Go <b>Back</b> to change anything and fit again, or save it: the Calculator and
+              the Diagnostics tests run once it's saved.
             </p>
-            <AltResultView results={result.results} />
+            {/* The model page's frame, inside the wizard: the answer line over the tabs. */}
+            <ModelFrame embedded notice={<div className="mf-wizard-head"><AnswerLine parts={altAnswerParts(result.results)} /></div>}>
+              <AltResultView results={result.results} />
+            </ModelFrame>
           </div>
         )}
 

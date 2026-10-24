@@ -62,6 +62,7 @@ const ReliabilityAgent = lazy(() => import("./views/ReliabilityAgent.jsx"));
 const AdminPage = lazy(() => import("./views/AdminPage.jsx"));
 // What changed in the workspace (#41).
 const ChangesPage = lazy(() => import("./views/ChangesPage.jsx"));
+const DataModelPage = lazy(() => import("./views/DataModelPage.jsx"));
 import { useAppConfig } from "./ConfigProvider.jsx";
 import { unmatchedRoute } from "./appConfig.js";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
@@ -198,6 +199,7 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/asset-register/parts/:id" element={<MaintenancePart />} />}
             {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
+            <Route path="/data-model" element={<DataModelPage />} />
             <Route path="/maintenance/rcm" element={<RcmHome />} />
             <Route path="/maintenance/rcm/:id" element={<RcmStudyPage />} />
             {/* Risk: models in use. Condition monitoring is the tracked items
