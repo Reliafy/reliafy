@@ -25,6 +25,7 @@ import {
   ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
+import { canPin, crumbAction, inBranch, levelMatches, pinDisplay, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 import usePhone from "../usePhone.js";
 import "./Maintenance.css";
@@ -60,6 +61,15 @@ import "./AssetExplorer.css";
 // function adds to the position picked; the tree grows. On the Summary tab the tree is the positions alone
 // and the page about the row picked is beside it. Full screen (F, Esc to leave)
 // gives the tree and the panel the whole screen, as the RBD editor's.
+//
+// "Pin this branch" (a row's menu, or the pin in the panel's heading) shows
+// only that row and what's inside it (treePin.js): ?pin=<id>, so Back un-pins
+// and a link opens pinned; not remembered on this device. A bar under the
+// search box says so, with Show everything (and "Show whole tree" heads the ⋯
+// menu). The way up in the panel's heading still shows the whole path: a crumb
+// above the pinned row moves the pin up to it. Asked to show a row outside the
+// branch (?sel=, a link, a new row), the page shows the whole tree again and
+// says so; a pinned row that's gone (retired, deleted) quietly un-pins.
 
 const HELP = { guide: "rcm-study" };
 
@@ -106,6 +116,13 @@ export default function AssetExplorer() {
     change(q);
     if (q.toString() === params.toString()) return;
     navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
+  }, [params, navigate, location]);
+  // A change Back should undo (pinning a branch, and un-pinning it).
+  const pushQuery = useCallback((change, state) => {
+    const q = new URLSearchParams(params);
+    change(q);
+    if (q.toString() === params.toString()) return;
+    navigate(`${location.pathname}?${q}${location.hash}`, { state });
   }, [params, navigate, location]);
 
   const [data, setData] = useState(null);
@@ -175,12 +192,28 @@ export default function AssetExplorer() {
   }, [wantItems, version]);
 
   const base = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
-  const display = useMemo(() => (rcmOn && rcm ? graftRcm(base, rcm) : base), [base, rcmOn, rcm]);
+  const whole = useMemo(() => (rcmOn && rcm ? graftRcm(base, rcm) : base), [base, rcmOn, rcm]);
+  // A branch pinned (?pin=): the pane's tree starts at that row, and
+  // everything below (open rows, levels, the filter, counts) works on it alone.
+  const pinParam = params.get("pin");
+  const pinKey = data ? pinTarget(whole, mode, pinParam) : null;
+  const display = useMemo(() => (pinKey ? pinDisplay(whole, pinKey) : whole), [whole, pinKey]);
+  const [pinNote, setPinNote] = useState(null);
+  // A pinned row that isn't in the tree (retired, deleted, or not one this
+  // arrangement shows): quietly the whole tree again.
+  useEffect(() => {
+    if (data && pinParam && !pinKey) setQuery_((q) => q.delete("pin"));
+  }, [data, pinParam, pinKey, setQuery_]);
+  useEffect(() => {
+    if (!pinNote) return undefined;
+    const t = setTimeout(() => setPinNote(null), 8000);
+    return () => clearTimeout(t);
+  }, [pinNote]);
   const filter = useMemo(() => (data ? computeFilter(display, {
     query, chips: mode === "items" ? chips.filter((c) => c !== "empty") : chips, extra: notPlaced ? (r) => r.type === "pos" && !r.ref.location : null,
   }) : null), [data, display, query, chips, notPlaced, mode]);
   useEffect(() => setFopen(filter ? filterOpen(filter) : null), [filter]);
-  const defaultOpen = useMemo(() => levelSet(display, 2), [display]);
+  const defaultOpen = useMemo(() => levelSet(whole, 2), [whole]);
   const baseOpen = openBy[mode] || defaultOpen;
   const open = filter ? fopen || filterOpen(filter) : baseOpen;
   const { list, index } = useMemo(() => flatten(display, open, filter), [display, open, filter]);
@@ -209,8 +242,8 @@ export default function AssetExplorer() {
     if (!rcm || openedRcm.current || !display.rows.has(selected.positions)) return;
     openedRcm.current = true;
     const more = openFor(display, selected.positions);
-    setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(display, 2)), ...more]) }));
-  }, [rcmOn, rcm, display, selected.positions]);
+    setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
+  }, [rcmOn, rcm, display, whole, selected.positions]);
 
   const setTab = (t) => {
     if (t === tab) return;
@@ -291,6 +324,13 @@ export default function AssetExplorer() {
   const shown = useRef(null);
   useEffect(() => {
     if (!data) return;
+    // Asked for a row outside the pinned branch: the whole tree again, and say so.
+    const want = pending.current;
+    if (want && pinKey && !display.rows.has(want) && whole.rows.has(want)) {
+      setPinNote("Showing the whole tree again");
+      setQuery_((q) => q.delete("pin"));
+      return;
+    }
     if (pending.current && display.rows.has(pending.current)) {
       const key = pending.current;
       pending.current = null;
@@ -300,7 +340,7 @@ export default function AssetExplorer() {
       shown.current = mode;
       reveal(selected[mode]);
     }
-  }, [data, display, reveal, mode, selected]);
+  }, [data, display, whole, pinKey, reveal, mode, selected, setQuery_]);
 
   const detailKey = phone ? location.state?.treeDetail : null;
   const pick = (key, opts = {}) => {
@@ -345,17 +385,64 @@ export default function AssetExplorer() {
       say(e.message, "error");
     }
   };
-  // A row's menu (TreePane's rowMenu): what it offers, and doing it.
-  const rowMenu = rcmOn && rcm ? {
-    actions: (r) => rowActions(r, { canRename: !phone }),
+  // Pin a branch: the address says so (Back undoes it). The selection stays
+  // when it's inside the branch, else it's the pinned row; with `select`, the
+  // pinned row is picked.
+  const pinTo = (key, { select = false, state } = {}) => {
+    if (!canPin(whole.rows.get(key), mode)) return;
+    setPinNote(null);
+    const keep = select || focus == null || !inBranch(whole, focus, key) ? key : focus;
+    if (keep !== focus) {
+      setRcmFocus(null);
+      setSelected((s) => ({ ...s, [mode]: keep }));
+    }
+    const kr = whole.rows.get(keep);
+    pushQuery((q) => {
+      q.set("pin", key);
+      q.set("sel", isRcmRow(kr) ? positionOf(kr) : keep);
+    }, state);
+  };
+  // The whole tree again; with `select`, that row picked.
+  const unpin = ({ select = null } = {}) => {
+    setPinNote(null);
+    if (select != null) {
+      setRcmFocus(null);
+      setSelected((s) => ({ ...s, [mode]: select }));
+    }
+    pushQuery((q) => q.delete("pin"));
+  };
+  // A crumb in the panel's heading: inside the branch it's picked; above it,
+  // the pin moves up to it (one step at a time), or, for one of the pane's own
+  // headings, the whole tree shows with it picked.
+  const crumbGo = (key, select) => {
+    const act = crumbAction(pinKey ? display : null, whole, mode, key);
+    if (act === "select") return select(key);
+    if (act === "pin") return pinTo(key, { select: true, state: phone && !rcmOn ? { treeDetail: key } : undefined });
+    return unpin({ select: key });
+  };
+  const above = pinKey ? (key) => !display.rows.has(key) : null;
+  const pinFor = (r) => (r && canPin(whole.rows.get(r.key), mode) ? {
+    on: r.key === pinKey,
+    onClick: () => (r.key === pinKey ? unpin() : pinTo(r.key, { select: true })),
+  } : null);
+  const pinItem = (r) => (canPin(r, mode)
+    ? [r.key === pinKey ? { id: "unpin", label: "Show whole tree" } : { id: "pin", label: "Pin this branch" }] : []);
+
+  // A row's menu (TreePane's rowMenu): what it offers, and doing it. On the
+  // RCM tab, adding inside the row and its other actions; and on any row that
+  // can be pinned, Pin this branch.
+  const rowMenu = {
+    actions: (r) => [...(rcmOn && rcm ? rowActions(r, { canRename: !phone }) : []), ...pinItem(r)],
     onAction: (r, id) => {
-      if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
+      if (id === "pin") pinTo(r.key, { select: true });
+      else if (id === "unpin") unpin();
+      else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       else if (id === "add-fail" || id === "add-mode") addInside(r);
       else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
       else if (id === "delete") remove(r);
     },
-  } : null;
+  };
   // One cell changed: checked as the server checks it, then written.
   const commit = (r, col, raw) => {
     const res = checkValue(col, cellRow(r), raw);
@@ -404,6 +491,7 @@ export default function AssetExplorer() {
 
   const onMode = (m) => {
     if (m === mode) return;
+    if (pinKey) skipPinOpen.current = true; // the pin stays with the arrangement it was made in
     const keep = carryOver(focus != null ? display.rows.get(focus) : null, m);
     const nextSelected = keep ? { ...selected, [m]: keep } : selected;
     setSelected(nextSelected);
@@ -421,17 +509,51 @@ export default function AssetExplorer() {
   const level = levelShown(levelBy, mode);
   const levelsOn = mode !== "flat" && mode !== "items";
   const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || rcmOn));
-  const changed = changedFromUsual({ mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn });
+  const changed = changedFromUsual({ mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn, pinned: !!pinKey });
   const resetView = () => {
     setChips([]);
     if (!rcmOn && mode !== DEFAULT_ARRANGEMENT) {
       setLevelBy((l) => ({ ...l, [DEFAULT_ARRANGEMENT]: DEFAULT_LEVEL }));
-      onMode(DEFAULT_ARRANGEMENT);
-    } else if (levelsOn && level !== DEFAULT_LEVEL && typeof level === "number") {
+      onMode(DEFAULT_ARRANGEMENT); // its address has no pin
+      return;
+    }
+    if (pinKey || (levelsOn && level !== DEFAULT_LEVEL && typeof level === "number")) {
       setLevelBy((l) => ({ ...l, [mode]: DEFAULT_LEVEL }));
-      setOpenBy((o) => ({ ...o, [mode]: levelSet(display, DEFAULT_LEVEL) }));
+      setOpenBy((o) => ({ ...o, [mode]: levelSet(whole, DEFAULT_LEVEL) }));
+    }
+    if (pinKey) {
+      skipPinOpen.current = true;
+      unpin();
     }
   };
+
+  // When the pin changes (pinned, moved up, un-pinned, or Back): the pinned
+  // row opens, and the way down to the row picked (and to the branch just
+  // left), so it's in view. The ⋯ menu ticks a level only while what's open
+  // still is one, counted from the tree's top.
+  const seenPin = useRef(undefined);
+  const skipPinOpen = useRef(false);
+  useEffect(() => {
+    if (!data || seenPin.current === pinKey) return;
+    const was = seenPin.current;
+    seenPin.current = pinKey;
+    if (skipPinOpen.current) {
+      skipPinOpen.current = false;
+      return;
+    }
+    if (was === undefined && pinKey == null) return;
+    const keys = [];
+    if (pinKey) keys.push(pinKey);
+    if (focus != null) keys.push(...ancestorsOf(whole, focus));
+    if (was) keys.push(was, ...ancestorsOf(whole, was));
+    if (filter) setFopen((s) => new Set([...(s || filterOpen(filter)), ...keys]));
+    else {
+      const next = new Set([...(openBy[mode] || defaultOpen), ...keys]);
+      setOpenBy((o) => ({ ...o, [mode]: next }));
+      if (levelsOn && typeof level === "number" && !levelMatches(display, next, level)) setLevelBy((l) => ({ ...l, [mode]: null }));
+    }
+    if (focus != null) setScrollTo({ key: focus, at: Date.now() });
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+\ folds the pane away and back.
   useEffect(() => {
@@ -504,14 +626,16 @@ export default function AssetExplorer() {
 
   const placedCount = data ? display.positions : 0;
   const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
-  const notAnalysed = data ? data.positions.filter((p) => p.not_analysed).length : 0;
+  // Pinned: the branch's own counts.
+  const notAnalysed = !data ? 0 : pinKey ? display.notAnalysed : data.positions.filter((p) => p.not_analysed).length;
+  const locationCount = !data ? 0 : pinKey ? display.locations : data.locations.length;
   const statusText = !data ? "" : rcmOn && !filter
     ? (rcmError ? `The RCM didn't load: ${rcmError}` : !rcm ? `${n(placedCount, "position")} · loading the RCM…`
       : `${n(placedCount, "position")} · ${notAnalysed.toLocaleString("en-AU")} not analysed · RCM is by position`)
     : filter
     ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
     : mode === "locations"
-      ? `${n(data.locations.length, "location")} · ${n(placedCount, "position")}`
+      ? `${n(locationCount, "location")} · ${n(placedCount, "position")}`
       : mode === "items" ? n(display.items, "item") : n(placedCount, "position");
 
   const notice = notPlaced && (
@@ -521,7 +645,8 @@ export default function AssetExplorer() {
     </p>
   );
 
-  const row = (phone ? detailKey : focus) != null ? display.rows.get(phone ? detailKey : focus) : null;
+  // The panel shows the row from the whole tree, so its way up is the whole path.
+  const row = (phone ? detailKey : focus) != null ? whole.rows.get(phone ? detailKey : focus) ?? null : null;
   const posRow = selPos != null ? display.rows.get(selPos) : null;
   const fullButton = !phone && <FullScreenButton ref={fullBtn} full={full} onClick={toggleFull} />;
 
@@ -541,8 +666,8 @@ export default function AssetExplorer() {
   } : null;
   const msg = message && <p className={"tt-msg " + message.tone} role="status">{message.text}</p>;
   const head = rcmOn && posRow && posRow.type === "pos" && (
-    <SlimHeader display={display} row={posRow} onSelect={reveal} headingRef={headingRef}
-                fullScreenButton={fullButton} message={msg}
+    <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
+                pin={pinFor(posRow)} headingRef={headingRef} fullScreenButton={fullButton} message={msg}
                 meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
                 actions={(
                   <>
@@ -565,6 +690,12 @@ export default function AssetExplorer() {
   const phoneTabs = phone && posRow && posRow.type === "pos" && (
     <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label="What to show" className="tp-tabs" />
   );
+  // A row picked in the panel (a crumb, a row in "Directly inside").
+  const selectFromPanel = (k) => {
+    if (!phone) return reveal(k);
+    setSelected((s) => ({ ...s, [mode]: k }));
+    return navigate(location.pathname + location.search, { state: { treeDetail: k }, replace: true });
+  };
   const back = phone && (
     <button type="button" className="secondary td-back" onClick={() => navigate(-1)}>‹ {title}</button>
   );
@@ -629,6 +760,8 @@ export default function AssetExplorer() {
         phoneTabs={phoneTabs}
         layoutKey={tab}
         anchorKey={selPos}
+        branch={pinKey ? { name: whole.rows.get(pinKey).ref.name || "(no name)", onUnpin: () => unpin() } : null}
+        branchNote={pinNote}
         arrangeLocked={rcmOn ? "RCM is by position, so the RCM tab shows the positions tree" : null}
       />
       {!rcmOn && <section className="tx-detail" aria-label="Details"
@@ -636,12 +769,9 @@ export default function AssetExplorer() {
                  if (e.key === "Escape" && !phone && focus) document.getElementById(`tp-${focus}`)?.focus();
                }}>
         {(!phone || detailKey) && (
-          <TreeDetail ref={headingRef} display={display} row={data && !nothing ? row : null} today={data?.today || ""}
-                      onSelect={(k) => {
-                        if (!phone) return reveal(k);
-                        setSelected((s) => ({ ...s, [mode]: k }));
-                        return navigate(location.pathname + location.search, { state: { treeDetail: k }, replace: true });
-                      }}
+          <TreeDetail ref={headingRef} display={whole} row={data && !nothing ? row : null} today={data?.today || ""}
+                      onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
+                      pin={data && !nothing ? pinFor(row) : null}
                       back={back} version={version} empty={emptyDetail}
                       tab={tab} onTab={setTab} fullScreenButton={fullButton} />
         )}

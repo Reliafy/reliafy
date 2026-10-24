@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import RowMenu from "./RowMenu.jsx";
 import TreeControlsMenu from "./TreeControlsMenu.jsx";
-import { Chevron, Highlight } from "./OutlineBits.jsx";
+import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { Cell, CellEditor, LevelIcon, PhoneStatus, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf } from "../assetTree.js";
@@ -31,6 +31,12 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 // editing, deleting, deciding) are in its menu (`rowMenu`): right-click the
 // row, press its ⋯ button (shown on hover and focus; always on a touch screen),
 // or Shift+F10 / the Menu key on the focused row.
+//
+// A branch can be pinned (treePin.js): the tree then starts at that row, and a
+// bar under the search box says so, with Show everything to undo it (as does
+// "Show whole tree" at the top of the ⋯ menu). `branch`: {name, onUnpin} while
+// one is; `branchNote`: a line in the bar's place when the page un-pinned to
+// show something outside the branch.
 //
 // Presentational: the page (AssetExplorer) holds the state.
 
@@ -169,7 +175,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
   };
   const more = onMenu && <MoreButton r={r} open={!!menuOpen} onMenu={onMenu} />;
   if (!table) {
-    return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} /></div>;
+    return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} />{more}</div>;
   }
   if (phone) {
     const line = r.type === "pos" ? posLine(r, table.hint === r.key) : phoneLine(cellRow(r));
@@ -231,7 +237,7 @@ export default function TreePane({
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
   onNew, newLabel, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
-  rowMenu = null,
+  rowMenu = null, branch = null, branchNote = null,
 }) {
   const H = phone ? (table ? 54 : 44) : 30;
   const maxPins = phone ? 2 : 4;
@@ -258,7 +264,7 @@ export default function TreePane({
     if (key != null) document.getElementById(`tp-${key}`)?.focus({ preventScroll: true });
   };
   const keys = (e) => {
-    if (rowMenu && focus != null && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey))
+    if (rowMenu && focus != null && itemsFor(focus).length && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey))
         && !e.target.closest("input, select, textarea, [contenteditable='true']")) {
       e.preventDefault();
       const row = document.getElementById(`tp-${focus}`);
@@ -335,6 +341,7 @@ export default function TreePane({
         </button>
       )}
       <TreeControlsMenu
+        pinned={branch ? { name: branch.name, onUnpin: branch.onUnpin } : null}
         arrange={arrangeLocked ? null : { value: mode, options: ARRANGEMENTS, onChange: onMode }}
         note={arrangeLocked}
         levels={levelsOn ? { value: level, onLevel, onCloseAll } : null}
@@ -355,6 +362,17 @@ export default function TreePane({
              aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
     </label>
   );
+  // The pinned branch's bar (or, just after un-pinning to show something
+  // outside it, a line saying so).
+  const branchBar = branch ? (
+    <div className="tp-branch" role="group" aria-label="Pinned branch">
+      <PinIcon />
+      <span className="tp-branch-text" title={branch.name}>Showing only: <strong>{branch.name}</strong></span>
+      <button type="button" className="secondary tp-branch-x" onClick={branch.onUnpin} title="Show the whole tree again">
+        <span aria-hidden="true">✕</span> Show everything
+      </button>
+    </div>
+  ) : branchNote ? <p className="tp-branch-note" role="status">{branchNote}</p> : null;
   // The two slim rows over the RCM tab's table (a wide screen): the tree's
   // title, counts and ⋯ over the tree column, beside the panel's heading (the
   // way up over the position's name, and its actions); then the search box
@@ -371,12 +389,14 @@ export default function TreePane({
         <div className="tt-tabslot">{headTabs}</div>
         {notice}
       </div>
+      {branchBar && <div className="tt-row3"><div className="tt-cell" style={{ width }}>{branchBar}</div></div>}
     </div>
   ) : (
     <div className="tp-head">
       {titleRow}
       {phoneTabs}
       {search}
+      {branchBar}
       {notice}
       {status}
     </div>
