@@ -2265,6 +2265,16 @@ export function getMaintenanceAccess() {
   return maintenanceAccess;
 }
 
+// The Data model page (graph access only): the live graph's labels and
+// relationships, and the stored design ({available: false, reason} without one).
+export function getGraphSchema() {
+  return request("/api/maintenance/graph/schema");
+}
+
+export function getGraphDesign() {
+  return request("/api/maintenance/graph/design");
+}
+
 // Photos (Reliafy Maintenance). The image endpoints need auth, so <img> tags
 // get object URLs from these blobs rather than a plain src.
 export async function getMaintenancePhotoBlob(photoId, size = "thumb") {

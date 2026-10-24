@@ -251,6 +251,21 @@ a mirrored plant and its answers against the app's, the three read-only layers,
 the limits, freshness, and a workspace outside the list never reaching Neo4j
 (and pruned when it does). Each test keeps to its own namespace and removes it.
 
+**The Data model page** (`/data-model`, `frontend/src/views/DataModelPage.jsx`)
+draws the schema for the same people: one circle per label (sized by count),
+one arrow per relationship type between two labels, loops for a label linked
+to itself, with a table of the same rows for keyboards, screen readers and
+phones. `GET /api/maintenance/access` says who may (`graph`), and the menu
+links it only where the menu preview is on. It can also draw an intended
+design next to what's built: `GET /api/maintenance/graph/design` returns the
+`data_model` document in `app_settings`, checked by
+`backend/maintenance/graph_design.py` (its docstring has the shape; plain text
+only, sizes capped), or `{available: false, reason}`. The app never writes that
+document. The page then shows "What's built", "What's designed" (proposed
+edges dashed) and "Both" (designed but not built dashed, built but not designed
+amber), and downloads the diagram as a PNG or an Arrows (arrows.app) JSON file.
+cytoscape.js (MIT) draws it, loaded only on that page.
+
 **Later: paying users.** Graph queries for Pro users (an optional extra) will
 use a **per-workspace subgraph sandbox**: each query runs on a throwaway graph
 holding only that workspace's data, so isolation doesn't depend on what else

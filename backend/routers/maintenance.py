@@ -260,8 +260,11 @@ def maintenance_write(ctx: AccessCtx = Depends(get_access)) -> Maintenance:
 
 @router.get("/access")
 def access(ctx: AccessCtx = Depends(get_access)) -> dict:
-    """Whether the caller may use Reliafy Maintenance (the app shows it if so)."""
-    return {"allowed": allowed(ctx.user)}
+    """Whether the caller may use Reliafy Maintenance (the app shows it if so), and
+    whether they have graph access (the Data model page)."""
+    from backend.maintenance.access import graph_query_allowed
+
+    return {"allowed": allowed(ctx.user), "graph": graph_query_allowed(ctx.user)}
 
 
 def _run(fn, *args, **kwargs) -> JSONResponse:
@@ -750,6 +753,16 @@ def graph_schema(ctx: AccessCtx = Depends(graph_access)) -> JSONResponse:
     from backend.maintenance import graph_cypher
 
     return _graph(graph_cypher.graph_schema, get_store(), ctx.write_owner, _readable(ctx))
+
+
+@router.get("/graph/design")
+def graph_design(ctx: AccessCtx = Depends(graph_access)) -> JSONResponse:
+    """The intended shape of the graph, for the Data model page: the ``data_model``
+    document in app_settings, checked ({available: false, reason} without one).
+    Read only; nothing in the app writes it (backend/maintenance/graph_design.py)."""
+    from backend.maintenance import graph_design as design
+
+    return JSONResponse(content=design.load(get_db()))
 
 
 # ---- items and locations ---------------------------------------------------------------

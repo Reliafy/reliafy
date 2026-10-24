@@ -32,6 +32,12 @@ const NewsIcon = () => (
     <path d="M19 16v4M17 18h4" />
   </svg>
 );
+const GraphIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="8" r="2.5" /><circle cx="10" cy="18" r="2.5" />
+    <path d="M8.4 6.6l7.2 1M16.6 10.1l-5.1 6M7 8.3l2.2 7.3" />
+  </svg>
+);
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="12" cy="12" r="3" />
@@ -145,7 +151,7 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
   // Credits only buy AI use; without it the page is plain billing.
   const billingLabel = ai || agentEnabled ? "Billing & credits" : "Billing";
   // The menu (navigation.js): what the user's roles use, then "More".
-  const { menu } = useRoles();
+  const { menu, has } = useRoles();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   // "More" opens by itself when the page shown is one of its entries.
@@ -287,6 +293,18 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
         >
           <span className="side-icon"><BillingIcon /></span>
           {!collapsed && <span className="side-label">{billingLabel}</span>}
+        </NavLink>
+      )}
+      {/* The Data model page: for graph-access users, and in the menu only where
+          the menu preview is on (anyone with access can open /data-model). */}
+      {has.graph && has.preview && (
+        <NavLink
+          to="/data-model"
+          className={({ isActive }) => "side-item" + (isActive ? " active" : "")}
+          title="Data model — the kinds of thing your maintenance graph holds and how they connect"
+        >
+          <span className="side-icon"><GraphIcon /></span>
+          {!collapsed && <span className="side-label">Data model</span>}
         </NavLink>
       )}
       <a
