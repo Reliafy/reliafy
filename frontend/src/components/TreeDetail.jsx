@@ -281,6 +281,50 @@ export function DetailHeader({ display, row, onSelect, tab, onTab, fullScreenBut
   );
 }
 
+// The RCM tab's heading: one slim bar over the table, so the table gets the
+// height. The tabs; the way up and the last thing done as small text over
+// the position's name, its tag and its checks; the actions on the right.
+export function CompactHeader({ display, row, onSelect, tab, onTab, fullScreenButton, headingRef, meta, actions, message }) {
+  const crumbs = ancestorsOf(display, row.key).map((k) => ({ key: k, label: display.rows.get(k).ref.name }));
+  const full = fullPagePath(row);
+  const p = row.ref;
+  const tabs = tabsFor(row);
+  return (
+    <div className="tt-bar-head">
+      {tabs.length > 1 && (
+        <Tabs tabs={tabs} value={shownTab(tab, row)} onChange={onTab} label="What to show for this row" idPrefix="td" className="tt-tabs" />
+      )}
+      <div className="tt-name">
+        {(crumbs.length > 0 || message) && (
+          <div className="tt-sub">
+            {crumbs.length > 0 && (
+              <nav className="crumb tt-crumb" aria-label="Breadcrumb">
+                {crumbs.map((c, i) => (
+                  <span key={c.key}>
+                    {i > 0 && <span className="crumb-sep" aria-hidden="true"> / </span>}
+                    <button type="button" className="crumb-link" title={c.label} onClick={() => onSelect(c.key)}>{c.label}</button>
+                  </span>
+                ))}
+              </nav>
+            )}
+            {message}
+          </div>
+        )}
+        <div className="tt-name-row">
+          <h1 className="tt-h1"><span ref={headingRef} tabIndex={-1} className="td-title">{p.name || "(no name)"}</span></h1>
+          {p.tag && <code className="tt-tag">{p.tag}</code>}
+          {meta}
+        </div>
+      </div>
+      <div className="tt-actions">
+        {actions}
+        {fullScreenButton}
+        {full && <Link className="td-open" to={full}>Open the full page</Link>}
+      </div>
+    </div>
+  );
+}
+
 const TreeDetail = forwardRef(function TreeDetail({
   display, row, today, onSelect, back, version, empty, tab, onTab, fullScreenButton,
 }, headingRef) {

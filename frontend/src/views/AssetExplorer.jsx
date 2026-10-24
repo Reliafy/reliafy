@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { getMaintenanceTree, getRcmOptions, listMaintenanceItems } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
-import TreeDetail, { DetailHeader } from "../components/TreeDetail.jsx";
+import TreeDetail, { CompactHeader } from "../components/TreeDetail.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx";
@@ -507,18 +507,15 @@ export default function AssetExplorer() {
   } : null;
   const msg = message && <p className={"tt-msg " + message.tone} role="status">{message.text}</p>;
   const head = rcmOn && posRow && posRow.type === "pos" && (
-    <div className="td tt-headpanel">
-      <DetailHeader display={display} row={posRow} onSelect={reveal} tab={tab} onTab={setTab} headingRef={headingRef}
-                    fullScreenButton={fullButton}
-                    meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
-                    actions={(
-                      <>
-                        <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
-                        <button type="button" className="sm" onClick={() => runAdd({ ref: { add: "fn", position_id: posRow.key } })}>Add function</button>
-                      </>
-                    )} />
-      {msg}
-    </div>
+    <CompactHeader display={display} row={posRow} onSelect={reveal} tab={tab} onTab={setTab} headingRef={headingRef}
+                   fullScreenButton={fullButton} message={msg}
+                   meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
+                   actions={(
+                     <>
+                       <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
+                       <button type="button" className="sm" onClick={() => runAdd({ ref: { add: "fn", position_id: posRow.key } })}>Add function</button>
+                     </>
+                   )} />
   );
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "add" ? cellRow(focusRow) : null;
   const side = detailsRow && (

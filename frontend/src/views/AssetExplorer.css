@@ -680,47 +680,200 @@ a.rw-cklink:focus-visible {
 .tt-h.rw-fill { flex: 1 0 auto; justify-content: flex-end; overflow: visible; }
 .tt-h .rw-cols .rw-btn, .tt-h .rw-cols > button { min-height: 22px; padding: 0 8px; font-size: var(--fs-12); }
 
-/* The RCM tab: the pane is the page's width; its controls and the panel's
-   heading side by side over the one table. */
+/* The RCM tab: the pane is the page's width, with two slim rows over the one
+   table (TreePane): the bar (the tree's title, then the panel's heading) and
+   the filters. Each row's first cell is as wide as the tree column, so the
+   rows line up with the table's columns. */
 .tx.tx-table .tp {
   flex: 1 1 auto;
   min-width: 0;
 }
-/* As tall as the tree's controls (the same as on the Summary tab, so the rows
-   don't move when the tab changes); the heading sits beside them. */
 .tt-top {
   position: relative;
+  z-index: 8; /* the Columns list opens over the table's sticky headers */
+  flex: none;
+  min-width: 0;
+}
+.tt-bar,
+.tt-filters {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.tt-bar {
+  min-height: 48px;
+  border-bottom: 1px solid var(--line);
+}
+.tt-cell {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-right: 1px solid var(--line);
+  min-width: 0;
+}
+.tt-cell > * { flex: 1 1 auto; min-width: 0; }
+.tt-headslot {
+  flex: 1 1 auto;
+  align-self: stretch;
   display: flex;
   min-width: 0;
 }
-.tt-top > .tp-head {
-  flex: none;
-  border-right: 1px solid var(--line);
+.tt-bar-head {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap; /* a narrow window: the actions go under, never off the edge */
+  column-gap: 12px;
+  min-width: 0;
+  padding: 0 12px 0 6px;
 }
-.tt-headslot {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+/* The tabs fill the bar's height; the active one's underline is its edge. */
+.tt-bar-head .tabs-strip.tt-tabs {
+  flex: none;
+  margin: 0;
+  display: flex;
+}
+.tt-bar-head .tt-tabs .scroll-cue-body { display: flex; }
+.tt-bar-head .tt-tabs .tabs { background: none; align-items: stretch; }
+.tt-bar-head .tt-tabs .tab { display: flex; align-items: center; padding: 0 10px; }
+.tt-name {
+  flex: 1 1 9em; /* narrower than this and the actions go under */
+  min-width: 9em;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3px 0;
+}
+.tt-sub { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.tt-sub .tt-crumb { flex: 0 1 auto; }
+/* The way up, small: each step shrinks (the nearest one last) so every step
+   stays on show and can be clicked; the full name is in its tooltip. */
+.tt-crumb {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-12);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.tt-crumb > span { display: flex; flex: 0 4 auto; min-width: 2em; }
+.tt-crumb > span:last-child { flex-shrink: 1; min-width: 3em; }
+.tt-crumb .crumb-sep { flex: none; white-space: pre; }
+.tt-crumb button.crumb-link {
+  display: block;
   min-width: 0;
   overflow: hidden;
-  padding: 14px 24px 0;
-  display: flex;
-  flex-direction: column;
+  text-overflow: ellipsis;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: inherit;
 }
-.tt-headpanel {
+.tt-crumb button.crumb-link:hover:not(:disabled) {
+  background: none;
+  color: var(--acc);
+  text-decoration: underline;
+}
+.tt-name-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.tt-h1 {
+  flex: 0 1 auto;
+  margin: 0;
+  min-width: 4em;
+  font-size: var(--fs-16);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-tag {
+  flex: 0 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.tt-rollup { flex: none; display: inline-flex; }
+.tt-actions {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+}
+.tt-actions button,
+.tt-actions .rw-cols > button,
+.tt-actions a.td-open {
+  min-height: 32px;
+  padding: 0 11px;
+  font-size: var(--fs-13);
+  box-shadow: none;
+}
+/* One primary action here (Add function): the way to the full page is
+   secondary. */
+.tt-actions a.td-open {
+  background: var(--surf);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.tt-actions a.td-open:hover { background: var(--surf-2); }
+/* Full screen is the icon here (its name and the F key in the tooltip);
+   "Exit full screen" stays spelt out. */
+.tt-actions .full-screen-btn:not(.is-full) { min-width: 32px; padding: 0 8px; justify-content: center; }
+.tt-actions .full-screen-btn:not(.is-full) .full-screen-word {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.tt-filters {
+  gap: 10px;
+  min-height: 40px;
+  padding-right: 12px;
+}
+.tt-filters .tp-filter input { padding: 5px 0; }
+.tt-filters .tp-levels { flex: none; }
+.tt-filters .tp-levels .seg-btn { min-height: 28px; }
+.tt-filters button.tp-icon-btn { height: 28px; min-width: 28px; }
+.tt-filters .tp-chips { flex: 0 1 auto; min-width: 0; }
+.tt-filters .tp-notice { flex: none; }
+/* The tree's title with its counts under it, small. */
+.tt-title {
   flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
-.tt-headpanel .page-header { margin-bottom: 4px; }
-.tt-rollup { margin-left: 8px; display: inline-flex; vertical-align: middle; }
+.tt-title .tp-title { line-height: 1.25; }
+.tt-title .tp-status {
+  padding: 0;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .tp-table .tp-body { min-width: 100%; }
-.tt-headpanel .rw-cols { position: relative; }
-.tt-headpanel .page-header .title-row h1 { font-size: var(--fs-20); }
-.tt-headpanel .td-tabs { margin: auto 0 0; }
 .tt-msg {
-  margin: 4px 0 0;
+  flex: 0 1 auto;
+  max-width: 60%;
+  margin: 0;
+  line-height: 1.3;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--fs-12);
   color: var(--ok);
 }
