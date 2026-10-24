@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import RcmTree from "../components/RcmTree.jsx";
+import RcmWorksheet from "../components/RcmWorksheet.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
@@ -11,29 +12,14 @@ import { getRcmStudy, getRcmOptions, putRcmTree, renameRcmStudy } from "../api.j
 import { toCsv } from "../csv.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import Tabs from "../components/ui/Tabs.jsx";
+import { worksheetCsvRows } from "../rcmWorksheet.js";
+import usePhone from "../usePhone.js";
 import { itemName } from "../components/LibRows";
 import { useNavCrumbs } from "../RolesProvider.jsx";
 
 function exportCsv(study, functions) {
-  const header = [
-    "function", "functional_failure", "failure_mode", "effects", "consequence",
-    "outcome", "rtf_basis", "task", "interval", "interval_unit",
-    "evidence_type", "evidence_name", "evidence_status", "evidence_detail", "notes",
-  ];
-  const rows = [header];
-  for (const fn of functions) {
-    for (const fail of fn.failures || []) {
-      for (const mode of fail.modes || []) {
-        const d = mode.decision || {};
-        rows.push([
-          fn.text, fail.text, mode.text, mode.effects || "", mode.consequence || "",
-          d.outcome || "", d.rtf_basis || "", d.task || "", d.interval ?? "", d.interval_unit || "",
-          d.evidence?.type || "", d.artifact_name || "", d.status || "", d.summary || d.reason || "",
-          mode.notes || "",
-        ]);
-      }
-    }
-  }
+  const rows = worksheetCsvRows(functions);
   const csv = toCsv(rows);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -44,23 +30,45 @@ function exportCsv(study, functions) {
   URL.revokeObjectURL(url);
 }
 
-// One RCM study: the worksheet tree lives in local state while editing; Save
-// PUTs the whole tree and comes back with freshly resolved evidence statuses.
+// The views of a study: the worksheet (an outline grid, the main view) and
+// the tree (the nested editor, as before). The address says which (?tab=tree).
+const TABS = [
+  { id: "worksheet", label: "Worksheet", title: "The worksheet as a table: the study's tree with its columns beside it" },
+  { id: "tree", label: "Tree", title: "The functions, failures and modes as a nested list, each with its evidence" },
+];
+const UNDO_DEPTH = 50;
+
+// One RCM study: the worksheet lives in local state while editing; Save PUTs
+// the whole tree and comes back with freshly resolved evidence statuses. On a
+// desktop the page fits the window, the worksheet scrolling inside its card.
 export default function RcmStudyPage() {
   // Maintenance › RCM studies (or, without Reliafy Maintenance, Maintenance alone: it is the RCM studies).
   const crumbs = useNavCrumbs("maintenance", "/maintenance/rcm");
   const { id } = useParams();
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "tree" ? "tree" : "worksheet";
+  const setTab = (t) => {
+    const next = new URLSearchParams(params);
+    if (t === "worksheet") next.delete("tab");
+    else next.set("tab", t);
+    setParams(next, { replace: true });
+  };
+  const phone = usePhone();
   const [study, setStudy] = useState(null);
   const [functions, setFunctions] = useState([]);
   const [options, setOptions] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [editTarget, setEditTarget] = useState(null); // { fnId, failId, mode }
+  const [editTarget, setEditTarget] = useState(null); // { at: [fi, xi, mi], mode }
   const [conflict, setConflict] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [imported, setImported] = useState(null); // { counts, warnings } of the last import
   const askText = useAskText();
+  // Undo: the worksheet as it was before each change since the last save.
+  const history = useRef([]);
+  const [, setUndoCount] = useState(0);
+  const resetHistory = () => { history.current = []; setUndoCount(0); };
 
   useEffect(() => {
     getRcmStudy(id)
@@ -73,23 +81,58 @@ export default function RcmStudyPage() {
     getRcmOptions().then(setOptions).catch(() => {});
   }, [id]);
 
-  const onTreeChange = (next) => { setFunctions(next); setDirty(true); };
+  const current = useRef(functions);
+  current.current = functions;
+  const onTreeChange = useCallback((next) => {
+    history.current = [...history.current, current.current].slice(-UNDO_DEPTH);
+    current.current = next;
+    setFunctions(next);
+    setUndoCount(history.current.length);
+    setDirty(true);
+  }, []);
 
+  const onUndo = useCallback(() => {
+    const prev = history.current.pop();
+    if (!prev) return;
+    current.current = prev;
+    setFunctions(prev);
+    setUndoCount(history.current.length);
+    setDirty(true);
+  }, []);
+
+  // Ctrl+Z (⌘Z) undoes the last change to the worksheet, unless you're typing.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key.toLowerCase() !== "z" || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+      if (e.target.closest?.("input, textarea, select, [contenteditable='true']")) return;
+      if (!history.current.length) return;
+      e.preventDefault();
+      onUndo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onUndo]);
+
+  // The decision dialog for a failure mode (from the worksheet or the tree).
+  const openDecision = (at, mode) => setEditTarget({ at, mode });
   const onDecisionSave = ({ consequence, decision }) => {
-    const { fnId, failId, mode } = editTarget;
-    setFunctions((fns) => fns.map((f) =>
-      f.id !== fnId ? f : {
+    const [fi, xi, mi] = editTarget.at;
+    onTreeChange(functions.map((f, i) =>
+      i !== fi ? f : {
         ...f,
-        failures: f.failures.map((x) =>
-          x.id !== failId ? x : {
-            ...x,
-            modes: x.modes.map((m) => (m.id === mode.id ? { ...m, consequence, decision } : m)),
-          }
+        failures: f.failures.map((x, j) =>
+          j !== xi ? x : { ...x, modes: x.modes.map((m, k) => (k === mi ? { ...m, consequence, decision } : m)) }
         ),
       }
     ));
-    setDirty(true);
     setEditTarget(null);
+  };
+  // The tree names a mode by its function's and failure's ids.
+  const treeDecision = (fnId, failId, mode) => {
+    const fi = functions.findIndex((f) => f.id === fnId);
+    const xi = fi < 0 ? -1 : functions[fi].failures.findIndex((x) => x.id === failId);
+    const mi = xi < 0 ? -1 : functions[fi].failures[xi].modes.findIndex((m) => m.id === mode.id);
+    if (mi >= 0) openDecision([fi, xi, mi], mode);
   };
 
   const onSave = async () => {
@@ -100,6 +143,7 @@ export default function RcmStudyPage() {
       setStudy(fresh);
       setFunctions(fresh.functions || []);
       setDirty(false);
+      resetHistory();
     } catch (err) {
       if (err.code === "conflict") {
         setError(err.message + " Use Reload below to fetch the latest version (your unsaved edits will be lost).");
@@ -116,6 +160,7 @@ export default function RcmStudyPage() {
     setStudy(fresh);
     setFunctions(fresh.functions || []);
     setDirty(false);
+    resetHistory();
     setError(null);
     setImported(fresh.imported || null);
     setImportOpen(false);
@@ -125,6 +170,7 @@ export default function RcmStudyPage() {
     setConflict(false);
     setError(null);
     setDirty(false);
+    resetHistory();
     getRcmStudy(id)
       .then((s) => { setStudy(s); setFunctions(s.functions || []); })
       .catch((e) => setError(e.message));
@@ -147,7 +193,7 @@ export default function RcmStudyPage() {
   const readOnly = study.read_only ?? study.is_sample;
 
   return (
-    <div className="app">
+    <div className="app rcm-frame">
       <PageHeader
         crumbs={crumbs}
         title={itemName(study)}
@@ -239,13 +285,31 @@ export default function RcmStudyPage() {
         </div>
       )}
 
-      <div className="card">
-        <RcmTree
-          functions={functions}
-          readOnly={readOnly}
-          onChange={onTreeChange}
-          onEditDecision={(fnId, failId, mode) => setEditTarget({ fnId, failId, mode })}
-        />
+      <Tabs tabs={TABS} value={tab} onChange={setTab} label="Views of the study" idPrefix="rcm" />
+      <div className="rcm-body" role="tabpanel" id="rcm-panel" aria-labelledby={`rcm-tab-${tab}`}>
+        {tab === "worksheet" ? (
+          <div className="card rw-card">
+            <RcmWorksheet
+              studyId={study.id}
+              functions={functions}
+              readOnly={readOnly}
+              phone={phone}
+              onChange={onTreeChange}
+              onDecision={(r) => openDecision(r.at, r.ref)}
+              onUndo={onUndo}
+              canUndo={history.current.length > 0}
+            />
+          </div>
+        ) : (
+          <div className="card rcm-tree-card">
+            <RcmTree
+              functions={functions}
+              readOnly={readOnly}
+              onChange={onTreeChange}
+              onEditDecision={treeDecision}
+            />
+          </div>
+        )}
       </div>
 
       {importOpen && (

@@ -27,7 +27,8 @@ Open it to see a finished study.
 
 ![The sample RCM study: functions, failures and modes, each decision with its evidence status](/guides/img/rcm-01-study.png)
 
-The worksheet is a tree, three levels deep:
+The study opens on its **Worksheet**: a table whose first column is the
+study's own tree, three levels deep:
 
 - **Function** — what the system must do, ideally with a standard: *Stop the
   vehicle within the rated distance*.
@@ -35,10 +36,30 @@ The worksheet is a tree, three levels deep:
 - **Failure mode** — what causes that failure: *Brake pad wear beyond the 8 mm
   limit*.
 
-Each failure mode carries its consequence, its effects, and a decision chip
-such as *Fixed-interval · 580 hours*. Beside the chip is the evidence status.
-Under it is a link to the evidence and one line saying what it shows, for
-example *Optimal interval ≈ 580 hours (50% saving vs run-to-failure)*.
+The columns beside it are the worksheet itself: **Failure effects**,
+**Consequence**, **Decision**, **Task**, **Interval** and **Evidence check**.
+A function or functional failure row counts what's inside it, for example
+*1 to decide* or *2 tasks*, so you can close it and still see what needs
+doing. Click a row to open its details on the right: there you'll find the
+link to the evidence and one line saying what it shows, for example *Optimal
+interval ≈ 580 hours (50% saving vs run-to-failure)*.
+
+To find your way around a big study:
+
+- **Levels 1 · 2 · 3 · All** open the whole worksheet to functions, functional
+  failures or failure modes. Click a row's arrow to open or close just that row.
+- **Filter** finds text in the descriptions, effects, tasks and notes, and
+  keeps the rows each match sits inside.
+- The chips show only the failure modes that **Need a decision**, are **Hidden
+  failures**, have a **Safety or environment** consequence, **Have a task**,
+  have **No task yet**, or have **Evidence to look at**.
+- **Columns** shows or hides columns, such as **Performance standard**,
+  **Evidence** and **Decision notes**. Click a column's heading to sort the rows
+  within each level; drag its edge to resize it. **Compact** fits more rows on
+  the screen. The worksheet remembers these choices on this device.
+
+The **Tree** tab shows the same study as a nested list, with each decision's
+evidence written under it.
 
 One decision in the sample is red on purpose. The old maintenance plan ran the
 wheel bearings to failure, on the grounds that bearing failures are random. The
@@ -54,13 +75,21 @@ On the RCM studies page, press **New study**. Give it a **Name**, and optionally
 **System** it covers and a **Description** of the scope, operating context and
 assumptions. Press **Create study** and the empty worksheet opens.
 
-Build the tree from the bottom of the worksheet:
+Build the worksheet from the top down:
 
-1. **+ Function** adds a function. Type what it must do and press Enter.
-2. Under it, **+ Functional failure** adds a way it can fail.
-3. Under that, **+ Failure mode** adds a cause. Add one per cause.
+1. **Add function** adds a function, and its details open on the right. Type
+   what it must do in **Description**.
+2. In the function's details, **Add a functional failure** adds a way it can
+   fail.
+3. In the functional failure's details, **Add a failure mode** adds a cause.
+   Add one per cause.
 
-Click the pencil beside any line to change its text, or the bin to delete it.
+Change any field in a row's details, or double-click a cell to change it in
+place: the description, effects, consequence, task, interval or notes. Press
+Enter to keep the change, or Escape to drop it. **Delete this…** in the details
+removes a row and everything inside it. **Undo** steps back through your
+changes.
+
 Nothing is stored until you press **Save study** at the top right. Until then
 the page shows an **Unsaved** chip.
 
@@ -86,8 +115,9 @@ ones; **Replace** swaps the whole worksheet, and asks you to confirm first.
 
 ## Make a decision for each failure mode
 
-Click **+ Decision** beside a failure mode. The dialog walks through the classic
-RCM decision logic in three steps.
+Click **To decide** in a failure mode's **Decision** column, or **Decide…** in
+its details. The dialog walks through the classic RCM decision logic in three
+steps.
 
 ![The decision dialog: the consequence, the suggested decisions, the task and the linked evidence](/guides/img/rcm-02-decision.png)
 
@@ -132,7 +162,7 @@ analysis**.
 
 ## Read the evidence status
 
-Each decision shows one of these:
+Each decision's **Evidence check** shows one of these:
 
 - **Supported** — the evidence agrees with the decision.
 - **Contradicted** — the evidence points the other way. A run-to-failure
@@ -145,7 +175,8 @@ Each decision shows one of these:
 
 Redesign and accept-risk decisions need no evidence, so they show no status.
 
-The chips under the study's title count the statuses for the whole study, and
+The chips under the study's title count the statuses for the whole study, a
+function's row counts them for everything inside it, and
 the RCM list shows the same counts for every study. A study with no red and no
 amber is one whose every decision you can defend.
 

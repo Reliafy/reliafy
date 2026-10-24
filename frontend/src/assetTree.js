@@ -13,6 +13,13 @@
 // take GET /api/maintenance/items, for each item's class, make and model.
 
 import { EXPLORER_PATH } from "./navigation.js";
+import { filterRows } from "./outlineTree.js";
+
+// The outline's own model (open to a level, flatten, pinned rows, the drawn
+// window, type-ahead), shared with the RCM worksheet.
+export {
+  ancestorsOf, filterOpen, findByPrefix, flatten, levelSet, pinnedRows, windowOf,
+} from "./outlineTree.js";
 
 export const ARRANGEMENTS = [
   { value: "positions", label: "Positions", title: "What each position does, inside what", tree: "Positions" },
@@ -250,17 +257,6 @@ function rollUp(rows, roots) {
   }
 }
 
-// The rows with something inside them, down to level n (1: only the tops
-// open... n = Infinity: everything open). Level 1 shows the tops, closed.
-export function levelSet(display, n, root = null) {
-  const open = new Set();
-  const base = root ? display.rows.get(root).depth + 1 : 0;
-  for (const r of display.rows.values()) {
-    if (r.kids.length && r.depth - base < n - 1) open.add(r.key);
-  }
-  return open;
-}
-
 // What a row's text is searched by: name, tag, the item's name and serial,
 // class; for an item, its serial, class, make, model and part number too.
 export function rowText(r) {
@@ -285,94 +281,9 @@ export function computeFilter(display, { query = "", chips = [], extra = null } 
   const q = query.trim().toLowerCase();
   const tests = CHIPS.filter((c) => chips.includes(c.id));
   if (!q && !tests.length && !extra) return null;
-  const match = new Set();
-  const keep = new Set();
-  for (const r of display.rows.values()) {
-    if (q && !rowText(r).includes(q)) continue;
-    if (tests.length && !tests.every((c) => c.test(r))) continue;
-    if (extra && !extra(r)) continue;
-    match.add(r.key);
-    let p = r.key;
-    while (p != null && !keep.has(p)) {
-      keep.add(p);
-      p = display.rows.get(p).parent;
-    }
-  }
-  return { match, keep };
-}
-
-// While filtering, the rows on the way down to a match start open.
-export function filterOpen(filter) {
-  return new Set([...filter.keep].filter((k) => !filter.match.has(k)));
-}
-
-// The rows in the order they're drawn: [{key, depth, pos, size}] (pos and size:
-// its place among the siblings shown, for aria-posinset and aria-setsize), and
-// each key's index. Under a match, everything inside it shows.
-export function flatten(display, open, filter = null) {
-  const list = [];
-  const index = new Map();
-  const walk = (keys, under) => {
-    const vis = filter && !under ? keys.filter((k) => filter.keep.has(k)) : keys;
-    let pos = 0;
-    for (const k of vis) {
-      const r = display.rows.get(k);
-      index.set(k, list.length);
-      list.push({ key: k, depth: r.depth, pos: ++pos, size: vis.length });
-      if (r.kids.length && open.has(k)) walk(r.kids, under || (filter && filter.match.has(k)));
-    }
-  };
-  walk(display.roots, false);
-  return { list, index };
-}
-
-// The ancestors pinned at the top while scrolling (VS Code's sticky scroll):
-// the rows the first row on screen sits inside, at most `max` (the top one and
-// the nearest ones when there are more).
-export function pinnedRows(display, list, index, scrollTop, rowHeight, max = 4) {
-  if (scrollTop <= 2 || !list.length) return [];
-  const top = Math.floor(scrollTop / rowHeight + 0.0001);
-  let pins = [];
-  for (let it = 0; it < 4; it++) {
-    const i = Math.min(list.length - 1, top + pins.length);
-    const chain = [];
-    let p = display.rows.get(list[i].key).parent;
-    while (p != null) {
-      if (index.has(p)) chain.unshift(p);
-      p = display.rows.get(p).parent;
-    }
-    pins = chain.filter((k) => index.get(k) < top + chain.length);
-  }
-  if (pins.length > max) pins = [pins[0], ...pins.slice(pins.length - max + 1)];
-  return pins;
-}
-
-// The first rows drawn and the last (exclusive): what's on screen, plus a few.
-export function windowOf(count, scrollTop, viewHeight, rowHeight, extra = 8) {
-  const from = Math.max(0, Math.floor(scrollTop / rowHeight) - extra);
-  const to = Math.min(count, Math.ceil((scrollTop + viewHeight) / rowHeight) + extra);
-  return [from, to];
-}
-
-// Type-ahead: the next row (after `from`, wrapping) whose name starts with `prefix`.
-export function findByPrefix(display, list, from, prefix) {
-  const q = prefix.toLowerCase();
-  for (let n = 1; n <= list.length; n++) {
-    const v = list[(from + n) % list.length];
-    if ((display.rows.get(v.key).ref.name || "").toLowerCase().startsWith(q)) return v.key;
-  }
-  return null;
-}
-
-// The keys of the rows a row sits inside, top first.
-export function ancestorsOf(display, key) {
-  const out = [];
-  let p = display.rows.get(key)?.parent;
-  while (p != null) {
-    out.unshift(p);
-    p = display.rows.get(p).parent;
-  }
-  return out;
+  return filterRows(display, (r) => (!q || rowText(r).includes(q))
+    && (!tests.length || tests.every((c) => c.test(r)))
+    && (!extra || extra(r)));
 }
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;

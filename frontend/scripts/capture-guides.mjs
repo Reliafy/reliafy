@@ -686,7 +686,8 @@ async function main() {
     { file: "sif-02-results.png", url: "/systems/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
     // --- RCM study: the sample, with its evidence statuses ---
-    { file: "rcm-01-study.png", url: "/maintenance/rcm/sample-rcm-truck", settle: 2000 },
+    { file: "rcm-01-study.png", url: "/maintenance/rcm/sample-rcm-truck", settle: 2000,
+      async act(page) { await page.getByRole("treegrid", { name: "RCM worksheet" }).waitFor({ timeout: 20000 }); await wait(400); } },
     // --- Failure-finding interval: a trip failing once a year (λ = 1/8,760 h), 99% ---
     { file: "ff-01-result.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) {
@@ -787,7 +788,7 @@ async function main() {
     // --- RCM study: deciding a failure mode, with the sample analysis as evidence ---
     { file: "rcm-02-decision.png", url: `/maintenance/rcm/${fx.rcmStudyId}`, settle: 1500,
       async act(page) {
-        await page.getByText("+ Decision").first().click(); await wait(600);
+        await page.getByRole("button", { name: "To decide" }).first().click(); await wait(600);
         const m = page.locator(".decision-modal");
         await m.getByRole("button", { name: /^Operational$/ }).click(); await wait(300);
         await m.getByRole("button", { name: /Fixed-interval replacement/ }).click(); await wait(800);

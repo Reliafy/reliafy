@@ -13,6 +13,7 @@ import {
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
 import { EXPLORER_LABEL } from "../navigation.js";
+import usePhone from "../usePhone.js";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
@@ -30,18 +31,6 @@ import "./AssetExplorer.css";
 // list's last row): only the positions at no location yet. ?sel=<id>: open
 // with that row picked. The old Positions, Items and Locations addresses
 // redirect here (redirects.js).
-
-const PHONE_QUERY = "(max-width: 720px)";
-function usePhone() {
-  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(PHONE_QUERY);
-    const onChange = () => setPhone(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return phone;
-}
 
 const HELP = { guide: "rcm-study" };
 
