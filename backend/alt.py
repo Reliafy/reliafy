@@ -21,6 +21,7 @@ for persistence and rehydrated without re-fitting.
 from __future__ import annotations
 
 import math
+import re
 import uuid
 import warnings
 from collections import OrderedDict
@@ -483,12 +484,16 @@ def _build_payload(
     # combination present in the data, plus the observed count.
     uniq, counts = _unique_rows(Z)
     life_at_uniq = _characteristic_life(model, uniq)
+    failed = _level_failures(inputs, uniq)
+    own = _own_fits(dist_of(distribution_id), inputs, uniq, failed)
     levels = []
-    for row, cnt, life in zip(uniq, counts, life_at_uniq):
+    for row, cnt, life, nf, mine in zip(uniq, counts, life_at_uniq, failed, own):
         levels.append({
             "stress": [float(v) for v in row],
             "n": int(cnt),
+            "failures": int(round(nf)),
             "characteristic_life": float(life) if np.isfinite(life) else None,
+            **({"own": mine} if mine else {}),
         })
 
     payload = {
@@ -505,7 +510,14 @@ def _build_payload(
         "params": shape_params,
         "coefficients": coeffs,
         "levels": levels,
+        "n_failures": int(round(float(np.sum(failed)))),
         "life_stress_plot": _life_stress_plot(model, Z, uniq, life_at_uniq, entry, labels, inputs),
+        # Two stresses: the same relationship read along the second stress,
+        # a line for each tested level of the first (the page shows the two
+        # charts side by side).
+        **({"life_stress_plot_2": _life_stress_plot(model, Z, uniq, life_at_uniq, entry, labels, inputs,
+                                                    primary=1)}
+           if Z.shape[1] > 1 else {}),
         "probability_plot": _probability_plot(
             model, dist_of(distribution_id), inputs, k_dist, uniq, life_at_uniq, labels
         ),
@@ -531,40 +543,117 @@ def _unique_rows(Z: np.ndarray):
     return rows, counts
 
 
-def _life_stress_plot(model, Z, uniq, life_at_uniq, entry, labels, inputs=None) -> dict:
+def _level_failures(inputs: dict, uniq: np.ndarray) -> np.ndarray:
+    """The failures at each tested level (``uniq``'s rows): the rows not
+    right-censored (seen to fail, found failed between inspections, or
+    before the first), weighted by their counts."""
+    Z = np.atleast_2d(np.asarray(inputs["Z"], dtype=float))
+    c = inputs.get("c")
+    failed = np.ones(Z.shape[0]) if c is None else (np.asarray(c) != 1).astype(float)
+    n = inputs.get("n")
+    if n is not None:
+        failed = failed * np.asarray(n, dtype=float)
+    keys = np.round(Z, 9)
+    out = np.zeros(len(uniq))
+    for i, row in enumerate(np.round(np.atleast_2d(uniq), 9)):
+        out[i] = float(failed[np.all(keys == row, axis=1)].sum())
+    return out
+
+
+#: Levels fitted on their own (:func:`_own_fits`), at most: past this the
+#: stress is continuous (each unit at its own), and no level has a fit.
+_MAX_OWN_FITS = 40
+
+
+def _own_fits(dist, inputs: dict, uniq: np.ndarray, failed: np.ndarray) -> list:
+    """Each tested level's distribution fitted on its own data alone (as the
+    probability plot's points are placed): its own characteristic life (the
+    parameter the life-stress model replaces) and shape, with 95% intervals,
+    for the Diagnostics tab's "is the shape the same at every stress?" and
+    "do the levels follow the life model?" charts. None for a level with
+    fewer than two failures or no verified fit."""
+    out: list = [None] * len(uniq)
+    if len(uniq) > _MAX_OWN_FITS:
+        return out
+    x, Z = inputs["x"], np.round(np.atleast_2d(np.asarray(inputs["Z"], dtype=float)), 9)
+    names = list(getattr(dist, "param_names", None) or getattr(dist, "parameter_names", []) or [])
+    for i, row in enumerate(np.round(np.atleast_2d(uniq), 9)):
+        if failed[i] < 2:
+            continue
+        mask = np.all(Z == row, axis=1)
+        kwargs = {"x": x[mask]}
+        for key in ("c", "n", "t"):
+            if inputs.get(key) is not None:
+                kwargs[key] = np.asarray(inputs[key])[mask]
+        try:
+            with warnings.catch_warnings(), np.errstate(all="ignore"):
+                warnings.simplefilter("ignore")
+                fit = dist.fit(**kwargs)
+        except Exception:  # noqa: BLE001 - a level too small or all censored
+            continue
+        if getattr(fit, "maximum", "verified") not in (None, "verified"):
+            continue
+        params = np.asarray(fit.params, dtype=float)
+        if not np.all(np.isfinite(params)):
+            continue
+        fit_names = list(getattr(fit, "param_names", None) or names or [f"p{k}" for k in range(params.size)])
+
+        def interval(name):
+            try:
+                with warnings.catch_warnings(), np.errstate(all="ignore"):
+                    warnings.simplefilter("ignore")
+                    ci = np.asarray(fit.param_cb(name, alpha_ci=0.05, bound="two-sided"), dtype=float).ravel()
+            except Exception:  # noqa: BLE001 - no covariance
+                return None
+            return [float(ci[0]), float(ci[1])] if ci.size == 2 and np.all(np.isfinite(ci)) else None
+
+        out[i] = {
+            "life": float(params[0]),
+            "life_ci": interval(fit_names[0]) if fit_names else None,
+            "shape": [{"name": fit_names[k], "value": float(params[k]), "ci": interval(fit_names[k])}
+                      for k in range(1, min(params.size, len(fit_names)))],
+        }
+    return out
+
+
+def _life_stress_plot(model, Z, uniq, life_at_uniq, entry, labels, inputs=None, primary: int = 0) -> dict:
     """Characteristic-life-vs-stress data: fitted line(s) over the stress range
     (extended below the lowest tested stress toward use level), plus the fitted
     point at each tested level. For two stresses we draw one line per unique
-    secondary-stress level, plotted against the primary stress."""
-    primary = 0
+    level of the other stress, plotted against the ``primary`` one (0: the
+    first stress, 1: the second)."""
+    two = Z.shape[1] > 1
+    other = 1 - primary if two else None
     zc = Z[:, primary]
     lo, hi = float(np.min(zc)), float(np.max(zc))
     span = hi - lo or max(abs(hi), 1.0)
     grid = np.linspace(lo - 0.4 * span, hi + 0.1 * span, 120)
 
     def line_for(secondary_val):
-        if Z.shape[1] == 1:
+        if not two:
             G = grid.reshape(-1, 1)
         else:
-            G = np.column_stack([grid, np.full_like(grid, secondary_val)])
+            G = np.empty((grid.size, 2))
+            G[:, primary] = grid
+            G[:, other] = secondary_val
         life = _characteristic_life(model, G)
         keep = np.isfinite(life) & (life > 0)
         return {
             "stress": grid[keep].tolist(),
             "life": life[keep].tolist(),
-            "secondary": None if Z.shape[1] == 1 else float(secondary_val),
+            "secondary": None if not two else float(secondary_val),
         }
 
-    if Z.shape[1] == 1:
+    if not two:
         lines = [line_for(None)]
     else:
-        sec_levels = sorted({float(v) for v in np.round(uniq[:, 1], 9)})
+        sec_levels = sorted({float(v) for v in np.round(uniq[:, other], 9)})
         lines = [line_for(s) for s in sec_levels]
 
     points = [
         {"stress": float(row[primary]),
          "life": float(life) if np.isfinite(life) else None,
-         "secondary": None if Z.shape[1] == 1 else float(row[1])}
+         "secondary": None if not two else float(row[other])}
         for row, life in zip(uniq, life_at_uniq)
     ]
     out = {
@@ -573,7 +662,7 @@ def _life_stress_plot(model, Z, uniq, life_at_uniq, entry, labels, inputs=None) 
         "log_y": bool(entry["log_y"]),
         "lines": lines,
         "points": points,
-        "secondary_label": labels[1] if Z.shape[1] > 1 else None,
+        "secondary_label": labels[other] if two else None,
     }
     if inputs is not None and is_interval(inputs):
         out["observations"] = _interval_observations(inputs, primary)
@@ -809,13 +898,17 @@ def evaluate(
     mission_time: Optional[float] = None,
     confidence: float = 0.95,
     bounds_method: Optional[str] = "wald",
+    tested=None,
 ) -> dict:
     """Reliability at a *use-level* stress: sf/ff/hf/… over a time grid, key
     metrics, the extrapolated characteristic life, and — when a reference (test)
     stress is given — the acceleration factor between them. ``mission_time``
     adds the reliability over that mission. With ``bounds_method`` (Wald by
     default, instant; None for none) it carries the confidence bounds of
-    :func:`use_level_bounds` too (#231).
+    :func:`use_level_bounds` too (#231). ``tested`` (the tested levels'
+    stress rows; the model's own data when it has them) adds ``life_lines``:
+    the life-stress line along each stress from the tested range to the use
+    stress, the other stress held at its use value (:func:`life_lines`).
     """
     Zuse = _use_row(use_stress, life_model_id)
     if mission_time is not None:
@@ -865,6 +958,10 @@ def evaluate(
         "acceleration_factor": af,
         "t_max": float(hi_disp),
     }
+    if tested is None and getattr(model, "data", None) is not None:
+        tested = getattr(model.data, "Z", None)
+    if tested is not None and len(tested):
+        out["life_lines"] = life_lines(model, Zuse, tested)
     if bounds_method is not None:
         try:
             out["bounds"] = use_level_bounds(
@@ -904,6 +1001,29 @@ FEW_FAILURES = 20
 #: Rows the likelihood-ratio and bootstrap bounds take in one request.
 MAX_ROWS_LR = 5_000
 MAX_ROWS_BOOTSTRAP = 5_000
+
+
+def life_lines(model, Zuse: np.ndarray, tested) -> list:
+    """The life-stress line along each stress, through the use stress: one
+    per stress column, over that stress from below the tested range (or the
+    use stress, if lower) to above it (or the use stress, if higher), the
+    other stress held at its use value. The model page draws it to the use
+    point on the life-stress charts."""
+    T = np.atleast_2d(np.asarray(tested, dtype=float))
+    use = np.atleast_2d(np.asarray(Zuse, dtype=float))
+    out = []
+    for j in range(use.shape[1]):
+        lo, hi = float(np.nanmin(T[:, j])), float(np.nanmax(T[:, j]))
+        span = hi - lo or max(abs(hi), 1.0)
+        a = min(lo - 0.4 * span, float(use[0, j]))
+        b = max(hi + 0.1 * span, float(use[0, j]))
+        grid = np.linspace(a, b, 120)
+        G = np.repeat(use, grid.size, axis=0)
+        G[:, j] = grid
+        life = _characteristic_life(model, G)
+        keep = np.isfinite(life) & (life > 0)
+        out.append({"stress": grid[keep].tolist(), "life": life[keep].tolist()})
+    return out
 
 
 def _use_row(use_stress, life_model_id: str) -> np.ndarray:
@@ -1286,3 +1406,157 @@ def _invert_ff(grid: np.ndarray, ff: np.ndarray, p: float):
         return float(grid[idx])
     frac = (p - f0) / (f1 - f0)
     return float(grid[idx - 1] + frac * (grid[idx] - grid[idx - 1]))
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics: can the model be trusted? (SurPyval's diagnose())
+# ---------------------------------------------------------------------------
+#: SurPyval's life-model names as the app names them; ``id`` is the app's
+#: life model (None: one the app doesn't offer).
+_PLAIN_LIFE_MODELS = {
+    "PowerExponential": ("Temperature–nonthermal", "power_exponential"),
+    "DualExponential": ("Dual exponential (temp–humidity)", "dual_exponential"),
+    "DualPower": ("Dual power", "dual_power"),
+    "InverseExponential": ("Arrhenius", "arrhenius"),
+    "Exponential": ("Arrhenius", "arrhenius"),
+    "InversePower": ("Inverse power law", "inverse_power"),
+    "Power": ("Inverse power law", "inverse_power"),
+    "InverseEyring": ("Inverse Eyring", None),
+    "Eyring": ("Eyring", "eyring"),
+    "GeneralLogLinear": ("General log-linear", None),
+    "Linear": ("Linear", "linear"),
+}
+#: Rows the checks take in one request: they refit the model several times.
+MAX_ROWS_DIAGNOSE = 5_000
+
+
+_LIFE_MODEL_WORD = re.compile(r"\b(" + "|".join(sorted(_PLAIN_LIFE_MODELS, key=len, reverse=True)) + r")\b")
+
+
+def plain_life_model(name: str) -> str:
+    return _PLAIN_LIFE_MODELS.get(str(name), (str(name), None))[0]
+
+
+def _plain_text(text: str) -> str:
+    """SurPyval's words with the app's names for the life models."""
+    return _LIFE_MODEL_WORD.sub(lambda m: plain_life_model(m.group(1)), str(text or ""))
+
+
+def _finite_or_none(v) -> Optional[float]:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def _test_row(row: Optional[dict]) -> Optional[dict]:
+    if row is None:
+        return None
+    detail = str(row.get("detail") or "")
+    computed = _finite_or_none(row.get("p")) is not None
+    return {
+        "verdict": row.get("verdict"),
+        "computed": computed,
+        "p": _finite_or_none(row.get("p")),
+        "statistic": _finite_or_none(row.get("statistic")),
+        "df": _finite_or_none(row.get("df")),
+        # "not computed: <why>" → the why.
+        "detail": _plain_text(detail.split("not computed: ", 1)[1] if detail.startswith("not computed: ")
+                              else detail),
+    }
+
+
+def diagnose(model, life_model_id: str, stresses: list, use_stress: Optional[list] = None) -> dict:
+    """SurPyval's checks of an accelerated life model (``diagnose()``), as
+    the Diagnostics tab reads them: whether the shape is the same at every
+    tested level (a likelihood-ratio test), whether the levels follow the
+    life model (its lack-of-fit test), every other life model for the same
+    number of stresses refitted with its AIC (and its life at the use
+    stress), and how many levels each stress was tested at and how far the
+    use stress lies from them. Nothing resamples. ``model`` must carry its
+    data (a fitted model, not one restored from a dict)."""
+    if getattr(model, "data", None) is None:
+        raise FitError("The checks need the data the model was fitted to.")
+    n_rows = int(np.asarray(model.data.x).shape[0])
+    if n_rows > MAX_ROWS_DIAGNOSE:
+        raise FitError(f"The checks refit the model several times, so they take up to "
+                       f"{MAX_ROWS_DIAGNOSE:,} rows; this model has {n_rows:,}.")
+    use = None
+    if use_stress is not None:
+        use = _use_row(use_stress, life_model_id).ravel()
+    try:
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore")
+            d = model.diagnose(**({"use_stress": use.tolist() if use.size > 1 else float(use[0])}
+                                  if use is not None else {}))
+    except ValueError as exc:
+        raise FitError(_plain_text(str(exc))) from exc
+    table = d.table
+    rows = table.to_dict("records") if hasattr(table, "to_dict") else list(table)
+    columns = list(getattr(d, "columns", []) or [])
+
+    def of(check):
+        return [r for r in rows if r.get("check") == check]
+
+    def stress_index(row) -> Optional[int]:
+        cov = tuple(row.get("covariates") or ())
+        if cov and cov[0] in columns:
+            return columns.index(cov[0])
+        return None
+
+    shape = of("common_shape")
+    life = of("life_stress")
+    # The comparison: the fitted model first, then the others by AIC.
+    comparison = []
+    own_aic = None
+    own_name = None
+    for r in of("life_model_comparison"):
+        aic = _finite_or_none(r.get("statistic"))
+        name = str(r.get("life_model") or "")
+        if own_aic is None:
+            own_aic, own_name = aic, name
+        detail = str(r.get("detail") or "")
+        at_use = None
+        marker = "life at the use stress "
+        if marker in detail:
+            at_use = _finite_or_none(detail.split(marker, 1)[1].split(";")[0].strip())
+        plain, app_id = _PLAIN_LIFE_MODELS.get(name, (name, None))
+        comparison.append({
+            "name": plain,
+            "life_model_id": app_id,
+            "current": name == own_name,
+            "aic": aic,
+            "delta": None if aic is None or own_aic is None else aic - own_aic,
+            "verdict": r.get("verdict"),
+            "life_at_use": at_use,
+        })
+    extrapolation = []
+    for j, stress in enumerate(stresses):
+        label = stress_display_label(stress.get("label") or stress.get("column") or f"Stress {j + 1}",
+                                     stress.get("unit") or "")
+        entry: dict = {"stress": j, "label": label}
+        for r in of("extrapolation"):
+            if stress_index(r) != j:
+                continue
+            if str(r.get("test") or "").startswith("stress levels"):
+                entry["levels"] = int(_finite_or_none(r.get("statistic")) or 0)
+                entry["levels_verdict"] = r.get("verdict")
+            else:
+                entry["distance"] = _finite_or_none(r.get("statistic"))
+                entry["use_verdict"] = r.get("verdict")
+                entry["use"] = float(use[j]) if use is not None else None
+        Z = np.asarray(model.data.Z, dtype=float)[:, j]
+        entry["low"], entry["high"] = float(np.nanmin(Z)), float(np.nanmax(Z))
+        extrapolation.append(entry)
+    generic = ("Common shape: the likelihood", "Life-model comparison:", "Extrapolation")
+    notes = [_plain_text(n) for n in (d.notes or []) if not str(n).startswith(generic)]
+    return _json_safe({
+        "alpha": float(getattr(d, "alpha", 0.05)),
+        "use_stress": None if use is None else [float(v) for v in use],
+        "shape": _test_row(shape[0]) if shape else None,
+        "life_stress": _test_row(life[0]) if life else None,
+        "comparison": comparison,
+        "extrapolation": extrapolation,
+        "notes": notes,
+    })

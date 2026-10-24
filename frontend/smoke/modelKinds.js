@@ -8,7 +8,8 @@
 //   find   how to reach a model of it: { id } for a sample, or { name } for a
 //          model seedModelKinds() saves (add its fit there too), or { path,
 //          list, name } for a model in another collection (path is the page
-//          address with ":id"; list is the API route listing its models)
+//          address with ":id"; list is the API route listing its models), or
+//          { path, id } for a sample in another collection
 //   tabs   the tab names the page shows, in order (none: [] for a one-view page)
 // The spec then opens every tab at 1440×900 and at 400 px wide and fails on a
 // page that scrolls on the desktop or sideways on the phone.
@@ -42,6 +43,11 @@ export const MODEL_KINDS = [
   { slug: "condition-life",
     find: { path: "/models/joint/:id", list: "/api/joint/models", name: "Smoke test pumps (condition-based)" },
     tabs: ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"] },
+  // Accelerated life: one stress, and two (two life-stress charts side by side).
+  { slug: "alt-one-stress", find: { path: "/models/alt/:id", id: "sample-alt-fluid" },
+    tabs: ["Life-stress", "Probability plot", "Calculator", "Diagnostics", "Data"] },
+  { slug: "alt-two-stresses", find: { path: "/models/alt/:id", id: "sample-alt-seal" },
+    tabs: ["Life-stress", "Probability plot", "Calculator", "Diagnostics", "Data"] },
   // Repairable (recurrent-event) models.
   ...[
     ["repairable-crow-amsaa", "Compressor fleet — Crow-AMSAA (sample)"],
@@ -148,7 +154,7 @@ export async function seedModelKinds(api) {
 // The page address of a kind's model on the server ``api`` talks to.
 export async function kindUrl(api, kind) {
   const f = kind.find;
-  if (f.id) return `/models/m/${f.id}`;
+  if (f.id) return (f.path || "/models/m/:id").replace(":id", f.id);
   const list = await (await api.get(f.list || "/api/models")).json();
   const rows = Array.isArray(list) ? list : list.models || list.items || [];
   const hit = rows.find((m) => m.name === f.name);

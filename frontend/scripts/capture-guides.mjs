@@ -621,7 +621,7 @@ async function main() {
     { file: "alt-03-probplot.png", url: `/models/alt/${S.altModel}`, settle: 1800,
       async act(page) { await press(page, /^Probability plot$/); await wait(1800); } },
     { file: "alt-04-uselevel.png", url: `/models/alt/${S.altModel}`, settle: 1800,
-      async act(page) { await press(page, /^Use-level calculator$/); await wait(1200);
+      async act(page) { await press(page, /^Calculator$/); await wait(1200);
                         await page.getByRole("button", { name: /Compute at use level/i }).click().catch(() => {}); await wait(3000); } },
     // Planning the next accelerated test from the sample fit, at a use stress of 20 kV.
     { file: "alt-05-plan.png", url: `/strategy/test-planning/accelerated?model=${S.altModel}`, settle: 2000,

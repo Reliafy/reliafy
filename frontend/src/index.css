@@ -8173,16 +8173,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 
 /* ---- Accelerated Life Testing (ALT) ---- */
-.alt-result { display: flex; flex-direction: column; gap: 14px; }
-/* Four tabs don't fit a phone: wrap them rather than widen the page. */
-.alt-result > .seg { flex-wrap: wrap; max-width: 100%; }
-.alt-plot-wrap { display: flex; flex-direction: column; gap: 8px; }
 .alt-model-pick { display: flex; gap: 16px; flex-wrap: wrap; }
-.alt-detail .alt-cols {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
-  gap: 28px;
-}
-@media (max-width: 760px) { .alt-detail .alt-cols { grid-template-columns: 1fr; } }
 .mini-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
 .mini-table th, .mini-table td {
   text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line);
@@ -8205,7 +8196,6 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .alt-calc { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
 @media (max-width: 820px) { .alt-calc { grid-template-columns: 1fr; } }
 .alt-calc-inputs { display: flex; flex-direction: column; gap: 12px; }
-.alt-stress-grid { display: flex; flex-direction: column; gap: 10px; }
 .alt-ref-toggle { display: flex; align-items: center; gap: 8px; font-size: var(--fs-13); color: var(--muted); cursor: pointer; }
 .alt-calc-out { display: flex; flex-direction: column; gap: 12px; }
 .alt-metrics { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -8224,8 +8214,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .alt-bounds-k { font-size: var(--fs-13); color: var(--ink); }
 .alt-bounds-pick .seg { flex-wrap: wrap; max-width: 100%; }
 .alt-method-hint { font-size: var(--fs-12); }
-.alt-ci-table td:nth-child(2), .alt-ci-table th:nth-child(2),
-.alt-coef-table td:nth-child(2), .alt-coef-table th:nth-child(2) { text-align: right; }
+.alt-ci-table td:nth-child(2), .alt-ci-table th:nth-child(2) { text-align: right; }
 /* Inspection-data toggle on the new-model Data step (#237) */
 .alt-interval-toggle { display: flex; align-items: center; gap: 8px; font-size: var(--fs-13); color: var(--muted); cursor: pointer; }
 @media (max-width: 560px) {

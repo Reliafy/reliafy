@@ -1166,6 +1166,13 @@ def seed_samples(db) -> None:
     for spec in SAMPLE_ALT_MODELS:
         try:
             existing = db.alt_models.find_one({"_id": spec["id"]})
+            levels = ((existing or {}).get("results") or {}).get("levels") or []
+            if existing is not None and levels and "failures" not in levels[0]:
+                # The model page's frame: each level's failures and own fit,
+                # and a two-stress model's second chart. Refit once to gain them.
+                db.alt_models.delete_one({"_id": spec["id"]})
+                existing = None
+                logger.info("Refitting sample ALT model %r (model page).", spec["id"])
             if existing is not None:
                 units = spec["spec"].get("stress_units")
                 if units and not (existing.get("spec") or {}).get("stress_units"):

@@ -128,8 +128,10 @@ def evaluate(db, model_id: str, use_stress: list, owner_id, ref_stress=None, *,
         raise ModelNotFound(model_id)
     live = get_live_model(db, model_id, owner_id)
     life_model_id = (doc.spec or {}).get("life_model_id", "arrhenius")
+    tested = [lvl.get("stress") for lvl in (doc.results or {}).get("levels") or [] if lvl.get("stress")]
     out = alt_fit.evaluate(live, use_stress, life_model_id, ref_stress=ref_stress,
-                           mission_time=mission_time, confidence=alt_fit.check_confidence(confidence))
+                           mission_time=mission_time, confidence=alt_fit.check_confidence(confidence),
+                           tested=tested or None)
     # A fit with no finite maximum (#230) extrapolates nothing: the use-level
     # numbers travel with the warning, never without it.
     notice = (doc.results or {}).get("no_finite_maximum")
@@ -219,6 +221,55 @@ def bounds(db, model_id: str, owner_id, *, uid: str, use_stress: list, method: s
     return 200, _done(alt_fit.use_level_bounds(
         live, use_stress, life_model_id, method=method, confidence=confidence, mission_time=mission_time,
         t_max=t_max))
+
+
+# The checks' answers, per model, fit and use stress: they refit the model
+# several times (about half a second), and the tab asks again on each visit.
+_DIAGNOSED: "OrderedDict[tuple, dict]" = OrderedDict()
+_DIAGNOSED_MAX = 64
+
+
+def diagnose(db, model_id: str, owner_id, use_stress=None) -> dict:
+    """SurPyval's checks of a saved ALT model (:func:`backend.alt.diagnose`):
+    the common shape, the life model's fit to the levels, the other life
+    models and the distance to ``use_stress`` (optional). They need the
+    model's data, so the model is refitted from its dataset (a rehydrated
+    model carries none)."""
+    doc = get_model(db, model_id, owner_id)
+    if doc is None:
+        raise ModelNotFound(model_id)
+    results = doc.results or {}
+    if results.get("no_finite_maximum"):
+        raise FitError("These checks need a fit that reached a finite maximum, and this one didn't: "
+                       "refit with more failures at each stress level.")
+    rows = int(results.get("n") or 0)
+    if rows > alt_fit.MAX_ROWS_DIAGNOSE:
+        raise FitError(f"The checks refit the model several times, so they take up to "
+                       f"{alt_fit.MAX_ROWS_DIAGNOSE:,} rows; this model has {rows:,}.")
+    spec = doc.spec or {}
+    life_model_id = spec.get("life_model_id", "arrhenius")
+    use = None if use_stress is None else [float(v) for v in use_stress]
+    if use is not None:
+        alt_fit._use_row(use, life_model_id)  # the right number of finite stresses
+    key = (model_id, json.dumps(spec, sort_keys=True, default=str), str(doc.updated_at),
+           tuple(use) if use is not None else None)
+    if key in _DIAGNOSED:
+        _DIAGNOSED.move_to_end(key)
+        return _DIAGNOSED[key]
+    live = get_live_model(db, model_id, owner_id)
+    if not alt_fit.has_data(live):
+        try:
+            live = _refit(db, doc)
+        except FitError as exc:
+            if str(exc) == DATASET_DELETED:
+                raise FitError("The dataset this model was fitted to was deleted, so these checks (which "
+                               "refit the model from its data) can't run.") from None
+            raise
+    out = alt_fit.diagnose(live, life_model_id, results.get("stresses") or [], use)
+    _DIAGNOSED[key] = out
+    while len(_DIAGNOSED) > _DIAGNOSED_MAX:
+        _DIAGNOSED.popitem(last=False)
+    return out
 
 
 def _remember_live(model_id: str, cache_id: str) -> None:
