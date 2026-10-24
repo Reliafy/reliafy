@@ -33,6 +33,7 @@ const REACHED_FROM = {
   "/api-docs": "the menu's Account group",
   "/team": "the top bar's team settings",
   "/admin": "operators only, by address",
+  "/data-model": "graph-access users: the menu's Account group where the preview is on, or by address",
   "/changes": "Home's What changed panel",
   "/oauth/consent": "an MCP client's sign-in",
 };

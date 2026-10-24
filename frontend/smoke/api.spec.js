@@ -27,6 +27,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/classes/forecast"], // #407
   ["POST", "/api/maintenance/graph/query"], // #423
   ["GET", "/api/maintenance/graph/schema"], // #423
+  ["GET", "/api/maintenance/graph/design"], // the Data model page
   ["GET", "/api/maintenance/conditions"], // #428
   ["GET", "/api/maintenance/overview"],
   ["GET", "/api/maintenance/tree"], // the asset tree pane

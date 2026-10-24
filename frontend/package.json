@@ -12,6 +12,7 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
+    "cytoscape": "^3.34.3",
     "dompurify": "^3.4.12",
     "firebase": "^11.10.0",
     "marked": "^14.1.4",

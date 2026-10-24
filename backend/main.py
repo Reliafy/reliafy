@@ -649,7 +649,7 @@ SPA_ROOTS = frozenset({
     "reliability-analysis-software",
     # The signed-in app.
     "home", "systems", "asset-register", "maintenance", "data", "models", "strategy", "forecasts", "reports",
-    "agent", "team", "settings", "tokens", "admin", "billing", "changes",
+    "agent", "team", "settings", "tokens", "admin", "billing", "changes", "data-model",
     # Placeholder pages (frontend/src/plannedPages.js).
     "requirements", "failures", "risk",
     # Its earlier addresses, which redirect (frontend/src/redirects.js).
