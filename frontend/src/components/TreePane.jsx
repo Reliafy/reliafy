@@ -38,8 +38,8 @@ function RowIcon({ r }) {
   );
 }
 
-function Markers({ r }) {
-  const list = markersOf(r);
+function Markers({ r, rcm }) {
+  const list = markersOf(r, { rcm });
   if (!list.length) return null;
   return (
     <span className="tp-mk">
@@ -56,7 +56,7 @@ function Markers({ r }) {
 // Bold: the pane's own headings, the places, and an item with positions on it.
 const heading = (r) => r.type === "group" || r.type === "loc" || (r.type === "item" && r.kids.length > 0);
 
-function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick }) {
+function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm }) {
   const has = r.kids.length > 0;
   const indent = Math.min(v.depth, phone ? 8 : 30) * 14;
   return (
@@ -82,7 +82,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
       <RowIcon r={r} />
       <span className="tp-nm"><Highlight text={r.ref.name || "(no name)"} query={query} /></span>
       {has && !open && <span className="tp-cnt" title={`${r.kids.length} directly inside`}>{r.kids.length.toLocaleString("en-AU")}</span>}
-      <Markers r={r} />
+      <Markers r={r} rcm={rcm} />
     </div>
   );
 }
@@ -90,7 +90,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
 export default function TreePane({
   title, treeLabel, display, list, index, open, filter, query, onQuery, chips, onChips, mode, onMode, focus, onPick,
   onToggle, onLevel, onCloseAll, phone, width, onWidth, collapsed, onCollapse, onNew, newLabel, menu,
-  notice, statusText, empty, scrollTo, onEnter,
+  notice, statusText, empty, scrollTo, onEnter, rcmMarks = false,
 }) {
   const H = phone ? 44 : 30;
   const maxPins = phone ? 2 : 4;
@@ -184,7 +184,7 @@ export default function TreePane({
                 const r = display.rows.get(k);
                 return (
                   <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned phone={phone}
-                       query={query} onToggle={onToggle} onPick={(key) => { onPick(key, {}); reveal(key, true); }} />
+                       query={query} onToggle={onToggle} onPick={(key) => { onPick(key, {}); reveal(key, true); }} rcm={rcmMarks} />
                 );
               })}
             </div>
@@ -196,7 +196,7 @@ export default function TreePane({
             const r = display.rows.get(v.key);
             return (
               <Row key={v.key} v={v} r={r} top={i * H} height={H} open={open.has(v.key)} focused={v.key === focus}
-                   dim={dim(v.key)} phone={phone} query={query} onToggle={onToggle} onPick={onPick} />
+                   dim={dim(v.key)} phone={phone} query={query} onToggle={onToggle} onPick={onPick} rcm={rcmMarks} />
             );
           })}
         </div>

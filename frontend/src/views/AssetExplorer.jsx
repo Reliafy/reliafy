@@ -4,6 +4,10 @@ import { getMaintenanceTree, listMaintenanceItems } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
 import TreeDetail from "../components/TreeDetail.jsx";
+import FullScreenButton from "../components/FullScreenButton.jsx";
+import useFullScreen from "../components/useFullScreen.js";
+import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
+import { scopeParam, shownTab, tabParam } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { NewItemModal, NewLocationModal } from "./MaintenanceLists.jsx";
@@ -31,6 +35,12 @@ import "./AssetExplorer.css";
 // list's last row): only the positions at no location yet. ?sel=<id>: open
 // with that row picked. The old Positions, Items and Locations addresses
 // redirect here (redirects.js).
+//
+// The panel has tabs (explorerTabs.js): ?tab=rcm opens a position's RCM, and
+// the tab stays as you walk the tree (rows without it show Summary); the
+// address keeps the row picked (?sel=) and the RCM's scope (?scope=this).
+// "Full width" folds the tree away for the RCM grid; Full screen (F, Esc to
+// leave) gives the tree and the panel the whole screen, as the RBD editor's.
 
 const HELP = { guide: "rcm-study" };
 
@@ -69,6 +79,15 @@ export default function AssetExplorer() {
     navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
   }, [params, mode, navigate, location]);
 
+  const setQuery_ = useCallback((change) => {
+    const q = new URLSearchParams(params);
+    change(q);
+    if (q.toString() === params.toString()) return;
+    navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
+  }, [params, navigate, location]);
+  const setTab = (t) => setQuery_((q) => (t === "summary" ? q.delete("tab") : q.set("tab", t)));
+  const setScope = (v) => setQuery_((q) => (v === "this" ? q.set("scope", "this") : q.delete("scope")));
+
   const [data, setData] = useState(null);
   // The items list (class, make and model for each item), for the Items
   // arrangement: fetched when it's first shown, and again after a change.
@@ -84,7 +103,14 @@ export default function AssetExplorer() {
   const [fopen, setFopen] = useState(null);
   const [scrollTo, setScrollTo] = useState(null);
   const [modal, setModal] = useState(null);
+  const [wide, setWide] = useState(false);
+  const beforeWide = useRef(false);
   const headingRef = useRef(null);
+  const frame = useRef(null);
+  const fullBtn = useRef(null);
+  const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
+  const tab = tabParam(params.get("tab"));
+  const scope = scopeParam(params.get("scope"));
   const pending = useRef(params.get("sel") || location.state?.treeReveal || null);
 
   const load = useCallback(() => {
@@ -118,6 +144,42 @@ export default function AssetExplorer() {
   const open = filter ? fopen || filterOpen(filter) : baseOpen;
   const { list, index } = useMemo(() => flatten(display, open, filter), [display, open, filter]);
   const focus = display.rows.has(selected[mode]) ? selected[mode] : list[0]?.key ?? null;
+
+  // With a tab open beyond Summary, the address follows the row picked
+  // (?sel=), once the tree is in, so a link opens on it with that tab.
+  useEffect(() => {
+    if (!data || focus == null || pending.current || tab === "summary") return;
+    if (params.get("sel") === focus) return;
+    setQuery_((q) => q.set("sel", focus));
+  }, [data, focus, params, setQuery_, tab]);
+
+  // Full width: the tree folds to its rail while it's on (and comes back as it
+  // was); opening the tree from the rail ends it.
+  const onWide = (on) => {
+    if (on) {
+      beforeWide.current = collapsed;
+      setCollapsed(true);
+    } else {
+      setCollapsed(beforeWide.current);
+    }
+    setWide(on);
+  };
+  useEffect(() => {
+    if (wide && !collapsed) setWide(false);
+  }, [wide, collapsed]);
+
+  // F toggles full screen (not while typing, nor with a dialog or menu open,
+  // nor with a modifier: Ctrl+F still finds); Esc leaves it.
+  useEffect(() => {
+    if (phone) return undefined;
+    const onKey = (e) => {
+      if (!isFullScreenKey(e) || hasOpenLayer(document)) return;
+      e.preventDefault();
+      toggleFull();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phone, toggleFull]);
 
   // Remembered on this device, a moment after each change, and on the way out.
   const latest = useRef(null);
@@ -202,7 +264,9 @@ export default function AssetExplorer() {
     latest.current = { ...latest.current, mode: m, selected: nextSelected };
     saveTreeState(workspace, latest.current);
     pending.current = keep;
-    navigate(explorerPath(m), { state: keep ? { treeReveal: keep } : undefined });
+    // The tab and the RCM's scope come along.
+    navigate(explorerPath(m, { tab: tab === "summary" ? null : tab, scope: scope === "this" ? "this" : null }),
+             { state: keep ? { treeReveal: keep } : undefined });
   };
 
   // Ctrl+\ folds the pane away and back.
@@ -290,12 +354,14 @@ export default function AssetExplorer() {
   );
 
   const row = (phone ? detailKey : focus) != null ? display.rows.get(phone ? detailKey : focus) : null;
+  const rcmShown = !!row && shownTab(tab, row) === "rcm";
   const back = phone && (
     <button type="button" className="secondary td-back" onClick={() => navigate(-1)}>‹ {title}</button>
   );
 
   return (
-    <div className={"tx" + (phone ? " phone" : "") + (phone && detailKey ? " show-detail" : "")}>
+    <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && detailKey ? " show-detail" : "")
+      + (full ? " is-full" : "") + (rcmShown && !phone ? " tx-fit" : "") + (wide ? " tx-wide" : "")}>
       <TreePane
         title={title}
         treeLabel={treeLabel}
@@ -333,6 +399,7 @@ export default function AssetExplorer() {
         empty={phone && (error || nothing) ? emptyDetail : paneEmpty}
         scrollTo={scrollTo}
         onEnter={(key) => (phone ? pick(key, { go: true }) : headingRef.current?.focus())}
+        rcmMarks={tab === "rcm" || chips.includes("unanalysed")}
       />
       <section className="tx-detail" aria-label="Details"
                onKeyDown={(e) => {
@@ -345,7 +412,10 @@ export default function AssetExplorer() {
                         setSelected((s) => ({ ...s, [mode]: k }));
                         return navigate(location.pathname + location.search, { state: { treeDetail: k }, replace: true });
                       }}
-                      back={back} version={version} empty={emptyDetail} />
+                      back={back} version={version} empty={emptyDetail}
+                      tab={tab} onTab={setTab} scope={scope} onScope={setScope} phone={phone}
+                      wide={wide} onWide={onWide} onTreeChanged={load}
+                      fullScreenButton={!phone && <FullScreenButton ref={fullBtn} full={full} onClick={toggleFull} />} />
         )}
       </section>
 

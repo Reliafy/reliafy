@@ -63,7 +63,7 @@ export function carryOver(row, to) {
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 export const byName = (a, b) => collator.compare(a.name || "", b.name || "");
 
-const blank = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null });
+const blank = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, not_analysed: 0 });
 
 // The display tree for one arrangement: rows {key, type (pos | loc | item |
 // group), ref, parent, kids, depth, own, sum} keyed by id, and the tops.
@@ -240,7 +240,9 @@ function rollUp(rows, roots) {
   }
   for (let i = order.length - 1; i >= 0; i--) {
     const r = order[i];
-    const own = { ...blank(), ...(r.ref.status || {}) };
+    // not_analysed: a position whose RCM isn't done (no function yet, or a
+    // failure mode with no decision), from the tree's rows.
+    const own = { ...blank(), ...(r.ref.status || {}), not_analysed: r.type === "pos" && r.ref.not_analysed ? 1 : 0 };
     const sum = { ...own, positions: 0, empty: 0 };
     for (const k of r.kids) {
       const c = rows.get(k);
@@ -248,6 +250,7 @@ function rollUp(rows, roots) {
       sum.overdue += s.overdue;
       sum.open_work += s.open_work;
       sum.alarms += s.alarms;
+      sum.not_analysed += s.not_analysed;
       sum.positions += s.positions + (c.type === "pos" ? 1 : 0);
       sum.empty += s.empty + (c.type === "pos" && c.ref.position_class && !c.ref.item ? 1 : 0);
       if (s.next_due && (!sum.next_due || s.next_due < sum.next_due)) sum.next_due = s.next_due;
@@ -272,6 +275,7 @@ export const CHIPS = [
   { id: "open", label: "Open work", test: (r) => r.own.open_work > 0 },
   { id: "alarm", label: "Alarm", test: (r) => r.own.alarms > 0 },
   { id: "empty", label: "Empty", title: "Positions with a class and nothing fitted", positionsOnly: true, test: (r) => r.type === "pos" && !!r.ref.position_class && !r.ref.item },
+  { id: "unanalysed", label: "Not analysed", title: "Positions with no function yet, or a failure mode with no decision (RCM)", positionsOnly: true, test: (r) => r.own.not_analysed > 0 },
 ];
 
 // The filter: the rows that match the text and every chip that's on (and the
@@ -291,7 +295,9 @@ const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n =
 // A row's markers, at most three: overdue (a count), open work (a count), and
 // "!" for an alarm. A row with something inside it counts everything inside
 // (and itself); `inside` says so. Each has the words for a screen reader.
-export function markersOf(r) {
+// With `rcm` (the RCM tab open, or the Not analysed chip on), a quiet fourth:
+// a position not analysed yet (a parent: how many, inside it and itself).
+export function markersOf(r, { rcm = false } = {}) {
   const parent = r.kids.length > 0;
   const s = parent ? r.sum : r.own;
   const where = (own) => (!parent ? "" : own ? " here and inside" : " inside");
@@ -299,6 +305,10 @@ export function markersOf(r) {
   if (s.overdue) out.push({ kind: "overdue", text: String(s.overdue), label: `${plural(s.overdue, "overdue task")}${where(r.own.overdue)}` });
   if (s.open_work) out.push({ kind: "open", text: String(s.open_work), label: `${plural(s.open_work, "open work order")}${where(r.own.open_work)}` });
   if (s.alarms) out.push({ kind: "alarm", text: "!", label: `${plural(s.alarms, "reading")} past an alarm limit${where(r.own.alarms)}` });
+  if (rcm && s.not_analysed) {
+    out.push({ kind: "rcm", text: parent ? String(s.not_analysed) : "○",
+      label: parent ? `${plural(s.not_analysed, "position")} not analysed yet${where(r.own.not_analysed)}` : "Not analysed yet (RCM)" });
+  }
   return out.map((m) => ({ ...m, inside: parent }));
 }
 

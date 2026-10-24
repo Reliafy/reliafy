@@ -12,9 +12,10 @@
 
 .tp {
   position: sticky;
-  top: 58px;
+  top: 59px;
   flex: none;
-  height: calc(100vh - 58px);
+  /* Below the app's header (59 px): the page itself doesn't scroll for the tree. */
+  height: calc(100vh - 59px);
   display: flex;
   flex-direction: column;
   background: var(--surf);
@@ -615,4 +616,167 @@ a.td-open:hover {
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
+}
+
+/* ---- the panel's tabs, the RCM tab, full width and full screen ---------------- */
+
+.td-tabs {
+  margin: 0 0 12px;
+}
+.td-desc {
+  margin: -6px 0 14px;
+}
+
+/* A position's RCM: the panel fits the window and the grid scrolls in its card
+   (no page scroll at a laptop's size). */
+.prcm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.prcm > * {
+  flex: none;
+}
+.prcm-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.prcm-sum {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+.prcm-err {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--danger);
+}
+.prcm > .card {
+  margin: 0;
+}
+.prcm > .prcm-card {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 12px;
+  min-height: 360px;
+}
+a.rw-cklink {
+  text-decoration: none;
+}
+a.rw-cklink:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+  border-radius: 999px;
+}
+.tp-mini.rcm {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+  font-weight: 500;
+}
+button.td-wide {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+@media (min-width: 721px) {
+  .tx.tx-fit .tx-detail {
+    position: sticky;
+    top: 59px;
+    height: calc(100vh - 59px);
+    height: calc(100dvh - 59px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 24px 14px;
+  }
+  .tx.tx-fit .td {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .td.td-fit > * {
+    flex: none;
+  }
+  .td.td-fit .page-header .title-row h1 {
+    font-size: var(--fs-20, 1.25rem);
+  }
+  .td.td-fit > .td-tabs {
+    margin-bottom: 8px;
+  }
+  .td.td-fit > .td-body,
+  .td.td-fit .prcm {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .td.td-fit .prcm > .prcm-card {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .tx.tx-wide .tx-detail {
+    padding-inline: 16px;
+  }
+}
+
+/* Full screen (F; Esc leaves): the tree and the panel cover the screen, the
+   app's menu and header out of sight, as the RBD editor's full screen. */
+.tx.is-full {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  align-items: stretch;
+}
+.tx.is-full .tp {
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+}
+.tx.is-full .tx-detail {
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+}
+.tx.is-full.tx-fit .tx-detail {
+  top: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .prcm > .prcm-card {
+    height: calc(100dvh - 190px);
+    min-height: 420px;
+    padding: 8px;
+  }
+  .prcm-bar .seg {
+    flex: 1 1 100%;
+  }
+}
+
+/* The worksheet's tools in a panel: one line of chips (scrolling sideways in
+   their row), no legend note; the grid gets the height. */
+.prcm .rw-filter {
+  flex-basis: 200px;
+  max-width: 300px;
+}
+.prcm .rw-chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+.prcm .rw-legend-note {
+  display: none;
 }

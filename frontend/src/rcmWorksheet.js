@@ -18,6 +18,12 @@ export const LEVELS = [
   { type: "mode", label: "Failure mode", plural: "Failure modes", child: null },
 ];
 export const LEVEL_OF = Object.fromEntries(LEVELS.map((l, i) => [l.type, { ...l, depth: i }]));
+// The RCM on the positions (an Explorer position's RCM tab) has two more kinds
+// of row: each position in it (when there's more than one), and, under a
+// position, its failure modes under no functional failure yet.
+export const POSITION_LEVEL = { type: "pos", label: "Position", plural: "Positions", child: "functions" };
+LEVEL_OF.pos = { ...POSITION_LEVEL, depth: 0 };
+LEVEL_OF.unassigned = { type: "unassigned", label: "Not under a functional failure", plural: "Unassigned", child: "modes", depth: 1 };
 
 export const OUTCOME_LABEL = {
   on_condition: "On-condition",
@@ -107,6 +113,86 @@ export function buildRcmDisplay(functions) {
     });
   });
   return { rows, roots, counts };
+}
+
+// The display for the RCM on the positions (GET /api/maintenance/positions/:id/rcm):
+// the same rows as a study's, keyed by the graph's own ids, each with the
+// position it's on (ref.position_id). With more than one position, each is a
+// row at the top (named by its path below the first: "Pump › Motor"), the
+// functions inside it; a position's failure modes under no functional failure
+// go under an "unassigned" row of their own, so nothing is hidden.
+export function buildPositionRcmDisplay(sheet) {
+  const rows = new Map();
+  const roots = [];
+  const counts = { pos: 0, fn: 0, fail: 0, mode: 0, unassigned: 0 };
+  const add = (type, key, ref, parent) => {
+    const depth = parent == null ? 0 : rows.get(parent).depth + 1;
+    const r = { key, type, ref, at: null, parent, kids: [], depth, sum: blank() };
+    rows.set(key, r);
+    (parent == null ? roots : rows.get(parent).kids).push(key);
+    counts[type] += 1;
+    return r;
+  };
+  const positions = sheet?.positions || [];
+  const withPositions = positions.length > 1;
+  const path = [];
+  for (const p of positions) {
+    path.length = Math.max(0, p.depth);
+    path.push(p.name);
+    const label = p.depth === 0 ? p.name : path.slice(1).join(" › ");
+    const top = withPositions
+      ? add("pos", `P:${p.id}`, { id: p.id, text: label, name: p.name, position_id: p.id, analysed: p.analysed, rollup: p.rollup }, null).key
+      : null;
+    const modeRow = (m, parent, ffId) => {
+      const r = add("mode", m.id, { ...m, position_id: p.id, functional_failure_id: ffId }, parent);
+      r.sum = modeCounts(m);
+      for (let up = parent; up != null; up = rows.get(up).parent) {
+        const u = rows.get(up);
+        for (const k of Object.keys(r.sum)) u.sum[k] += r.sum[k];
+      }
+    };
+    for (const fn of p.functions || []) {
+      const f = add("fn", fn.id, { ...fn, position_id: p.id }, top);
+      for (const ff of fn.failures || []) {
+        const x = add("fail", ff.id, { ...ff, position_id: p.id, function_id: fn.id }, f.key);
+        for (const m of ff.modes || []) modeRow(m, x.key, ff.id);
+      }
+    }
+    if ((p.unassigned || []).length) {
+      const u = add("unassigned", `U:${p.id}`, { id: `U:${p.id}`, text: "Not under a functional failure", position_id: p.id }, top);
+      for (const m of p.unassigned) modeRow(m, u.key, null);
+    }
+  }
+  return { rows, roots, counts, positions: withPositions };
+}
+
+// The functional failures on a position, for a failure mode's "Under" choice.
+export function failuresOn(display, positionId) {
+  const out = [];
+  for (const r of display.rows.values()) {
+    if (r.type === "fail" && r.ref.position_id === positionId) {
+      const fn = display.rows.get(r.parent);
+      out.push({ id: r.key, text: r.ref.text, function: fn?.ref.text || "" });
+    }
+  }
+  return out;
+}
+
+// A decision as the server takes it back: the fields a decision is made of,
+// without the evidence check the server added.
+export function decisionBody(d, patch = {}) {
+  if (!d) return null;
+  const out = {};
+  for (const k of ["outcome", "rtf_basis", "task", "interval", "interval_unit", "notes", "evidence"]) {
+    if (d[k] !== undefined && d[k] !== null && d[k] !== "") out[k] = d[k];
+  }
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null || v === "") delete out[k];
+    else out[k] = v;
+  }
+  if (out.interval != null && !out.interval_unit) out.interval_unit = "hours";
+  if (out.interval == null) delete out.interval_unit;
+  return out;
 }
 
 // A row's text (the node's description).

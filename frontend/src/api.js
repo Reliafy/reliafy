@@ -2378,6 +2378,43 @@ export function updateFailureMode(id, body) {
 export function mergeFailureMode(id, intoId) {
   return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
 }
+
+// A position's RCM, from the graph: scope "below" (it and everything inside it)
+// or "this"; each failure mode's decision with its evidence check.
+export function getPositionRcm(positionId, scope = "below") {
+  return request(`/api/maintenance/positions/${positionId}/rcm?scope=${encodeURIComponent(scope)}`);
+}
+const sendJson = (method) => (url, body) => request(url, {
+  method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
+});
+export function addPositionFunction(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/functions`, body);
+}
+export function updatePositionFunction(id, body) {
+  return sendJson("PATCH")(`/api/maintenance/functions/${id}`, body);
+}
+export function removePositionFunction(id) {
+  return sendJson("DELETE")(`/api/maintenance/functions/${id}`);
+}
+export function addFunctionalFailure(functionId, body) {
+  return postJson(`/api/maintenance/functions/${functionId}/failures`, body);
+}
+export function updateFunctionalFailure(id, body) {
+  return sendJson("PATCH")(`/api/maintenance/functional-failures/${id}`, body);
+}
+export function removeFunctionalFailure(id) {
+  return sendJson("DELETE")(`/api/maintenance/functional-failures/${id}`);
+}
+export function assignFailureMode(id, functionalFailureId) {
+  return postJson(`/api/maintenance/failure-modes/${id}/assign`, { functional_failure_id: functionalFailureId || null });
+}
+// {consequence?, decision?}: a key left out is left as it is; decision null clears it.
+export function decideFailureMode(id, body) {
+  return sendJson("PUT")(`/api/maintenance/failure-modes/${id}/decision`, body);
+}
+export function retireFailureMode(id) {
+  return sendJson("DELETE")(`/api/maintenance/failure-modes/${id}`);
+}
 export function addPastFitment(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/past-fitments`, body);
 }

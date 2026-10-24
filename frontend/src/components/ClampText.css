@@ -1,0 +1,32 @@
+/* Long free text kept to two lines (ClampText); "More" opens the whole of it. */
+.clamp {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: 72ch;
+  font-size: var(--fs-14);
+  color: var(--muted);
+}
+.clamp-text {
+  margin: 0;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.clamp button.clamp-more {
+  flex: none;
+  font-size: var(--fs-13);
+  min-height: 24px;
+}
+.clamp-full {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow-y: auto;
+}

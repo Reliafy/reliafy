@@ -4,7 +4,7 @@ import { flatten, levelSet } from "./outlineTree.js";
 import {
   COLUMN, DEFAULT_COLUMNS, NAME_COLUMN, addNode, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, patchNode, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder,
-  withOpen, worksheetCsvRows,
+  withOpen, worksheetCsvRows, buildPositionRcmDisplay, decisionBody, failuresOn,
 } from "./rcmWorksheet.js";
 
 // A house pool pump, as the server sends it back (decisions resolved).
@@ -163,4 +163,50 @@ test("remembered on this device: columns, widths, row height and each study's op
   const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
   assert.equal(loadPrefs(broken).density, "comfortable");
   assert.doesNotThrow(() => savePrefs(p, broken));
+});
+
+// ---- the RCM on the positions (an Explorer position's RCM tab) -------------
+
+const SHEET = {
+  scope: "below",
+  positions: [
+    { id: "p1", name: "Plant", depth: 0, analysed: false, functions: [], unassigned: [] },
+    { id: "p2", name: "Pump", depth: 1, analysed: false, functions: [
+      { id: "f1", text: "Pump water", failures: [{ id: "x1", text: "No flow", modes: [
+        { id: "m1", text: "Bearing", consequence: "hidden", decision: { outcome: "rtf", rtf_basis: "random", status: "contradicted", evidence: { type: "model", id: "e" } } },
+      ] }] },
+    ], unassigned: [{ id: "m2", text: "Seal", consequence: null, decision: null }] },
+    { id: "p3", name: "Motor", depth: 2, analysed: false, functions: [], unassigned: [] },
+  ],
+};
+
+test("the positions' RCM: a row per position, modes under no functional failure kept in sight", () => {
+  const d = buildPositionRcmDisplay(SHEET);
+  assert.equal(d.positions, true);
+  assert.deepEqual(d.roots, ["P:p1", "P:p2", "P:p3"]);
+  assert.deepEqual(d.roots.map((k) => d.rows.get(k).ref.text), ["Plant", "Pump", "Pump › Motor"]);
+  assert.deepEqual(d.rows.get("P:p2").kids, ["f1", "U:p2"]);
+  assert.equal(d.rows.get("m1").depth, 3);
+  assert.equal(d.rows.get("m2").ref.functional_failure_id, null);
+  assert.equal(d.rows.get("m1").ref.position_id, "p2");
+  // Roll-ups count every mode inside, through the position.
+  assert.equal(d.rows.get("P:p2").sum.modes, 2);
+  assert.equal(d.rows.get("P:p2").sum.undecided, 1);
+  assert.equal(d.rows.get("P:p2").sum.contradicted, 1);
+  assert.deepEqual(failuresOn(d, "p2"), [{ id: "x1", text: "No flow", function: "Pump water" }]);
+  // One position (scope "this"): no position rows.
+  const one = buildPositionRcmDisplay({ ...SHEET, scope: "this", positions: [SHEET.positions[1]] });
+  assert.equal(one.positions, false);
+  assert.deepEqual(one.roots, ["f1", "U:p2"]);
+});
+
+test("a decision goes back without the evidence check, a change applied", () => {
+  const d = { outcome: "fixed_interval", task: "Replace", interval: 6, interval_unit: "months", status: "supported",
+    summary: "ok", artifact_name: "A", evidence: { type: "strategy_analysis", id: "a" }, task_id: "t1" };
+  assert.deepEqual(decisionBody(d), { outcome: "fixed_interval", task: "Replace", interval: 6, interval_unit: "months",
+    evidence: { type: "strategy_analysis", id: "a" } });
+  assert.deepEqual(decisionBody(d, { interval: null }), { outcome: "fixed_interval", task: "Replace",
+    evidence: { type: "strategy_analysis", id: "a" } });
+  assert.equal(decisionBody({ outcome: "fixed_interval" }, { interval: 3 }).interval_unit, "hours");
+  assert.equal(decisionBody(null), null);
 });

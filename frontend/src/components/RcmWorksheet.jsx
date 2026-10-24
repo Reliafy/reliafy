@@ -7,8 +7,8 @@ import useOutlineNav from "./useOutlineNav.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { ancestorsOf, depthOf, filterOpen, flatten, levelSet, visiblePick } from "../outlineTree.js";
 import {
-  CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, LEVELS, LEVEL_OF, NAME_COLUMN,
-  addNode, buildRcmDisplay, consequenceWords, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
+  CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, LEVELS, LEVEL_OF, NAME_COLUMN, POSITION_LEVEL,
+  addNode, buildRcmDisplay, consequenceWords, failuresOn, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
   intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder, withOpen,
 } from "../rcmWorksheet.js";
 import "./RcmWorksheet.css";
@@ -30,11 +30,19 @@ import "./RcmWorksheet.css";
 //
 // On a phone each row is two lines: the description and its status, then the
 // main columns in a line; the details panel opens as a sheet with the rest.
+//
+// The same grid shows the RCM on the maintenance positions (an Explorer
+// position's RCM tab): given its `display` (buildPositionRcmDisplay) and `ops`,
+// each edit is written straight away (ops.set, add, remove, assign: the
+// graph's events, through the page) instead of being kept for a Save, and
+// there's no Undo.
 
 const ICONS = {
   fn: <path d="M3 3.5h10v9H3z M6.5 6v4l3.5-2z" strokeWidth="1.4" strokeLinejoin="round" />,
   fail: <><path d="M8 2.2 14.2 13H1.8z" strokeWidth="1.4" strokeLinejoin="round" /><path d="M8 6.5v3" strokeWidth="1.6" strokeLinecap="round" /><circle cx="8" cy="11.2" r=".9" fill="currentColor" stroke="none" /></>,
   mode: <path d="M9.2 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" strokeWidth="1.4" strokeLinejoin="round" />,
+  pos: <><rect x="2.5" y="2.5" width="11" height="11" rx="2.5" strokeWidth="1.5" /><circle cx="8" cy="8" r="2.3" fill="currentColor" stroke="none" /></>,
+  unassigned: <path d="M3 4.5h10M3 8h10M3 11.5h6" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="2 1.6" />,
   task: <path d="M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1L2.4 10.7a1.4 1.4 0 0 0 2 2l4.3-4.3a3.2 3.2 0 0 0 4.1-3.9l-1.9 1.9-1.8-.4-.4-1.8z" strokeWidth="1.3" strokeLinejoin="round" />,
 };
 
@@ -54,7 +62,7 @@ const CHECK_MARK = { contradicted: "✗", unsure: "?", stale: "–", supported: 
 const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
 
 // One cell's content (desktop).
-function Cell({ col, r, query, onDecision, readOnly }) {
+function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
   const d = r.ref.decision;
   const mode = r.type === "mode";
   switch (col.id) {
@@ -73,6 +81,14 @@ function Cell({ col, r, query, onDecision, readOnly }) {
         ? <span className="rw-sum rw-todo" title={`${n(r.sum.undecided, "failure mode")} inside with no decision yet`}>{r.sum.undecided.toLocaleString("en-AU")} to decide</span>
         : <span className="rw-sum rw-done">All decided</span>;
     case "check":
+      if (mode && linkChecks && d?.status && d.artifact_link_path) {
+        return (
+          <Link to={d.artifact_link_path} className="rw-cklink" onClick={(e) => e.stopPropagation()}
+                title={`${d.artifact_name || "The evidence"}: ${d.summary || d.reason || ""}`.trim()}>
+            <RcmStatusBadge status={d.status} />
+          </Link>
+        );
+      }
       if (mode) return d?.status ? <RcmStatusBadge status={d.status} /> : null;
       // One kind inside: in words ("4 to check"); more: a mark and a count each.
       if (checkCounts(r).length === 1) {
@@ -202,7 +218,7 @@ function PhoneStatus({ r }) {
 
 function Row({
   r, v, i, top, height, cols, widths, total, open, focused, tabbable, dim, pinned, phone, query, editing, readOnly, wt,
-  onToggle, onPick, onEdit, onCommit, onCancel, onDecision,
+  onToggle, onPick, onEdit, onCommit, onCancel, onDecision, linkChecks,
 }) {
   const has = r.kids.length > 0;
   const editCol = editing?.key === r.key ? editing.col : null;
@@ -255,7 +271,7 @@ function Row({
                title={can && editCol !== c.id ? "Double-click to edit" : undefined}>
             {editCol === c.id
               ? <CellEditor col={c} r={r} onCommit={commitCell(c.id)} onCancel={onCancel} />
-              : <Cell col={c} r={r} query={query} readOnly={readOnly} onDecision={onDecision} />}
+              : <Cell col={c} r={r} query={query} readOnly={readOnly} onDecision={onDecision} linkChecks={linkChecks} />}
           </div>
         );
       })}
@@ -266,7 +282,11 @@ function Row({
 
 // The details panel for the row picked: every field, the decision, adding
 // inside and deleting.
-function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef }) {
+// The kinds of row whose description is edited (not a position's, nor the
+// unassigned failure modes' heading).
+const EDITABLE = new Set(["fn", "fail", "mode"]);
+
+function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops }) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
   const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k));
@@ -297,9 +317,12 @@ function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, 
       )}
       <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef}>{nameOf(r) || <span className="rw-blank">(no description yet)</span>}</h2>
       {r.type !== "mode" && <p className="rw-inside">{insideWords(r)}</p>}
+      {r.type === "pos" && ops?.positionLink && (
+        <p className="rw-dline"><button type="button" className="link" onClick={() => ops.positionLink(r)}>Show this position in the tree</button></p>
+      )}
 
       <div className="rw-fields">
-        {field("Description", "name", { area: true, help: r.type === "fn" ? "What the system must do" : r.type === "fail" ? "How it fails to do it" : "What causes the failure" })}
+        {EDITABLE.has(r.type) && field("Description", "name", { area: true, help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "fail" ? "How it fails to do it" : "What causes the failure" })}
         {r.type === "fn" && field("Performance standard", "standard", { help: "Optional, e.g. within 30 m from 60 km/h" })}
         {r.type === "mode" && field("Failure effects", "effects", { area: true })}
         {r.type === "mode" && (
@@ -314,6 +337,20 @@ function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, 
           </label>
         )}
         {r.type === "mode" && field("Mode notes", "notes", { area: true })}
+        {r.type === "mode" && ops && (
+          <label className="rw-field">
+            <span className="rw-flabel">Under</span>
+            {readOnly ? <span className="rw-fval">{display.rows.get(r.parent)?.ref.text}</span> : (
+              <select value={r.ref.functional_failure_id || ""} onChange={(e) => ops.assign(r, e.target.value || null)}>
+                <option value="">No functional failure yet</option>
+                {failuresOn(display, r.ref.position_id).map((f) => (
+                  <option key={f.id} value={f.id}>{f.function ? `${f.function} › ` : ""}{f.text}</option>
+                ))}
+              </select>
+            )}
+            {r.ref.was_under && !r.ref.functional_failure_id && <span className="rw-fhelp">It was noted as under: {r.ref.was_under}</span>}
+          </label>
+        )}
       </div>
 
       {r.type === "mode" && (
@@ -345,10 +382,12 @@ function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, 
         <div className="rw-panel-acts">
           {level.child && (
             <button type="button" className="secondary" onClick={() => onAdd(r)}>
-              Add {r.type === "fn" ? "a functional failure" : "a failure mode"}
+              Add {r.type === "pos" ? "a function" : r.type === "fn" ? "a functional failure" : "a failure mode"}
             </button>
           )}
-          <button type="button" className="secondary danger" onClick={() => onDelete(r)}>Delete this {level.label.toLowerCase()}</button>
+          {EDITABLE.has(r.type) && (
+            <button type="button" className="secondary danger" onClick={() => onDelete(r)}>Delete this {level.label.toLowerCase()}</button>
+          )}
         </div>
       )}
     </aside>
@@ -426,10 +465,10 @@ function ColumnChooser({ cols, onCols }) {
 }
 
 export default function RcmWorksheet({
-  studyId, functions, readOnly, onChange, onDecision, onUndo, canUndo, phone, notice,
+  studyId, functions, readOnly, onChange, onDecision, onUndo, canUndo, phone, notice, display: given, ops, tools,
 }) {
   const confirm = useConfirm();
-  const display = useMemo(() => buildRcmDisplay(functions), [functions]);
+  const display = useMemo(() => given || buildRcmDisplay(functions), [given, functions]);
   const depth = Math.max(1, depthOf(display));
   const [prefs, setPrefs] = useState(() => loadPrefs());
   const [query, setQuery] = useState("");
@@ -537,6 +576,11 @@ export default function RcmWorksheet({
       return res.error;
     }
     const label = col === "name" ? "description" : (COLUMN[col]?.label || col).toLowerCase();
+    if (ops) {
+      ops.set(r, col, res.value).then(() => say(`Saved the ${label}.`), (e) => say(e.message, "error"));
+      setEditing(null);
+      return true;
+    }
     onChange(setCell(functions, r, col, res.value), `Changed the ${label} of “${(nameOf(r) || LEVEL_OF[r.type].label).slice(0, 60)}”.`);
     say(`Changed the ${label}. Save the study to keep it.`);
     setEditing(null);
@@ -544,6 +588,17 @@ export default function RcmWorksheet({
   };
 
   const add = (r) => {
+    if (ops) {
+      const what = !r || r.type === "pos" ? "function" : r.type === "fn" ? "functional failure" : "failure mode";
+      ops.add(r).then((id) => {
+        if (!id) return;
+        say(`Added a ${what}: describe it in the details.`);
+        if (r) setOpenState((s) => new Set([...s, r.key]));
+        setPanel(true);
+        if (id) setWant({ key: id });
+      }, (e) => say(e.message, "error"));
+      return;
+    }
     const { functions: next, id } = addNode(functions, r ? r.at : null);
     const what = r ? (r.type === "fn" ? "functional failure" : "failure mode") : "function";
     onChange(next, `Added a ${what}.`);
@@ -555,6 +610,20 @@ export default function RcmWorksheet({
 
   const remove = async (r) => {
     const level = LEVEL_OF[r.type].label.toLowerCase();
+    if (ops) {
+      const ok = await confirm({ title: `Delete this ${level}?`, body: ops.removeText(r), confirmLabel: `Delete ${level}` });
+      if (!ok) return;
+      const parent = r.parent;
+      try {
+        await ops.remove(r);
+        say(`Deleted the ${level}.`);
+        setFocus(parent);
+        if (!parent) setPanel(false);
+      } catch (e) {
+        say(e.message, "error");
+      }
+      return;
+    }
     if (r.kids.length) {
       const inside = r.type === "fn"
         ? `${n(r.kids.length, "functional failure")} and ${n(r.sum.modes, "failure mode")}`
@@ -625,7 +694,7 @@ export default function RcmWorksheet({
   const rowProps = (k) => ({
     r: display.rows.get(k), cols, widths, total, phone, query, readOnly, editing,
     onToggle: toggle, onPick: pick, onEdit: (key, col) => { setFocus(key); setEditing({ key, col }); },
-    onCommit: commit, onCancel: () => setEditing(null), onDecision,
+    onCommit: commit, onCancel: () => setEditing(null), onDecision, linkChecks: !!ops,
   });
 
   return (
@@ -636,14 +705,15 @@ export default function RcmWorksheet({
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
                  placeholder="Filter: description, effects, task, notes" aria-label="Filter the worksheet" />
         </label>
-        <LevelButtons levels={Array.from({ length: Math.min(depth, LEVELS.length) }, (_, i) => i + 1)}
-                      names={LEVELS.map((l) => l.plural)} onLevel={setLevel} onCloseAll={() => setOpen(new Set())}
+        <LevelButtons levels={Array.from({ length: Math.min(depth, LEVELS.length + (display.positions ? 1 : 0)) }, (_, i) => i + 1)}
+                      names={[...(display.positions ? [POSITION_LEVEL.plural] : []), ...LEVELS.map((l) => l.plural)]} onLevel={setLevel} onCloseAll={() => setOpen(new Set())}
                       className="tp-levels rw-levels" />
         <div className="rw-tools">
-          {!readOnly && (
+          {!readOnly && onUndo && (
             <button type="button" className="secondary rw-btn" onClick={() => { onUndo(); say("Undid the last change."); }} disabled={!canUndo}
                     title="Undo the last change (Ctrl+Z)">Undo</button>
           )}
+          {tools}
           {!phone && <ColumnChooser cols={prefs.cols} onCols={(next) => setPrefs((p) => ({ ...p, cols: next }))} />}
           {!phone && (
             <SegmentedControl size="sm" label="Row height" value={prefs.density}
@@ -666,6 +736,7 @@ export default function RcmWorksheet({
       </div>
       <div className="rw-sub">
         <p className="rw-legend" aria-label="What the icons mean">
+          {display.positions && <span><LevelIcon type="pos" /> Position</span>}
           {LEVELS.map((l) => <span key={l.type}><LevelIcon type={l.type} /> {l.label}</span>)}
           <span><LevelIcon type="task" /> Task</span>
           {!phone && <span className="rw-legend-note">A row with things inside it counts them; double-click a cell to edit it.</span>}
@@ -679,7 +750,7 @@ export default function RcmWorksheet({
 
       <div className={"rw-main" + (panel && row ? " with-panel" : "")}>
         <div className="rw-grid" ref={nav.scroller} onScroll={nav.onScroll} onKeyDown={(e) => {
-          if (e.key === "F2" && cur && !readOnly && !editing) { e.preventDefault(); setEditing({ key: cur, col: "name" }); return; }
+          if (e.key === "F2" && cur && !readOnly && !editing && EDITABLE.has(display.rows.get(cur)?.type)) { e.preventDefault(); setEditing({ key: cur, col: "name" }); return; }
           if (e.key === "Escape" && panel && !editing) { e.preventDefault(); setPanel(false); return; }
           nav.onKey(e);
         }}
@@ -741,7 +812,7 @@ export default function RcmWorksheet({
                 <p>Nothing matches. <button type="button" className="link" onClick={() => { setQuery(""); setChips([]); }}>Clear filters</button></p>
               ) : (
                 <>
-                  <p><b>No functions yet.</b> Start with a function: what the system must do, ideally with a performance standard.</p>
+                  <p><b>No functions yet.</b> Start with a function: what {ops ? "this position" : "the system"} must do, ideally with a performance standard.</p>
                   {!readOnly && <button type="button" onClick={() => add(null)}>Add function</button>}
                 </>
               )}
@@ -751,7 +822,7 @@ export default function RcmWorksheet({
         {panel && row && (
           <>
             {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
-            <Details r={row} display={display} readOnly={readOnly} phone={phone} headingRef={headingRef}
+            <Details r={row} display={display} readOnly={readOnly} phone={phone} headingRef={headingRef} ops={ops}
                      onCommit={commit} onAdd={add} onDelete={remove} onDecision={onDecision}
                      onClose={() => { setPanel(false); document.getElementById(`rw-${row.key}`)?.focus({ preventScroll: true }); }}
                      onSelect={(key) => setWant({ key })} />
