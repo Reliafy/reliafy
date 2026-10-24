@@ -161,9 +161,12 @@ export default function ResultView(props) {
   if (props.result.kind === "per_demand") {
     return <ModelTabs tabs={[]}><PerDemandPanel result={props.result} /></ModelTabs>;
   }
-  // Life data by failure mode (#177) has its own tabs and panel; a separate
-  // component, so a change of kind remounts rather than reorders hooks.
-  if (props.result.kind === "competing_risks") return <CompetingRisksResult result={props.result} name={props.name} />;
+  // Life data by failure mode (#177) has tabs of its own in the same frame; a
+  // separate component, so a change of kind remounts rather than reorders hooks.
+  if (props.result.kind === "competing_risks") {
+    return <CompetingRisksResult result={props.result} name={props.name} datasetId={props.datasetId || null}
+                                 tab={props.tab} onTab={props.onTab || null} />;
+  }
   return <LifeResult {...props} />;
 }
 

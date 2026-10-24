@@ -42,6 +42,11 @@ export const MODEL_KINDS = [
   { slug: "condition-life",
     find: { path: "/models/joint/:id", list: "/api/joint/models", name: "Smoke test pumps (condition-based)" },
     tabs: ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"] },
+  // Competing risks: life data by failure mode; with covariates, Effects too.
+  { slug: "competing-risks", find: { id: "sample-model-pump-modes" },
+    tabs: ["Failure modes", "Calculator", "Diagnostics", "Data"] },
+  { slug: "competing-risks-fine-gray", find: { name: "Smoke kinds — competing risks, Fine-Gray" },
+    tabs: ["Failure modes", "Effects", "Calculator", "Diagnostics", "Data"] },
 ];
 
 // Whole counts to failure (cycles), a few still running, for a discrete fit.
@@ -92,6 +97,10 @@ export async function seedModelKinds(api) {
   await fit("Smoke kinds — discrete", { dataset_id: cycles.id, x: "cycles", c: "censored", unit: "cycles",
                                         distribution: "geometric" });
   await fit("Smoke kinds — Cox PH", { ...seal, distribution: "cox_ph", z: "temp_C" });
+  await fit("Smoke kinds — competing risks, Fine-Gray", {
+    dataset_id: "sample-ds-pump-modes", x: "hours", e: "failure_mode", g: "site", z: "duty_pct", unit: "hours",
+    distribution: "competing_risks_fine_gray",
+  });
   await fit("Smoke kinds — frailty", { dataset_id: units.id, x: "hours", c: "censored", group: "site",
                                        z: "temp_C", unit: "hours", distribution: "weibull_frailty" });
   await json("/api/models/from-params", {
