@@ -63,8 +63,30 @@ which is how a set of wear curves becomes a reliability model of the population.
 ![A fitted degradation model: wear paths extrapolated to the threshold](/guides/img/degradation-01-model.png)
 
 For the sample brake pads (six pads, an 8 mm wear limit, linear paths) the
-crossing times fit a Weibull with a mean life of **5,960 hours**, and a design
-life of **3,210 hours**: 90% of pads survive that long, at 90% confidence.
+crossing times fit a Weibull with a mean life of **5,960 hours**. The line under
+the model's name gives the answer: B10 is **4,710 hours** (the time by which 10%
+of pads reach the limit), and the lower end of its 90% band, **3,210 hours**, is
+the design life to plan with.
+
+## Reading the model's page
+
+The page has five tabs:
+
+- **Paths**: each item's readings and fitted path against the threshold, with
+  the path shape, the life model and the design life beside them.
+- **Calculator**: the population's reliability curve with its confidence band.
+  Enter a reliability to get the time (the best estimate and the design life),
+  or a time to get the reliability. Change the confidence here too.
+- **Model characteristics**: the mean life, the design life and the B-lives
+  (B1, B5, B10, B50) with their band.
+- **Diagnostics**: can you trust it? *Do the two routes to a life agree?*
+  compares the life the path model implies with the life fitted to the
+  crossing times. *Do the readings scatter evenly about each path?* shows each
+  reading less its path: a curve or a funnel there says the path shape doesn't
+  suit the readings. When the fit chose the path, *Which path shape fits the
+  readings best?* ranks every shape it tried.
+- **Data**: what the model was fitted to, each item's crossing time and every
+  parameter.
 
 ## From population to individual
 

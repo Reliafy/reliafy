@@ -42,6 +42,12 @@ export const MODEL_KINDS = [
   { slug: "condition-life",
     find: { path: "/models/joint/:id", list: "/api/joint/models", name: "Smoke test pumps (condition-based)" },
     tabs: ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"] },
+  { slug: "degradation",
+    find: { path: "/models/degradation/:id", list: "/api/degradation/models", name: "Brake pad wear — linear degradation (sample)" },
+    tabs: ["Paths", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
+  { slug: "degradation-best-path",
+    find: { path: "/models/degradation/:id", list: "/api/degradation/models", name: "Smoke kinds — degradation, best path" },
+    tabs: ["Paths", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
 ];
 
 // Whole counts to failure (cycles), a few still running, for a discrete fit.
@@ -99,6 +105,11 @@ export async function seedModelKinds(api) {
     params: [{ name: "alpha", value: 1200 }, { name: "beta", value: 2.2 }],
   });
   await json("/api/models/per-demand", { name: "Smoke kinds — per demand", demands: 400, failures: 3 });
+  // A degradation model whose path the fit chose (the path comparison check).
+  await ok(api.post("/api/degradation/models", { multipart: {
+    name: "Smoke kinds — degradation, best path", dataset_id: "sample-ds-brake-wear", i: "item", x: "hours",
+    y: "wear_mm", threshold: "8", path: "best", unit: "hours", measurement_unit: "mm",
+  } }), "Smoke kinds — degradation, best path");
 }
 
 // The page address of a kind's model on the server ``api`` talks to.
