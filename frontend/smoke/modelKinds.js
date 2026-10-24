@@ -58,6 +58,17 @@ export const MODEL_KINDS = [
   { slug: "repairable-params",
     find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name: "Smoke kinds — repairable from parameters" },
     tabs: ["Failures over time", "Calculator", "Plan ahead", "Data"] },
+  // Competing risks: life data by failure mode; with covariates, Effects too.
+  { slug: "competing-risks", find: { id: "sample-model-pump-modes" },
+    tabs: ["Failure modes", "Calculator", "Diagnostics", "Data"] },
+  { slug: "competing-risks-fine-gray", find: { name: "Smoke kinds — competing risks, Fine-Gray" },
+    tabs: ["Failure modes", "Effects", "Calculator", "Diagnostics", "Data"] },
+  { slug: "degradation",
+    find: { path: "/models/degradation/:id", list: "/api/degradation/models", name: "Brake pad wear — linear degradation (sample)" },
+    tabs: ["Paths", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
+  { slug: "degradation-best-path",
+    find: { path: "/models/degradation/:id", list: "/api/degradation/models", name: "Smoke kinds — degradation, best path" },
+    tabs: ["Paths", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
 ];
 
 // Whole counts to failure (cycles), a few still running, for a discrete fit.
@@ -108,6 +119,10 @@ export async function seedModelKinds(api) {
   await fit("Smoke kinds — discrete", { dataset_id: cycles.id, x: "cycles", c: "censored", unit: "cycles",
                                         distribution: "geometric" });
   await fit("Smoke kinds — Cox PH", { ...seal, distribution: "cox_ph", z: "temp_C" });
+  await fit("Smoke kinds — competing risks, Fine-Gray", {
+    dataset_id: "sample-ds-pump-modes", x: "hours", e: "failure_mode", g: "site", z: "duty_pct", unit: "hours",
+    distribution: "competing_risks_fine_gray",
+  });
   await fit("Smoke kinds — frailty", { dataset_id: units.id, x: "hours", c: "censored", group: "site",
                                        z: "temp_C", unit: "hours", distribution: "weibull_frailty" });
   await json("/api/models/from-params", {
@@ -123,6 +138,11 @@ export async function seedModelKinds(api) {
   await ok(api.post("/api/recurrent/from-params", { multipart: {
     name: "Smoke kinds — repairable from parameters", model: "crow_amsaa", alpha: "1000", beta: "1.5",
     horizon: "5000", unit: "hours" } }), "repairable from parameters");
+  // A degradation model whose path the fit chose (the path comparison check).
+  await ok(api.post("/api/degradation/models", { multipart: {
+    name: "Smoke kinds — degradation, best path", dataset_id: "sample-ds-brake-wear", i: "item", x: "hours",
+    y: "wear_mm", threshold: "8", path: "best", unit: "hours", measurement_unit: "mm",
+  } }), "Smoke kinds — degradation, best path");
 }
 
 // The page address of a kind's model on the server ``api`` talks to.

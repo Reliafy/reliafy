@@ -6,7 +6,6 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { compareModel, getModel, deleteModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
 import useTabParam from "../components/model/useTabParam.js";
 import { itemName } from "../components/LibRows.jsx";
@@ -64,33 +63,6 @@ export default function ModelPage() {
       }}
     />
   );
-
-  // Competing risks keeps its own page until it moves to the frame.
-  if (model && model.kind === "competing_risks") {
-    return (
-      <div className="app model-page">
-        <PageHeader
-          crumbs={CRUMBS}
-          title={title}
-          badges={badges}
-          meta={<>Saved {relativeTime(model.created_at)}{model.unit ? ` · ${model.unit}` : ""}</>}
-          id={model.id}
-          menu={(
-            <>
-              <ShareButton collection="models" artifactId={model.id} name={model.name} readOnly={model.read_only}
-                           className="ovm-item" />
-              <button className="ovm-item danger" onClick={onDelete}>
-                {model.read_only ? "Remove from my view" : "Delete"}
-              </button>
-            </>
-          )}
-        />
-        <div className="card">
-          <ResultView result={results} modelId={model.id} name={model.name} split={split} />
-        </div>
-      </div>
-    );
-  }
 
   const tabs = results ? modelTabs(results) || [] : [];
   return (

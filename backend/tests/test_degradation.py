@@ -66,6 +66,29 @@ def test_fit_payload_shape_and_json_safety():
     assert degradation.get_live(cache_id) is not None
 
 
+def test_fit_payload_carries_residuals_and_path_parameter_names():
+    """Each reading's residual about its item's fitted path (the model page's
+    scatter check) and the path's parameter names (its Data tab)."""
+    from backend import degradation
+
+    payload, cache_id = degradation.fit(_deg_df(), MAPPING, 8.0, path="linear", unit="hours")
+    live = degradation.get_live(cache_id)
+    assert payload["path_model"]["param_names"] == ["a", "b"]
+    assert len(payload["path_param_mean"]) == len(payload["path_model"]["param_names"])
+    for u in payload["units"]:
+        x = np.asarray(u["scatter"]["x"])
+        y = np.asarray(u["scatter"]["y"])
+        r = np.asarray(u["residuals"], dtype=float)
+        assert r.shape == y.shape
+        np.testing.assert_allclose(r, y - live.path(x, u["id"]), atol=1e-9)
+        # A least-squares line: each item's residuals sum to zero.
+        assert abs(r.sum()) < 1e-8
+    # The pooled scatter about the paths is the fit's measurement variance.
+    allr = np.concatenate([u["residuals"] for u in payload["units"]])
+    dof = len(allr) - 2 * payload["n_units"]
+    assert payload["measurement_var"] == pytest.approx(float(allr @ allr) / dof, rel=1e-6)
+
+
 def test_reliability_curves_shape_and_bounds():
     from backend import degradation
 
@@ -269,6 +292,17 @@ def test_degradation_samples_seed_and_are_read_only(session, monkeypatch):
     samples.seed_samples(session)
     samples.seed_samples(session)  # idempotent
 
+    assert session.degradation_models.count_documents({}) == len(samples.SAMPLE_DEGRADATION_MODELS)
+    doc = session.degradation_models.find_one({"_id": "sample-deg-brake-wear"})
+    assert all("residuals" in u for u in doc["results"]["units"])
+    # An older seed (no residuals) is refitted once to gain them.
+    session.degradation_models.update_one(
+        {"_id": "sample-deg-brake-wear"},
+        {"$unset": {f"results.units.{k}.residuals": "" for k in range(len(doc["results"]["units"]))}},
+    )
+    samples.seed_samples(session)
+    doc = session.degradation_models.find_one({"_id": "sample-deg-brake-wear"})
+    assert all("residuals" in u for u in doc["results"]["units"])
     assert session.degradation_models.count_documents({}) == len(samples.SAMPLE_DEGRADATION_MODELS)
     assert session.tracked_items.count_documents({}) == len(samples.SAMPLE_TRACKED_ITEMS)
     item = session.tracked_items.find_one({"_id": "sample-item-truck-07"})

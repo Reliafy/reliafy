@@ -725,7 +725,8 @@ async function main() {
         await wait(600);
       } },
     // --- Competing risks: the Model step with a failure-mode column, the
-    // sample by-mode model, and its Gray's test by site ---
+    // sample by-mode model (its Failure modes tab), and its Gray's test by
+    // site (on its Diagnostics tab) ---
     { file: "crisk-01-model-step.png", url: "/models/new?dataset=sample-ds-pump-modes", settle: 1500,
       async act(page) {
         await chooseOption(page, "Failure mode (optional)", /^failure_mode/);
@@ -733,7 +734,7 @@ async function main() {
       } },
     { file: "crisk-02-incidence.png", url: "/models/m/sample-model-pump-modes", settle: 2500 },
     { file: "crisk-03-by-site.png", url: "/models/m/sample-model-pump-modes", settle: 2500,
-      async act(page) { await page.locator("button.gofr-link").click(); await wait(1000); } },
+      async act(page) { await page.locator("button.gofr-link").click(); await wait(1500); } },
     // --- Covariates: ticking them, the PH coefficients, a changing-load schedule ---
     { file: "cov-01-covariates.png", url: "/models/new?dataset=sample-ds-seal-alt", settle: 1500,
       async act(page) {
