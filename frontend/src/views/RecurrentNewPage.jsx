@@ -10,6 +10,8 @@ import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
 import RecurrentColumnMapper from "../components/RecurrentColumnMapper.jsx";
 import RecurrentParamsPanel from "../components/RecurrentParamsPanel.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
+import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
+import { recurrentAnswer } from "../recurrentResults.js";
 import {
   getRecurrentOptions,
   getColumns,
@@ -451,7 +453,10 @@ export default function RecurrentNewPage() {
             <p className="muted-line" style={{ margin: 0 }}>
               Review the fit below. Go <b>Back</b> to change the mapping or model and re-fit, or save it.
             </p>
-            <RecurrentResultView results={result.results} />
+            {/* The model page's frame, inside the wizard: the answer line over the tabs. */}
+            <ModelFrame embedded notice={<div className="mf-wizard-head"><AnswerLine parts={recurrentAnswer(result.results)} /></div>}>
+              <RecurrentResultView results={result.results} name={name || null} />
+            </ModelFrame>
           </div>
         )}
 

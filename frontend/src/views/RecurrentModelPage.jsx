@@ -1,83 +1,67 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
-import RecurrentOverhaul from "../components/RecurrentOverhaul.jsx";
-import RecurrentProjection from "../components/RecurrentProjection.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRecurrentModel, deleteRecurrentModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import ModelFrame from "../components/model/ModelFrame.jsx";
+import useTabParam from "../components/model/useTabParam.js";
 import { itemName } from "../components/LibRows.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
+import { recurrentAnswer, recurrentTabs } from "../recurrentResults.js";
 
-// A saved recurrent-event model, laid out like the non-repairable model page (#65): title
-// and saved meta, then one card of tabs: the MCF plot with its panel, the
-// calculator, the model's own views, the overhaul interval and the growth
-// projection.
+// A saved repairable (recurrent-event) model in the model frame: the answer
+// line, Share, the ⋯ menu (delete) and the result's tabs, the open one in
+// the address (?tab=).
 export default function RecurrentModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  const [tab, setTab] = useTabParam();
 
   useEffect(() => {
     setModel(null);
+    setError(null);
     getRecurrentModel(id).then(setModel).catch((e) => setError(e.message));
   }, [id]);
 
   const confirm = useConfirm();
   const onDelete = async () => {
     if (!(await confirm(deleteOrRemoveConfirm(model, "model", { name: itemName(model) })))) return;
-    await deleteRecurrentModel(id);
-    navigate("/models/recurrent");
+    try {
+      await deleteRecurrentModel(id);
+      navigate("/models/recurrent");
+    } catch (e) { setError(e.message); }
   };
 
   const r = model?.results || {};
-  // The saved model's own tools, as tabs after its results (#65): the overhaul
-  // interval needs a minimal-repair model; a growth projection needs data.
-  const tools = model ? [
-    (r.family || "nhpp") === "nhpp" && {
-      id: "overhaul", label: "Overhaul",
-      render: () => <RecurrentOverhaul modelId={model.id} unit={r.unit} name={model.name} />,
-    },
-    !model.spec?.params_only && {
-      id: "projection", label: "Growth projection",
-      render: () => <RecurrentProjection modelId={model.id} unit={r.unit} />,
-    },
-  ].filter(Boolean) : [];
-
+  const paramsOnly = !!model?.spec?.params_only;
+  const first = model ? recurrentTabs(r, { modelId: model.id, paramsOnly })[0]?.id : null;
   return (
-    <div className="app model-page">
-      <PageHeader
-        crumbs={[{ label: "Model", to: "/models" }, { label: "Repairable", to: "/models/recurrent" }]}
-        title={model ? itemName(model) : "Model"}
-        badges={model?.is_sample && <Chip>Sample</Chip>}
-        meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""}</>}
-        id={model?.id}
-        menu={model && (
-          <>
-            <ShareButton
-              collection="recurrent_models"
-              artifactId={model.id}
-              name={model.name}
-              readOnly={model.read_only}
-              className="ovm-item"
-            />
-            <button className="ovm-item danger" onClick={onDelete}>
-              {model.read_only ? "Remove from my view" : "Delete"}
-            </button>
-          </>
-        )}
-      />
-
-      {error && <div className="card error">{error}</div>}
-      {model && (
-        <div className="card">
-          <RecurrentResultView results={model.results} name={model.name} extraTabs={tools} />
-        </div>
+    <ModelFrame
+      className="model-page"
+      crumbs={[{ label: "Model", to: "/models" }, { label: "Repairable", to: "/models/recurrent" }]}
+      title={model ? itemName(model) : "Model"}
+      badges={model?.is_sample && <Chip>Sample</Chip>}
+      answer={model ? recurrentAnswer(r, { saved: `saved ${relativeTime(model.created_at)}` }) : null}
+      id={model?.id}
+      actions={model && (
+        <ShareButton collection="recurrent_models" artifactId={model.id} name={model.name} readOnly={model.read_only} />
       )}
-    </div>
+      menu={model && (
+        <button className="ovm-item danger" onClick={onDelete}>
+          {model.read_only ? "Remove from my view" : "Delete"}
+        </button>
+      )}
+      notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
+    >
+      {model ? (
+        <RecurrentResultView results={r} name={model.name} modelId={model.id} paramsOnly={paramsOnly}
+                             datasetId={model.dataset_id || null} tab={tab} onTab={(t) => setTab(t, first)} />
+      ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+    </ModelFrame>
   );
 }

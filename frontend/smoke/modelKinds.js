@@ -42,6 +42,22 @@ export const MODEL_KINDS = [
   { slug: "condition-life",
     find: { path: "/models/joint/:id", list: "/api/joint/models", name: "Smoke test pumps (condition-based)" },
     tabs: ["Risk now", "Calculator", "Effects", "Diagnostics", "Data"] },
+  // Repairable (recurrent-event) models.
+  ...[
+    ["repairable-crow-amsaa", "Compressor fleet — Crow-AMSAA (sample)"],
+    ["repairable-duane", "Smoke kinds — Duane"],
+    ["repairable-hpp", "Smoke kinds — HPP"],
+    ["repairable-imperfect", "Compressor fleet — imperfect repair (sample)"],
+  ].map(([slug, name]) => ({
+    slug, find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name },
+    tabs: ["Failures over time", "Calculator", "Plan ahead", "Diagnostics", "Data"],
+  })),
+  { slug: "repairable-covariates",
+    find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name: "Slurry pumps — repair rate by site and duty (sample)" },
+    tabs: ["Failures over time", "Effects", "Calculator", "Plan ahead", "Diagnostics", "Data"] },
+  { slug: "repairable-params",
+    find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name: "Smoke kinds — repairable from parameters" },
+    tabs: ["Failures over time", "Calculator", "Plan ahead", "Data"] },
 ];
 
 // Whole counts to failure (cycles), a few still running, for a discrete fit.
@@ -99,6 +115,14 @@ export async function seedModelKinds(api) {
     params: [{ name: "alpha", value: 1200 }, { name: "beta", value: 2.2 }],
   });
   await json("/api/models/per-demand", { name: "Smoke kinds — per demand", demands: 400, failures: 3 });
+  // Repairable models the samples don't cover.
+  const events = { dataset_id: "sample-ds-compressor-events", i: "compressor", x: "hours", t: "test_end", unit: "hours" };
+  const rec = (name, form) => ok(api.post("/api/recurrent/models", { multipart: { name, ...form } }), name);
+  await rec("Smoke kinds — Duane", { ...events, model: "duane" });
+  await rec("Smoke kinds — HPP", { ...events, model: "hpp" });
+  await ok(api.post("/api/recurrent/from-params", { multipart: {
+    name: "Smoke kinds — repairable from parameters", model: "crow_amsaa", alpha: "1000", beta: "1.5",
+    horizon: "5000", unit: "hours" } }), "repairable from parameters");
 }
 
 // The page address of a kind's model on the server ``api`` talks to.

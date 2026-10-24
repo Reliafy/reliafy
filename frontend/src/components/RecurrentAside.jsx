@@ -1,38 +1,29 @@
-import { useState } from "react";
-import Modal from "./Modal.jsx";
-import RecurrentStats from "./RecurrentStats.jsx";
 import { openGuide } from "./HelpButton.jsx";
 import { formatNumber } from "../format.js";
 import { boundWords } from "../lifeResults.js";
+import { COLORWAY } from "../plotTheme.js";
 import {
-  ciText, dataText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioCiText, ratioText, repairTitle,
+  ciText, dataText, familyOf, growthReading, paramLabel, pct, perUnit, ratioText, repairTitle,
 } from "../recurrentResults.js";
 
 const sig = (v, n = 3) => formatNumber(v, { sig: n });
 
-// The side panel beside a recurrent model's MCF plot (#65), as a non-repairable model's
-// (#311): its parameters by their plain names with their intervals, the data
-// and a row that opens the fit statistics; then the rates now (or, for
-// imperfect repair, each system's next failure); then a quiet one-line
-// reading of what the fit says.
-export default function RecurrentAside({ r }) {
-  const [statsOpen, setStatsOpen] = useState(false);
+// The panel beside a repairable model's mean cumulative function (the
+// Failures over time tab), like a non-repairable model's: the failure rate and
+// MTBF now (for imperfect repair, how much a repair restores and the systems
+// due soonest), the model in words, and a card with the model, its data and
+// links to its fit statistics (Diagnostics) and every parameter (Data).
+export default function RecurrentAside({ r, onStats = null, onData = null, onNext = null }) {
   const fam = familyOf(r);
   const unit = String(r.unit || "").trim().toLowerCase();
-  const aic = (r.gof || []).find((g) => g.id === "aic") || (r.gof || [])[0];
-  const hasStats = (r.gof || []).length > 0 || (r.trend_tests || []).length > 0 || (r.params || []).length > 0;
+  const aic = (r.gof || []).find((g) => g.id === "aic");
   const data = dataText(r);
-
-  // Covariate models lead with the baseline's growth shape, then each
-  // covariate's effect; the baseline scale is in the statistics.
-  // (Duane's shape is its alpha; Cox-Lewis's trend is its slope beta.)
-  const shapeName = r.baseline?.id === "duane" ? "alpha" : "beta";
-  const params = orderedParams(r).filter((p) => fam !== "regression" || p.name === shapeName);
   const rest = r.restoration;
+  const b = r.growth_basis;
+  const shape = b && (r.params || []).find((p) => p.name === b.parameter);
 
   let reading = null;
   if (fam === "renewal" && r.repair_test) {
-    // The interval is beside the value above: the reading keeps to words.
     // "Partial repair" is the title, so the verdict's own lead-in goes.
     const verdict = r.repair_test.sentence.replace(/^Repairs are partial: b/, "B");
     reading = { title: repairTitle(r.repair_test.verdict), text: <>{rest?.short || rest?.sentence} {verdict}</> };
@@ -43,83 +34,55 @@ export default function RecurrentAside({ r }) {
   }
 
   return (
-    <div className="aside rec-aside">
-      <div className="gof-card">
-        <div className="gofh life-card-head">
-          <span>Parameters</span>
-          <button type="button" className="link life-help" onClick={() => openGuide("recurrent-events")}>
-            What do these mean?
-          </button>
-        </div>
-        {rest && (
-          <div className="gofr" title={`${rest.sentence} ${rest.scale || ""}`}>
-            <span className="gk">{rest.ratio != null ? "Gap ratio" : "Repair effectiveness"}</span>
-            <span className="gv-col">
-              <span className="gv">{rest.ratio != null ? ratioText(rest.ratio) : pct(rest.effectiveness)}</span>
-              {rest.ratio != null
-                ? rest.ratio_ci && <span className="param-ci">95% {ciText(rest.ratio_ci, 3)}</span>
-                : rest.effectiveness_ci &&
-                  <span className="param-ci">95% {pct(rest.effectiveness_ci[0])}–{pct(rest.effectiveness_ci[1])}</span>}
-            </span>
-          </div>
-        )}
-        {params.filter((p) => !rest || p.name !== rest.parameter).map((p) => (
-          <div className="gofr" key={p.name}>
-            <span className="gk">{paramLabel(r, p.name)}</span>
-            <span className="gv-col">
-              <span className="gv">{sig(p.value)}</span>
-              {p.ci && <span className="param-ci">95% {ciText(p.ci)}</span>}
-            </span>
-          </div>
-        ))}
-        {(r.coefficients || []).map((c) => (
-          <div className="gofr" key={c.name} title={c.reading}>
-            <span className="gk">{c.name.replace(": ", " ")}</span>
-            <span className="gv-col">
-              <span className="gv">{c.ratio != null ? `${ratioText(c.ratio)} rate` : "—"}</span>
-              {c.ratio_ci && <span className="param-ci">95% {ratioCiText(c.ratio_ci)}</span>}
-            </span>
-          </div>
-        ))}
-        {data && (
-          <div className="gofr">
-            <span className="gk">Data</span>
-            <span className="gv">{data}</span>
-          </div>
-        )}
-        {hasStats && !r.from_params && (
-          <button type="button" className="gofr gofr-link" onClick={() => setStatsOpen(true)}>
-            <span className="gk">Fit statistics</span>
-            <span className="gv">{aic ? `AIC ${formatNumber(aic.value, { sig: 5 })}` : "Tests"} ›</span>
-          </button>
-        )}
-      </div>
-
+    <>
       {fam !== "renewal" && r.mtbf != null && <NowCard r={r} unit={unit} />}
-      {fam === "renewal" && r.next_failure?.units?.length > 0 && <NextCard nf={r.next_failure} unit={unit} />}
+      {fam === "renewal" && rest && <RepairCard rest={rest} />}
+      {fam === "renewal" && r.next_failure?.units?.length > 0 && <NextCard nf={r.next_failure} unit={unit} onNext={onNext} />}
 
-      {r.fit_warning && <div className="life-reading caveat">{r.fit_warning}</div>}
       {reading && (
         <div className="life-reading">
           <div className="life-reading-title">{reading.title}</div>
           <div>{reading.text}</div>
         </div>
       )}
-      {r.windows && (
-        <p className="life-method">
-          Observed in {r.windows.windows} windows; {r.windows.systems_with_gaps} system
-          {r.windows.systems_with_gaps === 1 ? " has" : "s have"} gaps ({formatNumber(r.windows.gap_time)}
-          {unit ? ` ${unit}` : ""} unobserved).
-        </p>
-      )}
-      {statsOpen && (
-        <Modal title="Fit statistics" className="rec-stats-modal" onClose={() => setStatsOpen(false)}
-               footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}>
-                 <button onClick={() => setStatsOpen(false)}>Done</button></div>}>
-          <RecurrentStats r={r} />
-        </Modal>
-      )}
-    </div>
+
+      <div className="gof-card">
+        <div className="gofh life-card-head">
+          <span>Model</span>
+          <button type="button" className="link life-help" onClick={() => openGuide("recurrent-events")}>
+            What does this mean?
+          </button>
+        </div>
+        <div className="gofr">
+          <span className="gk">Model</span>
+          <span className="gv">{fam === "regression" && r.baseline ? `${r.baseline.name} baseline` : r.model?.name || "—"}</span>
+        </div>
+        {shape && fam !== "renewal" && (
+          <div className="gofr">
+            <span className="gk">{paramLabel(r, shape.name)}</span>
+            <span className="gv-col">
+              <span className="gv">{sig(shape.value)}</span>
+              {ciText(shape.ci) && <span className="param-ci">95% {ciText(shape.ci)}</span>}
+            </span>
+          </div>
+        )}
+        {data && (
+          <div className="gofr"><span className="gk">Data</span><span className="gv">{data}</span></div>
+        )}
+        {onStats && (
+          <button type="button" className="gofr gofr-link" onClick={onStats}>
+            <span className="gk">Fit statistics</span>
+            <span className="gv">{aic ? `AIC ${formatNumber(aic.value, { sig: 5 })}` : "Checks"} ›</span>
+          </button>
+        )}
+        {onData && (
+          <button type="button" className="gofr gofr-link" onClick={onData}>
+            <span className="gk">Every parameter</span>
+            <span className="gv">{(r.params || []).length + (r.coefficients || []).length} ›</span>
+          </button>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -133,22 +96,23 @@ function NowCard({ r, unit }) {
   const mtbfTitle = [
     "MTBF now: 1 ÷ the failure rate at the end of the data",
     dm?.lower != null ? boundWords(level, "lower", dm.lower, null, fmtT) : null,
-    r.mtbf_ci ? `95% interval ${ciText(r.mtbf_ci)}` : null,
+    ciText(r.mtbf_ci) ? `95% interval ${ciText(r.mtbf_ci)}` : null,
   ].filter(Boolean).join(". ");
   return (
     <div className="gof-card life-card">
       <div className="gofh life-card-head">
-        <span>{at != null ? `At ${formatNumber(at)}${unit ? ` ${unit}` : ""}` : "Now"}</span>
-        {dm?.lower != null ? <span className="gof-sub">{level}% lower bound</span>
-          : r.rates_at ? <span className="gof-sub">average system</span> : null}
+        <span>{r.from_params ? "At the horizon" : "Now"}</span>
+        {at != null && <span className="gof-sub">at {formatNumber(at)}{unit ? ` ${unit}` : ""}{r.rates_at ? ", average system" : ""}</span>}
       </div>
       <div className="gofr life-row" title={`${mtbfTitle}.`}>
         <span className="gk">MTBF{unit ? ` (${unit})` : ""}</span>
         <span className="gv">{sig(r.mtbf)}</span>
-        <span className="life-lo">{dm?.lower != null ? `≥ ${sig(dm.lower)}` : ""}</span>
+        <span className="life-lo">
+          {dm?.lower != null ? `≥ ${sig(dm.lower)} (${level}%)` : ciText(r.mtbf_ci) || ""}
+        </span>
       </div>
       <div className="gofr life-row"
-           title={r.rocof_ci ? `Failures per ${perUnit(unit) || "unit time"}. 95% interval ${ciText(r.rocof_ci)}.` : undefined}>
+           title={ciText(r.rocof_ci) ? `Failures per ${perUnit(unit) || "unit time"}. 95% interval ${ciText(r.rocof_ci)}.` : undefined}>
         <span className="gk">Failure rate</span>
         <span className="gv">{sig(r.rocof)}</span>
         <span className="life-lo">{unit ? `per ${perUnit(unit)}` : ""}</span>
@@ -157,16 +121,34 @@ function NowCard({ r, unit }) {
   );
 }
 
-// Imperfect repair: the two systems due soonest (the rest on the Next failure
-// tab), by the median time to their next failure from where their history
-// leaves them.
-function NextCard({ nf, unit }) {
+// Imperfect repair: how much of the age a repair takes away (or, for G1, the
+// gap ratio), with its interval.
+function RepairCard({ rest }) {
+  return (
+    <div className="gof-card life-card">
+      <div className="gofh life-card-head"><span>Each repair</span><span className="gof-sub">95% interval</span></div>
+      <div className="gofr life-row" title={`${rest.sentence} ${rest.scale || ""}`}>
+        <span className="gk">{rest.ratio != null ? "Gap ratio" : "Restores"}</span>
+        <span className="gv">{rest.ratio != null ? ratioText(rest.ratio) : pct(rest.effectiveness)}</span>
+        <span className="life-lo">
+          {rest.ratio != null
+            ? rest.ratio_ci && ciText(rest.ratio_ci, 3)
+            : rest.effectiveness_ci && `${pct(rest.effectiveness_ci[0])}–${pct(rest.effectiveness_ci[1])}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// Imperfect repair: the two systems due soonest (every one under Plan ahead),
+// by the median time to their next failure from where their history leaves them.
+function NextCard({ nf, unit, onNext }) {
   const rows = nf.units.slice(0, 2);
   return (
     <div className="gof-card life-card">
       <div className="gofh life-card-head" title={unit ? `In ${unit} from now` : undefined}>
         <span>Next failure</span>
-        <span className="gof-sub">median · 10% by</span>
+        <span className="gof-sub">{unit ? `${unit}: ` : ""}median · 10%</span>
       </div>
       {rows.map((u) => (
         <div className="gofr life-row" key={u.system}
@@ -176,6 +158,51 @@ function NextCard({ nf, unit }) {
           <span className="life-lo">{u.b10 != null ? sig(u.b10) : ""}</span>
         </div>
       ))}
+      {onNext && nf.units.length > 2 && (
+        <button type="button" className="gofr gofr-link" onClick={onNext}>
+          <span className="gk">Every system</span><span className="gv">{nf.units.length} ›</span>
+        </button>
+      )}
     </div>
+  );
+}
+
+// The By cause view's panel: each cause (choose one to see its 95% band), its
+// failures and growth shape, and the chosen cause's reading.
+export function CausesSide({ r, chosen, onChoose }) {
+  const bc = r.by_cause || {};
+  const causes = bc.causes || [];
+  const current = causes.find((c) => c.label === chosen) || causes[0];
+  const reading = current?.fit ? growthReading(current.fit) : null;
+  return (
+    <>
+      <div className="gof-card">
+        <div className="gofh life-card-head">
+          <span>Causes</span>
+          <span className="gof-sub">failures · shape β</span>
+        </div>
+        {causes.map((c, k) => (
+          <button type="button" key={c.label}
+                  className={"gofr rec-cause-row" + (c === current ? " on" : "")}
+                  aria-pressed={c === current} onClick={() => onChoose(c.label)}>
+            <span className="gk"><span className="rec-dot" style={{ background: COLORWAY[k % COLORWAY.length] }} />{c.label}</span>
+            <span className="gv-col">
+              <span className="gv">{c.failures} <span className="gof-sub">({pct(c.share)})</span></span>
+              {c.fit && <span className="param-ci">β {formatNumber(c.fit.beta, { sig: 3 })}</span>}
+            </span>
+          </button>
+        ))}
+      </div>
+      {current && reading && (
+        <div className="life-reading">
+          <div className="life-reading-title">{current.label}: {reading.title.toLowerCase()}</div>
+          <div>{reading.text}</div>
+        </div>
+      )}
+      <p className="life-method">
+        {bc.model || "Crow-AMSAA per cause"}{bc.aic != null ? ` · AIC ${formatNumber(bc.aic, { sig: 5 })}` : ""}.
+        {bc.note ? ` ${bc.note}` : ""} Choose a cause to see its 95% band.
+      </p>
+    </>
   );
 }

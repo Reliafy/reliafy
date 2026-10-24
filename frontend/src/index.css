@@ -2667,8 +2667,9 @@ h1 .chip,
 .detail-panel.life-panel .aside { gap: 12px; }
 .detail-panel .life-row .gv { text-align: right; }
 .detail-panel .life-row .life-lo { text-align: right; font-size: var(--fs-12); color: var(--muted); font-variant-numeric: tabular-nums; }
-/* A recurrent model's panels (#65): cause rows that pick a band, covariate
-   effects in words, the next-failure table, and the fit-statistics dialog. */
+/* A repairable model's tabs (RecurrentResultView.jsx, in the model frame):
+   cause rows that pick a band, effects in words, the next-failure and
+   per-system tables, the window in the calculator, and Plan ahead's tools. */
 .detail-panel .gofr.rec-cause-row { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line2);
   border-radius: 0; text-align: left; color: inherit; font: inherit; font-size: var(--fs-13); cursor: pointer; }
 .detail-panel .gofr.rec-cause-row:last-child { border-bottom: none; }
@@ -2677,26 +2678,51 @@ h1 .chip,
 .detail-panel .gofr.rec-cause-row.on { background: var(--acc-t); }
 .detail-panel .gofr.rec-cause-row.on .gk { color: var(--ink); font-weight: 500; }
 .rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 8px; vertical-align: 1px; }
-.detail-panel .rec-aside-wide { width: 300px; }
-.rec-effect { padding: 11px 16px; border-bottom: 1px solid var(--line2); font-size: var(--fs-13); }
-.rec-effect:last-child { border-bottom: none; }
-.rec-effect-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink);
-  font-weight: 500; }
-.rec-effect p { margin: 4px 0 0; color: var(--muted); line-height: 1.45; }
-.rec-nf-scroll { max-height: 360px; overflow-y: auto; }
+.mf-effects-words li.rec-effect-line { display: flex; align-items: flex-start; gap: 10px; }
+.mf-effects-words li.rec-effect-line .chip { flex: none; }
 .gof-card .rec-nf-table th:first-child, .gof-card .rec-nf-table td:first-child { padding-left: 16px; }
 .gof-card .rec-nf-table th:last-child, .gof-card .rec-nf-table td:last-child { padding-right: 16px; }
 .rec-nf-table th:not(:first-child), .rec-nf-table td:not(:first-child),
 .rec-stats-table th:not(:first-child), .rec-stats-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.rec-stats section + section { margin-top: 20px; }
-.rec-stats-h { font-size: var(--fs-14); font-weight: 600; color: var(--ink); margin: 0 0 8px; padding-bottom: 8px;
-  border-bottom: 1px solid var(--line2); }
 .rec-stats-dl { margin: 0; display: grid; gap: 6px; font-size: var(--fs-13); }
 .rec-stats-dl > div { display: flex; justify-content: space-between; gap: 16px; }
 .rec-stats-dl dt { color: var(--muted); }
 .rec-stats-dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-.rec-stats-scroll { max-height: 260px; overflow-y: auto; }
-.rec-stats .rs-note { margin: 8px 0 0; }
+.detail-panel .aside.mf-side.rec-side > * { flex: none; }
+.detail-panel.mf-l5.rec-next { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); }
+.rec-next .mf-l5-main { display: flex; }
+/* The calculator's window: the failures, rate and MTBF over it. */
+.rec-window { margin: 0; display: grid; gap: 8px; font-size: var(--fs-13); }
+.rec-window > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.rec-window dt { color: var(--muted); }
+.rec-window dd { margin: 0; text-align: right; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.rec-window dd .gof-sub { font-weight: 400; }
+/* Plan ahead: its switch, and the growth projection and overhaul tools. */
+.mf-result > .mf-before.rec-plan-bar { display: flex; }
+.rec-plan-tool { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.rec-plan-tool[hidden] { display: none; }
+.detail-panel.mf-l5.rec-plan-panel { grid-template-columns: minmax(0, 1fr) 320px; }
+.rec-plan-panel .gp-table { min-width: 620px; }
+.rec-plan-panel .gp-table .gp-mode { min-width: 110px; }
+.rec-plan-panel .gp-table .gp-kind { min-width: 170px; }
+.rec-plan-panel .result-summary .stats { flex-direction: column; }
+.rec-plan-panel .result-summary .stats .stat { border-right: 0; border-bottom: 1px solid var(--line2); }
+.rec-plan-panel .result-summary .stats .stat:last-child { border-bottom: 0; }
+.rec-diag .mf-l3-side > .mf-check { flex: none; }
+.rec-diag .mf-l3-side .mf-check.rec-systems .mf-check-body { max-height: 220px; }
+.rec-plan-panel .gp-table td, .rec-plan-panel .gp-table th { padding: 6px 8px; }
+.detail-panel .aside.mf-side.rec-plan-side { width: 330px; }
+.rec-plan-form .rec-plan-inputs { margin: 0; padding: 0 16px 14px; gap: 10px 14px; }
+.rec-plan-form .rec-oh-inputs { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 14px; }
+.rec-plan-form .rec-oh-inputs .rs-note { margin: 0; }
+.rec-plan-form .rec-oh-inputs button { align-self: flex-start; }
+.rec-plan-panel .result-summary .stats .stat { padding: 10px 14px; }
+.rec-plan-panel .rs-details { margin-top: 10px; }
+.rec-plan-panel .gp-card .mf-scroll { overflow: auto; }
+.rec-plan-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 24px;
+  text-align: center; border: 1px dashed var(--line); border-radius: var(--r); background: var(--surf-2); }
+.rec-plan-empty .muted-line { margin: 0; max-width: 34em; }
+.mf-plot-card > .rec-plan-empty { border: 0; background: none; }
 /* The recurrent Data step's optional cause, covariates and windows (#65). */
 .rec-map-row { margin-bottom: var(--sp-3); }
 .rec-map-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -2706,8 +2732,11 @@ h1 .chip,
 .mapper button.link.rec-map-link { font-size: var(--fs-13); padding: 0; align-self: flex-start; min-height: 0; }
 .rec-map-note { margin: var(--sp-2) 0 0; font-size: var(--fs-12); }
 @media (max-width: 760px) {
-  .detail-panel .rec-aside-wide { width: auto; }
   .detail-panel .gofr.rec-cause-row { min-height: 44px; }
+}
+@media (max-width: 720px) {
+  .detail-panel .aside.mf-side.rec-plan-side { width: auto; }
+  .rec-plan-empty { min-height: 160px; }
 }
 /* Every distribution on the same data, in the fit-statistics dialog (#293). */
 .compare-dists { margin-top: 20px; }
