@@ -7,7 +7,7 @@ import useOutlineNav from "./useOutlineNav.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { ancestorsOf, depthOf, filterOpen, flatten, levelSet, visiblePick } from "../outlineTree.js";
 import {
-  CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, LEVELS, LEVEL_OF, NAME_COLUMN, POSITION_COLUMN,
+  CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, LEVELS, LEVEL_OF, NAME_COLUMN,
   addNode, buildRcmDisplay, consequenceWords, failuresOn, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
   intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder, withOpen,
 } from "../rcmWorksheet.js";
@@ -31,20 +31,14 @@ import "./RcmWorksheet.css";
 // On a phone each row is two lines: the description and its status, then the
 // main columns in a line; the details panel opens as a sheet with the rest.
 //
-// The same grid shows the RCM on the maintenance positions (an Explorer
-// position's RCM tab): given its `display` (buildPositionRcmDisplay) and `ops`,
-// each edit is written straight away (ops.set, add, remove, assign: the
-// graph's events, through the page) instead of being kept for a Save, and
-// there's no Undo. The Explorer's tree beside it is the index, so the grid
-// has no levels or chips of its own there, only a filter on its own text (the
-// tree's filter searches the positions); `positionColumn` adds the Position
-// column (the positions inside included).
+// The Explorer's RCM tab (the asset tree and the RCM as one table, TreePane)
+// uses the cells, the cell editor, the details panel and the column chooser
+// from here; there, edits are written at once (Details' `ops`).
 
 const ICONS = {
   fn: <path d="M3 3.5h10v9H3z M6.5 6v4l3.5-2z" strokeWidth="1.4" strokeLinejoin="round" />,
   fail: <><path d="M8 2.2 14.2 13H1.8z" strokeWidth="1.4" strokeLinejoin="round" /><path d="M8 6.5v3" strokeWidth="1.6" strokeLinecap="round" /><circle cx="8" cy="11.2" r=".9" fill="currentColor" stroke="none" /></>,
   mode: <path d="M9.2 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" strokeWidth="1.4" strokeLinejoin="round" />,
-  unassigned: <path d="M3 4.5h10M3 8h10M3 11.5h6" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="2 1.6" />,
   task: <path d="M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1L2.4 10.7a1.4 1.4 0 0 0 2 2l4.3-4.3a3.2 3.2 0 0 0 4.1-3.9l-1.9 1.9-1.8-.4-.4-1.8z" strokeWidth="1.3" strokeLinejoin="round" />,
 };
 
@@ -64,7 +58,7 @@ const CHECK_MARK = { contradicted: "✗", unsure: "?", stale: "–", supported: 
 const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
 
 // One cell's content (desktop).
-function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
+export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
   const d = r.ref.decision;
   const mode = r.type === "mode";
   switch (col.id) {
@@ -83,6 +77,7 @@ function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
         ? <span className="rw-sum rw-todo" title={`${n(r.sum.undecided, "failure mode")} inside with no decision yet`}>{r.sum.undecided.toLocaleString("en-AU")} to decide</span>
         : <span className="rw-sum rw-done">All decided</span>;
     case "check":
+      // linkChecks (the Explorer): the chip opens the model or analysis behind it.
       if (mode && linkChecks && d?.status && d.artifact_link_path) {
         return (
           <Link to={d.artifact_link_path} className="rw-cklink" onClick={(e) => e.stopPropagation()}
@@ -134,7 +129,7 @@ function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
 
 // A cell being edited in place: Enter or leaving it keeps the change; Escape
 // drops it. A value the server would refuse stays open with the reason.
-function CellEditor({ col, r, onCommit, onCancel }) {
+export function CellEditor({ col, r, onCommit, onCancel }) {
   const d = r.ref.decision || {};
   const start = col.id === "name" ? r.ref.text || ""
     : col.id === "consequence" ? r.ref.consequence || ""
@@ -201,14 +196,14 @@ function NameCell({ r, v, open, query, phone, editing, onToggle, onCommit, onCan
 }
 
 // The phone's second line: the main columns, in words.
-function phoneLine(r) {
+export function phoneLine(r) {
   if (r.type !== "mode") return insideWords(r);
   const d = r.ref.decision;
   return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", intervalText(d), d?.task]
     .filter(Boolean).join(" · ");
 }
 
-function PhoneStatus({ r }) {
+export function PhoneStatus({ r }) {
   if (r.type === "mode") {
     const d = r.ref.decision;
     return d?.status ? <RcmStatusBadge status={d.status} /> : null;
@@ -220,7 +215,7 @@ function PhoneStatus({ r }) {
 
 function Row({
   r, v, i, top, height, cols, widths, total, open, focused, tabbable, dim, pinned, phone, query, editing, readOnly, wt,
-  onToggle, onPick, onEdit, onCommit, onCancel, onDecision, linkChecks,
+  onToggle, onPick, onEdit, onCommit, onCancel, onDecision,
 }) {
   const has = r.kids.length > 0;
   const editCol = editing?.key === r.key ? editing.col : null;
@@ -273,7 +268,7 @@ function Row({
                title={can && editCol !== c.id ? "Double-click to edit" : undefined}>
             {editCol === c.id
               ? <CellEditor col={c} r={r} onCommit={commitCell(c.id)} onCancel={onCancel} />
-              : <Cell col={c} r={r} query={query} readOnly={readOnly} onDecision={onDecision} linkChecks={linkChecks} />}
+              : <Cell col={c} r={r} query={query} readOnly={readOnly} onDecision={onDecision} />}
           </div>
         );
       })}
@@ -285,10 +280,12 @@ function Row({
 // The details panel for the row picked: every field, the decision, adding
 // inside and deleting.
 // The kinds of row whose description is edited (not a position's, nor the
-// unassigned failure modes' heading).
-const EDITABLE = new Set(["fn", "fail", "mode"]);
+// unassigned failure modes' heading, in the Explorer).
+export const EDITABLE = new Set(["fn", "fail", "mode"]);
 
-function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops }) {
+// With `ops` (the Explorer), a failure mode can be put under another of its
+// position's functional failures.
+export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops }) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
   const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k));
@@ -431,7 +428,7 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
 }
 
 // The column chooser: tick the columns to show; the description is always shown.
-function ColumnChooser({ cols, onCols }) {
+export function ColumnChooser({ cols, onCols }) {
   const [open, setOpen] = useState(false);
   const box = useRef(null);
   useEffect(() => {
@@ -464,11 +461,10 @@ function ColumnChooser({ cols, onCols }) {
 }
 
 export default function RcmWorksheet({
-  studyId, functions, readOnly, onChange, onDecision, onUndo, canUndo, phone, notice, display: given, ops, tools,
-  positionColumn = false,
+  studyId, functions, readOnly, onChange, onDecision, onUndo, canUndo, phone, notice,
 }) {
   const confirm = useConfirm();
-  const display = useMemo(() => given || buildRcmDisplay(functions), [given, functions]);
+  const display = useMemo(() => buildRcmDisplay(functions), [functions]);
   const depth = Math.max(1, depthOf(display));
   const [prefs, setPrefs] = useState(() => loadPrefs());
   const [query, setQuery] = useState("");
@@ -521,7 +517,7 @@ export default function RcmWorksheet({
   const row = cur != null ? display.rows.get(cur) : null;
 
   const H = phone ? PHONE_H : HEIGHTS[prefs.density];
-  const cols = [...(positionColumn ? [POSITION_COLUMN] : []), ...prefs.cols.map((id) => COLUMN[id]).filter(Boolean)];
+  const cols = prefs.cols.map((id) => COLUMN[id]).filter(Boolean);
   const widths = { name: prefs.widths.name ?? NAME_COLUMN.width };
   for (const c of cols) widths[c.id] = prefs.widths[c.id] ?? c.width;
   const total = cols.reduce((s, c) => s + widths[c.id], widths.name);
@@ -576,11 +572,6 @@ export default function RcmWorksheet({
       return res.error;
     }
     const label = col === "name" ? "description" : (COLUMN[col]?.label || col).toLowerCase();
-    if (ops) {
-      ops.set(r, col, res.value).then(() => say(`Saved the ${label}.`), (e) => say(e.message, "error"));
-      setEditing(null);
-      return true;
-    }
     onChange(setCell(functions, r, col, res.value), `Changed the ${label} of “${(nameOf(r) || LEVEL_OF[r.type].label).slice(0, 60)}”.`);
     say(`Changed the ${label}. Save the study to keep it.`);
     setEditing(null);
@@ -588,17 +579,6 @@ export default function RcmWorksheet({
   };
 
   const add = (r) => {
-    if (ops) {
-      const what = !r ? "function" : r.type === "fn" ? "functional failure" : "failure mode";
-      ops.add(r).then((id) => {
-        if (!id) return;
-        say(`Added a ${what}: describe it in the details.`);
-        if (r) setOpenState((s) => new Set([...s, r.key]));
-        setPanel(true);
-        if (id) setWant({ key: id });
-      }, (e) => say(e.message, "error"));
-      return;
-    }
     const { functions: next, id } = addNode(functions, r ? r.at : null);
     const what = r ? (r.type === "fn" ? "functional failure" : "failure mode") : "function";
     onChange(next, `Added a ${what}.`);
@@ -610,20 +590,6 @@ export default function RcmWorksheet({
 
   const remove = async (r) => {
     const level = LEVEL_OF[r.type].label.toLowerCase();
-    if (ops) {
-      const ok = await confirm({ title: `Delete this ${level}?`, body: ops.removeText(r), confirmLabel: `Delete ${level}` });
-      if (!ok) return;
-      const parent = r.parent;
-      try {
-        await ops.remove(r);
-        say(`Deleted the ${level}.`);
-        setFocus(parent);
-        if (!parent) setPanel(false);
-      } catch (e) {
-        say(e.message, "error");
-      }
-      return;
-    }
     if (r.kids.length) {
       const inside = r.type === "fn"
         ? `${n(r.kids.length, "functional failure")} and ${n(r.sum.modes, "failure mode")}`
@@ -694,7 +660,7 @@ export default function RcmWorksheet({
   const rowProps = (k) => ({
     r: display.rows.get(k), cols, widths, total, phone, query, readOnly, editing,
     onToggle: toggle, onPick: pick, onEdit: (key, col) => { setFocus(key); setEditing({ key, col }); },
-    onCommit: commit, onCancel: () => setEditing(null), onDecision, linkChecks: !!ops,
+    onCommit: commit, onCancel: () => setEditing(null), onDecision,
   });
 
   return (
@@ -703,20 +669,16 @@ export default function RcmWorksheet({
         <label className="tp-filter rw-filter">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
-                 placeholder={ops ? "Filter this table" : "Filter: description, effects, task, notes"}
-                 aria-label={ops ? "Filter this table: descriptions, effects, tasks, notes" : "Filter the worksheet"} title={ops ? "Descriptions, effects, tasks and notes in this table (the tree's filter finds positions)" : undefined} />
+                 placeholder="Filter: description, effects, task, notes" aria-label="Filter the worksheet" />
         </label>
-        {!ops && (
-          <LevelButtons levels={Array.from({ length: Math.min(depth, LEVELS.length) }, (_, i) => i + 1)}
-                        names={LEVELS.map((l) => l.plural)} onLevel={setLevel} onCloseAll={() => setOpen(new Set())}
-                        className="tp-levels rw-levels" />
-        )}
+        <LevelButtons levels={Array.from({ length: Math.min(depth, LEVELS.length) }, (_, i) => i + 1)}
+                      names={LEVELS.map((l) => l.plural)} onLevel={setLevel} onCloseAll={() => setOpen(new Set())}
+                      className="tp-levels rw-levels" />
         <div className="rw-tools">
-          {!readOnly && onUndo && (
+          {!readOnly && (
             <button type="button" className="secondary rw-btn" onClick={() => { onUndo(); say("Undid the last change."); }} disabled={!canUndo}
                     title="Undo the last change (Ctrl+Z)">Undo</button>
           )}
-          {tools}
           {!phone && <ColumnChooser cols={prefs.cols} onCols={(next) => setPrefs((p) => ({ ...p, cols: next }))} />}
           {!phone && (
             <SegmentedControl size="sm" label="Row height" value={prefs.density}
@@ -726,7 +688,7 @@ export default function RcmWorksheet({
           {!readOnly && <button type="button" className="rw-btn" onClick={() => add(null)}>Add function</button>}
         </div>
       </div>
-      {!ops && <div className="tp-chips rw-chips" role="group" aria-label="Show only">
+      <div className="tp-chips rw-chips" role="group" aria-label="Show only">
         {CHIPS.map((ch) => {
           const on = chips.includes(ch.id);
           return (
@@ -736,7 +698,7 @@ export default function RcmWorksheet({
             </button>
           );
         })}
-      </div>}
+      </div>
       <div className="rw-sub">
         <p className="rw-legend" aria-label="What the icons mean">
           {LEVELS.map((l) => <span key={l.type}><LevelIcon type={l.type} /> {l.label}</span>)}
@@ -752,7 +714,7 @@ export default function RcmWorksheet({
 
       <div className={"rw-main" + (panel && row ? " with-panel" : "")}>
         <div className="rw-grid" ref={nav.scroller} onScroll={nav.onScroll} onKeyDown={(e) => {
-          if (e.key === "F2" && cur && !readOnly && !editing && EDITABLE.has(display.rows.get(cur)?.type)) { e.preventDefault(); setEditing({ key: cur, col: "name" }); return; }
+          if (e.key === "F2" && cur && !readOnly && !editing) { e.preventDefault(); setEditing({ key: cur, col: "name" }); return; }
           if (e.key === "Escape" && panel && !editing) { e.preventDefault(); setPanel(false); return; }
           nav.onKey(e);
         }}
@@ -814,7 +776,7 @@ export default function RcmWorksheet({
                 <p>Nothing matches. <button type="button" className="link" onClick={() => { setQuery(""); setChips([]); }}>Clear filters</button></p>
               ) : (
                 <>
-                  <p><b>No functions yet.</b> Start with a function: what {ops ? "this position" : "the system"} must do, ideally with a performance standard.</p>
+                  <p><b>No functions yet.</b> Start with a function: what the system must do, ideally with a performance standard.</p>
                   {!readOnly && <button type="button" onClick={() => add(null)}>Add function</button>}
                 </>
               )}
@@ -824,7 +786,7 @@ export default function RcmWorksheet({
         {panel && row && (
           <>
             {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
-            <Details r={row} display={display} readOnly={readOnly} phone={phone} headingRef={headingRef} ops={ops}
+            <Details r={row} display={display} readOnly={readOnly} phone={phone} headingRef={headingRef}
                      onCommit={commit} onAdd={add} onDelete={remove} onDecision={onDecision}
                      onClose={() => { setPanel(false); document.getElementById(`rw-${row.key}`)?.focus({ preventScroll: true }); }}
                      onSelect={(key) => setWant({ key })} />

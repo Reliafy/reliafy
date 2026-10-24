@@ -64,6 +64,11 @@ def test_build_a_positions_rcm_over_the_routes(api):
     assert got["effects"] == "Pump stops" and got["decision"]["artifact_link_path"].startswith("/models/m/")
     assert sheet["rollup"]["contradicted"] == 1 and pos["rollup"]["modes"] == 1
     assert api.get(f"{M}/positions/{plant['id']}/rcm?scope=this").json()["positions"][0]["functions"] == []
+    # The whole workspace's, for the tree: only positions with any RCM, checked the same way.
+    every = api.get(f"{M}/rcm").json()
+    assert [p["id"] for p in every["positions"]] == [pump["id"]]
+    assert every["positions"][0]["functions"][0]["failures"][0]["modes"][0]["decision"]["status"] == "contradicted"
+    assert every["rollup"]["contradicted"] == 1
     assert api.get(f"{M}/positions/{plant['id']}/rcm?scope=nope").status_code == 422
     tree = {r["name"]: r for r in api.get(f"{M}/tree").json()["positions"]}
     assert tree["Plant"]["not_analysed"] and "not_analysed" not in tree["Pump"]

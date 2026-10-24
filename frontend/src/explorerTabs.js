@@ -31,7 +31,3 @@ export function tabsFor(row) {
 export function shownTab(wanted, row) {
   return tabsFor(row).some((t) => t.id === wanted) ? wanted : DEFAULT_TAB;
 }
-
-// The RCM tab shows the position picked in the tree; ?inside=1 adds the
-// positions inside it ("Include positions inside").
-export const insideParam = (value) => value === "1";

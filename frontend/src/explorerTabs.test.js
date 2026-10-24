@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_TAB, TABS, insideParam, shownTab, tabParam, tabsFor } from "./explorerTabs.js";
+import { DEFAULT_TAB, TABS, shownTab, tabParam, tabsFor } from "./explorerTabs.js";
 
 const pos = { type: "pos" };
 const item = { type: "item" };
@@ -22,11 +22,8 @@ test("the tab picked stays while walking the tree, Summary where a row hasn't it
   assert.equal(shownTab("nope", pos), "summary");
 });
 
-test("the address names the tab and whether the positions inside are included", () => {
+test("the address names the tab", () => {
   assert.equal(tabParam("rcm"), "rcm");
   assert.equal(tabParam("work"), "summary");
   assert.equal(tabParam(null), "summary");
-  assert.equal(insideParam("1"), true);
-  assert.equal(insideParam(null), false);
-  assert.equal(insideParam("yes"), false);
 });

@@ -14,6 +14,7 @@
 
 import { EXPLORER_PATH } from "./navigation.js";
 import { filterRows } from "./outlineTree.js";
+import { RCM_CHIPS, isRcmRow, rcmRowText } from "./explorerRcm.js";
 
 // The outline's own model (open to a level, flatten, pinned rows, the drawn
 // window, type-ahead), shared with the RCM worksheet.
@@ -263,6 +264,7 @@ function rollUp(rows, roots) {
 // What a row's text is searched by: name, tag, the item's name and serial,
 // class; for an item, its serial, class, make, model and part number too.
 export function rowText(r) {
+  if (isRcmRow(r)) return rcmRowText(r);
   const p = r.ref;
   return [p.name, p.tag, p.item?.name, p.item?.serial, p.serial, p.position_class, p.item_class?.name,
     p.manufacturer, p.model, p.part_number]
@@ -276,6 +278,8 @@ export const CHIPS = [
   { id: "alarm", label: "Alarm", test: (r) => r.own.alarms > 0 },
   { id: "empty", label: "Empty", title: "Positions with a class and nothing fitted", positionsOnly: true, test: (r) => r.type === "pos" && !!r.ref.position_class && !r.ref.item },
   { id: "unanalysed", label: "Not analysed", title: "Positions with no function yet, or a failure mode with no decision (RCM)", positionsOnly: true, test: (r) => r.own.not_analysed > 0 },
+  // The RCM tab's own, about its failure modes (shown on that tab only).
+  ...RCM_CHIPS,
 ];
 
 // The filter: the rows that match the text and every chip that's on (and the
@@ -298,7 +302,9 @@ const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n =
 // With `rcm` (the RCM tab open, or the Not analysed chip on), a quiet fourth:
 // a position not analysed yet (a parent: how many, inside it and itself).
 export function markersOf(r, { rcm = false } = {}) {
-  const parent = r.kids.length > 0;
+  if (isRcmRow(r)) return [];
+  // Kids that are positions, locations or items (not the RCM tab's rows).
+  const parent = r.kids.length - (r.rcmKids || 0) > 0;
   const s = parent ? r.sum : r.own;
   const where = (own) => (!parent ? "" : own ? " here and inside" : " inside");
   const out = [];

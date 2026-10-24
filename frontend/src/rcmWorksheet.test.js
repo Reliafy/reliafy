@@ -4,7 +4,7 @@ import { flatten, levelSet } from "./outlineTree.js";
 import {
   COLUMN, DEFAULT_COLUMNS, NAME_COLUMN, addNode, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, patchNode, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder,
-  withOpen, worksheetCsvRows, POSITION_COLUMN, buildPositionRcmDisplay, decisionBody, failuresOn,
+  withOpen, worksheetCsvRows, decisionBody,
 } from "./rcmWorksheet.js";
 
 // A house pool pump, as the server sends it back (decisions resolved).
@@ -165,45 +165,7 @@ test("remembered on this device: columns, widths, row height and each study's op
   assert.doesNotThrow(() => savePrefs(p, broken));
 });
 
-// ---- the RCM on the positions (an Explorer position's RCM tab) -------------
-
-const SHEET = {
-  scope: "below",
-  positions: [
-    { id: "p1", name: "Plant", depth: 0, analysed: false, functions: [], unassigned: [] },
-    { id: "p2", name: "Pump", depth: 1, analysed: false, functions: [
-      { id: "f1", text: "Pump water", failures: [{ id: "x1", text: "No flow", modes: [
-        { id: "m1", text: "Bearing", consequence: "hidden", decision: { outcome: "rtf", rtf_basis: "random", status: "contradicted", evidence: { type: "model", id: "e" } } },
-      ] }] },
-    ], unassigned: [{ id: "m2", text: "Seal", consequence: null, decision: null }] },
-    { id: "p3", name: "Motor", depth: 2, analysed: false, functions: [], unassigned: [] },
-  ],
-};
-
-test("the positions' RCM: no position rows (the tree is the index); the Position column names them", () => {
-  const d = buildPositionRcmDisplay(SHEET);
-  assert.equal(d.many, true);
-  assert.ok(![...d.rows.values()].some((r) => r.type === "pos"));
-  assert.deepEqual(d.roots, ["f1", "U:p2"]);
-  assert.equal(d.rows.get("f1").ref.position_path, "Pump");
-  assert.equal(POSITION_COLUMN.text(d.rows.get("f1")), "Pump");
-  assert.equal(POSITION_COLUMN.text(d.rows.get("m1")), "");
-  assert.equal(d.rows.get("m1").depth, 2);
-  assert.equal(d.rows.get("m2").ref.functional_failure_id, null);
-  assert.equal(d.rows.get("m1").ref.position_id, "p2");
-  // Roll-ups count every mode inside.
-  assert.equal(d.rows.get("f1").sum.contradicted, 1);
-  assert.equal(d.rows.get("U:p2").sum.undecided, 1);
-  assert.deepEqual(failuresOn(d, "p2"), [{ id: "x1", text: "No flow", function: "Pump water" }]);
-  // A deeper position is named by its path below the one picked.
-  const deep = buildPositionRcmDisplay({ positions: [SHEET.positions[0], SHEET.positions[1],
-    { ...SHEET.positions[2], functions: [{ id: "f9", text: "Turn", failures: [] }] }] });
-  assert.equal(deep.rows.get("f9").ref.position_path, "Pump › Motor");
-  // One position: no paths (no Position column).
-  const one = buildPositionRcmDisplay({ positions: [SHEET.positions[1]] });
-  assert.equal(one.many, false);
-  assert.equal(one.rows.get("f1").ref.position_path, undefined);
-});
+// ---- the RCM in the Explorer's tree -----------------------------------------
 
 test("a decision goes back without the evidence check, a change applied", () => {
   const d = { outcome: "fixed_interval", task: "Replace", interval: 6, interval_unit: "months", status: "supported",

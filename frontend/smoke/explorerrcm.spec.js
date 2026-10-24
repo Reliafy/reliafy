@@ -1,9 +1,9 @@
-// The Explorer's detail panel tabs (Operate › Assets › Explorer): Summary and
-// RCM; the RCM tab's table for the position picked in the tree (no position
-// rows, levels or chips of its own: the tree is the index), "Include positions
-// inside", edits written at once, the evidence check, that it fits the window,
-// the "Not analysed" chip, Full width, and full screen (F, Esc, a dialog on top,
-// the selection and tab kept).
+// The Explorer's tabs (Operate › Assets › Explorer). Summary: the tree (positions)
+// with the page about the row picked beside it. RCM: the tree and the RCM are
+// one table: the same tree is its first column, each position's functions ›
+// functional failures › failure modes nested in it, the RCM's columns beside
+// every row; adding in the table grows the tree; the selected row stays put
+// across the tabs; it fits the window; the keyboard; the chips; full screen.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
 
@@ -21,147 +21,193 @@ async function plant(request, tag) {
   });
   const pump = await post(`${M}/positions`, { name: `Rcm pump ${tag}`, parent_id: top.id });
   const motor = await post(`${M}/positions`, { name: `Rcm motor ${tag}`, parent_id: pump.id });
-  const fn = await post(`${M}/positions/${pump.id}/functions`, { text: `Pump water ${tag}`, standard: "50 L/s" });
-  const ff = await post(`${M}/functions/${fn.id}/failures`, { text: `No flow ${tag}` });
-  const mode = await post(`${M}/positions/${pump.id}/failure-modes`, { text: `Bearing seizes ${tag}`, functional_failure_id: ff.id });
+  // Several functions, each with several functional failures, each with several modes.
+  const fns = [];
+  for (const f of ["Pump water", "Contain the water"]) {
+    const fn = await post(`${M}/positions/${pump.id}/functions`, { text: `${f} ${tag}` });
+    fns.push(fn);
+    for (const x of ["No flow", "Low flow"]) {
+      const ff = await post(`${M}/functions/${fn.id}/failures`, { text: `${x} ${f} ${tag}` });
+      for (const mo of ["Bearing seizes", "Seal leaks"]) {
+        await post(`${M}/positions/${pump.id}/failure-modes`, { text: `${mo} ${x} ${f} ${tag}`, functional_failure_id: ff.id });
+      }
+    }
+  }
+  const mode = await post(`${M}/positions/${pump.id}/failure-modes`, { text: `Coupling fails ${tag}` }); // under none
   const res = await request.put(`${M}/failure-modes/${mode.id}/decision`, {
     data: { consequence: "operational", decision: { outcome: "rtf", rtf_basis: "random", evidence: { type: "model", id: "sample-model-bearings-weibull" } } },
   });
   expect(res.ok()).toBeTruthy();
-  await post(`${M}/positions/${pump.id}/failure-modes`, { text: `Seal leaks ${tag}` }); // under no functional failure
   await post(`${M}/positions/${pump.id}/fit`, { new_item: { name: `Rcm unit ${tag}`, serial: `RU-${tag}` } });
-  return { top, pump, motor, fn, ff, mode };
+  return { top, pump, motor, fns, mode };
 }
 
-const row = (page, name) => page.getByRole("treeitem", { name: new RegExp(`^${name}`) });
-const panel = (page) => page.getByRole("region", { name: "Details" });
-const grid = (page) => page.getByRole("treegrid", { name: "RCM worksheet" });
+const table = (page) => page.getByRole("treegrid", { name: /and their RCM/ });
+const tree = (page) => page.getByRole("tree", { name: "Positions" });
+const trow = (page, name) => table(page).getByRole("row", { name: new RegExp(name) });
+// Picked by its tree cell (a click mid-row could land on a cell's own button).
+const pickRow = (page, name) => trow(page, name).locator(".tt-tree, .tt-l1").first().click();
+const treeitem = (page, name) => page.getByRole("treeitem", { name: new RegExp(`^${name}`) });
 const overflow = (page) => page.evaluate(() => {
   const el = document.documentElement;
   return { down: el.scrollHeight - innerHeight, side: el.scrollWidth - innerWidth };
 });
+const topOf = async (locator) => Math.round((await locator.boundingBox()).y);
 
-test("the panel's tabs: Summary and RCM, in the address, kept while walking the tree", async ({ page, request, problems }) => {
+test("RCM: the tree and the RCM are one table; Summary: the tree and the page; the row stays put", async ({ page, request, problems }) => {
   const tag = `t${Date.now()}`;
   const p = await plant(request, tag);
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
-  const tabs = panel(page).getByRole("tablist", { name: "What to show for this row" });
-  await expect(tabs.getByRole("tab")).toHaveText(["Summary", "RCM"]);
-  await expect(tabs.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
-  // A long description takes two lines, and More opens the whole of it.
-  const more = panel(page).getByRole("button", { name: /More/ });
-  await expect(more).toBeVisible();
-  await more.click();
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
+  // Summary: the tree (positions only) and the page beside it.
+  await expect(tree(page)).toBeVisible();
+  await expect(table(page)).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Details" }).getByRole("heading", { name: `Rcm pump ${tag}` })).toBeVisible();
+  await expect(page.getByText(`Pump water ${tag}`)).toHaveCount(0);
+  const before = await topOf(treeitem(page, `Rcm pump ${tag}`));
+
+  await page.getByRole("tab", { name: "RCM" }).click();
+  await expect(page).toHaveURL(/tab=rcm/);
+  // One table: no tree of its own beside it, the positions and their RCM in the same rows.
+  await expect(table(page)).toBeVisible();
+  await expect(page.getByRole("tree")).toHaveCount(0);
+  await expect(table(page).getByRole("columnheader", { name: "Decision" })).toBeVisible();
+  await expect(trow(page, `^Rcm plant ${tag}`)).toBeVisible();
+  const pumpRow = trow(page, `^Rcm pump ${tag}`);
+  await expect(pumpRow).toHaveAttribute("aria-selected", "true");
+  expect(await topOf(pumpRow)).toBe(before); // the selected row didn't move
+  // Its functions, failures and modes, nested under it (several of each).
+  await expect(trow(page, `^Function: Pump water ${tag}`)).toBeVisible();
+  await expect(trow(page, `^Function: Contain the water ${tag}`)).toBeVisible();
+  await expect(trow(page, `Functional failure: Low flow Pump water ${tag}`)).toBeVisible();
+  await expect(trow(page, `Failure mode: Seal leaks Low flow Pump water ${tag}`)).toBeVisible();
+  await trow(page, `^Function: Pump water ${tag}`).locator(".tp-chev").click(); // close two: the rest comes into view
+  await trow(page, `^Function: Contain the water ${tag}`).locator(".tp-chev").click();
+  await expect(trow(page, "Not under a functional failure").first()).toBeVisible();
+  await expect(trow(page, `Coupling fails ${tag}`).getByText("Contradicted")).toBeVisible();
+  // RCM is by position: the other arrangements wait for Summary.
+  await expect(page.getByRole("radio", { name: "Locations" })).toBeDisabled();
+
+  await page.getByRole("tab", { name: "Summary" }).click();
+  await expect(tree(page)).toBeVisible();
+  await expect(page.getByText(`Pump water ${tag}`)).toHaveCount(0);
+  await expect(treeitem(page, `Rcm pump ${tag}`)).toHaveAttribute("aria-selected", "true");
+  expect(await topOf(treeitem(page, `Rcm pump ${tag}`))).toBe(before);
+  // The plant's long description: two lines, and More opens the whole of it.
+  await treeitem(page, `Rcm plant ${tag}`).click();
+  await page.getByRole("region", { name: "Details" }).getByRole("button", { name: /More/ }).click();
   await expect(page.getByRole("dialog", { name: "Description" })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expectHealthy(page, problems, { label: "explorer one table" });
+});
 
-  // The arrow keys move between tabs (the ARIA tab pattern); the address follows.
-  await tabs.getByRole("tab", { name: "Summary" }).focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(tabs.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
-  await expect(page).toHaveURL(/tab=rcm/);
-  await expect(grid(page)).toBeVisible();
-  // The plant itself has no functions yet; the table is the plant's only.
-  await expect(grid(page).getByText(/No functions yet/)).toBeVisible();
-  await expect(grid(page).getByText(`Bearing seizes ${tag}`)).toHaveCount(0);
+test("adding in the table grows the tree: a function, its failures and modes", async ({ page, request, problems }) => {
+  const tag = `g${Date.now()}`;
+  const p = await plant(request, tag);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.motor.id}&tab=rcm`);
+  const ask = async (title, text) => {
+    const d = page.getByRole("dialog", { name: title });
+    await d.getByRole("textbox").fill(text);
+    await d.getByRole("button", { name: title.replace(/^Add an? /, "Add ") }).click();
+  };
+  await trow(page, "^Add a function$").click();
+  await ask("Add a function", `Turn the shaft ${tag}`);
+  const fn = trow(page, `^Function: Turn the shaft ${tag}`);
+  await expect(fn).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("complementary", { name: "Details" })).toBeVisible();
+  // A second function, then a failure under the first and two modes under that.
+  await trow(page, "^Add a function$").click();
+  await ask("Add a function", `Stay cool ${tag}`);
+  await fn.locator(".tp-chev").click();
+  await trow(page, "^Add a functional failure$").first().click();
+  await ask("Add a functional failure", `Shaft stops ${tag}`);
+  await trow(page, `Shaft stops ${tag}`).locator(".tp-chev").click();
+  for (const m of ["Winding burnt", "Bearing worn"]) {
+    await trow(page, "^Add a failure mode$").first().click();
+    await ask("Add a failure mode", `${m} ${tag}`);
+    await expect(trow(page, `${m} ${tag}`)).toBeVisible();
+  }
+  const sheet = await (await request.get(`${M}/positions/${p.motor.id}/rcm?scope=this`)).json();
+  expect(sheet.positions[0].functions.map((f) => f.text)).toEqual([`Turn the shaft ${tag}`, `Stay cool ${tag}`]);
+  expect(sheet.positions[0].functions[0].failures[0].modes.map((m) => m.text)).toEqual([`Winding burnt ${tag}`, `Bearing worn ${tag}`]);
+  // The motor is analysed now that it has functions; one mode undecided keeps it "not analysed".
+  await expect(trow(page, `^Rcm motor ${tag}`)).toBeVisible();
+  await expectHealthy(page, problems, { label: "tree grows" });
+});
 
-  // Walk down the tree: the RCM tab stays and the table follows.
-  await row(page, `Rcm plant ${tag}`).focus();
-  await page.keyboard.press("ArrowDown");
-  await expect(row(page, `Rcm pump ${tag}`)).toHaveAttribute("aria-selected", "true");
-  await expect(panel(page).getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
-  await expect(page).toHaveURL(new RegExp(`sel=${p.pump.id}`));
-  await expect(grid(page).getByText(`Bearing seizes ${tag}`)).toBeVisible();
-  await expect(grid(page).getByText("Contradicted").first()).toBeVisible();
-  await expect(grid(page).getByText("Not under a functional failure").first()).toBeVisible();
-  // The tree is the index: the table has no position rows, and no levels or chips of its own.
-  await expect(grid(page).getByText(`Rcm pump ${tag}`, { exact: true })).toHaveCount(0);
-  await expect(grid(page).getByText(`Rcm motor ${tag}`, { exact: true })).toHaveCount(0);
-  await expect(panel(page).getByRole("button", { name: "Needs a decision" })).toHaveCount(0);
-  await expect(panel(page).getByRole("group", { name: "Open the tree to a level" })).toHaveCount(0);
-
-  // An item has Summary only (no tab row); a position again shows RCM.
-  await open(page, `/asset-register/explorer?arrange=items&tab=rcm`);
-  await row(page, `Rcm unit ${tag}`).click();
-  await expect(panel(page).getByRole("heading", { name: `Rcm unit ${tag}` })).toBeVisible();
-  await expect(panel(page).getByRole("tablist")).toHaveCount(0);
+test("keyboard: walk from a position into its functions and modes, Enter for the details", async ({ page, request, problems }) => {
+  const tag = `k${Date.now()}`;
+  const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
-  await expect(panel(page).getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
-  await expectHealthy(page, problems, { label: "explorer tabs" });
+  const pumpRow = trow(page, `^Rcm pump ${tag}`);
+  await pumpRow.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(trow(page, `^Function: Pump water ${tag}`)).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowLeft"); // close it
+  await expect(trow(page, `Functional failure: No flow Pump water ${tag}`)).toHaveCount(0);
+  await page.keyboard.press("ArrowRight"); // open it
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`)).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("complementary", { name: "Details" })).toBeVisible();
+  await expectHealthy(page, problems, { label: "keyboard" });
 });
 
 for (const [w, h] of [[1440, 900], [1366, 768]]) {
-  test(`the RCM tab fits ${w}x${h}: no page scroll, the grid scrolls in its card`, async ({ page, request, problems }) => {
+  test(`the RCM tab fits ${w}x${h}: no page scroll, the table scrolls in its own area`, async ({ page, request, problems }) => {
     const tag = `f${w}${Date.now()}`;
     const p = await plant(request, tag);
     await page.setViewportSize({ width: w, height: h });
-    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm&inside=1`);
-    await expect(grid(page)).toBeVisible();
+    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
+    await expect(table(page)).toBeVisible();
     expect(await overflow(page)).toEqual({ down: 0, side: 0 });
-    // The details panel opens beside the grid and it still fits.
-    await grid(page).getByText(`Bearing seizes ${tag}`).click();
+    await pickRow(page, `Failure mode: Seal leaks No flow Pump water ${tag}`);
     await expect(page.getByRole("complementary", { name: "Details" })).toBeVisible();
     expect(await overflow(page)).toEqual({ down: 0, side: 0 });
-    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
-    await expectHealthy(page, problems, { label: `rcm fits ${w}` });
+    await expectHealthy(page, problems, { label: `rcm fits ${w}`, root: ".tx" });
   });
 }
 
-test("at 400 px nothing scrolls sideways, on either tab", async ({ page, request, problems }) => {
+test("at 400 px nothing scrolls sideways, on either tab; a mode opens as a sheet", async ({ page, request, problems }) => {
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
-  for (const tab of ["", "&tab=rcm"]) {
-    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}${tab}`);
-    await row(page, `Rcm pump ${tag}`).click();
-    await expect(panel(page).getByRole("heading", { name: `Rcm pump ${tag}` })).toBeVisible();
-    if (tab) await expect(grid(page)).toBeVisible();
-    expect((await overflow(page)).side, `sideways at 400 px${tab}`).toBe(0);
-  }
-  // No full-screen button on a phone: the page is already the screen.
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
+  expect((await overflow(page)).side).toBe(0);
+  await page.getByRole("tab", { name: "RCM" }).click();
+  await expect(table(page)).toBeVisible();
+  expect((await overflow(page)).side).toBe(0);
+  await pickRow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`);
+  await expect(page.getByRole("complementary", { name: "Details" })).toBeVisible();
+  expect((await overflow(page)).side).toBe(0);
   await expect(page.getByRole("button", { name: "Full screen", exact: true })).toHaveCount(0);
-  await expectHealthy(page, problems, { label: "rcm at 400 px", root: ".tx-detail" });
+  await expectHealthy(page, problems, { label: "rcm at 400 px", root: ".tx" });
 });
 
-test("Include positions inside, edits and the Not analysed chip", async ({ page, request, problems }) => {
-  const tag = `e${Date.now()}`;
+test("one search and one chip row: the RCM's text, Needs a decision, Not analysed", async ({ page, request, problems }) => {
+  const tag = `c${Date.now()}`;
   const p = await plant(request, tag);
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}&tab=rcm`);
-  // The plant only (the default): it has no functions of its own.
-  await expect(grid(page).getByText(/No functions yet/)).toBeVisible();
-  const inside = page.getByRole("checkbox", { name: "Include positions inside" });
-  await expect(inside).not.toBeChecked();
-  await inside.click(); // the address holds it, so the box follows a moment later
-  await expect(inside).toBeChecked();
-  await expect(page).toHaveURL(/inside=1/);
-  // The pump's function shows, naming its position in the Position column (no position rows).
-  await expect(grid(page).getByText(`Pump water ${tag}`)).toBeVisible();
-  await expect(grid(page).getByRole("columnheader", { name: /^Position/ })).toBeVisible();
-  await expect(grid(page).getByRole("gridcell", { name: `Rcm pump ${tag}`, exact: true }).first()).toBeVisible();
-  await inside.click();
-  await expect(inside).not.toBeChecked();
-  await expect(page).not.toHaveURL(/inside=1/);
-
-  // Add a function to the plant: written at once, in the tree's own graph.
-  await page.getByRole("button", { name: "Add function" }).first().click();
-  const ask = page.getByRole("dialog", { name: "Add a function" });
-  await ask.getByRole("textbox").fill(`Hold the line together ${tag}`);
-  await ask.getByRole("button", { name: "Add function" }).click();
-  await expect(grid(page).getByText(`Hold the line together ${tag}`)).toBeVisible();
-  const sheet = await (await request.get(`${M}/positions/${p.top.id}/rcm?scope=this`)).json();
-  expect(sheet.positions[0].functions.map((f) => f.text)).toEqual([`Hold the line together ${tag}`]);
-
-  // The Not analysed chip lives in the tree: the pump (a failure mode with no
-  // decision) and the motor (no function yet); the plant has a function now.
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
+  await page.getByRole("searchbox", { name: "Filter the tree and its RCM" }).fill(`Seal leaks Low flow Contain`);
+  await expect(trow(page, `Failure mode: Seal leaks Low flow Contain the water ${tag}`)).toBeVisible();
+  await expect(trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`)).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "Filter the tree and its RCM" }).fill("");
+  await page.getByRole("button", { name: "Needs a decision" }).click();
+  await expect(trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`)).toBeVisible();
+  await expect(trow(page, `Coupling fails ${tag}`)).toHaveCount(0); // decided
+  await page.getByRole("button", { name: "Needs a decision" }).click();
   await page.getByRole("button", { name: "Not analysed" }).click();
-  await expect(page.getByRole("status").filter({ hasText: /matches, shown with what they're inside/ })).toBeVisible();
-  await expect(row(page, `Rcm plant ${tag}`)).toHaveAccessibleName(/2 positions not analysed yet inside/);
-  await expect(row(page, `Rcm pump ${tag}`)).toBeVisible();
-  await expect(row(page, `Rcm pump ${tag}`).locator(".tp-mini.rcm")).toBeVisible();
-  await expectHealthy(page, problems, { label: "rcm edits" });
+  // The plant (no function), the pump (modes with no decision) and the motor
+  // (no function): counted in the plant's quiet marker.
+  await expect(trow(page, `^Rcm plant ${tag}`)).toHaveAccessibleName(/3 positions not analysed yet here and inside/);
+  await expect(trow(page, `^Rcm plant ${tag}`).locator(".tp-mini.rcm")).toBeVisible();
+  // The RCM's own chips are for its tab only.
+  await page.getByRole("tab", { name: "Summary" }).click();
+  await expect(page.getByRole("button", { name: "Needs a decision" })).toHaveCount(0);
+  await expectHealthy(page, problems, { label: "rcm chips" });
 });
 
-test("full width folds the tree; full screen: F, a dialog on top, Esc, the row and tab kept", async ({ page, request, problems }) => {
+test("full screen: F, a dialog on top, Esc, the row and tab kept", async ({ page, request, problems }) => {
   await page.addInitScript(() => {
     // The page's own full screen (as on an iPhone): Escape leaves it, as the app handles it.
     for (const k of ["requestFullscreen", "webkitRequestFullscreen"]) {
@@ -173,33 +219,26 @@ test("full width folds the tree; full screen: F, a dialog on top, Esc, the row a
   const tag = `s${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
-  await page.getByRole("button", { name: "Full width" }).click();
-  await expect(page.getByRole("button", { name: "Show the tree", exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("tree")).toHaveCount(0);
-  await page.getByRole("button", { name: /^Show the tree$/ }).first().click();
-  await expect(page.getByRole("tree")).toBeVisible();
-
   await page.locator("body").click({ position: { x: 5, y: 300 } });
   await page.keyboard.press("f");
   await expect(page.getByRole("button", { name: "Exit full screen" })).toBeVisible();
-  await expect(page.locator(".tx.is-full")).toBeVisible();
-  // The tree and the panel cover the whole screen (the app's menu and header behind).
   expect(await page.evaluate(() => {
     const r = document.querySelector(".tx.is-full").getBoundingClientRect();
     return [r.top, r.left, Math.round(r.width), Math.round(r.height)];
   })).toEqual([0, 0, ...(await page.evaluate(() => [innerWidth, innerHeight]))]);
   // A dialog opens on top, inside full screen.
-  await grid(page).getByText(`Bearing seizes ${tag}`).click();
-  await page.getByRole("button", { name: "Change the decision…" }).click();
+  await pickRow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`);
+  await page.getByRole("button", { name: "Decide…" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  expect(await page.evaluate(() => document.querySelector(".tx.is-full").contains(document.querySelector(".overlay, [role=dialog]")))).toBe(true);
+  expect(await page.evaluate(() => document.querySelector(".tx.is-full").contains(document.querySelector("[role=dialog]")))).toBe(true);
   await page.keyboard.press("Escape"); // the dialog first
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".tx.is-full")).toBeVisible();
+  await page.locator(".tt-headslot").click({ position: { x: 300, y: 20 } });
   await page.keyboard.press("Escape"); // then full screen
   await expect(page.locator(".tx.is-full")).toHaveCount(0);
-  await expect(row(page, `Rcm pump ${tag}`)).toHaveAttribute("aria-selected", "true");
-  await expect(panel(page).getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
-  await expectHealthy(page, problems, { label: "explorer full screen" });
+  await expect(trow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`)).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "RCM" })).toHaveAttribute("aria-selected", "true");
+  await expectHealthy(page, problems, { label: "explorer full screen", root: ".tx" });
 });

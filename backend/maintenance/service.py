@@ -2737,6 +2737,21 @@ class Maintenance:
             functions.append({**self._function_view(fn), "failures": failures})
         return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid)}
 
+    def rcm_all(self) -> dict:
+        """The RCM of every live position that has any (functions or failure
+        modes), for the asset tree's RCM tab: each position's functions ›
+        functional failures › failure modes and its unassigned modes, read in
+        bulk. Evidence statuses are added by the caller (rcm_graph.resolve)."""
+        index = self._rcm_index()
+        out = []
+        for p in self.s.nodes(self.org, "Position"):
+            pid = p["id"]
+            if p.get("retired") or not (index["functions"].get(pid) or index["modes"].get(pid)):
+                continue
+            out.append({"id": pid, "name": p["name"], "depth": 0, **self._position_rcm(index, pid)})
+        out.sort(key=lambda x: x["id"])
+        return {"positions": out}
+
     def rcm_worksheet(self, position_id: str, scope: str = "below", limit: int = 2000) -> dict:
         """A position's RCM, read from the graph: for the position (scope "this")
         or it and every position inside it (scope "below", the default; at most

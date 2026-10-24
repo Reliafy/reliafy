@@ -4,7 +4,6 @@ import { getMaintenancePosition } from "../api.js";
 import PageHeader from "./ui/PageHeader.jsx";
 import Tabs from "./ui/Tabs.jsx";
 import ClampText from "./ClampText.jsx";
-import PositionRcm from "./PositionRcm.jsx";
 import { DueChip, fmtDate, fmtDated } from "./MaintenanceParts.jsx";
 import { ancestorsOf, byName, insideWords, statusWords } from "../assetTree.js";
 import { shownTab, tabsFor } from "../explorerTabs.js";
@@ -17,8 +16,8 @@ import { shownTab, tabsFor } from "../explorerTabs.js";
 // own page, where it's edited (an item's history and fitments are there).
 //
 // The panel has tabs (explorerTabs.js): Summary (the above) for every row, and
-// RCM for a position (its functions, functional failures, failure modes and
-// decisions, read from and written to the tree itself).
+// RCM for a position. On the RCM tab the tree and the RCM are one table
+// (TreePane with its columns): this panel then gives only its heading.
 
 const OPEN = new Set(["open", "planned", "in_progress", "waiting"]);
 const KIND = { pos: "Position", loc: "Location", item: "Item", group: "" };
@@ -255,57 +254,46 @@ function Summary({ row, display, today, onSelect, version }) {
   );
 }
 
-const WideIcon = ({ on }) => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8"
-       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {on ? <path d="M9 5v14M4 9l3 3-3 3M20 5v14" /> : <path d="M4 5v14M20 5v14M9 12h6M12 9l3 3-3 3" />}
-  </svg>
-);
-
-const TreeDetail = forwardRef(function TreeDetail({
-  display, row, today, onSelect, back, version, empty, tab, onTab, inside, onInside, phone, wide, onWide,
-  fullScreenButton, onTreeChanged,
-}, headingRef) {
-  if (!row) return <div className="td">{back}{empty}</div>;
+// The panel's heading: where the row is, its name and kind, the actions, and
+// the tabs. On the RCM tab the same heading sits beside the tree's controls,
+// over the table (AssetExplorer).
+export function DetailHeader({ display, row, onSelect, tab, onTab, fullScreenButton, headingRef, meta: more, actions }) {
   const crumbs = ancestorsOf(display, row.key).map((k) => ({ label: display.rows.get(k).ref.name, onClick: () => onSelect(k) }));
   const full = fullPagePath(row);
   const p = row.ref;
   const meta = [KIND[row.type], p.tag && <code key="tag">{p.tag}</code>].filter(Boolean);
   const tabs = tabsFor(row);
   const shown = shownTab(tab, row);
-  const rcm = shown === "rcm";
   return (
-    <div className={"td" + (rcm ? " td-fit" : "")}>
-      {back}
+    <>
       <PageHeader
         className="td-header"
         crumbs={crumbs}
         title={<span ref={headingRef} tabIndex={-1} className="td-title">{p.name || "(no name)"}</span>}
-        meta={meta.length ? meta.reduce((acc, m, i) => (i ? [...acc, " · ", m] : [m]), []) : null}
-        actions={(
-          <>
-            {rcm && !phone && onWide && (
-              <button type="button" className="secondary sm td-wide" aria-pressed={wide} onClick={() => onWide(!wide)}
-                      title={wide ? "Show the tree again" : "Fold the tree away and give the RCM the width"}>
-                <WideIcon on={wide} /> {wide ? "Show the tree" : "Full width"}
-              </button>
-            )}
-            {fullScreenButton}
-          </>
-        )}
+        meta={<>{meta.length ? meta.reduce((acc, m, i) => (i ? [...acc, " · ", m] : [m]), []) : null}{more}</>}
+        actions={<>{actions}{fullScreenButton}</>}
         primary={full && <Link className="td-open" to={full}>Open the full page</Link>}
       />
       {tabs.length > 1 && (
         <Tabs tabs={tabs} value={shown} onChange={onTab} label="What to show for this row" idPrefix="td" className="td-tabs" />
       )}
+    </>
+  );
+}
+
+const TreeDetail = forwardRef(function TreeDetail({
+  display, row, today, onSelect, back, version, empty, tab, onTab, fullScreenButton,
+}, headingRef) {
+  if (!row) return <div className="td">{back}{empty}</div>;
+  const tabs = tabsFor(row);
+  return (
+    <div className="td">
+      {back}
+      <DetailHeader display={display} row={row} onSelect={onSelect} tab={tab} onTab={onTab}
+                    fullScreenButton={fullScreenButton} headingRef={headingRef} />
       <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
-           aria-labelledby={tabs.length > 1 ? `td-tab-${shown}` : undefined}>
-        {rcm ? (
-          <PositionRcm position={{ id: row.key, name: p.name }} inside={inside} onInside={onInside} phone={phone}
-                       onChanged={onTreeChanged} />
-        ) : (
-          <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />
-        )}
+           aria-labelledby={tabs.length > 1 ? "td-tab-summary" : undefined}>
+        <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />
       </div>
     </div>
   );

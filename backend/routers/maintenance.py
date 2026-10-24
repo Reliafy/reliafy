@@ -415,6 +415,14 @@ def _rcm_read(session, ctx: AccessCtx, fn, *args) -> JSONResponse:
     return _run(go)
 
 
+@router.get("/rcm")
+def workspace_rcm(session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every position's RCM (those with any), for the asset tree's RCM tab, with each
+    decision's evidence check as the reader sees it."""
+    return _rcm_read(session, ctx, m.rcm_all)
+
+
 @router.get("/positions/{position_id}/rcm")
 def position_rcm(position_id: str, scope: str = "below", session=Depends(get_session),
                  ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:

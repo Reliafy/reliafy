@@ -50,3 +50,16 @@ test("the pick moves up to the row it's hidden in; type-ahead by another name", 
   assert.equal(findByPrefix(d, list, 0, "ECH", (r) => r.ref.text), "e");
   assert.equal(findByPrefix(d, list, 0, "fox"), "f");
 });
+
+test("filtering opens the way down to each match, and a match with matches inside it", () => {
+  const rows = new Map();
+  const add = (key, parent) => {
+    rows.set(key, { key, parent, kids: [], depth: parent ? rows.get(parent).depth + 1 : 0, ref: { name: key } });
+    if (parent) rows.get(parent).kids.push(key);
+  };
+  add("a", null); add("b", "a"); add("c", "b"); add("d", "a");
+  const display = { rows, roots: ["a"] };
+  const f = filterRows(display, (r) => r.key === "b" || r.key === "c");
+  assert.deepEqual([...f.match].sort(), ["b", "c"]);
+  assert.deepEqual([...filterOpen(f)].sort(), ["a", "b"]); // b is a match and holds c
+});
