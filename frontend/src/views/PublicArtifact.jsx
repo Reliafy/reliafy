@@ -5,6 +5,9 @@ import { ACCENT, sentence } from "../plotTheme.js";
 import Logo from "../components/Logo.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 import ResultView from "../components/ResultView.jsx";
+import JointResultView from "../components/JointResultView.jsx";
+import ModelFrame from "../components/model/ModelFrame.jsx";
+import { answerParts } from "../modelFrame.js";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
@@ -42,6 +45,8 @@ const KIND_LABEL = {
   recurrent_models: "Repairable model",
   reports: "Report",
 };
+
+const art = (data) => data.artifact || {};
 
 const fmt = (v, dp = 1) =>
   v === null || v === undefined ? "—" : Number(v).toLocaleString(undefined, { maximumFractionDigits: dp });
@@ -116,10 +121,19 @@ function FleetView({ a }) {
   );
 }
 
-function Body({ collection, a, token, unlock }) {
+function Body({ collection, a, token, unlock, framed = false }) {
   switch (collection) {
-    case "models":
-      return <div className="card"><ResultView result={a.results} name={a.name} /></div>;
+    case "models": {
+      // A condition and life model is shared from the models collection too.
+      const view = a.kind === "joint"
+        ? <JointResultView results={a.results} name={a.name} />
+        : <ResultView result={a.results} name={a.name} split={a.results?.split || null} />;
+      if (framed || a.results?.kind === "competing_risks") {
+        return a.results?.kind === "competing_risks" ? <div className="card">{view}</div> : view;
+      }
+      // A model in a report: the same tabs, in a card of their own height.
+      return <div className="card mf-card mf-standalone">{view}</div>;
+    }
     case "degradation_models":
       return <div className="card"><DegradationResultView results={a.results} name={a.name} /></div>;
     case "recurrent_models":
@@ -321,7 +335,19 @@ export default function PublicArtifact() {
             <ReportView report={data.artifact} sharedBy={data.shared_by} Item={Body} />
           </div>
         )}
-        {data && data.collection !== "reports" && (
+        {data && data.collection === "models" && art(data).results?.kind !== "competing_risks" && (
+          // A shared model: the model page's frame, read-only (no actions).
+          <ModelFrame
+            className="public-app"
+            crumbs={[{ label: `${art(data).kind === "joint" ? "Condition and life model" : KIND_LABEL.models} · shared by ${data.shared_by}` }]}
+            title={data.artifact.name}
+            answer={answerParts(art(data).kind === "joint" ? { ...art(data).results, kind: "joint" } : art(data).results,
+                                { split: art(data).results?.split || null })}
+          >
+            <Body collection={data.collection} a={data.artifact} token={token} unlock={unlock} framed />
+          </ModelFrame>
+        )}
+        {data && data.collection !== "reports" && !(data.collection === "models" && art(data).results?.kind !== "competing_risks") && (
           <div className="app public-app">
             <header>
               <div>

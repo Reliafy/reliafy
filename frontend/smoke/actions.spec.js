@@ -321,7 +321,9 @@ test("Model characteristics: the mean life and its bound", async ({ page, proble
   await page.getByRole("combobox", { name: "Confidence of the lower bound" }).click();
   await page.getByRole("option", { name: "95% lower bound" }).click();
   await expect(chars(page)).toContainText(/at 95%/);
-  await page.getByRole("button", { name: /B-lives: use Time at reliability/ }).click();
+  // The B-lives sit beside it, with their bounds at the same confidence.
+  await expect(page.getByRole("region", { name: "B-lives" })).toContainText(/B10\s*582 hours\s*≥ \d+/);
+  await page.getByRole("button", { name: /Another reliability: use Time at reliability/ }).click();
   await expect(page.locator(".calc-answer")).toContainText("(the B10 life)");
   await expect(page.getByLabel("Confidence level %")).toHaveValue("95");
 
@@ -348,9 +350,11 @@ test("Model characteristics: the mean life and its bound", async ({ page, proble
   await expect(chars(page)).toContainText("None");
   await expect(chars(page)).toContainText("no finite mean life");
   await expect(chars(page)).not.toContainText(/Infinity|NaN/);
-  // No tab for a regression model (its own life card is in the Calculator).
+  // A regression model's figures are at the Calculator's covariates.
   await open(page, "/models/m/sample-model-seal-weibull-ph");
-  await expect(page.getByRole("tab", { name: "Model characteristics" })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Model characteristics" }).click();
+  await expect(page.getByRole("region", { name: "At these covariates" })).toContainText("temp_C");
+  await expect(page.locator(".rl-card")).toContainText("B10");
   await expectHealthy(page, problems, { label: "model characteristics" });
 });
 

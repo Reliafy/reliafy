@@ -8,7 +8,6 @@ import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js
 import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
 import { formatNumber, formatPercent } from "../format.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
-import RegressionLife from "./RegressionLife.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import { unitInText } from "./unitText.js";
@@ -164,11 +163,56 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
   );
 }
 
+// The covariates as one compact row above the chart: the first combination's
+// values typed in place; with several combinations, each as a chip (its
+// colour and values), edited in the larger view.
+function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, labelOf }) {
+  const multi = series.length > 1;
+  const first = series[0];
+  return (
+    <div className="calc-cov-row" role="group" aria-label="Covariates">
+      <span className="calc-cov-row-label">{multi ? "Combinations" : "At"}</span>
+      {multi ? (
+        <span className="calc-cov-combos">
+          {series.map((s, i) => (
+            <Chip key={s.id} dot={COLORS[i % COLORS.length]} onClick={onEdit} title="Edit the combinations">
+              {labelOf(s)}
+            </Chip>
+          ))}
+        </span>
+      ) : first && covariates.map((c) => (
+        <label className="calc-cov" key={c.name}>
+          <span>{c.stratum ? `${c.name} (stratum)` : withUnit(c.name, c.unit)}</span>
+          {c.type === "category" ? (
+            <Select value={first.values[c.name]} onChange={(v) => onUpdate(first.id, c.name, v)} options={c.options} />
+          ) : (
+            <input type="number" step="any" value={first.values[c.name]}
+                   onChange={(e) => onUpdate(first.id, c.name, e.target.value)} />
+          )}
+        </label>
+      ))}
+      <span className="calc-cov-actions">
+        {multi && (
+          <button type="button" className="secondary sm" onClick={onEdit} aria-haspopup="dialog">Edit ✎</button>
+        )}
+        {canAdd && (
+          <button type="button" className="secondary sm" onClick={multi ? onAdd : () => { onAdd(); onEdit(); }}
+                  title="Overlay the curve at other covariate values">
+            + Compare another
+          </button>
+        )}
+      </span>
+      {series.map((s) => s.error && <span className="combo-err" key={s.id}>{s.error}</span>)}
+    </div>
+  );
+}
+
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
-// each re-evaluated by the backend and overlaid on the chart.
+// each re-evaluated by the backend and overlaid on the chart. ``fill``: the
+// chart fills the tab's height (the model page's frame).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
-                                     paramLabel = null }) {
+                                     paramLabel = null, fill = false }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -177,8 +221,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
   const defaults = () =>
     Object.fromEntries(covariates.map((c) => [c.name, c.default]));
 
-  // Side-rail collapse, the axes dialog and "edit in a larger view" (local UI only).
-  const [railOpen, setRailOpen] = useState(true);
+  // The axes dialog and the covariate combinations' larger view (local UI only).
   const [covModal, setCovModal] = useState(false);
   const [axisOpen, setAxisOpen] = useState(false);
 
@@ -566,7 +609,18 @@ export default function Calculator({ functions, unit, params, state, setState, n
         </table>
       ) : null}
 
-      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} />
+      {hasCov && (
+        <CovariateRow
+          series={series}
+          covariates={covariates}
+          onUpdate={updateValue}
+          onAdd={addSeries}
+          canAdd={series.length < MAX_SERIES}
+          onEdit={() => setCovModal(true)}
+          labelOf={labelOf}
+        />
+      )}
+      <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} fill={fill} />
         </div>
 
         <div className="calc-side-rail">
@@ -684,51 +738,6 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </div>
               </div>
             </div>
-            {hasCov && (
-            <aside className={"calc-rail-card calc-cov-rail" + (railOpen ? "" : " collapsed")}>
-            <div className="calc-cov-rail-head">
-              <button
-                type="button"
-                className="cov-rail-toggle"
-                onClick={() => setRailOpen((o) => !o)}
-                aria-expanded={railOpen}
-              >
-                <span>{railOpen ? "▾" : "▸"}</span> Covariates
-              </button>
-              <button
-                type="button"
-                className="cov-rail-expand"
-                title="Edit in a larger view"
-                aria-label="Edit covariates in a larger view"
-                onClick={() => setCovModal(true)}
-              >
-                ⤢
-              </button>
-            </div>
-            {railOpen && (
-              <div className="calc-cov-rail-body">
-                <CovariateCombos
-                  series={series}
-                  covariates={covariates}
-                  onUpdate={updateValue}
-                  onRemove={removeSeries}
-                  onAdd={addSeries}
-                  canAdd={series.length < MAX_SERIES}
-                />
-              </div>
-            )}
-            </aside>
-            )}
-            {hasCov && (functions.life_path || functions.life_note) && (
-              <RegressionLife
-                path={functions.life_path}
-                note={functions.life_note}
-                values={series[0]?.values}
-                level={ciValid ? ciLevel : 90}
-                unit={unit}
-                dot={multi ? COLORS[0] : null}
-              />
-            )}
             {params && params.length > 0 && (
               <div className="calc-rail-card calc-rail-params">
                 <div className="gofh">Parameters</div>

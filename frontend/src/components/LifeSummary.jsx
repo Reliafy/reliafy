@@ -197,8 +197,11 @@ function CompareDistributions({ result, compare, onPick }) {
 // ``compare`` / ``onPick``: see CompareDistributions. ``modelId``: the saved
 // model, for "Use this model" (#294); ``onUse`` (a fit not saved yet) saves it
 // first.
+// ``onStats`` (the model page's frame) opens the Diagnostics tab from the
+// Fit statistics row instead of a dialog; ``showUse`` false leaves "Use this
+// model" to the page's header.
 export default function LifeAside({ result, split = null, bestFit = false, compare = null, onPick = null,
-                                   modelId = null, onUse = null }) {
+                                   modelId = null, onUse = null, onStats = null, showUse = true }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const [readingOpen, setReadingOpen] = useState(false);
   const aic = (result.gof || []).find((g) => g.id === "aic") || (result.gof || [])[0];
@@ -268,14 +271,15 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
           </div>
         )}
         {aic && (
-          <button type="button" className="gofr gofr-link" onClick={() => setStatsOpen(true)}>
+          <button type="button" className="gofr gofr-link" onClick={() => (onStats ? onStats() : setStatsOpen(true))}
+                  aria-label={onStats ? `Fit statistics: AIC ${formatNumber(aic.value, { sig: 5 })}. Open Diagnostics` : undefined}>
             <span className="gk">Fit statistics</span>
             <span className="gv">AIC {formatNumber(aic.value, { sig: 5 })} ›</span>
           </button>
         )}
       </div>
       {caveat && <div className="life-reading caveat">{result.fit_warning}</div>}
-      <ModelNextSteps result={result} modelId={modelId} onUse={onUse} />
+      {showUse && <ModelNextSteps result={result} modelId={modelId} onUse={onUse} />}
       {method && <p className="life-method">{method} fit.</p>}
       {readingOpen && reading && (
         <Modal title={reading.title} className="modal-sm reading-modal" onClose={() => setReadingOpen(false)}

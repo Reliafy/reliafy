@@ -109,22 +109,32 @@ regression models when failure depends on covariates like temperature or load.
 
 ## Reading the fit
 
-The result has three tabs, **Probability plot**, **Calculator** and **Model
-characteristics**, with a panel beside the plot:
+The answer comes first, in one line under the model's name: the failure
+pattern, the shape β with its interval, the B10 life with its lower bound, the
+mean life and the data. Under it are five tabs, each fitting on the screen:
+**Probability plot**, **Calculator**, **Model characteristics**,
+**Diagnostics** and **Data**. **Use this model**, top right, opens a list of the
+tools that take this model: a replacement interval, a fleet forecast, a
+demonstration test and a block in an RBD, each with a line on what you get
+there.
+
+The panel beside the probability plot has:
 
 - **Parameters** — each fitted parameter with its 95% interval, the number of
-  observations, and **Fit statistics** (the AIC, which opens the log-likelihood,
-  AIC, AICc and BIC, and a comparison with every other distribution).
+  observations, and **Fit statistics** (the AIC, which opens the Diagnostics
+  tab).
 - **Failure pattern** — what the fit means in a word: for a Weibull, wear-out,
   early-life failures or random failures, judged on β's interval. Click it for
   the reading in a sentence. (For a distribution with no shape to read, such as
   the lognormal, the row gives the **Median life** instead.)
-- **Use this model** — opens a list of the tools that take this model: a
-  replacement interval, a fleet forecast, a demonstration test and a block in
-  an RBD, each with a line on what you get there.
 
-B-lives (B10 and the like) are on the **Calculator** tab (see below), and the
-mean life (MTTF) with its bound is on the **Model characteristics** tab.
+The **Model characteristics** tab has the mean life (MTTF) and the B-lives (B1,
+B5, B10 and B50), each with its lower bound at one confidence you choose.
+**Diagnostics** asks whether you can trust the fit: the fitted curve over the
+data's own estimate, a P-P plot of where the failures fell against where the
+model expects them, the ranking of every other distribution on the same data,
+and the fit statistics (log-likelihood, AIC, AICc and BIC). **Data** lists the
+failures, how the model was fitted and every parameter.
 
 ![A fitted Weibull model: probability plot, parameters and the failure pattern](/guides/img/fit-02-result.png)
 

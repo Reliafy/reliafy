@@ -55,8 +55,9 @@ and its bound from the fit's uncertainty.
 For a percentage the chips don't cover, type the reliability: 97.5% for a B2.5,
 99.9% for a B0.1.
 
-The mean life (MTTF) is on the model's **Model characteristics** tab, with its
-lower bound at the same confidence: 1,270 hours, at least 1,150 at 90%. It's
+The usual B-lives and the mean life (MTTF) are together on the model's **Model
+characteristics** tab, each with its lower bound at the same confidence: B10 582
+hours (at least 467), and a mean of 1,270 hours, at least 1,150 at 90%. It's
 the average time to failure, so a few long-lived units pull it above the
 median. For a Kaplan-Meier estimate the tab gives the mean counted up to a time
 you choose, because data that stop before every unit has failed can't give the

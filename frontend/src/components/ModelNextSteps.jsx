@@ -8,7 +8,8 @@ import { STEP_LABELS, STEP_WHAT, nextStepLink, nextStepsFor, plainName, savedMod
 // "Use this model" (#294): the tools a fitted non-repairable model feeds, each opened
 // with the model chosen. One quiet button in the panel beside the plot
 // (``variant="button"``) that opens a dialog listing them, each with what you
-// get there, or items for the saved model's ⋯ menu (``variant="menu"``). A
+// get there, the same as the model page's main button (``variant="primary"``),
+// or items for the saved model's ⋯ menu (``variant="menu"``). A
 // saved model is ``modelId``; a fit not saved yet passes ``onUse``
 // (() => Promise<saved id>), which saves it first.
 // ``skip`` leaves steps out.
@@ -78,11 +79,18 @@ export default function ModelNextSteps({ result, modelId = null, onUse = null, s
   };
   return (
     <>
-      <button type="button" className="secondary use-model-btn" onClick={() => setListOpen(true)}
-              aria-haspopup="dialog">
-        <span>Use this model</span>
-        <span aria-hidden="true">›</span>
-      </button>
+      {variant === "primary" ? (
+        // The model page's main action, top right (the frame's header).
+        <button type="button" className="use-model-primary" onClick={() => setListOpen(true)} aria-haspopup="dialog">
+          Use this model
+        </button>
+      ) : (
+        <button type="button" className="secondary use-model-btn" onClick={() => setListOpen(true)}
+                aria-haspopup="dialog">
+          <span>Use this model</span>
+          <span aria-hidden="true">›</span>
+        </button>
+      )}
       {listOpen && (
         <Modal title="Use this model" className="modal-sm use-model-modal" onClose={() => setListOpen(false)}
                locked={!!busy && busy !== "rbd"}>

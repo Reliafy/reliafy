@@ -22,6 +22,9 @@ import CompetingRisksStep, { CR_OPTIONS } from "./CompetingRisksStep.jsx";
 import { groupProblem, withGroup } from "../moreModels.js";
 import { usableDatasets } from "../datasetFit.js";
 import ResultView from "./ResultView.jsx";
+import ModelFrame, { AnswerLine } from "./model/ModelFrame.jsx";
+import ModelNextSteps from "./ModelNextSteps.jsx";
+import { answerParts } from "../modelFrame.js";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { TvcToggle } from "./TvcColumns.jsx";
 import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts } from "../tvcData.js";
@@ -857,13 +860,25 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               {saving ? "Saving…" : file ? "Save this model and its data" : "Save this model"}
             </button>
           </div>
-          <ResultView
-            result={result}
-            split={split}
-            compare={result.kind === "distribution" && !hasCovariates ? compareFit : null}
-            onPick={ownOptions ? null : pickFit}
-            onUse={saveForUse}
-          />
+          {/* The model page's frame, inside the wizard: the answer line and
+              "Use this model" (which saves the fit first) over the tabs. */}
+          <ModelFrame
+            embedded
+            notice={(
+              <div className="mf-wizard-head">
+                <AnswerLine parts={answerParts(result, { split })} />
+                <ModelNextSteps result={result} onUse={saveForUse} variant="primary" />
+              </div>
+            )}
+          >
+            <ResultView
+              result={result}
+              split={split}
+              compare={result.kind === "distribution" && !hasCovariates ? compareFit : null}
+              onPick={ownOptions ? null : pickFit}
+              onUse={saveForUse}
+            />
+          </ModelFrame>
         </div>
       )}
 

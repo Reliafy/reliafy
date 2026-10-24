@@ -968,6 +968,29 @@ def _expo_weibull_paper_y(p: np.ndarray, mu: float) -> np.ndarray:
     return np.where(np.isfinite(y), y, a)
 
 
+def _empirical_points(model, data: dict, keep, heuristic: str) -> dict | None:
+    """The failures on the time scale, for the model page's checks: each
+    failure's time, the data's own estimate of the fraction failed by then
+    (the plotting position, from ``heuristic``) and the model's. The fitted
+    curve drawn over the data, and the P-P plot, read these. None when they
+    can't be had (they are a check, never a reason for a fit to fail)."""
+    try:
+        gamma = float(data.get("gamma") or 0.0)
+        x = np.asarray(data["x_"], dtype=float)[keep] + gamma
+        F = np.asarray(data["F"], dtype=float)[keep]
+        with np.errstate(all="ignore"):
+            model_F = np.asarray(model.ff(x), dtype=float)
+        ok = np.isfinite(x) & np.isfinite(F) & np.isfinite(model_F)
+        if not ok.any():
+            return None
+        return {
+            "x": x[ok].tolist(), "F": F[ok].tolist(), "model_F": model_F[ok].tolist(),
+            "method": heuristic,
+        }
+    except Exception:  # noqa: BLE001 - a check, never a reason to fail the fit
+        return None
+
+
 def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None) -> dict:
     """Shape SurPyval's plot data into Plotly-ready (already-linearised) arrays.
 
@@ -1021,6 +1044,7 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None)
 
     return {
         "scatter": {"x": scatter_x.tolist(), "y": scatter_y.tolist()},
+        "empirical": _empirical_points(model, data, keep, heuristic),
         "line": {"x": line_x.tolist(), "y": line_y.tolist()},
         "bounds": None if not has_bounds else {
             "x": line_x.tolist(),
@@ -2439,9 +2463,11 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
         or [f"p{i}" for i in range(len(model.params))]
     )
     params = _params_with_uncertainty(model, param_names, param_intervals.bounds_of(dist))
+    counts = _discrete_counts(model)
 
     cache_id = _store_model(model, np.asarray(curves["x"], dtype=float), [])
     return {
+        **({"counts": counts} if counts else {}),
         "distribution": entry["name"],
         "distribution_id": distribution,
         "kind": "discrete",
@@ -2452,6 +2478,50 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
         "gof": gof,
         "metrics": metrics,
     }
+
+
+#: The most counts a discrete fit's count table carries; past it, only the
+#: counts at which units failed.
+_COUNT_TABLE_MAX = 120
+
+
+def _discrete_counts(model) -> dict | None:
+    """Observed against expected failures at each count, for a discrete fit's
+    "Chance by count" chart and its check: at each count ``k``, the units
+    still at risk (not failed or stopped before ``k``), the failures there,
+    the failures the model expects (at risk times its chance of failing at
+    ``k`` given it got that far), the model's chance of failing at exactly
+    ``k`` and the data's own (the Kaplan-Meier step at ``k``). Right-censored
+    and exact counts only; None otherwise or when it can't be had."""
+    try:
+        data = model.data
+        x = np.asarray(data["x"], dtype=float).reshape(-1)
+        c = np.asarray(data["c"], dtype=float).reshape(-1)
+        n = np.asarray(data["n"], dtype=float).reshape(-1)
+        if x.size == 0 or x.size != c.size or np.any(~np.isin(c, (0, 1))):
+            return None
+        failed_at = sorted({int(v) for v in x[c == 0]})
+        top = int(np.nanmax(x))
+        ks = list(range(1, top + 1)) if top <= _COUNT_TABLE_MAX else failed_at
+        if not ks:
+            return None
+        k = np.asarray(ks, dtype=float)
+        at_risk = np.array([n[x >= v].sum() for v in k])
+        failed = np.array([n[(x == v) & (c == 0)].sum() for v in k])
+        with np.errstate(all="ignore"):
+            pmf = np.asarray(model.df(k), dtype=float)
+            before = np.asarray(model.sf(k - 1), dtype=float)
+            expected = np.where(before > 0, at_risk * pmf / before, np.nan)
+            S = np.cumprod(np.where(at_risk > 0, 1.0 - failed / at_risk, 1.0))
+        observed = np.concatenate([[1.0], S[:-1]]) - S
+
+        def clean(arr):
+            return [None if not np.isfinite(v) else float(v) for v in arr]
+
+        return {"k": [int(v) for v in k], "at_risk": clean(at_risk), "failed": clean(failed),
+                "expected": clean(expected), "pmf": clean(pmf), "observed": clean(observed)}
+    except Exception:  # noqa: BLE001 - a check, never a reason to fail the fit
+        return None
 
 
 def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
@@ -2494,6 +2564,9 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
             "R": [float(v) for v in R[finite]],
             "cb_lower": [None if not np.isfinite(v) else float(v) for v in lower[finite]],
             "cb_upper": [None if not np.isfinite(v) else float(v) for v in upper[finite]],
+            # The life table on the model page's Data tab: units at risk and
+            # failing at each time (absent where the estimator has none).
+            **_life_table(model, finite),
             # #85: simultaneous 95% bands, for the plot's whole-curve toggle.
             "bands": np_life.bands(model),
         },
@@ -2501,6 +2574,20 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
         "gof": [],
         "metrics": metrics,
     }
+
+
+def _life_table(model, finite) -> dict:
+    """``at_risk`` and ``failed`` beside a non-parametric estimate's times
+    (Kaplan-Meier, Nelson-Aalen, Fleming-Harrington); {} for an estimator
+    without them (Turnbull's are fractional and on intervals)."""
+    try:
+        r = np.asarray(model.r, dtype=float)[finite]
+        d = np.asarray(model.d, dtype=float)[finite]
+        if r.size != int(np.sum(finite)) or not (np.all(np.isfinite(r)) and np.all(np.isfinite(d))):
+            return {}
+        return {"at_risk": r.tolist(), "failed": d.tolist()}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _life_metrics(model) -> dict:

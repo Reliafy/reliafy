@@ -744,7 +744,7 @@ async function main() {
         await wait(500);
       } },
     { file: "cov-02-coefficients.png", url: "/models/m/sample-model-seal-weibull-ph", settle: 2500,
-      async act(page) { await press(page, /^Coefficients$/); await wait(1200); } },
+      async act(page) { await press(page, /^Effects$/); await wait(1200); } },
     { file: "cov-03-schedule.png", url: "/models/m/sample-model-pump-load-weibull-ph", settle: 3000 },
     // --- One-shot devices: the per-demand form, and a model made from it
     // (deleted straight after its shot) ---
@@ -843,7 +843,7 @@ async function main() {
     { file: "cbr-02-risk.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000 },
     { file: "cbr-03-unit.png", url: `/models/joint/${fx.joint.modelId}`, settle: 3000,
       async act(page) {
-        await page.locator("#joint-unit-view").evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 80));
+        // Risk now shows the riskiest unit beside the table (no scrolling: the tab fits the screen).
         await page.locator(".joint-unit-sum").waitFor({ timeout: 20000 }); await wait(2000);
       } },
     { file: "cbr-04-rbd.png", url: `/systems/b/${fx.joint.rbdId}`, settle: 1600,
@@ -851,8 +851,8 @@ async function main() {
     // Sharing: the Share dialog on a model of your own.
     { file: "share-01-dialog.png", url: `/models/m/${fx.ownModelId}`, settle: 2500,
       async act(page) {
-        await page.locator(".page-header .ovm button").first().click(); await wait(400);
-        await page.getByRole("button", { name: /^Share$/ }).click(); await wait(1200);
+        // Share is a button at the top right of a model's page.
+        await page.locator(".page-header").getByRole("button", { name: /^Share$/ }).click(); await wait(1200);
       } },
     // --- Outage history: a year of real outages on a saved pump station ---
     { file: "outage-01-history.png", url: `/systems/b/${fx.outageId}`, settle: 1600,
