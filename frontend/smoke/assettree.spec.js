@@ -29,6 +29,20 @@ async function plant(request, tag) {
 }
 
 const row = (page, name) => page.getByRole("treeitem", { name: new RegExp(`^${name}`) });
+// The tree's ⋯ menu (Arrange by, the levels, Show only), opened.
+async function treeMenu(page) {
+  const menu = page.getByRole("menu", { name: "Tree options" });
+  if (!(await menu.isVisible())) await page.getByRole("button", { name: /^Tree options/ }).click();
+  await expect(menu).toBeVisible();
+  return menu;
+}
+// Pick from it, and close it (Esc puts the focus back on its button).
+async function fromTreeMenu(page, role, name) {
+  const menu = await treeMenu(page);
+  await menu.getByRole(role, { name, exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+}
 
 test("the tree pane: open, close, levels, filter, and the panel for the row picked", async ({ page, request, problems }) => {
   const tag = `a${Date.now()}`;
@@ -60,10 +74,10 @@ test("the tree pane: open, close, levels, filter, and the panel for the row pick
   await expect(row(page, `Tree line ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await page.keyboard.press("ArrowLeft");
   await expect(top).toBeFocused();
-  await page.getByRole("button", { name: "Open everything" }).click();
+  await fromTreeMenu(page, "menuitemradio", "Open everything");
   await expect(row(page, `Tree seal ${tag}`)).toBeVisible();
   await expect(row(page, `Tree seal ${tag}`)).toHaveAttribute("aria-level", "4");
-  await page.getByRole("button", { name: "Open to level 1" }).click();
+  await fromTreeMenu(page, "menuitemradio", "Open to level 1");
   await expect(row(page, `Tree line ${tag}`)).toHaveCount(0);
 
   // The filter keeps the path down to a match.
@@ -97,7 +111,7 @@ test("arranged by locations, by items and flat, and the menu follows", async ({ 
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`);
   await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
-  await page.getByRole("radio", { name: "Locations" }).click();
+  await fromTreeMenu(page, "menuitemradio", "Locations");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations$/);
   await expect(page.getByRole("tree", { name: "Locations" })).toBeVisible();
   await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
@@ -114,14 +128,14 @@ test("arranged by locations, by items and flat, and the menu follows", async ({ 
   await expect(row(page, `Tree spare ${tag}`)).toBeVisible();
   await expectHealthy(page, problems, { label: "arranged by locations" });
 
-  await page.getByRole("radio", { name: "Flat" }).click();
+  await fromTreeMenu(page, "menuitemradio", "Flat");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=flat$/);
   await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
   await expectHealthy(page, problems, { label: "flat" });
 
   // By items: the line picked becomes the unit fitted there.
   await row(page, `Tree line ${tag}`).click();
-  await page.getByRole("radio", { name: "Items" }).click();
+  await fromTreeMenu(page, "menuitemradio", "Items");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=items$/);
   await expect(page.getByRole("tree", { name: "Items" })).toBeVisible();
   const unit = row(page, `Tree unit ${tag}`);
@@ -201,5 +215,21 @@ test("on a phone: the tree, then the panel, and back", async ({ page, request, p
   await expect(row(page, `Tree line ${tag}`)).toBeVisible();
   await expect(page.getByRole("tree")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+  // The tree's ⋯ menu: on screen, big enough to tap, and a filter in it works.
+  const menu = await treeMenu(page);
+  const mbox = await menu.boundingBox();
+  expect(mbox.x).toBeGreaterThanOrEqual(0);
+  expect(mbox.x + mbox.width).toBeLessThanOrEqual(400);
+  const overdue = menu.getByRole("menuitemcheckbox", { name: "Overdue" });
+  expect((await overdue.boundingBox()).height).toBeGreaterThanOrEqual(36);
+  await overdue.click();
+  await expect(overdue).toHaveAttribute("aria-checked", "true");
+  await expect(row(page, `Tree motor ${tag}`)).toBeVisible(); // under level 2: the filter opened the way to it
+  await expect(page.getByText(/shown with what they're inside · Showing only Overdue$/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+  await menu.getByRole("menuitem", { name: "Reset to the usual view" }).click();
+  await menu.getByRole("menuitem", { name: "Done" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Tree options", exact: true })).toBeFocused();
   await expectHealthy(page, problems, { label: "the tree on a phone" });
 });
