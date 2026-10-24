@@ -2379,14 +2379,9 @@ export function mergeFailureMode(id, intoId) {
   return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
 }
 
-// A position's RCM, from the graph: scope "below" (it and everything inside it)
-// or "this"; each failure mode's decision with its evidence check.
 // Every position's RCM (those with any), for the Explorer's RCM tab.
 export function getWorkspaceRcm() {
   return request("/api/maintenance/rcm");
-}
-export function getPositionRcm(positionId, scope = "below") {
-  return request(`/api/maintenance/positions/${positionId}/rcm?scope=${encodeURIComponent(scope)}`);
 }
 const sendJson = (method) => (url, body) => request(url, {
   method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
