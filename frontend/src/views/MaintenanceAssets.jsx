@@ -7,7 +7,7 @@ import { PlusIcon } from "../components/LibRows.jsx";
 import { fmtDate } from "../components/MaintenanceParts.jsx";
 import { NewLocationModal } from "./MaintenanceLists.jsx";
 import {
-  NOT_PLACED_PATH, POSITIONS_PATH, assetsSummary, dueText, insideText, openWorkPath, placePath,
+  NOT_PLACED_PATH, POSITIONS_PATH, assetPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "../maintenanceAssets.js";
 import "./Maintenance.css";
 
@@ -65,9 +65,9 @@ export default function MaintenanceAssets() {
               </thead>
               <tbody>
                 {visible.map((p) => (
-                  <tr key={p.id} className="lib-row" onClick={() => navigate(placePath(p.id))}>
+                  <tr key={p.id} className="lib-row" onClick={() => navigate(assetPath(p.id))}>
                     <td>
-                      <Link to={placePath(p.id)} className="lib-name maint-node-name" onClick={(e) => e.stopPropagation()}>
+                      <Link to={assetPath(p.id)} className="lib-name maint-node-name" onClick={(e) => e.stopPropagation()}>
                         {p.name}</Link>
                       {(p.description || p.locations > 0) && (
                         <div className="lib-date">{[p.description, insideText(p)].filter(Boolean).join(" · ")}</div>
