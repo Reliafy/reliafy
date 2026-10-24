@@ -55,7 +55,7 @@ function Facts({ r, display }) {
   const p = r.ref;
   const rows = [];
   if (r.type === "pos") {
-    rows.push(["Class", p.position_class || (r.kids.length ? "None (it groups the positions inside it)" : "None")]);
+    rows.push(["Class", p.position_class || "None"]);
     rows.push(["Fitted", p.item ? (
       <><Link to={`/asset-register/items/${p.item.id}`}>{p.item.name}</Link>{p.item.serial && <span className="lib-date"> · serial {p.item.serial}</span>}</>
     ) : <span className="lib-date">{p.position_class ? "Nothing fitted (an empty slot)" : "Nothing fitted"}</span>]);

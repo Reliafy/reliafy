@@ -28,7 +28,9 @@ const ICON = {
 
 function RowIcon({ r }) {
   let kind = r.type;
-  if (r.type === "pos") kind = r.ref.item ? "slot" : r.kids.length && !r.ref.position_class ? "group" : "emptyslot";
+  // A position is a position: the icon only says whether an item is fitted.
+  // The lines icon is for the pane's own headings ("No home yet" and so on).
+  if (r.type === "pos") kind = r.ref.item ? "slot" : "emptyslot";
   return (
     <svg className="tp-ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
       {ICON[kind] || ICON.group}
