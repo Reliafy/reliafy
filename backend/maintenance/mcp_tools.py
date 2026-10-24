@@ -251,6 +251,10 @@ FAILURE_MODES: Table = {
     "update_functional_failure": ("functional_failure_id text", "", "Change a functional failure's text."),
     "remove_functional_failure": ("functional_failure_id", "", "Delete a functional failure; its modes stay, "
                                   "unassigned."),
+    "move": ("failure_mode_id position_id", "functional_failure_id", "To another position, with its decision and "
+             "tasks; functional_failure_id: one there (or none)."),
+    "move_function": ("function_id position_id", "", "To another position, with its functional failures, modes "
+                      "and tasks."),
     "merge": ("failure_mode_id into_failure_mode_id", "", """Fold a mode into another on the same position (a
         duplicate, an ad-hoc one): its failures, findings and tasks move across. To link an ad-hoc mode to an
         RCM study's, apply the study, then merge into the study's. Returns the position."""),
@@ -273,7 +277,8 @@ TASKS: Table = {
                "include_positions", """Rename it or change its interval, second limit (also_interval 0 removes
         it), counter, instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
-        or include_positions. Its subject can't change: retire it and create another."""),
+        or include_positions. Its subject can't change: move it, or retire it and create another."""),
+    "move": ("task_id position_id", "", "A position's task to another position."),
     "retire": ("task_id", "reason", "Stop scheduling it (it stays in the history)."),
     "set_last_done": ("task_id on", "", """When it was last done before it was tracked here, so its next due
         date counts from then."""),
@@ -991,6 +996,10 @@ def register() -> None:
             return run(m.update_functional_failure, functional_failure_id, text)
         if action == "remove_functional_failure":
             return run(m.remove_functional_failure, functional_failure_id)
+        if action == "move":
+            return run(m.move_failure_mode, failure_mode_id, position_id, functional_failure_id)
+        if action == "move_function":
+            return run(m.move_function, function_id, position_id)
         return run(m.merge_failure_mode, failure_mode_id, into_failure_mode_id)
 
     Outcome = Literal["fixed_interval", "failure_finding", "on_condition"]
@@ -1028,6 +1037,8 @@ def register() -> None:
                        instructions, checklist, mode, source, reference,
                        None if clear_outcome else outcome if outcome is not None else ..., trade, while_stored,
                        include_positions)
+        if action == "move":
+            return run(m.move_task, task_id, position_id)
         if action == "retire":
             return run(lambda: (m.retire_task(task_id, reason or ""), {"retired": task_id})[1])
         return run(m.set_last_done, task_id, on)

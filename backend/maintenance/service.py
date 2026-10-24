@@ -787,6 +787,63 @@ def _failure_mode_assigned(s: GraphStore, org: str, p: dict) -> None:
         s.patch_node(org, p["id"], {"order": p.get("order", 0)})
 
 
+# ---- moving RCM between positions ----------------------------------------------
+# A function, a failure mode or a task moved to another position: the edges that
+# tie it to a position are re-pointed (PERFORMS, CAN_FAIL_AS, ON); ids, decisions,
+# effects, notes, evidence and task dates stay on the nodes. Each event names
+# everything that moved with it, so replaying it never depends on a rule worked
+# out again; re-pointing is idempotent (every other edge of that kind is dropped).
+
+def _on_position(s: GraphStore, org: str, edge: str, node_id: str, position_id: str) -> None:
+    """(:Position)-[edge]->(node) from ``position_id`` alone."""
+    for src in s.inn(org, node_id, edge):
+        if src["id"] != position_id:
+            s.delete_edge(org, edge, src["id"], node_id)
+    s.put_edge(org, edge, position_id, node_id)
+
+
+def _task_on(s: GraphStore, org: str, task_id: str, position_id: str) -> None:
+    for dst in s.out(org, task_id, "ON"):
+        if dst["id"] != position_id:
+            s.delete_edge(org, "ON", task_id, dst["id"])
+    s.put_edge(org, "ON", task_id, position_id)
+
+
+def _function_moved(s: GraphStore, org: str, p: dict) -> None:
+    """A function moved with its functional failures, the failure modes under
+    them and those modes' tasks. A deleted or merged mode still under one of its
+    functional failures stays on the old position (it's history there) and is
+    taken from under the functional failure, so no edge crosses positions."""
+    _on_position(s, org, "PERFORMS", p["id"], p["position_id"])
+    s.patch_node(org, p["id"], {"order": p.get("order", 0)})
+    moved = set(p.get("failure_mode_ids") or [])
+    for mode_id in moved:
+        _on_position(s, org, "CAN_FAIL_AS", mode_id, p["position_id"])
+    for ff in s.out(org, p["id"], "FAILS_AS"):
+        for mode in s.out(org, ff["id"], "CAUSED_BY"):
+            if mode["id"] not in moved:
+                s.delete_edge(org, "CAUSED_BY", ff["id"], mode["id"])
+    for task_id in p.get("task_ids") or []:
+        _task_on(s, org, task_id, p["position_id"])
+
+
+def _failure_mode_moved(s: GraphStore, org: str, p: dict) -> None:
+    """A failure mode moved with its decision and tasks, under one of the new
+    position's functional failures (or none)."""
+    _on_position(s, org, "CAN_FAIL_AS", p["id"], p["position_id"])
+    for ff in s.inn(org, p["id"], "CAUSED_BY"):
+        s.delete_edge(org, "CAUSED_BY", ff["id"], p["id"])
+    if p.get("functional_failure_id"):
+        s.put_edge(org, "CAUSED_BY", p["functional_failure_id"], p["id"])
+        s.patch_node(org, p["id"], {"order": p.get("order", 0)})
+    for task_id in p.get("task_ids") or []:
+        _task_on(s, org, task_id, p["position_id"])
+
+
+def _task_moved(s: GraphStore, org: str, p: dict) -> None:
+    _task_on(s, org, p["id"], p["position_id"])
+
+
 # A failure mode's RCM analysis, beyond what failure_mode.added carries.
 _ANALYSIS = ("effects", "notes", "rtf_basis", "evidence", "decision_notes", "task_note")
 
@@ -1722,6 +1779,10 @@ PROJECTORS = {
     "failure_mode.assigned": _failure_mode_assigned,
     "failure_mode.analysed": _patch,
     "failure_mode.retired": _flag("retired"),
+    # Moved to another position (with what goes with each).
+    "function.moved": _function_moved,
+    "failure_mode.moved": _failure_mode_moved,
+    "task.moved": _task_moved,
 }
 
 
@@ -2298,6 +2359,10 @@ class Maintenance:
         if failure_mode_id:
             fm = next((m for m in self.s.out(self.org, position_id, "CAN_FAIL_AS") if m["id"] == failure_mode_id), None)
             if fm is None:
+                # A mode moved away is on its new position: say where, so the failure goes there.
+                elsewhere = self.s.inn(self.org, failure_mode_id, "CAN_FAIL_AS")
+                if elsewhere:
+                    raise Invalid(f"That failure mode is on {elsewhere[0].get('name')}, not this position.")
                 raise Invalid("That failure mode isn't on this position.")
             return ("id", fm.get("merged_into") or fm["id"])
         return ("text", text) if text else None
@@ -2631,6 +2696,151 @@ class Maintenance:
                                         "reason": "Its failure mode was deleted."})
         self._emit("failure_mode.retired", {"id": mode_id, "on": self.today()})
         return {"removed": mode_id, "position_id": position["id"], "task_retired": task and task["id"]}
+
+    # ---- moving RCM to another position ---------------------------------------------
+    # A function (with its functional failures, their failure modes and those modes'
+    # tasks), one failure mode (with its decision and tasks) or one task moves to
+    # another live position. Nothing with history moves: failures, findings and work
+    # done belong to the position where they happened, so a move that would split
+    # them is refused, saying what to do instead. Retired tasks stay where they were.
+
+    def _move_target(self, position_id, from_id: str) -> dict:
+        """The live position something moves to (in this workspace, not where it is)."""
+        if not position_id:
+            raise Invalid("Say which position to move it to (position_id).")
+        target = self.s.node(self.org, position_id, "Position")
+        if target is None:
+            raise Invalid("There's no position with that id in this workspace: pick one from the asset tree.")
+        if target.get("retired"):
+            raise Invalid(f"{target['name']} has been retired: pick a position that's still in use.")
+        if target["id"] == from_id:
+            raise Invalid(f"It's already on {target['name']}: pick another position.")
+        return target
+
+    def _live_tasks_of(self, mode_id: str) -> list[dict]:
+        return [t for t in self.s.inn(self.org, mode_id, "MITIGATES") if t["label"] == "Task" and not t.get("retired")]
+
+    def _check_task_move(self, task: dict, source: dict, target: dict, modes_moving: set) -> None:
+        """Refuse moving a position's task when that would split its history or leave
+        it pointing back at the old position."""
+        name, here, there = task["name"], source["name"], target["name"]
+        for wo in self.s.inn(self.org, task["id"], "FOR"):
+            if wo["label"] != "WorkOrder" or wo.get("status") == "cancelled":
+                continue
+            if wo.get("status") in OPEN_STATUSES:
+                raise Invalid(f"{name} has an open work order (#{wo.get('number')}): close or cancel it first, "
+                              "then move it.")
+            raise Invalid(f"Work has been done on {name} at {here} (work order #{wo.get('number')}): moving it "
+                          f"would split its history. Retire it and add a new task on {there} instead.")
+        for fm in self.s.out(self.org, task["id"], "MITIGATES"):
+            if fm["id"] in modes_moving:
+                continue
+            on = self.s.inn(self.org, fm["id"], "CAN_FAIL_AS")
+            if not on or on[0]["id"] != target["id"]:
+                raise Invalid(f"{name} prevents the failure mode {fm['text']}, which stays on {here}: move the "
+                              "failure mode instead (its tasks go with it), or unlink the task from it first.")
+        point_id = task.get("point_id") or task.get("meter_id")
+        point = point_id and self.s.node(self.org, point_id)
+        if point and any(n["id"] == source["id"] for n in self.s.out(self.org, point_id, "ON")):
+            raise Invalid(f"{name} goes by the counter {point.get('name')} on {here}: pick a counter on {there} "
+                          "(or clear it) first.")
+        if _use_unit(task) and task.get("last_done_reading") is not None:
+            raise Invalid(f"{name} counts use from {here}'s counter since it was last done: moving it would "
+                          f"compare that reading with another counter. Retire it and add a new task on {there} "
+                          "(with when it was last done) instead.")
+        if task.get("rcm_mode_id") and any(
+                t["label"] == "Task" and t.get("rcm_mode_id") == task["rcm_mode_id"]
+                for t in self.s.inn(self.org, target["id"], "ON")):
+            raise Invalid(f"{there} already has the task for this RCM decision: retire one of the two first.")
+
+    def _check_mode_move(self, fm: dict, source: dict, target: dict, modes_moving: set) -> list[dict]:
+        """Refuse moving a failure mode with history at its position, or one the target
+        already has; returns its live tasks (they move with it), each checked."""
+        text, here, there = fm["text"], source["name"], target["name"]
+        failures = [f for f in self.s.inn(self.org, source["id"], "AT")
+                    if f["label"] == "Fitment" and f.get("failure_mode_id") == fm["id"] and not f.get("voided")]
+        if failures:
+            raise Invalid(f"{len(failures)} failure{'s' if len(failures) != 1 else ''} at {here} "
+                          f"{'are' if len(failures) != 1 else 'is'} recorded against {text}: moving it would "
+                          f"split that history. Leave it here and add the failure mode on {there} instead.")
+        if self.s.inn(self.org, fm["id"], "FOUND"):
+            raise Invalid(f"Inspections at {here} found {text}: moving it would split that history. Leave it "
+                          f"here and add the failure mode on {there} instead.")
+        if any(m.get("merged_into") == fm["id"] for m in self.s.out(self.org, source["id"], "CAN_FAIL_AS")):
+            raise Invalid(f"Other failure modes at {here} were merged into {text}, so its history is there. "
+                          f"Leave it here and add the failure mode on {there} instead.")
+        on_target = self.s.out(self.org, target["id"], "CAN_FAIL_AS")
+        same = next((m for m in on_target if not m.get("merged_into") and not m.get("retired")
+                     and _same_text(m["text"], text)), None)
+        if same:
+            raise Invalid(f"{there} already has the failure mode {same['text']}: rename one of them first.")
+        if fm.get("rcm_mode_id") and any(m.get("rcm_mode_id") == fm["rcm_mode_id"] for m in on_target):
+            raise Invalid(f"{there} already has {text} from the same RCM study.")
+        tasks = self._live_tasks_of(fm["id"])
+        for task in tasks:
+            self._check_task_move(task, source, target, modes_moving)
+        return tasks
+
+    def move_function(self, function_id: str, position_id) -> dict:
+        """Move a function to another position, with its functional failures, the
+        failure modes under them and those modes' tasks: ids, decisions, effects,
+        notes, evidence and task dates stay. The position's other failure modes
+        stay where they are."""
+        fn, source = self._live_function(function_id)
+        target = self._move_target(position_id, source["id"])
+        modes = [m for ff in self._failures_of(function_id) for m in self._ff_modes(ff["id"])]
+        moving = {m["id"] for m in modes}
+        tasks: dict[str, dict] = {}
+        for fm in modes:
+            for task in self._check_mode_move(fm, source, target, moving):
+                tasks[task["id"]] = task
+        if len(modes) + len(tasks) > MAX_COPY_NODES:
+            raise Invalid(f"That function has more than {MAX_COPY_NODES} failure modes and tasks to move at "
+                          "once: move some of its failure modes first.")
+        self._emit("function.moved", {
+            "id": function_id, "position_id": target["id"], "from_position_id": source["id"],
+            "order": self._next_order(self.s.out(self.org, target["id"], "PERFORMS")),
+            "failure_mode_ids": sorted(moving), "task_ids": sorted(tasks), "on": self.today(),
+        })
+        return {"moved": function_id, "position_id": target["id"], "from_position_id": source["id"],
+                "function": self._function_view(self._get(function_id, "Function")),
+                "failure_modes_moved": len(moving), "tasks_moved": len(tasks)}
+
+    def move_failure_mode(self, mode_id: str, position_id, functional_failure_id=None) -> dict:
+        """Move a failure mode to another position, with its decision and tasks, under
+        one of that position's functional failures (or under none)."""
+        fm, source = self._live_mode(mode_id)
+        target = self._move_target(position_id, source["id"])
+        ff = None
+        if functional_failure_id:
+            ff, _, on = self._live_ff(functional_failure_id)
+            if on["id"] != target["id"]:
+                raise Invalid(f"That functional failure is on {on['name']}, not {target['name']}: pick one of "
+                              f"{target['name']}'s, or leave it out to move the mode unassigned.")
+        tasks = self._check_mode_move(fm, source, target, {mode_id})
+        self._emit("failure_mode.moved", {
+            "id": mode_id, "position_id": target["id"], "from_position_id": source["id"],
+            "functional_failure_id": ff and ff["id"], "task_ids": sorted(t["id"] for t in tasks), "on": self.today(),
+        } | ({"order": self._next_order(self._ff_modes(ff["id"]))} if ff else {}))
+        return {**self.rcm_mode(mode_id), "position_id": target["id"], "from_position_id": source["id"],
+                "tasks_moved": len(tasks)}
+
+    def move_task(self, task_id: str, position_id) -> dict:
+        """Move a position's task to another position. Its link to a failure mode is
+        kept only when that mode is on the new position; otherwise the move is
+        refused (move the mode, which takes its tasks, or unlink the task first)."""
+        task = self._get(task_id, "Task")
+        if task.get("retired"):
+            raise Invalid("That task has been retired: add a new one on the other position instead.")
+        source = _subject(self.s, self.org, task)
+        if source is None or source["label"] != "Position":
+            raise Invalid("Only a position's task moves to another position. An item's task follows the item; "
+                          "for a location's, retire it and add a new one.")
+        target = self._move_target(position_id, source["id"])
+        self._check_task_move(task, source, target, set())
+        self._emit("task.moved", {"id": task_id, "position_id": target["id"], "from_position_id": source["id"],
+                                  "on": self.today()})
+        return self._task_view(self._get(task_id, "Task"))
 
     @staticmethod
     def _function_view(fn: dict) -> dict:
