@@ -21,9 +21,9 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 // one table: its rows go on into each position's functions, functional
 // failures and failure modes (nested in the same tree), every row has the
 // RCM's columns beside it, the column headers sit at the top, and the pane
-// takes the page's width (the panel's heading beside its controls). One scroll
-// container, one set of rows, one selection; the tree column stays put when
-// the table scrolls sideways. On a phone each row is two lines (the name,
+// takes the page's width, with two slim rows over it (the panel's heading,
+// then the filters). One scroll container, one set of rows, one selection;
+// the tree column stays put when the table scrolls sideways. On a phone each row is two lines (the name,
 // then the RCM's main columns in words).
 //
 // Presentational: the page (AssetExplorer) holds the state.
@@ -241,46 +241,76 @@ export default function TreePane({
 
   const dim = (key) => filter && !filter.match.has(key);
   const wide = table && !phone;
-  const controls = (
-    <div className="tp-head" style={wide ? { width } : undefined}>
-      <div className="tp-title-row">
-        <h2 className="tp-title">{title}</h2>
-        {onNew && (
-          <button type="button" className="tp-icon-btn tp-add" onClick={onNew} aria-label={newLabel} title={newLabel}>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+  const status = <p className="tp-status" role="status" title={statusText || undefined}>{statusText}</p>;
+  const titleRow = (
+    <div className="tp-title-row">
+      {wide ? <div className="tt-title"><h2 className="tp-title">{title}</h2>{status}</div> : <h2 className="tp-title">{title}</h2>}
+      {onNew && (
+        <button type="button" className="tp-icon-btn tp-add" onClick={onNew} aria-label={newLabel} title={newLabel}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+      )}
+      {menu && <OverflowMenu>{menu}</OverflowMenu>}
+      {!phone && !table && (
+        <button type="button" className="tp-icon-btn" onClick={() => onCollapse(true)}
+                aria-label="Fold the tree away" aria-expanded="true" title="Fold the tree away (Ctrl+\)">«</button>
+      )}
+    </div>
+  );
+  const search = (
+    <label className="tp-filter">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+      <input type="search" value={query} onChange={(e) => onQuery(e.target.value)}
+             placeholder={table ? "Filter: names, failures, effects, tasks" : mode === "items" ? "Filter: name, serial, make, model" : "Filter: name, tag, item, serial"}
+             aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
+    </label>
+  );
+  const levels = mode !== "flat" && mode !== "items" && (
+    <LevelButtons levels={LEVELS} onLevel={onLevel} onCloseAll={onCloseAll} />
+  );
+  const chipRow = (
+    <div className="tp-chips" role="group" aria-label="Show only">
+      {CHIPS.filter((c) => (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || table)).map((c) => {
+        const on = chips.includes(c.id);
+        return (
+          <button key={c.id} type="button" className={"tp-chip" + (on ? " on" : "") + (c.rcmOnly ? " rcm" : "")} aria-pressed={on} title={c.title}
+                  onClick={() => onChips(on ? chips.filter((x) => x !== c.id) : [...chips, c.id])}>
+            {c.label}
           </button>
-        )}
-        {menu && <OverflowMenu>{menu}</OverflowMenu>}
-        {!phone && !table && (
-          <button type="button" className="tp-icon-btn" onClick={() => onCollapse(true)}
-                  aria-label="Fold the tree away" aria-expanded="true" title="Fold the tree away (Ctrl+\)">«</button>
-        )}
+        );
+      })}
+    </div>
+  );
+  // The RCM tab on a wide screen: two slim rows over the table instead of
+  // the stacked controls, so the table gets the height. The first: the
+  // tree's title and its counts over the tree column, then the panel's
+  // heading (the tabs, the position and its actions). The second: the filter
+  // over the tree column, then the levels and the chips. Arrange by isn't
+  // offered here: the RCM is by position (the counts say so).
+  const controls = wide ? (
+    <div className="tt-top">
+      <div className="tt-bar">
+        <div className="tt-cell" style={{ width }}>{titleRow}</div>
+        <div className="tt-headslot">{head}</div>
       </div>
+      <div className="tt-filters">
+        <div className="tt-cell" style={{ width }}>{search}</div>
+        {levels}
+        {chipRow}
+        {notice}
+      </div>
+    </div>
+  ) : (
+    <div className="tp-head">
+      {titleRow}
       {phoneTabs}
-      <label className="tp-filter">
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-        <input type="search" value={query} onChange={(e) => onQuery(e.target.value)}
-               placeholder={table ? "Filter: names, failures, effects, tasks" : mode === "items" ? "Filter: name, serial, make, model" : "Filter: name, tag, item, serial"}
-               aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
-      </label>
+      {search}
       <SegmentedControl size="sm" className="tp-arrange" label="Arrange by" value={mode} onChange={onMode}
                         options={arrangeLocked ? ARRANGEMENTS.map((a) => (a.value === "positions" ? a : { ...a, disabled: true, title: arrangeLocked })) : ARRANGEMENTS} />
-      {mode !== "flat" && mode !== "items" && (
-        <LevelButtons levels={LEVELS} onLevel={onLevel} onCloseAll={onCloseAll} />
-      )}
-      <div className="tp-chips" role="group" aria-label="Show only">
-        {CHIPS.filter((c) => (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || table)).map((c) => {
-          const on = chips.includes(c.id);
-          return (
-            <button key={c.id} type="button" className={"tp-chip" + (on ? " on" : "") + (c.rcmOnly ? " rcm" : "")} aria-pressed={on} title={c.title}
-                    onClick={() => onChips(on ? chips.filter((x) => x !== c.id) : [...chips, c.id])}>
-              {c.label}
-            </button>
-          );
-        })}
-      </div>
+      {levels}
+      {chipRow}
       {notice}
-      <p className="tp-status" role="status">{statusText}</p>
+      {status}
     </div>
   );
 
@@ -301,7 +331,7 @@ export default function TreePane({
 
   return (
     <aside className={"tp" + (table ? " tp-table" : "")} aria-label={title} style={phone || wide ? undefined : { width }}>
-      {wide ? <div className="tt-top">{controls}<div className="tt-headslot" style={{ left: width }}>{head}</div></div> : controls}
+      {controls}
       <div className="tt-main">
         <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); }} onKeyDown={onKey}
              role={table ? "treegrid" : "tree"} aria-label={table ? `${treeLabel || title} and their RCM` : treeLabel || title}
