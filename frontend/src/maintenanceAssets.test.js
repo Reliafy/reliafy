@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  NOT_PLACED_PATH, assetsSummary, dueText, insideText, openWorkPath, placePath,
+  NOT_PLACED_PATH, assetPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "./maintenanceAssets.js";
 
 test("a place's page, its open work and the positions at no place", () => {
   assert.equal(placePath("l1"), "/asset-register/locations/l1");
+  assert.equal(assetPath("l1"), "/asset-register/explorer?arrange=locations&sel=l1");
   assert.equal(openWorkPath("l 1"), "/maintenance?location=l%201");
   assert.equal(NOT_PLACED_PATH, "/asset-register/explorer?arrange=positions&place=none");
 });

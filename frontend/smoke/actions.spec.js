@@ -58,10 +58,12 @@ test("the assets are the top-level places, and the positions at none stay reacha
 
   await open(page, "/asset-register");
   await depot.getByRole("link", { name: "Smoke test depot", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Smoke test depot" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Open work here" })).toBeVisible();
-  await expect(page.getByText("Smoke test inspection")).toBeVisible();
-  await expectHealthy(page, problems, { label: "an asset's page" });
+  // An asset opens in the Explorer, arranged by locations, with the asset picked.
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations&sel=/);
+  await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: /^Smoke test depot\b/ })).toBeVisible();
+  await expect(page.locator(".td-title")).toContainText("Smoke test depot");
+  await expectHealthy(page, problems, { label: "an asset in the Explorer" });
 });
 
 // #434, the first run: a CSV saved without a header row. Its first row is

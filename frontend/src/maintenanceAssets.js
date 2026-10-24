@@ -13,8 +13,12 @@ export const NOT_PLACED_PATH = explorerPath("positions", { place: "none" });
 // The Explorer arranged by positions, for "start with the positions".
 export const POSITIONS_PATH = explorerPath("positions");
 
-// A place's page.
+// A place's own page.
 export const placePath = (id) => `/asset-register/locations/${id}`;
+
+// Where an asset in the list goes: the Explorer, arranged by locations, with
+// that place picked (opened to it) so you land in the tree.
+export const assetPath = (id) => explorerPath("locations", { sel: id });
 
 // The open work orders in a place's area (Maintenance, filtered by location).
 export const openWorkPath = (id) => `/maintenance?location=${encodeURIComponent(id)}`;
