@@ -166,15 +166,15 @@ LIST_KINDS: Table = {
 }
 
 POSITIONS: Table = {
-    "create": ("name", "parent_id tag position_class description location_id", """A position: the job something
-        does ('Hot water system', 'MCC-3', 'Pump A'). parent_id: inside another position, or inside an item (a
-        position that travels with it, like an engine's turbo). position_class: like positions to compare and
-        pool. location_id: where it physically is; leave it out to inherit its parent's. Returns the
-        position."""),
-    "update": ("position_id", "name tag position_class description parent_id move_to_top_level location_id "
-               "clear_location", """Rename, change tag / class / description, move it (parent_id, or
-        move_to_top_level true), set where it is (location_id: positions inside without their own follow) or
-        clear_location true to inherit its parent's again."""),
+    "create": ("name", "parent_id tag position_class description operating_context location_id", """A position:
+        the job something does ('Hot water system', 'MCC-3', 'Pump A'). parent_id: inside another position, or
+        inside an item (a position that travels with it, like an engine's turbo). position_class: like positions
+        to compare and pool. operating_context: how it's used (load, environment, hours). location_id: where it
+        physically is; leave it out to inherit its parent's. Returns the position."""),
+    "update": ("position_id", "name tag position_class description operating_context parent_id move_to_top_level "
+               "location_id clear_location", """Rename, change tag / class / description / operating_context,
+        move it (parent_id, or move_to_top_level true), set where it is (location_id: positions inside without
+        their own follow) or clear_location true to inherit its parent's again."""),
     "copy": ("position_id name", "parent_id", """Copy a position and everything inside it (positions, failure
         modes, tasks, parts lists, locations set on them; not items, stock or work orders) under a new name.
         Repeat it to build many like structures; then update the copy's location_id if it's elsewhere."""),
@@ -827,8 +827,9 @@ def register() -> None:
                                   "create / update / copy: the position (or, for create, the item) it goes "
                                   "inside. from_rcm: the position to make it in."))] = None,
                               tag: str | None = None, position_class: str | None = None,
-                              description: str | None = None, location_id: str | None = None,
-                              move_to_top_level: bool | None = None, clear_location: bool | None = None,
+                              description: str | None = None, operating_context: str | None = None,
+                              location_id: str | None = None, move_to_top_level: bool | None = None,
+                              clear_location: bool | None = None,
                               reason: str | None = None, study_id: str | None = None,
                               dry_run: bool | None = None) -> dict[str, Any]:
         """Positions: the functional tree (functional locations, SAP's FLOC): the slot, by what it does.
@@ -836,10 +837,12 @@ def register() -> None:
         m = m_for(ctx)
         if action == "create":
             return run(lambda: m.position(m.create_position(name, tag or "", parent_id, position_class or "",
-                                                            description or "", location_id)["id"]))
+                                                            description or "", location_id,
+                                                            operating_context or "")["id"]))
         if action == "update":
             changes = {k: v for k, v in (("name", name), ("tag", tag), ("position_class", position_class),
-                                         ("description", description)) if v is not None}
+                                         ("description", description), ("operating_context", operating_context))
+                       if v is not None}
             if parent_id or move_to_top_level:
                 changes["parent_id"] = None if move_to_top_level else parent_id
             if location_id or clear_location:

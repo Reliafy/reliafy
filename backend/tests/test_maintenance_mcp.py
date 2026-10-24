@@ -773,6 +773,28 @@ def test_positions_and_locations_through_mcp(env):
     assert _session(env["token"], flow)
 
 
+def test_a_positions_operating_context_through_mcp(env):
+    async def flow(client):
+        made = _ok(await _do(client, "maintenance_positions", "create", name="Pump 4", description="Borehole pump",
+                             operating_context="Runs 18 hours a day in sandy water."))
+        assert made["operating_context"] == "Runs 18 hours a day in sandy water."
+        assert made["description"] == "Borehole pump"
+        kept = _ok(await _do(client, "maintenance_positions", "update", position_id=made["id"], name="Pump 4A"))
+        assert kept["operating_context"] == "Runs 18 hours a day in sandy water."
+        changed = _ok(await _do(client, "maintenance_positions", "update", position_id=made["id"],
+                                operating_context="Standby; run weekly."))
+        assert changed["operating_context"] == "Standby; run weekly."
+        cleared = _ok(await _do(client, "maintenance_positions", "update", position_id=made["id"],
+                                operating_context=""))
+        assert cleared["operating_context"] == ""
+        assert (_ok(await _get(client, "position", made["id"])))["operating_context"] == ""
+        too_long = await _do(client, "maintenance_positions", "create", name="Pump 5", operating_context="x" * 4001)
+        assert too_long.is_error and "operating context is at most 4000" in too_long.content[0].text
+        return True
+
+    assert _session(env["token"], flow)
+
+
 def test_the_workspaces_time_zone_over_mcp(env):
     async def flow(client):
         before = _ok(await client.call_tool("maintenance_overview", {}))

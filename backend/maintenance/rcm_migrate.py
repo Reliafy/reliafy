@@ -18,8 +18,10 @@ For each study this module
   mode its decision and the evidence linked);
 * adds the study's functions and functional failures to each position, and
   puts each failure mode under its functional failure;
-* puts the study's description on the position's description (the app shows
-  it clamped).
+* puts the study's description (how the system is used) in the position's
+  operating context, once: the position's description stays a short line on
+  what it is. A study whose description is already on the position (in either
+  field, from an earlier run) adds nothing.
 
 Every step matches what's already there (functions by ``rcm_function_id``,
 functional failures by ``rcm_failure_id``, modes by ``rcm_mode_id``), so
@@ -125,19 +127,38 @@ def _spine(m: Maintenance, position_id: str, study) -> None:
                     m.assign_failure_mode(fm["id"], ff_id)
 
 
-def _describe(m: Maintenance, position_id: str, study) -> None:
-    """The study's description at the end of the position's (once)."""
+def _one_line(text: str) -> str:
+    return " ".join(str(text or "").split())
+
+
+def present(said: str, had: str) -> bool:
+    """Whether ``said`` is already in ``had``: as it is, or (long text, cut to fit
+    with its lines joined) by its opening words."""
+    said, had = str(said or "").strip(), str(had or "")
+    if not said:
+        return True
+    if said in had:
+        return True
+    stem = _one_line(said)[:120]
+    return len(stem) >= 40 and stem in _one_line(had)
+
+
+def _context(m: Maintenance, position_id: str, study) -> None:
+    """The study's description in the position's operating context (once): after
+    what's there already, never in place of it. Text already on the position, in
+    its operating context or (from an earlier run) its description, is matched."""
     said = (study.description or "").strip()
     if not said:
         return
-    had = (m._get(position_id, "Position").get("description") or "").strip()
-    if said in had:
+    position = m._get(position_id, "Position")
+    had = (position.get("operating_context") or "").strip()
+    if present(said, had) or present(said, position.get("description") or ""):
         return
     room = LONG_TEXT - len(had) - 2 if had else LONG_TEXT
     if room < 40:
         return
     text = shortened(said, room)[0]
-    m.update_position(position_id, description=f"{had}\n\n{text}" if had else text)
+    m.update_position(position_id, operating_context=f"{had}\n\n{text}" if had else text)
 
 
 def migrate_study(store, db, study, index: dict, actor: str = ACTOR) -> dict:
@@ -178,7 +199,7 @@ def migrate_study(store, db, study, index: dict, actor: str = ACTOR) -> dict:
                                          "created": False})
         for pid in positions:
             _spine(m, pid, study)
-            _describe(m, pid, study)
+            _context(m, pid, study)
         out["events"] += [(org, t, p) for t, p in m.written]
     return out
 
@@ -223,7 +244,7 @@ def _counts(events) -> dict[str, int]:
 
 
 WORDS = {
-    "position.created": "position", "position.updated": "position description",
+    "position.created": "position", "position.updated": "position's operating context",
     "function.added": "function", "functional_failure.added": "functional failure",
     "failure_mode.added": "failure mode", "failure_mode.assigned": "failure mode put under its functional failure",
     "failure_mode.analysed": "decision or analysis copied", "task.added": "task", "task.updated": "task updated",

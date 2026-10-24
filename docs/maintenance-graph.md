@@ -381,10 +381,27 @@ workspace) or, if it was never applied, makes a position for it in its
 owner's workspace (never for a sample). It applies the study once more (every
 mode and task, each decision with its evidence), adds the study's functions
 and functional failures, puts each failure mode under its functional failure,
-and adds the study's description to the position's. What's already there is
+and puts the study's description in the position's operating context (the
+description stays a short line on what it is). What's already there is
 matched, so a second run changes nothing. The study document is kept as it
 was, as read-only history, and marked `migrated_to` (the position): it can't
 be edited or applied again after that.
+
+### A position's description and operating context
+
+A position has two text fields: `description`, a short line on what it is,
+and `operating_context`, how it's used (the load, the environment, the hours
+it runs). Both are plain text of at most 4,000 characters. `operating_context`
+is optional on `position.created` (left out when empty, so older events replay
+to the same node) and set or cleared ("") through `position.updated`.
+
+Studies moved before the field existed left their description appended to the
+position's description, after a blank line.
+`python -m backend.scripts.move_operating_context --org ORG POSITION_ID ...`
+moves that paragraph into the operating context: by default the text after the
+first blank line, or with `--study STUDY_ID` the text that equals that study's
+description. Like the migration it's a dry run on a throwaway copy unless
+`--apply`, and a second run changes nothing.
 
 ## Making Neo4j the primary store later
 

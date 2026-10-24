@@ -233,3 +233,128 @@ test("on a phone: the tree, then the panel, and back", async ({ page, request, p
   await expect(page.getByRole("button", { name: "Tree options", exact: true })).toBeFocused();
   await expectHealthy(page, problems, { label: "the tree on a phone" });
 });
+
+// ---- a position's operating context on the Summary tab ------------------------------------
+// The empty state, adding, editing (and cancelling), clearing, the six-line clamp
+// with More / Less, a phone, and that items and the RCM tab don't get the card.
+const CTX_PROMPT = "How is it used? Describe the load, the environment and the hours it runs.";
+
+async function ctxPlant(request, tag) {
+  const post = async (path, data) => {
+    const res = await request.post(path, { data });
+    expect(res.ok(), `${path}: ${res.status()}`).toBeTruthy();
+    return res.json();
+  };
+  const pump = await post(`${M}/positions`, { name: `Ctx pump ${tag}`, description: "Centrifugal pump, 50 L/s" });
+  await post(`${M}/positions/${pump.id}/fit`, { new_item: { name: `Ctx unit ${tag}`, serial: `CU-${tag}` } });
+  const fitted = (await (await request.get(`${M}/positions/${pump.id}`)).json()).fitted.item;
+  return { pump, fitted };
+}
+
+const contextOf = async (request, id) => (await (await request.get(`${M}/positions/${id}`)).json()).operating_context;
+
+test("add, edit, cancel and clear a position's operating context", async ({ page, request, problems }) => {
+  const tag = `o${Date.now()}`;
+  const p = await ctxPlant(request, tag);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
+  const panel = page.getByRole("region", { name: "Details" });
+  await expect(panel.getByRole("heading", { name: `Ctx pump ${tag}` })).toBeVisible();
+  // The description stays the grey line under the name.
+  await expect(panel.locator(".td-desc")).toHaveText("Centrifugal pump, 50 L/s");
+  const card = panel.getByRole("region", { name: "Operating context" });
+  await expect(card.getByRole("heading", { name: "Operating context" })).toBeVisible();
+  await expect(card.getByText(CTX_PROMPT)).toBeVisible();
+  await expect(card).not.toContainText(/duty/i);
+
+  // Add: in place, Save, "Saved.", kept with its line breaks.
+  await card.getByRole("button", { name: "Add", exact: true }).click();
+  const box = card.getByRole("textbox", { name: "Operating context" });
+  await expect(box).toBeFocused();
+  await box.fill("Runs 20 hours a day.\nSalt air; summers to 35 °C.");
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await expect(card.locator(".td-ctx-text")).toHaveText("Runs 20 hours a day.\nSalt air; summers to 35 °C.");
+  await expect.poll(() => contextOf(request, p.pump.id)).toBe("Runs 20 hours a day.\nSalt air; summers to 35 °C.");
+  await expect(panel.locator(".td-desc")).toHaveText("Centrifugal pump, 50 L/s");
+
+  // Edit, then Cancel (and Esc): nothing changes.
+  await card.getByRole("button", { name: /^Edit/ }).click();
+  await box.fill("Something else");
+  await card.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(card.locator(".td-ctx-text")).toHaveText("Runs 20 hours a day.\nSalt air; summers to 35 °C.");
+  await card.getByRole("button", { name: /^Edit/ }).click();
+  await box.fill("Something else again");
+  await box.press("Escape");
+  await expect(card.getByRole("textbox")).toHaveCount(0);
+  await expect(card.getByRole("button", { name: /^Edit/ })).toBeFocused();
+  expect(await contextOf(request, p.pump.id)).toBe("Runs 20 hours a day.\nSalt air; summers to 35 °C.");
+
+  // Edit and save; still there after a reload.
+  await card.getByRole("button", { name: /^Edit/ }).click();
+  await box.fill("Standby pump; started weekly for an hour.");
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
+  await expect(card.locator(".td-ctx-text")).toHaveText("Standby pump; started weekly for an hour.");
+
+  // Long text: clamped, More shows it all, Less folds it again.
+  await card.getByRole("button", { name: /^Edit/ }).click();
+  await box.fill(Array.from({ length: 12 }, (_, i) => `Line ${i + 1} about the load and the site.`).join("\n"));
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  const more = card.getByRole("button", { name: /^More/ });
+  await expect(more).toBeVisible();
+  const clamped = (await card.locator(".td-ctx-text").boundingBox()).height;
+  await more.click();
+  await expect(card.getByRole("button", { name: /^Less/ })).toHaveAttribute("aria-expanded", "true");
+  expect((await card.locator(".td-ctx-text").boundingBox()).height).toBeGreaterThan(clamped * 1.5);
+  await card.getByRole("button", { name: /^Less/ }).click();
+  await expect(more).toBeVisible();
+
+  // Clear: back to the empty state.
+  await card.getByRole("button", { name: /^Edit/ }).click();
+  await box.fill("");
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(card.getByRole("status")).toHaveText("Cleared.");
+  await expect(card.getByText(CTX_PROMPT)).toBeVisible();
+  await expect.poll(() => contextOf(request, p.pump.id)).toBe("");
+  await expectHealthy(page, problems, { label: "the operating context card" });
+});
+
+test("items don't get the card, and the RCM tab doesn't show it", async ({ page, request, problems }) => {
+  const tag = `i${Date.now()}`;
+  const p = await ctxPlant(request, tag);
+  await request.patch(`${M}/positions/${p.pump.id}`, { data: { operating_context: `Dusty; runs on demand ${tag}.` } });
+  await open(page, `/asset-register/explorer?arrange=items&sel=${p.fitted.id}`);
+  const panel = page.getByRole("region", { name: "Details" });
+  await expect(panel.getByRole("heading", { name: `Ctx unit ${tag}` })).toBeVisible();
+  await expect(panel.getByRole("region", { name: "Operating context" })).toHaveCount(0);
+
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
+  await expect(panel.getByRole("region", { name: "Operating context" }).getByText(`Dusty; runs on demand ${tag}.`)).toBeVisible();
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
+  await expect(page.getByRole("treegrid", { name: /and their RCM/ })).toBeVisible();
+  await expect(page.getByText(`Dusty; runs on demand ${tag}.`)).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Operating context" })).toHaveCount(0);
+  await expectHealthy(page, problems, { label: "items and the RCM tab" });
+});
+
+test("on a phone: the card fits and edits in place", async ({ page, request, problems }) => {
+  const tag = `p${Date.now()}`;
+  const p = await ctxPlant(request, tag);
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions`);
+  await page.getByRole("treeitem", { name: new RegExp(`^Ctx pump ${tag}`) }).locator(".tp-nm").click();
+  const card = page.getByRole("region", { name: "Details" }).getByRole("region", { name: "Operating context" });
+  await card.getByRole("button", { name: "Add", exact: true }).click();
+  await card.getByRole("textbox", { name: "Operating context" }).fill("Outdoors, wet season flooding; 12 hours a day.");
+  const save = card.getByRole("button", { name: "Save", exact: true });
+  expect((await save.boundingBox()).height).toBeGreaterThanOrEqual(36);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth), "the page scrolls sideways").toBeLessThanOrEqual(400);
+  await save.click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await expect(card.locator(".td-ctx-text")).toHaveText("Outdoors, wet season flooding; 12 hours a day.");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth), "the page scrolls sideways").toBeLessThanOrEqual(400);
+  await page.goBack();
+  await expect(page.getByRole("tree", { name: "Positions" })).toBeVisible();
+  await expectHealthy(page, problems, { label: "the operating context card on a phone" });
+});
