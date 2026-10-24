@@ -1,30 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { getMaintenanceTree } from "../api.js";
+import { getMaintenanceTree, listMaintenanceItems } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
 import TreeDetail from "../components/TreeDetail.jsx";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
-import { NewLocationModal } from "./MaintenanceLists.jsx";
+import { NewItemModal, NewLocationModal } from "./MaintenanceLists.jsx";
 import { FromRcmModal, ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import {
-  ARRANGE_PATH, ancestorsOf, buildDisplay, clampWidth, computeFilter, filterOpen, flatten, levelSet,
-  loadTreeState, saveTreeState,
+  ARRANGEMENTS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
+  filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
+import { EXPLORER_LABEL } from "../navigation.js";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
-// Operate › Assets › Positions and › Locations: one page, one tree pane,
-// arranged by what the menu entry says (Arrange by switches, and the address
-// follows). The tree is a second-level menu beside the site menu; the panel
-// beside it shows the row picked, with "Open the full page" for the position's
-// (or location's, or item's) own page. On a phone the tree is the whole
-// screen and picking a row slides to the panel; Back (or the phone's back
-// gesture) slides back.
+// Operate › Assets › Explorer: one page, one tree pane over the whole
+// register, arranged by positions, locations or items, or as a flat list of
+// positions (Arrange by switches, and the address follows: ?arrange=). The
+// tree is a second-level menu beside the site menu; the panel beside it shows
+// the row picked, with "Open the full page" for the position's (or
+// location's, or item's) own page. On a phone the tree is the whole screen
+// and picking a row slides to the panel; Back (or the phone's back gesture)
+// slides back.
 //
-// ?place=none (from the Assets list's last row): only the positions at no
-// location yet. ?sel=<id>: open with that row picked.
+// With no ?arrange=, it opens on the arrangement used last on this device
+// (else Positions) and says so in the address. ?place=none (from the Assets
+// list's last row): only the positions at no location yet. ?sel=<id>: open
+// with that row picked. The old Positions, Items and Locations addresses
+// redirect here (redirects.js).
 
 const PHONE_QUERY = "(max-width: 720px)";
 function usePhone() {
@@ -55,18 +60,30 @@ function pickerList(data) {
   return out;
 }
 
-export default function AssetExplorer({ arrange = "positions" }) {
+export default function AssetExplorer() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
   const { workspace } = useWorkspace();
   const phone = usePhone();
-  const mode = arrange === "positions" && params.get("arrange") === "flat" ? "flat" : arrange;
-  const notPlaced = arrange === "positions" && params.get("place") === "none";
-  const title = arrange === "locations" ? "Locations" : "Positions";
-
   const saved = useMemo(() => loadTreeState(workspace), [workspace]);
+  const mode = arrangementOf(params.get("arrange"), saved.mode);
+  const notPlaced = (mode === "positions" || mode === "flat") && params.get("place") === "none";
+  const title = EXPLORER_LABEL;
+  const treeLabel = ARRANGEMENTS.find((a) => a.value === mode).tree;
+
+  // The address always says the arrangement, so it can be shared as it is.
+  useEffect(() => {
+    if (params.get("arrange") === mode) return;
+    const q = new URLSearchParams(params);
+    q.set("arrange", mode);
+    navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
+  }, [params, mode, navigate, location]);
+
   const [data, setData] = useState(null);
+  // The items list (class, make and model for each item), for the Items
+  // arrangement: fetched when it's first shown, and again after a change.
+  const [itemList, setItemList] = useState(null);
   const [error, setError] = useState(null);
   const [version, setVersion] = useState(0);
   const [openBy, setOpenBy] = useState(saved.open);
@@ -91,11 +108,21 @@ export default function AssetExplorer({ arrange = "positions" }) {
       .catch((e) => setError({ text: e.message, notAllowed: e.status === 404 || e.status === 403 }));
   }, []);
   useEffect(() => load(), [load]);
+  const wantItems = mode === "items";
+  useEffect(() => {
+    if (!wantItems || !version) return undefined;
+    let live = true;
+    // Without it the items still show, from the tree: only class, make and model are missing.
+    listMaintenanceItems().then((d) => live && setItemList(d.items || [])).catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [wantItems, version]);
 
-  const display = useMemo(() => buildDisplay(data, mode), [data, mode]);
+  const display = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
   const filter = useMemo(() => (data ? computeFilter(display, {
-    query, chips, extra: notPlaced ? (r) => r.type === "pos" && !r.ref.location : null,
-  }) : null), [data, display, query, chips, notPlaced]);
+    query, chips: mode === "items" ? chips.filter((c) => c !== "empty") : chips, extra: notPlaced ? (r) => r.type === "pos" && !r.ref.location : null,
+  }) : null), [data, display, query, chips, notPlaced, mode]);
   useEffect(() => setFopen(filter ? filterOpen(filter) : null), [filter]);
   const defaultOpen = useMemo(() => levelSet(display, 2), [display]);
   const baseOpen = openBy[mode] || defaultOpen;
@@ -105,11 +132,11 @@ export default function AssetExplorer({ arrange = "positions" }) {
 
   // Remembered on this device, a moment after each change, and on the way out.
   const latest = useRef(null);
-  latest.current = { open: openBy, selected, width, collapsed };
+  latest.current = { mode, open: openBy, selected, width, collapsed };
   useEffect(() => {
     const t = setTimeout(() => saveTreeState(workspace, latest.current), 200);
     return () => clearTimeout(t);
-  }, [workspace, openBy, selected, width, collapsed]);
+  }, [workspace, mode, openBy, selected, width, collapsed]);
   useEffect(() => {
     const flush = () => saveTreeState(workspace, latest.current);
     window.addEventListener("pagehide", flush);
@@ -180,14 +207,13 @@ export default function AssetExplorer({ arrange = "positions" }) {
 
   const onMode = (m) => {
     if (m === mode) return;
-    const keep = focus && display.rows.get(focus)?.type === "pos" ? focus : null;
+    const keep = carryOver(focus != null ? display.rows.get(focus) : null, m);
     const nextSelected = keep ? { ...selected, [m]: keep } : selected;
     setSelected(nextSelected);
-    latest.current = { ...latest.current, selected: nextSelected };
+    latest.current = { ...latest.current, mode: m, selected: nextSelected };
     saveTreeState(workspace, latest.current);
     pending.current = keep;
-    const path = m === "locations" ? ARRANGE_PATH.locations : ARRANGE_PATH.positions;
-    navigate(`${path}${m === "flat" ? "?arrange=flat" : ""}`, { state: keep ? { treeReveal: keep } : undefined });
+    navigate(explorerPath(m), { state: keep ? { treeReveal: keep } : undefined });
   };
 
   // Ctrl+\ folds the pane away and back.
@@ -208,7 +234,12 @@ export default function AssetExplorer({ arrange = "positions" }) {
     load();
   };
 
-  const nothing = data && (mode === "locations" ? !data.locations.length && !data.positions.length : !data.positions.length);
+  const nothing = data && (mode === "locations" ? !data.locations.length && !data.positions.length
+    : mode === "items" ? !display.items : !data.positions.length);
+  const EMPTY = {
+    locations: ["No locations yet", "Add the places you look after (a site, a house), the areas and rooms inside them, and the stores."],
+    items: ["No items yet", "Items are the physical things, each with its own history. Fit one from a position's page, or add a spare that isn't fitted yet."],
+  };
   const emptyDetail = error?.notAllowed ? (
     <div className="card empty">
       <h2>Not on for this account</h2>
@@ -223,13 +254,17 @@ export default function AssetExplorer({ arrange = "positions" }) {
     <div className="card empty">Loading…</div>
   ) : nothing ? (
     <div className="card empty section-empty">
-      <h2>{mode === "locations" ? "No locations yet" : "No positions yet"}</h2>
-      <p>{mode === "locations"
-        ? "Add the places you look after (a site, a house), the areas and rooms inside them, and the stores."
-        : "Add the first position, or start from an RCM study: its system becomes a position, with the study's tasks."}</p>
+      <h2>{EMPTY[mode]?.[0] || "No positions yet"}</h2>
+      <p>{EMPTY[mode]?.[1]
+        || "Add the first position, or start from an RCM study: its system becomes a position, with the study's tasks."}</p>
       <div className="section-empty-action">
         {mode === "locations" ? (
           <button type="button" onClick={() => setModal("location")}><PlusIcon /> New location</button>
+        ) : mode === "items" ? (
+          <>
+            <button type="button" onClick={() => setModal("item")}><PlusIcon /> New item</button>
+            <button type="button" className="secondary" onClick={() => onMode("positions")}>Fit one to a position</button>
+          </>
         ) : (
           <>
             <button type="button" onClick={() => setModal("position")}><PlusIcon /> New position</button>
@@ -248,19 +283,20 @@ export default function AssetExplorer({ arrange = "positions" }) {
     : filter && notPlaced && !query.trim() && !chips.length ? "Every position is at a location."
     : filter ? (
       <>Nothing matches{query.trim() ? ` “${query.trim()}”` : ""}. <button type="button" className="link" onClick={() => { setQuery(""); setChips([]); }}>Clear the filter</button></>
-    ) : nothing ? (mode === "locations" ? "No locations yet." : "No positions yet.") : "Nothing here.";
+    ) : nothing ? `${EMPTY[mode]?.[0] || "No positions yet"}.` : "Nothing here.";
 
   const placedCount = data ? display.positions : 0;
+  const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
   const statusText = !data ? "" : filter
-    ? `${filter.match.size.toLocaleString("en-AU")} ${filter.match.size === 1 ? "match" : "matches"}, shown with what they're inside`
+    ? `${n(filter.match.size, "match", "matches")}, shown with what they're inside`
     : mode === "locations"
-      ? `${data.locations.length.toLocaleString("en-AU")} locations · ${placedCount.toLocaleString("en-AU")} positions`
-      : `${placedCount.toLocaleString("en-AU")} positions`;
+      ? `${n(data.locations.length, "location")} · ${n(placedCount, "position")}`
+      : mode === "items" ? n(display.items, "item") : n(placedCount, "position");
 
   const notice = notPlaced && (
     <p className="tp-notice">
       <span className="maint-badge">Not at a location yet</span>{" "}
-      <Link to="/asset-register/positions" replace>Show every position</Link>
+      <Link to={explorerPath(mode)} replace>Show every position</Link>
     </p>
   );
 
@@ -273,6 +309,7 @@ export default function AssetExplorer({ arrange = "positions" }) {
     <div className={"tx" + (phone ? " phone" : "") + (phone && detailKey ? " show-detail" : "")}>
       <TreePane
         title={title}
+        treeLabel={treeLabel}
         display={display}
         list={list}
         index={index}
@@ -294,9 +331,9 @@ export default function AssetExplorer({ arrange = "positions" }) {
         onWidth={setWidth}
         collapsed={collapsed}
         onCollapse={setCollapsed}
-        onNew={data ? () => setModal(mode === "locations" ? "location" : "position") : null}
-        newLabel={mode === "locations" ? "New location" : "New position"}
-        menu={data && mode !== "locations" && (
+        onNew={data ? () => setModal(mode === "locations" ? "location" : mode === "items" ? "item" : "position") : null}
+        newLabel={mode === "locations" ? "New location" : mode === "items" ? "New item" : "New position"}
+        menu={data && mode !== "locations" && mode !== "items" && (
           <>
             <button type="button" className="ovm-item" onClick={() => setModal("import")}>Import from a spreadsheet</button>
             <button type="button" className="ovm-item" onClick={() => setModal("rcm")}>From an RCM study</button>
@@ -332,6 +369,11 @@ export default function AssetExplorer({ arrange = "positions" }) {
           locations={(data?.locations || []).map((l) => ({ ...l, parent: l.parent_id ? { name: data.locations.find((x) => x.id === l.parent_id)?.name } : null }))}
           parentId={focus && display.rows.get(focus)?.type === "loc" ? focus : null}
           onClose={() => setModal(null)} onDone={(l) => created(l.id)} />
+      )}
+      {modal === "item" && (
+        <NewItemModal
+          locations={(data?.locations || []).map((l) => ({ ...l, parent: l.parent_id ? { name: data.locations.find((x) => x.id === l.parent_id)?.name } : null }))}
+          onClose={() => setModal(null)} onDone={(it) => created(it.id)} />
       )}
       {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
       {modal === "rcm" && (

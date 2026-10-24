@@ -1,7 +1,8 @@
-// The asset tree pane (Operate › Assets › Positions and Locations): open and
-// close, the levels, the filter that keeps the path to a match, the panel for
-// the row picked, the Locations arrangement, and the phone's slide to the
-// panel and back. Each test makes its own small plant through the API.
+// The asset tree pane (Operate › Assets › Explorer): open and close, the
+// levels, the filter that keeps the path to a match, the panel for the row
+// picked, the Locations, Items and Flat arrangements, the old Positions,
+// Items and Locations addresses, and the phone's slide to the panel and back.
+// Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
 
 const M = "/api/maintenance";
@@ -19,7 +20,12 @@ async function plant(request, tag) {
   const seal = await post(`${M}/positions`, { name: `Tree seal ${tag}`, parent_id: motor.id, position_class: "Mechanical seal" });
   await post(`${M}/positions/${motor.id}/tasks`, { name: "Grease", interval: 1, unit: "months", last_done: "2020-01-01" });
   await post(`${M}/work-orders`, { position_id: seal.id, title: `Tree leak ${tag}` });
-  return { site, top, line, motor, seal };
+  // A unit fitted to the line (it has no tasks to restart), and a spare kept at the site.
+  await post(`${M}/positions/${line.id}/fit`, { new_item: { name: `Tree unit ${tag}`, serial: `TU-${tag}` } });
+  const fitted = (await (await request.get(`${M}/positions/${line.id}`)).json()).fitted.item;
+  const spare = await post(`${M}/items`, { name: `Tree spare ${tag}`, serial: `SP-${tag}` });
+  await post(`${M}/items/${spare.id}/place`, { location_id: site.id });
+  return { site, top, line, motor, seal, fitted, spare };
 }
 
 const row = (page, name) => page.getByRole("treeitem", { name: new RegExp(`^${name}`) });
@@ -27,8 +33,8 @@ const row = (page, name) => page.getByRole("treeitem", { name: new RegExp(`^${na
 test("the tree pane: open, close, levels, filter, and the panel for the row picked", async ({ page, request, problems }) => {
   const tag = `a${Date.now()}`;
   const p = await plant(request, tag);
-  await open(page, `/asset-register/positions?sel=${p.top.id}`);
-  await expect(page.getByRole("heading", { name: "Positions", exact: true })).toBeVisible();
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
+  await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
   const tree = page.getByRole("tree", { name: "Positions" });
   await expect(tree).toBeVisible();
 
@@ -79,20 +85,22 @@ test("the tree pane: open, close, levels, filter, and the panel for the row pick
   await expect(row(page, `Tree motor ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expectHealthy(page, problems, { label: "the tree pane" });
 
-  // Remembered: a reload comes back to the same row.
-  await open(page, "/asset-register/positions");
+  // Remembered: the menu's address comes back to the same arrangement and row.
+  await open(page, "/asset-register/explorer");
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions$/);
   await expect(row(page, `Tree motor ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("region", { name: "Details" }).getByRole("heading", { name: `Tree motor ${tag}` })).toBeVisible();
 });
 
-test("arranged by locations, and the menu follows", async ({ page, request, problems }) => {
+test("arranged by locations, by items and flat, and the menu follows", async ({ page, request, problems }) => {
   const tag = `b${Date.now()}`;
   const p = await plant(request, tag);
-  await open(page, `/asset-register/positions?sel=${p.line.id}`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`);
+  await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
   await page.getByRole("radio", { name: "Locations" }).click();
-  await expect(page).toHaveURL(/\/asset-register\/locations$/);
-  await expect(page.getByRole("heading", { name: "Locations", exact: true })).toBeVisible();
-  await expect(page.locator(".side-subitem.active")).toHaveText("Locations");
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations$/);
+  await expect(page.getByRole("tree", { name: "Locations" })).toBeVisible();
+  await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
   // The position picked stays picked, shown inside its location.
   await expect(row(page, `Tree line ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expect(row(page, `Tree site ${tag}`)).toHaveAttribute("aria-expanded", "true");
@@ -102,17 +110,79 @@ test("arranged by locations, and the menu follows", async ({ page, request, prob
   await expect(panel.getByRole("link", { name: "Open the full page" })).toHaveAttribute("href", `/asset-register/locations/${p.site.id}`);
   await expectHealthy(page, problems, { label: "arranged by locations" });
 
+  // The spare kept at the site is a row under it.
+  await expect(row(page, `Tree spare ${tag}`)).toBeVisible();
+  await expectHealthy(page, problems, { label: "arranged by locations" });
+
   await page.getByRole("radio", { name: "Flat" }).click();
-  await expect(page).toHaveURL(/\/asset-register\/positions\?arrange=flat$/);
-  await expect(page.locator(".side-subitem.active")).toHaveText("Positions");
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=flat$/);
+  await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
   await expectHealthy(page, problems, { label: "flat" });
+
+  // By items: the line picked becomes the unit fitted there.
+  await row(page, `Tree line ${tag}`).click();
+  await page.getByRole("radio", { name: "Items" }).click();
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=items$/);
+  await expect(page.getByRole("tree", { name: "Items" })).toBeVisible();
+  const unit = row(page, `Tree unit ${tag}`);
+  await expect(unit).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByRole("heading", { name: `Tree unit ${tag}` })).toBeVisible();
+  await expect(panel.getByRole("link", { name: `Tree line ${tag}`, exact: true })).toHaveAttribute("href", `/asset-register/positions/${p.line.id}`);
+  // Found by serial, spares included; opened on its own page.
+  await page.getByLabel("Filter the tree").fill(`SP-${tag}`);
+  await expect(page.getByText("1 match, shown with what they're inside")).toBeVisible();
+  await row(page, `Tree spare ${tag}`).click();
+  await expect(panel.getByText("Placed at")).toBeVisible();
+  const full = panel.getByRole("link", { name: "Open the full page" });
+  await expect(full).toHaveAttribute("href", `/asset-register/items/${p.spare.id}`);
+  await full.click();
+  await expect(page.getByRole("heading", { name: `Tree spare ${tag}` })).toBeVisible();
+  await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
+  // Its breadcrumb goes back to the Explorer, by items, with it picked.
+  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Explorer", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/asset-register/explorer\\?arrange=items&sel=${p.spare.id}$`));
+  await expect(row(page, `Tree spare ${tag}`)).toHaveAttribute("aria-selected", "true");
+  await expectHealthy(page, problems, { label: "by items" });
+});
+
+test("a new item from the Explorer, and the old addresses land on it", async ({ page, request, problems }) => {
+  const tag = `d${Date.now()}`;
+  const p = await plant(request, tag);
+  await open(page, "/asset-register/explorer?arrange=items");
+  await page.getByRole("button", { name: "New item" }).click();
+  const dialog = page.getByRole("dialog", { name: "New item" });
+  await dialog.getByLabel("Name").fill(`Tree new spare ${tag}`);
+  await dialog.getByLabel("Serial number (optional)").fill(`NS-${tag}`);
+  await dialog.getByLabel("Where it is").selectOption({ label: `Tree site ${tag}` });
+  await dialog.getByRole("button", { name: "Create" }).click();
+  await expect(dialog).toHaveCount(0);
+  const made = row(page, `Tree new spare ${tag}`);
+  await expect(made).toHaveAttribute("aria-selected", "true");
+  const panel = page.getByRole("region", { name: "Details" });
+  await expect(panel.getByRole("link", { name: `Tree site ${tag}` })).toBeVisible();
+  await expectHealthy(page, problems, { label: "a new item" });
+
+  // The old Positions, Items and Locations pages, with what their addresses carried.
+  for (const [from, want] of [
+    [`/asset-register/positions?sel=${p.line.id}`, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`],
+    ["/asset-register/positions?arrange=flat", "/asset-register/explorer?arrange=flat"],
+    ["/asset-register/items", "/asset-register/explorer?arrange=items"],
+    [`/asset-register/locations?sel=${p.site.id}`, `/asset-register/explorer?arrange=locations&sel=${p.site.id}`],
+    ["/maintenance/items", "/asset-register/explorer?arrange=items"],
+  ]) {
+    await open(page, from);
+    await expect.poll(() => { const u = new URL(page.url()); return u.pathname + u.search; }, { message: from }).toBe(want);
+    await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
+  }
+  await expect(row(page, `Tree spare ${tag}`)).toBeVisible();
+  await expectHealthy(page, problems, { label: "old addresses" });
 });
 
 test("on a phone: the tree, then the panel, and back", async ({ page, request, problems }) => {
   const tag = `c${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
-  await open(page, `/asset-register/positions?sel=${p.top.id}`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
   const panel = page.getByRole("region", { name: "Details" });
   await expect(page.getByRole("tree", { name: "Positions" })).toBeVisible();
   await expect(panel.getByRole("heading", { name: `Tree plant ${tag}` })).toHaveCount(0);

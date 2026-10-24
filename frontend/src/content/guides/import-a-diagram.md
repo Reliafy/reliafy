@@ -3,7 +3,7 @@ title: "Import a diagram from BlockSim, Open-PSA, Galileo or Excel"
 task: "I already have this system drawn in another tool or a spreadsheet. How do I bring it into Reliafy?"
 category: "Reliability block diagrams"
 prerequisites: "A diagram file: a BlockSim project (.rsgz / .rsr / .rsrp), Open-PSA XML, a Galileo .dft, RePyability JSON, or an Excel workbook of blocks and connections."
-related_href: "/systems"
+related_href: "/systems/rbds"
 related_label: "Open the RBDs page"
 order: 11
 ---
@@ -19,7 +19,7 @@ anything you need to set before the numbers mean something.
 
 ## Import the file
 
-Open **Systems** in the menu and press **Import** at the top of the page. Pick
+Open **Systems → RBDs** in the menu and press **Import** at the top of the page. Pick
 the file. Reliafy works out the format from what's inside it, so the file
 extension only has to be roughly right.
 
@@ -122,7 +122,7 @@ See the next section.
 ## Build one from a spreadsheet
 
 A spreadsheet is often the quickest way to get a long list of blocks in. On the
-**Systems** page, open the **⋯** menu and choose **Download Excel template**. It
+**RBDs** page, open the **⋯** menu and choose **Download Excel template**. It
 has three sheets:
 
 - **README**: every column explained, and the parameters each distribution

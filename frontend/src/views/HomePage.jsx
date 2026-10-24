@@ -16,7 +16,7 @@ import {
   ATTENTION_ROWS, NEAR_EMPTY, RECENT_ROWS, attentionRows, dueRows, fleetRows, otherRecent, recentFor, recentRows,
   sparesRows, waitingFigures, workTodayRows,
 } from "../home.js";
-import { homeCards } from "../navigation.js";
+import { RBDS_LABEL, RBDS_PATH, homeCards } from "../navigation.js";
 import { useRoles } from "../RolesProvider.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { RolesCard } from "../components/RolePicker.jsx";
@@ -84,7 +84,7 @@ function RoleCard({ card, recent, attention, maintenance, studies, has }) {
       );
     case "recent-systems":
       return (
-        <HomeList id={id} title="Your recent systems" all={{ to: "/systems", label: "Systems" }}
+        <HomeList id={id} title={`Your recent ${RBDS_LABEL}`} all={{ to: RBDS_PATH, label: RBDS_LABEL }}
                   rows={first(recentFor(card, recent))}
                   empty={<>No block diagrams of your own yet. <Link to="/systems/b">Build one</Link>.</>} />
       );

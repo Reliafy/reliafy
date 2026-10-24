@@ -11,6 +11,7 @@ import { unitInText } from "../components/unitText.js";
 import { formatNumber } from "../format.js";
 import { availabilityText, compareSummary, runsPath, runtimeText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
+import { RBDS_PATH } from "../navigation.js";
 
 const when = (iso) =>
   iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -94,7 +95,7 @@ export default function RbdRunsCompare() {
   return (
     <div className="app rbd-runs">
       <PageHeader
-        crumbs={[{ label: "Systems", to: "/systems" }, { label: "Simulation runs", to: runsPath(rbdId) }]}
+        crumbs={[{ label: "Systems", to: RBDS_PATH }, { label: "Simulation runs", to: runsPath(rbdId) }]}
         title="Compare runs"
         meta={names.length ? names.join(" · ") : null}
       />

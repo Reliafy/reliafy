@@ -17,6 +17,8 @@ import {
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue, roughDateValue } from "../maintenanceFields.js";
 import { itemWhere } from "../maintenanceLocations.js";
+import { explorerPath } from "../assetTree.js";
+import { EXPLORER_LABEL } from "../navigation.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import { MeasurementsCard } from "./MaintenancePosition.jsx";
 import { ItemKindCard, useKinds } from "../components/MaintenanceItemClasses.jsx";
@@ -55,7 +57,7 @@ export default function MaintenanceItem() {
   return (
     <div className="app">
       <PageHeader
-        crumbs={[{ label: "Assets", to: "/asset-register" }, { label: "Items", to: "/asset-register/items" }]}
+        crumbs={[{ label: "Assets", to: "/asset-register" }, { label: EXPLORER_LABEL, to: explorerPath("items", { sel: item.id }) }]}
         title={item.name}
         meta={[item.manufacturer, item.model, item.serial && `serial ${item.serial}`].filter(Boolean).join(" · ") || "Item"}
         id={item.id}

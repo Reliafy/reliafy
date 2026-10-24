@@ -6,6 +6,7 @@ import Chip from "../components/ui/Chip.jsx";
 import { relativeTime } from "../instrument.js";
 import { availabilityText, byText, keptLine, runtimeText, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
+import { RBDS_PATH } from "../navigation.js";
 
 const MAX_COMPARE = 6;
 
@@ -51,7 +52,7 @@ export default function RbdRuns() {
   return (
     <div className="app rbd-runs">
       <PageHeader
-        crumbs={[{ label: "Systems", to: "/systems" }, ...(rbdId ? [{ label: diagram?.name || "Diagram", to: `/systems/b/${rbdId}` }] : [])]}
+        crumbs={[{ label: "Systems", to: RBDS_PATH }, ...(rbdId ? [{ label: diagram?.name || "Diagram", to: `/systems/b/${rbdId}` }] : [])]}
         title="Simulation runs"
         meta="Availability simulations from the app and your connectors."
         primary={

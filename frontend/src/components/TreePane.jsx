@@ -67,12 +67,15 @@ function Markers({ r }) {
   );
 }
 
+// Bold: the pane's own headings, the places, and an item with positions on it.
+const heading = (r) => r.type === "group" || r.type === "loc" || (r.type === "item" && r.kids.length > 0);
+
 function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick }) {
   const has = r.kids.length > 0;
   const indent = Math.min(v.depth, phone ? 8 : 30) * 14;
   return (
     <div
-      className={"tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (r.type !== "pos" ? " grp" : "")}
+      className={"tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (heading(r) ? " grp" : "")}
       role={pinned ? undefined : "treeitem"}
       aria-hidden={pinned ? "true" : undefined}
       id={pinned ? undefined : `tp-${r.key}`}
@@ -99,7 +102,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
 }
 
 export default function TreePane({
-  title, display, list, index, open, filter, query, onQuery, chips, onChips, mode, onMode, focus, onPick,
+  title, treeLabel, display, list, index, open, filter, query, onQuery, chips, onChips, mode, onMode, focus, onPick,
   onToggle, onLevel, onCloseAll, phone, width, onWidth, collapsed, onCollapse, onNew, newLabel, menu,
   notice, statusText, empty, scrollTo, onEnter,
 }) {
@@ -224,7 +227,7 @@ export default function TreePane({
     return (
       <aside className="tp tp-rail" aria-label={title}>
         <button type="button" className="tp-icon-btn" onClick={() => onCollapse(false)}
-                aria-label={`Show the ${title.toLowerCase()} tree`} aria-expanded="false" title="Show the tree (Ctrl+\)">»</button>
+                aria-label="Show the tree" aria-expanded="false" title="Show the tree (Ctrl+\)">»</button>
       </aside>
     );
   }
@@ -256,10 +259,11 @@ export default function TreePane({
         <label className="tp-filter">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
           <input type="search" value={query} onChange={(e) => onQuery(e.target.value)}
-                 placeholder="Filter: name, tag, item, serial" aria-label="Filter the tree" />
+                 placeholder={mode === "items" ? "Filter: name, serial, make, model" : "Filter: name, tag, item, serial"}
+                 aria-label="Filter the tree" />
         </label>
         <SegmentedControl size="sm" className="tp-arrange" label="Arrange by" options={ARRANGEMENTS} value={mode} onChange={onMode} />
-        {mode !== "flat" && (
+        {mode !== "flat" && mode !== "items" && (
           <div className="tp-levels" role="group" aria-label="Open the tree to a level">
             <span className="tp-levels-label" aria-hidden="true">Levels</span>
             <div className="seg seg-sm">
@@ -275,7 +279,7 @@ export default function TreePane({
           </div>
         )}
         <div className="tp-chips" role="group" aria-label="Show only">
-          {CHIPS.map((c) => {
+          {CHIPS.filter((c) => !c.positionsOnly || mode !== "items").map((c) => {
             const on = chips.includes(c.id);
             return (
               <button key={c.id} type="button" className={"tp-chip" + (on ? " on" : "")} aria-pressed={on} title={c.title}
@@ -289,7 +293,7 @@ export default function TreePane({
         <p className="tp-status" role="status">{statusText}</p>
       </div>
       <div className="tp-scroll" ref={scroller} onScroll={onScroll} onKeyDown={onKey}
-           role="tree" aria-label={title} aria-multiselectable="false">
+           role="tree" aria-label={treeLabel || title} aria-multiselectable="false">
         {pins.length > 0 && (
           <div className="tp-pins">
             <div className="tp-pins-in">

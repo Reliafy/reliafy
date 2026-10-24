@@ -3,7 +3,7 @@ title: "Verify a safety function (SIL / PFDavg)"
 task: "How do I check that a safety instrumented function reaches its SIL?"
 category: "Reliability block diagrams"
 prerequisites: "The function's elements, their dangerous undetected failure rates (λDU) and proof-test intervals."
-related_href: "/systems"
+related_href: "/systems/rbds"
 related_label: "Open the RBDs page"
 order: 33
 ---
@@ -20,7 +20,7 @@ between redundant channels and their common cause.
 
 ## Start from the starter
 
-On the Models, Systems or Strategy page, choose **Verify a safety function
+On the Models, RBDs or Strategy page, choose **Verify a safety function
 (SIL / PFDavg) → Open the starter**. It opens a diagram, unsaved, of the usual
 shape:
 

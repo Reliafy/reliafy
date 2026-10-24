@@ -3,7 +3,7 @@ title: "Measure production, not just uptime"
 task: "One inverter of four is down: the plant is 'up', but how much output am I losing?"
 category: "Reliability block diagrams"
 prerequisites: "A diagram (repairable for a period's lost output), and what each block can deliver while it works."
-related_href: "/systems"
+related_href: "/systems/rbds"
 related_label: "Open your RBDs"
 order: 36
 ---

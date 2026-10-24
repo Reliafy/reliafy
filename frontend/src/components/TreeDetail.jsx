@@ -7,8 +7,10 @@ import { ancestorsOf, byName, insideWords, statusWords } from "../assetTree.js";
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
 // position: where it sits, what's fitted, its status in words, its work
-// (overdue first), its class and location, and what's directly inside it.
-// "Open the full page" goes to the position's own page, where it's edited.
+// (overdue first), its class and location, and what's directly inside it. An
+// item: its serial, class, make and model, and where it is (the position it's
+// fitted to, or the place it's kept). "Open the full page" goes to the row's
+// own page, where it's edited (an item's history and fitments are there).
 
 const OPEN = new Set(["open", "planned", "in_progress", "waiting"]);
 const KIND = { pos: "Position", loc: "Location", item: "Item", group: "" };
@@ -68,10 +70,19 @@ function Facts({ r, display }) {
     ) : <span className="lib-date">Not at a location yet</span>]);
   }
   if (r.type === "item") {
-    const at = p.location_id && display.rows.get(p.location_id);
+    const atRow = p.location_id && display.rows.get(p.location_id);
+    const at = p.place || (atRow && { id: atRow.key, name: atRow.ref.name });
     rows.push(["Serial", p.serial || <span className="lib-date">None</span>]);
-    rows.push(["Where", at ? <>Placed at <Link to={`/asset-register/locations/${at.key}`}>{at.ref.name}</Link></>
-      : <span className="lib-date">Not fitted and not placed anywhere</span>]);
+    if (p.item_class) rows.push(["Class", p.item_class.name]);
+    const make = [p.manufacturer, p.model].filter(Boolean).join(" ");
+    if (make) rows.push(["Make and model", make]);
+    if (p.fitted_to) {
+      rows.push(["Fitted to", <Link to={`/asset-register/positions/${p.fitted_to.id}`}>{p.fitted_to.name}</Link>]);
+      if (at) rows.push(["Location", <><Link to={`/asset-register/locations/${at.id}`}>{at.name}</Link><span className="lib-date"> (where its position is)</span></>]);
+    } else {
+      rows.push(["Where", at ? <>Placed at <Link to={`/asset-register/locations/${at.id}`}>{at.name}</Link></>
+        : <span className="lib-date">Not fitted and not placed anywhere</span>]);
+    }
   }
   if (r.type === "group" && p.note) rows.push(["What", p.note]);
   const inside = insideWords(r);
@@ -149,30 +160,42 @@ const COLUMNS = [
   { id: "inside", label: "Positions inside", num: true, get: (r) => r.sum.positions },
 ];
 
+// For a list of items (the Items arrangement's groups): what the old Items
+// list showed, and their own status.
+const where = (r) => r.ref.fitted_to?.name || (r.ref.place ? `at ${r.ref.place.name}` : "");
+const ITEM_COLUMNS = [
+  { id: "name", label: "Name", get: (r) => r.ref.name || "" },
+  { id: "serial", label: "Serial", get: (r) => r.ref.serial || "" },
+  { id: "where", label: "Fitted to or kept at", get: where },
+  ...COLUMNS.slice(2, 6).map((c) => ({ ...c, label: c.label.replace(" Σ", "") })),
+];
+
 function Inside({ r, display, today, onSelect }) {
   const [sort, setSort] = useState({ id: null, desc: false });
+  const ofItems = r.kids.every((k) => display.rows.get(k).type === "item");
+  const columns = ofItems ? ITEM_COLUMNS : COLUMNS;
   const kids = useMemo(() => {
     const rows = r.kids.map((k) => display.rows.get(k));
-    const col = COLUMNS.find((c) => c.id === sort.id);
+    const col = columns.find((c) => c.id === sort.id);
     if (!col) return rows;
     const cmp = col.num ? (a, b) => col.get(a) - col.get(b)
       : col.id === "name" ? byName : (a, b) => String(col.get(a) || "￿").localeCompare(String(col.get(b) || "￿"));
     const out = [...rows].sort(cmp);
     return sort.desc ? out.reverse() : out;
-  }, [r, display, sort]);
+  }, [r, display, sort, columns]);
   if (!r.kids.length) return null;
-  const toggle = (id) => setSort((s) => (s.id === id ? { id, desc: !s.desc } : { id, desc: COLUMNS.find((c) => c.id === id).num }));
+  const toggle = (id) => setSort((s) => (s.id === id ? { id, desc: !s.desc } : { id, desc: columns.find((c) => c.id === id).num }));
   return (
     <section className="card td-card">
       <div className="td-inside-head">
         <h3>Directly inside <span className="td-n">{r.kids.length.toLocaleString("en-AU")}</span></h3>
-        <span className="lib-date">Totals (Σ) count everything inside each row. Pick a row to go to it.</span>
+        <span className="lib-date">{ofItems ? "Pick a row to go to it." : "Totals (Σ) count everything inside each row. Pick a row to go to it."}</span>
       </div>
       <div className="maint-scroll">
         <table className="lib-table td-table">
           <thead>
             <tr>
-              {COLUMNS.map((c) => (
+              {columns.map((c) => (
                 <th key={c.id} className={c.num ? "num" : undefined}
                     aria-sort={sort.id === c.id ? (sort.desc ? "descending" : "ascending") : undefined}>
                   <button type="button" className="td-sort" onClick={() => toggle(c.id)}>{c.label}</button>
@@ -184,12 +207,19 @@ function Inside({ r, display, today, onSelect }) {
             {kids.slice(0, 500).map((k) => (
               <tr key={k.key} className="lib-row" onClick={() => onSelect(k.key)}>
                 <td><button type="button" className="link td-go" onClick={(e) => { e.stopPropagation(); onSelect(k.key); }}>{k.ref.name}</button></td>
-                <td>{k.ref.item?.name || <span className="lib-date">{k.type === "pos" && k.ref.position_class ? "empty" : ""}</span>}</td>
+                {ofItems ? (
+                  <>
+                    <td className="lib-date">{k.ref.serial || ""}</td>
+                    <td>{where(k) || <span className="lib-date">no home yet</span>}</td>
+                  </>
+                ) : (
+                  <td>{k.ref.item?.name || <span className="lib-date">{k.type === "pos" && k.ref.position_class ? "empty" : ""}</span>}</td>
+                )}
                 <td className="num">{k.sum.overdue ? <span className="maint-overdue">{k.sum.overdue}</span> : ""}</td>
                 <td className="num">{k.sum.open_work || ""}</td>
                 <td className="num">{k.sum.alarms ? <span className="maint-overdue">{k.sum.alarms}</span> : ""}</td>
                 <td className={k.sum.next_due && k.sum.next_due < today ? "maint-overdue" : "lib-date"}>{k.sum.next_due ? fmtDate(k.sum.next_due) : ""}</td>
-                <td className="num">{k.sum.positions || ""}</td>
+                {!ofItems && <td className="num">{k.sum.positions || ""}</td>}
               </tr>
             ))}
           </tbody>

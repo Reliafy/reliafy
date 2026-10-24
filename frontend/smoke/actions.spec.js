@@ -34,7 +34,7 @@ test("a class's spares stock levels and the what-if", async ({ page, problems })
 });
 
 // Assets opens on the top-level places, each with what's inside it; the positions
-// at no place are the last row, opening Positions filtered to them (smoke/seed.js
+// at no place are the last row, opening the Explorer filtered to them (smoke/seed.js
 // puts one position in the depot and leaves the pumps at no place).
 test("the assets are the top-level places, and the positions at none stay reachable", async ({ page, problems }) => {
   await open(page, "/asset-register");
@@ -46,12 +46,13 @@ test("the assets are the top-level places, and the positions at none stay reacha
   await expectHealthy(page, problems, { label: "assets" });
 
   await rest.getByRole("link", { name: "Not at a place yet" }).click();
-  await expect(page).toHaveURL(/\/asset-register\/positions\?place=none$/);
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions&place=none$/);
   await expect(page.locator(".tp-notice")).toContainText("Not at a location yet");
   await expect(page.getByRole("treeitem", { name: /^Smoke pump 1\b/ })).toBeVisible();
   await expect(page.getByRole("treeitem", { name: /^Delivery truck/ })).toHaveCount(0); // at the depot
   await page.getByRole("link", { name: "Show every position" }).click();
-  await expect(page.getByRole("heading", { name: "Positions", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions$/);
+  await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
   await expect(page.locator(".tp-notice")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "positions" });
 
@@ -203,7 +204,7 @@ test("move a photo from a work order to its position", async ({ page, problems }
 // action, says what happens (a sample comes back from Settings), starts on
 // Cancel, and Escape or Cancel leaves everything as it was.
 test("removing a sample asks in the app's confirm dialog", async ({ page, problems }) => {
-  await open(page, "/systems");
+  await open(page, "/systems/rbds");
   const remove = page.getByRole("button", { name: "Remove from my view" }).first();
   const row = page.getByRole("row").filter({ has: remove }).first();
   await remove.click();
@@ -232,7 +233,7 @@ test("rename a diagram, and the delete dialog, in the app's own dialogs", async 
   });
   expect(saved.ok(), await saved.text()).toBeTruthy();
 
-  await open(page, "/systems");
+  await open(page, "/systems/rbds");
   const row = page.getByRole("row").filter({ hasText: "Smoke dialog diagram" });
   await row.getByRole("button", { name: "Rename" }).click();
   const ask = page.getByRole("dialog", { name: "Rename this diagram" });

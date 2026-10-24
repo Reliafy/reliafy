@@ -1,4 +1,4 @@
-/* Operate › Assets › Positions and Locations: the tree pane beside the site
+/* Operate › Assets › Explorer: the tree pane beside the site
    menu, and the detail panel filling the rest (AssetExplorer, TreePane,
    TreeDetail). */
 
@@ -118,7 +118,12 @@
 }
 
 .tp-arrange .seg-btn {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tp-levels {

@@ -10,13 +10,30 @@
 //   placeholder for a page that doesn't exist yet, except where a deployment
 //   turns the menu preview on (`needs: "preview"`, see plannedPages.js).
 // - An entry opens on its own landing page; its children are sub-types or
-//   filtered views of it, never a second copy of the landing page.
+//   filtered views of it, never a second copy of the landing page. The one
+//   exception is an entry that opens on its first child and lists it
+//   (`opensOnFirstChild`): Systems opens on RBDs, its main kind, so the word
+//   people look for is in the menu.
 //
 // Everything about roles is in ROLES below, so the menu can change from a
 // lens to a per-role structure by changing this file only.
 //
 // Pure data and functions (no React): the Sidebar draws it, section headers
 // take their labels from it, Home reads the roles, and the tests check it.
+
+// Design › Systems' block diagrams: the menu's word, the list page's title
+// (so the two agree) and its address. Change them here, in this one place.
+export const RBDS_LABEL = "RBDs";
+export const RBDS_TITLE = "Reliability block diagrams (RBDs)";
+export const RBDS_PATH = "/systems/rbds";
+
+// Assets' tree pane over the register: its name in the menu and on the page
+// (change it here, in this one place), its address, and the addresses of the
+// pages under it (a position's, a location's, an item's own page), which
+// light it in the menu.
+export const EXPLORER_LABEL = "Explorer";
+export const EXPLORER_PATH = "/asset-register/explorer";
+const EXPLORER_ALSO = ["positions", "locations", "items"].map((kind) => `/asset-register/${kind}`);
 
 export const SECTIONS = [
   { id: "design", label: "Design" },
@@ -42,8 +59,11 @@ export const ENTRIES = [
   { id: "home", label: "Home", to: "/home" },
 
   {
-    id: "systems", section: "design", label: "Systems", to: "/systems",
+    // Systems opens on its first child, the RBDs (a diagram's page, under
+    // /systems/b, is under it), and is the current entry on every /systems page.
+    id: "systems", section: "design", label: "Systems", to: RBDS_PATH, match: ["/systems"], opensOnFirstChild: true,
     children: [
+      { to: RBDS_PATH, label: RBDS_LABEL, also: ["/systems/b"] },
       { to: "/systems/runs", label: "Simulation runs" },
       { to: "/systems/structure", label: "Product structure", needs: "maintenance" },
       { to: "/systems/fault-trees", label: "Fault trees", needs: "preview" },
@@ -53,13 +73,13 @@ export const ENTRIES = [
   { id: "requirements", section: "design", label: "Requirements", to: "/requirements", needs: "preview" },
 
   // Assets opens on the assets themselves: the top-level places (a house, a
-  // site). Positions is every position, Locations the whole tree of places.
+  // site). The Explorer is one tree pane over the whole register, arranged by
+  // positions, locations or items (or flat); a position's, location's or
+  // item's own page is under it.
   {
     id: "assets", section: "operate", label: "Assets", to: "/asset-register", needs: "maintenance",
     children: [
-      { to: "/asset-register/positions", label: "Positions" },
-      { to: "/asset-register/items", label: "Items" },
-      { to: "/asset-register/locations", label: "Locations" },
+      { to: EXPLORER_PATH, label: EXPLORER_LABEL, also: EXPLORER_ALSO },
       { to: "/asset-register/parts", label: "Parts and stock" },
       { to: "/asset-register/classes", label: "Classes" },
       { to: "/asset-register/fleets", label: "Fleets", needs: "preview" },
@@ -246,8 +266,10 @@ export function activeEntry(entries, pathname) {
 export function crumbsFor(entries, entryId, pathname, childTo = null) {
   const entry = entries.find((e) => e.id === entryId);
   if (!entry || pathname === entry.to) return [];
-  const crumbs = [{ label: entry.label, to: entry.to }];
   const child = childTo && (entry.children || []).find((c) => c.to === childTo);
+  // An entry that opens on this child: the child's crumb alone (RBDs, not Systems › RBDs).
+  if (child && child.to === entry.to) return [{ label: child.label, to: child.to }];
+  const crumbs = [{ label: entry.label, to: entry.to }];
   if (child && pathname !== child.to) crumbs.push({ label: child.label, to: child.to });
   return crumbs;
 }

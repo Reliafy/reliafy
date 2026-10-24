@@ -11,6 +11,7 @@ import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
 import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { RBDS_TITLE } from "../navigation.js";
 
 const HELP = { walkthrough: "rbd", guide: "build-an-rbd" };
 
@@ -36,7 +37,7 @@ const ImportIcon = () => (
   </svg>
 );
 
-// Design › Systems: the saved block diagrams; open one or create a new one.
+// Design › Systems › RBDs: the saved block diagrams; open one or create a new one.
 export default function RbdHome() {
   const navigate = useNavigate();
   const [rbds, setRbds] = useState(null);
@@ -124,8 +125,8 @@ export default function RbdHome() {
         onChange={onImportFile}
       />
       <SectionHeader
-        title="Systems"
-        purpose="Your systems as reliability block diagrams: reliability, availability and what matters most."
+        title={RBDS_TITLE}
+        purpose="Your systems as block diagrams: reliability, availability and what matters most."
         help={HELP}
         actions={
           <button

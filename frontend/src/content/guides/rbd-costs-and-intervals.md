@@ -3,7 +3,7 @@ title: "Cost a repairable system and choose its maintenance intervals"
 task: "What does this system cost to own, how often should we service it, and which change saves the most?"
 category: "Reliability block diagrams"
 prerequisites: "A repairable diagram with life and repair models on its blocks, and rough costs: repairs, parts, a planned service, an hour of lost production."
-related_href: "/systems"
+related_href: "/systems/rbds"
 related_label: "Open your RBDs"
 order: 37
 ---

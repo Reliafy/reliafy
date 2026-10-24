@@ -64,7 +64,7 @@ for (const { format, file, blocks } of IMPORTS) {
       expect(res.ok()).toBeTruthy();
       upload = { name: "reliafy-rbd-template.xlsx", mimeType: "application/octet-stream", buffer: await res.body() };
     }
-    await open(page, "/systems");
+    await open(page, "/systems/rbds");
     await page.locator('input[type="file"]').setInputFiles(upload);
     await page.waitForURL(/\/systems\/b$/, { timeout: 30_000 });
     await expect(page.locator(".react-flow__node").nth(blocks - 1)).toBeVisible();

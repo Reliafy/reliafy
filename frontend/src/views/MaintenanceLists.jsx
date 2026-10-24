@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  createMaintenanceItem,
   createMaintenanceLocation,
   fitClassModel,
   getClassEconomics,
@@ -14,24 +15,23 @@ import {
   adjustMaintenanceStock,
   createMaintenancePart,
   getSparesCover,
-  listMaintenanceItems,
   listMaintenanceParts,
   setMaintenanceReorder,
   listMaintenanceLocations,
   listMaintenanceWorkOrders,
+  placeMaintenanceItem,
   updateMaintenanceLocation,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import {
   DocumentsCard, Field, FormModal, LifeTable, Proposals, fmtDate,
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
-import { countsText, inheritedText, itemWhere } from "../maintenanceLocations.js";
+import { countsText, inheritedText } from "../maintenanceLocations.js";
 import { openWorkPath } from "../maintenanceAssets.js";
 import { subjectBadge } from "../maintenanceSubjects.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
@@ -57,55 +57,36 @@ const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
 // ---- items -------------------------------------------------------------------------------
 
-export function MaintenanceItems() {
-  const navigate = useNavigate();
-  const [items, setItems] = useState(null);
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState({ itemClassId: null, manufacturerId: null });
-  const [kinds] = useKinds();
-  const [error, setError] = useState(null);
-  useEffect(() => {
-    listMaintenanceItems(filter).then((d) => setItems(d.items)).catch((e) => setError(e.message));
-  }, [filter]);
-  const filtered = !!(filter.itemClassId || filter.manufacturerId);
-  // The class column only once items have classes.
-  const showClass = (items || []).some((i) => i.item_class);
-  const visible = (items || []).filter((i) => matches(query, i.name, i.serial, i.manufacturer, i.model, i.part_number,
-    i.item_class?.name, i.manufacturer_entry?.name));
+// A new item: a spare on the shelf, a unit back from repair, anything not
+// fitted yet. Fitting one to a position (from the position's page) makes it
+// there and then; this is for the rest. `locations`: where it can be put.
+export function NewItemModal({ locations, locationId = null, onClose, onDone }) {
+  const [name, setName] = useState("");
+  const [serial, setSerial] = useState("");
+  const [where, setWhere] = useState(locationId || "");
   return (
-    <div className="app">
-      <SectionHeader section="assets" title="Items" purpose="Every physical thing: where it's fitted, where it is." />
-      {error && <div className="card error">{error}</div>}
-      {items === null ? <div className="card empty">Loading…</div> : items.length === 0 && !filtered ? (
-        <div className="card empty"><p>No items yet. Fit one to a position.</p></div>
-      ) : (
-        <>
-          <div className="tablebar section-tablebar">
-            <span className="count">{visible.length} of {items.length} items</span>
-            <span className="grow" />
-            <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search items…" />
-          </div>
-          <div className="lib maint-scroll">
-            <table className="lib-table">
-              <thead><tr><th>Item</th>{showClass && <th>Class</th>}<th>Make and model</th><th>Serial</th><th>Fitted to</th><th>Location</th></tr></thead>
-              <tbody>
-                {visible.map((i) => (
-                  <tr key={i.id} className="lib-row" onClick={() => navigate(`/asset-register/items/${i.id}`)}>
-                    <td>{i.name}</td>
-                    {showClass && <td className="lib-date">{i.item_class?.name || "—"}</td>}
-                    <td className="lib-date">{[i.manufacturer_entry?.name || i.manufacturer, i.model].filter(Boolean).join(" ") || "—"}</td>
-                    <td className="lib-date">{i.serial || "—"}</td>
-                    <td>{i.fitted_to?.name || <span className="lib-date">not fitted</span>}</td>
-                    <td className="lib-date">{itemWhere(i).label || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </div>
+    <FormModal title="New item" submitLabel="Create"
+               canSubmit={!!name.trim() && !tooLong(name) && !tooLong(serial)} onClose={onClose}
+               onSubmit={async () => {
+                 const item = await createMaintenanceItem({ name, serial });
+                 if (where) await placeMaintenanceItem(item.id, where);
+                 onDone(item);
+               }}>
+      <p className="lib-date">An item is one physical thing, with its own history. To fit a new one, open the
+        position it goes in and fit it there instead.</p>
+      <Field label="Name" text={name}>
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Spare seal kit, Motor M-118" />
+      </Field>
+      <Field label="Serial number (optional)" text={serial}>
+        <input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="e.g. SK-0042" />
+      </Field>
+      <Field label="Where it is">
+        <select value={where} onChange={(e) => setWhere(e.target.value)}>
+          <option value="">Nowhere yet (no home)</option>
+          {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
+        </select>
+      </Field>
+    </FormModal>
   );
 }
 

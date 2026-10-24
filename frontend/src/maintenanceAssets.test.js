@@ -7,7 +7,7 @@ import {
 test("a place's page, its open work and the positions at no place", () => {
   assert.equal(placePath("l1"), "/asset-register/locations/l1");
   assert.equal(openWorkPath("l 1"), "/maintenance?location=l%201");
-  assert.equal(NOT_PLACED_PATH, "/asset-register/positions?place=none");
+  assert.equal(NOT_PLACED_PATH, "/asset-register/explorer?arrange=positions&place=none");
 });
 
 test("what's inside and what's due, in words", () => {

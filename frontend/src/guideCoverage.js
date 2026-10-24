@@ -23,7 +23,7 @@ export const GUIDE_COVERAGE = [
   // Data.
   { feature: "Data (datasets)", href: "/data" },
   // System modelling.
-  { feature: "Reliability block diagrams", href: "/systems" },
+  { feature: "Reliability block diagrams", href: "/systems/rbds" },
   { feature: "RBD builder (targets, design, phases, production, outages)", href: "/systems/b" },
   { feature: "Simulation run history", href: "/systems/runs" },
   // Strategy.

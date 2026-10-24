@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ancestorsOf, buildDisplay, clampWidth, computeFilter, filterOpen, findByPrefix, flatten, insideWords,
-  levelSet, loadTreeState, markersOf, pinnedRows, saveTreeState, statusWords, windowOf,
+  ARRANGEMENTS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
+  filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, pinnedRows, saveTreeState,
+  statusWords, windowOf,
 } from "./assetTree.js";
 
 // A house and a truck whose engine carries a turbo slot, plus an engine on the
@@ -11,7 +12,8 @@ const DATA = {
   positions: [
     { id: "house", name: "House", parent_id: null, location_id: "site" },
     { id: "zone10", name: "Zone 10", parent_id: "house", position_class: "Solenoid" },
-    { id: "zone2", name: "Zone 2", parent_id: "house", item: { id: "i2", name: "Valve" }, status: { overdue: 2 } },
+    { id: "zone2", name: "Zone 2", parent_id: "house", item: { id: "i2", name: "Valve", serial: "V-77", status: { overdue: 1 } },
+      status: { overdue: 2 }, location: { id: "site", name: "Site", inherited: true } },
     { id: "pool", name: "pool pump", parent_id: "house", location_id: "shed", status: { open_work: 1, alarms: 1 } },
     { id: "seal", name: "Shaft seal", parent_id: "pool", status: { overdue: 1, next_due: "2026-01-01" } },
     { id: "truck", name: "Truck 14", parent_id: null, item: { id: "eng", name: "Engine" } },
@@ -64,11 +66,74 @@ test("arranged by locations: placed positions, spares, then the places inside; n
   assert.deepEqual(names(d, d.rows.get("house").kids), ["Zone 2", "Zone 10"]);
   assert.deepEqual(names(d, d.rows.get("shed").kids), ["pool pump"]);
   assert.deepEqual(names(d, d.rows.get("store").kids), ["Spare seal"]);
-  // The truck is at no place; the bench engine carries a position; the old pump carries nothing.
-  assert.deepEqual(names(d, d.rows.get("G:nohome").kids), ["Truck 14", "Engine B"]);
-  assert.equal(d.rows.has("junk"), false);
+  // The truck is at no place; the bench engine (carrying a position) and the
+  // old pump are neither fitted nor placed.
+  assert.deepEqual(names(d, d.rows.get("G:nohome").kids), ["Truck 14", "Engine B", "Old pump"]);
+  assert.equal(d.rows.get("junk").type, "item");
   assert.equal([...d.rows.values()].filter((r) => r.type === "pos").length, DATA.positions.length);
   assert.equal(d.rows.get("site").sum.positions, 5);
+});
+
+test("by items: every item once, A to Z, fitted, then kept at a place, then no home", () => {
+  const d = buildDisplay(DATA, "items");
+  assert.deepEqual(names(d, d.roots), ["Fitted", "At a location, not fitted", "No home yet"]);
+  assert.deepEqual(names(d, d.rows.get("G:fitted").kids), ["Engine", "Valve"]);
+  assert.deepEqual(names(d, d.rows.get("G:placed").kids), ["Spare seal"]);
+  assert.deepEqual(names(d, d.rows.get("G:unhomed").kids), ["Engine B", "Old pump"]);
+  assert.equal(d.items, 5);
+  assert.equal([...d.rows.values()].filter((r) => r.type === "pos").length, 0); // no "Elsewhere" group
+  // What the panel says: the position it's fitted to, where that is; the place a spare is kept.
+  const valve = d.rows.get("i2");
+  assert.deepEqual(valve.ref.fitted_to, { id: "zone2", name: "Zone 2" });
+  assert.deepEqual(valve.ref.place, { id: "site", name: "Site" });
+  assert.deepEqual(d.rows.get("sp").ref.place, { id: "store", name: "Store A" });
+  // The item's own status, not its position's.
+  assert.equal(valve.own.overdue, 1);
+  assert.equal(d.rows.get("G:fitted").sum.overdue, 1);
+  // Found by serial; with the items list, by class, make and model too.
+  assert.deepEqual([...computeFilter(d, { query: "v-77" }).match], ["i2"]);
+  assert.deepEqual([...computeFilter(d, { query: "s-1" }).match], ["sp"]);
+  const list = [
+    { id: "i2", name: "Valve", item_class: { id: "c", name: "Solenoid valve" }, manufacturer_entry: { name: "Hunter" }, model: "PGV-101" },
+    { id: "new", name: "Brand new spare", serial: "N-1", fitted_to: null, location: null },
+  ];
+  const e = buildDisplay(DATA, "items", list);
+  assert.deepEqual([...computeFilter(e, { query: "hunter pgv" }).match], ["i2"]);
+  assert.deepEqual([...computeFilter(e, { query: "solenoid valve" }).match], ["i2"]);
+  // An item the tree hasn't caught up with yet still shows.
+  assert.deepEqual(names(e, e.rows.get("G:unhomed").kids), ["Brand new spare", "Engine B", "Old pump"]);
+  // Nothing at all: no groups.
+  assert.equal(buildDisplay({ positions: [], locations: [] }, "items").roots.length, 0);
+});
+
+test("the arrangement from the address, else the last one used; the Explorer's addresses", () => {
+  assert.deepEqual(ARRANGEMENTS.map((a) => a.label), ["Positions", "Locations", "Items", "Flat"]);
+  assert.equal(arrangementOf("items", "locations"), "items");
+  assert.equal(arrangementOf(null, "locations"), "locations");
+  assert.equal(arrangementOf("nonsense", null), "positions");
+  assert.equal(explorerPath(), "/asset-register/explorer?arrange=positions");
+  assert.equal(explorerPath("items", { sel: "i 1", place: "" }), "/asset-register/explorer?arrange=items&sel=i+1");
+});
+
+test("switching arrangements keeps the same thing picked where it can", () => {
+  const pos = buildDisplay(DATA, "positions");
+  const items = buildDisplay(DATA, "items");
+  const loc = buildDisplay(DATA, "locations");
+  // A position: itself, or in Items the item fitted there.
+  assert.equal(carryOver(pos.rows.get("zone2"), "items"), "i2");
+  assert.equal(carryOver(pos.rows.get("zone10"), "items"), null);
+  assert.equal(carryOver(pos.rows.get("zone2"), "locations"), "zone2");
+  // An item: itself, or in Positions and Flat the position it's fitted to.
+  assert.equal(carryOver(items.rows.get("i2"), "positions"), "zone2");
+  assert.equal(carryOver(items.rows.get("i2"), "flat"), "zone2");
+  assert.equal(carryOver(items.rows.get("sp"), "locations"), "sp");
+  assert.equal(carryOver(items.rows.get("bench"), "positions"), "bench"); // its row among the items fitted nowhere
+  assert.equal(carryOver(items.rows.get("sp"), "flat"), null);
+  // A location only in Locations; a heading never.
+  assert.equal(carryOver(loc.rows.get("site"), "locations"), "site");
+  assert.equal(carryOver(loc.rows.get("site"), "items"), null);
+  assert.equal(carryOver(items.rows.get("G:fitted"), "positions"), null);
+  assert.equal(carryOver(null, "items"), null);
 });
 
 test("flat: every position, A to Z, nothing inside anything", () => {
@@ -145,8 +210,10 @@ test("8,000 positions build, open and draw quickly", () => {
 test("remembered per workspace, and still works when storage throws", () => {
   const box = new Map();
   const storage = { getItem: (k) => box.get(k) ?? null, setItem: (k, v) => box.set(k, v) };
-  saveTreeState("ws1", { open: { positions: new Set(["a", "b"]) }, selected: { positions: "b" }, width: 400, collapsed: true }, storage);
+  saveTreeState("ws1", { mode: "items", open: { positions: new Set(["a", "b"]) }, selected: { positions: "b" }, width: 400, collapsed: true }, storage);
   const back = loadTreeState("ws1", storage);
+  assert.equal(back.mode, "items");
+  assert.equal(loadTreeState("ws2", storage).mode, null);
   assert.deepEqual([...back.open.positions], ["a", "b"]);
   assert.deepEqual(back.selected, { positions: "b" });
   assert.equal(back.width, 400);
