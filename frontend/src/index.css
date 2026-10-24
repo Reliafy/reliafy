@@ -209,7 +209,9 @@ h6 {
   top: 58px;
   flex-shrink: 0;
   width: 206px;
-  height: calc(100vh - 58px);
+  /* The top bar is 58px and its 1px border: a 58px gap left the page 1px
+     taller than the window. */
+  height: calc(100vh - 59px);
   background: var(--surf);
   border-right: 1px solid var(--line);
   padding: 20px 14px;

@@ -720,11 +720,14 @@ def compare_model(
     model_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
 ) -> JSONResponse:
     """Best fit's ranking of every plain distribution on a saved non-repairable model's
-    own data (#293), best first. Saves nothing."""
+    own data (#293), best first: a fitted distribution or a Royston-Parmar spline.
+    Saves nothing."""
     model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
     if model is None:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
-    if model.kind != "distribution":
+    # A Royston-Parmar spline (kind "flexible") is compared on its own data
+    # too: its AIC sits beside the plain distributions' (the Diagnostics tab).
+    if model.kind not in ("distribution", "flexible"):
         return JSONResponse(status_code=422, content={
             "detail": "Only a fitted life distribution can be compared with the others."})
     try:

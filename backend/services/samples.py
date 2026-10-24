@@ -991,9 +991,13 @@ def seed_samples(db) -> None:
                 if is_regression:
                     continue
                 # Upgrade older seeds whose cached results predate newer payload
-                # fields (parameter CIs / the randomness verdict).
-                old_params = (existing.get("results") or {}).get("params") or []
-                if old_params and "ci" in old_params[0]:
+                # fields (parameter CIs / the randomness verdict / the failures
+                # on the time scale that the model page's checks draw).
+                old_results = existing.get("results") or {}
+                old_params = old_results.get("params") or []
+                old_plot = old_results.get("plot")
+                has_points = not old_plot or "empirical" in old_plot
+                if old_params and "ci" in old_params[0] and has_points:
                     continue
             ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
             if ds_doc is None:
@@ -1009,7 +1013,7 @@ def seed_samples(db) -> None:
                 db.models.update_one(
                     {"_id": spec["id"]}, {"$set": {"results": result}}
                 )
-                logger.info("Upgraded sample model %r (param CIs).", spec["id"])
+                logger.info("Upgraded sample model %r (newer result fields).", spec["id"])
                 continue
             model = Model(
                 id=spec["id"],

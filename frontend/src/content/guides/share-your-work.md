@@ -14,8 +14,8 @@ situations.
 
 ## A public link — for people who don't have Reliafy
 
-Open any saved model, diagram, or analysis, open the **⋯** menu at the top right
-of the page and choose **Share**. Under **Public links**, give the link a label if
+Open any saved model, diagram, or analysis and choose **Share**: on a model's
+page it's a button at the top right; elsewhere it's in the **⋯** menu there. Under **Public links**, give the link a label if
 you like ("for the client"), choose when it **Expires**, and press **Create public
 link**. You get a URL that anyone can open, with no account and no sign-in,
 showing a read-only view of the result, with the analyses it relies on.

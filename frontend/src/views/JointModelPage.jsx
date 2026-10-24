@@ -5,18 +5,21 @@ import { ShareButton } from "../components/ShareDialog.jsx";
 import { deleteJointModel, downloadJointPython, getJointModel, updateJointModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import ModelFrame from "../components/model/ModelFrame.jsx";
+import useTabParam from "../components/model/useTabParam.js";
+import { answerParts } from "../modelFrame.js";
 import { itemName } from "../components/LibRows.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 
-// A saved condition and life model: the result view, Download as Python,
-// rename, share and delete.
+// A saved condition and life model in the model frame: the answer line, the
+// result's tabs, Share, and the ⋯ menu (Download as Python, rename, delete).
 export default function JointModelPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  const [tab, setTab] = useTabParam();
 
   useEffect(() => {
     setModel(null);
@@ -45,32 +48,34 @@ export default function JointModelPage() {
 
   const r = model?.results || {};
   return (
-    <div className="app model-page">
-      <PageHeader
-        crumbs={[{ label: "Model", to: "/models" }, { label: "Condition and life", to: "/models/joint" }]}
-        title={model ? itemName(model) : "Model"}
-        badges={model?.is_sample && <Chip>Sample</Chip>}
-        meta={model && <>Saved {relativeTime(model.created_at)}{r.unit ? ` · ${r.unit}` : ""} · condition and life</>}
-        id={model?.id}
-        actions={model && (
-          <button type="button" className="secondary" onClick={onPython}
+    <ModelFrame
+      className="model-page"
+      crumbs={[{ label: "Model", to: "/models" }, { label: "Condition and life", to: "/models/joint" }]}
+      title={model ? itemName(model) : "Model"}
+      badges={model?.is_sample && <Chip>Sample</Chip>}
+      answer={model ? answerParts({ ...r, kind: "joint" }, { saved: `saved ${relativeTime(model.created_at)}` }) : null}
+      id={model?.id}
+      actions={model && (
+        <ShareButton collection="models" artifactId={model.id} name={model.name} readOnly={model.read_only} />
+      )}
+      menu={model && (
+        <>
+          <button type="button" className="ovm-item" onClick={onPython}
                   title="A script that refits this model with SurPyval from the data it was fitted to">
             Download as Python
           </button>
-        )}
-        menu={model && (
-          <>
-            {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
-            <ShareButton collection="models" artifactId={model.id} name={model.name}
-                         readOnly={model.read_only} className="ovm-item" />
-            <button className="ovm-item danger" onClick={onDelete}>
-              {model.read_only ? "Remove from my view" : "Delete"}
-            </button>
-          </>
-        )}
-      />
-      {error && <div className="card error" role="alert">{error}</div>}
-      {model && <JointResultView results={model.results} modelId={model.id} name={model.name} />}
-    </div>
+          {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
+          <button className="ovm-item danger" onClick={onDelete}>
+            {model.read_only ? "Remove from my view" : "Delete"}
+          </button>
+        </>
+      )}
+      notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
+    >
+      {model ? (
+        <JointResultView results={model.results} modelId={model.id} name={model.name}
+                         tab={tab} onTab={(t) => setTab(t, "risk")} />
+      ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+    </ModelFrame>
   );
 }

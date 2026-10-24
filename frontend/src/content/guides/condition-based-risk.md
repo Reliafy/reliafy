@@ -103,10 +103,11 @@ few seconds to about a minute.
 
 ## Read the risk table
 
-The model opens on its answer: how many units it learnt from, and the running
-unit at the highest risk now.
+The model opens on its answer, in the line under its name: how many units it
+learnt from, and the running unit at the highest risk now. Its tabs are **Risk
+now**, **Calculator**, **Effects**, **Diagnostics** and **Data**.
 
-**Running units' risk** lists every unit still in service, highest risk first,
+On **Risk now**, **Running units' risk** lists every unit still in service, highest risk first,
 with its chance of failing in the next **30, 90 and 365 days** (for a model in
 hours, days, weeks, months or years; other units get horizons in their own
 terms) and its **Median life left**: the time by which it has an even chance of
@@ -119,16 +120,19 @@ fleet of 40 pumps in this guide has four still running, and pump P6, whose
 vibration has climbed fastest, has a 92% chance of failing in the next 30 days.
 That's the one to look at first.
 
-**What changes the risk** puts the fitted effects in words: *each 1 mm/s higher
-vibration multiplies the failure rate by 2.79*. A hazard ratio of 2 doubles the
-failure rate at any moment; 0.5 halves it. When the interval includes 1, it says
-the data can't rule out no effect. The **Parameters** table below has every
-fitted value with its 95% interval and a line on what it means.
+The **Effects** tab charts each hazard ratio with its interval and puts the
+fitted effects in words: *each 1 mm/s higher vibration multiplies the failure
+rate by 2.79*. A hazard ratio of 2 doubles the failure rate at any moment; 0.5
+halves it. When the interval includes 1, it says the data can't rule out no
+effect. The **Data** tab has every fitted value with its 95% interval and a
+line on what it means. **Diagnostics** draws the units' readings against the
+fitted path, says whether the fit settled, and gives its fit statistics.
 
 ## One unit's view
 
-Press **View** on a row, or choose a unit under **A unit's updating
-prediction**. You get two charts:
+Beside the table is the chosen unit's updating prediction (the riskiest unit
+first): press **View** on a row, or the row itself, for another. You get two
+charts:
 
 - **Survival from now**: the chance it is still running at each age ahead. It
   starts at 1 at its age now, because it has survived that far.
@@ -138,9 +142,11 @@ prediction**. You get two charts:
 ![One unit's view: its survival from now and its own reading path](/guides/img/cbr-03-unit.png)
 
 Each new reading moves the answer. To try one before it is in your data, use
-**copy its readings**, add the new reading under **Enter a unit**, and press
-**Predict**. **Enter a unit** also works for a unit that wasn't in the fit at
-all: give its age now, its covariates and its readings so far.
+**copy its readings**: the **Calculator** tab opens with them under **Enter a
+unit**; add the new reading and press **Predict**. **Enter a unit** also works
+for a unit that wasn't in the fit at all: give its age now, its covariates and
+its readings so far. Until you predict, the Calculator shows a new unit's
+survival with typical covariates.
 
 ## Use a unit in an RBD
 
@@ -165,5 +171,5 @@ parallel are a weaker pair than two new ones, and the diagram now shows it. See
 - **One reading per model.** Vibration or oil debris, not both at once.
 - A fit takes up to 2,000 units and 20,000 readings (600 units for the
   quadratic path).
-- **Download as Python** gives a script that refits the model with
+- **Download as Python**, in the page's **⋯** menu, gives a script that refits the model with
   [SurPyval](https://github.com/derrynknife/SurPyval) from the same data.

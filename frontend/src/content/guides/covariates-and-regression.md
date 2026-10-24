@@ -84,14 +84,17 @@ in service.
 ## Read the effects
 
 Fit the seal data with **Weibull PH** (the sample model *Valve seal life —
-Weibull PH on temp & load* is this fit) and open the **Coefficients** tab:
+Weibull PH on temp & load* is this fit). It opens on the **Effects** tab: a
+chart of each covariate's hazard ratio with its 95% interval (1 means no
+effect), each effect in words, and the baseline beside them. The **Data** tab
+has every coefficient:
 
 | Covariate | β | 95% interval | Hazard ratio e^β |
 |---|---|---|---|
 | temp_C | 0.138 | 0.093 to 0.183 | 1.148 |
 | load | 5.32 | 3.02 to 7.63 | 205 |
 
-![The Coefficients tab: each covariate's β, its interval and its hazard ratio](/guides/img/cov-02-coefficients.png)
+![The Effects tab: each covariate's hazard ratio with its interval, and the effects in words](/guides/img/cov-02-coefficients.png)
 
 Read the **hazard ratio** as "per +1 of the covariate, the failure rate is
 multiplied by this". So each extra degree multiplies it by 1.148, and 10 °C
@@ -109,26 +112,33 @@ ratio raised to the shape β: 1.025^5.58 ≈ 1.148.
 
 ## Ask about one operating condition
 
-The **Calculator** tab answers for the covariate values you type under
-**Covariates**: reliability at a time, a time at a reliability, the B-lives and
-the MTTF, each with its bound. **+ Add combination** draws another set of
-values on the same chart, such as the same seal at 60 °C and at 100 °C.
+The **Calculator** tab answers for the covariate values you type in the row
+above its chart: reliability at a time, or a time at a reliability, each with
+its bound. **+ Compare another** draws another set of values on the same chart,
+such as the same seal at 60 °C and at 100 °C. The **Model characteristics** tab
+gives the B-lives and the MTTF at those values, with their bounds.
 
 ## Check the model holds
 
-The **Validation** tab asks two questions.
+The **Diagnostics** tab asks whether you can trust the model, in three groups.
 
-**How good is this model?** **Harrell's C** is how often the model ranks the
-unit that failed first as the riskier one (0.87 for the seals: strong). The
+**Assumptions.** *Does each effect stay constant over time?* For PH models, the
+**Grambsch-Therneau test** on the Schoenfeld residuals checks the core
+assumption: that each covariate's effect stays the same over time. A p-value
+above 0.05 (0.69 here) means one hazard ratio per covariate describes the data.
+Beside it, *Is each effect a straight line?* (the martingale residuals) and
+*Any odd units?* (the deviance residuals: units beyond ±2.5 are poorly
+predicted). **Test details and residuals** opens the per-covariate tests. If
+the assumption fails, try an AFT or PO model, or stratify a Cox model on the
+offending column.
+
+**Predictive accuracy.** **Harrell's C** is how often the model ranks the unit
+that failed first as the riskier one (0.87 for the seals: strong). The
 **integrated Brier score** is the prediction error, against one survival curve
 for every unit. Here the covariates cut it by 63%.
 
-**Does the model hold?** For PH models, the **Grambsch-Therneau test** checks
-the core assumption: that each covariate's effect stays the same over time. A
-p-value above 0.05 (0.69 here) means one hazard ratio per covariate describes
-the data. **Test details and residuals** opens the per-covariate tests and the
-Schoenfeld, martingale and deviance residual plots. If the assumption fails,
-try an AFT or PO model, or stratify a Cox model on the offending column.
+**Fit statistics.** The log-likelihood, AIC, AICc and BIC, to compare with
+another model fitted to the same data.
 
 ## Covariates that change over time
 
@@ -165,8 +175,9 @@ hours) = 36%, at least 26% at 90% confidence.
 
 ![A changing-load model's calculator: 60% load, then 90% from 4,800 hours](/guides/img/cov-03-schedule.png)
 
-Its **Coefficients** tab says it in words: *every +10% in load_pct multiplies
-the hazard by 1.74 (95% interval 1.19 to 2.55)*.
+Its **Effects** tab says it in words: *every +10% in load_pct multiplies
+the hazard by 1.74 (95% interval 1.19 to 2.55)*, and **Model characteristics**
+gives the B-lives and the mean life along the Calculator's schedule.
 
 ## Use it elsewhere
 

@@ -106,7 +106,8 @@ export function idSource(route) {
 // or a test of the record shown). The chart library loads with the first page
 // that needs it, so a broken chart chunk shows up here.
 const CHART_PAGES = {
-  "/models/m/:id": true,
+  // A per-demand model is one probability, with no chart.
+  "/models/m/:id": (model) => model.kind !== "per_demand",
   "/models/degradation/:id": true,
   "/models/recurrent/:id": true,
   "/models/alt/:id": true,

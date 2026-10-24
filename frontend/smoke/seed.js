@@ -2,9 +2,11 @@
 // seeds Maintenance or an RBD simulation run, so make one of each here (a
 // position from the sample RCM study, a location, an item fitted to the
 // position, a work order, a part and an assembly of it, the starter item classes, a position
-// class with a fitted non-repairable model and a spare with a lead time, and one availability run)
+// class with a fitted non-repairable model and a spare with a lead time, one availability run,
+// and a model of each kind the samples don't cover)
 // through the API. Skipped against a deployed site.
 import { request } from "@playwright/test";
+import { seedModelKinds } from "./modelKinds.js";
 
 // A deterministic fleet: 40 pumps, a vibration path each, those whose
 // vibration starts high failing sooner; still running at day 120 otherwise.
@@ -100,6 +102,9 @@ export default async function seed(config) {
     // A condition and life model: a small fleet of pumps, each with its
     // vibration read every 10 days, fitted in-process (billing is off here).
     await seedJointModel(post);
+    // One model of each kind the samples don't cover, for the model pages'
+    // fit check (modelframe.spec.js).
+    await seedModelKinds(api);
 
     // One availability run, for the run history pages.
     const rbd = await (await api.get("/api/rbds/sample-rbd-instrument-air-availability")).json();

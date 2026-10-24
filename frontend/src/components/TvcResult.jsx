@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
 import Select from "./Select.jsx";
-import Coefficients from "./Coefficients.jsx";
-import CiNote from "./CiNote.jsx";
-import { paramView } from "./LifeSummary.jsx";
 import { withUnit } from "./stressName.js";
 import { unitInText } from "./unitText.js";
 import { evaluateAt } from "../api.js";
@@ -27,7 +24,6 @@ const FUNCTIONS = {
   Hf: { label: "Cumulative hazard H(t)", axis: "Cumulative hazard, H(t)" },
 };
 const MAX_ROWS = 12;
-const LAYOUT_WORDS = { intervals: "start and stop rows", timeline: "timeline rows" };
 
 const fmtFn = (id, v) => (v == null ? "—" : FUNCTIONS[id]?.pct ? formatPercent(v, { sig: 3 }) : formatNumber(v, { sig: 4 }));
 
@@ -45,50 +41,6 @@ function interp(x, y, xq) {
   return null;
 }
 
-// The baseline distribution's own id (weibull_ph → weibull), for plain names.
-const baseOf = (result) => ({ ...result, distribution_id: String(result.distribution_id || "").replace(/_(ph|aft|po|ah)$/, "") });
-
-export function TvcCoefficients({ result }) {
-  const t = result.tvc || {};
-  const params = result.params || [];
-  const base = baseOf(result);
-  return (
-    <div className="tvc-coef">
-      <Coefficients coefficients={result.coefficients} ratioLabel={result.ratio_label} />
-      <div className="tvc-coef-side">
-        {(t.readings || []).length > 0 && (
-          <div className="gof-metrics-card tvc-readings">
-            <div className="gofh">What it means</div>
-            {t.readings.map((r) => <p className="tvc-reading" key={r.name}>{r.text}</p>)}
-          </div>
-        )}
-        {params.length > 0 && (
-          <div className="gof-metrics-card">
-            <div className="gofh">Baseline (every covariate at 0)</div>
-            {params.map((p) => {
-              const v = paramView(base, p);
-              return (
-                <div className="gofr" key={p.name}>
-                  <span className="gk">{v.label}</span>
-                  <span className="gv-col">
-                    <span className="gv">{v.value}</span>
-                    {v.ci && <span className="param-ci">95% {v.ci}</span>}
-                  </span>
-                </div>
-              );
-            })}
-            <CiNote params={params} note={result.ci_note} />
-          </div>
-        )}
-        <p className="tvc-data-line">
-          Fitted to {t.items?.toLocaleString()} items over {t.rows?.toLocaleString()} {LAYOUT_WORDS[t.layout] || "rows"}
-          {t.failures != null ? ` (${t.failures.toLocaleString()} failures)` : ""}, each item's covariates following
-          its rows.
-        </p>
-      </div>
-    </div>
-  );
-}
 
 // The calculator's opening state for a result.
 export function initTvcState(result) {
@@ -107,24 +59,23 @@ export function initTvcState(result) {
   };
 }
 
-export function TvcCalculator({ result, state, setState, name = null }) {
+// The curve along the schedule in ``state``, evaluated by the model (and
+// kept per request): { res, error, body, key, data }. The calculator and the
+// Model characteristics tab share it.
+export function useTvcEvaluation(result, state, { on } = {}) {
   const fns = result.functions || {};
   const fields = result.tvc?.covariates || fns.covariates || [];
-  const unit = result.unit;
-  const unitWord = unit ? ` ${unitInText(unit)}` : "";
   const path = tvcPath(fns);
   const x0 = fns.curves?.x || [];
   const xEnd = x0.length ? x0[x0.length - 1] : 1;
-  const { rows, active, t, bound, level } = state;
-  const set = (patch) => setState((st) => ({ ...st, ...patch }));
+  const { rows, bound, level } = state;
+  const active = on || state.active;
   const hasBounds = !!result.tvc?.bounds;
-
   const body = useMemo(() => scheduleBody(rows, fields), [rows, fields]);
   const levelNum = Number(level);
   const alpha = hasBounds && bound !== "none" && levelNum > 0 && levelNum < 100 ? 1 - levelNum / 100 : null;
   const xMax = scheduleXMax(rows, xEnd);
   const key = JSON.stringify([body.schedule, active, alpha, bound, xMax]);
-
   const [data, setData] = useState({ key: null, res: null, error: null });
   useEffect(() => {
     if (!path || !body.schedule || data.key === key) return undefined;
@@ -139,8 +90,17 @@ export function TvcCalculator({ result, state, setState, name = null }) {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, path]);
+  return { res: data.res, error: data.key === key ? data.error : null, body, key, data, path, alpha, xMax, fields, xEnd };
+}
 
-  const res = data.res;
+export function TvcCalculator({ result, state, setState, name = null, fill = false }) {
+  const unit = result.unit;
+  const unitWord = unit ? ` ${unitInText(unit)}` : "";
+  const { rows, active, t, bound, level } = state;
+  const set = (patch) => setState((st) => ({ ...st, ...patch }));
+  const hasBounds = !!result.tvc?.bounds;
+  const { res, body, key, data, path, alpha, xMax, fields, xEnd } = useTvcEvaluation(result, state);
+  const levelNum = Number(level);
   const curves = res?.curves;
   const band = alpha != null && res?.bounds ? res.bounds : null;
   const tNum = Number(t);
@@ -218,7 +178,7 @@ export function TvcCalculator({ result, state, setState, name = null }) {
           {!path && <p className="muted-line tvc-msg">Open the model in Reliafy to change the schedule.</p>}
           {alpha != null && res && !res.bounds && res.bounds_note && <p className="muted-line tvc-msg">{res.bounds_note}</p>}
           <div className="tvc-plot">
-            <Plot data={traces} layout={layout} download={`${name || result.distribution} — ${FUNCTIONS[active].axis} on a schedule`} />
+            <Plot fill={fill} data={traces} layout={layout} download={`${name || result.distribution} — ${FUNCTIONS[active].axis} on a schedule`} />
           </div>
         </div>
 
@@ -302,12 +262,12 @@ export function TvcCalculator({ result, state, setState, name = null }) {
               )}
             </div>
           </div>
-          <div className="calc-rail-card calc-rail-params">
+          {!fill && <div className="calc-rail-card calc-rail-params">
             <div className="gofh">Life on this schedule</div>
             <div className="gofr"><span className="gk">10% failed by (B10)</span><span className="gv">{fmtTime(b10)}</span></div>
             <div className="gofr"><span className="gk">Half failed by</span><span className="gv">{median != null ? fmtTime(median) : curves ? `after ${fmtTime(curves.x[curves.x.length - 1])}` : "—"}</span></div>
             {result.tvc?.mean && <div className="gofr"><span className="gk">Mean life</span><span className="gv">{fmtTime(res?.mean)}</span></div>}
-          </div>
+          </div>}
         </div>
       </div>
     </div>
