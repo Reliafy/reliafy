@@ -10,7 +10,7 @@ import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx
 import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
-import { cellRow, graftRcm, isRcmRow, openFor, positionOf } from "../explorerRcm.js";
+import { cellRow, graftRcm, isRcmRow, openFor, positionOf, rowActions } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
@@ -52,9 +52,11 @@ import "./AssetExplorer.css";
 // columns): the tree, arranged by positions, is the first column, each
 // position's functions › functional failures › failure modes nested in it,
 // and every row has the RCM's columns beside it; the panel's heading sits over
-// it. Picking a function, failure or mode opens its details beside the table;
-// "Add …" rows under the position picked (and the heading's Add function) add
-// to it, and the tree grows. On the Summary tab the tree is the positions alone
+// it. Picking a function, failure or mode opens its details beside the table.
+// Each row's menu (right-click, its ⋯ button, or Shift+F10) adds inside it (a
+// function on a position, a functional failure on a function, a failure mode
+// on a functional failure) and has the row's other actions; the heading's Add
+// function adds to the position picked; the tree grows. On the Summary tab the tree is the positions alone
 // and the page about the row picked is beside it. Full screen (F, Esc to leave)
 // gives the tree and the panel the whole screen, as the RBD editor's.
 
@@ -169,8 +171,7 @@ export default function AssetExplorer() {
   }, [wantItems, version]);
 
   const base = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
-  const working = selected.positions;
-  const display = useMemo(() => (rcmOn && rcm ? graftRcm(base, rcm, { addFor: working }) : base), [base, rcmOn, rcm, working]);
+  const display = useMemo(() => (rcmOn && rcm ? graftRcm(base, rcm) : base), [base, rcmOn, rcm]);
   const filter = useMemo(() => (data ? computeFilter(display, {
     query, chips: mode === "items" ? chips.filter((c) => c !== "empty") : chips, extra: notPlaced ? (r) => r.type === "pos" && !r.ref.location : null,
   }) : null), [data, display, query, chips, notPlaced, mode]);
@@ -300,11 +301,6 @@ export default function AssetExplorer() {
   const detailKey = phone ? location.state?.treeDetail : null;
   const pick = (key, opts = {}) => {
     const r = display.rows.get(key);
-    if (r?.type === "add") {
-      if (opts.keyboard) setRcmFocus(key);
-      else runAdd(r);
-      return;
-    }
     if (isRcmRow(r)) {
       setRcmFocus(key);
       setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
@@ -316,8 +312,9 @@ export default function AssetExplorer() {
     if (phone && opts.go && !rcmOn) navigate(location.pathname + location.search, { state: { treeDetail: key } });
   };
 
-  // Adding from the tree (an "Add …" row), the heading or the details: the new
-  // row is picked and brought into view once the RCM is read again.
+  // Adding from a row's menu, the heading or the details: the new row is
+  // picked, the way down to it opened and brought into view once the RCM is
+  // read again.
   const runAdd = (r) => {
     const kind = r.ref.add;
     ops.add(kind, { positionId: r.ref.position_id, functionId: r.ref.function_id, failureId: r.ref.functional_failure_id ?? null })
@@ -344,6 +341,17 @@ export default function AssetExplorer() {
       say(e.message, "error");
     }
   };
+  // A row's menu (TreePane's rowMenu): what it offers, and doing it.
+  const rowMenu = rcmOn && rcm ? {
+    actions: (r) => rowActions(r, { canRename: !phone }),
+    onAction: (r, id) => {
+      if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
+      else if (id === "add-fail" || id === "add-mode") addInside(r);
+      else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
+      else if (id === "decide") setDeciding(r);
+      else if (id === "delete") remove(r);
+    },
+  } : null;
   // One cell changed: checked as the server checks it, then written.
   const commit = (r, col, raw) => {
     const res = checkValue(col, cellRow(r), raw);
@@ -509,7 +517,12 @@ export default function AssetExplorer() {
   const head = rcmOn && posRow && posRow.type === "pos" && (
     <CompactHeader display={display} row={posRow} onSelect={reveal} tab={tab} onTab={setTab} headingRef={headingRef}
                    fullScreenButton={fullButton} message={msg}
-                   meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
+                   meta={rcm?.positions ? (
+                     <>
+                       <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span>
+                       {!posRow.rcmKids && <span className="tt-hint">No functions yet: press Add function, then right-click a row to add inside it.</span>}
+                     </>
+                   ) : null}
                    actions={(
                      <>
                        <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
@@ -517,7 +530,7 @@ export default function AssetExplorer() {
                      </>
                    )} />
   );
-  const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "add" ? cellRow(focusRow) : null;
+  const detailsRow = rcmOn && panel && isRcmRow(focusRow) ? cellRow(focusRow) : null;
   const side = detailsRow && (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
@@ -575,7 +588,6 @@ export default function AssetExplorer() {
         scrollTo={scrollTo}
         onEnter={(key) => {
           const r = display.rows.get(key);
-          if (r?.type === "add") return runAdd(r);
           if (isRcmRow(r)) {
             setPanel(true);
             return setTimeout(() => detailsHeading.current?.focus(), 0);
@@ -584,6 +596,7 @@ export default function AssetExplorer() {
         }}
         rcmMarks={rcmOn || chips.includes("unanalysed")}
         table={table}
+        rowMenu={rowMenu}
         head={head}
         side={side}
         phoneTabs={phoneTabs}
