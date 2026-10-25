@@ -491,6 +491,20 @@ def remove_functional_failure(ff_id: str, m: Maintenance = Depends(maintenance_w
     return _run(m.remove_functional_failure, ff_id)
 
 
+@router.post("/functional-failures/{ff_id}/causes")
+def link_functional_failure_cause(ff_id: str, body: dict = Body(...),
+                                  m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """It results from cause_id, a functional failure on a position inside its own; returns
+    the functional failure with its causes and effects."""
+    return _run(m.link_cause, ff_id, body.get("cause_id"))
+
+
+@router.delete("/functional-failures/{ff_id}/causes/{cause_id}")
+def unlink_functional_failure_cause(ff_id: str, cause_id: str,
+                                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.unlink_cause, ff_id, cause_id)
+
+
 @router.post("/failure-modes/{mode_id}/assign")
 def assign_failure_mode(mode_id: str, body: dict = Body(...),
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
@@ -658,7 +672,7 @@ def retire_task(task_id: str, body: dict = Body(default={}), m: Maintenance = De
 @router.post("/positions/{position_id}/retire")
 def retire_position(position_id: str, body: dict = Body(default={}),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(lambda: (m.retire_position(position_id, body.get("reason", "")), {"retired": position_id})[1])
+    return _run(m.retire_position, position_id, body.get("reason", ""))
 
 
 @router.post("/fitments/{fitment_id}/void")
