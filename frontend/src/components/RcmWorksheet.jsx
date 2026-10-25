@@ -462,7 +462,8 @@ export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS }) {
   }, [open]);
   return (
     <div className="rw-cols" ref={box}>
-      <button type="button" className="secondary rw-btn" aria-expanded={open} aria-haspopup="true" onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="secondary rw-btn" aria-expanded={open} aria-haspopup="true" onClick={() => setOpen((o) => !o)}
+              aria-label="Columns" title="Choose which columns to show">
         Columns
       </button>
       {open && (
