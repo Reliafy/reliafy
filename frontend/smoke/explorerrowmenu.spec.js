@@ -180,7 +180,7 @@ test("Summary row menu: new inside, rename, move to…, retire, pin; the server'
   await page.getByRole("tab", { name: "RCM" }).click();
   const trow = page.getByRole("row", { name: new RegExp(`^Menu heating ${tag}`) });
   await trow.locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Menu heating ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Show whole tree"]);
+  await expect(rowMenu(page, `Menu heating ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Show whole tree"]);
   await page.keyboard.press("Escape");
   // The refusals above were made up here (a 422 each): the browser logs them.
   problems.splice(0, problems.length, ...problems.filter((x) => !/status of 422/.test(x)));

@@ -644,6 +644,60 @@ def read_table(data: bytes, sheet: Optional[str] = None, header_row: Optional[in
         wb.close()
 
 
+def read_csv(data: bytes, filename: str = "", max_rows: Optional[int] = None) -> Table:
+    """A CSV file as the same ``Table`` a sheet reads as, so a column mapper
+    and an importer take either: the first non-blank line is the header
+    (blank or repeated names made unique, as for a sheet), blank lines are
+    skipped, cells are text with the spaces round them trimmed (blank: None).
+    UTF-8, falling back to Latin-1 (Excel's "CSV" on Windows)."""
+    if max_rows is None:
+        max_rows = MAX_ROWS
+    if not data:
+        raise ExcelError("The file is empty.")
+    if len(data) > MAX_FILE_BYTES:
+        raise ExcelError(f"The file is larger than {MAX_FILE_BYTES // (1024 * 1024)} MB.")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = data.decode("latin-1")
+    header_raw: list = []
+    header_row = 0
+    rows: list[list] = []
+    numbers: list[int] = []
+    notes: list[str] = []
+    try:
+        for rnum, cells in enumerate(csv.reader(io.StringIO(text, newline="")), start=1):
+            values = [c.strip() or None for c in cells[:MAX_COLS]]
+            if _is_blank(values):
+                continue
+            if not header_row:
+                header_raw, header_row = values, rnum
+                if len(cells) > MAX_COLS:
+                    notes.append(f"Only the first {MAX_COLS} columns were read.")
+                continue
+            if len(rows) >= max_rows:
+                notes.append(f"Only the first {max_rows:,} rows were read.")
+                break
+            rows.append(values)
+            numbers.append(rnum)
+    except csv.Error as exc:
+        raise ExcelError(f"That file couldn't be read as CSV ({exc}).") from None
+    if not header_row or not rows:
+        raise ExcelError("The CSV has no data: its first line should name the columns, with a row per line below.")
+    width = min(MAX_COLS, max([len(header_raw)] + [len(r) for r in rows]))
+    header: list[str] = []
+    for i in range(width):
+        name = str(header_raw[i]) if i < len(header_raw) and header_raw[i] else f"col {i + 1}"
+        base, n = name, 2
+        while name in header:
+            name, n = f"{base} ({n})", n + 1
+        header.append(name)
+    rows = [(r + [None] * width)[:width] for r in rows]
+    stem = (filename or "data.csv").rsplit("/", 1)[-1]
+    return Table(sheet=stem.rsplit(".", 1)[0] if "." in stem else stem, header=header, rows=rows,
+                 row_numbers=numbers, header_row=header_row, notes=notes)
+
+
 def _resolve_guess(head: list) -> int:
     idx = guess_header_row([raw for _, _, raw in head])
     return head[idx - 1][0] if idx and head else 0

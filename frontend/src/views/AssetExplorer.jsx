@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { addSampleTruck as postSampleTruck, getMaintenanceTree, getRcmOptions, listMaintenanceItems } from "../api.js";
+import { addSampleTruck as postSampleTruck, getMaintenanceTree, getPositionRcm, getRcmOptions, listMaintenanceItems } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
 import TreeDetail, { HeaderTabs, KIND, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
+import RcmImportModal from "../components/RcmImportModal.jsx";
+import OverflowMenu from "../components/OverflowMenu.jsx";
+import { exportFilename, importSummary, positionRcmCsv } from "../rcmImport.js";
+import { saveText } from "../sparesPlan.js";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx";
 import Tabs from "../components/ui/Tabs.jsx";
@@ -186,6 +190,8 @@ export default function AssetExplorer() {
   // Read a moment after the tree is in, on the Summary tab too, so the first
   // switch to the RCM tab draws its rows at once.
   const { rcm, error: rcmError, ops, load: loadRcm } = useTreeRcm({ on: rcmOn, prefetch: !!data, onTreeChanged: load, askText });
+  // A position an FMEA / RCM worksheet is being imported onto ({id, name}).
+  const [sheetFor, setSheetFor] = useState(null);
   const [rcmFocus, setRcmFocus] = useState(null); // a function, failure or mode picked (its position is selected)
   const [panel, setPanel] = useState(false); // its details beside the table
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
@@ -273,6 +279,17 @@ export default function AssetExplorer() {
     const more = openFor(display, selected.positions);
     setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
   }, [rcmOn, rcm, display, whole, selected.positions]);
+
+  // After a worksheet is imported onto a position: that position opens down to
+  // its failure modes once the RCM is read again.
+  const openAfter = useRef(null);
+  useEffect(() => {
+    const key = openAfter.current;
+    if (!key || !rcm || !display.rows.has(key)) return;
+    openAfter.current = null;
+    const more = openFor(display, key);
+    setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
+  }, [rcm, display, whole]);
 
   // On the RCM tab, the Summary's page for the position picked is read a
   // moment ahead, so switching to Summary shows it whole at once.
@@ -496,7 +513,29 @@ export default function AssetExplorer() {
       } else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
       else if (id === "delete") remove(r);
+      else if (id === "import-sheet") setSheetFor({ id: r.key, name: r.ref.name });
+      else if (id === "export-csv") exportRcm(r);
     },
+  };
+  // A position's RCM (it and everything inside it) as a CSV file, its columns
+  // named as the import reads them.
+  const exportRcm = (r) => {
+    getPositionRcm(r.key, "below")
+      .then((ws) => {
+        saveText(positionRcmCsv(ws), exportFilename(r.ref.name));
+        say("Downloaded the RCM as CSV.", "ok", { fade: true });
+      }, (e) => say(e.message, "error"));
+  };
+  // After an import: the RCM and the tree read again, the position opened down
+  // to its failure modes, and a few words on what was added.
+  const sheetImported = (result) => {
+    const pos = sheetFor;
+    setSheetFor(null);
+    const { adds, nothing } = importSummary(result.counts);
+    openAfter.current = pos.id;
+    pending.current = pos.id;
+    Promise.resolve(loadRcm()).then(() => load());
+    say(nothing ? `Nothing new to add to “${pos.name}”.` : `Added ${adds.join(", ")} to “${pos.name}”.`);
   };
   // One cell changed: checked as the server checks it, then written. The
   // cell (or the panel's field) keeps the text as typed until it's saved; if
@@ -795,6 +834,12 @@ export default function AssetExplorer() {
                             onClick={(e) => { if (e.detail < 2) runAdd({ ref: { add: "fn", position_id: posRow.key } }); }}>Add function</button>
                     <ColumnChooser cols={shownCols} usual={usualCols({ narrow })}
                                    onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
+                    <OverflowMenu>
+                      <button type="button" className="ovm-item" onClick={() => setSheetFor({ id: posRow.key, name: posRow.ref.name })}>
+                        Import worksheet…
+                      </button>
+                      <button type="button" className="ovm-item" onClick={() => exportRcm(posRow)}>Export CSV</button>
+                    </OverflowMenu>
                   </>
                 )} />
   ) : summaryRow && (
@@ -960,6 +1005,7 @@ export default function AssetExplorer() {
                        text: `Retired “${rowModal.row.ref.name}”.`,
                      })} />
       )}
+      {sheetFor && <RcmImportModal position={sheetFor} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
       {deciding && options && (
         <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} limits />
       )}

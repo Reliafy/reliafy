@@ -12,6 +12,8 @@ a CSV file.
 
 from __future__ import annotations
 
+import re
+
 from fastapi import HTTPException
 
 from backend import config
@@ -38,6 +40,8 @@ _CSV_PREFIXES = ("/api/fit/",)
 _FILE_ROUTES = frozenset({"/api/datasets", "/api/rbds/import", "/api/rcm/import",
                           "/api/rcm/import/preview"})
 _FILE_PREFIXES = ("/api/excel/",)
+# An RCM worksheet added to a position: /api/maintenance/positions/{id}/rcm/import[/preview].
+_FILE_PATTERN = re.compile(r"^/api/maintenance/positions/[^/]+/rcm/import(?:/preview)?$")
 
 
 def _file_cap() -> int:
@@ -53,7 +57,7 @@ def body_limit(path: str) -> int:
         from backend.services.uploads import HARD_MAX_BYTES
 
         return HARD_MAX_BYTES + _MB
-    if path in _FILE_ROUTES or path.startswith(_FILE_PREFIXES):
+    if path in _FILE_ROUTES or path.startswith(_FILE_PREFIXES) or _FILE_PATTERN.match(path):
         return _file_cap()
     if path in _CSV_ROUTES or path.startswith(_CSV_PREFIXES):
         return config.MAX_UPLOAD_BYTES + _FORM_OVERHEAD

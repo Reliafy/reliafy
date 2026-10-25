@@ -364,6 +364,28 @@ adds a row to the tree. A position
 with no function, or with a failure mode that has no decision, is marked "not
 analysed" in the tree.
 
+### Importing an FMEA / RCM worksheet onto a position
+
+`backend/maintenance/rcm_sheet.py` adds a worksheet (Excel or CSV, one row per
+failure mode) to one position's RCM: `POST
+/api/maintenance/positions/{id}/rcm/import/preview` (nothing written) and
+`…/rcm/import`, MCP `uploads import_excel target=rcm position_id`, and the
+RCM tab's "Import worksheet…". The sheet is read and mapped by the RCM study
+import's own parser (`services/rcm_import.build_tree`), and written through the
+service's methods (`add_function`, `add_functional_failure`,
+`add_failure_mode`, `update_failure_mode`, `decide_failure_mode`), so it is
+ordinary events and no new event type.
+
+It only adds. A function with the same text (case and spacing aside) is used
+as it is, and so is a functional failure with the same text under it; a
+failure mode already on the position is left as it is, wherever it is. So the
+same sheet imported twice adds nothing the second time, and the RCM tab's
+Export CSV (named as the import reads it) imports back adding nothing. Every
+row is checked first; a row in error (an interval over the task limits) means
+nothing is written. Limits: 5,000 rows read, 500 new failure modes per import
+(each is a few events); a failure mode over 200 characters gets a shortened
+name with the full text in its notes.
+
 ### Moving RCM studies onto the positions
 
 `backend/maintenance/rcm_migrate.py`, run by

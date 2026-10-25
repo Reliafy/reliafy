@@ -2389,6 +2389,32 @@ export function mergeFailureMode(id, intoId) {
 export function getWorkspaceRcm() {
   return request("/api/maintenance/rcm");
 }
+
+// An FMEA / RCM worksheet (Excel or CSV) added to a position's RCM. The
+// preview writes nothing: what it would add (counts, a short tree), what's on
+// the position already, rows skipped, errors and warnings, and the
+// consequence / decision values found. The import only adds. ``options`` =
+// { mapping, consequence_map, outcome_map, extra_columns }, as for a study.
+export function previewPositionRcmImport(positionId, file, sheet, headerRow, options) {
+  return request(`/api/maintenance/positions/${positionId}/rcm/import/preview`, {
+    method: "POST",
+    body: excelForm(file, sheet, headerRow, { options }),
+  });
+}
+export function importPositionRcm(positionId, file, sheet, headerRow, options) {
+  return withEvent(
+    request(`/api/maintenance/positions/${positionId}/rcm/import`, {
+      method: "POST",
+      body: excelForm(file, sheet, headerRow, { options }),
+    }),
+    "rcm_import"
+  );
+}
+
+// A position's RCM (scope "below": it and everything inside it; "this": it alone).
+export function getPositionRcm(positionId, scope = "below") {
+  return request(`/api/maintenance/positions/${positionId}/rcm?scope=${encodeURIComponent(scope)}`);
+}
 const sendJson = (method) => (url, body) => request(url, {
   method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
 });

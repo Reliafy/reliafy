@@ -3,7 +3,10 @@ import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
 import ExcelSheetPicker, { useExcelInspection } from "./ExcelSheetPicker.jsx";
 import SheetColumnMapper, { mappingComplete } from "./SheetColumnMapper.jsx";
-import { SPREADSHEET_ACCEPT, excelTable, importRcmWorksheet, previewRcmImport } from "../api.js";
+import {
+  SPREADSHEET_ACCEPT, excelTable, importPositionRcm, importRcmWorksheet, previewPositionRcmImport, previewRcmImport,
+} from "../api.js";
+import { WORKSHEET_ACCEPT, importSummary, isCsvFile } from "../rcmImport.js";
 
 const CONSEQUENCES = [
   ["safety", "Safety"],
@@ -30,11 +33,16 @@ const countModes = (functions) =>
 // mode / effects / consequence / decision…), check how consequence and
 // decision values map onto Reliafy's categories, then create a new study —
 // or, given ``study``, append to or replace its worksheet.
-export default function RcmImportModal({ study, onClose, onImported }) {
+//
+// Given ``position`` ({id, name}) instead, the worksheet (Excel, or CSV: no
+// sheet to pick) is added to that position's RCM: the preview says what it
+// adds and what's there already, and the import only adds.
+export default function RcmImportModal({ study, position, onClose, onImported }) {
   const fileRef = useRef(null);
   const [file, setFile] = useState(null);
   const [step, setStep] = useState("file"); // file | sheet | map
-  const { inspection, error: inspectError, loading } = useExcelInspection(file);
+  const csv = !!position && isCsvFile(file);
+  const { inspection, error: inspectError, loading } = useExcelInspection(csv ? null : file);
   const [sel, setSel] = useState(null);
   const [table, setTable] = useState(null);
   const [mapping, setMapping] = useState({});
@@ -66,14 +74,19 @@ export default function RcmImportModal({ study, onClose, onImported }) {
     setFile(f);
     setError(null);
     setName((n) => n || f.name.replace(/\.[^.]+$/, ""));
-    setStep("sheet");
+    if (position && isCsvFile(f)) {
+      // One table, its header on the first line: straight to the columns.
+      const whole = { sheet: null, headerRow: null };
+      setSel(whole);
+      toMapping(f, whole);
+    } else setStep("sheet");
   };
 
-  const toMapping = async () => {
+  const toMapping = async (f = file, at = sel) => {
     setBusy(true);
     setError(null);
     try {
-      const t = await excelTable(file, sel.sheet, sel.headerRow, "rcm");
+      const t = await excelTable(f, at.sheet, at.headerRow, "rcm");
       setTable(t);
       setMapping(t.guess || {});
       setExtras(t.extra_columns || []);
@@ -102,18 +115,35 @@ export default function RcmImportModal({ study, onClose, onImported }) {
     if (step !== "map" || !ready) { setPreview(null); return undefined; }
     let live = true;
     const t = setTimeout(() => {
-      previewRcmImport(file, sel.sheet, sel.headerRow, options)
+      (position ? previewPositionRcmImport(position.id, file, sel.sheet, sel.headerRow, options)
+        : previewRcmImport(file, sel.sheet, sel.headerRow, options))
         .then((p) => { if (live) { setPreview(p); setPreviewError(null); } })
         .catch((e) => { if (live) { setPreview(null); setPreviewError(e.message); } });
     }, 300);
     return () => { live = false; clearTimeout(t); };
-  }, [step, ready, file, sel, options]);
+  }, [step, ready, file, sel, options, position]);
 
   const unmapped = table ? table.columns.filter((c) => !Object.values(mapping).includes(c)) : [];
 
   const doImport = async () => {
     setBusy(true);
     setError(null);
+    if (position) {
+      try {
+        const done = await importPositionRcm(position.id, file, sel.sheet, sel.headerRow, options);
+        if (!done.ok) {
+          setPreview(done);
+          setError("Nothing was added: fix the rows listed and try again.");
+          setBusy(false);
+          return;
+        }
+        onImported(done);
+      } catch (e) {
+        setError(e.message);
+        setBusy(false);
+      }
+      return;
+    }
     try {
       const target = study
         ? { studyId: study.id, mode, expectedUpdatedAt: study.updated_at }
@@ -125,8 +155,9 @@ export default function RcmImportModal({ study, onClose, onImported }) {
     }
   };
 
+  const summary = position && preview ? importSummary(preview.counts) : null;
   const canImport = ready && preview && !busy
-    && (study ? mode === "append" || confirmReplace : name.trim());
+    && (position ? preview.ok && !summary.nothing : study ? mode === "append" || confirmReplace : name.trim());
 
   let footer;
   if (step === "file") {
@@ -135,7 +166,24 @@ export default function RcmImportModal({ study, onClose, onImported }) {
     footer = (
       <>
         <button className="secondary" onClick={() => { setFile(null); setStep("file"); }} disabled={busy}>Back</button>
-        <button onClick={toMapping} disabled={busy || !sel || !inspection}>{busy ? "Reading…" : "Next: map columns"}</button>
+        <button onClick={() => toMapping()} disabled={busy || !sel || !inspection}>{busy ? "Reading…" : "Next: map columns"}</button>
+      </>
+    );
+  } else if (position) {
+    // What it adds, beside the button (the full preview is above, maybe out of view).
+    footer = (
+      <>
+        <span className="hint" role="status">
+          {!preview ? "Reading the columns…" : preview.errors?.length ? "Fix the rows listed, then try again."
+            : summary.nothing ? "Nothing new to add." : `Adds ${summary.adds.join(" · ")}.`}
+        </span>
+        <div className="row xl-foot-row">
+          <button className="secondary" onClick={() => (csv ? (setFile(null), setStep("file")) : setStep("sheet"))}
+                  disabled={busy}>Back</button>
+          <button onClick={doImport} disabled={!canImport} title={`Add to “${position.name}”`}>
+            {busy ? "Adding…" : `Add to “${clip(position.name, 40)}”`}
+          </button>
+        </div>
       </>
     );
   } else {
@@ -150,7 +198,8 @@ export default function RcmImportModal({ study, onClose, onImported }) {
   }
 
   return (
-    <Modal title={study ? `Import worksheet into “${study.name}”` : "New RCM study from Excel"}
+    <Modal title={position ? `Import a worksheet onto “${clip(position.name)}”`
+      : study ? `Import worksheet into “${study.name}”` : "New RCM study from Excel"}
            className="modal-xl" locked={busy} onClose={onClose} footer={footer}>
       {step === "file" && (
         <div className="fit-step">
@@ -159,12 +208,21 @@ export default function RcmImportModal({ study, onClose, onImported }) {
             Functional failure, Failure mode, Effects, Consequence, Task and Interval. Blank
             function / failure cells carry down from the row above, as in most worksheets.
           </p>
+          {position && (
+            <p className="muted-line">
+              It's added to {clip(position.name)}'s RCM. Nothing there is changed or removed: a function or
+              functional failure with the same words is used as it is, and failure modes already there are left
+              alone, so importing the same file again adds nothing.
+            </p>
+          )}
+          {busy && <p className="hint">Reading the file…</p>}
           <div className="dropzone" onClick={() => fileRef.current?.click()}
                onDragOver={(e) => e.preventDefault()}
                onDrop={(e) => { e.preventDefault(); pick(e.dataTransfer.files?.[0]); }}>
-            <span className="dz-big">Drop an Excel workbook here or <strong>click to browse</strong></span>
-            <span className="dz-hint">.xlsx</span>
-            <input ref={fileRef} type="file" accept={SPREADSHEET_ACCEPT} hidden
+            <span className="dz-big">Drop {position ? "an Excel workbook or a CSV file" : "an Excel workbook"} here or <strong>click to browse</strong></span>
+            <span className="dz-hint">{position ? ".xlsx or .csv" : ".xlsx"}</span>
+            <input ref={fileRef} type="file" accept={position ? WORKSHEET_ACCEPT : SPREADSHEET_ACCEPT} hidden
+                   aria-label="Worksheet file"
                    onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
           </div>
         </div>
@@ -181,7 +239,7 @@ export default function RcmImportModal({ study, onClose, onImported }) {
       {step === "map" && table && (
         <div className="fit-step">
           <p className="muted-line" style={{ margin: 0 }}>
-            <b>{table.sheet}</b> · {table.n_rows.toLocaleString()} rows. Only Failure mode is
+            <b>{table.sheet}</b> · {table.n_rows.toLocaleString("en-AU")} rows. Only Failure mode is
             required; a missing Function or Functional failure column puts everything under “Imported”.
           </p>
           <SheetColumnMapper fields={table.fields} columns={table.columns} mapping={mapping}
@@ -218,6 +276,7 @@ export default function RcmImportModal({ study, onClose, onImported }) {
               <ValueMap
                 title={preview.outcome_source === "task" ? "Decision type — read from the Task column" : "Decision type values"}
                 items={preview.values.outcome} choices={OUTCOMES} map={outcomeMap} setMap={setOutcomeMap} />
+              {position ? <PositionResult preview={preview} summary={summary} name={position.name} /> : (
               <div className="xl-summary">
                 <div className="ds-section-h">Result</div>
                 <p>
@@ -245,10 +304,11 @@ export default function RcmImportModal({ study, onClose, onImported }) {
                 </ul>
                 {[...(preview.notes || []), ...preview.warnings].map((w, i) => <p key={i} className="xl-note">{w}</p>)}
               </div>
+              )}
             </>
           )}
 
-          {study ? (
+          {position ? null : study ? (
             <div className="xl-target">
               <div className="ds-section-h">Into this study</div>
               <label className="ds-check">
@@ -316,6 +376,55 @@ function ValueMap({ title, items, choices, map, setMap }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+const clip = (text, max = 60) => (String(text || "").length > max ? `${String(text).slice(0, max - 1)}…` : String(text || ""));
+
+// What the worksheet adds to the position (the preview: nothing written yet),
+// what's there already, and any rows in error (then nothing can be added).
+function PositionResult({ preview, summary, name }) {
+  const notes = [...(preview.notes || []), ...(preview.warnings || [])];
+  return (
+    <div className="xl-summary" data-testid="rcm-import-result">
+      <div className="ds-section-h">What this adds to {clip(name)}</div>
+      <p>
+        {summary.nothing ? <b>Nothing new: it's all on {clip(name)} already.</b>
+          : <>Adds {summary.adds.map((t, i) => <span key={t}>{i ? " · " : ""}<b>{t}</b></span>)}</>}
+      </p>
+      {summary.there.length > 0 && (
+        <p className="xl-dim">Already there, left as they are: {summary.there.join(" · ")}.</p>
+      )}
+      {preview.functions.length > 0 && (
+        <ul className="xl-tree">
+          {preview.functions.slice(0, 4).map((f, i) => (
+            <li key={i}>
+              <b>{f.text}</b>{!f.new && <span className="xl-dim"> (there already)</span>}
+              <ul>
+                {f.failures.slice(0, 3).map((x, j) => (
+                  <li key={j}>
+                    {x.text}
+                    <span className="xl-dim"> — {x.modes ? `${x.modes} new failure mode${x.modes === 1 ? "" : "s"}` : "no new failure modes"}</span>
+                  </li>
+                ))}
+                {f.failures.length > 3 && <li className="xl-dim">+ {f.failures.length - 3} more</li>}
+              </ul>
+            </li>
+          ))}
+          {preview.functions.length > 4 && <li className="xl-dim">+ {preview.functions.length - 4} more functions</li>}
+        </ul>
+      )}
+      {preview.errors?.length > 0 && (
+        <div className="error" role="alert">
+          <p style={{ margin: 0 }}>
+            {preview.errors.length === 1 ? "One row needs fixing" : `${preview.counts.errors} rows need fixing`} before
+            anything can be added:
+          </p>
+          <ul>{preview.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+        </div>
+      )}
+      {notes.map((w, i) => <p key={i} className="xl-note">{w}</p>)}
     </div>
   );
 }
