@@ -272,6 +272,19 @@ def test_cli_moves_rcm_between_positions(server, capsys):
     assert rf.call("maintenance_get", "rcm", id=a, scope="this")["positions"][0]["unassigned"][0]["id"] == mode["id"]
 
 
+def test_cli_adds_the_sample_truck(server, capsys):
+    """maintenance_positions add_sample_truck from the command line: once, then --again for another copy."""
+    code, out, _ = run(capsys, "maintenance_positions", "add_sample_truck", "--json")
+    made = json.loads(out)
+    assert code == 0 and made["added"] and made["failure_modes"] == 5 and made["decisions"] == 5
+    code, out, _ = run(capsys, "maintenance_positions", "add_sample_truck", "--json")
+    assert code == 0 and json.loads(out)["added"] is False
+    code, out, _ = run(capsys, "maintenance_positions", "add_sample_truck", "--again", "--json")
+    assert code == 0 and json.loads(out)["position"]["name"] == "Delivery truck (sample 2)"
+    sheet = Client().call("maintenance_get", "rcm", id=made["position"]["id"], scope="this")
+    assert sheet["rollup"]["modes"] == 5
+
+
 def test_cli_sets_and_clears_a_positions_operating_context(server, capsys):
     rf = Client()
     pid = rf.call("maintenance_positions", "create", name="Fan 3", operating_context="Dusty; runs on demand.")["id"]

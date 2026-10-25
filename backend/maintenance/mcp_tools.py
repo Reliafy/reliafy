@@ -184,6 +184,8 @@ POSITIONS: Table = {
         modes and a task for every decision with an interval (list kind rcm_studies / rcm create)."""),
     "apply_rcm": ("position_id study_id", "", """Bring a study's failure modes and tasks onto an existing
         position; again later adds what's new and updates changed tasks."""),
+    "add_sample_truck": ("", "again", """Copy the sample delivery truck, with its RCM, into the tree; once
+        only unless again is true."""),
     "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
         locations: each such placement becomes its position's location where it has none. dry_run (default
         true) lists the changes: show them, then run with dry_run false."""),
@@ -831,7 +833,7 @@ def register() -> None:
                               location_id: str | None = None, move_to_top_level: bool | None = None,
                               clear_location: bool | None = None,
                               reason: str | None = None, study_id: str | None = None,
-                              dry_run: bool | None = None) -> dict[str, Any]:
+                              dry_run: bool | None = None, again: bool | None = None) -> dict[str, Any]:
         """Positions: the functional tree (functional locations, SAP's FLOC): the slot, by what it does.
         Items are fitted to them; tasks, failure modes, parts lists and life data belong to them."""
         m = m_for(ctx)
@@ -857,6 +859,10 @@ def register() -> None:
         if action == "apply_rcm":
             return run(lambda: {**m.apply_rcm(position_id, study_for(ctx, study_id)),
                                 "position": m.position(position_id)})
+        if action == "add_sample_truck":
+            from backend.maintenance import templates
+
+            return run(templates.add_sample_truck, m, bool(again))
         return run(m.adopt_placements, _d(dry_run, True))
 
     @tool("maintenance_fitments", _WRITE, "Fit, remove and correct items in positions", FITMENTS)

@@ -2210,6 +2210,12 @@ export function maintenanceFromRcm(studyId, parentId) {
   return postJson("/api/maintenance/from-rcm", { study_id: studyId, parent_id: parentId || null });
 }
 
+// The sample delivery truck, with its RCM, copied into the workspace's tree. Once:
+// with a copy there, nothing is added ({ added: false, position }) unless again.
+export function addSampleTruck(again = false) {
+  return postJson("/api/maintenance/sample-truck", { again: !!again });
+}
+
 // Items, optionally only an item class's (with the classes inside it) or a
 // manufacturer's ("none": those with none).
 export function listMaintenanceItems({ itemClassId, manufacturerId } = {}) {

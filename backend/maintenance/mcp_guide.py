@@ -108,6 +108,10 @@ position does, with its performance standard), add_functional_failure (how that 
 functional_failure_id (the failure modes causing it), then decide (consequence and decision with its evidence: \
 a fixed-interval, failure-finding or on-condition decision with an interval makes or changes the mode's task). \
 maintenance_get kind rcm reads it back with each evidence check (scope below: everything inside too).
+- To see one built first: maintenance_positions add_sample_truck copies the sample delivery truck into the tree \
+(two functions, five failure modes with decisions linked to sample evidence, one of them contradicted on \
+purpose). Once only: a second call says it's there; again true adds another copy. It's the user's to change or \
+retire.
 - RCM put on the wrong position: maintenance_failure_modes move_function (the function with its functional \
 failures, modes and their tasks) or move (one mode with its decision and tasks; functional_failure_id: one on \
 the new position), and maintenance_tasks move (a position's task). Ids, decisions and dates stay. Anything with \
