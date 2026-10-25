@@ -115,6 +115,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               key={c.id}
               type="button"
               className={"option-tile" + (consequence === c.id ? " selected" : "")}
+              aria-pressed={consequence === c.id}
               onClick={() => setConsequence(c.id)}
             >
               <span className="option-title">{c.label}</span>
@@ -136,6 +137,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                 (outcome === o.id ? " selected" : "") +
                 (suggested.includes(o.id) ? " suggested" : "")
               }
+              aria-pressed={outcome === o.id}
               onClick={() => {
                 setOutcome(o.id);
                 if (o.id !== "rtf") setRtfBasis(null);
@@ -161,6 +163,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                 key={b.id}
                 type="button"
                 className={"option-tile" + (rtfBasis === b.id ? " selected" : "")}
+                aria-pressed={rtfBasis === b.id}
                 onClick={() => { setRtfBasis(b.id); setEvidenceId(null); }}
               >
                 <span className="option-title">{b.label}</span>
