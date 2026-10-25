@@ -164,12 +164,27 @@ def test_not_analysed_in_the_tree(m):
     pump = m.create_position("Pump", parent_id=plant["id"])
     rows = {r["name"]: r for r in m.tree_rows()["positions"]}
     assert rows["Plant"]["not_analysed"] and rows["Pump"]["not_analysed"]
+    pump_row = lambda: {r["name"]: r for r in m.tree_rows()["positions"]}["Pump"]  # noqa: E731
     fn = m.add_function(pump["id"], "Pump water")
-    assert "not_analysed" not in {r["name"]: r for r in m.tree_rows()["positions"]}["Pump"]
-    mode = m.add_failure_mode(pump["id"], "Seal", functional_failure_id=m.add_functional_failure(fn["id"], "Leaks")["id"])
-    assert {r["name"]: r for r in m.tree_rows()["positions"]}["Pump"]["not_analysed"]
+    assert pump_row()["not_analysed"]  # a function alone isn't an analysis
+    leaks = m.add_functional_failure(fn["id"], "Leaks")
+    assert pump_row()["not_analysed"]  # a functional failure with no failure mode
+    mode = m.add_failure_mode(pump["id"], "Seal", functional_failure_id=leaks["id"])
+    assert pump_row()["not_analysed"]  # a failure mode with no decision
     m.decide_failure_mode(mode["id"], "operational", {"outcome": "redesign"})
-    assert "not_analysed" not in {r["name"]: r for r in m.tree_rows()["positions"]}["Pump"]
+    assert "not_analysed" not in pump_row()
+    # Every functional failure needs a failure mode, and every failure mode a decision.
+    stops = m.add_functional_failure(fn["id"], "Stops")
+    assert pump_row()["not_analysed"]
+    other = m.add_failure_mode(pump["id"], "Motor trips", functional_failure_id=stops["id"])
+    m.decide_failure_mode(other["id"], "operational", {"outcome": "redesign"})
+    assert "not_analysed" not in pump_row()
+    loose = m.add_failure_mode(pump["id"], "Corrosion")  # under no functional failure
+    assert pump_row()["not_analysed"]
+    m.decide_failure_mode(loose["id"], "non_operational", {"outcome": "accept"})
+    assert "not_analysed" not in pump_row()
+    # Plant has no function of its own: still not analysed, whatever is inside it.
+    assert {r["name"]: r for r in m.tree_rows()["positions"]}["Plant"]["not_analysed"]
 
 
 def test_scope_below_walks_the_tree(m):

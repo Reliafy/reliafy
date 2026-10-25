@@ -174,12 +174,14 @@ Each decision's **Evidence check** shows one of these:
 - **Inconclusive** — the evidence can't decide it. The line underneath says
   why: the wrong kind of analysis, mismatched units, or a fit with no
   confidence interval.
-- **No evidence** — the decision expects evidence and none is linked yet.
 - **Stale link** — the linked analysis has been deleted.
 
-Redesign and accept-risk decisions need no evidence, so they show no status.
+A decision with nothing linked yet shows a quiet dash, not a warning: plenty of
+decisions are made from judgement, and linking evidence is optional. Its details
+offer **Link evidence…** when you're ready. Redesign and accept-risk decisions
+need no evidence, so they show no status.
 
-The chips under the study's title count the statuses for the whole study, a
+The chips under the study's title count the linked statuses for the whole study, a
 function's row counts them for everything inside it, and
 the RCM list shows the same counts for every study. A study with no red and no
 amber is one whose every decision you can defend.

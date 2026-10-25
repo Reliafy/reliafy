@@ -64,6 +64,11 @@ test("the cells, as text: decisions, intervals, roll-ups", () => {
   assert.equal(intervalText({ interval: 1, interval_unit: "months" }), "1 month");
   assert.equal(COLUMN.task.text(m("x2")), "1 task");
   assert.equal(COLUMN.check.text(m("f1")), "1 contradicted, 1 supported");
+  // Nothing linked is quiet: no "No evidence", no "to check" on the parents.
+  assert.equal(COLUMN.check.text(m("m4")), "");
+  assert.equal(COLUMN.check.text(m("f2")), "");
+  assert.equal(m("f2").sum.unlinked, 1);
+  assert.equal(m("f2").sum.unsure, 0);
   assert.equal(COLUMN.consequence.text(m("f2")), "1 safety or env.");
   assert.equal(COLUMN.evident.text(m("m4")), "Hidden");
   assert.equal(COLUMN.standard.text(m("f1")), "12 m³/h");
@@ -74,7 +79,8 @@ test("the cells, as text: decisions, intervals, roll-ups", () => {
 
 test("chips and text filter failure modes, keeping the path to each", () => {
   const d = buildRcmDisplay(STUDY);
-  assert.deepEqual(chipCounts(d), { undecided: 2, hidden: 1, safety: 1, task: 2, notask: 3, check: 2 });
+  // Evidence to look at: linked evidence only (m2 contradicted), not m4 with nothing linked.
+  assert.deepEqual(chipCounts(d), { undecided: 2, hidden: 1, safety: 1, task: 2, notask: 3, check: 1 });
   const f = computeFilter(d, { chips: ["undecided"] });
   assert.deepEqual([...f.match].sort(), ["m3", "m5"]);
   assert.deepEqual([...f.keep].sort(), ["f1", "f2", "m3", "m5", "x1", "x2"]);

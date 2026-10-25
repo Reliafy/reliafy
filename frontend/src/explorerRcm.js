@@ -9,7 +9,7 @@
 // RCM grafted in, which position a row is on, what each row's menu offers
 // (right-click, ⋯ or Shift+F10), and the RCM chips.
 
-import { blank as rcmBlank, modeCounts, rowText as rcmText } from "./rcmWorksheet.js";
+import { COLUMNS, DEFAULT_COLUMNS, blank as rcmBlank, modeCounts, rowText as rcmText } from "./rcmWorksheet.js";
 
 export const RCM_TYPES = new Set(["fn", "fail", "mode", "unassigned"]);
 export const isRcmRow = (r) => !!r && RCM_TYPES.has(r.type);
@@ -116,9 +116,53 @@ const isMode = (r) => r.type === "mode";
 export const RCM_CHIPS = [
   { id: "undecided", label: "Needs a decision", rcmOnly: true, test: (r) => isMode(r) && !r.ref.decision },
   { id: "hidden", label: "Hidden failures", rcmOnly: true, test: (r) => isMode(r) && r.ref.consequence === "hidden" },
-  { id: "check", label: "Evidence to look at", rcmOnly: true, title: "Contradicted, inconclusive, not linked yet, or a stale link",
-    test: (r) => isMode(r) && ["contradicted", "inconclusive", "unevidenced", "stale"].includes(r.ref.decision?.status) },
+  { id: "check", label: "Evidence to look at", rcmOnly: true,
+    title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
+    test: (r) => isMode(r) && ["contradicted", "inconclusive", "stale"].includes(r.ref.decision?.status) },
 ];
+
+// ---- the Evidence check column -------------------------------------------------
+// Most RCM is done from judgement, with no model or analysis linked to its
+// decisions; a column of "nothing linked" there says nothing. So the table
+// shows the Evidence check column only once some failure mode in the workspace
+// has evidence linked, unless it's been ticked on or off in the Columns menu
+// (remembered on this device with the other column choices: explorerCheck).
+
+// Does any decision in the workspace's RCM (GET /api/maintenance/rcm) have
+// evidence linked (a model or analysis, even one that has gone since)?
+export function hasLinkedEvidence(rcm) {
+  const linked = (m) => !!m.decision && (!!m.decision.evidence
+    || ["supported", "contradicted", "inconclusive", "stale"].includes(m.decision.status));
+  for (const p of rcm?.positions || []) {
+    if ((p.unassigned || []).some(linked)) return true;
+    for (const fn of p.functions || []) for (const ff of fn.failures || []) if ((ff.modes || []).some(linked)) return true;
+  }
+  return false;
+}
+
+const inOrder = (ids) => COLUMNS.map((c) => c.id).filter((id) => ids.includes(id));
+
+// The columns the table shows: the remembered set, with the Evidence check as
+// chosen in the Columns menu, else only when evidence is linked somewhere.
+export function tableCols(prefs, linked) {
+  const want = typeof prefs.explorerCheck === "boolean" ? prefs.explorerCheck : linked;
+  const rest = (prefs.cols || DEFAULT_COLUMNS).filter((id) => id !== "check");
+  return inOrder(want ? [...rest, "check"] : rest);
+}
+
+// The prefs after the Columns menu changed what's shown (`next`, from `shown`).
+// Ticking the Evidence check on or off is remembered as a choice; the other
+// columns are the shared set. `reset` (Show the usual columns): the usual set,
+// and the Evidence check back to following the evidence. The shared set keeps
+// its own Evidence check (the RCM study's worksheet uses it).
+export function withTableCols(prefs, next, shown, { reset = false } = {}) {
+  const had = (prefs.cols || DEFAULT_COLUMNS).includes("check");
+  const cols = inOrder([...next.filter((id) => id !== "check"), ...(had ? ["check"] : [])]);
+  const out = { ...prefs, cols };
+  if (reset) delete out.explorerCheck;
+  else if (next.includes("check") !== shown.includes("check")) out.explorerCheck = next.includes("check");
+  return out;
+}
 
 // The rows to open when the RCM tab opens on a position: it, and its
 // functions and functional failures, so its failure modes show.

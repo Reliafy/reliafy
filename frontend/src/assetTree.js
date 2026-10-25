@@ -241,8 +241,9 @@ function rollUp(rows, roots) {
   }
   for (let i = order.length - 1; i >= 0; i--) {
     const r = order[i];
-    // not_analysed: a position whose RCM isn't done (no function yet, or a
-    // failure mode with no decision), from the tree's rows.
+    // not_analysed: a position whose RCM isn't finished (ANALYSED_RULE), from
+    // the tree's rows (the server decides it); a parent's sum counts it and
+    // every position inside it.
     const own = { ...blank(), ...(r.ref.status || {}), not_analysed: r.type === "pos" && r.ref.not_analysed ? 1 : 0 };
     const sum = { ...own, positions: 0, empty: 0 };
     for (const k of r.kids) {
@@ -271,13 +272,21 @@ export function rowText(r) {
     .filter(Boolean).join(" ").toLowerCase();
 }
 
+// What "analysed" means (RCM), in plain words: the Not analysed chip's
+// tooltip. The server applies the same rule (Maintenance._analysed) to every
+// position, so the tree's marks, the chip, the counts and a parent's roll-up
+// all agree.
+export const ANALYSED_RULE = "Not analysed: positions whose RCM isn't finished. A position is analysed when it has at least "
+  + "one function, every function has a functional failure, every functional failure has a failure mode, and every "
+  + "failure mode has a decision. A position with no functions of its own is not analysed.";
+
 // The status filters, as chips.
 export const CHIPS = [
   { id: "overdue", label: "Overdue", test: (r) => r.own.overdue > 0 },
   { id: "open", label: "Open work", test: (r) => r.own.open_work > 0 },
   { id: "alarm", label: "Alarm", test: (r) => r.own.alarms > 0 },
   { id: "empty", label: "Empty", title: "Positions with a class and nothing fitted", positionsOnly: true, test: (r) => r.type === "pos" && !!r.ref.position_class && !r.ref.item },
-  { id: "unanalysed", label: "Not analysed", title: "Positions with no function yet, or a failure mode with no decision (RCM)", positionsOnly: true, test: (r) => r.own.not_analysed > 0 },
+  { id: "unanalysed", label: "Not analysed", title: ANALYSED_RULE, positionsOnly: true, test: (r) => r.own.not_analysed > 0 },
   // The RCM tab's own, about its failure modes (shown on that tab only).
   ...RCM_CHIPS,
 ];

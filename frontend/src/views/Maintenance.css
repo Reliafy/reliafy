@@ -11,6 +11,10 @@
 .maint-head h2 {
   margin: 0;
 }
+/* A picker in a card's heading (Open work orders: In <location>): a long
+   location path shortens the box rather than widening the page on a phone. */
+.maint-head > label { min-width: 0; max-width: 100%; }
+.maint-head > label select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
 
 .maint-row {
   display: flex;

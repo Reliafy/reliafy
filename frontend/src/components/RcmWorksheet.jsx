@@ -9,7 +9,7 @@ import { ancestorsOf, depthOf, filterOpen, flatten, levelSet, visiblePick } from
 import {
   CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, LEVELS, LEVEL_OF, NAME_COLUMN,
   addNode, buildRcmDisplay, consequenceWords, failuresOn, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
-  intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder, withOpen,
+  intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, shownStatus, siblingOrder, withOpen,
 } from "../rcmWorksheet.js";
 import "./RcmWorksheet.css";
 
@@ -85,6 +85,10 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
             <RcmStatusBadge status={d.status} />
           </Link>
         );
+      }
+      if (mode && d?.status === "unevidenced") {
+        // Nothing linked yet: quiet, not a warning (most RCM is done from judgement).
+        return <span className="rw-quiet" title="No evidence linked yet"><span aria-hidden="true">–</span><span className="sr-only">No evidence linked yet</span></span>;
       }
       if (mode) return d?.status ? <RcmStatusBadge status={d.status} /> : null;
       // One kind inside: in words ("4 to check"); more: a mark and a count each.
@@ -205,8 +209,8 @@ export function phoneLine(r) {
 
 export function PhoneStatus({ r }) {
   if (r.type === "mode") {
-    const d = r.ref.decision;
-    return d?.status ? <RcmStatusBadge status={d.status} /> : null;
+    const s = shownStatus(r.ref.decision?.status);
+    return s ? <RcmStatusBadge status={s} /> : null;
   }
   if (r.sum.contradicted) return <span className="rw-ck contradicted">✗{r.sum.contradicted}<span className="sr-only"> contradicted</span></span>;
   if (r.sum.undecided) return <span className="rw-sum rw-todo">{r.sum.undecided} to decide</span>;
@@ -358,12 +362,23 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
               {COLUMN.task.can(r) && field("Task", "task", { area: true })}
               {COLUMN.interval.can(r) && field("Interval", "interval")}
               {field("Decision notes", "dnotes", { area: true })}
+              {d.status === "unevidenced" ? (
+                // Nothing linked: a gentle way to link it, not a warning.
+                <p className="rw-evidence rw-unlinked">
+                  No evidence linked yet{readOnly ? "." : ": "}
+                  {!readOnly && (
+                    <button type="button" className="link" onClick={() => onDecision(r)}
+                            title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button>
+                  )}
+                </p>
+              ) : (
               <div className="rw-evidence">
                 {d.status && <RcmStatusBadge status={d.status} />}
                 {d.artifact_name && (d.artifact_link_path
                   ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
                 {(d.summary || d.reason) && <p>{d.summary || d.reason}</p>}
               </div>
+              )}
             </>
           ) : <p className="rw-dline">No decision yet.</p>}
           {!readOnly && (
@@ -434,7 +449,7 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
 }
 
 // The column chooser: tick the columns to show; the description is always shown.
-export function ColumnChooser({ cols, onCols }) {
+export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS }) {
   const [open, setOpen] = useState(false);
   const box = useRef(null);
   useEffect(() => {
@@ -459,7 +474,7 @@ export function ColumnChooser({ cols, onCols }) {
               {c.label}{c.sum ? <span className="rw-sig" title="A parent row counts what's inside it"> Σ</span> : null}
             </label>
           ))}
-          <button type="button" className="link rw-pop-reset" onClick={() => onCols(DEFAULT_COLUMNS)}>Show the usual columns</button>
+          <button type="button" className="link rw-pop-reset" onClick={() => onCols(usual, { reset: true })}>Show the usual columns</button>
         </div>
       )}
     </div>

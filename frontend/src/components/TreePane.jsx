@@ -129,7 +129,8 @@ function posLine(r, hint) {
   if (hint) return NO_FUNCTIONS_PHONE;
   const s = r.rsum;
   if (!s?.modes) return r.ref.not_analysed ? "Not analysed yet" : "";
-  return `${s.modes.toLocaleString("en-AU")} failure mode${s.modes === 1 ? "" : "s"} · ${s.undecided ? `${s.undecided} to decide` : "all decided"}`;
+  const state = s.undecided ? `${s.undecided} to decide` : r.ref.not_analysed ? "not analysed yet" : "all decided";
+  return `${s.modes.toLocaleString("en-AU")} failure mode${s.modes === 1 ? "" : "s"} · ${state}`;
 }
 
 // The tree's own part of a row: indent, arrow, icon, name, markers.

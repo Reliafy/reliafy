@@ -306,6 +306,8 @@
 .rw-ck.unsure { color: var(--warn); }
 .rw-ck.stale { color: var(--muted); }
 .rw-ck.supported { color: var(--ok); }
+/* A decision with no evidence linked: quiet, not a warning. */
+.rw-quiet { color: var(--muted); }
 .rw-c .chip { flex: none; }
 
 /* A cell being edited. */
@@ -391,6 +393,7 @@
 .rw-dline { margin: 0; font-size: var(--fs-14); }
 .rw-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: var(--fs-13); }
 .rw-evidence p { margin: 0; flex-basis: 100%; color: var(--muted); }
+p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-decision > button { align-self: flex-start; }
 .rw-panel-acts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 

@@ -10,7 +10,9 @@ import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx
 import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
-import { cellRow, graftRcm, isRcmRow, openFor, positionOf, rowActions } from "../explorerRcm.js";
+import {
+  cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, withTableCols,
+} from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
@@ -27,6 +29,8 @@ import {
 } from "../assetTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
+import { liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
+import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
 import usePhone from "../usePhone.js";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
@@ -98,7 +102,7 @@ export default function AssetExplorer() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
-  const { workspace } = useWorkspace();
+  const { workspace, activeTeam } = useWorkspace();
   const phone = usePhone();
   const saved = useMemo(() => loadTreeState(workspace), [workspace]);
   const tab = tabParam(params.get("tab"));
@@ -149,6 +153,10 @@ export default function AssetExplorer() {
   const [fopen, setFopen] = useState(null);
   const [scrollTo, setScrollTo] = useState(null);
   const [modal, setModal] = useState(null);
+  // The Summary tab's row menu: the row a new position or location goes
+  // inside, and the row being renamed, moved or retired ({kind, row}).
+  const [newParent, setNewParent] = useState(null);
+  const [rowModal, setRowModal] = useState(null);
   const headingRef = useRef(null);
   const detailsHeading = useRef(null);
   const frame = useRef(null);
@@ -188,7 +196,13 @@ export default function AssetExplorer() {
     const t = setTimeout(() => savePrefs(rprefs), 200);
     return () => clearTimeout(t);
   }, [rprefs]);
-  const say = (text, tone = "ok") => setMessage({ text, tone, at: Date.now() });
+  const say = (text, tone = "ok", { fade = false } = {}) => setMessage({ text, tone, at: Date.now(), fade });
+  // A message about a change made from the Summary tab's row menu goes after a while.
+  useEffect(() => {
+    if (!message?.fade) return undefined;
+    const t = setTimeout(() => setMessage((m) => (m === message ? null : m)), 6000);
+    return () => clearTimeout(t);
+  }, [message]);
   const wantItems = mode === "items";
   useEffect(() => {
     if (!wantItems || !version) return undefined;
@@ -202,6 +216,7 @@ export default function AssetExplorer() {
 
   const base = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
   const whole = useMemo(() => (rcmOn && rcm ? graftRcm(base, rcm) : base), [base, rcmOn, rcm]);
+  const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // A branch pinned (?pin=): the pane's tree starts at that row, and
   // everything below (open rows, levels, the filter, counts) works on it alone.
   const pinParam = params.get("pin");
@@ -452,12 +467,21 @@ export default function AssetExplorer() {
     ? [r.key === pinKey ? { id: "unpin", label: "Show whole tree" } : { id: "pin", label: "Pin this branch" }] : []);
 
   // A row's menu (TreePane's rowMenu): what it offers, and doing it. On the
-  // RCM tab, adding inside the row and its other actions; and on any row that
-  // can be pinned, Pin this branch.
+  // RCM tab, adding inside the row and its other actions; on the Summary tab,
+  // changing the tree (new inside, rename, move, retire: treeRowMenu.js); and
+  // on any row that can be pinned, Pin this branch.
+  const viewOnly = viewOnlyReason(activeTeam);
+  const kids = useMemo(() => liveKids(data?.positions), [data]);
   const rowMenu = {
-    actions: (r) => [...(rcmOn && rcm ? rowActions(r, { canRename: !phone }) : []), ...pinItem(r)],
+    actions: (r) => (rcmOn
+      ? [...(rcm ? rowActions(r, { canRename: !phone }) : []), ...pinItem(r)]
+      : withPin(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), pinItem(r))),
     onAction: (r, id) => {
-      if (id === "pin") pinTo(r.key, { select: true });
+      if (id === "tree-new") {
+        setNewParent(r.key);
+        setModal(r.type === "loc" ? "location" : "position");
+      } else if (id === "tree-rename" || id === "tree-move" || id === "tree-retire") setRowModal({ kind: id.slice(5), row: r });
+      else if (id === "pin") pinTo(r.key, { select: true });
       else if (id === "unpin") unpin();
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       else if (id === "add-fail" || id === "add-mode") addInside(r);
@@ -589,9 +613,26 @@ export default function AssetExplorer() {
 
   const created = (id) => {
     setModal(null);
+    setNewParent(null);
     pending.current = id;
     load();
   };
+  const closeModal = () => {
+    setModal(null);
+    setNewParent(null);
+  };
+  // After a rename, move or retire from the row menu: the tree read again,
+  // the row kept picked (moved: shown in its new place; retired: the row it
+  // was inside picked instead), and a few words to say so.
+  const rowChanged = (row, { select = row.key, text }) => {
+    setRowModal(null);
+    if (select != null) pending.current = select;
+    load();
+    say(text, "ok", { fade: true });
+    if (select != null) setTimeout(() => document.getElementById(`tp-${select}`)?.focus({ preventScroll: true }), 300);
+  };
+  // Where a row can move to: its kind's tree, without it and what's inside it.
+  const targetsFor = (row) => moveTargets(row.type === "loc" ? data?.locations : data?.positions, row.key);
 
   const nothing = data && (mode === "locations" ? !data.locations.length && !data.positions.length
     : mode === "items" ? !display.items : !data.positions.length);
@@ -672,7 +713,10 @@ export default function AssetExplorer() {
 
   // The RCM tab: the table's columns beside the tree, the heading over them,
   // and the details of the function, failure or mode picked.
-  const cols = rprefs.cols.map((id) => COLUMN[id]).filter(Boolean);
+  // The Evidence check column only once evidence is linked somewhere (or as
+  // chosen in the Columns menu).
+  const shownCols = tableCols(rprefs, linkedEvidence);
+  const cols = shownCols.map((id) => COLUMN[id]).filter(Boolean);
   const widths = {};
   for (const c of cols) widths[c.id] = rprefs.widths[c.id] ?? c.width;
   const table = rcmOn ? {
@@ -698,13 +742,14 @@ export default function AssetExplorer() {
                     <button type="button" className="sm"
                             // A double-click asks once (its second click is the dialog's, which ignores it).
                             onClick={(e) => { if (e.detail < 2) runAdd({ ref: { add: "fn", position_id: posRow.key } }); }}>Add function</button>
-                    <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
+                    <ColumnChooser cols={shownCols} onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
                   </>
                 )} />
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 pin={pinFor(summaryRow)} headingRef={headingRef} fullScreenButton={fullButton}
-                meta={KIND[summaryRow.type] ? <span className="tt-kind">{KIND[summaryRow.type]}</span> : null} primaryOpen />
+                meta={KIND[summaryRow.type] ? <span className="tt-kind">{KIND[summaryRow.type]}</span> : null} primaryOpen
+                message={message?.fade ? msg : null} />
   );
   const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
   const headTabs = !phone && tabsRow && <HeaderTabs row={tabsRow} tab={tab} onTab={setTab} />;
@@ -821,14 +866,15 @@ export default function AssetExplorer() {
       {phone && summary}
 
       {modal === "position" && (
-        <NewPositionModal positions={pickerList(data)} parentId={selPos && display.rows.get(selPos)?.type === "pos" ? selPos : null}
-                          onClose={() => setModal(null)} onCreated={(p) => created(p.id)} />
+        <NewPositionModal positions={pickerList(data)}
+                          parentId={newParent ?? (selPos && display.rows.get(selPos)?.type === "pos" ? selPos : null)}
+                          onClose={closeModal} onCreated={(p) => created(p.id)} />
       )}
       {modal === "location" && (
         <NewLocationModal
           locations={(data?.locations || []).map((l) => ({ ...l, parent: l.parent_id ? { name: data.locations.find((x) => x.id === l.parent_id)?.name } : null }))}
-          parentId={focus && display.rows.get(focus)?.type === "loc" ? focus : null}
-          onClose={() => setModal(null)} onDone={(l) => created(l.id)} />
+          parentId={newParent ?? (focus && display.rows.get(focus)?.type === "loc" ? focus : null)}
+          onClose={closeModal} onDone={(l) => created(l.id)} />
       )}
       {modal === "item" && (
         <NewItemModal
@@ -838,6 +884,22 @@ export default function AssetExplorer() {
       {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
       {modal === "rcm" && (
         <FromRcmModal positions={pickerList(data)} onClose={() => setModal(null)} onCreated={(r) => created(r.position.id)} />
+      )}
+      {rowModal?.kind === "rename" && (
+        <RenameModal row={rowModal.row} onClose={() => setRowModal(null)}
+                     onDone={(name) => rowChanged(rowModal.row, { text: `Renamed it “${name}”.` })} />
+      )}
+      {rowModal?.kind === "move" && (
+        <MoveModal row={rowModal.row} targets={targetsFor(rowModal.row)} parentId={rowModal.row.ref.parent_id || null}
+                   onClose={() => setRowModal(null)}
+                   onDone={(to) => rowChanged(rowModal.row, { text: to ? `Moved it inside “${to}”.` : "Moved it to the top level." })} />
+      )}
+      {rowModal?.kind === "retire" && (
+        <RetireModal row={rowModal.row} onClose={() => setRowModal(null)}
+                     onDone={() => rowChanged(rowModal.row, {
+                       select: rowModal.row.ref.parent_id && display.rows.has(rowModal.row.ref.parent_id) ? rowModal.row.ref.parent_id : null,
+                       text: `Retired “${rowModal.row.ref.name}”.`,
+                     })} />
       )}
       {deciding && options && (
         <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} limits />

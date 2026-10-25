@@ -43,9 +43,13 @@ export const STATUS_LABEL = {
   supported: "Supported",
   contradicted: "Contradicted",
   inconclusive: "Inconclusive",
-  unevidenced: "No evidence",
+  unevidenced: "Not linked",
   stale: "Stale link",
 };
+// A decision's evidence check worth showing: one with linked evidence (a
+// decision with nothing linked yet, "unevidenced", is quiet: most RCM is done
+// from judgement, and nothing is wrong with it).
+export const shownStatus = (s) => (s && s !== "unevidenced" ? s : null);
 const RTF_LABEL = { random: "random", uneconomic: "not economic" };
 
 // Which decisions take a task and an interval (as the decision dialog asks).
@@ -54,7 +58,7 @@ export const INTERVAL_OUTCOMES = new Set(["on_condition", "fixed_interval", "fai
 
 export const blank = () => ({
   modes: 0, undecided: 0, tasks: 0, hidden: 0, safety: 0,
-  supported: 0, contradicted: 0, unsure: 0, stale: 0,
+  supported: 0, contradicted: 0, unsure: 0, stale: 0, unlinked: 0,
 });
 
 // A failure mode's own counts (each 0 or 1).
@@ -69,8 +73,10 @@ export function modeCounts(m) {
     safety: m.consequence === "safety" || m.consequence === "environmental" ? 1 : 0,
     supported: s === "supported" ? 1 : 0,
     contradicted: s === "contradicted" ? 1 : 0,
-    unsure: s === "inconclusive" || s === "unevidenced" ? 1 : 0,
+    // Linked evidence that doesn't settle it (the wrong kind, a unit mismatch...).
+    unsure: s === "inconclusive" ? 1 : 0,
     stale: s === "stale" ? 1 : 0,
+    unlinked: s === "unevidenced" ? 1 : 0,
   };
 }
 
@@ -176,12 +182,13 @@ export function insideWords(r) {
 }
 
 // The evidence checks inside a row: [{kind, n, label}] (kind: supported,
-// contradicted, unsure, stale), for the parent rows' Evidence check cell.
+// contradicted, unsure, stale), for the parent rows' Evidence check cell. Only
+// linked evidence counts: a decision with nothing linked yet isn't "to check".
 export function checkCounts(r) {
   const s = r.sum;
   return [
     { kind: "contradicted", n: s.contradicted, label: "contradicted" },
-    { kind: "unsure", n: s.unsure, label: "to check" },
+    { kind: "unsure", n: s.unsure, label: "inconclusive" },
     { kind: "stale", n: s.stale, label: "stale" },
     { kind: "supported", n: s.supported, label: "supported" },
   ].filter((c) => c.n > 0);
@@ -197,7 +204,7 @@ export function checkCounts(r) {
 // ("text", "choice" or "number"), and `can(r)` the rows that allow it.
 const CONS_RANK = { safety: 0, environmental: 1, hidden: 2, operational: 3, non_operational: 4 };
 const OUT_RANK = { on_condition: 0, fixed_interval: 1, failure_finding: 2, rtf: 3, redesign: 4, accept: 5 };
-const STATUS_RANK = { contradicted: 0, stale: 1, unevidenced: 2, inconclusive: 3, supported: 4 };
+const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, supported: 4 };
 const isMode = (r) => r.type === "mode";
 const d = (r) => r.ref.decision || null;
 
@@ -252,7 +259,7 @@ export const COLUMNS = [
   {
     id: "check", label: "Evidence check", width: 126, on: true,
     title: "Whether the linked analysis backs the decision, checked each time the study opens",
-    text: (r) => (isMode(r) ? STATUS_LABEL[d(r)?.status] || "" : checkCounts(r).map((c) => `${c.n} ${c.label}`).join(", ")),
+    text: (r) => (isMode(r) ? STATUS_LABEL[shownStatus(d(r)?.status)] || "" : checkCounts(r).map((c) => `${c.n} ${c.label}`).join(", ")),
     sort: (r) => (isMode(r) ? STATUS_RANK[d(r)?.status] ?? null
       : r.sum.contradicted ? 0 : r.sum.stale ? 1 : r.sum.unsure ? 2 : r.sum.supported ? 4 : null),
   },
@@ -336,8 +343,8 @@ export const CHIPS = [
   { id: "safety", label: "Safety or environment", test: (r) => isMode(r) && (r.ref.consequence === "safety" || r.ref.consequence === "environmental") },
   { id: "task", label: "Has a task", test: (r) => isMode(r) && hasTask(r.ref) },
   { id: "notask", label: "No task yet", test: (r) => isMode(r) && !hasTask(r.ref) },
-  { id: "check", label: "Evidence to look at", title: "Contradicted, inconclusive, not linked yet, or a stale link",
-    test: (r) => isMode(r) && ["contradicted", "inconclusive", "unevidenced", "stale"].includes(d(r)?.status) },
+  { id: "check", label: "Evidence to look at", title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
+    test: (r) => isMode(r) && ["contradicted", "inconclusive", "stale"].includes(d(r)?.status) },
 ];
 
 export function chipCounts(display) {
@@ -506,6 +513,9 @@ export function loadPrefs(storage = globalThis.localStorage) {
       widths,
       density: v.density === "compact" ? "compact" : "comfortable",
       open: v.open && typeof v.open === "object" ? v.open : {},
+      // The Explorer's Evidence check column, when chosen on or off there
+      // (left out: shown once the workspace has linked evidence).
+      ...(typeof v.explorerCheck === "boolean" ? { explorerCheck: v.explorerCheck } : {}),
     };
   } catch {
     return fallback;

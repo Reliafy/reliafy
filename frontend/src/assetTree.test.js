@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ARRANGEMENTS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
+  ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, pinnedRows, saveTreeState,
   statusWords, windowOf,
 } from "./assetTree.js";
@@ -241,4 +241,8 @@ test("Not analysed: the chip finds positions with no RCM yet; the quiet marker c
   assert.deepEqual(markersOf(d.rows.get("zone10"), { rcm: true }).map((m) => [m.kind, m.text]), [["rcm", "○"]]);
   // Items have none.
   assert.equal(computeFilter(buildDisplay(data, "items"), { chips: ["unanalysed"] }).match.size, 0);
+  // The chip's tooltip says what analysed means (the server's rule), in words.
+  const chip = CHIPS.find((c) => c.id === "unanalysed");
+  assert.match(chip.title, /at least one function, every function has a functional failure, every functional failure has a failure mode, and every failure mode has a decision/);
+  assert.match(chip.title, /no functions of its own is not analysed/);
 });

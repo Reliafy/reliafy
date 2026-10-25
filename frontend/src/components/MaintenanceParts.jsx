@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   addMaintenanceDocument, decideProposal, getMaintenanceDocumentBlob, removeMaintenanceDocument,
@@ -268,18 +268,29 @@ export function LocationPicker({ locations, value, onChange, emptyLabel = "Choos
 }
 
 // A modal with a form: `onSubmit` returns a promise; errors show in the modal.
-export function FormModal({ title, submitLabel, onClose, onSubmit, canSubmit = true, children }) {
+// Sent once: while it's in flight the button is disabled and says
+// `pendingLabel` (default "Saving…"), and a second click, double-click or
+// Enter sends nothing more (a ref, set before React draws again). A refusal
+// shows in the modal, in the server's words, or what to do when there was no
+// answer at all.
+export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onClose, onSubmit, canSubmit = true, children }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const inFlight = useRef(false);
   const submit = async () => {
+    if (inFlight.current || !canSubmit) return;
+    inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
       await onSubmit();
     } catch (err) {
-      setError(err.message);
+      const msg = err?.message || "";
+      setError(!msg || msg === "Failed to fetch" || /NetworkError|Load failed/i.test(msg)
+        ? "Couldn't save: check your connection and try again." : msg);
     }
     // A step that keeps the dialog open (check, then import) needs the button back.
+    inFlight.current = false;
     setBusy(false);
   };
   return (
@@ -290,7 +301,7 @@ export function FormModal({ title, submitLabel, onClose, onSubmit, canSubmit = t
       footer={
         <>
           <button className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          <button onClick={submit} disabled={busy || !canSubmit}>{busy ? "Saving…" : submitLabel}</button>
+          <button onClick={submit} disabled={busy || !canSubmit} aria-busy={busy || undefined}>{busy ? pendingLabel : submitLabel}</button>
         </>
       }
     >
