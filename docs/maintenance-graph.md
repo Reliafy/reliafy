@@ -393,6 +393,16 @@ The events are new types: `PROJECTION_VERSION` stays, and code from before them
 passes them over, so there a failure explained only below reads as not covered
 until it's replaced.
 
+Where to write them: `POST /api/maintenance/functional-failures/{ff_id}/causes`
+`{cause_id}` and `DELETE /api/maintenance/functional-failures/{ff_id}/causes/{cause_id}`
+in the app (both answer with the functional failure, its causes and effects);
+`maintenance_failure_modes` `link_cause` / `unlink_cause`
+(`functional_failure_id`, `cause_id`) over MCP, with their REST twins
+(`POST /api/v1/maintenance_failure_modes/link_cause`) and CLI commands
+(`reliafy maintenance_failure_modes link_cause --functional-failure-id … --cause-id …`)
+built from the same table. The graph schema's examples `failure_causes` and
+`failure_effects` walk the links in Cypher.
+
 ### Moving RCM to another position
 
 RCM written on the wrong position can be moved, keeping every id, decision,

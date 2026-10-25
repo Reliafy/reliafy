@@ -214,4 +214,77 @@ def test_the_working_behind_a_standard_over_mcp(env):  # noqa: F811
                              standard_basis="x" * 20_001)
         assert too_long.is_error and "attach it as a PDF" in too_long.content[0].text
         return True
+
+    assert _session(env["token"], go)
+
+
+def test_link_a_cause_over_the_routes(api):
+    M = "/api/maintenance"
+    pool = api.post(f"{M}/positions", json={"name": "Swimming Pool"}).json()
+    cell = api.post(f"{M}/positions", json={"name": "Chlorinator cell", "parent_id": pool["id"]}).json()
+    fn = api.post(f"{M}/positions/{pool['id']}/functions", json={"text": "Sanitise the water"}).json()
+    top = api.post(f"{M}/functions/{fn['id']}/failures", json={"text": "Free chlorine below 1 ppm"}).json()
+    fn2 = api.post(f"{M}/positions/{cell['id']}/functions", json={"text": "Produce chlorine"}).json()
+    low = api.post(f"{M}/functions/{fn2['id']}/failures", json={"text": "No chlorine produced"}).json()
+    mode = api.post(f"{M}/positions/{cell['id']}/failure-modes",
+                    json={"text": "Plates scaled", "functional_failure_id": low["id"]}).json()
+    api.put(f"{M}/failure-modes/{mode['id']}/decision",
+            json={"consequence": "operational", "decision": {"outcome": "rtf", "rtf_basis": "random"}})
+
+    r = api.post(f"{M}/functional-failures/{top['id']}/causes", json={"cause_id": low["id"]})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["covered"] is True and out["explained_below"] is True
+    assert [(c["id"], c["position"]["name"], c["inside"]) for c in out["causes"]] == [
+        (low["id"], "Chlorinator cell", True)]
+    rows = {p["name"]: p for p in api.get(f"{M}/tree").json()["positions"]}
+    assert "not_analysed" not in rows["Swimming Pool"]  # the tree's mark follows the links
+    sheet = api.get(f"{M}/positions/{pool['id']}/rcm").json()
+    assert sheet["positions"][0]["analysed"] is True
+    assert sheet["positions"][1]["functions"][0]["failures"][0]["effects"][0]["id"] == top["id"]
+    # The other way round is refused, saying what to do.
+    r = api.post(f"{M}/functional-failures/{low['id']}/causes", json={"cause_id": top["id"]})
+    assert r.status_code == 422 and "inside Chlorinator cell" in r.json()["detail"]
+    assert api.post(f"{M}/functional-failures/{top['id']}/causes", json={}).status_code == 422
+    assert api.post(f"{M}/functional-failures/nope/causes", json={"cause_id": low["id"]}).status_code == 404
+
+    r = api.delete(f"{M}/functional-failures/{top['id']}/causes/{low['id']}")
+    assert r.status_code == 200 and r.json()["causes"] == [] and r.json()["covered"] is False
+    # Retiring a position says how many links went.
+    api.post(f"{M}/functional-failures/{top['id']}/causes", json={"cause_id": low["id"]})
+    api.delete(f"{M}/failure-modes/{mode['id']}")
+    r = api.post(f"{M}/positions/{cell['id']}/retire", json={})
+    assert r.status_code == 200 and r.json() == {"retired": cell["id"], "links_removed": 1}
+
+
+def test_link_a_cause_over_mcp(env):  # noqa: F811
+    async def go(client):
+        pool = _ok(await _do(client, "maintenance_positions", "create", name="Swimming Pool"))
+        salt = _ok(await _do(client, "maintenance_positions", "create", name="Salt chlorinator",
+                             parent_id=pool["id"]))
+        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pool["id"],
+                           text="Sanitise the water"))
+        top = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn["id"],
+                            text="Free chlorine below 1 ppm"))
+        fn2 = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=salt["id"],
+                            text="Produce up to 25 g/h"))
+        low = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn2["id"],
+                            text="No output"))
+        linked = _ok(await _do(client, "maintenance_failure_modes", "link_cause", functional_failure_id=top["id"],
+                               cause_id=low["id"]))
+        assert [c["id"] for c in linked["causes"]] == [low["id"]] and linked["covered"] is False
+        sheet = _ok(await _get(client, "rcm", pool["id"]))
+        failure = sheet["positions"][0]["functions"][0]["failures"][0]
+        assert failure["explained_below"] is True and failure["causes"][0]["position"]["name"] == "Salt chlorinator"
+        assert sheet["positions"][1]["functions"][0]["failures"][0]["effects"][0]["id"] == top["id"]
+        refused = await _do(client, "maintenance_failure_modes", "link_cause", functional_failure_id=low["id"],
+                            cause_id=top["id"])
+        assert refused.is_error and "inside Salt chlorinator" in refused.content[0].text
+        missing = await _do(client, "maintenance_failure_modes", "link_cause", functional_failure_id=top["id"])
+        assert missing.is_error and "needs cause_id" in missing.content[0].text
+        gone = _ok(await _do(client, "maintenance_failure_modes", "unlink_cause", functional_failure_id=top["id"],
+                             cause_id=low["id"]))
+        assert gone["causes"] == []
+        return True
+
     assert _session(env["token"], go)

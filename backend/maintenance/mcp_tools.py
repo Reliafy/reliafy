@@ -93,8 +93,9 @@ GET_KINDS: Table = {
     "where_used": ("id", "", "The parts a part is in (with the quantity in one), and the positions and items "
                              "using it."),
     "rcm": ("id", "scope", """A position's RCM: functions › functional failures › failure modes, each mode's
-        decision, task and evidence check, and modes under none (unassigned); scope below (default: it and
-        everything inside it) or this."""),
+        decision, task and evidence check, and modes under none (unassigned); each functional failure's causes
+        below, effects above, covered and explained_below; scope below (default: it and everything inside it)
+        or this."""),
     "measurement_point": ("id", "", """Kind, source and tag, latest reading, rate (counter) or trend and the
         date it should reach an alarm limit (condition), status, recent readings (each with status ok,
         correction, voided or replaced; reading ids for maintenance_measurements void / correct)."""),
@@ -255,6 +256,9 @@ FAILURE_MODES: Table = {
     "update_functional_failure": ("functional_failure_id text", "", "Change a functional failure's text."),
     "remove_functional_failure": ("functional_failure_id", "", "Delete a functional failure; its modes stay, "
                                   "unassigned."),
+    "link_cause": ("functional_failure_id cause_id", "", "It results from cause_id, a functional failure on a "
+                   "position inside its own; returns it with its causes."),
+    "unlink_cause": ("functional_failure_id cause_id", "", "Take that cause off it."),
     "move": ("failure_mode_id position_id", "functional_failure_id", "To another position, with its decision and "
              "tasks; functional_failure_id: one there (or none)."),
     "move_function": ("function_id position_id", "", "To another position, with its functional failures, modes "
@@ -856,7 +860,7 @@ def register() -> None:
         if action == "copy":
             return run(m.copy_position, position_id, name, parent_id)
         if action == "retire":
-            return run(lambda: (m.retire_position(position_id, reason or ""), {"retired": position_id})[1])
+            return run(m.retire_position, position_id, reason or "")
         if action == "from_rcm":
             return run(m.position_from_rcm, study_for(ctx, study_id), parent_id)
         if action == "apply_rcm":
@@ -961,7 +965,8 @@ def register() -> None:
                                   notes: str | None = None, function_id: str | None = None,
                                   functional_failure_id: str | None = None, standard: str | None = None,
                                   standard_basis: str | None = None,
-                                  decision: dict[str, Any] | None = None) -> dict[str, Any]:
+                                  decision: dict[str, Any] | None = None,
+                                  cause_id: str | None = None) -> dict[str, Any]:
         """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
         each fails (functional failures) and the modes causing each, with each mode's decision. Modes come
         from RCM studies, are added here, or are typed in at a failure (ad hoc). Failures
@@ -1009,6 +1014,10 @@ def register() -> None:
             return run(m.update_functional_failure, functional_failure_id, text)
         if action == "remove_functional_failure":
             return run(m.remove_functional_failure, functional_failure_id)
+        if action == "link_cause":
+            return run(m.link_cause, functional_failure_id, cause_id)
+        if action == "unlink_cause":
+            return run(m.unlink_cause, functional_failure_id, cause_id)
         if action == "move":
             return run(m.move_failure_mode, failure_mode_id, position_id, functional_failure_id)
         if action == "move_function":
