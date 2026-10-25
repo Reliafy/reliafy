@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flatten, levelSet } from "./outlineTree.js";
 import {
-  COLUMN, DEFAULT_COLUMNS, NAME_COLUMN, addNode, buildRcmDisplay, checkValue, chipCounts, computeFilter,
+  COLUMN, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, addNode, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, patchNode, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder,
   withOpen, worksheetCsvRows, decisionBody,
 } from "./rcmWorksheet.js";
@@ -182,4 +182,21 @@ test("a decision goes back without the evidence check, a change applied", () => 
     evidence: { type: "strategy_analysis", id: "a" } });
   assert.equal(decisionBody({ outcome: "fixed_interval" }, { interval: 3 }).interval_unit, "hours");
   assert.equal(decisionBody(null), null);
+});
+
+test("a function's text is kept to 200 characters where it's typed; one saved longer before stays editable", () => {
+  const fn = { type: "fn", ref: { text: "Pump water" } };
+  assert.deepEqual(checkValue("name", fn, "a".repeat(200)), { value: "a".repeat(200) });
+  assert.deepEqual(checkValue("name", fn, "a".repeat(201)),
+    { error: "Shorten it to 200 characters or fewer to save the change (it's 201)." });
+  // Saved longer before: a change must bring it within the limit.
+  const long = { type: "fn", ref: { text: "b".repeat(1200) } };
+  assert.ok(checkValue("name", long, "b".repeat(1100)).error);
+  assert.deepEqual(checkValue("name", long, "Pump water"), { value: "Pump water" });
+  // Other rows have no such limit here (the server's own applies).
+  assert.deepEqual(checkValue("name", { type: "mode", ref: { text: "" } }, "c".repeat(300)), { value: "c".repeat(300) });
+  const c = functionCount("d".repeat(190));
+  assert.equal(c.tone, "near");
+  assert.equal(c.text, "190 / 200");
+  assert.equal(FUNCTION_MAX, 200);
 });

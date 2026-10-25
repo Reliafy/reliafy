@@ -287,7 +287,7 @@ export function FormModal({ title, submitLabel, pendingLabel = "Saving…", onCl
     } catch (err) {
       const msg = err?.message || "";
       setError(!msg || msg === "Failed to fetch" || /NetworkError|Load failed/i.test(msg)
-        ? "Couldn't save: check your connection and try again." : msg);
+        ? "Couldn't save. Check your connection and try again." : msg);
     }
     // A step that keeps the dialog open (check, then import) needs the button back.
     inFlight.current = false;

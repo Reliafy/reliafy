@@ -11,9 +11,11 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, withTableCols,
+  NARROW_TABLE, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, usualCols,
+  withTableCols,
 } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
+import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
@@ -27,7 +29,7 @@ import {
   ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
-import { canPin, crumbAction, inBranch, levelMatches, pinDisplay, pinPath, pinTarget } from "../treePin.js";
+import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 import { liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
@@ -104,6 +106,7 @@ export default function AssetExplorer() {
   const [params] = useSearchParams();
   const { workspace, activeTeam } = useWorkspace();
   const phone = usePhone();
+  const narrow = useNarrowTable();
   const saved = useMemo(() => loadTreeState(workspace), [workspace]);
   const tab = tabParam(params.get("tab"));
   const rcmOn = tab === "rcm";
@@ -405,7 +408,7 @@ export default function AssetExplorer() {
         pending.current = id;
         setPanel(true);
         say(`Added the ${kind === "fn" ? "function" : kind === "fail" ? "functional failure" : "failure mode"}.`);
-      }, (e) => say(e.message, "error"));
+      }, (e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error"));
   };
   const addInside = (r) => runAdd({ ref: {
     add: r.type === "fn" ? "fail" : "mode", position_id: r.ref.position_id,
@@ -417,7 +420,7 @@ export default function AssetExplorer() {
     const level = LEVEL_OF[r.type].label.toLowerCase();
     const ok = await confirm({
       title: `Delete this ${level}?`, body: ops.removeText(r), confirmLabel: `Delete ${level}`,
-      pendingLabel: "Deleting…", run: () => ops.remove(r).then(() => true),
+      pendingLabel: "Deleting…", failedWhat: "delete it", run: () => ops.remove(r).then(() => true),
     });
     if (!ok) return;
     setRcmFocus(isRcmRow(display.rows.get(r.parent)) ? r.parent : null);
@@ -451,7 +454,7 @@ export default function AssetExplorer() {
   };
   // A crumb in the panel's heading: inside the branch it's picked; above it,
   // the pin moves up to it (one step at a time), or, for one of the pane's own
-  // headings, the whole tree shows with it picked.
+  // headings or the whole tree's one top row, the whole tree shows with it picked.
   const crumbGo = (key, select) => {
     const act = crumbAction(pinKey ? display : null, whole, mode, key);
     if (act === "select") return select(key);
@@ -485,21 +488,34 @@ export default function AssetExplorer() {
       else if (id === "unpin") unpin();
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       else if (id === "add-fail" || id === "add-mode") addInside(r);
-      else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
+      else if (id === "rename" && r.type === "fn") {
+        // A function's description: in a dialog with its counter.
+        setRcmFocus(r.key);
+        ops.editFunction(r).then((ok) => ok && say("Saved."));
+      } else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
       else if (id === "delete") remove(r);
     },
   };
-  // One cell changed: checked as the server checks it, then written.
+  // One cell changed: checked as the server checks it, then written. The
+  // cell (or the panel's field) keeps the text as typed until it's saved; if
+  // it isn't (no connection, a refusal), it stays as typed with the reason, to
+  // try again. Resolves true once saved, else to the reason.
   const commit = (r, col, raw) => {
     const res = checkValue(col, cellRow(r), raw);
     if (res.error) {
       say(res.error, "error");
       return res.error;
     }
-    ops.set(r, col, res.value).then(() => say("Saved."), (e) => say(e.message, "error"));
-    setEditing(null);
-    return true;
+    return ops.set(r, col, res.value).then(() => {
+      setEditing((e) => (e && e.key === r.key && e.col === col ? null : e));
+      say("Saved.");
+      return true;
+    }, (e) => {
+      const text = saveErrorText(e, { offline: navigator.onLine === false });
+      say(text, "error");
+      return text;
+    });
   };
   // The dialog stays open (Apply saying "Saving…") until the server has it;
   // a refusal shows in the dialog, with everything as it was typed.
@@ -553,7 +569,10 @@ export default function AssetExplorer() {
   const level = levelShown(levelBy, mode);
   const levelsOn = mode !== "flat" && mode !== "items";
   const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || rcmOn));
-  const changed = changedFromUsual({ mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn, pinned: !!pinKey });
+  // A pin on the whole tree's one top row shows everything: not a change.
+  const changed = changedFromUsual({
+    mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn, pinned: !!pinKey && !pinCoversAll(whole, pinKey),
+  });
   const resetView = () => {
     setChips([]);
     if (!rcmOn && mode !== DEFAULT_ARRANGEMENT) {
@@ -714,13 +733,17 @@ export default function AssetExplorer() {
   // The RCM tab: the table's columns beside the tree, the heading over them,
   // and the details of the function, failure or mode picked.
   // The Evidence check column only once evidence is linked somewhere (or as
-  // chosen in the Columns menu).
-  const shownCols = tableCols(rprefs, linkedEvidence);
+  // chosen in the Columns menu). A window under 1400 px: fewer usual columns
+  // (no Interval, folded into the Task cell, nor Evidence check), so the table
+  // fits beside the tree; its columns narrow to fit too (TreePane).
+  const shownCols = tableCols(rprefs, linkedEvidence, { narrow });
   const cols = shownCols.map((id) => COLUMN[id]).filter(Boolean);
   const widths = {};
   for (const c of cols) widths[c.id] = rprefs.widths[c.id] ?? c.width;
   const table = rcmOn ? {
     cols, widths, treeW: width, total: width + cols.reduce((t, c) => t + widths[c.id], 0),
+    foldInterval: !shownCols.includes("interval"),
+    intervalW: rprefs.widths.interval ?? COLUMN.interval.width,
     editing, readOnly: false,
     canEditName: (r) => EDITABLE.has(r.type),
     onEdit: (key, col) => { setRcmFocus(key); setEditing({ key, col }); },
@@ -728,7 +751,7 @@ export default function AssetExplorer() {
     // The position picked, when it has no functions yet: its row says how to start.
     hint: rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
   } : null;
-  const msg = message && <p className={"tt-msg " + message.tone} role="status">{message.text}</p>;
+  const msg = message && <p className={"tt-msg " + message.tone} role="status" title={message.text}>{message.text}</p>;
   // The panel's heading and tabs, in the two slim rows over the tree on both
   // tabs (a wide screen): the same elements on each, so nothing in them is
   // drawn afresh and the focus stays on the tab picked.
@@ -742,7 +765,8 @@ export default function AssetExplorer() {
                     <button type="button" className="sm"
                             // A double-click asks once (its second click is the dialog's, which ignores it).
                             onClick={(e) => { if (e.detail < 2) runAdd({ ref: { add: "fn", position_id: posRow.key } }); }}>Add function</button>
-                    <ColumnChooser cols={shownCols} onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
+                    <ColumnChooser cols={shownCols} usual={usualCols({ narrow })}
+                                   onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
                   </>
                 )} />
   ) : summaryRow && (
@@ -754,10 +778,16 @@ export default function AssetExplorer() {
   const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
   const headTabs = !phone && tabsRow && <HeaderTabs row={tabsRow} tab={tab} onTab={setTab} />;
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) ? cellRow(focusRow) : null;
+  // A failure mode moved under another functional failure from the panel: a
+  // refusal is said in the heading, in plain words.
+  const panelOps = {
+    ...ops,
+    assign: (r, ffId) => ops.assign(r, ffId).catch((e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error")),
+  };
   const rcmSide = detailsRow && (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
-      <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={ops}
+      <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={panelOps}
                onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
                onClose={() => { setPanel(false); document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }); }}
                onSelect={(k) => reveal(k)} />
@@ -911,4 +941,18 @@ export default function AssetExplorer() {
 // A position's own evidence checks, for its heading on the RCM tab.
 function rollupOf(rcm, positionId) {
   return (rcm.positions || []).find((p) => p.id === positionId)?.rollup || null;
+}
+
+// Is the window narrower than NARROW_TABLE (fewer usual columns in the RCM
+// table)? Follows the window as it changes.
+const NARROW_QUERY = `(max-width: ${NARROW_TABLE - 1}px)`;
+function useNarrowTable() {
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW_QUERY);
+    const onChange = () => setNarrow(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return narrow;
 }

@@ -90,6 +90,8 @@ export default function useOutlineNav({
 
   const onKey = (e) => {
     if (e.target.closest("input, select, textarea, [contenteditable='true']")) return;
+    // Space on a button or link in a row presses it, as everywhere.
+    if (e.key === " " && e.target.closest("button, a")) return;
     if (!list.length) return;
     const i = focus != null && index.has(focus) ? index.get(focus) : 0;
     const v = list[i];
@@ -111,7 +113,12 @@ export default function useOutlineNav({
       else if (r.parent != null && index.has(r.parent)) go(r.parent);
     } else if (key === "Enter") {
       onEnter?.(v.key);
-    } else if (key.length === 1 && /\S/.test(key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    } else if (key === " " && !e.ctrlKey && !e.metaKey && !e.altKey && Date.now() - typed.current.at >= 700) {
+      // Space picks the row and keeps the focus on it (its default would
+      // scroll the tree a page, which lost the focus). Mid type-ahead it's
+      // part of the name typed, below.
+      go(v.key);
+    } else if (key.length === 1 && (/\S/.test(key) || key === " ") && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const now = Date.now();
       typed.current = { text: now - typed.current.at < 700 ? typed.current.text + key : key, at: now };
       const from = typed.current.text.length > 1 ? i - 1 : i;

@@ -57,3 +57,37 @@ export function checkDecision({ outcome, rtfBasis, task = "", interval = "", int
   }
   return { blockers, intervalError, notice };
 }
+
+// ---- the interval's unit, remembered on this device ---------------------------
+// The decision dialog's unit starts at the one chosen last (most RCMs have
+// their tasks in weeks or months, not hours), else hours as before. A decision
+// that already has a unit keeps its own. Storage can throw (private mode,
+// blocked site data), so every read and write is guarded.
+
+export const INTERVAL_UNITS = ["hours", "days", "weeks", "months", "years", "cycles", "km"];
+const UNIT_KEY = "reliafy.rcmIntervalUnit";
+
+// The unit chosen last on this device, or null.
+export function rememberedUnit(storage = globalThis.localStorage) {
+  try {
+    const u = storage?.getItem(UNIT_KEY);
+    return INTERVAL_UNITS.includes(u) ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberUnit(unit, storage = globalThis.localStorage) {
+  if (!INTERVAL_UNITS.includes(unit)) return;
+  try {
+    storage?.setItem(UNIT_KEY, unit);
+  } catch {
+    // Not remembered on this device; the dialog still works.
+  }
+}
+
+// The unit the dialog starts at: the decision's own, else the one chosen
+// last, else hours.
+export function startUnit(existing, storage = globalThis.localStorage) {
+  return existing?.interval_unit || rememberedUnit(storage) || "hours";
+}

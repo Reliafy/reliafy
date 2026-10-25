@@ -76,6 +76,8 @@ async function openTreeMenu(page) {
 test("RCM: the tree and the RCM are one table; Summary: the tree and the page; the row stays put", async ({ page, request, problems }) => {
   const tag = `t${Date.now()}`;
   const p = await plant(request, tag);
+  // Wide enough for the usual columns to include the Evidence check (once evidence is linked).
+  await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
   // Summary: the tree (positions only) and the page beside it.
   await expect(tree(page)).toBeVisible();
@@ -206,18 +208,29 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
   await expect(fn).toBeFocused();
-  // The Menu key; Enter chooses: Edit description edits the name in place.
+  // The Menu key; Enter chooses: Edit description opens the function's text
+  // in a dialog (with its counter).
   await page.keyboard.press("ContextMenu");
   await expect(menu).toBeVisible();
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
-  const editor = table(page).getByRole("textbox", { name: `Function, failure or mode of Pump water ${tag}` });
+  const editDialog = page.getByRole("dialog", { name: "Edit the function" });
+  const editor = editDialog.getByRole("textbox", { name: "What must this position do?" });
   await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue(`Pump water ${tag}`);
   // Right-click in the field: the browser's own menu, not the row's.
   await editor.click({ button: "right" });
   await expect(page.getByRole("menu")).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(editor).toHaveCount(0);
+  await expect(editDialog).toHaveCount(0);
+  // A failure mode's description is still edited in place.
+  const modeRow = trow(page, `^Failure mode: Seal leaks No flow Pump water ${tag}`);
+  await modeRow.locator(".tt-tree").click({ button: "right" });
+  await rowMenu(page, "Failure mode: Seal leaks").getByRole("menuitem", { name: "Edit description" }).click();
+  const inPlace = table(page).getByRole("textbox", { name: `Function, failure or mode of Seal leaks No flow Pump water ${tag}` });
+  await expect(inPlace).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(inPlace).toHaveCount(0);
   // The ⋯ button: hidden until the row is hovered; it opens the same menu.
   const mode = trow(page, `^Failure mode: Bearing seizes No flow Pump water ${tag}`);
   const more = mode.getByRole("button", { name: "Actions", exact: true });

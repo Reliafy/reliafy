@@ -24,3 +24,26 @@ export function lengthNote(value, max = SHORT_TEXT, hint = "") {
 // Where the detail goes instead, for the length note.
 export const TASK_HINT = "put the detail in the instructions";
 export const DESCRIPTION_HINT = "put the detail in the description";
+
+// A live character counter for a box with a soft limit (a function's text):
+// {n, max, text, tone, over, blocked, message}. `tone`: "" well within it,
+// "near" (amber) in its last tenth, "over" (red) past it. A text saved before
+// the limit (`before`) that's longer stays as it is and can still be edited,
+// but a change to it can't be saved until it's within the limit (`blocked`);
+// a new text (no `before`) can't be saved past it either.
+export function charCount(value, { max = SHORT_TEXT, before = null } = {}) {
+  const n = textLength(value);
+  const over = n > max;
+  const near = !over && n >= Math.ceil(max * 0.9);
+  const changed = before == null || String(value ?? "").trim() !== String(before ?? "").trim();
+  const fmt = (x) => x.toLocaleString("en-AU");
+  return {
+    n,
+    max,
+    text: `${fmt(n)} / ${fmt(max)}`,
+    tone: over ? "over" : near ? "near" : "",
+    over,
+    blocked: over && changed,
+    message: over ? `Shorten it to ${fmt(max)} characters or fewer${changed ? " to save the change" : ""} (it's ${fmt(n)}).` : "",
+  };
+}

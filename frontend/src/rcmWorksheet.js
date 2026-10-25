@@ -11,6 +11,15 @@
 // the CSV rows, and what's remembered on this device.
 
 import { filterRows } from "./outlineTree.js";
+import { charCount } from "./maintenanceText.js";
+
+// A function's text is a short statement (what it must do); the standard of
+// performance has its own field. Kept to 200 characters where it's typed (the
+// server takes longer, and a longer one saved before stays as it is).
+export const FUNCTION_MAX = 200;
+export const FUNCTION_NUDGE = "Keep it short. Put the standard of performance in its own field.";
+// The counter for a function's text being typed (`before`: its saved text).
+export const functionCount = (value, before = null) => charCount(value, { max: FUNCTION_MAX, before });
 
 export const LEVELS = [
   { type: "fn", label: "Function", plural: "Functions", child: "failures" },
@@ -197,7 +206,8 @@ export function checkCounts(r) {
 // ---- columns -----------------------------------------------------------------
 
 // Every column but the index (the description, always shown first). `on`: in
-// the default set (fits 1440 px wide with the menu open). `text(r)`: the cell
+// the default set (fits 1440 px wide with the menu open). `min`: the least
+// it's narrowed to so a table fits its pane (its header still whole). `text(r)`: the cell
 // as plain text (the phone's second line, the CSV of what's shown). `sort(r)`:
 // the value it sorts by, null for blank (blanks go last); a row with things
 // inside it sorts by what's inside. `edit`: the field edited in the cell
@@ -210,91 +220,91 @@ const d = (r) => r.ref.decision || null;
 
 export const COLUMNS = [
   {
-    id: "standard", label: "Performance standard", width: 200, on: false,
+    id: "standard", label: "Performance standard", width: 200, min: 150, on: false,
     title: "What the function must achieve, e.g. within 30 m from 60 km/h",
     text: (r) => (r.type === "fn" ? r.ref.standard || "" : ""),
     sort: (r) => (r.type === "fn" ? r.ref.standard || null : null),
     edit: "text", can: (r) => r.type === "fn", field: "standard",
   },
   {
-    id: "effects", label: "Failure effects", width: 180, on: true,
+    id: "effects", label: "Failure effects", width: 180, min: 112, on: true,
     title: "What happens when the failure mode occurs",
     text: (r) => (isMode(r) ? r.ref.effects || "" : ""),
     sort: (r) => (isMode(r) ? r.ref.effects || null : null),
     edit: "text", can: isMode, field: "effects",
   },
   {
-    id: "consequence", label: "Consequence", width: 114, on: true,
+    id: "consequence", label: "Consequence", width: 114, min: 98, on: true,
     title: "Safety, environmental, operational, non-operational or hidden",
     text: (r) => (isMode(r) ? CONSEQUENCE_LABEL[r.ref.consequence] || "" : consequenceSum(r)),
     sort: (r) => (isMode(r) ? CONS_RANK[r.ref.consequence] ?? null : r.sum.safety ? 0 : r.sum.hidden ? 2 : null),
     edit: "choice", can: isMode, field: "consequence",
   },
   {
-    id: "evident", label: "Evident or hidden", width: 120, on: false,
+    id: "evident", label: "Evident or hidden", width: 120, min: 120, on: false,
     title: "Hidden: the failure can't be seen in normal operation",
     text: (r) => (isMode(r) ? (r.ref.consequence === "hidden" ? "Hidden" : r.ref.consequence ? "Evident" : "") : r.sum.hidden ? `${r.sum.hidden} hidden` : ""),
     sort: (r) => (isMode(r) ? (r.ref.consequence === "hidden" ? 0 : r.ref.consequence ? 1 : null) : r.sum.hidden ? 0 : null),
   },
   {
-    id: "decision", label: "Decision", width: 150, on: true,
+    id: "decision", label: "Decision", width: 150, min: 84, on: true,
     title: "The maintenance decision for the failure mode",
     text: (r) => (isMode(r) ? decisionText(d(r)) || "To decide" : r.sum.modes ? (r.sum.undecided ? `${r.sum.undecided} to decide` : "All decided") : ""),
     sort: (r) => (isMode(r) ? (d(r) ? OUT_RANK[d(r).outcome] ?? 9 : -1) : -r.sum.undecided),
   },
   {
-    id: "task", label: "Task", width: 190, on: true,
+    id: "task", label: "Task", width: 190, min: 110, on: true,
     title: "What is done, and for run-to-failure the action on failure",
     text: (r) => (isMode(r) ? d(r)?.task || "" : r.sum.tasks ? plural(r.sum.tasks, "task") : ""),
     sort: (r) => (isMode(r) ? d(r)?.task || null : r.sum.tasks || null),
     edit: "text", can: (r) => isMode(r) && TASK_OUTCOMES.has(d(r)?.outcome), field: "task", onDecision: true,
   },
   {
-    id: "interval", label: "Interval", width: 92, on: true, align: "num",
+    id: "interval", label: "Interval", width: 92, min: 72, on: true, align: "num",
     title: "How often the task is done, in its unit",
     text: (r) => (isMode(r) ? intervalText(d(r)) : ""),
     sort: (r) => (isMode(r) && d(r)?.interval ? Number(d(r).interval) : null),
     edit: "number", can: (r) => isMode(r) && INTERVAL_OUTCOMES.has(d(r)?.outcome), field: "interval", onDecision: true,
   },
   {
-    id: "check", label: "Evidence check", width: 126, on: true,
+    id: "check", label: "Evidence check", width: 126, min: 112, on: true,
     title: "Whether the linked analysis backs the decision, checked each time the study opens",
     text: (r) => (isMode(r) ? STATUS_LABEL[shownStatus(d(r)?.status)] || "" : checkCounts(r).map((c) => `${c.n} ${c.label}`).join(", ")),
     sort: (r) => (isMode(r) ? STATUS_RANK[d(r)?.status] ?? null
       : r.sum.contradicted ? 0 : r.sum.stale ? 1 : r.sum.unsure ? 2 : r.sum.supported ? 4 : null),
   },
   {
-    id: "evidence", label: "Evidence", width: 200, on: false,
+    id: "evidence", label: "Evidence", width: 200, min: 90, on: false,
     title: "The saved model or analysis linked to the decision",
     text: (r) => (isMode(r) ? d(r)?.artifact_name || "" : ""),
     sort: (r) => (isMode(r) ? d(r)?.artifact_name || null : null),
   },
   {
-    id: "detail", label: "What the evidence shows", width: 260, on: false,
+    id: "detail", label: "What the evidence shows", width: 260, min: 160, on: false,
     text: (r) => (isMode(r) ? d(r)?.summary || d(r)?.reason || "" : ""),
     sort: (r) => (isMode(r) ? d(r)?.summary || d(r)?.reason || null : null),
   },
   {
-    id: "dnotes", label: "Decision notes", width: 220, on: false,
+    id: "dnotes", label: "Decision notes", width: 220, min: 110, on: false,
     text: (r) => (isMode(r) ? d(r)?.notes || "" : ""),
     sort: (r) => (isMode(r) ? d(r)?.notes || null : null),
     edit: "text", can: (r) => isMode(r) && !!d(r), field: "notes", onDecision: true,
   },
   {
-    id: "notes", label: "Mode notes", width: 200, on: false,
+    id: "notes", label: "Mode notes", width: 200, min: 96, on: false,
     title: "Notes on the failure mode itself (for example scores kept from an FMEA)",
     text: (r) => (isMode(r) ? r.ref.notes || "" : ""),
     sort: (r) => (isMode(r) ? r.ref.notes || null : null),
     edit: "text", can: isMode, field: "notes",
   },
   {
-    id: "modes", label: "Failure modes", width: 104, on: false, align: "num", sum: true,
+    id: "modes", label: "Failure modes", width: 104, min: 100, on: false, align: "num", sum: true,
     title: "How many failure modes are inside",
     text: (r) => (isMode(r) ? "" : String(r.sum.modes)),
     sort: (r) => (isMode(r) ? null : r.sum.modes),
   },
   {
-    id: "undecided", label: "To decide", width: 90, on: false, align: "num", sum: true,
+    id: "undecided", label: "To decide", width: 90, min: 78, on: false, align: "num", sum: true,
     title: "Failure modes inside with no decision yet",
     text: (r) => (isMode(r) ? "" : r.sum.undecided ? String(r.sum.undecided) : ""),
     sort: (r) => (isMode(r) ? null : r.sum.undecided || null),
@@ -438,7 +448,12 @@ export function removeNode(functions, at) {
 export function checkValue(col, row, raw) {
   if (col === "name") {
     const text = String(raw ?? "").trim();
-    return text ? { value: text } : { error: `Every ${LEVEL_OF[row.type].label.toLowerCase()} needs a description.` };
+    if (!text) return { error: `Every ${LEVEL_OF[row.type].label.toLowerCase()} needs a description.` };
+    if (row.type === "fn") {
+      const c = functionCount(text, row.ref?.text ?? null);
+      if (c.blocked) return { error: c.message };
+    }
+    return { value: text };
   }
   const c = COLUMN[col];
   if (c?.edit === "number") {
@@ -516,11 +531,18 @@ export function loadPrefs(storage = globalThis.localStorage) {
       // The Explorer's Evidence check column, when chosen on or off there
       // (left out: shown once the workspace has linked evidence).
       ...(typeof v.explorerCheck === "boolean" ? { explorerCheck: v.explorerCheck } : {}),
+      // The columns were chosen in a Columns menu (else the usual ones, which
+      // in the Explorer depend on the window's width). Columns kept from
+      // before this was remembered count as chosen when they aren't the usual set.
+      ...(v.colsChosen === true || (v.colsChosen !== false && Array.isArray(v.cols) && !sameSet(cols, DEFAULT_COLUMNS))
+        ? { colsChosen: true } : {}),
     };
   } catch {
     return fallback;
   }
 }
+
+const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
 
 export function savePrefs(prefs, storage = globalThis.localStorage) {
   try {

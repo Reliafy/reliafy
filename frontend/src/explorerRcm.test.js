@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, withTableCols,
+  NARROW_TABLE, TASK_WITH_INTERVAL, fitWidths, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols,
+  taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
-import { DEFAULT_COLUMNS, failuresOn, loadPrefs } from "./rcmWorksheet.js";
+import { COLUMN, DEFAULT_COLUMNS, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
 
 const DATA = {
   positions: [
@@ -123,4 +124,74 @@ test("the Evidence check column: hidden until evidence is linked somewhere, unle
   // Remembered on this device with the other column choices.
   assert.equal(loadPrefs({ getItem: () => JSON.stringify({ cols: DEFAULT_COLUMNS, explorerCheck: false }) }).explorerCheck, false);
   assert.equal("explorerCheck" in loadPrefs({ getItem: () => JSON.stringify({ cols: DEFAULT_COLUMNS }) }), false);
+});
+
+test("the usual columns by the window's width: under 1400 px, no Interval (it's in the Task cell) and no Evidence check", () => {
+  assert.equal(NARROW_TABLE, 1400);
+  const fresh = loadPrefs({ getItem: () => null });
+  assert.equal(fresh.colsChosen, undefined);
+  assert.deepEqual(tableCols(fresh, false, { narrow: true }), ["effects", "consequence", "decision", "task"]);
+  assert.deepEqual(tableCols(fresh, true, { narrow: true }), ["effects", "consequence", "decision", "task"]); // even with evidence linked
+  assert.deepEqual(tableCols(fresh, false, { narrow: false }), ["effects", "consequence", "decision", "task", "interval"]);
+  assert.deepEqual(tableCols(fresh, true, { narrow: false }), ["effects", "consequence", "decision", "task", "interval", "check"]);
+  assert.deepEqual(usualCols({ narrow: true }), ["effects", "consequence", "decision", "task"]);
+  // Saved before as the usual set (the page saves its prefs as it opens): still the usual ones, by width.
+  const saved = loadPrefs({ getItem: () => JSON.stringify({ cols: DEFAULT_COLUMNS }) });
+  assert.equal(saved.colsChosen, undefined);
+  assert.deepEqual(tableCols(saved, false, { narrow: true }), ["effects", "consequence", "decision", "task"]);
+  // Chosen in the Columns menu: kept whatever the width, and remembered.
+  const shown = tableCols(fresh, false, { narrow: true });
+  const withInterval = withTableCols(fresh, [...shown, "interval"], shown);
+  assert.equal(withInterval.colsChosen, true);
+  assert.deepEqual(tableCols(withInterval, false, { narrow: true }), ["effects", "consequence", "decision", "task", "interval"]);
+  let stored = null;
+  const box = { getItem: () => stored, setItem: (k, v) => { stored = v; } };
+  savePrefs(withInterval, box);
+  assert.equal(loadPrefs(box).colsChosen, true);
+  const noTask = withTableCols(fresh, shown.filter((c) => c !== "task"), shown);
+  assert.deepEqual(tableCols(noTask, false, { narrow: false }), ["effects", "consequence", "decision"]);
+  // Columns chosen before this was remembered (not the usual set): chosen.
+  assert.equal(loadPrefs({ getItem: () => JSON.stringify({ cols: ["effects", "task"] }) }).colsChosen, true);
+  // Show the usual columns: by width again; the shared set back to its usual.
+  const reset = withTableCols(withInterval, usualCols({ narrow: true }), tableCols(withInterval, false, { narrow: true }), { reset: true });
+  assert.equal("colsChosen" in reset, false);
+  assert.deepEqual(reset.cols, DEFAULT_COLUMNS);
+  assert.deepEqual(tableCols(reset, false, { narrow: true }), ["effects", "consequence", "decision", "task"]);
+  savePrefs(reset, box);
+  assert.equal(loadPrefs(box).colsChosen, undefined);
+});
+
+test("the columns narrow to fit the pane before the table scrolls sideways, never below their least", () => {
+  const ids = ["effects", "consequence", "decision", "task"];
+  const w = { effects: 180, consequence: 114, decision: 150, task: 190 }; // 634
+  assert.deepEqual(fitWidths(ids, w, 900), w); // room to spare: as they are (never widened)
+  const fit = fitWidths(ids, w, 500);
+  assert.equal(Object.values(fit).reduce((a, b) => a + b, 0), 500);
+  for (const id of ids) assert.ok(fit[id] >= COLUMN[id].min && fit[id] <= w[id], id);
+  // Each gives up the same share of its slack.
+  assert.ok(fit.effects < 180 && fit.task < 190 && fit.consequence < 114);
+  // Too little room: each at its least, and the table scrolls.
+  const least = fitWidths(ids, w, 200);
+  for (const id of ids) assert.equal(least[id], COLUMN[id].min);
+  // The side panel open at 1280 px: the four main columns still fit.
+  const mins = ids.reduce((t, id) => t + COLUMN[id].min, 0);
+  assert.ok(mins <= 410, `the four columns at their least: ${mins} px`);
+  // A width already under its least (chosen narrower before) isn't widened.
+  assert.equal(fitWidths(["task"], { task: 80 }, 60).task, 80);
+  assert.deepEqual(fitWidths(ids, w, NaN), w);
+});
+
+test("the Task cell with the interval folded in", () => {
+  const m = (decision) => ({ type: "mode", ref: { decision } });
+  assert.equal(taskWithInterval(m({ outcome: "fixed_interval", task: "Inspect roof tubes", interval: 12, interval_unit: "months" })),
+    "Inspect roof tubes · every 12 months");
+  assert.equal(taskWithInterval(m({ outcome: "fixed_interval", task: "Empty the basket", interval: 1, interval_unit: "weeks" })),
+    "Empty the basket · every 1 week");
+  assert.equal(taskWithInterval(m({ outcome: "on_condition", interval: 3, interval_unit: "months" })), "Every 3 months");
+  assert.equal(taskWithInterval(m({ outcome: "rtf", task: "Replace the motor" })), "Replace the motor");
+  assert.equal(taskWithInterval(m(null)), "");
+  // A parent row: what's inside it, as the Task column says.
+  assert.equal(taskWithInterval({ type: "fn", ref: {}, sum: { tasks: 2 } }), "2 tasks");
+  assert.equal(TASK_WITH_INTERVAL.id, "task");
+  assert.equal(TASK_WITH_INTERVAL.edit, "text"); // still edits the task itself
 });

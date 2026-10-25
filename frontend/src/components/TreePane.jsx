@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import RowMenu from "./RowMenu.jsx";
 import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
-import { Cell, CellEditor, LevelIcon, PhoneStatus, phoneLine } from "./RcmWorksheet.jsx";
+import { Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf } from "../assetTree.js";
-import { cellRow, isRcmRow } from "../explorerRcm.js";
+import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 
@@ -55,6 +55,24 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 
 const LEVELS = [1, 2, 3, 4];
 const HEAD_H = 30;
+// The soft shadow on a side of the table with more to scroll to: its width,
+// and how far from the end it fades in.
+const SHADE_W = 16;
+const SHADE_FADE = 24;
+
+// The table (the RCM tab, a wide screen) fitted to its pane: its columns
+// narrowed (never below their least) so it scrolls sideways only when it
+// must, and with the Interval column not shown, the interval in the Task cell.
+// `room`: the scroll area's width inside its scrollbar (null: not measured yet).
+function fitTable(table, room) {
+  if (!table) return table;
+  const fold = table.foldInterval && table.cols.some((c) => c.id === "task");
+  const cols = fold ? table.cols.map((c) => (c.id === "task" ? TASK_WITH_INTERVAL : c)) : table.cols;
+  // The Task cell with the interval in it takes the Interval column's room too.
+  const base = fold ? { ...table.widths, task: table.widths.task + (table.intervalW || 0) } : table.widths;
+  const widths = room == null ? base : fitWidths(cols.map((c) => c.id), base, room - table.treeW);
+  return { ...table, cols, widths, total: table.treeW + cols.reduce((t, c) => t + widths[c.id], 0) };
+}
 
 const ICON = {
   group: <path d="M2 4h12M2 8h12M2 12h8" strokeWidth="1.6" strokeLinecap="round" />,
@@ -147,7 +165,7 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot }) {
       <RowIcon r={r} />
       {pinRoot && <span className="tp-pinmark" title={`Pinned: ${pinRoot.path}`}><PinIcon size={13} /><span className="sr-only">Pinned: </span></span>}
       {isRcmRow(r) && <span className="sr-only">{LEVEL_OF[r.type]?.label}: </span>}
-      <span className="tp-nm" title={table && label(r).length > 40 ? label(r) : undefined}>
+      <span className="tp-nm" title={label(r).length > 24 ? label(r) : undefined}>
         <Highlight text={label(r)} query={query} />
       </span>
       {has && !open && inner > 0 && <span className="tp-cnt" title={`${inner} directly inside`}>{inner.toLocaleString("en-AU")}</span>}
@@ -240,7 +258,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
           <div key={c.id} role="gridcell" className={"rw-c" + (c.align === "num" ? " num" : "") + (can ? " can" : "")}
                style={{ width: table.widths[c.id] }}
                onDoubleClick={can ? (e) => { e.stopPropagation(); table.onEdit(r.key, c.id); } : undefined}
-               title={can && editCol !== c.id ? "Double-click to edit" : undefined}>
+               title={editCol !== c.id ? cellTip(c, cr, can) : undefined} aria-description={editCol !== c.id ? cellHint(can) : undefined}>
             {editCol === c.id
               ? <CellEditor col={c} r={cr} onCommit={(raw) => table.onCommit(r, c.id, raw)} onCancel={table.onCancel} />
               : (rcmRow || cr.sum.modes) ? <Cell col={c} r={r.type === "pos" ? { ...cr, type: "fn" } : cr} query={query} readOnly={table.readOnly}
@@ -263,13 +281,17 @@ function cornerOf(row) {
 export default function TreePane({
   title, treeLabel, display, list, index, open, filter, query, onQuery, chips, onChips, mode, onMode, focus, onPick,
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
-  onNew, newLabel, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table = null,
+  onNew, newLabel, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
   rowMenu = null, branch = null, branchNote = null, fullScreenKey = false,
 }) {
-  const H = phone ? (table ? 54 : 44) : 30;
+  const H = phone ? (tableIn ? 54 : 44) : 30;
   const wide = !phone;
-  const wideTable = !!table && wide;
+  const wideTable = !!tableIn && wide;
+  // The scroll area's width inside its scrollbar (the RCM tab, a wide screen),
+  // measured before each paint, so the columns fit it from the first frame.
+  const [room, setRoom] = useState(null);
+  const table = wideTable ? fitTable(tableIn, room) : tableIn;
   // The tree folded to a thin rail (the Summary tab, a wide screen).
   const railed = collapsed && wide && !table;
   const treeW = railed ? PANE.rail : width;
@@ -354,6 +376,55 @@ export default function TreePane({
     const g = Math.max(0, el.offsetWidth - el.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth));
     if (g !== gutter) setGutter(g);
   });
+
+  // The table's width to fit (before each paint, and as the window or the
+  // panel beside it changes), and the soft shadows on the sides with more to
+  // scroll to: on the left at the tree column's edge (the columns slide under
+  // it), on the right at the scroll area's edge; each fades in over the last
+  // few pixels before its end, and neither shows when everything fits. They
+  // sit over the scroll area (not in it), so overlay scrollbars and the sticky
+  // tree column don't matter.
+  const shadeL = useRef(null);
+  const shadeR = useRef(null);
+  const treeColW = table?.treeW ?? 0;
+  // The table's own width: the scroll area's scrollWidth can count a few
+  // pixels more than can be scrolled to (the scrollbar's gutter).
+  const tableW = useRef(0);
+  tableW.current = wideTable ? table.total : 0;
+  const paintShade = useCallback(() => {
+    const el = scroller.current;
+    const l = shadeL.current;
+    const r = shadeR.current;
+    if (!el || !l || !r) return;
+    const max = Math.min(el.scrollWidth, tableW.current || el.scrollWidth) - el.clientWidth;
+    const x = el.scrollLeft;
+    const place = (s, left, on) => {
+      s.style.top = `${el.offsetTop + el.clientTop}px`;
+      s.style.height = `${el.clientHeight}px`;
+      s.style.left = `${left}px`;
+      s.style.opacity = String(on);
+    };
+    place(l, el.offsetLeft + treeColW, max > 1 ? Math.min(1, x / SHADE_FADE) : 0);
+    place(r, el.offsetLeft + el.clientWidth - SHADE_W, max > 1 ? Math.min(1, (max - x) / SHADE_FADE) : 0);
+    l.dataset.on = x > 0.5 && max > 1 ? "true" : "false";
+    r.dataset.on = max - x > 0.5 && max > 1 ? "true" : "false";
+  }, [treeColW]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !wideTable) return;
+    if (el.clientWidth !== room) setRoom(el.clientWidth);
+    paintShade();
+  });
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !wideTable || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => {
+      setRoom(el.clientWidth);
+      paintShade();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [wideTable, paintShade]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Drag the edge to resize; ← → when it has focus; double-click resets.
   const startResize = (e) => {
@@ -468,7 +539,7 @@ export default function TreePane({
       </div>
       {wideTable && table.cols.map((c) => (
         <div key={c.id} role="columnheader" className={"tt-h" + (c.align === "num" ? " num" : "")} style={{ width: table.widths[c.id] }}
-             title={c.title}>{c.label}</div>
+             title={c.title ? `${c.label}: ${c.title}` : c.label}>{c.label}</div>
       ))}
       {wideTable && <div className="tt-h rw-fill" aria-hidden="true">{table.headTools}</div>}
     </div>
@@ -479,7 +550,7 @@ export default function TreePane({
       {controls}
       <div className="tt-main">
         {railed ? <div className="tp-railcol" style={{ width: PANE.rail }} /> : (
-        <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); }} onKeyDown={keys}
+        <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); if (wideTable) paintShade(); }} onKeyDown={keys}
              role={table ? "treegrid" : "tree"} aria-label={table ? `${treeLabel || title} and their RCM` : treeLabel || title}
              aria-multiselectable="false" style={wide && !table ? { width: width + gutter } : undefined}>
           {columnHeads}
@@ -509,6 +580,12 @@ export default function TreePane({
           </div>
           {!list.length && <div className="tp-empty" style={wide && !table ? { width } : undefined}>{empty}</div>}
         </div>
+        )}
+        {wideTable && (
+          <>
+            <div className="tt-shade tt-shade-l" ref={shadeL} aria-hidden="true" />
+            <div className="tt-shade tt-shade-r" ref={shadeR} aria-hidden="true" />
+          </>
         )}
         {side}
       </div>

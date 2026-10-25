@@ -4,7 +4,7 @@ import {
   removeFunctionalFailure, removePositionFunction, retireFailureMode, updateFailureMode, updateFunctionalFailure,
   updatePositionFunction,
 } from "../api.js";
-import { COLUMN, decisionBody } from "../rcmWorksheet.js";
+import { COLUMN, FUNCTION_MAX, FUNCTION_NUDGE, decisionBody } from "../rcmWorksheet.js";
 
 // The RCM in the Explorer's tree (the RCM tab): every position's functions,
 // functional failures and failure modes, read once when the tab opens and
@@ -16,7 +16,10 @@ import { COLUMN, decisionBody } from "../rcmWorksheet.js";
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
 const WORDS = {
-  fn: { title: "Add a function", label: "What must this position do?", confirmLabel: "Add function" },
+  // A function's text is kept short where it's typed (a counter, and a nudge
+  // to put the standard in its own field).
+  fn: { title: "Add a function", label: "What must this position do?", confirmLabel: "Add function",
+    limit: { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } },
   fail: { title: "Add a functional failure", label: "How does it fail to do it?", confirmLabel: "Add functional failure" },
   mode: { title: "Add a failure mode", label: "What causes it?", confirmLabel: "Add failure mode" },
 };
@@ -87,6 +90,24 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       });
       return id || null;
     },
+    // A function's description, in a dialog with its counter (the row menu's
+    // Edit description): the text saved before, however long, to edit; saved
+    // from the dialog, which stays open until it's done (or says why not).
+    // Resolves true once saved, null when cancelled or unchanged.
+    async editFunction(r) {
+      const before = r.ref.text || "";
+      const out = await askText({
+        title: "Edit the function", label: "What must this position do?", confirmLabel: "Save",
+        value: before, pendingLabel: "Saving…",
+        limit: { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE, before },
+        run: async (text) => {
+          if (text === before.trim()) return "same";
+          await after(updatePositionFunction(r.ref.id, { text }));
+          return "saved";
+        },
+      });
+      return out === "saved" ? true : null;
+    },
     removeText(r) {
       const name = `“${(r.ref.text || "").slice(0, 80)}”`;
       const modes = r.rsum?.modes || 0;
@@ -105,8 +126,9 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       if (r.type === "fail") return after(removeFunctionalFailure(id));
       return after(retireFailureMode(id));
     },
+    // A refusal goes to the caller (it says so beside the panel).
     assign(r, ffId) {
-      return after(assignFailureMode(r.ref.id, ffId)).catch((e) => setError(e.message));
+      return after(assignFailureMode(r.ref.id, ffId));
     },
     decide(r, { consequence, decision }) {
       return after(decideFailureMode(r.ref.id, { consequence: consequence || null, decision }));

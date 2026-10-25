@@ -3,7 +3,8 @@ import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
 import Chip from "./ui/Chip.jsx";
-import { NEEDS_INTERVAL, checkDecision } from "../decisionCheck.js";
+import { saveErrorText } from "../confirm.js";
+import { INTERVAL_UNITS, NEEDS_INTERVAL, checkDecision, rememberUnit, startUnit } from "../decisionCheck.js";
 
 // Guided RCM decision flow for one failure mode: consequence → outcome
 // (suggested first, per the classic decision diagram) → task details →
@@ -21,7 +22,8 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   const [rtfBasis, setRtfBasis] = useState(existing.rtf_basis || null);
   const [task, setTask] = useState(existing.task || "");
   const [interval, setInterval_] = useState(existing.interval ?? "");
-  const [intervalUnit, setIntervalUnit] = useState(existing.interval_unit || "hours");
+  // The decision's own unit, else the one chosen last on this device, else hours.
+  const [intervalUnit, setIntervalUnit] = useState(() => startUnit(existing));
   const [notes, setNotes] = useState(existing.notes || "");
   const [evidenceId, setEvidenceId] = useState(existing.evidence?.id || null);
 
@@ -63,6 +65,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
     if (fields.includes("interval") && interval !== "" && !Number.isNaN(Number(interval))) {
       decision.interval = Number(interval);
       decision.interval_unit = intervalUnit;
+      rememberUnit(intervalUnit); // the next decision starts at it
     }
     if (notes.trim()) decision.notes = notes.trim();
     decision.evidence = expectedEvidence && evidenceId
@@ -78,7 +81,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
     } catch (e) {
       busy.current = false;
       setSaving(false);
-      setFailed(e?.message === "Failed to fetch" ? "Couldn't save: check your connection and try again." : e?.message || "Couldn't save the decision.");
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
     }
   };
 
@@ -113,6 +116,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               key={c.id}
               type="button"
               className={"option-tile" + (consequence === c.id ? " selected" : "")}
+              aria-pressed={consequence === c.id}
               onClick={() => setConsequence(c.id)}
             >
               <span className="option-title">{c.label}</span>
@@ -134,6 +138,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                 (outcome === o.id ? " selected" : "") +
                 (suggested.includes(o.id) ? " suggested" : "")
               }
+              aria-pressed={outcome === o.id}
               onClick={() => {
                 setOutcome(o.id);
                 if (o.id !== "rtf") setRtfBasis(null);
@@ -159,6 +164,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                 key={b.id}
                 type="button"
                 className={"option-tile" + (rtfBasis === b.id ? " selected" : "")}
+                aria-pressed={rtfBasis === b.id}
                 onClick={() => { setRtfBasis(b.id); setEvidenceId(null); }}
               >
                 <span className="option-title">{b.label}</span>
@@ -198,9 +204,9 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                 />
                 <Select
                   value={intervalUnit}
-                  onChange={setIntervalUnit}
+                  onChange={(u) => { setIntervalUnit(u); rememberUnit(u); }}
                   title="Use the same time unit as the linked analysis — a mismatch resolves as inconclusive."
-                  options={["hours", "days", "weeks", "months", "years", "cycles", "km"]}
+                  options={INTERVAL_UNITS}
                 />
               </>
             )}

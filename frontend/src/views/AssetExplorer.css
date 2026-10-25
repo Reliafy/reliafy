@@ -641,6 +641,9 @@ a.rw-cklink:focus-visible {
 .tp-table .tt-h-tree,
 .tx:not(.phone) .tt-h-tree { border-right: 1px solid var(--line); }
 .tt-h.rw-fill { flex: 1 0 auto; justify-content: flex-end; overflow: visible; }
+/* The last cell only fills what's left: no width of its own, so a table
+   fitted to its pane doesn't overflow it by the cell's padding. */
+.tt-h.rw-fill:empty, .tp-row.tt > .rw-fill { padding: 0; min-width: 0; }
 .tt-h .rw-cols .rw-btn, .tt-h .rw-cols > button { min-height: 22px; padding: 0 8px; font-size: var(--fs-12); }
 
 /* A wide screen, both tabs: the pane is the page's width, with two slim rows
@@ -909,17 +912,55 @@ a.rw-cklink:focus-visible {
   color: var(--ok);
 }
 .tt-msg.error { color: var(--danger); font-weight: 600; }
+/* A save that didn't go through: the whole of what to do comes first; the
+   way up beside it gives way (its steps are cut short, their names in their
+   tooltips). */
+.tt-msg.error { flex: 0 0 auto; max-width: 100%; }
 .tt-main {
+  position: relative; /* the table's scroll shadows sit over it */
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
 }
+/* The soft shadows on a side of the table with more to scroll to (TreePane
+   places them and sets how strong): on the left at the tree column's edge, on
+   the right at the scroll area's. None when everything fits. */
+.tt-shade {
+  position: absolute;
+  top: 0;
+  width: 16px;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 7;
+  transition: opacity 0.12s linear;
+}
+.tt-shade-l { background: linear-gradient(to right, var(--scroll-shade), transparent); }
+.tt-shade-r { background: linear-gradient(to left, var(--scroll-shade), transparent); }
 .tt-main > .tp-scroll {
   flex: 1 1 auto;
   min-width: 0;
 }
 .tp-table .tp-scroll {
   overflow-x: auto;
+}
+/* The table's scrollbars: always on show and thick enough to see and grab
+   (a 1 px overlay bar said nothing about the columns off to the side). */
+/* The vertical bar always there (its own track, rather than a kept gutter:
+   with a styled bar, Chrome stops the sideways scroll a gutter short). */
+.tx:not(.phone) .tp-table .tp-scroll { overflow-y: scroll; scrollbar-gutter: auto; }
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar-track { background: var(--surf-2); }
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar-corner { background: var(--surf-2); }
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar-thumb {
+  background: var(--faint);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 6px;
+}
+.tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+@supports not selector(::-webkit-scrollbar) {
+  .tx:not(.phone) .tp-table .tp-scroll { scrollbar-width: auto; scrollbar-color: var(--faint) var(--surf-2); }
 }
 .tp-table .tp-row.tt {
   right: auto;
@@ -956,7 +997,9 @@ a.rw-cklink:focus-visible {
 .tt-fail .tp-ic, .tt-unassigned .tp-ic { color: var(--warn); }
 .tt-side {
   flex: none;
-  width: 360px;
+  /* A little narrower on a laptop, so the table beside it still shows its
+     main columns (failure effects, consequence, decision, task). */
+  width: clamp(300px, 25vw, 360px);
   display: flex;
   padding: 8px;
   border-left: 1px solid var(--line);
@@ -1030,8 +1073,9 @@ a.rw-cklink:focus-visible {
 }
 
 /* A row's ⋯ button (its menu: the same as a right-click), at the end of the
-   tree cell. Shown on hover, on keyboard focus and while its menu is open;
-   always on a touch screen or a narrow one, where there's no right-click. */
+   tree cell. Shown on the row picked (so the menu is easy to find), on hover,
+   on keyboard focus and while its menu is open; always on a touch screen or a
+   narrow one, where there's no right-click. */
 .tt-more {
   flex: none;
   margin-left: auto;
@@ -1051,7 +1095,7 @@ a.rw-cklink:focus-visible {
 }
 .tp-mk + .tt-more, .tt-st + .tt-more { margin-left: 2px; }
 .tt-more:hover:not(:disabled), .tt-more.open { background: var(--acc-t); color: var(--acc); }
-.tp-row:hover .tt-more, .tp-row:focus-visible .tt-more, .tp-row.focus:focus .tt-more,
+.tp-row:hover .tt-more, .tp-row:focus-visible .tt-more, .tp-row.focus .tt-more,
 .tp-row.menu-open .tt-more { opacity: 1; }
 .tx.phone .tt-more { opacity: 1; width: 36px; height: 36px; }
 @media (hover: none), (max-width: 700px) {
