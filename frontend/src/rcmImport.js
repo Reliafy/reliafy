@@ -26,19 +26,28 @@ export function importSummary(counts) {
     c.failures ? n(c.failures, "functional failure") : null,
     c.modes ? n(c.modes, "failure mode") : null,
     c.tasks ? n(c.tasks, "task") : null,
+    c.links ? n(c.links, "link between functional failures", "links between functional failures") : null,
   ].filter(Boolean);
   const there = [
     c.functions_existing ? n(c.functions_existing, "function") : null,
     c.failures_existing ? n(c.failures_existing, "functional failure") : null,
     c.modes_existing ? n(c.modes_existing, "failure mode") : null,
+    c.links_existing ? n(c.links_existing, "link between functional failures", "links between functional failures") : null,
   ].filter(Boolean);
-  return { adds, there, nothing: !c.functions && !c.failures && !c.modes };
+  return { adds, there, nothing: !c.functions && !c.failures && !c.modes && !c.links };
 }
 
 export const EXPORT_HEADER = [
-  "Position", "Function", "Performance standard", "Standard working", "Functional failure", "Failure mode", "Effects", "Consequence",
+  "Position", "Function", "Performance standard", "Standard working", "Functional failure", "Caused by (below)", "Failure mode", "Effects", "Consequence",
   "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Notes",
 ];
+
+// The "Caused by (below)" cell: the lower failures that cause it (the links that
+// count), each as "Position › failure", separated by "; ", in tree order.
+export function causedBy(fail) {
+  return (fail?.causes || []).filter((c) => c.inside !== false)
+    .map((c) => `${c.position?.name || ""} › ${c.text}`).join("; ");
+}
 
 // A position's RCM (GET /api/maintenance/positions/{id}/rcm) as rows: the
 // header, then a row per failure mode with its position's path, function and
@@ -65,7 +74,7 @@ export function positionRcmRows(worksheet) {
       const first = firstRow(fn);
       const d = m?.decision || {};
       return [
-        where, fn?.text || "", fn?.standard || "", (first && fn.standard_basis) || "", fail?.text || "", m?.text || "", m?.effects || "",
+        where, fn?.text || "", fn?.standard || "", (first && fn.standard_basis) || "", fail?.text || "", causedBy(fail), m?.text || "", m?.effects || "",
         CONSEQUENCE_LABEL[m?.consequence] || "", OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
         d.interval ?? "", d.interval ? d.interval_unit || "" : "",
         d.status && d.status !== "unevidenced" ? STATUS_LABEL[d.status] || d.status : "", m?.notes || "",

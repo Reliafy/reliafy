@@ -95,13 +95,16 @@ function RowIcon({ r }) {
   );
 }
 
-function Markers({ r, rcm }) {
+function Markers({ r, rcm, onGoto }) {
   const list = markersOf(r, { rcm });
   if (!list.length) return null;
   return (
     <span className="tp-mk">
       {list.map((m) => (
-        <span key={m.kind} className={`tp-mini ${m.kind}${m.inside ? " inside" : ""}`} title={m.label}>
+        // The ↑ n marker (a failure that causes ones above): a click goes up to
+        // the first of them. Not a tab stop, as no marker is (the panel lists them).
+        <span key={m.kind} className={`tp-mini ${m.kind}${m.inside ? " inside" : ""}${m.effect && onGoto ? " go" : ""}`} title={m.label}
+              onClick={m.effect && onGoto ? (e) => { e.stopPropagation(); onGoto(m.effect); } : undefined}>
           <span aria-hidden="true">{m.text}</span>
           <span className="sr-only">{m.label}</span>
         </span>
@@ -151,8 +154,13 @@ function posLine(r, hint) {
   return `${s.modes.toLocaleString("en-AU")} failure mode${s.modes === 1 ? "" : "s"} · ${state}`;
 }
 
+// A reference row's tooltip: what it is and what a click does.
+const causeTip = (r) => (r.ref.inside === false
+  ? `${r.ref.text} (on ${r.ref.on}) isn't inside ${r.ref.effect_position || "this position"} any more, so it no longer counts. Click to go there; Unlink takes it off.`
+  : `Caused by: ${r.ref.text} (on ${r.ref.on}). Click to go there.`);
+
 // The tree's own part of a row: indent, arrow, icon, name, markers.
-function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, info = null }) {
+function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info = null }) {
   const has = r.kids.length > 0;
   const inner = r.kids.length;
   const indent = Math.min(v.depth, phone ? 8 : 30) * 14;
@@ -165,12 +173,13 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, info = null })
       <RowIcon r={r} />
       {pinRoot && <span className="tp-pinmark" title={`Pinned: ${pinRoot.path}`}><PinIcon size={13} /><span className="sr-only">Pinned: </span></span>}
       {isRcmRow(r) && <span className="sr-only">{LEVEL_OF[r.type]?.label}: </span>}
-      <span className="tp-nm" title={label(r).length > 24 ? label(r) : undefined}>
+      <span className="tp-nm" title={r.type === "cause" ? causeTip(r) : label(r).length > 24 ? label(r) : undefined}>
         <Highlight text={label(r)} query={query} />
       </span>
+      {r.type === "cause" && <span className="tp-on" title={causeTip(r)}>on {r.ref.on}</span>}
       {has && !open && inner > 0 && <span className="tp-cnt" title={`${inner} directly inside`}>{inner.toLocaleString("en-AU")}</span>}
       {info}
-      <Markers r={r} rcm={rcm} />
+      <Markers r={r} rcm={rcm} onGoto={onGoto} />
     </>
   );
 }
@@ -229,7 +238,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     return (
       <div {...common}>
         <div className="tt-l1">
-          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pinRoot={pinRoot} />
+          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pinRoot={pinRoot} onGoto={table.onGoto} />
           {isRcmRow(r) && <span className="tt-st"><PhoneStatus r={cellRow(r)} /></span>}
           {unpin}{more}
         </div>
@@ -245,7 +254,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
            onDoubleClick={table.canEditName(r) ? (e) => { e.stopPropagation(); table.onEdit(r.key, "name"); } : undefined}>
         {editCol === "name"
           ? <CellEditor col={NAME_COLUMN} r={cr} onCommit={(raw) => table.onCommit(r, "name", raw)} onCancel={table.onCancel} />
-          : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table
+          : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto}
                        info={table.basisInName ? <BasisInfo r={r} onBasis={table.onBasis} /> : null} />{more}</>}
       </div>
       {table.hint === r.key && editCol == null ? (
@@ -330,6 +339,17 @@ export default function TreePane({
       const row = document.getElementById(`tp-${focus}`);
       if (row) openMenu(focus, cornerOf(row));
       return;
+    }
+    // A reference row (a failure below that causes the one above): Enter or
+    // Space goes to the real row, Delete unlinks it.
+    const fr = focus != null ? display.rows.get(focus) : null;
+    if (fr?.type === "cause" && rowMenu && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, select, textarea, button, a, [contenteditable='true']")) {
+      const act = e.key === "Enter" || e.key === " " ? "go" : e.key === "Delete" ? "unlink" : null;
+      if (act) {
+        e.preventDefault();
+        rowMenu.onAction(fr, act);
+        return;
+      }
     }
     onKey(e);
   };

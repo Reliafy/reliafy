@@ -32,6 +32,9 @@ export const LEVEL_OF = Object.fromEntries(LEVELS.map((l, i) => [l.type, { ...l,
 // functional failure yet.
 LEVEL_OF.pos = { type: "pos", label: "Position", plural: "Positions", child: "functions", depth: 0 };
 LEVEL_OF.unassigned = { type: "unassigned", label: "Not under a functional failure", plural: "Unassigned", child: "modes", depth: 0 };
+// A reference row under a functional failure: a lower functional failure that
+// causes it (a view of a row that lives on a position below, never edited here).
+LEVEL_OF.cause = { type: "cause", label: "Caused by", plural: "Causes below", child: null, depth: 0 };
 
 export const OUTCOME_LABEL = {
   on_condition: "On-condition",
@@ -178,16 +181,68 @@ export function decisionText(d) {
   return d.outcome === "rtf" && RTF_LABEL[d.rtf_basis] ? `${label} (${RTF_LABEL[d.rtf_basis]})` : label;
 }
 
+// ---- a functional failure caused by lower ones (the Explorer's RCM tab) ------------
+// A functional failure's counted causes (on positions inside its own), each
+// with its chain's roll-up, are read with it (ref.causes, ref.below). Its own
+// failure modes are what `sum` counts; the chain below is shown beside, never
+// added in, so nothing is counted twice.
+
+// The part of a functional failure's row that comes from below, or null: how
+// many failure modes below still need a decision, how many tasks are below,
+// whether a linked failure below isn't finished, and whether it has failure
+// modes of its own.
+export function belowOf(r) {
+  if (r.type !== "fail") return null;
+  const causes = (r.ref.causes || []).filter((c) => c.inside);
+  if (!causes.length) return null;
+  const b = r.ref.below || {};
+  return { undecided: b.undecided || 0, tasks: b.tasks || 0, unfinished: causes.some((c) => !c.covered), own: r.sum.modes > 0 };
+}
+
+// The Decision cell's part from below: "explained below", "2 to decide below";
+// with no failure modes of its own, "Explained below · 2 to decide".
+export function belowDecisionText(r) {
+  const b = belowOf(r);
+  if (!b) return "";
+  if (b.own) return b.undecided ? `${b.undecided.toLocaleString("en-AU")} to decide below` : b.unfinished ? "not finished below" : "explained below";
+  return `Explained below${b.undecided ? ` · ${b.undecided.toLocaleString("en-AU")} to decide` : b.unfinished ? " · not finished" : ""}`;
+}
+
+// Does what's below still need work (the amber part of the cell)?
+export const belowPending = (r) => {
+  const b = belowOf(r);
+  return !!b && (b.undecided > 0 || b.unfinished);
+};
+
 // What's inside a row, in words: "5 failure modes · 2 to decide · 3 with a task".
 export function insideWords(r) {
   const s = r.sum;
   if (r.type === "mode") return "";
+  if (r.type === "fail" && !s.modes && (r.ref.causes || []).length) return r.ref.explained_below ? "Explained below" : "No failure modes of its own";
   if (!s.modes) return r.kids.length ? plural(r.kids.length, "functional failure") + ", no failure modes yet" : "Nothing inside yet";
   return [
     plural(s.modes, "failure mode"),
     s.undecided ? `${s.undecided.toLocaleString("en-AU")} to decide` : "all decided",
     s.tasks ? `${s.tasks.toLocaleString("en-AU")} with a task` : null,
   ].filter(Boolean).join(" · ");
+}
+
+// The phone's second line: the main columns, in words.
+export function phoneLine(r) {
+  if (r.type === "cause") {
+    const s = r.sum;
+    const where = r.ref.inside === false ? `no longer inside ${r.ref.effect_position || "it"}` : null;
+    return [`on ${r.ref.on}`, where, s.modes ? (s.undecided ? `${s.undecided} to decide` : "all decided") : "no failure modes yet",
+      s.tasks ? plural(s.tasks, "task") : null].filter(Boolean).join(" · ");
+  }
+  if (r.type === "fail" && belowOf(r)) {
+    return belowOf(r).own ? `${insideWords(r)} · ${belowDecisionText(r)}` : belowDecisionText(r);
+  }
+  if (r.type === "fn" && r.ref.has_basis) return [insideWords(r), "has a working"].filter(Boolean).join(" · ");
+  if (r.type !== "mode") return insideWords(r);
+  const d = r.ref.decision;
+  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", intervalText(d), d?.task]
+    .filter(Boolean).join(" · ");
 }
 
 // The evidence checks inside a row: [{kind, n, label}] (kind: supported,
@@ -249,13 +304,15 @@ export const COLUMNS = [
   {
     id: "decision", label: "Decision", width: 150, min: 84, on: true,
     title: "The maintenance decision for the failure mode",
-    text: (r) => (isMode(r) ? decisionText(d(r)) || "To decide" : r.sum.modes ? (r.sum.undecided ? `${r.sum.undecided} to decide` : "All decided") : ""),
+    text: (r) => (isMode(r) ? decisionText(d(r)) || "To decide"
+      : [r.sum.modes ? (r.sum.undecided ? `${r.sum.undecided} to decide` : "All decided") : "", belowDecisionText(r)].filter(Boolean).join(" · ")),
     sort: (r) => (isMode(r) ? (d(r) ? OUT_RANK[d(r).outcome] ?? 9 : -1) : -r.sum.undecided),
   },
   {
     id: "task", label: "Task", width: 190, min: 110, on: true,
     title: "What is done, and for run-to-failure the action on failure",
-    text: (r) => (isMode(r) ? d(r)?.task || "" : r.sum.tasks ? plural(r.sum.tasks, "task") : ""),
+    text: (r) => (isMode(r) ? d(r)?.task || ""
+      : [r.sum.tasks ? plural(r.sum.tasks, "task") : "", belowOf(r)?.tasks ? `${belowOf(r).tasks.toLocaleString("en-AU")} below` : ""].filter(Boolean).join(" · ")),
     sort: (r) => (isMode(r) ? d(r)?.task || null : r.sum.tasks || null),
     edit: "text", can: (r) => isMode(r) && TASK_OUTCOMES.has(d(r)?.outcome), field: "task", onDecision: true,
   },

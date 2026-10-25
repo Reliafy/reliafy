@@ -8,12 +8,13 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { ancestorsOf, depthOf, filterOpen, flatten, levelSet, visiblePick } from "../outlineTree.js";
 import {
   CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVELS, LEVEL_OF, NAME_COLUMN, functionCount,
-  addNode, buildRcmDisplay, consequenceWords, failuresOn, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
+  addNode, belowDecisionText, belowOf, belowPending, buildRcmDisplay, phoneLine, consequenceWords, failuresOn, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
   intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, shownStatus, siblingOrder, withOpen,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
 import { plainFirstLine } from "../basisMarkdown.js";
+import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
 import "./RcmWorksheet.css";
 
 // The RCM study's worksheet as an outline grid: the study's hierarchy in the
@@ -42,6 +43,7 @@ const ICONS = {
   fn: <path d="M3 3.5h10v9H3z M6.5 6v4l3.5-2z" strokeWidth="1.4" strokeLinejoin="round" />,
   fail: <><path d="M8 2.2 14.2 13H1.8z" strokeWidth="1.4" strokeLinejoin="round" /><path d="M8 6.5v3" strokeWidth="1.6" strokeLinecap="round" /><circle cx="8" cy="11.2" r=".9" fill="currentColor" stroke="none" /></>,
   mode: <path d="M9.2 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" strokeWidth="1.4" strokeLinejoin="round" />,
+  cause: <path d="M4 2.5v6a2 2 0 0 0 2 2h6M9.5 7.5l3 3-3 3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />,
   task: <path d="M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1L2.4 10.7a1.4 1.4 0 0 0 2 2l4.3-4.3a3.2 3.2 0 0 0 4.1-3.9l-1.9 1.9-1.8-.4-.4-1.8z" strokeWidth="1.3" strokeLinejoin="round" />,
 };
 
@@ -53,6 +55,7 @@ export function LevelIcon({ type, className = "rw-ic" }) {
   );
 }
 
+export { phoneLine };
 const PHONE_H = 60;
 const HEIGHTS = { comfortable: 36, compact: 28 };
 const HEAD_H = 36;
@@ -103,10 +106,23 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onBasis 
         }
         return <span className="rw-txt" title={[decisionText(d), d.notes].filter(Boolean).join(": ")}>{decisionText(d)}</span>;
       }
-      if (!r.sum.modes) return null;
-      return r.sum.undecided
-        ? <span className="rw-sum rw-todo" title={`${n(r.sum.undecided, "failure mode")} inside with no decision yet`}>{r.sum.undecided.toLocaleString("en-AU")} to decide</span>
-        : <span className="rw-sum rw-done">All decided</span>;
+      {
+        const own = r.sum.modes ? (r.sum.undecided
+          ? <span className="rw-sum rw-todo" title={`${n(r.sum.undecided, "failure mode")} inside with no decision yet`}>{r.sum.undecided.toLocaleString("en-AU")} to decide</span>
+          : <span className="rw-sum rw-done">All decided</span>) : null;
+        // A functional failure caused by lower ones (the Explorer): what's decided
+        // below, beside its own, never added into it. Short beside its own (the
+        // column is narrow); the whole words are in its tooltip.
+        const bp = belowOf(r) ? belowPending(r) : false;
+        const bb = belowOf(r);
+        const below = bb ? (
+          <span className={"rw-sum rw-below" + (bp ? " rw-todo" : "")} title={cellTip(col, r, false)}>
+            {own ? `· ${bp ? (bb.undecided ? `${bb.undecided.toLocaleString("en-AU")} below` : "not done below") : "below"}` : belowDecisionText(r)}
+          </span>
+        ) : null;
+        if (!own && !below) return null;
+        return <>{own}{below}</>;
+      }
     case "check":
       // linkChecks (the Explorer): the chip opens the model or analysis behind it.
       if (mode && linkChecks && d?.status && d.artifact_link_path) {
@@ -264,15 +280,6 @@ function NameCell({ r, v, open, query, phone, editing, onToggle, onCommit, onCan
   );
 }
 
-// The phone's second line: the main columns, in words.
-export function phoneLine(r) {
-  if (r.type === "fn" && r.ref.has_basis) return [insideWords(r), "has a working"].filter(Boolean).join(" · ");
-  if (r.type !== "mode") return insideWords(r);
-  const d = r.ref.decision;
-  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", intervalText(d), d?.task]
-    .filter(Boolean).join(" · ");
-}
-
 export function PhoneStatus({ r }) {
   if (r.type === "mode") {
     const s = shownStatus(r.ref.decision?.status);
@@ -355,7 +362,7 @@ export const EDITABLE = new Set(["fn", "fail", "mode"]);
 
 // With `ops` (the Explorer), a failure mode can be put under another of its
 // position's functional failures.
-export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops }) {
+export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops, links }) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
   const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k));
@@ -467,6 +474,15 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
             </button>
           )}
         </section>
+      )}
+
+      {/* Order of the panel: Description, then (function) its standard and basis, or (failure) Caused by below
+          and Causes above, then the actions. */}
+      {r.type === "fail" && ops && links && (
+        <CausedBySection r={r} where={display.rows.get(r.ref.position_id)?.ref.name} readOnly={readOnly} links={links} onSelect={onSelect} />
+      )}
+      {r.type === "fail" && ops && links && (
+        <CausesSection r={r} where={display.rows.get(r.ref.position_id)?.ref.name} readOnly={readOnly} links={links} onSelect={onSelect} />
       )}
 
       {/* Each button acts on its first click only: a double-click opens one dialog. */}

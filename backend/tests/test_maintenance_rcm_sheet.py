@@ -521,3 +521,89 @@ def test_a_different_working_on_an_existing_function_is_left_as_it_is(m):
     assert out["ok"] and any("working" in w for w in out["warnings"])
     [safe] = _rcm(m, pid)["functions"]
     assert safe["id"] == fn["id"] and safe["standard_basis"] == "Our own sums"
+
+
+# ---- "Caused by (below)": links between functional failures -------------------------------
+
+def _pool(m):
+    """Pool > Pump (a failure "No flow") and Pool > Plant room > Cell (a failure "No output")."""
+    pool = m.create_position("Pool")["id"]
+    pump = m.create_position("Pump", parent_id=pool)["id"]
+    room = m.create_position("Plant room", parent_id=pool)["id"]
+    cell = m.create_position("Cell", parent_id=room, tag="CELL-1")["id"]
+    for pos, fn, ff in ((pump, "Move water", "No flow"), (cell, "Make chlorine", "No output")):
+        fid = m.add_function(pos, fn)["id"]
+        m.add_functional_failure(fid, ff)
+    return pool, pump, cell
+
+
+def _links_csv(rows):
+    head = "Function,Functional failure,Caused by (below),Failure mode\n"
+    return excel.read_csv((head + "\n".join(rows) + "\n").encode(), "links.csv")
+
+
+def test_the_caused_by_column_is_guessed_and_links_a_failure_with_no_modes_of_its_own(m):
+    pool, pump, cell = _pool(m)
+    table = _links_csv(['Keep the water clear,Water is dull,"Pump › No flow; CELL-1 › No output",'])
+    opts = rcm_sheet.default_options(table)
+    assert opts["mapping"]["causes"] == "Caused by (below)"
+    dry = rcm_sheet.run(m, pool, table, opts, dry_run=True)
+    assert dry["ok"] and dry["counts"]["links"] == 2 and dry["counts"]["modes"] == 0
+    events = m.s.event_count(ORG)
+    assert m.s.event_count(ORG) == events  # the dry run wrote nothing
+    out = rcm_sheet.run(m, pool, table, opts, dry_run=False)
+    assert out["ok"] and out["counts"]["failures"] == 1
+    ff = _rcm(m, pool)["functions"][0]["failures"][0]
+    assert ff["explained_below"] is True and ff["covered"] is False  # linked, but the causes have no modes yet
+    assert sorted(c["position"]["name"] for c in ff["causes"]) == ["Cell", "Pump"]
+    assert m.s.event_count(ORG) > events
+    _rebuilds_the_same(m)
+    # Again: nothing to add.
+    events = m.s.event_count(ORG)
+    again = rcm_sheet.run(m, pool, table, opts, dry_run=False)
+    assert again["ok"] and again["counts"]["links"] == 0 and again["counts"]["links_existing"] == 2
+    assert m.s.event_count(ORG) == events
+
+
+def test_a_mode_row_can_carry_its_failures_causes_too(m):
+    pool, pump, cell = _pool(m)
+    table = _links_csv(['Keep the water clear,Water is dull,Pump › No flow,Dust on the sensor'])
+    out = rcm_sheet.run(m, pool, table, rcm_sheet.default_options(table), dry_run=False)
+    assert out["ok"] and out["counts"]["modes"] == 1 and out["counts"]["links"] == 1
+
+
+def test_causes_that_cant_be_found_stop_the_whole_import(m):
+    pool, pump, cell = _pool(m)
+    m.create_position("Pump", parent_id=m.create_position("Spare", parent_id=pool)["id"])  # a second "Pump" inside
+    rows = ['F,Water is dull,Filter › No flow,', 'F,Water is dull,Pump › Nothing like it,', 'F,Water is dull,Pool › No flow,',
+            'F,Water is dull,Elsewhere › No flow,', 'F,Water is dull,no separator,']
+    table = _links_csv(rows)
+    events = m.s.event_count(ORG)
+    out = rcm_sheet.run(m, pool, table, rcm_sheet.default_options(table), dry_run=False)
+    assert not out["ok"] and m.s.event_count(ORG) == events
+    text = " ".join(out["errors"])
+    assert "there is no position “Filter” inside Pool" in text
+    assert "two positions inside the target are called “Pump”" in text
+    assert "no functional failure ‘Nothing like it’ on" not in text  # ambiguous first
+    assert "is the position this sheet is imported onto" in text
+    assert "there is no position “Elsewhere”" in text
+    assert "should read Position › Functional failure" in text
+    # A position that exists but has no such failure.
+    table = _links_csv(['F,Water is dull,Cell › Nothing like it,'])
+    out = rcm_sheet.run(m, pool, table, rcm_sheet.default_options(table), dry_run=True)
+    assert "no functional failure ‘Nothing like it’ on Cell yet. Import that position's rows first" in out["errors"][0]
+    assert out["errors"][0].startswith("Row 2:")
+
+
+def test_the_tabs_csv_with_the_causes_column_imports_again_adding_nothing(m):
+    pool, pump, cell = _pool(m)
+    table = _links_csv(['Keep the water clear,Water is dull,Pump › No flow,'])
+    rcm_sheet.run(m, pool, table, rcm_sheet.default_options(table), dry_run=False)
+    events = m.s.event_count(ORG)
+    exported = (
+        "Position,Function,Performance standard,Functional failure,Caused by (below),Failure mode,Effects\n"
+        "Pool,Keep the water clear,,Water is dull,Pump › No flow,,\n")
+    t = excel.read_csv(exported.encode(), "Pool RCM.csv")
+    out = rcm_sheet.run(m, pool, t, rcm_sheet.default_options(t), dry_run=False)
+    assert out["ok"] and m.s.event_count(ORG) == events
+    assert out["counts"]["links_existing"] == 1

@@ -189,3 +189,66 @@ test("on a phone, switching tabs leaves the title, the tabs, the search box and 
   expect(side).toBeLessThanOrEqual(0);
   await expectHealthy(page, problems, { label: "explorer steady tabs, phone" });
 });
+
+// Linking a functional failure to a cause below it adds a reference row and
+// nothing else: no new column, no new control in the heading, so the frame
+// round the table stays where it is.
+test("linking a functional failure to a cause below moves nothing in the heading or the frame", async ({ page, request, problems }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const tag = `l${Date.now()}`;
+  const p = await plant(request, tag);
+  const fn = await postOk(request, `${M}/positions/${p.top.id}/functions`, { text: `Keep the plant running ${tag}` });
+  await postOk(request, `${M}/functions/${fn.id}/failures`, { text: `Plant stops ${tag}` });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}&tab=rcm`);
+  const higher = page.getByRole("row", { name: new RegExp(`Plant stops ${tag}`) });
+  await expect(higher).toBeVisible();
+  await settled(page);
+  const before = await frameOf(page);
+  const heading = page.locator(".tt-headslot");
+  const headBefore = await heading.boundingBox();
+  const colsBefore = await page.locator(".tt-head [role=columnheader]").count();
+
+  await higher.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Link to a cause…" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText(`Link a cause of “Plant stops ${tag}”`);
+  await dialog.getByRole("checkbox", { name: new RegExp(`No flow Pump water ${tag}`) }).check();
+  await dialog.getByRole("button", { name: "Link 1 cause" }).click();
+  await expect(dialog).toHaveCount(0);
+  const ref = page.getByRole("row", { name: new RegExp(`Caused by: No flow Pump water ${tag}`) });
+  await expect(ref).toBeVisible();
+  await settled(page);
+
+  expect(await heading.boundingBox(), "the heading's bounding box").toEqual(headBefore);
+  expect(await page.locator(".tt-head [role=columnheader]").count(), "no new column").toBe(colsBefore);
+  const after = await frameOf(page);
+  // Every box in the frame but the name (a "Linked 1 cause." message shows beside it, as any change's does) and the rows.
+  const moved = movedBetween(before, after).filter((m) => !m.startsWith("row ") && !m.startsWith("name.") && !m.startsWith("(rows"));
+  expect(moved, "what moved").toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+
+  // The lower failure says what it causes; the reference row goes to it.
+  await ref.click();
+  await expect(page.getByRole("row", { name: new RegExp(`^Functional failure: No flow Pump water ${tag}`) })).toHaveAttribute("aria-selected", "true");
+  await expectHealthy(page, problems, { label: "explorer rcm links" });
+});
+
+test("on a phone the picker is a sheet, and the page doesn't scroll sideways", async ({ page, request, problems }) => {
+  await page.setViewportSize({ width: 400, height: 800 });
+  const tag = `m${Date.now()}`;
+  const p = await plant(request, tag);
+  const fn = await postOk(request, `${M}/positions/${p.top.id}/functions`, { text: `Keep the plant running ${tag}` });
+  await postOk(request, `${M}/functions/${fn.id}/failures`, { text: `Plant stops ${tag}` });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}&tab=rcm`);
+  await page.getByRole("row", { name: new RegExp(`Plant stops ${tag}`) }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Link to a cause…" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box.width).toBeLessThanOrEqual(400);
+  expect(box.y + box.height).toBeGreaterThan(790); // anchored to the bottom, as a sheet
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expectHealthy(page, problems, { label: "explorer rcm links, phone" });
+});
