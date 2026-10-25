@@ -284,6 +284,7 @@ failure is caused by some of the position's failure modes:
 (:Position)-[:PERFORMS]->(:Function {text, standard, standard_basis?, basis_on?})
 (:Function)-[:FAILS_AS]->(:FunctionalFailure {text})
 (:FunctionalFailure)-[:CAUSED_BY]->(:FailureMode)
+(:FunctionalFailure)-[:RESULTS_FROM]->(:FunctionalFailure)   # effect -> cause, on a position inside
 (:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
 (:Task)-[:MITIGATES]->(:FailureMode)                # the decision's task, as before
 ```
@@ -328,6 +329,69 @@ The server stores it as text and never renders it.
   function (the edge is on the node), isn't copied with a position (no
   document is), and is removed with the function: `remove_function` emits
   `document.removed` for each, and the app deletes a kept PDF's bytes.
+
+### A higher functional failure caused by lower ones
+
+A functional failure can result from functional failures on positions inside
+its own position, at any depth: "Free chlorine below 1 ppm" on the pool
+results from "No output" on the salt chlorinator inside it. The failure-mode
+questions for it are then answered on the lower position, and it needs no
+failure modes of its own. The edge points from effect to cause, as `CAUSED_BY`
+does, so what explains a failure is always a walk out of it. Many to many: a
+failure may have several causes below, a lower failure may cause several above,
+and a failure may have causes below and failure modes of its own. At most 50
+causes per failure; the edge has no properties.
+
+| Event | Payload | Projector |
+|---|---|---|
+| `functional_failure.linked` | `id, cause_id, position_id, cause_position_id, on` | `put_edge("RESULTS_FROM", id, cause_id)` |
+| `functional_failure.unlinked` | `id, cause_id, position_id, cause_position_id, on` | `delete_edge("RESULTS_FROM", id, cause_id)` |
+
+`id` is the effect (the higher failure), `cause_id` the lower one; the two
+position ids are for the event feed and the audit, and the projectors read only
+the failure ids. Linking twice, or unlinking what isn't linked, writes nothing.
+A link is refused, saying what to do, when either failure (or its function) was
+deleted, either position is retired, the two are the same failure or on the
+same position, the cause isn't on a position inside the effect's, the link
+would close a loop, or the effect already has 50 causes. Another workspace's
+failure is not found.
+
+Links are analysis, not history, so nothing is refused for having them; they
+go, with an `unlinked` event each, when:
+
+- either failure is deleted, or its function is (`links_removed` in the result);
+- the cause's position is retired (`links_removed`);
+- a function moves, or a position is moved to another parent, so that a cause
+  would no longer be on a position inside its effect's (`links_removed` and a
+  `note` in the result). Links that still run downwards stay.
+
+Retiring or merging failure modes leaves links alone. Copying a position
+copies the links between failures inside the copied branch, and a link from a
+failure above the branch when that failure is still above where the copy goes
+(otherwise it's counted in `links_skipped`).
+
+**Covered and analysed.** A functional failure is *covered* when it has at
+least one failure mode of its own or one counted cause, every one of its own
+failure modes has a decision, and every counted cause is covered in turn. A
+cause counts while it is live, on a live position strictly inside the effect's
+position; the walk skips failures already on it, so a loop (only possible from
+two links written at the same moment) never hangs a read. A position is
+*analysed* when it has a function, every function has a functional failure,
+every functional failure is covered, and every failure mode on the position has
+a decision. The cause's position need not be analysed, only the linked failure.
+
+The RCM reads (`rcm_all`, `rcm_worksheet`, `functional_failure`) give each
+functional failure `covered`, `explained_below` (counted causes and no failure
+modes of its own), `causes` (each with `position`, `inside`: whether it counts,
+`covered` and `chain`: the counts over every failure mode reachable through it),
+`effects` (each with `position` and `inside`) and `below` (the counts over every
+failure mode under its counted causes, or null). A chain counts each failure
+mode once however many paths reach it, and a position's own counts stay its
+own failure modes only, so nothing is counted twice.
+
+The events are new types: `PROJECTION_VERSION` stays, and code from before them
+passes them over, so there a failure explained only below reads as not covered
+until it's replaced.
 
 ### Moving RCM to another position
 
@@ -388,8 +452,7 @@ The app's Assets › Explorer shows it on its RCM tab, where the asset tree and
 the RCM are one table: the tree (by positions) is the first column, each
 position's functions, functional failures and failure modes are nested in it,
 and every row has the RCM's columns. Adding a function, failure or mode there
-adds a row to the tree. A position
-with no function, or with a failure mode that has no decision, is marked "not
+adds a row to the tree. A position that isn't analysed (above) is marked "not
 analysed" in the tree.
 
 ### Importing an FMEA / RCM worksheet onto a position

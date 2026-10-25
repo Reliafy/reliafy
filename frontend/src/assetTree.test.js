@@ -243,6 +243,6 @@ test("Not analysed: the chip finds positions with no RCM yet; the quiet marker c
   assert.equal(computeFilter(buildDisplay(data, "items"), { chips: ["unanalysed"] }).match.size, 0);
   // The chip's tooltip says what analysed means (the server's rule), in words.
   const chip = CHIPS.find((c) => c.id === "unanalysed");
-  assert.match(chip.title, /at least one function, every function has a functional failure, every functional failure has a failure mode, and every failure mode has a decision/);
+  assert.match(chip.title, /at least one function, every function has a functional failure, every functional failure has failure modes or is caused by failures on positions inside it/);
   assert.match(chip.title, /no functions of its own is not analysed/);
 });
