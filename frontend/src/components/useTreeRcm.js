@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addFailureMode, addFunctionalFailure, addPositionFunction, assignFailureMode, decideFailureMode, getWorkspaceRcm,
-  linkFunctionalFailureCause, removeFunctionalFailure, removePositionFunction, unlinkFunctionalFailureCause, retireFailureMode, updateFailureMode, updateFunctionalFailure,
-  updatePositionFunction,
+  addFailureMode, addFunctionalFailure, addPositionFunction, assignFailureMode, decideFailureMode, getPositionFunction,
+  getWorkspaceRcm, linkFunctionalFailureCause, removeFunctionalFailure, removeMaintenanceDocument, removePositionFunction,
+  retireFailureMode, unlinkFunctionalFailureCause, updateFailureMode, updateFunctionalFailure, updatePositionFunction,
+  uploadMaintenanceDocument,
 } from "../api.js";
 import { COLUMN, FUNCTION_MAX, FUNCTION_NUDGE, decisionBody } from "../rcmWorksheet.js";
 
@@ -125,6 +126,16 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       if (r.type === "fn") return after(removePositionFunction(id));
       if (r.type === "fail") return after(removeFunctionalFailure(id));
       return after(retireFailureMode(id));
+    },
+    // The working behind a function's performance standard (the panel's
+    // section): the whole function read once when opened (the bulk read has
+    // only a preview), the text saved, and PDFs attached or removed. A
+    // refusal goes to the caller, who shows it under the field.
+    basis: {
+      read: (functionId) => getPositionFunction(functionId),
+      save: (functionId, text) => after(updatePositionFunction(functionId, { standard_basis: text })),
+      attach: (functionId, file, title = "") => after(uploadMaintenanceDocument({ target_id: functionId }, file, { title, kind: "other" })),
+      detach: (documentId) => after(removeMaintenanceDocument(documentId)),
     },
     // A refusal goes to the caller (it says so beside the panel).
     assign(r, ffId) {

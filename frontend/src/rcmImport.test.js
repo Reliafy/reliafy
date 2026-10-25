@@ -30,7 +30,7 @@ const WS = {
       unassigned: [{ id: "u", text: "Motor hums", consequence: null, decision: null }],
       functions: [
         {
-          id: "f1", text: "Move grain", standard: "40 t/h",
+          id: "f1", text: "Move grain", standard: "40 t/h", standard_basis: "## Rate\n\n40 t/h = 10 t over 15 min",
           failures: [
             {
               id: "x1", text: "Moves no grain",
@@ -59,13 +59,13 @@ test("a position's RCM as rows named as the import reads them", () => {
   const rows = positionRcmRows(WS);
   assert.deepEqual(rows[0], EXPORT_HEADER);
   assert.equal(rows.length, 6);
-  assert.deepEqual(rows[1].slice(0, 6), ["Plant › Conveyor C-2", "", "", "", "", "Motor hums"]);
-  assert.deepEqual(rows[2], ["Plant › Conveyor C-2", "Move grain", "40 t/h", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
+  assert.deepEqual(rows[1].slice(0, 7), ["Plant › Conveyor C-2", "", "", "", "", "", "Motor hums"]);
+  assert.deepEqual(rows[2], ["Plant › Conveyor C-2", "Move grain", "40 t/h", "## Rate\n\n40 t/h = 10 t over 15 min", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
     "Operational", "On-condition", "", "Walk the belt", 1, "weeks", "", "Severity 7"]);
-  assert.deepEqual(rows[3].slice(7, 14), ["Non-operational", "Run-to-failure", "random", "Replace when it fails", "", "",
+  assert.deepEqual(rows[3].slice(8, 15), ["Non-operational", "Run-to-failure", "random", "Replace when it fails", "", "",
     "Contradicted"]);
-  assert.deepEqual(rows[4].slice(1, 6), ["Move grain", "40 t/h", "Moves too little", "", ""]); // a failure with no modes
-  assert.deepEqual(rows[5].slice(1, 6), ["Stop on the lanyard", "", "", "", ""]); // a function with no failures
+  assert.deepEqual(rows[4].slice(1, 7), ["Move grain", "40 t/h", "", "Moves too little", "", ""]); // a failure with no modes
+  assert.deepEqual(rows[5].slice(1, 7), ["Stop on the lanyard", "", "", "", "", ""]); // a function with no failures
   assert.deepEqual(positionRcmRows(null), [EXPORT_HEADER]);
 });
 
@@ -92,9 +92,17 @@ test("links count in the import's words", () => {
 
 test("the CSV keeps a formula-looking cell as text, and the file is named after the position", () => {
   const csv = positionRcmCsv(WS);
-  assert.ok(csv.startsWith("Position,Function,Performance standard,Functional failure,Caused by (below),Failure mode,"));
+  assert.ok(csv.startsWith("Position,Function,Performance standard,Standard working,Functional failure,Caused by (below),Failure mode,"));
   assert.ok(csv.includes(",'=Bearing seizes,"));
   assert.equal(exportFilename("Conveyor C-2"), "Conveyor C-2 RCM.csv");
   assert.equal(exportFilename('Pump "A" / B'), "Pump A B RCM.csv");
   assert.equal(exportFilename(""), "Position RCM.csv");
+});
+
+test("the working is written on a function's first row only, and quoted with its line breaks", () => {
+  const rows = positionRcmRows(WS);
+  const col = EXPORT_HEADER.indexOf("Standard working");
+  assert.equal(col, EXPORT_HEADER.indexOf("Performance standard") + 1);
+  assert.deepEqual(rows.map((r) => r[col]), ["Standard working", "", "## Rate\n\n40 t/h = 10 t over 15 min", "", "", ""]);
+  assert.ok(positionRcmCsv(WS).includes('"## Rate\n\n40 t/h = 10 t over 15 min"'));
 });

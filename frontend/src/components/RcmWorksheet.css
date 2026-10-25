@@ -466,3 +466,66 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 .rw-scrim { position: fixed; inset: 0; z-index: 209; background: var(--scrim); }
+
+/* ---- the working behind a performance standard ------------------------------------- */
+
+/* The (i) in a table cell: fixed size and never shrunk, so a row keeps its
+   height and the text beside it is what gives way. */
+.rw-info {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; min-height: 0; padding: 0; margin-left: 4px;
+  border: 1px solid var(--acc); border-radius: 50%; background: var(--surf); color: var(--acc);
+  font: italic 700 12px/1 Georgia, "Times New Roman", serif; cursor: pointer;
+}
+.rw-info:hover { background: var(--acc-t); }
+.rw-info:focus-visible { outline: none; box-shadow: var(--focus); }
+.rw-withinfo { display: flex; align-items: center; min-width: 0; width: 100%; }
+.rw-withinfo > .rw-txt { flex: 0 1 auto; min-width: 0; }
+.rw-c .rw-info:only-child { margin-left: 0; }
+.tt-tree .rw-info { margin-left: 6px; }
+
+.rw-basis { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; min-width: 0; }
+.rw-basis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rw-basis-head h3 { margin: 0; font-size: var(--fs-14); }
+.rw-basis p { margin: 0; }
+.rw-basis-meta { overflow-wrap: anywhere; }
+.rw-basis-preview {
+  font-size: var(--fs-13); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.rw-basis-more { align-self: flex-start; }
+.rw-basis-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-13); }
+.rw-basis-edit { display: flex; flex-direction: column; gap: 6px; }
+.rw-basis-area { min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-13); resize: vertical; }
+.rw-basis-count { font-size: var(--fs-12); text-align: right; }
+.rw-basis-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rw-basis-spacer { flex: 1 1 auto; }
+.rw-basis-keys { font-size: var(--fs-12); }
+.rw-basis-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-13); padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2); }
+.rw-basis-ask > span { flex: 1 1 100%; overflow-wrap: anywhere; }
+.rw-basis-attach { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2); }
+.rw-basis-file { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rw-basis-filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+.rw-pdfs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rw-pdf { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; font-size: var(--fs-13); }
+.rw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: #fff; background: #c0392b; border-radius: 3px; padding: 2px 4px; }
+.rw-pdf-title { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; flex: 0 1 auto; }
+.rw-pdf-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rw-pdf .ovm { margin-left: auto; }
+.rw-pdf .ovm-trigger { min-height: 28px; padding: 0 6px; }
+
+/* The rendered Markdown: headings kept small; tables and code scroll inside
+   their own blocks, so a wide one never widens the panel. */
+.rw-md { font-size: var(--fs-13); line-height: 1.5; overflow-wrap: anywhere; min-width: 0; }
+.rw-md > :first-child { margin-top: 0; }
+.rw-md > :last-child { margin-bottom: 0; }
+.rw-md h1, .rw-md h2, .rw-md h3, .rw-md h4, .rw-md h5, .rw-md h6 { font-size: var(--fs-13); margin: 10px 0 4px; }
+.rw-md p, .rw-md ul, .rw-md ol, .rw-md blockquote { margin: 0 0 8px; }
+.rw-md ul, .rw-md ol { padding-left: 20px; }
+.rw-md blockquote { padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.rw-md pre { margin: 0 0 8px; padding: 8px; overflow-x: auto; background: var(--surf-2); border-radius: var(--r-sm); max-width: 100%; }
+.rw-md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+.rw-md table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 8px; }
+.rw-md th, .rw-md td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; white-space: nowrap; }
+.rw-md th { background: var(--surf-2); }

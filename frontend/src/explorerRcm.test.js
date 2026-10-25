@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  NARROW_TABLE, TASK_WITH_INTERVAL, causeKey, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols,
+  NARROW_TABLE, TASK_WITH_INTERVAL, basisInName, causeKey, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -194,6 +194,22 @@ test("the Task cell with the interval folded in", () => {
   assert.equal(taskWithInterval({ type: "fn", ref: {}, sum: { tasks: 2 } }), "2 tasks");
   assert.equal(TASK_WITH_INTERVAL.id, "task");
   assert.equal(TASK_WITH_INTERVAL.edit, "text"); // still edits the task itself
+});
+
+test("the (i) for a working sits in the name while the Performance standard column is hidden", () => {
+  assert.equal(basisInName(tableCols({}, false)), true);
+  assert.equal(basisInName(["standard", "effects"]), false);
+  assert.equal(basisInName(tableCols({ colsChosen: true, cols: ["standard", "effects"] }, false)), false);
+});
+
+test("the one search box also reaches the first words of a working, never the whole text", () => {
+  const display = graftRcm(buildDisplay(DATA, "positions"), {
+    positions: [{ id: "pump", functions: [{ id: "f", text: "Keep it clean", standard: "", has_basis: true,
+      basis_preview: "Chlorine demand 4.3 ppm per day", failures: [] }] }],
+  });
+  const f = computeFilter(display, { query: "chlorine demand" });
+  assert.ok(f.keep.has("f"));
+  assert.equal(computeFilter(display, { query: "turnover" })?.keep.has("f") ?? false, false);
 });
 
 // ---- a functional failure caused by lower ones ---------------------------------------

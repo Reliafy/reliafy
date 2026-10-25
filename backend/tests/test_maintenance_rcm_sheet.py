@@ -471,6 +471,58 @@ def test_the_tabs_csv_export_imports_again_adding_nothing(m):
     assert (out["counts"]["functions"], out["counts"]["failures"], out["counts"]["modes"]) == (0, 0, 0)
 
 
+# ---- the working behind a performance standard ---------------------------------------------
+
+WORKING = "## Demand\n\n150 g ÷ 35,000 L = 4.3 ppm/day\n\n- 0.1 ppm per swim"
+BASIS_HEADER = ["Function", "Performance standard", "Standard working", "Functional failure", "Failure mode"]
+
+
+def _basis_csv(rows) -> bytes:
+    import csv
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(BASIS_HEADER)
+    w.writerows(rows)
+    return buf.getvalue().encode()
+
+
+def test_a_standard_working_column_is_mapped_and_carried_down_a_function(m):
+    pid = m.create_position("Pool")["id"]
+    table = excel.read_csv(_basis_csv([
+        ["Keep the water safe", "1-3 ppm chlorine", WORKING, "Too little chlorine", "Dosing pump fails"],
+        ["", "", "", "", "Chlorinator trips"],
+        ["Keep the water clear", "", "", "Cloudy", "Filter blocked"],
+    ]), "pool.csv")
+    opts = rcm_sheet.default_options(table)
+    assert opts["mapping"]["standard_basis"] == "Standard working"
+    assert opts["mapping"]["standard"] == "Performance standard"
+    out = rcm_sheet.run(m, pid, table, opts, dry_run=False)
+    assert out["ok"], out["errors"]
+    safe, clear = _rcm(m, pid)["functions"]
+    assert safe["standard_basis"] == WORKING and safe["standard"] == "1-3 ppm chlorine"
+    assert not clear["has_basis"] and clear["standard_basis"] == ""
+    _rebuilds_the_same(m)
+
+
+def test_a_working_over_the_cap_is_a_row_error_and_nothing_is_written(m):
+    pid = m.create_position("Pool")["id"]
+    table = excel.read_csv(_basis_csv([["Keep the water safe", "", "x" * 20_001, "Too little", "Pump fails"]]), "p.csv")
+    out = rcm_sheet.run(m, pid, table, rcm_sheet.default_options(table), dry_run=False)
+    assert not out["ok"] and "20,000" in out["errors"][0] and "PDF" in out["errors"][0]
+    assert _rcm(m, pid)["functions"] == []
+
+
+def test_a_different_working_on_an_existing_function_is_left_as_it_is(m):
+    pid = m.create_position("Pool")["id"]
+    fn = m.add_function(pid, "Keep the water safe", "1-3 ppm", standard_basis="Our own sums")
+    table = excel.read_csv(_basis_csv([["Keep the water safe", "1-3 ppm", WORKING, "Too little", "Pump fails"]]), "p.csv")
+    out = rcm_sheet.run(m, pid, table, rcm_sheet.default_options(table), dry_run=False)
+    assert out["ok"] and any("working" in w for w in out["warnings"])
+    [safe] = _rcm(m, pid)["functions"]
+    assert safe["id"] == fn["id"] and safe["standard_basis"] == "Our own sums"
+
+
 # ---- "Caused by (below)": links between functional failures -------------------------------
 
 def _pool(m):

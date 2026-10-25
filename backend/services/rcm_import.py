@@ -49,6 +49,10 @@ FIELDS = [
     {"id": "standard", "label": "Performance standard",
      "help": "Optional: how well it must do it.",
      "synonyms": ["performance standard", "standard", "performance", "performance requirement"]},
+    {"id": "standard_basis", "label": "Standard working",
+     "help": "Optional: how the standard was worked out (Markdown is fine). Blank cells carry down.",
+     "synonyms": ["standard working", "working", "basis", "standard basis", "performance standard basis",
+                  "how the standard was calculated", "standard calculation", "calculation", "derivation"]},
     {"id": "failure", "label": "Functional failure",
      "help": "How it fails to do it. Blank cells carry down.",
      "synonyms": ["functional failure", "functional failures", "failure", "failure description", "function failure", "loss of function"]},
@@ -316,7 +320,7 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     warnings: list[str] = []
     skipped: list[int] = []
     truncated = 0
-    cur_fn = cur_standard = cur_fail = ""
+    cur_fn = cur_standard = cur_fail = cur_basis = ""
     n_modes = n_decisions = n_links = 0
     stashed_tasks = 0
 
@@ -330,16 +334,19 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     for rnum, r in zip(numbers, rows):
         fn_text = cell(r, "function")
         if fn_text and fn_text != cur_fn:
-            cur_fn, cur_standard, cur_fail = fn_text, cell(r, "standard"), ""
-        elif cell(r, "standard"):
-            cur_standard = cell(r, "standard")
+            cur_fn, cur_standard, cur_fail, cur_basis = fn_text, cell(r, "standard"), "", cell(r, "standard_basis")
+        else:
+            if cell(r, "standard"):
+                cur_standard = cell(r, "standard")
+            if cell(r, "standard_basis"):
+                cur_basis = cell(r, "standard_basis")
         fail_text = cell(r, "failure")
         if fail_text:
             cur_fail = fail_text
         mode_text = cell(r, "mode")
         cause_text = cell(r, "causes") if keep_rows else ""
         if not mode_text and not cause_text:
-            structural = {"function", "standard", "failure", "causes"}
+            structural = {"function", "standard", "standard_basis", "failure", "causes"}
             if any(cell(r, f) for f in FIELD_IDS if f not in structural) or any(_text(r[index[c]]) for c in extra):
                 skipped.append(rnum)
             continue
@@ -357,10 +364,15 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             fn = {"text": fn_name, "failures": [], "_by_key": {}}
             if cur_standard:
                 fn["standard"] = clip(cur_standard)
+            if cur_basis:
+                fn["standard_basis"] = cur_basis  # never clipped: the position import refuses one that is too long
             fn_by_key[fn_key] = fn
             functions.append(fn)
-        elif cur_standard and not fn.get("standard"):
-            fn["standard"] = clip(cur_standard)
+        else:
+            if cur_standard and not fn.get("standard"):
+                fn["standard"] = clip(cur_standard)
+            if cur_basis and not fn.get("standard_basis"):
+                fn["standard_basis"] = cur_basis
 
         fail_name = clip(cur_fail or (IMPORTED if col["failure"] is None else ""))
         if not fail_name:
@@ -458,6 +470,8 @@ def build_tree(header: list[str], rows: list[list], options: dict,
         raise RcmImportError(str(exc)) from None
     if keep_rows:  # clean_tree keeps the order, and drops the row
         for fn, cfn in zip(functions, cleaned):
+            if fn.get("standard_basis"):
+                cfn["standard_basis"] = fn["standard_basis"]
             for failure, cfailure in zip(fn["failures"], cfn["failures"]):
                 if failure.get("causes"):  # the lower failures named in "Caused by (below)", by row
                     cfailure["causes"] = failure["causes"]

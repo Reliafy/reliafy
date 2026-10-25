@@ -27,8 +27,8 @@ from __future__ import annotations
 import re
 
 from backend.maintenance.service import (
-    LONG_TEXT, MAX_CAUSES, MAX_EVENTS, MAX_TASKS, SCHEDULED_OUTCOMES, SHORT_TEXT, Invalid, LimitReached, Maintenance,
-    _interval, _norm_unit, _same_text, shortened,
+    BASIS_TEXT, LONG_TEXT, MAX_CAUSES, MAX_EVENTS, MAX_TASKS, SCHEDULED_OUTCOMES, SHORT_TEXT, Invalid, LimitReached,
+    Maintenance, _basis_text, _interval, _norm_unit, _same_text, shortened,
 )
 from backend.services import excel, rcm_import
 
@@ -172,6 +172,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     no_unit: list[int] = []
     shortened_rows: list[int] = []
     standards_kept: list[str] = []
+    workings_kept: list[str] = []
     functions: list[dict] = []
     counts = {"functions": 0, "failures": 0, "modes": 0, "decisions": 0, "tasks": 0,
               "functions_existing": 0, "failures_existing": 0, "modes_existing": 0, "links": 0, "links_existing": 0}
@@ -181,8 +182,21 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
         match = next((f for f in existing_fns if _same_text(f["text"], fn["text"])), None)
         if match and fn.get("standard") and not _same_text(match.get("standard"), fn["standard"]):
             standards_kept.append(match["text"])
-        fn_plan = {"text": fn["text"], "standard": fn.get("standard") or "", "id": match and match["id"],
-                   "failures": []}
+        basis = fn.get("standard_basis") or ""
+        if len(basis) > BASIS_TEXT:
+            errors.append(f"“{fn['text'][:60]}”: the standard working is {len(basis):,} characters; at most "
+                          f"{BASIS_TEXT:,}. Shorten it in the sheet, or attach it as a PDF after the import.")
+            basis = ""
+        elif basis:
+            try:
+                basis = _basis_text(basis)
+            except Invalid as err:
+                errors.append(f"“{fn['text'][:60]}”: {err}")
+                basis = ""
+        if match and basis and not _same_text(match.get("standard_basis"), basis):
+            workings_kept.append(match["text"])
+        fn_plan = {"text": fn["text"], "standard": fn.get("standard") or "", "standard_basis": basis,
+                   "id": match and match["id"], "failures": []}
         existing_ffs = m._failures_of(match["id"]) if match else []
         for ff in fn["failures"]:
             ff_match = next((f for f in existing_ffs if _same_text(f["text"], ff["text"])), None)
@@ -266,6 +280,8 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
                         "Map an Interval unit column to say otherwise.")
     for text in standards_kept[:5]:
         warnings.append(f"“{text[:80]}” is on {name} already with another performance standard; it was left as it is.")
+    for text in workings_kept[:5]:
+        warnings.append(f"“{text[:80]}” is on {name} already with another working behind its standard; it was left as it is.")
 
     if m.limited:
         events = counts["functions"] + counts["failures"] + 4 * counts["modes"] + counts["tasks"] + counts["links"]
@@ -279,7 +295,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
 
 def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
     for fn in functions:
-        fn_id = fn["id"] or m.add_function(position_id, fn["text"], fn["standard"])["id"]
+        fn_id = fn["id"] or m.add_function(position_id, fn["text"], fn["standard"], standard_basis=fn["standard_basis"])["id"]
         for ff in fn["failures"]:
             ff_id = ff["id"] or m.add_functional_failure(fn_id, ff["text"])["id"]
             for mode in ff["modes"]:

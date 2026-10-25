@@ -238,6 +238,7 @@ export function phoneLine(r) {
   if (r.type === "fail" && belowOf(r)) {
     return belowOf(r).own ? `${insideWords(r)} · ${belowDecisionText(r)}` : belowDecisionText(r);
   }
+  if (r.type === "fn" && r.ref.has_basis) return [insideWords(r), "has a working"].filter(Boolean).join(" · ");
   if (r.type !== "mode") return insideWords(r);
   const d = r.ref.decision;
   return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", intervalText(d), d?.task]
@@ -422,11 +423,11 @@ export function chipCounts(display) {
   return out;
 }
 
-// What the filter's text is searched by: the description, the standard, the
-// effects, the task and the notes.
+// What the filter's text is searched by: the description, the standard (and
+// the first words of the working behind it), the effects, the task and the notes.
 export function rowText(r) {
   const p = r.ref;
-  return [p.text, p.standard, p.effects, p.notes, p.decision?.task, p.decision?.notes]
+  return [p.text, p.standard, p.basis_preview, p.effects, p.notes, p.decision?.task, p.decision?.notes]
     .filter(Boolean).join(" ").toLowerCase();
 }
 
