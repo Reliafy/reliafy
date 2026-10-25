@@ -41,11 +41,14 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 // row, press its ⋯ button (shown on hover and focus; always on a touch screen),
 // or Shift+F10 / the Menu key on the focused row.
 //
-// A branch can be pinned (treePin.js): the tree then starts at that row, and a
-// bar under the search box says so, with Show everything to undo it (as does
-// "Show whole tree" at the top of the ⋯ menu). `branch`: {name, onUnpin} while
-// one is; `branchNote`: a line in the bar's place when the page un-pinned to
-// show something outside the branch.
+// A branch can be pinned (treePin.js): the tree then starts at that row. It
+// says so without a row of its own: on a wide screen the tree's column header
+// reads "Pinned: <name>" with a ✕ (Show everything) beside it; on a phone (no
+// column header) the pinned row itself has the pin before its name and the ✕
+// at its end. "Show whole tree" at the top of the ⋯ menu un-pins too.
+// `branch`: {key, name, path, onUnpin} while one is; `branchNote`: a few words
+// in the same place (the column header; the counts on a phone) when the page
+// un-pinned to show something outside the branch.
 //
 // Presentational: the page (AssetExplorer) holds the state.
 
@@ -129,7 +132,7 @@ function posLine(r, hint) {
 }
 
 // The tree's own part of a row: indent, arrow, icon, name, markers.
-function TreeBit({ r, v, open, phone, query, rcm, table }) {
+function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot }) {
   const has = r.kids.length > 0;
   const inner = r.kids.length;
   const indent = Math.min(v.depth, phone ? 8 : 30) * 14;
@@ -140,6 +143,7 @@ function TreeBit({ r, v, open, phone, query, rcm, table }) {
         <span className={"tp-chev" + (open ? " open" : "")} aria-hidden="true"><Chevron /></span>
       ) : <span className="tp-chev-sp" />}
       <RowIcon r={r} />
+      {pinRoot && <span className="tp-pinmark" title={`Pinned: ${pinRoot.path}`}><PinIcon size={13} /><span className="sr-only">Pinned: </span></span>}
       {isRcmRow(r) && <span className="sr-only">{LEVEL_OF[r.type]?.label}: </span>}
       <span className="tp-nm" title={table && label(r).length > 40 ? label(r) : undefined}>
         <Highlight text={label(r)} query={query} />
@@ -150,7 +154,19 @@ function TreeBit({ r, v, open, phone, query, rcm, table }) {
   );
 }
 
-function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW }) {
+// The ✕ on the pinned row (a phone): the whole tree again. Always shown, a
+// 36 px target; not a tab stop (the ⋯ menu's Show whole tree is, from the keyboard).
+function UnpinButton({ pinRoot }) {
+  return (
+    <button type="button" className="tp-unpin" tabIndex={-1} aria-label="Show everything" title="Show everything"
+            onDoubleClick={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); pinRoot.onUnpin(); }}>
+      <span aria-hidden="true">✕</span>
+    </button>
+  );
+}
+
+function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
   const has = r.kids.length > 0;
   const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (heading(r) ? " grp" : "")
     + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "");
@@ -168,7 +184,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     tabIndex: pinned ? undefined : focused ? 0 : -1,
     style: { top: pinned ? undefined : top, height, width: table && !phone ? table.total : rowW },
     onClick: (e) => {
-      if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more")) return;
+      if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin")) return;
       if (e.target.closest(".tp-chev")) onToggle(r.key);
       else onPick(r.key, { go: true });
     },
@@ -183,17 +199,18 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     } : undefined,
   };
   const more = onMenu && <MoreButton r={r} open={!!menuOpen} onMenu={onMenu} />;
+  const unpin = pinRoot && <UnpinButton pinRoot={pinRoot} />;
   if (!table) {
-    return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} />{more}</div>;
+    return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} pinRoot={pinRoot} />{unpin}{more}</div>;
   }
   if (phone) {
     const line = r.type === "pos" ? posLine(r, table.hint === r.key) : phoneLine(cellRow(r));
     return (
       <div {...common}>
         <div className="tt-l1">
-          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table />
+          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pinRoot={pinRoot} />
           {isRcmRow(r) && <span className="tt-st"><PhoneStatus r={cellRow(r)} /></span>}
-          {more}
+          {unpin}{more}
         </div>
         {line && <div className="tt-l2" style={{ paddingLeft: Math.min(v.depth, 8) * 14 + 40 }}>{line}</div>}
       </div>
@@ -278,6 +295,7 @@ export default function TreePane({
     if (key != null) document.getElementById(`tp-${key}`)?.focus({ preventScroll: true });
   };
   const keys = (e) => {
+    if (e.target.closest(".tt-head button")) return;
     if (rowMenu && focus != null && itemsFor(focus).length && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey))
         && !e.target.closest("input, select, textarea, [contenteditable='true']")) {
       e.preventDefault();
@@ -392,17 +410,19 @@ export default function TreePane({
              aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
     </label>
   );
-  // The pinned branch's bar (or, just after un-pinning to show something
-  // outside it, a line saying so).
-  const branchBar = branch ? (
-    <div className="tp-branch" role="group" aria-label="Pinned branch">
-      <PinIcon />
-      <span className="tp-branch-text" title={branch.name}>Showing only: <strong>{branch.name}</strong></span>
-      <button type="button" className="secondary tp-branch-x" onClick={branch.onUnpin} title="Show the whole tree again">
-        <span aria-hidden="true">✕</span> Show everything
+  // While a branch is pinned, the tree's column header says so (a wide screen,
+  // both tabs): the pin, "Pinned: <name>" (cut short, the whole path in its
+  // tooltip) and a ✕ to show everything. Just after un-pinning to show
+  // something outside the branch, a few words in its place.
+  const pinHead = branch ? (
+    <span className="tt-pinned" role="group" aria-label="Pinned branch">
+      <PinIcon size={13} />
+      <span className="tt-pinned-nm" title={`Pinned: ${branch.path || branch.name}`}>Pinned: <strong>{branch.name}</strong></span>
+      <button type="button" className="tt-pinned-x" onClick={branch.onUnpin} aria-label="Show everything" title="Show everything">
+        <span aria-hidden="true">✕</span>
       </button>
-    </div>
-  ) : branchNote ? <p className="tp-branch-note" role="status">{branchNote}</p> : null;
+    </span>
+  ) : branchNote ? <span className="tt-pinned-note" role="status">{branchNote}</span> : null;
   // The two slim rows over the tree (a wide screen, both tabs): the tree's
   // title, counts and ⋯ over the tree column, beside the panel's heading (the
   // way up over the row's name, and its actions); then the search box over the
@@ -419,27 +439,28 @@ export default function TreePane({
         <div className="tt-tabslot">{headTabs}</div>
         {notice}
       </div>
-      {branchBar && !railed && <div className="tt-row3"><div className="tt-cell" style={{ width }}>{branchBar}</div></div>}
     </div>
   ) : (
     <div className="tp-head">
       {titleRow}
       {phoneTabs}
       {search}
-      {branchBar}
       {notice}
-      {status}
+      {branchNote && !branch ? <p className="tp-status" role="status">{branchNote}</p> : status}
     </div>
   );
 
   // A row on the Summary tab (a wide screen) is as wide as the RCM tab's tree cell.
   const rowProps = { phone, query, onToggle, rcm: rcmMarks, table, rowW: wide && !table ? width : undefined };
+  // The pinned row on a phone: the pin before its name and the ✕ at its end.
+  const pinRootOf = (key) => (phone && branch && key === branch.key ? branch : undefined);
   const menuProps = (key) => (itemsFor(key).length ? { onMenu: openMenu, menuOpen: rowOpen?.key === key } : {});
   const columnHeads = !phone && (
-    <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable ? undefined : "true"}
+    <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable || pinHead ? undefined : "true"}
          style={{ width: wideTable ? table.total : width, height: HEAD_H }}>
-      <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}>
-        {wideTable ? "Position › function, failure or mode" : treeLabel || title}
+      <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}
+           aria-label={wideTable && pinHead ? "Position › function, failure or mode" : undefined}>
+        {pinHead || (wideTable ? "Position › function, failure or mode" : treeLabel || title)}
       </div>
       {wideTable && table.cols.map((c) => (
         <div key={c.id} role="columnheader" className={"tt-h" + (c.align === "num" ? " num" : "")} style={{ width: table.widths[c.id] }}
@@ -465,7 +486,7 @@ export default function TreePane({
                   const v = list[index.get(k)];
                   const r = display.rows.get(k);
                   return (
-                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned {...rowProps} {...menuProps(k)}
+                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned {...rowProps} {...menuProps(k)} pinRoot={pinRootOf(k)}
                          onPick={(key) => { onPick(key, {}); reveal(key, true); }} />
                   );
                 })}
@@ -478,7 +499,7 @@ export default function TreePane({
               const r = display.rows.get(v.key);
               return (
                 <Row key={v.key} v={v} r={r} top={i * H} height={H} open={open.has(v.key)} focused={v.key === focus}
-                     dim={dim(v.key)} onPick={onPick} {...rowProps} {...menuProps(v.key)} />
+                     dim={dim(v.key)} onPick={onPick} {...rowProps} {...menuProps(v.key)} pinRoot={pinRootOf(v.key)} />
               );
             })}
           </div>

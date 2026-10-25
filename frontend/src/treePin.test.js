@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, filterOpen, flatten, levelSet } from "./assetTree.js";
 import { graftRcm } from "./explorerRcm.js";
-import { canPin, crumbAction, inBranch, levelMatches, pinDisplay, pinTarget } from "./treePin.js";
+import { canPin, crumbAction, inBranch, levelMatches, pinDisplay, pinPath, pinTarget } from "./treePin.js";
 
 // A plant with two lines, each with a pump and its seal; a second site; an
 // engine fitted nowhere that carries an alternator position.
@@ -156,4 +156,13 @@ test("inside the branch or not, and what a crumb above it does", () => {
   const alt = pinDisplay(whole, "alt");
   assert.equal(crumbAction(alt, whole, "positions", "bench"), "pin");
   assert.equal(crumbAction(alt, whole, "positions", "G:loose"), "unpin"); // the pane's own heading
+});
+
+test("the pinned row's path, from the top of the whole tree", () => {
+  const pos = buildDisplay(DATA, "positions");
+  assert.equal(pinPath(pos, "sealA"), "Plant › Line A › Pump A › Seal A");
+  assert.equal(pinPath(pos, "plant"), "Plant");
+  assert.equal(pinPath(pos, "nope"), "");
+  const loc = buildDisplay(DATA, "locations");
+  assert.equal(pinPath(loc, "shed"), "Site › Shed");
 });

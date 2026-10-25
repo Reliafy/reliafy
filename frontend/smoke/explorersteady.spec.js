@@ -129,16 +129,53 @@ test("switching tabs moves nothing with a branch pinned, and a long operating co
     data: { operating_context: `Runs on demand in a dusty pump house, 18 hours a day ${tag}.\n`.repeat(12) },
   });
   expect(res.ok()).toBeTruthy();
+  // Without a pin first: where the tree starts on each tab.
+  const treeTop = {};
+  for (const t of ["Summary", "RCM"]) {
+    await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}${t === "RCM" ? "&tab=rcm" : ""}`);
+    await expect(tab(page, t)).toHaveAttribute("aria-selected", "true");
+    await settled(page);
+    treeTop[t] = (await frameOf(page)).boxes.tree;
+  }
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&pin=${p.top.id}`);
-  await expect(page.getByRole("group", { name: "Pinned branch" })).toBeVisible();
+  // The pin is said in the tree's column header, with no row of its own: the
+  // tree starts exactly where it does without a pin.
+  const pinNote = page.locator(".tt-head").getByRole("group", { name: "Pinned branch" });
+  await expect(pinNote).toContainText(`Pinned: Steady plant ${tag}`);
   await expect(page.getByRole("region", { name: "Operating context" })).toBeVisible();
+  expect((await frameOf(page)).boxes.tree).toEqual(treeTop.Summary);
   await switchEveryWay(page, "Summary");
-  // The pinned bar stays where it was, as wide as the tree.
-  const bar = await page.getByRole("group", { name: "Pinned branch" }).boundingBox();
+  // On the RCM tab: the note in the same place, the tree where it is without a
+  // pin, and 18 or more rows on screen at 1280×720.
+  await expect(tab(page, "RCM")).toHaveAttribute("aria-selected", "true");
+  const note = await pinNote.boundingBox();
+  expect((await frameOf(page)).boxes.tree).toEqual(treeTop.RCM);
+  const onScreen = await page.locator(".tp-scroll").evaluate((el) => Math.floor((el.clientHeight - 30) / 30));
+  expect(onScreen).toBeGreaterThanOrEqual(18);
   await tab(page, "Summary").click();
   await settled(page);
-  expect(await page.getByRole("group", { name: "Pinned branch" }).boundingBox()).toEqual(bar);
+  expect(await pinNote.boundingBox()).toEqual(note);
+  // Its ✕ shows everything; the frame stays put.
+  const before = await frameOf(page);
+  await pinNote.getByRole("button", { name: "Show everything" }).click();
+  await expect(pinNote).toHaveCount(0);
+  const after = await frameOf(page);
+  expect(after.boxes.tree).toEqual(before.boxes.tree);
+  expect(after.boxes.column).toEqual(before.boxes.column);
   await expectHealthy(page, problems, { label: "explorer steady tabs, pinned" });
+});
+
+test("on a phone with a branch pinned, switching tabs leaves the frame where it is", async ({ page, request, problems }) => {
+  await page.setViewportSize({ width: 400, height: 800 });
+  const tag = `q${Date.now()}`;
+  const p = await plant(request, tag);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&pin=${p.top.id}`);
+  await expect(page.getByRole("treeitem", { name: new RegExp(`^Pinned: Steady plant ${tag}`) })).toBeVisible();
+  const scrolls = { Summary: (await frameOf(page)).scrollTop };
+  await check(page, "phone, pinned: to RCM", () => tab(page, "RCM").click(), { wantTab: "RCM", rows: false, scrolls });
+  await check(page, "phone, pinned: to Summary", () => tab(page, "Summary").click(), { wantTab: "Summary", rows: false, scrolls });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+  await expectHealthy(page, problems, { label: "explorer steady tabs, phone, pinned" });
 });
 
 test("on a phone, switching tabs leaves the title, the tabs, the search box and the tree where they are", async ({ page, request, problems }) => {

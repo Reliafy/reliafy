@@ -86,3 +86,18 @@ export function crumbAction(pinned, whole, mode, key) {
   if (!pinned || pinned.rows.has(key)) return "select";
   return canPin(whole.rows.get(key), mode) ? "pin" : "unpin";
 }
+
+// The pinned row's way down from the top of the whole tree, by name
+// ("Plant › Line A › Pump A"): the tooltip on the pin's note, so a short or
+// cut-off name still says where it is.
+export function pinPath(display, key) {
+  const names = [];
+  let k = key;
+  while (k != null) {
+    const r = display?.rows.get(k);
+    if (!r) break;
+    names.unshift(r.ref?.name || r.ref?.text || "(no name)");
+    k = r.parent;
+  }
+  return names.join(" › ");
+}
