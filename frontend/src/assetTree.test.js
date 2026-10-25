@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  nextGutter,
   ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, pinnedRows, saveTreeState,
   statusWords, windowOf,
@@ -245,4 +246,20 @@ test("Not analysed: the chip finds positions with no RCM yet; the quiet marker c
   const chip = CHIPS.find((c) => c.id === "unanalysed");
   assert.match(chip.title, /at least one function, every function has a functional failure, every functional failure has failure modes or is caused by failures on positions inside it/);
   assert.match(chip.title, /no functions of its own is not analysed/);
+});
+
+test("the scrollbar's gutter only grows, so a measure that flips can't loop", () => {
+  assert.equal(nextGutter(0, 15), 15);
+  assert.equal(nextGutter(15, 0), 15); // the bar went (a short list): the room stays
+  assert.equal(nextGutter(15, 14), 15);
+  assert.equal(nextGutter(0, NaN), 0);
+  // Measures that alternate with whatever width was set settle at once.
+  let kept = 0;
+  const renders = [];
+  for (const m of [15, 0, 15, 0, 16, 15, 0]) {
+    const next = nextGutter(kept, m);
+    renders.push(next !== kept);
+    kept = next;
+  }
+  assert.deepEqual(renders, [true, false, false, false, true, false, false]);
 });

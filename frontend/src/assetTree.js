@@ -404,3 +404,10 @@ export function clampWidth(width, windowWidth) {
   const max = Math.max(PANE.min, Math.round(windowWidth * 0.6));
   return Math.min(max, Math.max(PANE.min, Math.round(width)));
 }
+
+// The Summary tab's scroll area keeps room for the scrollbar (its width is the
+// tree's plus this gutter) so rows never narrow when the bar comes and goes.
+// The gutter measured after each render is taken only when it is wider than
+// the one kept, so it settles: a measure that changes with the width it sets
+// can't keep the page re-rendering.
+export const nextGutter = (kept, measured) => (Number.isFinite(measured) && measured > kept ? measured : kept);
