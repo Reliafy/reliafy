@@ -1,25 +1,25 @@
 """Evidence checks for the RCM on the maintenance positions.
 
 A failure mode's decision on the graph links the saved model or analysis that
-justifies it (``evidence`` on the mode), as a decision in an RCM study does.
-The check is the study's own (backend/services/rcm.py ``resolve_decision``):
-done on every read, never stored, so the RCM tab and a study give the same
-answer for the same decision and evidence.
+justifies it (``evidence`` on the mode). The check is
+``backend/maintenance/rcm_decisions.py`` ``resolve_decision``: done on every
+read, never stored. The older RCM studies use the same rules from there, so
+both give the same answer for the same decision and evidence.
 """
 
 from __future__ import annotations
 
-from backend.services import rcm as rcm_service
+from backend.maintenance import rcm_decisions
 
 
 def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
     """``worksheet`` (Maintenance.rcm_worksheet) with each decision's evidence
     status, and a rollup per position and for the whole of it (as a study's)."""
-    fetch = rcm_service.evidence_fetcher(db, owner_id, hidden)
-    total = rcm_service.blank_rollup()
+    fetch = rcm_decisions.evidence_fetcher(db, owner_id, hidden)
+    total = rcm_decisions.blank_rollup()
     positions = []
     for p in worksheet["positions"]:
-        rollup = rcm_service.blank_rollup()
+        rollup = rcm_decisions.blank_rollup()
 
         def mode_out(mode: dict) -> dict:
             rollup["modes"] += 1
@@ -27,7 +27,7 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
             if not decision:
                 return mode
             rollup["decided"] += 1
-            resolved = rcm_service.resolve_decision(decision, fetch)
+            resolved = rcm_decisions.resolve_decision(decision, fetch)
             status = resolved.get("status")
             if status in rollup:
                 rollup[status] += 1
@@ -47,12 +47,12 @@ def mode_status(db, mode: dict, owner_id, hidden=frozenset()) -> dict:
     decision = mode.get("decision")
     if not decision:
         return mode
-    fetch = rcm_service.evidence_fetcher(db, owner_id, hidden)
-    return {**mode, "decision": {**decision, **rcm_service.resolve_decision(decision, fetch)}}
+    fetch = rcm_decisions.evidence_fetcher(db, owner_id, hidden)
+    return {**mode, "decision": {**decision, **rcm_decisions.resolve_decision(decision, fetch)}}
 
 
 def evidence_refs(decision) -> list[tuple[str, str]]:
     """The (collection, id) a decision links as evidence, for access.check_references."""
     from backend.services import access
 
-    return access.evidence_refs([{"failures": [{"modes": [{"decision": decision or {}}]}]}])
+    return access.refs_of_decision(decision)

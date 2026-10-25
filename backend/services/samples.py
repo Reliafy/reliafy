@@ -1232,89 +1232,10 @@ def _seed_rcm_study(db) -> None:
     if db.rcm_studies.find_one({"_id": "sample-rcm-truck"}) is not None:
         return
     try:
-        functions = [
-            {
-                "id": "sample-rcm-f1",
-                "text": "Stop the vehicle within the rated distance",
-                "failures": [
-                    {
-                        "id": "sample-rcm-f1-ff1",
-                        "text": "Insufficient braking force",
-                        "modes": [
-                            {
-                                "id": "sample-rcm-m1",
-                                "text": "Brake pad wear beyond the 8 mm limit",
-                                "effects": "Extended stopping distance; risk of collision.",
-                                "consequence": "safety",
-                                "decision": {
-                                    "outcome": "on_condition",
-                                    "task": "Measure pad wear at each service; replace before the 8 mm threshold.",
-                                    "evidence": {"type": "degradation_model", "id": "sample-deg-brake-wear"},
-                                },
-                            },
-                            {
-                                "id": "sample-rcm-m2",
-                                "text": "Secondary hydraulic circuit failed (hidden until demanded)",
-                                "effects": "No redundancy on primary circuit failure.",
-                                "consequence": "hidden",
-                                "decision": {
-                                    "outcome": "failure_finding",
-                                    "task": "Function-test the secondary circuit.",
-                                    "evidence": {"type": "strategy_analysis", "id": "sample-strategy-ffi-brake-circuit"},
-                                },
-                            },
-                        ],
-                    },
-                ],
-            },
-            {
-                "id": "sample-rcm-f2",
-                "text": "Transmit drive to the wheels",
-                "failures": [
-                    {
-                        "id": "sample-rcm-f2-ff1",
-                        "text": "Wheel does not rotate freely",
-                        "modes": [
-                            {
-                                "id": "sample-rcm-m3",
-                                "text": "Wheel-bearing fatigue",
-                                "effects": "Vehicle immobilised; tow required.",
-                                "consequence": "operational",
-                                "decision": {
-                                    "outcome": "fixed_interval",
-                                    "task": "Replace wheel bearings preventively.",
-                                    "interval": 580,
-                                    "interval_unit": "hours",
-                                    "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"},
-                                },
-                            },
-                            {
-                                "id": "sample-rcm-m4",
-                                "text": "Wheel-bearing failure — legacy run-to-failure plan",
-                                "effects": "As above; inherited from the old maintenance plan.",
-                                "consequence": "operational",
-                                "decision": {
-                                    "outcome": "rtf",
-                                    "rtf_basis": "random",
-                                    "notes": "Legacy decision — kept to demonstrate live evidence validation.",
-                                    "evidence": {"type": "model", "id": "sample-model-bearings-weibull"},
-                                },
-                            },
-                            {
-                                "id": "sample-rcm-m5",
-                                "text": "Chassis cracking at the spring hanger",
-                                "effects": "Structural risk under load.",
-                                "consequence": "safety",
-                                "decision": {
-                                    "outcome": "redesign",
-                                    "notes": "No task can manage the risk — reinforcement redesign raised with engineering.",
-                                },
-                            },
-                        ],
-                    },
-                ],
-            },
-        ]
+        # The same content as the sample truck a workspace can copy onto its tree.
+        from backend.maintenance.templates import sample_truck_functions
+
+        functions = sample_truck_functions()
         from backend.services import rcm as rcm_service
 
         study = RcmStudy(

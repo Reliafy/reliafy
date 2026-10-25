@@ -1304,3 +1304,18 @@ a.rw-cklink:focus-visible {
 /* The pin in the panel's heading: an icon, as tall as Full screen beside it. */
 .tt-actions button.tt-pin { min-width: 32px; padding: 0 8px; justify-content: center; }
 .tt-actions button.tt-pin.on { background: var(--acc-t); border-color: var(--acc); color: var(--acc); }
+
+/* The empty tree's "New here? Add the sample truck" card. */
+.ae-sample {
+  margin: 1.25rem auto 0;
+  max-width: 34rem;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+.ae-sample p { margin: 0; }

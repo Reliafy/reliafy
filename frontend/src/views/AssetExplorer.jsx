@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { getMaintenanceTree, getRcmOptions, listMaintenanceItems } from "../api.js";
+import { addSampleTruck as postSampleTruck, getMaintenanceTree, getRcmOptions, listMaintenanceItems } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
 import TreeDetail, { HeaderTabs, KIND, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
@@ -34,6 +34,7 @@ import { EXPLORER_LABEL } from "../navigation.js";
 import { liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
 import usePhone from "../usePhone.js";
+import { SAMPLE_TRUCK_LABEL, addSampleTruck } from "../sampleTruck.js";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
@@ -184,7 +185,7 @@ export default function AssetExplorer() {
   const confirm = useConfirm();
   // Read a moment after the tree is in, on the Summary tab too, so the first
   // switch to the RCM tab draws its rows at once.
-  const { rcm, error: rcmError, ops } = useTreeRcm({ on: rcmOn, prefetch: !!data, onTreeChanged: load, askText });
+  const { rcm, error: rcmError, ops, load: loadRcm } = useTreeRcm({ on: rcmOn, prefetch: !!data, onTreeChanged: load, askText });
   const [rcmFocus, setRcmFocus] = useState(null); // a function, failure or mode picked (its position is selected)
   const [panel, setPanel] = useState(false); // its details beside the table
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
@@ -640,6 +641,25 @@ export default function AssetExplorer() {
     setModal(null);
     setNewParent(null);
   };
+  // "Add the sample truck": copied into this workspace's tree, then shown
+  // picked on the RCM tab. With a copy there already, the person is asked
+  // whether to add another; keeping theirs picks it instead.
+  const [addingSample, setAddingSample] = useState(false);
+  const addSample = () => {
+    if (addingSample) return;
+    setAddingSample(true);
+    addSampleTruck(postSampleTruck, confirm)
+      .then((r) => {
+        created(r.position.id);
+        if (r.added) {
+          loadRcm();
+          setTab("rcm");
+          // Short: it shows in the heading's slim row (the server's message is longer).
+          say("Added the sample truck.");
+        }
+      }, (e) => say(`The sample truck wasn't added: ${e.message}`, "error"))
+      .finally(() => setAddingSample(false));
+  };
   // After a rename, move or retire from the row menu: the tree read again,
   // the row kept picked (moved: shown in its new place; retired: the row it
   // was inside picked instead), and a few words to say so.
@@ -692,6 +712,14 @@ export default function AssetExplorer() {
           </>
         )}
       </div>
+      {mode !== "locations" && mode !== "items" && (
+        <div className="ae-sample">
+          <p><strong>New here?</strong> Add the sample truck to see an RCM built on the tree.</p>
+          <button type="button" className="secondary" onClick={addSample} disabled={addingSample}>
+            {addingSample ? "Adding…" : SAMPLE_TRUCK_LABEL}
+          </button>
+        </div>
+      )}
       <p className="section-empty-more"><ShowMe help={HELP}>How RCM studies become positions and tasks</ShowMe></p>
     </div>
   ) : (
@@ -862,6 +890,7 @@ export default function AssetExplorer() {
         menuActions={data && mode !== "locations" && mode !== "items" ? [
           { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
           { id: "rcm", label: "From an RCM study", onSelect: () => setModal("rcm") },
+          { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: addSample },
         ] : []}
         notice={notice}
         statusText={statusText}

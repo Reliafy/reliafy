@@ -1,6 +1,6 @@
 // Global setup for the local run: the samples cover most pages, but nothing
-// seeds Maintenance or an RBD simulation run, so make one of each here (a
-// position from the sample RCM study, a location, an item fitted to the
+// seeds Maintenance or an RBD simulation run, so make one of each here (the
+// sample truck with its RCM, as "Add the sample truck" makes it, a location, an item fitted to the
 // position, a work order, a part and an assembly of it, the starter item classes, a position
 // class with a fitted non-repairable model and a spare with a lead time, one availability run,
 // and a model of each kind the samples don't cover)
@@ -60,7 +60,7 @@ export default async function seed(config) {
   const patch = send("PATCH");
   try {
     const m = "/api/maintenance";
-    const { position_id } = await post(`${m}/from-rcm`, { study_id: "sample-rcm-truck" });
+    const { position: { id: position_id } } = await post(`${m}/sample-truck`, {});
     const location = await post(`${m}/locations`, { name: "Smoke test depot" });
     const item = await post(`${m}/items`, { name: "Smoke test brake set", serial: "SMOKE-1" });
     await patch(`${m}/positions/${position_id}`, { location_id: location.id });

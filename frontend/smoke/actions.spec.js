@@ -1,6 +1,6 @@
 // The main path through the app: fit a model to a sample dataset and save it.
 // (Calculating an RBD is in rbd.spec.js.)
-import { test, expect, open, expectHealthy } from "./health.js";
+import { test, expect, open, expectHealthy, postOk } from "./health.js";
 
 test("fit and save a Weibull model from a sample dataset", async ({ page, problems }) => {
   await open(page, "/data/sample-ds-bearings");
@@ -49,7 +49,8 @@ test("the assets are the top-level places, and the positions at none stay reacha
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions&place=none$/);
   await expect(page.locator(".tp-notice")).toContainText("Not at a location yet");
   await expect(page.getByRole("treeitem", { name: /^Smoke pump 1\b/ })).toBeVisible();
-  await expect(page.getByRole("treeitem", { name: /^Delivery truck/ })).toHaveCount(0); // at the depot
+  // The seeded sample truck is at the depot (a copy another test adds, "(sample 2)", may not be).
+  await expect(page.getByRole("treeitem", { name: /^Delivery truck \(sample\)/ })).toHaveCount(0);
   await page.getByRole("link", { name: "Show every position" }).click();
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions$/);
   await expect(page.getByRole("heading", { name: "Explorer", exact: true })).toBeVisible();
@@ -397,4 +398,60 @@ test("the calculator's Axes dialog", async ({ page, problems }) => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator(".calc-axis-now")).toHaveText("Auto");
   await expectHealthy(page, problems, { label: "calculator axes", chart: true });
+});
+
+// "Add the sample truck" (the Explorer's ⋯ menu, and the empty tree's card):
+// the sample delivery truck, with its RCM, copied into the workspace's tree.
+// smoke/seed.js added the first copy, so here it asks first; another copy opens
+// on the RCM tab with the sample's functions and its contradicted decision.
+test("add the sample truck from the Explorer's menu", async ({ page, request, problems }) => {
+  await open(page, "/asset-register/explorer?arrange=positions");
+  const menu = async () => {
+    await page.getByRole("button", { name: /^Tree options/ }).click();
+    await page.getByRole("menu", { name: "Tree options" }).getByRole("menuitem", { name: "Add the sample truck" }).click();
+  };
+  const ask = page.getByRole("alertdialog", { name: "The sample truck is already in your tree" });
+  await menu();
+  await expect(ask).toContainText("Delivery truck (sample)");
+  await ask.getByRole("button", { name: "Keep the one I have" }).click();
+  await expect(ask).toHaveCount(0);
+  await expect(page).not.toHaveURL(/tab=rcm/);
+
+  await menu();
+  await ask.getByRole("button", { name: "Add another copy" }).click();
+  await expect(page).toHaveURL(/tab=rcm/);
+  await expect(page.locator(".tt-msg.ok")).toHaveText("Added the sample truck.");
+  const name = (await page.locator(".tt-h1").first().textContent()).trim();
+  expect(name).toMatch(/^Delivery truck \(sample \d+\)$/);
+  const grid = page.getByRole("treegrid", { name: /and their RCM/ });
+  await expect(grid.getByRole("row", { name: /Stop the vehicle within the rated distance/ }).first()).toBeVisible();
+  await expect(grid.getByRole("row", { name: /Wheel-bearing failure — legacy run-to-failure plan/ }).first()).toBeVisible();
+  await expect(page.locator(".tt-rollup")).toContainText(/contradicted/i);
+  await expectHealthy(page, problems, { label: "the sample truck on the RCM tab" });
+
+  // Tidy up: the copy goes (the seeded one stays for the other tests).
+  const tree = await (await request.get("/api/maintenance/tree")).json();
+  const copy = tree.positions.find((p) => p.name === name);
+  await postOk(request, `/api/maintenance/positions/${copy.id}/retire`, { reason: "smoke test" });
+});
+
+test("the empty tree offers the sample truck", async ({ page, problems }) => {
+  // The tree read as empty (the suite's own isn't), and the add answered here: nothing is written.
+  await page.route("**/api/maintenance/tree", async (route) => {
+    const res = await route.fetch();
+    await route.fulfill({ response: res, json: { ...(await res.json()), positions: [], locations: [] } });
+  });
+  const asked = [];
+  await page.route("**/api/maintenance/sample-truck", async (route) => {
+    asked.push(route.request().postDataJSON());
+    await route.fulfill({ json: { added: false, position: { id: "x", name: "Delivery truck (sample)" }, message: "" } });
+  });
+  await open(page, "/asset-register/explorer?arrange=positions");
+  const card = page.locator(".ae-sample").first();
+  await expect(card).toContainText("New here? Add the sample truck to see an RCM built on the tree.");
+  await card.getByRole("button", { name: "Add the sample truck" }).click();
+  const ask = page.getByRole("alertdialog", { name: "The sample truck is already in your tree" });
+  await ask.getByRole("button", { name: "Keep the one I have" }).click();
+  expect(asked).toEqual([{ again: false }]);
+  await expectHealthy(page, problems, { label: "the empty tree" });
 });

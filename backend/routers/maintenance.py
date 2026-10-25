@@ -537,6 +537,15 @@ def from_rcm(body: dict = Body(...), session=Depends(get_session), ctx: AccessCt
     return _run(m.position_from_rcm, study, body.get("parent_id"))
 
 
+@router.post("/sample-truck")
+def add_sample_truck(body: dict | None = Body(None), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Copy the sample delivery truck, with its RCM, into this workspace's tree. When
+    a copy is there already nothing is added (added false) unless again is true."""
+    from backend.maintenance import templates
+
+    return _run(templates.add_sample_truck, m, bool((body or {}).get("again")))
+
+
 @router.patch("/tasks/{task_id}")
 def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Set when it was last done, and/or change its name, interval or unit."""
