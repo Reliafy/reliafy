@@ -10,7 +10,9 @@ import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx
 import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
-import { cellRow, graftRcm, isRcmRow, openFor, positionOf, rowActions } from "../explorerRcm.js";
+import {
+  cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, withTableCols,
+} from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
@@ -202,6 +204,7 @@ export default function AssetExplorer() {
 
   const base = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
   const whole = useMemo(() => (rcmOn && rcm ? graftRcm(base, rcm) : base), [base, rcmOn, rcm]);
+  const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // A branch pinned (?pin=): the pane's tree starts at that row, and
   // everything below (open rows, levels, the filter, counts) works on it alone.
   const pinParam = params.get("pin");
@@ -672,7 +675,10 @@ export default function AssetExplorer() {
 
   // The RCM tab: the table's columns beside the tree, the heading over them,
   // and the details of the function, failure or mode picked.
-  const cols = rprefs.cols.map((id) => COLUMN[id]).filter(Boolean);
+  // The Evidence check column only once evidence is linked somewhere (or as
+  // chosen in the Columns menu).
+  const shownCols = tableCols(rprefs, linkedEvidence);
+  const cols = shownCols.map((id) => COLUMN[id]).filter(Boolean);
   const widths = {};
   for (const c of cols) widths[c.id] = rprefs.widths[c.id] ?? c.width;
   const table = rcmOn ? {
@@ -698,7 +704,7 @@ export default function AssetExplorer() {
                     <button type="button" className="sm"
                             // A double-click asks once (its second click is the dialog's, which ignores it).
                             onClick={(e) => { if (e.detail < 2) runAdd({ ref: { add: "fn", position_id: posRow.key } }); }}>Add function</button>
-                    <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
+                    <ColumnChooser cols={shownCols} onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
                   </>
                 )} />
   ) : summaryRow && (

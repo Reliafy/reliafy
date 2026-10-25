@@ -2934,10 +2934,23 @@ class Maintenance:
 
     @staticmethod
     def _analysed(index: dict, position_id: str) -> bool:
-        """A position is analysed once it has a function and every one of its
-        failure modes has a decision."""
-        return bool(index["functions"].get(position_id)) and all(
-            m.get("outcome") for m in index["modes"].get(position_id, []))
+        """A position is analysed when it has at least one function, each function
+        has at least one functional failure, each functional failure has at least
+        one failure mode, and every failure mode on the position (under a
+        functional failure or not) has a decision. A position with no functions
+        (a parent that only groups others, too) is not analysed."""
+        fns = index["functions"].get(position_id)
+        if not fns:
+            return False
+        modes = index["modes"].get(position_id, [])
+        if not all(m.get("outcome") for m in modes):
+            return False
+        caused = {index["ff_of"][m["id"]] for m in modes if m["id"] in index["ff_of"]}
+        for fn in fns:
+            ffs = index["failures"].get(fn["id"], [])
+            if not ffs or any(ff["id"] not in caused for ff in ffs):
+                return False
+        return True
 
     def _position_rcm(self, index: dict, pid: str) -> dict:
         ff_of, task_of = index["ff_of"], index["task_of"]
@@ -7178,7 +7191,7 @@ class Maintenance:
             for key, value in (("status", lean(r["status"])), ("inside", lean(inside.get(pid)))):
                 if value:
                     row[key] = value
-            # RCM not done here yet: no function, or a failure mode with no decision.
+            # RCM not done here yet (see _analysed).
             if not self._analysed(rcm, pid):
                 row["not_analysed"] = True
             positions.append(row)

@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
-import { graftRcm, isRcmRow, openFor, positionOf, rowActions } from "./explorerRcm.js";
-import { failuresOn } from "./rcmWorksheet.js";
+import {
+  graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, withTableCols,
+} from "./explorerRcm.js";
+import { DEFAULT_COLUMNS, failuresOn, loadPrefs } from "./rcmWorksheet.js";
 
 const DATA = {
   positions: [
@@ -84,4 +86,41 @@ test("levels count functions and failures; the one search and the chips reach th
   assert.deepEqual([...computeFilter(d, { chips: ["unanalysed"] }).match].sort(), ["motor", "plant", "pump"]);
   // Opening the tab on the pump opens it down to its failure modes.
   assert.deepEqual([...openFor(d, "pump")].sort(), ["U:pump", "f1", "f2", "pump", "x1", "x2"]);
+});
+
+test("the Evidence check column: hidden until evidence is linked somewhere, unless chosen", () => {
+  // Nothing linked (decisions from judgement, or none yet): no column, no "to check".
+  assert.equal(hasLinkedEvidence(RCM), true); // m2 is contradicted: linked evidence
+  const plain = { positions: [{ id: "pump", functions: [{ id: "f", failures: [{ id: "x", modes: [
+    mode("a", "A", { outcome: "fixed_interval", status: "unevidenced" }), mode("b", "B")] }] }], unassigned: [] }] };
+  assert.equal(hasLinkedEvidence(plain), false);
+  assert.equal(hasLinkedEvidence(null), false);
+  const linkedLater = { positions: [{ id: "p", functions: [], unassigned: [mode("c", "C", { outcome: "rtf", evidence: { type: "model", id: "m" } })] }] };
+  assert.equal(hasLinkedEvidence(linkedLater), true);
+
+  const prefs = { cols: DEFAULT_COLUMNS, widths: {} };
+  assert.ok(!tableCols(prefs, false).includes("check"));
+  assert.ok(tableCols(prefs, true).includes("check"));
+  assert.deepEqual(tableCols(prefs, true), DEFAULT_COLUMNS);
+
+  // Ticked on in the Columns menu: shown with nothing linked, and remembered.
+  const shown = tableCols(prefs, false);
+  const on = withTableCols(prefs, [...shown, "check"], shown);
+  assert.equal(on.explorerCheck, true);
+  assert.ok(tableCols(on, false).includes("check"));
+  // Ticked off: hidden even when evidence is linked.
+  const off = withTableCols(prefs, DEFAULT_COLUMNS.filter((c) => c !== "check"), DEFAULT_COLUMNS);
+  assert.equal(off.explorerCheck, false);
+  assert.ok(!tableCols(off, true).includes("check"));
+  // Another column changed: the Evidence check keeps following the evidence,
+  // and the shared set (the study worksheet's) keeps its own Evidence check.
+  const other = withTableCols(prefs, shown.filter((c) => c !== "effects"), shown);
+  assert.equal(other.explorerCheck, undefined);
+  assert.ok(!other.cols.includes("effects") && other.cols.includes("check"));
+  // Show the usual columns: back to following the evidence.
+  const reset = withTableCols(on, DEFAULT_COLUMNS, tableCols(on, false), { reset: true });
+  assert.equal("explorerCheck" in reset, false);
+  // Remembered on this device with the other column choices.
+  assert.equal(loadPrefs({ getItem: () => JSON.stringify({ cols: DEFAULT_COLUMNS, explorerCheck: false }) }).explorerCheck, false);
+  assert.equal("explorerCheck" in loadPrefs({ getItem: () => JSON.stringify({ cols: DEFAULT_COLUMNS }) }), false);
 });
