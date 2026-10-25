@@ -342,6 +342,17 @@ def graph_refs(graph) -> list[tuple[str, str]]:
     return refs
 
 
+def refs_of_decision(decision) -> list[tuple[str, str]]:
+    """The (collection, id) one RCM decision links as evidence (none or one)."""
+    evidence = (decision or {}).get("evidence") or {}
+    if not isinstance(evidence, dict):
+        return []
+    coll = _EVIDENCE_COLLECTIONS.get(evidence.get("type"))
+    if coll and (eid := _str_id(evidence.get("id"))):
+        return [(coll, eid)]
+    return []
+
+
 def evidence_refs(functions) -> list[tuple[str, str]]:
     """(collection, id) pairs an RCM worksheet's decisions link as evidence."""
     refs: list[tuple[str, str]] = []
@@ -354,12 +365,7 @@ def evidence_refs(functions) -> list[tuple[str, str]]:
             for mode in failure.get("modes") or []:
                 if not isinstance(mode, dict):
                     continue
-                evidence = (mode.get("decision") or {}).get("evidence") or {}
-                if not isinstance(evidence, dict):
-                    continue
-                coll = _EVIDENCE_COLLECTIONS.get(evidence.get("type"))
-                if coll and (eid := _str_id(evidence.get("id"))):
-                    refs.append((coll, eid))
+                refs.extend(refs_of_decision(mode.get("decision")))
     return refs
 
 

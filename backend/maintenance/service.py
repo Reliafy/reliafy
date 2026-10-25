@@ -54,7 +54,8 @@ from dateutil.relativedelta import relativedelta
 from backend import config
 from backend.maintenance.store import GraphStore, new_id
 from backend.services import time_zones
-from backend.services.rcm import _norm_unit
+from backend.maintenance import rcm_decisions
+from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
 
 logger = logging.getLogger(__name__)
 
@@ -2639,24 +2640,22 @@ class Maintenance:
     def decide_failure_mode(self, mode_id: str, consequence=..., decision=...) -> dict:
         """A failure mode's RCM decision: its consequence and the decision (outcome,
         rtf_basis, task, interval and interval_unit, notes, evidence: the saved model
-        or analysis behind it), checked as an RCM study checks it. A decision that
-        schedules a task (fixed interval, failure finding, on condition, with an
+        or analysis behind it), checked by the RCM decision rules (rcm_decisions).
+        A decision that schedules a task (fixed interval, failure finding, on condition, with an
         interval) gets one on the position, or changes the one it has; a decision
         that doesn't retires it. decision None clears the decision."""
-        from backend.services import rcm as rcm_service
-
         fm, position = self._live_mode(mode_id)
         changes: dict = {}
         if consequence is not ...:
             consequence = consequence or None
-            if consequence is not None and consequence not in rcm_service.CONSEQUENCES:
+            if consequence is not None and consequence not in rcm_decisions.CONSEQUENCES:
                 raise Invalid(f"Unknown consequence '{consequence}'.")
             changes["consequence"] = consequence
         task = self._mode_task(mode_id)
         if decision is not ...:
             try:
-                cleaned = rcm_service._clean_decision(decision) if decision else None
-            except rcm_service.RcmValidationError as err:
+                cleaned = rcm_decisions.clean_decision(decision) if decision else None
+            except rcm_decisions.RcmValidationError as err:
                 raise Invalid(str(err)) from None
             cleaned = cleaned or {}
             said = str(cleaned.get("task") or "").strip()
