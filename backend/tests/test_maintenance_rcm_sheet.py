@@ -435,9 +435,6 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
                                                       "target": "dataset", "position_id": pid}))
     assert "position_id applies to target rcm" in msg
     msg = _err(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link3["upload_id"],
-                                                      "target": "rcm", "position_id": pid, "study_id": "s"}))
-    assert "not both" in msg
-    msg = _err(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link3["upload_id"],
                                                       "target": "rcm", "position_id": "nope"}))
     assert "Position not found" in msg
     link4, _ = up._upload(mcp, _xlsx(), "c2.xlsx", purpose="excel", uid=up.B)

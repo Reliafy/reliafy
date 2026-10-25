@@ -494,40 +494,16 @@ def test_excel_dataset_needs_a_sheet_then_maps_columns(env):
     assert _no_uploads_left(env.db)
 
 
-def test_excel_rcm_worksheet_into_a_new_then_an_existing_study(env):
+def test_excel_rcm_worksheet_needs_a_position(env):
     link, _ = _upload(env, FMEA, "pump-fmea.xlsx", purpose="excel")
     seen = _ok(_call(env.token[A], "get", {"kind": "upload", "id": link["upload_id"]}))
     assert seen["sheets"][0]["looks_like"]["rcm"]["mode"] == "Failure mode"
-
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"], "target": "rcm",
-                                                   "name": "Cooling water pump"}))
-    assert out["target"] == "rcm" and out["appended"] is False
-    assert out["counts"]["functions"] == 1 and out["counts"]["failures"] == 2 and out["counts"]["modes"] == 3
-    assert out["mapping"]["mode"] == "Failure mode" and "Severity" in out["extra_columns"]
-    assert out["url"].endswith(f"/maintenance/rcm/{out['study_id']}")
-    study = env.db.rcm_studies.find_one({"_id": out["study_id"]})
-    assert study["owner_id"] == A and study["name"] == "Cooling water pump"
-    assert _no_uploads_left(env.db)
-
-    # Into the existing study (appended), with an explicit mapping.
-    link2, _ = _upload(env, FMEA, "pump-fmea.xlsx", purpose="excel")
-    out2 = _ok(_call(env.token[A], "uploads", {"action": "import_excel",
-        "upload_id": link2["upload_id"], "target": "rcm", "study_id": out["study_id"],
-        "mapping": {"mode": "Failure mode", "effects": "Effect"}}))
-    assert out2["appended"] is True and out2["study_id"] == out["study_id"]
-    assert len(env.db.rcm_studies.find_one({"_id": out["study_id"]})["functions"]) == 2
-    assert env.db.rcm_studies.count_documents({}) == 1
-
-    # A worksheet with no failure-mode column asks for a mapping.
-    link3, _ = _upload(env, LIVES, "x.xlsx", purpose="excel")
-    msg = _err(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link3["upload_id"],
-                                               "target": "rcm",
-                                                    "sheet": "Lives"}))
-    assert "failure modes" in msg and "Run hours" in msg
-    # Another user's study can't be imported into.
-    link4, _ = _upload(env, FMEA, "f.xlsx", purpose="excel", uid=B)
-    assert "not found" in _err(_call(env.token[B], "uploads", {"action": "import_excel",
-        "upload_id": link4["upload_id"], "target": "rcm", "study_id": out["study_id"]}))
+    # RCM lives on a position; the old study-based import is gone.
+    msg = _err(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+                                               "target": "rcm"}))
+    assert "needs position_id" in msg
+    assert _call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+                                           "target": "rcm", "study_id": "x"}).is_error
 
 
 def test_import_excel_refuses_non_workbooks_and_misplaced_ids(env):
@@ -535,8 +511,8 @@ def test_import_excel_refuses_non_workbooks_and_misplaced_ids(env):
     assert "isn't an Excel workbook" in _err(_call(env.token[A], "uploads", {"action": "import_excel",
         "upload_id": link["upload_id"], "target": "dataset"}))
     link2, _ = _upload(env, FMEA, "f.xlsx", purpose="excel")
-    assert "study_id applies to target rcm" in _err(_call(env.token[A], "uploads", {"action": "import_excel",
-        "upload_id": link2["upload_id"], "target": "dataset", "study_id": "x"}))
+    assert "position_id applies to target rcm" in _err(_call(env.token[A], "uploads", {"action": "import_excel",
+        "upload_id": link2["upload_id"], "target": "dataset", "position_id": "x"}))
 
 
 # ---- datasets upload / rbd upload_outage_log ---------------------------------------------------

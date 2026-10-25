@@ -176,7 +176,6 @@ def test_a_sample_of_every_tool(env):
     assert rbd.status_code == 200, rbd.text
     up = env.post("/api/v1/uploads/create", {"purpose": "dataset", "filename": "x.csv"})
     assert up.status_code == 200 and up.json()["upload_id"]
-    assert env.post("/api/v1/rcm/create", {"name": "Pump RCM"}).status_code == 200
     link = env.post("/api/v1/sharing/create_link", {"kind": "model", "id": mid})
     assert link.status_code == 200, link.text
     r = env.post("/api/v1/fleet/create_alert", {"fleet_id": "nope", "kind": "above", "threshold": 2})

@@ -15,7 +15,7 @@ from backend.tests.test_mcp_plans import FREE, PRO, WEIBULL, _call, _calls_used,
 
 READS = {"guide", "get", "list", "life_data_analysis", "repairable_analysis", "strategy", "rbd_analysis",
          "library", "upgrade_link"}
-WRITES = {"models", "datasets", "rbd", "uploads", "rcm", "sharing", "fleet"}
+WRITES = {"models", "datasets", "rbd", "uploads", "sharing", "fleet"}
 REPORTS = {"report_problem"}  # writes Reliafy's own feedback, never the workspace
 
 pytestmark = pytest.mark.usefixtures("mcp_on")
@@ -29,7 +29,7 @@ def test_fifteen_tools_reads_apart_from_writes(env):
     from backend import mcp_server
 
     tools = _tools(env.oauth[PRO])
-    assert set(tools) == READS | WRITES | REPORTS and len(tools) == 17
+    assert set(tools) == READS | WRITES | REPORTS and len(tools) == 16
     for name, tool in tools.items():
         a = tool.annotations
         assert a.read_only_hint is (name in READS) and a.destructive_hint is (name in WRITES), name
@@ -42,7 +42,7 @@ def test_fifteen_tools_reads_apart_from_writes(env):
     # + 4 test plans, + strategy calendar_replacement, next_replacement, + joint models' fit_joint,
     # predict_joint and models fit_joint, + report_problem's report, status, triage and update,
     # + library's search, get and sources.
-    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 81
+    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 77
 
 
 def test_every_action_is_in_its_tool_description_and_schema(env):
@@ -96,8 +96,8 @@ def test_a_call_is_held_to_its_actions_arguments(env):
     # A value no action has is refused by the schema.
     assert _call(token, "strategy", {"action": "nope"}).is_error
     # Renamed for get / list: the tool's argument names in the message, not the function's.
-    msg = _err(_call(token, "get", {"kind": "rcm_study", "id": "x" * 65}))
-    assert "kind 'rcm_study': id: String should have at most 64 characters" in msg
+    msg = _err(_call(token, "get", {"kind": "upload", "id": "x" * 65}))
+    assert "kind 'upload': id: String should have at most 64 characters" in msg
 
 
 def test_null_means_left_out_and_defaults_are_each_actions(env):
@@ -234,7 +234,7 @@ def test_the_guide_by_topic(env):
     index = _ok(_call(token, "guide"))
     assert set(index["topics"]) == set(mcp_guide.TOPICS) >= {
         "life_data", "units", "accelerated", "repairable", "rbds", "rbd_analysis", "strategy", "fleets",
-        "uploads", "rcm", "sharing", "workspace", "plans"}
+        "uploads", "sharing", "workspace", "plans"}
     for topic in index["topics"]:
         page = _ok(_call(token, "guide", {"topic": topic}))
         assert page["topic"] == topic and len(page["guide"]) > 300
@@ -259,10 +259,10 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
     try:
         names = {t.name for t in anyio.run(mcp_server.mcp.list_tools)}
         # 21 maintenance tools, and the 2 graph query tools (listed per user only to the owner).
-        assert len(names) == 17 + 21 + 2 and READS | WRITES <= names
+        assert len(names) == 16 + 21 + 2 and READS | WRITES <= names
         assert "maintenance_reliability.fit_class_model" in mcp_server.PRO_ONLY_TOOLS & mcp_server._FIT_TOOLS
         assert "maintenance_workspace.import_history" in mcp_server.HEAVY_TOOLS
         assert {"maintenance_graph_query", "maintenance_graph_schema"} <= mcp_server.HEAVY_TOOLS & names
     finally:
         mcp_tools.unregister()
-    assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 17
+    assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 16

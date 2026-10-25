@@ -86,10 +86,11 @@ temperature, with alarm limits), then record readings.
 up as they're true (a site, a system): what's inside inherits them. See the conditions topic."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location.", """\
 Planning the maintenance.
-- From RCM, where the user has a study: rcm create saves one given as JSON (list kind rcm_studies finds \
-existing ones), then maintenance_positions from_rcm (a new position with the study's failure modes and a task \
-for every decision with an interval) or apply_rcm (onto an existing position; run it again after the study \
-changes: it adds what's new and updates changed tasks). A decision's task text over 200 characters gives the \
+- From RCM: build it on the position itself with maintenance_failure_modes (add_function, add_functional_failure, \
+add, decide), or add a worksheet file with uploads import_excel target rcm and position_id. A study the user \
+already has in the app (its id is in the page address) comes onto the tree with maintenance_positions from_rcm \
+(a new position with the study's failure modes and a task for every decision with an interval) or apply_rcm \
+(onto an existing position; run it again after the study changes: it adds what's new and updates changed tasks). A decision's task text over 200 characters gives the \
 task a shortened name, with the full text in its instructions.
 - Directly (a maker's manual, a regulation, own practice): maintenance_tasks create, on exactly one subject:
   - position_id, the usual one: the job, whatever does it. 'Lubricate the pump', 'test the protection relay'. \

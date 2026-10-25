@@ -40,10 +40,9 @@ def test_a_workbook_in_parts_imports_as_if_put(env):
 
     seen = _ok(_call(env.token[A], "get", {"kind": "upload", "id": link["upload_id"]}))
     assert seen["sheets"][0]["looks_like"]["rcm"]["mode"] == "Failure mode"
-    study = _ok(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
-                                                "target": "rcm",
-                                                     "name": "Pump"}))
-    assert study["counts"]["modes"] == 3
+    sheet = _ok(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+                                                "target": "dataset"}))
+    assert sheet["target"] == "dataset"
     assert env.db.uploads.count_documents({}) == 0 and env.db.upload_chunks.count_documents({}) == 0
 
 
@@ -153,9 +152,9 @@ def test_the_fallback_and_guide_name_the_in_connection_route(env):
     from backend import mcp_guide
 
     link = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "excel", "filename": "fmea.xlsx"}))
-    assert "uploads send_part" in link["fallback"] and "rcm create" in link["fallback"]
+    assert "uploads send_part" in link["fallback"] and "target rcm" in link["fallback"]
     guide = mcp_guide.TOPICS["uploads"][1]
-    assert "uploads send_part" in guide and "rcm create" in guide
+    assert "uploads send_part" in guide and "target rcm" in guide
 
     async def tools(client):
         return {t.name: t for t in (await client.list_tools()).tools}
