@@ -183,7 +183,7 @@ POSITIONS: Table = {
     "retire": ("position_id", "reason", """Take it out of the plant (kept in the history). Nothing fitted, no
         position inside it in use, no work order open."""),
     "from_rcm": ("study_id", "parent_id", """A new position named for an RCM study's system, with its failure
-        modes and a task for every decision with an interval (list kind rcm_studies / rcm create)."""),
+        modes and a task for every decision with an interval (the study's id is in its address in the app)."""),
     "apply_rcm": ("position_id study_id", "", """Bring a study's failure modes and tasks onto an existing
         position; again later adds what's new and updates changed tasks."""),
     "add_sample_truck": ("", "again", """Copy the sample delivery truck, with its RCM, into the tree; once

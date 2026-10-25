@@ -250,33 +250,15 @@ refused attempt.
 (datasets upload csv, rbd upload_outage_log csv, uploads import_rbd content for Open-PSA XML, Galileo or \
 RePyability JSON); any other file of up to a few hundred KB (an .xlsx, a BlockSim project) goes through this \
 connection with uploads send_part (base64 parts 0, 1, 2… into the same upload_id, last=true with sha256 on the \
-final one; not counted against the Free allowance), then import as usual; an FMEA / RCM worksheet you can read \
-can instead go in as JSON with rcm create. Anything larger: ask the user to upload it in the app (create's \
+final one; not counted against the Free allowance), then import as usual (an FMEA / RCM worksheet goes onto a \
+position's RCM with uploads import_excel target rcm and position_id). Anything larger: ask the user to upload it in the app (create's \
 fallback says where).
 4. get kind upload shows a workbook's sheets, columns and a guessed mapping, or a diagram file's diagrams.
 5. Import with the upload_id: uploads import_rbd (diagrams; save=false previews with edges and cut sets; only \
-picks diagrams by name; time_unit when the file states none), uploads import_excel (target dataset, rcm or \
+picks diagrams by name; time_unit when the file states none), uploads import_excel (target dataset, rcm with a position_id, or \
 rbd_template), datasets upload, or rbd upload_outage_log.
 Relay the import notes: they say what was approximated. Blocks imported without a non-repairable model (needs_model) \
 need one before analysis: ask the user, don't invent values."""),
-
-    "rcm": ("RCM / FMEA studies as structured JSON.", """\
-RCM studies (FMEA / RCM worksheets).
-- list kind rcm_studies; get kind rcm_study reads one in the form rcm create takes, with every node's id and \
-each decision's evidence check (supported / contradicted / inconclusive / unevidenced / stale; read-only). Over \
-300 failure modes comes back as an outline: pass function_id for one function.
-- rcm create saves one from JSON: functions › failures (functional failures) › modes, each mode with effects, \
-consequence (safety, environmental, operational, non_operational, hidden), notes and a decision {outcome: \
-on_condition | fixed_interval | rtf (with rtf_basis random or uneconomic) | failure_finding | redesign | \
-accept, task, interval, interval_unit, notes, evidence}. Every node needs text. Use it when you can read a \
-worksheet but can't upload it (map the columns and values yourself), or to record an analysis built with the \
-user. A decision with an interval becomes a scheduled task in Reliafy Maintenance (warnings flag ones without).
-- Evidence links a decision to a saved model, strategy analysis or degradation model (the user's own or a \
-sample); Reliafy checks it on every read.
-- rcm update: mode merge (default) adds nodes without an id and changes those with one (give a parent's id with \
-no other change to add children under it); mode replace makes functions the whole worksheet (keep ids so \
-Maintenance positions stay linked); or set name, system, description. Samples can't change.
-- A worksheet file: uploads import_excel with target rcm (guide topic uploads)."""),
 
     "sharing": ("Share links and reports: read-only pages anyone with the URL can open.", """\
 Sharing (only when the user asks; confirm before publishing anything).
@@ -292,8 +274,8 @@ returned them.
 
     "workspace": ("Reading, tidying and deleting saved items; what changed.", """\
 The workspace.
-- Reads: list kind models / datasets / rbds / rcm_studies / fleets / share_links / rbd_runs, and get kind model \
-/ dataset (a page of rows at a time) / rbd / rcm_study / rbd_run / job / upload. Shared samples are listed \
+- Reads: list kind models / datasets / rbds / fleets / share_links / rbd_runs, and get kind model \
+/ dataset (a page of rows at a time) / rbd / rbd_run / job / upload. Shared samples are listed \
 (is_sample) and readable, never changed.
 - list kind workspace_changes: what changed over a period (since a date or the last visit, or days), computed \
 from what Reliafy stores: new and changed items, refits that moved B10 or MTTF, moved forecasts, fired alerts, \

@@ -38,7 +38,7 @@ USERS = {
 }
 UPGRADE = "upgrade to Reliafy Pro (US$19/month)"
 WEIBULL = [{"name": "alpha", "value": 1200.0}, {"name": "beta", "value": 2.5}]
-N_TOOLS = 17
+N_TOOLS = 16
 
 
 # MCP switched on (on the cloud it is off by default): backend/services/mcp_switch.py.

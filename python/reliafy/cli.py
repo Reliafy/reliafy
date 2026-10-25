@@ -578,7 +578,7 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--target", help="excel: dataset, rcm or rbd.")
     sp.add_argument("--sheet")
     sp.add_argument("--position", help="excel --target rcm: add the worksheet (.xlsx or .csv) to this maintenance "
-                                       "position's RCM instead of a study. Only adds.")
+                                       "position's RCM (required for --target rcm). Only adds.")
     sp = add("photo", cmd_photo, "Add photos to a maintenance position, item, location or work order; link a "
                                  "photo to another one too, move it, or unlink it.")
     sp.add_argument("verb", choices=["add", "link", "move", "unlink"])

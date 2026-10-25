@@ -24,7 +24,7 @@ Each token has **scopes**, chosen when you create it:
 |---|---|
 | `ingest` (Push data) | the `/api/ingest/*` endpoints and `/api/import/models` |
 | `read` | `/api/v1` reads and calculations: the read-only tools (`guide`, `get`, `list`, `life_data_analysis`, `repairable_analysis`, `strategy`, `rbd_analysis`, `library`, `upgrade_link`, and Reliafy Maintenance's reads) |
-| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`models`, `datasets`, `rbd`, `uploads`, `rcm`, `sharing`, `fleet`, Reliafy Maintenance's writes), and photo uploads |
+| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`models`, `datasets`, `rbd`, `uploads`, `sharing`, `fleet`, Reliafy Maintenance's writes), and photo uploads |
 
 A request outside the token's scopes gets `403`. A token that only has
 `ingest` can push data but can never read your analyses; no token can touch

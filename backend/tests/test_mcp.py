@@ -35,7 +35,7 @@ READ_TOOLS = {"guide", "get", "list", "life_data_analysis", "repairable_analysis
               "library", "upgrade_link"}
 # Tools that reach outside Reliafy (upgrade_link creates a Stripe checkout).
 OPEN_WORLD_TOOLS = {"upgrade_link"}
-WRITE_TOOLS = {"models", "datasets", "rbd", "uploads", "rcm", "sharing", "fleet"}
+WRITE_TOOLS = {"models", "datasets", "rbd", "uploads", "sharing", "fleet"}
 # Writes Reliafy's own feedback store, never the workspace: neither read-only nor destructive.
 REPORT_TOOLS = {"report_problem"}
 

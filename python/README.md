@@ -95,7 +95,7 @@ and `detail` (what Reliafy said, in plain words).
 ```python
 rf.upload_dataset("bearings.xlsx", name="Bearings")      # CSV or .xlsx
 rf.import_rbd("plant.xml")                               # BlockSim, Open-PSA, Galileo, RePyability
-rf.import_excel("fmea.xlsx", target="rcm")
+rf.import_excel("fmea.xlsx", target="rcm", position_id="…")  # onto a position's RCM
 rf.add_photo("nameplate.jpg", target_id="…")             # Reliafy Maintenance
 rf.add_document("manual.pdf", target_id="…", kind="manual")  # a PDF, at most 20 MB
 rf.download_document(document_id, "manual.pdf")

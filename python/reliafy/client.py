@@ -190,7 +190,7 @@ class Client:
     # ---- typed shortcuts for the common things -----------------------------------
 
     def list(self, kind: str, **args) -> dict:
-        """``list`` kind (models, datasets, rbds, fleets, rcm_studies, …)."""
+        """``list`` kind (models, datasets, rbds, fleets, …)."""
         return self.call("list", kind, **args)
 
     def get(self, kind: str, id: str | None = None, **args) -> dict:
@@ -262,7 +262,8 @@ class Client:
 
     def import_excel(self, path: str, **args) -> dict:
         """Import an .xlsx workbook (a data sheet, an RCM/FMEA worksheet or
-        Reliafy's RBD template): see the uploads guide for the arguments."""
+        Reliafy's RBD template): see the uploads guide for the arguments. An
+        RCM worksheet needs ``target="rcm", position_id=…``."""
         up = self.upload_file(path, "excel")
         return self.call("uploads", "import_excel", upload_id=up["upload_id"], **args)
 

@@ -171,7 +171,7 @@ rf.spec()      # the OpenAPI spec`}</Code>
       <h3 id="files">Files, photos and data</h3>
       <Code>{`rf.upload_dataset("bearings.xlsx", name="Bearings")     # CSV or .xlsx, as a dataset
 rf.import_rbd("plant.xml")                              # BlockSim, Open-PSA, Galileo, RePyability, the Excel template
-rf.import_excel("fmea.xlsx", target="rcm")              # dataset, rcm or rbd
+rf.import_excel("fmea.xlsx", target="rcm", position_id="…")  # dataset, rcm (onto a position) or rbd
 rf.add_photo("nameplate.jpg", target_id="…")            # Reliafy Maintenance users
 rf.add_document("manual.pdf", target_id="…")             # a PDF on an item or position (at most 20 MB)
 
@@ -760,7 +760,7 @@ function Authentication({ base }) {
             </tr>
             <tr>
               <td><code>write</code></td>
-              <td className="api-pdesc">Everything that saves, changes, shares or deletes (<code>models</code>, <code>datasets</code>, <code>rbd</code>, <code>uploads</code>, <code>rcm</code>, <code>sharing</code>, <code>fleet</code>), and photo uploads.</td>
+              <td className="api-pdesc">Everything that saves, changes, shares or deletes (<code>models</code>, <code>datasets</code>, <code>rbd</code>, <code>uploads</code>, <code>sharing</code>, <code>fleet</code>), and photo uploads.</td>
             </tr>
             <tr>
               <td><code>ingest</code></td>
@@ -1036,7 +1036,7 @@ reliafy call get model --args '{"id": "MODEL_ID"}'`}</Code>
 reliafy push model.json                        # {distribution, params | data, name?, unit?}
 reliafy upload bearings.xlsx --name Bearings   # CSV or .xlsx as a dataset
 reliafy import rbd plant.xml                   # BlockSim, Open-PSA, Galileo, RePyability, Excel
-reliafy import excel fmea.xlsx --target rcm
+reliafy import excel fmea.xlsx --target rcm --position POSITION_ID
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest measurements readings.csv --fleet TRACKED_FLEET_ID
 reliafy ingest lives new_failures.csv --dataset DATASET_ID
@@ -1054,19 +1054,18 @@ reliafy photo add IMG_*.jpg --to POSITION_ID   # Reliafy Maintenance users`}</Co
 // few tools, each doing one area's work by action (or, for get and list, kind).
 // Reads and calculations are separate from the tools that change your workspace.
 const MCP_TOOLS = [
-  { name: "guide", desc: "Short how-tos by topic — life data and censoring, units, accelerated tests, repairable systems, building RBDs, analysing them, strategy, fleets, uploads, RCM, sharing, published failure data, the workspace, plans — so the agent reads the one it needs before a task. Never counted against the allowance." },
+  { name: "guide", desc: "Short how-tos by topic — life data and censoring, units, accelerated tests, repairable systems, building RBDs, analysing them, strategy, fleets, uploads, sharing, published failure data, the workspace, plans — so the agent reads the one it needs before a task. Never counted against the allowance." },
   { name: "get", desc: "One saved item in full, by kind and id.", actions: [
     ["model", "A saved life or recurrent model — distribution, parameters with confidence intervals, goodness of fit, MTTF and B-lives with lower bounds. Regression models add how good the model is (Harrell’s C, the integrated Brier score, the time-dependent AUC) and whether it holds (the proportional-hazards test with a plain verdict; for Cox PH robust standard errors, the tie method and strata). A model fitted by failure mode reports each mode’s share with 95% intervals and Gray’s test. Recurrent models give the growth verdict, ROCOF and MTBF with bounds and the trend tests."],
     ["dataset", "A dataset’s columns and rows, a page at a time."],
     ["rbd", "A diagram’s structure."],
     ["rbd_run", "One availability simulation in full — its results with their confidence intervals, the inputs and engine versions it ran on, the precision it achieved and what was quoted before it ran."],
     ["job", "A calculation queued on the calculation service (a long simulation, a what-to-improve or interval search, an ALT’s bootstrap bounds) — its place in the queue, then the result."],
-    ["rcm_study", "An RCM study’s worksheet — functions, functional failures and failure modes with effects, consequences and decisions — with every node’s id and each decision’s evidence check."],
     ["upload", "An uploaded file before importing it: a workbook’s sheets with their header rows, columns, row counts and a guessed mapping; a diagram file’s diagrams and block counts."],
     ["account", "Your plan; on Free, the tool calls used and left this month and the date they reset (Pro is unlimited); storage used against your plan’s limits, and whether simulation is included. Never counted against the allowance."],
   ] },
   { name: "list", desc: "Your saved items of one kind, with the shared samples.", actions: [
-    ["models / datasets / rbds / rcm_studies", "Your models (life or recurrent), datasets, diagrams and RCM studies."],
+    ["models / datasets / rbds", "Your models (life or recurrent), datasets and diagrams."],
     ["rbd_runs", "Simulation history, from the app or any connector: who ran each run and from where, its status, method, runtime and result. Kept 7 days on the free plan and 90 on Pro."],
     ["fleets / fleet_alerts", "Your fleet forecasts and a fleet’s email alerts (Pro)."],
     ["share_links", "Your live share links."],
@@ -1128,10 +1127,7 @@ const MCP_TOOLS = [
     ["create", "A single-use link (15 minutes) to send a file with a plain HTTP PUT — a ready curl command — with a reliafy.com fallback URL for networks that block the direct one. Up to 30 MB; deleted after its import, or after an hour."],
     ["send_part", "For an agent that can’t reach the upload URL at all: the file in base64 parts through the MCP connection, into the same upload. For files up to a few hundred KB; not counted against the Free allowance."],
     ["import_rbd", "Import diagrams from ReliaSoft BlockSim, Open-PSA XML, Galileo DFT, RePyability JSON or Reliafy’s Excel RBD template, with notes on anything approximated; preview first to check the structure."],
-    ["import_excel", "A sheet as a dataset, an FMEA / RCM worksheet into a new or existing RCM study, or the RBD template as a diagram (as a copy of an existing one, unless you ask to replace it)."],
-  ] },
-  { name: "rcm", desc: "RCM studies as structured data.", actions: [
-    ["create / update", "Save an FMEA / RCM worksheet given as data — the same study the RCM editor or an Excel import makes, with the same checks and plan limit — or add to and change one by node id, replace its worksheet, or set its name, system and description."],
+    ["import_excel", "A sheet as a dataset, an FMEA / RCM worksheet onto a maintenance position’s RCM (give its position_id), or the RBD template as a diagram (as a copy of an existing one, unless you ask to replace it)."],
   ] },
   { name: "sharing", desc: "Read-only pages anyone with the link can open, no account needed.", actions: [
     ["create_link", "Publish one of your own items — a model, dataset, diagram, strategy analysis, RCM study or fleet — optionally password-protected (a passphrase shown once, for you to send separately) and expiring."],
@@ -1223,7 +1219,7 @@ function McpDocs({ tokenNote }) {
         <ul className="api-list">
           <li>The link works once, expires after 15 minutes and takes at most 30 MB. Its answer, errors and privacy: <Link className="evidence-link" to={apiDocsPath("files")}>Files and photos</Link>.</li>
           <li>The upload URL points straight at Reliafy’s app service, which is fastest. Some sandboxes and corporate proxies refuse that host (for example <code>CONNECT tunnel failed, response 403</code>). For those, <code>uploads create</code> also returns <code>url_fallback</code> (with a ready <code>curl_fallback</code>): the same link on reliafy.com. Send the same PUT there once. It’s slower for large files. A PUT that a proxy refused never reached Reliafy, so the link is still unused.</li>
-          <li>If Claude’s environment can’t reach either URL (no network), small text files (up to 200 KB) can be pasted instead — CSV into <code>datasets upload</code> or <code>rbd upload_outage_log</code>, Open-PSA or Galileo text into <code>uploads import_rbd</code>. Other files of up to a few hundred KB (an Excel workbook, a BlockSim project) can go through the MCP connection itself with <code>uploads send_part</code>: base64 parts into the same upload, checked against the file’s SHA-256. An FMEA / RCM worksheet can also be given as data with <code>rcm create</code>. Anything larger is uploaded in the app.</li>
+          <li>If Claude’s environment can’t reach either URL (no network), small text files (up to 200 KB) can be pasted instead — CSV into <code>datasets upload</code> or <code>rbd upload_outage_log</code>, Open-PSA or Galileo text into <code>uploads import_rbd</code>. Other files of up to a few hundred KB (an Excel workbook, a BlockSim project) can go through the MCP connection itself with <code>uploads send_part</code>: base64 parts into the same upload, checked against the file’s SHA-256. An FMEA / RCM worksheet goes onto a position’s RCM with <code>uploads import_excel</code> (target <code>rcm</code> and a <code>position_id</code>). Anything larger is uploaded in the app.</li>
         </ul>
 
         <h3>Tools</h3>

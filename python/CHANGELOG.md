@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The `rcm` tool (study-based RCM worksheets as JSON) is gone, with `list`
+  kind `rcm_studies` and `get` kind `rcm_study`. RCM is built on a position
+  (`maintenance_failure_modes`), and a worksheet file goes in with `reliafy
+  import excel FILE --target rcm --position ID`. `--target rcm` now needs the
+  position. This removes a tool, so release the client with the app that
+  removes it.
 - `reliafy import excel FILE --target rcm --position ID` (and
   `Client.import_excel(path, target="rcm", position_id=…)`) adds an FMEA /
   RCM worksheet, .xlsx or .csv, to a Reliafy Maintenance position's RCM. It

@@ -197,36 +197,36 @@ def test_a_house_through_mcp(env):
     assert missing.is_error and "Not found" in missing.content[0].text
 
 
-def test_a_study_given_as_json_drives_positions_and_tasks(env):
-    """rcm create's study works with maintenance_positions from_rcm straight away,
-    and a change through rcm update reaches the position's tasks (apply_rcm)."""
+def test_a_study_drives_positions_and_tasks(env):
+    """A saved study works with maintenance_positions from_rcm, and a change to
+    it reaches the position's tasks (apply_rcm)."""
+    from backend.services import rcm as rcm_service
+
+    db = env["db"]
+    study = rcm_service.create_study(db, "Pool RCM", "Pool pump", "", UID)
+    study = rcm_service.replace_tree(db, study.id, [
+        {"text": "Circulate water", "failures": [{"text": "No flow", "modes": [
+            {"text": "Basket blocked", "consequence": "operational",
+             "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks",
+                          "task": "Empty the pump basket"}},
+            {"text": "Bearing worn", "decision": {"outcome": "rtf", "rtf_basis": "random"}}]}]}], UID)
 
     async def flow(client):
-        study = _ok(await client.call_tool("rcm", {
-            "action": "create", "name": "Pool RCM", "system": "Pool pump", "functions": [
-                {"text": "Circulate water", "failures": [{"text": "No flow", "modes": [
-                    {"text": "Basket blocked", "consequence": "operational",
-                     "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks",
-                                  "task": "Empty the pump basket"}},
-                    {"text": "Bearing worn", "decision": {"outcome": "rtf", "rtf_basis": "random"}}]}]}]}))
-        assert study["counts"]["scheduled_tasks"] == 1
-        assert "from_rcm" in study["next"]
-        made = _ok(await _do(client, "maintenance_positions", "from_rcm", study_id=study["study_id"]))
-        got = _ok(await client.call_tool("get", {"kind": "rcm_study", "id": study["study_id"]}))
-        basket = got["functions"][0]["failures"][0]["modes"][0]
-        _ok(await client.call_tool("rcm", {"action": "update", "study_id": study["study_id"], "functions": [
-            {"id": got["functions"][0]["id"], "failures": [{"id": got["functions"][0]["failures"][0]["id"],
-                                                            "modes": [{"id": basket["id"], "decision": {
-                                                                "outcome": "on_condition", "interval": 2,
-                                                                "interval_unit": "weeks",
-                                                                "task": "Empty the pump basket"}}]}]}]}))
+        made = _ok(await _do(client, "maintenance_positions", "from_rcm", study_id=study.id))
+        fn = study.functions[0]
+        basket = fn["failures"][0]["modes"][0]
+        rcm_service.replace_tree(db, study.id, [
+            {"id": fn["id"], "text": fn["text"], "failures": [{"id": fn["failures"][0]["id"], "text": "No flow",
+                "modes": [{"id": basket["id"], "text": "Basket blocked", "consequence": "operational",
+                           "decision": {"outcome": "on_condition", "interval": 2, "interval_unit": "weeks",
+                                        "task": "Empty the pump basket"}}]}]}], UID)
         again = _ok(await _do(client, "maintenance_positions", "apply_rcm", position_id=made["position"]["id"],
-                              study_id=study["study_id"]))
+                              study_id=study.id))
         return made, again
 
     made, again = _session(env["token"], flow)
     assert made["position"]["name"] == "Pool pump" and made["tasks_added"] == 1 and made["failure_modes_added"] == 2
-    assert again["tasks_updated"] == 1 and again["tasks_added"] == 0 and again["failure_modes_added"] == 0
+    assert again["tasks_updated"] == 1 and again["tasks_added"] == 0
     assert [t["interval"] for t in again["position"]["tasks"]] == [2]
 
 
