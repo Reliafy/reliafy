@@ -58,6 +58,17 @@ const CHECK_MARK = { contradicted: "✗", unsure: "?", stale: "–", supported: 
 
 const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
 
+// A cell's tooltip: its whole text (a long one is cut short in the cell),
+// else, for an empty cell that can be edited, how to edit it. The edit hint
+// for a cell with text is in `cellHint` (its aria-description), not over the
+// text.
+export function cellTip(col, r, can) {
+  const text = col.text(r);
+  if (text) return r.type === "mode" && col.id === "decision" && r.ref.decision?.notes ? `${text}: ${r.ref.decision.notes}` : text;
+  return can ? "Double-click to edit" : undefined;
+}
+export const cellHint = (can) => (can ? "Double-click to edit" : undefined);
+
 // One cell's content (desktop).
 export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
   const d = r.ref.decision;
@@ -117,14 +128,14 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
       const text = col.text(r);
       if (!text) return null;
       return mode
-        ? <span className="rw-txt rw-task" title={text}><LevelIcon type="task" className="rw-ic rw-ic-task" /><Highlight text={text} query={query} /></span>
+        ? <span className="rw-txt rw-task" title={text}><LevelIcon type="task" className="rw-ic rw-ic-task" /><span className="rw-task-t"><Highlight text={text} query={query} /></span></span>
         : <span className="rw-sum">{text}</span>;
     }
     default: {
       const text = col.text(r);
       if (!text) return null;
       const sum = !mode && (col.id === "consequence" || col.id === "evident");
-      const title = sum && col.id === "consequence" ? consequenceWords(r) : text.length > 24 ? text : undefined;
+      const title = sum && col.id === "consequence" ? consequenceWords(r) : text;
       return <span className={sum ? "rw-sum" : "rw-txt"} title={title}>
         {col.edit === "text" ? <Highlight text={text} query={query} /> : text}
       </span>;
@@ -212,7 +223,7 @@ function NameCell({ r, v, open, query, phone, editing, onToggle, onCommit, onCan
       {editing ? (
         <CellEditor col={NAME_COLUMN} r={r} onCommit={onCommit} onCancel={onCancel} />
       ) : (
-        <span className={"rw-nm" + (text ? "" : " rw-blank")} title={text.length > 40 ? text : undefined}>
+        <span className={"rw-nm" + (text ? "" : " rw-blank")} title={text.length > 24 ? text : undefined}>
           {text ? <Highlight text={text} query={query} /> : "(no description yet)"}
         </span>
       )}
@@ -293,7 +304,7 @@ function Row({
                style={{ width: widths[c.id] }}
                data-wt={c.id === "check" ? wt?.check : undefined}
                onDoubleClick={can ? (e) => { e.stopPropagation(); onEdit(r.key, c.id); } : undefined}
-               title={can && editCol !== c.id ? "Double-click to edit" : undefined}>
+               title={editCol !== c.id ? cellTip(c, r, can) : undefined} aria-description={editCol !== c.id ? cellHint(can) : undefined}>
             {editCol === c.id
               ? <CellEditor col={c} r={r} onCommit={commitCell(c.id)} onCancel={onCancel} />
               : <Cell col={c} r={r} query={query} readOnly={readOnly} onDecision={onDecision} />}
@@ -336,7 +347,8 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
       {up.length > 0 && (
         <nav className="rw-crumbs" aria-label="Inside">
           {up.map((a) => (
-            <button key={a.key} type="button" className="link" onClick={() => onSelect(a.key)}>
+            <button key={a.key} type="button" className="link" onClick={() => onSelect(a.key)}
+                    title={nameOf(a) || undefined}>
               {nameOf(a) || `(${LEVEL_OF[a.type].label.toLowerCase()})`}
             </button>
           ))}

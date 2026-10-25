@@ -281,7 +281,8 @@
   white-space: nowrap;
 }
 .rw-nm { flex: 0 1 auto; }
-.rw-task { display: inline-flex; align-items: center; }
+.rw-task { display: inline-flex; align-items: center; max-width: 100%; }
+.rw-task-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rw-blank { color: var(--muted); font-style: italic; }
 .rw-sum { color: var(--muted); font-size: var(--fs-12); overflow: hidden; text-overflow: ellipsis; }
 .rw-todo {
@@ -368,7 +369,9 @@
 .rw-panel-kind { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-12); color: var(--muted); font-weight: 600; }
 .rw button.rw-x { min-height: 28px; padding: 0 10px; font-size: var(--fs-13); }
 .rw-crumbs { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: var(--fs-12); }
-.rw-crumbs button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+/* A long name is cut short with an ellipsis (the whole of it in its tooltip),
+   never clipped: a block, as the bare button's inline-flex can't ellipsise. */
+.rw-crumbs button { display: block; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .rw-crumbs button + button::before { content: "›"; color: var(--faint); margin-right: 8px; }
 /* A long description: two lines at most (the whole of it is in the tooltip,
    and in the Description field below). */

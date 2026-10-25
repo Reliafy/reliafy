@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import RowMenu from "./RowMenu.jsx";
 import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
-import { Cell, CellEditor, LevelIcon, PhoneStatus, phoneLine } from "./RcmWorksheet.jsx";
+import { Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf } from "../assetTree.js";
 import { cellRow, isRcmRow } from "../explorerRcm.js";
@@ -147,7 +147,7 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot }) {
       <RowIcon r={r} />
       {pinRoot && <span className="tp-pinmark" title={`Pinned: ${pinRoot.path}`}><PinIcon size={13} /><span className="sr-only">Pinned: </span></span>}
       {isRcmRow(r) && <span className="sr-only">{LEVEL_OF[r.type]?.label}: </span>}
-      <span className="tp-nm" title={table && label(r).length > 40 ? label(r) : undefined}>
+      <span className="tp-nm" title={label(r).length > 24 ? label(r) : undefined}>
         <Highlight text={label(r)} query={query} />
       </span>
       {has && !open && inner > 0 && <span className="tp-cnt" title={`${inner} directly inside`}>{inner.toLocaleString("en-AU")}</span>}
@@ -240,7 +240,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
           <div key={c.id} role="gridcell" className={"rw-c" + (c.align === "num" ? " num" : "") + (can ? " can" : "")}
                style={{ width: table.widths[c.id] }}
                onDoubleClick={can ? (e) => { e.stopPropagation(); table.onEdit(r.key, c.id); } : undefined}
-               title={can && editCol !== c.id ? "Double-click to edit" : undefined}>
+               title={editCol !== c.id ? cellTip(c, cr, can) : undefined} aria-description={editCol !== c.id ? cellHint(can) : undefined}>
             {editCol === c.id
               ? <CellEditor col={c} r={cr} onCommit={(raw) => table.onCommit(r, c.id, raw)} onCancel={table.onCancel} />
               : (rcmRow || cr.sum.modes) ? <Cell col={c} r={r.type === "pos" ? { ...cr, type: "fn" } : cr} query={query} readOnly={table.readOnly}
