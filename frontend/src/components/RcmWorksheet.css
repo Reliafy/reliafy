@@ -236,7 +236,9 @@
 }
 .rw-row.pin { position: relative; background: var(--surf-2); border-bottom-color: var(--line); }
 .rw-pins-in .rw-row:last-child { box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14); }
-.rw-row:hover, .rw-row:hover .rw-name { background: var(--acc-hover); }
+/* The name cell is sticky and pinned rows cover the rows under them: both
+   need an opaque fill, so the hover tint goes over the row's solid colour. */
+.rw-row:hover, .rw-row:hover .rw-name { background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf); }
 .rw-row.rw-fn, .rw-row.rw-fn .rw-name { background: var(--surf-2); }
 .rw-row.rw-fn .rw-nm { font-weight: 600; }
 .rw-row.rw-fail .rw-nm { font-weight: 500; }
