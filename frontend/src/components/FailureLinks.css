@@ -1,0 +1,52 @@
+/* A functional failure caused by lower ones: the panel's two sections and the picker. */
+.fl-sec { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.fl-sec h3 { margin: 0; font-size: var(--fs-14); }
+.fl-sum, .fl-note { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.fl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fl-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.fl-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; font-size: var(--fs-13); }
+.fl-go { text-align: left; overflow-wrap: anywhere; }
+.fl-on { color: var(--muted); font-size: var(--fs-12); }
+.fl-warn { color: var(--warn); font-size: var(--fs-12); }
+.fl-chip { font-size: var(--fs-12); }
+.fl-list .fl-unlink { flex: none; font-size: var(--fs-13); min-height: 28px; }
+.fl-add { align-self: flex-start; }
+
+.overlay .modal.link-picker { max-width: 640px; }
+.link-picker .modal-body { padding: 0; }
+.lp-sub { margin: 0; padding: 12px 18px 8px; font-size: var(--fs-13); color: var(--muted); }
+.lp-filter { display: block; width: calc(100% - 36px); margin: 0 18px 10px; }
+.lp-list { border-top: 1px solid var(--line2); max-height: 46vh; overflow-y: auto; }
+.lp-pos { margin: 0; padding: 6px 12px; background: var(--bg); font-size: var(--fs-12); font-weight: 600; color: var(--muted); position: sticky; top: 0; }
+.lp-item { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; font-size: var(--fs-13); cursor: pointer; }
+.lp-item:hover { background: var(--acc-hover); }
+.lp-item input { flex: none; align-self: center; }
+.lp-item.linked { color: var(--muted); cursor: default; }
+.lp-t { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.lp-fn { color: var(--muted); }
+.lp-s { flex: none; font-size: var(--fs-12); color: var(--muted); }
+.lp-item.linked .lp-s { color: var(--acc-d); }
+.lp-none { margin: 0; padding: 6px 12px; font-size: var(--fs-13); font-style: italic; color: var(--muted); }
+.lp-empty { padding: 18px; text-align: center; font-style: normal; }
+.lp-newrow { padding: 10px 18px; border-top: 1px solid var(--line2); }
+.lp-newbtn { font-size: var(--fs-13); text-align: left; }
+.fl-new { display: flex; flex-direction: column; gap: 8px; padding: 10px 18px 4px; border-top: 1px solid var(--line2); }
+.fl-new h4 { margin: 0; font-size: var(--fs-13); }
+.fl-new .lp-sub { padding: 0 0 8px; }
+.fl-f { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-12); color: var(--muted); }
+.fl-new-acts { display: flex; gap: 8px; justify-content: flex-end; }
+.lp-keys { font-size: var(--fs-12); color: var(--muted); }
+.lp-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.lp-error { flex: 1 1 100%; margin: 0; font-size: var(--fs-13); color: var(--danger); text-align: right; }
+
+/* A phone: the picker is a sheet from the bottom, one failure per line, its summary under it. */
+@media (max-width: 720px) {
+  .overlay:has(.link-picker) { padding: 0; align-items: flex-end; }
+  .overlay .modal.link-picker { margin: 0; max-width: none; border-radius: 14px 14px 0 0; max-height: 90dvh; }
+  .lp-list { max-height: none; }
+  .lp-item { flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
+  .lp-t { flex: 1 1 0; }
+  .lp-s { flex: 1 1 100%; padding-left: 26px; }
+  .lp-keys { display: none; }
+  .lp-foot { width: 100%; }
+}

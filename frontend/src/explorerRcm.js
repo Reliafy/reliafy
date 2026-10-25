@@ -13,7 +13,7 @@ import {
   COLUMN, COLUMNS, DEFAULT_COLUMNS, blank as rcmBlank, intervalText, modeCounts, rowText as rcmText,
 } from "./rcmWorksheet.js";
 
-export const RCM_TYPES = new Set(["fn", "fail", "mode", "unassigned"]);
+export const RCM_TYPES = new Set(["fn", "fail", "mode", "unassigned", "cause"]);
 export const isRcmRow = (r) => !!r && RCM_TYPES.has(r.type);
 
 const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, not_analysed: 0, positions: 0, empty: 0 });
@@ -26,8 +26,20 @@ const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, n
 // heading's Add function, not from rows in the tree. The display given is left
 // as it is; position rows gain `rsum` (their own failure modes' counts) and
 // `rcmKids` (how many of their kids are RCM rows).
+//
+// A functional failure caused by lower ones gets a reference row ("cause", key
+// `L:<failure>:<cause>`) after its own failure modes for each lower failure
+// linked to it: a view of a row that lives on a position below, with that
+// failure's chain rolled up in its cells (the failure modes reachable through
+// the links, each once). It is never counted into the failure's, function's or
+// position's own counts (rsum), so nothing is counted twice.
 export function graftRcm(display, rcm) {
   const byPos = new Map((rcm?.positions || []).map((p) => [p.id, p]));
+  const modeById = new Map();
+  for (const p of rcm?.positions || []) {
+    for (const m of p.unassigned || []) modeById.set(m.id, m);
+    for (const fn of p.functions || []) for (const ff of fn.failures || []) for (const m of ff.modes || []) modeById.set(m.id, m);
+  }
   const rows = new Map();
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
   const out = { ...display, rows, rcm: true };
@@ -58,8 +70,16 @@ export function graftRcm(display, rcm) {
     for (const fn of p?.functions || []) {
       if (!add(fn.id, "fn", { ...fn, position_id: r.key }, r.key, d + 1)) continue;
       for (const ff of fn.failures || []) {
-        if (!add(ff.id, "fail", { ...ff, position_id: r.key, function_id: fn.id }, fn.id, d + 2)) continue;
+        if (!add(ff.id, "fail", { ...ff, position_id: r.key, function_id: fn.id, has_above: !!r.ref.parent_id }, fn.id, d + 2)) continue;
         for (const m of ff.modes || []) modeRow(m, ff.id, d + 3, ff.id);
+        for (const c of ff.causes || []) {
+          const key = causeKey(ff.id, c.id);
+          const row = add(key, "cause", {
+            id: key, text: c.text, cause_id: c.id, effect_id: ff.id, position_id: r.key, effect_position: r.ref.name,
+            on: c.position?.name || "", cause_position_id: c.position?.id || null, inside: c.inside !== false, covered: !!c.covered,
+          }, ff.id, d + 3);
+          if (row) row.rsum = chainCounts(c.chain, modeById);
+        }
       }
     }
     if ((p?.unassigned || []).length) {
@@ -70,6 +90,25 @@ export function graftRcm(display, rcm) {
     r.rcmKids = keys.length;
     r.rsum = rsum;
   }
+  return out;
+}
+
+export const causeKey = (effectId, causeId) => `L:${effectId}:${causeId}`;
+
+// A reference row's counts: the failure modes in the chain it stands for (the
+// `chain` the server read with the link), counted as a failure mode's own are;
+// the server's own totals when it didn't list them.
+function chainCounts(chain, modeById) {
+  const out = rcmBlank();
+  const ids = chain?.mode_ids;
+  if (Array.isArray(ids) && ids.every((id) => modeById.has(id))) {
+    for (const id of ids) {
+      const c = modeCounts(modeById.get(id));
+      for (const k of Object.keys(out)) out[k] += c[k];
+    }
+    return out;
+  }
+  for (const k of ["modes", "undecided", "tasks", "hidden", "safety"]) out[k] = chain?.[k] || 0;
   return out;
 }
 
@@ -107,8 +146,15 @@ export function rowActions(r, { canRename = true } = {}) {
     return [{ id: "add-fail", label: "Add functional failure" }, ...rename, { id: "delete", label: "Delete function", danger: true }];
   }
   if (r.type === "fail") {
-    return [{ id: "add-mode", label: "Add failure mode" }, ...rename, { id: "delete", label: "Delete functional failure", danger: true }];
+    return [
+      { id: "add-mode", label: "Add failure mode" },
+      { id: "link-cause", label: "Link to a cause…" },
+      ...(r.ref.has_above ? [{ id: "link-effect", label: "Link to an effect…" }] : []),
+      ...rename,
+      { id: "delete", label: "Delete functional failure", danger: true },
+    ];
   }
+  if (r.type === "cause") return [{ id: "go", label: "Go to it" }, { id: "unlink", label: "Unlink", danger: true }];
   if (r.type === "mode") {
     return [
       { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
@@ -258,4 +304,81 @@ export function openFor(display, positionKey) {
     }
   }
   return out;
+}
+
+// ---- linking functional failures ----------------------------------------------------
+// The picker's lists, from the grafted display (`whole`, not a pinned branch of
+// it): for a functional failure's causes, the functional failures on the
+// positions inside its own (in tree order, any depth); for its effects, those
+// on the positions above it (nearest first). Grouped by position, each with
+// its functions (for "New functional failure on a position…"), and each
+// failure with a quiet summary and whether it's linked already.
+export function linkChoices(whole, ffKey, direction) {
+  const rows = whole.rows;
+  const ff = rows.get(ffKey);
+  if (!ff || ff.type !== "fail") return [];
+  const here = ff.ref.position_id;
+  const linked = new Set(((direction === "cause" ? ff.ref.causes : ff.ref.effects) || []).map((x) => x.id));
+  const order = [];
+  if (direction === "cause") {
+    const walk = (key, depth) => {
+      const p = rows.get(key);
+      if (!p || p.type !== "pos") return;
+      if (key !== here) order.push({ p, depth });
+      for (const k of p.kids) if (rows.get(k)?.type === "pos") walk(k, depth + 1);
+    };
+    walk(here, -1);
+  } else {
+    const seen = new Set();
+    for (let at = rows.get(here)?.ref.parent_id; at && rows.has(at) && !seen.has(at); at = rows.get(at).ref.parent_id) {
+      seen.add(at);
+      order.push({ p: rows.get(at), depth: 0 });
+    }
+  }
+  return order.map(({ p, depth }) => {
+    const functions = [];
+    const items = [];
+    for (const fk of p.kids) {
+      const fn = rows.get(fk);
+      if (fn?.type !== "fn") continue;
+      functions.push({ id: fn.key, text: fn.ref.text || "" });
+      for (const xk of fn.kids) {
+        const x = rows.get(xk);
+        if (x?.type !== "fail") continue;
+        items.push({
+          id: x.key, text: x.ref.text || "", function: fn.ref.text || "", linked: linked.has(x.key),
+          summary: failureSummary(x),
+        });
+      }
+    }
+    return { id: p.key, name: p.ref.name || "(no name)", depth: Math.max(0, depth), functions, items };
+  });
+}
+
+// "3 failure modes · all decided", "explained below", "no failure modes yet".
+export function failureSummary(x) {
+  const s = x.rsum || rcmBlank();
+  const n = s.modes;
+  const own = n ? `${n} failure mode${n === 1 ? "" : "s"} · ${s.undecided ? `${s.undecided} to decide` : "all decided"}` : "";
+  if (own) return own;
+  return x.ref.explained_below ? "explained below" : "no failure modes yet";
+}
+
+// The groups narrowed to a typed filter (position, function or failure text):
+// a position whose own name matches keeps all its failures.
+export function filterChoices(groups, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return groups;
+  const has = (t) => String(t || "").toLowerCase().includes(q);
+  return groups.map((g) => (has(g.name) ? g : { ...g, items: g.items.filter((i) => has(i.text) || has(i.function)) }))
+    .filter((g) => g.items.length > 0);
+}
+
+// Would unlinking make the higher failure not analysed? It has no failure
+// modes of its own and the link is its last one that counts.
+export function unlinkEmptiesFailure(whole, effectId, causeId) {
+  const e = whole.rows.get(effectId);
+  if (!e || e.type !== "fail") return false;
+  const counted = (e.ref.causes || []).filter((c) => c.inside);
+  return !(e.rsum?.modes) && counted.length === 1 && counted[0].id === causeId;
 }

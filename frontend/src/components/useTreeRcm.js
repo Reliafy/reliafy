@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addFailureMode, addFunctionalFailure, addPositionFunction, assignFailureMode, decideFailureMode, getWorkspaceRcm,
-  removeFunctionalFailure, removePositionFunction, retireFailureMode, updateFailureMode, updateFunctionalFailure,
+  linkFunctionalFailureCause, removeFunctionalFailure, removePositionFunction, unlinkFunctionalFailureCause, retireFailureMode, updateFailureMode, updateFunctionalFailure,
   updatePositionFunction,
 } from "../api.js";
 import { COLUMN, FUNCTION_MAX, FUNCTION_NUDGE, decisionBody } from "../rcmWorksheet.js";
@@ -129,6 +129,47 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
     // A refusal goes to the caller (it says so beside the panel).
     assign(r, ffId) {
       return after(assignFailureMode(r.ref.id, ffId));
+    },
+    // A functional failure results from a lower one (the same link from either
+    // end), or no longer does. The tree and the RCM are read again after.
+    link(effectId, causeId) {
+      return after(linkFunctionalFailureCause(effectId, causeId));
+    },
+    unlink(effectId, causeId) {
+      return after(unlinkFunctionalFailureCause(effectId, causeId));
+    },
+    // Several links in one go, written in order, the RCM read again once at the
+    // end (even when one is refused, so what was linked shows). Each item is
+    // {effect, cause}, or, for a failure not written yet, {id, make, effect}
+    // or {id, make, cause}: make is {position_id, function_id | function_text,
+    // text}, and the failure is written (its function too) and fills the end
+    // left out. `made` ({id: failure id}) remembers what was written, so trying
+    // again after a refusal writes nothing twice. Returns how many were linked.
+    async linkMany(items, made = {}) {
+      let n = 0;
+      try {
+        for (const it of items) {
+          let { effect, cause } = it;
+          if (it.make) {
+            if (!made[it.id]) {
+              // A new function is written once, however many new failures go under it.
+              const fnKey = `fn:${it.make.position_id}:${it.make.function_text}`;
+              if (!it.make.function_id && !made[fnKey]) {
+                made[fnKey] = (await addPositionFunction(it.make.position_id, { text: it.make.function_text })).id;
+              }
+              const fnId = it.make.function_id || made[fnKey];
+              made[it.id] = (await addFunctionalFailure(fnId, { text: it.make.text })).id;
+            }
+            effect = effect || made[it.id];
+            cause = cause || made[it.id];
+          }
+          await linkFunctionalFailureCause(effect, cause);
+          n += 1;
+        }
+      } finally {
+        await after(Promise.resolve());
+      }
+      return n;
     },
     decide(r, { consequence, decision }) {
       return after(decideFailureMode(r.ref.id, { consequence: consequence || null, decision }));

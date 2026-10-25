@@ -2436,6 +2436,14 @@ export function updateFunctionalFailure(id, body) {
 export function removeFunctionalFailure(id) {
   return sendJson("DELETE")(`/api/maintenance/functional-failures/${id}`);
 }
+// A functional failure results from `causeId`, a functional failure on a position
+// inside its own (the same link from either end); unlinking is the reverse.
+export function linkFunctionalFailureCause(id, causeId) {
+  return postJson(`/api/maintenance/functional-failures/${id}/causes`, { cause_id: causeId });
+}
+export function unlinkFunctionalFailureCause(id, causeId) {
+  return sendJson("DELETE")(`/api/maintenance/functional-failures/${id}/causes/${causeId}`);
+}
 export function assignFailureMode(id, functionalFailureId) {
   return postJson(`/api/maintenance/failure-modes/${id}/assign`, { functional_failure_id: functionalFailureId || null });
 }

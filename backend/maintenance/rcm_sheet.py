@@ -24,13 +24,16 @@ added.
 
 from __future__ import annotations
 
+import re
+
 from backend.maintenance.service import (
-    LONG_TEXT, MAX_EVENTS, MAX_TASKS, SCHEDULED_OUTCOMES, SHORT_TEXT, Invalid, LimitReached, Maintenance,
+    LONG_TEXT, MAX_CAUSES, MAX_EVENTS, MAX_TASKS, SCHEDULED_OUTCOMES, SHORT_TEXT, Invalid, LimitReached, Maintenance,
     _interval, _norm_unit, _same_text, shortened,
 )
 from backend.services import excel, rcm_import
 
 MAX_MODES = 500  # failure modes one import adds (each is a few events; a big FMEA goes in by system)
+MAX_LINKS = 500  # links between functional failures one import adds
 MAX_ROWS = 5000  # rows read from the sheet
 SHOWN = 50  # errors, functions in the preview, rows listed in a message
 
@@ -55,6 +58,10 @@ def default_options(table) -> dict:
     return {"mapping": guess, "extra_columns": rcm_import.default_extra_columns(table.header, guess)}
 
 
+def counts_new(links: list[dict]) -> int:
+    return sum(1 for k in links if not k["existing"])
+
+
 def _rows(rows: list[int]) -> str:
     listed = ", ".join(str(n) for n in rows[:8])
     return f"row{'s' if len(rows) != 1 else ''} {listed}{' …' if len(rows) > 8 else ''}"
@@ -62,6 +69,84 @@ def _rows(rows: list[int]) -> str:
 
 def _plural(n: int, one: str, many: str | None = None) -> str:
     return f"{n:,} {one if n == 1 else (many or one + 's')}"
+
+
+_SPLIT_CAUSES = re.compile(r"[;\n\r]+")
+_SPLIT_PLACE = re.compile(r"\s*[›>|]\s*")
+
+
+def _norm(text) -> str:
+    return " ".join(str(text or "").lower().split())
+
+
+class _Places:
+    """The positions inside the one a sheet is imported onto, found by name or
+    tag, for the "Caused by (below)" cells."""
+
+    def __init__(self, m: Maintenance, target_id: str):
+        self.m, self.target_id = m, target_id
+        kids: dict[str, list[str]] = {}
+        for src, dst in m.s.pairs(m.org, "PART_OF"):
+            kids.setdefault(dst, []).append(src)
+        self.nodes = {p["id"]: p for p in m.s.nodes(m.org, "Position") if not p.get("retired")}
+        self.inside: set[str] = set()
+        stack = list(kids.get(target_id, []))
+        while stack:
+            at = stack.pop()
+            if at not in self.inside:
+                self.inside.add(at)
+                stack.extend(kids.get(at, []))
+
+    def find(self, name: str) -> tuple[dict | None, str | None]:
+        """The one position inside the target with that name or tag, or why not."""
+        key = _norm(name)
+        named = [p for p in self.nodes.values() if key in (_norm(p["name"]), _norm(p.get("tag")))]
+        here = [p for p in named if p["id"] in self.inside]
+        if len(here) == 1:
+            return here[0], None
+        if len(here) > 1:
+            tags = " and ".join(f"{p['name']} ({p.get('tag') or 'no tag'})" for p in here[:3])
+            return None, f"two positions inside the target are called “{name}”: {tags}. Put the tag in the cell"
+        if any(p["id"] == self.target_id for p in named):
+            return None, f"“{name}” is the position this sheet is imported onto: a cause is on a position inside it"
+        if named:
+            return None, f"“{name}” isn't inside {self.nodes[self.target_id]['name']}"
+        return None, f"there is no position “{name}” inside {self.nodes[self.target_id]['name']}"
+
+
+def _resolve_causes(m: Maintenance, places: _Places, ff_match: dict | None, causes: list[dict],
+                    errors: list[str]) -> list[dict]:
+    """The links one functional failure's "Caused by (below)" cells name: each
+    ``{row, cause_id, position, text, existing}``. A cell that can't be resolved
+    is a row error (nothing is written); the lower failure must be there already."""
+    out: list[dict] = []
+    linked = {c["id"] for c in m.s.out(m.org, ff_match["id"], "RESULTS_FROM")} if ff_match else set()
+    for cell in causes:
+        for part in _SPLIT_CAUSES.split(cell["text"]):
+            part = part.strip()
+            if not part:
+                continue
+            row = cell["row"]
+            bits = _SPLIT_PLACE.split(part, maxsplit=1)
+            if len(bits) != 2 or not bits[0].strip() or not bits[1].strip():
+                errors.append(f"Row {row}: “{shortened(part, 80)[0]}” should read Position › Functional failure.")
+                continue
+            place, text = bits[0].strip(), bits[1].strip()
+            pos, why = places.find(place)
+            if pos is None:
+                errors.append(f"Row {row}: {why}.")
+                continue
+            found = next((f for fn in m._functions_of(pos["id"]) for f in m._failures_of(fn["id"])
+                          if _same_text(f["text"], text)), None)
+            if found is None:
+                errors.append(f"Row {row}: no functional failure ‘{shortened(text, 80)[0]}’ on {pos['name']} yet. "
+                              "Import that position's rows first, or correct the cell.")
+                continue
+            if any(o["cause_id"] == found["id"] for o in out):
+                continue
+            out.append({"row": row, "cause_id": found["id"], "position": pos["name"], "text": found["text"],
+                        "existing": found["id"] in linked})
+    return out
 
 
 def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
@@ -89,7 +174,8 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     standards_kept: list[str] = []
     functions: list[dict] = []
     counts = {"functions": 0, "failures": 0, "modes": 0, "decisions": 0, "tasks": 0,
-              "functions_existing": 0, "failures_existing": 0, "modes_existing": 0}
+              "functions_existing": 0, "failures_existing": 0, "modes_existing": 0, "links": 0, "links_existing": 0}
+    places = _Places(m, position_id)
 
     for fn in built["functions"]:
         match = next((f for f in existing_fns if _same_text(f["text"], fn["text"])), None)
@@ -100,7 +186,14 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
         existing_ffs = m._failures_of(match["id"]) if match else []
         for ff in fn["failures"]:
             ff_match = next((f for f in existing_ffs if _same_text(f["text"], ff["text"])), None)
-            ff_plan = {"text": ff["text"], "id": ff_match and ff_match["id"], "modes": []}
+            ff_plan = {"text": ff["text"], "id": ff_match and ff_match["id"], "modes": [], "links": []}
+            if ff.get("causes"):
+                ff_plan["links"] = _resolve_causes(m, places, ff_match, ff["causes"], errors)
+                counts["links_existing"] += sum(1 for k in ff_plan["links"] if k["existing"])
+                counts["links"] += sum(1 for k in ff_plan["links"] if not k["existing"])
+                have = len(m.s.out(m.org, ff_match["id"], "RESULTS_FROM")) if ff_match else 0
+                if have + counts_new(ff_plan["links"]) > MAX_CAUSES:
+                    errors.append(f"“{shortened(ff['text'], 80)[0]}” would have more than {MAX_CAUSES} causes below it.")
             for mode in ff["modes"]:
                 row, text = mode["row"], mode["text"]
                 full = ""
@@ -138,7 +231,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
                 counts["modes"] += 1
                 counts["decisions"] += bool(decision)
                 counts["tasks"] += task
-            if not ff_match and not ff_plan["modes"] and ff["text"] == rcm_import.IMPORTED:
+            if not ff_match and not ff_plan["modes"] and not ff_plan["links"] and ff["text"] == rcm_import.IMPORTED:
                 continue  # a stand-in name for modes with none above them, and they're all here already
             counts["failures_existing" if ff_match else "failures"] += 1
             fn_plan["failures"].append(ff_plan)
@@ -150,6 +243,10 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     if counts["modes"] > MAX_MODES:
         raise Invalid(f"The sheet would add {counts['modes']:,} failure modes; one import adds at most {MAX_MODES:,} "
                       "to a position. Split the sheet (by system or function) and import each part.")
+
+    if counts["links"] > MAX_LINKS:
+        raise Invalid(f"The sheet would add {counts['links']:,} links between functional failures; one import adds "
+                      f"at most {MAX_LINKS:,}. Split the sheet and import each part.")
 
     name = position["name"]
     if already:
@@ -171,7 +268,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
         warnings.append(f"“{text[:80]}” is on {name} already with another performance standard; it was left as it is.")
 
     if m.limited:
-        events = counts["functions"] + counts["failures"] + 4 * counts["modes"] + counts["tasks"]
+        events = counts["functions"] + counts["failures"] + 4 * counts["modes"] + counts["tasks"] + counts["links"]
         if m.s.event_count(m.org) + events > MAX_EVENTS:
             raise LimitReached(f"This maintenance workspace can't take {events:,} more recorded changes "
                                f"(its limit is {MAX_EVENTS:,}).")
@@ -192,6 +289,9 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
                 if mode["consequence"] or mode["decision"]:
                     m.decide_failure_mode(mode_id, mode["consequence"] or None,
                                           mode["decision"] if mode["decision"] else ...)
+            for link in ff["links"]:
+                if not link["existing"]:
+                    m.link_cause(ff_id, link["cause_id"])
 
 
 def run(m: Maintenance, position_id: str, table, options: dict | None, dry_run: bool = True) -> dict:

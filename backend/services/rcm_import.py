@@ -52,6 +52,9 @@ FIELDS = [
     {"id": "failure", "label": "Functional failure",
      "help": "How it fails to do it. Blank cells carry down.",
      "synonyms": ["functional failure", "functional failures", "failure", "failure description", "function failure", "loss of function"]},
+    {"id": "causes", "label": "Caused by (below)",
+     "help": "Optional: functional failures on positions inside this one that cause it, as “Position › Failure”, separated by “;”.",
+     "synonyms": ["caused by (below)", "caused by below", "caused by", "causes below", "lower-level causes", "results from"]},
     {"id": "mode", "label": "Failure mode", "required": True,
      "help": "What causes the functional failure (one row per mode).",
      "synonyms": ["failure mode", "failure modes", "mode", "potential failure mode", "failure cause", "cause of failure", "cause", "root cause"]},
@@ -293,7 +296,9 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     for field_id, col in mapping.items():
         if col not in index:
             raise RcmImportError(f"The sheet has no column “{col}” (mapped to {field_id}).")
-    if "mode" not in mapping:
+    # A sheet imported onto a position may have no failure modes at all, only
+    # the lower failures that cause each functional failure (keep_rows).
+    if "mode" not in mapping and not (keep_rows and "causes" in mapping):
         raise RcmImportError("Map a column to Failure mode — it's the one required column.")
     extra = [c for c in (options.get("extra_columns") or []) if c in index and c not in mapping.values()]
 
@@ -312,7 +317,7 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     skipped: list[int] = []
     truncated = 0
     cur_fn = cur_standard = cur_fail = ""
-    n_modes = n_decisions = 0
+    n_modes = n_decisions = n_links = 0
     stashed_tasks = 0
 
     def clip(text: str) -> str:
@@ -332,12 +337,13 @@ def build_tree(header: list[str], rows: list[list], options: dict,
         if fail_text:
             cur_fail = fail_text
         mode_text = cell(r, "mode")
-        if not mode_text:
-            structural = {"function", "standard", "failure"}
+        cause_text = cell(r, "causes") if keep_rows else ""
+        if not mode_text and not cause_text:
+            structural = {"function", "standard", "failure", "causes"}
             if any(cell(r, f) for f in FIELD_IDS if f not in structural) or any(_text(r[index[c]]) for c in extra):
                 skipped.append(rnum)
             continue
-        if n_modes >= MAX_MODES:
+        if mode_text and n_modes >= MAX_MODES:
             raise RcmImportError(
                 f"The sheet has more than {MAX_MODES:,} failure modes — split it into several studies.")
 
@@ -366,6 +372,11 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             fn["_by_key"][fail_name.lower()] = failure
             fn["failures"].append(failure)
 
+        if cause_text:
+            failure.setdefault("causes", []).append({"row": rnum, "text": cause_text})
+        if not mode_text:
+            n_links += 1
+            continue
         mode: dict = {"text": clip(mode_text), "consequence": None, "decision": None, "_row": rnum}
         effects = cell(r, "effects")
         if effects:
@@ -424,9 +435,9 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     for fn in functions:
         fn.pop("_by_key", None)
 
-    if n_modes == 0:
+    if n_modes == 0 and not n_links:
         raise RcmImportError(
-            f"No failure modes found — the “{mapping['mode']}” column is empty. Check the "
+            f"No failure modes found — the “{mapping.get('mode', 'Failure mode')}” column is empty. Check the "
             "header row and the column mapped to Failure mode.")
     if skipped:
         listed = ", ".join(str(n) for n in skipped[:8]) + (" …" if len(skipped) > 8 else "")
@@ -448,6 +459,8 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     if keep_rows:  # clean_tree keeps the order, and drops the row
         for fn, cfn in zip(functions, cleaned):
             for failure, cfailure in zip(fn["failures"], cfn["failures"]):
+                if failure.get("causes"):  # the lower failures named in "Caused by (below)", by row
+                    cfailure["causes"] = failure["causes"]
                 for mode, cmode in zip(failure["modes"], cfailure["modes"]):
                     cmode["row"] = mode["_row"]
 
