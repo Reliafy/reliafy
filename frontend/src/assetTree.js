@@ -277,8 +277,9 @@ export function rowText(r) {
 // position, so the tree's marks, the chip, the counts and a parent's roll-up
 // all agree.
 export const ANALYSED_RULE = "Not analysed: positions whose RCM isn't finished. A position is analysed when it has at least "
-  + "one function, every function has a functional failure, every functional failure has a failure mode, and every "
-  + "failure mode has a decision. A position with no functions of its own is not analysed.";
+  + "one function, every function has a functional failure, every functional failure has failure modes or is "
+  + "caused by failures on positions inside it that are answered in turn, and every failure mode has a decision. "
+  + "A position with no functions of its own is not analysed.";
 
 // The status filters, as chips.
 export const CHIPS = [

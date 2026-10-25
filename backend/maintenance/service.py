@@ -115,6 +115,7 @@ _LONG_FIELDS = {"description", "operating context", "notes", "note", "instructio
 MAX_COPY_NODES = 500  # positions, failure modes and tasks made by one copy
 MAX_LOCATION_POSITIONS = 500  # positions listed on one location (the counts are of all)
 MAX_LIST = 100  # ids or entries given in one request
+MAX_CAUSES = 50  # lower functional failures one functional failure results from
 MAX_POSITIONS = 20_000
 MAX_ITEMS = 50_000
 MAX_TASKS = 100_000
@@ -834,6 +835,148 @@ def _failure_mode_assigned(s: GraphStore, org: str, p: dict) -> None:
     if p.get("functional_failure_id"):
         s.put_edge(org, "CAUSED_BY", p["functional_failure_id"], p["id"])
         s.patch_node(org, p["id"], {"order": p.get("order", 0)})
+
+
+# A functional failure results from functional failures on positions inside its
+# own (RESULTS_FROM, effect -> cause, the same direction as CAUSED_BY): the
+# failure-mode questions for it are answered on those lower positions. The edge
+# id comes from its ends, so linking twice or replaying gives the same edge.
+
+def _functional_failure_linked(s: GraphStore, org: str, p: dict) -> None:
+    s.put_edge(org, "RESULTS_FROM", p["id"], p["cause_id"])
+
+
+def _functional_failure_unlinked(s: GraphStore, org: str, p: dict) -> None:
+    s.delete_edge(org, "RESULTS_FROM", p["id"], p["cause_id"])
+
+
+def _links_note(n: int) -> str:
+    return (f"{n} link{'s' if n != 1 else ''} between functional failures {'were' if n != 1 else 'was'} removed: "
+            f"{'their causes are' if n != 1 else 'its cause is'} no longer on a position inside "
+            f"{'their effects' if n != 1 else 'its effect'}' position.")
+
+
+# ---- reading the links (over Maintenance._rcm_index) -------------------------------
+# A functional failure is *covered* when everything under it is answered: its own
+# failure modes (each with a decision) and the lower functional failures it
+# results from (each covered in turn), and there's at least one of either. A link
+# counts only while its cause is live, on a live position strictly inside the
+# effect's position. The walk keeps the failures already on it, so a loop (only
+# possible from two links written at the same moment) never hangs a read; each
+# read memoises what it worked out, so a cause shared by many effects costs once.
+
+def _rcm_above(index: dict, pid: str) -> set:
+    """The positions a position sits inside (its parent, theirs, ...)."""
+    memo = index["memo"].setdefault("above", {})
+    if pid not in memo:
+        memo[pid] = set(_rcm_ancestry(index, pid))
+    return memo[pid]
+
+
+def _rcm_counts(index: dict, effect_id: str, cause_id: str) -> bool:
+    """Whether a link counts: the cause live, on a live position inside the effect's."""
+    ep, cp = index["ff_pos"].get(effect_id), index["ff_pos"].get(cause_id)
+    if not ep or not cp or cp not in index["positions"] or index["positions"][cp].get("retired"):
+        return False
+    return ep in _rcm_above(index, cp)
+
+
+def _rcm_below(index: dict, ff_id: str) -> list[str]:
+    """The causes of a functional failure that count."""
+    return [c for c in index["causes_of"].get(ff_id, ()) if _rcm_counts(index, ff_id, c)]
+
+
+def _rcm_covered(index: dict, ff_id: str, walk: frozenset = frozenset()) -> bool:
+    memo = index["memo"].setdefault("covered", {})
+    if ff_id in memo:
+        return memo[ff_id]
+    own = index["own"].get(ff_id, [])
+    walk = walk | {ff_id}
+    below = [c for c in _rcm_below(index, ff_id) if c not in walk]
+    ok = bool(own or below) and all(m.get("outcome") for m in own) and \
+        all(_rcm_covered(index, c, walk) for c in below)
+    memo[ff_id] = ok
+    return ok
+
+
+def _rcm_chain(index: dict, ff_id: str) -> set:
+    """The failure modes reachable from a functional failure: its own and, through
+    the links that count, every one below, each once however many paths reach it."""
+    memo = index["memo"].setdefault("chain", {})
+    if ff_id not in memo:
+        modes, seen, stack = set(), set(), [ff_id]
+        while stack:
+            at = stack.pop()
+            if at in seen:
+                continue
+            seen.add(at)
+            modes.update(m["id"] for m in index["own"].get(at, []))
+            stack.extend(_rcm_below(index, at))
+        memo[ff_id] = modes
+    return memo[ff_id]
+
+
+def _rcm_rollup(index: dict, mode_ids: set) -> dict:
+    """Counts over a set of failure modes, in the worksheet's roll-up keys."""
+    modes = [index["mode"][m] for m in mode_ids if m in index["mode"]]
+    return {
+        "modes": len(modes),
+        "undecided": sum(1 for m in modes if not m.get("outcome")),
+        "tasks": sum(1 for m in modes if m["id"] in index["task_of"]),
+        "hidden": sum(1 for m in modes if m.get("consequence") == "hidden"),
+        "safety": sum(1 for m in modes if m.get("consequence") in ("safety", "environmental")),
+        "mode_ids": sorted(m["id"] for m in modes),
+    }
+
+
+def _rcm_place(index: dict, ff_id: str) -> tuple:
+    """Where a functional failure is in tree order: its position's path of names,
+    then its function's order, then its own."""
+    pid = index["ff_pos"].get(ff_id)
+    path = [pid, *_rcm_ancestry(index, pid)][::-1] if pid else []
+    names = tuple(str((index["positions"].get(x) or {}).get("name") or "").lower() for x in path)
+    fn = index["fn"].get(index["ff_fn"].get(ff_id)) or {}
+    ff = index["ff"].get(ff_id) or {}
+    return names, fn.get("order") or 0, ff.get("order") or 0, str(ff.get("text") or "").lower()
+
+
+def _rcm_ancestry(index: dict, pid: str) -> list:
+    out, at, seen = [], index["parent"].get(pid), set()
+    while at and at not in seen:
+        seen.add(at)
+        out.append(at)
+        at = index["parent"].get(at)
+    return out
+
+
+def _rcm_end(index: dict, ff_id: str) -> dict:
+    pid = index["ff_pos"][ff_id]
+    return {"id": ff_id, "text": index["ff"][ff_id]["text"],
+            "position": {"id": pid, "name": (index["positions"].get(pid) or {}).get("name", "")}}
+
+
+def _rcm_links(index: dict, ff_id: str) -> dict:
+    """What a read says about a functional failure's links: whether it's covered,
+    whether it's explained below (counted causes and no failure modes of its own),
+    its causes (each with whether it counts, ``inside``, whether it's covered and
+    its chain's roll-up), its effects, and ``below``: the roll-up of every failure
+    mode under its counted causes (None without any)."""
+    causes = sorted((c for c in index["causes_of"].get(ff_id, ()) if c in index["ff_pos"]),
+                    key=lambda c: _rcm_place(index, c))
+    effects = sorted((e for e in index["effects_of"].get(ff_id, ())
+                      if e in index["ff_pos"] and not (index["positions"].get(index["ff_pos"][e]) or {}).get("retired")),
+                     key=lambda e: _rcm_place(index, e))
+    counted = _rcm_below(index, ff_id)
+    below = set().union(*(_rcm_chain(index, c) for c in counted)) if counted else None
+    return {
+        "covered": _rcm_covered(index, ff_id),
+        "explained_below": bool(counted) and not index["own"].get(ff_id),
+        "causes": [{**_rcm_end(index, c), "inside": _rcm_counts(index, ff_id, c),
+                    "covered": _rcm_counts(index, ff_id, c) and _rcm_covered(index, c),
+                    "chain": _rcm_rollup(index, _rcm_chain(index, c))} for c in causes],
+        "effects": [{**_rcm_end(index, e), "inside": _rcm_counts(index, e, ff_id)} for e in effects],
+        "below": _rcm_rollup(index, below) if below is not None else None,
+    }
 
 
 # ---- moving RCM between positions ----------------------------------------------
@@ -1828,6 +1971,9 @@ PROJECTORS = {
     "failure_mode.assigned": _failure_mode_assigned,
     "failure_mode.analysed": _patch,
     "failure_mode.retired": _flag("retired"),
+    # A functional failure caused by one on a position inside its own (or no longer).
+    "functional_failure.linked": _functional_failure_linked,
+    "functional_failure.unlinked": _functional_failure_unlinked,
     # Moved to another position (with what goes with each).
     "function.moved": _function_moved,
     "failure_mode.moved": _failure_mode_moved,
@@ -1924,6 +2070,7 @@ class Maintenance:
         what = {"name": "position's name", "tag": "tag", "position_class": "class", "description": "description",
                 "operating_context": "operating context"}
         allowed = {k: _text(v, what[k]) for k, v in changes.items() if k in what and v is not None}
+        leaving: list[tuple[str, str]] = []
         if "name" in allowed and not allowed["name"]:
             raise Invalid("The position's name is required.")
         if "parent_id" in changes:
@@ -1933,13 +2080,18 @@ class Maintenance:
                 if parent == id or id in self._ancestor_ids(parent):
                     raise Invalid("A position can't sit inside itself.")
             allowed["parent_id"] = parent
+            now = self._parent(id)
+            leaving = self._links_leaving(id, parent) if (now and now["id"]) != parent else []
         if "location_id" in changes:
             location_id = self._location_ref(changes["location_id"])
             if location_id != ((self._own_location(id) or {}).get("id")):
                 allowed["location_id"] = location_id
+        for effect_id, cause_id in leaving:
+            self._link_event("functional_failure.unlinked", effect_id, cause_id)
         if allowed:
             self._emit("position.updated", {"id": id, "changes": allowed})
-        return self._get(id, "Position")
+        out = self._get(id, "Position")
+        return out | ({"links_removed": len(leaving), "note": _links_note(len(leaving))} if leaving else {})
 
     def _location_ref(self, location_id) -> str | None:
         """A location id from a request, checked (None when not given)."""
@@ -2005,6 +2157,7 @@ class Maintenance:
                     read(child, new_id(), shortened(child["name"])[0], new_pid)
 
         new = new_id()
+        ff_ids: dict[str, str] = {}  # each copied functional failure -> its copy
         read(source, new, new_name, parent_id or None)
         self._quota("Position", MAX_POSITIONS, adding=len(plan))
         self._quota("PartListing", MAX_PART_LISTINGS, adding=sum(len(x[6]) for x in plan), what="parts-list entries")
@@ -2039,7 +2192,7 @@ class Maintenance:
                   | ({"standard_basis": fn["standard_basis"], "on": fn.get("basis_on") or self.today()}
                      if fn.get("standard_basis") else {}))
                 for ff in self._failures_of(fn["id"]):
-                    ff_id = new_id()
+                    ff_id = ff_ids[ff["id"]] = new_id()
                     self._emit("functional_failure.added", {
                         "id": ff_id, "function_id": fn_id, "text": ff["text"], "order": ff.get("order") or 0,
                     } | ({"rcm_failure_id": ff["rcm_failure_id"], "study_id": ff.get("study_id")}
@@ -2067,7 +2220,28 @@ class Maintenance:
                     "id": new_id(), "position_id": pid, "part_id": self.s.out(self.org, listing["id"], "LISTS")[0]["id"],
                     **{k: listing.get(k) for k in ("role", "quantity", "critical", "min_on_hand", "notes")},
                     "on": today})
-        return self.position(new)
+        skipped = self._copy_links(ff_ids, parent_id or None)
+        return self.position(new) | ({"links_skipped": skipped} if skipped else {})
+
+    def _copy_links(self, ff_ids: dict[str, str], parent_id: str | None) -> int:
+        """Links of a copied branch: between two copied failures, between their
+        copies; to a failure above the branch, to the copy too when that failure
+        is still above it where it was copied to. Returns the links not copied."""
+        above = {parent_id, *self._ancestor_ids(parent_id)} if parent_id else set()
+        skipped = 0
+        for old, copy in ff_ids.items():
+            for c in self.s.out(self.org, old, "RESULTS_FROM"):
+                if c["id"] in ff_ids:
+                    self._link_event("functional_failure.linked", copy, ff_ids[c["id"]])
+            for e in self.s.inn(self.org, old, "RESULTS_FROM"):
+                if e["id"] in ff_ids or e.get("removed"):
+                    continue
+                if self._ff_position_id(e["id"]) in above and \
+                        len(self.s.out(self.org, e["id"], "RESULTS_FROM")) < MAX_CAUSES:
+                    self._link_event("functional_failure.linked", e["id"], copy)
+                else:
+                    skipped += 1
+        return skipped
 
     def create_location(self, name, parent_id=None, description="") -> dict:
         name = _text(name, "location's name", required=True)
@@ -2638,15 +2812,16 @@ class Maintenance:
         Documents on the function are removed with it (documents_removed: the
         caller deletes a kept PDF's bytes)."""
         fn, position = self._live_function(function_id)
-        moved = 0
+        moved = links = 0
         for ff in self._failures_of(function_id):
-            moved += self._drop_ff(ff)
+            m, n = self._drop_ff(ff)
+            moved, links = moved + m, links + n
         docs = self.documents_of(function_id)
         for d in docs:
             self._emit("document.removed", {"id": d["id"], "on": self.today()})
         self._emit("function.removed", {"id": function_id, "on": self.today()})
         return {"removed": function_id, "position_id": position["id"], "failure_modes_unassigned": moved,
-                "documents_removed": [d["id"] for d in docs]}
+                "documents_removed": [d["id"] for d in docs], "links_removed": links}
 
     def function(self, function_id: str) -> dict:
         """One function in full: its text, performance standard, the working behind
@@ -2674,19 +2849,23 @@ class Maintenance:
             self._emit("functional_failure.updated", {"id": ff_id, "changes": {"text": value}})
         return self._ff_view(self._get(ff_id, "FunctionalFailure"))
 
-    def _drop_ff(self, ff: dict) -> int:
+    def _drop_ff(self, ff: dict) -> tuple[int, int]:
+        """Delete a functional failure: its links to failures above and below go
+        first, then its modes are left unassigned. Returns (modes, links)."""
+        links = self._drop_links(ff["id"])
         modes = self._ff_modes(ff["id"])
         for mode in modes:
             self._emit("failure_mode.assigned", {"id": mode["id"], "functional_failure_id": None})
         self._emit("functional_failure.removed", {"id": ff["id"], "on": self.today()})
-        return len(modes)
+        return len(modes), links
 
     def remove_functional_failure(self, ff_id: str) -> dict:
         """Delete a functional failure. Its failure modes stay on the position
         (unassigned), with their decisions, tasks and history."""
         ff, _, position = self._live_ff(ff_id)
-        moved = self._drop_ff(ff)
-        return {"removed": ff_id, "position_id": position["id"], "failure_modes_unassigned": moved}
+        moved, links = self._drop_ff(ff)
+        return {"removed": ff_id, "position_id": position["id"], "failure_modes_unassigned": moved,
+                "links_removed": links}
 
     def assign_failure_mode(self, mode_id: str, functional_failure_id) -> dict:
         """Put a failure mode under one of its position's functional failures (None:
@@ -2700,6 +2879,115 @@ class Maintenance:
             "id": mode_id, "functional_failure_id": target and target["id"],
         } | ({"order": self._next_order(self._ff_modes(target["id"]))} if target else {}))
         return self._mode_view(self._get(mode_id, "FailureMode"))
+
+    # ---- a functional failure caused by lower ones -------------------------------------
+    # A higher functional failure results from functional failures on positions
+    # inside its position (any depth): its failure-mode questions are answered
+    # there. Links are analysis, not history: deleting or retiring the lower end,
+    # or a move that takes a cause out from under its effect, drops the link and
+    # says so; nothing is refused for having links.
+
+    def _ff_position_id(self, ff_id: str) -> str | None:
+        """The position whose function fails as this functional failure."""
+        fns = self.s.inn(self.org, ff_id, "FAILS_AS")
+        on = self.s.inn(self.org, fns[0]["id"], "PERFORMS") if fns else []
+        return on[0]["id"] if on else None
+
+    def _link_event(self, type: str, effect_id: str, cause_id: str) -> None:
+        self._emit(type, {"id": effect_id, "cause_id": cause_id,
+                          "position_id": self._ff_position_id(effect_id),
+                          "cause_position_id": self._ff_position_id(cause_id), "on": self.today()})
+
+    def _drop_links(self, ff_id: str, causes: bool = True, effects: bool = True) -> int:
+        """Unlink a functional failure from the failures it causes (effects) and
+        the ones it results from (causes). Returns how many links went."""
+        pairs = ([(e["id"], ff_id) for e in self.s.inn(self.org, ff_id, "RESULTS_FROM")] if effects else []) + \
+                ([(ff_id, c["id"]) for c in self.s.out(self.org, ff_id, "RESULTS_FROM")] if causes else [])
+        for effect_id, cause_id in pairs:
+            self._link_event("functional_failure.unlinked", effect_id, cause_id)
+        return len(pairs)
+
+    def link_cause(self, ff_id: str, cause_id) -> dict:
+        """Say that functional failure ``ff_id`` results from ``cause_id``, a
+        functional failure on a position inside ff_id's position (any depth).
+        Linking what's already linked changes nothing."""
+        if not cause_id:
+            raise Invalid("Say which functional failure causes it (cause_id).")
+        effect, _, here = self._live_ff(ff_id)
+        cause, _, there = self._live_ff(str(cause_id))
+        for pos in (here, there):
+            if pos.get("retired"):
+                raise Invalid(f"{pos['name']} has been retired: pick a position that's still in use.")
+        if cause["id"] == effect["id"]:
+            raise Invalid("A functional failure can't cause itself.")
+        if there["id"] == here["id"]:
+            raise Invalid(f"Both are on {here['name']}: link a functional failure on a position inside it, "
+                          "or add the cause here as a failure mode.")
+        if here["id"] not in self._ancestor_ids(there["id"]):
+            raise Invalid(f"Pick a functional failure on a position inside {here['name']}: "
+                          f"{there['name']} isn't inside it.")
+        linked = {c["id"] for c in self.s.out(self.org, effect["id"], "RESULTS_FROM")}
+        if cause["id"] in linked:
+            return self.functional_failure(effect["id"])
+        seen, stack = set(), [cause["id"]]
+        while stack:
+            at = stack.pop()
+            if at == effect["id"]:
+                raise Invalid(f"That would go round in a circle: {shortened(cause['text'])[0]} already results "
+                              f"from {shortened(effect['text'])[0]}.")
+            if at not in seen:
+                seen.add(at)
+                stack.extend(c["id"] for c in self.s.out(self.org, at, "RESULTS_FROM"))
+        if len(linked) >= MAX_CAUSES:
+            raise Invalid(f"A functional failure can have at most {MAX_CAUSES} causes below it: unlink one first.")
+        self._link_event("functional_failure.linked", effect["id"], cause["id"])
+        return self.functional_failure(effect["id"])
+
+    def unlink_cause(self, ff_id: str, cause_id) -> dict:
+        """Take a cause off a functional failure. Unlinking what isn't linked
+        changes nothing; a link whose cause is no longer inside can be unlinked."""
+        if not cause_id:
+            raise Invalid("Say which cause to unlink (cause_id).")
+        effect = self._get(ff_id, "FunctionalFailure")
+        cause = self._get(str(cause_id), "FunctionalFailure")
+        if self.s.edge(self.org, "RESULTS_FROM", effect["id"], cause["id"]) is not None:
+            self._link_event("functional_failure.unlinked", effect["id"], cause["id"])
+        if effect.get("removed"):
+            return self._ff_view(effect)
+        return self.functional_failure(effect["id"])
+
+    def functional_failure(self, ff_id: str) -> dict:
+        """A functional failure with its function, position and failure modes, the
+        failures below it that it results from (causes), the ones above that it
+        causes (effects), and whether everything under it is answered (covered)."""
+        ff, fn, position = self._live_ff(ff_id)
+        index = self._rcm_index()
+        modes = [self._rcm_mode_view(m, index["task_of"].get(m["id"])) for m in index["own"].get(ff["id"], [])]
+        return {**self._ff_view(ff), "function": {"id": fn["id"], "text": fn["text"]},
+                "position": {"id": position["id"], "name": position["name"]}, "modes": modes,
+                **_rcm_links(index, ff["id"])}
+
+    def _links_leaving(self, position_id: str, new_parent: str | None) -> list[tuple[str, str]]:
+        """The links a re-parented position would take out from under their
+        effect: a cause on it or inside it, with its effect above it and not above
+        the new parent."""
+        links = self.s.pairs(self.org, "RESULTS_FROM")
+        if not links:
+            return []
+        kids: dict[str, list] = {}
+        for src, dst in self.s.pairs(self.org, "PART_OF"):
+            kids.setdefault(dst, []).append(src)
+        inside, stack = set(), [position_id]
+        while stack:
+            at = stack.pop()
+            if at not in inside:
+                inside.add(at)
+                stack.extend(kids.get(at, []))
+        fn_pos = {fn: pos for pos, fn in self.s.pairs(self.org, "PERFORMS")}
+        ff_pos = {ff: fn_pos.get(fn) for fn, ff in self.s.pairs(self.org, "FAILS_AS")}
+        above = {new_parent, *self._ancestor_ids(new_parent)} if new_parent else set()
+        return [(e, c) for e, c in links
+                if ff_pos.get(c) in inside and ff_pos.get(e) not in inside and ff_pos.get(e) not in above]
 
     def _mode_task(self, mode_id: str) -> dict | None:
         """The live task that mitigates a failure mode (its decision's task)."""
@@ -2874,6 +3162,19 @@ class Maintenance:
         if len(modes) + len(tasks) > MAX_COPY_NODES:
             raise Invalid(f"That function has more than {MAX_COPY_NODES} failure modes and tasks to move at "
                           "once: move some of its failure modes first.")
+        # Links that would no longer run from a position down into one inside it go.
+        above = set(self._ancestor_ids(target["id"]))
+        leaving = []
+        for ff in self._failures_of(function_id):
+            for c in self.s.out(self.org, ff["id"], "RESULTS_FROM"):
+                cp = self._ff_position_id(c["id"])
+                if not cp or target["id"] not in self._ancestor_ids(cp):
+                    leaving.append((ff["id"], c["id"]))
+            for e in self.s.inn(self.org, ff["id"], "RESULTS_FROM"):
+                if self._ff_position_id(e["id"]) not in above:
+                    leaving.append((e["id"], ff["id"]))
+        for effect_id, cause_id in leaving:
+            self._link_event("functional_failure.unlinked", effect_id, cause_id)
         self._emit("function.moved", {
             "id": function_id, "position_id": target["id"], "from_position_id": source["id"],
             "order": self._next_order(self.s.out(self.org, target["id"], "PERFORMS")),
@@ -2881,7 +3182,8 @@ class Maintenance:
         })
         return {"moved": function_id, "position_id": target["id"], "from_position_id": source["id"],
                 "function": self._function_view(self._get(function_id, "Function")),
-                "failure_modes_moved": len(moving), "tasks_moved": len(tasks)}
+                "failure_modes_moved": len(moving), "tasks_moved": len(tasks), "links_removed": len(leaving),
+                **({"note": _links_note(len(leaving))} if leaving else {})}
 
     def move_failure_mode(self, mode_id: str, position_id, functional_failure_id=None) -> dict:
         """Move a failure mode to another position, with its decision and tasks, under
@@ -2980,21 +3282,38 @@ class Maintenance:
         modes = {m["id"]: m for m in s.nodes(org, "FailureMode") if not m.get("merged_into") and not m.get("retired")}
         tasks = {t["id"]: t for t in s.nodes(org, "Task") if not t.get("retired")}
         fns_of: dict[str, list] = {}
+        fn_pos: dict[str, str] = {}
         for src, dst in s.pairs(org, "PERFORMS"):
             if dst in fns:
                 fns_of.setdefault(src, []).append(fns[dst])
+                fn_pos[dst] = src
         ffs_of: dict[str, list] = {}
+        ff_fn: dict[str, str] = {}
         for src, dst in s.pairs(org, "FAILS_AS"):
             if dst in ffs and src in fns:
                 ffs_of.setdefault(src, []).append(ffs[dst])
+                ff_fn[dst] = src
         modes_of: dict[str, list] = {}
         for src, dst in s.pairs(org, "CAN_FAIL_AS"):
             if dst in modes:
                 modes_of.setdefault(src, []).append(modes[dst])
         ff_of: dict[str, str] = {}
+        own: dict[str, list] = {}
         for src, dst in s.pairs(org, "CAUSED_BY"):
             if src in ffs and dst in modes:
                 ff_of[dst] = src
+                own.setdefault(src, []).append(modes[dst])
+        # The links between functional failures, and where each failure is.
+        ff_pos = {ff: fn_pos[fn] for ff, fn in ff_fn.items() if fn in fn_pos}
+        causes_of: dict[str, list] = {}
+        effects_of: dict[str, list] = {}
+        for src, dst in s.pairs(org, "RESULTS_FROM"):
+            if src in ff_pos and dst in ff_pos:
+                causes_of.setdefault(src, []).append(dst)
+                effects_of.setdefault(dst, []).append(src)
+        parent: dict[str, str] = {}
+        for src, dst in s.pairs(org, "PART_OF"):
+            parent.setdefault(src, dst)
         task_of: dict[str, dict] = {}
         for src, dst in s.pairs(org, "MITIGATES"):
             if src in tasks and dst in modes:
@@ -3007,31 +3326,35 @@ class Maintenance:
                 if src in docs and dst in fns:
                     docs_of.setdefault(dst, []).append(docs[src])
         order = lambda x: (x.get("order") or 0, x["text"].lower())  # noqa: E731
-        for d in (fns_of, ffs_of, modes_of):
+        for d in (fns_of, ffs_of, modes_of, own):
             for v in d.values():
                 v.sort(key=order)
         for v in docs_of.values():
             v.sort(key=lambda d: (d["title"].lower(), d["id"]))
         return {"functions": fns_of, "failures": ffs_of, "modes": modes_of, "ff_of": ff_of, "task_of": task_of,
-                "documents": docs_of}
+                "documents": docs_of,
+                "own": own, "mode": modes, "ff": ffs, "fn": fns, "ff_fn": ff_fn, "ff_pos": ff_pos,
+                "causes_of": causes_of, "effects_of": effects_of, "parent": parent,
+                "positions": {p["id"]: p for p in s.nodes(org, "Position")}, "memo": {}}
 
     @staticmethod
     def _analysed(index: dict, position_id: str) -> bool:
         """A position is analysed when it has at least one function, each function
-        has at least one functional failure, each functional failure has at least
-        one failure mode, and every failure mode on the position (under a
-        functional failure or not) has a decision. A position with no functions
-        (a parent that only groups others, too) is not analysed."""
+        has at least one functional failure, each functional failure is covered
+        (its own failure modes decided and the lower failures it results from
+        covered in turn, at least one of either: _rcm_covered), and every failure
+        mode on the position (under a functional failure or not) has a decision.
+        A position with no functions (a parent that only groups others, too) is
+        not analysed."""
         fns = index["functions"].get(position_id)
         if not fns:
             return False
         modes = index["modes"].get(position_id, [])
         if not all(m.get("outcome") for m in modes):
             return False
-        caused = {index["ff_of"][m["id"]] for m in modes if m["id"] in index["ff_of"]}
         for fn in fns:
             ffs = index["failures"].get(fn["id"], [])
-            if not ffs or any(ff["id"] not in caused for ff in ffs):
+            if not ffs or not all(_rcm_covered(index, ff["id"]) for ff in ffs):
                 return False
         return True
 
@@ -3047,7 +3370,7 @@ class Maintenance:
                 unassigned.append(view)
         functions = []
         for fn in index["functions"].get(pid, []):
-            failures = [{**self._ff_view(ff), "modes": by_ff.get(ff["id"], [])}
+            failures = [{**self._ff_view(ff), "modes": by_ff.get(ff["id"], []), **_rcm_links(index, ff["id"])}
                         for ff in index["failures"].get(fn["id"], [])]
             docs = index["documents"].get(fn["id"], [])
             functions.append({**self._function_view(fn, full), "failures": failures,
@@ -5275,7 +5598,7 @@ class Maintenance:
             raise Invalid("That task was already retired.")
         self._emit("task.retired", {"id": task_id, "on": self.today(), "reason": _text(reason, "reason")})
 
-    def retire_position(self, position_id: str, reason="") -> None:
+    def retire_position(self, position_id: str, reason="") -> dict:
         """Take a position out of the plant (it stays in the history). Nothing may be
         fitted to it, and no position inside it still in use."""
         p = self._get(position_id, "Position")
@@ -5287,8 +5610,12 @@ class Maintenance:
             raise Invalid("Positions inside it are still in use. Retire or move them first.")
         if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES for w in self.s.inn(self.org, position_id, "ON")):
             raise Invalid("It has open work orders. Close or cancel them first.")
+        # Its functional failures stop explaining failures above it: those links go.
+        links = sum(self._drop_links(ff["id"], causes=False)
+                    for fn in self._functions_of(position_id) for ff in self._failures_of(fn["id"]))
         self._emit("position.retired", {"id": position_id, "on": self.today(),
                                         "reason": _text(reason, "reason")})
+        return {"retired": position_id, "links_removed": links}
 
     def update_location(self, location_id: str, name=None, description=None, parent_id=...) -> dict:
         self._get(location_id, "Location")
