@@ -61,6 +61,8 @@ export default async function seed(config) {
   try {
     const m = "/api/maintenance";
     const { position_id } = await post(`${m}/from-rcm`, { study_id: "sample-rcm-truck" });
+    // The sample study is off the list, so make one of our own for the study pages to open.
+    await post("/api/rcm/studies", { name: "Smoke test study", system: "Smoke test system", description: "" });
     const location = await post(`${m}/locations`, { name: "Smoke test depot" });
     const item = await post(`${m}/items`, { name: "Smoke test brake set", serial: "SMOKE-1" });
     await patch(`${m}/positions/${position_id}`, { location_id: location.id });

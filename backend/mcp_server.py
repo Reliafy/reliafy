@@ -7748,7 +7748,7 @@ def list_rcm_studies(ctx: Context) -> dict[str, Any]:
     decision counts."""
     user, db = _caller(ctx), _db()
     out = []
-    for study in rcm_service.list_studies(db, _owners(user["uid"])):
+    for study in rcm_service.list_studies(db, _owners(user["uid"]), include_samples=False):
         counts = _rcm_counts(study.functions)
         out.append({"id": study.id, "name": study.name, "system": study.system,
                     "functions": counts["functions"], "modes": counts["modes"], "decisions": counts["decisions"],
