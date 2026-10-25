@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, filterOpen, flatten, levelSet } from "./assetTree.js";
 import { graftRcm } from "./explorerRcm.js";
-import { canPin, crumbAction, inBranch, levelMatches, pinDisplay, pinPath, pinTarget } from "./treePin.js";
+import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "./treePin.js";
 
 // A plant with two lines, each with a pump and its seal; a second site; an
 // engine fitted nowhere that carries an alternator position.
@@ -165,4 +165,27 @@ test("the pinned row's path, from the top of the whole tree", () => {
   assert.equal(pinPath(pos, "nope"), "");
   const loc = buildDisplay(DATA, "locations");
   assert.equal(pinPath(loc, "shed"), "Site › Shed");
+});
+
+test("a crumb at the whole tree's one top row un-pins instead of pinning everything", () => {
+  // One top row (a pool with everything inside it).
+  const one = buildDisplay({
+    positions: [
+      { id: "pool", name: "Swimming pool", parent_id: null },
+      { id: "circ", name: "Circulation", parent_id: "pool" },
+      { id: "pump", name: "Filter pump", parent_id: "circ" },
+    ],
+    locations: [],
+  }, "positions");
+  assert.deepEqual(one.roots, ["pool"]);
+  const pinned = pinDisplay(one, "pump");
+  assert.equal(pinCoversAll(one, "pool"), true);
+  assert.equal(pinCoversAll(one, "circ"), false);
+  assert.equal(crumbAction(pinned, one, "positions", "pool"), "unpin");
+  assert.equal(crumbAction(pinned, one, "positions", "circ"), "pin");
+  // Several top rows: pinning one of them still hides the others, so it moves the pin.
+  const whole = buildDisplay(DATA, "positions");
+  assert.equal(pinCoversAll(whole, "plant"), false);
+  assert.equal(crumbAction(pinDisplay(whole, "pumpA"), whole, "positions", "plant"), "pin");
+  assert.equal(pinCoversAll(null, "plant"), false);
 });

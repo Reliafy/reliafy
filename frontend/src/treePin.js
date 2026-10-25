@@ -78,12 +78,21 @@ export function levelMatches(display, open, n) {
   return true;
 }
 
+// Would pinning `key` show the whole tree anyway (it's the tree's one top
+// row)? Then a pin there is no pin: the crumb un-pins, and the ⋯ menu doesn't
+// count it as a change.
+export function pinCoversAll(whole, key) {
+  return !!whole && key != null && whole.roots?.length === 1 && whole.roots[0] === key;
+}
+
 // What a click on a crumb in the panel's heading does while a branch is
 // pinned: a crumb inside the branch is picked ("select"); one above it moves
 // the pin up to it ("pin"), or, when it can't be pinned (one of the pane's own
-// headings), shows the whole tree with it picked ("unpin").
+// headings) or is the whole tree's one top row, shows the whole tree with it
+// picked ("unpin").
 export function crumbAction(pinned, whole, mode, key) {
   if (!pinned || pinned.rows.has(key)) return "select";
+  if (pinCoversAll(whole, key)) return "unpin";
   return canPin(whole.rows.get(key), mode) ? "pin" : "unpin";
 }
 

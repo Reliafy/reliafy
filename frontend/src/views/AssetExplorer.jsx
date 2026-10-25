@@ -27,7 +27,7 @@ import {
   ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
-import { canPin, crumbAction, inBranch, levelMatches, pinDisplay, pinPath, pinTarget } from "../treePin.js";
+import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 import { liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
@@ -451,7 +451,7 @@ export default function AssetExplorer() {
   };
   // A crumb in the panel's heading: inside the branch it's picked; above it,
   // the pin moves up to it (one step at a time), or, for one of the pane's own
-  // headings, the whole tree shows with it picked.
+  // headings or the whole tree's one top row, the whole tree shows with it picked.
   const crumbGo = (key, select) => {
     const act = crumbAction(pinKey ? display : null, whole, mode, key);
     if (act === "select") return select(key);
@@ -553,7 +553,10 @@ export default function AssetExplorer() {
   const level = levelShown(levelBy, mode);
   const levelsOn = mode !== "flat" && mode !== "items";
   const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || rcmOn));
-  const changed = changedFromUsual({ mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn, pinned: !!pinKey });
+  // A pin on the whole tree's one top row shows everything: not a change.
+  const changed = changedFromUsual({
+    mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn, pinned: !!pinKey && !pinCoversAll(whole, pinKey),
+  });
   const resetView = () => {
     setChips([]);
     if (!rcmOn && mode !== DEFAULT_ARRANGEMENT) {
