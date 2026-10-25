@@ -57,3 +57,27 @@ test("the Explorer's own limits: at most 100 years, 10 million units of use, not
   assert.deepEqual(check({ outcome: "accept", notes: "x".repeat(4001) }, limits).blockers, ["Shorten the notes to 4,000 characters or fewer."]);
   assert.deepEqual(check({ outcome: "accept", notes: "x".repeat(4000) }, limits).blockers, []);
 });
+
+test("the interval's unit starts at the decision's own, else the one chosen last, else hours", async () => {
+  const { rememberUnit, rememberedUnit, startUnit } = await import("./decisionCheck.js");
+  const box = () => {
+    const m = new Map();
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) };
+  };
+  const s = box();
+  assert.equal(startUnit({}, s), "hours"); // nothing remembered: as before
+  assert.equal(startUnit(null, s), "hours");
+  rememberUnit("months", s);
+  assert.equal(rememberedUnit(s), "months");
+  assert.equal(startUnit({}, s), "months");
+  assert.equal(startUnit({ interval: 2, interval_unit: "weeks" }, s), "weeks"); // its own unit wins
+  rememberUnit("fortnights", s); // not a unit the dialog offers: ignored
+  assert.equal(rememberedUnit(s), "months");
+  s.setItem("reliafy.rcmIntervalUnit", "parsecs"); // something odd stored
+  assert.equal(startUnit({}, s), "hours");
+  // Storage that throws (private mode, blocked site data): hours, and no error.
+  const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
+  assert.equal(startUnit({}, broken), "hours");
+  assert.doesNotThrow(() => rememberUnit("days", broken));
+  assert.equal(startUnit({}, undefined), "hours");
+});
