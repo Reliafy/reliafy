@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { getMaintenanceTree, getRcmOptions, listMaintenanceItems } from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
-import TreeDetail, { HeaderTabs, SlimHeader } from "../components/TreeDetail.jsx";
+import TreeDetail, { HeaderTabs, KIND, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx";
@@ -70,6 +70,11 @@ import "./AssetExplorer.css";
 // above the pinned row moves the pin up to it. Asked to show a row outside the
 // branch (?sel=, a link, a new row), the page shows the whole tree again and
 // says so; a pinned row that's gone (retired, deleted) quietly un-pins.
+//
+// Switching tabs moves nothing but what's meant to change (a wide screen): the
+// same frame on both (TreePane's two slim rows over the tree, the panel's
+// heading and tabs in them), the tree as wide on both, its scroll, what's open
+// and the row picked kept, and the focus left on the tab picked.
 
 const HELP = { guide: "rcm-study" };
 
@@ -154,6 +159,7 @@ export default function AssetExplorer() {
     setError(null);
     getMaintenanceTree()
       .then((d) => {
+        forgetPositions();
         setData(d);
         setVersion((v) => v + 1);
       })
@@ -164,7 +170,9 @@ export default function AssetExplorer() {
   // The RCM tab: the RCM read into the tree, and what's being worked on.
   const askText = useAskText();
   const confirm = useConfirm();
-  const { rcm, error: rcmError, ops } = useTreeRcm({ on: rcmOn, onTreeChanged: load, askText });
+  // Read a moment after the tree is in, on the Summary tab too, so the first
+  // switch to the RCM tab draws its rows at once.
+  const { rcm, error: rcmError, ops } = useTreeRcm({ on: rcmOn, prefetch: !!data, onTreeChanged: load, askText });
   const [rcmFocus, setRcmFocus] = useState(null); // a function, failure or mode picked (its position is selected)
   const [panel, setPanel] = useState(false); // its details beside the table
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
@@ -232,9 +240,10 @@ export default function AssetExplorer() {
   }, [data, selPos, params, setQuery_, tab]);
 
   // Opening the RCM tab opens the position picked down to its failure modes
-  // (once each time the tab opens; what's open after that is yours).
+  // (once each time the tab opens; what's open after that is yours). Before the
+  // tab is drawn, so its rows don't appear closed for a frame and then open.
   const openedRcm = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!rcmOn) {
       openedRcm.current = false;
       return;
@@ -244,6 +253,15 @@ export default function AssetExplorer() {
     const more = openFor(display, selected.positions);
     setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
   }, [rcmOn, rcm, display, whole, selected.positions]);
+
+  // On the RCM tab, the Summary's page for the position picked is read a
+  // moment ahead, so switching to Summary shows it whole at once.
+  const selIsPos = selPos != null && display.rows.get(selPos)?.type === "pos";
+  useEffect(() => {
+    if (!rcmOn || !selIsPos) return undefined;
+    const t = setTimeout(() => prefetchPosition(selPos, version), 400);
+    return () => clearTimeout(t);
+  }, [rcmOn, selIsPos, selPos, version]);
 
   const setTab = (t) => {
     if (t === tab) return;
@@ -665,7 +683,11 @@ export default function AssetExplorer() {
     hint: rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
   } : null;
   const msg = message && <p className={"tt-msg " + message.tone} role="status">{message.text}</p>;
-  const head = rcmOn && posRow && posRow.type === "pos" && (
+  // The panel's heading and tabs, in the two slim rows over the tree on both
+  // tabs (a wide screen): the same elements on each, so nothing in them is
+  // drawn afresh and the focus stays on the tab picked.
+  const summaryRow = !rcmOn && data && !nothing ? row : null;
+  const head = phone ? null : rcmOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 pin={pinFor(posRow)} headingRef={headingRef} fullScreenButton={fullButton} message={msg}
                 meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
@@ -675,10 +697,15 @@ export default function AssetExplorer() {
                     <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
                   </>
                 )} />
+  ) : summaryRow && (
+    <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
+                pin={pinFor(summaryRow)} headingRef={headingRef} fullScreenButton={fullButton}
+                meta={KIND[summaryRow.type] ? <span className="tt-kind">{KIND[summaryRow.type]}</span> : null} primaryOpen />
   );
-  const headTabs = rcmOn && posRow && posRow.type === "pos" && <HeaderTabs row={posRow} tab={tab} onTab={setTab} />;
+  const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
+  const headTabs = !phone && tabsRow && <HeaderTabs row={tabsRow} tab={tab} onTab={setTab} />;
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) ? cellRow(focusRow) : null;
-  const side = detailsRow && (
+  const rcmSide = detailsRow && (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
       <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={ops}
@@ -699,6 +726,24 @@ export default function AssetExplorer() {
   const back = phone && (
     <button type="button" className="secondary td-back" onClick={() => navigate(-1)}>‹ {title}</button>
   );
+  // The Summary tab's page about the row picked: beside the tree in the pane
+  // (a wide screen, its heading and tabs over it in the slim rows), or its own
+  // screen on a phone.
+  const summary = !rcmOn && (
+    <section className="tx-detail" aria-label="Details"
+             onKeyDown={(e) => {
+               if (e.key === "Escape" && !phone && focus) document.getElementById(`tp-${focus}`)?.focus();
+             }}>
+      {(!phone || detailKey) && (
+        <TreeDetail ref={headingRef} display={whole} row={data && !nothing ? row : null} today={data?.today || ""}
+                    onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
+                    pin={data && !nothing ? pinFor(row) : null}
+                    back={back} version={version} empty={emptyDetail} headless={!phone}
+                    tab={tab} onTab={setTab} fullScreenButton={fullButton} />
+      )}
+    </section>
+  );
+  const side = rcmOn ? rcmSide : phone ? null : summary;
 
   return (
     <div ref={frame} className={"tx" + (phone ? " phone" : "") + (phone && detailKey && !rcmOn ? " show-detail" : "")
@@ -758,24 +803,15 @@ export default function AssetExplorer() {
         headTabs={headTabs}
         side={side}
         phoneTabs={phoneTabs}
-        layoutKey={tab}
+        // The row picked stays where it is on screen when the tab changes, and
+        // when the RCM's rows first arrive.
+        layoutKey={`${tab}:${rcmOn && rcm ? "rcm" : ""}`}
         anchorKey={selPos}
         branch={pinKey ? { name: whole.rows.get(pinKey).ref.name || "(no name)", onUnpin: () => unpin() } : null}
         branchNote={pinNote}
         arrangeLocked={rcmOn ? "RCM is by position, so the RCM tab shows the positions tree" : null}
       />
-      {!rcmOn && <section className="tx-detail" aria-label="Details"
-               onKeyDown={(e) => {
-                 if (e.key === "Escape" && !phone && focus) document.getElementById(`tp-${focus}`)?.focus();
-               }}>
-        {(!phone || detailKey) && (
-          <TreeDetail ref={headingRef} display={whole} row={data && !nothing ? row : null} today={data?.today || ""}
-                      onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
-                      pin={data && !nothing ? pinFor(row) : null}
-                      back={back} version={version} empty={emptyDetail}
-                      tab={tab} onTab={setTab} fullScreenButton={fullButton} />
-        )}
-      </section>}
+      {phone && summary}
 
       {modal === "position" && (
         <NewPositionModal positions={pickerList(data)} parentId={selPos && display.rows.get(selPos)?.type === "pos" ? selPos : null}

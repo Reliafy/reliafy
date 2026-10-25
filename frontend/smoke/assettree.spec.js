@@ -4,6 +4,7 @@
 // Items and Locations addresses, and the phone's slide to the panel and back.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
+import { details } from "./explorer.js";
 
 const M = "/api/maintenance";
 
@@ -55,7 +56,7 @@ test("the tree pane: open, close, levels, filter, and the panel for the row pick
   // Picked from the address: the panel shows it, with what's inside rolled up.
   const top = row(page, `Tree plant ${tag}`);
   await expect(top).toHaveAttribute("aria-selected", "true");
-  const panel = page.getByRole("region", { name: "Details" });
+  const panel = details(page);
   await expect(panel.getByRole("heading", { name: `Tree plant ${tag}` })).toBeVisible();
   await expect(panel.getByText("1 overdue inside")).toBeVisible();
   await expect(panel.getByText("1 open work order inside")).toBeVisible();
@@ -103,7 +104,7 @@ test("the tree pane: open, close, levels, filter, and the panel for the row pick
   await open(page, "/asset-register/explorer");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=positions$/);
   await expect(row(page, `Tree motor ${tag}`)).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("region", { name: "Details" }).getByRole("heading", { name: `Tree motor ${tag}` })).toBeVisible();
+  await expect(details(page).getByRole("heading", { name: `Tree motor ${tag}` })).toBeVisible();
 });
 
 test("arranged by locations, by items and flat, and the menu follows", async ({ page, request, problems }) => {
@@ -119,7 +120,7 @@ test("arranged by locations, by items and flat, and the menu follows", async ({ 
   await expect(row(page, `Tree line ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expect(row(page, `Tree site ${tag}`)).toHaveAttribute("aria-expanded", "true");
   await row(page, `Tree site ${tag}`).click();
-  const panel = page.getByRole("region", { name: "Details" });
+  const panel = details(page);
   await expect(panel.getByRole("heading", { name: `Tree site ${tag}` })).toBeVisible();
   await expect(panel.getByRole("link", { name: "Open the full page" })).toHaveAttribute("href", `/asset-register/locations/${p.site.id}`);
   await expectHealthy(page, problems, { label: "arranged by locations" });
@@ -172,7 +173,7 @@ test("a new item from the Explorer, and the old addresses land on it", async ({ 
   await expect(dialog).toHaveCount(0);
   const made = row(page, `Tree new spare ${tag}`);
   await expect(made).toHaveAttribute("aria-selected", "true");
-  const panel = page.getByRole("region", { name: "Details" });
+  const panel = details(page);
   await expect(panel.getByRole("link", { name: `Tree site ${tag}` })).toBeVisible();
   await expectHealthy(page, problems, { label: "a new item" });
 
@@ -197,7 +198,7 @@ test("on a phone: the tree, then the panel, and back", async ({ page, request, p
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
-  const panel = page.getByRole("region", { name: "Details" });
+  const panel = details(page);
   await expect(page.getByRole("tree", { name: "Positions" })).toBeVisible();
   await expect(panel.getByRole("heading", { name: `Tree plant ${tag}` })).toHaveCount(0);
   await row(page, `Tree plant ${tag}`).locator(".tp-nm").click();
@@ -257,7 +258,7 @@ test("add, edit, cancel and clear a position's operating context", async ({ page
   const tag = `o${Date.now()}`;
   const p = await ctxPlant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
-  const panel = page.getByRole("region", { name: "Details" });
+  const panel = details(page);
   await expect(panel.getByRole("heading", { name: `Ctx pump ${tag}` })).toBeVisible();
   // The description stays the grey line under the name.
   await expect(panel.locator(".td-desc")).toHaveText("Centrifugal pump, 50 L/s");
@@ -325,7 +326,7 @@ test("items don't get the card, and the RCM tab doesn't show it", async ({ page,
   const p = await ctxPlant(request, tag);
   await request.patch(`${M}/positions/${p.pump.id}`, { data: { operating_context: `Dusty; runs on demand ${tag}.` } });
   await open(page, `/asset-register/explorer?arrange=items&sel=${p.fitted.id}`);
-  const panel = page.getByRole("region", { name: "Details" });
+  const panel = details(page);
   await expect(panel.getByRole("heading", { name: `Ctx unit ${tag}` })).toBeVisible();
   await expect(panel.getByRole("region", { name: "Operating context" })).toHaveCount(0);
 

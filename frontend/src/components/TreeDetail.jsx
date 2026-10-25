@@ -8,6 +8,7 @@ import { PinIcon } from "./OutlineBits.jsx";
 import { ancestorsOf, byName, insideWords, statusWords } from "../assetTree.js";
 import { shownTab, tabsFor } from "../explorerTabs.js";
 import OperatingContextCard from "./OperatingContextCard.jsx";
+import { createRecent } from "../recentCache.js";
 
 // The panel beside the asset tree: what the selected row is, in a glance. A
 // position: where it sits, what's fitted, its status in words, its work
@@ -17,12 +18,13 @@ import OperatingContextCard from "./OperatingContextCard.jsx";
 // own page, where it's edited (an item's history and fitments are there).
 //
 // The panel has tabs (explorerTabs.js): Summary (the above) for every row, and
-// RCM for a position. On the RCM tab the tree and the RCM are one table
-// (TreePane with its columns): this panel then gives only its heading
-// (SlimHeader and HeaderTabs).
+// RCM for a position. On a wide screen the heading and the tabs (SlimHeader and
+// HeaderTabs) sit in the two slim rows over the tree on both tabs, so they stay
+// put when the tab changes; the panel itself is then `headless`. On the RCM tab
+// the tree and the RCM are one table (TreePane with its columns).
 
 const OPEN = new Set(["open", "planned", "in_progress", "waiting"]);
-const KIND = { pos: "Position", loc: "Location", item: "Item", group: "" };
+export const KIND = { pos: "Position", loc: "Location", item: "Item", group: "" };
 
 export function fullPagePath(r) {
   if (r.type === "pos") return `/asset-register/positions/${r.key}`;
@@ -33,15 +35,49 @@ export function fullPagePath(r) {
 
 // What a position page fetch gives the panel (tasks, work orders, since when
 // fitted): fetched a moment after the selection settles, so arrowing down the
-// tree doesn't fetch every row on the way.
+// tree doesn't fetch every row on the way. The last few are kept (until the
+// tree is read again), so coming back to a row, or to the Summary tab, shows
+// them at once instead of "Loading…" while they're fetched again.
+const SEEN = createRecent(30);
+const seenKey = (id, version) => `${version}:${id}`;
+// Each time the tree is read again (a change, or the page opened afresh).
+export function forgetPositions() {
+  SEEN.clear();
+}
+function fetchPosition(id, version) {
+  return getMaintenancePosition(id).then((data) => {
+    const got = { id, data, error: null };
+    SEEN.set(seenKey(id, version), got);
+    return got;
+  });
+}
+// A change saved from the panel, kept in its copy too (so switching tabs and
+// back shows it, not the text from before).
+function rememberChange(id, version, change) {
+  const key = seenKey(id, version);
+  const seen = SEEN.get(key);
+  if (seen?.data) SEEN.set(key, { ...seen, data: { ...seen.data, ...change } });
+}
+// Read ahead (the RCM tab, for the position picked), so switching to Summary
+// shows its work at once.
+export function prefetchPosition(id, version) {
+  if (!id || SEEN.has(seenKey(id, version))) return;
+  fetchPosition(id, version).catch(() => {});
+}
 function usePosition(id, version) {
-  const [state, setState] = useState({ id: null, data: null, error: null });
+  const [state, setState] = useState(() => SEEN.get(seenKey(id, version)) || { id: null, data: null, error: null });
   useEffect(() => {
     if (!id) return undefined;
+    const key = seenKey(id, version);
+    const seen = SEEN.get(key);
+    if (seen) {
+      setState(seen);
+      return undefined;
+    }
     let live = true;
     const t = setTimeout(() => {
-      getMaintenancePosition(id)
-        .then((data) => live && setState({ id, data, error: null }))
+      fetchPosition(id, version)
+        .then((got) => live && setState(got))
         .catch((e) => live && setState({ id, data: null, error: e.message }));
     }, 180);
     return () => {
@@ -49,7 +85,8 @@ function usePosition(id, version) {
       clearTimeout(t);
     };
   }, [id, version]);
-  return state.id === id ? state : { id, data: null, error: null };
+  if (state.id === id) return state;
+  return SEEN.get(seenKey(id, version)) || { id, data: null, error: null };
 }
 
 function StatusLine({ r }) {
@@ -251,7 +288,10 @@ function Summary({ row, display, today, onSelect, version }) {
         <Facts r={row} display={display} />
         {row.type === "pos" && <Work r={row} state={position} />}
       </div>
-      {row.type === "pos" && <OperatingContextCard positionId={row.key} state={position} />}
+      {row.type === "pos" && (
+        <OperatingContextCard positionId={row.key} state={position}
+                              onSaved={(text) => rememberChange(row.key, version, { operating_context: text })} />
+      )}
       <Inside r={row} display={display} today={today} onSelect={onSelect} />
     </>
   );
@@ -260,9 +300,9 @@ function Summary({ row, display, today, onSelect, version }) {
 // The panel's heading, the same on both tabs: two slim rows. The first: the
 // way up (and the last thing done) as small text over the row's name, its
 // kind, tag and checks, with the actions on the right; the second, under the
-// way up and the name: the tabs. On the RCM tab (a wide screen) the two rows
-// sit beside the tree's own two over the table (TreePane's head and
-// headTabs); on the Summary tab they head the panel.
+// way up and the name: the tabs. On a wide screen the two rows sit beside the
+// tree's own two over the tree, on both tabs (TreePane's head and headTabs);
+// on a phone they head the panel.
 //
 // With a branch of the tree pinned, the way up still shows the whole path:
 // `above(key)` says which crumbs are above the pinned row (a click there moves
@@ -325,19 +365,21 @@ export function HeaderTabs({ row, tab, onTab }) {
 }
 
 const TreeDetail = forwardRef(function TreeDetail({
-  display, row, today, onSelect, onCrumb, above, pin, back, version, empty, tab, onTab, fullScreenButton,
+  display, row, today, onSelect, onCrumb, above, pin, back, version, empty, tab, onTab, fullScreenButton, headless = false,
 }, headingRef) {
   if (!row) return <div className="td">{back}{empty}</div>;
   const tabs = tabsFor(row);
   return (
     <div className="td">
       {back}
-      <div className="td-head">
-        <SlimHeader display={display} row={row} onSelect={onSelect} onCrumb={onCrumb || onSelect} above={above} pin={pin}
-                    fullScreenButton={fullScreenButton} headingRef={headingRef}
-                    meta={KIND[row.type] ? <span className="tt-kind">{KIND[row.type]}</span> : null} primaryOpen />
-        <HeaderTabs row={row} tab={tab} onTab={onTab} />
-      </div>
+      {!headless && (
+        <div className="td-head">
+          <SlimHeader display={display} row={row} onSelect={onSelect} onCrumb={onCrumb || onSelect} above={above} pin={pin}
+                      fullScreenButton={fullScreenButton} headingRef={headingRef}
+                      meta={KIND[row.type] ? <span className="tt-kind">{KIND[row.type]}</span> : null} primaryOpen />
+          <HeaderTabs row={row} tab={tab} onTab={onTab} />
+        </div>
+      )}
       <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
            aria-labelledby={tabs.length > 1 ? "td-tab-summary" : undefined}>
         <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />

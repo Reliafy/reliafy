@@ -23,10 +23,17 @@
   min-width: 0;
 }
 
-.tp-rail {
-  width: 44px;
-  align-items: center;
-  padding-top: 14px;
+/* The tree folded away (Ctrl+\, the Summary tab): a thin rail with » to bring
+   it back, its slim rows and the panel beside it where they were. */
+.tt-cell.tt-rail {
+  padding: 0;
+  justify-content: center;
+}
+.tt-cell.tt-rail > * { flex: none; }
+.tp-railcol {
+  flex: none;
+  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
 }
 
 .tp-head {
@@ -41,6 +48,7 @@
   align-items: center;
   gap: 6px;
 }
+.tp-title-row > :not(.tp-title):not(.tt-title) { flex: none; }
 
 .tp-title {
   flex: 1;
@@ -267,10 +275,16 @@
 
 /* ---- the detail panel ---------------------------------------------------------- */
 
+/* A wide screen: beside the tree in the pane, under its heading and tabs (the
+   slim rows over both), scrolling on its own so the page never moves. */
 .tx-detail {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  padding: 22px 32px 56px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border-top: 1px solid var(--line);
+  padding: 16px 32px 56px;
 }
 
 .td .page-header {
@@ -491,6 +505,8 @@ a.td-open:hover {
   }
   .tx.phone .tx-detail {
     display: none;
+    overflow: visible;
+    border-top: 0;
     padding: 16px 16px 48px;
   }
   .tx.phone.show-detail .tp {
@@ -622,19 +638,38 @@ a.rw-cklink:focus-visible {
   background: var(--surf-2);
   padding-left: 12px;
 }
-.tp-table .tt-h-tree { border-right: 1px solid var(--line); }
+.tp-table .tt-h-tree,
+.tx:not(.phone) .tt-h-tree { border-right: 1px solid var(--line); }
 .tt-h.rw-fill { flex: 1 0 auto; justify-content: flex-end; overflow: visible; }
 .tt-h .rw-cols .rw-btn, .tt-h .rw-cols > button { min-height: 22px; padding: 0 8px; font-size: var(--fs-12); }
 
-/* The RCM tab: the pane is the page's width, with two slim rows over the one
-   table (TreePane): the bar (the tree's title, then the panel's heading: the
-   way up over the name, and the actions) and under it the search box, then
-   the panel's tabs. Each row's first cell is as wide as the tree column, so
-   the rows line up with the table's columns. */
-.tx.tx-table .tp {
+/* A wide screen, both tabs: the pane is the page's width, with two slim rows
+   over the tree (TreePane): the bar (the tree's title, then the panel's
+   heading: the way up over the name, and the actions) and under it the search
+   box, then the panel's tabs. Each row's first cell is as wide as the tree
+   column, so the rows line up with the tree and the table's columns; on the
+   Summary tab the panel's page is beside the tree, on the RCM tab the table's
+   columns. The frame is the same on both, so switching tabs moves nothing in
+   it. */
+.tx:not(.phone) .tp {
   flex: 1 1 auto;
   min-width: 0;
 }
+/* The Summary tab's tree: exactly as wide as the RCM tab's tree column (its
+   scrollbar beside it, the gutter always kept), each row edged as that
+   column's cells are, and the edge drawn down the empty space under the rows. */
+.tx:not(.phone) .tp:not(.tp-table) .tp-scroll {
+  flex: none;
+  scrollbar-gutter: stable;
+  box-shadow: inset -1px 0 0 var(--line);
+}
+.tx:not(.phone) .tp:not(.tp-table) .tp-row {
+  right: auto;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid transparent; /* as the RCM tab's rows: the text at the same height */
+}
+.tp button.tp-fold.is-off { visibility: hidden; }
+.tp-table .tp-scroll { scrollbar-gutter: stable; }
 .tt-top {
   position: relative;
   z-index: 8; /* the Columns list opens over the table's sticky headers */
@@ -667,6 +702,19 @@ a.rw-cklink:focus-visible {
   align-self: stretch;
   display: flex;
   min-width: 0;
+  container: tthead / inline-size;
+}
+/* Over the tree, the heading is one line on both tabs (the name shrinks
+   first); where the slot is too narrow for the RCM tab's actions beside the
+   name, the actions go under it on both tabs alike. Whether it wraps depends
+   only on the slot's width, never on which tab is open, so the rows under it
+   don't move when the tab changes. */
+.tt-headslot .tt-bar-head { flex-wrap: nowrap; }
+.tt-headslot .tt-name { flex: 1 1 0; min-width: 4em; }
+@container tthead (max-width: 490px) {
+  .tt-headslot .tt-bar-head { flex-wrap: wrap; }
+  .tt-headslot .tt-name { flex-basis: 100%; }
+  .tt-headslot .tt-actions { padding-top: 0; }
 }
 .tt-bar-head {
   flex: 1 1 auto;
@@ -833,7 +881,7 @@ a.rw-cklink:focus-visible {
 .tt-row2 .tp-notice { flex: none; align-self: center; }
 /* The tree's title with its counts under it, small. */
 .tt-title {
-  flex: 1 1 auto;
+  flex: 1 1 0; /* the counts' length never squeezes the buttons beside it */
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -941,7 +989,7 @@ a.rw-cklink:focus-visible {
   height: 100vh;
   height: 100dvh;
 }
-.tx.is-full .tx-detail {
+.tx.is-full.phone .tx-detail {
   height: 100vh;
   height: 100dvh;
   overflow-y: auto;
@@ -949,20 +997,17 @@ a.rw-cklink:focus-visible {
 
 /* A phone: the tree is the screen; on the RCM tab each row is two lines. */
 @media (max-width: 720px) {
-  .tx.phone.tx-table .tp {
-    height: auto;
-    min-height: calc(100dvh - 58px);
-  }
+  /* The same height as the Summary tab's tree (the details open as a sheet over it). */
   .tx.phone .tp-table .tp-scroll {
     overflow-x: hidden;
-    height: calc(100dvh - 300px);
-    min-height: 360px;
-    flex: 1 1 auto;
   }
+  /* Its first line where the Summary tab's one line is (the row picked stays
+     put when the tab changes), the second under it. */
   .tx.phone .tp-row.tt {
     flex-direction: column;
     align-items: stretch;
-    justify-content: center;
+    justify-content: flex-start;
+    padding-top: 4px;
     right: 0;
   }
   .tt-l1 {

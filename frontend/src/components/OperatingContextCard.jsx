@@ -8,8 +8,9 @@ import "./OperatingContextCard.css";
 // description under its name. The text keeps its line breaks and is clamped to
 // about six lines (More / Less); Edit changes it in place (the same request as
 // any other change to the position; the server says if you may only view).
-// `state` is the Summary tab's position fetch ({ data, error }).
-export default function OperatingContextCard({ positionId, state }) {
+// `state` is the Summary tab's position fetch ({ data, error }); `onSaved`
+// hears the text saved (so the panel's copy of the position keeps it).
+export default function OperatingContextCard({ positionId, state, onSaved }) {
   const loaded = state.data ? state.data.operating_context || "" : null;
   // The text as saved here, until the next fetch brings it back.
   const [saved, setSaved] = useState(null);
@@ -70,6 +71,7 @@ export default function OperatingContextCard({ positionId, state }) {
     try {
       const p = await updateMaintenancePosition(positionId, { operating_context: res.value });
       setSaved(p?.operating_context ?? res.value);
+      onSaved?.(p?.operating_context ?? res.value);
       setOpen(false);
       setNote(res.value ? "Saved." : "Cleared.");
       stop();

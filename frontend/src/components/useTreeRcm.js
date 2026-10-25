@@ -10,7 +10,8 @@ import { COLUMN, decisionBody } from "../rcmWorksheet.js";
 // functional failures and failure modes, read once when the tab opens and
 // again after each change, and the changes themselves, each written at once as
 // the graph's own events (no Undo yet). After a change the tree is read again
-// too (its "not analysed" marks follow).
+// too (its "not analysed" marks follow). With `prefetch` it's read once a
+// moment early (the Summary tab), so opening the tab doesn't wait for it.
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
@@ -20,7 +21,7 @@ const WORDS = {
   mode: { title: "Add a failure mode", label: "What causes it?", confirmLabel: "Add failure mode" },
 };
 
-export default function useTreeRcm({ on, onTreeChanged, askText }) {
+export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askText }) {
   const [rcm, setRcm] = useState(null);
   const [error, setError] = useState(null);
   const latest = useRef(0);
@@ -33,6 +34,16 @@ export default function useTreeRcm({ on, onTreeChanged, askText }) {
   useEffect(() => {
     if (on) load();
   }, [on, load]);
+  const fetched = useRef(false);
+  useEffect(() => {
+    if (on) fetched.current = true;
+    if (!prefetch || on || fetched.current) return undefined;
+    const t = setTimeout(() => {
+      fetched.current = true;
+      load();
+    }, 600);
+    return () => clearTimeout(t);
+  }, [prefetch, on, load]);
 
   const after = useCallback(async (p) => {
     const out = await p;
