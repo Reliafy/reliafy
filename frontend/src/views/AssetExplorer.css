@@ -1080,6 +1080,10 @@ a.rw-cklink:focus-visible {
 }
 .row-menu .ovm-item:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; background: var(--acc-t); color: var(--acc); }
 .row-menu .ovm-item.danger:focus-visible { background: var(--danger-bg); color: var(--danger); }
+/* An item that can't be used now: greyed, with the reason under it. */
+.row-menu .ovm-item.off { color: var(--subtle); cursor: not-allowed; }
+.row-menu .ovm-item.off:hover, .row-menu .ovm-item.off:focus-visible { background: var(--surf-2, transparent); color: var(--muted); }
+.row-menu-why { display: block; max-width: 260px; margin-top: 2px; font-size: var(--fs-12); color: var(--muted); white-space: normal; line-height: 1.35; }
 
 /* The tree's ⋯ menu (TreeControlsMenu): Arrange by, the levels, Close
    everything, Show only, the pane's other actions; it stays open while you

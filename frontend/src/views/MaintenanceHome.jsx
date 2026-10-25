@@ -250,6 +250,7 @@ export function NewPositionModal({ positions, parentId = null, onClose, onCreate
     <FormModal
       title="New position"
       submitLabel="Create position"
+      pendingLabel="Adding…"
       canSubmit={!!name.trim() && !tooLong(name)}
       onClose={onClose}
       onSubmit={async () => onCreated(await createMaintenancePosition({

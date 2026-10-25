@@ -110,6 +110,7 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("No evidence linked yet");
   await expect(panel.locator(".chip")).toHaveCount(0);
+  await panel.getByRole("button", { name: "Link evidence…" }).scrollIntoViewIfNeeded();
   await shot(page, "quiet-2-mode-panel-link-evidence");
   await panel.getByRole("button", { name: "Link evidence…" }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Link the evidence" });
@@ -125,15 +126,10 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   // The pump is analysed (one function › one failure › one decided mode); the pool, with no function of its own, isn't.
   await expect(trow(page, `^Quiet pump ${tag}`).locator(".tp-mini.rcm")).toHaveCount(0);
   await expect(trow(page, `^Quiet pool ${tag}`).locator(".tp-mini.rcm")).toHaveAttribute("title", "1 position not analysed yet here and inside");
-  await expectHealthy(page, problems, { label: "explorer quiet evidence" });
-});
-
-test("analysed follows one rule: a functional failure with no failure mode leaves the position not analysed", async ({ page, request, problems }) => {
-  const tag = `r${Date.now()}`;
-  const p = await plant(request, tag);
+  // One rule everywhere: a functional failure with no failure mode leaves the pump not analysed.
   await request.post(`${M}/functions/${p.fn.id}/failures`, { data: { text: `Leaks ${tag}` } });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
+  await page.reload();
   await expect(trow(page, `^Quiet pump ${tag}`).locator(".tp-mini.rcm")).toHaveAttribute("title", "Not analysed yet (RCM)");
   await expect(trow(page, `^Quiet pool ${tag}`).locator(".tp-mini.rcm")).toHaveAttribute("title", "2 positions not analysed yet here and inside");
-  await expectHealthy(page, problems, { label: "explorer analysed rule" });
+  await expectHealthy(page, problems, { label: "explorer quiet evidence" });
 });

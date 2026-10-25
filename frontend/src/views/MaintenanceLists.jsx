@@ -97,7 +97,7 @@ export function NewLocationModal({ locations, parentId = null, asset = false, on
   const [name, setName] = useState("");
   const [parent, setParent] = useState(parentId || "");
   return (
-    <FormModal title={asset ? "New asset" : "New location"} submitLabel="Create"
+    <FormModal title={asset ? "New asset" : "New location"} submitLabel="Create" pendingLabel="Adding…"
                canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
                onSubmit={async () => onDone(await createMaintenanceLocation({ name, parent_id: (!asset && parent) || null }))}>
       {asset && (
