@@ -8,6 +8,7 @@
 // by, the levels, Show only, Reset); full screen.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
+import { details } from "./explorer.js";
 
 const M = "/api/maintenance";
 
@@ -55,9 +56,9 @@ const overflow = (page) => page.evaluate(() => {
   return { down: el.scrollHeight - innerHeight, side: el.scrollWidth - innerWidth };
 });
 const topOf = async (locator) => Math.round((await locator.boundingBox()).y);
-// A row's place in the tree's own scroll area (the area itself starts higher on
-// the RCM tab, whose controls are two slim rows).
-const placeOf = async (page, locator) => (await topOf(locator)) - (await topOf(page.locator(".tp-scroll")));
+// A row's place on screen (the tree's scroll area starts at the same height on
+// both tabs, so the row picked stays exactly where it was).
+const placeOf = async (page, locator) => topOf(locator);
 // The tree's ⋯ menu: its button, and the menu once open.
 const menuButton = (page) => page.getByRole("button", { name: /^Tree options/ });
 const treeMenu = (page) => page.getByRole("menu", { name: "Tree options" });
@@ -74,7 +75,7 @@ test("RCM: the tree and the RCM are one table; Summary: the tree and the page; t
   // Summary: the tree (positions only) and the page beside it.
   await expect(tree(page)).toBeVisible();
   await expect(table(page)).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Details" }).getByRole("heading", { name: `Rcm pump ${tag}` })).toBeVisible();
+  await expect(details(page).getByRole("heading", { name: `Rcm pump ${tag}` })).toBeVisible();
   await expect(page.getByText(`Pump water ${tag}`)).toHaveCount(0);
   const before = await placeOf(page, treeitem(page, `Rcm pump ${tag}`));
 
@@ -112,7 +113,7 @@ test("RCM: the tree and the RCM are one table; Summary: the tree and the page; t
   expect(await placeOf(page, treeitem(page, `Rcm pump ${tag}`))).toBe(before);
   // The plant's long description: two lines, and More opens the whole of it.
   await treeitem(page, `Rcm plant ${tag}`).click();
-  await page.getByRole("region", { name: "Details" }).getByRole("button", { name: /More/ }).click();
+  await details(page).getByRole("button", { name: /More/ }).click();
   await expect(page.getByRole("dialog", { name: "Description" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "explorer one table" });

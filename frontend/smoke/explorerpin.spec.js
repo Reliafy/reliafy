@@ -10,6 +10,7 @@
 // "Tree"), which share the server and expect their rows near the top.
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
+import { details } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -39,7 +40,7 @@ async function plant(request, tag) {
 
 const row = (page, name) => page.getByRole("treeitem", { name: new RegExp(`^${name}`) });
 const bar = (page) => page.getByRole("group", { name: "Pinned branch" });
-const panel = (page) => page.getByRole("region", { name: "Details" });
+const panel = details;
 const rowMenu = (page, name) => page.getByRole("menu", { name: new RegExp(`^Actions for ${name}`) });
 const query = (page) => new URL(page.url()).searchParams;
 async function treeMenu(page) {

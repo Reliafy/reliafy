@@ -22,12 +22,21 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 // With `table` (the Explorer's RCM tab) the same tree is the first column of
 // one table: its rows go on into each position's functions, functional
 // failures and failure modes (nested in the same tree), every row has the
-// RCM's columns beside it, the column headers sit at the top, and the pane
-// takes the page's width, with two slim rows over it: the tree's title and
-// counts, then the panel's heading (the way up over the position's name, its
-// actions); under them the search box, then the panel's tabs. One scroll container, one set of rows, one selection;
-// the tree column stays put when the table scrolls sideways. On a phone each row is two lines (the name,
-// then the RCM's main columns in words). Each row's actions (adding inside it,
+// RCM's columns beside it and the column headers sit at the top. One scroll
+// container, one set of rows, one selection; the tree column stays put when
+// the table scrolls sideways.
+//
+// On a wide screen the frame is the same on both tabs, so switching tabs moves
+// nothing but what's meant to change: the pane takes the page's width, with
+// two slim rows over it (the tree's title, counts and ⋯ beside the panel's
+// heading; then the search box beside the panel's tabs), and under them the
+// tree, as wide as the tree column, with the table's columns (the RCM tab) or
+// the panel's page (`side`, the Summary tab) beside it. The same elements stay
+// in the page across the tabs (the search box, the tree's scroll area, the
+// heading, the tabs), so the scroll, the focus and what's open stay put.
+//
+// On a phone each row is two lines on the RCM tab (the name, then the RCM's
+// main columns in words). Each row's actions (adding inside it,
 // editing, deleting, deciding) are in its menu (`rowMenu`): right-click the
 // row, press its ⋯ button (shown on hover and focus; always on a touch screen),
 // or Shift+F10 / the Menu key on the focused row.
@@ -141,7 +150,7 @@ function TreeBit({ r, v, open, phone, query, rcm, table }) {
   );
 }
 
-function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen }) {
+function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW }) {
   const has = r.kids.length > 0;
   const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (heading(r) ? " grp" : "")
     + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "");
@@ -157,7 +166,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     "aria-expanded": pinned || !has ? undefined : open,
     "aria-selected": pinned ? undefined : focused,
     tabIndex: pinned ? undefined : focused ? 0 : -1,
-    style: pinned ? { height, width: table && !phone ? table.total : undefined } : { top, height, width: table && !phone ? table.total : undefined },
+    style: { top: pinned ? undefined : top, height, width: table && !phone ? table.total : rowW },
     onClick: (e) => {
       if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more")) return;
       if (e.target.closest(".tp-chev")) onToggle(r.key);
@@ -240,11 +249,16 @@ export default function TreePane({
   rowMenu = null, branch = null, branchNote = null,
 }) {
   const H = phone ? (table ? 54 : 44) : 30;
+  const wide = !phone;
+  const wideTable = !!table && wide;
+  // The tree folded to a thin rail (the Summary tab, a wide screen).
+  const railed = collapsed && wide && !table;
+  const treeW = railed ? PANE.rail : width;
   const maxPins = phone ? 2 : 4;
   const headH = phone ? 0 : HEAD_H;
-  const { scroller, onScroll, onKey, pins, reveal, drawn } = useOutlineNav({
+  const { scroller, onScroll, syncScroll, onKey, pins, reveal, drawn } = useOutlineNav({
     display, list, index, open, focus, rowHeight: H, maxPins, onPick, onToggle, onEnter, headerHeight: headH,
-    measureKey: `${collapsed}${phone}${!!table}${!!side}`, rowId: (key) => `tp-${key}`,
+    measureKey: `${railed}${phone}${!!table}${!!side}`, rowId: (key) => `tp-${key}`,
     nameOf: (r) => label(r),
   });
 
@@ -281,24 +295,43 @@ export default function TreePane({
   }, [scrollTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Switching tab adds or removes the RCM rows: the selected position stays
-  // where it was on screen.
-  const anchor = useRef({ key: null, offset: 0, layout: layoutKey });
+  // where it was on screen. At the top (or the end) of the tree there may be
+  // no room to keep it there; then the place it had is kept until the tree is
+  // scrolled or another row picked, so switching back puts everything back
+  // exactly where it was.
+  const anchor = useRef({ key: null, offset: 0, layout: layoutKey, held: null });
   useLayoutEffect(() => {
     const el = scroller.current;
     const a = anchor.current;
     if (el && a.layout !== layoutKey && a.key != null && index.has(a.key)) {
-      el.scrollTop = Math.max(0, index.get(a.key) * H - a.offset);
-      onScroll();
+      const want = index.get(a.key) * H - a.offset;
+      el.scrollTop = Math.max(0, want);
+      a.held = Math.abs(el.scrollTop - want) >= 1 ? { key: a.key, top: el.scrollTop } : null;
+      syncScroll();
     }
     a.layout = layoutKey;
   });
   const record = () => {
     const el = scroller.current;
-    if (el && anchorKey != null && index.has(anchorKey)) {
-      anchor.current = { ...anchor.current, key: anchorKey, offset: index.get(anchorKey) * H - el.scrollTop };
-    }
+    const a = anchor.current;
+    if (!el || anchorKey == null || !index.has(anchorKey)) return;
+    if (a.held && a.held.key === anchorKey && Math.abs(el.scrollTop - a.held.top) < 1) return;
+    anchor.current = { ...a, key: anchorKey, offset: index.get(anchorKey) * H - el.scrollTop, held: null };
   };
   useEffect(record);
+
+  // The Summary tab's tree is exactly as wide as the RCM tab's tree column:
+  // its scroll area adds the scrollbar's width (none where scrollbars float
+  // over the content), with the gutter always kept, so the rows never narrow
+  // when the scrollbar comes and goes.
+  const [gutter, setGutter] = useState(0);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !wide || table) return;
+    const cs = getComputedStyle(el);
+    const g = Math.max(0, el.offsetWidth - el.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth));
+    if (g !== gutter) setGutter(g);
+  });
 
   // Drag the edge to resize; ← → when it has focus; double-click resets.
   const startResize = (e) => {
@@ -318,17 +351,11 @@ export default function TreePane({
     el.addEventListener("pointercancel", up);
   };
 
-  if (collapsed && !phone && !table) {
-    return (
-      <aside className="tp tp-rail" aria-label={title}>
-        <button type="button" className="tp-icon-btn" onClick={() => onCollapse(false)}
-                aria-label="Show the tree" aria-expanded="false" title="Show the tree (Ctrl+\)">»</button>
-      </aside>
-    );
-  }
-
+  const unfold = (
+    <button type="button" className="tp-icon-btn" onClick={() => onCollapse(false)}
+            aria-label="Show the tree" aria-expanded="false" title="Show the tree (Ctrl+\)">»</button>
+  );
   const dim = (key) => filter && !filter.match.has(key);
-  const wide = table && !phone;
   const levelsOn = mode !== "flat" && mode !== "items";
   const chipList = CHIPS.filter((c) => (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || table));
   const status = <p className="tp-status" role="status" title={statusText || undefined}>{statusText}</p>;
@@ -348,8 +375,11 @@ export default function TreePane({
         chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id) }))}
         onChip={(id) => onChips(chips.includes(id) ? chips.filter((x) => x !== id) : [...chips, id])}
         changed={changed} onReset={onReset} actions={menuActions} />
-      {!phone && !table && (
-        <button type="button" className="tp-icon-btn" onClick={() => onCollapse(true)}
+      {/* Folding is for the Summary tab; on the RCM tab its place is kept, so
+          the + and ⋯ beside it don't move when the tab changes. */}
+      {wide && (
+        <button type="button" className={"tp-icon-btn tp-fold" + (table ? " is-off" : "")} onClick={() => onCollapse(true)}
+                disabled={!!table} tabIndex={table ? -1 : undefined} aria-hidden={table ? "true" : undefined}
                 aria-label="Fold the tree away" aria-expanded="true" title="Fold the tree away (Ctrl+\)">«</button>
       )}
     </div>
@@ -373,23 +403,23 @@ export default function TreePane({
       </button>
     </div>
   ) : branchNote ? <p className="tp-branch-note" role="status">{branchNote}</p> : null;
-  // The two slim rows over the RCM tab's table (a wide screen): the tree's
+  // The two slim rows over the tree (a wide screen, both tabs): the tree's
   // title, counts and ⋯ over the tree column, beside the panel's heading (the
-  // way up over the position's name, and its actions); then the search box
-  // over the tree column, beside the panel's tabs. Elsewhere (the Summary tab,
-  // a phone) the title, the search box and the counts stack over the tree.
+  // way up over the row's name, and its actions); then the search box over the
+  // tree column, beside the panel's tabs. On a phone the title, the tabs, the
+  // search box and the counts stack over the tree.
   const controls = wide ? (
     <div className="tt-top">
       <div className="tt-bar">
-        <div className="tt-cell" style={{ width }}>{titleRow}</div>
+        <div className={"tt-cell" + (railed ? " tt-rail" : "")} style={{ width: treeW }}>{railed ? unfold : titleRow}</div>
         <div className="tt-headslot">{head}</div>
       </div>
       <div className="tt-row2">
-        <div className="tt-cell" style={{ width }}>{search}</div>
+        <div className="tt-cell" style={{ width: treeW }}>{railed ? null : search}</div>
         <div className="tt-tabslot">{headTabs}</div>
         {notice}
       </div>
-      {branchBar && <div className="tt-row3"><div className="tt-cell" style={{ width }}>{branchBar}</div></div>}
+      {branchBar && !railed && <div className="tt-row3"><div className="tt-cell" style={{ width }}>{branchBar}</div></div>}
     </div>
   ) : (
     <div className="tp-head">
@@ -402,29 +432,31 @@ export default function TreePane({
     </div>
   );
 
-  const rowProps = { phone, query, onToggle, rcm: rcmMarks, table };
+  // A row on the Summary tab (a wide screen) is as wide as the RCM tab's tree cell.
+  const rowProps = { phone, query, onToggle, rcm: rcmMarks, table, rowW: wide && !table ? width : undefined };
   const menuProps = (key) => (itemsFor(key).length ? { onMenu: openMenu, menuOpen: rowOpen?.key === key } : {});
   const columnHeads = !phone && (
-    <div className="tt-head" role={wide ? "row" : undefined} aria-hidden={wide ? undefined : "true"}
-         style={{ width: wide ? table.total : undefined, height: HEAD_H }}>
-      <div className="tt-h tt-h-tree" role={wide ? "columnheader" : undefined} style={{ width: wide ? table.treeW : "100%" }}>
-        {wide ? "Position › function, failure or mode" : treeLabel || title}
+    <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable ? undefined : "true"}
+         style={{ width: wideTable ? table.total : width, height: HEAD_H }}>
+      <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}>
+        {wideTable ? "Position › function, failure or mode" : treeLabel || title}
       </div>
-      {wide && table.cols.map((c) => (
+      {wideTable && table.cols.map((c) => (
         <div key={c.id} role="columnheader" className={"tt-h" + (c.align === "num" ? " num" : "")} style={{ width: table.widths[c.id] }}
              title={c.title}>{c.label}</div>
       ))}
-      {wide && <div className="tt-h rw-fill" aria-hidden="true">{table.headTools}</div>}
+      {wideTable && <div className="tt-h rw-fill" aria-hidden="true">{table.headTools}</div>}
     </div>
   );
 
   return (
-    <aside className={"tp" + (table ? " tp-table" : "")} aria-label={title} style={phone || wide ? undefined : { width }}>
+    <aside className={"tp" + (table ? " tp-table" : "") + (railed ? " tp-railed" : "")} aria-label={title}>
       {controls}
       <div className="tt-main">
+        {railed ? <div className="tp-railcol" style={{ width: PANE.rail }} /> : (
         <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); }} onKeyDown={keys}
              role={table ? "treegrid" : "tree"} aria-label={table ? `${treeLabel || title} and their RCM` : treeLabel || title}
-             aria-multiselectable="false">
+             aria-multiselectable="false" style={wide && !table ? { width: width + gutter } : undefined}>
           {columnHeads}
           {pins.length > 0 && (
             <div className="tp-pins" style={{ top: headH }}>
@@ -440,7 +472,7 @@ export default function TreePane({
               </div>
             </div>
           )}
-          <div className="tp-body" style={{ height: list.length * H, width: wide ? table.total : undefined }}>
+          <div className="tp-body" style={{ height: list.length * H, width: wideTable ? table.total : wide ? width : undefined }}>
             {drawn.map((i) => {
               const v = list[i];
               const r = display.rows.get(v.key);
@@ -450,18 +482,19 @@ export default function TreePane({
               );
             })}
           </div>
-          {!list.length && <div className="tp-empty">{empty}</div>}
+          {!list.length && <div className="tp-empty" style={wide && !table ? { width } : undefined}>{empty}</div>}
         </div>
+        )}
         {side}
       </div>
       {rowOpen && itemsFor(rowOpen.key).length > 0 && (
         <RowMenu items={itemsFor(rowOpen.key)} at={rowOpen.at} label={menuLabel(display.rows.get(rowOpen.key))} anchorId={`tp-${rowOpen.key}`} onClose={closeMenu}
                  onChoose={(id) => rowMenu.onAction(display.rows.get(rowOpen.key), id)} />
       )}
-      {!phone && (
+      {wide && !railed && (
         <div className="tp-edge" role="separator" aria-orientation="vertical" aria-label={table ? "Resize the tree column" : "Resize the tree"}
              aria-valuemin={PANE.min} aria-valuemax={Math.round(window.innerWidth * 0.6)} aria-valuenow={width}
-             style={wide ? { left: width - 4, right: "auto" } : undefined}
+             style={{ left: width - 4, right: "auto" }}
              tabIndex={0} onPointerDown={startResize} onDoubleClick={() => onWidth(PANE.initial)}
              onKeyDown={(e) => {
                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {

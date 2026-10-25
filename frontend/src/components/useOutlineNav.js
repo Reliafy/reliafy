@@ -47,6 +47,12 @@ export default function useOutlineNav({
     });
   }, []);
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  // At once, not on the next frame: after the page itself set the scroll (a
+  // tab switch keeping a row in place), so the rows drawn match it before the
+  // screen is painted (no frame with rows missing).
+  const syncScroll = useCallback(() => {
+    if (scroller.current) setScrollTop(scroller.current.scrollTop);
+  }, []);
 
   const pins = pinnedRows(display, list, index, scrollTop, H, maxPins);
   const rowsH = Math.max(H, viewH - headerHeight);
@@ -122,5 +128,5 @@ export default function useOutlineNav({
   const fi = focus != null ? index.get(focus) : undefined;
   if (fi != null && (fi < from || fi >= to)) drawn.push(fi);
 
-  return { scroller, scrollTop, onScroll, onKey, pins, reveal, drawn };
+  return { scroller, scrollTop, onScroll, syncScroll, onKey, pins, reveal, drawn };
 }
