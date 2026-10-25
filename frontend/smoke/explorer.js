@@ -9,7 +9,7 @@ export const details = (page) =>
 
 // Where the parts of the Explorer's frame are on screen, rounded to 0.1 px:
 // the pane, the tree's title row (title, +, ⋯), the search box, the counts,
-// the pinned branch's bar (if any), the tree's column header, the tree's
+// the pinned branch's note in the column header (if any), the tree's column header, the tree's
 // scroll area (its top, its scroll and the place of each row drawn on screen,
 // by key), and the panel's heading and tabs.
 export function frameOf(page) {
@@ -39,7 +39,7 @@ export function frameOf(page) {
         menu: r(q(".tm-trigger")),
         search: r(q(".tp-filter")),
         counts: r(q(".tp-status")),
-        pinned: r(q(".tp-branch")),
+        pinned: r(q(".tt-pinned")),
         column: r(q(".tt-head .tt-h-tree")),
         tree: sc ? { ...r(sc), w: null } : null, // its width grows to the table's on the RCM tab
         heading: r(q(".tt-headslot")),

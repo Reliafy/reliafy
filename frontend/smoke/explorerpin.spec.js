@@ -1,9 +1,10 @@
 // "Pin this branch" in the Explorer (Operate › Assets › Explorer): a row's
 // menu or the pin in the panel's heading shows only that row and what's
-// inside it; the bar under the search box, Show everything, "Show whole tree"
-// in the ⋯ menu, Reset; the levels, search and counts on the branch; a crumb
+// inside it; the pin's note in the tree's column header (no row of its own),
+// its ✕ (Show everything), "Show whole tree" in the ⋯ menu, Reset; the levels, search and counts on the branch; a crumb
 // above it moves the pin up; Back un-pins; the RCM tab with a pin; a row
-// outside the branch, or a pinned row that's gone; full screen; 400 px.
+// outside the branch, or a pinned row that's gone; full screen; 400 px (the
+// pinned row itself carries the pin and the ✕).
 // Each test makes its own small plant through the API.
 //
 // The names start "Works" so they sort after the other specs' plants ("Rcm",
@@ -38,8 +39,10 @@ async function plant(request, tag) {
   return { site, top, lineA, pumpA, sealA, lineB, pumpB, other, fn };
 }
 
-const row = (page, name) => page.getByRole("treeitem", { name: new RegExp(`^${name}`) });
-const bar = (page) => page.getByRole("group", { name: "Pinned branch" });
+// On a phone the pinned row's name starts "Pinned: ".
+const row = (page, name) => page.getByRole("treeitem", { name: new RegExp(`^(Pinned: )?${name}`) });
+// The pin's note: in the tree's column header, on both tabs (a wide screen).
+const bar = (page) => page.locator(".tt-head").getByRole("group", { name: "Pinned branch" });
 const panel = details;
 const rowMenu = (page, name) => page.getByRole("menu", { name: new RegExp(`^Actions for ${name}`) });
 const query = (page) => new URL(page.url()).searchParams;
@@ -71,8 +74,11 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await menu.getByRole("menuitem", { name: "Pin this branch" }).click();
   await expect.poll(() => query(page).get("pin")).toBe(p.lineA.id);
 
-  // Only the line and what's inside it; the bar says so; the line is the top.
-  await expect(bar(page)).toContainText(`Showing only: Works line A ${tag}`);
+  // Only the line and what's inside it; the column header says so (the whole
+  // path in its tooltip), with no row of its own; the line is the top.
+  await expect(bar(page)).toContainText(`Pinned: Works line A ${tag}`);
+  await expect(bar(page).locator(".tt-pinned-nm")).toHaveAttribute("title", `Pinned: Works plant ${tag} › Works line A ${tag}`);
+  await expect(page.locator(".tt-row3")).toHaveCount(0);
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-level", "1");
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, `Works pump A ${tag}`)).toBeVisible();
@@ -102,7 +108,7 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   // A crumb above the pinned row moves the pin up to it.
   await panel(page).getByRole("button", { name: `Works plant ${tag}` }).click();
   await expect.poll(() => query(page).get("pin")).toBe(p.top.id);
-  await expect(bar(page)).toContainText(`Showing only: Works plant ${tag}`);
+  await expect(bar(page)).toContainText(`Pinned: Works plant ${tag}`);
   await expect(row(page, `Works line B ${tag}`)).toBeVisible();
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-expanded", "true"); // the branch just left stays open
   await expect(row(page, `Works other ${tag}`)).toHaveCount(0);
@@ -133,7 +139,7 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await expect(bar(page)).toContainText(`Works pump A ${tag}`);
   await expect(page.locator(".tp-status")).toHaveText("2 positions");
   await expect(pin).toHaveAttribute("aria-pressed", "true");
-  // Full screen keeps the pin, and the bar.
+  // Full screen keeps the pin, and its note.
   await page.locator(".td-title").click();
   await page.keyboard.press("f");
   await expect(page.locator(".tx.is-full")).toBeVisible();
@@ -143,7 +149,7 @@ test("pin a branch from a row's menu: only it shows; levels, search and counts o
   await pin.click();
   await expect(bar(page)).toHaveCount(0);
 
-  // Reset to the usual view un-pins too; and Show everything in the bar.
+  // Reset to the usual view un-pins too; and the ✕ (Show everything) in the column header.
   await row(page, `Works line A ${tag}`).locator(".tp-nm").click({ button: "right" });
   await rowMenu(page, `Works line A ${tag}`).getByRole("menuitem", { name: "Pin this branch" }).click();
   await expect(bar(page)).toBeVisible();
@@ -167,7 +173,9 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   const table = page.getByRole("treegrid", { name: /and their RCM/ });
   const trow = (name) => table.getByRole("row", { name: new RegExp(name) });
   await expect(table).toBeVisible();
-  await expect(bar(page)).toContainText(`Showing only: Works line A ${tag}`);
+  await expect(bar(page)).toContainText(`Pinned: Works line A ${tag}`);
+  // The column still says what it is, to a screen reader.
+  await expect(table.getByRole("columnheader", { name: "Position › function, failure or mode" })).toBeVisible();
   await expect(trow(`^Works line A ${tag}`)).toHaveAttribute("aria-level", "1");
   await expect(trow(`^Function: Pump water ${tag}`)).toBeVisible();
   await expect(trow(`Failure mode: Seal leaks ${tag}`)).toBeVisible();
@@ -205,7 +213,7 @@ test("a row outside the branch shows the whole tree again; a pin that's gone qui
   const p = await plant(request, tag);
   // ?sel= outside the pinned branch: the whole tree, the row picked, and a note.
   await open(page, `/asset-register/explorer?arrange=positions&pin=${p.lineA.id}&sel=${p.other.id}`);
-  await expect(page.getByText("Showing the whole tree again")).toBeVisible();
+  await expect(page.locator(".tt-head").getByRole("status")).toHaveText("Showing the whole tree again");
   await expect(bar(page)).toHaveCount(0);
   await expect(row(page, `Works other ${tag}`)).toHaveAttribute("aria-selected", "true");
   expect(query(page).get("pin")).toBe(null);
@@ -229,32 +237,45 @@ test("a row outside the branch shows the whole tree again; a pin that's gone qui
   await expectHealthy(page, problems, { label: "pin outside and gone", root: ".tx" });
 });
 
-test("at 400 px: the pinned bar fits and is easy to tap; the row's ⋯ pins; nothing scrolls sideways", async ({ page, request, problems }) => {
+test("at 400 px: the pinned row carries the pin and an easy-to-tap ✕; the row's ⋯ pins; nothing scrolls sideways", async ({ page, request, problems }) => {
   const tag = `w${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.top.id}`);
+  const treeTop = (await page.locator(".tp-scroll").boundingBox()).y;
   const more = row(page, `Works line A ${tag}`).getByRole("button", { name: "Actions", exact: true });
   await expect(more).toHaveCSS("opacity", "1");
   await more.click();
   await rowMenu(page, `Works line A ${tag}`).getByRole("menuitem", { name: "Pin this branch" }).click();
-  await expect(bar(page)).toBeVisible();
-  const box = await bar(page).boundingBox();
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(400);
-  const x = bar(page).getByRole("button", { name: "Show everything" });
-  expect((await x.boundingBox()).height).toBeGreaterThanOrEqual(36);
+  // No row of its own: the tree starts where it did; the pinned row says it.
+  const pinned = row(page, `Works line A ${tag}`);
+  await expect(pinned).toHaveAccessibleName(new RegExp(`^Pinned: Works line A ${tag}`));
+  await expect(pinned.locator(".tp-pinmark")).toBeVisible();
+  expect((await page.locator(".tp-scroll").boundingBox()).y).toBe(treeTop);
+  const x = pinned.getByRole("button", { name: "Show everything" });
+  await expect(x).toBeVisible();
+  const xb = await x.boundingBox();
+  expect(xb.height).toBeGreaterThanOrEqual(36);
+  expect(xb.width).toBeGreaterThanOrEqual(36);
+  expect(xb.x + xb.width).toBeLessThanOrEqual(400);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await expect(row(page, `Works plant ${tag}`)).toHaveCount(0);
   await shot(page, "4-phone-400px-pinned");
+  // The RCM tab: the same on its two-line rows.
+  await page.getByRole("tab", { name: "RCM" }).click();
+  const trow = page.getByRole("row", { name: new RegExp(`^Pinned: Works line A ${tag}`) });
+  await expect(trow.getByRole("button", { name: "Show everything" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+  await shot(page, "5-phone-400px-pinned-rcm");
+  await page.getByRole("tab", { name: "Summary" }).click();
   // The panel, and back to the pinned tree.
   await row(page, `Works pump A ${tag}`).locator(".tp-nm").click();
   await expect(panel(page).getByRole("heading", { name: `Works pump A ${tag}` })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await page.goBack();
-  await expect(bar(page)).toBeVisible();
+  await expect(x).toBeVisible();
   await x.click();
-  await expect(bar(page)).toHaveCount(0);
+  await expect(x).toHaveCount(0);
   await expect.poll(() => query(page).get("pin")).toBe(null);
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-level", "2");
   await expectHealthy(page, problems, { label: "pinned at 400 px", root: ".tx" });

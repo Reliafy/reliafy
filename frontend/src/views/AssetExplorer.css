@@ -1179,53 +1179,80 @@ a.rw-cklink:focus-visible {
 }
 
 /* ---- a pinned branch ------------------------------------------------------- */
-/* The bar under the search box while only one branch shows: what's pinned,
-   and Show everything. It wraps rather than pushing anything off the edge. */
-.tp-branch {
+/* No row of its own: on a wide screen the tree's column header says it (the
+   pin, "Pinned: <name>" cut short with its path in the tooltip, and a compact
+   ✕ to show everything), on both tabs alike. */
+.tt-h-tree .tt-pinned {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 5px;
+  flex: 1 1 auto;
   min-width: 0;
-  padding: 4px 4px 4px 8px;
-  border: 1px solid var(--acc);
-  border-radius: var(--r-sm);
-  background: var(--acc-t);
+  height: 100%;
   color: var(--ink);
-  font-size: var(--fs-13);
+  font-weight: 500;
 }
-.tp-branch > svg { flex: none; color: var(--acc); }
-/* A long name takes two lines at most (the whole of it in the tooltip). */
-.tp-branch-text {
-  flex: 1 1 8em;
+.tt-pinned > svg { flex: none; color: var(--acc); }
+.tt-pinned-nm {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  line-height: 1.3;
-}
-.tp-branch button.tp-branch-x {
-  flex: none;
-  min-height: 28px;
-  padding: 0 9px;
-  font-size: var(--fs-13);
-  box-shadow: none;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tp-branch-note {
-  margin: 0;
-  font-size: var(--fs-12);
+.tt-pinned-nm strong { font-weight: 600; }
+.tt-h-tree button.tt-pinned-x {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  min-height: 0;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  box-shadow: none;
   color: var(--muted);
+  font-size: var(--fs-12);
+  line-height: 1;
+  cursor: pointer;
 }
-/* On the RCM tab's wide table: its own slim row over the tree column. */
-.tt-row3 { display: flex; min-width: 0; }
-.tt-row3 .tt-cell { padding: 0 12px 6px; }
-@media (max-width: 720px) {
-  .tx.phone .tp-branch button.tp-branch-x { min-height: 36px; }
+.tt-h-tree button.tt-pinned-x:hover { background: var(--acc-t); border-color: var(--acc); color: var(--acc); }
+/* On a touch screen, as big as the header allows. */
+@media (hover: none) {
+  .tt-h-tree button.tt-pinned-x { width: 36px; height: 28px; }
 }
+.tt-pinned-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--ink);
+}
+/* On a phone (no column header) the pinned row itself: the pin before its
+   name, and the ✕ at its end, always shown, a 36 px target. */
+.tp-pinmark { flex: none; display: inline-flex; color: var(--acc); margin-right: 4px; }
+.tp-row button.tp-unpin {
+  flex: none;
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--acc);
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.tp-row button.tp-unpin:hover { background: var(--acc-t); }
+.tp-mk + .tp-unpin, .tt-st + .tp-unpin, .tp-unpin + .tt-more { margin-left: 2px; }
 /* The pin in the panel's heading: an icon, as tall as Full screen beside it. */
 .tt-actions button.tt-pin { min-width: 32px; padding: 0 8px; justify-content: center; }
 .tt-actions button.tt-pin.on { background: var(--acc-t); border-color: var(--acc); color: var(--acc); }

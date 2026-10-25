@@ -25,7 +25,7 @@ import {
   ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
-import { canPin, crumbAction, inBranch, levelMatches, pinDisplay, pinTarget } from "../treePin.js";
+import { canPin, crumbAction, inBranch, levelMatches, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 import usePhone from "../usePhone.js";
 import "./Maintenance.css";
@@ -64,9 +64,10 @@ import "./AssetExplorer.css";
 //
 // "Pin this branch" (a row's menu, or the pin in the panel's heading) shows
 // only that row and what's inside it (treePin.js): ?pin=<id>, so Back un-pins
-// and a link opens pinned; not remembered on this device. A bar under the
-// search box says so, with Show everything (and "Show whole tree" heads the ⋯
-// menu). The way up in the panel's heading still shows the whole path: a crumb
+// and a link opens pinned; not remembered on this device. The tree's column
+// header says so ("Pinned: <name>", its path in the tooltip, and a ✕ to show
+// everything; on a phone the pinned row itself), with no row of its own, and
+// "Show whole tree" heads the ⋯ menu. The way up in the panel's heading still shows the whole path: a crumb
 // above the pinned row moves the pin up to it. Asked to show a row outside the
 // branch (?sel=, a link, a new row), the page shows the whole tree again and
 // says so; a pinned row that's gone (retired, deleted) quietly un-pins.
@@ -807,7 +808,9 @@ export default function AssetExplorer() {
         // when the RCM's rows first arrive.
         layoutKey={`${tab}:${rcmOn && rcm ? "rcm" : ""}`}
         anchorKey={selPos}
-        branch={pinKey ? { name: whole.rows.get(pinKey).ref.name || "(no name)", onUnpin: () => unpin() } : null}
+        branch={pinKey ? {
+          key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
+        } : null}
         branchNote={pinNote}
         arrangeLocked={rcmOn ? "RCM is by position, so the RCM tab shows the positions tree" : null}
       />
