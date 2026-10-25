@@ -204,6 +204,35 @@ last quarter can turn red this quarter, and the study tells you.
   the task has none. The block isn't kept in sync: later changes to the study
   don't update it.
 
+## Working top down or bottom up
+
+On the Explorer's **RCM** tab, the RCM sits on each position, and a functional
+failure on a higher position can be caused by functional failures on the
+positions inside it. Say a swimming pool's *Free chlorine below 1 ppm* is
+caused by *No output* on the salt chlorinator, a few levels down. Link them, and
+the failure modes and decisions for that cause are answered once, down on the
+chlorinator, not again on the pool.
+
+- **From the top:** right-click the higher functional failure and choose **Link
+  to a cause…**. Tick the failures on the positions inside it. If the lower one
+  isn't written yet, use **New functional failure on a position below…** at the
+  foot of the list: it is written and linked together.
+- **From the bottom:** right-click the lower functional failure and choose
+  **Link to an effect…**. Tick the failures on the positions above it.
+- Under the higher failure each cause shows as a row starting **↳**, with the
+  position it is on. Click it to go to the real row. The lower failure shows
+  **↑ 1** (or more) to say it causes something above; click that to go up.
+- A failure explained only below needs no failure modes of its own. Its Decision
+  cell reads **Explained below**, or says how many are still to decide below.
+  Add failure modes at the higher level only for causes that belong to that
+  position itself.
+- **Unlink** (in the row's menu, or in the failure's details panel) takes a link
+  off. If it was the only explanation of the higher failure, Reliafy asks first.
+- The **Caused by (below)** column in the exported CSV holds the links, written
+  as *Position › Functional failure*. Importing a worksheet with that column
+  links failures that are already written on positions inside the one you
+  import onto.
+
 ## Where to go next
 
 The two analyses most RCM decisions cite have their own guides:

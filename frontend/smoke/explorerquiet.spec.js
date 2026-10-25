@@ -121,7 +121,7 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   // The Not analysed chip says what analysed means, in words.
   await page.getByRole("button", { name: /^Tree options/ }).click();
   const chip = page.getByRole("menu", { name: "Tree options" }).getByRole("menuitemcheckbox", { name: "Not analysed" });
-  await expect(chip).toHaveAttribute("title", /analysed when it has at least one function, every function has a functional failure, every functional failure has a failure mode, and every failure mode has a decision/);
+  await expect(chip).toHaveAttribute("title", /analysed when it has at least one function, every function has a functional failure, every functional failure has failure modes or is caused by failures on positions inside it that are answered in turn, and every failure mode has a decision/);
   await page.keyboard.press("Escape");
   // The pump is analysed (one function › one failure › one decided mode); the pool, with no function of its own, isn't.
   await expect(trow(page, `^Quiet pump ${tag}`).locator(".tp-mini.rcm")).toHaveCount(0);

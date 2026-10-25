@@ -312,6 +312,14 @@ const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n =
 // With `rcm` (the RCM tab open, or the Not analysed chip on), a quiet fourth:
 // a position not analysed yet (a parent: how many, inside it and itself).
 export function markersOf(r, { rcm = false } = {}) {
+  if (r.type === "fail" && isRcmRow(r)) {
+    // On the RCM tab: a functional failure that causes ones above it. Quiet
+    // (no colour of its own); its text names them, and clicking it goes up.
+    const up = (r.ref.effects || []).filter((e) => e.inside !== false);
+    if (!up.length) return [];
+    const names = up.map((e) => `${e.text} (on ${e.position?.name || "a position above"})`).join("; ");
+    return [{ kind: "up", text: `↑ ${up.length}`, label: `Causes: ${names}`, effect: up[0].id }];
+  }
   if (isRcmRow(r)) return [];
   // Kids that are positions, locations or items (not the RCM tab's rows).
   const parent = r.kids.length - (r.rcmKids || 0) > 0;

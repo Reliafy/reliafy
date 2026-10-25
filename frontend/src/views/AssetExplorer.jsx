@@ -5,6 +5,7 @@ import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
 import TreeDetail, { HeaderTabs, KIND, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
+import LinkFailurePicker from "../components/FailureLinks.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
 import OverflowMenu from "../components/OverflowMenu.jsx";
 import { exportFilename, importSummary, positionRcmCsv } from "../rcmImport.js";
@@ -15,7 +16,7 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  NARROW_TABLE, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, usualCols,
+  NARROW_TABLE, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, unlinkEmptiesFailure, usualCols,
   withTableCols,
 } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
@@ -196,6 +197,7 @@ export default function AssetExplorer() {
   const [panel, setPanel] = useState(false); // its details beside the table
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
   const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
+  const [linking, setLinking] = useState(null); // {row, direction}: the picker that links functional failures
   const [options, setOptions] = useState(null);
   const [rprefs, setRprefs] = useState(() => loadPrefs());
   const [message, setMessage] = useState(null);
@@ -404,6 +406,8 @@ export default function AssetExplorer() {
   const detailKey = phone ? location.state?.treeDetail : null;
   const pick = (key, opts = {}) => {
     const r = display.rows.get(key);
+    // A reference row (a failure below that causes one above) goes to the real row.
+    if (r?.type === "cause" && opts.go) return reveal(r.ref.cause_id);
     if (isRcmRow(r)) {
       setRcmFocus(key);
       setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
@@ -443,6 +447,24 @@ export default function AssetExplorer() {
     if (!ok) return;
     setRcmFocus(isRcmRow(display.rows.get(r.parent)) ? r.parent : null);
     say(`Deleted the ${level}.`);
+  };
+  // Linking functional failures (from a row's menu or the panel): the picker,
+  // and taking a link off, with one confirm when it would leave the higher
+  // failure with nothing explaining it.
+  const openLink = (r, direction) => setLinking({ row: r, direction });
+  const unlinkPair = async (effectId, causeId) => {
+    if (unlinkEmptiesFailure(whole, effectId, causeId)) {
+      const e = whole.rows.get(effectId);
+      const ok = await confirm({
+        title: "Unlink this cause?",
+        body: `This was the only explanation of “${(e.ref.text || "").slice(0, 80)}”. It will have no cause or failure mode, so its position is no longer analysed.`,
+        confirmLabel: "Unlink anyway", pendingLabel: "Unlinking…", failedWhat: "unlink it",
+        run: () => ops.unlink(effectId, causeId).then(() => true),
+      });
+      if (ok) say("Unlinked.");
+      return;
+    }
+    ops.unlink(effectId, causeId).then(() => say("Unlinked."), (e) => say(saveErrorText(e, { what: "unlink it", offline: navigator.onLine === false }), "error"));
   };
   // Pin a branch: the address says so (Back undoes it). The selection stays
   // when it's inside the branch, else it's the pinned row; with `select`, the
@@ -512,6 +534,10 @@ export default function AssetExplorer() {
         ops.editFunction(r).then((ok) => ok && say("Saved."));
       } else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
+      else if (id === "link-cause") openLink(r, "cause");
+      else if (id === "link-effect") openLink(r, "effect");
+      else if (id === "go") reveal(r.ref.cause_id);
+      else if (id === "unlink") unlinkPair(r.ref.effect_id, r.ref.cause_id);
       else if (id === "delete") remove(r);
       else if (id === "import-sheet") setSheetFor({ id: r.key, name: r.ref.name });
       else if (id === "export-csv") exportRcm(r);
@@ -815,6 +841,7 @@ export default function AssetExplorer() {
     canEditName: (r) => EDITABLE.has(r.type),
     onEdit: (key, col) => { setRcmFocus(key); setEditing({ key, col }); },
     onCommit: commit, onCancel: () => setEditing(null), onDecision: (r) => setDeciding(r),
+    onGoto: (key) => reveal(key),
     // The position picked, when it has no functions yet: its row says how to start.
     hint: rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
   } : null;
@@ -850,7 +877,7 @@ export default function AssetExplorer() {
   );
   const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
   const headTabs = !phone && tabsRow && <HeaderTabs row={tabsRow} tab={tab} onTab={setTab} />;
-  const detailsRow = rcmOn && panel && isRcmRow(focusRow) ? cellRow(focusRow) : null;
+  const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "cause" ? cellRow(focusRow) : null;
   // A failure mode moved under another functional failure from the panel: a
   // refusal is said in the heading, in plain words.
   const panelOps = {
@@ -860,7 +887,7 @@ export default function AssetExplorer() {
   const rcmSide = detailsRow && (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
-      <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={panelOps}
+      <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={panelOps} links={{ onLink: openLink, onUnlink: unlinkPair }}
                onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
                onClose={() => { setPanel(false); document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }); }}
                onSelect={(k) => reveal(k)} />
@@ -1006,6 +1033,13 @@ export default function AssetExplorer() {
                      })} />
       )}
       {sheetFor && <RcmImportModal position={sheetFor} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
+      {linking && (
+        <LinkFailurePicker direction={linking.direction} row={linking.row} whole={whole} onLink={ops.linkMany}
+                           onClose={(n) => {
+                             setLinking(null);
+                             if (n) say(`Linked ${n} ${linking.direction === "cause" ? (n === 1 ? "cause" : "causes") : (n === 1 ? "effect" : "effects")}.`);
+                           }} />
+      )}
       {deciding && options && (
         <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} limits />
       )}
