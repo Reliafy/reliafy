@@ -129,7 +129,7 @@ export default function OperatingContextCard({ positionId, state, onSaved }) {
   }
 
   return (
-    <section className="card td-card td-ctx" aria-label="Operating context">
+    <section className="card td-card td-ctx" id="operating-context" aria-label="Operating context">
       <div className="td-ctx-head">
         <h3>Operating context</h3>
         {note && <span className="tt-msg ok" role="status">{note}</span>}

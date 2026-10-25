@@ -148,6 +148,12 @@ export function hasLinkedEvidence(rcm) {
   return false;
 }
 
+// Where the (i) for a function's working sits: at the end of its Performance
+// standard cell, or, while that column is hidden (it is by default), at the
+// end of the function's name, so a working is never out of sight and no column
+// has to appear or change width.
+export const basisInName = (colIds) => !colIds.includes("standard");
+
 const inOrder = (ids) => COLUMNS.map((c) => c.id).filter((id) => ids.includes(id));
 
 // A window narrower than this (a 1280 px laptop) gets fewer columns by

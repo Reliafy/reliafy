@@ -2421,6 +2421,10 @@ const sendJson = (method) => (url, body) => request(url, {
 export function addPositionFunction(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/functions`, body);
 }
+// One function in full: its working (Markdown) and the PDFs attached to it.
+export function getPositionFunction(id) {
+  return request(`/api/maintenance/functions/${id}`);
+}
 export function updatePositionFunction(id, body) {
   return sendJson("PATCH")(`/api/maintenance/functions/${id}`, body);
 }

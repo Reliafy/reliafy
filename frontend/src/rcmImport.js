@@ -36,7 +36,7 @@ export function importSummary(counts) {
 }
 
 export const EXPORT_HEADER = [
-  "Position", "Function", "Performance standard", "Functional failure", "Failure mode", "Effects", "Consequence",
+  "Position", "Function", "Performance standard", "Standard working", "Functional failure", "Failure mode", "Effects", "Consequence",
   "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Notes",
 ];
 
@@ -53,10 +53,19 @@ export function positionRcmRows(worksheet) {
     path.length = p.depth || 0;
     path.push(p.name);
     const where = path.join(" › ");
+    // The working is long: written on a function's first row only, and read
+    // back down its other rows (the import carries a function's cells down).
+    const written = new Set();
+    const firstRow = (fn) => {
+      if (!fn || written.has(fn.id)) return false;
+      written.add(fn.id);
+      return true;
+    };
     const modeRow = (fn, fail, m) => {
+      const first = firstRow(fn);
       const d = m?.decision || {};
       return [
-        where, fn?.text || "", fn?.standard || "", fail?.text || "", m?.text || "", m?.effects || "",
+        where, fn?.text || "", fn?.standard || "", (first && fn.standard_basis) || "", fail?.text || "", m?.text || "", m?.effects || "",
         CONSEQUENCE_LABEL[m?.consequence] || "", OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
         d.interval ?? "", d.interval ? d.interval_unit || "" : "",
         d.status && d.status !== "unevidenced" ? STATUS_LABEL[d.status] || d.status : "", m?.notes || "",

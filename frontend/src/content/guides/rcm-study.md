@@ -190,6 +190,32 @@ The check runs again every time the study opens. Refit a linked non-repairable m
 new failures and the status follows the new fit. A decision that was supported
 last quarter can turn red this quarter, and the study tells you.
 
+## Show the working behind a performance standard
+
+Some standards come from sums, not a book: how much chlorine a pool needs from
+its volume, its sunlight and its swimmers, or how many tonnes an hour a belt
+must move to keep a silo filling. On a position's **RCM** tab in the
+Explorer, open a function's details and look under **Performance standard** for
+**Working behind the standard**. It is optional.
+
+- **Add a working…** (or **Edit**) opens a box where you write in Markdown:
+  headings, lists, tables, bold, code and links. **Preview** shows what readers
+  will see. Images and raw HTML are not shown. The text can be up to 20,000
+  characters.
+- **Upload .md** reads a Markdown or text file into the box. If there is text
+  already, you choose **Replace it** or **Add below**.
+- **Attach PDF** keeps a PDF of the working with the function, up to five, each
+  up to 20 MB. Open one from its name; its **⋯** menu downloads, replaces or
+  removes it.
+- A small **i** beside the standard in the table means a working is there.
+  Click it to open the working. If the Performance standard column is hidden,
+  the **i** sits at the end of the function's name instead.
+
+When the position (or one above it) has an operating context, the working links
+to it, so the figures it uses are one click away. Over a spreadsheet, the
+working travels in a **Standard working** column: it is exported with the RCM
+as CSV and read back by **Import worksheet…**. PDFs are not part of the file.
+
 ## Use the decisions elsewhere
 
 - **Export CSV** at the top of the study downloads the worksheet, one row per

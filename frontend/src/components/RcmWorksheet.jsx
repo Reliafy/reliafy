@@ -12,6 +12,8 @@ import {
   intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, shownStatus, siblingOrder, withOpen,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
+import RcmBasis from "./RcmBasis.jsx";
+import { plainFirstLine } from "../basisMarkdown.js";
 import "./RcmWorksheet.css";
 
 // The RCM study's worksheet as an outline grid: the study's hierarchy in the
@@ -69,8 +71,25 @@ export function cellTip(col, r, can) {
 }
 export const cellHint = (can) => (can ? "Double-click to edit" : undefined);
 
+// The (i) beside a function's standard (or its name, when the standard column
+// is hidden) when the standard has a working behind it. It opens the details
+// panel with the working in full. A letter, a label and a tooltip: never
+// colour alone. Fixed size, so a row never changes height or width with it.
+export function BasisInfo({ r, onBasis }) {
+  if (!onBasis || r.type !== "fn" || !r.ref.has_basis) return null;
+  const first = plainFirstLine(r.ref.basis_preview, 80);
+  return (
+    <button type="button" className="rw-info" aria-label="This standard has a working: open it"
+            title={`How this standard was worked out${first ? `: ${first}` : ""}. Open the working.`}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); if (e.detail < 2) onBasis(r); }}>
+      <span aria-hidden="true">i</span>
+    </button>
+  );
+}
+
 // One cell's content (desktop).
-export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
+export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onBasis }) {
   const d = r.ref.decision;
   const mode = r.type === "mode";
   switch (col.id) {
@@ -130,6 +149,17 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
       return mode
         ? <span className="rw-txt rw-task" title={text}><LevelIcon type="task" className="rw-ic rw-ic-task" /><span className="rw-task-t"><Highlight text={text} query={query} /></span></span>
         : <span className="rw-sum">{text}</span>;
+    }
+    case "standard": {
+      const text = col.text(r);
+      const info = <BasisInfo r={r} onBasis={onBasis} />;
+      if (!text) return info;
+      return (
+        <span className="rw-withinfo">
+          <span className="rw-txt" title={text}><Highlight text={text} query={query} /></span>
+          {info}
+        </span>
+      );
     }
     default: {
       const text = col.text(r);
@@ -236,6 +266,7 @@ function NameCell({ r, v, open, query, phone, editing, onToggle, onCommit, onCan
 
 // The phone's second line: the main columns, in words.
 export function phoneLine(r) {
+  if (r.type === "fn" && r.ref.has_basis) return [insideWords(r), "has a working"].filter(Boolean).join(" · ");
   if (r.type !== "mode") return insideWords(r);
   const d = r.ref.decision;
   return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", intervalText(d), d?.task]
@@ -394,6 +425,13 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
           </label>
         )}
       </div>
+
+      {/* The panel's order: Description → (function: Performance standard → Working behind it) /
+          (failure: Caused by below → Causes above) → the actions. */}
+      {r.type === "fn" && ops?.basis && (
+        <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
+                  openToken={ops.basisView?.token(r)} />
+      )}
 
       {r.type === "mode" && (
         <section className="rw-decision" aria-label="Decision">

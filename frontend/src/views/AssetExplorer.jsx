@@ -15,7 +15,7 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  NARROW_TABLE, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, usualCols,
+  NARROW_TABLE, basisInName, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, usualCols,
   withTableCols,
 } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
@@ -193,6 +193,7 @@ export default function AssetExplorer() {
   // A position an FMEA / RCM worksheet is being imported onto ({id, name}).
   const [sheetFor, setSheetFor] = useState(null);
   const [rcmFocus, setRcmFocus] = useState(null); // a function, failure or mode picked (its position is selected)
+  const [basisAt, setBasisAt] = useState(null); // the (i) in the table clicked: {key, at}, the working opens in the panel
   const [panel, setPanel] = useState(false); // its details beside the table
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
   const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
@@ -815,6 +816,11 @@ export default function AssetExplorer() {
     canEditName: (r) => EDITABLE.has(r.type),
     onEdit: (key, col) => { setRcmFocus(key); setEditing({ key, col }); },
     onCommit: commit, onCancel: () => setEditing(null), onDecision: (r) => setDeciding(r),
+    // The (i) beside a standard that has a working: the function is picked and
+    // its panel opens with the working in full. With the Performance standard
+    // column hidden (it is, by default) the (i) sits at the end of the name.
+    onBasis: (r) => { pick(r.key, { go: true }); setBasisAt({ key: r.key, at: Date.now() }); },
+    basisInName: basisInName(shownCols),
     // The position picked, when it has no functions yet: its row says how to start.
     hint: rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
   } : null;
@@ -853,8 +859,39 @@ export default function AssetExplorer() {
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) ? cellRow(focusRow) : null;
   // A failure mode moved under another functional failure from the panel: a
   // refusal is said in the heading, in plain words.
+  // The function panel's working: where the operating context is (the
+  // function's position, else the nearest one above that has it), and the (i)
+  // click that asks for the working open.
+  const positionsById = new Map((data?.positions || []).map((p) => [p.id, p]));
+  const contextOf = (r) => {
+    const own = positionsById.get(r.ref.position_id);
+    if (!own) return null;
+    let p = own;
+    for (let guard = 0; p && !p.context && p.parent_id && guard < 64; guard += 1) p = positionsById.get(p.parent_id);
+    const at = p?.context ? p : own;
+    return {
+      name: at.name, has: !!p?.context, to: explorerPath("positions", { sel: at.id }),
+      // The Summary tab on that position, its operating context card brought into view once it is drawn.
+      go: () => {
+        setEditing(null);
+        setRcmFocus(null);
+        setPanel(false);
+        setSelected((sel) => ({ ...sel, positions: at.id }));
+        pending.current = at.id;
+        navigate(explorerPath("positions"), { state: { treeReveal: at.id } });
+        let tries = 0;
+        const bring = () => {
+          const card = document.getElementById("operating-context");
+          if (card) card.scrollIntoView({ block: "nearest" });
+          else if ((tries += 1) < 20) setTimeout(bring, 100);
+        };
+        setTimeout(bring, 100);
+      },
+    };
+  };
   const panelOps = {
     ...ops,
+    basisView: { context: contextOf, token: (r) => (basisAt?.key === r.key ? basisAt.at : null) },
     assign: (r, ffId) => ops.assign(r, ffId).catch((e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error")),
   };
   const rcmSide = detailsRow && (
