@@ -66,7 +66,7 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
       if (mode) {
         if (!d) {
           return readOnly ? <span className="rw-todo">To decide</span> : (
-            <button type="button" className="rw-todo rw-todo-btn" onClick={(e) => { e.stopPropagation(); onDecision(r); }}
+            <button type="button" className="rw-todo rw-todo-btn" onClick={(e) => { e.stopPropagation(); if (e.detail < 2) onDecision(r); }}
                     title="Choose the decision for this failure mode">To decide</button>
           );
         }
@@ -367,22 +367,23 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
             </>
           ) : <p className="rw-dline">No decision yet.</p>}
           {!readOnly && (
-            <button type="button" className={d ? "secondary" : ""} onClick={() => onDecision(r)}>
+            <button type="button" className={d ? "secondary" : ""} onClick={(e) => { if (e.detail < 2) onDecision(r); }}>
               {d ? "Change the decision…" : "Decide…"}
             </button>
           )}
         </section>
       )}
 
+      {/* Each button acts on its first click only: a double-click opens one dialog. */}
       {!readOnly && (
         <div className="rw-panel-acts">
           {level.child && (
-            <button type="button" className="secondary" onClick={() => onAdd(r)}>
+            <button type="button" className="secondary" onClick={(e) => { if (e.detail < 2) onAdd(r); }}>
               Add {r.type === "fn" ? "a functional failure" : "a failure mode"}
             </button>
           )}
           {EDITABLE.has(r.type) && (
-            <button type="button" className="secondary danger" onClick={() => onDelete(r)}>Delete this {level.label.toLowerCase()}</button>
+            <button type="button" className="secondary danger" onClick={(e) => { if (e.detail < 2) onDelete(r); }}>Delete this {level.label.toLowerCase()}</button>
           )}
         </div>
       )}
@@ -395,7 +396,10 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
 function Field({ label, help, value, area, readOnly, type, suffix, onCommit, autoFocus }) {
   const [draft, setDraft] = useState(String(value ?? ""));
   const [error, setError] = useState(null);
-  useEffect(() => { setDraft(String(value ?? "")); setError(null); }, [value]);
+  // What was last sent: Enter then leaving the field (or Enter twice) sends it
+  // once; typing, or coming back to the field, can send it again.
+  const sent = useRef(null);
+  useEffect(() => { setDraft(String(value ?? "")); setError(null); sent.current = null; }, [value]);
   if (readOnly) {
     return (
       <div className="rw-field">
@@ -405,8 +409,9 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
     );
   }
   const commit = () => {
-    if (draft === String(value ?? "")) return;
+    if (draft === String(value ?? "") || draft === sent.current) return;
     const err = onCommit(draft);
+    if (typeof err !== "string") sent.current = draft;
     setError(typeof err === "string" ? err : null);
   };
   const Tag = area ? "textarea" : "input";
@@ -417,7 +422,8 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
         <Tag value={draft} rows={area ? 2 : undefined} type={area ? undefined : type} autoFocus={autoFocus}
              inputMode={type === "number" ? "decimal" : undefined} min={type === "number" ? "0" : undefined}
              step={type === "number" ? "any" : undefined} aria-invalid={error ? "true" : undefined}
-             onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+             onChange={(e) => { setDraft(e.target.value); sent.current = null; }} onBlur={commit}
+             onFocus={() => { sent.current = null; }}
              onKeyDown={(e) => { if (e.key === "Enter" && !area) { e.preventDefault(); commit(); } }} />
         {suffix && <span className="rw-unit">{suffix}</span>}
       </span>

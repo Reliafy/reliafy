@@ -142,7 +142,11 @@ tagged **Suggested** and listed first:
 
 For a scheduled task, describe it under **Task** and give the interval and its
 unit. Use the same unit as the analysis you link. If the units disagree, the
-decision is marked inconclusive rather than converted.
+decision is marked inconclusive rather than converted. A fixed-interval
+replacement or a failure-finding task needs its interval. An on-condition
+decision can go without one, when another task already covers it: no task is
+made, so say in **Notes** what covers it. While **Apply** can't be pressed, the
+dialog says beside it what's missing.
 
 **3. Link the evidence.** The dialog lists only the evidence the decision
 expects: your non-repairable models with their β verdicts, your degradation models, or

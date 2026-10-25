@@ -7,10 +7,15 @@
 // across the tabs; it fits the window; the keyboard; the tree's ⋯ menu (Arrange
 // by, the levels, Show only, Reset); full screen.
 // Each test makes its own small plant through the API.
-import { test, expect, open, expectHealthy } from "./health.js";
+import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { details } from "./explorer.js";
 
 const M = "/api/maintenance";
+// With SMOKE_SHOTS_DIR set, the decision dialog's states are saved there too (for the pull request).
+const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
+const shot = async (page, name) => {
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` });
+};
 
 async function plant(request, tag) {
   const post = async (path, data) => {
@@ -577,3 +582,259 @@ test("the tree's ⋯ menu: the levels, a filter with its count on the button, Re
   await expect(page.locator(".tx.is-full")).toBeVisible();
   await expectHealthy(page, problems, { label: "tree menu", root: ".tx" });
 });
+
+// A smaller plant for the tests below (the suite shares the server's limit on
+// changes a minute): a plant, its pump and the pump's motor; the pump's two
+// functions, three functional failures and two failure modes.
+async function smallPlant(request, tag) {
+  const post = (path, data) => postOk(request, path, data);
+  const top = await post(`${M}/positions`, { name: `Rcm plant ${tag}` });
+  const pump = await post(`${M}/positions`, { name: `Rcm pump ${tag}`, parent_id: top.id });
+  const motor = await post(`${M}/positions`, { name: `Rcm motor ${tag}`, parent_id: pump.id });
+  const water = await post(`${M}/positions/${pump.id}/functions`, { text: `Pump water ${tag}` });
+  const none = await post(`${M}/functions/${water.id}/failures`, { text: `No flow Pump water ${tag}` });
+  const low = await post(`${M}/functions/${water.id}/failures`, { text: `Low flow Pump water ${tag}` });
+  await post(`${M}/positions/${pump.id}/failure-modes`, { text: `Bearing seizes No flow Pump water ${tag}`, functional_failure_id: none.id });
+  await post(`${M}/positions/${pump.id}/failure-modes`, { text: `Seal leaks Low flow Pump water ${tag}`, functional_failure_id: low.id });
+  const contain = await post(`${M}/positions/${pump.id}/functions`, { text: `Contain the water ${tag}` });
+  await post(`${M}/functions/${contain.id}/failures`, { text: `No flow Contain the water ${tag}` });
+  return { top, pump, motor };
+}
+
+// Hold a request back a moment, so what a dialog shows while it's on its way can be seen.
+const slow = (page, glob, method) => page.route(glob, async (route) => {
+  if (route.request().method() === method) await new Promise((r) => setTimeout(r, 600));
+  await route.continue();
+});
+const sent = (page, method, ending) => {
+  const out = [];
+  page.on("request", (r) => { if (r.method() === method && new URL(r.url()).pathname.endsWith(ending)) out.push(r.url()); });
+  return out;
+};
+
+test("adding, deleting and deciding go once: a double-click, three clicks at once, Enter twice", async ({ page, request, problems }) => {
+  const tag = `o${Date.now()}`;
+  const p = await smallPlant(request, tag);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.motor.id}&tab=rcm`);
+  await slow(page, `**${M}/positions/${p.motor.id}/functions`, "POST");
+  const posts = sent(page, "POST", `/positions/${p.motor.id}/functions`);
+  const add = page.locator(".tt-headslot").getByRole("button", { name: "Add function", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Add a function" });
+  // A double-click on Add function asks once; one on the dialog's button adds once, saying so meanwhile.
+  await add.dblclick();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("textbox").fill(`Double ${tag}`);
+  await dialog.getByRole("button", { name: "Add function" }).dblclick();
+  await expect(dialog.getByRole("button", { name: "Adding…" })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await expect(dialog).toHaveCount(0);
+  await expect(trow(page, `^Function: Double ${tag}`)).toHaveCount(1);
+  // Three clicks in one go.
+  await add.click();
+  await dialog.getByRole("textbox").fill(`Triple ${tag}`);
+  await dialog.getByRole("button", { name: "Add function" }).evaluate((b) => { b.click(); b.click(); b.click(); });
+  await expect(dialog).toHaveCount(0);
+  // Enter twice.
+  await add.click();
+  await dialog.getByRole("textbox").fill(`Enter ${tag}`);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveCount(0);
+  const sheet = await (await request.get(`${M}/positions/${p.motor.id}/rcm?scope=this`)).json();
+  expect(sheet.positions[0].functions.map((f) => f.text)).toEqual([`Double ${tag}`, `Triple ${tag}`, `Enter ${tag}`]);
+  expect(posts).toHaveLength(3);
+  for (const f of ["Double", "Triple", "Enter"]) await expect(trow(page, `^Function: ${f} ${tag}`)).toHaveCount(1);
+
+  // A functional failure and a failure mode from a row's menu, double-clicked: one each.
+  await fromMenu(page, `^Function: Double ${tag}`, `Function: Double ${tag}`, "Add functional failure");
+  const ffDialog = page.getByRole("dialog", { name: "Add a functional failure" });
+  await ffDialog.getByRole("textbox").fill(`Stops ${tag}`);
+  await ffDialog.getByRole("button", { name: "Add functional failure" }).dblclick();
+  await expect(ffDialog).toHaveCount(0);
+  await fromMenu(page, `^Functional failure: Stops ${tag}`, `Functional failure: Stops ${tag}`, "Add failure mode");
+  const fmDialog = page.getByRole("dialog", { name: "Add a failure mode" });
+  await fmDialog.getByRole("textbox").fill(`Burns out ${tag}`);
+  await fmDialog.getByRole("button", { name: "Add failure mode" }).dblclick();
+  await expect(fmDialog).toHaveCount(0);
+  await expect(trow(page, `^Functional failure: Stops ${tag}`)).toHaveCount(1);
+  await expect(trow(page, `^Failure mode: Burns out ${tag}`)).toHaveCount(1);
+
+  // Deciding: a double-click on Apply saves once.
+  await slow(page, `**${M}/failure-modes/*/decision`, "PUT");
+  const puts = sent(page, "PUT", "/decision");
+  await pickRow(page, `^Failure mode: Burns out ${tag}`);
+  await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Decide…" }).dblclick();
+  const decide = page.getByRole("dialog", { name: /^Decision/ });
+  await decide.getByRole("button", { name: /^Run-to-failure/ }).click();
+  await decide.getByRole("button", { name: "Failures are random" }).click();
+  await decide.getByRole("button", { name: "Apply" }).dblclick();
+  await expect(decide.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  await expect(decide).toHaveCount(0);
+  expect(puts).toHaveLength(1);
+
+  // A rename from the panel: Enter, then leaving the field, saves once.
+  const patches = sent(page, "PATCH", "");
+  const desc = page.getByRole("complementary", { name: "Details" }).getByRole("textbox", { name: /Description/ });
+  await desc.fill(`Burns out fast ${tag}`);
+  await desc.press("Tab");
+  await expect(trow(page, `^Failure mode: Burns out fast ${tag}`)).toHaveCount(1);
+  expect(patches).toHaveLength(1);
+
+  // Deleting: a double-click on the confirm's button deletes once.
+  const deletes = sent(page, "DELETE", "");
+  await fromMenu(page, `^Function: Triple ${tag}`, `Function: Triple ${tag}`, "Delete function");
+  const confirm = page.getByRole("alertdialog", { name: "Delete this function?" });
+  await confirm.getByRole("button", { name: "Delete function" }).dblclick();
+  await expect(confirm).toHaveCount(0);
+  await expect(trow(page, `^Function: Triple ${tag}`)).toHaveCount(0);
+  expect(deletes).toHaveLength(1);
+  await expectHealthy(page, problems, { label: "once only", root: ".tx" });
+});
+
+test("the decision dialog says what's missing: the interval a schedule needs, why run to failure, and when no task is made", async ({ page, request, problems }) => {
+  const tag = `w${Date.now()}`;
+  const p = await smallPlant(request, tag);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
+  await pickRow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`);
+  await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Decide…" }).click();
+  const dialog = page.getByRole("dialog", { name: /^Decision/ });
+  const apply = dialog.getByRole("button", { name: "Apply" });
+  const why = dialog.locator(".decision-why");
+  await expect(apply).toBeDisabled();
+  await expect(why).toHaveText("Choose a maintenance decision.");
+  // Run to failure: Apply waits for the reason, and says so.
+  await dialog.getByRole("button", { name: /^Run-to-failure/ }).click();
+  await expect(apply).toBeDisabled();
+  await expect(why).toHaveText("Choose why it can run to failure.");
+  await expect(apply).toHaveAccessibleDescription("Choose why it can run to failure.");
+  await shot(page, "decide-rtf-hint");
+  await dialog.getByRole("button", { name: "Failures are random" }).click();
+  await expect(apply).toBeEnabled();
+  await expect(why).toHaveCount(0);
+  // Fixed interval and failure finding: the interval is needed, marked and said.
+  for (const [tile, words] of [[/^Fixed-interval replacement/, "how often it's replaced or restored"], [/^Failure-finding task/, "how often the hidden function is checked"]]) {
+    await dialog.getByRole("button", { name: tile }).click();
+    const interval = dialog.getByRole("spinbutton", { name: "Interval (needed)" });
+    await expect(interval).toHaveAttribute("aria-invalid", "true");
+    await expect(interval).toHaveAttribute("aria-required", "true");
+    await expect(dialog.getByText(`Give the interval: ${words}.`)).toBeVisible();
+    await expect(apply).toBeDisabled();
+    await expect(why).toHaveText("Give the task's interval.");
+  }
+  await dialog.getByRole("button", { name: /^Fixed-interval replacement/ }).click();
+  await shot(page, "decide-missing-interval");
+  await dialog.getByRole("spinbutton", { name: "Interval (needed)" }).fill("0");
+  await expect(dialog.getByText("The interval must be more than 0.")).toBeVisible();
+  await expect(why).toHaveText("Fix the interval.");
+  await dialog.getByRole("spinbutton", { name: "Interval (needed)" }).fill("2");
+  await expect(apply).toBeEnabled();
+  // On condition with no interval: Apply stays on, with a quiet notice.
+  await dialog.getByRole("spinbutton", { name: "Interval (needed)" }).fill("");
+  await dialog.getByRole("button", { name: /^On-condition/ }).click();
+  await expect(dialog.getByRole("spinbutton", { name: "Interval", exact: true })).not.toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByText("No task will be created: this decision will show as having no task. Say in the notes what covers it.")).toBeVisible();
+  await expect(apply).toBeEnabled();
+  await dialog.locator("textarea").fill("Covered by the weekly walk-round");
+  await shot(page, "decide-on-condition-notice");
+  await apply.click();
+  await expect(dialog).toHaveCount(0);
+  const sheet = await (await request.get(`${M}/positions/${p.pump.id}/rcm?scope=this`)).json();
+  const mode = sheet.positions[0].functions[0].failures[0].modes.find((m) => m.text.startsWith("Bearing seizes"));
+  expect(mode.decision).toMatchObject({ outcome: "on_condition", notes: "Covered by the weekly walk-round" });
+  expect(mode.decision.interval ?? null).toBe(null);
+  await expectHealthy(page, problems, { label: "decision dialog", root: ".tx" });
+});
+
+test("F is full screen from the tree too, on both tabs and pinned; other letters still jump; not while typing or with a menu open", async ({ page, request, problems }) => {
+  await page.addInitScript(() => {
+    for (const k of ["requestFullscreen", "webkitRequestFullscreen"]) {
+      delete Element.prototype[k];
+      delete HTMLElement.prototype[k];
+    }
+    for (const k of ["exitFullscreen", "webkitExitFullscreen"]) delete Document.prototype[k];
+  });
+  const tag = `y${Date.now()}`;
+  const p = await smallPlant(request, tag);
+  const full = page.locator(".tx.is-full");
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
+  await expect(page.getByRole("button", { name: "Full screen", exact: true })).toHaveAttribute("title", "Full screen (F, also in the tree)");
+  const fn = trow(page, `^Function: Pump water ${tag}`);
+  await pickRow(page, `^Function: Pump water ${tag}`);
+  await expect(fn).toBeFocused();
+  await page.keyboard.press("f");
+  await expect(full).toBeVisible();
+  await expect(fn).toHaveAttribute("aria-selected", "true"); // F didn't jump to a row
+  await page.keyboard.press("f");
+  await expect(full).toHaveCount(0);
+  // Another letter still jumps to a row starting with it.
+  await fn.focus();
+  await page.keyboard.press("c");
+  await expect(trow(page, `^Function: Contain the water ${tag}`)).toHaveAttribute("aria-selected", "true");
+  // Not with a row's menu open, nor typing in a field.
+  await fn.locator(".tt-tree").click({ button: "right" });
+  await expect(rowMenu(page, `Function: Pump water ${tag}`)).toBeVisible();
+  await page.keyboard.press("f");
+  await expect(full).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("searchbox").fill("");
+  await page.getByRole("searchbox").press("f");
+  await expect(full).toHaveCount(0);
+  await page.getByRole("searchbox").fill("");
+  // The Summary tab: from the tree.
+  await page.getByRole("tab", { name: "Summary" }).click();
+  await treeitem(page, `Rcm motor ${tag}`).click();
+  await expect(treeitem(page, `Rcm motor ${tag}`)).toBeFocused();
+  await page.keyboard.press("f");
+  await expect(full).toBeVisible();
+  await expect(treeitem(page, `Rcm motor ${tag}`)).toHaveAttribute("aria-selected", "true");
+  await page.locator(".tt-headslot .td-title").click();
+  await page.keyboard.press("Escape"); // Esc leaves, as before
+  await expect(full).toHaveCount(0);
+  // Pinned: the same.
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&pin=${p.pump.id}&tab=rcm`);
+  await pickRow(page, `^Function: Pump water ${tag}`);
+  await page.keyboard.press("f");
+  await expect(full).toBeVisible();
+  await expect(trow(page, `^Function: Pump water ${tag}`)).toHaveAttribute("aria-selected", "true");
+  await expectHealthy(page, problems, { label: "F from the tree", root: ".tx" });
+});
+
+test("one click on a function, failure or mode picks that row first time: with a filter, pinned, and a tap at 400 px", async ({ browser, request }) => {
+  const tag = `z${Date.now()}`;
+  const p = await smallPlant(request, tag);
+  const baseURL = test.info().project.use.baseURL;
+  // A fresh browser each time: nothing remembered, as on someone's first visit.
+  test.setTimeout(180_000);
+  const mode = `Failure mode: Seal leaks Low flow Pump water ${tag}`;
+  const all = [mode, `Functional failure: No flow Contain the water ${tag}`, `Function: Contain the water ${tag}`];
+  const tries = [
+    { label: "filter", url: `/asset-register/explorer?arrange=positions&tab=rcm`, filter: true, rows: all },
+    { label: "no filter", url: `/asset-register/explorer?arrange=positions&tab=rcm&sel=${p.pump.id}`, rows: [mode] },
+    { label: "pinned", url: `/asset-register/explorer?arrange=positions&tab=rcm&pin=${p.pump.id}`, filter: true, rows: [mode] },
+    { label: "phone filter", url: `/asset-register/explorer?arrange=positions&tab=rcm`, filter: true, phone: true, rows: [mode, all[2]] },
+    { label: "phone", url: `/asset-register/explorer?arrange=positions&tab=rcm&sel=${p.pump.id}`, phone: true, rows: [mode] },
+  ];
+  for (const t of tries) {
+    for (const name of t.rows) {
+      const ctx = await browser.newContext(t.phone
+        ? { baseURL, viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true }
+        : { baseURL, viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      await open(page, t.url);
+      await expect(table(page)).toBeVisible();
+      if (t.filter) await page.getByRole("searchbox").fill(name.replace(/^[^:]+: /, ""));
+      const row = trow(page, `^${name}`);
+      await row.scrollIntoViewIfNeeded();
+      const hit = row.locator(".tt-tree, .tt-l1").first();
+      if (t.phone) await hit.tap();
+      else await hit.click();
+      await expect(row, `${t.label}: ${name}`).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("complementary", { name: "Details" }), `${t.label}: ${name}`).toBeVisible();
+      await expect(page.getByRole("complementary", { name: "Details" }).locator(".rw-panel-title")).toHaveText(name.replace(/^[^:]+: /, ""));
+      await page.waitForTimeout(300); // nothing takes the pick away after
+      await expect(row, `${t.label}: ${name}, a moment later`).toHaveAttribute("aria-selected", "true");
+      await ctx.close();
+    }
+  }
+});
+

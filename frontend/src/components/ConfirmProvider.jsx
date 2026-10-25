@@ -13,6 +13,13 @@ import { normaliseConfirm, normalisePrompt } from "../confirm.js";
 //   const ask = useAskText();
 //   const name = changedText(await ask(renamePrompt({ kind: "dataset", name })), name);
 // which resolves to the text typed, or null when cancelled.
+//
+// With `run` (and `pendingLabel`, e.g. "Adding…"), the dialog does the work
+// itself: pressing the button calls run(text) (or run() for a confirm), and
+// the dialog stays open, the button disabled and saying pendingLabel, until it
+// settles. It resolves to what run returned; if run throws, the error shows in
+// the dialog, with the text as typed, to try again or cancel. Either way the
+// dialog answers once: a second click, double-click or Enter does nothing.
 const ConfirmContext = createContext(null);
 
 export function useConfirm() {
@@ -73,7 +80,14 @@ function ConfirmDialog({ request, onAnswer }) {
   const inputRef = useRef(null);
   const asking = !!request.input;
   const [text, setText] = useState(asking ? request.value : "");
-  const cancel = useCallback(() => onAnswer(asking ? null : false), [onAnswer, asking]);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const answered = useRef(false); // set at once, before React draws the dialog again
+  const cancel = useCallback(() => {
+    if (answered.current) return;
+    answered.current = true;
+    onAnswer(asking ? null : false);
+  }, [onAnswer, asking]);
   const canGo = !asking || text.trim() !== "";
 
   useEffect(() => {
@@ -116,14 +130,31 @@ function ConfirmDialog({ request, onAnswer }) {
     };
   }, [cancel]);
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
-    if (!canGo) return;
-    onAnswer(asking ? text.trim() : true);
+    if (!canGo || answered.current) return;
+    answered.current = true;
+    const answer = asking ? text.trim() : true;
+    if (!request.run) {
+      onAnswer(answer);
+      return;
+    }
+    setBusy(true);
+    setFailed(null);
+    try {
+      const out = await request.run(asking ? answer : undefined);
+      onAnswer(out);
+    } catch (err) {
+      answered.current = false;
+      setBusy(false);
+      setFailed(failureText(err));
+    }
   };
 
   return createPortal(
-    <div className="overlay confirm-overlay" onClick={cancel}>
+    <div className="overlay confirm-overlay"
+         // Not the second click of a double-click on the button that opened it.
+         onClick={(e) => { if (e.detail < 2) cancel(); }}>
       <form
         ref={box}
         className="modal modal-sm confirm-dialog"
@@ -151,23 +182,27 @@ function ConfirmDialog({ request, onAnswer }) {
                   maxLength={200}
                   autoComplete="off"
                   spellCheck="false"
+                  readOnly={busy}
+                  aria-invalid={failed ? "true" : undefined}
                   onChange={(e) => setText(e.target.value)}
                 />
               </label>
             )}
+            {failed && <p className="confirm-error" role="alert">{failed}</p>}
           </div>
         )}
         <div className="modal-foot">
           <div className="row confirm-actions">
-            <button type="button" ref={cancelBtn} className={buttonClass("secondary")} onClick={cancel}>
+            <button type="button" ref={cancelBtn} className={buttonClass("secondary")} onClick={cancel} disabled={busy}>
               {request.cancelLabel}
             </button>
             <button
               type="submit"
               className={buttonClass(request.destructive ? "danger" : "primary") || undefined}
-              disabled={!canGo}
+              disabled={!canGo || busy}
+              aria-busy={busy || undefined}
             >
-              {request.confirmLabel}
+              {busy ? request.pendingLabel : request.confirmLabel}
             </button>
           </div>
         </div>
@@ -175,4 +210,14 @@ function ConfirmDialog({ request, onAnswer }) {
     </div>,
     portalHost()
   );
+}
+
+// A refusal in plain words: what the server said, or, with no answer at all,
+// what to do next.
+function failureText(err) {
+  const msg = err?.message || "";
+  if (!msg || msg === "Failed to fetch" || /NetworkError|Load failed/i.test(msg)) {
+    return "Couldn't save: check your connection and try again.";
+  }
+  return msg;
 }

@@ -9,17 +9,13 @@
 // By click, by the arrow keys, and by the browser's Back and Forward; for a
 // position with RCM rows and one with none; opened on either tab.
 // Each test makes its own small plant through the API.
-import { test, expect, open, expectHealthy } from "./health.js";
+import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { flashes, frameOf, movedBetween, watchFrames } from "./explorer.js";
 
 const M = "/api/maintenance";
 
 async function plant(request, tag) {
-  const post = async (path, data) => {
-    const res = await request.post(path, { data });
-    expect(res.ok(), `${path}: ${res.status()} ${await res.text()}`).toBeTruthy();
-    return res.json();
-  };
+  const post = (path, data) => postOk(request, path, data);
   const top = await post(`${M}/positions`, { name: `Steady plant ${tag}` });
   const units = [];
   for (let u = 1; u <= 6; u += 1) {

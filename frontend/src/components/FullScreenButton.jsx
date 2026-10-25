@@ -15,11 +15,12 @@ const ExitIcon = () => (
 );
 
 // The "Full screen" / "Exit full screen" toggle. Its words say which it does
-// (not colour or the icon alone); ``shortcut`` is shown in the tooltip.
+// (not colour or the icon alone); ``shortcut`` is shown in the tooltip, with
+// ``shortcutNote`` after it (where the key works, say).
 // ``compact`` keeps only the icon on the way in on a phone (the shared page's
 // corner button), never on the way out: "Exit full screen" is always spelt out.
 const FullScreenButton = forwardRef(function FullScreenButton(
-  { full, onClick, shortcut = "F", className = "", compact = false },
+  { full, onClick, shortcut = "F", shortcutNote = "", className = "", compact = false },
   ref
 ) {
   const label = full ? "Exit full screen" : "Full screen";
@@ -29,7 +30,7 @@ const FullScreenButton = forwardRef(function FullScreenButton(
       type="button"
       className={"secondary sm full-screen-btn" + (full ? " is-full" : "") + (className ? " " + className : "")}
       onClick={onClick}
-      title={shortcut ? `${label} (${shortcut})` : label}
+      title={shortcut ? `${label} (${shortcut}${shortcutNote ? `, ${shortcutNote}` : ""})` : label}
       aria-label={label}
       aria-keyshortcuts={shortcut || undefined}
       data-full={full ? "true" : "false"}

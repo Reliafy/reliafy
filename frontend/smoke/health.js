@@ -91,3 +91,20 @@ export async function expectHealthy(page, problems, { label = page.url(), chart 
   await crashed(); // a crash once the page's data arrived
   expect(problems, `${label}: errors in the page`).toEqual([]);
 }
+
+// POST to the API and return the JSON, failing the test on a refusal. The
+// Maintenance API takes at most 600 changes a minute per workspace, and the
+// whole suite shares one: a 429 waits for the next minute (up to 65 s) and
+// tries again, rather than failing a test for what other tests did.
+export async function postOk(request, path, data) {
+  const until = Date.now() + 65_000;
+  for (;;) {
+    const res = await request.post(path, { data });
+    if (res.status() === 429 && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 2_000));
+      continue;
+    }
+    expect(res.ok(), `${path}: ${res.status()} ${await res.text()}`).toBeTruthy();
+    return res.json();
+  }
+}
