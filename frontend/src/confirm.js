@@ -26,8 +26,9 @@ export function normaliseConfirm(opts = {}) {
     destructive: opts.destructive !== false,
     // The dialog does the work itself (ConfirmProvider.jsx), its button saying
     // pendingLabel meanwhile.
+    // `failedWhat`: what a refusal says couldn't be done ("Couldn't save. …").
     ...(typeof opts.run === "function"
-      ? { run: opts.run, pendingLabel: String(opts.pendingLabel || "").trim() || "Saving…" } : {}),
+      ? { run: opts.run, pendingLabel: String(opts.pendingLabel || "").trim() || "Saving…", failedWhat: String(opts.failedWhat || "save") } : {}),
   };
 }
 
@@ -99,4 +100,28 @@ export function deleteOrRemoveConfirm(item, kind, { name, extra } = {}) {
   if (item.is_sample) return removeSampleConfirm({ name: label });
   if (item.read_only) return removeSharedConfirm({ name: label });
   return deleteConfirm({ kind, name: label, extra });
+}
+
+// ---- a change that didn't save, in plain words -------------------------------
+// The browser's own words for no connection ("Failed to fetch", "Load
+// failed", "NetworkError when attempting to fetch resource").
+const OFFLINE = /^(failed to fetch|load failed)$|networkerror|network request failed|network error/i;
+
+// What to say when a save (or a delete: `what`) didn't go through: with no
+// connection, to check it and try again; with the server's own plain reason,
+// that reason; else to try again in a moment. Never the raw "Failed to
+// fetch", "Request failed (500)" or "[object Object]".
+export function saveErrorText(err, { what = "save", offline = false } = {}) {
+  const msg = String((typeof err === "string" ? err : err?.message) || "").trim();
+  if (offline || !msg || OFFLINE.test(msg)) return `Couldn't ${what}. Check your connection and try again.`;
+  // FastAPI's own refusals list what's wrong ([{msg, loc}]).
+  const detail = err?.data?.detail;
+  let reason = Array.isArray(detail) ? detail.map((d) => d?.msg).filter(Boolean).join("; ") : msg;
+  if (!reason || reason === "[object Object]" || /^Request failed \(\d+\)$/.test(reason) || err?.status >= 500) {
+    return `Couldn't ${what}. Try again in a moment.`;
+  }
+  reason = reason.replace(/^Value error,\s*/i, "");
+  reason = reason.charAt(0).toUpperCase() + reason.slice(1);
+  if (/^couldn['’]t /i.test(reason)) return /[.!?]$/.test(reason) ? reason : `${reason}.`;
+  return `Couldn't ${what}. ${reason}${/[.!?]$/.test(reason) ? "" : "."}`;
 }

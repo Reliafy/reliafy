@@ -909,6 +909,10 @@ a.rw-cklink:focus-visible {
   color: var(--ok);
 }
 .tt-msg.error { color: var(--danger); font-weight: 600; }
+/* A save that didn't go through: the whole of what to do comes first; the
+   way up beside it gives way (its steps are cut short, their names in their
+   tooltips). */
+.tt-msg.error { flex: 0 0 auto; max-width: 100%; }
 .tt-main {
   flex: 1 1 auto;
   min-height: 0;

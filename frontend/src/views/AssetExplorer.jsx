@@ -14,6 +14,7 @@ import {
   cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, withTableCols,
 } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
+import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
@@ -405,7 +406,7 @@ export default function AssetExplorer() {
         pending.current = id;
         setPanel(true);
         say(`Added the ${kind === "fn" ? "function" : kind === "fail" ? "functional failure" : "failure mode"}.`);
-      }, (e) => say(e.message, "error"));
+      }, (e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error"));
   };
   const addInside = (r) => runAdd({ ref: {
     add: r.type === "fn" ? "fail" : "mode", position_id: r.ref.position_id,
@@ -417,7 +418,7 @@ export default function AssetExplorer() {
     const level = LEVEL_OF[r.type].label.toLowerCase();
     const ok = await confirm({
       title: `Delete this ${level}?`, body: ops.removeText(r), confirmLabel: `Delete ${level}`,
-      pendingLabel: "Deleting…", run: () => ops.remove(r).then(() => true),
+      pendingLabel: "Deleting…", failedWhat: "delete it", run: () => ops.remove(r).then(() => true),
     });
     if (!ok) return;
     setRcmFocus(isRcmRow(display.rows.get(r.parent)) ? r.parent : null);
@@ -490,16 +491,25 @@ export default function AssetExplorer() {
       else if (id === "delete") remove(r);
     },
   };
-  // One cell changed: checked as the server checks it, then written.
+  // One cell changed: checked as the server checks it, then written. The
+  // cell (or the panel's field) keeps the text as typed until it's saved; if
+  // it isn't (no connection, a refusal), it stays as typed with the reason, to
+  // try again. Resolves true once saved, else to the reason.
   const commit = (r, col, raw) => {
     const res = checkValue(col, cellRow(r), raw);
     if (res.error) {
       say(res.error, "error");
       return res.error;
     }
-    ops.set(r, col, res.value).then(() => say("Saved."), (e) => say(e.message, "error"));
-    setEditing(null);
-    return true;
+    return ops.set(r, col, res.value).then(() => {
+      setEditing((e) => (e && e.key === r.key && e.col === col ? null : e));
+      say("Saved.");
+      return true;
+    }, (e) => {
+      const text = saveErrorText(e, { offline: navigator.onLine === false });
+      say(text, "error");
+      return text;
+    });
   };
   // The dialog stays open (Apply saying "Saving…") until the server has it;
   // a refusal shows in the dialog, with everything as it was typed.
@@ -731,7 +741,7 @@ export default function AssetExplorer() {
     // The position picked, when it has no functions yet: its row says how to start.
     hint: rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
   } : null;
-  const msg = message && <p className={"tt-msg " + message.tone} role="status">{message.text}</p>;
+  const msg = message && <p className={"tt-msg " + message.tone} role="status" title={message.text}>{message.text}</p>;
   // The panel's heading and tabs, in the two slim rows over the tree on both
   // tabs (a wide screen): the same elements on each, so nothing in them is
   // drawn afresh and the focus stays on the tab picked.
@@ -757,10 +767,16 @@ export default function AssetExplorer() {
   const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
   const headTabs = !phone && tabsRow && <HeaderTabs row={tabsRow} tab={tab} onTab={setTab} />;
   const detailsRow = rcmOn && panel && isRcmRow(focusRow) ? cellRow(focusRow) : null;
+  // A failure mode moved under another functional failure from the panel: a
+  // refusal is said in the heading, in plain words.
+  const panelOps = {
+    ...ops,
+    assign: (r, ffId) => ops.assign(r, ffId).catch((e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error")),
+  };
   const rcmSide = detailsRow && (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
-      <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={ops}
+      <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={panelOps}
                onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
                onClose={() => { setPanel(false); document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }); }}
                onSelect={(k) => reveal(k)} />

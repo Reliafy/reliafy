@@ -105,8 +105,9 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       if (r.type === "fail") return after(removeFunctionalFailure(id));
       return after(retireFailureMode(id));
     },
+    // A refusal goes to the caller (it says so beside the panel).
     assign(r, ffId) {
-      return after(assignFailureMode(r.ref.id, ffId)).catch((e) => setError(e.message));
+      return after(assignFailureMode(r.ref.id, ffId));
     },
     decide(r, { consequence, decision }) {
       return after(decideFailureMode(r.ref.id, { consequence: consequence || null, decision }));

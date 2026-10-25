@@ -3,6 +3,7 @@ import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
 import Chip from "./ui/Chip.jsx";
+import { saveErrorText } from "../confirm.js";
 import { INTERVAL_UNITS, NEEDS_INTERVAL, checkDecision, rememberUnit, startUnit } from "../decisionCheck.js";
 
 // Guided RCM decision flow for one failure mode: consequence → outcome
@@ -80,7 +81,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
     } catch (e) {
       busy.current = false;
       setSaving(false);
-      setFailed(e?.message === "Failed to fetch" ? "Couldn't save: check your connection and try again." : e?.message || "Couldn't save the decision.");
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
     }
   };
 

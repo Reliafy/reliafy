@@ -133,6 +133,10 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
 
 // A cell being edited in place: Enter or leaving it keeps the change; Escape
 // drops it. A value the server would refuse stays open with the reason.
+// `onCommit` returns true (kept), the reason it isn't (a string), or a promise
+// of either (the Explorer writes at once): meanwhile the cell keeps the text
+// as typed (read-only, so it's sent once), and if it isn't saved it stays open
+// with that text, to try again or Escape.
 export function CellEditor({ col, r, onCommit, onCancel }) {
   const d = r.ref.decision || {};
   const start = col.id === "name" ? r.ref.text || ""
@@ -140,11 +144,24 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
     : col.id === "interval" ? d.interval ?? ""
     : COLUMN[col.id]?.onDecision ? d[COLUMN[col.id].field] || "" : r.ref[COLUMN[col.id].field] || "";
   const [value, setValue] = useState(String(start));
+  const [busy, setBusy] = useState(false);
   const done = useRef(false);
+  const field = useRef(null);
   const commit = (v = value) => {
     if (done.current) return;
     if (String(v) === String(start)) { done.current = true; onCancel(); return; }
-    if (onCommit(v) === true) done.current = true;
+    const out = onCommit(v);
+    if (out === true) done.current = true;
+    else if (out && typeof out.then === "function") {
+      done.current = true;
+      setBusy(true);
+      out.then((ok) => {
+        if (ok === true) return;
+        done.current = false;
+        setBusy(false);
+        field.current?.focus({ preventScroll: true });
+      });
+    }
   };
   const keys = (e) => {
     e.stopPropagation();
@@ -154,7 +171,7 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
   const label = `${col.label} of ${nameOf(r) || LEVEL_OF[r.type].label.toLowerCase()}`;
   if (col.id === "consequence") {
     return (
-      <select className="rw-edit" autoFocus value={value} aria-label={label} onKeyDown={keys}
+      <select className="rw-edit" autoFocus ref={field} value={value} aria-label={label} onKeyDown={keys} disabled={busy}
               onChange={(e) => { setValue(e.target.value); commit(e.target.value); }} onBlur={() => commit()}>
         <option value="">Not set</option>
         {Object.entries(CONSEQUENCE_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
@@ -163,7 +180,7 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
   }
   return (
     <span className="rw-edit-wrap">
-      <input className="rw-edit" autoFocus aria-label={label} value={value} onKeyDown={keys}
+      <input className="rw-edit" autoFocus ref={field} aria-label={label} value={value} onKeyDown={keys} readOnly={busy} aria-busy={busy || undefined}
              type={col.id === "interval" ? "number" : "text"} inputMode={col.id === "interval" ? "decimal" : undefined}
              min={col.id === "interval" ? "0" : undefined} step={col.id === "interval" ? "any" : undefined}
              onChange={(e) => setValue(e.target.value)} onBlur={() => commit()} />
@@ -428,6 +445,16 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
     const err = onCommit(draft);
     if (typeof err !== "string") sent.current = draft;
     setError(typeof err === "string" ? err : null);
+    // Written at once (the Explorer): if it didn't save, the text stays as
+    // typed with the reason, and leaving the field again sends it again.
+    if (err && typeof err.then === "function") {
+      const was = draft;
+      err.then((out) => {
+        if (typeof out !== "string") return;
+        if (sent.current === was) sent.current = null;
+        setError(out);
+      });
+    }
   };
   const Tag = area ? "textarea" : "input";
   return (

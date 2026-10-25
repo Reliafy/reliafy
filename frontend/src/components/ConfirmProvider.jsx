@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useR
 import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
 import { buttonClass } from "./ui/Button.jsx";
-import { normaliseConfirm, normalisePrompt } from "../confirm.js";
+import { normaliseConfirm, normalisePrompt, saveErrorText } from "../confirm.js";
 
 // The app's own confirm dialog (replaces window.confirm and window.prompt).
 // Mounted once near the root; any component asks with
@@ -147,7 +147,7 @@ function ConfirmDialog({ request, onAnswer }) {
     } catch (err) {
       answered.current = false;
       setBusy(false);
-      setFailed(failureText(err));
+      setFailed(saveErrorText(err, { what: request.failedWhat, offline: navigator.onLine === false }));
     }
   };
 
@@ -210,14 +210,4 @@ function ConfirmDialog({ request, onAnswer }) {
     </div>,
     portalHost()
   );
-}
-
-// A refusal in plain words: what the server said, or, with no answer at all,
-// what to do next.
-function failureText(err) {
-  const msg = err?.message || "";
-  if (!msg || msg === "Failed to fetch" || /NetworkError|Load failed/i.test(msg)) {
-    return "Couldn't save: check your connection and try again.";
-  }
-  return msg;
 }

@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   normaliseConfirm, deleteConfirm, removeSampleConfirm, removeSharedConfirm, deleteOrRemoveConfirm,
-  normalisePrompt, renamePrompt, changedText,
+  normalisePrompt, renamePrompt, changedText, saveErrorText,
 } from "./confirm.js";
 
 test("normaliseConfirm fills defaults", () => {
@@ -120,4 +120,28 @@ test("a dialog that does the work itself: run and its pending words", () => {
   const plain = normaliseConfirm({ title: "Delete?", confirmLabel: "Delete it" });
   assert.equal("run" in plain, false);
   assert.equal("pendingLabel" in plain, false);
+});
+
+test("a save that didn't go through says so in plain words, never the raw error", () => {
+  const offline = "Couldn't save. Check your connection and try again.";
+  for (const m of ["Failed to fetch", "Load failed", "NetworkError when attempting to fetch resource.", "", undefined]) {
+    assert.equal(saveErrorText(new TypeError(m)), offline, String(m));
+  }
+  assert.equal(saveErrorText(null), offline);
+  assert.equal(saveErrorText(new Error("anything"), { offline: true }), offline);
+  // The server's plain reason, as it said it.
+  const refusal = Object.assign(new Error("Every function needs a description"), { status: 422 });
+  assert.equal(saveErrorText(refusal), "Couldn't save. Every function needs a description.");
+  assert.equal(saveErrorText(Object.assign(new Error("at most 4000 characters; this one is 5059."), { status: 422 })),
+    "Couldn't save. At most 4000 characters; this one is 5059.");
+  // FastAPI's list of what's wrong.
+  const listed = Object.assign(new Error("[object Object]"), { status: 422, data: { detail: [{ msg: "Value error, text is too long" }] } });
+  assert.equal(saveErrorText(listed), "Couldn't save. Text is too long.");
+  // No reason worth showing: try again.
+  assert.equal(saveErrorText(Object.assign(new Error("Request failed (500)"), { status: 500 })), "Couldn't save. Try again in a moment.");
+  assert.equal(saveErrorText(Object.assign(new Error("Internal error"), { status: 503 })), "Couldn't save. Try again in a moment.");
+  // Already in words: kept.
+  assert.equal(saveErrorText(new Error("Couldn't save the decision")), "Couldn't save the decision.");
+  // A delete says so.
+  assert.equal(saveErrorText(new Error("Failed to fetch"), { what: "delete it" }), "Couldn't delete it. Check your connection and try again.");
 });
