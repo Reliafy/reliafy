@@ -985,9 +985,17 @@ a.rw-cklink:focus-visible {
   border-right: 1px solid var(--line);
   overflow: hidden;
 }
-.tp-row.tt:hover, .tp-row.tt:hover .tt-tree { background: var(--acc-hover); }
+/* The tree cell is sticky: the row's other cells slide under it, so its fill
+   must be opaque in every state, or their text shows through its name. A
+   state's tint (hover, the row picked) is laid over the row's own solid
+   colour, never on its own: the tints are see-through. */
+.tp-row.tt:hover, .tp-row.tt:hover .tt-tree { background: linear-gradient(var(--acc-hover), var(--acc-hover)), var(--surf); }
 .tp-row.tt.focus, .tp-row.tt.focus .tt-tree { background: linear-gradient(var(--acc-t), var(--acc-t)), var(--surf); }
 .tp-row.tt.focus .tt-tree { box-shadow: inset 3px 0 0 var(--acc); }
+/* Keyboard focus: the row's ring is drawn under its cells, so the tree cell
+   draws its part of it (top, bottom and left) itself. */
+.tp-row.tt:focus-visible .tt-tree { box-shadow: inset 2px 0 0 var(--acc), inset 0 2px 0 var(--acc), inset 0 -2px 0 var(--acc); }
+.tp-row.tt.focus:focus-visible .tt-tree { box-shadow: inset 3px 0 0 var(--acc), inset 0 2px 0 var(--acc), inset 0 -2px 0 var(--acc); }
 .tp-row.tt.tt-fn .tp-nm { font-weight: 600; }
 .tp-row.tt.tt-fail .tp-nm { font-weight: 500; }
 .tp-row.tt.pin, .tp-row.tt.pin .tt-tree { background: var(--surf-2); }
