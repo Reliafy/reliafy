@@ -11,6 +11,15 @@
 // the CSV rows, and what's remembered on this device.
 
 import { filterRows } from "./outlineTree.js";
+import { charCount } from "./maintenanceText.js";
+
+// A function's text is a short statement (what it must do); the standard of
+// performance has its own field. Kept to 200 characters where it's typed (the
+// server takes longer, and a longer one saved before stays as it is).
+export const FUNCTION_MAX = 200;
+export const FUNCTION_NUDGE = "Keep it short. Put the standard of performance in its own field.";
+// The counter for a function's text being typed (`before`: its saved text).
+export const functionCount = (value, before = null) => charCount(value, { max: FUNCTION_MAX, before });
 
 export const LEVELS = [
   { type: "fn", label: "Function", plural: "Functions", child: "failures" },
@@ -438,7 +447,12 @@ export function removeNode(functions, at) {
 export function checkValue(col, row, raw) {
   if (col === "name") {
     const text = String(raw ?? "").trim();
-    return text ? { value: text } : { error: `Every ${LEVEL_OF[row.type].label.toLowerCase()} needs a description.` };
+    if (!text) return { error: `Every ${LEVEL_OF[row.type].label.toLowerCase()} needs a description.` };
+    if (row.type === "fn") {
+      const c = functionCount(text, row.ref?.text ?? null);
+      if (c.blocked) return { error: c.message };
+    }
+    return { value: text };
   }
   const c = COLUMN[col];
   if (c?.edit === "number") {

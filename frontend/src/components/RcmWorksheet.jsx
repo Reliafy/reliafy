@@ -7,10 +7,11 @@ import useOutlineNav from "./useOutlineNav.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { ancestorsOf, depthOf, filterOpen, flatten, levelSet, visiblePick } from "../outlineTree.js";
 import {
-  CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, LEVELS, LEVEL_OF, NAME_COLUMN,
+  CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVELS, LEVEL_OF, NAME_COLUMN, functionCount,
   addNode, buildRcmDisplay, consequenceWords, failuresOn, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
   intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, shownStatus, siblingOrder, withOpen,
 } from "../rcmWorksheet.js";
+import { charCount } from "../maintenanceText.js";
 import "./RcmWorksheet.css";
 
 // The RCM study's worksheet as an outline grid: the study's hierarchy in the
@@ -178,13 +179,19 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
       </select>
     );
   }
+  // A function's text: kept to 200 characters, with a counter at its end.
+  const count = col.id === "name" && r.type === "fn" ? functionCount(value, r.ref.text || "") : null;
   return (
     <span className="rw-edit-wrap">
       <input className="rw-edit" autoFocus ref={field} aria-label={label} value={value} onKeyDown={keys} readOnly={busy} aria-busy={busy || undefined}
+             maxLength={count ? FUNCTION_MAX : undefined} title={count ? FUNCTION_NUDGE : undefined}
+             aria-description={count ? `${count.n} of ${count.max} characters. ${FUNCTION_NUDGE}` : undefined}
+             aria-invalid={count?.over ? "true" : undefined}
              type={col.id === "interval" ? "number" : "text"} inputMode={col.id === "interval" ? "decimal" : undefined}
              min={col.id === "interval" ? "0" : undefined} step={col.id === "interval" ? "any" : undefined}
              onChange={(e) => setValue(e.target.value)} onBlur={() => commit()} />
       {col.id === "interval" && <span className="rw-unit">{d.interval_unit || "hours"}</span>}
+      {count && <span className={"char-count rw-count" + (count.tone ? ` ${count.tone}` : "")} aria-hidden="true">{count.text}</span>}
     </span>
   );
 }
@@ -310,11 +317,11 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
   const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k));
-  const field = (label, col, { area, help } = {}) => {
+  const field = (label, col, { area, help, limit } = {}) => {
     const column = col === "name" ? NAME_COLUMN : COLUMN[col];
     const value = col === "name" ? r.ref.text || "" : column.onDecision ? d?.[column.field] ?? "" : r.ref[column.field] || "";
     return (
-      <Field key={`${r.key}:${col}`} label={label} help={help} value={value} area={area} readOnly={readOnly}
+      <Field key={`${r.key}:${col}`} label={label} help={help} value={value} area={area} readOnly={readOnly} limit={limit}
              type={col === "interval" ? "number" : "text"} suffix={col === "interval" ? d?.interval_unit || "hours" : null}
              onCommit={(raw) => onCommit(r, col, raw)} autoFocus={col === "name" && !r.ref.text && !readOnly} />
     );
@@ -335,11 +342,17 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
           ))}
         </nav>
       )}
-      <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef}>{nameOf(r) || <span className="rw-blank">(no description yet)</span>}</h2>
+      <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef} title={nameOf(r).length > 80 ? nameOf(r) : undefined}>
+        {nameOf(r) || <span className="rw-blank">(no description yet)</span>}
+      </h2>
       {r.type !== "mode" && <p className="rw-inside">{insideWords(r)}</p>}
 
       <div className="rw-fields">
-        {EDITABLE.has(r.type) && field("Description", "name", { area: true, help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "fail" ? "How it fails to do it" : "What causes the failure" })}
+        {EDITABLE.has(r.type) && field("Description", "name", {
+          area: true,
+          help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
+          limit: r.type === "fn" ? { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } : null,
+        })}
         {r.type === "fn" && field("Performance standard", "standard", { help: "Optional, e.g. within 30 m from 60 km/h" })}
         {r.type === "mode" && field("Failure effects", "effects", { area: true })}
         {r.type === "mode" && (
@@ -425,7 +438,11 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
 
 // A field in the panel: kept when you leave it (or press Enter in a one-line
 // field); a value the server would refuse shows why and isn't kept.
-function Field({ label, help, value, area, readOnly, type, suffix, onCommit, autoFocus }) {
+// `limit` ({max, nudge}): a live counter beside the label (amber near the
+// limit, red past it), the box stopping at `max`, and the nudge under it. A
+// text saved longer before stays as it is, red, and a change to it is saved
+// only once it's short enough (onCommit says so).
+function Field({ label, help, value, area, readOnly, type, suffix, onCommit, autoFocus, limit = null }) {
   const [draft, setDraft] = useState(String(value ?? ""));
   const [error, setError] = useState(null);
   // What was last sent: Enter then leaving the field (or Enter twice) sends it
@@ -457,19 +474,27 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
     }
   };
   const Tag = area ? "textarea" : "input";
+  const count = limit ? charCount(draft, { max: limit.max, before: String(value ?? "") }) : null;
   return (
     <label className="rw-field">
-      <span className="rw-flabel">{label}</span>
+      <span className={"rw-flabel" + (count ? " rw-flabel-count" : "")}>
+        {label}
+        {count && <span className={"char-count" + (count.tone ? ` ${count.tone}` : "")} aria-hidden="true">{count.text}</span>}
+      </span>
       <span className="rw-fin">
         <Tag value={draft} rows={area ? 2 : undefined} type={area ? undefined : type} autoFocus={autoFocus}
+             maxLength={limit ? limit.max : undefined}
+             aria-description={count ? `${count.n} of ${count.max} characters.${limit.nudge ? ` ${limit.nudge}` : ""}` : undefined}
              inputMode={type === "number" ? "decimal" : undefined} min={type === "number" ? "0" : undefined}
-             step={type === "number" ? "any" : undefined} aria-invalid={error ? "true" : undefined}
+             step={type === "number" ? "any" : undefined} aria-invalid={error || count?.over ? "true" : undefined}
              onChange={(e) => { setDraft(e.target.value); sent.current = null; }} onBlur={commit}
              onFocus={() => { sent.current = null; }}
              onKeyDown={(e) => { if (e.key === "Enter" && !area) { e.preventDefault(); commit(); } }} />
         {suffix && <span className="rw-unit">{suffix}</span>}
       </span>
       {help && !error && <span className="rw-fhelp">{help}</span>}
+      {limit?.nudge && !error && <span className="rw-fhelp rw-nudge">{limit.nudge}</span>}
+      {count?.over && !error && <span className="rw-ferr">{count.message}</span>}
       {error && <span className="rw-ferr" role="alert">{error}</span>}
     </label>
   );

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
 import { buttonClass } from "./ui/Button.jsx";
 import { normaliseConfirm, normalisePrompt, saveErrorText } from "../confirm.js";
+import { SHORT_TEXT, charCount } from "../maintenanceText.js";
 
 // The app's own confirm dialog (replaces window.confirm and window.prompt).
 // Mounted once near the root; any component asks with
@@ -88,7 +89,10 @@ function ConfirmDialog({ request, onAnswer }) {
     answered.current = true;
     onAnswer(asking ? null : false);
   }, [onAnswer, asking]);
-  const canGo = !asking || text.trim() !== "";
+  // A box with a soft limit (a function's text): its counter.
+  const limit = asking ? request.limit : null;
+  const count = limit ? charCount(text, { max: limit.max, before: limit.before }) : null;
+  const canGo = (!asking || text.trim() !== "") && !count?.blocked;
 
   useEffect(() => {
     const before = document.activeElement;
@@ -179,15 +183,24 @@ function ConfirmDialog({ request, onAnswer }) {
                   ref={inputRef}
                   type="text"
                   value={text}
-                  maxLength={200}
+                  maxLength={limit ? limit.max : SHORT_TEXT}
                   autoComplete="off"
                   spellCheck="false"
                   readOnly={busy}
-                  aria-invalid={failed ? "true" : undefined}
+                  aria-invalid={failed || count?.over ? "true" : undefined}
+                  aria-describedby={count ? `${id}-count${limit.nudge ? ` ${id}-nudge` : ""}` : undefined}
                   onChange={(e) => setText(e.target.value)}
                 />
               </label>
             )}
+            {count && (
+              <div className="confirm-count-row">
+                {limit.nudge && <span id={`${id}-nudge`} className="confirm-nudge">{limit.nudge}</span>}
+                <span id={`${id}-count`} className={"char-count" + (count.tone ? ` ${count.tone}` : "")}
+                      aria-label={`${count.n} of ${count.max} characters`}>{count.text}</span>
+              </div>
+            )}
+            {count?.over && <p className="confirm-error" role="alert">{count.message}</p>}
             {failed && <p className="confirm-error" role="alert">{failed}</p>}
           </div>
         )}

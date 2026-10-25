@@ -486,7 +486,11 @@ export default function AssetExplorer() {
       else if (id === "unpin") unpin();
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       else if (id === "add-fail" || id === "add-mode") addInside(r);
-      else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
+      else if (id === "rename" && r.type === "fn") {
+        // A function's description: in a dialog with its counter.
+        setRcmFocus(r.key);
+        ops.editFunction(r).then((ok) => ok && say("Saved."));
+      } else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
       else if (id === "delete") remove(r);
     },

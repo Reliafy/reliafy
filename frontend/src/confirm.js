@@ -38,7 +38,13 @@ export function normalisePrompt(opts = {}) {
   const base = normaliseConfirm({ ...opts, destructive: false });
   const label = String(opts.label || "").trim();
   if (!label) throw new Error("A text question needs a label for its box.");
-  return { ...base, label, value: opts.value == null ? "" : String(opts.value) };
+  // `limit` ({max, nudge, before}): a live counter under the box, the box
+  // stopping at `max`, and a one-line nudge; a text saved longer before
+  // (`before`) stays as it is but can't be saved changed until it's short enough.
+  const limit = opts.limit && Number(opts.limit.max) > 0 ? {
+    max: Number(opts.limit.max), nudge: String(opts.limit.nudge || ""), before: opts.limit.before ?? null,
+  } : null;
+  return { ...base, label, value: opts.value == null ? "" : String(opts.value), ...(limit ? { limit } : {}) };
 }
 
 // The text typed, trimmed; null when it's blank or unchanged (nothing to do).

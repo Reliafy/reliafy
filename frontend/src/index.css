@@ -2289,6 +2289,27 @@ h1 .chip,
   border-color: var(--acc);
   box-shadow: var(--focus);
 }
+.confirm-field input[aria-invalid="true"] { border-color: var(--danger); }
+/* A box with a soft limit: the nudge, and the counter (amber near the limit,
+   red past it). */
+.confirm-count-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: var(--fs-12);
+  line-height: 1.4;
+}
+.confirm-nudge { color: var(--muted); min-width: 0; }
+.char-count {
+  margin-left: auto;
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.char-count.near { color: var(--warn); font-weight: 600; }
+.char-count.over { color: var(--danger); font-weight: 600; }
 /* On a phone the two buttons share the row and stay big enough to tap. */
 @media (max-width: 480px) {
   .modal-foot > .row.confirm-actions {
