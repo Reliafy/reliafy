@@ -4,7 +4,7 @@ import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { BasisInfo, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
-import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf } from "../assetTree.js";
+import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
@@ -396,7 +396,11 @@ export default function TreePane({
     if (!el || !wide || table) return;
     const cs = getComputedStyle(el);
     const g = Math.max(0, el.offsetWidth - el.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth));
-    if (g !== gutter) setGutter(g);
+    // Only ever wider (nextGutter): a measure that flips with the width it sets
+    // (a browser rounding the bar's width, a bar that comes and goes) would
+    // otherwise update the state on every render, without end.
+    const next = nextGutter(gutter, g);
+    if (next !== gutter) setGutter(next);
   });
 
   // The table's width to fit (before each paint, and as the window or the

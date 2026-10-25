@@ -252,3 +252,30 @@ test("on a phone the picker is a sheet, and the page doesn't scroll sideways", a
   await expect(dialog).toHaveCount(0);
   await expectHealthy(page, problems, { label: "explorer rcm links, phone" });
 });
+
+// A real plant is a long tree: scrolling, with a scrollbar of its own, and positions
+// with a long operating context and tasks. The Summary tab must settle (no render
+// loop: "Something went wrong"), at several widths, with and without a classic scrollbar.
+test("a long tree with operating contexts and tasks settles on the Summary tab at several widths", async ({ page, request, problems }) => {
+  const tag = `g${Date.now()}`;
+  const top = await postOk(request, `${M}/positions`, { name: `Long plant ${tag}`, operating_context: `Runs 18 hours a day ${tag}.\n`.repeat(6) });
+  let first = null;
+  for (let u = 1; u <= 12; u += 1) {
+    const unit = await postOk(request, `${M}/positions`, { name: `Long unit ${u} ${tag}`, parent_id: top.id });
+    first ||= unit;
+    for (let k = 1; k <= 9; k += 1) {
+      const part = await postOk(request, `${M}/positions`, { name: `Long unit ${u} part ${k} ${tag}`, parent_id: unit.id });
+      if (k === 1) await postOk(request, `${M}/positions/${part.id}/tasks`, { name: `Inspect ${u} ${tag}`, interval: 3, interval_unit: "months" }).catch(() => null);
+    }
+  }
+  for (const width of [1280, 1500, 1920, 400]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const q of ["", "&tab=rcm"]) {
+      await open(page, `/asset-register/explorer?arrange=positions&sel=${first.id}${q}`);
+      await expect(page.getByRole("tab", { name: "Summary", exact: true })).toBeVisible();
+      await settled(page);
+      await expect(page.getByText("Something went wrong")).toHaveCount(0);
+    }
+  }
+  await expectHealthy(page, problems, { label: "explorer, a long tree" });
+});
