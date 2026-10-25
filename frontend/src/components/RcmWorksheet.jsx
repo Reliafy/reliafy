@@ -765,7 +765,14 @@ export default function RcmWorksheet({
             <button type="button" className="secondary rw-btn" onClick={() => { onUndo(); say("Undid the last change."); }} disabled={!canUndo}
                     title="Undo the last change (Ctrl+Z)">Undo</button>
           )}
-          {!phone && <ColumnChooser cols={prefs.cols} onCols={(next) => setPrefs((p) => ({ ...p, cols: next }))} />}
+          {!phone && (
+            <ColumnChooser cols={prefs.cols} onCols={(next, o) => setPrefs((p) => {
+              // Chosen (the Explorer's table keeps them whatever the window's width), or the usual ones again.
+              const out = { ...p, cols: next, colsChosen: true };
+              if (o?.reset) delete out.colsChosen;
+              return out;
+            })} />
+          )}
           {!phone && (
             <SegmentedControl size="sm" label="Row height" value={prefs.density}
                               options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]}

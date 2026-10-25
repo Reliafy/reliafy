@@ -84,6 +84,8 @@
   /* Shadows */
   --shadow-card: 0 1px 2px rgba(20, 23, 28, 0.06);
   --shadow-overlay: 0 12px 40px rgba(20, 23, 28, 0.16);
+  /* The soft edge on a side of a table with more to scroll to. */
+  --scroll-shade: rgba(20, 23, 28, 0.13);
   /* Strong enough to see on any surface (the 9% accent tint is for fills). */
   --focus: 0 0 0 3px rgba(47, 109, 246, 0.35);
   /* The selected node on a diagram canvas. */

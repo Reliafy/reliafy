@@ -11,7 +11,8 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, withTableCols,
+  NARROW_TABLE, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, usualCols,
+  withTableCols,
 } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
 import { saveErrorText } from "../confirm.js";
@@ -105,6 +106,7 @@ export default function AssetExplorer() {
   const [params] = useSearchParams();
   const { workspace, activeTeam } = useWorkspace();
   const phone = usePhone();
+  const narrow = useNarrowTable();
   const saved = useMemo(() => loadTreeState(workspace), [workspace]);
   const tab = tabParam(params.get("tab"));
   const rcmOn = tab === "rcm";
@@ -731,13 +733,17 @@ export default function AssetExplorer() {
   // The RCM tab: the table's columns beside the tree, the heading over them,
   // and the details of the function, failure or mode picked.
   // The Evidence check column only once evidence is linked somewhere (or as
-  // chosen in the Columns menu).
-  const shownCols = tableCols(rprefs, linkedEvidence);
+  // chosen in the Columns menu). A window under 1400 px: fewer usual columns
+  // (no Interval, folded into the Task cell, nor Evidence check), so the table
+  // fits beside the tree; its columns narrow to fit too (TreePane).
+  const shownCols = tableCols(rprefs, linkedEvidence, { narrow });
   const cols = shownCols.map((id) => COLUMN[id]).filter(Boolean);
   const widths = {};
   for (const c of cols) widths[c.id] = rprefs.widths[c.id] ?? c.width;
   const table = rcmOn ? {
     cols, widths, treeW: width, total: width + cols.reduce((t, c) => t + widths[c.id], 0),
+    foldInterval: !shownCols.includes("interval"),
+    intervalW: rprefs.widths.interval ?? COLUMN.interval.width,
     editing, readOnly: false,
     canEditName: (r) => EDITABLE.has(r.type),
     onEdit: (key, col) => { setRcmFocus(key); setEditing({ key, col }); },
@@ -759,7 +765,8 @@ export default function AssetExplorer() {
                     <button type="button" className="sm"
                             // A double-click asks once (its second click is the dialog's, which ignores it).
                             onClick={(e) => { if (e.detail < 2) runAdd({ ref: { add: "fn", position_id: posRow.key } }); }}>Add function</button>
-                    <ColumnChooser cols={shownCols} onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
+                    <ColumnChooser cols={shownCols} usual={usualCols({ narrow })}
+                                   onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
                   </>
                 )} />
   ) : summaryRow && (
@@ -934,4 +941,18 @@ export default function AssetExplorer() {
 // A position's own evidence checks, for its heading on the RCM tab.
 function rollupOf(rcm, positionId) {
   return (rcm.positions || []).find((p) => p.id === positionId)?.rollup || null;
+}
+
+// Is the window narrower than NARROW_TABLE (fewer usual columns in the RCM
+// table)? Follows the window as it changes.
+const NARROW_QUERY = `(max-width: ${NARROW_TABLE - 1}px)`;
+function useNarrowTable() {
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW_QUERY);
+    const onChange = () => setNarrow(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return narrow;
 }

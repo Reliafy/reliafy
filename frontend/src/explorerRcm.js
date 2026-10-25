@@ -9,7 +9,9 @@
 // RCM grafted in, which position a row is on, what each row's menu offers
 // (right-click, ⋯ or Shift+F10), and the RCM chips.
 
-import { COLUMNS, DEFAULT_COLUMNS, blank as rcmBlank, modeCounts, rowText as rcmText } from "./rcmWorksheet.js";
+import {
+  COLUMN, COLUMNS, DEFAULT_COLUMNS, blank as rcmBlank, intervalText, modeCounts, rowText as rcmText,
+} from "./rcmWorksheet.js";
 
 export const RCM_TYPES = new Set(["fn", "fail", "mode", "unassigned"]);
 export const isRcmRow = (r) => !!r && RCM_TYPES.has(r.type);
@@ -142,27 +144,98 @@ export function hasLinkedEvidence(rcm) {
 
 const inOrder = (ids) => COLUMNS.map((c) => c.id).filter((id) => ids.includes(id));
 
-// The columns the table shows: the remembered set, with the Evidence check as
-// chosen in the Columns menu, else only when evidence is linked somewhere.
-export function tableCols(prefs, linked) {
-  const want = typeof prefs.explorerCheck === "boolean" ? prefs.explorerCheck : linked;
-  const rest = (prefs.cols || DEFAULT_COLUMNS).filter((id) => id !== "check");
+// A window narrower than this (a 1280 px laptop) gets fewer columns by
+// default, so the table fits beside the tree: no Interval (it's folded into
+// the Task cell, "Inspect roof tubes · every 12 months") and no Evidence check.
+export const NARROW_TABLE = 1400;
+
+// The usual columns for the window's width (`narrow`: under NARROW_TABLE).
+export function usualCols({ narrow = false } = {}) {
+  return DEFAULT_COLUMNS.filter((id) => id !== "check" && !(narrow && id === "interval"));
+}
+
+// The columns the table shows: the ones chosen in a Columns menu (the
+// remembered set), else the usual ones for the window's width; with the
+// Evidence check as chosen in the Columns menu, else only when evidence is
+// linked somewhere (and the window isn't narrow).
+export function tableCols(prefs, linked, { narrow = false } = {}) {
+  const want = typeof prefs.explorerCheck === "boolean" ? prefs.explorerCheck : linked && !narrow;
+  const rest = prefs.colsChosen ? (prefs.cols || DEFAULT_COLUMNS).filter((id) => id !== "check") : usualCols({ narrow });
   return inOrder(want ? [...rest, "check"] : rest);
 }
 
 // The prefs after the Columns menu changed what's shown (`next`, from `shown`).
 // Ticking the Evidence check on or off is remembered as a choice; the other
-// columns are the shared set. `reset` (Show the usual columns): the usual set,
-// and the Evidence check back to following the evidence. The shared set keeps
-// its own Evidence check (the RCM study's worksheet uses it).
+// columns are the shared set, now chosen. `reset` (Show the usual columns):
+// the usual set again (following the window's width), and the Evidence check
+// back to following the evidence. The shared set keeps its own Evidence check
+// (the RCM study's worksheet uses it).
 export function withTableCols(prefs, next, shown, { reset = false } = {}) {
   const had = (prefs.cols || DEFAULT_COLUMNS).includes("check");
+  if (reset) {
+    const out = { ...prefs, cols: DEFAULT_COLUMNS };
+    delete out.explorerCheck;
+    delete out.colsChosen;
+    return out;
+  }
   const cols = inOrder([...next.filter((id) => id !== "check"), ...(had ? ["check"] : [])]);
-  const out = { ...prefs, cols };
-  if (reset) delete out.explorerCheck;
-  else if (next.includes("check") !== shown.includes("check")) out.explorerCheck = next.includes("check");
+  const out = { ...prefs, cols, colsChosen: true };
+  if (next.includes("check") !== shown.includes("check")) out.explorerCheck = next.includes("check");
   return out;
 }
+
+// The columns' widths narrowed to fit `room` (the pane's width beside the
+// tree column): a table wider than its pane gives up the same share of each
+// column's slack (its width over its least), never below its least (`min`),
+// so it scrolls sideways only when every column is at its least. Never
+// widened (the row's last cell fills what's left). {id: width}.
+export function fitWidths(ids, widths, room) {
+  const out = Object.fromEntries(ids.map((id) => [id, widths[id]]));
+  if (!Number.isFinite(room) || room <= 0) return out;
+  const total = ids.reduce((t, id) => t + out[id], 0);
+  if (total <= room) return out;
+  const least = (id) => Math.min(out[id], COLUMN[id]?.min ?? out[id]);
+  const slack = ids.reduce((t, id) => t + out[id] - least(id), 0);
+  if (slack <= 0) return out;
+  const k = Math.min(1, (total - room) / slack);
+  let used = 0;
+  for (const id of ids) {
+    out[id] = Math.max(least(id), Math.floor(out[id] - (out[id] - least(id)) * k));
+    used += out[id];
+  }
+  // Rounding: the pixels the rounding down left over go back, one each, to
+  // the columns that gave some up, so the table is exactly as wide as its room.
+  for (let spare = room - used; spare > 0;) {
+    const back = ids.filter((x) => out[x] < widths[x]);
+    if (!back.length) break;
+    for (const id of back) {
+      if (spare <= 0) break;
+      out[id] += 1;
+      spare -= 1;
+    }
+  }
+  return out;
+}
+
+// The Task cell with the interval folded into it (the Interval column not
+// shown): "Inspect roof tubes · every 12 months"; an interval with no task,
+// "Every 12 months". Other rows: as the Task column has them.
+export function taskWithInterval(r) {
+  if (r.type !== "mode") return COLUMN.task.text(r);
+  const d = r.ref.decision;
+  const task = String(d?.task || "").trim();
+  const every = intervalText(d);
+  if (!every) return task;
+  return task ? `${task} · every ${every}` : `Every ${every}`;
+}
+
+// The Task column with its interval (for the table when the Interval column
+// isn't shown).
+export const TASK_WITH_INTERVAL = {
+  ...COLUMN.task,
+  title: "What is done and how often, and for run-to-failure the action on failure",
+  text: taskWithInterval,
+};
 
 // The rows to open when the RCM tab opens on a position: it, and its
 // functions and functional failures, so its failure modes show.
