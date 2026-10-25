@@ -98,6 +98,18 @@ def remove_document(m: Maintenance, document_id: str) -> dict:
     return out
 
 
+def remove_function(m: Maintenance, function_id: str) -> dict:
+    """Delete a function (see Maintenance.remove_function); the kept PDFs on it
+    go with it, bytes and all (the history keeps that they were there)."""
+    out = m.remove_function(function_id)
+    store = None
+    for document_id in out["documents_removed"]:
+        if m.document(document_id).get("stored"):
+            store = store or get_document_store()
+            store.delete(document_id)
+    return out
+
+
 def served_document(m: Maintenance, document_id: str) -> tuple[dict, bytes] | None:
     """A stored PDF and its bytes, if it's in this workspace and hasn't been
     removed."""
@@ -435,19 +447,31 @@ def position_rcm(position_id: str, scope: str = "below", session=Depends(get_ses
 
 @router.post("/positions/{position_id}/functions")
 def add_function(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.add_function, position_id, body.get("text"), body.get("standard", ""))
+    """A function with its performance standard and, optionally, the working behind it
+    (standard_basis: Markdown text)."""
+    return _run(m.add_function, position_id, body.get("text"), body.get("standard", ""),
+                standard_basis=body.get("standard_basis", ""))
+
+
+@router.get("/functions/{function_id}")
+def get_function(function_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """One function in full: the working behind its standard and the documents on it."""
+    return _run(m.function, function_id)
 
 
 @router.patch("/functions/{function_id}")
 def update_function(function_id: str, body: dict = Body(...),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.update_function, function_id, body.get("text"), body.get("standard"))
+    """text, standard or standard_basis (the working behind the standard; "" clears it)."""
+    return _run(m.update_function, function_id, body.get("text"), body.get("standard"),
+                body.get("standard_basis"))
 
 
 @router.delete("/functions/{function_id}")
-def remove_function(function_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Delete a function and its functional failures; their failure modes stay, unassigned."""
-    return _run(m.remove_function, function_id)
+def delete_function(function_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Delete a function and its functional failures (their failure modes stay, unassigned)
+    and the documents on it."""
+    return _run(remove_function, m, function_id)
 
 
 @router.post("/functions/{function_id}/failures")

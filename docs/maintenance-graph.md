@@ -281,7 +281,7 @@ function fails in one or more ways (functional failures), and each functional
 failure is caused by some of the position's failure modes:
 
 ```
-(:Position)-[:PERFORMS]->(:Function {text, standard})
+(:Position)-[:PERFORMS]->(:Function {text, standard, standard_basis?, basis_on?})
 (:Function)-[:FAILS_AS]->(:FunctionalFailure {text})
 (:FunctionalFailure)-[:CAUSED_BY]->(:FailureMode)
 (:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
@@ -300,6 +300,34 @@ Events: `function.added` / `updated` / `removed`, `functional_failure.added`
 or none), `failure_mode.analysed` and `failure_mode.retired`. Deleting a
 function or a functional failure leaves its failure modes on the position,
 unassigned; deleting a failure mode retires the task that mitigates it.
+
+### The working behind a performance standard
+
+Some performance standards are worked out from the operating context (a
+dosing rate from a tank's volume and its demand, a flow from a turnover
+time). `standard_basis` on the Function keeps that working: Markdown text, LF
+line endings, at most 20,000 characters (`BASIS_TEXT`), no control characters.
+The server stores it as text and never renders it.
+
+- `function.added` carries `standard_basis` and `on` only when there is a
+  working, so older events replay to the same node. `function.updated` carries
+  it in `changes` like `text` and `standard` (`""` clears it), plus a
+  top-level `on`; the projector keeps that day as `basis_on` ("updated
+  <date>"). A copied position carries the working (and its date).
+- Code from before the field: its `function.added` projector reads named keys,
+  so it projects the function without the working; its `function.updated`
+  projector (`_patch`) stores `changes.standard_basis` on the node, unused and
+  unshown; the top-level `on` is ignored. Nothing fails.
+- Reads: the full text is only in per-position reads (`rcm_worksheet`: `GET
+  /positions/{id}/rcm` and `maintenance_get kind rcm`) and in one function's
+  read (`GET /functions/{id}`, `maintenance_get kind function`). The bulk
+  `rcm_all` (the asset tree's RCM tab) gives each function `has_basis` and
+  `basis_preview` (its first 240 characters as one plain line) instead.
+- A PDF of the working is a Document with its `OF` edge to the Function (no
+  new event, edge or kind; at most 5 on one function). It moves with the
+  function (the edge is on the node), isn't copied with a position (no
+  document is), and is removed with the function: `remove_function` emits
+  `document.removed` for each, and the app deletes a kept PDF's bytes.
 
 ### Moving RCM to another position
 

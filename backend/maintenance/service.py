@@ -107,6 +107,8 @@ class RateLimited(LimitReached):
 SHORT_TEXT = 200  # names, titles, tags, serials
 LONG_TEXT = 4000  # descriptions, notes, instructions, reasons
 MAX_NOTES = 5 * LONG_TEXT  # an item's or work order's notes, grown by appended lines
+BASIS_TEXT = 5 * LONG_TEXT  # the working behind a function's performance standard (Markdown)
+BASIS_PREVIEW = 240  # characters of that working in the bulk RCM read
 NOTE_HISTORY = 20  # earlier versions of a note kept on the node (the log keeps every one)
 _LONG_FIELDS = {"description", "operating context", "notes", "note", "instructions", "reason"}
 
@@ -217,6 +219,40 @@ def shortened(text, limit: int = SHORT_TEXT) -> tuple[str, bool]:
         cut -= 1
     head = " ".join(text[:cut].split()).rstrip(",;:-–—(/").rstrip()  # one line
     return (head or text[:cut]) + "…", True
+
+
+def _basis_text(value) -> str:
+    """The working behind a performance standard from a request: plain text
+    (Markdown), LF line endings, each line's trailing spaces and the whole
+    trimmed, at most BASIS_TEXT characters ("" clears it). Never rendered here."""
+    lines = str(value or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    text = "\n".join(line.rstrip() for line in lines).strip()
+    if any(ord(ch) < 32 and ch not in "\n\t" for ch in text):
+        raise Invalid("The working behind the standard is plain text (Markdown is fine); it has a control "
+                      "character in it. Paste it as text, or attach the file as a PDF.")
+    if len(text) > BASIS_TEXT:
+        raise Invalid(f"The working behind the standard is at most {BASIS_TEXT:,} characters; this one is "
+                      f"{len(text):,}. Shorten it, or attach it as a PDF.")
+    return text
+
+
+_MD_RULE = re.compile(r"[-*_=|:\s]{3,}")
+_MD_LEAD = re.compile(r"^(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)+")
+_MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+_MD_MARKS = re.compile(r"\*\*|__|~~|[*`]")
+
+
+def basis_preview(text, limit: int = BASIS_PREVIEW) -> str:
+    """A working's first words as one plain line (Markdown marks, rules and
+    code fences dropped), at most ``limit`` characters: for lists and tooltips."""
+    words = []
+    for line in str(text or "").split("\n"):
+        line = line.strip()
+        if not line or line.startswith("```") or _MD_RULE.fullmatch(line):
+            continue
+        line = _MD_MARKS.sub("", _MD_LINK.sub(r"\1", _MD_LEAD.sub("", line)))
+        words.append(" ".join(line.strip("| ").replace("|", "·").split()))
+    return shortened(" ".join(w for w in words if w), limit)[0]
 
 
 def derived_title(name, room: int = LONG_TEXT) -> tuple[str, str]:
@@ -474,6 +510,7 @@ def warranty_view(w: dict | None, on: str | None = None) -> dict | None:
 DOCUMENT_KINDS = ("manual", "datasheet", "invoice", "drawing", "certificate", "other")
 MAX_DOCUMENTS = 20_000  # per organisation
 MAX_DOCUMENTS_EACH = 100  # on one item, position or class
+MAX_BASIS_DOCUMENTS = 5  # on one function (PDFs of the working behind its standard)
 MAX_STORED_DOCUMENTS = 500  # PDFs kept in one organisation's workspace (documents.py has their size cap)
 MAX_URL = 2000
 
@@ -770,8 +807,16 @@ def _function_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Function", {
         "text": p["text"], "standard": p.get("standard", ""), "order": p.get("order", 0),
         "rcm_function_id": p.get("rcm_function_id"), "study_id": p.get("study_id"),
-    })
+    } | ({"standard_basis": p["standard_basis"], "basis_on": p.get("on")} if p.get("standard_basis") else {}))
     s.put_edge(org, "PERFORMS", p["position_id"], p["id"])
+
+
+def _function_updated(s: GraphStore, org: str, p: dict) -> None:
+    """function.updated: field changes; a change to the working behind the
+    standard keeps the day it was made (the event's ``on``, when it has one)."""
+    _patch(s, org, p)
+    if "standard_basis" in p["changes"]:
+        s.patch_node(org, p["id"], {"basis_on": p.get("on")})
 
 
 def _functional_failure_added(s: GraphStore, org: str, p: dict) -> None:
@@ -1775,7 +1820,7 @@ PROJECTORS = {
     # the failure modes that cause it; a failure mode's analysis (effects, notes,
     # consequence and decision, with the evidence behind it); a mode taken out.
     "function.added": _function_added,
-    "function.updated": _patch,
+    "function.updated": _function_updated,
     "function.removed": _flag("removed"),
     "functional_failure.added": _functional_failure_added,
     "functional_failure.updated": _patch,
@@ -1990,7 +2035,9 @@ class Maintenance:
                     "id": fn_id, "position_id": pid, "text": fn["text"], "standard": fn.get("standard", ""),
                     "order": fn.get("order") or 0,
                 } | ({"rcm_function_id": fn["rcm_function_id"], "study_id": fn.get("study_id")}
-                     if fn.get("rcm_function_id") else {}))
+                     if fn.get("rcm_function_id") else {})
+                  | ({"standard_basis": fn["standard_basis"], "on": fn.get("basis_on") or self.today()}
+                     if fn.get("standard_basis") else {}))
                 for ff in self._failures_of(fn["id"]):
                     ff_id = new_id()
                     self._emit("functional_failure.added", {
@@ -2551,41 +2598,63 @@ class Maintenance:
         """Whether a failure mode is under one of its position's functional failures."""
         return any(not ff.get("removed") for ff in self.s.inn(self.org, mode_id, "CAUSED_BY"))
 
-    def add_function(self, position_id: str, text, standard="", rcm_function_id=None, study_id=None) -> dict:
+    def add_function(self, position_id: str, text, standard="", rcm_function_id=None, study_id=None,
+                     standard_basis="") -> dict:
         """A function the position performs ('Pump 50 L/s of water at 4 bar'), with
-        its performance standard if any."""
+        its performance standard if any, and the working behind that standard
+        (standard_basis: how it was worked out, Markdown text)."""
         position = self._get(position_id, "Position")
         if position.get("retired"):
             raise Invalid("That position has been retired.")
+        basis = _basis_text(standard_basis)
         fid = new_id()
         self._emit("function.added", {
             "id": fid, "position_id": position_id, "text": _text(text, "function", required=True, max_len=LONG_TEXT),
             "standard": _text(standard, "performance standard", max_len=LONG_TEXT),
             "order": self._next_order(self.s.out(self.org, position_id, "PERFORMS")),
-        } | ({"rcm_function_id": rcm_function_id, "study_id": study_id} if rcm_function_id else {}))
+        } | ({"rcm_function_id": rcm_function_id, "study_id": study_id} if rcm_function_id else {})
+          | ({"standard_basis": basis, "on": self.today()} if basis else {}))
         return self._function_view(self._get(fid, "Function"))
 
-    def update_function(self, function_id: str, text=None, standard=None) -> dict:
+    def update_function(self, function_id: str, text=None, standard=None, standard_basis=None) -> dict:
+        """Change a function's text, performance standard or the working behind
+        the standard ("" clears the standard or the working)."""
         fn, _ = self._live_function(function_id)
         changes = {}
         if text is not None:
             changes["text"] = _text(text, "function", required=True, max_len=LONG_TEXT)
         if standard is not None:
             changes["standard"] = _text(standard, "performance standard", max_len=LONG_TEXT)
-        changes = {k: v for k, v in changes.items() if fn.get(k, "") != v}
+        if standard_basis is not None:
+            changes["standard_basis"] = _basis_text(standard_basis)
+        changes = {k: v for k, v in changes.items() if (fn.get(k) or "") != v}
         if changes:
-            self._emit("function.updated", {"id": function_id, "changes": changes})
+            self._emit("function.updated", {"id": function_id, "changes": changes, "on": self.today()})
         return self._function_view(self._get(function_id, "Function"))
 
     def remove_function(self, function_id: str) -> dict:
         """Delete a function and its functional failures. Their failure modes stay
-        on the position (unassigned), with their decisions, tasks and history."""
+        on the position (unassigned), with their decisions, tasks and history.
+        Documents on the function are removed with it (documents_removed: the
+        caller deletes a kept PDF's bytes)."""
         fn, position = self._live_function(function_id)
         moved = 0
         for ff in self._failures_of(function_id):
             moved += self._drop_ff(ff)
+        docs = self.documents_of(function_id)
+        for d in docs:
+            self._emit("document.removed", {"id": d["id"], "on": self.today()})
         self._emit("function.removed", {"id": function_id, "on": self.today()})
-        return {"removed": function_id, "position_id": position["id"], "failure_modes_unassigned": moved}
+        return {"removed": function_id, "position_id": position["id"], "failure_modes_unassigned": moved,
+                "documents_removed": [d["id"] for d in docs]}
+
+    def function(self, function_id: str) -> dict:
+        """One function in full: its text, performance standard, the working behind
+        it (Markdown), its position, its functional failures and the documents on it."""
+        fn, position = self._live_function(function_id)
+        return {**self._function_view(fn), "position": {"id": position["id"], "name": position["name"]},
+                "failures": [self._ff_view(ff) for ff in self._failures_of(function_id)],
+                "documents": self.documents_of(function_id)}
 
     def add_functional_failure(self, function_id: str, text, rcm_failure_id=None, study_id=None) -> dict:
         """A way the function fails ('No flow', 'Flow below 40 L/s')."""
@@ -2851,9 +2920,14 @@ class Maintenance:
         return self._task_view(self._get(task_id, "Task"))
 
     @staticmethod
-    def _function_view(fn: dict) -> dict:
-        return {"id": fn["id"], "text": fn["text"], "standard": fn.get("standard") or "",
-                "from_study": fn.get("study_id")}
+    def _function_view(fn: dict, full: bool = True) -> dict:
+        """A function as reads show it. full: the working behind the standard in
+        full (a per-position read); otherwise has_basis and a short plain preview."""
+        basis = fn.get("standard_basis") or ""
+        out = {"id": fn["id"], "text": fn["text"], "standard": fn.get("standard") or "",
+               "from_study": fn.get("study_id"), "has_basis": bool(basis),
+               "basis_on": fn.get("basis_on") if basis else None}
+        return out | ({"standard_basis": basis} if full else {"basis_preview": basis_preview(basis)})
 
     @staticmethod
     def _ff_view(ff: dict) -> dict:
@@ -2925,11 +2999,21 @@ class Maintenance:
         for src, dst in s.pairs(org, "MITIGATES"):
             if src in tasks and dst in modes:
                 task_of.setdefault(dst, tasks[src])
+        docs_of: dict[str, list] = {}  # function -> its documents (the working's PDFs)
+        on_fns = [(src, dst) for src, dst in s.pairs(org, "OF") if dst in fns]
+        if on_fns:
+            docs = {d["id"]: d for d in s.nodes(org, "Document") if not d.get("removed")}
+            for src, dst in on_fns:
+                if src in docs and dst in fns:
+                    docs_of.setdefault(dst, []).append(docs[src])
         order = lambda x: (x.get("order") or 0, x["text"].lower())  # noqa: E731
         for d in (fns_of, ffs_of, modes_of):
             for v in d.values():
                 v.sort(key=order)
-        return {"functions": fns_of, "failures": ffs_of, "modes": modes_of, "ff_of": ff_of, "task_of": task_of}
+        for v in docs_of.values():
+            v.sort(key=lambda d: (d["title"].lower(), d["id"]))
+        return {"functions": fns_of, "failures": ffs_of, "modes": modes_of, "ff_of": ff_of, "task_of": task_of,
+                "documents": docs_of}
 
     @staticmethod
     def _analysed(index: dict, position_id: str) -> bool:
@@ -2951,7 +3035,7 @@ class Maintenance:
                 return False
         return True
 
-    def _position_rcm(self, index: dict, pid: str) -> dict:
+    def _position_rcm(self, index: dict, pid: str, full: bool = True) -> dict:
         ff_of, task_of = index["ff_of"], index["task_of"]
         by_ff: dict[str, list] = {}
         unassigned = []
@@ -2965,7 +3049,11 @@ class Maintenance:
         for fn in index["functions"].get(pid, []):
             failures = [{**self._ff_view(ff), "modes": by_ff.get(ff["id"], [])}
                         for ff in index["failures"].get(fn["id"], [])]
-            functions.append({**self._function_view(fn), "failures": failures})
+            docs = index["documents"].get(fn["id"], [])
+            functions.append({**self._function_view(fn, full), "failures": failures,
+                              "documents": [self._document_view(d, self._DOCUMENT_FIELDS) if full else
+                                            {"id": d["id"], "title": d["title"], "size": d.get("size")}
+                                            for d in docs]})
         return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid)}
 
     def rcm_all(self) -> dict:
@@ -2979,7 +3067,8 @@ class Maintenance:
             pid = p["id"]
             if p.get("retired") or not (index["functions"].get(pid) or index["modes"].get(pid)):
                 continue
-            out.append({"id": pid, "name": p["name"], "depth": 0, **self._position_rcm(index, pid)})
+            # Lean: a working's preview, never its full text (that's per position, or function()).
+            out.append({"id": pid, "name": p["name"], "depth": 0, **self._position_rcm(index, pid, full=False)})
         out.sort(key=lambda x: x["id"])
         return {"positions": out}
 
@@ -6675,14 +6764,18 @@ class Maintenance:
     def _document_target(self, target_id=None, position_class=None) -> tuple[dict, str]:
         """What a document is for, as the event names it, and its node's id."""
         if bool(target_id) == bool(position_class):
-            raise Invalid("Say what the document is for: an item or position (target_id), or a class of "
-                          "position (position_class).")
+            raise Invalid("Say what the document is for: an item, position or function (target_id), or a "
+                          "class of position (position_class).")
         if position_class:
             name = self._class_name(position_class)
             return {"class_name": name}, class_id(self.org, name)
         node = self.s.node(self.org, str(target_id))
-        if node is None or node["label"] not in ("Item", "Position"):
+        if node is None or node["label"] not in ("Item", "Position", "Function"):
             raise NotFound(target_id)
+        if node["label"] == "Function":  # the working behind its performance standard, as a PDF
+            self._live_function(node["id"])
+            if len(self.documents_of(node["id"])) >= MAX_BASIS_DOCUMENTS:
+                raise LimitReached(f"At most {MAX_BASIS_DOCUMENTS} documents on one function. Remove one first.")
         return {"target_id": node["id"]}, node["id"]
 
     def add_document(self, url, title="", kind="other", target_id=None, position_class=None) -> dict:
@@ -6762,7 +6855,7 @@ class Maintenance:
         d = self._get(document_id, "Document")
         of = self.s.out(self.org, document_id, "OF")
         return self._document_view(d, (*self._DOCUMENT_FIELDS, "removed")) | {
-            "of": of and {"id": of[0]["id"], "kind": of[0]["label"], "name": of[0].get("name")},
+            "of": of and {"id": of[0]["id"], "kind": of[0]["label"], "name": of[0].get("name") or of[0].get("text")},
         }
 
     def stored_document(self, document_id: str) -> dict:
@@ -7165,13 +7258,15 @@ class Maintenance:
         """The asset trees for the app's tree pane, flat: every live position once
         (id, name, parent_id, and when set: tag, position_class, item (with the
         item's own status, when it has any), location_id (set on it), location
-        (where it is), carried_by, status, inside), with the
+        (where it is), carried_by, status, inside, context: it has an operating
+        context), with the
         locations, the items placed at one now (spares) and the items neither fitted
         nor placed (unhomed). Empty fields are left out: a big register stays small."""
         read = self._tree_read()
         rows = read["positions"]
         _, inside = self._tree_rollup(rows)
         rcm = self._rcm_index()
+        context = {p["id"] for p in self.s.nodes(self.org, "Position") if p.get("operating_context")}
 
         def lean(d: dict | None) -> dict | None:
             return {k: v for k, v in d.items() if v} or None if d else None
@@ -7193,6 +7288,8 @@ class Maintenance:
             # RCM not done here yet (see _analysed).
             if not self._analysed(rcm, pid):
                 row["not_analysed"] = True
+            if pid in context:  # it has an operating context (a working can point at it)
+                row["context"] = True
             positions.append(row)
 
         def thing(d: dict) -> dict:

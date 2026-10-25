@@ -124,7 +124,8 @@ GET_KINDS: Table = {
     "photo_link": ("id", "", """id = a link_id from maintenance_attachments photo_link. The photos added
         through it so far, and any location a photo carried with the user's answer (saved / declined / null =
         not answered). Unanswered: ask the user before set_coordinates; never save it unasked."""),
-    "document": ("id", "", """A document on an item, position or class. A stored PDF has open_url and
+    "function": ("id", "", "A function in full: standard_basis (Markdown) and its documents."),
+    "document": ("id", "", """A document on an item, position, function or class. A stored PDF has open_url and
         download_url: no sign-in, for 15 minutes; read it again for new ones."""),
     "manufacturer_match": ("text", "", """Which register entry a maker as written ('K.S.B.', 'KSB AG') is:
         by name or alias, case, accents, punctuation and company form (AG, Ltd) aside. match is null when none
@@ -244,11 +245,12 @@ FAILURE_MODES: Table = {
     "assign": ("failure_mode_id", "functional_failure_id", "Put it under one of its position's functional "
                "failures (left out: under none)."),
     "retire": ("failure_mode_id", "", "Delete it from the position's RCM, with its task (recorded failures keep it)."),
-    "add_function": ("position_id text", "standard", "A function the position performs, with its performance "
-                     "standard."),
-    "update_function": ("function_id", "text standard", "Change a function's text or performance standard."),
-    "remove_function": ("function_id", "", "Delete a function and its functional failures; their modes stay, "
-                        "unassigned."),
+    "add_function": ("position_id text", "standard standard_basis", "A function the position performs, with its "
+                     "performance standard and how it was worked out (standard_basis, Markdown)."),
+    "update_function": ("function_id", "text standard standard_basis", "Change a function's text, standard or "
+                        "standard_basis ('' clears it)."),
+    "remove_function": ("function_id", "", "Delete a function, its functional failures and documents; their modes "
+                        "stay, unassigned."),
     "add_functional_failure": ("function_id text", "", "A way the function fails ('No flow')."),
     "update_functional_failure": ("functional_failure_id text", "", "Change a functional failure's text."),
     "remove_functional_failure": ("functional_failure_id", "", "Delete a functional failure; its modes stay, "
@@ -474,7 +476,7 @@ ATTACHMENTS: Table = {
     "unlink_photo": ("photo_id target_id", "", "Take a photo off one place it shows (not its last: move or remove it)."),
     "move_photo": ("photo_id target_id", "from_id", "Move a photo to target_id: off from_id, or else off everywhere else."),
     "add_document": ("", "url upload_id target_id position_class title kind", """Add a document (a manual,
-        datasheet, invoice, drawing, certificate) to an item or position (target_id), or to a position class
+        datasheet, invoice, drawing, certificate) to an item, position or function (target_id), or to a position class
         (one datasheet every pump of that model shares): a link (url, http(s)) or a PDF to keep here (upload_id
         from uploads create, purpose document). Use this rather than links in notes. kind: manual, datasheet,
         invoice, drawing, certificate, other (default)."""),
@@ -524,6 +526,7 @@ def register() -> None:
     from backend.mcp_server import _READ, _WRITE, _caller, _db, _reader, _tool, mcp
     from backend.routers.maintenance import (document_link, get_store, ingest_document, link_payload, photo_links,
                                              remove_document, remove_photo, served_photo)
+    from backend.routers.maintenance import remove_function as remove_function_and_documents
     from backend.schema import RcmStudy
     from backend.services import access as access_service
     from backend.services import time_zones
@@ -697,7 +700,7 @@ def register() -> None:
                 "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
                 "impact": m.impact, "conditions": m.conditions_of, "part_structure": m.part_structure,
-                "where_used": m.where_used}[kind]
+                "where_used": m.where_used, "function": m.function}[kind]
         return run(read, rid)
 
     @tool("maintenance_list", _READ, "List maintenance records", LIST_KINDS, "kind")
@@ -957,6 +960,7 @@ def register() -> None:
                                   consequence: str | None = None, effects: str | None = None,
                                   notes: str | None = None, function_id: str | None = None,
                                   functional_failure_id: str | None = None, standard: str | None = None,
+                                  standard_basis: str | None = None,
                                   decision: dict[str, Any] | None = None) -> dict[str, Any]:
         """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
         each fails (functional failures) and the modes causing each, with each mode's decision. Modes come
@@ -994,11 +998,11 @@ def register() -> None:
         if action == "retire":
             return run(m.retire_failure_mode, failure_mode_id)
         if action == "add_function":
-            return run(m.add_function, position_id, text, standard or "")
+            return run(m.add_function, position_id, text, standard or "", standard_basis=standard_basis or "")
         if action == "update_function":
-            return run(m.update_function, function_id, text, standard)
+            return run(m.update_function, function_id, text, standard, standard_basis)
         if action == "remove_function":
-            return run(m.remove_function, function_id)
+            return run(remove_function_and_documents, m, function_id)
         if action == "add_functional_failure":
             return run(m.add_functional_failure, function_id, text)
         if action == "update_functional_failure":
@@ -1449,8 +1453,8 @@ def register() -> None:
                                 target_id: Annotated[str | None, Field(description=(
                                     "photo_link, link_photo, unlink_photo, move_photo: a position, location, "
                                     "item or work order. set_coordinates: a "
-                                    "position, item, location or work order. add_document: an item or "
-                                    "position."))] = None,
+                                    "position, item, location or work order. add_document: an item, "
+                                    "position or function."))] = None,
                                 upload_id: Annotated[str | None, Field(max_length=64, description=(
                                     "add_document: a PDF sent with uploads create (purpose document)."))] = None,
                                 caption: str | None = None, lat: float | None = None, lon: float | None = None,

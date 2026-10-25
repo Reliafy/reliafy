@@ -6,6 +6,11 @@
   `Client.import_excel(path, target="rcm", position_id=…)`) adds an FMEA /
   RCM worksheet, .xlsx or .csv, to a Reliafy Maintenance position's RCM. It
   only adds: importing the same file again adds nothing.
+- `maintenance_failure_modes add_function` / `update_function` take
+  `standard_basis`, the working behind a performance standard (Markdown;
+  `--standard-basis @working.md` reads a file), and `maintenance_get kind
+  function` reads one function in full. No client code changed: the commands
+  come from the server's tool list.
 
 ## 0.3.1
 

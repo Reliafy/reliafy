@@ -315,6 +315,22 @@ def test_cli_sets_and_clears_a_positions_operating_context(server, capsys):
     assert code == 0 and json.loads(out)["operating_context"] == ""
 
 
+def test_cli_sets_the_working_behind_a_standard_from_a_file(server, capsys):
+    rf = Client()
+    pid = rf.call("maintenance_positions", "create", name="Tank")["id"]
+    fn = rf.call("maintenance_failure_modes", "add_function", position_id=pid, text="Hold water")["id"]
+    working = server["tmp"] / "working.md"
+    working.write_text("## Sizing\n\n| Days | kL |\n|---|---|\n| 2 | 10 |\n", encoding="utf-8")
+    code, out, _ = run(capsys, "maintenance_failure_modes", "update_function", "--function_id", fn,
+                       "--standard_basis", f"@{working}", "--json")
+    assert code == 0 and json.loads(out)["standard_basis"] == working.read_text().strip()
+    code, out, _ = run(capsys, "maintenance_get", "function", "--id", fn, "--json")
+    assert code == 0 and json.loads(out)["standard_basis"].startswith("## Sizing")
+    code, out, _ = run(capsys, "maintenance_failure_modes", "update_function", "--function-id", fn,
+                       "--standard-basis", "", "--json")
+    assert code == 0 and json.loads(out)["has_basis"] is False
+
+
 def test_cli_document_add_and_get(server, capsys):
     from backend.tests.test_maintenance_documents import pdf
 

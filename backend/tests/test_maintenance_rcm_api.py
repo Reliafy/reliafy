@@ -196,3 +196,22 @@ def test_move_rcm_over_mcp(env):  # noqa: F811
         return True
 
     assert _session(env["token"], go)
+
+
+def test_the_working_behind_a_standard_over_mcp(env):  # noqa: F811
+    """standard_basis on add_function / update_function ('' clears it), read in full with kind function."""
+    async def go(client):
+        pool = _ok(await _do(client, "maintenance_positions", "create", name="Tank"))
+        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pool["id"],
+                           text="Hold water", standard="10 kL", standard_basis="## Sizing\n\n2 days x 5 kL"))
+        assert fn["standard_basis"] == "## Sizing\n\n2 days x 5 kL" and fn["has_basis"]
+        got = _ok(await _get(client, "function", fn["id"]))
+        assert got["standard_basis"] == fn["standard_basis"] and got["position"]["id"] == pool["id"]
+        cleared = _ok(await _do(client, "maintenance_failure_modes", "update_function", function_id=fn["id"],
+                                standard_basis=""))
+        assert cleared["standard_basis"] == "" and not cleared["has_basis"]
+        too_long = await _do(client, "maintenance_failure_modes", "update_function", function_id=fn["id"],
+                             standard_basis="x" * 20_001)
+        assert too_long.is_error and "attach it as a PDF" in too_long.content[0].text
+        return True
+    assert _session(env["token"], go)
