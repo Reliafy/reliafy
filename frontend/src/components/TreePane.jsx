@@ -6,6 +6,7 @@ import { Cell, CellEditor, LevelIcon, PhoneStatus, phoneLine } from "./RcmWorksh
 import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf } from "../assetTree.js";
 import { cellRow, isRcmRow } from "../explorerRcm.js";
+import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 
 // The asset tree as a second-level menu beside the site menu: the outline
@@ -263,7 +264,7 @@ export default function TreePane({
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
   onNew, newLabel, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
-  rowMenu = null, branch = null, branchNote = null,
+  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false,
 }) {
   const H = phone ? (table ? 54 : 44) : 30;
   const wide = !phone;
@@ -296,6 +297,8 @@ export default function TreePane({
   };
   const keys = (e) => {
     if (e.target.closest(".tt-head button")) return;
+    // F is the page's full screen (its own key handler), not a jump to a row.
+    if (fullScreenKey && isFullScreenKey(e)) return;
     if (rowMenu && focus != null && itemsFor(focus).length && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey))
         && !e.target.closest("input, select, textarea, [contenteditable='true']")) {
       e.preventDefault();

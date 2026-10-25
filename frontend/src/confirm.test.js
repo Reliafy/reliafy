@@ -110,3 +110,14 @@ test("no browser confirm, alert or prompt anywhere in the app", () => {
   walk(new URL(".", import.meta.url).pathname);
   assert.deepEqual(offenders, []);
 });
+
+test("a dialog that does the work itself: run and its pending words", () => {
+  const run = async () => "id";
+  const c = normaliseConfirm({ title: "Delete this function?", confirmLabel: "Delete function", run, pendingLabel: "Deleting…" });
+  assert.equal(c.run, run);
+  assert.equal(c.pendingLabel, "Deleting…");
+  assert.equal(normalisePrompt({ title: "Add a function", label: "What must it do?", confirmLabel: "Add function", run }).pendingLabel, "Saving…");
+  const plain = normaliseConfirm({ title: "Delete?", confirmLabel: "Delete it" });
+  assert.equal("run" in plain, false);
+  assert.equal("pendingLabel" in plain, false);
+});

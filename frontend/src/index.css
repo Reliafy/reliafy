@@ -2278,6 +2278,12 @@ h1 .chip,
   color: var(--ink);
   background: var(--bg);
 }
+.confirm-error {
+  margin: 10px 0 0;
+  font-size: var(--fs-13);
+  color: var(--danger);
+  line-height: 1.4;
+}
 .confirm-field input:focus {
   outline: none;
   border-color: var(--acc);
@@ -7517,6 +7523,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .field-row { display: flex; gap: 8px; }
 .field-row input[type="text"] { flex: 1; }
 .interval-input { width: 110px; }
+.interval-input[aria-invalid="true"] { border-color: var(--danger); }
+.decision-interval-error { font-size: var(--fs-12); color: var(--danger); line-height: 1.5; margin: 6px 0 0; }
+/* Apply, and beside it what's missing while it can't be pressed. */
+.decision-apply { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
+.decision-why { margin: 0; font-size: var(--fs-13); color: var(--muted); text-align: right; line-height: 1.4; }
+.decision-why.error { color: var(--danger); }
 
 /* Evidence picker */
 .evidence-picker { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }

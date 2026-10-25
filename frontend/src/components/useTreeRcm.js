@@ -68,16 +68,24 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
     },
     // Something new inside a row: a function on a position, a functional failure
     // on a function, a failure mode on a functional failure (or under none). Asks
-    // for its words; returns the new row's id (null when cancelled).
+    // for its words and adds it from the dialog, which stays open (its button
+    // saying "Adding…") until the RCM is read again, so a second click or Enter
+    // adds nothing more, and a refusal shows there with the words kept.
+    // Returns the new row's id (null when cancelled).
     async add(kind, { positionId, functionId = null, failureId = null }) {
-      const text = (await askText(WORDS[kind]))?.trim();
-      if (!text) return null;
-      let made;
-      if (kind === "fn") made = await addPositionFunction(positionId, { text });
-      else if (kind === "fail") made = await addFunctionalFailure(functionId, { text });
-      else made = await addFailureMode(positionId, { text, functional_failure_id: failureId });
-      await after(Promise.resolve());
-      return made.id;
+      const id = await askText({
+        ...WORDS[kind],
+        pendingLabel: "Adding…",
+        run: async (text) => {
+          let made;
+          if (kind === "fn") made = await addPositionFunction(positionId, { text });
+          else if (kind === "fail") made = await addFunctionalFailure(functionId, { text });
+          else made = await addFailureMode(positionId, { text, functional_failure_id: failureId });
+          await after(Promise.resolve());
+          return made.id;
+        },
+      });
+      return id || null;
     },
     removeText(r) {
       const name = `“${(r.ref.text || "").slice(0, 80)}”`;

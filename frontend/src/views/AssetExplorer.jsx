@@ -286,13 +286,13 @@ export default function AssetExplorer() {
   };
 
   // F toggles full screen (not while typing, nor with a dialog or menu open,
-  // nor with a modifier: Ctrl+F still finds); Esc leaves it.
+  // nor with a modifier: Ctrl+F still finds); Esc leaves it. In the tree too:
+  // there F is full screen, not a jump to a row starting with F (TreePane's
+  // fullScreenKey); the other letters still jump.
   useEffect(() => {
     if (phone) return undefined;
     const onKey = (e) => {
-      if (!isFullScreenKey(e) || hasOpenLayer(document)) return;
-      // In the tree, letters jump to a row (type-ahead): F there isn't full screen.
-      if (e.target.closest?.("[role='tree'], [role='treegrid']")) return;
+      if (e.defaultPrevented || !isFullScreenKey(e) || hasOpenLayer(document)) return;
       e.preventDefault();
       toggleFull();
     };
@@ -355,9 +355,13 @@ export default function AssetExplorer() {
       pending.current = null;
       shown.current = mode;
       reveal(key);
-    } else if (shown.current !== mode && display.rows.has(selected[mode])) {
+    } else if (shown.current !== mode) {
+      // Once per arrangement, as soon as the tree is in, whether or not a row
+      // was remembered: else, with none remembered, the first row picked by a
+      // click would be "revealed" here as the position it's on, taking the
+      // pick off a function, failure or mode just clicked.
       shown.current = mode;
-      reveal(selected[mode]);
+      if (display.rows.has(selected[mode])) reveal(selected[mode]);
     }
   }, [data, display, whole, pinKey, reveal, mode, selected, setQuery_]);
 
@@ -392,17 +396,17 @@ export default function AssetExplorer() {
     add: r.type === "fn" ? "fail" : "mode", position_id: r.ref.position_id,
     function_id: r.type === "fn" ? r.ref.id : null, functional_failure_id: r.type === "fail" ? r.ref.id : null,
   } });
+  // The confirm stays open (its button saying "Deleting…") until the server
+  // has done it, so it's sent once; a refusal shows in the confirm.
   const remove = async (r) => {
     const level = LEVEL_OF[r.type].label.toLowerCase();
-    const ok = await confirm({ title: `Delete this ${level}?`, body: ops.removeText(r), confirmLabel: `Delete ${level}` });
+    const ok = await confirm({
+      title: `Delete this ${level}?`, body: ops.removeText(r), confirmLabel: `Delete ${level}`,
+      pendingLabel: "Deleting…", run: () => ops.remove(r).then(() => true),
+    });
     if (!ok) return;
-    try {
-      await ops.remove(r);
-      setRcmFocus(isRcmRow(display.rows.get(r.parent)) ? r.parent : null);
-      say(`Deleted the ${level}.`);
-    } catch (e) {
-      say(e.message, "error");
-    }
+    setRcmFocus(isRcmRow(display.rows.get(r.parent)) ? r.parent : null);
+    say(`Deleted the ${level}.`);
   };
   // Pin a branch: the address says so (Back undoes it). The selection stays
   // when it's inside the branch, else it's the pinned row; with `select`, the
@@ -473,15 +477,12 @@ export default function AssetExplorer() {
     setEditing(null);
     return true;
   };
+  // The dialog stays open (Apply saying "Saving…") until the server has it;
+  // a refusal shows in the dialog, with everything as it was typed.
   const saveDecision = async (answer) => {
-    const r = deciding;
+    await ops.decide(deciding, answer);
     setDeciding(null);
-    try {
-      await ops.decide(r, answer);
-      say("Saved the decision.");
-    } catch (e) {
-      say(e.message, "error");
-    }
+    say("Saved the decision.");
   };
 
   const toggle = (key, force) => {
@@ -667,7 +668,7 @@ export default function AssetExplorer() {
   // The panel shows the row from the whole tree, so its way up is the whole path.
   const row = (phone ? detailKey : focus) != null ? whole.rows.get(phone ? detailKey : focus) ?? null : null;
   const posRow = selPos != null ? display.rows.get(selPos) : null;
-  const fullButton = !phone && <FullScreenButton ref={fullBtn} full={full} onClick={toggleFull} />;
+  const fullButton = !phone && <FullScreenButton ref={fullBtn} full={full} onClick={toggleFull} shortcutNote="also in the tree" />;
 
   // The RCM tab: the table's columns beside the tree, the heading over them,
   // and the details of the function, failure or mode picked.
@@ -694,7 +695,9 @@ export default function AssetExplorer() {
                 meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key)} /></span> : null}
                 actions={(
                   <>
-                    <button type="button" className="sm" onClick={() => runAdd({ ref: { add: "fn", position_id: posRow.key } })}>Add function</button>
+                    <button type="button" className="sm"
+                            // A double-click asks once (its second click is the dialog's, which ignores it).
+                            onClick={(e) => { if (e.detail < 2) runAdd({ ref: { add: "fn", position_id: posRow.key } }); }}>Add function</button>
                     <ColumnChooser cols={rprefs.cols} onCols={(next) => setRprefs((p) => ({ ...p, cols: next }))} />
                   </>
                 )} />
@@ -800,6 +803,7 @@ export default function AssetExplorer() {
         rcmMarks={rcmOn || chips.includes("unanalysed")}
         table={table}
         rowMenu={rowMenu}
+        fullScreenKey={!phone}
         head={head}
         headTabs={headTabs}
         side={side}
@@ -836,7 +840,7 @@ export default function AssetExplorer() {
         <FromRcmModal positions={pickerList(data)} onClose={() => setModal(null)} onCreated={(r) => created(r.position.id)} />
       )}
       {deciding && options && (
-        <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} />
+        <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} limits />
       )}
     </div>
   );

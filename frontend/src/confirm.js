@@ -24,6 +24,10 @@ export function normaliseConfirm(opts = {}) {
     confirmLabel,
     cancelLabel: String(opts.cancelLabel || "Cancel"),
     destructive: opts.destructive !== false,
+    // The dialog does the work itself (ConfirmProvider.jsx), its button saying
+    // pendingLabel meanwhile.
+    ...(typeof opts.run === "function"
+      ? { run: opts.run, pendingLabel: String(opts.pendingLabel || "").trim() || "Saving…" } : {}),
   };
 }
 

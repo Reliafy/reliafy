@@ -51,8 +51,9 @@ export default function Modal({ title, onClose, locked, children, footer, classN
   return createPortal(
     <div
       className="overlay"
-      onClick={() => {
-        if (!locked) onClose();
+      onClick={(e) => {
+        // Not the second click of a double-click on the button that opened it.
+        if (!locked && e.detail < 2) onClose();
       }}
     >
       <div

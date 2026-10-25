@@ -1,14 +1,20 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
 import Chip from "./ui/Chip.jsx";
+import { NEEDS_INTERVAL, checkDecision } from "../decisionCheck.js";
 
 // Guided RCM decision flow for one failure mode: consequence → outcome
 // (suggested first, per the classic decision diagram) → task details →
-// linked evidence. Saves back {consequence, decision} to the tree editor;
-// nothing hits the server until the study is saved.
-export default function DecisionModal({ options, mode, onSave, onClose }) {
+// linked evidence. Saves back {consequence, decision}: to the study's tree
+// (nothing hits the server until the study is saved), or straight to the
+// server (the Explorer), when onSave returns a promise: the dialog then stays
+// open, Apply showing "Saving…", until it's done, and a refusal shows here
+// with everything as typed. Apply says what's missing whenever it can't be
+// pressed (decisionCheck.js); `limits` adds the Explorer's own checks.
+export default function DecisionModal({ options, mode, onSave, onClose, limits = false }) {
+  const id = useId();
   const existing = mode.decision || {};
   const [consequence, setConsequence] = useState(mode.consequence || null);
   const [outcome, setOutcome] = useState(existing.outcome || null);
@@ -41,10 +47,16 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
   }, [options.outcomes, suggested]);
 
   const fields = outcomeOpt?.fields || [];
-  const canSave = !!outcome && (outcome !== "rtf" || !!rtfBasis);
+  const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, notes, fields }, { limits });
+  const canSave = check.blockers.length === 0;
+  const needsInterval = NEEDS_INTERVAL.has(outcome) && fields.includes("interval");
+  // One save at a time: a second click (or Enter) while one is on its way does nothing.
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const busy = useRef(false);
 
-  const save = () => {
-    if (!canSave) return;
+  const save = async () => {
+    if (!canSave || busy.current) return;
     const decision = { outcome };
     if (outcome === "rtf") decision.rtf_basis = rtfBasis;
     if (fields.includes("task") && task.trim()) decision.task = task.trim();
@@ -56,18 +68,40 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
     decision.evidence = expectedEvidence && evidenceId
       ? { type: expectedEvidence, id: evidenceId }
       : null;
-    onSave({ consequence, decision });
+    busy.current = true;
+    setFailed(null);
+    const done = onSave({ consequence, decision });
+    if (!done || typeof done.then !== "function") return;
+    setSaving(true);
+    try {
+      await done;
+    } catch (e) {
+      busy.current = false;
+      setSaving(false);
+      setFailed(e?.message === "Failed to fetch" ? "Couldn't save: check your connection and try again." : e?.message || "Couldn't save the decision.");
+    }
   };
 
   return (
     <Modal
       title={`Decision — ${mode.text || "failure mode"}`}
       onClose={onClose}
+      locked={saving}
       className="decision-modal"
       footer={
         <>
-          <button className="secondary" onClick={onClose}>Cancel</button>
-          <button onClick={save} disabled={!canSave}>Apply</button>
+          <button className="secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <div className="decision-apply">
+            {(failed || !canSave) && (
+              <p className={"decision-why" + (failed ? " error" : "")} id={`${id}-why`} role={failed ? "alert" : "status"}>
+                {failed || check.blockers.join(" ")}
+              </p>
+            )}
+            <button onClick={save} disabled={!canSave || saving} aria-busy={saving || undefined}
+                    aria-describedby={failed || !canSave ? `${id}-why` : undefined}>
+              {saving ? "Saving…" : "Apply"}
+            </button>
+          </div>
         </>
       }
     >
@@ -137,7 +171,7 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
 
       {(fields.includes("task") || fields.includes("interval")) && (
         <div className="decision-step">
-          <label className="field-label">Task</label>
+          <label className="field-label">{needsInterval ? "Task and interval (the interval is needed)" : "Task"}</label>
           <div className="field-row">
             {fields.includes("task") && (
               <input
@@ -156,6 +190,10 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
                   step="any"
                   value={interval}
                   placeholder="Interval"
+                  aria-label={needsInterval ? "Interval (needed)" : "Interval"}
+                  aria-required={needsInterval || undefined}
+                  aria-invalid={check.intervalError ? "true" : undefined}
+                  aria-describedby={check.intervalError ? `${id}-interval` : undefined}
                   onChange={(e) => setInterval_(e.target.value)}
                 />
                 <Select
@@ -167,6 +205,8 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
               </>
             )}
           </div>
+          {check.intervalError && <p className="field-error decision-interval-error" id={`${id}-interval`}>{check.intervalError}</p>}
+          {check.notice && <p className="option-hint decision-notice" role="note">{check.notice}</p>}
           {fields.includes("interval") && expectedEvidence && (
             <p className="option-hint">
               Use the same time unit as the linked analysis — mismatched units
