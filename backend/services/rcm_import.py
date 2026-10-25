@@ -260,7 +260,7 @@ def _values(rows: list[list], col: Optional[int], guess, choices) -> list[dict]:
 
 
 def build_tree(header: list[str], rows: list[list], options: dict,
-               row_numbers: Optional[list[int]] = None) -> dict:
+               row_numbers: Optional[list[int]] = None, keep_rows: bool = False) -> dict:
     """The worksheet tree a table maps to, plus what the UI shows about it::
 
         {"functions": [...],             # clean_tree-valid
@@ -272,7 +272,8 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     ``options``: ``mapping`` (field id -> column name), ``consequence_map`` /
     ``outcome_map`` (cell text -> category, ``""`` = leave unset; unlisted
     values use the guess), ``extra_columns`` (column names appended to the
-    mode's notes).
+    mode's notes). ``keep_rows``: each mode also says the sheet ``row`` it came
+    from (for row-level messages, as the import onto a position gives).
     """
     options = options or {}
     mapping = {k: v for k, v in (options.get("mapping") or {}).items() if v}
@@ -365,7 +366,7 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             fn["_by_key"][fail_name.lower()] = failure
             fn["failures"].append(failure)
 
-        mode: dict = {"text": clip(mode_text), "consequence": None, "decision": None}
+        mode: dict = {"text": clip(mode_text), "consequence": None, "decision": None, "_row": rnum}
         effects = cell(r, "effects")
         if effects:
             mode["effects"] = clip(effects)
@@ -444,6 +445,11 @@ def build_tree(header: list[str], rows: list[list], options: dict,
         cleaned = rcm.clean_tree(functions)
     except rcm.RcmValidationError as exc:  # pragma: no cover - built to be valid
         raise RcmImportError(str(exc)) from None
+    if keep_rows:  # clean_tree keeps the order, and drops the row
+        for fn, cfn in zip(functions, cleaned):
+            for failure, cfailure in zip(fn["failures"], cfn["failures"]):
+                for mode, cmode in zip(failure["modes"], cfailure["modes"]):
+                    cmode["row"] = mode["_row"]
 
     values = {
         "consequence": _values(rows, col["consequence"], guess_consequence, CONSEQUENCE_CHOICES),

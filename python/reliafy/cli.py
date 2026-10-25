@@ -412,7 +412,8 @@ def cmd_import(client: Client, ns) -> int:
     if ns.what == "rbd":
         result = client.import_rbd(ns.file, name=ns.name, format=ns.format)
     else:
-        result = client.import_excel(ns.file, target=ns.target, sheet=ns.sheet, name=ns.name)
+        result = client.import_excel(ns.file, target=ns.target, sheet=ns.sheet, name=ns.name,
+                                     position_id=ns.position)
     render(result, ns.json)
     return 0
 
@@ -576,6 +577,8 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--format", help="rbd: blocksim, openpsa, galileo, excel or repyability (default: detected).")
     sp.add_argument("--target", help="excel: dataset, rcm or rbd.")
     sp.add_argument("--sheet")
+    sp.add_argument("--position", help="excel --target rcm: add the worksheet (.xlsx or .csv) to this maintenance "
+                                       "position's RCM instead of a study. Only adds.")
     sp = add("photo", cmd_photo, "Add photos to a maintenance position, item, location or work order; link a "
                                  "photo to another one too, move it, or unlink it.")
     sp.add_argument("verb", choices=["add", "link", "move", "unlink"])

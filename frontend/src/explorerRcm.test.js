@@ -60,8 +60,8 @@ test("no Add rows in the tree: adding is from each row's menu", () => {
   assert.deepEqual(d.rows.get("f2").kids, []);
   assert.deepEqual(d.rows.get("motor").kids, []);
   const ids = (key, opts) => rowActions(d.rows.get(key), opts).map((a) => a.id);
-  assert.deepEqual(ids("pump"), ["add-fn"]);
-  assert.deepEqual(ids("motor"), ["add-fn"]); // a position with no RCM yet
+  assert.deepEqual(ids("pump"), ["add-fn", "import-sheet", "export-csv"]);
+  assert.deepEqual(ids("motor"), ["add-fn", "import-sheet", "export-csv"]); // a position with no RCM yet
   assert.deepEqual(ids("f1"), ["add-fail", "rename", "delete"]);
   assert.deepEqual(ids("x1"), ["add-mode", "rename", "delete"]);
   assert.deepEqual(ids("m1"), ["decide", "rename", "delete"]);

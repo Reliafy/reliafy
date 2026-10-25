@@ -285,6 +285,24 @@ def test_cli_adds_the_sample_truck(server, capsys):
     assert sheet["rollup"]["modes"] == 5
 
 
+def test_cli_and_client_add_a_worksheet_to_a_position(server, capsys):
+    """An FMEA / RCM worksheet (CSV here) onto a position: the command, then the
+    client's import_excel, which adds nothing the second time."""
+    rf = Client()
+    pid = rf.call("maintenance_positions", "create", name="Conveyor C-2")["id"]
+    sheet = server["tmp"] / "conveyor.csv"
+    sheet.write_text("Function,Functional failure,Failure mode,Task type,Proposed task,Interval,Unit\n"
+                     "Move grain,Moves no grain,Belt torn,On-condition,Walk the belt,1,weeks\n"
+                     ",,Drive bearing seizes,Fixed interval,Replace bearings,12,months\n")
+    code, out, _ = run(capsys, "import", "excel", str(sheet), "--target", "rcm", "--position", pid, "--json")
+    body = json.loads(out)
+    assert code == 0 and body["written"] and body["counts"]["modes"] == 2 and body["counts"]["tasks"] == 2
+    again = rf.import_excel(str(sheet), target="rcm", position_id=pid)
+    assert again["counts"]["modes"] == 0 and again["counts"]["modes_existing"] == 2
+    rcm = rf.call("maintenance_get", "rcm", id=pid, scope="this")["positions"][0]
+    assert [x["text"] for x in rcm["functions"][0]["failures"][0]["modes"]] == ["Belt torn", "Drive bearing seizes"]
+
+
 def test_cli_sets_and_clears_a_positions_operating_context(server, capsys):
     rf = Client()
     pid = rf.call("maintenance_positions", "create", name="Fan 3", operating_context="Dusty; runs on demand.")["id"]

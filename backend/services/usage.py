@@ -346,6 +346,8 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("PUT", "/api/rcm/studies/{id}/tree", "rcm_edit"),
     ("POST", "/api/rcm/import/preview", "rcm_import_preview"),
     ("POST", "/api/rcm/import", "rcm_import"),
+    ("POST", "/api/maintenance/positions/{id}/rcm/import/preview", "rcm_import_preview"),
+    ("POST", "/api/maintenance/positions/{id}/rcm/import", "rcm_import"),
     # Excel (.xlsx) uploads: sheets read for a dataset, an RCM study or an RBD
     ("POST", "/api/excel/inspect", "excel_inspect"),
     ("POST", "/api/excel/table", "excel_import"),

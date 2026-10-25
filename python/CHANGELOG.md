@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `reliafy import excel FILE --target rcm --position ID` (and
+  `Client.import_excel(path, target="rcm", position_id=…)`) adds an FMEA /
+  RCM worksheet, .xlsx or .csv, to a Reliafy Maintenance position's RCM. It
+  only adds: importing the same file again adds nothing.
+
 ## 0.3.1
 
 - PDFs in Reliafy Maintenance: `Client.add_document(path, target_id=…)` keeps

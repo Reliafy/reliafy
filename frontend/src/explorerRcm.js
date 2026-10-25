@@ -96,7 +96,13 @@ export const rcmRowText = (r) => rcmText(r);
 export function rowActions(r, { canRename = true } = {}) {
   if (!r) return [];
   const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
-  if (r.type === "pos") return [{ id: "add-fn", label: "Add function" }];
+  if (r.type === "pos") {
+    return [
+      { id: "add-fn", label: "Add function" },
+      { id: "import-sheet", label: "Import worksheet…" },
+      { id: "export-csv", label: "Export CSV" },
+    ];
+  }
   if (r.type === "fn") {
     return [{ id: "add-fail", label: "Add functional failure" }, ...rename, { id: "delete", label: "Delete function", danger: true }];
   }

@@ -523,6 +523,56 @@ def merge_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = De
     return _run(m.merge_failure_mode, mode_id, body.get("into_id"))
 
 
+def _rcm_sheet(m: Maintenance, ctx: AccessCtx, position_id: str, file: UploadFile, sheet, header_row, options,
+               dry_run: bool) -> JSONResponse:
+    """Read the uploaded worksheet and add it to the position's RCM (or, with
+    dry_run, say what it would add)."""
+    import json
+
+    from backend.maintenance import rcm_sheet
+    from backend.routers import excel as excel_router
+    from backend.services import excel
+
+    try:
+        opts = json.loads(options) if options else None
+    except ValueError:
+        return JSONResponse(status_code=422, content={"detail": "The import options aren't valid JSON."})
+    if opts is not None and not isinstance(opts, dict):
+        return JSONResponse(status_code=422, content={"detail": "The import options must be an object."})
+    data = excel_router.read_upload(file)
+    filename = file.filename or ""
+    try:
+        table = excel_router.guarded(ctx.uid, rcm_sheet.read_table, data, filename, sheet or None,
+                                     excel_router.header_row_param(header_row))
+    except Exception as exc:  # noqa: BLE001 - untrusted file: a 422 that says why, never a 500
+        return excel_router.excel_error(exc, "rcm sheet", data, filename)
+    if opts is None:
+        opts = rcm_sheet.default_options(table)
+    return _run(rcm_sheet.run, m, position_id, table, opts, dry_run)
+
+
+@router.post("/positions/{position_id}/rcm/import/preview")
+def preview_rcm_sheet(position_id: str, file: UploadFile = File(...), sheet: str | None = Form(None),
+                      header_row: str | None = Form(None), options: str | None = Form(None),
+                      ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What an FMEA / RCM worksheet (Excel or CSV, one row per failure mode) would add to the position's RCM:
+    functions, functional failures, failure modes and tasks, what's there already and rows skipped. Nothing is
+    written. ``options`` is JSON ``{mapping, consequence_map, outcome_map, extra_columns}`` as for the study
+    import (left out: the mapping guessed from the header)."""
+    return _rcm_sheet(m, ctx, position_id, file, sheet, header_row, options, dry_run=True)
+
+
+@router.post("/positions/{position_id}/rcm/import")
+def import_rcm_sheet(position_id: str, file: UploadFile = File(...), sheet: str | None = Form(None),
+                     header_row: str | None = Form(None), options: str | None = Form(None),
+                     ctx: AccessCtx = Depends(get_access),
+                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Add the worksheet to the position's RCM, as the preview says. Only adds: a function or functional failure
+    with the same text is used as it is, a failure mode already on the position is left as it is, so the same
+    sheet imported again adds nothing. With any row in error nothing is written (``ok`` false)."""
+    return _rcm_sheet(m, ctx, position_id, file, sheet, header_row, options, dry_run=False)
+
+
 @router.post("/positions/{position_id}/apply-rcm")
 def apply_rcm(position_id: str, study_id: str = Body(..., embed=True), session=Depends(get_session),
               ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:

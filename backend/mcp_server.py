@@ -7408,6 +7408,58 @@ def _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id) 
     return out
 
 
+def _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, position_id) -> dict:
+    """An FMEA / RCM worksheet added to a maintenance position's RCM (only adds;
+    backend/maintenance/rcm_sheet.py)."""
+    from backend.maintenance import rcm_sheet
+    from backend.maintenance.access import allowed
+    from backend.maintenance.service import Invalid, Maintenance, NotFound
+    from backend.routers.maintenance import get_store
+    from backend.services import excel, rcm_import, time_zones
+
+    if not allowed(user):
+        raise ToolError("position_id: positions aren't available on your account.")
+    table = rcm_sheet.read_table(data, doc["filename"], sheet, header_row)
+    if mapping and isinstance(mapping.get("mapping"), dict):
+        options = dict(mapping)
+    elif mapping:
+        options = {"mapping": dict(mapping)}
+    else:
+        options = rcm_sheet.default_options(table)
+        if "mode" not in options["mapping"]:
+            raise ToolError(
+                f"Couldn't tell which column of “{table.sheet}” holds the failure modes. Give mapping: "
+                f"{{field: column}} with fields {', '.join(rcm_import.FIELD_IDS)} (mode is required). Its "
+                "columns: " + ", ".join(table.header) + ".")
+    options.setdefault("extra_columns", rcm_import.default_extra_columns(table.header, options["mapping"]))
+    m = Maintenance(get_store(), user["uid"], user["uid"], time_zone=time_zones.of_owner(db, user["uid"]))
+    try:
+        result = rcm_sheet.run(m, position_id, table, options, dry_run=False)
+    except NotFound:
+        raise ToolError("Position not found in your maintenance workspace.") from None
+    except (Invalid, excel.ExcelError) as err:
+        raise ToolError(str(err)) from None
+    if result["ok"]:
+        uploads_service.delete(db, doc["_id"])
+    unmapped = {k: [v for v in vals if v.get("guess") is None][:_RCM_VALUES]
+                for k, vals in (result.get("values") or {}).items()}
+    out = {"target": "rcm", "position_id": position_id, "written": not result["dry_run"],
+           **{k: result[k] for k in ("ok", "sheet", "header_row", "counts", "errors")},
+           "mapping": options["mapping"], "extra_columns": options.get("extra_columns") or [],
+           "warnings": result["warnings"][:_IMPORT_NOTES],
+           "url": _url(f"/asset-register/explorer?arrange=positions&tab=rcm&sel={position_id}")}
+    if not result["ok"]:
+        out["note"] = "Nothing was added: fix the rows in errors and import again (the upload is kept)."
+    if any(unmapped.values()):
+        out["unmapped_values"] = {k: v for k, v in unmapped.items() if v}
+        out["unmapped_note"] = ("These consequence / decision values weren't recognised and were left unset. To "
+                                "set them, import again with mapping {mapping: {...}, consequence_map: {value: "
+                                "category}, outcome_map: {value: decision}}.")
+    if result["notes"]:
+        out["notes"] = result["notes"]
+    return out
+
+
 def _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id, replace=False) -> dict:
     filename = doc["filename"]
     excel_mapping = mapping
@@ -7455,15 +7507,20 @@ def import_excel(
     study_id: Annotated[Optional[str], Field(description=(
         "rcm only: append the imported functions to this existing study of the user's instead of creating one."
     ))] = None,
+    position_id: Annotated[Optional[str], Field(max_length=64, description=(
+        "rcm only: add the worksheet (or a CSV) to this position's RCM instead. Only adds: importing it again "
+        "adds nothing."
+    ))] = None,
     header_row: Annotated[Optional[int], Field(ge=0, description=(
         "The sheet row holding the column names (1-based; 0 = no header row). Default: guessed."))] = None,
 ) -> dict[str, Any]:
-    """Import an uploaded .xlsx: a sheet as a dataset, an FMEA / RCM worksheet into a new or
-    existing RCM study (study_id), or Reliafy's RBD template as a diagram (with rbd_id a new copy of it, or with
-    replace=true over it). Look first with get kind upload. Formulas are read as last saved, never evaluated."""
+    """Import an uploaded .xlsx: a sheet as a dataset, an FMEA / RCM worksheet as an RCM study
+    (new, or study_id) or onto a position (position_id), or Reliafy's RBD template as a diagram
+    (rbd_id: a new copy of it; replace=true: over it). Look first with get kind upload. Formulas are
+    read as last saved, never evaluated."""
     user, db = _caller(ctx), _db()
     doc, data = uploads_service.read(db, upload_id, user["uid"])
-    if not uploads_service.is_excel(doc):
+    if not uploads_service.is_excel(doc) and not (target == "rcm" and position_id):  # a position takes CSV too
         raise ToolError(f"This upload isn't an Excel workbook (it's {doc.get('detected_format')}). CSV goes to "
                         "datasets upload / rbd upload_outage_log with upload_id; diagram files to uploads import_rbd.")
     if rbd_id and target != "rbd_template":
@@ -7472,9 +7529,15 @@ def import_excel(
         raise ToolError("replace applies with rbd_id (the diagram to overwrite).")
     if study_id and target != "rcm":
         raise ToolError("study_id applies to target rcm.")
+    if position_id and target != "rcm":
+        raise ToolError("position_id applies to target rcm.")
+    if position_id and study_id:
+        raise ToolError("Give study_id or position_id, not both.")
     with _untrusted_file(user["uid"]):
         if target == "dataset":
             return _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row)
+        if target == "rcm" and position_id:
+            return _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, position_id)
         if target == "rcm":
             return _excel_rcm(db, user, doc, data, sheet, mapping, name, header_row, study_id)
         return _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id, replace)
