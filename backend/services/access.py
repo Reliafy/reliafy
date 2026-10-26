@@ -276,17 +276,17 @@ def get_access(
 # ---- Direct shares (view-only) ------------------------------------------------
 #
 # A share grants one user read access to one artifact. Referenced artifacts
-# (a shared model's dataset, a shared study's evidence) become readable
+# (a shared model's dataset, a shared diagram's models) become readable
 # *transitively* — resolved live per request, never materialised, so the grant
 # follows later edits to the root artifact.
 
 SHARABLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models",
-    "strategy_analyses", "rcm_studies", "fleets", "recurrent_models",
+    "strategy_analyses", "fleets", "recurrent_models",
 )
 
-# How much of the reference graph a share can pull in: an RCM study links
-# evidence (depth 1) whose models link datasets (depth 2).
+# How much of the reference graph a share can pull in: a diagram links its
+# blocks' models (depth 1), which link their datasets (depth 2).
 _REF_DEPTH = 2
 
 
@@ -353,22 +353,6 @@ def refs_of_decision(decision) -> list[tuple[str, str]]:
     return []
 
 
-def evidence_refs(functions) -> list[tuple[str, str]]:
-    """(collection, id) pairs an RCM worksheet's decisions link as evidence."""
-    refs: list[tuple[str, str]] = []
-    for fn in functions or []:
-        if not isinstance(fn, dict):
-            continue
-        for failure in fn.get("failures") or []:
-            if not isinstance(failure, dict):
-                continue
-            for mode in failure.get("modes") or []:
-                if not isinstance(mode, dict):
-                    continue
-                refs.extend(refs_of_decision(mode.get("decision")))
-    return refs
-
-
 def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:
     """(collection, id) pairs this artifact references, from its raw doc."""
     refs: list[tuple[str, str]] = []
@@ -376,8 +360,6 @@ def refs_of(collection: str, doc: dict) -> list[tuple[str, str]]:
         refs.append(("datasets", doc["dataset_id"]))
     elif collection == "fleets" and _str_id(doc.get("model_id")):
         refs.append((FLEET_MODEL_COLLECTIONS[fleet_model_kind(doc)], doc["model_id"]))
-    elif collection == "rcm_studies":
-        refs.extend(evidence_refs(doc.get("functions")))
     elif collection == "rbds":
         refs.extend(graph_refs(doc.get("graph")))
     return refs
@@ -403,8 +385,8 @@ def reachable_via_shares(db, uid: str, collection: str) -> set[str]:
     """Ids in ``collection`` readable through shares — direct or referenced.
 
     Walks the reference graph from every artifact shared with the user
-    (depth-capped), so e.g. a shared RCM study's evidence models and their
-    datasets open for the recipient. Every step stays inside the grantor's
+    (depth-capped), so e.g. a shared diagram's models and their datasets
+    open for the recipient. Every step stays inside the grantor's
     own artifacts (plus samples): a reference to anything the grantor
     doesn't own is not followed. Computed fresh per request: revoking the
     root share instantly revokes the whole chain.
@@ -518,7 +500,7 @@ def check_references(db, ctx: AccessCtx, refs, keep=()) -> None:
     """Refuse a save whose references point at artifacts the writer can't read.
 
     ``refs`` are ``(collection, id)`` pairs (:func:`graph_refs`,
-    :func:`evidence_refs`, …), checked with :func:`readable_raw` — the same
+    :func:`refs_of_decision`, …), checked with :func:`readable_raw` — the same
     rule as opening the artifact. ``keep`` are the pairs the artifact already
     held before this save: they are left alone, so a document saved before
     this check stays editable (and the share walk never follows a reference

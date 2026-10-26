@@ -32,9 +32,10 @@ on the [What's new](https://reliafy.com/whats-new) page.
 - **Degradation & RUL** — fit per-unit degradation paths to a failure
   threshold, then track in-service items and predict when each will cross it
   (remaining useful life with credible intervals).
-- **RCM studies** — Function → Functional failure → Failure mode worksheets
-  where every maintenance decision links to the analysis that justifies it,
-  re-validated live (supported / contradicted / inconclusive).
+- **RCM on your asset tree** — functions → functional failures → failure
+  modes on each position, where every maintenance decision links to the
+  analysis that justifies it, re-validated live (supported / contradicted /
+  inconclusive).
 - **Maintenance strategy** — rank candidate distributions against your data,
   compare two designs head-to-head, and find the cost-optimal
   preventive-replacement interval.

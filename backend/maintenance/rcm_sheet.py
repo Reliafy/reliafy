@@ -1,7 +1,7 @@
 """An FMEA / RCM worksheet (Excel or CSV) added to one position's RCM.
 
-The sheet is read and mapped exactly as the RCM study import reads it
-(:func:`backend.services.rcm_import.build_tree`: one row per failure mode,
+The sheet is read and mapped by :func:`backend.services.rcm_import.build_tree`
+(one row per failure mode,
 function and functional failure carried down, consequence and decision-type
 cells mapped onto Reliafy's categories), then added to the position through
 the service's own methods, so every change is an ordinary event:

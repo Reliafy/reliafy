@@ -34,9 +34,6 @@ before, as a plain ``NonRepairable``)::
                                                     #   the rest (#136)
         "maintenance_group": "north pumps",    # shares the group's set-up cost
         "crew_priority": 2,                    # its place in the repair-crew queue
-        "rcm_source": {"study_id", "mode_id", ...}, # where the schedule was filled
-                                                    #   from (display only: never
-                                                    #   analysed, not in the cache key)
     }
     graph["costs"] = {"downtime_rate": 500,    # per unit time the *system* is down
                       "horizon": 87600,        # ownership horizon for the total cost

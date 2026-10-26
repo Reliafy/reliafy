@@ -182,10 +182,6 @@ POSITIONS: Table = {
         Repeat it to build many like structures; then update the copy's location_id if it's elsewhere."""),
     "retire": ("position_id", "reason", """Take it out of the plant (kept in the history). Nothing fitted, no
         position inside it in use, no work order open."""),
-    "from_rcm": ("study_id", "parent_id", """A new position named for an RCM study's system, with its failure
-        modes and a task for every decision with an interval (the study's id is in its address in the app)."""),
-    "apply_rcm": ("position_id study_id", "", """Bring a study's failure modes and tasks onto an existing
-        position; again later adds what's new and updates changed tasks."""),
     "add_sample_truck": ("", "again", """Copy the sample delivery truck, with its RCM, into the tree; once
         only unless again is true."""),
     "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
@@ -239,10 +235,10 @@ FAILURE_MODES: Table = {
         position: how it fails ('Bearing worn'); functional_failure_id puts it under one of the position's
         functional failures. Failures and tasks then name it by id."""),
     "update": ("failure_mode_id", "text effects notes function failure consequence", """Edit one (editing an
-        ad-hoc mode confirms it). A study's mode changes in the study until it's under a functional failure."""),
+        ad-hoc mode confirms it). effects and notes are its RCM analysis."""),
     "decide": ("failure_mode_id", "consequence decision", """Its consequence and decision {outcome, rtf_basis,
-        task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it), checked as a study's; adds,
-        changes or retires its task. Returns it with the evidence check."""),
+        task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it), checked by the RCM decision
+        rules; adds, changes or retires its task. Returns it with the evidence check."""),
     "assign": ("failure_mode_id", "functional_failure_id", "Put it under one of its position's functional "
                "failures (left out: under none)."),
     "retire": ("failure_mode_id", "", "Delete it from the position's RCM, with its task (recorded failures keep it)."),
@@ -264,14 +260,13 @@ FAILURE_MODES: Table = {
     "move_function": ("function_id position_id", "", "To another position, with its functional failures, modes "
                       "and tasks."),
     "merge": ("failure_mode_id into_failure_mode_id", "", """Fold a mode into another on the same position (a
-        duplicate, an ad-hoc one): its failures, findings and tasks move across. To link an ad-hoc mode to an
-        RCM study's, apply the study, then merge into the study's. Returns the position."""),
+        duplicate, an ad-hoc one): its failures, findings and tasks move across. Returns the position."""),
 }
 
 TASKS: Table = {
     "create": ("name interval", "position_id item_id location_id unit outcome also_interval also_unit point_id "
                "instructions checklist source reference failure_mode_id last_done trade while_stored "
-               "include_positions", """A scheduled task without an RCM study, on exactly one subject:
+               "include_positions", """A scheduled task added directly (not from an RCM decision), on exactly one subject:
         position_id (the job: lubricate the pump), item_id (follows the serial number: calibration,
         certification, a rotable's overhaul, preserving a stored spare) or location_id (a round; calendar units
         only). unit (default months): days, weeks, months, years, or hours / cycles / km from a counter
@@ -531,7 +526,6 @@ def register() -> None:
     from backend.routers.maintenance import (document_link, get_store, ingest_document, link_payload, photo_links,
                                              remove_document, remove_photo, served_photo)
     from backend.routers.maintenance import remove_function as remove_function_and_documents
-    from backend.schema import RcmStudy
     from backend.services import access as access_service
     from backend.services import time_zones
 
@@ -548,13 +542,6 @@ def register() -> None:
             raise ToolError("Not found in your maintenance workspace.") from None
         except Invalid as err:
             raise ToolError(str(err)) from None
-
-    def study_for(ctx: Context, study_id: str) -> RcmStudy:
-        user = _caller(ctx)
-        study, _ = access_service.fetch_readable(_db(), "rcm_studies", RcmStudy, study_id, _reader(user))
-        if study is None:
-            raise ToolError("RCM study not found.")
-        return study
 
     def tool(name, annotations, title, table: Table | None = None, selector: str = "action"):
         """Register one tool; with a table, its description lists the actions and
@@ -834,12 +821,12 @@ def register() -> None:
                               name: str | None = None,
                               parent_id: Annotated[str | None, Field(description=(
                                   "create / update / copy: the position (or, for create, the item) it goes "
-                                  "inside. from_rcm: the position to make it in."))] = None,
+                                  "inside."))] = None,
                               tag: str | None = None, position_class: str | None = None,
                               description: str | None = None, operating_context: str | None = None,
                               location_id: str | None = None, move_to_top_level: bool | None = None,
                               clear_location: bool | None = None,
-                              reason: str | None = None, study_id: str | None = None,
+                              reason: str | None = None,
                               dry_run: bool | None = None, again: bool | None = None) -> dict[str, Any]:
         """Positions: the functional tree (functional locations, SAP's FLOC): the slot, by what it does.
         Items are fitted to them; tasks, failure modes, parts lists and life data belong to them."""
@@ -861,11 +848,6 @@ def register() -> None:
             return run(m.copy_position, position_id, name, parent_id)
         if action == "retire":
             return run(m.retire_position, position_id, reason or "")
-        if action == "from_rcm":
-            return run(m.position_from_rcm, study_for(ctx, study_id), parent_id)
-        if action == "apply_rcm":
-            return run(lambda: {**m.apply_rcm(position_id, study_for(ctx, study_id)),
-                                "position": m.position(position_id)})
         if action == "add_sample_truck":
             from backend.maintenance import templates
 
@@ -968,8 +950,8 @@ def register() -> None:
                                   decision: dict[str, Any] | None = None,
                                   cause_id: str | None = None) -> dict[str, Any]:
         """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
-        each fails (functional failures) and the modes causing each, with each mode's decision. Modes come
-        from RCM studies, are added here, or are typed in at a failure (ad hoc). Failures
+        each fails (functional failures) and the modes causing each, with each mode's decision. Modes are
+        added here (or from a worksheet: uploads import_excel), or typed in at a failure (ad hoc). Failures
         (maintenance_fitments remove / add_past, maintenance_work_orders close) and tasks name them by id.
         Read it with maintenance_get kind rcm."""
         m = m_for(ctx)
@@ -1043,8 +1025,8 @@ def register() -> None:
                           reason: str | None = None) -> dict[str, Any]:
         """Scheduled tasks: they fall due and raise work orders (maintenance_work_orders generate). A task
         is on a position (the job; it counts again from each new item fitted), an item (follows the serial
-        number, into a store too) or a location (a round). Tasks from RCM come with maintenance_positions
-        from_rcm / apply_rcm. Example: {action: 'create', position_id: '<id>', name: 'Grease bearings',
+        number, into a store too) or a location (a round). A task from an RCM decision comes with
+        maintenance_failure_modes decide. Example: {action: 'create', position_id: '<id>', name: 'Grease bearings',
         interval: 500, unit: 'hours', also_interval: 6, also_unit: 'months', source: 'oem', reference:
         'Manual 7.2'}."""
         m = m_for(ctx)

@@ -183,32 +183,6 @@ class AgentSessionDoc(BaseModel):
     updated_at: datetime = Field(default_factory=_now)
 
 
-class RcmStudy(BaseModel):
-    """A Reliability Centred Maintenance study: an embedded worksheet tree
-    (Function → Functional Failure → Failure Mode) where each failure mode can
-    carry a maintenance decision linked to the analysis that justifies it.
-
-    The tree lives inside the study document: a study is one cohesive editing
-    unit of a few dozen nodes, always read and written whole, so a single
-    document gives atomic updates for free. Evidence statuses are computed at
-    read time from the linked artifacts — never stored.
-    """
-
-    id: str
-    name: str
-    system: str = ""
-    description: str = ""
-    owner_id: Optional[str] = None
-    updated_by: Optional[dict] = None
-    created_at: datetime = Field(default_factory=_now)
-    updated_at: datetime = Field(default_factory=_now)
-    functions: list = Field(default_factory=list)
-    # Set once the study has been moved onto the maintenance positions (the
-    # position it went to; backend/maintenance/rcm_migrate.py): from then on it is
-    # read-only history, and its RCM is changed on the position.
-    migrated_to: Optional[str] = None
-
-
 class StrategyAnalysis(BaseModel):
     """A saved strategy calculation (optimal replacement, two-model comparison,
     or failure-finding interval): the inputs plus the computed results — the

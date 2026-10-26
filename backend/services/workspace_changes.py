@@ -17,9 +17,9 @@ What is compared, and from what:
   arriving through the API (:func:`note_forecast`, at most one a day unless it
   changed), against the fleet's live forecast now;
 * fleet alerts that fired: ``fleet_alert_events``;
-* RCM evidence that changed: decisions whose linked non-repairable model was refitted
-  in the period, with the evidence status before (where the stored fit
-  decides it) and now;
+* RCM evidence that changed: decisions on the asset tree (Reliafy Maintenance)
+  whose linked non-repairable model was refitted in the period, with the
+  evidence status before (where the stored fit decides it) and now;
 * availability simulations whose answer moved: a diagram's newest finished run
   in the period against its newest before it (``rbd_jobs``, kept 7 or 90 days).
 
@@ -67,9 +67,11 @@ COLLECTIONS = {
     "rbds": ("Block diagram", "/systems/b/"),
     "fleets": ("Failure forecast", "/forecasts/"),
     "tracked_fleets": ("Tracked fleet", "/risk/"),
-    "rcm_studies": ("RCM study", "/maintenance/rcm/"),
     "strategy_analyses": ("Strategy analysis", "/strategy/analyses/"),
 }
+
+# Where a position's RCM opens: the Explorer's RCM tab, on that position.
+RCM_URL = "/asset-register/explorer?arrange=positions&tab=rcm&sel="
 
 # Documents in ``models`` that aren't non-repairable models (``kind``): their own label and page.
 MODEL_KINDS = {
@@ -298,8 +300,7 @@ def _items(db, owners, since, until, uid) -> tuple[list, list, dict]:
     for coll in COLLECTIONS:
         ids[coll] = {}
         for doc in db[coll].find({"owner_id": {"$in": owners}},
-                                 {"name": 1, "created_at": 1, "updated_at": 1, "updated_by": 1,
-                                  "functions": 1, "kind": 1}):
+                                 {"name": 1, "created_at": 1, "updated_at": 1, "updated_by": 1, "kind": 1}):
             ids[coll][doc["_id"]] = doc
             label, prefix = _label_and_prefix(coll, doc)
             created, updated = _aware(doc.get("created_at")), _aware(doc.get("updated_at"))
@@ -456,48 +457,62 @@ def _alerts(db, fleet_docs: dict, since, until) -> list:
     return out
 
 
-def _rcm(db, study_docs: dict, model_docs: dict, refit_rows: dict, owners) -> list:
+def _rcm_modes(owners: list, user: dict | None) -> list[tuple[str, dict]]:
+    """Every decided failure mode on the workspace's asset tree (Reliafy
+    Maintenance; each owner is a maintenance organisation), as (position name,
+    mode with its decision) pairs. Nothing without Maintenance."""
+    from backend.maintenance.access import allowed
+
+    if not allowed(user):
+        return []
+    from backend.maintenance.service import Maintenance
+    from backend.routers.maintenance import get_store
+
+    store = get_store()
+    out = []
+    for org in owners:
+        if org == SAMPLE_OWNER:
+            continue
+        for p in Maintenance(store, org, (user or {}).get("uid") or org).rcm_all()["positions"]:
+            modes = [m for fn in p["functions"] for ff in fn["failures"] for m in ff["modes"]] + p["unassigned"]
+            out.extend((p["id"], p["name"], m) for m in modes if m.get("decision"))
+    return out
+
+
+def _rcm(db, model_docs: dict, refit_rows: dict, owners, user: dict | None) -> list:
     """Decisions whose linked non-repairable model was refitted in the period."""
-    from backend.db import from_doc
-    from backend.schema import RcmStudy
-    from backend.services import rcm as rcm_service
+    from backend.maintenance import rcm_decisions, rcm_graph
 
     if not refit_rows:
         return []
     out = []
-    for sid, sdoc in study_docs.items():
-        statuses = None  # each decision's status now, resolved once per study
-        for fn in sdoc.get("functions") or []:
-            for failure in fn.get("failures") or []:
-                for mode in failure.get("modes") or []:
-                    decision = mode.get("decision") or {}
-                    evidence = decision.get("evidence") or {}
-                    if evidence.get("type") != "model" or evidence.get("id") not in refit_rows:
-                        continue
-                    if statuses is None:
-                        study = from_doc(RcmStudy, db.rcm_studies.find_one({"_id": sid}))
-                        resolved = rcm_service.resolve(db, study, [*owners, SAMPLE_OWNER])
-                        statuses = {m.get("id"): (m.get("decision") or {}).get("status")
-                                    for f in resolved["functions"] for fl in f["failures"] for m in fl["modes"]}
-                    rows = refit_rows[evidence["id"]]
-                    before = None
-                    if decision.get("outcome") == "rtf" and decision.get("rtf_basis") == "random":
-                        prior = rows[0].get("before") or {}
-                        before = rcm_service._check_randomness(
-                            SimpleNamespace(results={"kind": prior.get("kind"),
-                                                     "distribution_id": prior.get("distribution_id"),
-                                                     "randomness": prior.get("randomness")})).get("status")
-                    now_status = statuses.get(mode.get("id"))
-                    model = model_docs.get(evidence["id"]) or {}
-                    out.append({
-                        "study_id": sid, "study": sdoc.get("name") or "Untitled",
-                        "url": COLLECTIONS["rcm_studies"][1] + sid,
-                        "mode": mode.get("text"), "outcome": decision.get("outcome"),
-                        "evidence": model.get("name"), "evidence_url": _model_url(model, evidence["id"]),
-                        "at": _iso(rows[-1]["at"]), "status_before": before, "status": now_status,
-                        "status_changed": before is not None and before != now_status,
-                    })
-    out.sort(key=lambda r: (not r["status_changed"], r["study"]))
+    fetch = None
+    for pid, position, mode in _rcm_modes(owners, user):
+        decision = mode.get("decision") or {}
+        evidence = decision.get("evidence") or {}
+        if evidence.get("type") != "model" or evidence.get("id") not in refit_rows:
+            continue
+        if fetch is None:
+            fetch = rcm_decisions.evidence_fetcher(db, [*owners, SAMPLE_OWNER])
+        rows = refit_rows[evidence["id"]]
+        before = None
+        if decision.get("outcome") == "rtf" and decision.get("rtf_basis") == "random":
+            prior = rows[0].get("before") or {}
+            before = rcm_decisions.check_randomness(
+                SimpleNamespace(results={"kind": prior.get("kind"),
+                                         "distribution_id": prior.get("distribution_id"),
+                                         "randomness": prior.get("randomness")})).get("status")
+        now_status = rcm_decisions.resolve_decision(decision, fetch).get("status")
+        model = model_docs.get(evidence["id"]) or {}
+        out.append({
+            "position_id": pid, "position": position, "url": RCM_URL + pid,
+            "mode": mode.get("text"), "outcome": decision.get("outcome"),
+            "evidence": model.get("name"), "evidence_url": _model_url(model, evidence["id"]),
+            "at": _iso(rows[-1]["at"]), "status_before": before, "status": now_status,
+            "status_changed": before is not None and before != now_status,
+        })
+    del rcm_graph  # the check is resolve_decision's; the tab's reader (rcm_graph.resolve) uses the same
+    out.sort(key=lambda r: (not r["status_changed"], r["position"]))
     return out
 
 
@@ -586,9 +601,11 @@ FLEETS_LEFT_OUT = {"what": "Fleet forecasts and alerts",
                    "why": "Fleets are part of Pro when used from an AI agent (MCP), so they're left out here."}
 
 
-def summarize(db, list_owners, uid: str, period: dict, fleets: bool = True) -> dict:
+def summarize(db, list_owners, uid: str, period: dict, fleets: bool = True, user: dict | None = None) -> dict:
     """The workspace's changes over ``period`` (from :func:`resolve_period`).
-    ``fleets`` false leaves fleet forecasts and alerts out (a plan without them)."""
+    ``fleets`` false leaves fleet forecasts and alerts out (a plan without them).
+    ``user`` (the caller) decides whether the RCM on the asset tree is read
+    (Reliafy Maintenance): without it, or without Maintenance, no RCM rows."""
     since, until = period["since"], period["until"]
     owners = _scope(list_owners)
     new, changed, ids = _items(db, owners, since, until, uid)
@@ -600,7 +617,7 @@ def summarize(db, list_owners, uid: str, period: dict, fleets: bool = True) -> d
         alerts = _alerts(db, ids["fleets"], since, until)
     else:
         forecasts, unrecorded, alerts = [], 0, []
-    rcm = _rcm(db, ids["rcm_studies"], ids["models"], refit_rows, owners)
+    rcm = _rcm(db, ids["models"], refit_rows, owners, user)
     runs = _runs(db, ids["rbds"], since, until, owners)
 
     counts = {

@@ -59,11 +59,13 @@ jobs:
           VITE_AUTH_DISABLED: "true"
 
       # No MONGODB_URI: the backend uses its in-memory database, seeded with
-      # the samples the guides are written against.
+      # the samples the guides are written against. Maintenance is on so the
+      # RCM guide's shots (the Explorer's RCM tab) can be taken.
       - name: Start the app with the in-memory database and samples
         env:
           AUTH_DISABLED: "true"
           SEED_SAMPLES: "true"
+          MAINTENANCE_ENABLED: "true"
           PUSH_ERROR_ALERTS: "false"
         run: |
           nohup python -m uvicorn backend.main:app --port 8000 > "$RUNNER_TEMP/server.log" 2>&1 &

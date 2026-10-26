@@ -263,7 +263,7 @@ need one before analysis: ask the user, don't invent values."""),
     "sharing": ("Share links and reports: read-only pages anyone with the URL can open.", """\
 Sharing (only when the user asks; confirm before publishing anything).
 - sharing create_link publishes a read-only page of one of the user's own items (model, dataset, rbd, \
-degradation_model, strategy_analysis, rcm_study, fleet, recurrent_model) that anyone with the URL can open \
+degradation_model, strategy_analysis, fleet, recurrent_model) that anyone with the URL can open \
 without an account. password=true: Reliafy generates a passphrase, returned once — tell the user to send the \
 link and the passphrase to the recipient separately. expires_in_days for a link that ends; label says who it's \
 for. Samples can't be shared (rbd clone one first).

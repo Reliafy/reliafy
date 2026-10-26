@@ -23,7 +23,7 @@ from backend.services import time_zones
 # Maintenance aside: deleting the team deletes them.
 ARTIFACT_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models",
-    "tracked_items", "tracked_fleets", "strategy_analyses", "rcm_studies", "fleets",
+    "tracked_items", "tracked_fleets", "strategy_analyses", "fleets",
     "outage_logs", "recurrent_models", "alt_models", "model_refits",
 )
 

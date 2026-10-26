@@ -284,13 +284,6 @@ def test_a_mode_the_target_already_has_stays(m):
         m.move_failure_mode(mode["id"], other["id"])
     with pytest.raises(Invalid, match="already has the failure mode"):
         m.move_function(fn["id"], other["id"])
-    # The same RCM study's mode (by its id there), under another name.
-    third = m.create_position("Pump C")
-    m.s.patch_node(ORG, loose["id"], {"rcm_mode_id": "rm-1"})
-    twin = m.add_failure_mode(third["id"], "Winding burns")
-    m.s.patch_node(ORG, twin["id"], {"rcm_mode_id": "rm-1"})
-    with pytest.raises(Invalid, match="already has Motor overheats from the same RCM study"):
-        m.move_failure_mode(loose["id"], third["id"])
 
 
 def test_the_functional_failure_must_be_on_the_target(m):
@@ -359,16 +352,9 @@ def test_a_task_for_a_mode_staying_behind_is_refused_not_unlinked(m):
     assert m.s.out(ORG, task["id"], "MITIGATES") == []
 
 
-def test_only_a_positions_task_moves_and_rcm_tasks_stay_single(m):
-    pump = m.create_position("Pump A")
+def test_only_a_positions_task_moves(m):
     other = m.create_position("Pump B")
     item = m.create_item("Hoist", serial="H1")
     on_item = m.create_task(None, "Certify", 12, "months", item_id=item["id"])
     with pytest.raises(Invalid, match="Only a position's task moves"):
         m.move_task(on_item["id"], other["id"])
-    a = m.create_task(pump["id"], "Replace seal", 6, "months")
-    b = m.create_task(other["id"], "Replace seal", 6, "months")
-    for t in (a, b):
-        m.s.patch_node(ORG, t["id"], {"rcm_mode_id": "rm-9"})
-    with pytest.raises(Invalid, match="Pump B already has the task for this RCM decision"):
-        m.move_task(a["id"], other["id"])

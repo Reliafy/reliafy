@@ -136,7 +136,7 @@ def test_the_action_validator():
 def test_the_validator_answers_over_mcp(env):
     async def flow(client):
         missing = await _do(client, "maintenance_work_orders", "close", notes="done")
-        extra = await _do(client, "maintenance_positions", "create", name="Pump", study_id="s1")
+        extra = await _do(client, "maintenance_positions", "create", name="Pump", reason="x")
         no_id = await _get(client, "position")
         bad_kind = await client.call_tool("maintenance_get", {"kind": "nope", "id": "x"})
         bad_status = await _list(client, "proposals", status="open")
@@ -144,32 +144,35 @@ def test_the_validator_answers_over_mcp(env):
 
     missing, extra, no_id, bad_kind, bad_status = _session(env["token"], flow)
     assert missing.is_error and "action 'close' needs work_order_id" in missing.content[0].text
-    assert extra.is_error and "action 'create' doesn't take study_id" in extra.content[0].text
+    assert extra.is_error and "action 'create' doesn't take reason" in extra.content[0].text
     assert no_id.is_error and "kind 'position' needs id" in no_id.content[0].text
     assert bad_kind.is_error
     assert bad_status.is_error and "kind 'proposals' takes status pending" in bad_status.content[0].text
 
 
 def test_a_house_through_mcp(env):
-    from backend.services import rcm as rcm_service
-
-    study = rcm_service.create_study(env["db"], "Pool RCM", "Pool pump", "", UID)
-    rcm_service.replace_tree(env["db"], study.id, [
-        {"text": "Circulate water", "failures": [{"text": "No flow", "modes": [
-            {"text": "Basket blocked", "consequence": "operational",
-             "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks",
-                          "task": "Empty the pump basket"}},
-            {"text": "Bearing worn", "consequence": "operational",
-             "decision": {"outcome": "rtf", "rtf_basis": "random"}}]}]}], UID)
-
     async def flow(client):
         names = {t.name for t in (await client.list_tools()).tools}
         assert EXPECTED_TOOLS <= names
 
         house = _ok(await _do(client, "maintenance_positions", "create", name="House"))
-        pool = _ok(await _do(client, "maintenance_positions", "from_rcm", study_id=study.id, parent_id=house["id"]))
-        pid = pool["position"]["id"]
-        assert pool["tasks_added"] == 1
+        pool = _ok(await _do(client, "maintenance_positions", "create", name="Pool pump", parent_id=house["id"]))
+        pid = pool["id"]
+        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pid,
+                           text="Circulate water"))
+        ff = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn["id"],
+                           text="No flow"))
+        basket = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=pid, text="Basket blocked",
+                               functional_failure_id=ff["id"]))
+        worn = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=pid, text="Bearing worn",
+                             functional_failure_id=ff["id"]))
+        _ok(await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=basket["id"],
+                      consequence="operational",
+                      decision={"outcome": "on_condition", "interval": 1, "interval_unit": "weeks",
+                                "task": "Empty the pump basket"}))
+        _ok(await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=worn["id"],
+                      consequence="operational", decision={"outcome": "rtf", "rtf_basis": "random"}))
+        assert [t["name"] for t in _ok(await _get(client, "position", pid))["tasks"]] == ["Empty the pump basket"]
         _ok(await _do(client, "maintenance_fitments", "fit", position_id=pid, item_name="Astral CTX 280",
                       on="2024-11-01"))
         wo = _ok(await _do(client, "maintenance_work_orders", "open", position_id=pid, title="Pump screaming"))
@@ -197,37 +200,21 @@ def test_a_house_through_mcp(env):
     assert missing.is_error and "Not found" in missing.content[0].text
 
 
-def test_a_study_drives_positions_and_tasks(env):
-    """A saved study works with maintenance_positions from_rcm, and a change to
-    it reaches the position's tasks (apply_rcm)."""
-    from backend.services import rcm as rcm_service
-
-    db = env["db"]
-    study = rcm_service.create_study(db, "Pool RCM", "Pool pump", "", UID)
-    study = rcm_service.replace_tree(db, study.id, [
-        {"text": "Circulate water", "failures": [{"text": "No flow", "modes": [
-            {"text": "Basket blocked", "consequence": "operational",
-             "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks",
-                          "task": "Empty the pump basket"}},
-            {"text": "Bearing worn", "decision": {"outcome": "rtf", "rtf_basis": "random"}}]}]}], UID)
+def test_a_changed_decision_reaches_the_task_over_mcp(env):
+    decision = {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks", "task": "Empty the pump basket"}
 
     async def flow(client):
-        made = _ok(await _do(client, "maintenance_positions", "from_rcm", study_id=study.id))
-        fn = study.functions[0]
-        basket = fn["failures"][0]["modes"][0]
-        rcm_service.replace_tree(db, study.id, [
-            {"id": fn["id"], "text": fn["text"], "failures": [{"id": fn["failures"][0]["id"], "text": "No flow",
-                "modes": [{"id": basket["id"], "text": "Basket blocked", "consequence": "operational",
-                           "decision": {"outcome": "on_condition", "interval": 2, "interval_unit": "weeks",
-                                        "task": "Empty the pump basket"}}]}]}], UID)
-        again = _ok(await _do(client, "maintenance_positions", "apply_rcm", position_id=made["position"]["id"],
-                              study_id=study.id))
-        return made, again
+        pid = _ok(await _do(client, "maintenance_positions", "create", name="Pool pump"))["id"]
+        mode = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=pid, text="Basket blocked"))
+        first = _ok(await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=mode["id"],
+                              consequence="operational", decision=decision))
+        again = _ok(await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=mode["id"],
+                              decision={**decision, "interval": 2}))
+        return first, again, _ok(await _get(client, "position", pid))
 
-    made, again = _session(env["token"], flow)
-    assert made["position"]["name"] == "Pool pump" and made["tasks_added"] == 1 and made["failure_modes_added"] == 2
-    assert again["tasks_updated"] == 1 and again["tasks_added"] == 0
-    assert [t["interval"] for t in again["position"]["tasks"]] == [2]
+    first, again, position = _session(env["token"], flow)
+    assert first["decision"]["interval"] == 1 and again["decision"]["interval"] == 2
+    assert [(t["name"], t["interval"], t["source"]) for t in position["tasks"]] == [("Empty the pump basket", 2, "rcm")]
 
 
 def test_no_token_needed_when_sign_in_is_off(env, monkeypatch):

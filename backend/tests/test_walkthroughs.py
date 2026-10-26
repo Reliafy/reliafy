@@ -72,11 +72,11 @@ def test_events_stored_with_walkthrough_and_step(client):
     assert _event(client, "walkthrough_step", walkthrough="fit", step=1).status_code == 200
     assert _event(client, "walkthrough_step", walkthrough="fit", step=2).status_code == 200
     assert _event(client, "walkthrough_completed", walkthrough="fit", step=4).status_code == 200
-    assert _event(client, "walkthrough_skipped", walkthrough="rcm", step=2).status_code == 200
+    assert _event(client, "walkthrough_skipped", walkthrough="fleet", step=2).status_code == 200
     docs = list(client.db.metrics_events.find({}, {"_id": 0, "name": 1, "walkthrough": 1, "step": 1}))
     assert {"name": "walkthrough_step", "walkthrough": "fit", "step": 2} in docs
     assert {"name": "walkthrough_started", "walkthrough": "fit"} in docs
-    assert {"name": "walkthrough_skipped", "walkthrough": "rcm", "step": 2} in docs
+    assert {"name": "walkthrough_skipped", "walkthrough": "fleet", "step": 2} in docs
     # Privacy as for every event: nothing identifies the client directly.
     blob = str(list(client.db.metrics_events.find({})))
     assert "203.0.113.7" not in blob and "Mozilla" not in blob
@@ -118,7 +118,7 @@ def test_admin_traffic_counts_per_walkthrough(client):
     client.act_as(A)
     data = client.get("/api/admin/traffic?days=7").json()
     rows = {r["key"]: r for r in data["walkthroughs"]}
-    assert list(rows) == ["fit", "replacement", "rbd", "rcm", "fleet"]
+    assert list(rows) == ["fit", "replacement", "rbd", "fleet"]
     fit = rows["fit"]
     assert (fit["started"], fit["completed"], fit["skipped"]) == (3, 1, 1)
     assert fit["steps"] == {"1": 3, "2": 2}
@@ -162,10 +162,10 @@ def test_summarise_ignores_unknown_and_malformed():
 
     rows = summarise([
         {"name": "walkthrough_started", "walkthrough": "gone"},
-        {"name": "walkthrough_step", "walkthrough": "rcm", "step": "2"},
-        {"name": "walkthrough_step", "walkthrough": "rcm", "step": 2},
+        {"name": "walkthrough_step", "walkthrough": "fleet", "step": "2"},
+        {"name": "walkthrough_step", "walkthrough": "fleet", "step": 2},
         {"name": "pageview"},
     ])
-    rcm = next(r for r in rows if r["key"] == "rcm")
-    assert rcm["steps"] == {"2": 1} and rcm["started"] == 0
+    fleet = next(r for r in rows if r["key"] == "fleet")
+    assert fleet["steps"] == {"2": 1} and fleet["started"] == 0
     assert sum(r["started"] for r in rows) == 0
