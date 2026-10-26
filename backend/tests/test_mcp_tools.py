@@ -257,12 +257,19 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
 
     mcp_tools.register()
     try:
-        names = {t.name for t in anyio.run(mcp_server.mcp.list_tools)}
-        # 21 maintenance tools, and the 2 graph query tools (listed per user only to the owner).
-        assert len(names) == 16 + 21 + 2 and READS | WRITES <= names
+        every = anyio.run(mcp_server.mcp.list_tools)
+        names = {t.name for t in every}
+        # 22 maintenance tools, and the 2 graph query tools (listed per user only to the owner).
+        assert len(names) == 16 + 22 + 2 and READS | WRITES <= names
         assert "maintenance_reliability.fit_class_model" in mcp_server.PRO_ONLY_TOOLS & mcp_server._FIT_TOOLS
-        assert "maintenance_workspace.import_history" in mcp_server.HEAVY_TOOLS
+        assert {"maintenance_workspace.import_history", "maintenance_apply"} <= mcp_server.HEAVY_TOOLS
         assert {"maintenance_graph_query", "maintenance_graph_schema"} <= mcp_server.HEAVY_TOOLS & names
+        # The whole list an operator loads on every connection: descriptions and JSON, guarded.
+        import json
+
+        assert sum(len(t.description or "") for t in every) < 85_000  # 75,611 before maintenance_apply
+        listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in every])
+        assert len(listed) < 310_000  # 284,258 before maintenance_apply
     finally:
         mcp_tools.unregister()
     assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 16

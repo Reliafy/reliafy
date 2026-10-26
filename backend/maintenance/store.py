@@ -171,13 +171,23 @@ class SqliteEventLog:
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) FROM events WHERE org = ?", (org,)).fetchone()[0])
 
-    def recent(self, org: str, limit: int) -> list[dict]:
+    def recent(self, org: str, limit: int, since: int | None = None, type: str | None = None) -> list[dict]:
+        """The organisation's newest events (``since``: only those after that
+        sequence number, oldest first; ``type``: only that event type)."""
+        where, args = ["org = ?"], [org]
+        if since is not None:
+            where.append("seq > ?")
+            args.append(int(since))
+        if type:
+            where.append("type = ?")
+            args.append(type)
+        order = "ASC" if since is not None else "DESC"
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, type, at, actor, payload FROM events WHERE org = ? ORDER BY seq DESC LIMIT ?",
-                (org, limit),
+                f"SELECT seq, id, type, at, actor, payload FROM events WHERE {' AND '.join(where)} "
+                f"ORDER BY seq {order} LIMIT ?", (*args, limit),
             ).fetchall()
-        return [{"id": r["id"], "type": r["type"], "at": r["at"], "actor": r["actor"],
+        return [{"seq": r["seq"], "id": r["id"], "type": r["type"], "at": r["at"], "actor": r["actor"],
                  "payload": json.loads(r["payload"])} for r in rows]
 
 
@@ -213,10 +223,15 @@ class MongoEventLog:
     def count(self, org: str) -> int:
         return int(self._events.count_documents({"org": org}))
 
-    def recent(self, org: str, limit: int) -> list[dict]:
-        return [{"id": d["_id"], "type": d["type"], "at": d["at"], "actor": d.get("actor"),
-                 "payload": d["payload"]}
-                for d in self._events.find({"org": org}).sort("seq", -1).limit(limit)]
+    def recent(self, org: str, limit: int, since: int | None = None, type: str | None = None) -> list[dict]:
+        query: dict = {"org": org}
+        if since is not None:
+            query["seq"] = {"$gt": int(since)}
+        if type:
+            query["type"] = type
+        cursor = self._events.find(query).sort("seq", 1 if since is not None else -1).limit(limit)
+        return [{"seq": d["seq"], "id": d["_id"], "type": d["type"], "at": d["at"], "actor": d.get("actor"),
+                 "payload": d["payload"]} for d in cursor]
 
 
 # ---- the graph -------------------------------------------------------------------------
@@ -434,8 +449,25 @@ class GraphStore:
             self._event_counts.clear()
             return self.sync()
 
-    def events(self, org: str, limit: int = 100) -> list[dict]:
-        return self.log.recent(org, limit)
+    def events(self, org: str, limit: int = 100, since: int | None = None, type: str | None = None) -> list[dict]:
+        return self.log.recent(org, limit, since, type)
+
+    def load_snapshot(self, nodes: list, edges: list) -> None:
+        """Fill an empty graph with the rows of another store's :meth:`snapshot`
+        (for a throwaway copy: see :func:`scratch_copy`). Not a projection: the
+        copy's log stays empty and its applied position 0."""
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                self._conn.executemany("INSERT OR REPLACE INTO nodes (id, org, label, props) VALUES (?, ?, ?, ?)",
+                                       [(n[0], n[1], n[2], n[3]) for n in nodes])
+                self._conn.executemany(
+                    "INSERT OR REPLACE INTO edges (id, org, type, src, dst, props) VALUES (?, ?, ?, ?, ?, ?)",
+                    [(e[0], e[1], e[2], e[3], e[4], e[5]) for e in edges])
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
 
     # ---- writing: the graph (projectors only) ---------------------------------------
 
@@ -601,6 +633,18 @@ class GraphStore:
                     "nodes": [(r["id"], r["label"], r["props"], r["w"]) for r in nodes],
                     "edges": [(r["id"], r["type"], r["src"], r["dst"], r["props"], r["w"]) for r in edges],
                     "gone": gone}
+
+
+def scratch_copy(store, org: str) -> GraphStore:
+    """A throwaway in-memory copy of one organisation's graph, with the same
+    projectors and an empty log of its own: changes made on it are checked
+    and projected as on the real store, and never reach the real log. For a
+    batch's dry run. Works from the SQLite graph and from Neo4j (both give the
+    same :meth:`GraphStore.snapshot` shape)."""
+    nodes, edges = store.snapshot(org)
+    copy = GraphStore(":memory:", store._projectors, version=getattr(store, "version", 1))
+    copy.load_snapshot(nodes, edges)
+    return copy
 
 
 def _notify(listeners, org: str) -> None:

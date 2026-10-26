@@ -216,6 +216,16 @@ class Client:
     def guide(self, topic: str | None = None) -> dict:
         return self.call("guide", topic=topic)
 
+    def apply(self, operations: list, *, dry_run: bool | None = None, on_error: str | None = None,
+              idempotency_key: str | None = None) -> dict:
+        """Many Reliafy Maintenance changes in one call (``maintenance_apply``):
+        a list of ``{"do": "<area>.<action>", "args": {...}, "ref"?: "p",
+        "confirm"?: "name"}`` run in order, checked first; ``"@p"`` in a later
+        argument is op p's id. ``dry_run`` reports what would happen (the
+        default when the batch deletes or has over 25 operations)."""
+        return self.call("maintenance_apply", operations=list(operations), dry_run=dry_run, on_error=on_error,
+                         idempotency_key=idempotency_key)
+
     # ---- files (REST only: MCP can't carry bytes) -----------------------------
 
     def upload_file(self, path: str, purpose: str) -> dict:

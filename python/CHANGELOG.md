@@ -2,6 +2,27 @@
 
 ## 0.4.0
 
+- `maintenance_apply`: many Reliafy Maintenance changes in one call. A list
+  of the `maintenance_<area>` actions (`{"do": "failure_modes.add", "args":
+  {...}, "ref": "m1"}`), run in order with `@ref`s between them, checked on
+  a copy of the workspace before anything is written; deletes name what they
+  delete (`confirm`); the answer has every operation's result and the reverse
+  operations (`undo`). `Client.apply(operations, dry_run=…, on_error=…,
+  idempotency_key=…)`, and `reliafy apply ops.json [--run] [--key K]` (a dry
+  run unless `--run`; the undo list is written beside the file).
+- Every level of the maintenance tree can be taken out of use and brought
+  back: `maintenance_locations retire / restore`, `maintenance_items create /
+  retire / restore`, `maintenance_parts retire / restore / unlink`,
+  `maintenance_manufacturers retire / restore`, `maintenance_measurements
+  retire_point / restore_point`, `maintenance_topology update / reconnect /
+  retire_group / restore_group`, `maintenance_positions restore` (and `retire
+  --cascade`), `maintenance_tasks restore`, `maintenance_failure_modes
+  restore`, `maintenance_item_classes restore / restore_condition`,
+  `maintenance_attachments update_document / restore_document / update_photo
+  / clear_coordinates`; `maintenance_parts update --clear` and `reorder
+  --clear-reorder-point`; `maintenance_list --kind events`. No client code
+  changed for these: the commands come from the server's tool list.
+
 - RCM studies are gone from Reliafy: RCM lives on the asset tree, on each
   position. The `rcm` tool (study-based RCM worksheets as JSON) is gone, with
   `list` kind `rcm_studies` and `get` kind `rcm_study`. RCM is built on a
