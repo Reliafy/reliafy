@@ -8865,7 +8865,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .rbd-cost-field input { width: 116px; }
 .rbd-cost-field span { font-family: inherit; }
 .rbd-cost-field small { color: var(--muted); font-size: var(--fs-12); }
-/* Costs as ranges and "Fill from RCM study" (#100) */
+/* Costs as ranges (#100) */
 .rbd-cost-label { display: flex; align-items: baseline; gap: 6px; }
 .rbd-range-toggle {
   background: none; border: none; box-shadow: none; padding: 0; margin: 0; cursor: pointer;
@@ -8877,31 +8877,6 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .rbd-cost-field .rbd-range-inputs input { width: 66px; padding-left: 8px; padding-right: 6px; -moz-appearance: textfield; appearance: textfield; }
 .rbd-range-inputs input::-webkit-outer-spin-button,
 .rbd-range-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.rbd-cost-field.rbd-filled input { border-color: var(--acc-line); background: var(--acc-t); }
-.rbd-rcm-picker {
-  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
-  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf);
-}
-.rbd-rcm-picker-head { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--fs-13); }
-.rbd-rcm-picker select { max-width: 100%; }
-.rbd-rcm-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; }
-.rbd-rcm-tasks li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: var(--fs-13); }
-.rbd-rcm-tasks li:first-child { border-top: none; }
-.rbd-rcm-task-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.rbd-rcm-mode { font-weight: 600; }
-.rbd-rcm-tasks .muted { color: var(--muted); font-size: var(--fs-12); }
-.rbd-rcm-fills { color: var(--ink); }
-.rbd-rcm-fills b { color: var(--ok); font-weight: 600; }
-.rbd-rcm-reason { color: var(--muted); font-style: italic; font-size: var(--fs-12); }
-.rbd-rcm-tasks li.no .rbd-rcm-mode { color: var(--muted); }
-.rbd-rcm-use { padding: 4px 12px; font-size: var(--fs-12); flex-shrink: 0; }
-.rbd-rcm-source {
-  font-size: var(--fs-13); padding: 8px 10px; border-radius: var(--r-sm); line-height: 1.45;
-  background: var(--acc-t); border: 1px solid var(--acc-line);
-}
-.rbd-rcm-source .muted { color: var(--muted); font-size: var(--fs-12); margin-top: 2px; }
-.rbd-rcm-source button.link { font-size: var(--fs-12); }
-.rbd-rcm-edited { color: var(--warn); font-weight: 600; }
 .rbd-costs-errors { margin: 0; padding-left: 18px; color: var(--danger); font-size: var(--fs-13); }
 /* A block's chips (#314): one neutral style with an icon each, overhanging
    the card's bottom edge so the card keeps its size; big enough to read at
@@ -9189,10 +9164,6 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 .xl-tree > li { margin: 0.25rem 0; }
 .xl-tree ul { padding-left: 1.4rem; }
 .xl-tree ul li { margin: 0.15rem 0; }
-.xl-target { display: flex; flex-direction: column; gap: 0.45rem; border-top: 1px solid var(--line2); padding-top: 0.9rem; }
-.xl-target-new { flex-direction: row; flex-wrap: wrap; gap: 0.8rem; }
-.xl-target-new .login-field { flex: 1 1 14rem; }
-.xl-danger { color: var(--danger); }
 .xl-imported p + p { margin-top: 0.3rem; }
 .xl-rbd-section { display: flex; flex-direction: column; gap: 0.8rem; }
 .xl-rbd-section + .xl-rbd-section { border-top: 1px solid var(--line2); padding-top: 1rem; }

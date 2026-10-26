@@ -3,10 +3,10 @@ import { Link } from "react-router-dom";
 import {
   getMaintenanceOverview,
   getWorkspaceChanges,
+  getWorkspaceRcm,
   listDatasets,
   listFleets,
   listRbds,
-  listRcmStudies,
   listStrategyAnalyses,
   listTrackedFleets,
 } from "../api.js";
@@ -66,7 +66,7 @@ function Figures({ items }) {
 
 // A role's card (navigation.js ROLES `home`), from what Home loaded. Cards
 // that need Reliafy Maintenance draw nothing without it.
-function RoleCard({ card, recent, attention, maintenance, studies, has }) {
+function RoleCard({ card, recent, attention, maintenance, rcm, has }) {
   const id = `home-${card}`;
   const first = (rows) => rows.slice(0, CARD_ROWS);
   switch (card) {
@@ -127,12 +127,18 @@ function RoleCard({ card, recent, attention, maintenance, studies, has }) {
                   rows={first(sparesRows(maintenance))}
                   empty={maintenance ? "Every critical spare is stocked." : "Loading…"} />
       );
-    case "waiting":
+    case "waiting": {
+      // The RCM on the asset tree and the maintenance overview: both are
+      // Reliafy Maintenance's, so the card draws nothing without it.
+      if (!has.maintenance) return null;
+      const figures = waitingFigures(rcm, maintenance);
       return (
-        <HomeList id={id} title="Targets and what's waiting" all={{ to: "/reports", label: "Reports" }} rows={[]}>
-          <Figures items={waitingFigures(studies, has.maintenance ? maintenance : null)} />
+        <HomeList id={id} title="Targets and what's waiting" all={{ to: "/reports", label: "Reports" }} rows={[]}
+                  empty={figures.length ? null : "Loading…"}>
+          {figures.length > 0 && <Figures items={figures} />}
         </HomeList>
       );
+    }
     default:
       return null;
   }
@@ -148,6 +154,8 @@ export default function HomePage() {
   const [lists, setLists] = useState(null);
   const [changes, setChanges] = useState(undefined);
   const [maintenance, setMaintenance] = useState(null);
+  // The RCM on the asset tree, as one rollup of every decision's evidence check.
+  const [rcm, setRcm] = useState(null);
 
   useEffect(() => {
     let live = true;
@@ -155,12 +163,11 @@ export default function HomePage() {
       loadAllModels().catch(() => []),
       quiet(listDatasets(), "datasets"),
       quiet(listRbds(), "rbds"),
-      quiet(listRcmStudies(), "studies"),
       quiet(listFleets(), "fleets"),
       quiet(listStrategyAnalyses(), "analyses"),
       quiet(listTrackedFleets(), "fleets"),
-    ]).then(([models, datasets, rbds, studies, forecasts, analyses, tracked]) => {
-      if (live) setLists({ models, datasets, rbds, studies, forecasts, analyses, tracked });
+    ]).then(([models, datasets, rbds, forecasts, analyses, tracked]) => {
+      if (live) setLists({ models, datasets, rbds, forecasts, analyses, tracked });
     });
     getWorkspaceChanges().then((d) => live && setChanges(d)).catch(() => live && setChanges(null));
     return () => {
@@ -168,11 +175,13 @@ export default function HomePage() {
     };
   }, []);
 
-  // Maintenance work, for Reliafy Maintenance's operators only (the menu's check).
+  // Maintenance work and the tree's RCM, for Reliafy Maintenance's operators
+  // only (the menu's check).
   useEffect(() => {
     if (!has.maintenance) return undefined;
     let live = true;
     getMaintenanceOverview().then((o) => live && setMaintenance(o)).catch(() => {});
+    getWorkspaceRcm().then((d) => live && setRcm(d?.rollup || null)).catch(() => {});
     return () => {
       live = false;
     };
@@ -191,7 +200,7 @@ export default function HomePage() {
   const attention = attentionRows({ changes, tracked: lists?.tracked, maintenance: has.maintenance ? maintenance : null });
 
   // The roles' cards, and what they already show (left out of the lists below).
-  const cards = homeCards(roles).filter((c) => has.maintenance || !["due", "work-today", "spares"].includes(c));
+  const cards = homeCards(roles).filter((c) => has.maintenance || !["due", "work-today", "spares", "waiting"].includes(c));
   const cardShows = (r) => (cards.includes("due") && r.key.startsWith("due-"))
     || (cards.includes("fleets") && (r.key.startsWith("alert-") || r.key.startsWith("track-")));
   const needs = attention.filter((r) => !cardShows(r));
@@ -221,7 +230,7 @@ export default function HomePage() {
           {cards.map((card) => (
             <div key={card} className="home-slot">
               <RoleCard card={card} recent={recent} attention={attention} maintenance={maintenance}
-                        studies={lists.studies} has={has} />
+                        rcm={rcm} has={has} />
             </div>
           ))}
 

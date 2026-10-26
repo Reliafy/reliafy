@@ -1521,86 +1521,10 @@ export function deleteStrategyAnalysis(id) {
 
 // ---- RCM ---------------------------------------------------------------------
 
+// The RCM decision vocabulary (consequences, outcomes, run-to-failure bases)
+// the decision dialog offers, with the evidence each outcome expects.
 export function getRcmOptions() {
-  return request("/api/rcm/options");
-}
-
-export function listRcmStudies() {
-  return request("/api/rcm/studies");
-}
-
-export function createRcmStudy(name, system, description) {
-  return withEvent(
-    request("/api/rcm/studies", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, system: system || "", description: description || "" }),
-    }),
-    "rcm_create"
-  );
-}
-
-export function getRcmStudy(id) {
-  return request(`/api/rcm/studies/${id}`);
-}
-
-export function renameRcmStudy(id, name) {
-  return request(`/api/rcm/studies/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
-}
-
-export function deleteRcmStudy(id) {
-  return request(`/api/rcm/studies/${id}`, { method: "DELETE" });
-}
-
-// What an FMEA / RCM spreadsheet would import as (nothing saved): the tree,
-// counts, warnings and the consequence / decision values found.
-// ``options`` = { mapping, consequence_map, outcome_map, extra_columns }.
-export function previewRcmImport(file, sheet, headerRow, options) {
-  return request("/api/rcm/import/preview", {
-    method: "POST",
-    body: excelForm(file, sheet, headerRow, { options }),
-  });
-}
-
-// Import the worksheet: a new study (``target.name``) or an existing one
-// (``target.studyId`` with mode "append" | "replace").
-export function importRcmWorksheet(file, sheet, headerRow, options, target) {
-  return withEvent(
-    request("/api/rcm/import", {
-      method: "POST",
-      body: excelForm(file, sheet, headerRow, {
-        options,
-        study_id: target.studyId,
-        mode: target.mode,
-        expected_updated_at: target.expectedUpdatedAt,
-        name: target.name,
-        system: target.system,
-        description: target.description,
-      }),
-    }),
-    "rcm_import"
-  );
-}
-
-// A study's tasks as a repairable RBD block's maintenance (#100): what each
-// would fill in a diagram in `unit` (scheduled replacement or proof test), or
-// why it can't.
-export function getRcmMaintenanceTasks(id, unit) {
-  return request(`/api/rcm/studies/${id}/maintenance-tasks?unit=${encodeURIComponent(unit || "")}`);
-}
-
-// Replace the whole worksheet tree; returns the study with fresh evidence
-// statuses resolved.
-export function putRcmTree(id, functions, expectedUpdatedAt) {
-  return request(`/api/rcm/studies/${id}/tree`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ functions, expected_updated_at: expectedUpdatedAt || null }),
-  });
+  return request("/api/maintenance/rcm/options");
 }
 
 // ---- Teams -------------------------------------------------------------------
@@ -2202,14 +2126,6 @@ export function removeMaintenanceItem(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/remove`, body);
 }
 
-export function applyRcmToPosition(positionId, studyId) {
-  return postJson(`/api/maintenance/positions/${positionId}/apply-rcm`, { study_id: studyId });
-}
-
-export function maintenanceFromRcm(studyId, parentId) {
-  return postJson("/api/maintenance/from-rcm", { study_id: studyId, parent_id: parentId || null });
-}
-
 // The sample delivery truck, with its RCM, copied into the workspace's tree. Once:
 // with a copy there, nothing is added ({ added: false, position }) unless again.
 export function addSampleTruck(again = false) {
@@ -2394,7 +2310,7 @@ export function getWorkspaceRcm() {
 // preview writes nothing: what it would add (counts, a short tree), what's on
 // the position already, rows skipped, errors and warnings, and the
 // consequence / decision values found. The import only adds. ``options`` =
-// { mapping, consequence_map, outcome_map, extra_columns }, as for a study.
+// { mapping, consequence_map, outcome_map, extra_columns }.
 export function previewPositionRcmImport(positionId, file, sheet, headerRow, options) {
   return request(`/api/maintenance/positions/${positionId}/rcm/import/preview`, {
     method: "POST",

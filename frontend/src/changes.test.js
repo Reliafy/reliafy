@@ -66,9 +66,12 @@ test("simulations and evidence read plainly", async () => {
     "2 runs; availability 96.21% → 94.87%");
   assert.equal(rcmDetail({ mode: "Seal leaks", evidence: "Seal life", status_before: "supported", status: "contradicted",
     status_changed: true }), "“Seal leaks”: Seal life was refitted; evidence supported → contradicted");
-  const rows = changeRows({ rcm_evidence: [{ study_id: "s", study: "Pump RCM", url: "/maintenance/rcm/s", mode: "Seal leaks",
+  const rows = changeRows({ rcm_evidence: [{ position_id: "p", position: "Pump A",
+    url: "/asset-register/explorer?arrange=positions&tab=rcm&sel=p", mode: "Seal leaks",
     evidence: "Seal life", evidence_url: "/models/m/x", status: "contradicted" }] });
   assert.equal(rows[0].tone, "danger");
+  assert.equal(rows[0].name, "Pump A");
+  assert.equal(rows[0].key, "rcm-p-Seal leaks-/models/m/x");
 });
 
 test("a refit that only changed its failure pattern starts with a capital", () => {

@@ -122,7 +122,6 @@ export function StartHere({ info, sampleModelId = null }) {
           <ShowMeHow id="fit">Fit a model</ShowMeHow> ·{" "}
           <ShowMeHow id="replacement">Optimal replacement</ShowMeHow> ·{" "}
           <ShowMeHow id="rbd">Block diagram</ShowMeHow> ·{" "}
-          <ShowMeHow id="rcm">RCM study</ShowMeHow> ·{" "}
           <ShowMeHow id="fleet">Fleet forecast</ShowMeHow>
         </p>
       )}

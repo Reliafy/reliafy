@@ -160,7 +160,8 @@ readings (`reliafy ingest measurements`) and new failures for a dataset
 `reliafy upload` sends a CSV or Excel file as a dataset. `reliafy import rbd`
 brings in a diagram from BlockSim, Open-PSA, Galileo or RePyability JSON, and
 `reliafy import excel` reads an .xlsx workbook: a sheet as a dataset, an FMEA or
-RCM worksheet as an RCM study, or Reliafy's RBD template as a diagram. The details are on [Files and photos](/api-docs/files); to import
+RCM worksheet onto a position's RCM (`--target rcm --position ID`), or Reliafy's
+RBD template as a diagram. The details are on [Files and photos](/api-docs/files); to import
 from the app instead, see [import a diagram](/guides/import-a-diagram).
 
 ## Where to go next

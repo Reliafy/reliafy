@@ -89,7 +89,7 @@ function fleshModel(model) {
 // Repairable blocks: instant repair, costs and maintenance (#99/#100), the
 // maintenance group, crew priority and a standby group's own repairer (#156/#157).
 const BLOCK_KEYS = [
-  "instant_repair", "costs", "preventive", "inspection", "rcm_source",
+  "instant_repair", "costs", "preventive", "inspection",
   "maintenance_group", "crew_priority", "repair_one_at_a_time",
 ];
 // Diagram-level settings of a repairable diagram, carried as given.

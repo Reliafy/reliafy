@@ -21,7 +21,6 @@ const ARTIFACTS = [
   ["RBDs", "rbds"],
   ["Degradation models", "degradation_models"],
   ["Tracked items", "tracked_items"],
-  ["RCM studies", "rcm_studies"],
   ["Fleet forecasts", "fleets"],
   ["Outage logs", "outage_logs"],
 ];

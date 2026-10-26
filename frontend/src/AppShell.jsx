@@ -43,8 +43,6 @@ const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
 const FleetTrackingHome = lazy(() => import("./views/FleetTrackingHome.jsx"));
 const FleetForecastPage = lazy(() => import("./views/FleetForecastPage.jsx"));
 const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx"));
-const RcmHome = lazy(() => import("./views/RcmHome.jsx"));
-const RcmStudyPage = lazy(() => import("./views/RcmStudyPage.jsx"));
 const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
 const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
@@ -200,8 +198,6 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/maintenance" element={<MaintenanceHome />} />}
             {maintenanceEnabled && <Route path="/maintenance/work-orders/:id" element={<MaintenanceWorkOrder />} />}
             <Route path="/data-model" element={<DataModelPage />} />
-            <Route path="/maintenance/rcm" element={<RcmHome />} />
-            <Route path="/maintenance/rcm/:id" element={<RcmStudyPage />} />
             {/* Risk: models in use. Condition monitoring is the tracked items
                 against their degradation models. */}
             <Route path="/risk" element={<FleetTrackingHome />} />

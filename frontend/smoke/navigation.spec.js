@@ -90,10 +90,10 @@ test("no roles: every entry under Design, Operate and Analyse, nothing under Mor
   // The old address of the list still lands on it.
   await open(page, "/systems");
   await expect(page).toHaveURL(/\/systems\/rbds$/);
-  // Operate: Maintenance (due and work orders), with RCM studies under it.
+  // Operate: an RCM study's old address lands on the Explorer's RCM tab, under Assets.
   await open(page, "/maintenance/rcm");
-  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RCM studies");
-  await expect(page.locator(".crumb")).toHaveText("Maintenance");
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=rcm(&|$)/);  // the Explorer adds its own view state
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Explorer");
   // Operate › Risk opens straight on Condition monitoring (its only page so
   // far, so no children); a tracked fleet's page lights Risk and names it.
   await mainMenu(page).getByRole("link", { name: "Risk", exact: true }).click();
@@ -181,7 +181,6 @@ const EMPTY = {
   "/api/recurrent/models": { models: [] },
   "/api/datasets": { datasets: [] },
   "/api/rbds": { rbds: [] },
-  "/api/rcm/studies": { studies: [] },
   "/api/strategy/analyses": { analyses: [] },
   "/api/maintenance/overview": {
     summary: { positions: 0, items: 0, tasks: 0 }, time_zone: null, today: "2026-10-16", tree: [], due: [],
@@ -237,7 +236,7 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
 
 const PHONE_PAGES = [
   "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
-  "/asset-register/explorer?arrange=items", "/asset-register/parts", "/maintenance", "/maintenance/rcm", "/data",
+  "/asset-register/explorer?arrange=items", "/asset-register/explorer?tab=rcm", "/asset-register/parts", "/maintenance", "/data",
   "/models", "/strategy", "/forecasts", "/reports", "/settings",
 ];
 

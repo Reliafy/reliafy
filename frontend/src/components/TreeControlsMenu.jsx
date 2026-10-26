@@ -6,7 +6,7 @@ import { menuMove } from "../treeControls.js";
 
 // The tree pane's ⋯ menu: how the tree is shown (Arrange by, the levels,
 // Close everything), what it shows (the Show only filters, ticked when on),
-// and the pane's other actions (Import, From an RCM study). It stays open
+// and the pane's other actions (Import, Add the sample truck). It stays open
 // while several things are changed, and closes on Esc, Tab, a click outside or
 // Done; Esc and Done put the focus back on the ⋯ button. The menu pattern:
 // the first item takes the focus; ↑ ↓ go from row to row, ← → along a row of

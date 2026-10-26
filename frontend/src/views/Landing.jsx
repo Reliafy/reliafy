@@ -101,7 +101,7 @@ const FEATURES = [
   {
     viz: <VizRcm />,
     title: "Evidence-linked RCM",
-    body: "Build Function → Failure → Mode worksheets where every maintenance decision cites the analysis that justifies it — and gets re-checked live when the data changes.",
+    body: "Build functions → functional failures → failure modes on each position of your asset tree, where every maintenance decision cites the analysis that justifies it — and gets re-checked live when the data changes.",
   },
   {
     viz: <VizDatasets />,
@@ -136,7 +136,7 @@ const TIERS = (primaryHref, mcpOn = true) => [
     features: [
       "3 saved datasets, 3 models, 1 RBD",
       "Degradation tracking: 1 model, 3 tracked assets",
-      "1 RCM study with live evidence validation",
+      "RCM on your asset tree, every decision checked against its evidence",
       "1 fleet failure forecast",
       "Join team workspaces free (view-only)",
       "Sample data and worked examples included",
@@ -158,7 +158,7 @@ const TIERS = (primaryHref, mcpOn = true) => [
       "Unlimited datasets, models, and RBDs",
       "1,000 AI credits included every month",
       "Unlimited fleet monitoring (degradation & RUL)",
-      "Unlimited evidence-linked RCM studies",
+      "Unlimited evidence-linked RCM across your asset tree",
       "Fleet failure forecasting — spares demand from your models",
       mcpOn
         ? "Unlimited use from AI agents (MCP) — Claude or any MCP client"
@@ -235,20 +235,21 @@ export default function Landing() {
           <div className="landing-eyebrow">Reliability centred maintenance</div>
           <h2>Maintenance decisions that prove themselves.</h2>
           <p>
-            Every decision in an RCM study links to the analysis behind it: a
-            run-to-failure call cites the non-repairable model that shows failures are
-            random, a fixed interval cites the cost-optimal replacement
-            analysis, condition monitoring cites the degradation model.
+            Every RCM decision on your asset tree links to the analysis behind
+            it: a run-to-failure call cites the non-repairable model that shows
+            failures are random, a fixed interval cites the cost-optimal
+            replacement analysis, condition monitoring cites the degradation
+            model.
           </p>
           <p>
             And the links stay live — when new data shows a "random" failure
-            mode is actually wearing out, the study flags the decision as
+            mode is actually wearing out, Reliafy flags the decision as
             <strong> contradicted</strong> instead of letting it quietly go
             stale.
           </p>
         </div>
         <div className="spotlight-shot">
-          <img src="/landing/rcm-worksheet.png" alt="An RCM worksheet with live evidence statuses, including a contradicted run-to-failure decision" loading="lazy" />
+          <img src="/landing/rcm-worksheet.png" alt="The Explorer's RCM tab: an asset tree with its functions, failure modes and decisions, each decision's evidence check beside it, including a contradicted run-to-failure decision" loading="lazy" />
         </div>
       </section>
 
@@ -278,7 +279,7 @@ export default function Landing() {
           <h3>Work as a team</h3>
           <p>
             Shared team workspaces where everyone sees the same models,
-            studies, and diagrams. Viewers are free; editing comes with Pro.
+            analyses, and diagrams. Viewers are free; editing comes with Pro.
             Or share a single analysis, view-only, with anyone.
           </p>
         </div>
@@ -286,9 +287,8 @@ export default function Landing() {
           <h3>An assistant that does the work</h3>
           <p>
             Ask in plain language and the assistant acts in the app: fits
-            models, builds RBDs, runs replacement calculations, tracks
-            degradation, and drafts RCM studies — with your data, on your
-            screen.
+            models, builds RBDs, runs replacement calculations and tracks
+            degradation — with your data, on your screen.
           </p>
         </div>
         <div className="trio-card">

@@ -481,5 +481,5 @@ export function FailureModePicker({ modes = [], classModes = [], value, onChange
 
 export const TASK_SOURCES = {
   manual: "Own practice", oem: "Maker's recommendation (OEM)", statutory: "Law, regulation or standard",
-  other: "Other", rcm: "RCM study",
+  other: "Other", rcm: "RCM decision",
 };
