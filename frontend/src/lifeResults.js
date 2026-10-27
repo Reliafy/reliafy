@@ -24,7 +24,7 @@ const GLOSS = {
   expo_weibull: "a Weibull with a second shape parameter",
 };
 
-const LABELS = { aic: "AIC", aic_c: "AICc", bic: "BIC" };
+const LABELS = { aic: "AIC", aic_c: "AICc", bic: "BIC", neg_ll: "−log L" };
 export const criterionLabel = (key) => LABELS[key] || "AIC";
 
 // Best fit's candidates as table rows, lowest criterion first:
@@ -34,7 +34,7 @@ export const criterionLabel = (key) => LABELS[key] || "AIC";
 export function compareRows(candidates, criterion = "aic", currentId = null) {
   const rows = (candidates || [])
     .filter((c) => Number.isFinite(Number(c?.[criterion])))
-    .map((c) => ({ id: c.id, name: c.name, value: Number(c[criterion]) }))
+    .map((c) => ({ id: c.id, name: c.name, value: Number(c[criterion]), k: c.k ?? null }))
     .sort((a, b) => a.value - b.value);
   if (!rows.length) return [];
   const best = rows[0].value;

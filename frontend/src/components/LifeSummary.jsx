@@ -156,7 +156,7 @@ function CompareDistributions({ result, compare, onPick }) {
       <ScrollCue className="rs-table-wrap">
         <table className="mini-table compare-table">
           <thead>
-            <tr><th>Distribution</th><th>{label}</th><th>Δ{label}</th><th>Verdict</th></tr>
+            <tr><th>Distribution</th><th title="Number of parameters fitted">Parameters</th><th>{label}</th><th>Δ{label}</th><th>Verdict</th></tr>
           </thead>
           <tbody>
             {rows.map((r) => {
@@ -170,6 +170,7 @@ function CompareDistributions({ result, compare, onPick }) {
                     ) : r.name}
                     {r.current && <span className="gof-sub"> · this fit</span>}
                   </td>
+                  <td>{r.k ?? "—"}</td>
                   <td>{formatNumber(r.value, { sig: 5 })}</td>
                   <td>{r.delta === 0 ? "—" : `+${r.delta.toFixed(1)}`}</td>
                   <td>
@@ -183,11 +184,14 @@ function CompareDistributions({ result, compare, onPick }) {
         </table>
       </ScrollCue>
       <p className="muted-line">
-        Lower {label} is better. Under 2 apart, the data can't tell two distributions apart.
+        Lower {label} is better.{key === "neg_ll" ? "" : " Under 2 apart, the data can't tell two distributions apart."}
         {onPick ? " Pick a name to fit that one instead." : ""}
       </p>
+      {(selection.guidance || []).map((g) => <p key={g} className="muted-line compare-guidance">{g}</p>)}
       {selection.failed?.length > 0 && (
-        <p className="muted-line">Couldn't fit: {selection.failed.map((f) => f.name).join(", ")}.</p>
+        <p className="muted-line">
+          Couldn't fit: {selection.failed.map((f) => (f.reason ? `${f.name} (${f.reason})` : f.name)).join("; ")}.
+        </p>
       )}
     </div>
   );

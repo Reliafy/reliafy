@@ -9,7 +9,7 @@ import { getDataset, getDistributions, updateModelFit } from "../api.js";
 import { EMPTY_MAPPING, columnFacts, dataStepProblems } from "../lifeData.js";
 import { TvcToggle } from "./TvcColumns.jsx";
 import { tvcMapping, tvcProblems } from "../tvcData.js";
-import { groupProblem, withGroup } from "../moreModels.js";
+import { frailtyFitOptions, groupProblem, withGroup } from "../moreModels.js";
 
 // Edit a saved model's fit spec and refit in place: same dataset, same id.
 // Prefilled from the stored spec; anything referencing the model (RCM
@@ -97,7 +97,9 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
         covariateUnits: hasCovariates && !advanced ? covUnits : {},
         formula: hasCovariates && advanced ? formula : null,
         unit,
-        fitOptions: hasCovariates ? (distribution === "cox_ph" ? { cox: coxOpts } : null) : fitOpts,
+        fitOptions: hasCovariates
+          ? (distribution === "cox_ph" ? { cox: coxOpts } : frailtyFitOptions(selectedOpt, fitOpts))
+          : fitOpts,
       });
       onUpdated(updated);
     } catch (err) {

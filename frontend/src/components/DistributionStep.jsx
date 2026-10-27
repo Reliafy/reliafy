@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import Select from "./Select.jsx";
 import RefLink from "./RefLink.jsx";
-import { MORE_DESCRIPTIONS, pickerGroups } from "../moreModels.js";
+import { CRITERION_CHOICES, CRITERION_HELP, FRAILTY_FAMILIES, MORE_DESCRIPTIONS, familyApplies,
+  pickerGroups } from "../moreModels.js";
 // Short blurbs shown under the dropdown for context (keyed by distribution id).
 const DESCRIPTIONS = {
-  best: "Fits every distribution and keeps the lowest-AIC winner — let the data decide.",
+  best: "Fits every distribution and keeps the winner on the score you choose (AIC unless changed) — let the data decide.",
   weibull: "Two-parameter (α scale, β shape). The most common non-repairable model.",
   exponential: "Single rate parameter; constant hazard.",
   normal: "Gaussian location–scale model.",
@@ -28,6 +29,7 @@ const DESCRIPTIONS = {
   gamma_ph: "Gamma baseline proportional-hazards model.",
   logistic_ph: "Logistic baseline proportional-hazards model.",
   gumbel_ph: "Gumbel baseline proportional-hazards model.",
+  loglogistic_ph: "Log-logistic baseline proportional-hazards model: hazard rises then falls.",
   cox_ph: "Semi-parametric Cox model — covariate effects, no baseline shape.",
   weibull_aft: "Weibull baseline; covariates scale time to failure (accelerated life).",
   exponential_aft: "Exponential baseline accelerated-failure-time model.",
@@ -36,6 +38,7 @@ const DESCRIPTIONS = {
   gamma_aft: "Gamma baseline accelerated-failure-time model.",
   logistic_aft: "Logistic baseline accelerated-failure-time model.",
   gumbel_aft: "Gumbel baseline accelerated-failure-time model.",
+  loglogistic_aft: "Log-logistic baseline; covariates scale time to failure. Hazard rises then falls.",
   weibull_po: "Weibull baseline; covariates scale the odds of failure (proportional odds).",
   exponential_po: "Exponential baseline proportional-odds model.",
   lognormal_po: "Lognormal baseline proportional-odds model.",
@@ -43,6 +46,7 @@ const DESCRIPTIONS = {
   gamma_po: "Gamma baseline proportional-odds model.",
   logistic_po: "Logistic baseline proportional-odds model.",
   gumbel_po: "Gumbel baseline proportional-odds model.",
+  loglogistic_po: "Log-logistic baseline proportional-odds model (the same model as log-logistic AFT).",
   weibull_ah: "Weibull baseline; covariates add to the hazard (additive hazards, Aalen).",
   exponential_ah: "Exponential baseline additive-hazards model.",
   lognormal_ah: "Lognormal baseline additive-hazards model.",
@@ -50,6 +54,7 @@ const DESCRIPTIONS = {
   gamma_ah: "Gamma baseline additive-hazards model.",
   logistic_ah: "Logistic baseline additive-hazards model.",
   gumbel_ah: "Gumbel baseline additive-hazards model.",
+  loglogistic_ah: "Log-logistic baseline additive-hazards model.",
   kaplan_meier: "Non-parametric survival estimate — no distribution assumed.",
   nelson_aalen: "Non-parametric survival via cumulative hazard.",
   fleming_harrington: "Non-parametric, tie-corrected cumulative hazard.",
@@ -202,6 +207,31 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
           <span className="muted-line">
             Units in one group share a hidden risk; the fit says how much the groups differ.
           </span>
+        </div>
+      )}
+      {familyApplies(selected) && (
+        <div className="dist-field">
+          <span className="dist-label">Frailty distribution</span>
+          <Select
+            value={opts.frailty_family || "gamma"}
+            onChange={(v) => setOpt("frailty_family", v === "gamma" ? "" : v)}
+            options={FRAILTY_FAMILIES}
+          />
+          <span className="muted-line">
+            How the hidden group risk varies. Log-normal lets a few very frail groups stand out without
+            dragging the rest.
+          </span>
+        </div>
+      )}
+      {value === "best" && (
+        <div className="dist-field">
+          <span className="dist-label">Rank by</span>
+          <Select
+            value={opts.criterion || "aic"}
+            onChange={(v) => setOpt("criterion", v === "aic" ? "" : v)}
+            options={CRITERION_CHOICES}
+          />
+          <span className="muted-line">{CRITERION_HELP[opts.criterion || "aic"]}</span>
         </div>
       )}
       {value === "best" && (

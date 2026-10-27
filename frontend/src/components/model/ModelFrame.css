@@ -352,3 +352,9 @@ html.print-layout .app.model-frame { height: auto !important; overflow: visible 
 
 /* A visible focus on the model tabs (the arrow keys move between them). */
 .mf-tabs .tab:focus-visible { outline: none; box-shadow: inset var(--focus); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+
+/* The model's own assumption checks: what to try, under the table. */
+.model-checks-advice { margin: 0; padding-left: 1.1rem; }
+.model-checks td:first-child { white-space: normal; }
+.model-checks td:last-child, .model-checks th:last-child { text-align: left; white-space: nowrap; }
+.compare-guidance { margin-top: 6px; }
