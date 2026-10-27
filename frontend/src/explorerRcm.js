@@ -226,8 +226,8 @@ export function tableCols(prefs, linked, { narrow = false } = {}) {
 // Ticking the Evidence check on or off is remembered as a choice; the other
 // columns are the shared set, now chosen. `reset` (Show the usual columns):
 // the usual set again (following the window's width), and the Evidence check
-// back to following the evidence. The shared set keeps its own Evidence check
-// (the RCM study's worksheet uses it).
+// back to following the evidence. The shared set (rcmWorksheet.js
+// DEFAULT_COLUMNS) keeps its own Evidence check.
 export function withTableCols(prefs, next, shown, { reset = false } = {}) {
   const had = (prefs.cols || DEFAULT_COLUMNS).includes("check");
   if (reset) {

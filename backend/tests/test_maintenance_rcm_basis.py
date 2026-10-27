@@ -137,7 +137,6 @@ def test_the_tree_says_which_positions_have_an_operating_context(m):
 def _old_function_added(s, org, p):
     s.put_node(org, p["id"], "Function", {
         "text": p["text"], "standard": p.get("standard", ""), "order": p.get("order", 0),
-        "rcm_function_id": p.get("rcm_function_id"), "study_id": p.get("study_id"),
     })
     s.put_edge(org, "PERFORMS", p["position_id"], p["id"])
 

@@ -374,6 +374,6 @@ def test_billing_status_exposes_plan_comparison_numbers(monkeypatch):
     assert body["pro_monthly_credit_cents"] == 1000
     assert body["caps"]["datasets"] == 3
     assert set(body["caps"]) == {
-        "datasets", "models", "rbds", "degradation_models", "tracked_items", "rcm_studies", "fleets",
+        "datasets", "models", "rbds", "degradation_models", "tracked_items", "fleets",
         "outage_logs",
     }

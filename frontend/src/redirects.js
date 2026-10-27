@@ -2,8 +2,9 @@
 //
 // The menu moved to Design · Operate · Analyse: Modelling became Models and
 // Data, RBDs became Systems, Fleet became Forecasts (its degradation tracking
-// moved to Models, then to Operate › Risk as Condition monitoring), RCM moved
-// under Maintenance, and Reliafy Maintenance's register moved to Assets. Links saved before then (emails, share notices,
+// moved to Models, then to Operate › Risk as Condition monitoring), the RCM
+// studies became the RCM on the asset tree (Assets › Explorer), and Reliafy
+// Maintenance's register moved to Assets. Links saved before then (emails, share notices,
 // bookmarks, API and MCP results, guides and posts) must keep working, so
 // every old address redirects to its page's new one with the same ids, query
 // and #hash (AppShell.jsx draws a route for each row).
@@ -62,10 +63,14 @@ export const MOVED = [
   { path: "/strategy/tracking/:modelId", to: "/risk" },
   // The Demonstration test page is Test planning's first tab.
   { path: "/strategy/demonstration-test", to: "/strategy/test-planning" },
-  // RCM → Operate › Maintenance › RCM studies.
-  { path: "/rcm", to: "/maintenance/rcm" },
-  { path: "/rcm/studies", to: "/maintenance/rcm" },
-  { path: "/rcm/studies/:id", to: "/maintenance/rcm/:id" },
+  // RCM studies (first at /rcm, then under Maintenance) → the RCM on the asset
+  // tree, the Explorer's RCM tab. No study survives, so a study's own address
+  // lands on the tab too, with no id to carry.
+  { path: "/rcm", to: "/asset-register/explorer?tab=rcm" },
+  { path: "/rcm/studies", to: "/asset-register/explorer?tab=rcm" },
+  { path: "/rcm/studies/:id", to: "/asset-register/explorer?tab=rcm" },
+  { path: "/maintenance/rcm", to: "/asset-register/explorer?tab=rcm" },
+  { path: "/maintenance/rcm/:id", to: "/asset-register/explorer?tab=rcm" },
   // Reliafy Maintenance's register → Operate › Assets. (/maintenance itself
   // stays: it's the due tasks and work orders now; the positions tree is
   // Assets › Explorer, and Assets opens on the top-level places.)

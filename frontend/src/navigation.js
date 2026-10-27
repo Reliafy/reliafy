@@ -49,8 +49,9 @@ export const SECTIONS = [
 // plannedPages.js; nothing else has them, so they stay hidden).
 //
 // `landingNeeds`: the entry's own landing page needs that; without it the
-// entry opens on its first child instead, and that child isn't repeated
-// under it (Maintenance without Reliafy Maintenance is the RCM studies).
+// entry opens on its first live child instead, and that child isn't repeated
+// under it; with no live child either, the entry is left out (Maintenance
+// without Reliafy Maintenance).
 //
 // An entry is the current one on any page under its `to` (or `match`); a
 // child on its own page and the pages under it, or under any of its `also`
@@ -88,7 +89,6 @@ export const ENTRIES = [
   {
     id: "maintenance", section: "operate", label: "Maintenance", to: "/maintenance", landingNeeds: "maintenance",
     children: [
-      { to: "/maintenance/rcm", label: "RCM studies" },
       { to: "/maintenance/inbox", label: "Field inbox", needs: "preview" },
     ],
   },
@@ -243,8 +243,8 @@ export function childActive(child, pathname) {
 }
 
 // The entry (from `entries`) a page belongs to, if any. The longest match
-// wins, so /maintenance/rcm belongs to Maintenance even if another entry's
-// address were a prefix of it.
+// wins, so /maintenance/work-orders belongs to Maintenance even if another
+// entry's address were a prefix of it.
 export function activeEntry(entries, pathname) {
   let best = null;
   let bestLen = -1;
@@ -262,7 +262,7 @@ export function activeEntry(entries, pathname) {
 // The breadcrumbs above a page's title: its entry (unless the page is the
 // entry's landing page), then its child (unless it's that child's own page).
 // `entries` are the live ones, so a link never points at a page the user
-// doesn't have (Maintenance without Reliafy Maintenance opens on RCM studies).
+// doesn't have (an entry that opens on its first child links to that child).
 export function crumbsFor(entries, entryId, pathname, childTo = null) {
   const entry = entries.find((e) => e.id === entryId);
   if (!entry || pathname === entry.to) return [];
@@ -283,7 +283,6 @@ export const COLLECTION_PATHS = {
   datasets: "/data/",
   rbds: "/systems/b/",
   strategy_analyses: "/strategy/analyses/",
-  rcm_studies: "/maintenance/rcm/",
   fleets: "/forecasts/",
   tracked_fleets: "/risk/",
 };

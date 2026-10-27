@@ -1,9 +1,7 @@
-import { useEffect, useState } from "react";
-import { getRcmMaintenanceTasks, listRcmStudies } from "../api.js";
+import { useState } from "react";
 import { unitInText } from "./unitText.js";
 import { unitAbbr } from "./rbdModelText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { workspaceToday } from "../workspaceDate.js";
 
 // A repairable block's costs and maintenance (#99, #100, #156, #157), edited in
 // the block dialog's Maintenance (or Proof test) and Costs sections (#314).
@@ -18,8 +16,6 @@ import { workspaceToday } from "../workspaceDate.js";
 //   data.maintenance_group = "name"                 (shares the group's set-up cost)
 //   data.crew_priority = 2                          (place in the repair-crew queue)
 //   data.instant_repair = true                      (no repair-time model needed)
-//   data.rcm_source = {study_id, study, mode_id, mode, target, filled, ...}
-//                     (the RCM study the schedule was filled from: display only)
 // A standby group (mode "standby") takes only costs and a crew priority.
 // A duration of 0/blank is instant. A block has scheduled replacement or proof
 // tests, not both (as in RePyability). A cost charged per action (repair,
@@ -101,7 +97,6 @@ function initialState(data = {}) {
     coverage: str(test.coverage),
     fullTest: str(test.full_test),
     priority: str(data.crew_priority),
-    rcm: data.rcm_source || null,
   };
 }
 
@@ -142,8 +137,6 @@ function toExtras(s, mode = "component") {
     inspection: s.kind === "inspection" ? inspection : null,
     maintenance_group: group,
     crew_priority: priority,
-    // The link means nothing once the schedule it filled is gone.
-    rcm_source: s.rcm && s.rcm.target === s.kind ? s.rcm : null,
   };
 }
 
@@ -200,9 +193,9 @@ export function applyBlockExtras(data, extras) {
   return out;
 }
 
-function Field({ label, hint, value, onChange, title, filled, min = "0", max }) {
+function Field({ label, hint, value, onChange, title, min = "0", max }) {
   return (
-    <label className={"param-field rbd-cost-field" + (filled ? " rbd-filled" : "")} title={title}>
+    <label className="param-field rbd-cost-field" title={title}>
       <span>{label}</span>
       <input type="number" step="any" min={min} max={max} value={value} placeholder="—" aria-label={label}
              onChange={(e) => onChange(e.target.value)} />
@@ -236,11 +229,11 @@ const POLICY_HINTS = {
 };
 
 // A cost that may be a single value or a min–max range (drawn uniformly).
-function CostField({ label, hint, cost, onChange, title, filled }) {
+function CostField({ label, hint, cost, onChange, title }) {
   const mean = cost.range && !costProblem(cost, label) && !costBlank(cost)
     ? (Number(cost.min) + Number(cost.max)) / 2 : null;
   return (
-    <div className={"param-field rbd-cost-field" + (filled ? " rbd-filled" : "")} title={title}>
+    <div className="param-field rbd-cost-field" title={title}>
       <span className="rbd-cost-label">
         {label}
         <button type="button" className="rbd-range-toggle" onClick={() => onChange(toggleRange(cost))}
@@ -263,104 +256,6 @@ function CostField({ label, hint, cost, onChange, title, filled }) {
       {(hint || mean != null) && (
         <small>{[hint, mean != null ? `uniform, mean ${fmt(mean)}` : null].filter(Boolean).join(" · ")}</small>
       )}
-    </div>
-  );
-}
-
-const TARGET_LABEL = { preventive: "Scheduled replacement", inspection: "Proof test" };
-
-// What an RCM task fills, in words: "every 580 h · age replacement · cost 200".
-function filledText(fill, unit, sources = {}, analysis) {
-  const u = unit ? ` ${unitInText(unit)}` : "";
-  const parts = [`every ${fmt(fill.interval)}${u}${sources.interval === "analysis" ? " (from its analysis)" : ""}`];
-  if (fill.policy) parts.push(`${fill.policy} replacement`);
-  if (fill.cost != null) parts.push(`cost ${fmt(fill.cost)}${analysis ? ` (from “${analysis}”)` : ""}`);
-  return parts.join(" · ");
-}
-
-// Pick an RCM study, then one of its tasks, to fill the block's schedule.
-function RcmPicker({ unit, onPick, onClose }) {
-  const [studies, setStudies] = useState(null);
-  const [studyId, setStudyId] = useState("");
-  const [tasks, setTasks] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    let live = true;
-    listRcmStudies()
-      .then((r) => live && setStudies(r.studies || []))
-      .catch((e) => live && setError(e.message || "Couldn't load your RCM studies."));
-    return () => { live = false; };
-  }, []);
-
-  const choose = (id) => {
-    setStudyId(id);
-    setTasks(null);
-    setError(null);
-    if (!id) return;
-    setLoading(true);
-    getRcmMaintenanceTasks(id, unit)
-      .then(setTasks)
-      .catch((e) => setError(e.message || "Couldn't load the study's tasks."))
-      .finally(() => setLoading(false));
-  };
-
-  return (
-    <div className="rbd-rcm-picker">
-      <div className="rbd-rcm-picker-head">
-        <strong>Fill from an RCM study</strong>
-        <button type="button" className="link" onClick={onClose}>Cancel</button>
-      </div>
-      {studies && studies.length === 0 ? (
-        <p className="hint">No RCM studies yet — record failure modes and their tasks under RCM, then fill blocks from them.</p>
-      ) : (
-        <select value={studyId} onChange={(e) => choose(e.target.value)} disabled={!studies} aria-label="RCM study">
-          <option value="">{studies ? "Choose a study…" : "Loading studies…"}</option>
-          {(studies || []).map((st) => (
-            <option key={st.id} value={st.id}>
-              {st.name}{st.shared_by ? ` — shared by ${st.shared_by}` : ""}
-            </option>
-          ))}
-        </select>
-      )}
-      {loading && <p className="hint">Loading tasks…</p>}
-      {error && <p className="rbd-costs-errors">{error}</p>}
-      {tasks && (
-        tasks.tasks.length === 0 ? (
-          <p className="hint">This study has no failure modes yet.</p>
-        ) : (
-          <ul className="rbd-rcm-tasks">
-            {tasks.tasks.map((t) => (
-              <li key={t.mode_id} className={t.target ? "ok" : "no"}>
-                <div className="rbd-rcm-task-text">
-                  <div className="rbd-rcm-mode">{t.mode}</div>
-                  <div className="muted">
-                    {[t.outcome_label || "No task decided", t.task].filter(Boolean).join(" · ")}
-                  </div>
-                  {t.target ? (
-                    <div className="rbd-rcm-fills">
-                      <b>{TARGET_LABEL[t.target]}</b> {filledText(t.fill, unit, t.sources, t.analysis_name)}
-                    </div>
-                  ) : (
-                    <div className="rbd-rcm-reason">{t.reason}</div>
-                  )}
-                </div>
-                {t.target && (
-                  <button type="button" className="secondary rbd-rcm-use"
-                          onClick={() => onPick(tasks, t)}>
-                    Use
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )
-      )}
-      <p className="hint">
-        A task carries its interval (and a replacement task's linked analysis its cost); durations and the other
-        costs stay as you set them.
-      </p>
     </div>
   );
 }
@@ -432,38 +327,8 @@ export function PriorityField({ ctl }) {
 // Scheduled replacement or proof tests, and the maintenance group.
 export function MaintenanceFields({ ctl, unit = "", groups = [] }) {
   const { s, update } = ctl;
-  const [picking, setPicking] = useState(false);
   const condition = s.kind === "preventive" && s.policy === "condition";
   const what = s.kind === "preventive" ? (condition ? "inspection" : "replacement") : "test";
-
-  const pick = (study, task) => {
-    const fill = task.fill || {};
-    update({
-      kind: task.target,
-      ...(fill.policy ? { policy: fill.policy } : {}),
-      interval: str(fill.interval),
-      ...(fill.cost != null ? { cost: costState(fill.cost) } : {}),
-      rcm: {
-        study_id: study.study_id,
-        study: study.study,
-        mode_id: task.mode_id,
-        mode: task.mode,
-        target: task.target,
-        filled: fill,
-        sources: task.sources || {},
-        ...(task.analysis_name ? { analysis: task.analysis_name } : {}),
-        filled_at: workspaceToday(),
-      },
-    });
-    setPicking(false);
-  };
-  const link = s.rcm && s.rcm.target === s.kind ? s.rcm : null;
-  const filled = link?.filled || {};
-  const same = (a, b) => !isBlank(a) && b != null && Number(a) === Number(b);
-  const intervalFilled = link && same(s.interval, filled.interval);
-  const costFilled = link && filled.cost != null && !s.cost.range && same(s.cost.value, filled.cost);
-  const edited = link && (!intervalFilled || (filled.cost != null && !costFilled)
-                          || (filled.policy && filled.policy !== s.policy));
 
   return (
     <>
@@ -474,25 +339,7 @@ export function MaintenanceFields({ ctl, unit = "", groups = [] }) {
           onChange={(kind) => update({ kind })}
           options={KINDS.map((k) => ({ value: k.id, label: k.label }))}
         />
-        {!picking && (
-          <button type="button" className="link" onClick={() => setPicking(true)}>
-            Fill from RCM study…
-          </button>
-        )}
       </div>
-      {picking && <RcmPicker unit={unit} onPick={pick} onClose={() => setPicking(false)} />}
-      {link && (
-        <div className="rbd-rcm-source">
-          <div>
-            From RCM study <b>{link.study}</b> — {link.mode}: {filledText(filled, unit, link.sources, link.analysis)}.
-            {edited && <span className="rbd-rcm-edited"> Edited since.</span>}
-          </div>
-          <div className="muted">
-            Not kept in sync: later changes to the study don't update this block.{" "}
-            <button type="button" className="link" onClick={() => update({ rcm: null })}>Unlink</button>
-          </div>
-        </div>
-      )}
       {s.kind === "preventive" && (
         <>
           <SegmentedControl
@@ -516,7 +363,7 @@ export function MaintenanceFields({ ctl, unit = "", groups = [] }) {
         <div className="param-fields">
           <Field label={`${what === "test" ? "Test" : what === "inspection" ? "Inspect" : "Replace"} every`}
                  hint={unit || "time"}
-                 value={s.interval} onChange={(v) => update({ interval: v })} filled={intervalFilled} />
+                 value={s.interval} onChange={(v) => update({ interval: v })} />
           {condition && (
             <Field label="Replace above" hint="P(fails before next inspection), e.g. 0.05" max="1"
                    title="Replaced at an inspection when its chance of failing before the next one, given its age, is above this."
@@ -526,7 +373,7 @@ export function MaintenanceFields({ ctl, unit = "", groups = [] }) {
                  title={`How long the block is off-line for each ${condition ? "replacement" : what} (a planned outage).`}
                  value={s.duration} onChange={(v) => update({ duration: v })} />
           <CostField label={`Cost per ${condition ? "replacement" : what}`} hint="optional" cost={s.cost}
-                     onChange={(v) => update({ cost: v })} filled={costFilled} />
+                     onChange={(v) => update({ cost: v })} />
           {condition && (
             <CostField label="Cost per inspection" hint="optional" cost={s.inspectionCost}
                        onChange={(v) => update({ inspectionCost: v })} />
@@ -602,7 +449,6 @@ export function BlockCostSection({ initial, onChange, unit = "", crews = false, 
 export function maintenanceChips(data, unit) {
   const u = unitAbbr(unit) ? ` ${unitAbbr(unit)}` : "";
   const out = [];
-  const from = data.rcm_source?.study ? ` · from RCM study “${data.rcm_source.study}”` : "";
   const pm = data.preventive;
   const test = data.inspection;
   const cbm = pm?.policy === "condition";
@@ -611,9 +457,9 @@ export function maintenanceChips(data, unit) {
       key: "pm",
       text: `${cbm ? "◎" : "↻"} ${fmt(pm.interval)}${u}`,
       title: cbm
-        ? `Inspected every ${fmt(pm.interval)}${u}, replaced when P(failing before the next inspection) > ${pm.threshold}${from}`
+        ? `Inspected every ${fmt(pm.interval)}${u}, replaced when P(failing before the next inspection) > ${pm.threshold}`
         : `Scheduled ${pm.policy === "block" ? "block" : "age"} replacement every ${fmt(pm.interval)}${u}`
-          + (pm.opportunity != null ? `, renewed early from age ${fmt(pm.opportunity)}${u} at a group stop` : "") + from,
+          + (pm.opportunity != null ? `, renewed early from age ${fmt(pm.opportunity)}${u} at a group stop` : ""),
     });
   }
   if (test) {
@@ -625,7 +471,7 @@ export function maintenanceChips(data, unit) {
     out.push({
       key: "test",
       text: `⏱ ${fmt(test.interval)}${u}${notes.length ? " *" : ""}`,
-      title: `Hidden failures, proof-tested every ${fmt(test.interval)}${u}${notes.length ? ` (${notes.join("; ")})` : ""}${from}`,
+      title: `Hidden failures, proof-tested every ${fmt(test.interval)}${u}${notes.length ? ` (${notes.join("; ")})` : ""}`,
     });
   }
   if (data.maintenance_group) {

@@ -82,7 +82,6 @@ export const DETAIL_IDS = {
   "/strategy/analyses/:id": ["/api/strategy/analyses", list("analyses")],
   "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],
   "/forecasts/:id": ["/api/fleet/fleets", list("fleets")],
-  "/maintenance/rcm/:id": ["/api/rcm/studies", list("studies")],
   "/asset-register/positions/:id": ["/api/maintenance/overview", list("tree")],
   "/maintenance/work-orders/:id": ["/api/maintenance/work-orders", list("work_orders")],
   "/asset-register/items/:id": ["/api/maintenance/items", list("items")],
@@ -139,7 +138,9 @@ export const REDIRECTS_WITH_QUERY = [
   ["/datasets/d/sample-ds-bearings?compare=arm", "/data/sample-ds-bearings?compare=arm"],
   ["/modelling/new?mode=paste", "/models/new?mode=paste"],
   ["/modelling/m/sample-model-bearings-weibull?from=email#bounds", "/models/m/sample-model-bearings-weibull?from=email#bounds"],
-  ["/rcm/studies/sample-rcm-truck?from=email", "/maintenance/rcm/sample-rcm-truck?from=email"],
+  // A study's old address lands on the Explorer's RCM tab: the tab is the target's own query, then the rest.
+  ["/rcm/studies/sample-rcm-truck?from=email", "/asset-register/explorer?tab=rcm&from=email"],
+  ["/maintenance/rcm/sample-rcm-truck?from=email", "/asset-register/explorer?tab=rcm&from=email"],
   ["/strategy/demonstration-test?model=sample-model-bearings-weibull", "/strategy/test-planning?model=sample-model-bearings-weibull"],
   ["/asset-register/positions?place=none", "/asset-register/explorer?arrange=positions&place=none"],
   ["/maintenance/locations#top", "/asset-register/explorer?arrange=locations#top"],

@@ -68,7 +68,8 @@ def test_the_copy_has_the_whole_rcm_with_new_ids(store):
     assert task["interval"] == 580 and task["unit"] == "hours" and task["outcome"] == "fixed_interval"
     assert task["name"] == "Replace wheel bearings preventively."
 
-    # New ids everywhere: nothing carries the sample study's, nor its study_id.
+    # New ids everywhere: nothing carries the template's ids, and nothing writes the
+    # fields the earlier RCM studies left on nodes.
     ids = {n["id"] for label in ("Position", "Function", "FunctionalFailure", "FailureMode", "Task")
            for n in store.nodes(ORG, label)}
     assert len(ids) == 1 + 2 + 2 + 5 + 1 and not any(i.startswith("sample-") for i in ids)
@@ -80,23 +81,17 @@ def test_the_copy_has_the_whole_rcm_with_new_ids(store):
     assert store.snapshot() == before
 
 
-def test_the_evidence_check_matches_the_sample_study(store, db):
-    from backend.db import from_doc
-    from backend.schema import RcmStudy
-    from backend.services import rcm as rcm_service
+def test_the_evidence_check_on_the_copy(store, db):
     from backend.services.samples import SAMPLE_OWNER
 
-    owners = [ORG, SAMPLE_OWNER]
     m = Maintenance(store, ORG, "tester")
     pid = templates.add_sample_truck(m)["position"]["id"]
-    graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), owners)
-    study = rcm_service.resolve(db, from_doc(RcmStudy, db.rcm_studies.find_one({"_id": "sample-rcm-truck"})), owners)
-    want = {mo["text"]: mo["decision"].get("status") for fn in study["functions"]
-            for f in fn["failures"] for mo in f["modes"]}
-    assert {mo["text"]: mo["decision"].get("status") for mo in _modes(graph)} == want
-    assert graph["rollup"] == study["rollup"]
-    assert want["Wheel-bearing failure — legacy run-to-failure plan"] == "contradicted"
-    assert {"supported", "contradicted"} <= set(want.values())
+    graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), [ORG, SAMPLE_OWNER])
+    statuses = {mo["text"]: mo["decision"].get("status") for mo in _modes(graph)}
+    assert statuses["Wheel-bearing failure — legacy run-to-failure plan"] == "contradicted"
+    assert {"supported", "contradicted"} <= set(statuses.values())
+    assert graph["rollup"] == {"modes": 5, "decided": 5, "supported": 3, "contradicted": 1,
+                               "inconclusive": 0, "unevidenced": 0, "stale": 0}
 
 
 def test_once_unless_asked_again_and_only_in_the_callers_workspace(store):
@@ -127,11 +122,8 @@ def test_once_unless_asked_again_and_only_in_the_callers_workspace(store):
     assert templates.add_sample_truck(m, again=True)["position"]["name"] == "Delivery truck (sample)"
 
 
-def test_the_sample_study_is_seeded_from_the_same_content(db):
-    from backend.services import rcm as rcm_service
-
-    doc = db.rcm_studies.find_one({"_id": "sample-rcm-truck"})
-    assert doc["functions"] == rcm_service.clean_tree(templates.sample_truck_functions())
+def test_the_template_is_copied_fresh_each_time():
+    assert templates.sample_truck_functions() == templates.SAMPLE_TRUCK_FUNCTIONS
     assert templates.sample_truck_functions() is not templates.SAMPLE_TRUCK_FUNCTIONS
 
 

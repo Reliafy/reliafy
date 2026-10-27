@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkDecision } from "./decisionCheck.js";
 
-// The fields each outcome asks for (as GET /api/rcm/options says).
+// The fields each outcome asks for (as GET /api/maintenance/rcm/options says).
 const F = { on_condition: ["task", "interval"], fixed_interval: ["task", "interval"], failure_finding: ["task", "interval"], rtf: ["rtf_basis", "task"], redesign: ["notes"], accept: ["notes"] };
 const check = (d, opts) => checkDecision({ fields: F[d.outcome] || [], ...d }, opts);
 
@@ -53,7 +53,7 @@ test("the Explorer's own limits: at most 100 years, 10 million units of use, not
   assert.equal(check({ outcome: "fixed_interval", interval: "1300", intervalUnit: "months" }, limits).intervalError, "The interval is at most 100 years.");
   assert.equal(check({ outcome: "fixed_interval", interval: "100", intervalUnit: "years" }, limits).intervalError, null);
   assert.match(check({ outcome: "fixed_interval", interval: "20000000", intervalUnit: "hours" }, limits).intervalError, /^The interval is at most 10,000,000 hours/);
-  assert.equal(check({ outcome: "fixed_interval", interval: "20000000", intervalUnit: "hours" }).intervalError, null); // a study takes it
+  assert.equal(check({ outcome: "fixed_interval", interval: "20000000", intervalUnit: "hours" }).intervalError, null); // no limit without `limits`
   assert.deepEqual(check({ outcome: "accept", notes: "x".repeat(4001) }, limits).blockers, ["Shorten the notes to 4,000 characters or fewer."]);
   assert.deepEqual(check({ outcome: "accept", notes: "x".repeat(4000) }, limits).blockers, []);
 });

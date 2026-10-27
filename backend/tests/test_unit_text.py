@@ -9,7 +9,8 @@ copy.
 import re
 
 from backend import units
-from backend.services import rbd_analysis, rbd_intervals, rbd_sensitivity, rcm, strategy, strategy_store
+from backend.maintenance import rcm_decisions
+from backend.services import rbd_analysis, rbd_intervals, rbd_sensitivity, strategy, strategy_store
 from backend.schema import StrategyAnalysis
 
 # A capitalised known unit after a lower-case word: "in Hours", "about 500 Hours".
@@ -69,7 +70,7 @@ def test_headlines_and_verdicts_read_lower_case():
     _clean(head)
     assert head.endswith("120 hours")
 
-    mismatch = rcm._unit_mismatch({"interval_unit": "Months"}, "Hours")
+    mismatch = rcm_decisions._unit_mismatch({"interval_unit": "Months"}, "Hours")
     _clean(mismatch["reason"])
     assert "is in months but the linked analysis is in hours" in mismatch["reason"]
 

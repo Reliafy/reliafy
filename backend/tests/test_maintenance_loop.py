@@ -9,6 +9,7 @@ import pytest
 from backend.maintenance import loop
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore
+from backend.tests.rcm_tree import position_with_rcm
 
 ORG = "user-l"
 
@@ -17,8 +18,8 @@ def _ago(days: int) -> str:
     return (date.today() - timedelta(days=days)).isoformat()
 
 
-class _Study:
-    id, name, system = "s1", "Pump RCM", "Pump"
+class _Rcm:
+    name = "Pump"
     functions = [{"id": "f", "text": "Pump water", "failures": [{"id": "ff", "text": "No flow", "modes": [
         {"id": "m1", "text": "Bearing worn", "consequence": "operational",
          "decision": {"outcome": "fixed_interval", "interval": 24, "interval_unit": "months",
@@ -32,7 +33,7 @@ def setup():
     # Three pumps of one class, each with a history of wear-out failures.
     lives = [[700, 760, 820], [690, 840, 780], [730, 800]]
     for i, history in enumerate(lives):
-        pos = m.position_from_rcm(_Study())["position"]
+        pos = position_with_rcm(m, _Rcm.functions, _Rcm.name)["position"]
         m.update_position(pos["id"], name=f"Pump {i + 1}", position_class="Centrifugal pump")
         day = 3000
         fm = pos["failure_modes"][0]["id"]

@@ -77,12 +77,12 @@ Press **Save analysis** under the answer, give it a name, and press **Save**.
 The result is recomputed on the server from your inputs and stored, and it
 appears on the [Strategy](/strategy) page.
 
-A saved failure-finding analysis is the evidence an RCM study expects for a
-*Failure-finding task*. In the study's decision dialog, choose the failure mode's
-consequence (**Hidden**), the decision **Failure-finding task**, the task and its
-interval, and link this analysis. The decision then reads **Supported**: *Check
-every ~175 hours for 99% availability.* See
-[running an RCM study](/guides/rcm-study).
+A saved failure-finding analysis is the evidence an RCM decision expects for a
+*Failure-finding task*. On the Explorer's **RCM** tab, open the failure mode's
+decision dialog and choose its consequence (**Hidden**), the decision
+**Failure-finding task**, the task and its interval, and link this analysis. The
+decision then reads **Supported**: *Check every ~175 hours for 99%
+availability.* See [building RCM on your asset tree](/guides/rcm-on-your-asset-tree).
 
 Keep the units the same in both places. If the task interval is in days and the
 analysis is in hours, the decision is marked inconclusive rather than converted.

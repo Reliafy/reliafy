@@ -28,7 +28,7 @@ import { shownTab, tabParam, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { NewItemModal, NewLocationModal } from "./MaintenanceLists.jsx";
-import { FromRcmModal, ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
+import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
 import { DEFAULT_ARRANGEMENT, DEFAULT_LEVEL, changedFromUsual, levelShown, showingOnly } from "../treeControls.js";
 import {
   ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
@@ -89,7 +89,7 @@ import "./AssetExplorer.css";
 // heading and tabs in them), the tree as wide on both, its scroll, what's open
 // and the row picked kept, and the focus left on the tab picked.
 
-const HELP = { guide: "rcm-study" };
+const HELP = { guide: "rcm-on-your-asset-tree" };
 
 // Every position depth first, for the "Inside" pickers.
 function pickerList(data) {
@@ -761,7 +761,7 @@ export default function AssetExplorer() {
     <div className="card empty section-empty">
       <h2>{EMPTY[mode]?.[0] || "No positions yet"}</h2>
       <p>{EMPTY[mode]?.[1]
-        || "Add the first position, or start from an RCM study: its system becomes a position, with the study's tasks."}</p>
+        || "Add the first position, add the sample truck, or import a worksheet."}</p>
       <div className="section-empty-action">
         {mode === "locations" ? (
           <button type="button" onClick={() => setModal("location")}><PlusIcon /> New location</button>
@@ -773,7 +773,6 @@ export default function AssetExplorer() {
         ) : (
           <>
             <button type="button" onClick={() => setModal("position")}><PlusIcon /> New position</button>
-            <button type="button" className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>
             <button type="button" className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>
           </>
         )}
@@ -786,7 +785,7 @@ export default function AssetExplorer() {
           </button>
         </div>
       )}
-      <p className="section-empty-more"><ShowMe help={HELP}>How RCM studies become positions and tasks</ShowMe></p>
+      <p className="section-empty-more"><ShowMe help={HELP}>How to build RCM on your asset tree</ShowMe></p>
     </div>
   ) : (
     <div className="card empty">Pick a row in the tree to see it here.</div>
@@ -998,7 +997,6 @@ export default function AssetExplorer() {
         onReset={resetView}
         menuActions={data && mode !== "locations" && mode !== "items" ? [
           { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
-          { id: "rcm", label: "From an RCM study", onSelect: () => setModal("rcm") },
           { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: addSample },
         ] : []}
         notice={notice}
@@ -1050,9 +1048,6 @@ export default function AssetExplorer() {
           onClose={() => setModal(null)} onDone={(it) => created(it.id)} />
       )}
       {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
-      {modal === "rcm" && (
-        <FromRcmModal positions={pickerList(data)} onClose={() => setModal(null)} onCreated={(r) => created(r.position.id)} />
-      )}
       {rowModal?.kind === "rename" && (
         <RenameModal row={rowModal.row} onClose={() => setRowModal(null)}
                      onDone={(name) => rowChanged(rowModal.row, { text: `Renamed it “${name}”.` })} />

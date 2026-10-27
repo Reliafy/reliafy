@@ -56,7 +56,7 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
-MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_source",
+MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection",
                     "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
 DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil")
@@ -548,7 +548,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
             raise GraphError(f"{where}: {exc}") from None
         if data["covariate_schedules"] is None:
             del data["covariate_schedules"]
-    for key in ("costs", "preventive", "inspection", "rcm_source", "repair_quality"):
+    for key in ("costs", "preventive", "inspection", "repair_quality"):
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
     if isinstance(data.get("repair_quality"), dict) and data["repair_quality"].get("model", "perfect") == "perfect" \

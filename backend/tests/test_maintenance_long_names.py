@@ -1,7 +1,7 @@
 """Reliafy Maintenance: names longer than names may be.
 
 A task's name became a 397-character paragraph (an RCM decision's task text,
-brought onto a position by apply_rcm, which didn't check its length). Its work
+brought onto a position by an earlier import, which didn't check its length). Its work
 order's title, made from the name, was then refused every morning, and that one
 refusal stopped the whole workspace's daily run. Now:
 
@@ -24,6 +24,7 @@ from backend.maintenance.service import (
     LONG_TEXT, PROJECTORS, SHORT_TEXT, Invalid, Maintenance, derived_title, shortened,
 )
 from backend.maintenance.store import GraphStore
+from backend.tests.rcm_tree import apply_tree
 
 ORG = "user-long"
 
@@ -54,14 +55,15 @@ def m(store):
     return Maintenance(store, ORG, "tester")
 
 
-class _Study:
-    def __init__(self, task_text, system="Pool", name="Pool RCM"):
-        self.system, self.name, self.id = system, name, "study-1"
-        self.functions = [{"id": "fn1", "text": "Keep the water clear", "failures": [{
-            "id": "ff1", "text": "Water cloudy", "modes": [
-                {"id": "m-filter", "text": "Filter blocked", "consequence": "operational",
-                 "decision": {"outcome": "on_condition", "interval": 2, "interval_unit": "weeks",
-                              "task": task_text}}]}]}]
+def _decision(task_text):
+    return {"outcome": "on_condition", "interval": 2, "interval_unit": "weeks", "task": task_text}
+
+
+def _rcm(task_text):
+    return [{"id": "fn1", "text": "Keep the water clear", "failures": [{
+        "id": "ff1", "text": "Water cloudy", "modes": [
+            {"id": "m-filter", "text": "Filter blocked", "consequence": "operational",
+             "decision": _decision(task_text)}]}]}]
 
 
 def _due_task(m: Maintenance, position_id: str, name: str) -> str:
@@ -133,7 +135,7 @@ def test_the_full_name_is_bounded_too():
 
 def test_a_397_character_task_name_from_before_gets_its_work_order(m, caplog):
     """As the real data did: the long name arrived by an event nothing checked (a
-    name-only task.updated, as apply_rcm wrote), not through create_task."""
+    name-only task.updated, as an earlier import wrote), not through create_task."""
     pool = m.create_position("Pool")
     filt = m.create_position("Filter", parent_id=pool["id"])
     long_task = _due_task(m, filt["id"], "Fortnightly filter check")
@@ -253,47 +255,38 @@ def test_the_daily_run_reports_skipped_tasks_in_its_result_and_digest(store, mon
 
 def test_an_rcm_decisions_long_task_text_becomes_a_short_name_and_full_instructions(m):
     pos = m.create_position("Filter")
-    m.apply_rcm(pos["id"], _Study(LONG_NAME))
+    apply_tree(m, pos["id"], _rcm(LONG_NAME))
     [task] = m.position(pos["id"])["tasks"]
     assert len(task["name"]) <= SHORT_TEXT and task["name"].endswith("…")
     assert task["instructions"] == LONG_NAME
     m.set_last_done(task["id"], "2020-01-01")
     [wo] = m.generate(30)["work_orders"]
     assert m.work_order(wo["id"])["instructions"] == LONG_NAME  # it travels with the work
-    # Applying again changes nothing.
-    assert m.apply_rcm(pos["id"], _Study(LONG_NAME))["tasks_updated"] == 0
+    # Deciding the same again changes nothing.
+    [mode] = m.position(pos["id"])["failure_modes"]
+    events = m.s.event_count(ORG)
+    m.decide_failure_mode(mode["id"], decision=_decision(LONG_NAME))
+    assert m.s.event_count(ORG) == events
     # A short decision text stays the name, as it always was, with no instructions added.
     other = m.create_position("Skimmer")
-    m.apply_rcm(other["id"], _Study("Empty the skimmer basket"))
+    apply_tree(m, other["id"], _rcm("Empty the skimmer basket"))
     [short] = m.position(other["id"])["tasks"]
     assert short["name"] == "Empty the skimmer basket" and not short.get("instructions")
     _snapshot_holds(m)
 
 
-def test_reapplying_a_study_fixes_a_long_name_from_before(m):
-    """The workspace's existing long names: applying the study again shortens them,
-    and the full text moves to the instructions (never over your own)."""
+def test_deciding_again_fixes_a_long_name_from_before(m):
+    """The workspace's existing long names: deciding the mode again shortens its
+    task's name, and the full text moves to the instructions."""
     pos = m.create_position("Filter")
-    m.apply_rcm(pos["id"], _Study("Check"))
+    apply_tree(m, pos["id"], _rcm("Check"))
     [task] = m.position(pos["id"])["tasks"]
     m.s.apply(ORG, "task.updated", {"id": task["id"], "changes": {"name": LONG_NAME}})  # as before the fix
-    assert m.apply_rcm(pos["id"], _Study(LONG_NAME))["tasks_updated"] == 1
+    [mode] = m.position(pos["id"])["failure_modes"]
+    m.decide_failure_mode(mode["id"], decision=_decision(LONG_NAME))
     [task] = m.position(pos["id"])["tasks"]
     assert len(task["name"]) <= SHORT_TEXT and task["instructions"] == LONG_NAME
-    # Your own instructions are kept when the study's text changes.
-    m.update_task(task["id"], instructions="Wear gloves")
-    changed = _long(250).replace("Fortnightly", "Weekly", 1)
-    m.apply_rcm(pos["id"], _Study(changed))
-    [task] = m.position(pos["id"])["tasks"]
-    assert task["name"].startswith("Weekly") and task["instructions"] == "Wear gloves"
-
-
-def test_a_position_from_an_rcm_study_with_a_long_system_name(m):
-    made = m.position_from_rcm(_Study("Clean", system=LONG_NAME))
-    position = made["position"]
-    assert len(position["name"]) <= SHORT_TEXT and position["name"].endswith("…")
-    assert position["description"].split("\n")[0] == LONG_NAME
-    assert position["description"].endswith("From the RCM study “Pool RCM”.")
+    _snapshot_holds(m)
 
 
 def test_a_copy_shortens_a_long_name_from_before(m):

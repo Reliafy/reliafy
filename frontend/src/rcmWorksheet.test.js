@@ -2,13 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flatten, levelSet } from "./outlineTree.js";
 import {
-  COLUMN, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, addNode, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
-  insideWords, intervalText, loadPrefs, patchNode, rememberedOpen, removeNode, savePrefs, setCell, siblingOrder,
-  withOpen, worksheetCsvRows, decisionBody,
+  COLUMN, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
+  insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody,
 } from "./rcmWorksheet.js";
 
-// A house pool pump, as the server sends it back (decisions resolved).
-const STUDY = [
+// A house pool pump's RCM, as the server sends it back (decisions resolved).
+const RCM = [
   { id: "f1", text: "Circulate the water", standard: "12 m³/h", failures: [
     { id: "x1", text: "No flow", modes: [
       { id: "m1", text: "Bearing seizes", effects: "Pump stops", consequence: "operational",
@@ -28,7 +27,7 @@ const STUDY = [
 ];
 
 test("the display: three levels, each row counting the failure modes inside it", () => {
-  const d = buildRcmDisplay(STUDY);
+  const d = buildRcmDisplay(RCM);
   assert.deepEqual(d.counts, { fn: 2, fail: 2, mode: 5 });
   assert.deepEqual(d.roots, ["f1", "f2"]);
   const f1 = d.rows.get("f1");
@@ -55,7 +54,7 @@ test("a repeated id still gets a row of its own", () => {
 });
 
 test("the cells, as text: decisions, intervals, roll-ups", () => {
-  const d = buildRcmDisplay(STUDY);
+  const d = buildRcmDisplay(RCM);
   const m = (k) => d.rows.get(k);
   assert.equal(COLUMN.decision.text(m("m2")), "Run-to-failure (random)");
   assert.equal(COLUMN.decision.text(m("m3")), "To decide");
@@ -78,7 +77,7 @@ test("the cells, as text: decisions, intervals, roll-ups", () => {
 });
 
 test("chips and text filter failure modes, keeping the path to each", () => {
-  const d = buildRcmDisplay(STUDY);
+  const d = buildRcmDisplay(RCM);
   // Evidence to look at: linked evidence only (m2 contradicted), not m4 with nothing linked.
   assert.deepEqual(chipCounts(d), { undecided: 2, hidden: 1, safety: 1, task: 2, notask: 3, check: 1 });
   const f = computeFilter(d, { chips: ["undecided"] });
@@ -91,7 +90,7 @@ test("chips and text filter failure modes, keeping the path to each", () => {
 });
 
 test("sorting keeps the tree: siblings in order, blanks last", () => {
-  const d = buildRcmDisplay(STUDY);
+  const d = buildRcmDisplay(RCM);
   const byInterval = siblingOrder(d, { col: "interval", dir: -1 });
   assert.deepEqual(byInterval(["m1", "m2", "m3"]), ["m1", "m2", "m3"]);
   const byName = siblingOrder(d, { col: "name", dir: 1 });
@@ -105,8 +104,8 @@ test("sorting keeps the tree: siblings in order, blanks last", () => {
   assert.equal(siblingOrder(d, null), null);
 });
 
-test("edits: change, add and remove, each a new list; cells checked as the server checks them", () => {
-  const d = buildRcmDisplay(STUDY);
+test("cells checked as the server checks them; only the columns that allow it are edited in place", () => {
+  const d = buildRcmDisplay(RCM);
   const m1 = d.rows.get("m1");
   assert.deepEqual(checkValue("name", m1, "  "), { error: "Every failure mode needs a description." });
   assert.deepEqual(checkValue("interval", m1, "-2"), { error: "The task interval must be positive." });
@@ -114,57 +113,23 @@ test("edits: change, add and remove, each a new list; cells checked as the serve
   assert.deepEqual(checkValue("interval", m1, ""), { value: null });
   assert.deepEqual(checkValue("consequence", m1, "nonsense"), { value: null });
   assert.deepEqual(checkValue("effects", m1, " Leaks "), { value: "Leaks" });
-
-  let next = setCell(STUDY, m1, "interval", 4);
-  assert.equal(next[0].failures[0].modes[0].decision.interval, 4);
-  assert.equal(STUDY[0].failures[0].modes[0].decision.interval, 3, "the original is untouched");
-  next = setCell(next, m1, "name", "Bearing seizes early");
-  assert.equal(next[0].failures[0].modes[0].text, "Bearing seizes early");
-  next = setCell(next, d.rows.get("m3"), "consequence", "hidden");
-  assert.equal(next[0].failures[0].modes[2].consequence, "hidden");
-  next = setCell(next, m1, "dnotes", "Per the OEM");
-  assert.equal(next[0].failures[0].modes[0].decision.notes, "Per the OEM");
-  next = setCell(next, d.rows.get("f1"), "standard", "13 m³/h");
-  assert.equal(next[0].standard, "13 m³/h");
-  // A mode without a decision has no task to change.
-  assert.equal(setCell(STUDY, d.rows.get("m3"), "task", "x")[0].failures[0].modes[2].decision, null);
-
-  const added = addNode(STUDY, [0, 0]);
-  assert.equal(added.functions[0].failures[0].modes.length, 4);
-  assert.equal(added.functions[0].failures[0].modes[3].id, added.id);
-  assert.equal(addNode(STUDY, [1]).functions[1].failures.length, 2);
-  assert.equal(addNode(STUDY, null).functions.length, 3);
-  assert.equal(removeNode(STUDY, [0, 0, 1])[0].failures[0].modes.map((m) => m.id).join(), "m1,m3");
-  assert.equal(removeNode(STUDY, [1, 0])[1].failures.length, 0);
-  assert.equal(removeNode(STUDY, [0]).length, 1);
-  assert.equal(patchNode(STUDY, [1, 0], { text: "Dry run" })[1].failures[0].text, "Dry run");
-  // Only the columns that allow it are edited in place.
   assert.equal(COLUMN.task.can(d.rows.get("m2")), true); // run-to-failure: the action on failure
   assert.equal(COLUMN.interval.can(d.rows.get("m2")), false);
   assert.equal(COLUMN.task.can(d.rows.get("m3")), false);
   assert.equal(COLUMN.effects.can(d.rows.get("f1")), false);
 });
 
-test("the CSV: one row per failure mode", () => {
-  const rows = worksheetCsvRows(STUDY);
-  assert.equal(rows.length, 6);
-  assert.equal(rows[0][0], "function");
-  assert.deepEqual(rows[1].slice(0, 3), ["Circulate the water", "No flow", "Bearing seizes"]);
-  assert.equal(rows[1][8], 3);
-});
-
-test("remembered on this device: columns, widths, row height and each study's open rows", () => {
+test("remembered on this device: columns, widths and row height; an earlier version's open rows dropped", () => {
   const store = new Map();
   const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
   assert.deepEqual(loadPrefs(storage).cols, DEFAULT_COLUMNS);
-  const d = buildRcmDisplay(STUDY);
-  savePrefs(withOpen({ cols: ["task", "nope"], widths: { task: 300, bogus: 4 }, density: "compact", open: {} }, "s1", new Set(["f1", "gone"])), storage);
+  savePrefs({ cols: ["task", "nope"], widths: { task: 300, bogus: 4 }, density: "compact", open: { s1: ["f1"] } }, storage);
   const p = loadPrefs(storage);
   assert.deepEqual(p.cols, ["task"]);
   assert.deepEqual(p.widths, { task: 300 });
   assert.equal(p.density, "compact");
-  assert.deepEqual([...rememberedOpen(p, "s1", d)], ["f1"]);
-  assert.equal(rememberedOpen(p, "s2", d), null);
+  assert.equal(p.open, undefined);
+  assert.ok(!JSON.parse(store.get("reliafy.rcmWorksheet")).open);
   // Storage that throws: the defaults, and saving quietly does nothing.
   const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
   assert.equal(loadPrefs(broken).density, "comfortable");

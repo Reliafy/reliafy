@@ -1130,7 +1130,7 @@ const MCP_TOOLS = [
     ["import_excel", "A sheet as a dataset, an FMEA / RCM worksheet onto a maintenance position’s RCM (give its position_id), or the RBD template as a diagram (as a copy of an existing one, unless you ask to replace it)."],
   ] },
   { name: "sharing", desc: "Read-only pages anyone with the link can open, no account needed.", actions: [
-    ["create_link", "Publish one of your own items — a model, dataset, diagram, strategy analysis, RCM study or fleet — optionally password-protected (a passphrase shown once, for you to send separately) and expiring."],
+    ["create_link", "Publish one of your own items — a model, dataset, diagram, strategy analysis or fleet — optionally password-protected (a passphrase shown once, for you to send separately) and expiring."],
     ["create_report", "Several of your items on one print-ready page, with a title, an author line, an introduction and a note per item."],
     ["revoke_link", "End a link at once."],
   ] },

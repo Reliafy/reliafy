@@ -73,8 +73,8 @@ WORK_ORDER_TYPES = ("preventive", "corrective", "inspection", "other")
 OPEN_STATUSES = ("open", "planned", "in_progress", "waiting")
 END_REASONS = ("failure", "planned", "other")
 # Where a task added by hand comes from: the maker's manual, a law or standard,
-# the organisation's own practice, or something else. (Tasks from an RCM study
-# show as "rcm".)
+# the organisation's own practice, or something else. (A task from an RCM
+# decision shows as "rcm".)
 TASK_SOURCES = ("manual", "oem", "statutory", "other")
 # How well a historical date is known (passed through on past fitments).
 DATE_PRECISIONS = ("exact", "month", "year", "estimated")
@@ -778,7 +778,6 @@ def _failure_mode_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "FailureMode", {
         "text": p["text"], "function": p.get("function", ""), "failure": p.get("failure", ""),
         "consequence": p.get("consequence"), "outcome": p.get("outcome"),
-        "rcm_mode_id": p.get("rcm_mode_id"), "study_id": p.get("study_id"),
     } | ({"ad_hoc": True} if p.get("ad_hoc") else {}))
     s.put_edge(org, "CAN_FAIL_AS", p["position_id"], p["id"])
 
@@ -807,7 +806,6 @@ def _failure_mode_merged(s: GraphStore, org: str, p: dict) -> None:
 def _function_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Function", {
         "text": p["text"], "standard": p.get("standard", ""), "order": p.get("order", 0),
-        "rcm_function_id": p.get("rcm_function_id"), "study_id": p.get("study_id"),
     } | ({"standard_basis": p["standard_basis"], "basis_on": p.get("on")} if p.get("standard_basis") else {}))
     s.put_edge(org, "PERFORMS", p["position_id"], p["id"])
 
@@ -821,10 +819,7 @@ def _function_updated(s: GraphStore, org: str, p: dict) -> None:
 
 
 def _functional_failure_added(s: GraphStore, org: str, p: dict) -> None:
-    s.put_node(org, p["id"], "FunctionalFailure", {
-        "text": p["text"], "order": p.get("order", 0),
-        "rcm_failure_id": p.get("rcm_failure_id"), "study_id": p.get("study_id"),
-    })
+    s.put_node(org, p["id"], "FunctionalFailure", {"text": p["text"], "order": p.get("order", 0)})
     s.put_edge(org, "FAILS_AS", p["function_id"], p["id"])
 
 
@@ -1040,24 +1035,6 @@ def _task_moved(s: GraphStore, org: str, p: dict) -> None:
 _ANALYSIS = ("effects", "notes", "rtf_basis", "evidence", "decision_notes", "task_note")
 
 
-def _study_analysis(mode: dict, fm: dict) -> dict:
-    """What an RCM study's failure mode says beyond its text (effects, notes,
-    consequence, the decision with its evidence) that the graph's mode ``fm``
-    doesn't say yet: the changes for a failure_mode.analysed event."""
-    decision = mode.get("decision") or {}
-    outcome = decision.get("outcome")
-    scheduled = outcome in SCHEDULED_OUTCOMES and decision.get("interval")
-    said = str(decision.get("task") or "").strip()
-    want = {
-        "effects": str(mode.get("effects") or "").strip(), "notes": str(mode.get("notes") or "").strip(),
-        "consequence": mode.get("consequence") or None, "outcome": outcome or None,
-        "rtf_basis": decision.get("rtf_basis") or None, "evidence": decision.get("evidence") or None,
-        "decision_notes": str(decision.get("notes") or "").strip(),
-        "task_note": "" if scheduled else shortened(said, LONG_TEXT)[0],
-    }
-    return {k: v for k, v in want.items() if fm.get(k) != v and not (fm.get(k) is None and v in ("", None))}
-
-
 # Task fields that only tasks added by hand (or edited since) carry: projected
 # only when the payload has them, so older events give the same tasks.
 _TASK_EXTRAS = ("source", "reference", "also_interval", "also_unit", "point_id", "instructions", "checklist",
@@ -1074,8 +1051,7 @@ def _subject_id(p: dict) -> str:
 def _task_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Task", {
         "name": p["name"], "outcome": p.get("outcome"), "interval": p["interval"], "unit": p["unit"],
-        "start": p["start"], "last_done": None, "rcm_mode_id": p.get("rcm_mode_id"),
-        "study_id": p.get("study_id"),
+        "start": p["start"], "last_done": None,
     } | {k: p[k] for k in _TASK_EXTRAS if k in p})
     s.put_edge(org, "ON", p["id"], _subject_id(p))
     if p.get("failure_mode_id"):
@@ -2174,8 +2150,7 @@ class Maintenance:
                 mode_ids[fm["id"]] = new_id()
                 self._emit("failure_mode.added", {
                     "id": mode_ids[fm["id"]], "position_id": pid,
-                    **{k: fm.get(k) for k in ("text", "function", "failure", "consequence", "outcome",
-                                              "rcm_mode_id", "study_id")},
+                    **{k: fm.get(k) for k in ("text", "function", "failure", "consequence", "outcome")},
                     **({"ad_hoc": True} if fm.get("ad_hoc") else {}),
                 })
                 analysis = {k: fm[k] for k in _ANALYSIS if fm.get(k)}
@@ -2187,16 +2162,13 @@ class Maintenance:
                 self._emit("function.added", {
                     "id": fn_id, "position_id": pid, "text": fn["text"], "standard": fn.get("standard", ""),
                     "order": fn.get("order") or 0,
-                } | ({"rcm_function_id": fn["rcm_function_id"], "study_id": fn.get("study_id")}
-                     if fn.get("rcm_function_id") else {})
-                  | ({"standard_basis": fn["standard_basis"], "on": fn.get("basis_on") or self.today()}
+                } | ({"standard_basis": fn["standard_basis"], "on": fn.get("basis_on") or self.today()}
                      if fn.get("standard_basis") else {}))
                 for ff in self._failures_of(fn["id"]):
                     ff_id = ff_ids[ff["id"]] = new_id()
                     self._emit("functional_failure.added", {
                         "id": ff_id, "function_id": fn_id, "text": ff["text"], "order": ff.get("order") or 0,
-                    } | ({"rcm_failure_id": ff["rcm_failure_id"], "study_id": ff.get("study_id")}
-                         if ff.get("rcm_failure_id") else {}))
+                    })
                     for fm in self._ff_modes(ff["id"]):
                         if fm["id"] in mode_ids:
                             self._emit("failure_mode.assigned", {"id": mode_ids[fm["id"]], "functional_failure_id": ff_id,
@@ -2210,7 +2182,7 @@ class Maintenance:
                     "id": new_id(), "position_id": pid,
                     "failure_mode_id": mitigates and mode_ids.get(mitigates[0]["id"]),
                     "start": today,
-                    **{k: task.get(k) for k in ("outcome", "interval", "unit", "rcm_mode_id", "study_id")},
+                    **{k: task.get(k) for k in ("outcome", "interval", "unit")},
                     # Not point_id: the copy has no measurement points yet.
                     **{k: task[k] for k in _TASK_EXTRAS if k in task and k != "point_id"},
                     "name": name,
@@ -2611,13 +2583,12 @@ class Maintenance:
             return found["id"]
         fid = new_id()
         self._emit("failure_mode.added", {"id": fid, "position_id": position_id, "text": value, "function": "",
-                                          "failure": "", "consequence": None, "outcome": None,
-                                          "rcm_mode_id": None, "study_id": None, "ad_hoc": True})
+                                          "failure": "", "consequence": None, "outcome": None, "ad_hoc": True})
         return fid
 
     def _mode_view(self, fm: dict) -> dict:
         return {k: fm.get(k) for k in ("id", "text", "function", "failure", "consequence", "outcome")} | {
-            "ad_hoc": bool(fm.get("ad_hoc")), "from_rcm": bool(fm.get("rcm_mode_id")),
+            "ad_hoc": bool(fm.get("ad_hoc")),
         }
 
     def class_failure_modes(self, position_id: str) -> list[str]:
@@ -2640,8 +2611,8 @@ class Maintenance:
 
     def add_failure_mode(self, position_id: str, text, function="", failure="", consequence="",
                          functional_failure_id=None) -> dict:
-        """A failure mode on a position without an RCM study (how it fails: 'Bearing
-        worn', 'Seal leaking'). Failures and tasks can then name it. With
+        """A failure mode on a position (how it fails: 'Bearing worn', 'Seal
+        leaking'). Failures and tasks can then name it. With
         functional_failure_id (one of the position's), it goes under that
         functional failure in the position's RCM."""
         position = self._get(position_id, "Position")
@@ -2656,7 +2627,7 @@ class Maintenance:
         self._emit("failure_mode.added", {
             "id": fid, "position_id": position_id, "text": text, "function": _text(function, "function"),
             "failure": _text(failure, "functional failure"), "consequence": _text(consequence, "consequence") or None,
-            "outcome": None, "rcm_mode_id": None, "study_id": None,
+            "outcome": None,
         })
         if ff:
             self._emit("failure_mode.assigned", {"id": fid, "functional_failure_id": ff["id"],
@@ -2673,13 +2644,9 @@ class Maintenance:
 
     def update_failure_mode(self, mode_id: str, text=None, function=None, failure=None, consequence=None,
                             effects=None, notes=None) -> dict:
-        """Change a failure mode added by hand or typed in at a failure. Editing an
-        ad-hoc mode confirms it as a formal one. (A mode from an RCM study is
-        changed in the study, until it's on the position's RCM: under one of its
-        functional failures.) effects and notes are its RCM analysis."""
+        """Change a failure mode. Editing an ad-hoc mode (typed in at a failure)
+        confirms it as a formal one. effects and notes are its RCM analysis."""
         fm, position = self._live_mode(mode_id)
-        if fm.get("rcm_mode_id") and not self._on_spine(mode_id):
-            raise Invalid("That failure mode comes from an RCM study: change it in the study, and apply it again.")
         analysed = {}
         if effects is not None:
             analysed["effects"] = _text(effects, "effects", max_len=LONG_TEXT)
@@ -2710,16 +2677,14 @@ class Maintenance:
     def merge_failure_mode(self, mode_id: str, into_mode_id: str) -> dict:
         """Fold one failure mode into another on the same position: the failures
         recorded against it, findings and tasks move to the other, and it leaves
-        the list. To link a mode typed in at a failure to one from an RCM study,
-        merge it into the study's mode (apply the study to the position first)."""
+        the list (a duplicate, or a mode typed in at a failure that is one of
+        the position's RCM modes)."""
         fm, position = self._live_mode(mode_id)
         into, into_position = self._live_mode(into_mode_id)
         if mode_id == into_mode_id:
             raise Invalid("Pick two different failure modes.")
         if position["id"] != into_position["id"]:
             raise Invalid("Both failure modes must be on the same position.")
-        if fm.get("rcm_mode_id"):
-            raise Invalid(f"{fm['text']} comes from an RCM study, so it stays: merge {into['text']} into it instead.")
         self._emit("failure_mode.merged", {"id": mode_id, "into_id": into_mode_id, "on": self.today()})
         return self.position(position["id"])
 
@@ -2772,8 +2737,7 @@ class Maintenance:
         """Whether a failure mode is under one of its position's functional failures."""
         return any(not ff.get("removed") for ff in self.s.inn(self.org, mode_id, "CAUSED_BY"))
 
-    def add_function(self, position_id: str, text, standard="", rcm_function_id=None, study_id=None,
-                     standard_basis="") -> dict:
+    def add_function(self, position_id: str, text, standard="", standard_basis="") -> dict:
         """A function the position performs ('Pump 50 L/s of water at 4 bar'), with
         its performance standard if any, and the working behind that standard
         (standard_basis: how it was worked out, Markdown text)."""
@@ -2786,8 +2750,7 @@ class Maintenance:
             "id": fid, "position_id": position_id, "text": _text(text, "function", required=True, max_len=LONG_TEXT),
             "standard": _text(standard, "performance standard", max_len=LONG_TEXT),
             "order": self._next_order(self.s.out(self.org, position_id, "PERFORMS")),
-        } | ({"rcm_function_id": rcm_function_id, "study_id": study_id} if rcm_function_id else {})
-          | ({"standard_basis": basis, "on": self.today()} if basis else {}))
+        } | ({"standard_basis": basis, "on": self.today()} if basis else {}))
         return self._function_view(self._get(fid, "Function"))
 
     def update_function(self, function_id: str, text=None, standard=None, standard_basis=None) -> dict:
@@ -2831,7 +2794,7 @@ class Maintenance:
                 "failures": [self._ff_view(ff) for ff in self._failures_of(function_id)],
                 "documents": self.documents_of(function_id)}
 
-    def add_functional_failure(self, function_id: str, text, rcm_failure_id=None, study_id=None) -> dict:
+    def add_functional_failure(self, function_id: str, text) -> dict:
         """A way the function fails ('No flow', 'Flow below 40 L/s')."""
         self._live_function(function_id)
         fid = new_id()
@@ -2839,7 +2802,7 @@ class Maintenance:
             "id": fid, "function_id": function_id,
             "text": _text(text, "functional failure", required=True, max_len=LONG_TEXT),
             "order": self._next_order(self.s.out(self.org, function_id, "FAILS_AS")),
-        } | ({"rcm_failure_id": rcm_failure_id, "study_id": study_id} if rcm_failure_id else {}))
+        })
         return self._ff_view(self._get(fid, "FunctionalFailure"))
 
     def update_functional_failure(self, ff_id: str, text) -> dict:
@@ -3037,7 +3000,6 @@ class Maintenance:
                     self._emit("task.added", {
                         "id": new_id(), "position_id": position["id"], "failure_mode_id": mode_id,
                         "name": name, "outcome": outcome, "interval": interval, "unit": unit, "start": self.today(),
-                        "rcm_mode_id": fm.get("rcm_mode_id"), "study_id": fm.get("study_id"),
                     } | ({"instructions": full} if full else {}))
                 else:
                     wanted = {"name": name, "interval": interval, "unit": unit, "outcome": outcome}
@@ -3113,10 +3075,6 @@ class Maintenance:
             raise Invalid(f"{name} counts use from {here}'s counter since it was last done: moving it would "
                           f"compare that reading with another counter. Retire it and add a new task on {there} "
                           "(with when it was last done) instead.")
-        if task.get("rcm_mode_id") and any(
-                t["label"] == "Task" and t.get("rcm_mode_id") == task["rcm_mode_id"]
-                for t in self.s.inn(self.org, target["id"], "ON")):
-            raise Invalid(f"{there} already has the task for this RCM decision: retire one of the two first.")
 
     def _check_mode_move(self, fm: dict, source: dict, target: dict, modes_moving: set) -> list[dict]:
         """Refuse moving a failure mode with history at its position, or one the target
@@ -3139,8 +3097,6 @@ class Maintenance:
                      and _same_text(m["text"], text)), None)
         if same:
             raise Invalid(f"{there} already has the failure mode {same['text']}: rename one of them first.")
-        if fm.get("rcm_mode_id") and any(m.get("rcm_mode_id") == fm["rcm_mode_id"] for m in on_target):
-            raise Invalid(f"{there} already has {text} from the same RCM study.")
         tasks = self._live_tasks_of(fm["id"])
         for task in tasks:
             self._check_task_move(task, source, target, modes_moving)
@@ -3227,17 +3183,16 @@ class Maintenance:
         full (a per-position read); otherwise has_basis and a short plain preview."""
         basis = fn.get("standard_basis") or ""
         out = {"id": fn["id"], "text": fn["text"], "standard": fn.get("standard") or "",
-               "from_study": fn.get("study_id"), "has_basis": bool(basis),
-               "basis_on": fn.get("basis_on") if basis else None}
+               "has_basis": bool(basis), "basis_on": fn.get("basis_on") if basis else None}
         return out | ({"standard_basis": basis} if full else {"basis_preview": basis_preview(basis)})
 
     @staticmethod
     def _ff_view(ff: dict) -> dict:
-        return {"id": ff["id"], "text": ff["text"], "from_study": ff.get("study_id")}
+        return {"id": ff["id"], "text": ff["text"]}
 
     @staticmethod
     def _decision_of(fm: dict, task: dict | None) -> dict | None:
-        """A failure mode's decision in an RCM study's shape (outcome, rtf_basis,
+        """A failure mode's decision as the worksheet shows it (outcome, rtf_basis,
         task, interval, interval_unit, notes, evidence), from the mode and its task;
         None when it has no outcome."""
         if not fm.get("outcome"):
@@ -3262,7 +3217,7 @@ class Maintenance:
         return {
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
             "consequence": fm.get("consequence"), "decision": self._decision_of(fm, task),
-            "from_study": fm.get("study_id"), "ad_hoc": bool(fm.get("ad_hoc")),
+            "ad_hoc": bool(fm.get("ad_hoc")),
             # Words an earlier failure mode kept for its function and failure (before
             # functions were on the positions): a hint for where it belongs.
             "was_under": " › ".join(x for x in (fm.get("function"), fm.get("failure")) if x) or None,
@@ -3400,7 +3355,7 @@ class Maintenance:
         or it and every position inside it (scope "below", the default; at most
         ``limit`` positions, depth first as the tree shows them), each position's
         functions › functional failures › failure modes, with each mode's decision
-        (in an RCM study's shape) and task, and the modes under no functional
+        and task, and the modes under no functional
         failure yet (unassigned). Evidence statuses are added by the caller
         (rcm_graph.resolve): they need the saved models and analyses."""
         if scope not in ("below", "this"):
@@ -3431,92 +3386,6 @@ class Maintenance:
                         "description": descriptions.get(pid, ""), **self._position_rcm(index, pid)})
         return {"position": {"id": root["id"], "name": root["name"]}, "scope": scope, "positions": out,
                 "truncated": truncated, "total_positions": len(order)}
-
-    # ---- RCM -> failure modes and tasks ---------------------------------------------
-
-    def apply_rcm(self, position_id: str, study) -> dict:
-        """Bring an RCM study's failure modes and scheduled tasks onto a position.
-
-        Applying again adds what's new and updates changed tasks and decisions;
-        nothing is removed (work orders may already point at it). Each mode's
-        decision comes with it: consequence, outcome, run-to-failure basis, the
-        evidence linked (the saved model or analysis behind it), notes, effects,
-        and what's done when no task is scheduled. A study moved onto its
-        positions (migrated) is history: it can't be applied again."""
-        if getattr(study, "migrated_to", None):
-            raise Invalid("That RCM study has moved onto its position: change its RCM there.")
-        self._get(position_id, "Position")
-        today = self.today()
-        modes = {m.get("rcm_mode_id"): m for m in self.s.out(self.org, position_id, "CAN_FAIL_AS")}
-        tasks = {t.get("rcm_mode_id"): t for t in self.s.inn(self.org, position_id, "ON")
-                 if t["label"] == "Task"}
-        added_modes = added_tasks = updated_tasks = 0
-        for fn in study.functions or []:
-            for failure in fn.get("failures") or []:
-                for mode in failure.get("modes") or []:
-                    if not isinstance(mode, dict) or not mode.get("id"):
-                        continue  # a mode not yet saved with an id can't be tracked
-                    decision = mode.get("decision") or {}
-                    fm = modes.get(mode["id"])
-                    if fm is None:
-                        fm_id = new_id()
-                        self._emit("failure_mode.added", {
-                            "id": fm_id, "position_id": position_id, "text": mode.get("text", ""),
-                            "function": fn.get("text", ""), "failure": failure.get("text", ""),
-                            "consequence": mode.get("consequence"), "outcome": decision.get("outcome"),
-                            "rcm_mode_id": mode["id"], "study_id": study.id,
-                        })
-                        added_modes += 1
-                        fm = {"consequence": mode.get("consequence"), "outcome": decision.get("outcome")}
-                    else:
-                        fm_id = fm["id"]
-                    analysed = _study_analysis(mode, fm)
-                    if analysed:
-                        self._emit("failure_mode.analysed", {"id": fm_id, "changes": analysed})
-                    outcome = decision.get("outcome")
-                    if outcome not in SCHEDULED_OUTCOMES or not decision.get("interval"):
-                        continue
-                    # The decision's task is free text, often a paragraph: the task's name is
-                    # its opening words, and the whole of it goes in the instructions.
-                    said = (str(decision.get("task") or "").strip()
-                            or f"{SCHEDULED_OUTCOMES[outcome]}: {mode.get('text', '')}")
-                    name, cut = shortened(said)
-                    full = shortened(said, LONG_TEXT)[0] if cut else ""
-                    unit = _norm_unit(decision.get("interval_unit")) or "days"
-                    interval = _interval(decision["interval"], unit, f"interval for {str(name)[:80]}")
-                    existing = tasks.get(mode["id"])
-                    if existing is None:
-                        self._emit("task.added", {
-                            "id": new_id(), "position_id": position_id, "failure_mode_id": fm_id,
-                            "name": name, "outcome": outcome, "interval": interval, "unit": unit,
-                            "start": today, "rcm_mode_id": mode["id"], "study_id": study.id,
-                        } | ({"instructions": full} if full else {}))
-                        added_tasks += 1
-                    else:
-                        changes = {k: v for k, v in (("name", name), ("interval", interval), ("unit", unit),
-                                                     ("outcome", outcome)) if existing.get(k) != v}
-                        # The full text replaces instructions that are empty or an earlier
-                        # study text (the old name was cut from them); never your own.
-                        had = (existing.get("instructions") or "").strip()
-                        old = str(existing.get("name") or "")
-                        stem = old.removesuffix("…").strip() if old.endswith("…") or len(old) > SHORT_TEXT else ""
-                        if full and had != full and (not had or (stem and had.startswith(stem))):
-                            changes["instructions"] = full
-                        if changes:
-                            self._emit("task.updated", {"id": existing["id"], "changes": changes})
-                            updated_tasks += 1
-        return {"position_id": position_id, "failure_modes_added": added_modes,
-                "tasks_added": added_tasks, "tasks_updated": updated_tasks}
-
-    def position_from_rcm(self, study, parent_id=None) -> dict:
-        """A new position named for the study's system, with its tasks. The study's
-        description (how the system is used) becomes the position's operating context."""
-        name, full = derived_title((study.system or "").strip() or study.name)
-        made_from = f"From the RCM study “{shortened(study.name)[0]}”."
-        position = self.create_position(name, parent_id=parent_id, description=_with_first(full, made_from),
-                                        operating_context=shortened(getattr(study, "description", ""), LONG_TEXT)[0])
-        result = self.apply_rcm(position["id"], study)
-        return {**result, "position": self.position(position["id"])}
 
     # ---- tasks and when they're due ------------------------------------------------
 
@@ -3647,7 +3516,8 @@ class Maintenance:
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
             # What it's on: a position (its job), an item (it follows the serial number) or a location.
             "subject": self._subject_brief(subject),
-            "source": task.get("source") or ("rcm" if task.get("rcm_mode_id") else "manual"),
+            # A task with no source of its own is a decision's (maintenance_failure_modes decide).
+            "source": task.get("source") or ("rcm" if mode else "manual"),
             "reference": task.get("reference", ""), "point_id": task.get("point_id"),
             "failure_mode": {"id": mode[0]["id"], "text": mode[0]["text"]} if mode else None,
             "interval": task["interval"], "unit": task["unit"],
@@ -5411,23 +5281,11 @@ class Maintenance:
 
     def _task_link(self, position_id: str, failure_mode_id, task: dict | None = None) -> dict:
         """The changes that link a task to one of its position's failure modes (or
-        unlink it: ''). Linked to a mode from an RCM study, the task becomes that
-        decision's task, so applying the study again updates it instead of adding
-        a second one (unless the decision already has a task here)."""
-        if task and task.get("rcm_mode_id") and not task.get("source"):
-            raise Invalid("This task comes from an RCM study and stays linked to its decision.")
-        out = {"failure_mode_id": None, "rcm_mode_id": None, "study_id": None}
+        unlink it: '')."""
         if not failure_mode_id:
-            return out
+            return {"failure_mode_id": None}
         ref = self._mode_ref(position_id, failure_mode_id)
-        fm = self._get(ref[1], "FailureMode")
-        out["failure_mode_id"] = fm["id"]
-        if fm.get("rcm_mode_id"):
-            taken = any(t.get("rcm_mode_id") == fm["rcm_mode_id"] and t["id"] != (task or {}).get("id")
-                        for t in self.s.inn(self.org, position_id, "ON") if t["label"] == "Task")
-            if not taken:
-                out |= {"rcm_mode_id": fm["rcm_mode_id"], "study_id": fm.get("study_id")}
-        return out
+        return {"failure_mode_id": self._get(ref[1], "FailureMode")["id"]}
 
     WHILE_STORED = ("run", "pause")
 
@@ -5475,7 +5333,7 @@ class Maintenance:
                     also_unit=None, point_id=None, instructions="", checklist=None, source="manual", reference="",
                     failure_mode_id=None, last_done=None, trade="", item_id=None, location_id=None,
                     while_stored=None, include_positions=None) -> dict:
-        """A scheduled task without an RCM study: from the maker's manual (source 'oem'),
+        """A scheduled task added directly (not an RCM decision's): from the maker's manual (source 'oem'),
         a law or standard ('statutory'), your own practice ('manual') or elsewhere
         ('other'). It's scheduled and raises work orders like a task from RCM. outcome
         says what kind of task it is (as an RCM decision would): fixed_interval (replace
@@ -5569,16 +5427,12 @@ class Maintenance:
         if source is not None:
             if source not in TASK_SOURCES:
                 raise Invalid(f"The source is one of {', '.join(TASK_SOURCES)}.")
-            if task.get("rcm_mode_id") and not task.get("source"):
-                raise Invalid("This task comes from an RCM study.")
             changes["source"] = source
         if reference is not None:
             changes["reference"] = _text(reference, "reference")
         if outcome is not ...:
             if outcome not in (None, "") and outcome not in SCHEDULED_OUTCOMES:
                 raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
-            if task.get("rcm_mode_id"):
-                raise Invalid("This task's outcome is its RCM decision's.")
             changes["outcome"] = outcome or None
         if failure_mode_id is not None:
             linked = self.s.out(self.org, task_id, "MITIGATES")
@@ -7931,4 +7785,7 @@ def summary(m: Maintenance) -> dict:
 # 3: nodes and edges keyed by (org, id); position class ids include the org
 # 4: cancelling or closing a work order no longer replaces its notes (the reason and
 #    closing notes are their own fields); note history; tasks re-read a corrected counter
-PROJECTION_VERSION = 4
+# 5: the fields the earlier RCM studies left on functions, functional failures, failure
+#    modes and tasks (study_id, rcm_*_id) are no longer projected; old events still
+#    carry them and are read as before
+PROJECTION_VERSION = 5

@@ -32,7 +32,6 @@ const LABELS = {
   tracked_items: "Tracked items",
   tracked_fleets: "Tracked fleets",
   strategy_analyses: "Strategy analyses",
-  rcm_studies: "RCM studies",
   fleets: "Fleet forecasts",
 };
 

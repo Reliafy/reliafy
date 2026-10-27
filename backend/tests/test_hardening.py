@@ -158,7 +158,7 @@ def test_email_noop_when_unconfigured():
 # ---- Telemetry + admin stats -------------------------------------------------------
 
 def test_telemetry_endpoints(client):
-    assert client.post("/api/client-error", json={"message": "boom", "stack": "x", "path": "/maintenance/rcm"}).status_code == 200
+    assert client.post("/api/client-error", json={"message": "boom", "stack": "x", "path": "/asset-register/explorer"}).status_code == 200
     assert client.post("/api/metrics/event", json={"name": "pageview", "path": "/"}).status_code == 200
 
 
@@ -172,7 +172,7 @@ def test_admin_stats_gated(client, monkeypatch):
     assert data["users_total"] >= 1
     assert set(data["artifacts"]) == {
         "datasets", "models", "rbds", "degradation_models",
-        "tracked_items", "tracked_fleets", "strategy_analyses", "rcm_studies", "fleets",
+        "tracked_items", "tracked_fleets", "strategy_analyses", "fleets",
     }
 
 
@@ -211,26 +211,6 @@ def test_admin_signups_gated_and_minimal(client, monkeypatch):
 
 
 # ---- Optimistic locking + attribution ----------------------------------------------
-
-def test_rcm_tree_conflict_409(client):
-    client.act_as(A)
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    tree = {"functions": [{"text": "Fn", "failures": []}]}
-    first = client.put(f"/api/rcm/studies/{sid}/tree", json=tree)
-    assert first.status_code == 200
-    loaded_at = first.json()["updated_at"]
-
-    # A save carrying the current stamp succeeds and bumps updated_at.
-    r = client.put(f"/api/rcm/studies/{sid}/tree",
-                   json={**tree, "expected_updated_at": loaded_at})
-    assert r.status_code == 200
-    # Reusing the stale stamp now conflicts.
-    r = client.put(f"/api/rcm/studies/{sid}/tree",
-                   json={**tree, "expected_updated_at": loaded_at})
-    assert r.status_code == 409 and r.json()["code"] == "conflict"
-    # Without the precondition it's last-write-wins (backwards compatible).
-    assert client.put(f"/api/rcm/studies/{sid}/tree", json=tree).status_code == 200
-
 
 def test_rbd_conflict_and_attribution(client):
     client.act_as(A)
@@ -279,15 +259,6 @@ def test_saves_within_a_millisecond_still_conflict(client, monkeypatch, gap_us):
                                            "expected_updated_at": ok.json()["updated_at"]})
     assert again.status_code == 200
     assert client.db.rbds.find_one({"_id": saved["id"]})["name"] == "D4"
-
-    # The same for an RCM study's tree (and a fleet's items: same helpers).
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    tree = {"functions": [{"text": "Fn", "failures": []}]}
-    first = client.put(f"/api/rcm/studies/{sid}/tree", json=tree).json()["updated_at"]
-    assert client.put(f"/api/rcm/studies/{sid}/tree",
-                      json={**tree, "expected_updated_at": first}).status_code == 200
-    r = client.put(f"/api/rcm/studies/{sid}/tree", json={**tree, "expected_updated_at": first})
-    assert r.status_code == 409
 
 
 def test_conditional_write_catches_a_save_racing_the_check(client, monkeypatch):

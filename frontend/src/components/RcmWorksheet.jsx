@@ -1,15 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import RcmStatusBadge from "./RcmStatusBadge.jsx";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { Chevron, Highlight, LevelButtons } from "./OutlineBits.jsx";
-import useOutlineNav from "./useOutlineNav.js";
-import { useConfirm } from "./ConfirmProvider.jsx";
-import { ancestorsOf, depthOf, filterOpen, flatten, levelSet, visiblePick } from "../outlineTree.js";
+import { Highlight } from "./OutlineBits.jsx";
+import { ancestorsOf } from "../outlineTree.js";
 import {
-  CHIPS, COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVELS, LEVEL_OF, NAME_COLUMN, functionCount,
-  addNode, belowDecisionText, belowOf, belowPending, buildRcmDisplay, phoneLine, consequenceWords, failuresOn, checkCounts, checkValue, chipCounts, clampCol, computeFilter, decisionText, insideWords,
-  intervalText, loadPrefs, nameOf, rememberedOpen, removeNode, savePrefs, setCell, shownStatus, siblingOrder, withOpen,
+  COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
+  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, checkCounts, decisionText, insideWords,
+  intervalText, nameOf, shownStatus,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
@@ -17,27 +14,16 @@ import { plainFirstLine } from "../basisMarkdown.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
 import "./RcmWorksheet.css";
 
-// The RCM study's worksheet as an outline grid: the study's hierarchy in the
-// first column (function → functional failure → failure mode: indent, arrow,
-// icon, description), the worksheet's columns beside it. Levels 1 · 2 · 3 ·
-// All, a filter that keeps the path to each match, chips, a sort that keeps
-// the tree, a column chooser, resizable columns and two row heights. Only the
-// rows on screen are in the page; the rows the first one sits inside stay
-// pinned under the header. A parent row rolls up what's inside it.
+// The RCM worksheet's pieces, drawn by the Explorer's RCM tab (the asset tree
+// and the RCM as one table, TreePane): the level icons, a cell and its
+// tooltip, the cell editor (a double-click edits the commonest cells in
+// place: description, effects, consequence, task, interval, notes, checked as
+// the server checks them), a row's status on a phone, the details panel (every
+// field of the row, adding inside it, deleting it, and the failure mode's
+// decision dialog) and the column chooser. Edits are written at once (Details'
+// `ops`); a refused value stays in the cell with the reason.
 //
-// Editing: a row opens its details panel (Enter, or a click), where every
-// field of the row is edited, a row added inside it or deleted, and a failure
-// mode's decision opened in the decision dialog. A double-click edits the
-// commonest cells in place (description, effects, consequence, task,
-// interval, notes), checked as the server checks them. Edits change the study
-// on this page only: the page's Save sends them, and Undo steps back.
-//
-// On a phone each row is two lines: the description and its status, then the
-// main columns in a line; the details panel opens as a sheet with the rest.
-//
-// The Explorer's RCM tab (the asset tree and the RCM as one table, TreePane)
-// uses the cells, the cell editor, the details panel and the column chooser
-// from here; there, edits are written at once (Details' `ops`).
+// On a phone the details panel opens as a sheet.
 
 const ICONS = {
   fn: <path d="M3 3.5h10v9H3z M6.5 6v4l3.5-2z" strokeWidth="1.4" strokeLinejoin="round" />,
@@ -56,9 +42,6 @@ export function LevelIcon({ type, className = "rw-ic" }) {
 }
 
 export { phoneLine };
-const PHONE_H = 60;
-const HEIGHTS = { comfortable: 36, compact: 28 };
-const HEAD_H = 36;
 const CHECK_MARK = { contradicted: "✗", unsure: "?", stale: "–", supported: "✓" };
 
 const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
@@ -253,33 +236,7 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
   );
 }
 
-function NameCell({ r, v, open, query, phone, editing, onToggle, onCommit, onCancel, width }) {
-  const has = r.kids.length > 0;
-  const indent = Math.min(v.depth, 6) * (phone ? 14 : 18);
-  const text = nameOf(r);
-  return (
-    <div className="rw-c rw-name" role="rowheader" style={phone ? undefined : { width }}>
-      <span className="rw-indent" style={{ width: indent }} />
-      {has ? (
-        <span className={"tp-chev rw-chev" + (open ? " open" : "")} aria-hidden="true"
-              onClick={(e) => { e.stopPropagation(); onToggle(r.key); }}><Chevron /></span>
-      ) : <span className="tp-chev-sp rw-chev-sp" />}
-      <LevelIcon type={r.type} />
-      <span className="sr-only">{LEVEL_OF[r.type].label}: </span>
-      {editing ? (
-        <CellEditor col={NAME_COLUMN} r={r} onCommit={onCommit} onCancel={onCancel} />
-      ) : (
-        <span className={"rw-nm" + (text ? "" : " rw-blank")} title={text.length > 24 ? text : undefined}>
-          {text ? <Highlight text={text} query={query} /> : "(no description yet)"}
-        </span>
-      )}
-      {has && !open && !editing && (
-        <span className="tp-cnt" title={`${r.kids.length} directly inside`}>{r.kids.length.toLocaleString("en-AU")}</span>
-      )}
-    </div>
-  );
-}
-
+// A row's status on a phone: a mode's evidence check, a parent's count to look at.
 export function PhoneStatus({ r }) {
   if (r.type === "mode") {
     const s = shownStatus(r.ref.decision?.status);
@@ -288,70 +245,6 @@ export function PhoneStatus({ r }) {
   if (r.sum.contradicted) return <span className="rw-ck contradicted">✗{r.sum.contradicted}<span className="sr-only"> contradicted</span></span>;
   if (r.sum.undecided) return <span className="rw-sum rw-todo">{r.sum.undecided} to decide</span>;
   return null;
-}
-
-function Row({
-  r, v, i, top, height, cols, widths, total, open, focused, tabbable, dim, pinned, phone, query, editing, readOnly, wt,
-  onToggle, onPick, onEdit, onCommit, onCancel, onDecision,
-}) {
-  const has = r.kids.length > 0;
-  const editCol = editing?.key === r.key ? editing.col : null;
-  const cls = "rw-row rw-" + r.type + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "");
-  const common = {
-    className: cls,
-    role: pinned ? undefined : "row",
-    "aria-hidden": pinned ? "true" : undefined,
-    id: pinned ? undefined : `rw-${r.key}`,
-    "data-key": r.key,
-    "data-wt": pinned ? undefined : wt?.row,
-    "aria-rowindex": pinned ? undefined : i + 2,
-    "aria-level": pinned ? undefined : v.depth + 1,
-    "aria-setsize": pinned ? undefined : v.size,
-    "aria-posinset": pinned ? undefined : v.pos,
-    "aria-expanded": pinned || !has ? undefined : open,
-    "aria-selected": pinned ? undefined : focused,
-    tabIndex: pinned ? undefined : focused || tabbable ? 0 : -1,
-    style: pinned ? { height, width: phone ? undefined : total } : { top, height, width: phone ? undefined : total },
-    onClick: (e) => {
-      if (e.target.closest("input, select, a, button.rw-todo-btn")) return;
-      onPick(r.key, { open: true });
-    },
-  };
-  const commitCell = (col) => (raw) => onCommit(r, col, raw);
-  if (phone) {
-    return (
-      <div {...common}>
-        <div className="rw-l1">
-          <NameCell r={r} v={v} open={open} query={query} phone onToggle={onToggle}
-                    editing={false} onCommit={commitCell("name")} onCancel={onCancel} />
-          <span className="rw-st"><PhoneStatus r={r} /></span>
-        </div>
-        <div className="rw-l2" role="gridcell" style={{ paddingLeft: Math.min(v.depth, 6) * 14 + 46 }}>{phoneLine(r)}</div>
-      </div>
-    );
-  }
-  return (
-    <div {...common}>
-      <NameCell r={r} v={v} open={open} query={query} width={widths.name} onToggle={onToggle}
-                editing={editCol === "name"} onCommit={commitCell("name")} onCancel={onCancel} />
-      {cols.map((c) => {
-        const can = !readOnly && c.edit && c.can(r);
-        return (
-          <div key={c.id} role="gridcell"
-               className={"rw-c" + (c.align === "num" ? " num" : "") + (can ? " can" : "")}
-               style={{ width: widths[c.id] }}
-               data-wt={c.id === "check" ? wt?.check : undefined}
-               onDoubleClick={can ? (e) => { e.stopPropagation(); onEdit(r.key, c.id); } : undefined}
-               title={editCol !== c.id ? cellTip(c, r, can) : undefined} aria-description={editCol !== c.id ? cellHint(can) : undefined}>
-            {editCol === c.id
-              ? <CellEditor col={c} r={r} onCommit={commitCell(c.id)} onCancel={onCancel} />
-              : <Cell col={c} r={r} query={query} readOnly={readOnly} onDecision={onDecision} />}
-          </div>
-        );
-      })}
-      <div className="rw-c rw-fill" aria-hidden="true" />
-    </div>
-  );
 }
 
 // The details panel for the row picked: every field, the decision, adding
@@ -596,350 +489,6 @@ export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS }) {
           <button type="button" className="link rw-pop-reset" onClick={() => onCols(usual, { reset: true })}>Show the usual columns</button>
         </div>
       )}
-    </div>
-  );
-}
-
-export default function RcmWorksheet({
-  studyId, functions, readOnly, onChange, onDecision, onUndo, canUndo, phone, notice,
-}) {
-  const confirm = useConfirm();
-  const display = useMemo(() => buildRcmDisplay(functions), [functions]);
-  const depth = Math.max(1, depthOf(display));
-  const [prefs, setPrefs] = useState(() => loadPrefs());
-  const [query, setQuery] = useState("");
-  const [chips, setChips] = useState([]);
-  const [sort, setSort] = useState(null); // {col, dir}
-  const [focus, setFocus] = useState(null);
-  const [panel, setPanel] = useState(false);
-  const [editing, setEditing] = useState(null); // {key, col}
-  const [message, setMessage] = useState(null); // {text, tone}
-  const headingRef = useRef(null);
-
-  // Open rows: remembered for this study, else everything for a small study
-  // and two levels for a big one.
-  const [open, setOpenState] = useState(() => rememberedOpen(prefs, studyId, display)
-    || levelSet(display, display.rows.size <= 300 ? Infinity : 2));
-  const [fopen, setFopen] = useState(null);
-  const filter = useMemo(() => computeFilter(display, { query, chips }), [display, query, chips]);
-  useEffect(() => setFopen(filter ? filterOpen(filter) : null), [filter]);
-  const shownOpen = filter ? fopen || filterOpen(filter) : open;
-  const order = useMemo(() => siblingOrder(display, sort), [display, sort]);
-  const { list, index } = useMemo(() => flatten(display, shownOpen, filter, order), [display, shownOpen, filter, order]);
-  const counts = useMemo(() => chipCounts(display), [display]);
-
-  // Remembered on this device, a moment after each change, and on the way out.
-  const latest = useRef(null);
-  latest.current = withOpen(prefs, studyId, open);
-  useEffect(() => {
-    const t = setTimeout(() => savePrefs(latest.current), 200);
-    return () => clearTimeout(t);
-  }, [prefs, open, studyId]);
-  useEffect(() => {
-    const flush = () => savePrefs(latest.current);
-    window.addEventListener("pagehide", flush);
-    return () => {
-      window.removeEventListener("pagehide", flush);
-      flush();
-    };
-  }, []);
-
-  const setOpen = (next) => (filter ? setFopen(next) : setOpenState(next));
-  const toggle = (key, force) => {
-    const next = new Set(shownOpen);
-    const want = force ?? !next.has(key);
-    if (want) next.add(key);
-    else next.delete(key);
-    setOpen(next);
-  };
-
-  const cur = focus != null && index.has(focus) ? focus : null;
-  const row = cur != null ? display.rows.get(cur) : null;
-
-  const H = phone ? PHONE_H : HEIGHTS[prefs.density];
-  const cols = prefs.cols.map((id) => COLUMN[id]).filter(Boolean);
-  const widths = { name: prefs.widths.name ?? NAME_COLUMN.width };
-  for (const c of cols) widths[c.id] = prefs.widths[c.id] ?? c.width;
-  const total = cols.reduce((s, c) => s + widths[c.id], widths.name);
-
-  const pick = (key, opts = {}) => {
-    setFocus(key);
-    if (opts.open) setPanel(true);
-  };
-  const nav = useOutlineNav({
-    display, list, index, open: shownOpen, focus: cur, rowHeight: H, maxPins: phone ? 2 : 4,
-    headerHeight: phone ? 0 : HEAD_H, onPick: pick, onToggle: toggle, nameOf,
-    onEnter: (key) => { setFocus(key); setPanel(true); setTimeout(() => headingRef.current?.focus(), 0); },
-    measureKey: `${phone}${panel}${prefs.density}`, rowId: (key) => `rw-${key}`,
-  });
-
-  // A new row or one picked from the panel's path: open the way down to it
-  // and bring it into view.
-  const [want, setWant] = useState(null);
-  useEffect(() => {
-    if (!want || !display.rows.has(want.key)) return;
-    if (!index.has(want.key)) {
-      const up = ancestorsOf(display, want.key);
-      if (filter) setFopen((s) => new Set([...(s || filterOpen(filter)), ...up]));
-      else setOpenState((s) => new Set([...s, ...up]));
-      if (filter && !filter.keep.has(want.key)) { setQuery(""); setChips([]); }
-      return;
-    }
-    setFocus(want.key);
-    nav.reveal(want.key, true);
-    setWant(null);
-  }, [want, display, index]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const setLevel = (lv) => {
-    let next = levelSet(display, lv);
-    if (filter) next = new Set([...next].filter((k) => filter.keep.has(k)));
-    setOpen(next);
-    if (cur != null) {
-      const { index: shown } = flatten(display, next, filter);
-      const k = visiblePick(display, shown, cur);
-      if (k != null && k !== cur) setFocus(k);
-    }
-  };
-
-  const say = (text, tone = "ok") => setMessage({ text, tone, at: Date.now() });
-
-  // One cell changed: checked as the server checks it, then kept on the page.
-  // Returns true when kept; a refused value says why.
-  const commit = (r, col, raw) => {
-    const res = checkValue(col, r, raw);
-    if (res.error) {
-      say(res.error, "error");
-      return res.error;
-    }
-    const label = col === "name" ? "description" : (COLUMN[col]?.label || col).toLowerCase();
-    onChange(setCell(functions, r, col, res.value), `Changed the ${label} of “${(nameOf(r) || LEVEL_OF[r.type].label).slice(0, 60)}”.`);
-    say(`Changed the ${label}. Save the study to keep it.`);
-    setEditing(null);
-    return true;
-  };
-
-  const add = (r) => {
-    const { functions: next, id } = addNode(functions, r ? r.at : null);
-    const what = r ? (r.type === "fn" ? "functional failure" : "failure mode") : "function";
-    onChange(next, `Added a ${what}.`);
-    say(`Added a ${what}: describe it in the details.`);
-    if (r) setOpenState((s) => new Set([...s, r.key]));
-    setPanel(true);
-    setWant({ key: id });
-  };
-
-  const remove = async (r) => {
-    const level = LEVEL_OF[r.type].label.toLowerCase();
-    if (r.kids.length) {
-      const inside = r.type === "fn"
-        ? `${n(r.kids.length, "functional failure")} and ${n(r.sum.modes, "failure mode")}`
-        : n(r.sum.modes, "failure mode");
-      const ok = await confirm({
-        title: `Delete this ${level}?`,
-        body: `“${nameOf(r) || level}” and the ${inside} inside it go. Undo brings them back until you save.`,
-        confirmLabel: `Delete ${level}`,
-      });
-      if (!ok) return;
-    }
-    const parent = r.parent;
-    onChange(removeNode(functions, r.at), `Deleted a ${level}.`);
-    say(`Deleted the ${level}. Undo brings it back.`);
-    setFocus(parent);
-    if (!parent) setPanel(false);
-  };
-
-  const onHeaderSort = (id) => setSort((s) => (s?.col !== id ? { col: id, dir: 1 } : s.dir === 1 ? { col: id, dir: -1 } : null));
-
-  // Drag a header's edge to resize its column; ← → when it has focus; a
-  // double-click goes back to the usual width.
-  const resize = (id, w) => setPrefs((p) => ({ ...p, widths: { ...p.widths, [id]: clampCol(w, id === "name" ? NAME_COLUMN.min : 60) } }));
-  const startResize = (id) => (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const startX = e.clientX;
-    const startW = widths[id];
-    const el = e.currentTarget;
-    el.setPointerCapture?.(e.pointerId);
-    const move = (ev) => resize(id, startW + ev.clientX - startX);
-    const up = () => {
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", up);
-    };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
-  };
-  const resetWidth = (id) => setPrefs((p) => {
-    const next = { ...p.widths };
-    delete next[id];
-    return { ...p, widths: next };
-  });
-
-  // The walkthrough's anchors: the first function, failure mode and evidence check.
-  const wt = useMemo(() => {
-    const out = {};
-    for (const v of list) {
-      const r = display.rows.get(v.key);
-      if (r.type === "fn" && !out.fn) out.fn = v.key;
-      if (r.type === "mode" && !out.mode) out.mode = v.key;
-      if (r.type === "mode" && r.ref.decision?.status && !out.check) out.check = v.key;
-    }
-    return out;
-  }, [list, display]);
-  const wtFor = (key) => ({
-    row: key === wt.fn ? "rcm-function" : key === wt.mode ? "rcm-mode" : undefined,
-    check: key === wt.check ? "rcm-evidence" : undefined,
-  });
-
-  const c = display.counts;
-  const statusText = filter
-    ? `${n(filter.match.size, "match", "matches")}, shown with what they're inside`
-    : `${n(c.fn, "function")} · ${n(c.fail, "functional failure")} · ${n(c.mode, "failure mode")}`;
-  const dim = (key) => filter && !filter.match.has(key);
-  const rowProps = (k) => ({
-    r: display.rows.get(k), cols, widths, total, phone, query, readOnly, editing,
-    onToggle: toggle, onPick: pick, onEdit: (key, col) => { setFocus(key); setEditing({ key, col }); },
-    onCommit: commit, onCancel: () => setEditing(null), onDecision,
-  });
-
-  return (
-    <div className={"rw" + (phone ? " phone" : "") + (prefs.density === "compact" ? " compact" : "")}>
-      <div className="rw-bar">
-        <label className="tp-filter rw-filter">
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
-                 placeholder="Filter: description, effects, task, notes" aria-label="Filter the worksheet" />
-        </label>
-        <LevelButtons levels={Array.from({ length: Math.min(depth, LEVELS.length) }, (_, i) => i + 1)}
-                      names={LEVELS.map((l) => l.plural)} onLevel={setLevel} onCloseAll={() => setOpen(new Set())}
-                      className="tp-levels rw-levels" />
-        <div className="rw-tools">
-          {!readOnly && (
-            <button type="button" className="secondary rw-btn" onClick={() => { onUndo(); say("Undid the last change."); }} disabled={!canUndo}
-                    title="Undo the last change (Ctrl+Z)">Undo</button>
-          )}
-          {!phone && (
-            <ColumnChooser cols={prefs.cols} onCols={(next, o) => setPrefs((p) => {
-              // Chosen (the Explorer's table keeps them whatever the window's width), or the usual ones again.
-              const out = { ...p, cols: next, colsChosen: true };
-              if (o?.reset) delete out.colsChosen;
-              return out;
-            })} />
-          )}
-          {!phone && (
-            <SegmentedControl size="sm" label="Row height" value={prefs.density}
-                              options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]}
-                              onChange={(v) => setPrefs((p) => ({ ...p, density: v }))} />
-          )}
-          {!readOnly && <button type="button" className="rw-btn" onClick={() => add(null)}>Add function</button>}
-        </div>
-      </div>
-      <div className="tp-chips rw-chips" role="group" aria-label="Show only">
-        {CHIPS.map((ch) => {
-          const on = chips.includes(ch.id);
-          return (
-            <button key={ch.id} type="button" className={"tp-chip rw-chip" + (on ? " on" : "")} aria-pressed={on} title={ch.title}
-                    onClick={() => setChips(on ? chips.filter((x) => x !== ch.id) : [...chips, ch.id])}>
-              {ch.label} <span className="rw-chip-n">{counts[ch.id].toLocaleString("en-AU")}</span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="rw-sub">
-        <p className="rw-legend" aria-label="What the icons mean">
-          {LEVELS.map((l) => <span key={l.type}><LevelIcon type={l.type} /> {l.label}</span>)}
-          <span><LevelIcon type="task" /> Task</span>
-          {!phone && <span className="rw-legend-note">A row with things inside it counts them; double-click a cell to edit it.</span>}
-        </p>
-        <p className="rw-status" role="status">
-          {statusText}
-          {message && <span className={"rw-msg " + message.tone}> · {message.text}</span>}
-        </p>
-      </div>
-      {notice}
-
-      <div className={"rw-main" + (panel && row ? " with-panel" : "")}>
-        <div className="rw-grid" ref={nav.scroller} onScroll={nav.onScroll} onKeyDown={(e) => {
-          if (e.key === "F2" && cur && !readOnly && !editing) { e.preventDefault(); setEditing({ key: cur, col: "name" }); return; }
-          if (e.key === "Escape" && panel && !editing) { e.preventDefault(); setPanel(false); return; }
-          nav.onKey(e);
-        }}
-             role="treegrid" aria-label="RCM worksheet" aria-rowcount={list.length + 1} aria-colcount={cols.length + 1}
-             aria-multiselectable="false">
-          {!phone && (
-            <div className="rw-head" role="row" aria-rowindex={1} style={{ width: total, height: HEAD_H }}>
-              {[NAME_COLUMN, ...cols].map((col) => {
-                const sorted = sort?.col === col.id;
-                return (
-                  <div key={col.id} role="columnheader" className={"rw-h" + (col.id === "name" ? " rw-name" : "") + (col.align === "num" ? " num" : "")}
-                       style={{ width: widths[col.id] }}
-                       aria-sort={sorted ? (sort.dir === 1 ? "ascending" : "descending") : undefined}>
-                    <button type="button" className="rw-hs" onClick={() => onHeaderSort(col.id)}
-                            title={`${col.title ? `${col.title}. ` : ""}Sort by ${col.label.toLowerCase()} within each level`}>
-                      {col.label}{col.sum ? <span className="rw-sig" aria-hidden="true"> Σ</span> : null}
-                      {sorted && <span aria-hidden="true">{sort.dir === 1 ? " ▲" : " ▼"}</span>}
-                    </button>
-                    <span className="rw-rz" role="separator" aria-orientation="vertical" tabIndex={0}
-                          aria-label={`Resize ${col.label}`} aria-valuenow={widths[col.id]} aria-valuemin={60} aria-valuemax={640}
-                          onPointerDown={startResize(col.id)} onDoubleClick={() => resetWidth(col.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              resize(col.id, widths[col.id] + (e.key === "ArrowLeft" ? -16 : 16));
-                            }
-                          }} />
-                  </div>
-                );
-              })}
-              <div className="rw-h rw-fill" aria-hidden="true" />
-            </div>
-          )}
-          {nav.pins.length > 0 && (
-            <div className="rw-pins" style={{ top: phone ? 0 : HEAD_H }}>
-              <div className="rw-pins-in">
-                {nav.pins.map((k) => (
-                  <Row key={k} {...rowProps(k)} v={list[index.get(k)]} i={index.get(k)} height={H}
-                       open={shownOpen.has(k)} focused={k === cur} pinned editing={null}
-                       onPick={(key) => { pick(key, {}); nav.reveal(key, true); }} />
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="rw-body" style={{ height: list.length * H, width: phone ? undefined : total }}>
-            {nav.drawn.map((i) => {
-              const v = list[i];
-              return (
-                <Row key={v.key} {...rowProps(v.key)} v={v} i={i} top={i * H} height={H}
-                     open={shownOpen.has(v.key)} focused={v.key === cur} tabbable={cur == null && i === 0}
-                     dim={dim(v.key)} wt={wtFor(v.key)} />
-              );
-            })}
-          </div>
-          {!list.length && (
-            <div className="rw-empty">
-              {filter ? (
-                <p>Nothing matches. <button type="button" className="link" onClick={() => { setQuery(""); setChips([]); }}>Clear filters</button></p>
-              ) : (
-                <>
-                  <p><b>No functions yet.</b> Start with a function: what the system must do, ideally with a performance standard.</p>
-                  {!readOnly && <button type="button" onClick={() => add(null)}>Add function</button>}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-        {panel && row && (
-          <>
-            {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
-            <Details r={row} display={display} readOnly={readOnly} phone={phone} headingRef={headingRef}
-                     onCommit={commit} onAdd={add} onDelete={remove} onDecision={onDecision}
-                     onClose={() => { setPanel(false); document.getElementById(`rw-${row.key}`)?.focus({ preventScroll: true }); }}
-                     onSelect={(key) => setWant({ key })} />
-          </>
-        )}
-      </div>
     </div>
   );
 }

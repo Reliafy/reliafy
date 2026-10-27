@@ -26,7 +26,6 @@ const LINK_KIND = {
   rbds: "Block diagram",
   strategy_analyses: "Strategy analysis",
   fleets: "Failure forecast",
-  rcm_studies: "RCM study",
   datasets: "Dataset",
   reports: "Report",
 };
@@ -55,7 +54,7 @@ function YourReports({ rows, error, onOpen, onNew }) {
       ) : rows.length === 0 ? (
         <div className="card empty">
           <p>
-            No reports yet. A report puts several models, diagrams, studies or analyses on one page, with
+            No reports yet. A report puts several models, diagrams, forecasts or analyses on one page, with
             your notes, to print or share as one link.
           </p>
           <button type="button" onClick={onNew}><PlusIcon /> New report</button>
@@ -159,7 +158,7 @@ function SharedLinks({ reports }) {
         <div className="card empty">Loading…</div>
       ) : links.length === 0 ? (
         <div className="card empty">
-          <p>No shared links yet. Use the Share button on a model, diagram, study, analysis or report to get a link anyone can open.</p>
+          <p>No shared links yet. Use the Share button on a model, diagram, forecast, analysis or report to get a link anyone can open.</p>
         </div>
       ) : (
         <div className="lib maint-scroll">

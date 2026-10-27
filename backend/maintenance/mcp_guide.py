@@ -59,8 +59,8 @@ Building the register.
 2. Positions: maintenance_positions create, top down (parent_id), with position_class for like duties, \
 operating_context for how it's used (load, environment, hours; the description stays one line on what it is) and \
 location_id where it physically is (set it on a system's top position; the ones inside inherit it). Many alike: \
-build one, then maintenance_positions copy (failure modes, tasks and parts lists come too). From an RCM study: \
-see the plan topic.
+build one, then maintenance_positions copy (failure modes, tasks and parts lists come too). A worked example to \
+start from: maintenance_positions add_sample_truck (the sample delivery truck with its RCM). RCM: see the plan topic.
 3. Items: maintenance_fitments fit (position_id, plus a new item by item_name / serial / manufacturer, or by \
 part_id, or an existing item_id), with on = the date it went in ('2022' if that's all that's known). Earlier \
 items: maintenance_fitments add_past. A whole history from a spreadsheet: maintenance_workspace import_history \
@@ -87,11 +87,10 @@ up as they're true (a site, a system): what's inside inherits them. See the cond
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location.", """\
 Planning the maintenance.
 - From RCM: build it on the position itself with maintenance_failure_modes (add_function, add_functional_failure, \
-add, decide), or add a worksheet file with uploads import_excel target rcm and position_id. A study the user \
-already has in the app (its id is in the page address) comes onto the tree with maintenance_positions from_rcm \
-(a new position with the study's failure modes and a task for every decision with an interval) or apply_rcm \
-(onto an existing position; run it again after the study changes: it adds what's new and updates changed tasks). A decision's task text over 200 characters gives the \
-task a shortened name, with the full text in its instructions.
+add, decide), or add a worksheet file (an FMEA or RCM sheet, one row per failure mode) with uploads import_excel \
+target rcm and position_id. A decision that schedules a task (fixed_interval, failure_finding, on_condition with an \
+interval) gets a task on the position; one that doesn't (rtf, redesign, accept) gets none. A decision's task text \
+over 200 characters gives the task a shortened name, with the full text in its instructions.
 - Directly (a maker's manual, a regulation, own practice): maintenance_tasks create, on exactly one subject:
   - position_id, the usual one: the job, whatever does it. 'Lubricate the pump', 'test the protection relay'. \
 It stays with the slot and counts again from each new item fitted.

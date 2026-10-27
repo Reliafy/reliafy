@@ -9,8 +9,6 @@ import {
   listMaintenanceLocations,
   listMaintenanceWorkOrders,
   setMaintenanceSettings,
-  listRcmStudies,
-  maintenanceFromRcm,
 } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -45,7 +43,7 @@ export default function MaintenanceHome() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [modal, setModal] = useState(null); // "position" | "rcm"
+  const [modal, setModal] = useState(null); // "position" | "import"
   const [generating, setGenerating] = useState(false);
 
   const [digest, setDigest] = useState(null);
@@ -95,11 +93,8 @@ export default function MaintenanceHome() {
     <div className="app">
       <SectionHeader
         title="Maintenance"
-        purpose="What's due from your RCM studies' tasks, the work orders, and the changes proposed."
-        actions={<>
-          <button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>
-          <button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>
-        </>}
+        purpose="What's due from your scheduled tasks, the work orders, and the changes proposed."
+        actions={<button className="secondary" onClick={() => setModal("import")}>Import from a spreadsheet</button>}
       />
       {error && <div className="card error">{error}</div>}
       {data && <TimeZoneNudge zone={data.time_zone} />}
@@ -108,9 +103,11 @@ export default function MaintenanceHome() {
       ) : data.tree.length === 0 ? (
         <div className="card empty">
           <h2>Nothing here yet</h2>
-          <p>Start from an RCM study (its system becomes a position, with the study's tasks), or add a position by hand.</p>
+          <p>
+            Add a position by hand, or build the tree on the <Link to="/asset-register/explorer">Explorer</Link>, where
+            each position's RCM gives it its tasks.
+          </p>
           <div className="maint-row" style={{ justifyContent: "center", marginTop: "1rem" }}>
-            <button className="secondary" onClick={() => setModal("rcm")}>From an RCM study</button>
             <button onClick={() => setModal("position")}><PlusIcon /> New position</button>
           </div>
         </div>
@@ -216,13 +213,6 @@ export default function MaintenanceHome() {
         />
       )}
       {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
-      {modal === "rcm" && (
-        <FromRcmModal
-          positions={positions}
-          onClose={() => setModal(null)}
-          onCreated={(r) => navigate(`/asset-register/positions/${r.position.id}`)}
-        />
-      )}
     </div>
   );
 }
@@ -268,40 +258,6 @@ export function NewPositionModal({ positions, parentId = null, onClose, onCreate
       </Field>
       <Field label="Class (optional, to compare like positions)">
         <input value={positionClass} placeholder="e.g. Electric storage water heater" onChange={(e) => setPositionClass(e.target.value)} />
-      </Field>
-    </FormModal>
-  );
-}
-
-export function FromRcmModal({ positions, onClose, onCreated }) {
-  const [studies, setStudies] = useState(null);
-  const [studyId, setStudyId] = useState("");
-  const [parent, setParent] = useState(null);
-  useEffect(() => {
-    listRcmStudies().then((d) => setStudies(d.studies || [])).catch(() => setStudies([]));
-  }, []);
-  return (
-    <FormModal
-      title="From an RCM study"
-      submitLabel="Create position"
-      canSubmit={!!studyId}
-      onClose={onClose}
-      onSubmit={async () => onCreated(await maintenanceFromRcm(studyId, parent))}
-    >
-      <p className="lib-date">
-        The study's system becomes a position. Its failure modes come with it, and every decision with an
-        interval becomes a scheduled task.
-      </p>
-      <Field label="RCM study">
-        <select value={studyId} onChange={(e) => setStudyId(e.target.value)}>
-          <option value="">{studies === null ? "Loading…" : "Choose a study"}</option>
-          {(studies || []).map((s) => (
-            <option key={s.id} value={s.id}>{s.name}{s.system ? ` (${s.system})` : ""}</option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Inside">
-        <PositionPicker positions={positions} value={parent} onChange={setParent} />
       </Field>
     </FormModal>
   );

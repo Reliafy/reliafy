@@ -104,8 +104,8 @@ export function changeRows(data) {
       detail: forecastDetail(f), at: null });
   }
   for (const e of data.rcm_evidence || []) {
-    rows.push({ key: `rcm-${e.study_id}-${e.mode}-${e.evidence_url}`, kind: "RCM evidence",
-      tone: e.status === "contradicted" ? "danger" : null, name: e.study, url: e.url,
+    rows.push({ key: `rcm-${e.position_id}-${e.mode}-${e.evidence_url}`, kind: "RCM evidence",
+      tone: e.status === "contradicted" ? "danger" : null, name: e.position, url: e.url,
       detail: rcmDetail(e), at: e.at });
   }
   for (const s of (data.simulations || []).filter((x) => x.moved)) {

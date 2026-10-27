@@ -1,14 +1,15 @@
-// The RCM study's worksheet as an outline grid (RcmWorksheet): the study's own
-// hierarchy as the index (function → functional failure → failure mode), and
-// the worksheet's columns beside it (effects, consequence, decision, task,
-// interval, the evidence check...). A failure mode's decision is its task, so
-// the task is columns on the mode's row, not a level of its own.
+// The RCM worksheet's rows and columns, as the Explorer's RCM tab draws them
+// on the asset tree (TreePane, explorerRcm.js): the RCM hierarchy as the index
+// (function → functional failure → failure mode), and the worksheet's columns
+// beside it (effects, consequence, decision, task, interval, the evidence
+// check...). A failure mode's decision is its task, so the task is columns on
+// the mode's row, not a level of its own.
 //
 // Pure functions (no React), tested in rcmWorksheet.test.js: the display
-// built from the study's functions with each row's roll-up of what's inside
-// it, the columns, the filter chips, the sort that keeps the tree, the edits
-// (each returns a new functions list; nothing is saved until the study is),
-// the CSV rows, and what's remembered on this device.
+// built from a position's functions with each row's roll-up of what's inside
+// it, the columns, the filter chips, the sort that keeps the tree, the checks
+// on a cell's value (as the server checks it), and what's remembered on this
+// device.
 
 import { filterRows } from "./outlineTree.js";
 import { charCount } from "./maintenanceText.js";
@@ -440,68 +441,11 @@ export function computeFilter(display, { query = "", chips = [] } = {}) {
   return filterRows(display, (r) => (!q || rowText(r).includes(q)) && tests.every((c) => c.test(r)));
 }
 
-// ---- edits (each returns a new functions list) -------------------------------
+// ---- a cell's value ---------------------------------------------------------
 
-const newId = () => (globalThis.crypto?.randomUUID
-  ? globalThis.crypto.randomUUID().replaceAll("-", "")
-  : Math.random().toString(36).slice(2) + Date.now().toString(36));
-
-// Replace the node at `at` with update(node).
-function mapAt(functions, at, update) {
-  const [fi, xi, mi] = at;
-  return functions.map((fn, i) => {
-    if (i !== fi) return fn;
-    if (xi == null) return update(fn);
-    return {
-      ...fn,
-      failures: (fn.failures || []).map((fail, j) => {
-        if (j !== xi) return fail;
-        if (mi == null) return update(fail);
-        return { ...fail, modes: (fail.modes || []).map((m, k) => (k === mi ? update(m) : m)) };
-      }),
-    };
-  });
-}
-
-export const patchNode = (functions, at, patch) => mapAt(functions, at, (n) => ({ ...n, ...patch }));
-
-// Change a decision's task, interval or notes (a failure mode with one).
-export function patchDecision(functions, at, patch) {
-  return mapAt(functions, at, (m) => (m.decision ? { ...m, decision: { ...m.decision, ...patch } } : m));
-}
-
-// A new node inside the row at `at` (null: a new function at the end).
-// Returns {functions, id}.
-export function addNode(functions, at) {
-  const id = newId();
-  if (!at) return { functions: [...functions, { id, text: "", failures: [] }], id };
-  if (at.length === 1) {
-    return { functions: mapAt(functions, at, (fn) => ({ ...fn, failures: [...(fn.failures || []), { id, text: "", modes: [] }] })), id };
-  }
-  return {
-    functions: mapAt(functions, at, (fail) => ({
-      ...fail, modes: [...(fail.modes || []), { id, text: "", consequence: null, decision: null }],
-    })),
-    id,
-  };
-}
-
-export function removeNode(functions, at) {
-  const [fi, xi, mi] = at;
-  if (xi == null) return functions.filter((_, i) => i !== fi);
-  return functions.map((fn, i) => {
-    if (i !== fi) return fn;
-    if (mi == null) return { ...fn, failures: fn.failures.filter((_, j) => j !== xi) };
-    return {
-      ...fn,
-      failures: fn.failures.map((fail, j) => (j !== xi ? fail : { ...fail, modes: fail.modes.filter((_, k) => k !== mi) })),
-    };
-  });
-}
-
-// A cell's new value, checked as the server will check it on Save: a
-// description can't be empty; an interval is a positive number (blank clears
-// it). {value} or {error}.
+// A cell's new value, checked as the server will check it: a description
+// can't be empty; an interval is a positive number (blank clears it). {value}
+// or {error}.
 export function checkValue(col, row, raw) {
   if (col === "name") {
     const text = String(raw ?? "").trim();
@@ -525,55 +469,15 @@ export function checkValue(col, row, raw) {
   return { value: String(raw ?? "").trim() };
 }
 
-// The functions list with one cell changed (the value from checkValue).
-export function setCell(functions, row, col, value) {
-  if (col === "name") return patchNode(functions, row.at, { text: value });
-  const c = COLUMN[col];
-  if (c.onDecision) {
-    const patch = { [c.field]: value };
-    if (c.field === "interval" && value != null && !row.ref.decision?.interval_unit) patch.interval_unit = "hours";
-    return patchDecision(functions, row.at, patch);
-  }
-  return patchNode(functions, row.at, { [c.field]: value });
-}
-
-// ---- CSV ---------------------------------------------------------------------
-
-// The worksheet as rows for a spreadsheet: a header, then one row per failure
-// mode with its function and functional failure.
-export function worksheetCsvRows(functions) {
-  const rows = [[
-    "function", "functional_failure", "failure_mode", "effects", "consequence",
-    "outcome", "rtf_basis", "task", "interval", "interval_unit",
-    "evidence_type", "evidence_name", "evidence_status", "evidence_detail", "notes",
-  ]];
-  for (const fn of functions || []) {
-    for (const fail of fn.failures || []) {
-      for (const mode of fail.modes || []) {
-        const dd = mode.decision || {};
-        rows.push([
-          fn.text, fail.text, mode.text, mode.effects || "", mode.consequence || "",
-          dd.outcome || "", dd.rtf_basis || "", dd.task || "", dd.interval ?? "", dd.interval_unit || "",
-          dd.evidence?.type || "", dd.artifact_name || "", dd.status || "", dd.summary || dd.reason || "",
-          mode.notes || "",
-        ]);
-      }
-    }
-  }
-  return rows;
-}
-
 // ---- remembered on this device -----------------------------------------------
 
-// The columns shown and their widths, the row density, the view (worksheet or
-// tree) and, per study (the last 30), the rows open. Storage can throw
+// The columns shown and their widths, and the row density. Storage can throw
 // (private mode, blocked site data), so every read and write is guarded and
 // the worksheet works without it.
 const KEY = "reliafy.rcmWorksheet";
-const MAX_STUDIES = 30;
 
 export function loadPrefs(storage = globalThis.localStorage) {
-  const fallback = { cols: DEFAULT_COLUMNS, widths: {}, density: "comfortable", open: {} };
+  const fallback = { cols: DEFAULT_COLUMNS, widths: {}, density: "comfortable" };
   try {
     const raw = storage?.getItem(KEY);
     const v = raw ? JSON.parse(raw) : {};
@@ -584,7 +488,6 @@ export function loadPrefs(storage = globalThis.localStorage) {
       cols,
       widths,
       density: v.density === "compact" ? "compact" : "comfortable",
-      open: v.open && typeof v.open === "object" ? v.open : {},
       // The Explorer's Evidence check column, when chosen on or off there
       // (left out: shown once the workspace has linked evidence).
       ...(typeof v.explorerCheck === "boolean" ? { explorerCheck: v.explorerCheck } : {}),
@@ -603,24 +506,13 @@ const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x))
 
 export function savePrefs(prefs, storage = globalThis.localStorage) {
   try {
-    const open = Object.entries(prefs.open || {}).slice(-MAX_STUDIES);
-    storage?.setItem(KEY, JSON.stringify({ ...prefs, open: Object.fromEntries(open) }));
+    // `open` (the rows open per study, before the RCM moved onto the tree) is
+    // dropped from what an earlier version remembered.
+    const { open: _open, ...rest } = prefs;
+    storage?.setItem(KEY, JSON.stringify(rest));
   } catch {
     // Not remembered on this device; the worksheet still works.
   }
-}
-
-// The rows to open for a study seen before (those still in it), else null.
-export function rememberedOpen(prefs, studyId, display) {
-  const keys = prefs.open?.[studyId];
-  if (!Array.isArray(keys)) return null;
-  return new Set(keys.filter((k) => display.rows.has(k)));
-}
-
-// The prefs with a study's open rows set (most recent last).
-export function withOpen(prefs, studyId, open) {
-  const rest = Object.fromEntries(Object.entries(prefs.open || {}).filter(([k]) => k !== studyId));
-  return { ...prefs, open: { ...rest, [studyId]: [...open] } };
 }
 
 // A width kept between a column's least and 640 px.

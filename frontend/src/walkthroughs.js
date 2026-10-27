@@ -63,7 +63,7 @@ export const WALKTHROUGHS = {
       },
       {
         target: '[data-wt="repl-result"]',
-        text: "The answer: the age to replace at and what it saves against running to failure; save it to cite in an RCM study.",
+        text: "The answer: the age to replace at and what it saves against running to failure; save it to cite as evidence in your RCM.",
         wait: 15000,
       },
     ],
@@ -95,28 +95,6 @@ export const WALKTHROUGHS = {
       },
     ],
   },
-  rcm: {
-    title: "An RCM study",
-    route: "/maintenance/rcm/sample-rcm-truck",
-    steps: [
-      {
-        target: '[data-wt="rcm-function"]',
-        text: "A study starts from what the system must do, its functions, and then the ways each one can fail.",
-      },
-      {
-        target: '[data-wt="rcm-mode"]',
-        text: "Each failure mode gets a decision: inspect its condition, replace on a schedule, check a hidden function, or run to failure.",
-      },
-      {
-        target: '[data-wt="rcm-evidence"]',
-        text: "Link a decision to its evidence, a saved model or analysis, and Reliafy checks that the evidence backs it.",
-      },
-      {
-        target: '[data-wt="rcm-checks"]',
-        text: "The checks run each time you open the study: here one run-to-failure call is contradicted, because its own model shows wear-out.",
-      },
-    ],
-  },
   fleet: {
     title: "A fleet forecast",
     route: "/forecasts/sample-fleet-trucks",
@@ -142,7 +120,7 @@ export const WALKTHROUGHS = {
   },
 };
 
-export const WALKTHROUGH_IDS = ["fit", "replacement", "rbd", "rcm", "fleet"];
+export const WALKTHROUGH_IDS = ["fit", "replacement", "rbd", "fleet"];
 
 export function getWalkthrough(id) {
   return Object.prototype.hasOwnProperty.call(WALKTHROUGHS, id) ? WALKTHROUGHS[id] : null;

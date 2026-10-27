@@ -41,7 +41,6 @@ ITEM_KINDS = {
     "rbds": "Block diagram",
     "strategy_analyses": "Strategy analysis",
     "fleets": "Fleet forecast",
-    "rcm_studies": "RCM study",
     "datasets": "Dataset",
 }
 

@@ -7497,13 +7497,12 @@ _SHARE_KINDS = {
     "rbd": "rbds",
     "degradation_model": "degradation_models",
     "strategy_analysis": "strategy_analyses",
-    "rcm_study": "rcm_studies",
     "fleet": "fleets",
     "recurrent_model": "recurrent_models",
     "report": "reports",  # several of the above on one page (sharing create_report)
 }
 _KIND_OF = {collection: kind for kind, collection in _SHARE_KINDS.items()}
-_ShareKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study", "fleet",
+_ShareKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "fleet",
                      "recurrent_model", "report"]
 
 
@@ -7526,7 +7525,7 @@ def _share_brief(db, link: dict) -> dict:
 def share_link(
     ctx: Context,
     kind: Annotated[_ShareKind, Field(description="What to share: model (a fitted non-repairable model), dataset, rbd, "
-                                                  "degradation_model, strategy_analysis, rcm_study, fleet, "
+                                                  "degradation_model, strategy_analysis, fleet, "
                                                   "recurrent_model (a repairable-system model) or report (made "
                                                   "with sharing create_report).")],
     id: Annotated[str, Field(description="The id of one of the user's own items of that kind (e.g. from "
@@ -7601,7 +7600,7 @@ def revoke_share_link(
 # and published with an ordinary share link, so list kind share_links (kind
 # "report") and sharing revoke_link manage it like any other.
 
-_ReportItemKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis", "rcm_study",
+_ReportItemKind = Literal["model", "dataset", "rbd", "degradation_model", "strategy_analysis",
                           "fleet", "recurrent_model"]
 
 
@@ -7780,7 +7779,7 @@ def workspace_changes(
         raise ToolError(str(exc)) from exc
     # Fleets are Pro over MCP (_FLEET_TOOLS): a plan without them gets the rest.
     fleets = user.get("mcp_plan", "pro") == "pro"
-    return _absolute_urls(changes_service.summarize(db, user["uid"], user["uid"], period, fleets=fleets))
+    return _absolute_urls(changes_service.summarize(db, user["uid"], user["uid"], period, fleets=fleets, user=user))
 
 
 # ---- get kind account (#133): the caller's plan and what's left on it -------------

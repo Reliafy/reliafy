@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from backend import config
+from backend.auth import get_current_user
 from backend.db import get_db, get_session, is_simulated
 from backend.maintenance.access import allowed
 from backend.maintenance import documents as documents_mod
@@ -24,7 +25,6 @@ from backend.maintenance import photos as photos_mod
 from backend.maintenance.service import PROJECTORS, Invalid, LimitReached, Maintenance, NotFound, summary
 from backend.maintenance.store import new_id
 from backend.maintenance.store import GraphStore, MongoEventLog
-from backend.schema import RcmStudy
 from backend.services import access as access_service
 from backend.services import time_zones
 from backend.services.access import AccessCtx, get_access
@@ -292,13 +292,6 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": str(err)})
 
 
-def _study(session, ctx: AccessCtx, study_id: str) -> RcmStudy:
-    study, _ = access_service.fetch_readable(session, "rcm_studies", RcmStudy, study_id, ctx)
-    if study is None or study.id in ctx.hidden:
-        raise HTTPException(status_code=404, detail="Study not found.")
-    return study
-
-
 # ---- overview ----------------------------------------------------------------------
 
 @router.get("/overview")
@@ -383,7 +376,7 @@ def _create_task(m: Maintenance, body: dict, **subject) -> JSONResponse:
 
 @router.post("/positions/{position_id}/tasks")
 def create_task(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """A scheduled task added by hand (not from an RCM study), on the position: it stays with the job."""
+    """A scheduled task added by hand (not from an RCM decision), on the position: it stays with the job."""
     return _create_task(m, body, position_id=position_id)
 
 
@@ -517,7 +510,7 @@ def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(ge
                         ctx: AccessCtx = Depends(get_access),
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """The mode's consequence and decision ({outcome, rtf_basis, task, interval, interval_unit, notes,
-    evidence}; null clears it), checked as an RCM study's; the evidence must be one the writer can open."""
+    evidence}; null clears it), checked by the RCM decision rules; the evidence must be one the writer can open."""
     from backend.maintenance import rcm_graph
 
     def go():
@@ -595,8 +588,8 @@ def preview_rcm_sheet(position_id: str, file: UploadFile = File(...), sheet: str
                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """What an FMEA / RCM worksheet (Excel or CSV, one row per failure mode) would add to the position's RCM:
     functions, functional failures, failure modes and tasks, what's there already and rows skipped. Nothing is
-    written. ``options`` is JSON ``{mapping, consequence_map, outcome_map, extra_columns}`` as for the study
-    import (left out: the mapping guessed from the header)."""
+    written. ``options`` is JSON ``{mapping, consequence_map, outcome_map, extra_columns}``
+    (:func:`backend.services.rcm_import.build_tree`; left out: the mapping guessed from the header)."""
     return _rcm_sheet(m, ctx, position_id, file, sheet, header_row, options, dry_run=True)
 
 
@@ -611,18 +604,13 @@ def import_rcm_sheet(position_id: str, file: UploadFile = File(...), sheet: str 
     return _rcm_sheet(m, ctx, position_id, file, sheet, header_row, options, dry_run=False)
 
 
-@router.post("/positions/{position_id}/apply-rcm")
-def apply_rcm(position_id: str, study_id: str = Body(..., embed=True), session=Depends(get_session),
-              ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    study = _study(session, ctx, study_id)
-    return _run(lambda: {**m.apply_rcm(position_id, study), "position": m.position(position_id)})
+@router.get("/rcm/options")
+def rcm_options(user: dict = Depends(get_current_user)) -> dict:
+    """The RCM decision vocabulary with its hints (consequences, outcomes and
+    run-to-failure bases), for the decision dialog."""
+    from backend.maintenance import rcm_decisions
 
-
-@router.post("/from-rcm")
-def from_rcm(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
-             m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    study = _study(session, ctx, str(body.get("study_id") or ""))
-    return _run(m.position_from_rcm, study, body.get("parent_id"))
+    return rcm_decisions.options()
 
 
 @router.post("/sample-truck")

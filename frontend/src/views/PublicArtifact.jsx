@@ -17,8 +17,6 @@ import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
 import DemoTestResult from "../components/DemoTestResult.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
-import RcmTree from "../components/RcmTree.jsx";
-import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import PublicRbd from "../components/PublicRbd.jsx";
 import ReportView from "./PublicReport.jsx";
 import { getPublicArtifact, unlockPublicLink } from "../api.js";
@@ -41,7 +39,6 @@ const KIND_LABEL = {
   datasets: "Dataset",
   degradation_models: "Degradation model",
   strategy_analyses: "Strategy analysis",
-  rcm_studies: "RCM study",
   fleets: "Fleet failure forecast",
   rbds: "Reliability block diagram",
   recurrent_models: "Repairable model",
@@ -166,15 +163,6 @@ function Body({ collection, a, token, unlock, framed = false }) {
             <p className="muted-line">No preview available.</p>
           )}
         </div>
-      );
-    case "rcm_studies":
-      return (
-        <>
-          {a.rollup && <RollupBadges rollup={a.rollup} />}
-          <div className="card" style={{ marginTop: "0.8rem" }}>
-            <RcmTree functions={a.functions || []} readOnly onChange={() => {}} onEditDecision={() => {}} />
-          </div>
-        </>
       );
     case "fleets":
       return <FleetView a={a} />;

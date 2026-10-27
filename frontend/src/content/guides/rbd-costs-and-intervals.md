@@ -32,8 +32,7 @@ Double-click a block. A repairable block has these sections:
   or **Condition-based** (inspected, and replaced when the chance of failing
   before the next inspection is too high). Give how often (**Replace
   every**), how long it takes (**Takes**; blank is instant) and the **Cost
-  per replacement**. **Fill from RCM study…** copies a task from an
-  [RCM study](/guides/rcm-study).
+  per replacement**.
 - **Costs**: **Repair cost** and **Parts cost** per failure, **Block
   downtime** (a cost while this block is down, even if the system is up) and
   the **Purchase price**. A per-failure cost can be a **range**.

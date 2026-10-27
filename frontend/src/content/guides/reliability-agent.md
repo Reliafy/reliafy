@@ -76,8 +76,8 @@ covariates, the offset/zero-inflation/limited-failure-population modifiers),
 **degradation models**, and **RBDs** — including repairable diagrams that report
 availability, and common-cause groups on redundant stages.
 
-It doesn't create RCM studies, fleet forecasts or condition and life models
-yet. If you ask, it'll say so rather than improvising.
+It doesn't build RCM on your asset tree, fleet forecasts or condition and life
+models yet. If you ask, it'll say so rather than improvising.
 
 ## Conversations are saved
 

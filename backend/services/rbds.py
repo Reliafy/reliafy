@@ -351,14 +351,8 @@ def _strip_ui(value):
     return value
 
 
-# Node data that records where values came from (#100: the RCM study a
-# block's maintenance was filled from). The filled values themselves are in
-# the key; the link isn't, so it never invalidates a saved result.
-_PROVENANCE_KEYS = frozenset({"rcm_source"})
-
-
 def _analysis_data(data: dict) -> dict:
-    return _strip_ui({k: v for k, v in data.items() if k not in _PROVENANCE_KEYS})
+    return _strip_ui(dict(data))
 
 
 def _key_unit(graph: dict, spelling: str | None = None) -> str:

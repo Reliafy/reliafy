@@ -168,64 +168,6 @@ def test_hide_revoke_and_reshare(client):
 
 # ---- Transitive references ----------------------------------------------------
 
-def test_shared_rcm_study_resolves_and_links_open(client):
-    client.act_as(B)
-    client.act_as(A)
-    model = _save_model(client)
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    r = client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": [
-        {"text": "Fn", "failures": [{"text": "FF", "modes": [
-            {"text": "M", "consequence": "operational",
-             "decision": {"outcome": "rtf", "rtf_basis": "random",
-                          "evidence": {"type": "model", "id": model["id"]}}}]}]},
-    ]})
-    author_status = r.json()["functions"][0]["failures"][0]["modes"][0]["decision"]["status"]
-    _share(client, "rcm_studies", sid, "b@x.com")
-
-    client.act_as(B)
-    # The study resolves with the author's evidence statuses.
-    study = client.get(f"/api/rcm/studies/{sid}").json()
-    decision = study["functions"][0]["failures"][0]["modes"][0]["decision"]
-    assert decision["status"] == author_status
-    assert study["read_only"] is True
-    # Evidence link opens transitively (model + its dataset).
-    assert client.get(f"/api/models/{model['id']}").status_code == 200
-    assert client.get(f"/api/datasets/{model['dataset_id']}").status_code == 200
-    # Edits are blocked.
-    assert client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": []}).status_code == 403
-
-    # Liveness: the author re-links to new evidence; the recipient sees it.
-    client.act_as(A)
-    model2 = _save_model(client, name="M2")
-    client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": [
-        {"text": "Fn", "failures": [{"text": "FF", "modes": [
-            {"text": "M", "consequence": "operational",
-             "decision": {"outcome": "rtf", "rtf_basis": "random",
-                          "evidence": {"type": "model", "id": model2["id"]}}}]}]},
-    ]})
-    client.act_as(B)
-    assert client.get(f"/api/models/{model2['id']}").status_code == 200
-
-    # No leak: embedding someone's artifact id in your OWN study doesn't grant access.
-    client.act_as(C)
-    sid_c = client.post("/api/rcm/studies", json={"name": "steal"}).json()["id"]
-    foreign = [
-        {"text": "Fn", "failures": [{"text": "FF", "modes": [
-            {"text": "M", "consequence": "operational",
-             "decision": {"outcome": "rtf", "rtf_basis": "random",
-                          "evidence": {"type": "model", "id": model["id"]}}}]}]},
-    ]
-    # Saving the link is refused; a study saved before that check resolves
-    # it as stale.
-    assert client.put(f"/api/rcm/studies/{sid_c}/tree", json={"functions": foreign}).status_code == 422
-    from backend.services import rcm as rcm_service
-
-    client.db.rcm_studies.update_one({"_id": sid_c}, {"$set": {"functions": rcm_service.clean_tree(foreign)}})
-    study_c = client.get(f"/api/rcm/studies/{sid_c}").json()
-    assert study_c["functions"][0]["failures"][0]["modes"][0]["decision"]["status"] == "stale"
-    assert client.get(f"/api/models/{model['id']}").status_code == 404
-
-
 def test_shared_degradation_model_with_items(client):
     client.act_as(B)
     client.act_as(A)
