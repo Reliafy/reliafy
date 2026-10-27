@@ -69,3 +69,31 @@ export function withGroup(mapping, selected, group) {
 export function groupProblem(selected, group) {
   return selected?.frailty && !group ? "Choose the Group by column — the site, batch or unit each row belongs to." : null;
 }
+
+// Best fit's scores, for its picker (the first is the default).
+export const CRITERION_CHOICES = [
+  { value: "aic", label: "AIC (the usual choice)" },
+  { value: "aic_c", label: "AICc (few failures)" },
+  { value: "bic", label: "BIC (favours simpler)" },
+  { value: "neg_ll", label: "Negative log-likelihood (no penalty)" },
+];
+export const CRITERION_HELP = {
+  aic: "Rewards fit and charges a little for each parameter. The usual choice.",
+  aic_c: "AIC with a larger charge when there are few failures. Use it under about 40 failures.",
+  bic: "Charges more for parameters, so it prefers simpler distributions as the data grows.",
+  neg_ll: "How well each fits, with no charge for parameters. It always favours the most flexible distribution, so use it only to compare equal-sized models.",
+};
+
+// A shared frailty's own distribution (a Cox frailty has the gamma only).
+export const FRAILTY_FAMILIES = [
+  { value: "gamma", label: "Gamma (the usual choice)" },
+  { value: "lognormal", label: "Log-normal (heavier tail)" },
+];
+export const familyApplies = (selected) => Boolean(selected?.frailty) && selected.id !== "cox_frailty";
+
+// The fit options a regression sends besides Cox's: the frailty family, only
+// when it is not the default and applies to the model.
+export function frailtyFitOptions(selected, fitOpts) {
+  return familyApplies(selected) && fitOpts?.frailty_family && fitOpts.frailty_family !== "gamma"
+    ? { frailty_family: fitOpts.frailty_family } : null;
+}

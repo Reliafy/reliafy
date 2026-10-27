@@ -65,11 +65,21 @@ distributions, in four families. They differ in *how* a covariate acts:
 - **Additive hazards (AH)**: a covariate adds a fixed amount to the failure
   rate rather than multiplying it.
 
+Each family comes with several baselines to pick from: Weibull, exponential,
+lognormal, gamma, **log-logistic** (a hazard that rises, then falls, with a
+heavier tail than the lognormal), normal, logistic and Gumbel. If you don't
+know which, fit two or three and compare them in the Diagnostics tab. For the
+log-logistic, proportional odds and accelerated failure time are the same
+model: they fit identically and only the coefficients are written differently.
+
 Under **More models** there are semi-parametric versions (Lin-Ying additive
 hazards, proportional odds, Buckley-James AFT) and **shared frailty** models.
 A frailty model is for units grouped by site or batch that share a hidden risk:
 choose its **Group by (site or batch)** column and the fit says how much the
-groups differ.
+groups differ. **Frailty distribution** sets how that hidden risk varies:
+**Gamma** is the usual choice, **Log-normal** has a heavier tail, so a few very
+frail sites stand out without dragging the rest (Cox PH with frailty takes the
+gamma only).
 
 For **Cox PH**, **Advanced Cox options** set how **Tied failure times** are
 handled (Efron by default), a column to **Stratify by** (each level gets its
@@ -105,6 +115,13 @@ e^(5.32 × 0.4) ≈ 8.4.
 An interval for β that doesn't include 0 (a ratio that doesn't include 1) means
 the covariate clearly matters. Both do here.
 
+A proportional-odds model reports an **odds ratio**: per +1 of the covariate,
+the odds that a unit has already failed are multiplied by this number, and the
+effect fades as units age. An additive-hazards model reports an **added failure
+rate**: per +1 of the covariate, the failure rate rises by this amount per unit
+of time, whatever the age. It is not a ratio, so a negative number means the
+covariate lowers the failure rate.
+
 An AFT model reports a **time ratio** instead. For the same data, **Weibull
 AFT** gives temp_C a time ratio of 1.025: each extra degree makes the seal age
 2.5% faster. The two views agree. For a Weibull, the hazard ratio is the time
@@ -131,6 +148,16 @@ Beside it, *Is each effect a straight line?* (the martingale residuals) and
 predicted). **Test details and residuals** opens the per-covariate tests. If
 the assumption fails, try an AFT or PO model, or stratify a Cox model on the
 offending column.
+
+For the other families the card is **Do the model's own assumptions hold?**:
+a table of tests, each marked *Passes*, *Borderline* or *Fails*, with what to
+try under it. A proportional-odds or additive-hazards model is tested for an
+effect that changes with age. An AFT or PO model is also checked for its
+baseline (does another distribution fit more than 2 AIC points better?), for
+each covariate acting in a straight line, and for predicted survival matching
+what happened. A frailty model is tested for whether the groups differ at all.
+A "Fails" is a reason to try another family or baseline, not a verdict on your
+data. Buckley-James has no such checks; judge it by its ranking score.
 
 **Predictive accuracy.** **Harrell's C** is how often the model ranks the unit
 that failed first as the riskier one (0.87 for the seals: strong). The

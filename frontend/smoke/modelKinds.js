@@ -38,6 +38,12 @@ export const MODEL_KINDS = [
     tabs: ["Effects", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
   { slug: "frailty", find: { name: "Smoke kinds — frailty" },
     tabs: ["Effects", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
+  { slug: "loglogistic-aft", find: { name: "Smoke kinds — log-logistic AFT" },
+    tabs: ["Effects", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
+  { slug: "additive-hazards", find: { name: "Smoke kinds — additive hazards" },
+    tabs: ["Effects", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
+  { slug: "best-fit-bic", find: { name: "Smoke kinds — best fit by BIC" },
+    tabs: ["Probability plot", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
   { slug: "tvc", find: { id: "sample-model-pump-load-weibull-ph" },
     tabs: ["Effects", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
   { slug: "condition-life",
@@ -129,6 +135,9 @@ export async function seedModelKinds(api) {
     dataset_id: "sample-ds-pump-modes", x: "hours", e: "failure_mode", g: "site", z: "duty_pct", unit: "hours",
     distribution: "competing_risks_fine_gray",
   });
+  await fit("Smoke kinds — log-logistic AFT", { ...seal, distribution: "loglogistic_aft", z: "temp_C" });
+  await fit("Smoke kinds — additive hazards", { ...seal, distribution: "additive_hazards", z: "temp_C" });
+  await fit("Smoke kinds — best fit by BIC", { ...bearings, distribution: "best", criterion: "bic" });
   await fit("Smoke kinds — frailty", { dataset_id: units.id, x: "hours", c: "censored", group: "site",
                                        z: "temp_C", unit: "hours", distribution: "weibull_frailty" });
   await json("/api/models/from-params", {

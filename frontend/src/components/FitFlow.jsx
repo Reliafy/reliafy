@@ -19,7 +19,7 @@ import CoxOptions from "./CoxOptions.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import DistributionStep from "./DistributionStep.jsx";
 import CompetingRisksStep, { CR_OPTIONS } from "./CompetingRisksStep.jsx";
-import { groupProblem, withGroup } from "../moreModels.js";
+import { frailtyFitOptions, groupProblem, withGroup } from "../moreModels.js";
 import { usableDatasets } from "../datasetFit.js";
 import ResultView from "./ResultView.jsx";
 import ModelFrame, { AnswerLine } from "./model/ModelFrame.jsx";
@@ -366,7 +366,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const summary = csv && !tvc ? statusSummary(mapping, facts, csv.n_rows) || fileSplit : null;
 
   // Cox PH's own options travel with a Cox fit only.
-  const coxFit = distribution === "cox_ph" ? { fitOptions: { cox: coxOpts } } : {};
+  const familyOpts = frailtyFitOptions(options.find((d) => d.id === distribution), fitOpts);
+  const coxFit = distribution === "cox_ph" ? { fitOptions: { cox: coxOpts } }
+    : familyOpts ? { fitOptions: familyOpts } : {};
   const coxColumns = (csv?.columns || []).filter(
     (c) => !mappedColumns.has(c) && !(advanced ? false : covariates.includes(c)));
 

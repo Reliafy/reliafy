@@ -176,7 +176,7 @@ export function getColumns(file) {
 // the fit method, Best fit's "consider two-mode mixtures" (#236) and Cox PH's
 // tie method, strata and cluster columns (#61).
 function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution, how,
-                                  include_mixtures, cox } = {}) {
+                                  include_mixtures, criterion, frailty_family, cox } = {}) {
   if (offset) form.append("offset", "true");
   if (zi) form.append("zi", "true");
   if (lfp) form.append("lfp", "true");
@@ -185,6 +185,8 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
   if (mixture_distribution) form.append("mixture_distribution", mixture_distribution);
   if (how) form.append("how", how);
   if (include_mixtures) form.append("include_mixtures", "true");
+  if (criterion) form.append("criterion", criterion);
+  if (frailty_family) form.append("frailty_family", frailty_family);
   const coxSet = cox && Object.fromEntries(Object.entries(cox).filter(([, v]) => v));
   if (coxSet && Object.keys(coxSet).length) form.append("cox", JSON.stringify(coxSet));
 }
@@ -441,6 +443,8 @@ export function updateModelFit(id, { distribution, mapping, covariates, covariat
       fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,
       how: fitOptions?.how || null,
       include_mixtures: !!fitOptions?.include_mixtures,
+      criterion: fitOptions?.criterion || null,
+      frailty_family: fitOptions?.frailty_family || null,
       cox: fitOptions?.cox && Object.values(fitOptions.cox).some(Boolean) ? fitOptions.cox : null,
       ...(units !== undefined ? { covariate_units: units } : {}),
     }),

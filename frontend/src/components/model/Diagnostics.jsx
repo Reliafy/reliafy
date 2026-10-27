@@ -14,6 +14,7 @@ import { getModelValidation, getResiduals } from "../../api.js";
 import { formatNumber } from "../../format.js";
 import { bestFitSentence, compareRows, criterionLabel } from "../../lifeResults.js";
 import { COLORWAY, DATA_INK, dataPoints, fitLine, referenceShape } from "../../plotTheme.js";
+import { checkRows, checksTone } from "../../modelChecks.js";
 import { countsSummary, curveSummary, hazardShape, oddUnits, ppSummary } from "../../modelFrame.js";
 import { unitInText } from "../unitText.js";
 
@@ -360,6 +361,47 @@ function ResidualChecks({ result, name }) {
   );
 }
 
+// The model's own assumption checks (SurPyval's diagnose()): a table of
+// tests with a verdict each, the reading first, then what to try.
+function ModelChecksCard({ checks }) {
+  if (!checks) return null;
+  if (!checks.available) {
+    return <CheckCard question="Do the model's own assumptions hold?"
+                      verdict={checks.reason || "Not available for this model."} />;
+  }
+  const rows = checkRows(checks);
+  const tone = checksTone(checks);
+  return (
+    <CheckCard question="Do the model's own assumptions hold?" term="model checks" tone={tone}
+               verdict={checks.reading}
+               footer={checks.advice?.length > 0 && (
+                 <ul className="muted-line model-checks-advice">
+                   {checks.advice.map((a) => <li key={a.check}><b>{a.title}.</b> {a.text}</li>)}
+                 </ul>
+               )}>
+      <div className="rs-table-wrap">
+        <table className="mini-table model-checks">
+          <thead><tr><th>Check</th><th>Covariate</th><th>Result</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} title={r.detail}>
+                <td>{r.title}<span className="gof-sub"> · {r.sub}</span></td>
+                <td>{r.covariates || "—"}</td>
+                <td>
+                  <Chip tone={r.verdict === "ok" ? "success" : r.verdict === "fail" ? "danger" : "warning"}>
+                    {r.verdictLabel}
+                  </Chip>
+                  {r.p && <span className="gof-sub"> {r.p}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </CheckCard>
+  );
+}
+
 const RATING_TONE = { strong: "good", good: "good", moderate: "caveat", weak: "caveat", "no better than chance": "bad" };
 const n2 = (v) => Number(v).toFixed(2);
 const n3 = (v) => Number(v).toFixed(3);
@@ -441,7 +483,9 @@ function RegressionDiagnostics({ result, name, modelId }) {
                 side={<><WarningCard result={result} />
                   <RegressionChecks diagnostics={result.diagnostics} modelId={modelId}
                                     residualsPath={result.functions?.residuals_path} unit={result.unit} /></>}>
-      <ResidualChecks result={result} name={name} />
+      {/* The residual plots are a Cox model's (and a proportional-hazards model's). */}
+      {result.effect === "hazard" && !result.frailty ? <ResidualChecks result={result} name={name} /> : null}
+      <ModelChecksCard checks={result.diagnostics?.model_checks} />
     </ChecksGrid>
   );
 }

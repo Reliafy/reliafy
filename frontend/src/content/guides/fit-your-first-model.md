@@ -97,7 +97,15 @@ Then, in the **Model** step, pick the model. Weibull is the default. If you
 don't know which distribution you want — and often you genuinely don't — choose
 **Best fit (auto)** and Reliafy will fit every candidate
 and keep the one with the lowest AIC, showing you the full ranking so you can
-see how close the runners-up were.
+see how close the runners-up were. **Rank by** changes the score: **AICc** for
+few failures (under about 40), **BIC** to favour simpler distributions, or the
+negative log-likelihood, which charges nothing for extra parameters and so
+always leans to the most flexible. The ranking shows each candidate's number of
+parameters and how far it is behind the best; **within 2, the data can't tell
+them apart**, so prefer the one with fewer parameters. Distributions that can't
+be fitted to your data (a negative time, say) are skipped, and the ranking says
+which and why. Reliafy also warns when a three-parameter winner rests on very
+few failures.
 
 If you do want to choose: **Weibull** is the workhorse and handles wear-out,
 infant mortality and random failure through its shape parameter. **Exponential**
