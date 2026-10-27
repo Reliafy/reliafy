@@ -1040,7 +1040,6 @@ def seed_samples(db) -> None:
             logger.warning("Failed to seed sample model %r: %s", spec["id"], exc)
 
     _seed_strategy_analyses(db)
-    _seed_rcm_study(db)
     _seed_fleet(db)
 
     for spec in SAMPLE_RBDS:
@@ -1219,45 +1218,9 @@ def seed_samples(db) -> None:
     _seed_tracked_fleet(db)
 
 
-def _seed_rcm_study(db) -> None:
-    """Sample RCM study wiring every sample artifact together as evidence.
-
-    One decision — the legacy run-to-failure plan on the wheel bearings — is
-    deliberately linked to a model that CONTRADICTS it (the bearing Weibull
-    fits wear-out, β ≈ 2.5): the study opens with a red badge that demos the
-    live evidence validation.
-    """
-    from backend.schema import RcmStudy
-
-    if db.rcm_studies.find_one({"_id": "sample-rcm-truck"}) is not None:
-        return
-    try:
-        # The same content as the sample truck a workspace can copy onto its tree.
-        from backend.maintenance.templates import sample_truck_functions
-
-        functions = sample_truck_functions()
-        from backend.services import rcm as rcm_service
-
-        study = RcmStudy(
-            id="sample-rcm-truck",
-            name="Delivery truck — RCM demo (sample)",
-            system="Delivery truck (brakes + drivetrain)",
-            description=(
-                "A worked RCM study with every decision linked to its evidence. "
-                "Note the legacy run-to-failure decision flagged as CONTRADICTED — "
-                "its own non-repairable model shows wear-out, not random failure."
-            ),
-            owner_id=SAMPLE_OWNER,
-            functions=rcm_service.clean_tree(functions),
-        )
-        db.rcm_studies.insert_one(to_doc(study))
-        logger.info("Seeded sample RCM study 'sample-rcm-truck'.")
-    except Exception as exc:  # pragma: no cover - defensive; never block boot
-        logger.warning("Failed to seed sample RCM study: %s", exc)
-
-
 def _seed_strategy_analyses(db) -> None:
-    """Sample saved strategy analyses (evidence for the sample RCM study).
+    """Sample saved strategy analyses (the evidence the sample truck's RCM
+    links: backend/maintenance/templates.py).
 
     The bearing replacement analysis reads the just-seeded bearing model's
     fitted parameters, so this runs after the SAMPLE_MODELS loop.
@@ -1334,7 +1297,7 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
 # Every collection that can hold a shared-sample artifact.
 _SAMPLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models", "tracked_items",
-    "tracked_fleets", "rcm_studies", "strategy_analyses", "fleets",
+    "tracked_fleets", "strategy_analyses", "fleets",
 )
 
 

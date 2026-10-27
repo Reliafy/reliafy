@@ -429,8 +429,7 @@ A move is refused, with a message saying what to do instead, when:
   inspection findings recorded against it, or other modes were merged into it:
   that history belongs to the old position, so add the mode on the new one
   instead;
-- the target already has a live mode of the same name, or the same RCM study's
-  mode;
+- the target already has a live mode of the same name;
 - a task has an open work order (close or cancel it first) or work done on it
   (retire it and add a new task on the target); cancelled work orders don't
   count;
@@ -440,23 +439,20 @@ A move is refused, with a message saying what to do instead, when:
 - a task prevents a failure mode that isn't moving with it and isn't on the
   target. It isn't unlinked silently: move the mode (its tasks go with it), or
   unlink the task first;
-- the target already has the task for the same RCM decision;
 - only an item's or a location's task: those don't move between positions.
 
 After a move, failures and work orders on the new position name the mode as
 usual (`_mode_ref` finds it there); naming it on the old position says where it
-went. Applying the RCM study it came from to the old position again adds the
-study's modes back there, as for any position without them.
+went.
 
 The events are new types, so no existing projection changes meaning and
 `PROJECTION_VERSION` stays. Code from before them logs an event it doesn't
 know and passes over it (see `GraphStore._project`), so during a rolling
 deploy an older instance shows the thing where it was until it's replaced.
 
-The evidence check is the RCM study's own (`backend/services/rcm.py`): done on
-every read, never stored, so a decision gives the same status on a position
-as in a study. One difference: a study's interval with no unit skips the unit
-check, while on a position the task runs in days, so days are checked.
+The evidence check (`backend/maintenance/rcm_decisions.py`, applied by
+`rcm_graph.resolve`) is done on every read, never stored. A task with no unit
+given runs in days, so days are checked against the linked analysis's unit.
 
 The app's Assets › Explorer shows it on its RCM tab, where the asset tree and
 the RCM are one table: the tree (by positions) is the first column, each
@@ -471,8 +467,8 @@ analysed" in the tree.
 failure mode) to one position's RCM: `POST
 /api/maintenance/positions/{id}/rcm/import/preview` (nothing written) and
 `…/rcm/import`, MCP `uploads import_excel target=rcm position_id`, and the
-RCM tab's "Import worksheet…". The sheet is read and mapped by the RCM study
-import's own parser (`services/rcm_import.build_tree`), and written through the
+RCM tab's "Import worksheet…". The sheet is read and mapped by the worksheet
+parser (`services/rcm_import.build_tree`), and written through the
 service's methods (`add_function`, `add_functional_failure`,
 `add_failure_mode`, `update_failure_mode`, `decide_failure_mode`), so it is
 ordinary events and no new event type.
@@ -487,28 +483,14 @@ nothing is written. Limits: 5,000 rows read, 500 new failure modes per import
 (each is a few events); a failure mode over 200 characters gets a shortened
 name with the full text in its notes.
 
-### Moving RCM studies onto the positions
+### Fields left by the earlier RCM studies
 
-`backend/maintenance/rcm_migrate.py`, run by
-`python -m backend.scripts.migrate_rcm_studies`:
-
-1. Run it without `--apply` first. That is a dry run: the same steps on a
-   throwaway in-memory copy of the graph, printing what each study would
-   add. Nothing is written to the log or to the studies.
-2. Read the output, then run it again with `--apply` (`--owner` or `--study`
-   to do a few first).
-
-For each study it finds the positions the study was applied to (by the
-`study_id` and `rcm_mode_id` its failure modes and tasks carry, in any
-workspace) or, if it was never applied, makes a position for it in its
-owner's workspace (never for a sample). It applies the study once more (every
-mode and task, each decision with its evidence), adds the study's functions
-and functional failures, puts each failure mode under its functional failure,
-and puts the study's description in the position's operating context (the
-description stays a short line on what it is). What's already there is
-matched, so a second run changes nothing. The study document is kept as it
-was, as read-only history, and marked `migrated_to` (the position): it can't
-be edited or applied again after that.
+Before RCM was built on the positions, it was kept in separate study
+documents and applied onto positions. Events written then (`function.added`,
+`functional_failure.added`, `failure_mode.added`, `task.added`) may carry
+`study_id` and `rcm_function_id` / `rcm_failure_id` / `rcm_mode_id` fields.
+The projectors tolerate them, nothing reads or writes them any more, and the
+log is never rewritten, so those events replay as they always did.
 
 ### A position's description and operating context
 
@@ -518,13 +500,40 @@ it runs). Both are plain text of at most 4,000 characters. `operating_context`
 is optional on `position.created` (left out when empty, so older events replay
 to the same node) and set or cleared ("") through `position.updated`.
 
-Studies moved before the field existed left their description appended to the
-position's description, after a blank line.
-`python -m backend.scripts.move_operating_context --org ORG POSITION_ID ...`
-moves that paragraph into the operating context: by default the text after the
-first blank line, or with `--study STUDY_ID` the text that equals that study's
-description. Like the migration it's a dry run on a throwaway copy unless
-`--apply`, and a second run changes nothing.
+### Retiring the rest of the tree, and restoring anything
+
+Nothing is erased. Every level can be taken out of use with a flag event and
+brought back with its reverse: `location.retired`, `item.retired`,
+`part.retired`, `manufacturer.retired` and `point.retired` join the retires
+that were there (positions, tasks, failure modes, classes, conditions, groups,
+connections), each projected by `_flag("retired")`; `<node>.restored`
+(`position`, `location`, `item`, `task`, `failure_mode`, `part`,
+`manufacturer`, `point`, `item_class`, `condition`, `group`, `interface`) and
+`document.restored` (a link; a deleted PDF's bytes are gone) are projected by
+`_unflag`, which turns the flag off and keeps `restored_on`. The service
+refuses a retire while something depends on the thing (fitted, located,
+placed, stocked, listed, an open work order, a task going by a point) and a
+restore while what it needs is still retired (its parent, its subject, its
+failure mode), so the graph is consistent after either. `positions retire` and
+`locations retire` take `cascade`: the live subtree goes too, deepest first,
+after every node is checked. Reads leave retired locations, items, parts,
+makers and points out of lists and matches; a direct read answers with
+`retired: true`.
+
+Edits that had no event before: `interface.updated` (kind, medium, name,
+rating, and the position that realises it), `document.updated` (title, kind),
+`photo.updated` (caption), `coordinates.cleared`, `part.supersession_cleared`
+and `parts.not_interchangeable`. All of these are new event types:
+`PROJECTION_VERSION` stays, and code from before them passes over each
+(logged, skipped) and projects the rest.
+
+`maintenance_apply` (backend/maintenance/apply.py) runs a list of the typed
+tools' actions as one call. Every operation first runs on a throwaway copy of
+the organisation's graph (`store.scratch_copy`: an in-memory `GraphStore`
+filled from `snapshot(org)`, with an empty log of its own), so a failure
+anywhere refuses the batch before the live log is touched; then the same
+operations run on the live store in order. The log records each operation's
+events as it always would; a batch isn't one event.
 
 ## Making Neo4j the primary store later
 

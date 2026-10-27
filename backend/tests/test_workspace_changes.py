@@ -79,14 +79,13 @@ def test_new_and_changed_items_are_the_workspaces_own(client):
     put(db, "models", "pump-model", A, ago(days=5), results=WEIBULL_RESULTS)
     put(db, "rbds", "skid-diagram", A, ago(days=60), ago(days=3), updated_by={"uid": B, "name": "Bob"})
     put(db, "datasets", "old-data", A, ago(days=60))
-    put(db, "rcm_studies", "old-study", A, ago(days=40), ago(days=40))
     put(db, "models", "someone-elses", C, ago(days=1))
     put(db, "models", "a-sample", SAMPLE_OWNER, ago(days=1))
     out = changes(client)
     assert [(r["collection"], r["id"], r["url"]) for r in out["new"]] == [
         ("models", "pump-model", "/models/m/pump-model")]
     assert [(r["id"], r.get("by")) for r in out["changed"]] == [("skid-diagram", "Bob")]
-    assert out["counts"]["items"] == 4
+    assert out["counts"]["items"] == 3
     assert out["sentence"] == "In the last 30 days: 1 item was added and 1 changed."
     # A shorter period leaves the five-day-old model out.
     short = changes(client, days=4)
@@ -273,31 +272,45 @@ def test_fleet_alerts_that_fired_in_the_period(client):
 
 # ---- RCM evidence ----------------------------------------------------------------------
 
-def test_rcm_evidence_whose_model_was_refitted_shows_its_status_before_and_now(client):
+def test_rcm_evidence_whose_model_was_refitted_shows_its_status_before_and_now(client, monkeypatch):
+    """The RCM lives on the asset tree (Reliafy Maintenance): a decision there whose
+    model was refitted in the period shows its evidence status before and now."""
+    from backend import config
+    from backend.maintenance.service import PROJECTORS, Maintenance
+    from backend.maintenance.store import GraphStore
+    from backend.routers import maintenance as maintenance_router
     from backend.services import workspace_changes as wc
 
     db = client.db
+    monkeypatch.setattr(config, "MAINTENANCE_ENABLED", True)
+    monkeypatch.setattr(config, "MAINTENANCE_EMAILS", {"a@x.com"})
+    monkeypatch.setattr(maintenance_router, "_store", GraphStore(":memory:", PROJECTORS))
     wear_out = {**WEIBULL_RESULTS, "randomness": {"verdict": "wear_out", "beta": 3.1, "beta_ci": [2.2, 4.4]}}
     random_ = {**WEIBULL_RESULTS, "randomness": {"verdict": "random", "beta": 1.1, "beta_ci": [0.7, 1.6]}}
     put(db, "models", "seal-model", A, ago(days=90), results=wear_out)
     put(db, "models", "other-model", A, ago(days=90), results=random_)
-    tree = [{"id": "f1", "text": "Pump water", "failures": [{"id": "ff1", "text": "No flow", "modes": [
-        {"id": "m1", "text": "Seal leak", "consequence": "operational",
-         "decision": {"outcome": "rtf", "rtf_basis": "random", "evidence": {"type": "model", "id": "seal-model"}}},
-        {"id": "m2", "text": "Bearing", "consequence": "operational",
-         "decision": {"outcome": "rtf", "rtf_basis": "random", "evidence": {"type": "model", "id": "other-model"}}},
-    ]}]}]
-    put(db, "rcm_studies", "pump-study", A, ago(days=90), functions=tree)
+    m = Maintenance(maintenance_router._store, A, A)
+    pid = m.create_position("Pump")["id"]
+    ff = m.add_functional_failure(m.add_function(pid, "Pump water")["id"], "No flow")
+    for text, model_id in (("Seal leak", "seal-model"), ("Bearing", "other-model")):
+        mode = m.add_failure_mode(pid, text, functional_failure_id=ff["id"])
+        m.decide_failure_mode(mode["id"], "operational", {"outcome": "rtf", "rtf_basis": "random",
+                                                           "evidence": {"type": "model", "id": model_id}})
     wc.record_refit(db, "seal-model", A, random_, wear_out, now=ago(days=4))
     out = changes(client)
     (row,) = out["rcm_evidence"]
     assert (row["mode"], row["status_before"], row["status"], row["status_changed"]) == (
         "Seal leak", "supported", "contradicted", True)
-    assert row["url"] == "/maintenance/rcm/pump-study" and row["evidence_url"] == "/models/m/seal-model"
+    assert (row["position_id"], row["position"]) == (pid, "Pump")
+    assert row["url"] == wc.RCM_URL + pid and row["evidence_url"] == "/models/m/seal-model"
     # The refit itself reports the pattern it changed.
     (refit,) = out["refits"]
     assert {"measure": "Failure pattern", "before": "random", "after": "wear-out"} in refit["moved"]
     assert "evidence changed on 1 RCM decision" in out["sentence"]
+
+    # Without Reliafy Maintenance there is no RCM to read: no rows, no error.
+    monkeypatch.setattr(config, "MAINTENANCE_ENABLED", False)
+    assert changes(client)["rcm_evidence"] == [] and changes(client)["counts"]["rcm_evidence"] == 0
 
 
 # ---- Simulation runs -------------------------------------------------------------------

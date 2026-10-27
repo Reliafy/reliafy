@@ -1,4 +1,4 @@
-"""Turn an FMEA / RCM spreadsheet into an RCM study worksheet.
+"""Turn an FMEA / RCM spreadsheet into an RCM worksheet tree.
 
 Typical FMEA and RCM worksheets are one row per failure mode, with the
 function and functional failure written once and left blank (or merged) on
@@ -9,7 +9,8 @@ the rows below. :func:`build_tree` reads such a table — from any source, via
      "mode": "Failure mode", "effects": "Effect", ...}
 
 into the ``functions → failures → modes`` tree that
-:func:`backend.services.rcm.clean_tree` validates:
+:func:`backend.maintenance.rcm_decisions.clean_tree` validates, and that
+:mod:`backend.maintenance.rcm_sheet` then adds to a position:
 
 * ``mode`` is the only required column; ``function`` / ``failure`` carry down
   from the row above when blank, and when not mapped at all every mode goes
@@ -30,7 +31,7 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
-from backend.services import rcm
+from backend.maintenance import rcm_decisions as rcm
 from backend.services.excel import has_words as _has
 from backend.services.excel import norm
 

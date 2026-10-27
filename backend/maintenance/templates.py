@@ -9,8 +9,7 @@ bearing Weibull shows wear-out), so the evidence check shows red on purpose.
 
 A copy is made through the ordinary service methods, so it is events like
 any change a person makes, in the caller's own workspace only. Nothing is
-seeded for anyone who never asks. The read-only sample RCM study is seeded
-from the same content (backend/services/samples.py), so the two can't drift.
+seeded for anyone who never asks.
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ SAMPLE_TRUCK_DESCRIPTION = (
 )
 
 # Functions › functional failures › failure modes, each mode with its decision.
-# The ids are the sample study's (a copy onto the tree gets new ones).
+# The ids are the template's own (a copy onto the tree gets new ones).
 SAMPLE_TRUCK_FUNCTIONS = [
     {
         "id": "sample-rcm-f1",

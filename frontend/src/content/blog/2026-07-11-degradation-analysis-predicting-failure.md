@@ -149,9 +149,9 @@ version](/blog/reliafy-is-open-source) has no limits at all.
 
 Degradation analysis is the quantitative backbone of **on-condition
 maintenance** — the RCM outcome where you monitor a measurable parameter and
-act before functional failure. If you're building an RCM study in Reliafy,
+act before functional failure. If you're building RCM on your asset tree in Reliafy,
 an on-condition decision links directly to the degradation model as its
-evidence: the study can *show* that the failure mode develops measurably and
+evidence: the decision can *show* that the failure mode develops measurably and
 that the monitoring interval makes sense, rather than asserting it.
 
 It also plays well with the classical tools rather than replacing them. The

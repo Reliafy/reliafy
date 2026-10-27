@@ -3,8 +3,7 @@
 A failure mode's decision on the graph links the saved model or analysis that
 justifies it (``evidence`` on the mode). The check is
 ``backend/maintenance/rcm_decisions.py`` ``resolve_decision``: done on every
-read, never stored. The older RCM studies use the same rules from there, so
-both give the same answer for the same decision and evidence.
+read, never stored.
 """
 
 from __future__ import annotations

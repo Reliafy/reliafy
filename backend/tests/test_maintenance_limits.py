@@ -247,22 +247,14 @@ def test_malformed_requests_are_refused_cleanly(store):
         m.update_task(tid, checklist=7)
 
 
-class _Study:
-    def __init__(self, functions):
-        self.functions, self.system, self.name, self.id = functions, "Pool", "Pool RCM", "study-x"
-
-
-def test_rcm_modes_without_an_id_or_with_a_bad_interval(store):
+def test_a_decision_with_a_bad_interval_is_refused(store):
     m = Maintenance(store, UID)
     pos = m.create_position("Pool")
-    no_id = _Study([{"text": "Pump", "failures": [{"text": "No flow", "modes": [
-        {"text": "Blocked", "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks"}}]}]}])
-    assert m.apply_rcm(pos["id"], no_id)["failure_modes_added"] == 0
-    bad = _Study([{"text": "Pump", "failures": [{"text": "No flow", "modes": [
-        {"id": "m1", "text": "Blocked", "decision": {"outcome": "on_condition", "interval": "1e400",
-                                                     "interval_unit": "weeks"}}]}]}])
+    mode = m.add_failure_mode(pos["id"], "Blocked")
     with pytest.raises(Invalid):
-        m.apply_rcm(pos["id"], bad)
+        m.decide_failure_mode(mode["id"], decision={"outcome": "on_condition", "interval": "1e400",
+                                                    "interval_unit": "weeks"})
+    assert m.position(pos["id"])["tasks"] == []
 
 
 def test_api_limits_answer_with_their_status(api, monkeypatch):

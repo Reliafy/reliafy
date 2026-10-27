@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Best fit takes a score: `reliafy fit FILE --criterion bic` (or `criterion=`
   on `life_data_analysis fit` / `models fit`; aic, aic_c, bic or neg_ll). The
@@ -10,12 +10,39 @@
   `loglogistic_aft`, `loglogistic_po` and `loglogistic_ah`, and regression
   fits report `diagnostics.model_checks`. No client code changed beyond the
   `--criterion` flag: the rest comes from the server's tool list.
-- The `rcm` tool (study-based RCM worksheets as JSON) is gone, with `list`
-  kind `rcm_studies` and `get` kind `rcm_study`. RCM is built on a position
-  (`maintenance_failure_modes`), and a worksheet file goes in with `reliafy
-  import excel FILE --target rcm --position ID`. `--target rcm` now needs the
-  position. This removes a tool, so release the client with the app that
-  removes it.
+- `maintenance_apply`: many Reliafy Maintenance changes in one call. A list
+  of the `maintenance_<area>` actions (`{"do": "failure_modes.add", "args":
+  {...}, "ref": "m1"}`), run in order with `@ref`s between them, checked on
+  a copy of the workspace before anything is written; deletes name what they
+  delete (`confirm`); the answer has every operation's result and the reverse
+  operations (`undo`). `Client.apply(operations, dry_run=…, on_error=…,
+  idempotency_key=…)`, and `reliafy apply ops.json [--run] [--key K]` (a dry
+  run unless `--run`; the undo list is written beside the file).
+- Every level of the maintenance tree can be taken out of use and brought
+  back: `maintenance_locations retire / restore`, `maintenance_items create /
+  retire / restore`, `maintenance_parts retire / restore / unlink`,
+  `maintenance_manufacturers retire / restore`, `maintenance_measurements
+  retire_point / restore_point`, `maintenance_topology update / reconnect /
+  retire_group / restore_group`, `maintenance_positions restore` (and `retire
+  --cascade`), `maintenance_tasks restore`, `maintenance_failure_modes
+  restore`, `maintenance_item_classes restore / restore_condition`,
+  `maintenance_attachments update_document / restore_document / update_photo
+  / clear_coordinates`; `maintenance_parts update --clear` and `reorder
+  --clear-reorder-point`; `maintenance_list --kind events`. No client code
+  changed for these: the commands come from the server's tool list.
+
+- RCM studies are gone from Reliafy: RCM lives on the asset tree, on each
+  position. The `rcm` tool (study-based RCM worksheets as JSON) is gone, with
+  `list` kind `rcm_studies` and `get` kind `rcm_study`. RCM is built on a
+  position (`maintenance_failure_modes`), and a worksheet file goes in with
+  `reliafy import excel FILE --target rcm --position ID`. `--target rcm` now
+  needs the position.
+- `sharing create_link` and `reports` no longer take kind `rcm_study`, and
+  `maintenance_positions from_rcm` / `apply_rcm` are gone: RCM is built on
+  the position (`maintenance_failure_modes`, or `maintenance_positions
+  add_sample_truck` for the sample) or imported from a worksheet.
+- These remove tools and actions, so this client ships with the app release
+  that removes them, never before.
 - `reliafy import excel FILE --target rcm --position ID` (and
   `Client.import_excel(path, target="rcm", position_id=…)`) adds an FMEA /
   RCM worksheet, .xlsx or .csv, to a Reliafy Maintenance position's RCM. It

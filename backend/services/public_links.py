@@ -3,7 +3,7 @@
 A link is (token → collection, artifact_id, grantor). Anyone with the URL
 can view the artifact — no account needed — through a *guest* access
 context scoped to the grantor's ownership, so referenced artifacts (a
-model's dataset, a study's evidence) resolve exactly as they do for the
+model's dataset, a diagram's models) resolve exactly as they do for the
 owner, while every write path sees an owner that can never match.
 
 Tokens are unguessable (secrets.token_urlsafe) and revocable; the link dies
@@ -50,7 +50,6 @@ PUBLIC_COLLECTIONS = {
     "datasets",
     "degradation_models",
     "strategy_analyses",
-    "rcm_studies",
     "fleets",
     "rbds",
     "recurrent_models",

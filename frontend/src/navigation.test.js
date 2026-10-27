@@ -70,7 +70,7 @@ test("each entry's children, as agreed", () => {
   const kids = (id) => live.find((e) => e.id === id).children?.map((c) => c.label) || [];
   assert.deepEqual(kids("systems"), ["RBDs", "Simulation runs", "Product structure"]);
   assert.deepEqual(kids("assets"), ["Explorer", "Parts and stock", "Classes"]);
-  assert.deepEqual(kids("maintenance"), ["RCM studies"]);
+  assert.deepEqual(kids("maintenance"), []);
   assert.deepEqual(kids("data"), []);
   assert.deepEqual(kids("models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
     "Condition and life"]);
@@ -91,14 +91,11 @@ test("an entry's landing page is never also one of its children", () => {
   }
 });
 
-test("without Reliafy Maintenance: no Assets, and Maintenance is the RCM studies", () => {
+test("without Reliafy Maintenance: no Assets and no Maintenance (the RCM is on the asset tree)", () => {
   const none = liveEntries({});
   assert.ok(!ids(none).includes("assets"));
+  assert.ok(!ids(none).includes("maintenance"));
   assert.ok(!ids(none).includes("agent"));
-  const maint = none.find((e) => e.id === "maintenance");
-  assert.equal(maint.label, "Maintenance");
-  assert.equal(maint.to, "/maintenance/rcm");
-  assert.equal(maint.children, undefined);
   // Product structure is Reliafy Maintenance's parts catalogue.
   assert.ok(!everyLink(none).includes("/systems/structure"));
   // With it, Maintenance opens on the due tasks and work orders.
@@ -224,15 +221,14 @@ test("a page lights its entry, and its child, on landing, child and detail pages
   assert.deepEqual(at("/asset-register/items/i1"), ["assets", "Explorer"]);
   assert.deepEqual(at("/asset-register/parts/x"), ["assets", "Parts and stock"]);
   assert.deepEqual(at("/maintenance/work-orders/w1"), ["maintenance", null]);
-  assert.deepEqual(at("/maintenance/rcm/s1"), ["maintenance", "RCM studies"]);
   assert.deepEqual(at("/reports"), ["reports", null]);
   assert.deepEqual(at("/settings"), [null, null]);
   // A prefix of a word isn't a match.
   assert.deepEqual(at("/modelsx"), [null, null]);
   const models = live.find((e) => e.id === "models");
   assert.ok(entryActive(models, "/models"));
-  // Without Reliafy Maintenance, an RCM study lights Maintenance.
-  assert.equal(activeEntry(liveEntries({}), "/maintenance/rcm/s1").id, "maintenance");
+  // Without Reliafy Maintenance there is no Maintenance entry to light.
+  assert.equal(activeEntry(liveEntries({}), "/maintenance/work-orders/w1"), null);
 });
 
 test("a page's breadcrumbs: its entry, then its child, from the live menu", () => {
@@ -241,18 +237,15 @@ test("a page's breadcrumbs: its entry, then its child, from the live menu", () =
   assert.deepEqual(crumbsFor(live, "models", "/models/life"), [{ label: "Model", to: "/models" }]);
   assert.deepEqual(crumbsFor(live, "models", "/models/m/x", "/models/life"),
     [{ label: "Model", to: "/models" }, { label: "Non-repairable", to: "/models/life" }]);
-  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/rcm/s", "/maintenance/rcm"),
-    [{ label: "Maintenance", to: "/maintenance" }, { label: "RCM studies", to: "/maintenance/rcm" }]);
-  // Without Reliafy Maintenance, Maintenance is the RCM studies: one crumb, to a page the user has.
+  assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/work-orders/w"), [{ label: "Maintenance", to: "/maintenance" }]);
+  // Without Reliafy Maintenance there is no Maintenance entry: no crumb to a page the user doesn't have.
   const none = liveEntries({});
-  assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/rcm"), []);
+  assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/work-orders/w"), []);
   // Systems opens on its RBDs: a diagram's crumb is RBDs alone; a run's starts at Systems.
   assert.deepEqual(crumbsFor(live, "systems", "/systems/rbds", "/systems/rbds"), []);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/b/x", "/systems/rbds"), [{ label: "RBDs", to: "/systems/rbds" }]);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/runs/x", "/systems/runs"),
     [{ label: "Systems", to: "/systems/rbds" }, { label: "Simulation runs", to: "/systems/runs" }]);
-  assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/rcm/s", "/maintenance/rcm"),
-    [{ label: "Maintenance", to: "/maintenance/rcm" }]);
   assert.deepEqual(crumbsFor(none, "assets", "/asset-register/explorer"), []);
   assert.deepEqual(crumbsFor(live, "assets", "/asset-register/explorer"), [{ label: "Assets", to: "/asset-register" }]);
 });
@@ -281,7 +274,8 @@ test("Home leads with the primary role's cards; none without roles", () => {
 
 test("saved items open at their new addresses", () => {
   assert.equal(itemPath("models", "m 1"), "/models/m/m%201");
-  assert.equal(itemPath("rcm_studies", "s"), "/maintenance/rcm/s");
+  // RCM studies are gone: the RCM is on the asset tree, not a saved item of its own.
+  assert.equal(itemPath("rcm_studies", "s"), null);
   assert.equal(itemPath("fleets", "f"), "/forecasts/f");
   assert.equal(itemPath("rbds", "r"), "/systems/b/r");
   assert.equal(itemPath("reports", "r"), null);
@@ -332,9 +326,12 @@ const OLD_TO_NEW = [
   ["/strategy/tracking", "/risk"],
   ["/strategy/tracking/x", "/risk"],
   ["/strategy/demonstration-test", "/strategy/test-planning"],
-  ["/rcm", "/maintenance/rcm"],
-  ["/rcm/studies", "/maintenance/rcm"],
-  ["/rcm/studies/x", "/maintenance/rcm/x"],
+  // The RCM studies, at /rcm and then under Maintenance: all to the Explorer's RCM tab (no study survives).
+  ["/rcm", "/asset-register/explorer?tab=rcm"],
+  ["/rcm/studies", "/asset-register/explorer?tab=rcm"],
+  ["/rcm/studies/x", "/asset-register/explorer?tab=rcm"],
+  ["/maintenance/rcm", "/asset-register/explorer?tab=rcm"],
+  ["/maintenance/rcm/x", "/asset-register/explorer?tab=rcm"],
   ["/maintenance/positions/x", "/asset-register/positions/x"],
   ["/maintenance/items", "/asset-register/explorer?arrange=items"],
   ["/maintenance/items/x", "/asset-register/items/x"],
@@ -369,6 +366,8 @@ test("an earlier address keeps its query: the target's first, then the rest", ()
   // The old Positions, Items and Locations pages, with what their addresses carried.
   assert.equal(movedHref("/asset-register/explorer?arrange=positions", "?place=none"),
     "/asset-register/explorer?arrange=positions&place=none");
+  // An RCM study's address from an email: the tab first, then the rest.
+  assert.equal(movedHref("/asset-register/explorer?tab=rcm", "?from=email"), "/asset-register/explorer?tab=rcm&from=email");
   assert.equal(movedHref("/asset-register/explorer?arrange=positions", "?arrange=flat&sel=p1"),
     "/asset-register/explorer?arrange=flat&sel=p1");
   assert.equal(movedHref("/asset-register/explorer?arrange=locations", "?sel=l1", "#top"),
@@ -412,7 +411,7 @@ test("not-yet-built entries show only where the menu preview is on", () => {
   assert.deepEqual(kids(plain, "systems"), ["RBDs", "Simulation runs", "Product structure"]);
   assert.deepEqual(kids(preview, "systems"), ["RBDs", "Simulation runs", "Product structure", "Fault trees", "FMECA"]);
   assert.deepEqual(kids(preview, "assets"), ["Explorer", "Parts and stock", "Classes", "Fleets"]);
-  assert.deepEqual(kids(preview, "maintenance"), ["RCM studies", "Field inbox"]);
+  assert.deepEqual(kids(preview, "maintenance"), ["Field inbox"]);
   assert.deepEqual(kids(preview, "data"), ["Library"]);
   assert.deepEqual(kids(plain, "data"), []);
 });

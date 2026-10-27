@@ -10,11 +10,14 @@ therefore never stored; they are recomputed from the linked artifacts each
 time the RCM is read.
 
 The maintenance tree (``backend/maintenance/service.py`` and
-``rcm_graph.py``) owns these rules. The older RCM study service
-(``backend/services/rcm.py``) imports them from here, so there is one copy.
+``rcm_graph.py``) owns these rules, and a worksheet import
+(``backend/services/rcm_import.py``) validates what it builds with them, so
+there is one copy.
 """
 
 from __future__ import annotations
+
+import uuid
 
 from backend.services import degradation as degradation_service
 from backend.services import models as models_service
@@ -24,13 +27,75 @@ from backend.units import unit_in_text
 
 
 class RcmValidationError(ValueError):
-    """Raised when a worksheet tree fails validation (HTTP 422)."""
+    """Raised when a decision or a worksheet tree fails validation (HTTP 422)."""
 
 
 CONSEQUENCES = ("safety", "environmental", "operational", "non_operational", "hidden")
 OUTCOMES = ("on_condition", "fixed_interval", "rtf", "failure_finding", "redesign", "accept")
 RTF_BASES = ("random", "uneconomic")
 EVIDENCE_TYPES = ("model", "strategy_analysis", "degradation_model")
+
+# The vocabulary as the app shows it (GET /api/maintenance/rcm/options): each
+# consequence and outcome with its hint. Suggestions follow the classic RCM
+# logic: hidden failures need failure-finding; safety and environmental
+# consequences demand a proactive task or redesign; economic consequences
+# allow run-to-failure when the numbers support it.
+CONSEQUENCE_OPTIONS = [
+    {"id": "safety", "label": "Safety",
+     "hint": "Could hurt someone. A proactive task must reduce the risk to a tolerable level — otherwise redesign is compulsory.",
+     "suggested_outcomes": ["on_condition", "fixed_interval", "redesign"]},
+    {"id": "environmental", "label": "Environmental",
+     "hint": "Could breach an environmental standard. Treat like safety: proactive task or redesign.",
+     "suggested_outcomes": ["on_condition", "fixed_interval", "redesign"]},
+    {"id": "operational", "label": "Operational",
+     "hint": "Affects output or quality. A proactive task must cost less than the consequences it prevents — otherwise run-to-failure.",
+     "suggested_outcomes": ["on_condition", "fixed_interval", "rtf"]},
+    {"id": "non_operational", "label": "Non-operational",
+     "hint": "Only the repair cost matters. Proactive maintenance rarely pays — run-to-failure unless the numbers say otherwise.",
+     "suggested_outcomes": ["rtf", "fixed_interval", "accept"]},
+    {"id": "hidden", "label": "Hidden",
+     "hint": "The failure is invisible in normal operation (protective devices). Schedule failure-finding checks, or redesign to make it evident.",
+     "suggested_outcomes": ["failure_finding", "on_condition", "redesign"]},
+]
+
+OUTCOME_OPTIONS = [
+    {"id": "on_condition", "label": "On-condition (monitor)",
+     "expected_evidence": "degradation_model",
+     "fields": ["task", "interval"],
+     "hint": "Monitor a degradation signal and act before the threshold. Link the degradation model that shows the failure develops measurably."},
+    {"id": "fixed_interval", "label": "Fixed-interval replacement",
+     "expected_evidence": "strategy_analysis",
+     "fields": ["task", "interval"],
+     "hint": "Replace or restore on a schedule. Link the optimal-replacement analysis showing the interval is cost-optimal."},
+    {"id": "rtf", "label": "Run-to-failure",
+     "expected_evidence": None,  # depends on rtf_basis
+     "fields": ["rtf_basis", "task"],
+     "hint": "Let it fail, then fix it. Justify with either a non-repairable model showing random failures, or a replacement analysis showing prevention isn't economic."},
+    {"id": "failure_finding", "label": "Failure-finding task",
+     "expected_evidence": "strategy_analysis",
+     "fields": ["task", "interval"],
+     "hint": "Periodically check a hidden function. Link the failure-finding-interval analysis that sets the check frequency."},
+    {"id": "redesign", "label": "Redesign",
+     "expected_evidence": None, "fields": ["notes"],
+     "hint": "No suitable task exists — change the design (or the operating context) instead."},
+    {"id": "accept", "label": "Accept risk / no scheduled maintenance",
+     "expected_evidence": None, "fields": ["notes"],
+     "hint": "The consequences are tolerable and no task is worthwhile. Document why."},
+]
+
+RTF_BASIS_OPTIONS = [
+    {"id": "random", "label": "Failures are random",
+     "expected_evidence": "model",
+     "hint": "Evidence: a Weibull fit whose β confidence interval contains 1, or an Exponential fit."},
+    {"id": "uneconomic", "label": "Prevention isn't economic",
+     "expected_evidence": "strategy_analysis",
+     "hint": "Evidence: an optimal-replacement analysis showing no beneficial interval."},
+]
+
+
+def options() -> dict:
+    """The decision vocabulary with its hints, for the decision dialog."""
+    return {"consequences": CONSEQUENCE_OPTIONS, "outcomes": OUTCOME_OPTIONS, "rtf_bases": RTF_BASIS_OPTIONS}
 
 # Common aliases so "hr", "hrs" and "hours" agree. Unmapped units compare
 # case-insensitively as-is.
@@ -133,13 +198,72 @@ def _clean_decision(decision) -> dict | None:
     return cleaned
 
 
+# ---- A worksheet tree ----------------------------------------------------------
+# The shape a spreadsheet import builds before it goes onto a position:
+# functions › failures › modes, each mode with its consequence and decision.
+
+def _require_text(node: dict, what: str) -> str:
+    text = str(node.get("text") or "").strip()
+    if not text:
+        raise RcmValidationError(f"Every {what} needs a description.")
+    return text
+
+
+def _node_id(node: dict) -> str:
+    nid = node.get("id")
+    return nid if isinstance(nid, str) and nid.strip() else uuid.uuid4().hex
+
+
+def clean_tree(functions) -> list[dict]:
+    """Validate and normalise a worksheet tree (functions › failures › modes)."""
+    if not isinstance(functions, list):
+        raise RcmValidationError("functions must be a list.")
+    out = []
+    for fn in functions:
+        cleaned_fn = {
+            "id": _node_id(fn),
+            "text": _require_text(fn, "function"),
+            "failures": [],
+        }
+        standard = str(fn.get("standard") or "").strip()
+        if standard:
+            cleaned_fn["standard"] = standard
+        for failure in fn.get("failures") or []:
+            cleaned_failure = {
+                "id": _node_id(failure),
+                "text": _require_text(failure, "functional failure"),
+                "modes": [],
+            }
+            for mode in failure.get("modes") or []:
+                consequence = mode.get("consequence") or None
+                if consequence is not None and consequence not in CONSEQUENCES:
+                    raise RcmValidationError(f"Unknown consequence '{consequence}'.")
+                cleaned_mode = {
+                    "id": _node_id(mode),
+                    "text": _require_text(mode, "failure mode"),
+                    "consequence": consequence,
+                    "decision": _clean_decision(mode.get("decision")),
+                }
+                effects = str(mode.get("effects") or "").strip()
+                if effects:
+                    cleaned_mode["effects"] = effects
+                # Free-text notes on the mode itself (e.g. FMEA scores kept
+                # from a spreadsheet import); a decision's notes live on it.
+                notes = str(mode.get("notes") or "").strip()
+                if notes:
+                    cleaned_mode["notes"] = notes
+                cleaned_failure["modes"].append(cleaned_mode)
+            cleaned_fn["failures"].append(cleaned_failure)
+        out.append(cleaned_fn)
+    return out
+
+
 # ---- Evidence resolution (live validation) -----------------------------------
 
 def evidence_fetcher(db, owner_id, hidden=frozenset()):
     """fetch(type, id): the linked model or analysis a reader (``owner_id``) can
-    open, or None; each looked up once. Shared by studies and the RCM on the
-    maintenance positions (backend/maintenance/rcm_graph.py), so both check
-    evidence the same way."""
+    open, or None; each looked up once (backend/maintenance/rcm_graph.py reads
+    a whole worksheet with one)."""
     memo: dict = {}
 
     def fetch(etype: str, eid: str):
@@ -315,7 +439,7 @@ def _link_path(etype: str, artifact_id: str) -> str:
     }[etype]
 
 
-# Public names for the tree's callers; the underscored names stay for the
-# older study service and its tests.
+# Public names for the tree's callers.
 norm_unit = _norm_unit
 clean_decision = _clean_decision
+check_randomness = _check_randomness

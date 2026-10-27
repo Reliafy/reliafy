@@ -1,43 +1,7 @@
-/* The RCM study page's frame (RcmStudyPage) and its worksheet, an outline
-   grid (RcmWorksheet). Desktop: the page is the window's height below the top
-   bar; the header and the tabs take what they need and the worksheet the
-   rest, its rows scrolling inside their card under a sticky header and
-   first column. Phone (720 px and under): the page scrolls as usual and the
-   worksheet is nearly a screen tall, with two-line rows. */
-
-.app.rcm-frame {
-  display: flex;
-  flex-direction: column;
-  padding: 16px 32px 16px;
-  min-width: 0;
-}
-@media (min-width: 721px) {
-  .app.rcm-frame {
-    height: calc(100vh - 59px);
-    height: calc(100dvh - 59px);
-    overflow: hidden;
-  }
-}
-.rcm-frame > * { flex: none; }
-.rcm-frame > .page-header .title-row h1 { font-size: var(--fs-24); }
-.rcm-frame > .card { margin: 10px 0 0; }
-.rcm-frame > .tabs-strip { margin: 10px 0 0; }
-.rcm-frame > .rcm-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  margin-top: 10px;
-}
-.rcm-body > .card.rcm-tree-card { flex: 1 1 auto; min-height: 0; overflow: auto; margin: 0; }
-.rcm-body > .card.rw-card {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 10px 12px 12px;
-}
+/* The RCM worksheet's pieces (RcmWorksheet.jsx): its cells, the cell editor,
+   the details panel and the column chooser, as the Explorer's RCM tab draws
+   them in its table (TreePane). The `.rw` grid rules are the outline grid the
+   pieces were made for; the Explorer's own grid is `.tt-*` (TreePane.css). */
 
 /* ---- the worksheet ------------------------------------------------------------ */
 
@@ -417,13 +381,6 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 /* ---- phone ---------------------------------------------------------------------- */
 
 @media (max-width: 720px) {
-  .app.rcm-frame { padding: 12px 16px 24px; }
-  .rcm-body > .card.rw-card {
-    height: calc(100dvh - 80px);
-    min-height: 420px;
-    padding: 8px;
-  }
-  .rcm-body > .card.rcm-tree-card { overflow: visible; }
   .rw-filter { flex-basis: 100%; max-width: none; }
   .rw-tools { margin-left: 0; }
   .rw-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }

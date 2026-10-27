@@ -1,8 +1,8 @@
 ---
 title: "RCM analysis example: a pump system, worked end to end"
 description: "A complete reliability centred maintenance example — functions, functional failures, failure modes, consequences, and task selection for a cooling-water pump — with the worksheet filled in and the reasoning shown."
-cta_text: "Reliafy's RCM worksheets link every decision to the non-repairable model or analysis that justifies it — and flag the decision when new data contradicts it. The sample study is a pump system just like this one."
-cta_label: "Open the RCM sample study"
+cta_text: "RCM in Reliafy lives on your asset tree: every decision links to the non-repairable model or analysis that justifies it, and is flagged when new data contradicts it. The sample truck comes with its RCM built in, one decision contradicted on purpose."
+cta_label: "See RCM on the asset tree"
 cta_href: "/rcm-software"
 ---
 
@@ -136,7 +136,7 @@ about β**, and β moves as data accumulates. M3's run-to-failure is only
 right while the windings keep failing randomly; M1's interval is only
 optimal while the bearing model holds. A worksheet that stays linked to the
 live models — and flags the decision when the evidence turns — is the
-difference between an RCM study and an RCM archive.
+difference between a living RCM and an RCM archive.
 
 ## Frequently asked questions
 

@@ -69,7 +69,7 @@ export default function StrategyAnalyses() {
     <div className="app">
       <SectionHeader
         title="Strategy"
-        purpose="Turn fitted models into maintenance decisions. Saved analyses can be cited as evidence in RCM studies."
+        purpose="Turn fitted models into maintenance decisions. Saved analyses can be cited as evidence for RCM decisions."
         help={HELP}
         primary={newAnalysis}
       />

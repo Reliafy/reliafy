@@ -22,10 +22,6 @@ import {
   saveDegradationModel,
   createTrackedItem,
   addTrackedMeasurement,
-  listRcmStudies,
-  createRcmStudy,
-  getRcmStudy,
-  putRcmTree,
   createShare,
   getDataset,
   getRbd,
@@ -63,9 +59,10 @@ function interpCurve(x, y, xq) {
 // step, so a client can't change them. This file runs the tools: each tool
 // defined there needs a case in makeExecutor below (a backend test checks).
 
-// Only let the assistant route to real in-app pages.
+// Only let the assistant route to real in-app pages (the Explorer's RCM tab
+// is /asset-register/explorer?tab=rcm).
 const NAV_PREFIXES = [
-  "/home", "/models", "/systems", "/data", "/strategy", "/forecasts", "/maintenance/rcm", "/reports", "/team", "/changes",
+  "/home", "/models", "/systems", "/data", "/strategy", "/forecasts", "/asset-register", "/reports", "/team", "/changes",
 ];
 export function isAllowedPath(path) {
   return typeof path === "string" && path.startsWith("/") && NAV_PREFIXES.some(
@@ -96,36 +93,6 @@ function itemSummary(it) {
   };
 }
 
-// Compact per-decision summary of a resolved RCM tree.
-function rcmTreeSummary(functions) {
-  return (functions || []).map((fn) => ({
-    id: fn.id,
-    text: fn.text,
-    failures: (fn.failures || []).map((f) => ({
-      id: f.id,
-      text: f.text,
-      modes: (f.modes || []).map((m) => ({
-        id: m.id,
-        text: m.text,
-        effects: m.effects,
-        consequence: m.consequence,
-        decision: m.decision
-          ? {
-              outcome: m.decision.outcome,
-              rtf_basis: m.decision.rtf_basis,
-              task: m.decision.task,
-              interval: m.decision.interval,
-              interval_unit: m.decision.interval_unit,
-              evidence: m.decision.evidence,
-              status: m.decision.status,
-              summary: m.decision.summary || m.decision.reason,
-            }
-          : null,
-      })),
-    })),
-  }));
-}
-
 // What each shareable collection is called, and how to read one item's name.
 const ARTIFACTS = {
   datasets: ["dataset", getDataset],
@@ -133,7 +100,6 @@ const ARTIFACTS = {
   rbds: ["RBD", getRbd],
   degradation_models: ["degradation model", getDegradationModel],
   strategy_analyses: ["strategy analysis", getStrategyAnalysis],
-  rcm_studies: ["RCM study", getRcmStudy],
   fleets: ["failure forecast", getFleet],
   recurrent_models: ["recurrent-event model", getRecurrentModel],
 };
@@ -412,39 +378,6 @@ export function makeExecutor({ navigate, onChange, confirm }) {
         const item = await addTrackedMeasurement(input.model_id, input.item_id, input.t, input.y);
         onChange?.();
         return itemSummary(item);
-      }
-      case "list_rcm_studies": {
-        const { studies } = await listRcmStudies();
-        return studies.map((s) => ({
-          id: s.id, name: s.name, system: s.system,
-          rollup: s.rollup, is_sample: !!s.is_sample,
-        }));
-      }
-      case "get_rcm_study": {
-        const s = await getRcmStudy(input.id);
-        return {
-          id: s.id, name: s.name, system: s.system, rollup: s.rollup,
-          read_only: !!s.read_only,
-          functions: rcmTreeSummary(s.functions),
-        };
-      }
-      case "create_rcm_study": {
-        const s = await createRcmStudy(input.name, input.system || "", input.description || "");
-        onChange?.();
-        return { id: s.id, name: s.name };
-      }
-      case "set_rcm_tree": {
-        const study = await artifactName("rcm_studies", input.study_id);
-        if (!study) return { ok: false, error: `RCM study not found: ${input.study_id}` };
-        const ok = await userConfirms(confirm, {
-          title: "Replace an RCM worksheet?",
-          body: `The assistant wants to replace the whole worksheet of the RCM study “${study}” with ${plural((input.functions || []).length, "function")}.`,
-          confirmLabel: "Replace",
-        });
-        if (!ok) return DECLINED;
-        const s = await putRcmTree(input.study_id, input.functions || []);
-        onChange?.();
-        return { id: s.id, rollup: s.rollup, functions: rcmTreeSummary(s.functions) };
       }
       case "list_fleets": {
         const { fleets } = await listFleets();

@@ -1,5 +1,5 @@
 // The outline's model, shared by every tree drawn as an outline: the asset
-// tree pane (assetTree.js) and the RCM study's worksheet (rcmWorksheet.js).
+// tree pane (assetTree.js) and the RCM worksheet's rows (rcmWorksheet.js).
 //
 // A display is {rows, roots}: rows a Map of key → {key, parent, kids, depth,
 // ref, ...}, roots the keys at the top. These pure functions (no React) open

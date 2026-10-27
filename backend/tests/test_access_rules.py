@@ -161,30 +161,6 @@ def test_shared_rbd_opens_only_the_sharers_own_references(client):
     assert client.get(f"/api/rbds/{a_rbd['id']}").status_code in (403, 404)
 
 
-def test_shared_study_evidence_from_another_owner_stays_closed(client):
-    _register_all(client)
-    client.act_as(A)
-    a_model = _save_model(client, "A's model")
-
-    client.act_as(B)
-    b_model = _save_model(client, "B's model", seed=12)
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    assert client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(b_model["id"])}).status_code == 200
-    # Pre-existing evidence link to A's model, written straight to the DB.
-    tree = client.db.rcm_studies.find_one({"_id": sid})["functions"]
-    tree[0]["failures"][0]["modes"].append(
-        {**tree[0]["failures"][0]["modes"][0], "id": "m-foreign",
-         "decision": {"outcome": "rtf", "rtf_basis": "random", "evidence": {"type": "model", "id": a_model["id"]}}})
-    client.db.rcm_studies.update_one({"_id": sid}, {"$set": {"functions": tree}})
-    _share(client, "rcm_studies", sid, "c@x.com")
-
-    client.act_as(C)
-    assert client.get(f"/api/rcm/studies/{sid}").status_code == 200
-    assert client.get(f"/api/models/{b_model['id']}").status_code == 200
-    assert client.get(f"/api/models/{a_model['id']}").status_code in (403, 404)
-    assert client.get(f"/api/datasets/{a_model['dataset_id']}").status_code in (403, 404)
-
-
 def test_reshared_reference_does_not_extend_a_share(client):
     """A shares a model with B; B's diagram uses it and B shares the diagram
     with C: C gets B's diagram, not A's model."""
@@ -307,24 +283,6 @@ def test_rbd_update_keeps_existing_references(client):
     a_rbd = client.db.rbds.insert_one({"_id": "a-rbd", "owner_id": A, "name": "x", "graph": {}}).inserted_id
     r = _save_rbd(client, _graph(model_id=a_model["id"], sub_rbd_id=a_rbd), rbd_id=rid)
     assert r.status_code == 422
-
-
-def test_rcm_tree_save_checks_evidence(client):
-    _register_all(client)
-    client.act_as(A)
-    a_model = _save_model(client, "A's model")
-    a_analysis = client.db.strategy_analyses.insert_one(
-        {"_id": "a-analysis", "owner_id": A, "name": "x", "kind": "replacement"}).inserted_id
-
-    client.act_as(B)
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    r = client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(a_model["id"])})
-    assert r.status_code == 422 and r.json()["code"] == "unreadable_reference"
-    r = client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(a_analysis, "strategy_analysis")})
-    assert r.status_code == 422
-    assert client.db.rcm_studies.find_one({"_id": sid}).get("functions") in (None, [])
-    b_model = _save_model(client, "B's model", seed=12)
-    assert client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(b_model["id"])}).status_code == 200
 
 
 def test_fleet_and_model_saves_check_references(client):

@@ -107,6 +107,35 @@ reliafy.push_lives(dataset_id, file="new_failures.csv")
 
 Files are streamed from disk, not read into memory.
 
+## Many maintenance changes in one call
+
+Reliafy Maintenance's tools can run as a batch: a list of their actions, in
+order, with `@ref`s between them, checked on a copy of the workspace before
+anything is written. Build a position with its RCM, tasks and parts in one
+call:
+
+```python
+done = rf.apply([
+    {"ref": "p", "do": "positions.create", "args": {"name": "Feed pump A", "parent_id": "…"}},
+    {"ref": "f", "do": "failure_modes.add_function", "args": {"position_id": "@p", "text": "Deliver 40 L/s"}},
+    {"ref": "ff", "do": "failure_modes.add_functional_failure", "args": {"function_id": "@f", "text": "No flow"}},
+    {"ref": "m", "do": "failure_modes.add", "args": {"position_id": "@p", "functional_failure_id": "@ff",
+                                                     "text": "Bearing worn"}},
+    {"do": "failure_modes.decide", "args": {"failure_mode_id": "@m", "consequence": "operational",
+             "decision": {"outcome": "on_condition", "task": "Vibration check", "interval": 3,
+                          "interval_unit": "months"}}},
+    {"do": "tasks.create", "args": {"position_id": "@p", "name": "Grease bearings", "interval": 500,
+                                    "unit": "hours", "source": "oem"}},
+], dry_run=False)
+done["applied"], done["undo"]      # 6, and the operations that reverse it
+```
+
+A delete in a batch (`retire`, `remove_*`, `void`, `cancel`, `merge`,
+`disconnect`) names what it deletes with `confirm`; a batch that deletes, or
+has over 25 operations, is a dry run unless `dry_run=False`. From the command
+line, `reliafy apply ops.json` dry-runs a file of operations and
+`reliafy apply ops.json --run` writes them, leaving `ops.undo.json` beside it.
+
 ## The command line
 
 ```bash
@@ -126,6 +155,7 @@ reliafy document add manual.pdf --to ITEM_ID --kind manual
 reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
+reliafy apply ops.json --run                     # maintenance changes in one call (dry run without --run)
 reliafy library search --query "check valve" --kind rate   # published failure data
 reliafy library get --id nrc-inl-2020:ckv-fto
 reliafy library get --id mil-hdbk-217f-n2:9-1-rc-11 --environment GF   # a handbook rate, ground fixed

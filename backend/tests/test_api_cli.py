@@ -359,6 +359,46 @@ def test_cli_document_add_and_get(server, capsys):
     assert code == 1 and "a link" in err
 
 
+def test_cli_and_client_apply_a_batch_of_maintenance_changes(server, capsys):
+    """reliafy apply FILE: a dry run, then --run (writing the undo file beside it);
+    the generic maintenance_apply command and Client.apply do the same."""
+    rf = Client()
+    system = rf.call("maintenance_positions", "create", name="Boiler feed")["id"]
+    ops = [{"ref": "p", "do": "positions.create", "args": {"name": "Feed pump A", "parent_id": system}},
+           {"ref": "f", "do": "failure_modes.add_function", "args": {"position_id": "@p", "text": "Deliver feed"}},
+           {"ref": "ff", "do": "failure_modes.add_functional_failure", "args": {"function_id": "@f", "text": "No flow"}},
+           {"ref": "m", "do": "failure_modes.add", "args": {"position_id": "@p", "functional_failure_id": "@ff",
+                                                           "text": "Bearing worn"}},
+           {"do": "failure_modes.decide", "args": {"failure_mode_id": "@m", "consequence": "operational", "decision": {
+               "outcome": "on_condition", "task": "Vibration check", "interval": 3, "interval_unit": "months"}}}]
+    path = server["tmp"] / "pump.json"
+    path.write_text(json.dumps({"operations": ops}))
+    code, out, _ = run(capsys, "apply", str(path))
+    assert code == 0 and "dry_run: true" in out and "would_apply: 5" in out and "results (5):" in out
+    assert rf.call("maintenance_get", "position", id=system)["children"] == []
+    code, out, _ = run(capsys, "apply", str(path), "--run", "--key", "pump-a")
+    assert code == 0 and "applied: 5" in out and "To undo it: reliafy apply" in out
+    undo = json.loads((server["tmp"] / "pump.undo.json").read_text())["operations"]
+    assert [u["do"] for u in undo] == ["failure_modes.retire", "failure_modes.remove_functional_failure",
+                                       "failure_modes.remove_function", "positions.retire"]
+    pump = rf.call("maintenance_get", "position", id=system)["children"][0]
+    assert pump["name"] == "Feed pump A"
+    assert [t["name"] for t in rf.call("maintenance_get", "position", id=pump["id"])["tasks"]] == ["Vibration check"]
+    # The generic command, straight from the spec; and the client's shortcut.
+    code, out, _ = run(capsys, "maintenance_apply", "--operations", json.dumps(
+        [{"do": "tasks.create", "args": {"position_id": pump["id"], "name": "Grease", "interval": 1}}]),
+        "--dry-run", "false", "--json")
+    assert code == 0 and json.loads(out)["applied"] == 1
+    again = rf.apply(ops, idempotency_key="pump-a")
+    assert again["replayed"] is True
+    code, out, err = run(capsys, "apply", str(server["tmp"] / "pump.undo.json"))
+    assert code == 0 and "would_apply: 4" in out
+    bad = server["tmp"] / "bad.json"
+    bad.write_text(json.dumps([{"do": "rockets.launch", "args": {}}]))
+    code, _, err = run(capsys, "apply", str(bad))
+    assert code == 1 and "no write action" in err
+
+
 class _OldServer(BaseHTTPRequestHandler):
     """A Reliafy server from before the tools API: FastAPI's plain 404."""
 

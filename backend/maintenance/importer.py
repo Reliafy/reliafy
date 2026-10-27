@@ -279,7 +279,7 @@ def run(m: Maintenance, rows: list[dict], dry_run: bool = False) -> dict:
                     mode_id = new_id()
                     m._emit("failure_mode.added", {"id": mode_id, "position_id": pid, "text": r["failure_mode"],
                                                    "function": "", "failure": "", "consequence": None,
-                                                   "outcome": None, "rcm_mode_id": None, "study_id": None})
+                                                   "outcome": None})
             m.remove(pid, on=r["removed"], reason="failure" if r["failed"] else "planned",
                      failure_mode_id=mode_id)
     return report

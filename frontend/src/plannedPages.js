@@ -68,7 +68,7 @@ export const PLANNED = {
     will: [
       "Failure modes per function, with severity, occurrence and detection",
       "Criticality ranking",
-      "Links to the RCM study and its tasks",
+      "Links to the position's RCM and its tasks",
     ],
   },
 };

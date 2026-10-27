@@ -430,22 +430,15 @@ async function scrollTo(locator, offset = 80) {
   await wait(600);
 }
 
-// RCM and teams guides: a study of the user's own (the sample is read-only, so
-// its decision dialog can't open), with one mode still to decide; and a team
-// with one pending invitation (single-user mode can create one: no billing).
-async function seedRcmStudy() {
-  const study = await api("/rcm/studies", { name: "Conveyor drive — RCM", system: "Conveyor line 2", description: "" });
-  const res = await fetch(`${BASE}/api/rcm/studies/${study.id}/tree`, {
-    method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ functions: [{ text: "Drive the belt at 4 m/s", failures: [{ text: "Belt stops", modes: [
-      { text: "Gearbox bearing fatigue", effects: "Line stops until the bearing is changed; about 8 hours lost.",
-        consequence: null, decision: null },
-      { text: "Motor overload trip fails to operate (hidden)", effects: "Motor burns out on the next jam.",
-        consequence: "hidden", decision: null },
-    ] }] }] }),
-  });
-  if (!res.ok) throw new Error(`rcm tree → ${res.status} ${await res.text()}`);
-  return study.id;
+// RCM guide: the sample truck copied into the tree (Explorer › "Add the sample
+// truck"), with its RCM and evidence; null when Reliafy Maintenance is off on
+// this server (then the RCM shots are skipped, out loud, and keep their
+// images). Teams guide: a team with one pending invitation (single-user mode
+// can create one: no billing).
+async function seedSampleTruck(config) {
+  if (!config.maintenance) return null;
+  const made = await api("/maintenance/sample-truck", {});
+  return made.position.id;
 }
 async function seedTeam() {
   const team = await api("/teams", { name: "Reliability team" });
@@ -685,9 +678,6 @@ async function main() {
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); } },
     { file: "sif-02-results.png", url: "/systems/rbds", settle: 1500,
       async act(page) { await page.getByText("Open the starter").first().click(); await wait(2500); await calculate(page); } },
-    // --- RCM study: the sample, with its evidence statuses ---
-    { file: "rcm-01-study.png", url: "/maintenance/rcm/sample-rcm-truck", settle: 2000,
-      async act(page) { await page.getByRole("treegrid", { name: "RCM worksheet" }).waitFor({ timeout: 20000 }); await wait(400); } },
     // --- Failure-finding interval: a trip failing once a year (λ = 1/8,760 h), 99% ---
     { file: "ff-01-result.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) {
@@ -786,16 +776,31 @@ async function main() {
 
   // Shots needing purpose-built fixtures (created below, deleted afterwards).
   const fixtureShots = (fx) => [
-    // --- RCM study: deciding a failure mode, with the sample analysis as evidence ---
-    { file: "rcm-02-decision.png", url: `/maintenance/rcm/${fx.rcmStudyId}`, settle: 1500,
+    // --- RCM on the asset tree: the Explorer's RCM tab on the sample truck, with
+    // its evidence checks; then the decision dialog on one of its modes (the
+    // wheel-bearing fixed interval, 580 hours, linked to the sample replacement
+    // analysis). The Explorer is a Maintenance page: without MAINTENANCE_ENABLED
+    // on the server there is no truck (fx.truckId null) and both are skipped.
+    { file: "rcm-01-explorer.png", url: `/asset-register/explorer?arrange=positions&tab=rcm&sel=${fx.truckId}`, settle: 2500,
+      skip: () => (fx.truckId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
       async act(page) {
-        await page.getByRole("button", { name: "To decide" }).first().click(); await wait(600);
-        const m = page.locator(".decision-modal");
-        await m.getByRole("button", { name: /^Operational$/ }).click(); await wait(300);
-        await m.getByRole("button", { name: /Fixed-interval replacement/ }).click(); await wait(800);
-        await m.getByPlaceholder("e.g. Replace brake pads").fill("Replace the gearbox input bearing");
-        await m.getByPlaceholder("Interval").fill("580");
-        await m.locator(".evidence-option", { hasText: /Bearing preventive replacement/ }).click(); await wait(500);
+        await page.getByRole("treegrid", { name: /and their RCM/ }).waitFor({ timeout: 20000 });
+        await page.getByText("Wheel-bearing fatigue").first().waitFor({ timeout: 20000 });
+        // At this width the Evidence check column is off by default: show it.
+        await page.getByRole("button", { name: "Columns" }).click(); await wait(300);
+        const check = page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Evidence check" });
+        if (!(await check.isChecked())) await check.check();
+        await page.keyboard.press("Escape"); await wait(300);
+        await page.getByText("Contradicted").first().waitFor({ timeout: 20000 }); await wait(600);
+      } },
+    { file: "rcm-02-decision.png", url: `/asset-register/explorer?arrange=positions&tab=rcm&sel=${fx.truckId}`, settle: 2500,
+      skip: () => (fx.truckId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=rcm on a server that has it."),
+      async act(page) {
+        const table = page.getByRole("treegrid", { name: /and their RCM/ });
+        await table.waitFor({ timeout: 20000 });
+        await table.getByRole("row", { name: /Wheel-bearing fatigue/ }).first().click(); await wait(600);
+        await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Change the decision…" }).click();
+        await page.getByRole("dialog", { name: /^Decision/ }).waitFor({ timeout: 20000 }); await wait(800);
       } },
     // --- Teams: the workspace menu, then the team's settings (members, a pending invite) ---
     { file: "team-01-switcher.png", url: "/strategy/failure-finding", settle: 1200,
@@ -1037,7 +1042,7 @@ async function main() {
       outageId: await seedOutageRbd(),
       networkId: await seedNetworkRbd(),
       design: await seedDesignRbds(),
-      rcmStudyId: await seedRcmStudy(),
+      truckId: await seedSampleTruck(config),
       teamId: await seedTeam(),
     };
     try {
@@ -1053,7 +1058,11 @@ async function main() {
         await fetch(`${BASE}/api/models/${id}`, { method: "DELETE" }).catch(() => {});
       }
       await fetch(`${BASE}/api/joint/models/${fx.joint.modelId}`, { method: "DELETE" }).catch(() => {});
-      await fetch(`${BASE}/api/rcm/studies/${fx.rcmStudyId}`, { method: "DELETE" }).catch(() => {});
+      if (fx.truckId) {
+        await fetch(`${BASE}/api/maintenance/positions/${fx.truckId}/retire`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "guide capture" }),
+        }).catch(() => {});
+      }
       await fetch(`${BASE}/api/teams/${fx.teamId}`, { method: "DELETE" }).catch(() => {});
       for (const id of [fx.loadshare.datasetId, ...fx.joint.datasetIds]) {
         await fetch(`${BASE}/api/datasets/${id}`, { method: "DELETE" }).catch(() => {});

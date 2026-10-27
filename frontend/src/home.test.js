@@ -9,8 +9,10 @@ test("needs attention: worst first, samples left out, only contradicted evidence
     changes: {
       alerts: [{ fleet_id: "f1", fleet: "Trucks", url: "/forecasts/f1", text: "Above 3", at: "2026-10-10" }],
       rcm_evidence: [
-        { study_id: "s1", study: "Line 2", mode: "Bearing wear", status: "contradicted", url: "/maintenance/rcm/s1" },
-        { study_id: "s2", study: "Line 3", mode: "Seal", status: "supported", url: "/maintenance/rcm/s2" },
+        { position_id: "p1", position: "Line 2", mode: "Bearing wear", status: "contradicted",
+          url: "/asset-register/explorer?arrange=positions&tab=rcm&sel=p1" },
+        { position_id: "p2", position: "Line 3", mode: "Seal", status: "supported",
+          url: "/asset-register/explorer?arrange=positions&tab=rcm&sel=p2" },
       ],
     },
     tracked: [
@@ -26,6 +28,7 @@ test("needs attention: worst first, samples left out, only contradicted evidence
     ] },
   });
   assert.deepEqual(rows.map((r) => r.name), ["Line 2", "Pads", "Inspect", "Trucks", "Belts", "Grease"]);
+  assert.equal(rows.find((r) => r.name === "Line 2").url, "/asset-register/explorer?arrange=positions&tab=rcm&sel=p1");
   assert.equal(rows.find((r) => r.name === "Pads").detail, "2 items to replace now");
   assert.equal(rows.find((r) => r.name === "Inspect").url, "/maintenance/work-orders/w9");
   assert.equal(rows.find((r) => r.name === "Grease").url, "/maintenance");
@@ -43,9 +46,9 @@ test("recent: own items only, newest save first, each linked to its page", () =>
       { id: "m2", type: "life", name: "Sample", is_sample: true, to: "/models/m/m2", created_at: "2026-10-09" }],
     datasets: [{ id: "d1", name: "Lives", n_rows: 1, created_at: "2026-10-05" }],
     rbds: [{ id: "r1", name: "Pump train", n_nodes: 5, created_at: "2026-09-01", updated_at: "2026-10-07" }],
-    studies: [{ id: "s1", name: "Line 2", updated_at: "2026-10-01" }],
+    analyses: [{ id: "a1", name: "Bearing replacement", headline: "Every 580 h", updated_at: "2026-10-01" }],
   });
-  assert.deepEqual(rows.map((r) => r.url), ["/systems/b/r1", "/data/d1", "/models/m/m1", "/maintenance/rcm/s1"]);
+  assert.deepEqual(rows.map((r) => r.url), ["/systems/b/r1", "/data/d1", "/models/m/m1", "/strategy/analyses/a1"]);
   assert.equal(rows[1].detail, "1 row");
   assert.equal(rows[2].kind, "Non-repairable model");
 });
@@ -100,12 +103,15 @@ test("role cards: due tasks, today's work orders and short spares from the overv
     [["None left", "/asset-register/parts/pt", "0 usable, keep 2"]]);
 });
 
-test("role cards: the manager's figures, with Reliafy Maintenance's only when it's on", () => {
-  const studies = [{ rollup: { supported: 3, contradicted: 1, unevidenced: 2, inconclusive: 1 } },
-    { is_sample: true, rollup: { supported: 9 } }];
-  const plain = waitingFigures(studies);
-  assert.deepEqual(plain.map((f) => f.n), [3, 1, 3]);
-  const withMaintenance = waitingFigures(studies, OVERVIEW);
-  assert.deepEqual(withMaintenance.slice(3).map((f) => [f.label, f.n]),
+test("role cards: the manager's figures, from the tree's RCM rollup and the overview, each only when it's there", () => {
+  const rollup = { modes: 9, decided: 7, supported: 3, contradicted: 1, unevidenced: 2, inconclusive: 1, stale: 0 };
+  const rcm = waitingFigures(rollup);
+  assert.deepEqual(rcm.map((f) => f.n), [3, 1, 3]);
+  assert.ok(rcm.every((f) => f.to === "/asset-register/explorer?tab=rcm"));
+  const both = waitingFigures(rollup, OVERVIEW);
+  assert.deepEqual(both.slice(3).map((f) => [f.label, f.n]),
     [["changes to decide", 1], ["tasks overdue", 1], ["open work orders", 3]]);
+  // Without Reliafy Maintenance there is no RCM on the tree and no overview: nothing to show.
+  assert.deepEqual(waitingFigures(), []);
+  assert.deepEqual(waitingFigures(null, OVERVIEW).map((f) => f.label), ["changes to decide", "tasks overdue", "open work orders"]);
 });

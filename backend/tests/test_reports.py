@@ -34,7 +34,6 @@ SAMPLES = {
     "rbds": "sample-rbd-pump-station",
     "strategy_analyses": "sample-strategy-bearing-replacement",
     "fleets": "sample-fleet-trucks",
-    "rcm_studies": "sample-rcm-truck",
     "datasets": "sample-ds-bearings",
 }
 
@@ -300,7 +299,6 @@ def test_every_item_kind_renders_in_a_report(client):
     assert by_coll["strategy_analyses"]["artifact"]["results"]["optimal_time"] > 0
     assert by_coll["recurrent_models"]["artifact"]["results"]["mtbf"] > 0
     assert by_coll["degradation_models"]["artifact"]["results"]["threshold"] == 8.0
-    assert by_coll["rcm_studies"]["artifact"]["functions"]
     assert by_coll["datasets"]["artifact"]["preview"]
 
 

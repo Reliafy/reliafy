@@ -1,5 +1,5 @@
-"""Reliafy Maintenance: the event-sourced graph store, RCM to tasks, work
-orders, fitments and the life data they give."""
+"""Reliafy Maintenance: the event-sourced graph store, RCM decisions to tasks,
+work orders, fitments and the life data they give."""
 
 from datetime import date, timedelta
 
@@ -8,6 +8,7 @@ import pytest
 
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance, add_interval
 from backend.maintenance.store import GraphStore
+from backend.tests.rcm_tree import position_with_rcm
 
 ORG = "user-a"
 
@@ -17,15 +18,9 @@ def m():
     return Maintenance(GraphStore(":memory:", PROJECTORS), ORG, "tester")
 
 
-class _Study:
-    """The parts of an RcmStudy that maintenance reads."""
-
-    def __init__(self, functions, system="Hot water system", name="Hot water RCM", id="study-1"):
-        self.functions, self.system, self.name, self.id = functions, system, name, id
-
-
-def _study(interval=6, unit="months", outcome="fixed_interval"):
-    return _Study([{
+def _rcm(interval=6, unit="months", outcome="fixed_interval"):
+    """A hot water system's RCM: one scheduled decision and one run-to-failure."""
+    return [{
         "id": "fn1", "text": "Supply hot water at 60 °C", "failures": [{
             "id": "ff1", "text": "No hot water", "modes": [
                 {"id": "m-anode", "text": "Anode depleted", "consequence": "operational",
@@ -33,7 +28,11 @@ def _study(interval=6, unit="months", outcome="fixed_interval"):
                               "task": "Replace sacrificial anode"}},
                 {"id": "m-element", "text": "Element burnt out", "consequence": "operational",
                  "decision": {"outcome": "rtf", "rtf_basis": "random"}},
-            ]}]}])
+            ]}]}]
+
+
+def _hws(m, **kw):
+    return position_with_rcm(m, _rcm(**kw), "Hot water system")
 
 
 def test_add_interval_calendar_units_and_use():
@@ -57,13 +56,13 @@ def test_hierarchy_and_tree(m):
         m.update_position(house["id"], parent_id=hws["id"])  # no cycles
 
 
-def test_rcm_gives_failure_modes_and_tasks_and_reapplies_cleanly(m):
-    result = m.position_from_rcm(_study())
+def test_rcm_gives_failure_modes_and_tasks_and_a_changed_decision_changes_the_task(m):
+    result = _hws(m)
     pos = result["position"]
     assert pos["name"] == "Hot water system"
-    assert result["failure_modes_added"] == 2 and result["tasks_added"] == 1
+    assert result["failure_modes"] == 2 and result["tasks"] == 1
     [task] = pos["tasks"]
-    assert task["name"] == "Replace sacrificial anode"
+    assert task["name"] == "Replace sacrificial anode" and task["source"] == "rcm"
     assert task["next_due"] == add_interval(date.today().isoformat(), 6, "months")
 
     done = m.set_last_done(task["id"], "2025-01-15")
@@ -71,15 +70,19 @@ def test_rcm_gives_failure_modes_and_tasks_and_reapplies_cleanly(m):
     with pytest.raises(Invalid):
         m.set_last_done(task["id"], (date.today() + timedelta(days=3)).isoformat())
 
-    again = m.apply_rcm(pos["id"], _study())
-    assert again == {"position_id": pos["id"], "failure_modes_added": 0, "tasks_added": 0, "tasks_updated": 0}
-    changed = m.apply_rcm(pos["id"], _study(interval=12))
-    assert changed["tasks_updated"] == 1
-    assert m.position(pos["id"])["tasks"][0]["interval"] == 12
+    # Deciding the same again writes nothing; a new interval changes the task in place.
+    anode = next(f for f in pos["failure_modes"] if f["text"] == "Anode depleted")
+    decision = _rcm()[0]["failures"][0]["modes"][0]["decision"]
+    before = m.s.event_count(ORG)
+    m.decide_failure_mode(anode["id"], decision=decision)
+    assert m.s.event_count(ORG) == before
+    m.decide_failure_mode(anode["id"], decision={**decision, "interval": 12})
+    [task] = m.position(pos["id"])["tasks"]
+    assert task["interval"] == 12 and task["name"] == "Replace sacrificial anode"
 
 
 def test_work_orders_replace_items_and_give_life_data(m):
-    pos = m.position_from_rcm(_study(interval=1, unit="days"))["position"]
+    pos = _hws(m, interval=1, unit="days")["position"]
     pid = pos["id"]
     start = (date.today() - timedelta(days=400)).isoformat()
     m.fit(pid, new_item={"name": "Rheem 315 L", "serial": "A1"}, on=start)
@@ -127,7 +130,7 @@ def test_inspection_needs_a_finding_and_nothing_is_written_on_error(m):
 
 
 def test_rebuild_from_the_log_gives_the_same_graph(m):
-    pos = m.position_from_rcm(_study(interval=1, unit="days"))["position"]
+    pos = _hws(m, interval=1, unit="days")["position"]
     loc = m.create_location("Garage")
     m.fit(pos["id"], new_item={"name": "Tank"}, on="2025-01-01")
     spare = m.create_item("Spare anode")
@@ -174,16 +177,19 @@ def test_api_is_off_unless_enabled_and_works_when_on(monkeypatch):
         assert client.get("/api/maintenance/overview").status_code == 404  # not on the list
         monkeypatch.setattr(config, "MAINTENANCE_EMAILS", {"a@x.com"})
         assert client.get("/api/maintenance/access").json() == {"allowed": True, "graph": False}
-        study = client.post("/api/rcm/studies", json={"name": "Pool", "system": "Pool pump"}).json()
-        client.put(f"/api/rcm/studies/{study['id']}/tree", json={"functions": [
-            {"text": "Circulate water", "failures": [{"text": "No flow", "modes": [
-                {"text": "Basket blocked", "consequence": "operational",
-                 "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks",
-                              "task": "Empty the pump basket"}}]}]}]})
-        made = client.post("/api/maintenance/from-rcm", json={"study_id": study["id"]})
+        made = client.post("/api/maintenance/positions", json={"name": "Pool pump"})
         assert made.status_code == 200, made.text
-        pid = made.json()["position"]["id"]
-        assert made.json()["position"]["tasks"][0]["name"] == "Empty the pump basket"
+        pid = made.json()["id"]
+        fn = client.post(f"/api/maintenance/positions/{pid}/functions", json={"text": "Circulate water"}).json()
+        ff = client.post(f"/api/maintenance/functions/{fn['id']}/failures", json={"text": "No flow"}).json()
+        mode = client.post(f"/api/maintenance/positions/{pid}/failure-modes",
+                           json={"text": "Basket blocked", "functional_failure_id": ff["id"]}).json()
+        decided = client.put(f"/api/maintenance/failure-modes/{mode['id']}/decision", json={
+            "consequence": "operational",
+            "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks",
+                         "task": "Empty the pump basket"}})
+        assert decided.status_code == 200, decided.text
+        assert client.get(f"/api/maintenance/positions/{pid}").json()["tasks"][0]["name"] == "Empty the pump basket"
 
         assert client.post(f"/api/maintenance/positions/{pid}/fit",
                            json={"new_item": {"name": "Astral CTX"}}).status_code == 200
@@ -209,7 +215,7 @@ def test_a_shared_mongo_log_keeps_every_process_in_step():
     mongo = mongomock.MongoClient()["maint_log"]
     a = Maintenance(GraphStore(":memory:", PROJECTORS, MongoEventLog(mongo)), ORG)
     b = Maintenance(GraphStore(":memory:", PROJECTORS, MongoEventLog(mongo)), ORG)
-    pos = a.position_from_rcm(_study())["position"]
+    pos = _hws(a)["position"]
     b.s.sync()
     assert b.position(pos["id"])["tasks"][0]["name"] == "Replace sacrificial anode"
     b.fit(pos["id"], new_item={"name": "Tank"}, on="2024-02-01")

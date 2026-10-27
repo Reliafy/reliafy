@@ -8,9 +8,8 @@ import { INTERVAL_UNITS, NEEDS_INTERVAL, checkDecision, rememberUnit, startUnit 
 
 // Guided RCM decision flow for one failure mode: consequence → outcome
 // (suggested first, per the classic decision diagram) → task details →
-// linked evidence. Saves back {consequence, decision}: to the study's tree
-// (nothing hits the server until the study is saved), or straight to the
-// server (the Explorer), when onSave returns a promise: the dialog then stays
+// linked evidence. Saves back {consequence, decision} straight to the
+// server (the Explorer): onSave returns a promise, and the dialog stays
 // open, Apply showing "Saving…", until it's done, and a refusal shows here
 // with everything as typed. Apply says what's missing whenever it can't be
 // pressed (decisionCheck.js); `limits` adds the Explorer's own checks.

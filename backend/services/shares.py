@@ -34,7 +34,6 @@ _LINK_PATHS = {
     "degradation_models": "/models/degradation/{id}",
     "recurrent_models": "/models/recurrent/{id}",
     "strategy_analyses": "/strategy/analyses/{id}",
-    "rcm_studies": "/maintenance/rcm/{id}",
 }
 
 
