@@ -41,7 +41,7 @@ const SIGNED_IN = [
   ["GET", "/api/rbd-runs"],
   ["POST", "/api/rbds/import"],
   ["GET", "/api/rbds"],
-  ["GET", "/api/rcm/studies"],
+  ["GET", "/api/maintenance/rcm/options"], // the decision dialog's vocabulary
   ["GET", "/api/fleet/fleets"],
   ["GET", "/api/strategy/analyses"],
   ["GET", "/api/models"],

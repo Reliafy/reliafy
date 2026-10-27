@@ -55,7 +55,14 @@ test("earlier addresses keep their query and #hash", async ({ page, problems }) 
     await test.step(`${from} → ${to}`, async () => {
       problems.length = 0;
       await open(page, from);
-      await expect.poll(() => { const u = new URL(page.url()); return u.pathname + u.search + u.hash; }).toBe(to);
+      await expect.poll(() => {
+        const u = new URL(page.url());
+        // The Explorer fills in its own view state once open (?arrange=, ?sel=); the move's query is what's checked.
+        if (u.pathname === "/asset-register/explorer") {
+          for (const k of ["arrange", "sel"]) if (!to.includes(`${k}=`)) u.searchParams.delete(k);
+        }
+        return u.pathname + u.search + u.hash;
+      }).toBe(to);
       await expectHealthy(page, problems, { label: from });
     });
   }

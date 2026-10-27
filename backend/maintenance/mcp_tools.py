@@ -32,6 +32,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
+from backend.maintenance import apply as apply_mod
 from backend.maintenance import mcp_guide
 from backend.mcp_actions import Table, check, describe
 from backend.mcp_actions import choice as _choice
@@ -39,6 +40,9 @@ from backend.mcp_actions import choice as _choice
 TOOL_NAMES: list[str] = []
 # The graph query tools: a narrower audience than the rest (graph_query_allowed).
 GRAPH_TOOL_NAMES: list[str] = []
+# Each action tool's body (the argument check and the work, without the MCP
+# server's gating, slots and usage log): what maintenance_apply runs per operation.
+BODIES: dict = {}
 _ORIGINAL: dict = {}
 # Calls (tool.action) that fit a non-repairable model on the server: Pro only, like the MCP
 # server's other fitting tools (added to its plan gating when registered).
@@ -47,7 +51,8 @@ PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
 HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_workspace.import_history",
                "maintenance_parts.import_bom", "maintenance_parts.positions_from_structure",
                "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
-               "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema")
+               "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema",
+               "maintenance_apply")
 
 
 # ---- actions: what each takes -------------------------------------------------------
@@ -165,6 +170,9 @@ LIST_KINDS: Table = {
         below their position's minimum, counting supersessions and alternatives in every store), no_spare
         (positions whose critical replacement part has none usable); include_unlisted adds
         without_parts_list."""),
+    "events": ("", "limit since type", """What changed, newest first: each event's seq, type, at, actor and
+        payload (the ids it touched: what to restore or undo). limit up to 500 (default 100); since: a seq to
+        read forward from; type: one event type."""),
 }
 
 POSITIONS: Table = {
@@ -180,12 +188,9 @@ POSITIONS: Table = {
     "copy": ("position_id name", "parent_id", """Copy a position and everything inside it (positions, failure
         modes, tasks, parts lists, locations set on them; not items, stock or work orders) under a new name.
         Repeat it to build many like structures; then update the copy's location_id if it's elsewhere."""),
-    "retire": ("position_id", "reason", """Take it out of the plant (kept in the history). Nothing fitted, no
-        position inside it in use, no work order open."""),
-    "from_rcm": ("study_id", "parent_id", """A new position named for an RCM study's system, with its failure
-        modes and a task for every decision with an interval (the study's id is in its address in the app)."""),
-    "apply_rcm": ("position_id study_id", "", """Bring a study's failure modes and tasks onto an existing
-        position; again later adds what's new and updates changed tasks."""),
+    "retire": ("position_id", "reason cascade", """Take it out of the plant (kept in the history). Nothing fitted,
+        no work order open; cascade true retires the live positions inside it too (all or nothing)."""),
+    "restore": ("position_id", "", "Bring a retired position back (its parent must be in use)."),
     "add_sample_truck": ("", "again", """Copy the sample delivery truck, with its RCM, into the tree; once
         only unless again is true."""),
     "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
@@ -220,6 +225,13 @@ FITMENTS: Table = {
 }
 
 ITEMS: Table = {
+    "create": ("name", "serial part_number manufacturer model notes nameplate part_id purchase_date in_service_date "
+               "manufacture_date replacement_cost warranty location_id on", """An item that isn't fitted
+        anywhere: a spare in a store (location_id places it there, on = since when), one on order. part_id (the
+        make and model) fills in what isn't given. To fit one as you make it: maintenance_fitments fit."""),
+    "retire": ("item_id", "reason", """Dispose of it (scrapped, sold): kept in the history and every fitment it
+        had. Not while fitted or with open work orders; its own tasks are retired with it."""),
+    "restore": ("item_id", "", "Bring a retired item back (with the tasks retired with it)."),
     "update": ("item_id", "name serial part_number manufacturer model notes append_note nameplate purchase_date "
                "in_service_date manufacture_date replacement_cost warranty clear", """Change an item's details.
         After reading a nameplate: make in manufacturer, the model, the serial, everything else on the plate in
@@ -239,13 +251,14 @@ FAILURE_MODES: Table = {
         position: how it fails ('Bearing worn'); functional_failure_id puts it under one of the position's
         functional failures. Failures and tasks then name it by id."""),
     "update": ("failure_mode_id", "text effects notes function failure consequence", """Edit one (editing an
-        ad-hoc mode confirms it). A study's mode changes in the study until it's under a functional failure."""),
+        ad-hoc mode confirms it). effects and notes are its RCM analysis."""),
     "decide": ("failure_mode_id", "consequence decision", """Its consequence and decision {outcome, rtf_basis,
-        task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it), checked as a study's; adds,
-        changes or retires its task. Returns it with the evidence check."""),
+        task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it), checked by the RCM decision
+        rules; adds, changes or retires its task. Returns it with the evidence check."""),
     "assign": ("failure_mode_id", "functional_failure_id", "Put it under one of its position's functional "
                "failures (left out: under none)."),
     "retire": ("failure_mode_id", "", "Delete it from the position's RCM, with its task (recorded failures keep it)."),
+    "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
     "add_function": ("position_id text", "standard standard_basis", "A function the position performs, with its "
                      "performance standard and how it was worked out (standard_basis, Markdown)."),
     "update_function": ("function_id", "text standard standard_basis", "Change a function's text, standard or "
@@ -264,14 +277,13 @@ FAILURE_MODES: Table = {
     "move_function": ("function_id position_id", "", "To another position, with its functional failures, modes "
                       "and tasks."),
     "merge": ("failure_mode_id into_failure_mode_id", "", """Fold a mode into another on the same position (a
-        duplicate, an ad-hoc one): its failures, findings and tasks move across. To link an ad-hoc mode to an
-        RCM study's, apply the study, then merge into the study's. Returns the position."""),
+        duplicate, an ad-hoc one): its failures, findings and tasks move across. Returns the position."""),
 }
 
 TASKS: Table = {
     "create": ("name interval", "position_id item_id location_id unit outcome also_interval also_unit point_id "
                "instructions checklist source reference failure_mode_id last_done trade while_stored "
-               "include_positions", """A scheduled task without an RCM study, on exactly one subject:
+               "include_positions", """A scheduled task added directly (not from an RCM decision), on exactly one subject:
         position_id (the job: lubricate the pump), item_id (follows the serial number: calibration,
         certification, a rotable's overhaul, preserving a stored spare) or location_id (a round; calendar units
         only). unit (default months): days, weeks, months, years, or hours / cycles / km from a counter
@@ -288,6 +300,7 @@ TASKS: Table = {
         or include_positions. Its subject can't change: move it, or retire it and create another."""),
     "move": ("task_id position_id", "", "A position's task to another position."),
     "retire": ("task_id", "reason", "Stop scheduling it (it stays in the history)."),
+    "restore": ("task_id", "", "Put a retired task back on the schedule as it was."),
     "set_last_done": ("task_id on", "", """When it was last done before it was tracked here, so its next due
         date counts from then."""),
 }
@@ -337,6 +350,9 @@ MEASUREMENTS: Table = {
         with an ingest-scope token)."""),
     "update_point": ("point_id", "name alarm_above alarm_below clear_alarm_above clear_alarm_below tag", """Rename
         a point, set or clear its alarm limits, or change an automated point's tag."""),
+    "retire_point": ("point_id", "reason", """Stop measuring there (readings kept, its tag freed). Not while a
+        task goes by it or an alarm work order is open."""),
+    "restore_point": ("point_id", "", "Bring a retired point back."),
     "record": ("point_id value", "at on note precision", """A manual reading (the hour meter says 12,340).
         Counters only go up. at is when it was read, to the minute or finer (or on, a day); a time of day orders
         readings taken the same day. Returns the point: latest, rate or trend, status, any alarm work order."""),
@@ -353,6 +369,9 @@ LOCATIONS: Table = {
         a location_id."""),
     "update": ("location_id", "name description parent_id move_to_top_level", """Rename it, change its
         description, or move it inside another (parent_id) or to the top level."""),
+    "retire": ("location_id", "reason cascade", """Take a place out of use (kept in the history): nothing located,
+        placed or stocked there, no open work; cascade true takes the locations inside it too."""),
+    "restore": ("location_id", "", "Bring a retired location back (with the rounds retired with it)."),
 }
 
 PARTS: Table = {
@@ -362,19 +381,24 @@ PARTS: Table = {
         the register (manufacturer_match first). unit default 'each'."""),
     "stock": ("part_id location_id quantity", "reason on",
               "Receive (positive quantity) or issue / write off (negative) at a location."),
-    "reorder": ("part_id location_id reorder_point", "",
-                "Stock at or below reorder_point at the location counts as low."),
+    "reorder": ("part_id location_id", "reorder_point clear_reorder_point",
+                "Stock at or below reorder_point at the location counts as low (clear_reorder_point true: none)."),
     "link": ("part_id other_part_id", "relation", """part_id is superseded_by other_part_id, or the two are
         interchangeable (default)."""),
+    "unlink": ("part_id other_part_id", "relation", "Take off a wrong supersession or interchangeability."),
+    "retire": ("part_id", "reason", """Take a part out of the catalogue (kept in the history and on its items). No
+        stock on hand, no parts list or structure naming it."""),
+    "restore": ("part_id", "", "Bring a retired part back into the catalogue."),
     "add_to_position": ("position_id part_id", "role quantity critical min_on_hand notes", """Put a catalogue part
         on a position's parts list (its bill of materials). role: replacement (replaces what's fitted, one per
         position), component (default: used in its maintenance) or consumable. quantity: per job (default 1).
         critical true: a critical spare, min_on_hand the least to keep (default one job's worth). notes:
         compatibility ('fits from serial 4000 on'). Returns the parts list."""),
     "update": ("part_id", "name manufacturer unit unit_cost notes lead_time_days service_level repairable "
-               "turnaround_days", """Change a catalogue part. For its stock levels: lead_time_days to replenish,
+               "turnaround_days clear", """Change a catalogue part. For its stock levels: lead_time_days to replenish,
         service_level (chance of no stock-out to plan for, e.g. 0.95), repairable with turnaround_days (repaired
-        and sent back)."""),
+        and sent back). clear: a list of the numbers to take off (unit_cost, lead_time_days, service_level,
+        turnaround_days)."""),
     "update_on_position": ("listing_id", "role quantity critical min_on_hand notes", """Change a parts-list entry
         (ids in the position's parts_list); critical false drops the minimum. For a different part, remove it and
         add the other."""),
@@ -412,7 +436,11 @@ TOPOLOGY: Table = {
         another (water tank -> pump, 240 V switchboard -> motor). kind: flow (default), electrical, mechanical,
         signal, data, other. realised_by: a position for the connection itself when it's maintainable (a hose, a
         cable)."""),
+    "update": ("interface_id", "kind medium name rating realised_by clear_realised_by", """Change a connection's
+        kind, medium, name, rating ('' clears) or the position that realises it (clear_realised_by true: none).
+        Its ends don't change: disconnect and connect again."""),
     "disconnect": ("interface_id", "", "Remove a connection (its id is in the position's connections)."),
+    "reconnect": ("interface_id", "", "Put a removed connection back as it was."),
     "create_group": ("member_ids", "name k mode standby", """Positions doing the same job where k of them are
         enough (two pumps, either will do: k = 1, the default; duty and standby: mode standby). Record it while
         building the register: generate_rbd and impact depend on it. mode active (default) or standby (the others
@@ -420,6 +448,8 @@ TOPOLOGY: Table = {
     "update_group": ("group_id", "name k mode standby add remove",
                      "Rename it, change k or mode, add / remove members."),
     "set_duty": ("group_id position_id", "", "Which member of a standby group runs now (a duty / standby swap)."),
+    "retire_group": ("group_id", "reason", "Take a redundancy group out of use (kept in the history)."),
+    "restore_group": ("group_id", "", "Bring a retired group back with its members."),
     "generate_rbd": ("position_id", "", """Generate (or regenerate) an RBD for a system position from the
         positions inside it: connections wire the blocks, groups become k of n, blocks take their class's
         fitted model (placeholders otherwise, listed in notes). Saved as a normal RBD: rbd_analysis analyze."""),
@@ -435,6 +465,7 @@ ITEM_CLASSES: Table = {
     "set_attributes": ("item_class_id attributes", "", """Replace the class's OWN attributes (the whole list).
         Values items have for one taken off stay on them."""),
     "retire": ("item_class_id", "reason", "Take an empty class out of use (kept in the history)."),
+    "restore": ("item_class_id", "", "Bring a retired class back into the tree."),
     "assign": ("target_id item_class_id", "", """Give an item or a catalogue part a class; item_class_id 'none'
         takes it away. Prefer the part: its items follow."""),
     "import": ("", "classes csv dry_run source", """Load a taxonomy the user has (their company's, or a standard
@@ -448,6 +479,7 @@ ITEM_CLASSES: Table = {
     "update_condition": ("condition_id", "name kind unit code description parent_id move_to_top_level",
                          "Rename, change or move a condition."),
     "retire_condition": ("condition_id", "reason", "Retire a condition: it stops applying anywhere."),
+    "restore_condition": ("condition_id", "", "Bring a retired condition back: it applies again where it was."),
     "apply_condition": ("target_id condition_id", "value note",
                         "Record that a location, position, item or connection is exposed to it."),
     "exclude_condition": ("target_id condition_id", "note", "Stop an inherited condition there and below."),
@@ -461,6 +493,8 @@ MANUFACTURERS: Table = {
     "update": ("manufacturer_id", "name add_aliases remove_aliases", "Rename it, or add or take off aliases."),
     "merge": ("manufacturer_id into_manufacturer_id", "", """Fold a duplicate into another: its items and parts
         move, its names become aliases. Confirm with the user first."""),
+    "retire": ("manufacturer_id", "reason", "Take an entry nothing links to out of the register (kept in the history)."),
+    "restore": ("manufacturer_id", "", "Bring a retired entry back."),
     "link": ("target_id manufacturer_id", "", """Link an item or (preferably) a part to its maker; manufacturer_id
         'none' unlinks. Its typed manufacturer text stays (or takes the register's name if it had none)."""),
     "link_by_name": ("", "dry_run", """Link every item and part whose typed manufacturer matches an entry and has
@@ -487,6 +521,10 @@ ATTACHMENTS: Table = {
     "remove_document": ("document_id", "",
                         "Remove a document (ids in the documents on the item, position or class); a kept PDF is "
                         "deleted."),
+    "update_document": ("document_id", "title kind", "Change a document's title or kind."),
+    "restore_document": ("document_id", "", "Put a removed link back (a deleted PDF can't come back: add it again)."),
+    "update_photo": ("photo_id", "caption", "Change a photo's caption ('' clears it)."),
+    "clear_coordinates": ("target_id", "", "Take a position's, item's or location's coordinates off."),
 }
 
 WORKSPACE: Table = {
@@ -516,6 +554,10 @@ TABLES: dict[str, tuple[str, Table]] = {
 
 def register() -> None:
     """Add the maintenance tools to the MCP server (idempotent)."""
+    # Importing the server registers these tools itself when Maintenance is on,
+    # so import it first: a nested register fills TOOL_NAMES and this one returns.
+    from backend import mcp_server  # noqa: F401
+
     if TOOL_NAMES:
         return
     from mcp.server.mcpserver import Context, Image
@@ -531,7 +573,6 @@ def register() -> None:
     from backend.routers.maintenance import (document_link, get_store, ingest_document, link_payload, photo_links,
                                              remove_document, remove_photo, served_photo)
     from backend.routers.maintenance import remove_function as remove_function_and_documents
-    from backend.schema import RcmStudy
     from backend.services import access as access_service
     from backend.services import time_zones
 
@@ -539,6 +580,11 @@ def register() -> None:
         user = _caller(ctx)
         if not allowed(user):
             raise ToolError("Reliafy Maintenance isn't available on your account yet.")
+        # Inside a batch, every operation acts on the batch's Maintenance (the dry
+        # pass's throwaway copy, then the live one).
+        active = apply_mod.ACTIVE_M.get()
+        if active is not None:
+            return active
         return Maintenance(get_store(), user["uid"], user["uid"], time_zone=time_zones.of_owner(_db(), user["uid"]))
 
     def run(fn, *args, **kwargs):
@@ -548,13 +594,6 @@ def register() -> None:
             raise ToolError("Not found in your maintenance workspace.") from None
         except Invalid as err:
             raise ToolError(str(err)) from None
-
-    def study_for(ctx: Context, study_id: str) -> RcmStudy:
-        user = _caller(ctx)
-        study, _ = access_service.fetch_readable(_db(), "rcm_studies", RcmStudy, study_id, _reader(user))
-        if study is None:
-            raise ToolError("RCM study not found.")
-        return study
 
     def tool(name, annotations, title, table: Table | None = None, selector: str = "action"):
         """Register one tool; with a table, its description lists the actions and
@@ -571,8 +610,22 @@ def register() -> None:
                 check(selector, kwargs[selector], table,
                       {k: v for k, v in kwargs.items() if k != selector and not isinstance(v, Context)})
                 return fn(*args, **kwargs)
+            BODIES[name] = checked
             return _tool(name, annotations, title, call_key=lambda kwargs: f"{name}.{kwargs[selector]}")(checked)
         return decorator
+
+    # Bytes kept outside the event log (a PDF's, a photo's) are deleted only on a
+    # real run: a batch's dry pass changes the throwaway copy alone.
+    def remove_photo_bytes(m, photo_id):
+        if apply_mod.DRY.get():
+            return (m.remove_photo(photo_id), {"removed": photo_id})[1]
+        return remove_photo(m, photo_id)
+
+    def remove_document_bytes(m, document_id):
+        return m.remove_document(document_id) if apply_mod.DRY.get() else remove_document(m, document_id)
+
+    def remove_function_bytes(m, function_id):
+        return m.remove_function(function_id) if apply_mod.DRY.get() else remove_function_and_documents(m, function_id)
 
     def base_url(ctx: Context) -> str:
         return config.PUBLIC_BASE_URL or str(ctx.request_context.request.base_url).rstrip("/")
@@ -637,9 +690,10 @@ def register() -> None:
         plan (RCM or tasks directly; tasks on a position, an item or a location), run (generate and
         close work orders: failure modes, parts, labour, corrections), learn (class life data, fitting a
         class model, proposals the user accepts), decide (plan economics, generated RBDs, impact, spares
-        cover), data (rough dates, placement, time zone, notes, dry runs), classes (position classes vs
-        item classes, taxonomies, manufacturers), conditions (what things are exposed to, inherited),
-        structure (parts made of parts: BOMs, indenture levels, where used).
+        cover), data (rough dates, placement, time zone, notes, dry runs, retire and restore, clearing),
+        classes (position classes vs item classes, taxonomies, manufacturers), conditions (what things are
+        exposed to, inherited), structure (parts made of parts: BOMs, indenture levels, where used), apply
+        (many changes in one call: build a branch, bulk edit, delete with confirm, undo).
         Read the one you need before a task you haven't done here yet."""
         m_for(ctx)  # Maintenance is on for this account
         pages = dict(mcp_guide.TOPICS)
@@ -721,13 +775,19 @@ def register() -> None:
                          manufacturer_id: Annotated[str | None, Field(description=(
                              "Only this manufacturer's; 'none' for those with no manufacturer linked."))] = None,
                          target_id: str | None = None, include_unlisted: bool | None = None,
-                         format: Literal["tree", "json", "csv"] | None = None) -> dict[str, Any]:
+                         format: Literal["tree", "json", "csv"] | None = None,
+                         limit: Annotated[int | None, Field(ge=1, le=500)] = None,
+                         since: Annotated[int | None, Field(ge=0, description="events: a seq to read on from.")] = None,
+                         type: Annotated[str | None, Field(description="events: one event type.")] = None
+                         ) -> dict[str, Any]:
         """Lists and reports across the maintenance workspace, by kind."""
         m = m_for(ctx)
         statuses = {"work_orders": ("open", "planned", "in_progress", "waiting", "closed", "cancelled"),
                     "proposals": ("pending", "accepted", "rejected", "superseded", "all")}
         if status is not None and status not in statuses[kind]:
             raise ToolError(f"kind '{kind}' takes status {', '.join(statuses[kind])}.")
+        if kind == "events":
+            return {"events": run(m.s.events, m.org, _d(limit, 100), since, type or None)}
         if kind == "work_orders":
             return {"work_orders": run(m.work_orders, status, location_id)}
         if kind == "items":
@@ -834,12 +894,12 @@ def register() -> None:
                               name: str | None = None,
                               parent_id: Annotated[str | None, Field(description=(
                                   "create / update / copy: the position (or, for create, the item) it goes "
-                                  "inside. from_rcm: the position to make it in."))] = None,
+                                  "inside."))] = None,
                               tag: str | None = None, position_class: str | None = None,
                               description: str | None = None, operating_context: str | None = None,
                               location_id: str | None = None, move_to_top_level: bool | None = None,
                               clear_location: bool | None = None,
-                              reason: str | None = None, study_id: str | None = None,
+                              reason: str | None = None, cascade: bool | None = None,
                               dry_run: bool | None = None, again: bool | None = None) -> dict[str, Any]:
         """Positions: the functional tree (functional locations, SAP's FLOC): the slot, by what it does.
         Items are fitted to them; tasks, failure modes, parts lists and life data belong to them."""
@@ -860,12 +920,9 @@ def register() -> None:
         if action == "copy":
             return run(m.copy_position, position_id, name, parent_id)
         if action == "retire":
-            return run(m.retire_position, position_id, reason or "")
-        if action == "from_rcm":
-            return run(m.position_from_rcm, study_for(ctx, study_id), parent_id)
-        if action == "apply_rcm":
-            return run(lambda: {**m.apply_rcm(position_id, study_for(ctx, study_id)),
-                                "position": m.position(position_id)})
+            return run(m.retire_position, position_id, reason or "", bool(cascade))
+        if action == "restore":
+            return run(m.restore_position, position_id)
         if action == "add_sample_truck":
             from backend.maintenance import templates
 
@@ -935,12 +992,29 @@ def register() -> None:
                           values: Annotated[dict[str, Any] | None, Field(description=(
                               "{attribute name: value}, e.g. {'Flow': 45, 'Head': '32 m', 'Shaft seal': "
                               "'mechanical seal'}. Numbers in the attribute's unit (convert first); '' or "
-                              "null clears one."))] = None) -> dict[str, Any]:
+                              "null clears one."))] = None,
+                          reason: str | None = None) -> dict[str, Any]:
         """Items: the physical, serial-numbered things. Their details, nameplate, dates, warranty and
         attributes, which catalogue part (make and model) they are, and where an unfitted one is. To
         fit, remove or move one: maintenance_fitments. The nameplate flow is in maintenance_guide topic
         register. Say what you read from a plate and what you couldn't."""
         m = m_for(ctx)
+        if action == "create":
+            def go():
+                details = {k: v for k, v in (("purchase_date", purchase_date), ("in_service_date", in_service_date),
+                                             ("manufacture_date", manufacture_date),
+                                             ("replacement_cost", replacement_cost), ("warranty", warranty))
+                           if v is not None}
+                made = m.create_item(name, serial or "", part_number or "", manufacturer or "", notes or "",
+                                     model or "", nameplate, none_is_null(part_id), **details)
+                if location_id:
+                    m.place_item(made["id"], location_id, on)
+                return m.item(made["id"])
+            return run(go)
+        if action == "retire":
+            return run(m.retire_item, item_id, reason or "")
+        if action == "restore":
+            return run(m.restore_item, item_id)
         if action == "update":
             details = {k: v for k, v in (("purchase_date", purchase_date), ("in_service_date", in_service_date),
                                          ("manufacture_date", manufacture_date),
@@ -968,8 +1042,8 @@ def register() -> None:
                                   decision: dict[str, Any] | None = None,
                                   cause_id: str | None = None) -> dict[str, Any]:
         """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
-        each fails (functional failures) and the modes causing each, with each mode's decision. Modes come
-        from RCM studies, are added here, or are typed in at a failure (ad hoc). Failures
+        each fails (functional failures) and the modes causing each, with each mode's decision. Modes are
+        added here (or from a worksheet: uploads import_excel), or typed in at a failure (ad hoc). Failures
         (maintenance_fitments remove / add_past, maintenance_work_orders close) and tasks name them by id.
         Read it with maintenance_get kind rcm."""
         m = m_for(ctx)
@@ -1002,12 +1076,14 @@ def register() -> None:
             return run(m.assign_failure_mode, failure_mode_id, functional_failure_id)
         if action == "retire":
             return run(m.retire_failure_mode, failure_mode_id)
+        if action == "restore":
+            return run(m.restore_failure_mode, failure_mode_id)
         if action == "add_function":
             return run(m.add_function, position_id, text, standard or "", standard_basis=standard_basis or "")
         if action == "update_function":
             return run(m.update_function, function_id, text, standard, standard_basis)
         if action == "remove_function":
-            return run(remove_function_and_documents, m, function_id)
+            return run(remove_function_bytes, m, function_id)
         if action == "add_functional_failure":
             return run(m.add_functional_failure, function_id, text)
         if action == "update_functional_failure":
@@ -1043,8 +1119,8 @@ def register() -> None:
                           reason: str | None = None) -> dict[str, Any]:
         """Scheduled tasks: they fall due and raise work orders (maintenance_work_orders generate). A task
         is on a position (the job; it counts again from each new item fitted), an item (follows the serial
-        number, into a store too) or a location (a round). Tasks from RCM come with maintenance_positions
-        from_rcm / apply_rcm. Example: {action: 'create', position_id: '<id>', name: 'Grease bearings',
+        number, into a store too) or a location (a round). A task from an RCM decision comes with
+        maintenance_failure_modes decide. Example: {action: 'create', position_id: '<id>', name: 'Grease bearings',
         interval: 500, unit: 'hours', also_interval: 6, also_unit: 'months', source: 'oem', reference:
         'Manual 7.2'}."""
         m = m_for(ctx)
@@ -1063,6 +1139,8 @@ def register() -> None:
             return run(m.move_task, task_id, position_id)
         if action == "retire":
             return run(lambda: (m.retire_task(task_id, reason or ""), {"retired": task_id})[1])
+        if action == "restore":
+            return run(m.restore_task, task_id)
         return run(m.set_last_done, task_id, on)
 
     @tool("maintenance_proposals", _WRITE, "Accept or reject a proposed plan change", PROPOSALS)
@@ -1178,6 +1256,10 @@ def register() -> None:
             if tag is not None:
                 kwargs["tag"] = tag
             return run(m.update_point, point_id, **kwargs)
+        if action == "retire_point":
+            return run(m.retire_point, point_id, reason or "")
+        if action == "restore_point":
+            return run(m.restore_point, point_id)
         if action == "record":
             return run(m.record_reading, point_id, value, on, note or "", at, precision)
         if action == "void":
@@ -1187,14 +1269,18 @@ def register() -> None:
     @tool("maintenance_locations", _WRITE, "Create and change locations", LOCATIONS)
     def maintenance_locations(action: _choice(LOCATIONS), ctx: Context, location_id: str | None = None,
                               name: str | None = None, parent_id: str | None = None,
-                              description: str | None = None, move_to_top_level: bool | None = None
-                              ) -> dict[str, Any]:
+                              description: str | None = None, move_to_top_level: bool | None = None,
+                              reason: str | None = None, cascade: bool | None = None) -> dict[str, Any]:
         """Locations: the physical tree (sites, areas, buildings, rooms, substations, stores), separate
         from the positions (the functional tree). Positions get a location_id; unfitted items are placed
         at one (maintenance_items place)."""
         m = m_for(ctx)
         if action == "create":
             return run(m.create_location, name, parent_id, description or "")
+        if action == "retire":
+            return run(m.retire_location, location_id, reason or "", bool(cascade))
+        if action == "restore":
+            return run(m.restore_location, location_id)
         kwargs = {k: v for k, v in (("name", name), ("description", description)) if v is not None}
         if parent_id or move_to_top_level:
             kwargs["parent_id"] = None if move_to_top_level else parent_id
@@ -1245,7 +1331,11 @@ def register() -> None:
                               "'indenture level'?, manufacturer?, reference?}]; names matched loosely."))] = None,
                           dry_run: bool | None = None, lead_time_days: float | None = None,
                           service_level: float | None = None, repairable: bool | None = None,
-                          turnaround_days: float | None = None) -> dict[str, Any]:
+                          turnaround_days: float | None = None,
+                          clear: Annotated[list[Literal["unit_cost", "lead_time_days", "service_level",
+                                                        "turnaround_days"]] | None,
+                                           Field(description="update: numbers to take off the part.")] = None,
+                          clear_reorder_point: bool | None = None) -> dict[str, Any]:
         """The parts catalogue (spares, and makes and models of equipment), stock at locations, and each
         position's parts list (its bill of materials, with critical spares). Supersession and
         interchangeable parts belong to the catalogue (link), not the parts list. Parts made of parts
@@ -1261,15 +1351,24 @@ def register() -> None:
             changes = {"name": name, "manufacturer": manufacturer, "unit": unit, "unit_cost": unit_cost,
                        "notes": notes, "lead_time_days": lead_time_days, "service_level": service_level,
                        "repairable": repairable, "turnaround_days": turnaround_days}
-            return run(m.update_part, part_id, **{k: v for k, v in changes.items() if v is not None})
+            changes = {k: v for k, v in changes.items() if v is not None} | {k: None for k in clear or []}
+            return run(m.update_part, part_id, **changes)
         if action == "stock":
             return run(m.adjust_stock, part_id, location_id, quantity, reason or "", on)
         if action == "reorder":
-            return run(m.set_reorder_point, part_id, location_id, reorder_point)
+            if reorder_point is None and not clear_reorder_point:
+                raise ToolError("action 'reorder' needs reorder_point (or clear_reorder_point true).")
+            return run(m.set_reorder_point, part_id, location_id, None if clear_reorder_point else reorder_point)
         if action == "link":
             if relation == "superseded_by":
                 return run(m.supersede_part, part_id, other_part_id)
             return run(m.mark_interchangeable, part_id, other_part_id)
+        if action == "unlink":
+            return run(m.unlink_parts, part_id, other_part_id, _d(relation, "interchangeable"))
+        if action == "retire":
+            return run(m.retire_part, part_id, reason or "")
+        if action == "restore":
+            return run(m.restore_part, part_id)
         if action == "add_to_position":
             return run(m.add_position_part, position_id, part_id, _d(role, "component"), _d(quantity, 1),
                        bool(critical), min_on_hand, notes or "")
@@ -1316,7 +1415,8 @@ def register() -> None:
                              mode: Literal["active", "standby"] | None = None,
                              standby: Literal["cold", "warm", "hot"] | None = None,
                              group_id: str | None = None, add: list[str] | None = None,
-                             remove: list[str] | None = None, position_id: str | None = None) -> dict[str, Any]:
+                             remove: list[str] | None = None, position_id: str | None = None,
+                             clear_realised_by: bool | None = None, reason: str | None = None) -> dict[str, Any]:
         """How positions depend on each other: connections (what passes from one to another) and
         redundancy groups (k of n will do). They drive impact (maintenance_get kind impact) and the RBD
         generate_rbd makes from a system."""
@@ -1324,8 +1424,17 @@ def register() -> None:
         if action == "connect":
             return run(m.connect, from_id, to_id, _d(kind, "flow"), medium or "", name or "", rating or "",
                        realised_by)
+        if action == "update":
+            via = None if clear_realised_by else realised_by if realised_by is not None else ...
+            return run(m.update_interface, interface_id, kind, medium, name, rating, via)
         if action == "disconnect":
             return run(lambda: (m.disconnect(interface_id), {"removed": interface_id})[1])
+        if action == "reconnect":
+            return run(m.reconnect, interface_id)
+        if action == "retire_group":
+            return run(lambda: (m.retire_group(group_id, reason or ""), {"retired": group_id})[1])
+        if action == "restore_group":
+            return run(m.restore_group, group_id)
         if action == "create_group":
             return run(m.create_group, name or "", member_ids, _d(k, 1), _d(mode, "active"), _d(standby, "cold"))
         if action == "update_group":
@@ -1355,6 +1464,8 @@ def register() -> None:
             return run(m.update_condition, condition_id, **kwargs)
         if action == "retire_condition":
             return run(lambda: (m.retire_condition(condition_id, reason or ""), {"retired": condition_id})[1])
+        if action == "restore_condition":
+            return run(m.restore_condition, condition_id)
         if action == "apply_condition":
             return run(m.apply_condition, target_id, condition_id, value, note or "")
         if action == "exclude_condition":
@@ -1419,6 +1530,8 @@ def register() -> None:
             return run(m.set_item_class_attributes, item_class_id, attributes or [])
         if action == "retire":
             return run(lambda: (m.retire_item_class(item_class_id, reason or ""), {"retired": item_class_id})[1])
+        if action == "restore":
+            return run(m.restore_item_class, item_class_id)
         if action == "assign":
             return run(m.assign_item_class, target_id, none_is_null(item_class_id))
         if action == "import":
@@ -1440,7 +1553,7 @@ def register() -> None:
                                   into_manufacturer_id: str | None = None,
                                   target_id: Annotated[str | None, Field(description=(
                                       "link: an item or a catalogue part."))] = None,
-                                  dry_run: bool | None = None) -> dict[str, Any]:
+                                  dry_run: bool | None = None, reason: str | None = None) -> dict[str, Any]:
         """The manufacturer register: one entry per maker, tying its spellings together ('KSB',
         'K.S.B.', 'KSB SE & Co. KGaA'). Items and parts keep their typed manufacturer text and link to an
         entry. Find one first with maintenance_get kind manufacturer_match."""
@@ -1451,6 +1564,10 @@ def register() -> None:
             return run(m.update_manufacturer, manufacturer_id, name, add_aliases or [], remove_aliases or [])
         if action == "merge":
             return run(m.merge_manufacturers, manufacturer_id, into_manufacturer_id)
+        if action == "retire":
+            return run(m.retire_manufacturer, manufacturer_id, reason or "")
+        if action == "restore":
+            return run(m.restore_manufacturer, manufacturer_id)
         if action == "link":
             return run(m.link_manufacturer, target_id, none_is_null(manufacturer_id))
         return run(m.link_manufacturers_by_name, _d(dry_run, True))
@@ -1481,8 +1598,16 @@ def register() -> None:
             return run(lambda: link_payload(base_url(ctx), m, m.photo_target(target_id), (caption or "")[:200]))
         if action == "set_coordinates":
             return run(m.set_coordinates, target_id, lat, lon, _d(source, "manual"))
+        if action == "clear_coordinates":
+            return run(m.clear_coordinates, target_id)
         if action == "remove_photo":
-            return run(remove_photo, m, photo_id)
+            return run(remove_photo_bytes, m, photo_id)
+        if action == "update_photo":
+            return run(m.update_photo, photo_id, caption)
+        if action == "update_document":
+            return run(m.update_document, document_id, title, kind)
+        if action == "restore_document":
+            return run(m.restore_document, document_id)
         if action == "link_photo":
             return run(m.link_photo, photo_id, target_id)
         if action == "unlink_photo":
@@ -1506,7 +1631,7 @@ def register() -> None:
                         target_id, position_class)
             uploads_service.delete(db, upload["_id"])
             return saved
-        return run(remove_document, m, document_id)
+        return run(remove_document_bytes, m, document_id)
 
     @tool("maintenance_workspace", _WRITE, "Workspace settings and history import", WORKSPACE)
     def maintenance_workspace(action: _choice(WORKSPACE), ctx: Context,
@@ -1530,6 +1655,87 @@ def register() -> None:
             raise ToolError(f"At most {importer.MAX_ROWS} rows at a time.")
         return run(importer.run, m_for(ctx), [{str(k): str(v) for k, v in r.items()} for r in rows],
                    _d(dry_run, True))
+
+    # ---- many changes in one call --------------------------------------------------------
+
+    @tool("maintenance_apply", _WRITE, "Many maintenance changes in one call")
+    def maintenance_apply(
+            operations: Annotated[list[dict[str, Any]], Field(description=(
+                "[{do: '<area>.<action>', args: {the action's arguments}, ref?: 'p1', confirm?: 'its name'}], "
+                "in order, at most 200. @ref in any argument is an earlier operation's id (@p1.fitted.item.id: "
+                "a field)."))],
+            ctx: Context,
+            dry_run: Annotated[bool | None, Field(description=(
+                "true: check every operation and report what would happen, writing nothing. Default: true "
+                "when any operation deletes or there are more than 25, else false."))] = None,
+            on_error: Annotated[Literal["stop", "continue"] | None, Field(description=(
+                "On a failure during the real run (rare: a change made meanwhile): stop (default) or "
+                "continue with the rest."))] = None,
+            idempotency_key: Annotated[str | None, Field(description=(
+                "A key of your own (up to 64 characters): the same key and operations within 24 hours answer "
+                "with the first run's result instead of running again."))] = None) -> dict[str, Any]:
+        """Run a list of maintenance write actions as one batch: build a whole branch (a position, its
+        functions, functional failures, failure modes, decisions, tasks, parts list, connections), or
+        edit and delete many things at once. Each operation is one of the maintenance_<area> tools'
+        actions (area = the tool name without maintenance_: positions, fitments, items, failure_modes,
+        tasks, proposals, work_orders, measurements, locations, parts, topology, item_classes,
+        manufacturers, attachments) with its own arguments and error texts. Every operation is first
+        checked on a throwaway copy of the workspace: with any failure nothing is written. A delete-type
+        operation (retire, remove, void, cancel, merge, disconnect, unlink, clear) needs confirm: the
+        thing's name as it is now. Answers with each operation's result, counts, the events written and
+        undo (the reverse operations). At most 200 operations (50 deletes). How-to and worked examples:
+        maintenance_guide topic apply."""
+        from pydantic import ValidationError
+
+        from backend.maintenance.store import scratch_copy
+        from backend.mcp_server import _validation_message
+
+        m = m_for(ctx)
+        tables = {name: TABLES[name] for name in TABLES if TABLES[name][0] == "action"}
+        try:
+            ops = apply_mod.parse(operations, tables)
+            if idempotency_key:
+                stored = apply_mod.replay(_db(), m.org, idempotency_key, operations)
+                if stored is not None:
+                    return stored
+            for op in ops:
+                apply_mod.check_confirm(m, op)
+        except apply_mod.BatchRefused as err:
+            raise ToolError(str(err)) from None
+        dry = _d(dry_run, any(op["do"] in apply_mod.DELETES for op in ops) or len(ops) > apply_mod.AUTO_DRY_RUN_OVER)
+        stop = _d(on_error, "stop") == "stop"
+
+        def call(area, action, args):
+            name = f"maintenance_{area}"
+            try:  # the action's argument types, as the tool's schema has them
+                mcp._tool_manager.get_tool(name).fn_metadata.arg_model.model_validate({**args, "action": action})
+            except ValidationError as exc:
+                raise apply_mod.BatchRefused(_validation_message("action", action, exc, {})) from None
+            return BODIES[name](action=action, ctx=ctx, **args)
+
+        # The dry pass, on a copy: a failure anywhere refuses the whole batch.
+        copy = Maintenance(scratch_copy(m.s, m.org), m.org, m.actor, time_zone=m.time_zone)
+        rehearsal = apply_mod.run_pass(ops, call, copy, "stop", dry=True)
+        if dry or rehearsal["failed"]:
+            out = apply_mod.summarise(ops, rehearsal, True, copy.s.event_count(m.org))
+            if rehearsal["failed"]:
+                out["detail"] = (f"Nothing was written: {rehearsal['failed']['error']} Fix that operation and "
+                                 "send the batch again.")
+            elif dry_run is None:
+                out["detail"] = ("A dry run (the batch deletes, or has over 25 operations): show the user what "
+                                 "would change, then run it again with dry_run false.")
+            return out
+        before = m.s.event_count(m.org)
+        real = apply_mod.run_pass(ops, call, m, "stop" if stop else "continue", dry=False)
+        out = apply_mod.summarise(ops, real, False, m.s.event_count(m.org) - before)
+        if real["failed"] and stop:
+            out["detail"] = (f"Stopped at {real['failed']['error']} The operations before it were applied (undo "
+                             "lists their reverse); the rest were skipped.")
+        elif real["failed"]:
+            out["detail"] = f"{real['failed']['error']} The other operations ran (see results)."
+        if idempotency_key:
+            apply_mod.remember(_db(), m.org, idempotency_key, operations, out)
+        return out
 
     # The tools are listed only to people who may use them: wrap the server's
     # tools/list handler to drop them for everyone else.
@@ -1612,6 +1818,7 @@ def unregister() -> None:
         mcp.remove_tool(name)
     TOOL_NAMES.clear()
     GRAPH_TOOL_NAMES.clear()
+    BODIES.clear()
     lowlevel = mcp._lowlevel_server
     if "tools/list" in _ORIGINAL:
         lowlevel._request_handlers["tools/list"] = _ORIGINAL.pop("tools/list")

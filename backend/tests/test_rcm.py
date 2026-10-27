@@ -1,4 +1,5 @@
-"""RCM studies: worksheet CRUD, caps, and live evidence-status resolution."""
+"""The RCM evidence check: a decision on a position against the saved model or
+analysis it links (backend/maintenance/rcm_decisions.py), read live."""
 
 import matplotlib
 
@@ -10,6 +11,10 @@ import mongomock
 import numpy as np
 import pandas as pd
 import pytest
+
+from backend.maintenance import rcm_graph
+from backend.maintenance.service import PROJECTORS, Maintenance
+from backend.maintenance.store import GraphStore
 
 
 @pytest.fixture()
@@ -23,7 +28,6 @@ def session(monkeypatch):
 
 
 A = "user-a"
-B = "user-b"
 
 
 def _csv(kind: str) -> bytes:
@@ -61,55 +65,13 @@ def _make_replacement(session, owner, beneficial: bool):
     return strategy_store.save_analysis(session, "repl", "optimal_replacement", inputs, owner)
 
 
-def _mode(decision, mid="m1"):
-    return [{
-        "id": "f1", "text": "Function",
-        "failures": [{"id": "ff1", "text": "Failure", "modes": [
-            {"id": mid, "text": "Mode", "consequence": "operational", "decision": decision},
-        ]}],
-    }]
-
-
 def _status(session, owner, decision):
-    from backend.services import rcm
-
-    study = rcm.create_study(session, "S", "", "", owner)
-    rcm.replace_tree(session, study.id, _mode(decision), owner)
-    study = rcm.get_study(session, study.id, owner)
-    resolved = rcm.resolve(session, study, owner)
-    return resolved["functions"][0]["failures"][0]["modes"][0]["decision"]
-
-
-# ---- CRUD + validation --------------------------------------------------------
-
-def test_study_crud_and_tree_validation(session):
-    from backend.services import rcm
-
-    study = rcm.create_study(session, "Pumps", "Pump station", "", A)
-    assert rcm.get_study(session, study.id, A) is not None
-    assert rcm.get_study(session, study.id, B) is None  # isolation
-
-    # Valid tree round trip; ids preserved, missing ids generated.
-    tree = [{"text": "Fn", "failures": [{"id": "keep", "text": "FF", "modes": []}]}]
-    updated = rcm.replace_tree(session, study.id, tree, A)
-    assert updated.functions[0]["id"]  # generated
-    assert updated.functions[0]["failures"][0]["id"] == "keep"
-
-    with pytest.raises(rcm.RcmValidationError):  # empty text
-        rcm.replace_tree(session, study.id, [{"text": " ", "failures": []}], A)
-    with pytest.raises(rcm.RcmValidationError):  # bad consequence
-        rcm.replace_tree(session, study.id, _mode(None) and [{
-            "text": "Fn", "failures": [{"text": "FF", "modes": [{"text": "M", "consequence": "bogus"}]}]}], A)
-    with pytest.raises(rcm.RcmValidationError):  # rtf without basis
-        rcm.replace_tree(session, study.id, _mode({"outcome": "rtf"}), A)
-    with pytest.raises(rcm.RcmValidationError):  # bad interval
-        rcm.replace_tree(session, study.id, _mode({"outcome": "fixed_interval", "interval": -5}), A)
-    with pytest.raises(rcm.StudyNotFound):  # B can't write A's tree
-        rcm.replace_tree(session, study.id, tree, B)
-
-    rcm.rename_study(session, study.id, "Pumps v2", A)
-    rcm.delete_study(session, study.id, A)
-    assert rcm.get_study(session, study.id, A) is None
+    """Decide one failure mode on a position of ``owner``'s and read the check."""
+    m = Maintenance(GraphStore(":memory:", PROJECTORS), owner, "tester")
+    pid = m.create_position("Thing")["id"]
+    mode = m.add_failure_mode(pid, "Mode", consequence="operational")
+    m.decide_failure_mode(mode["id"], decision=decision)
+    return rcm_graph.mode_status(session, m.rcm_mode(mode["id"]), owner)["decision"]
 
 
 # ---- Evidence-status rules ------------------------------------------------------
@@ -131,7 +93,6 @@ def test_rtf_random_statuses(session):
     assert _status(session, A, d)["status"] == "supported"
 
     # Old model without CI info -> inconclusive with a re-save hint.
-    from backend import db as db_module
     session.models.update_one({"_id": wear.id}, {"$unset": {"results.randomness": ""}})
     session.models.update_one({"_id": wear.id}, {"$set": {"results.params": [
         {"name": "alpha", "value": 100.0}, {"name": "beta", "value": 3.0}]}})
@@ -201,86 +162,13 @@ def test_on_condition_ffi_mismatch_unevidenced_stale(session):
     assert _status(session, A, oc)["status"] == "stale"
 
 
-# ---- API: caps + isolation -----------------------------------------------------
-
-def test_api_caps_and_isolation(monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from backend import config, db
-    from backend.auth import get_current_user
-    from backend.main import app
-
-    monkeypatch.setattr(config, "AUTH_DISABLED", False)
-    monkeypatch.setattr(config, "BILLING_ENABLED", True)
-    monkeypatch.setattr(config, "FREE_MAX_RCM_STUDIES", 1)
-    test_db = mongomock.MongoClient()["reliafy_test"]
-    monkeypatch.setattr(db, "_db", test_db)
-    monkeypatch.setattr(db, "_simulated", True)
-    client = TestClient(app)
-    try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True}
-        r = client.post("/api/rcm/studies", json={"name": "S1"})
-        assert r.status_code == 200
-        sid = r.json()["id"]
-        r2 = client.post("/api/rcm/studies", json={"name": "S2"})
-        assert r2.status_code == 402 and r2.json()["code"] == "cap"
-
-        # Admin bypasses the cap.
-        monkeypatch.setattr(config, "ADMIN_EMAILS", {"a@x.com"})
-        assert client.post("/api/rcm/studies", json={"name": "S3"}).status_code == 200
-        monkeypatch.setattr(config, "ADMIN_EMAILS", set())
-
-        # PUT tree via API + resolved response shape.
-        r = client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": [
-            {"text": "Fn", "failures": [{"text": "FF", "modes": [
-                {"text": "M", "consequence": "operational",
-                 "decision": {"outcome": "accept", "notes": "cheap part"}}]}]},
-        ]})
-        assert r.status_code == 200
-        assert r.json()["rollup"]["modes"] == 1
-
-        # usage_summary carries the new key.
-        assert client.get("/api/billing").json()["caps"]["rcm_studies"] == 1
-
-        # Isolation.
-        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True}
-        assert client.get(f"/api/rcm/studies/{sid}").status_code == 404
-    finally:
-        app.dependency_overrides.clear()
-
-
-# ---- Sample study ---------------------------------------------------------------
-
-def test_sample_study_seeds_with_contradicted_demo(session, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from backend import config
-    from backend.auth import get_current_user
-    from backend.main import app
-    from backend.services import samples
-
-    samples.seed_samples(session)
-    samples.seed_samples(session)  # idempotent
-    assert session.rcm_studies.count_documents({}) == 1
-
-    monkeypatch.setattr(config, "AUTH_DISABLED", False)
-    client = TestClient(app)
-    try:
-        app.dependency_overrides[get_current_user] = lambda: {"uid": A, "email": "a@x.com", "name": "A", "email_verified": True}
-        study = client.get("/api/rcm/studies/sample-rcm-truck").json()
-        assert study["is_sample"] is True
-        assert study["rollup"]["supported"] == 3
-        assert study["rollup"]["contradicted"] == 1  # the legacy RTF demo
-
-        # Read-only: PUT and rename refused; delete hides per-user.
-        assert client.put("/api/rcm/studies/sample-rcm-truck/tree", json={"functions": []}).status_code == 403
-        assert client.patch("/api/rcm/studies/sample-rcm-truck", json={"name": "x"}).status_code == 403
-        assert client.delete("/api/rcm/studies/sample-rcm-truck").json()["ok"] is True
-        assert client.get("/api/rcm/studies/sample-rcm-truck").status_code == 404
-        app.dependency_overrides[get_current_user] = lambda: {"uid": B, "email": "b@x.com", "name": "B", "email_verified": True}
-        assert client.get("/api/rcm/studies/sample-rcm-truck").status_code == 200
-    finally:
-        app.dependency_overrides.clear()
+def test_another_owners_evidence_is_stale_to_the_reader(session):
+    """The check reads the evidence as the position's owner: someone else's
+    model, however it got linked, resolves to nothing."""
+    theirs = _make_model(session, "user-b", "random")
+    d = {"outcome": "rtf", "rtf_basis": "random", "evidence": {"type": "model", "id": theirs.id}}
+    assert _status(session, A, d)["status"] == "stale"
+    assert _status(session, "user-b", d)["status"] == "supported"
 
 
 def test_unit_mismatch_blocks_support(session):
@@ -301,9 +189,3 @@ def test_unit_mismatch_blocks_support(session):
     # Aliases of the same unit agree.
     assert status_for("hrs")["status"] == "supported"
     assert status_for("hours")["status"] == "supported"
-    # Missing unit on the decision passes (can't prove a contradiction).
-    ok = _status(session, A, {
-        "outcome": "fixed_interval", "task": "replace",
-        "evidence": {"type": "strategy_analysis", "id": analysis.id},
-    })
-    assert ok["status"] == "supported"

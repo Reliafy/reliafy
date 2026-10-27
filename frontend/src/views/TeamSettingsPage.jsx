@@ -305,7 +305,7 @@ export default function TeamSettingsPage() {
           <p className="muted-line" style={{ marginTop: 0 }}>
             This permanently deletes the team and <b>every artifact in its
             workspace</b> — datasets, models, RBDs, degradation models, tracked
-            items, analyses, and RCM studies — for all members. This can't be
+            items, analyses and forecasts — for all members. This can't be
             undone.
           </p>
           <label className="login-field">

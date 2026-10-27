@@ -37,8 +37,7 @@ _CSV_PREFIXES = ("/api/fit/",)
 
 # Routes that accept an Excel workbook or a diagram file, up to the importers'
 # own limits.
-_FILE_ROUTES = frozenset({"/api/datasets", "/api/rbds/import", "/api/rcm/import",
-                          "/api/rcm/import/preview"})
+_FILE_ROUTES = frozenset({"/api/datasets", "/api/rbds/import"})
 _FILE_PREFIXES = ("/api/excel/",)
 # An RCM worksheet added to a position: /api/maintenance/positions/{id}/rcm/import[/preview].
 _FILE_PATTERN = re.compile(r"^/api/maintenance/positions/[^/]+/rcm/import(?:/preview)?$")

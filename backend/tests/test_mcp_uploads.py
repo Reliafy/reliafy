@@ -502,8 +502,6 @@ def test_excel_rcm_worksheet_needs_a_position(env):
     msg = _err(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
                                                "target": "rcm"}))
     assert "needs position_id" in msg
-    assert _call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
-                                           "target": "rcm", "study_id": "x"}).is_error
 
 
 def test_import_excel_refuses_non_workbooks_and_misplaced_ids(env):

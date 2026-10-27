@@ -72,7 +72,7 @@ together.
 
 Create one from the workspace switcher at the top right (**＋ New team…**), and everything created
 inside it belongs to the team rather than to you — datasets, models, diagrams,
-studies. Members see it all, and the switcher moves you between your personal
+analyses. Members see it all, and the switcher moves you between your personal
 workspace and any teams you belong to.
 
 Invite people from the [team's settings](/team) by email address. They join when they

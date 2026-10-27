@@ -313,16 +313,13 @@ class _Editor:
                         raise EditError(str(exc)) from None
                 elif key in ("preventive", "inspection"):
                     # A block has a schedule or proof tests, not both: the new
-                    # one replaces the other (and the RCM link it carried).
+                    # one replaces the other.
                     data.pop("inspection" if key == "preventive" else "preventive", None)
-                    data.pop("rcm_source", None)
                     data[key] = value
                 else:
                     data[key] = value
             for key in clear:
                 data.pop(key, None)
-                if key in ("preventive", "inspection"):
-                    data.pop("rcm_source", None)
             if data.get("covariate_schedules") and ({"covariate_schedules", "model"} & set(changes)):  # #52
                 from backend.services import rbd_tvc
 

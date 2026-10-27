@@ -543,8 +543,8 @@ class Neo4jGraphStore:
             self._event_counts.clear()
             return self.sync()
 
-    def events(self, org: str, limit: int = 100) -> list[dict]:
-        return self.log.recent(org, limit)
+    def events(self, org: str, limit: int = 100, since: int | None = None, type: str | None = None) -> list[dict]:
+        return self.log.recent(org, limit, since, type)
 
     # ---- writing: the graph (projectors only) -----------------------------------------
 

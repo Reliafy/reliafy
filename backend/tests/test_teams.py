@@ -324,25 +324,11 @@ def test_frozen_team_is_read_only(client):
 
 # ---- Team artifacts compose -------------------------------------------------------
 
-def test_team_rcm_and_tracked_items(client):
+def test_team_tracked_items(client):
     _make_pro(client.db, A)
     client.act_as(A)
     tid = _create_team(client)
     h = {"X-Workspace-Id": tid}
-
-    # Team model -> team RCM study citing it as evidence resolves live.
-    mid = _save_model(client, tid).json()["id"]
-    sid = client.post("/api/rcm/studies", json={"name": "S"}, headers=h).json()["id"]
-    r = client.put(f"/api/rcm/studies/{sid}/tree", headers=h, json={"functions": [
-        {"text": "Fn", "failures": [{"text": "FF", "modes": [
-            {"text": "M", "consequence": "operational",
-             "decision": {"outcome": "rtf", "rtf_basis": "random",
-                          "evidence": {"type": "model", "id": mid}}}]}]},
-    ]})
-    assert r.status_code == 200
-    decision = r.json()["functions"][0]["failures"][0]["modes"][0]["decision"]
-    assert decision["status"] in ("supported", "contradicted", "inconclusive")
-    assert decision.get("artifact_name")  # the team model resolved
 
     # Tracked items created in the team workspace are team-owned and cascade.
     dm = client.post("/api/degradation/models", headers=h, data={
@@ -378,7 +364,6 @@ def test_team_delete_cascades(client):
     tid = _create_team(client)
     h = {"X-Workspace-Id": tid}
     _save_model(client, tid)
-    client.post("/api/rcm/studies", json={"name": "S"}, headers=h)
     principal = f"team:{tid}"
     # A team's recurrent-event models go with it too (#89).
     client.db.recurrent_models.insert_one({"_id": "rm-team", "owner_id": principal, "name": "R"})
@@ -386,7 +371,7 @@ def test_team_delete_cascades(client):
     assert client.db.datasets.count_documents({"owner_id": principal}) == 1
 
     assert client.delete(f"/api/teams/{tid}").status_code == 200
-    for coll in ("models", "datasets", "rcm_studies", "recurrent_models"):
+    for coll in ("models", "datasets", "recurrent_models"):
         assert client.db[coll].count_documents({"owner_id": principal}) == 0
     assert client.get("/api/teams").json()["teams"] == []
     # The workspace header is now invalid.

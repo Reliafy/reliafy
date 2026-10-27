@@ -13,7 +13,7 @@ const ReportComposer = lazy(() => import("./ReportComposer.jsx"));
 
 // Collections with a public read-only renderer at /p/:token.
 const PUBLIC_LINKABLE = new Set([
-  "models", "datasets", "degradation_models", "strategy_analyses", "rcm_studies", "fleets", "rbds",
+  "models", "datasets", "degradation_models", "strategy_analyses", "fleets", "rbds",
   "recurrent_models",
 ]);
 

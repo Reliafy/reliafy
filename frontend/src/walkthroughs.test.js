@@ -21,9 +21,9 @@ import {
   withLaunch,
 } from "./walkthroughs.js";
 
-test("five walkthroughs, 3–4 steps each, one sentence a step", () => {
+test("four walkthroughs, 3–4 steps each, one sentence a step", () => {
   assert.deepEqual(Object.keys(WALKTHROUGHS), WALKTHROUGH_IDS);
-  assert.deepEqual(WALKTHROUGH_IDS, ["fit", "replacement", "rbd", "rcm", "fleet"]);
+  assert.deepEqual(WALKTHROUGH_IDS, ["fit", "replacement", "rbd", "fleet"]);
   for (const id of WALKTHROUGH_IDS) {
     const wt = WALKTHROUGHS[id];
     assert.ok(wt.title && wt.route.startsWith("/"), id);
@@ -68,11 +68,11 @@ test("routeMatches: same path and every query value the route sets", () => {
   assert.equal(routeMatches(r, "/strategy/replacement", "?model=m2&planned=200"), false);
   assert.equal(routeMatches(r, "/strategy/replacement", ""), false);
   assert.equal(routeMatches(r, "/strategy", "?model=m1&planned=200"), false);
-  assert.equal(routeMatches("/maintenance/rcm/s", "/maintenance/rcm/s", "?anything=1"), true);
+  assert.equal(routeMatches("/forecasts/f", "/forecasts/f", "?anything=1"), true);
 });
 
 test("launch links: href, parse and strip", () => {
-  assert.equal(launchHref("rcm"), "/maintenance/rcm/sample-rcm-truck?walkthrough=rcm");
+  assert.equal(launchHref("fleet"), "/forecasts/sample-fleet-trucks?walkthrough=fleet");
   assert.equal(
     launchHref("fit", { auto: true }),
     "/models/new?dataset=sample-ds-bearings&walkthrough=fit&auto=1"
@@ -171,7 +171,7 @@ test("rectInView keeps the sheet's inset clear", () => {
 
 test("stepFunnel: runs reaching each step, in order, zeros included", () => {
   assert.deepEqual(stepFunnel({ steps: { 1: 5, 2: 4, 4: 1 } }, "fit"), [5, 4, 0, 1]);
-  assert.deepEqual(stepFunnel({ steps: {} }, "rcm"), [0, 0, 0, 0]);
+  assert.deepEqual(stepFunnel({ steps: {} }, "fleet"), [0, 0, 0, 0]);
   assert.deepEqual(stepFunnel({ steps: { 1: 2, 2: 1 } }, "unknown"), [2, 1]);
 });
 

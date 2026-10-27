@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addFailureMode,
   addPastFitment,
-  applyRcmToPosition,
   fitMaintenanceItem,
   listMaintenanceItems,
   mergeFailureMode,
@@ -11,7 +10,6 @@ import {
   getMaintenanceOverview,
   getMaintenancePosition,
   listMaintenanceLocations,
-  listRcmStudies,
   openWorkOrder,
   addMeasurementPoint,
   addItemMeasurementPoint,
@@ -94,7 +92,6 @@ export default function MaintenancePosition() {
         actions={
           <>
             <button className="secondary" onClick={openChild}><PlusIcon /> Position inside</button>
-            <button className="secondary" onClick={() => setModal("rcm")}>Apply an RCM study</button>
           </>
         }
         primary={<button onClick={() => setModal("wo")}>New work order</button>}
@@ -172,7 +169,7 @@ export default function MaintenancePosition() {
       <TasksCard subject={{ kind: "position", id: p.id, name: p.name }} tasks={p.tasks} itemTasks={p.item_tasks || []}
                  modes={p.failure_modes} counters={p.measurements.filter((mp) => mp.kind === "counter")}
                  onChanged={refresh}
-                 emptyText="No scheduled tasks. Add one (from the maker's manual, a regulation or your own practice), or apply an RCM study whose decisions have intervals." />
+                 emptyText="No scheduled tasks. Add one (from the maker's manual, a regulation or your own practice), or decide the position's failure modes on the Explorer's RCM tab: a decision with an interval schedules its task." />
 
       <MeasurementsCard measurements={p.measurements} target={{ kind: "position", id: p.id }} onChanged={refresh} />
 
@@ -205,7 +202,7 @@ export default function MaintenancePosition() {
           <button className="secondary" onClick={() => setModal({ mode: {} })}><PlusIcon /> Add failure mode</button>
         </div>
         {p.failure_modes.length === 0 ? (
-          <p className="lib-date">None yet. They come from an RCM study, are added here, or are recorded when
+          <p className="lib-date">None yet. They are added here or on the Explorer's RCM tab, or are recorded when
             something fails.</p>
         ) : (
           <div className="maint-scroll"><table className="lib-table">
@@ -217,7 +214,7 @@ export default function MaintenancePosition() {
                   <td className="lib-date">{m.failure || "—"}</td>
                   <td className="lib-date">{m.consequence || "—"}</td>
                   <td className="lib-date">{OUTCOME_LABELS[m.outcome] || "—"}</td>
-                  <td>{!m.from_rcm && <button className="crumb-link" onClick={() => setModal({ mode: m })}>Edit</button>}</td>
+                  <td><button className="crumb-link" onClick={() => setModal({ mode: m })}>Edit</button></td>
                 </tr>
               ))}
             </tbody>
@@ -265,7 +262,6 @@ export default function MaintenancePosition() {
       {modal?.fix && <FixModal row={modal.fix} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "fit" && <FitModal positionId={id} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
       {modal === "remove" && <RemoveModal position={p} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
-      {modal === "rcm" && <ApplyRcmModal positionId={id} onClose={() => setModal(null)} onDone={(d) => { setP(d.position); setModal(null); }} />}
       {modal === "wo" && (
         <NewWorkOrderModal positionId={id} onClose={() => setModal(null)}
                            onDone={(wo) => navigate(`/maintenance/work-orders/${wo.id}`)} />
@@ -413,26 +409,6 @@ function PastFitmentModal({ p, onClose, onDone }) {
           <FailureModePicker modes={p.failure_modes} classModes={p.class_failure_modes} value={mode} onChange={setMode} />
         </Field>
       )}
-    </FormModal>
-  );
-}
-
-function ApplyRcmModal({ positionId, onClose, onDone }) {
-  const [studies, setStudies] = useState(null);
-  const [studyId, setStudyId] = useState("");
-  useEffect(() => {
-    listRcmStudies().then((d) => setStudies(d.studies || [])).catch(() => setStudies([]));
-  }, []);
-  return (
-    <FormModal title="Apply an RCM study" submitLabel="Apply" canSubmit={!!studyId} onClose={onClose}
-               onSubmit={async () => onDone(await applyRcmToPosition(positionId, studyId))}>
-      <p className="lib-date">Adds the study's failure modes and scheduled tasks here. Applying it again picks up changes.</p>
-      <Field label="RCM study">
-        <select value={studyId} onChange={(e) => setStudyId(e.target.value)}>
-          <option value="">{studies === null ? "Loading…" : "Choose a study"}</option>
-          {(studies || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-      </Field>
     </FormModal>
   );
 }

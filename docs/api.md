@@ -24,7 +24,7 @@ Each token has **scopes**, chosen when you create it:
 |---|---|
 | `ingest` (Push data) | the `/api/ingest/*` endpoints and `/api/import/models` |
 | `read` | `/api/v1` reads and calculations: the read-only tools (`guide`, `get`, `list`, `life_data_analysis`, `repairable_analysis`, `strategy`, `rbd_analysis`, `library`, `upgrade_link`, and Reliafy Maintenance's reads) |
-| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`models`, `datasets`, `rbd`, `uploads`, `sharing`, `fleet`, Reliafy Maintenance's writes), and photo uploads |
+| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`models`, `datasets`, `rbd`, `uploads`, `sharing`, `fleet`, Reliafy Maintenance's writes and `maintenance_apply`), and photo uploads |
 
 A request outside the token's scopes gets `403`. A token that only has
 `ingest` can push data but can never read your analyses; no token can touch
@@ -101,6 +101,49 @@ curl -X POST https://reliafy.com/api/v1/get/job -H "Authorization: Bearer $TOKEN
 
 until `status` is `done` (with the result) or `failed`. The Python client and
 the command line wait for you.
+
+### Many maintenance changes in one call
+
+Reliafy Maintenance's write actions can run as one batch, `POST
+/api/v1/maintenance_apply`: a list of the `maintenance_<area>` actions with
+their own arguments, in order, with `@ref`s between them (`"@p"` is op p's
+id; `"@p.fitted.item.id"` a field of its result). Every operation is first run
+on a throwaway copy of the workspace, so with any failure nothing is written
+and the answer names the operation. A delete-type operation (`retire`,
+`remove_*`, `void`, `cancel`, `merge`, `disconnect`, `unlink`,
+`clear_coordinates`) needs `confirm`: the thing's name as it is now. The
+answer has each operation's result, counts, the events written and `undo`,
+the reverse operations.
+
+```bash
+curl -X POST https://reliafy.com/api/v1/maintenance_apply \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"operations": [
+        {"ref": "p", "do": "positions.create", "args": {"name": "Feed pump A"}},
+        {"ref": "f", "do": "failure_modes.add_function", "args": {"position_id": "@p", "text": "Deliver 40 L/s"}},
+        {"ref": "ff", "do": "failure_modes.add_functional_failure", "args": {"function_id": "@f", "text": "No flow"}},
+        {"ref": "m", "do": "failure_modes.add", "args": {"position_id": "@p", "functional_failure_id": "@ff", "text": "Bearing worn"}},
+        {"do": "failure_modes.decide", "args": {"failure_mode_id": "@m", "consequence": "operational",
+             "decision": {"outcome": "on_condition", "task": "Vibration check", "interval": 3, "interval_unit": "months"}}}
+      ], "dry_run": false}'
+```
+
+`dry_run` true checks and reports without writing; it's the default when a
+batch deletes or has over 25 operations. `on_error` (`stop`, the default, or
+`continue`) says what to do if an operation fails during the real run (rare:
+a change made meanwhile). `idempotency_key` (yours, up to 64 characters):
+the same key and operations within 24 hours answer with the first run's
+result. At most 200 operations and 50 deletes per batch; `fit_class_model`,
+`generate_rbd`, the imports and the workspace settings stay single calls.
+The Python client has `Client.apply(...)`, the command line
+`reliafy apply ops.json [--run]`, and `maintenance_guide` topic `apply` the
+worked examples.
+
+Everything in the tree can be taken out of use and brought back (`retire` /
+`restore` on positions, locations, items, parts, manufacturers, measurement
+points, tasks, failure modes, classes, conditions, groups, connections and
+document links): nothing is erased, and `maintenance_list` kind `events`
+shows what changed, with the ids to restore.
 
 ### Things only the API can do
 

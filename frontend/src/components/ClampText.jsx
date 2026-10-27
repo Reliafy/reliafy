@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import "./ClampText.css";
 
-// Long free text (a description, a study's context) kept to two lines, so it
+// Long free text (a description, a position's operating context) kept to two lines, so it
 // never takes the view from the work below it; "More" opens the whole of it in
 // a dialog. Short text shows as it is, with no button.
 export default function ClampText({ text, title = "Description", className = "" }) {

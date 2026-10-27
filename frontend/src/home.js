@@ -34,8 +34,8 @@ export function attentionRows({ changes = null, tracked = [], maintenance = null
       url: a.url, detail: a.text, at: a.at });
   }
   for (const e of (changes?.rcm_evidence || []).filter((x) => x.status === "contradicted")) {
-    rows.push({ key: `rcm-${e.study_id}-${e.mode}-${e.evidence_url}`, kind: "RCM evidence", tone: "danger",
-      name: e.study, url: e.url, detail: rcmDetail(e), at: e.at });
+    rows.push({ key: `rcm-${e.position_id}-${e.mode}-${e.evidence_url}`, kind: "RCM evidence", tone: "danger",
+      name: e.position, url: e.url, detail: rcmDetail(e), at: e.at });
   }
   for (const f of (tracked || []).filter((x) => !x.is_sample)) {
     const t = f.tracking || {};
@@ -72,7 +72,7 @@ const when = (x) => x.updated_at || x.created_at || null;
 // doesn't record which items a user opened, so "recent" is by save time.
 // ``models`` are allModels.js rows; the rest are the API lists as returned.
 export function recentRows({
-  models = [], datasets = [], rbds = [], studies = [], forecasts = [], analyses = [], tracked = [],
+  models = [], datasets = [], rbds = [], forecasts = [], analyses = [], tracked = [],
 } = {}) {
   const own = (xs) => (xs || []).filter((x) => !x.is_sample);
   const rows = [
@@ -82,8 +82,6 @@ export function recentRows({
       detail: d.n_rows != null ? plural(d.n_rows, "row") : null, at: when(d) })),
     ...own(rbds).map((r) => ({ key: `rbd-${r.id}`, kind: "Block diagram", name: r.name, url: `/systems/b/${r.id}`,
       detail: r.n_nodes != null ? plural(r.n_nodes, "block") : null, at: when(r) })),
-    ...own(studies).map((s) => ({ key: `rcm-${s.id}`, kind: "RCM study", name: s.name, url: `/maintenance/rcm/${s.id}`,
-      detail: s.system || null, at: when(s) })),
     ...own(forecasts).map((f) => ({ key: `fleet-${f.id}`, kind: "Failure forecast", name: f.name,
       url: `/forecasts/${f.id}`, detail: f.n_items != null ? plural(f.n_items, "item") : null, at: when(f) })),
     ...own(analyses).map((a) => ({ key: `sa-${a.id}`, kind: "Strategy analysis", name: a.name,
@@ -165,17 +163,22 @@ export function sparesRows(maintenance) {
   }));
 }
 
-// Manager: how the RCM decisions stand against their evidence and, with
-// Reliafy Maintenance, what's waiting on someone. Each figure links to where
+// Manager: how the RCM decisions on the asset tree stand against their
+// evidence (the workspace rollup from GET /api/maintenance/rcm) and what's
+// waiting on someone. Both need Reliafy Maintenance: without it (a null
+// rollup, a null overview) that part is left out. Each figure links to where
 // it's dealt with; `alert` ones are drawn in the danger colour when above 0.
-export function waitingFigures(studies = [], maintenance = null) {
-  const own = (studies || []).filter((s) => !s.is_sample);
-  const sum = (key) => own.reduce((n, s) => n + (s.rollup?.[key] || 0), 0);
-  const figures = [
-    { label: "RCM decisions supported", n: sum("supported"), to: "/maintenance/rcm" },
-    { label: "contradicted by evidence", n: sum("contradicted"), to: "/maintenance/rcm", alert: true },
-    { label: "without evidence", n: sum("unevidenced") + sum("inconclusive"), to: "/maintenance/rcm" },
-  ];
+export function waitingFigures(rollup = null, maintenance = null) {
+  const figures = [];
+  if (rollup) {
+    const n = (key) => rollup[key] || 0;
+    const rcm = "/asset-register/explorer?tab=rcm";
+    figures.push(
+      { label: "RCM decisions supported", n: n("supported"), to: rcm },
+      { label: "contradicted by evidence", n: n("contradicted"), to: rcm, alert: true },
+      { label: "without evidence", n: n("unevidenced") + n("inconclusive"), to: rcm },
+    );
+  }
   if (maintenance) {
     figures.push(
       { label: "changes to decide", n: (maintenance.proposals || []).length, to: "/maintenance", alert: true },

@@ -1,6 +1,6 @@
 """An FMEA / RCM worksheet (Excel or CSV) added to a position's RCM
-(backend/maintenance/rcm_sheet.py): read and mapped as the study import reads
-it, written only through the service's methods, only ever adding, checked
+(backend/maintenance/rcm_sheet.py): read and mapped by backend/services/rcm_import.py,
+written only through the service's methods, only ever adding, checked
 first and all or nothing; over REST (preview and import) and MCP (uploads
 import_excel target=rcm position_id). Invented worksheets only."""
 
@@ -410,7 +410,6 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
     assert out["url"].endswith(f"/asset-register/explorer?arrange=positions&tab=rcm&sel={pid}")
     assert up._no_uploads_left(mcp.db)
     assert len(m.rcm_worksheet(pid, "this")["positions"][0]["functions"]) == 2
-    assert mcp.db.rcm_studies.count_documents({}) == 0  # not a study
 
     # The same rows again, as CSV: nothing more.
     link2, _ = up._upload(mcp, _csv(), "c2.csv", purpose="excel")

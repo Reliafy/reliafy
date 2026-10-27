@@ -135,6 +135,6 @@ year, rather than when to replace one item, that's
 And if you're deciding among several candidate policies, save each analysis —
 Reliafy keeps them under Strategy so you can compare and cite
 them later, which matters when someone asks in six months why the interval is
-what it is. An [RCM study](/maintenance/rcm) can cite a saved analysis as the evidence for a
-failure mode's maintenance task: see
-[running an RCM study](/guides/rcm-study).
+what it is. An RCM decision on your asset tree can cite a saved analysis as the
+evidence for a failure mode's maintenance task: see
+[building RCM on your asset tree](/guides/rcm-on-your-asset-tree).

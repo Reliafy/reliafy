@@ -10,7 +10,7 @@ import { TASK_HINT, tooLong } from "../maintenanceText.js";
 
 // What a task on each kind of subject is for, under the Add task form.
 const SUBJECT_NOTES = {
-  position: "It falls due, raises work orders and counts again from each new item fitted, like a task from an RCM study.",
+  position: "It falls due, raises work orders and counts again from each new item fitted, like a task from an RCM decision.",
   item: "It follows this item wherever it goes (another position, or a store), and its work orders say where it is. "
     + "By use, it counts the item's own counter, else the use it has had at each position it was fitted to.",
   location: "It goes by the calendar and raises one work order for the place: a round or an area inspection.",
@@ -248,11 +248,10 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
             <Field label="Failure mode it prevents">
               <select value={mode} onChange={(e) => setMode(e.target.value)}>
                 <option value="">None</option>
-                {modes.map((m) => <option key={m.id} value={m.id}>{m.text}{m.from_rcm ? " (RCM)" : ""}</option>)}
+                {modes.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
               </select>
             </Field>
-            <p className="lib-date">Linked to a failure mode from an RCM study, this becomes that decision's task:
-              applying the study again updates it.</p>
+            <p className="lib-date">Linked to a failure mode, this task is the one its RCM decision schedules.</p>
           </>
         )}
       </>}

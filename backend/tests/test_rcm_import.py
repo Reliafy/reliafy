@@ -1,16 +1,13 @@
-"""FMEA / RCM spreadsheet -> RCM study worksheet: column mapping, carry-down
+"""FMEA / RCM spreadsheet -> an RCM worksheet tree: column mapping, carry-down
 of blank function / failure cells, consequence and decision-type value
-mapping, FMEA scores kept in the mode's notes, and the import endpoints (new
-study vs existing, append vs replace, access and edit conflicts)."""
+mapping, FMEA scores kept in the mode's notes. (Adding the tree to a position
+is backend/maintenance/rcm_sheet.py: test_maintenance_rcm_sheet.py.)"""
 
-import io
-import json
 
-import mongomock
 import pytest
-from openpyxl import Workbook
 
-from backend.services import excel, rcm, rcm_import
+from backend.maintenance import rcm_decisions
+from backend.services import excel, rcm_import
 
 HEADER = ["Item", "Function", "Functional failure", "Failure mode", "Effect", "S", "O", "D", "RPN",
           "Consequence", "Task type", "Recommended action", "Interval", "Unit", "Comments"]
@@ -142,156 +139,4 @@ def test_errors():
 
 def test_mode_notes_are_kept_by_clean_tree():
     tree = [{"text": "F", "failures": [{"text": "X", "modes": [{"text": "m", "notes": " RPN 96 "}]}]}]
-    assert rcm.clean_tree(tree)[0]["failures"][0]["modes"][0]["notes"] == "RPN 96"
-
-
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
-
-A, B = "user-a", "user-b"
-USERS = {A: {"uid": A, "email": "a@x.com", "name": "A"}, B: {"uid": B, "email": "b@x.com", "name": "B"}}
-XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-
-def _workbook() -> bytes:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "RCM worksheet"
-    ws.append(["Conveyor RCM"])
-    ws.append([])
-    ws.append(HEADER)
-    for r in ROWS:
-        ws.append(r)
-    ws.merge_cells("B4:B6")  # the function written once, merged down
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
-
-
-@pytest.fixture()
-def client(monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from backend import config, db
-    from backend.auth import get_current_user
-    from backend.main import app
-
-    monkeypatch.setattr(config, "AUTH_DISABLED", False)
-    monkeypatch.setattr(config, "BILLING_ENABLED", False)
-    test_db = mongomock.MongoClient()["reliafy_test"]
-    monkeypatch.setattr(db, "_db", test_db)
-    monkeypatch.setattr(db, "_simulated", True)
-    who = {"uid": A}
-    app.dependency_overrides[get_current_user] = lambda: USERS[who["uid"]]
-    tc = TestClient(app)
-    tc.db = test_db
-    tc.who = who
-    try:
-        yield tc
-    finally:
-        app.dependency_overrides.clear()
-
-
-def _form(**extra):
-    opts = _options()
-    return {"sheet": "RCM worksheet", "header_row": "3", "options": json.dumps(opts), **extra}
-
-
-def _post(client, path, **extra):
-    return client.post(path, files={"file": ("rcm.xlsx", _workbook(), XLSX)}, data=_form(**extra))
-
-
-def test_preview_saves_nothing(client):
-    r = _post(client, "/api/rcm/import/preview")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["counts"]["modes"] == 4
-    assert {v["value"] for v in body["values"]["consequence"]} == {"Operational", "O", "Environmental", "Hidden"}
-    assert client.db.rcm_studies.count_documents({}) == 0
-
-
-def test_import_creates_a_study(client):
-    r = _post(client, "/api/rcm/import", name="Conveyor", system="Line 2")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["name"] == "Conveyor" and body["system"] == "Line 2"
-    assert body["rollup"]["modes"] == 4 and body["rollup"]["decided"] == 3
-    assert body["imported"]["counts"]["modes"] == 4
-    got = client.get(f"/api/rcm/studies/{body['id']}").json()
-    assert got["functions"][0]["text"] == "Pump water at 100 L/min"
-
-
-def test_import_new_study_needs_a_name_and_respects_the_cap(client, monkeypatch):
-    assert _post(client, "/api/rcm/import").status_code == 422
-    from backend.services import billing
-
-    monkeypatch.setattr(billing, "would_exceed_cap", lambda *a, **k: True)
-    r = _post(client, "/api/rcm/import", name="Over the cap")
-    assert r.status_code == 402 and r.json()["code"] == "cap"
-    assert client.db.rcm_studies.count_documents({}) == 0
-
-
-def test_import_bad_mapping_creates_nothing(client):
-    r = client.post("/api/rcm/import", files={"file": ("rcm.xlsx", _workbook(), XLSX)},
-                    data={"sheet": "RCM worksheet", "header_row": "3", "name": "X",
-                          "options": json.dumps({"mapping": {"function": "Function"}})})
-    assert r.status_code == 422 and "Failure mode" in r.json()["detail"]
-    assert client.db.rcm_studies.count_documents({}) == 0
-
-
-def _existing(client):
-    study = client.post("/api/rcm/studies", json={"name": "Existing"}).json()
-    tree = [{"text": "Keep me", "failures": [{"text": "F", "modes": [{"text": "old mode"}]}]}]
-    return client.put(f"/api/rcm/studies/{study['id']}/tree", json={"functions": tree}).json()
-
-
-def test_append_keeps_the_existing_worksheet(client):
-    study = _existing(client)
-    r = _post(client, "/api/rcm/import", study_id=study["id"], mode="append",
-              expected_updated_at=study["updated_at"])
-    assert r.status_code == 200, r.text
-    fns = r.json()["functions"]
-    assert [f["text"] for f in fns] == ["Keep me", "Pump water at 100 L/min", "Contain fluid"]
-    assert fns[0]["id"] == study["functions"][0]["id"]
-    assert r.json()["rollup"]["modes"] == 5
-
-
-def test_replace_swaps_the_worksheet(client):
-    study = _existing(client)
-    r = _post(client, "/api/rcm/import", study_id=study["id"], mode="replace",
-              expected_updated_at=study["updated_at"])
-    assert r.status_code == 200, r.text
-    assert [f["text"] for f in r.json()["functions"]] == ["Pump water at 100 L/min", "Contain fluid"]
-
-
-def test_import_detects_edit_conflicts(client):
-    study = _existing(client)
-    stale = "2000-01-01T00:00:00+00:00"
-    r = _post(client, "/api/rcm/import", study_id=study["id"], mode="append", expected_updated_at=stale)
-    assert r.status_code == 409 and r.json()["code"] == "conflict"
-    assert len(client.get(f"/api/rcm/studies/{study['id']}").json()["functions"]) == 1
-
-
-def test_import_into_someone_elses_study_is_refused(client):
-    study = _existing(client)
-    client.who["uid"] = B
-    r = _post(client, "/api/rcm/import", study_id=study["id"], mode="replace")
-    assert r.status_code == 404
-    client.who["uid"] = A
-    assert len(client.get(f"/api/rcm/studies/{study['id']}").json()["functions"]) == 1
-
-
-def test_import_into_a_sample_is_refused(client):
-    from backend.services import samples
-
-    samples.seed_samples(client.db)
-    sample = next(s for s in client.get("/api/rcm/studies").json()["studies"] if s["is_sample"])
-    before = client.get(f"/api/rcm/studies/{sample['id']}").json()["functions"]
-    r = _post(client, "/api/rcm/import", study_id=sample["id"], mode="append")
-    assert r.status_code == 403
-    assert client.get(f"/api/rcm/studies/{sample['id']}").json()["functions"] == before
-
-
-def test_import_rejects_unknown_mode(client):
-    assert _post(client, "/api/rcm/import", name="X", mode="merge").status_code == 422
+    assert rcm_decisions.clean_tree(tree)[0]["failures"][0]["modes"][0]["notes"] == "RPN 96"

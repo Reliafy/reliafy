@@ -73,8 +73,8 @@ WORK_ORDER_TYPES = ("preventive", "corrective", "inspection", "other")
 OPEN_STATUSES = ("open", "planned", "in_progress", "waiting")
 END_REASONS = ("failure", "planned", "other")
 # Where a task added by hand comes from: the maker's manual, a law or standard,
-# the organisation's own practice, or something else. (Tasks from an RCM study
-# show as "rcm".)
+# the organisation's own practice, or something else. (A task from an RCM
+# decision shows as "rcm".)
 TASK_SOURCES = ("manual", "oem", "statutory", "other")
 # How well a historical date is known (passed through on past fitments).
 DATE_PRECISIONS = ("exact", "month", "year", "estimated")
@@ -722,6 +722,42 @@ def _flag(field: str):
     return project
 
 
+def _unflag(field: str):
+    """The reverse of :func:`_flag`: a retired (or removed) node back in use. The
+    day it came back is kept on the node; the log keeps both events."""
+    def project(s: GraphStore, org: str, p: dict) -> None:
+        s.patch_node(org, p["id"], {field: False, f"{field}_on": None, f"{field}_reason": "",
+                                    "restored_on": p.get("on")})
+    return project
+
+
+def _interface_updated(s: GraphStore, org: str, p: dict) -> None:
+    """interface.updated: a connection's fields, and the position that realises
+    it (realised_by in changes: None takes it off)."""
+    changes = {k: v for k, v in p["changes"].items() if k != "realised_by"}
+    if changes:
+        s.patch_node(org, p["id"], changes)
+    if "realised_by" in p["changes"]:
+        for via in s.out(org, p["id"], "REALISED_BY"):
+            s.delete_edge(org, "REALISED_BY", p["id"], via["id"])
+        if p["changes"]["realised_by"]:
+            s.put_edge(org, "REALISED_BY", p["id"], p["changes"]["realised_by"])
+
+
+def _coordinates_cleared(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["node_id"], {"coordinates": None})
+
+
+def _part_supersession_cleared(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"superseded_by": None})
+    s.delete_edge(org, "SUPERSEDED_BY", p["id"], p["by_id"])
+
+
+def _parts_not_interchangeable(s: GraphStore, org: str, p: dict) -> None:
+    s.delete_edge(org, "INTERCHANGEABLE", p["a"], p["b"])
+    s.delete_edge(org, "INTERCHANGEABLE", p["b"], p["a"])
+
+
 def _fitment_corrected(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {k: p[k] for k in ("from", "to", "from_precision", "to_precision") if k in p})
 
@@ -778,7 +814,6 @@ def _failure_mode_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "FailureMode", {
         "text": p["text"], "function": p.get("function", ""), "failure": p.get("failure", ""),
         "consequence": p.get("consequence"), "outcome": p.get("outcome"),
-        "rcm_mode_id": p.get("rcm_mode_id"), "study_id": p.get("study_id"),
     } | ({"ad_hoc": True} if p.get("ad_hoc") else {}))
     s.put_edge(org, "CAN_FAIL_AS", p["position_id"], p["id"])
 
@@ -807,7 +842,6 @@ def _failure_mode_merged(s: GraphStore, org: str, p: dict) -> None:
 def _function_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Function", {
         "text": p["text"], "standard": p.get("standard", ""), "order": p.get("order", 0),
-        "rcm_function_id": p.get("rcm_function_id"), "study_id": p.get("study_id"),
     } | ({"standard_basis": p["standard_basis"], "basis_on": p.get("on")} if p.get("standard_basis") else {}))
     s.put_edge(org, "PERFORMS", p["position_id"], p["id"])
 
@@ -821,10 +855,7 @@ def _function_updated(s: GraphStore, org: str, p: dict) -> None:
 
 
 def _functional_failure_added(s: GraphStore, org: str, p: dict) -> None:
-    s.put_node(org, p["id"], "FunctionalFailure", {
-        "text": p["text"], "order": p.get("order", 0),
-        "rcm_failure_id": p.get("rcm_failure_id"), "study_id": p.get("study_id"),
-    })
+    s.put_node(org, p["id"], "FunctionalFailure", {"text": p["text"], "order": p.get("order", 0)})
     s.put_edge(org, "FAILS_AS", p["function_id"], p["id"])
 
 
@@ -1040,24 +1071,6 @@ def _task_moved(s: GraphStore, org: str, p: dict) -> None:
 _ANALYSIS = ("effects", "notes", "rtf_basis", "evidence", "decision_notes", "task_note")
 
 
-def _study_analysis(mode: dict, fm: dict) -> dict:
-    """What an RCM study's failure mode says beyond its text (effects, notes,
-    consequence, the decision with its evidence) that the graph's mode ``fm``
-    doesn't say yet: the changes for a failure_mode.analysed event."""
-    decision = mode.get("decision") or {}
-    outcome = decision.get("outcome")
-    scheduled = outcome in SCHEDULED_OUTCOMES and decision.get("interval")
-    said = str(decision.get("task") or "").strip()
-    want = {
-        "effects": str(mode.get("effects") or "").strip(), "notes": str(mode.get("notes") or "").strip(),
-        "consequence": mode.get("consequence") or None, "outcome": outcome or None,
-        "rtf_basis": decision.get("rtf_basis") or None, "evidence": decision.get("evidence") or None,
-        "decision_notes": str(decision.get("notes") or "").strip(),
-        "task_note": "" if scheduled else shortened(said, LONG_TEXT)[0],
-    }
-    return {k: v for k, v in want.items() if fm.get(k) != v and not (fm.get(k) is None and v in ("", None))}
-
-
 # Task fields that only tasks added by hand (or edited since) carry: projected
 # only when the payload has them, so older events give the same tasks.
 _TASK_EXTRAS = ("source", "reference", "also_interval", "also_unit", "point_id", "instructions", "checklist",
@@ -1074,8 +1087,7 @@ def _subject_id(p: dict) -> str:
 def _task_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Task", {
         "name": p["name"], "outcome": p.get("outcome"), "interval": p["interval"], "unit": p["unit"],
-        "start": p["start"], "last_done": None, "rcm_mode_id": p.get("rcm_mode_id"),
-        "study_id": p.get("study_id"),
+        "start": p["start"], "last_done": None,
     } | {k: p[k] for k in _TASK_EXTRAS if k in p})
     s.put_edge(org, "ON", p["id"], _subject_id(p))
     if p.get("failure_mode_id"):
@@ -1409,7 +1421,7 @@ def _use_unit(task: dict) -> str | None:
 def _counter_on(s: GraphStore, org: str, node_id: str, unit: str) -> dict | None:
     """A position's (or item's) use counter in ``unit``: the first by name."""
     points = [mp for mp in s.inn(org, node_id, "ON")
-              if mp["label"] == "MeasurementPoint" and mp.get("kind") == "counter"
+              if mp["label"] == "MeasurementPoint" and mp.get("kind") == "counter" and not mp.get("retired")
               and _norm_unit(mp["unit"]) == _norm_unit(unit)]
     return sorted(points, key=lambda mp: mp["name"].lower())[0] if points else None
 
@@ -1978,6 +1990,32 @@ PROJECTORS = {
     "function.moved": _function_moved,
     "failure_mode.moved": _failure_mode_moved,
     "task.moved": _task_moved,
+    # Taking the rest of the tree out of use (history kept), and bringing anything
+    # retired or removed back; the edits that had no event before.
+    "location.retired": _flag("retired"),
+    "item.retired": _flag("retired"),
+    "part.retired": _flag("retired"),
+    "manufacturer.retired": _flag("retired"),
+    "point.retired": _flag("retired"),
+    "position.restored": _unflag("retired"),
+    "location.restored": _unflag("retired"),
+    "item.restored": _unflag("retired"),
+    "task.restored": _unflag("retired"),
+    "failure_mode.restored": _unflag("retired"),
+    "part.restored": _unflag("retired"),
+    "manufacturer.restored": _unflag("retired"),
+    "point.restored": _unflag("retired"),
+    "item_class.restored": _unflag("retired"),
+    "condition.restored": _unflag("retired"),
+    "group.restored": _unflag("retired"),
+    "interface.restored": _unflag("retired"),
+    "document.restored": _unflag("removed"),
+    "interface.updated": _interface_updated,
+    "document.updated": _patch,
+    "photo.updated": _patch,
+    "coordinates.cleared": _coordinates_cleared,
+    "part.supersession_cleared": _part_supersession_cleared,
+    "parts.not_interchangeable": _parts_not_interchangeable,
 }
 
 
@@ -2097,7 +2135,32 @@ class Maintenance:
         """A location id from a request, checked (None when not given)."""
         if location_id in (None, ""):
             return None
-        return self._get(str(location_id), "Location")["id"]
+        return self._live_location(str(location_id))["id"]
+
+    def _live_location(self, location_id) -> dict:
+        node = self._get(str(location_id or ""), "Location")
+        if node.get("retired"):
+            raise Invalid(f"{node['name']} has been retired: restore it first, or pick another location.")
+        return node
+
+    def _live_item(self, item_id) -> dict:
+        node = self._get(str(item_id or ""), "Item")
+        if node.get("retired"):
+            raise Invalid(f"{node['name']} has been retired (disposed of): restore it first.")
+        return node
+
+    def _live_part(self, part_id) -> dict:
+        node = self._get(str(part_id or ""), "Part")
+        if node.get("retired"):
+            raise Invalid(f"Part {node['part_number']} has been retired from the catalogue: restore it first, "
+                          "or pick another part.")
+        return node
+
+    def _not_retired(self, node: dict, flag: str = "retired") -> None:
+        """For a restore: the node must be retired (or removed)."""
+        if not node.get(flag):
+            what = node.get("name") or node.get("text") or node.get("title") or node.get("part_number") or "It"
+            raise Invalid(f"{what} isn't {flag}: nothing to restore.")
 
     def _parent_node(self, id: str) -> dict:
         """What a position can sit inside: another position, or an item (an item
@@ -2106,7 +2169,8 @@ class Maintenance:
         if node is None or node["label"] not in ("Position", "Item"):
             raise NotFound(id)
         if node.get("retired"):
-            raise Invalid("That position has been retired.")
+            raise Invalid("That position has been retired." if node["label"] == "Position" else
+                          f"{node['name']} has been retired (disposed of): restore it first.")
         return node
 
     def _parent(self, id: str) -> dict | None:
@@ -2174,8 +2238,7 @@ class Maintenance:
                 mode_ids[fm["id"]] = new_id()
                 self._emit("failure_mode.added", {
                     "id": mode_ids[fm["id"]], "position_id": pid,
-                    **{k: fm.get(k) for k in ("text", "function", "failure", "consequence", "outcome",
-                                              "rcm_mode_id", "study_id")},
+                    **{k: fm.get(k) for k in ("text", "function", "failure", "consequence", "outcome")},
                     **({"ad_hoc": True} if fm.get("ad_hoc") else {}),
                 })
                 analysis = {k: fm[k] for k in _ANALYSIS if fm.get(k)}
@@ -2187,16 +2250,13 @@ class Maintenance:
                 self._emit("function.added", {
                     "id": fn_id, "position_id": pid, "text": fn["text"], "standard": fn.get("standard", ""),
                     "order": fn.get("order") or 0,
-                } | ({"rcm_function_id": fn["rcm_function_id"], "study_id": fn.get("study_id")}
-                     if fn.get("rcm_function_id") else {})
-                  | ({"standard_basis": fn["standard_basis"], "on": fn.get("basis_on") or self.today()}
+                } | ({"standard_basis": fn["standard_basis"], "on": fn.get("basis_on") or self.today()}
                      if fn.get("standard_basis") else {}))
                 for ff in self._failures_of(fn["id"]):
                     ff_id = ff_ids[ff["id"]] = new_id()
                     self._emit("functional_failure.added", {
                         "id": ff_id, "function_id": fn_id, "text": ff["text"], "order": ff.get("order") or 0,
-                    } | ({"rcm_failure_id": ff["rcm_failure_id"], "study_id": ff.get("study_id")}
-                         if ff.get("rcm_failure_id") else {}))
+                    })
                     for fm in self._ff_modes(ff["id"]):
                         if fm["id"] in mode_ids:
                             self._emit("failure_mode.assigned", {"id": mode_ids[fm["id"]], "functional_failure_id": ff_id,
@@ -2210,7 +2270,7 @@ class Maintenance:
                     "id": new_id(), "position_id": pid,
                     "failure_mode_id": mitigates and mode_ids.get(mitigates[0]["id"]),
                     "start": today,
-                    **{k: task.get(k) for k in ("outcome", "interval", "unit", "rcm_mode_id", "study_id")},
+                    **{k: task.get(k) for k in ("outcome", "interval", "unit")},
                     # Not point_id: the copy has no measurement points yet.
                     **{k: task[k] for k in _TASK_EXTRAS if k in task and k != "point_id"},
                     "name": name,
@@ -2246,7 +2306,7 @@ class Maintenance:
     def create_location(self, name, parent_id=None, description="") -> dict:
         name = _text(name, "location's name", required=True)
         if parent_id:
-            self._get(parent_id, "Location")
+            self._live_location(parent_id)
         lid = new_id()
         self._emit("location.created", {"id": lid, "name": name, "parent_id": parent_id or None,
                                         "description": _text(description, "description")})
@@ -2434,7 +2494,7 @@ class Maintenance:
         details = {k: v for k, v in details.items() if k in self.ITEM_DETAILS and v not in (None, "", {})}
         for key, value in details.items():
             self.ITEM_DETAILS[key](value, self.today())  # checked before anything is written
-        part = self._get(str(part_id), "Part") if part_id else None
+        part = self._live_part(part_id) if part_id else None
         if part:
             name = name or part["name"]
             part_number = part_number or part["part_number"]
@@ -2452,7 +2512,7 @@ class Maintenance:
 
     def _item_from(self, item_id=None, new_item=None) -> str:
         if item_id:
-            self._get(item_id, "Item")
+            self._live_item(item_id)
             if self._current_fitment_of_item(item_id):
                 raise Invalid("That item is already fitted somewhere. Remove it there first.")
             return item_id
@@ -2467,8 +2527,8 @@ class Maintenance:
         one away at a repairer): today with no date, never before it got where it is
         now or came out of its last position. A fitted item is where its position
         is: set the position's location instead."""
-        item = self._get(item_id, "Item")
-        self._get(location_id, "Location")
+        item = self._live_item(item_id)
+        self._live_location(location_id)
         fitted = self._current_fitment_of_item(item_id)
         if fitted:
             position = self.s.out(self.org, fitted["id"], "AT")[0]
@@ -2611,13 +2671,12 @@ class Maintenance:
             return found["id"]
         fid = new_id()
         self._emit("failure_mode.added", {"id": fid, "position_id": position_id, "text": value, "function": "",
-                                          "failure": "", "consequence": None, "outcome": None,
-                                          "rcm_mode_id": None, "study_id": None, "ad_hoc": True})
+                                          "failure": "", "consequence": None, "outcome": None, "ad_hoc": True})
         return fid
 
     def _mode_view(self, fm: dict) -> dict:
         return {k: fm.get(k) for k in ("id", "text", "function", "failure", "consequence", "outcome")} | {
-            "ad_hoc": bool(fm.get("ad_hoc")), "from_rcm": bool(fm.get("rcm_mode_id")),
+            "ad_hoc": bool(fm.get("ad_hoc")),
         }
 
     def class_failure_modes(self, position_id: str) -> list[str]:
@@ -2640,8 +2699,8 @@ class Maintenance:
 
     def add_failure_mode(self, position_id: str, text, function="", failure="", consequence="",
                          functional_failure_id=None) -> dict:
-        """A failure mode on a position without an RCM study (how it fails: 'Bearing
-        worn', 'Seal leaking'). Failures and tasks can then name it. With
+        """A failure mode on a position (how it fails: 'Bearing worn', 'Seal
+        leaking'). Failures and tasks can then name it. With
         functional_failure_id (one of the position's), it goes under that
         functional failure in the position's RCM."""
         position = self._get(position_id, "Position")
@@ -2656,7 +2715,7 @@ class Maintenance:
         self._emit("failure_mode.added", {
             "id": fid, "position_id": position_id, "text": text, "function": _text(function, "function"),
             "failure": _text(failure, "functional failure"), "consequence": _text(consequence, "consequence") or None,
-            "outcome": None, "rcm_mode_id": None, "study_id": None,
+            "outcome": None,
         })
         if ff:
             self._emit("failure_mode.assigned", {"id": fid, "functional_failure_id": ff["id"],
@@ -2673,13 +2732,9 @@ class Maintenance:
 
     def update_failure_mode(self, mode_id: str, text=None, function=None, failure=None, consequence=None,
                             effects=None, notes=None) -> dict:
-        """Change a failure mode added by hand or typed in at a failure. Editing an
-        ad-hoc mode confirms it as a formal one. (A mode from an RCM study is
-        changed in the study, until it's on the position's RCM: under one of its
-        functional failures.) effects and notes are its RCM analysis."""
+        """Change a failure mode. Editing an ad-hoc mode (typed in at a failure)
+        confirms it as a formal one. effects and notes are its RCM analysis."""
         fm, position = self._live_mode(mode_id)
-        if fm.get("rcm_mode_id") and not self._on_spine(mode_id):
-            raise Invalid("That failure mode comes from an RCM study: change it in the study, and apply it again.")
         analysed = {}
         if effects is not None:
             analysed["effects"] = _text(effects, "effects", max_len=LONG_TEXT)
@@ -2710,16 +2765,14 @@ class Maintenance:
     def merge_failure_mode(self, mode_id: str, into_mode_id: str) -> dict:
         """Fold one failure mode into another on the same position: the failures
         recorded against it, findings and tasks move to the other, and it leaves
-        the list. To link a mode typed in at a failure to one from an RCM study,
-        merge it into the study's mode (apply the study to the position first)."""
+        the list (a duplicate, or a mode typed in at a failure that is one of
+        the position's RCM modes)."""
         fm, position = self._live_mode(mode_id)
         into, into_position = self._live_mode(into_mode_id)
         if mode_id == into_mode_id:
             raise Invalid("Pick two different failure modes.")
         if position["id"] != into_position["id"]:
             raise Invalid("Both failure modes must be on the same position.")
-        if fm.get("rcm_mode_id"):
-            raise Invalid(f"{fm['text']} comes from an RCM study, so it stays: merge {into['text']} into it instead.")
         self._emit("failure_mode.merged", {"id": mode_id, "into_id": into_mode_id, "on": self.today()})
         return self.position(position["id"])
 
@@ -2772,8 +2825,7 @@ class Maintenance:
         """Whether a failure mode is under one of its position's functional failures."""
         return any(not ff.get("removed") for ff in self.s.inn(self.org, mode_id, "CAUSED_BY"))
 
-    def add_function(self, position_id: str, text, standard="", rcm_function_id=None, study_id=None,
-                     standard_basis="") -> dict:
+    def add_function(self, position_id: str, text, standard="", standard_basis="") -> dict:
         """A function the position performs ('Pump 50 L/s of water at 4 bar'), with
         its performance standard if any, and the working behind that standard
         (standard_basis: how it was worked out, Markdown text)."""
@@ -2786,8 +2838,7 @@ class Maintenance:
             "id": fid, "position_id": position_id, "text": _text(text, "function", required=True, max_len=LONG_TEXT),
             "standard": _text(standard, "performance standard", max_len=LONG_TEXT),
             "order": self._next_order(self.s.out(self.org, position_id, "PERFORMS")),
-        } | ({"rcm_function_id": rcm_function_id, "study_id": study_id} if rcm_function_id else {})
-          | ({"standard_basis": basis, "on": self.today()} if basis else {}))
+        } | ({"standard_basis": basis, "on": self.today()} if basis else {}))
         return self._function_view(self._get(fid, "Function"))
 
     def update_function(self, function_id: str, text=None, standard=None, standard_basis=None) -> dict:
@@ -2831,7 +2882,7 @@ class Maintenance:
                 "failures": [self._ff_view(ff) for ff in self._failures_of(function_id)],
                 "documents": self.documents_of(function_id)}
 
-    def add_functional_failure(self, function_id: str, text, rcm_failure_id=None, study_id=None) -> dict:
+    def add_functional_failure(self, function_id: str, text) -> dict:
         """A way the function fails ('No flow', 'Flow below 40 L/s')."""
         self._live_function(function_id)
         fid = new_id()
@@ -2839,7 +2890,7 @@ class Maintenance:
             "id": fid, "function_id": function_id,
             "text": _text(text, "functional failure", required=True, max_len=LONG_TEXT),
             "order": self._next_order(self.s.out(self.org, function_id, "FAILS_AS")),
-        } | ({"rcm_failure_id": rcm_failure_id, "study_id": study_id} if rcm_failure_id else {}))
+        })
         return self._ff_view(self._get(fid, "FunctionalFailure"))
 
     def update_functional_failure(self, ff_id: str, text) -> dict:
@@ -3037,7 +3088,6 @@ class Maintenance:
                     self._emit("task.added", {
                         "id": new_id(), "position_id": position["id"], "failure_mode_id": mode_id,
                         "name": name, "outcome": outcome, "interval": interval, "unit": unit, "start": self.today(),
-                        "rcm_mode_id": fm.get("rcm_mode_id"), "study_id": fm.get("study_id"),
                     } | ({"instructions": full} if full else {}))
                 else:
                     wanted = {"name": name, "interval": interval, "unit": unit, "outcome": outcome}
@@ -3061,6 +3111,32 @@ class Maintenance:
                                         "reason": "Its failure mode was deleted."})
         self._emit("failure_mode.retired", {"id": mode_id, "on": self.today()})
         return {"removed": mode_id, "position_id": position["id"], "task_retired": task and task["id"]}
+
+    def restore_failure_mode(self, mode_id: str) -> dict:
+        """Put a deleted failure mode back on its position's RCM, with its decision,
+        and the task retired with it. Its position must be in use, and no live mode
+        there may have its text now. It comes back unassigned if its functional
+        failure was deleted since."""
+        fm = self._get(mode_id, "FailureMode")
+        if fm.get("merged_into"):
+            raise Invalid("That failure mode was merged into another: it can't come back on its own.")
+        self._not_retired(fm)
+        position = self.s.inn(self.org, mode_id, "CAN_FAIL_AS")[0]
+        if position.get("retired"):
+            raise Invalid(f"{position['name']} is retired: restore the position first.")
+        same = next((m for m in self._modes_on(position["id"]) if _same_text(m["text"], fm["text"])), None)
+        if same:
+            raise Invalid(f"{same['text']} is a failure mode on {position['name']} now (id {same['id']}): rename "
+                          "or merge that one first.")
+        self._emit("failure_mode.restored", {"id": mode_id, "on": self.today()})
+        if any(ff.get("removed") for ff in self.s.inn(self.org, mode_id, "CAUSED_BY")):
+            self._emit("failure_mode.assigned", {"id": mode_id, "functional_failure_id": None})
+        restored = []
+        for t in self.s.inn(self.org, mode_id, "MITIGATES"):
+            if t["label"] == "Task" and t.get("retired") and t.get("retired_reason") == "Its failure mode was deleted.":
+                self._emit("task.restored", {"id": t["id"], "on": self.today()})
+                restored.append(t["id"])
+        return {**self.rcm_mode(mode_id), "tasks_restored": restored}
 
     # ---- moving RCM to another position ---------------------------------------------
     # A function (with its functional failures, their failure modes and those modes'
@@ -3113,10 +3189,6 @@ class Maintenance:
             raise Invalid(f"{name} counts use from {here}'s counter since it was last done: moving it would "
                           f"compare that reading with another counter. Retire it and add a new task on {there} "
                           "(with when it was last done) instead.")
-        if task.get("rcm_mode_id") and any(
-                t["label"] == "Task" and t.get("rcm_mode_id") == task["rcm_mode_id"]
-                for t in self.s.inn(self.org, target["id"], "ON")):
-            raise Invalid(f"{there} already has the task for this RCM decision: retire one of the two first.")
 
     def _check_mode_move(self, fm: dict, source: dict, target: dict, modes_moving: set) -> list[dict]:
         """Refuse moving a failure mode with history at its position, or one the target
@@ -3139,8 +3211,6 @@ class Maintenance:
                      and _same_text(m["text"], text)), None)
         if same:
             raise Invalid(f"{there} already has the failure mode {same['text']}: rename one of them first.")
-        if fm.get("rcm_mode_id") and any(m.get("rcm_mode_id") == fm["rcm_mode_id"] for m in on_target):
-            raise Invalid(f"{there} already has {text} from the same RCM study.")
         tasks = self._live_tasks_of(fm["id"])
         for task in tasks:
             self._check_task_move(task, source, target, modes_moving)
@@ -3227,17 +3297,16 @@ class Maintenance:
         full (a per-position read); otherwise has_basis and a short plain preview."""
         basis = fn.get("standard_basis") or ""
         out = {"id": fn["id"], "text": fn["text"], "standard": fn.get("standard") or "",
-               "from_study": fn.get("study_id"), "has_basis": bool(basis),
-               "basis_on": fn.get("basis_on") if basis else None}
+               "has_basis": bool(basis), "basis_on": fn.get("basis_on") if basis else None}
         return out | ({"standard_basis": basis} if full else {"basis_preview": basis_preview(basis)})
 
     @staticmethod
     def _ff_view(ff: dict) -> dict:
-        return {"id": ff["id"], "text": ff["text"], "from_study": ff.get("study_id")}
+        return {"id": ff["id"], "text": ff["text"]}
 
     @staticmethod
     def _decision_of(fm: dict, task: dict | None) -> dict | None:
-        """A failure mode's decision in an RCM study's shape (outcome, rtf_basis,
+        """A failure mode's decision as the worksheet shows it (outcome, rtf_basis,
         task, interval, interval_unit, notes, evidence), from the mode and its task;
         None when it has no outcome."""
         if not fm.get("outcome"):
@@ -3262,7 +3331,7 @@ class Maintenance:
         return {
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
             "consequence": fm.get("consequence"), "decision": self._decision_of(fm, task),
-            "from_study": fm.get("study_id"), "ad_hoc": bool(fm.get("ad_hoc")),
+            "ad_hoc": bool(fm.get("ad_hoc")),
             # Words an earlier failure mode kept for its function and failure (before
             # functions were on the positions): a hint for where it belongs.
             "was_under": " › ".join(x for x in (fm.get("function"), fm.get("failure")) if x) or None,
@@ -3400,7 +3469,7 @@ class Maintenance:
         or it and every position inside it (scope "below", the default; at most
         ``limit`` positions, depth first as the tree shows them), each position's
         functions › functional failures › failure modes, with each mode's decision
-        (in an RCM study's shape) and task, and the modes under no functional
+        and task, and the modes under no functional
         failure yet (unassigned). Evidence statuses are added by the caller
         (rcm_graph.resolve): they need the saved models and analyses."""
         if scope not in ("below", "this"):
@@ -3431,92 +3500,6 @@ class Maintenance:
                         "description": descriptions.get(pid, ""), **self._position_rcm(index, pid)})
         return {"position": {"id": root["id"], "name": root["name"]}, "scope": scope, "positions": out,
                 "truncated": truncated, "total_positions": len(order)}
-
-    # ---- RCM -> failure modes and tasks ---------------------------------------------
-
-    def apply_rcm(self, position_id: str, study) -> dict:
-        """Bring an RCM study's failure modes and scheduled tasks onto a position.
-
-        Applying again adds what's new and updates changed tasks and decisions;
-        nothing is removed (work orders may already point at it). Each mode's
-        decision comes with it: consequence, outcome, run-to-failure basis, the
-        evidence linked (the saved model or analysis behind it), notes, effects,
-        and what's done when no task is scheduled. A study moved onto its
-        positions (migrated) is history: it can't be applied again."""
-        if getattr(study, "migrated_to", None):
-            raise Invalid("That RCM study has moved onto its position: change its RCM there.")
-        self._get(position_id, "Position")
-        today = self.today()
-        modes = {m.get("rcm_mode_id"): m for m in self.s.out(self.org, position_id, "CAN_FAIL_AS")}
-        tasks = {t.get("rcm_mode_id"): t for t in self.s.inn(self.org, position_id, "ON")
-                 if t["label"] == "Task"}
-        added_modes = added_tasks = updated_tasks = 0
-        for fn in study.functions or []:
-            for failure in fn.get("failures") or []:
-                for mode in failure.get("modes") or []:
-                    if not isinstance(mode, dict) or not mode.get("id"):
-                        continue  # a mode not yet saved with an id can't be tracked
-                    decision = mode.get("decision") or {}
-                    fm = modes.get(mode["id"])
-                    if fm is None:
-                        fm_id = new_id()
-                        self._emit("failure_mode.added", {
-                            "id": fm_id, "position_id": position_id, "text": mode.get("text", ""),
-                            "function": fn.get("text", ""), "failure": failure.get("text", ""),
-                            "consequence": mode.get("consequence"), "outcome": decision.get("outcome"),
-                            "rcm_mode_id": mode["id"], "study_id": study.id,
-                        })
-                        added_modes += 1
-                        fm = {"consequence": mode.get("consequence"), "outcome": decision.get("outcome")}
-                    else:
-                        fm_id = fm["id"]
-                    analysed = _study_analysis(mode, fm)
-                    if analysed:
-                        self._emit("failure_mode.analysed", {"id": fm_id, "changes": analysed})
-                    outcome = decision.get("outcome")
-                    if outcome not in SCHEDULED_OUTCOMES or not decision.get("interval"):
-                        continue
-                    # The decision's task is free text, often a paragraph: the task's name is
-                    # its opening words, and the whole of it goes in the instructions.
-                    said = (str(decision.get("task") or "").strip()
-                            or f"{SCHEDULED_OUTCOMES[outcome]}: {mode.get('text', '')}")
-                    name, cut = shortened(said)
-                    full = shortened(said, LONG_TEXT)[0] if cut else ""
-                    unit = _norm_unit(decision.get("interval_unit")) or "days"
-                    interval = _interval(decision["interval"], unit, f"interval for {str(name)[:80]}")
-                    existing = tasks.get(mode["id"])
-                    if existing is None:
-                        self._emit("task.added", {
-                            "id": new_id(), "position_id": position_id, "failure_mode_id": fm_id,
-                            "name": name, "outcome": outcome, "interval": interval, "unit": unit,
-                            "start": today, "rcm_mode_id": mode["id"], "study_id": study.id,
-                        } | ({"instructions": full} if full else {}))
-                        added_tasks += 1
-                    else:
-                        changes = {k: v for k, v in (("name", name), ("interval", interval), ("unit", unit),
-                                                     ("outcome", outcome)) if existing.get(k) != v}
-                        # The full text replaces instructions that are empty or an earlier
-                        # study text (the old name was cut from them); never your own.
-                        had = (existing.get("instructions") or "").strip()
-                        old = str(existing.get("name") or "")
-                        stem = old.removesuffix("…").strip() if old.endswith("…") or len(old) > SHORT_TEXT else ""
-                        if full and had != full and (not had or (stem and had.startswith(stem))):
-                            changes["instructions"] = full
-                        if changes:
-                            self._emit("task.updated", {"id": existing["id"], "changes": changes})
-                            updated_tasks += 1
-        return {"position_id": position_id, "failure_modes_added": added_modes,
-                "tasks_added": added_tasks, "tasks_updated": updated_tasks}
-
-    def position_from_rcm(self, study, parent_id=None) -> dict:
-        """A new position named for the study's system, with its tasks. The study's
-        description (how the system is used) becomes the position's operating context."""
-        name, full = derived_title((study.system or "").strip() or study.name)
-        made_from = f"From the RCM study “{shortened(study.name)[0]}”."
-        position = self.create_position(name, parent_id=parent_id, description=_with_first(full, made_from),
-                                        operating_context=shortened(getattr(study, "description", ""), LONG_TEXT)[0])
-        result = self.apply_rcm(position["id"], study)
-        return {**result, "position": self.position(position["id"])}
 
     # ---- tasks and when they're due ------------------------------------------------
 
@@ -3647,7 +3630,8 @@ class Maintenance:
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
             # What it's on: a position (its job), an item (it follows the serial number) or a location.
             "subject": self._subject_brief(subject),
-            "source": task.get("source") or ("rcm" if task.get("rcm_mode_id") else "manual"),
+            # A task with no source of its own is a decision's (maintenance_failure_modes decide).
+            "source": task.get("source") or ("rcm" if mode else "manual"),
             "reference": task.get("reference", ""), "point_id": task.get("point_id"),
             "failure_mode": {"id": mode[0]["id"], "text": mode[0]["text"]} if mode else None,
             "interval": task["interval"], "unit": task["unit"],
@@ -3705,25 +3689,81 @@ class Maintenance:
     def supersede_part(self, part_id: str, by_part_id: str) -> dict:
         """The part is replaced by another (a new part number for the same job)."""
         self._get(part_id, "Part")
-        self._get(by_part_id, "Part")
+        self._live_part(by_part_id)
         if part_id == by_part_id:
             raise Invalid("A part can't supersede itself.")
         self._emit("part.superseded", {"id": part_id, "by_id": by_part_id})
         return self.part(part_id)
 
     def mark_interchangeable(self, part_id: str, other_part_id: str) -> dict:
-        self._get(part_id, "Part")
-        self._get(other_part_id, "Part")
+        self._live_part(part_id)
+        self._live_part(other_part_id)
         if part_id == other_part_id:
             raise Invalid("Pick two different parts.")
         self._emit("parts.interchangeable", {"a": part_id, "b": other_part_id})
         return self.part(part_id)
 
+    def unlink_parts(self, part_id: str, other_part_id: str, relation="interchangeable") -> dict:
+        """Take off a supersession recorded by mistake (part_id is no longer superseded
+        by other_part_id) or an interchangeability between two parts."""
+        pt = self._get(part_id, "Part")
+        other = self._get(other_part_id, "Part")
+        if relation == "superseded_by":
+            if pt.get("superseded_by") != other["id"]:
+                by = pt.get("superseded_by") and self.s.node(self.org, pt["superseded_by"])
+                raise Invalid(f"{pt['part_number']} isn't superseded by {other['part_number']}"
+                              + (f" (it's superseded by {by['part_number']})." if by else " (it isn't superseded)."))
+            self._emit("part.supersession_cleared", {"id": part_id, "by_id": other["id"], "on": self.today()})
+        elif relation == "interchangeable":
+            if self.s.edge(self.org, "INTERCHANGEABLE", part_id, other["id"]) is None:
+                raise Invalid(f"{pt['part_number']} and {other['part_number']} aren't marked interchangeable.")
+            self._emit("parts.not_interchangeable", {"a": part_id, "b": other["id"], "on": self.today()})
+        else:
+            raise Invalid("The relation is superseded_by or interchangeable.")
+        return self.part(part_id)
+
+    def retire_part(self, part_id: str, reason="") -> dict:
+        """Take a part out of the catalogue (it stays in the history and on the items
+        made from it). No stock may be on hand, and no live parts-list entry or
+        structure line may name it."""
+        pt = self._get(part_id, "Part")
+        if pt.get("retired"):
+            raise Invalid("That part was already retired.")
+        why = []
+        held = [(st, self.s.out(self.org, st["id"], "AT")) for st in self._stocks(part_id) if (st.get("quantity") or 0) > 0]
+        if held:
+            where = ", ".join(f"{st['quantity']:g} at {at[0]['name'] if at else 'a location'}" for st, at in held[:3])
+            why.append(f"{pt['part_number']} is in stock ({where}): issue or write it off first (maintenance_parts "
+                       "stock with a negative quantity).")
+        listed = self._listings_of(part_id)
+        if listed:
+            names = ", ".join(self.s.out(self.org, x["id"], "LISTED_AT")[0]["name"] for x in listed[:3])
+            why.append(f"It is on the parts list of {names}: take it off first (remove_from_position).")
+        above = [p for p in self.s.inn(self.org, part_id, "CONTAINS") if p["label"] == "Part"]
+        if above:
+            why.append(f"It is in the structure of {', '.join(a['part_number'] for a in above[:3])}: take it out "
+                       "first (remove_component).")
+        if why:
+            raise Invalid(" ".join(why))
+        self._emit("part.retired", {"id": part_id, "on": self.today(), "reason": _text(reason, "reason")})
+        return {"retired": part_id}
+
+    def restore_part(self, part_id: str) -> dict:
+        pt = self._get(part_id, "Part")
+        self._not_retired(pt)
+        self._emit("part.restored", {"id": part_id, "on": self.today()})
+        return self.part(part_id)
+
     def adjust_stock(self, part_id: str, location_id: str, delta, reason="", on=None, work_order_id=None) -> dict:
         """Receive (positive) or issue (negative) stock of a part at a location."""
-        self._get(part_id, "Part")
-        self._get(location_id, "Location")
+        pt = self._get(part_id, "Part")
+        loc = self._get(location_id, "Location")
         delta = _number(delta, "quantity", -MAX_AMOUNT, MAX_AMOUNT)
+        if delta > 0 and pt.get("retired"):
+            raise Invalid(f"Part {pt['part_number']} has been retired from the catalogue: restore it to receive "
+                          "stock of it.")
+        if delta > 0 and loc.get("retired"):
+            raise Invalid(f"{loc['name']} has been retired: restore it first, or receive the stock elsewhere.")
         if delta == 0:
             raise Invalid("The quantity can't be 0.")
         stock = self.s.node(self.org, stock_id(part_id, location_id))
@@ -3736,7 +3776,7 @@ class Maintenance:
 
     def set_reorder_point(self, part_id: str, location_id: str, reorder_point) -> dict:
         self._get(part_id, "Part")
-        self._get(location_id, "Location")
+        self._live_location(location_id)
         self._emit("stock.reorder_set", {"part_id": part_id, "location_id": location_id,
                                          "reorder_point": self._amount(reorder_point, "reorder point"),
                                          "on": self.today()})
@@ -3781,7 +3821,7 @@ class Maintenance:
                 critical_short = critical_short or self._listing_view(listing)["short"]
         return {
             "id": part_id, **{k: pt.get(k) for k in ("part_number", "name", "manufacturer", "unit", "unit_cost", "notes")},
-            **{k: pt.get(k) for k in PART_STOCKING},
+            **{k: pt.get(k) for k in PART_STOCKING}, "retired": bool(pt.get("retired")),
             "superseded_by": by and {"id": by["id"], "part_number": by["part_number"], "name": by["name"]},
             "interchangeable": [{"id": a["id"], "part_number": a["part_number"], "name": a["name"]} for a in alike],
             "stock": locs, "on_hand": on_hand,
@@ -3804,7 +3844,7 @@ class Maintenance:
         classes, maker = self._filter_ids(item_class_id, manufacturer_id)
         return [self.part(pt["id"]) for pt in sorted(self.s.nodes(self.org, "Part"),
                                                      key=lambda pt: pt["part_number"].lower())
-                if self._kept(pt, classes, maker)]
+                if not pt.get("retired") and self._kept(pt, classes, maker)]
 
     # ---- a position's parts list ------------------------------------------------------
     # Catalogue parts linked to a position (a PartListing: LISTED_AT the position,
@@ -3931,7 +3971,7 @@ class Maintenance:
         position = self._get(position_id, "Position")
         if position.get("retired"):
             raise Invalid("That position has been retired.")
-        pt = self._get(part_id, "Part")
+        pt = self._live_part(part_id)
         role = self._part_role(role)
         listings = self._listings_at(position_id)
         if any(self.s.out(self.org, x["id"], "LISTS")[0]["id"] == part_id for x in listings):
@@ -4177,6 +4217,7 @@ class Maintenance:
         parent, child, line = self._structure_line(part_id, child_id)
         if line is not None:
             raise Invalid(f"{child['part_number']} is already in {parent['part_number']}: change that line instead.")
+        self._live_part(part_id), self._live_part(child_id)
         if len(self._components(part_id)) >= MAX_COMPONENTS_EACH:
             raise LimitReached(f"A part's structure holds at most {MAX_COMPONENTS_EACH} lines.")
         self._check_no_loop(parent, child)
@@ -4435,7 +4476,7 @@ class Maintenance:
         tag = _text(tag, "tag")[:200]
         if source == "automated" and not tag:
             raise Invalid("An automated point needs the tag its feed sends readings under.")
-        if tag and any(mp.get("tag") == tag for mp in self.s.nodes(self.org, "MeasurementPoint")):
+        if tag and any(mp.get("tag") == tag and not mp.get("retired") for mp in self.s.nodes(self.org, "MeasurementPoint")):
             raise Invalid(f"Tag {tag} is already used by another point.")
         unit = _text(unit, "unit")[:20]
         if kind == "counter":
@@ -4453,8 +4494,15 @@ class Maintenance:
             "alarm_above": above, "alarm_below": below, "on": self.today()})
         return self.point(pid)
 
+    def _live_point(self, point_id) -> dict:
+        point = self._get(str(point_id or ""), "MeasurementPoint")
+        if point.get("retired"):
+            raise Invalid(f"{point['name']} has been retired: restore it first (maintenance_measurements "
+                          "restore_point).")
+        return point
+
     def update_point(self, point_id: str, name=None, alarm_above=..., alarm_below=..., tag=None) -> dict:
-        point = self._get(point_id, "MeasurementPoint")
+        point = self._live_point(point_id)
         changes = {}
         if name is not None:
             changes["name"] = _text(name, "point's name", required=True)
@@ -4466,7 +4514,7 @@ class Maintenance:
             tag = _text(tag, "tag")[:200]
             if point.get("source") == "automated" and not tag:
                 raise Invalid("An automated point needs a tag.")
-            if tag and any(mp.get("tag") == tag and mp["id"] != point_id
+            if tag and any(mp.get("tag") == tag and mp["id"] != point_id and not mp.get("retired")
                            for mp in self.s.nodes(self.org, "MeasurementPoint")):
                 raise Invalid(f"Tag {tag} is already used by another point.")
             changes["tag"] = tag
@@ -4476,6 +4524,36 @@ class Maintenance:
             raise Invalid("The low alarm must be below the high alarm.")
         if changes:
             self._emit("point.updated", {"id": point_id, "changes": changes})
+        return self.point(point_id)
+
+    def retire_point(self, point_id: str, reason="") -> dict:
+        """Stop measuring at a point (its readings stay in the history, its tag is
+        freed). No live task may go by it, and no alarm work order may be open on it."""
+        point = self._live_point(point_id)
+        by_it = [t for t in self.s.nodes(self.org, "Task")
+                 if not t.get("retired") and (t.get("point_id") or t.get("meter_id")) == point_id]
+        if by_it:
+            raise Invalid(f"{by_it[0]['name']} goes by {point['name']}: pick another counter for the task "
+                          "(maintenance_tasks update point_id, or '' to clear it) first.")
+        if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES
+               for w in self.s.inn(self.org, point_id, "ALARM_FOR")):
+            raise Invalid("It has an open alarm work order. Close or cancel it first.")
+        self._emit("point.retired", {"id": point_id, "on": self.today(), "reason": _text(reason, "reason")})
+        return {"retired": point_id}
+
+    def restore_point(self, point_id: str) -> dict:
+        """Bring a retired measurement point back. What it's on must be in use, and its
+        tag (if any) must be free."""
+        point = self._get(point_id, "MeasurementPoint")
+        self._not_retired(point)
+        on = self.s.out(self.org, point_id, "ON")
+        if on and on[0].get("retired"):
+            raise Invalid(f"{on[0]['name']} (what it measures) is retired: restore that first.")
+        tag = point.get("tag")
+        if tag and any(mp.get("tag") == tag and mp["id"] != point_id and not mp.get("retired")
+                       for mp in self.s.nodes(self.org, "MeasurementPoint")):
+            raise Invalid(f"Tag {tag} is used by another point now: change that point's tag first.")
+        self._emit("point.restored", {"id": point_id, "on": self.today()})
         return self.point(point_id)
 
     @staticmethod
@@ -4488,7 +4566,7 @@ class Maintenance:
         """A manual reading. A counter's only go up. A condition reading past an alarm
         limit opens an inspection (one at a time per point). ``at`` gives its time of
         day (or a coarser time), ``precision`` how well it's known (#264)."""
-        point = self._get(point_id, "MeasurementPoint")
+        point = self._live_point(point_id)
         if point.get("source") == "automated":
             raise Invalid(f"{point['name']} is fed automatically (tag {point.get('tag')}); its readings come in "
                           "through the feed.")
@@ -4539,7 +4617,7 @@ class Maintenance:
 
         rows = _list(rows, "readings", MAX_BATCH)
         by_tag = {mp["tag"]: mp for mp in self.s.nodes(self.org, "MeasurementPoint")
-                  if mp.get("source") == "automated" and mp.get("tag")}
+                  if mp.get("source") == "automated" and mp.get("tag") and not mp.get("retired")}
         grouped: dict[str, list] = {}
         unknown: dict[str, int] = {}
         for i, r in enumerate(rows):
@@ -4698,7 +4776,7 @@ class Maintenance:
                "source": mp.get("source", "manual"), "tag": mp.get("tag", ""), "alarm_above": above,
                "alarm_below": below, "reading": current and current["value"], "read_at": current and current["at"],
                "read_when": current and current.get("when"), "read_precision": current and current.get("precision"),
-               "status": status, "readings": recent}
+               "status": status, "readings": recent, "retired": bool(mp.get("retired"))}
         on = self.s.out(self.org, point_id, "ON")
         # What it measures: a position (position), or an item (item: it travels with it).
         out["position"] = on and on[0]["label"] == "Position" and {"id": on[0]["id"], "name": on[0]["name"]} or None
@@ -4835,6 +4913,8 @@ class Maintenance:
             if live_position and node.get("retired"):
                 raise Invalid("That position has been retired.")
             return node, {"position_id": node["id"]}
+        if node.get("retired"):
+            raise Invalid(f"{node['name']} has been retired: restore it first.")
         return node, {"subject": {"kind": kind, "id": node["id"]}}
 
     def _round(self, location_id: str) -> list[dict]:
@@ -5095,6 +5175,39 @@ class Maintenance:
             self._emit("note.appended", appended)
         return self.item(item_id)
 
+    def retire_item(self, item_id: str, reason="") -> dict:
+        """Take an item out of use for good (disposed of, scrapped, sold): it stays in
+        the history and in every fitment it had. It can't be fitted anywhere, have no
+        open work order, and no live position inside it (an engine's turbo slots). Its
+        own tasks are retired with it (reported) and come back with it."""
+        item = self._get(item_id, "Item")
+        if item.get("retired"):
+            raise Invalid("That item was already retired.")
+        fitted = self._current_fitment_of_item(item_id)
+        if fitted:
+            position = self.s.out(self.org, fitted["id"], "AT")[0]
+            raise Invalid(f"{item['name']} is fitted to {position['name']}: remove it first (maintenance_fitments "
+                          "remove, or a work order's replace), then retire it.")
+        if self._live_children(item_id, "Position"):
+            raise Invalid("Positions inside it are still in use. Retire or move them first.")
+        if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES for w in self.s.inn(self.org, item_id, "ON")):
+            raise Invalid("It has open work orders. Close or cancel them first.")
+        tasks = []
+        for task in self._tasks_on(item_id):
+            self._emit("task.retired", {"id": task["id"], "on": self.today(), "reason": "Its item was retired."})
+            tasks.append(task["id"])
+        self._emit("item.retired", {"id": item_id, "on": self.today(), "reason": _text(reason, "reason")})
+        return {"retired": item_id, "tasks_retired": tasks}
+
+    def restore_item(self, item_id: str) -> dict:
+        """Bring a retired item back (not fitted anywhere: fit or place it next), with
+        the tasks retired with it."""
+        item = self._get(item_id, "Item")
+        self._not_retired(item)
+        self._emit("item.restored", {"id": item_id, "on": self.today()})
+        restored = self._restore_tasks_retired_with(item_id, "Its item was retired.")
+        return {**self.item(item_id), "tasks_restored": restored}
+
     def _note_to_append(self, node: dict, text) -> dict | None:
         """The note.appended payload for adding ``text`` as a dated line to a node's
         notes (checked before anything is written), or None with no text."""
@@ -5110,7 +5223,7 @@ class Maintenance:
     def move_item(self, item_id: str, to_position_id: str, on=None) -> dict:
         """Move an item from wherever it's fitted to an empty position (a planned
         removal there, a fit here): a rotable going round."""
-        self._get(item_id, "Item")
+        self._live_item(item_id)
         self._get(to_position_id, "Position")
         if self.current_fitment(to_position_id):
             raise Invalid("Something is already fitted there. Move or remove it first.")
@@ -5314,7 +5427,7 @@ class Maintenance:
         if qty <= 0:
             raise Invalid("The quantity must be more than 0.")
         if part_id:
-            catalogue = self._get(part_id, "Part")
+            catalogue = self._live_part(part_id)
             part = part or catalogue["name"]
             part_number = part_number or catalogue["part_number"]
             if unit_cost in (None, ""):
@@ -5404,30 +5517,18 @@ class Maintenance:
         return {"also_unit": unit, "also_interval": _interval(also_number, unit, "second limit")}
 
     def _counter(self, point_id: str) -> dict:
-        point = self._get(point_id, "MeasurementPoint")
+        point = self._live_point(point_id)
         if point.get("kind") != "counter":
             raise Invalid("A task by use goes by a counter, not a condition point.")
         return point
 
     def _task_link(self, position_id: str, failure_mode_id, task: dict | None = None) -> dict:
         """The changes that link a task to one of its position's failure modes (or
-        unlink it: ''). Linked to a mode from an RCM study, the task becomes that
-        decision's task, so applying the study again updates it instead of adding
-        a second one (unless the decision already has a task here)."""
-        if task and task.get("rcm_mode_id") and not task.get("source"):
-            raise Invalid("This task comes from an RCM study and stays linked to its decision.")
-        out = {"failure_mode_id": None, "rcm_mode_id": None, "study_id": None}
+        unlink it: '')."""
         if not failure_mode_id:
-            return out
+            return {"failure_mode_id": None}
         ref = self._mode_ref(position_id, failure_mode_id)
-        fm = self._get(ref[1], "FailureMode")
-        out["failure_mode_id"] = fm["id"]
-        if fm.get("rcm_mode_id"):
-            taken = any(t.get("rcm_mode_id") == fm["rcm_mode_id"] and t["id"] != (task or {}).get("id")
-                        for t in self.s.inn(self.org, position_id, "ON") if t["label"] == "Task")
-            if not taken:
-                out |= {"rcm_mode_id": fm["rcm_mode_id"], "study_id": fm.get("study_id")}
-        return out
+        return {"failure_mode_id": self._get(ref[1], "FailureMode")["id"]}
 
     WHILE_STORED = ("run", "pause")
 
@@ -5475,7 +5576,7 @@ class Maintenance:
                     also_unit=None, point_id=None, instructions="", checklist=None, source="manual", reference="",
                     failure_mode_id=None, last_done=None, trade="", item_id=None, location_id=None,
                     while_stored=None, include_positions=None) -> dict:
-        """A scheduled task without an RCM study: from the maker's manual (source 'oem'),
+        """A scheduled task added directly (not an RCM decision's): from the maker's manual (source 'oem'),
         a law or standard ('statutory'), your own practice ('manual') or elsewhere
         ('other'). It's scheduled and raises work orders like a task from RCM. outcome
         says what kind of task it is (as an RCM decision would): fixed_interval (replace
@@ -5569,16 +5670,12 @@ class Maintenance:
         if source is not None:
             if source not in TASK_SOURCES:
                 raise Invalid(f"The source is one of {', '.join(TASK_SOURCES)}.")
-            if task.get("rcm_mode_id") and not task.get("source"):
-                raise Invalid("This task comes from an RCM study.")
             changes["source"] = source
         if reference is not None:
             changes["reference"] = _text(reference, "reference")
         if outcome is not ...:
             if outcome not in (None, "") and outcome not in SCHEDULED_OUTCOMES:
                 raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
-            if task.get("rcm_mode_id"):
-                raise Invalid("This task's outcome is its RCM decision's.")
             changes["outcome"] = outcome or None
         if failure_mode_id is not None:
             linked = self.s.out(self.org, task_id, "MITIGATES")
@@ -5598,27 +5695,98 @@ class Maintenance:
             raise Invalid("That task was already retired.")
         self._emit("task.retired", {"id": task_id, "on": self.today(), "reason": _text(reason, "reason")})
 
-    def retire_position(self, position_id: str, reason="") -> dict:
+    def restore_task(self, task_id: str) -> dict:
+        """Put a retired task back on the schedule, as it was (its last-done date and
+        history kept). What it's on must be in use, and so must the failure mode it
+        prevents, if any."""
+        task = self._get(task_id, "Task")
+        self._not_retired(task)
+        subject = _subject(self.s, self.org, task)
+        if subject is None:
+            raise Invalid("What the task was on is no longer in the workspace.")
+        if subject.get("retired"):
+            raise Invalid(f"{subject['name']} (what the task is on) is retired: restore that first.")
+        for fm in self.s.out(self.org, task_id, "MITIGATES"):
+            if fm.get("retired") or fm.get("merged_into"):
+                raise Invalid(f"The failure mode it prevents, {fm['text']}, was deleted: restore that first "
+                              "(maintenance_failure_modes restore), or add the task again without it.")
+        self._emit("task.restored", {"id": task_id, "on": self.today()})
+        return self._task_view(self._get(task_id, "Task"))
+
+    def _live_children(self, node_id: str, label: str) -> list[dict]:
+        return [c for c in self.s.inn(self.org, node_id, "PART_OF") if c["label"] == label and not c.get("retired")]
+
+    def _position_retire_blockers(self, position_id: str, named: bool = False) -> list[str]:
+        """Why a position can't be retired now (without its children counted)."""
+        why = []
+        p = self.s.node(self.org, position_id)
+        who = f"{p['name']}: " if named else ""
+        if self.current_fitment(position_id):
+            why.append(f"{who}{'s' if named else 'S'}omething is still fitted. Remove or move it first.")
+        if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES for w in self.s.inn(self.org, position_id, "ON")):
+            why.append(f"{who}{'i' if named else 'I'}t has open work orders. Close or cancel them first.")
+        return why
+
+    def retire_position(self, position_id: str, reason="", cascade: bool = False) -> dict:
         """Take a position out of the plant (it stays in the history). Nothing may be
-        fitted to it, and no position inside it still in use."""
+        fitted to it, and no position inside it still in use, unless ``cascade``:
+        then the live positions inside it go too (deepest first), after every one
+        has been checked; with any of them blocked nothing is retired."""
         p = self._get(position_id, "Position")
         if p.get("retired"):
             raise Invalid("That position was already retired.")
-        if self.current_fitment(position_id):
-            raise Invalid("Something is still fitted. Remove or move it first.")
-        if any(not c.get("retired") for c in self.s.inn(self.org, position_id, "PART_OF") if c["label"] == "Position"):
-            raise Invalid("Positions inside it are still in use. Retire or move them first.")
-        if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES for w in self.s.inn(self.org, position_id, "ON")):
-            raise Invalid("It has open work orders. Close or cancel them first.")
-        # Its functional failures stop explaining failures above it: those links go.
-        links = sum(self._drop_links(ff["id"], causes=False)
-                    for fn in self._functions_of(position_id) for ff in self._failures_of(fn["id"]))
-        self._emit("position.retired", {"id": position_id, "on": self.today(),
-                                        "reason": _text(reason, "reason")})
-        return {"retired": position_id, "links_removed": links}
+        reason = _text(reason, "reason")
+        order: list[str] = []  # deepest first
+        if cascade:
+            stack, seen = [position_id], set()
+            while stack:
+                pid = stack.pop()
+                if pid in seen:
+                    continue
+                seen.add(pid)
+                order.append(pid)
+                stack.extend(c["id"] for c in self._live_children(pid, "Position"))
+            order.reverse()
+            if len(order) > MAX_COPY_NODES:
+                raise Invalid(f"More than {MAX_COPY_NODES} positions would be retired at once: retire the systems "
+                              "inside it one at a time.")
+            blockers = [w for pid in order for w in self._position_retire_blockers(pid, named=True)]
+            if blockers:
+                raise Invalid(" ".join(blockers[:5]))
+        else:
+            if self._live_children(position_id, "Position"):
+                raise Invalid("Positions inside it are still in use. Retire or move them first, or retire with "
+                              "cascade true to retire them with it.")
+            blockers = self._position_retire_blockers(position_id)
+            if blockers:
+                raise Invalid(" ".join(blockers))
+            order = [position_id]
+        links = 0
+        for pid in order:
+            # Its functional failures stop explaining failures above it: those links go.
+            links += sum(self._drop_links(ff["id"], causes=False)
+                         for fn in self._functions_of(pid) for ff in self._failures_of(fn["id"]))
+            self._emit("position.retired", {"id": pid, "on": self.today(), "reason": reason})
+        return {"retired": position_id, "links_removed": links,
+                **({"also_retired": [pid for pid in order if pid != position_id]} if cascade else {})}
+
+    def restore_position(self, position_id: str) -> dict:
+        """Bring a retired position back into the plant. Its parent (a position or an
+        item) must be in use; the tasks and failure modes it had stay as they were."""
+        p = self._get(position_id, "Position")
+        self._not_retired(p)
+        parent = self._parent(position_id)
+        if parent and parent.get("retired"):
+            raise Invalid(f"{parent['name']} (what it sits inside) is retired: restore that first.")
+        own = self._own_location(position_id)
+        if own and own.get("retired"):
+            raise Invalid(f"Its location {own['name']} is retired: restore that first, or clear the location "
+                          "after restoring the position.")
+        self._emit("position.restored", {"id": position_id, "on": self.today()})
+        return self.position(position_id)
 
     def update_location(self, location_id: str, name=None, description=None, parent_id=...) -> dict:
-        self._get(location_id, "Location")
+        self._live_location(location_id)
         changes = {}
         if name is not None:
             changes["name"] = _text(name, "location's name", required=True)
@@ -5626,13 +5794,96 @@ class Maintenance:
             changes["description"] = _text(description, "description")
         if parent_id is not ...:
             if parent_id:
-                self._get(parent_id, "Location")
+                self._live_location(parent_id)
                 if parent_id == location_id or location_id in self._ancestor_ids(parent_id):
                     raise Invalid("A location can't sit inside itself.")
             changes["parent_id"] = parent_id or None
         if changes:
             self._emit("location.updated", {"id": location_id, "changes": changes})
         return self.location(location_id)
+
+    def _location_retire_blockers(self, location_id: str) -> list[str]:
+        """Why a location can't be retired now (its child locations aside)."""
+        loc = self.s.node(self.org, location_id)
+        why = []
+        positions = [n for n in self.s.inn(self.org, location_id, "LOCATED_AT")
+                     if n["label"] == "Position" and not n.get("retired")]
+        if positions:
+            why.append(f"{len(positions)} position{'s are' if len(positions) != 1 else ' is'} located at {loc['name']}: "
+                       "give them another location first (maintenance_positions update location_id, or "
+                       "clear_location).")
+        items = [i for i, _, _ in self._loose_items([location_id]) if not i.get("retired")]
+        if items:
+            why.append(f"{len(items)} item{'s are' if len(items) != 1 else ' is'} placed at {loc['name']}: place "
+                       "them elsewhere first (maintenance_items place).")
+        stock = [st for st in self.s.inn(self.org, location_id, "AT")
+                 if st["label"] == "Stock" and (st.get("quantity") or 0) > 0]
+        if stock:
+            why.append(f"Stock is on hand at {loc['name']}: issue or write it off first (maintenance_parts stock "
+                       "with a negative quantity).")
+        if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES
+               for w in self.s.inn(self.org, location_id, "ON")):
+            why.append(f"{loc['name']} has open work orders. Close or cancel them first.")
+        return why
+
+    def retire_location(self, location_id: str, reason="", cascade: bool = False) -> dict:
+        """Take a location out of use (it stays in the history). Nothing may be there:
+        no live position located at it, no item placed there, no stock on hand, no
+        open work order; and no location inside it in use, unless ``cascade`` (then
+        they go too, deepest first, all or nothing). Its own tasks (rounds) are
+        retired with it and come back with it."""
+        loc = self._get(location_id, "Location")
+        if loc.get("retired"):
+            raise Invalid("That location was already retired.")
+        reason = _text(reason, "reason")
+        order: list[str] = []
+        if cascade:
+            stack, seen = [location_id], set()
+            while stack:
+                lid = stack.pop()
+                if lid in seen:
+                    continue
+                seen.add(lid)
+                order.append(lid)
+                stack.extend(c["id"] for c in self._live_children(lid, "Location"))
+            order.reverse()
+        else:
+            if self._live_children(location_id, "Location"):
+                raise Invalid("Locations inside it are still in use. Retire or move them first, or retire with "
+                              "cascade true to retire them with it.")
+            order = [location_id]
+        blockers = [w for lid in order for w in self._location_retire_blockers(lid)]
+        if blockers:
+            raise Invalid(" ".join(blockers[:5]))
+        tasks = []
+        for lid in order:
+            for task in self._tasks_on(lid):
+                self._emit("task.retired", {"id": task["id"], "on": self.today(), "reason": "Its location was retired."})
+                tasks.append(task["id"])
+            self._emit("location.retired", {"id": lid, "on": self.today(), "reason": reason})
+        return {"retired": location_id, "tasks_retired": tasks,
+                **({"also_retired": [lid for lid in order if lid != location_id]} if cascade else {})}
+
+    def restore_location(self, location_id: str) -> dict:
+        """Bring a retired location back, with the rounds retired with it."""
+        loc = self._get(location_id, "Location")
+        self._not_retired(loc)
+        parent = self._parent(location_id)
+        if parent and parent.get("retired"):
+            raise Invalid(f"{parent['name']} (what it sits inside) is retired: restore that first.")
+        self._emit("location.restored", {"id": location_id, "on": self.today()})
+        restored = self._restore_tasks_retired_with(location_id, "Its location was retired.")
+        return {**self.location(location_id), "tasks_restored": restored}
+
+    def _restore_tasks_retired_with(self, node_id: str, reason: str) -> list[str]:
+        """The tasks on a node retired with it (by the reason their retire carries)
+        come back with it."""
+        out = []
+        for t in self.s.inn(self.org, node_id, "ON"):
+            if t["label"] == "Task" and t.get("retired") and t.get("retired_reason") == reason:
+                self._emit("task.restored", {"id": t["id"], "on": self.today()})
+                out.append(t["id"])
+        return out
 
     # ---- item classes: what kind of thing an item is (optional) ------------------------
     # A tree the workspace builds, imports (taxonomy.py) or starts from the starter
@@ -5830,6 +6081,19 @@ class Maintenance:
                           "Give them another class (or none) first.")
         self._emit("item_class.retired", {"id": class_id, "on": self.today(), "reason": _text(reason, "reason")})
 
+    def restore_item_class(self, class_id: str) -> dict:
+        """Bring a retired item class back into the tree (its parent must be in use, and
+        no class of its name may be there now)."""
+        node = self._get(class_id, "ItemClass")
+        self._not_retired(node)
+        parent = self._parent(class_id)
+        if parent and parent.get("retired"):
+            raise Invalid(f"{parent['name']} (the class it sits inside) is retired: restore that first.")
+        if self._sibling_named(parent and parent["id"], node["name"], but=class_id):
+            raise Invalid(f"There's already an item class called {node['name']} there: rename that one first.")
+        self._emit("item_class.restored", {"id": class_id, "on": self.today()})
+        return self.item_class(class_id)
+
     def _classable(self, target_id) -> dict:
         node = self.s.node(self.org, str(target_id or ""))
         if node is None or node["label"] not in ("Item", "Part"):
@@ -5856,7 +6120,7 @@ class Maintenance:
     def set_item_part(self, item_id: str, part_id=None) -> dict:
         """Say which catalogue part (make and model) an item is; None unlinks it."""
         self._get(item_id, "Item")
-        pid = self._get(str(part_id), "Part")["id"] if part_id else None
+        pid = self._live_part(part_id)["id"] if part_id else None
         if ((self._item_part(item_id) or {}).get("id")) != pid:
             self._emit("item.part_set", {"target_id": item_id, "part_id": pid})
         return self.item(item_id)
@@ -6014,10 +6278,36 @@ class Maintenance:
         node = self._get(str(manufacturer_id or ""), "Manufacturer")
         if node.get("merged_into"):
             raise Invalid(f"{node['name']} was merged into another manufacturer; use that one.")
+        if node.get("retired"):
+            raise Invalid(f"{node['name']} has been retired from the register: restore it first.")
         return node
 
     def _makers(self) -> list[dict]:
-        return [mk for mk in self.s.nodes(self.org, "Manufacturer") if not mk.get("merged_into")]
+        return [mk for mk in self.s.nodes(self.org, "Manufacturer")
+                if not mk.get("merged_into") and not mk.get("retired")]
+
+    def retire_manufacturer(self, manufacturer_id: str, reason="") -> dict:
+        """Take a manufacturer out of the register (kept in the history). Nothing may be
+        linked to it: items and parts link to another maker (or 'none') first, or the
+        entry is merged into another."""
+        node = self._maker(manufacturer_id)
+        linked = [x for x in self.s.inn(self.org, node["id"], "MADE_BY") if x["label"] in ("Item", "Part")]
+        if linked:
+            items = sum(1 for x in linked if x["label"] == "Item")
+            raise Invalid(f"{items} item(s) and {len(linked) - items} part(s) are linked to {node['name']}: link them "
+                          "to another maker first (maintenance_manufacturers link; 'none' unlinks), or merge "
+                          "this entry into another.")
+        self._emit("manufacturer.retired", {"id": node["id"], "on": self.today(), "reason": _text(reason, "reason")})
+        return {"retired": node["id"]}
+
+    def restore_manufacturer(self, manufacturer_id: str) -> dict:
+        node = self._get(str(manufacturer_id or ""), "Manufacturer")
+        if node.get("merged_into"):
+            raise Invalid(f"{node['name']} was merged into another manufacturer: it can't come back on its own.")
+        self._not_retired(node)
+        self._maker_names(node["name"], node.get("aliases") or [], but=node["id"])  # no clash since
+        self._emit("manufacturer.restored", {"id": node["id"], "on": self.today()})
+        return self.manufacturer(node["id"])
 
     def _maker_names(self, name, aliases, but: str | None = None) -> tuple[str, list[str]]:
         """A manufacturer's name and aliases from a request, checked: each names no
@@ -6185,7 +6475,7 @@ class Maintenance:
         into = node.get("merged_into") and self.s.node(self.org, node["merged_into"])
         parts = [x for x in self.s.inn(self.org, manufacturer_id, "MADE_BY") if x["label"] == "Part"]
         found = self.items(manufacturer_id=manufacturer_id) if not into else []
-        return {**self._maker_brief(node), "created": node.get("created"),
+        return {**self._maker_brief(node), "created": node.get("created"), "retired": bool(node.get("retired")),
                 "merged_into": into and {"id": into["id"], "name": into["name"]},
                 "counts": {"items": len(found), "parts": len(parts)},
                 "items": found[:MAX_LOCATION_POSITIONS],
@@ -6331,6 +6621,19 @@ class Maintenance:
         if self._condition_children(condition_id):
             raise Invalid("Conditions inside it are still in use. Retire or move them first.")
         self._emit("condition.retired", {"id": condition_id, "on": self.today(), "reason": _text(reason, "reason")})
+
+    def restore_condition(self, condition_id: str) -> dict:
+        """Bring a retired condition back into the register: it applies again wherever
+        it was applied."""
+        node = self._get(condition_id, "Condition")
+        self._not_retired(node)
+        parent = self._parent(condition_id)
+        if parent and parent.get("retired"):
+            raise Invalid(f"{parent['name']} (the condition it sits inside) is retired: restore that first.")
+        if self._condition_sibling(parent and parent["id"], node["name"], but=condition_id):
+            raise Invalid(f"There's already a condition called {node['name']} there: rename that one first.")
+        self._emit("condition.restored", {"id": condition_id, "on": self.today()})
+        return self.condition(condition_id)
 
     def _exposable(self, target_id) -> dict:
         node = self.s.node(self.org, str(target_id or ""))
@@ -6562,7 +6865,7 @@ class Maintenance:
 
     def _points_on(self, node_id: str) -> list[dict]:
         return [self.point(mp["id"]) for mp in sorted(
-            (x for x in self.s.inn(self.org, node_id, "ON") if x["label"] == "MeasurementPoint"),
+            (x for x in self.s.inn(self.org, node_id, "ON") if x["label"] == "MeasurementPoint" and not x.get("retired")),
             key=lambda x: (x.get("kind") != "counter", x["name"].lower()))]
 
     def item(self, id: str) -> dict:
@@ -6585,7 +6888,7 @@ class Maintenance:
         class_cost = cls and (self.s.node(self.org, class_id(self.org, cls)) or {}).get("replacement_cost")
         return {
             **{k: item.get(k, "") for k in self.ITEM_FIELDS}, "id": id, "nameplate": item.get("nameplate") or {},
-            "note_history": item.get("note_history") or [],
+            "note_history": item.get("note_history") or [], "retired": bool(item.get("retired")),
             "created": item.get("created"), "coordinates": item.get("coordinates"),
             **{k: _dated_view(item.get(k)) for k in ("purchase_date", "in_service_date", "manufacture_date")},
             "replacement_cost": item.get("replacement_cost"),
@@ -6663,7 +6966,7 @@ class Maintenance:
         count = lambda rows, lid: sum(1 for r in rows if under.get(r[1]["id"]) == lid)  # noqa: E731
         return {
             "id": id, "name": loc["name"], "description": loc.get("description", ""),
-            "coordinates": loc.get("coordinates"),
+            "coordinates": loc.get("coordinates"), "retired": bool(loc.get("retired")),
             "path": self._location_path(id),
             "children": [{"id": c["id"], "name": c["name"], "positions": count(found, c["id"]),
                           "items": count(loose, c["id"])} for c in kids],
@@ -6726,7 +7029,7 @@ class Maintenance:
     def location_tree(self) -> list[dict]:
         """Every location as a tree, with the positions there (set or inherited) and the
         items placed there (not fitted): here, and with the locations inside it (all_)."""
-        locs = self.s.nodes(self.org, "Location")
+        locs = [loc for loc in self.s.nodes(self.org, "Location") if not loc.get("retired")]
         children: dict[str | None, list] = {}
         for loc in locs:
             parent = self._parent(loc["id"])
@@ -6760,7 +7063,8 @@ class Maintenance:
         def blank() -> dict:
             return {"positions": 0, "items": 0, "open_work_orders": 0, "due": 0, "overdue": 0, "next_due": None}
 
-        roots = sorted((loc for loc in self.s.nodes(self.org, "Location") if self._parent(loc["id"]) is None),
+        roots = sorted((loc for loc in self.s.nodes(self.org, "Location")
+                        if self._parent(loc["id"]) is None and not loc.get("retired")),
                        key=lambda loc: loc["name"].lower())
         out = {r["id"]: {"id": r["id"], "name": r["name"], "description": r.get("description", ""),
                          "locations": len(self._location_ids_in(r["id"])) - 1, **blank()} for r in roots}
@@ -6959,6 +7263,54 @@ class Maintenance:
             raise Invalid("That connection was already removed.")
         self._emit("interface.removed", {"id": interface_id, "on": self.today()})
 
+    def update_interface(self, interface_id: str, kind=None, medium=None, name=None, rating=None,
+                         realised_by=...) -> dict:
+        """Change a connection's kind, medium, name or rating ('' clears text), or the
+        position that realises it (realised_by; None takes it off). Its ends don't
+        change: disconnect and connect again for that."""
+        i = self._get(interface_id, "Interface")
+        if i.get("retired"):
+            raise Invalid("That connection was removed: reconnect it first.")
+        changes = {}
+        if kind is not None:
+            if kind not in self.INTERFACE_KINDS:
+                raise Invalid(f"The kind is one of {', '.join(self.INTERFACE_KINDS)}.")
+            if kind != i.get("kind"):
+                view = self._interface_view(i)
+                if any(x["to"]["id"] == view["to"]["id"] and x["kind"] == kind and x["id"] != interface_id
+                       for x in self._interfaces(view["from"]["id"], "FROM")):
+                    raise Invalid(f"{view['from']['name']} already connects to {view['to']['name']} ({kind}).")
+                changes["kind"] = kind
+        for key, value in (("medium", medium), ("name", name), ("rating", rating)):
+            if value is not None:
+                changes[key] = _text(value, key)
+        if realised_by is not ...:
+            via = self.s.out(self.org, interface_id, "REALISED_BY")
+            target = self._get(str(realised_by), "Position")["id"] if realised_by else None
+            if target and self.s.node(self.org, target).get("retired"):
+                raise Invalid("That position has been retired.")
+            if target != (via[0]["id"] if via else None):
+                changes["realised_by"] = target
+        changes = {k: v for k, v in changes.items() if k == "realised_by" or v != i.get(k, "")}
+        if changes:
+            self._emit("interface.updated", {"id": interface_id, "changes": changes, "on": self.today()})
+        return self._interface_view(self._get(interface_id, "Interface"))
+
+    def reconnect(self, interface_id: str) -> dict:
+        """Put a removed connection back, as it was. Both positions must be in use,
+        with no live connection of that kind between them now."""
+        i = self._get(interface_id, "Interface")
+        self._not_retired(i)
+        src = self.s.out(self.org, interface_id, "FROM")[0]
+        dst = self.s.out(self.org, interface_id, "TO")[0]
+        for end in (src, dst):
+            if end.get("retired"):
+                raise Invalid(f"{end['name']} has been retired: restore the position first.")
+        if any(x["to"]["id"] == dst["id"] and x["kind"] == i.get("kind") for x in self._interfaces(src["id"], "FROM")):
+            raise Invalid(f"{src['name']} already connects to {dst['name']} ({i.get('kind')}): nothing to restore.")
+        self._emit("interface.restored", {"id": interface_id, "on": self.today()})
+        return self._interface_view(self._get(interface_id, "Interface"))
+
     def _interface_view(self, i: dict) -> dict:
         src = self.s.out(self.org, i["id"], "FROM")[0]
         dst = self.s.out(self.org, i["id"], "TO")[0]
@@ -7004,6 +7356,8 @@ class Maintenance:
 
     def update_group(self, group_id: str, name=None, k=None, mode=None, standby=None, add=(), remove=()) -> dict:
         g = self._get(group_id, "RedundancyGroup")
+        if g.get("retired"):
+            raise Invalid("That group was retired: restore it first.")
         add, remove = _list(add, "positions to add"), _list(remove, "positions to remove")
         try:
             new_k = int(k) if k is not None else g["k"]
@@ -7047,9 +7401,21 @@ class Maintenance:
                                     "on": self.today()})
         return self.group(group_id)
 
-    def retire_group(self, group_id: str) -> None:
-        self._get(group_id, "RedundancyGroup")
-        self._emit("group.retired", {"id": group_id, "on": self.today()})
+    def retire_group(self, group_id: str, reason="") -> None:
+        if self._get(group_id, "RedundancyGroup").get("retired"):
+            raise Invalid("That group was already retired.")
+        self._emit("group.retired", {"id": group_id, "on": self.today(), "reason": _text(reason, "reason")})
+
+    def restore_group(self, group_id: str) -> dict:
+        """Bring a retired redundancy group back, with the members it had."""
+        g = self._get(group_id, "RedundancyGroup")
+        self._not_retired(g)
+        gone = [m["name"] for m in self._members(group_id) if m.get("retired")]
+        if gone:
+            raise Invalid(f"{', '.join(gone[:3])} (in the group) {'is' if len(gone) == 1 else 'are'} retired: "
+                          "restore them first, or take them out of the group after restoring it.")
+        self._emit("group.restored", {"id": group_id, "on": self.today()})
+        return self.group(group_id)
 
     def _members(self, group_id: str) -> list[dict]:
         return [m for m in self.s.inn(self.org, group_id, "IN_GROUP") if m["label"] == "Position"]
@@ -7168,6 +7534,36 @@ class Maintenance:
             raise Invalid("That document was already removed.")
         self._emit("document.removed", {"id": document_id, "on": self.today()})
         return {"removed": document_id}
+
+    def update_document(self, document_id: str, title=None, kind=None) -> dict:
+        """Change a document's title or kind (what it is: manual, datasheet, ...)."""
+        d = self._get(document_id, "Document")
+        if d.get("removed"):
+            raise Invalid("That document was removed.")
+        changes = {}
+        if title is not None:
+            changes["title"] = _text(title, "title", required=True)
+        if kind is not None:
+            if kind not in DOCUMENT_KINDS:
+                raise Invalid(f"The kind is one of {', '.join(DOCUMENT_KINDS)}.")
+            changes["kind"] = kind
+        changes = {k: v for k, v in changes.items() if v != d.get(k)}
+        if changes:
+            self._emit("document.updated", {"id": document_id, "changes": changes, "on": self.today()})
+        return self.document(document_id)
+
+    def restore_document(self, document_id: str) -> dict:
+        """Put a removed document link back. A removed PDF's bytes are gone: add it again."""
+        d = self._get(document_id, "Document")
+        self._not_retired(d, "removed")
+        if d.get("stored"):
+            raise Invalid("That PDF was deleted when the document was removed: add it again (uploads create, "
+                          "then add_document with its upload_id).")
+        of = self.s.out(self.org, document_id, "OF")
+        if of and (of[0].get("removed") or of[0].get("retired")):
+            raise Invalid("What the document was on is no longer in use: restore that first.")
+        self._emit("document.restored", {"id": document_id, "on": self.today()})
+        return self.document(document_id)
 
     _DOCUMENT_FIELDS = ("id", "title", "url", "kind", "added_on")
     _STORED_FIELDS = ("file_name", "size")
@@ -7297,6 +7693,15 @@ class Maintenance:
             raise Invalid("That photo was already removed.")
         self._emit("photo.removed", {"id": photo_id})
 
+    def update_photo(self, photo_id: str, caption=None) -> dict:
+        """Change a photo's caption ('' clears it)."""
+        p = self._live_photo(photo_id)
+        if caption is not None:
+            text = _text(caption, "caption")
+            if text != (p.get("caption") or ""):
+                self._emit("photo.updated", {"id": photo_id, "changes": {"caption": text}, "on": self.today()})
+        return self.photo(photo_id)
+
     def set_coordinates(self, node_id: str, lat, lon, source="manual") -> dict:
         """Where a position, item or location is, as latitude and longitude. For a
         work order, the coordinates go on its position."""
@@ -7316,6 +7721,18 @@ class Maintenance:
         node = self.s.node(self.org, node["id"])
         return {"id": node["id"], "kind": node["label"], "name": node.get("name") or node.get("title"),
                 "coordinates": node["coordinates"]}
+
+    def clear_coordinates(self, node_id: str) -> dict:
+        """Take a position's, item's or location's coordinates off (a work order's: its
+        position's). Nothing to clear: nothing changes."""
+        node = self.photo_target(node_id)
+        if node["label"] == "WorkOrder":
+            node = self.s.out(self.org, node_id, "ON")[0]
+        if node.get("coordinates"):
+            self._emit("coordinates.cleared", {"node_id": node["id"], "on": self.today()})
+        node = self.s.node(self.org, node["id"])
+        return {"id": node["id"], "kind": node["label"], "name": node.get("name") or node.get("title"),
+                "coordinates": node.get("coordinates")}
 
     # ---- reading -------------------------------------------------------------------
 
@@ -7355,8 +7772,8 @@ class Maintenance:
         s, org, today = self.s, self.org, self.today()
         every = {p["id"]: p for p in s.nodes(org, "Position")}
         live = {pid: p for pid, p in every.items() if not p.get("retired")}
-        items = {i["id"]: i for i in s.nodes(org, "Item")}
-        locations = {loc["id"]: loc for loc in s.nodes(org, "Location")}
+        items = {i["id"]: i for i in s.nodes(org, "Item") if not i.get("retired")}
+        locations = {loc["id"]: loc for loc in s.nodes(org, "Location") if not loc.get("retired")}
         fitments = {f["id"]: f for f in s.nodes(org, "Fitment") if not f.get("voided")}
         placements = {p["id"]: p for p in s.nodes(org, "Placement")}
         part_of: dict[str, str] = {}
@@ -7655,9 +8072,7 @@ class Maintenance:
             "work_orders": [self._wo_brief(w) for w in wos],
             "life_data": self.life_data(id),
             "coordinates": p.get("coordinates"),
-            "measurements": [self.point(mp["id"]) for mp in sorted(
-                (x for x in self.s.inn(self.org, id, "ON") if x["label"] == "MeasurementPoint"),
-                key=lambda x: (x.get("kind") != "counter", x["name"].lower()))],
+            "measurements": self._points_on(id),
             "connections": self.connections(id),
             "groups": self.groups_of(id),
             "rbd_id": p.get("rbd_id"),
@@ -7830,7 +8245,7 @@ class Maintenance:
         classes, maker = self._filter_ids(item_class_id, manufacturer_id)
         out = []
         for item in sorted(self.s.nodes(self.org, "Item"), key=lambda i: i["name"].lower()):
-            if not self._kept(item, classes, maker):
+            if item.get("retired") or not self._kept(item, classes, maker):
                 continue
             fitment = self._current_fitment_of_item(item["id"])
             where = self.whereabouts(item["id"])
@@ -7849,6 +8264,8 @@ class Maintenance:
     def locations(self) -> list[dict]:
         out = []
         for loc in sorted(self.s.nodes(self.org, "Location"), key=lambda n: n["name"].lower()):
+            if loc.get("retired"):
+                continue
             parent = self._parent(loc["id"])
             out.append({"id": loc["id"], "name": loc["name"], "description": loc.get("description", ""),
                         "parent": parent and {"id": parent["id"], "name": parent["name"]},
@@ -7916,8 +8333,8 @@ def summary(m: Maintenance) -> dict:
     """Counts for the home page."""
     return {
         "positions": sum(1 for p in m.s.nodes(m.org, "Position") if not p.get("retired")),
-        "locations": len(m.s.nodes(m.org, "Location")),
-        "items": len(m.s.nodes(m.org, "Item")),
+        "locations": sum(1 for x in m.s.nodes(m.org, "Location") if not x.get("retired")),
+        "items": sum(1 for x in m.s.nodes(m.org, "Item") if not x.get("retired")),
         "open_work_orders": sum(1 for w in m.s.nodes(m.org, "WorkOrder") if w["status"] in OPEN_STATUSES),
         "low_stock": sum(1 for st in m.s.nodes(m.org, "Stock")
                          if st.get("reorder_point") is not None and st["quantity"] <= st["reorder_point"]),
@@ -7931,4 +8348,7 @@ def summary(m: Maintenance) -> dict:
 # 3: nodes and edges keyed by (org, id); position class ids include the org
 # 4: cancelling or closing a work order no longer replaces its notes (the reason and
 #    closing notes are their own fields); note history; tasks re-read a corrected counter
-PROJECTION_VERSION = 4
+# 5: the fields the earlier RCM studies left on functions, functional failures, failure
+#    modes and tasks (study_id, rcm_*_id) are no longer projected; old events still
+#    carry them and are read as before
+PROJECTION_VERSION = 5

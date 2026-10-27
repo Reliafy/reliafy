@@ -1,4 +1,4 @@
-"""Reliafy Maintenance without an RCM study: tasks added by hand, failure modes
+"""Reliafy Maintenance beyond RCM decisions: tasks added by hand, failure modes
 added or typed in at a failure (and merged later), placement dates that follow
 the fitment, and past fitments put into a position's history."""
 
@@ -10,6 +10,7 @@ import pytest
 from backend.maintenance import loop
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore
+from backend.tests.rcm_tree import apply_tree, position_with_rcm
 
 ORG = "user-t"
 
@@ -23,12 +24,10 @@ def _ago(days: int) -> str:
     return (date.today() - timedelta(days=days)).isoformat()
 
 
-class _Study:
-    id, name, system = "s1", "Pump RCM", "Pump"
-    functions = [{"id": "f", "text": "Pump water", "failures": [{"id": "ff", "text": "No flow", "modes": [
-        {"id": "m1", "text": "Bearing worn", "consequence": "operational",
-         "decision": {"outcome": "fixed_interval", "interval": 24, "interval_unit": "months",
-                      "task": "Replace bearings"}}]}]}]
+_RCM = [{"id": "f", "text": "Pump water", "failures": [{"id": "ff", "text": "No flow", "modes": [
+    {"id": "m1", "text": "Bearing worn", "consequence": "operational",
+     "decision": {"outcome": "fixed_interval", "interval": 24, "interval_unit": "months",
+                  "task": "Replace bearings"}}]}]}]
 
 
 # ---- tasks added by hand ---------------------------------------------------------------
@@ -87,65 +86,23 @@ def test_task_input_is_checked(m):
         m.create_task(pid, "Grease", 3)
 
 
-def test_linking_a_task_to_an_rcm_mode_makes_it_that_decisions_task(m):
+def test_a_decisions_task_and_a_task_by_hand_on_the_same_mode(m):
     pid = m.create_position("Pump")["id"]
     task = m.create_task(pid, "Bearing change (OEM)", 30, "months", source="oem")
-    m.apply_rcm(pid, _Study())
+    apply_tree(m, pid, _RCM)
     tasks = m.position(pid)["tasks"]
     rcm_task = next(t for t in tasks if t["source"] == "rcm")
-    with pytest.raises(Invalid, match="RCM study"):
-        m.update_task(rcm_task["id"], failure_mode_id="")
+    assert rcm_task["name"] == "Replace bearings" and rcm_task["failure_mode"]["text"] == "Bearing worn"
     m.retire_task(rcm_task["id"])
 
-    # A second position: the hand-made task is linked before the study comes.
-    pid2 = m.create_position("Pump 2")["id"]
-    own = m.create_task(pid2, "Bearing change (OEM)", 30, "months", source="oem")
-    m.apply_rcm(pid2, type("S", (), {"id": "s1", "functions": [{"text": "Pump water", "failures": [
-        {"text": "No flow", "modes": [{"id": "m1", "text": "Bearing worn", "decision": {}}]}]}]})())
-    mode = m.position(pid2)["failure_modes"][0]
-    linked = m.update_task(own["id"], failure_mode_id=mode["id"])
+    # A task by hand links to an RCM mode and keeps its own source; unlinking works too.
+    mode = m.position(pid)["failure_modes"][0]
+    linked = m.update_task(task["id"], failure_mode_id=mode["id"])
     assert linked["failure_mode"] == {"id": mode["id"], "text": "Bearing worn"} and linked["source"] == "oem"
-    result = m.apply_rcm(pid2, _Study())
-    assert (result["tasks_added"], result["tasks_updated"]) == (0, 1)
-    [only] = m.position(pid2)["tasks"]
-    assert (only["id"], only["interval"], only["unit"]) == (own["id"], 24, "months")
-    unlinked = m.update_task(own["id"], failure_mode_id="")
+    unlinked = m.update_task(task["id"], failure_mode_id="")
     assert unlinked["failure_mode"] is None
     assert task["id"] in {t["id"] for t in m.position(pid)["tasks"]}
 
-
-def test_a_hand_made_task_goes_into_the_class_proposals_and_economics():
-    db = mongomock.MongoClient()["tasks"]
-    m = Maintenance(GraphStore(":memory:", PROJECTORS), ORG, "tester")
-    lives = [[700, 760, 820], [690, 840, 780], [730, 800]]
-    for i, history in enumerate(lives):
-        pid = m.create_position(f"Pump {i + 1}", position_class="Centrifugal pump")["id"]
-        m.create_task(pid, "Replace bearings", 36, "months", outcome="fixed_interval", source="oem")
-        day = 3000
-        m.fit(pid, new_item={"name": f"Pump {i + 1}.0"}, on=_ago(day))
-        for n, life in enumerate(history):
-            day -= life
-            wo = m.open_work_order(pid, "Seized")
-            m.close_work_order(wo["id"], [{"kind": "replace", "failure_mode_text": "Bearing seized",
-                                           "new_item": {"name": f"Pump {i + 1}.{n + 1}"}}], on=_ago(day))
-    data = m.class_life_data("Centrifugal pump")
-    assert data["failures"] == 8 and data["suspensions"] == 3
-    m.set_class_costs("Centrifugal pump", planned_cost=400, failure_cost=4000)
-    out = loop.fit_class_model(m, db, "Centrifugal pump")
-    assert {p["task"]["name"] for p in out["proposals"]} == {"Replace bearings"} and len(out["proposals"]) == 3
-    plans = {o["plan"] for o in loop.economics(m, "Centrifugal pump")["options"]}
-    assert "current plan" in plans
-
-
-def test_copying_a_position_keeps_a_hand_made_tasks_details(m):
-    pid = m.create_position("Pump")["id"]
-    m.create_task(pid, "Grease", 3, "months", source="oem", instructions="Two shots.", checklist=["Wipe nipple"])
-    copy = m.copy_position(pid, "Pump 2")
-    [task] = copy["tasks"]
-    assert (task["source"], task["instructions"], task["checklist"]) == ("oem", "Two shots.", ["Wipe nipple"])
-
-
-# ---- failure modes without RCM -------------------------------------------------------------
 
 def test_a_failure_in_words_adds_an_ad_hoc_mode_and_counts_as_a_failure(m):
     pid = m.create_position("Pump A", position_class="Pool pump")["id"]
@@ -156,7 +113,7 @@ def test_a_failure_in_words_adds_an_ad_hoc_mode_and_counts_as_a_failure(m):
         m.remove(pid, on=_ago(200), failure_mode_id="x", failure_mode_text="Seal leaking")
     position = m.remove(pid, on=_ago(200), failure_mode_text="Seal leaking")
     [mode] = position["failure_modes"]
-    assert (mode["text"], mode["ad_hoc"], mode["from_rcm"]) == ("Seal leaking", True, False)
+    assert (mode["text"], mode["ad_hoc"]) == ("Seal leaking", True)
     assert position["fitments"][0]["end_reason"] == "failure"
     # The same words (case and spacing aside) reuse the mode.
     m.fit(pid, new_item={"name": "P2"}, on=_ago(200))
@@ -232,21 +189,18 @@ def test_failure_modes_are_added_edited_and_merged(m):
     assert (promoted["ad_hoc"], promoted["text"]) == (False, "Impeller cracked (cavitation)")
 
 
-def test_rcm_modes_are_changed_in_the_study_and_never_merged_away(m):
-    pid = m.position_from_rcm(_Study())["position"]["id"]
+def test_rcm_modes_can_be_edited_and_absorb_ad_hoc_ones(m):
+    pid = position_with_rcm(m, _RCM, "Pump")["position"]["id"]
     rcm = m.position(pid)["failure_modes"][0]
-    assert rcm["from_rcm"]
-    with pytest.raises(Invalid, match="RCM study"):
-        m.update_failure_mode(rcm["id"], text="Bearings")
+    assert m.update_failure_mode(rcm["id"], text="Bearings")["text"] == "Bearings"
     m.fit(pid, new_item={"name": "P1"}, on=_ago(300))
     m.remove(pid, on=_ago(200), failure_mode_text="Bearing collapsed")
     ad_hoc = next(f for f in m.position(pid)["failure_modes"] if f["ad_hoc"])
-    with pytest.raises(Invalid, match="stays"):
-        m.merge_failure_mode(rcm["id"], ad_hoc["id"])
     m.merge_failure_mode(ad_hoc["id"], rcm["id"])
-    assert m.life_data(pid)[0]["failure_mode"] == "Bearing worn"
-    # Applying the study again still adds nothing.
-    assert m.apply_rcm(pid, _Study())["failure_modes_added"] == 0
+    assert m.life_data(pid)[0]["failure_mode"] == "Bearings"
+    # The decision's task is still the RCM mode's.
+    [task] = m.position(pid)["tasks"]
+    assert task["failure_mode"]["id"] == rcm["id"] and task["source"] == "rcm"
 
 
 # ---- placements are for items that aren't fitted ---------------------------------------------
