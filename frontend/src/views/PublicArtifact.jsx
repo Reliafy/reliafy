@@ -156,11 +156,17 @@ function Body({ collection, a, token, unlock, framed = false }) {
         <div className="card">
           {a.preview?.length ? (
             <>
-              <div className="ds-section-h">Preview · first {a.preview.length} rows</div>
+              <div className="ds-section-h">{a.measurements ? "Life data · " : "Preview · "}first {a.preview.length} rows</div>
               <PreviewTable columns={a.preview_columns} rows={a.preview} />
             </>
           ) : (
             <p className="muted-line">No preview available.</p>
+          )}
+          {a.measurements?.preview?.length > 0 && (
+            <>
+              <div className="ds-section-h">Measurements · first {a.measurements.preview.length} of {a.measurements.n_rows.toLocaleString()} readings</div>
+              <PreviewTable columns={a.measurements.preview_columns} rows={a.measurements.preview} />
+            </>
           )}
         </div>
       );

@@ -264,6 +264,14 @@ class Client:
         return self.call("datasets", "upload", upload_id=up["upload_id"],
                          name=name or os.path.splitext(os.path.basename(path))[0], sheet=sheet, **args)
 
+    def add_measurements(self, dataset_id: str, path: str, sheet: str | None = None, **args) -> dict:
+        """Add a CSV or .xlsx file of readings (unit id, age since new, value)
+        to a dataset as its measurements, or replace them (``datasets
+        add_measurements``)."""
+        up = self.upload_file(path, "dataset")
+        return self.call("datasets", "add_measurements", dataset_id=dataset_id, upload_id=up["upload_id"],
+                         sheet=sheet, **args)
+
     def import_rbd(self, path: str, **args) -> dict:
         """Import a diagram file (BlockSim .rsgz/.rsr, Open-PSA .xml, Galileo
         .dft, RePyability .json) as RBDs."""

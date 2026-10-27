@@ -21,6 +21,26 @@
 }
 
 /* ---- Dataset page ------------------------------------------------------------ */
+/* The two parts (life data, measurements) as tabs above the preview. */
+.ds-main .tabs-strip.ds-tabs { margin-bottom: var(--sp-3); }
+.ds-part-empty {
+  padding: var(--sp-4) var(--sp-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+  color: var(--ink);
+  font-size: var(--fs-14);
+  max-width: 60ch;
+}
+.ds-part-empty p { margin: 0 0 var(--sp-3); }
+.ds-part-empty p:last-child { margin-bottom: 0; }
+.ds-split-note { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ds-part-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* A part's input (a file or a paste) in the dialogs. */
+.ds-part-input { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ds-part-modes { display: flex; gap: var(--sp-1); }
+.ds-part-modes .tab { padding: 4px 12px; }
+.dropzone.ds-part-drop { padding: 22px 16px; }
+.ds-meas > summary { margin-top: var(--sp-2); }
 /* Every preview row shows: the page has room, so no inner scroller. */
 .preview-wrap.ds-preview {
   max-height: none;

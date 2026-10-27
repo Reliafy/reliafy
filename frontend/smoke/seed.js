@@ -30,14 +30,13 @@ export function jointFleet() {
   return { lifetimes: life.join("\n"), readings: reads.join("\n") };
 }
 
-async function seedJointModel(post) {
+async function seedJointModel(post, put) {
   const { lifetimes, readings } = jointFleet();
   const life = await post("/api/datasets/paste", { name: "Smoke test pump lives", content: lifetimes });
-  const reads = await post("/api/datasets/paste", { name: "Smoke test pump vibration", content: readings });
+  await put(`/api/datasets/${life.id}/measurements/paste`, { content: readings });
   await post("/api/joint/models", {
     name: "Smoke test pumps (condition-based)",
-    lifetimes_dataset_id: life.id,
-    readings_dataset_id: reads.id,
+    dataset_id: life.id,
     mapping: { id: "pump", x: "age", c: "running" },
     readings_mapping: { id: "pump", age: "age", value: "vibration" },
     covariates: ["load"],
@@ -101,7 +100,7 @@ export default async function seed(config) {
 
     // A condition and life model: a small fleet of pumps, each with its
     // vibration read every 10 days, fitted in-process (billing is off here).
-    await seedJointModel(post);
+    await seedJointModel(post, send("PUT"));
     // One model of each kind the samples don't cover, for the model pages'
     // fit check (modelframe.spec.js).
     await seedModelKinds(api);

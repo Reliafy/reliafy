@@ -556,6 +556,44 @@ export function deleteDataset(id) {
   return request(`/api/datasets/${id}`, { method: "DELETE" });
 }
 
+// ---- A dataset's parts: its measurements (readings on its units at ages),
+// or life data for a dataset of readings alone. ``part`` is "measurements"
+// or "life". Files and pastes take the same options as a new dataset. The
+// answer is the dataset's detail (with ``measurements``).
+export function uploadDatasetPart(id, part, file, noHeader = null, excel = null) {
+  const form = new FormData();
+  form.append("file", file);
+  if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
+  if (excel?.sheet) form.append("sheet", excel.sheet);
+  if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
+  return withEvent(request(`/api/datasets/${id}/${part}`, { method: "PUT", body: form }), "dataset_upload");
+}
+
+export function pasteDatasetPart(id, part, content, noHeader = null) {
+  return withEvent(
+    request(`/api/datasets/${id}/${part}/paste`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: content || "", ...(noHeader != null ? { no_header: !!noHeader } : {}) }),
+    }),
+    "dataset_upload"
+  );
+}
+
+export function removeMeasurements(id) {
+  return request(`/api/datasets/${id}/measurements`, { method: "DELETE" });
+}
+
+// Split one table of life data and readings into the dataset's two parts
+// (the server's plan, ``profile.split``, with any overrides in ``plan``).
+export function splitDataset(id, plan = {}) {
+  return request(`/api/datasets/${id}/split`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(plan || {}),
+  });
+}
+
 export function renameDataset(id, name) {
   return request(`/api/datasets/${id}`, {
     method: "PATCH",

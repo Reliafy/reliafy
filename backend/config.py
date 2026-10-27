@@ -20,6 +20,10 @@ MONGODB_TIMEOUT_MS = int(os.environ.get("MONGODB_TIMEOUT_MS", "3000"))
 # Upload ceiling for CSV datasets. Raw bytes are stored inside the Mongo
 # document, whose hard limit is 16MB — stay well under it.
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
+# A dataset's two tables (its life data and its measurements) live in one
+# document: together they stay under this, so the document (with its columns,
+# checksums and preview-free metadata) never nears Mongo's 16 MB.
+MAX_DATASET_BYTES = int(os.environ.get("MAX_DATASET_BYTES", str(12 * 1024 * 1024)))
 # Shape limits for a CSV read into a DataFrame (uploads and stored datasets).
 # Life data is long and narrow; these sit far above any real dataset while
 # keeping one parse's memory bounded.

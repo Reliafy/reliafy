@@ -51,7 +51,9 @@ being deliberate about, because everything downstream is expressed relative to i
 Go to **Model → Degradation → New model**, pick your dataset, choose the
 item id, time and measurement columns, and set the **Failure threshold** along
 with the **Time unit** and **Measurement unit** so the outputs are labelled
-properly.
+properly. A dataset that holds life data with its **Measurements** (readings on
+the same units; see [condition and life](/guides/condition-based-risk)) is read
+here by its measurements.
 
 In the next step you choose a **path** — how degradation progresses. The
 default, **Best (auto-select by AICc)**, tries all nine paths and keeps the one

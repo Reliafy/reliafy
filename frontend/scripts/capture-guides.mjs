@@ -33,9 +33,9 @@ const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../public/guides/i
 
 // --- Fixtures: create real saved diagrams via the API so we can screenshot
 // --- them without automating the canvas. Auth-disabled mode needs no token.
-async function api(path, body) {
+async function api(path, body, method = null) {
   const res = await fetch(`${BASE}/api${path}`, {
-    method: body ? "POST" : "GET",
+    method: method || (body ? "POST" : "GET"),
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -198,15 +198,16 @@ async function seedTwoValveSif() {
 }
 
 // Condition-based risk: the smoke suite's demo fleet (40 pumps, vibration read
-// every 10 days; smoke/seed.js), fitted as a joint model, and a diagram with two
-// of its running pumps in parallel as condition-based blocks.
+// every 10 days; smoke/seed.js) as one dataset — the lives with the readings as
+// its measurements — fitted as a joint model, and a diagram with two of its
+// running pumps in parallel as condition-based blocks.
 async function seedJointModel() {
   const { lifetimes, readings } = jointFleet();
   const life = await api("/datasets/paste", { name: "Pump lives", content: lifetimes });
-  const reads = await api("/datasets/paste", { name: "Pump vibration", content: readings });
+  await api(`/datasets/${life.id}/measurements/paste`, { content: readings }, "PUT");
   const fit = await api("/joint/models", {
     name: "Feed pumps (condition-based)",
-    lifetimes_dataset_id: life.id, readings_dataset_id: reads.id,
+    dataset_id: life.id,
     mapping: { id: "pump", x: "age", c: "running" },
     readings_mapping: { id: "pump", age: "age", value: "vibration" },
     covariates: ["load"], path_model: "linear", unit: "Days", marker: "vibration", marker_unit: "mm/s",
@@ -233,7 +234,7 @@ async function seedJointModel() {
     ],
   };
   const rbd = await api("/rbds", { name: "Feed pump train", graph });
-  return { modelId, rbdId: rbd.id, datasetIds: [life.id, reads.id] };
+  return { modelId, rbdId: rbd.id, datasetIds: [life.id] };
 }
 
 // A model of the user's own (samples can't be shared), for the Share dialog.
@@ -841,8 +842,7 @@ async function main() {
     // the risk table, one unit's view, and a unit as an RBD block.
     { file: "cbr-01-new.png", url: "/models/joint/new", settle: 1500,
       async act(page) {
-        await chooseOption(page, "Lifetimes: one row per unit", /^Pump lives/);
-        await chooseOption(page, "Readings: one row per reading", /^Pump vibration/);
+        await chooseOption(page, "Dataset", /^Pump lives/);
         await page.getByLabel("load changes the risk").check();
         await page.getByLabel("load changes the path").check();
         await wait(800);

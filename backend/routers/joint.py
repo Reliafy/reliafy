@@ -67,9 +67,9 @@ def options(ctx: AccessCtx = Depends(get_access)) -> dict:
 
 @router.post("/joint/check")
 def check(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
-    """Read the two tables as a fit would and say what it would take: units,
-    failures, running units, readings, and any readings that match no unit.
-    Free, quick and saves nothing."""
+    """Read the dataset's two parts as a fit would and say what it would
+    take: units, failures, running units, readings, and any readings that
+    match no unit. Free, quick and saves nothing."""
     try:
         return JSONResponse(content=joint_service.check(session, body, ctx.write_owner))
     except FitError as exc:
@@ -79,7 +79,9 @@ def check(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx =
 @router.post("/joint/models")
 def fit_model(body: dict = Body(...), session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     """Fit and save a condition and life model (Pro). ``body``:
-    ``name``, ``lifetimes_dataset_id``, ``readings_dataset_id``, ``mapping``
+    ``name``, ``dataset_id`` (its life data with its measurements, or one
+    table holding both; a body may still name ``lifetimes_dataset_id`` and
+    ``readings_dataset_id`` as before), ``mapping``
     ``{id, x | xl+xr, c, tl?}``, ``readings_mapping`` ``{id, age, value}``,
     ``covariates``, ``hazard_covariates?``, ``path_covariates?`` (a list, or
     ``{path parameter: [...]}``), ``path_model``, ``unit``, ``marker?``,

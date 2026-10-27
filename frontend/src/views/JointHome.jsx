@@ -53,7 +53,7 @@ export default function JointHome() {
         help={HELP}
         empty={{
           title: "No condition and life models yet",
-          body: "Fit one from two tables: your units (each one's age at failure, or now, and whether it failed) and their readings (unit, age, value).",
+          body: "Fit one from a dataset holding your units' life data (each one's age at failure, or now, and whether it failed) and their measurements (unit, age, value).",
           action: newModel,
         }}
         head={[

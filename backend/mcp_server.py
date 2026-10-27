@@ -2708,12 +2708,12 @@ def alt_use_level(
 # Condition and life: joint models of a marker's readings and units' lives
 # ---------------------------------------------------------------------------
 
-_JointLifeDataset = Annotated[Optional[str], Field(description=(
-    "The lifetimes dataset (list kind datasets): one row per unit — its id, its age (since new) at failure or when "
-    "last seen running, the censoring flag, and any covariates."))]
-_JointReadingsDataset = Annotated[Optional[str], Field(description=(
-    "The readings dataset: one row per reading — unit id, age (since new) and value."))]
-_JointCol = Annotated[Optional[str], Field(description="A column name of the dataset it belongs to.")]
+_JointDataset = Annotated[Optional[str], Field(description=(
+    "The dataset (list kind datasets): its life data, one row per unit (id, age since new at failure or when last "
+    "seen running, censoring flag, covariates), with its measurements (one row per reading: unit id, age, value; "
+    "datasets add_measurements), or one table holding both."))]
+_JointCol = Annotated[Optional[str], Field(description="A column of the life data (reading_* columns: of the "
+                                                       "measurements).")]
 _JointCovs = Annotated[Optional[list[str]], Field(description=(
     "Numeric lifetimes columns. hazard_covariates change the failure rate at a given reading; path_covariates "
     "change how the reading drifts. A covariate may be in both."))]
@@ -2722,7 +2722,7 @@ _JointPath = Annotated[Literal[tuple(joint_fit.PATHS)], Field(description=(
 _JOINT_WAIT_S = 25.0
 
 
-def _joint_body(name, lifetimes_dataset_id, readings_dataset_id, unit_id_column, age_column, censor_column,
+def _joint_body(name, dataset_id, unit_id_column, age_column, censor_column,
                 reading_unit_column, reading_age_column, reading_value_column, age_right_column,
                 entry_age_column, hazard_covariates, path_covariates, path_model, unit, marker, marker_unit,
                 c_invert) -> dict:
@@ -2735,7 +2735,7 @@ def _joint_body(name, lifetimes_dataset_id, readings_dataset_id, unit_id_column,
     else:
         mapping["x"] = age_column
     return {
-        "name": name, "lifetimes_dataset_id": lifetimes_dataset_id, "readings_dataset_id": readings_dataset_id,
+        "name": name, "dataset_id": dataset_id,
         "mapping": mapping,
         "readings_mapping": {"id": reading_unit_column or unit_id_column, "age": reading_age_column,
                              "value": reading_value_column},
@@ -2804,8 +2804,7 @@ def _joint_answer(model_id, results: dict) -> dict:
 
 def fit_joint(
     ctx: Context,
-    lifetimes_dataset_id: _JointLifeDataset = None,
-    readings_dataset_id: _JointReadingsDataset = None,
+    dataset_id: _JointDataset = None,
     unit_id_column: _JointCol = None,
     age_column: _JointCol = None,
     censor_column: _FitCensorCol = None,
@@ -2823,26 +2822,28 @@ def fit_joint(
     c_invert: _FitInvert = False,
 ) -> dict[str, Any]:
     """Fit a condition and life (joint) model: how a reading drifts with age and how it raises the failure rate,
-    from a lifetimes and a readings dataset; reports parameters with 95% CIs, hazard ratios and the riskiest running
-    units. Pro; saves nothing (models fit_joint keeps it). guide topic life_data."""
-    for arg, value in (("lifetimes_dataset_id", lifetimes_dataset_id), ("readings_dataset_id", readings_dataset_id),
-                       ("unit_id_column", unit_id_column), ("age_column", age_column),
-                       ("censor_column", censor_column), ("reading_age_column", reading_age_column),
-                       ("reading_value_column", reading_value_column)):
-        if not value:
-            raise ToolError(f"fit_joint needs {arg}.")
-    body = _joint_body(None, lifetimes_dataset_id, readings_dataset_id, unit_id_column, age_column, censor_column,
+    from one dataset of life data with measurements; reports parameters with 95% CIs, hazard ratios and the riskiest
+    running units. Pro; saves nothing (models fit_joint keeps it). guide topic life_data."""
+    _joint_needs(dataset_id, unit_id_column, age_column, censor_column, reading_age_column, reading_value_column)
+    body = _joint_body(None, dataset_id, unit_id_column, age_column, censor_column,
                        reading_unit_column, reading_age_column, reading_value_column, age_right_column,
                        entry_age_column, hazard_covariates, path_covariates, path_model, unit, marker,
                        marker_unit, c_invert)
     return _joint_fit(ctx, body, save=False)
 
 
+def _joint_needs(dataset_id, unit_id_column, age_column, censor_column, reading_age_column, reading_value_column):
+    for arg, value in (("dataset_id", dataset_id), ("unit_id_column", unit_id_column), ("age_column", age_column),
+                       ("censor_column", censor_column), ("reading_age_column", reading_age_column),
+                       ("reading_value_column", reading_value_column)):
+        if not value:
+            raise ToolError(f"fit_joint needs {arg}.")
+
+
 def fit_joint_model(
     ctx: Context,
     name: Annotated[str, Field(min_length=1, description="Name for the saved model.")],
-    lifetimes_dataset_id: _JointLifeDataset = None,
-    readings_dataset_id: _JointReadingsDataset = None,
+    dataset_id: _JointDataset = None,
     unit_id_column: _JointCol = None,
     age_column: _JointCol = None,
     censor_column: _FitCensorCol = None,
@@ -2861,13 +2862,8 @@ def fit_joint_model(
 ) -> dict[str, Any]:
     """Fit and save a condition and life (joint) model, as life_data_analysis fit_joint does, for
     life_data_analysis predict_joint and RBD blocks. Pro."""
-    for arg, value in (("lifetimes_dataset_id", lifetimes_dataset_id), ("readings_dataset_id", readings_dataset_id),
-                       ("unit_id_column", unit_id_column), ("age_column", age_column),
-                       ("censor_column", censor_column), ("reading_age_column", reading_age_column),
-                       ("reading_value_column", reading_value_column)):
-        if not value:
-            raise ToolError(f"fit_joint needs {arg}.")
-    body = _joint_body(name, lifetimes_dataset_id, readings_dataset_id, unit_id_column, age_column, censor_column,
+    _joint_needs(dataset_id, unit_id_column, age_column, censor_column, reading_age_column, reading_value_column)
+    body = _joint_body(name, dataset_id, unit_id_column, age_column, censor_column,
                        reading_unit_column, reading_age_column, reading_value_column, age_right_column,
                        entry_age_column, hazard_covariates, path_covariates, path_model, unit, marker,
                        marker_unit, c_invert)
@@ -2945,15 +2941,145 @@ def _joint_brief(m) -> dict:
 # ---------------------------------------------------------------------------
 
 def list_datasets(ctx: Context) -> dict[str, Any]:
-    """Saved datasets with their columns and row counts."""
+    """Saved datasets with their columns and row counts (and their measurements, where added)."""
     user, db = _caller(ctx), _db()
     datasets = datasets_service.list_datasets(db, user["uid"])
     return {"datasets": [
         {"id": d.id, "name": d.name, "n_rows": d.n_rows, "columns": [c["name"] for c in d.columns],
          **datasets_service.dataset_tags(d),
+         **({"measurements": {"n_rows": d.measurements.n_rows,
+                              "columns": [c["name"] for c in d.measurements.columns]}}
+            if d.measurements is not None else {}),
          "created_at": d.created_at.isoformat(), "url": _url(f"/data/{d.id}")}
         for d in datasets
     ]}
+
+
+# ---- datasets add_measurements / remove_measurements / split -------------------------
+
+def _owned_dataset(db, uid: str, dataset_id: str):
+    ds = datasets_service.get_dataset(db, dataset_id, _owners(uid))
+    if ds is None:
+        raise ToolError("Dataset not found.")
+    if samples_service.is_sample(ds.owner_id):
+        raise ToolError(f"“{ds.name}” is a shared sample dataset, not yours — it can't be changed.")
+    return ds
+
+
+def _dataset_parts(ds) -> dict[str, Any]:
+    out: dict[str, Any] = {"dataset_id": ds.id, "name": ds.name, "n_rows": ds.n_rows,
+                           "columns": [c["name"] for c in ds.columns], **datasets_service.dataset_tags(ds),
+                           "url": _url(f"/data/{ds.id}")}
+    if ds.measurements is not None:
+        out["measurements"] = {"n_rows": ds.measurements.n_rows,
+                               "columns": [c["name"] for c in ds.measurements.columns],
+                               "preview": _preview_part(ds.measurements)}
+    return out
+
+
+def _preview_part(part) -> dict:
+    return fitting.preview(bytes(part.data), 5)
+
+
+def add_measurements(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list kind datasets).")],
+    csv: Annotated[Optional[str], Field(min_length=1, description=(
+        "The readings as CSV text, header row first: unit id, age since new, value (more reading columns are "
+        "fine)."))] = None,
+    upload_id: Annotated[Optional[str], Field(description=(
+        "Instead of csv: a file sent through uploads create (CSV/TSV, or an .xlsx workbook with sheet)."))] = None,
+    from_dataset_id: Annotated[Optional[str], Field(description=(
+        "Instead of csv: a dataset whose table is the readings; its table is copied in (it stays as it is)."))] = None,
+    sheet: Annotated[Optional[str], Field(description="With an .xlsx upload_id: the sheet to read.")] = None,
+    no_header: Annotated[Optional[bool], Field(description=(
+        "True if the first row is data, not column names; omit to guess."))] = None,
+) -> dict[str, Any]:
+    """Add or replace a dataset's measurements (readings: unit id, age since new, value) from csv, an upload_id
+    or from_dataset_id (its table copied in). Refused while a model reads them."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    given = [k for k, v in (("csv", csv), ("upload_id", upload_id), ("from_dataset_id", from_dataset_id)) if v]
+    if len(given) != 1:
+        raise ToolError("Give the readings one way: csv (text), upload_id (a file sent through uploads create) or "
+                        "from_dataset_id (a dataset's table).")
+    ds = _owned_dataset(db, uid, dataset_id)
+    used = datasets_service.measurements_dependents(db, ds.id, _owners(uid))
+    if ds.measurements is not None and used:
+        raise ToolError(f"{datasets_service.dependents_message(used)} Those models read these measurements: delete "
+                        "them first (models delete), or add the new readings to a new dataset.")
+    upload = None
+    try:
+        if from_dataset_id:
+            source = datasets_service.get_dataset(db, from_dataset_id, _owners(uid))
+            if source is None:
+                raise ToolError("from_dataset_id: dataset not found.")
+            if source.id == ds.id:
+                raise ToolError("from_dataset_id is the dataset itself: its measurements must be another table.")
+            csv_bytes = bytes(source.data)
+        else:
+            if upload_id is not None:
+                upload, text, sheet_header = _upload_table(db, uid, upload_id, sheet, 0 if no_header else None)
+                apply = False
+            else:
+                text = csv
+                apply = datasets_service.pasted_header_guess(text) == 0 if no_header is None else bool(no_header)
+            csv_bytes = datasets_service.normalize_pasted(text, apply)
+        ds = datasets_service.set_measurements(db, ds, csv_bytes, uid)
+    except FitError as exc:
+        raise ToolError(str(exc)) from None
+    if upload is not None:
+        uploads_service.delete(db, upload["_id"])
+    return {"added": True, **_dataset_parts(ds)}
+
+
+def remove_measurements(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list kind datasets).")],
+) -> dict[str, Any]:
+    """Take the measurements off a dataset (its life data stays); refused while a model reads them."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    ds = _owned_dataset(db, uid, dataset_id)
+    if ds.measurements is None:
+        raise ToolError("This dataset has no measurements.")
+    used = datasets_service.measurements_dependents(db, ds.id, _owners(uid))
+    if used:
+        raise ToolError(f"{datasets_service.dependents_message(used)} Those models read these measurements: delete "
+                        "them first (models delete).")
+    try:
+        ds = datasets_service.remove_measurements(db, ds, uid)
+    except FitError as exc:
+        raise ToolError(str(exc)) from None
+    return {"removed": True, **_dataset_parts(ds)}
+
+
+def split_dataset(
+    ctx: Context,
+    dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list kind datasets).")],
+    unit_column: _JointCol = None,
+    age_column: _JointCol = None,
+    censor_column: _FitCensorCol = None,
+    life_columns: Annotated[Optional[list[str]], Field(description=(
+        "Columns that describe the unit (constant along its rows: covariates); guessed when omitted."))] = None,
+    measurement_columns: Annotated[Optional[list[str]], Field(description=(
+        "The reading columns (they change along a unit's rows); guessed when omitted."))] = None,
+) -> dict[str, Any]:
+    """Split a dataset whose one table holds life data and readings (the flag filled in once per unit) into
+    its two parts, in place; columns guessed."""
+    user, db = _caller(ctx), _db()
+    uid = user["uid"]
+    ds = _owned_dataset(db, uid, dataset_id)
+    plan = {k: v for k, v in (("unit", unit_column), ("age", age_column), ("censor", censor_column),
+                              ("life_columns", life_columns), ("measurement_columns", measurement_columns))
+            if v is not None} or None
+    try:
+        ds, plan = datasets_service.split_dataset(db, ds, uid, plan)
+    except FitError as exc:
+        raise ToolError(str(exc)) from None
+    return {"split": {k: plan.get(k) for k in ("unit", "age", "censor", "life_columns", "measurement_columns",
+                                               "n_units", "n_readings", "n_without_outcome")},
+            **_dataset_parts(ds)}
 
 
 def upload_dataset(
@@ -3040,14 +3166,22 @@ def get_dataset(
     offset: Annotated[int, Field(ge=0, description="First row to return (0-based).")] = 0,
     limit: Annotated[int, Field(ge=1, le=_DATASET_PAGE_MAX,
                                 description=f"Rows to return, at most {_DATASET_PAGE_MAX}.")] = 50,
+    part: Annotated[Optional[Literal["life", "measurements"]], Field(description=(
+        "Which table: life (default) or measurements (its readings, when it has them)."))] = None,
 ) -> dict[str, Any]:
-    """A dataset's name, notes, columns with types, row_count and a page of rows (offset, limit);
-    next_offset pages on. Summarise rather than read every row when you don't need them."""
+    """A dataset's name, notes, columns with types, row_count and a page of rows (offset, limit; part for its
+    measurements); next_offset pages on. Summarise rather than read every row when you don't need them."""
     user, db = _caller(ctx), _db()
     ds = datasets_service.get_dataset(db, dataset_id, _owners(user["uid"]))
     if ds is None:
         raise ToolError("Dataset not found.")
-    df = datasets_service.load_dataframe(ds)
+    if part == "measurements":
+        if ds.measurements is None:
+            raise ToolError("This dataset has no measurements of its own (datasets add_measurements adds them); "
+                            "its one table is what get kind dataset shows.")
+        df = datasets_service.load_measurements(ds)
+    else:
+        df = datasets_service.load_dataframe(ds)
     total = int(df.shape[0])
     page = df.iloc[offset:offset + limit]
     rows = [[_cell(v) for v in row] for row in page.itertuples(index=False, name=None)]
@@ -3056,6 +3190,7 @@ def get_dataset(
         "id": ds.id,
         "name": ds.name,
         "is_sample": samples_service.is_sample(ds.owner_id),
+        "part": part or "life",
         "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
         "row_count": total,
         "offset": offset,
@@ -3063,6 +3198,10 @@ def get_dataset(
         "next_offset": end if end < total else None,
         "url": _url(f"/data/{ds.id}"),
     }
+    if ds.measurements is not None and part != "measurements":
+        out["measurements"] = {"n_rows": ds.measurements.n_rows,
+                               "columns": [c["name"] for c in ds.measurements.columns],
+                               "note": "Read them with part=measurements."}
     if ds.notes:
         out["notes"] = ds.notes
     if offset >= total and total:
@@ -8098,8 +8237,12 @@ _action_tool("models", _WRITE, "Save and change models", "action", """Save model
 })
 
 _action_tool("datasets", _WRITE, "Save and change datasets", "action", """The user's datasets: save one
-    (CSV text or an uploaded file), rename or annotate it, delete it.""", {
+    (CSV text or an uploaded file), add its measurements (readings on its units), split one table into the
+    two, rename or annotate it, delete it.""", {
     "upload": _act(upload_dataset),
+    "add_measurements": _act(add_measurements),
+    "remove_measurements": _act(remove_measurements),
+    "split": _act(split_dataset),
     "update": _act(update_dataset),
     "delete": _act(delete_dataset),
 })

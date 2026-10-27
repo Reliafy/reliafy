@@ -240,11 +240,53 @@ _PUMP_MODES_CSV = (
     "P-71,4210,,A,60\nP-72,50,seal leak,B,60\n"
 ).encode()
 
+def _feed_pump_fleet(n: int = 40, seed: int = 12, stop: float = 120.0, every: float = 10.0) -> tuple[bytes, bytes]:
+    """Condition and life in one dataset: ``(life data, measurements)`` for
+    40 feed pumps watched for 120 days, their vibration read every 10 days.
+    Drawn from a joint model (each pump's vibration follows its own straight
+    line; a Weibull failure rate rises with the vibration now and with a
+    heavier duty, ``load`` 1), so the condition and life fit recovers it:
+    35 pumps fail, 5 are still running with their own readings to judge
+    them by. Deterministic (a fixed seed), so the seed is idempotent."""
+    import numpy as np
+
+    truth = dict(a=2.0, b=0.02, sd_a=0.3, sd_b=0.004, sd_noise=0.15, alpha=150.0, beta=2.0, zeta=0.8, ref=2.0,
+                 load=0.5)
+    rng = np.random.default_rng(seed)
+    grid = np.linspace(0, 1000, 20001)
+    life = ["pump,age_days,running,load"]
+    reads = ["pump,age_days,vibration_mm_s"]
+    for k in range(n):
+        load = k % 2
+        a, b = rng.normal(truth["a"], truth["sd_a"]), rng.normal(truth["b"], truth["sd_b"])
+        h = (truth["beta"] / truth["alpha"] * (np.maximum(grid, 1e-12) / truth["alpha"]) ** (truth["beta"] - 1)
+             * np.exp(truth["zeta"] * (a + b * grid - truth["ref"]) + truth["load"] * load))
+        cum = np.concatenate([[0], np.cumsum((h[1:] + h[:-1]) / 2 * np.diff(grid))])
+        t_fail = float(np.interp(rng.exponential(), cum, grid))
+        end = min(t_fail, stop)
+        ages = np.arange(0.0, end, every)
+        y = a + b * ages + rng.normal(0, truth["sd_noise"], ages.size)
+        uid = f"P-{k + 1:02d}"
+        life.append(f"{uid},{end:.1f},{int(t_fail >= stop)},{load}")
+        reads += [f"{uid},{t:g},{v:.3f}" for t, v in zip(ages, y)]
+    return ("\n".join(life) + "\n").encode(), ("\n".join(reads) + "\n").encode()
+
+
+_FEED_PUMP_LIVES_CSV, _FEED_PUMP_VIBRATION_CSV = _feed_pump_fleet()
+
 SAMPLE_DATASETS = [
     {
         "id": "sample-ds-bearings",
         "name": "Bearing fatigue test (sample)",
         "csv": _BEARINGS_CSV,
+    },
+    {
+        # One dataset with both parts (docs/datasets.md): the pumps' lives
+        # and their vibration readings, for condition and life.
+        "id": "sample-ds-feed-pumps",
+        "name": "Feed pumps — lives and vibration readings (sample)",
+        "csv": _FEED_PUMP_LIVES_CSV,
+        "measurements": _FEED_PUMP_VIBRATION_CSV,
     },
     {
         "id": "sample-ds-insulating-fluid",
@@ -285,6 +327,30 @@ SAMPLE_DATASETS = [
         "id": "sample-ds-pump-modes",
         "name": "Pump failures by mode (sample)",
         "csv": _PUMP_MODES_CSV,
+    },
+]
+
+# A condition and life (joint) model on the feed pumps: each running pump's
+# own risk from its own vibration readings. Fitted in-process at seed time
+# (about a second), once.
+SAMPLE_JOINT_MODELS = [
+    {
+        "id": "sample-joint-feed-pumps",
+        "name": "Feed pumps — condition and life (sample)",
+        "dataset_id": "sample-ds-feed-pumps",
+        "spec": {
+            "dataset_id": "sample-ds-feed-pumps",
+            "mapping": {"id": "pump", "x": "age_days", "c": "running"},
+            "readings_mapping": {"id": "pump", "age": "age_days", "value": "vibration_mm_s"},
+            "covariates": ["load"],
+            "hazard_covariates": ["load"],
+            "path_covariates": [],
+            "c_invert": False,
+            "path_model": "linear",
+            "unit": "Days",
+            "marker": "vibration",
+            "marker_unit": "mm/s",
+        },
     },
 ]
 
@@ -896,15 +962,72 @@ def _upgrade_sample_dataset(db, spec: dict, existing: dict) -> None:
     so models fitted to the sample stay valid."""
     have = {str(c.get("name")) for c in existing.get("columns") or [] if isinstance(c, dict)}
     df = fitting.read_dataframe(spec["csv"])
-    if not set(map(str, df.columns)) - have:
+    update: dict = {}
+    if set(map(str, df.columns)) - have:
+        update.update({
+            "data": spec["csv"],
+            "checksum": storage.checksum(spec["csv"]),
+            "n_rows": int(df.shape[0]),
+            "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
+        })
+    # A measurements part this release gives the sample (never one it has).
+    if spec.get("measurements") and not existing.get("measurements"):
+        update["measurements"] = _sample_part(spec["measurements"]).model_dump()
+    if not update:
         return
-    db.datasets.update_one({"_id": spec["id"]}, {"$set": {
-        "data": spec["csv"],
-        "checksum": storage.checksum(spec["csv"]),
-        "n_rows": int(df.shape[0]),
-        "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
-    }})
-    logger.info("Upgraded sample dataset %r (new columns).", spec["id"])
+    db.datasets.update_one({"_id": spec["id"]}, {"$set": update})
+    logger.info("Upgraded sample dataset %r (%s).", spec["id"],
+                "new columns" if "data" in update else "measurements")
+
+
+def _sample_part(csv: bytes):
+    """A sample dataset's measurements part from its CSV."""
+    from backend.schema import DatasetPart
+
+    df = fitting.read_dataframe(csv)
+    return DatasetPart(checksum=storage.checksum(csv), n_rows=int(df.shape[0]),
+                       columns=[{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns], data=csv)
+
+
+def _seed_joint_models(db) -> None:
+    """Fit and save the sample condition and life models (idempotent: a
+    saved one is left as it is)."""
+    for spec in SAMPLE_JOINT_MODELS:
+        try:
+            if db.models.find_one({"_id": spec["id"]}, {"_id": 1}) is not None:
+                continue
+            if db.datasets.find_one({"_id": spec["dataset_id"]}, {"_id": 1}) is None:
+                continue
+            from backend import joint as joint_fit  # local: heavy import
+            from backend.services import compute_core
+            from backend.services import joint as joint_service
+
+            s = spec["spec"]
+            items, summary = joint_service.items_for(db, s, SAMPLE_OWNER)
+            request = joint_fit.fit_request(
+                items, s["covariates"], path_model=s["path_model"], hazard_covariates=s.get("hazard_covariates"),
+                path_covariates=s.get("path_covariates"), unit=s.get("unit") or "", marker=s.get("marker") or "",
+                marker_unit=s.get("marker_unit") or "", summary=summary)
+            out = compute_core.to_wire(compute_core.run_joint_fit(request))
+            import surpyval
+
+            model = Model(
+                id=spec["id"],
+                name=spec["name"],
+                owner_id=SAMPLE_OWNER,
+                dataset_id=spec["dataset_id"],
+                kind=joint_service.KIND,
+                distribution_id=(out.get("results") or {}).get("distribution_id") or "joint",
+                spec=dict(s),
+                results=out.get("results") or {},
+                serialized={"format": "surpyval_joint", "model": out.get("model"), "units": out.get("units") or {}},
+                surpyval_version=getattr(surpyval, "__version__", None),
+                status="ready",
+            )
+            db.models.insert_one(to_doc(model))
+            logger.info("Seeded sample condition and life model %r.", spec["id"])
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to seed sample condition and life model %r: %s", spec["id"], exc)
 
 
 def _upgrade_sample_recurrent(db, spec: dict, existing: dict) -> None:
@@ -973,11 +1096,14 @@ def seed_samples(db) -> None:
                 n_rows=int(df.shape[0]),
                 columns=columns,
                 data=spec["csv"],
+                measurements=_sample_part(spec["measurements"]) if spec.get("measurements") else None,
             )
             db.datasets.insert_one(to_doc(dataset))
             logger.info("Seeded sample dataset %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample dataset %r: %s", spec["id"], exc)
+
+    _seed_joint_models(db)
 
     import surpyval
 

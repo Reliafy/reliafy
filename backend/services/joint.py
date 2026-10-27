@@ -1,13 +1,19 @@
 """Condition and life models (joint models of readings and failures): saving,
 fitting as a compute job, and the live model.
 
-A joint model is a saved model (``models``, ``kind: "joint"``) fitted to two
-datasets: the lifetimes (one row per unit) and the readings (one row per
-reading). It stores its recipe (``spec``), what the results page shows
-(``results``) and ``serialized``: SurPyval's ``JointModel.to_dict()`` with
-the running units' inputs (age, covariates, readings), so the model and any
-running unit's prediction rehydrate without a refit
-(:func:`models_service.get_live_model` → :func:`live_entry`).
+A joint model is a saved model (``models``, ``kind: "joint"``) fitted to one
+dataset that holds both parts: its life data (one row per unit) and its
+measurements (one row per reading; ``spec.dataset_id`` with ``mapping`` and
+``readings_mapping``). A dataset with no measurements part is read as one
+long table: the rows with the censoring flag filled in are the lifetimes,
+every row a reading. Models saved before datasets held their measurements
+name two datasets (``spec.lifetimes_dataset_id`` / ``readings_dataset_id``,
+possibly the same one twice); they open and refit as they always did. It
+stores its recipe (``spec``), what the results page shows (``results``) and
+``serialized``: SurPyval's ``JointModel.to_dict()`` with the running units'
+inputs (age, covariates, readings), so the model and any running unit's
+prediction rehydrate without a refit (:func:`models_service.get_live_model`
+→ :func:`live_entry`).
 
 The fit is heavy (8-40 s for a real fleet), so with the compute queue
 configured it runs as a job on the compute service (``joint_fit``); the
@@ -56,12 +62,27 @@ class ModelNotFound(KeyError):
 
 
 def _dataset(db, dataset_id, owners, what: str):
+    what = f"{what} dataset" if what else "dataset"
     if not dataset_id or not isinstance(dataset_id, str):
-        raise FitError(f"Pick the {what} dataset.")
+        raise FitError(f"Pick the {what}.")
     ds = datasets_service.get_dataset(db, dataset_id, owner_id=owners)
     if ds is None:
-        raise FitError(f"The {what} dataset wasn't found.")
+        raise FitError(f"The {what} wasn't found.")
     return ds
+
+
+def dataset_keys(body: dict) -> dict:
+    """Which dataset(s) a request or a saved spec names: ``{"dataset_id"}``
+    for one dataset (the one way to fit now; two ids that are the same
+    dataset fold into it), else the two ids a model saved earlier carries."""
+    body = body or {}
+    one = body.get("dataset_id")
+    life, reads = body.get("lifetimes_dataset_id"), body.get("readings_dataset_id")
+    if not one and life and life == reads:
+        one = life
+    if one:
+        return {"dataset_id": one}
+    return {"lifetimes_dataset_id": life, "readings_dataset_id": reads}
 
 
 def spec_from(body: dict) -> dict:
@@ -72,8 +93,7 @@ def spec_from(body: dict) -> dict:
         raise FitError(f"Unknown path model {path!r}: use one of {', '.join(joint.PATHS)}.")
     covariates = [str(c) for c in (body.get("covariates") or []) if c]
     return {
-        "lifetimes_dataset_id": body.get("lifetimes_dataset_id"),
-        "readings_dataset_id": body.get("readings_dataset_id"),
+        **dataset_keys(body),
         "mapping": {k: v for k, v in (body.get("mapping") or {}).items() if k in joint.LIFE_KEYS and v},
         "readings_mapping": {k: v for k, v in (body.get("readings_mapping") or {}).items()
                              if k in joint.READING_KEYS and v},
@@ -97,14 +117,26 @@ def _outcome_rows(table, mapping: dict):
     return table[table[c].notna()]
 
 
+def frames_for(db, spec: dict, owners):
+    """``(life, readings)``: the two tables a spec names. One dataset: its
+    life data and its measurements part, or — with no part — its one table
+    read as both (:func:`_outcome_rows`). A spec saved with two dataset ids
+    reads them as it always did."""
+    keys = dataset_keys(spec)
+    if "dataset_id" in keys:
+        ds = _dataset(db, keys["dataset_id"], owners, "")
+        life = datasets_service.load_dataframe(ds)
+        if ds.measurements is not None:
+            return life, datasets_service.load_measurements(ds)
+        return _outcome_rows(life, spec.get("mapping") or {}), life
+    life_ds = _dataset(db, keys.get("lifetimes_dataset_id"), owners, "lifetimes")
+    read_ds = _dataset(db, keys.get("readings_dataset_id"), owners, "readings")
+    return datasets_service.load_dataframe(life_ds), datasets_service.load_dataframe(read_ds)
+
+
 def items_for(db, spec: dict, owners) -> tuple[list, dict]:
-    """The units of a spec's datasets, grouped (:func:`joint.build_items`)."""
-    life_ds = _dataset(db, spec.get("lifetimes_dataset_id"), owners, "lifetimes")
-    read_ds = _dataset(db, spec.get("readings_dataset_id"), owners, "readings")
-    life = datasets_service.load_dataframe(life_ds)
-    readings = datasets_service.load_dataframe(read_ds)
-    if life_ds.id == read_ds.id:
-        life = _outcome_rows(life, spec.get("mapping") or {})
+    """The units of a spec's dataset, grouped (:func:`joint.build_items`)."""
+    life, readings = frames_for(db, spec, owners)
     return joint.build_items(life, readings, spec.get("mapping") or {}, spec.get("readings_mapping") or {},
                              spec.get("covariates") or [], bool(spec.get("c_invert")))
 
@@ -190,7 +222,7 @@ def _save(db, pending: dict, out: dict) -> Model:
         id=uuid.uuid4().hex,
         name=pending.get("name") or "Condition and life",
         owner_id=pending.get("owner_id"),
-        dataset_id=spec.get("lifetimes_dataset_id") or "",
+        dataset_id=spec.get("dataset_id") or spec.get("lifetimes_dataset_id") or "",
         kind=KIND,
         distribution_id=(out.get("results") or {}).get("distribution_id") or "joint",
         spec=spec,

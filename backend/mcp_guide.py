@@ -42,12 +42,15 @@ failures; exact bounds); models fit with demand_batches saves one.
 - "Is A better than B?": life_data_analysis compare_groups (split by a column or give a group per time; \
 log-rank, RMST difference, Gray's test per mode, a verdict to relay). Nothing is fitted.
 - Condition and life: remaining life from condition readings (a joint model, Pro): a reading taken again and again on each unit (vibration, wear, oil \
-debris) and the units' lives, fitted together. Two datasets: lifetimes, one row per unit (unit_id_column, \
-age_column = age since new at failure or when last seen running, censor_column, optional entry_age_column and \
-numeric covariates; age_right_column for units found failed between two ages, flag 2), and readings, one row \
-per reading (reading_unit_column, reading_age_column since new, reading_value_column). Ages are since new, in \
-one time unit (say it). hazard_covariates change the failure rate at a given reading; path_covariates change \
-how the reading drifts; one may be in both. path_model: linear unless the readings clearly curve. \
+debris) and the units' lives, fitted together. One dataset (dataset_id) holding both: its life data, one row \
+per unit (unit_id_column, age_column = age since new at failure or when last seen running, censor_column, \
+optional entry_age_column and numeric covariates; age_right_column for units found failed between two ages, \
+flag 2), and its measurements, one row per reading (reading_unit_column, reading_age_column since new, \
+reading_value_column; datasets add_measurements puts them on the dataset: csv, an upload_id, or \
+from_dataset_id to copy another dataset's table in). A dataset whose one table holds both (the flag filled in \
+once per unit, a reading on every row) works as it is, or datasets split makes the two parts. Ages are since \
+new, in one time unit (say it). hazard_covariates change the failure rate at a given reading; path_covariates \
+change how the reading drifts; one may be in both. path_model: linear unless the readings clearly curve. \
 life_data_analysis fit_joint reports; models fit_joint saves. The fit runs on the calculation service (8-40 s): \
 it may come back as a job (get kind job). Quote each hazard ratio with its 95% CI, as its text says.
 - A running unit's risk: life_data_analysis predict_joint (unit_id, or age_now + readings + unit_covariates): \
@@ -280,8 +283,12 @@ returned them.
     "workspace": ("Reading, tidying and deleting saved items; what changed.", """\
 The workspace.
 - Reads: list kind models / datasets / rbds / fleets / share_links / rbd_runs, and get kind model \
-/ dataset (a page of rows at a time) / rbd / rbd_run / job / upload. Shared samples are listed \
-(is_sample) and readable, never changed.
+/ dataset (a page of rows at a time; part=measurements for a dataset's readings) / rbd / rbd_run / job / \
+upload. Shared samples are listed (is_sample) and readable, never changed.
+- A dataset is one document: its life data (its table) and, when added, its measurements (readings on the \
+same units at ages since new; datasets add_measurements / remove_measurements). The list shows a \
+measurements entry where there is one. Datasets never point at each other: readings for a dataset's units \
+go on that dataset.
 - list kind workspace_changes: what changed over a period (since a date or the last visit, or days), computed \
 from what Reliafy stores: new and changed items, refits that moved B10 or MTTF, moved forecasts, fired alerts, \
 RCM evidence changes, moved simulations. Start from its sentence; report not_compared as unknown, never guess.

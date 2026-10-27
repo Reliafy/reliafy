@@ -114,6 +114,17 @@ def _resolve_dataset(session, ctx: AccessCtx, dataset_id, file):
     raise FitError("Provide a CSV file or a dataset_id.")
 
 
+def _readings_frame(session, ctx: AccessCtx, dataset_id, contents):
+    """``preview_frame`` reading a saved dataset's measurements part when it
+    has one (its readings), else its one table."""
+    if dataset_id:
+        dataset = datasets_service.get_dataset(session, dataset_id, owner_id=ctx.write_owner)
+        if dataset is None:
+            raise FitError("Dataset not found.")
+        return datasets_service.load_measurements(dataset), dataset.id
+    return datasets_service.preview_frame(session, ctx.write_owner, None, contents)
+
+
 def _spec_from_form(i, x, y, threshold, path, distribution, population_method, unit, measurement_unit) -> dict:
     return {
         "mapping": {"i": i, "x": x, "y": y},
@@ -146,7 +157,7 @@ def fit_preview(
     CSV is parsed in memory (``dataset_id`` is null) and stored on save."""
     try:
         contents = read_upload(file) if (file is not None and not dataset_id) else None
-        df, preview_dataset_id = datasets_service.preview_frame(session, ctx.write_owner, dataset_id, contents)
+        df, preview_dataset_id = _readings_frame(session, ctx, dataset_id, contents)
         spec = _spec_from_form(i, x, y, threshold, path, distribution, population_method, unit, measurement_unit)
         payload, _ = degradation_fit.fit(
             df, spec["mapping"], spec["threshold"], spec["path"],
