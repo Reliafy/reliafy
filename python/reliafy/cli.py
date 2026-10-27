@@ -15,6 +15,8 @@
     reliafy document get DOCUMENT_ID -o manual.pdf
     reliafy ingest usage fleet.csv --fleet FLEET_ID
     reliafy ingest readings readings.csv
+    reliafy apply ops.json                          # maintenance changes in one call (a dry run)
+    reliafy apply ops.json --run                    # ... for real
 
 The generic commands come from the server's OpenAPI spec, so a new tool
 action is on the command line as soon as the server has it. Output is a
@@ -39,7 +41,7 @@ from reliafy.client import Client, ReliafyError, ServerTooOld, _version
 
 SPEC_TTL_S = 24 * 3600
 BUILTINS = ("login", "logout", "whoami", "tools", "spec", "call", "push", "fit", "upload", "import", "photo",
-            "document", "ingest", "help")
+            "document", "ingest", "apply", "help")
 
 
 # ---- output --------------------------------------------------------------------
@@ -527,6 +529,35 @@ def cmd_ingest(client: Client, ns) -> int:
     return 0
 
 
+def cmd_apply(client: Client, ns) -> int:
+    """apply FILE.json: a list of maintenance operations (or {operations: [...]})
+    as one maintenance_apply call. A dry run unless --run; the per-operation
+    results as a table, and the undo list written beside the file."""
+    with open(ns.file, encoding="utf-8") as fh:
+        body = json.load(fh)
+    operations = body.get("operations") if isinstance(body, dict) else body
+    if not isinstance(operations, list):
+        raise ReliafyError(f"{ns.file} should hold a list of operations, or " + '{"operations": [...]}.')
+    result = client.apply(operations, dry_run=not ns.run, on_error=ns.on_error, idempotency_key=ns.key)
+    if ns.json:
+        render(result, True)
+    else:
+        summary = {k: v for k, v in result.items() if k not in ("results", "undo", "irreversible")}
+        render(summary, False)
+        rows = [{k: r.get(k) for k in ("index", "ref", "do", "status", "id", "error")} for r in result.get("results", [])]
+        if rows:
+            print(f"\nresults ({len(rows)}):")
+            table(rows)
+    undo = result.get("undo")
+    if undo and ns.run:
+        path = os.path.splitext(ns.file)[0] + ".undo.json"
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"operations": undo}, fh, indent=2)
+        if not ns.json:
+            print(f"\nTo undo it: reliafy apply {path} --run")
+    return 0 if result.get("ok") else 1
+
+
 def builtin_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="reliafy", description="Reliafy from the command line: every tool action, files, photos, documents "
@@ -603,6 +634,12 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--fleet")
     sp.add_argument("--dataset")
     sp.add_argument("--no-refit", action="store_true")
+    sp = add("apply", cmd_apply, "Run a JSON file of Reliafy Maintenance operations as one maintenance_apply "
+                                 "call: a dry run unless --run.")
+    sp.add_argument("file", help="A JSON list of {do, args, ref?, confirm?}, or {operations: [...]}.")
+    sp.add_argument("--run", action="store_true", help="Write the changes (default: a dry run).")
+    sp.add_argument("--on-error", choices=["stop", "continue"], dest="on_error")
+    sp.add_argument("--key", help="An idempotency key: the same key and file within 24 hours isn't run twice.")
     return p
 
 

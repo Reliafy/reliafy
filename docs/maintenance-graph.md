@@ -500,6 +500,41 @@ it runs). Both are plain text of at most 4,000 characters. `operating_context`
 is optional on `position.created` (left out when empty, so older events replay
 to the same node) and set or cleared ("") through `position.updated`.
 
+### Retiring the rest of the tree, and restoring anything
+
+Nothing is erased. Every level can be taken out of use with a flag event and
+brought back with its reverse: `location.retired`, `item.retired`,
+`part.retired`, `manufacturer.retired` and `point.retired` join the retires
+that were there (positions, tasks, failure modes, classes, conditions, groups,
+connections), each projected by `_flag("retired")`; `<node>.restored`
+(`position`, `location`, `item`, `task`, `failure_mode`, `part`,
+`manufacturer`, `point`, `item_class`, `condition`, `group`, `interface`) and
+`document.restored` (a link; a deleted PDF's bytes are gone) are projected by
+`_unflag`, which turns the flag off and keeps `restored_on`. The service
+refuses a retire while something depends on the thing (fitted, located,
+placed, stocked, listed, an open work order, a task going by a point) and a
+restore while what it needs is still retired (its parent, its subject, its
+failure mode), so the graph is consistent after either. `positions retire` and
+`locations retire` take `cascade`: the live subtree goes too, deepest first,
+after every node is checked. Reads leave retired locations, items, parts,
+makers and points out of lists and matches; a direct read answers with
+`retired: true`.
+
+Edits that had no event before: `interface.updated` (kind, medium, name,
+rating, and the position that realises it), `document.updated` (title, kind),
+`photo.updated` (caption), `coordinates.cleared`, `part.supersession_cleared`
+and `parts.not_interchangeable`. All of these are new event types:
+`PROJECTION_VERSION` stays, and code from before them passes over each
+(logged, skipped) and projects the rest.
+
+`maintenance_apply` (backend/maintenance/apply.py) runs a list of the typed
+tools' actions as one call. Every operation first runs on a throwaway copy of
+the organisation's graph (`store.scratch_copy`: an in-memory `GraphStore`
+filled from `snapshot(org)`, with an empty log of its own), so a failure
+anywhere refuses the batch before the live log is touched; then the same
+operations run on the live store in order. The log records each operation's
+events as it always would; a batch isn't one event.
+
 ## Making Neo4j the primary store later
 
 Worth it when Neo4j is close to Cloud Run (AuraDB Professional in

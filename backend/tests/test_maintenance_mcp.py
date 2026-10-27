@@ -22,6 +22,7 @@ EXPECTED_TOOLS = {
     "maintenance_tasks", "maintenance_proposals", "maintenance_work_orders", "maintenance_measurements",
     "maintenance_locations", "maintenance_parts", "maintenance_reliability", "maintenance_topology",
     "maintenance_item_classes", "maintenance_manufacturers", "maintenance_attachments", "maintenance_workspace",
+    "maintenance_apply",
 }
 
 
@@ -106,12 +107,14 @@ def test_a_handful_of_tools_reads_apart_from_writes(env):
         return {t.name: t for t in (await client.list_tools()).tools if t.name.startswith("maintenance_")}
 
     tools = _session(env["token"], listed)
-    assert set(tools) == EXPECTED_TOOLS and len(tools) == 21 == len(mcp_tools.TOOL_NAMES)
+    assert set(tools) == EXPECTED_TOOLS and len(tools) == 22 == len(mcp_tools.TOOL_NAMES)
     reads = {n for n, t in tools.items() if t.annotations.read_only_hint}
     assert reads == {"maintenance_overview", "maintenance_guide", "maintenance_get", "maintenance_list",
                      "maintenance_view_photo"}
     assert set(mcp_tools.TABLES) == EXPECTED_TOOLS - {"maintenance_overview", "maintenance_guide",
-                                                      "maintenance_view_photo"}
+                                                      "maintenance_view_photo", "maintenance_apply"}
+    # The whole maintenance surface stays within its description budget (how-tos go in the guide).
+    assert sum(len(t.description) for t in tools.values()) < 48_000  # 40,794 before maintenance_apply
     for name, (selector, table) in mcp_tools.TABLES.items():
         t = tools[name]
         assert t.input_schema["properties"][selector]["enum"] == list(table) and selector in t.input_schema["required"]
@@ -287,7 +290,9 @@ def test_the_guide_by_topic(env):
 
     index, pages, bad = _session(env["token"], flow)
     assert set(index["topics"]) == {"model", "register", "plan", "run", "learn", "decide", "data", "classes",
-                                    "conditions", "structure"}
+                                    "conditions", "structure", "apply"}
+    apply = pages["apply"]["guide"]
+    assert "maintenance_apply" in apply and "@p" in apply and "confirm" in apply and "dry_run" in apply
     structure = pages["structure"]["guide"]
     assert "add_component" in structure and "positions_from_structure" in structure and "loop" in structure
     conditions = pages["conditions"]["guide"]
@@ -858,12 +863,12 @@ def test_item_classes_and_the_nameplate_flow_over_mcp(env):
     async def flow(client):
         tools = {t.name: t for t in (await client.list_tools()).tools}
         item_class_actions = tools["maintenance_item_classes"].input_schema["properties"]["action"]["enum"]
-        assert item_class_actions == ["create", "update", "set_attributes", "retire", "assign", "import",
+        assert item_class_actions == ["create", "update", "set_attributes", "retire", "restore", "assign", "import",
                                       "load_starter", "create_condition", "update_condition", "retire_condition",
-                                      "apply_condition", "exclude_condition", "remove_condition",
-                                      "import_conditions"]
+                                      "restore_condition", "apply_condition", "exclude_condition",
+                                      "remove_condition", "import_conditions"]
         assert tools["maintenance_manufacturers"].input_schema["properties"]["action"]["enum"] == [
-            "create", "update", "merge", "link", "link_by_name"]
+            "create", "update", "merge", "retire", "restore", "link", "link_by_name"]
         assert _ok(await _list(client, "item_classes"))["tree"] == []
         dry = _ok(await _do(client, "maintenance_item_classes", "load_starter"))
         assert dry["dry_run"] and dry["source"] == "Reliafy starter taxonomy"

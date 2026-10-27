@@ -312,8 +312,11 @@ def tree(m: Maintenance = Depends(maintenance)) -> JSONResponse:
 
 
 @router.get("/events")
-def events(limit: int = 100, m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    return _run(lambda: {"events": m.s.events(m.org, max(1, min(limit, 500)))})
+def events(limit: int = 100, since: int | None = None, type: str | None = None,
+           m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The workspace's recent events, newest first (each with its seq); since a
+    seq reads forward from it; type keeps one event type."""
+    return _run(lambda: {"events": m.s.events(m.org, max(1, min(limit, 500)), since, type or None)})
 
 
 # ---- positions -----------------------------------------------------------------------
@@ -660,7 +663,7 @@ def retire_task(task_id: str, body: dict = Body(default={}), m: Maintenance = De
 @router.post("/positions/{position_id}/retire")
 def retire_position(position_id: str, body: dict = Body(default={}),
                     m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.retire_position, position_id, body.get("reason", ""))
+    return _run(m.retire_position, position_id, body.get("reason", ""), bool(body.get("cascade")))
 
 
 @router.post("/fitments/{fitment_id}/void")
@@ -902,8 +905,8 @@ def set_duty(group_id: str, body: dict = Body(...), m: Maintenance = Depends(mai
 
 
 @router.post("/groups/{group_id}/retire")
-def retire_group(group_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(lambda: (m.retire_group(group_id), {"retired": group_id})[1])
+def retire_group(group_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(lambda: (m.retire_group(group_id, body.get("reason", "")), {"retired": group_id})[1])
 
 
 @router.get("/positions/{position_id}/impact")
@@ -1574,6 +1577,129 @@ def move_photo(photo_id: str, body: dict = Body(...), m: Maintenance = Depends(m
 def set_coordinates(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.set_coordinates, body.get("node_id"), body.get("lat"), body.get("lon"),
                 body.get("source") or "manual")
+
+
+@router.delete("/coordinates/{node_id}")
+def clear_coordinates(node_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.clear_coordinates, node_id)
+
+
+# ---- retiring the rest of the tree, and restoring anything -------------------------------
+# The same service methods the agent's tools call, so the app can offer them.
+
+@router.post("/positions/{position_id}/restore")
+def restore_position(position_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_position, position_id)
+
+
+@router.post("/locations/{location_id}/retire")
+def retire_location(location_id: str, body: dict = Body(default={}),
+                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.retire_location, location_id, body.get("reason", ""), bool(body.get("cascade")))
+
+
+@router.post("/locations/{location_id}/restore")
+def restore_location(location_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_location, location_id)
+
+
+@router.post("/items/{item_id}/retire")
+def retire_item(item_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.retire_item, item_id, body.get("reason", ""))
+
+
+@router.post("/items/{item_id}/restore")
+def restore_item(item_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_item, item_id)
+
+
+@router.post("/tasks/{task_id}/restore")
+def restore_task(task_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_task, task_id)
+
+
+@router.post("/failure-modes/{mode_id}/restore")
+def restore_failure_mode(mode_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_failure_mode, mode_id)
+
+
+@router.post("/parts/{part_id}/retire")
+def retire_part(part_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.retire_part, part_id, body.get("reason", ""))
+
+
+@router.post("/parts/{part_id}/restore")
+def restore_part(part_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_part, part_id)
+
+
+@router.post("/parts/{part_id}/unlink")
+def unlink_parts(part_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{other_part_id, relation?: superseded_by | interchangeable}: take a wrong link off."""
+    return _run(m.unlink_parts, part_id, body.get("other_part_id"), body.get("relation") or "interchangeable")
+
+
+@router.post("/points/{point_id}/retire")
+def retire_point(point_id: str, body: dict = Body(default={}), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.retire_point, point_id, body.get("reason", ""))
+
+
+@router.post("/points/{point_id}/restore")
+def restore_point(point_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_point, point_id)
+
+
+@router.post("/item-classes/{class_id}/restore")
+def restore_item_class(class_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_item_class, class_id)
+
+
+@router.post("/conditions/{condition_id}/restore")
+def restore_condition(condition_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_condition, condition_id)
+
+
+@router.post("/manufacturers/{manufacturer_id}/retire")
+def retire_manufacturer(manufacturer_id: str, body: dict = Body(default={}),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.retire_manufacturer, manufacturer_id, body.get("reason", ""))
+
+
+@router.post("/manufacturers/{manufacturer_id}/restore")
+def restore_manufacturer(manufacturer_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_manufacturer, manufacturer_id)
+
+
+@router.patch("/interfaces/{interface_id}")
+def update_interface(interface_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """{kind?, medium?, name?, rating?, realised_by?: a position id, or null to take it off}."""
+    return _run(m.update_interface, interface_id, body.get("kind"), body.get("medium"), body.get("name"),
+                body.get("rating"), body["realised_by"] if "realised_by" in body else ...)
+
+
+@router.post("/interfaces/{interface_id}/restore")
+def reconnect(interface_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.reconnect, interface_id)
+
+
+@router.post("/groups/{group_id}/restore")
+def restore_group(group_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_group, group_id)
+
+
+@router.patch("/documents/{document_id}")
+def update_document(document_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_document, document_id, body.get("title"), body.get("kind"))
+
+
+@router.post("/documents/{document_id}/restore")
+def restore_document(document_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.restore_document, document_id)
+
+
+@router.patch("/photos/{photo_id}")
+def update_photo(photo_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_photo, photo_id, body.get("caption"))
 
 
 @router.post("/photo-links")
