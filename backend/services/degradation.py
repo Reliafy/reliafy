@@ -53,8 +53,10 @@ def _now():
 # ---- Models ----------------------------------------------------------------
 
 def save_model(db, name: str, dataset, spec: dict, owner_id: str) -> DegradationModelDoc:
-    """Fit and persist a degradation model. Raises ``FitError`` on a bad fit."""
-    df = datasets_service.load_dataframe(dataset)
+    """Fit and persist a degradation model. Raises ``FitError`` on a bad fit.
+    The readings are the dataset's measurements part when it has one, else
+    its one table (``datasets_service.load_measurements``)."""
+    df = datasets_service.load_measurements(dataset)
     payload, cache_id = degradation_fit.fit(
         df,
         spec.get("mapping", {}),
@@ -151,7 +153,7 @@ def _refit(db, doc: DegradationModelDoc):
     dataset = datasets_service.get_dataset(db, doc.dataset_id, owner_id=doc.owner_id)
     if dataset is None:
         raise ModelNotFound(doc.id)
-    df = datasets_service.load_dataframe(dataset)
+    df = datasets_service.load_measurements(dataset)
     spec = doc.spec or {}
     _, cache_id = degradation_fit.fit(
         df,

@@ -177,6 +177,24 @@ from the MIL-HDBK-217F prediction handbook), not your own equipment's data;
 show each record's `licence.attribution` with its numbers. The record format
 and the sources: [library.md](library.md).
 
+### Datasets: life data and measurements
+
+A dataset is one document holding its **life data** (one row per unit) and,
+when added, its **measurements**: readings on the same units at ages since
+new, one row per reading (unit id, age, value). A condition and life model is
+fitted to one such dataset; a degradation model reads its measurements. See
+[datasets.md](datasets.md).
+
+| Call | Does |
+|---|---|
+| `POST /api/v1/datasets/add_measurements` | `dataset_id` with `csv` (text), `upload_id` (a file sent to an upload link; `sheet` for a workbook) or `from_dataset_id` (another dataset's table, copied in). Adds the measurements, or replaces them; refused while a model reads them. |
+| `POST /api/v1/datasets/remove_measurements` | `dataset_id`: takes the measurements off (the life data stays). |
+| `POST /api/v1/datasets/split` | `dataset_id` whose one table holds life data and readings together (a reading per row, the censoring flag filled in once per unit): splits it into the two parts in place. Columns are guessed; `unit_column`, `age_column`, `censor_column`, `life_columns` and `measurement_columns` override them. |
+| `POST /api/v1/get/dataset` | `id` with `part: "measurements"` pages the readings; without it, the life data (and a `measurements` summary where there is one). `list/datasets` shows each dataset's `measurements`. |
+
+On the command line: `reliafy upload readings.csv --measurements-for
+DATASET_ID`; in Python, `rf.add_measurements(dataset_id, "readings.csv")`.
+
 ---
 
 ## Python client and command line

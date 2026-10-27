@@ -41,8 +41,8 @@ def test_fifteen_tools_reads_apart_from_writes(env):
     # Every one of the 66 old tools is an action now, but upgrade_link (still a tool of its own).
     # + 4 test plans, + strategy calendar_replacement, next_replacement, + joint models' fit_joint,
     # predict_joint and models fit_joint, + report_problem's report, status, triage and update,
-    # + library's search, get and sources.
-    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 77
+    # + library's search, get and sources, + datasets add_measurements, remove_measurements and split.
+    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 80
 
 
 def test_every_action_is_in_its_tool_description_and_schema(env):

@@ -175,6 +175,13 @@ def test_cli_fit_upload_import_push_ingest(server, capsys):
 
     code, out, _ = run(capsys, "upload", str(data), "--name", "Bearings", "--json")
     assert code == 0 and json.loads(out)["n_rows"] == 5
+    dataset_id = json.loads(out)["id"]
+    # The same command adds a file as a dataset's measurements (its readings).
+    wear = tmp / "wear.csv"
+    wear.write_text("unit,hours,wear\nB1,100,0.2\nB1,200,0.5\nB2,100,0.1\n")
+    code, out, _ = run(capsys, "upload", str(wear), "--measurements-for", dataset_id, "--json")
+    assert code == 0 and json.loads(out)["measurements"]["n_rows"] == 3, out
+    assert Client().get("dataset", dataset_id, part="measurements")["row_count"] == 3
 
     dft = tmp / "sys.dft"
     dft.write_text('toplevel "Sys";\n"Sys" and "A" "B";\n"A" lambda=0.001;\n"B" lambda=0.002;\n')

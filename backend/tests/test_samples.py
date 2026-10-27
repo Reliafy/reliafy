@@ -32,7 +32,7 @@ def test_seed_is_idempotent_and_shared(session):
     samples.seed_samples(session)  # second run must not duplicate
 
     assert session.datasets.count_documents({}) == len(samples.SAMPLE_DATASETS)
-    assert session.models.count_documents({}) == len(samples.SAMPLE_MODELS)
+    assert session.models.count_documents({}) == len(samples.SAMPLE_MODELS) + len(samples.SAMPLE_JOINT_MODELS)
     assert session.rbds.count_documents({}) == len(samples.SAMPLE_RBDS)
 
     # Every user sees the same samples without anything copied per-user.

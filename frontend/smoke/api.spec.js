@@ -11,6 +11,12 @@ import { test, expect } from "@playwright/test";
 const SIGNED_IN = [
   // The Explorer's "Add the sample truck" (once: smoke/seed.js added it, so this adds nothing).
   ["POST", "/api/maintenance/sample-truck"],
+  // A dataset's measurements part (docs/datasets.md): add, paste, remove, split, life data for readings alone.
+  ["PUT", "/api/datasets/smoke/measurements"],
+  ["PUT", "/api/datasets/smoke/measurements/paste"],
+  ["DELETE", "/api/datasets/smoke/measurements"],
+  ["POST", "/api/datasets/smoke/split"],
+  ["PUT", "/api/datasets/smoke/life"],
   ["POST", "/api/alt/models/smoke/diagnostics"], // the accelerated life page's Diagnostics checks
   ["GET", "/api/me/roles"], // what the user does: the menu's order and Home's cards
   ["GET", "/api/public-links"], // Reports: every shared link

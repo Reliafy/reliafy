@@ -30,7 +30,7 @@ def test_readings_are_measurements():
     rows = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u] for u in range(4) for k in range(4)]
     out = tags(rows, ["bearing", "hours", "vibration_mm_s"])
     assert out["tags"] == ["Measurements"]  # no failure times: not life data
-    assert "Condition and life (the readings)" in out["use_for"]
+    assert out["use_for"] == ["Degradation model", "Condition and life model (once life data is added)"]
 
 
 def test_start_stop_rows_with_changing_load():

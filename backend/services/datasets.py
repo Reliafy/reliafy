@@ -1,10 +1,17 @@
 """Dataset persistence: store uploaded CSVs (in MongoDB) and read them back as
-DataFrames."""
+DataFrames.
+
+A dataset is one document holding one table (``data``) and, when the user
+adds them, its measurements (``measurements``: readings on the same units at
+ages since new, as a second CSV in the same document). The two are linked by
+unit id inside the dataset; a dataset never points at another. See
+docs/datasets.md for the shape, the limits and why."""
 
 from __future__ import annotations
 
 import re
 import uuid
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -14,7 +21,7 @@ from backend.db import from_doc, to_doc
 from backend.fitting import FitError
 from backend.fitting import preview as _preview
 from backend.fitting import header_guess, read_csv_capped, read_dataframe, with_generic_header
-from backend.schema import Dataset, Model
+from backend.schema import Dataset, DatasetPart, Model
 
 
 
@@ -247,13 +254,232 @@ def list_datasets(db, owner_id: str | list[str], hidden=frozenset(), shared=froz
 
 
 def load_dataframe(dataset: Dataset) -> pd.DataFrame:
+    """The dataset's table: its life data (or, for a dataset of readings
+    alone, those readings). Every life-data fit reads this."""
     return read_dataframe(bytes(dataset.data))
+
+
+def load_measurements(dataset: Dataset) -> pd.DataFrame:
+    """The dataset's readings: its measurements part, or its one table when
+    that is all it holds (a dataset of readings alone, as saved before
+    measurements had a part of their own). Degradation and condition and
+    life fits read this."""
+    if dataset.measurements is not None:
+        return read_dataframe(bytes(dataset.measurements.data))
+    return load_dataframe(dataset)
 
 
 def preview_rows(dataset: Dataset, rows: int = 8, distinct: bool = False) -> dict:
     """Column names + a small sample of rows for the dataset detail view
     (``distinct``: with each column's distinct-value count, see preview)."""
     return _preview(bytes(dataset.data), rows, distinct=distinct)
+
+
+def preview_measurements(dataset: Dataset, rows: int = 8, distinct: bool = False) -> dict | None:
+    """``preview_rows`` of the measurements part, or None without one."""
+    if dataset.measurements is None:
+        return None
+    return _preview(bytes(dataset.measurements.data), rows, distinct=distinct)
+
+
+# ---- The measurements part ---------------------------------------------------------
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def check_dataset_size(primary: bytes, measurements: bytes | None) -> None:
+    """Refuse two tables that together don't fit one dataset document
+    (``MAX_DATASET_BYTES``, well under Mongo's 16 MB), in words."""
+    from backend import config
+
+    n_life = len(primary)
+    n_meas = len(measurements or b"")
+    if n_life + n_meas > config.MAX_DATASET_BYTES:
+        mb = 1024 * 1024
+        raise FitError(
+            f"Together, the life data ({n_life / mb:.1f} MB) and the measurements ({n_meas / mb:.1f} MB) are "
+            f"too large for one dataset. The limit is {config.MAX_DATASET_BYTES / mb:.0f} MB: trim unused "
+            "columns, or thin the readings (every other one, say)."
+        )
+
+
+def build_part(csv_bytes: bytes, no_header: bool = False) -> DatasetPart:
+    """A dataset part (a table stored as the dataset's own is) from CSV
+    bytes: size-checked, parsed once for its columns and row count."""
+    check_size(csv_bytes)
+    if no_header:
+        csv_bytes = apply_generic_header(csv_bytes)
+    df = read_dataframe(csv_bytes)
+    return DatasetPart(
+        checksum=storage.checksum(csv_bytes),
+        n_rows=int(df.shape[0]),
+        columns=[{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
+        data=csv_bytes,
+    )
+
+
+def set_measurements(db, dataset: Dataset, csv_bytes: bytes, owner_id: str,
+                     no_header: bool = False) -> Dataset:
+    """Add the measurements (readings at ages: unit id, age, value, …) to an
+    owned dataset, or replace them. The unit ids are matched to the life
+    data's when a model is fitted (where the columns are mapped); here the
+    table only has to read, and both tables have to fit one document."""
+    part = build_part(csv_bytes, no_header)
+    check_dataset_size(bytes(dataset.data), part.data)
+    res = db.datasets.update_one({"_id": dataset.id, "owner_id": owner_id},
+                                 {"$set": {"measurements": part.model_dump(), "updated_at": _now()}})
+    if res.matched_count == 0:
+        raise FitError("Dataset not found.")
+    return get_dataset(db, dataset.id)
+
+
+def remove_measurements(db, dataset: Dataset, owner_id: str) -> Dataset:
+    """Take the measurements part off an owned dataset (the life data stays).
+    Callers refuse while a model reads the part (``measurements_dependents``)."""
+    res = db.datasets.update_one({"_id": dataset.id, "owner_id": owner_id},
+                                 {"$unset": {"measurements": ""}, "$set": {"updated_at": _now()}})
+    if res.matched_count == 0:
+        raise FitError("Dataset not found.")
+    return get_dataset(db, dataset.id)
+
+
+def set_life_data(db, dataset: Dataset, csv_bytes: bytes, owner_id: str, no_header: bool = False) -> Dataset:
+    """Give a dataset of readings alone its life data: the new table becomes
+    the dataset's table and the readings it held become its measurements, so
+    a degradation model fitted to the readings keeps reading them
+    (``load_measurements``). A dataset that already has both parts keeps
+    them: its life data is what its models were fitted to."""
+    if dataset.measurements is not None:
+        raise FitError("This dataset already has life data and measurements. To start from other life data, "
+                       "make a new dataset.")
+    others = [d for d in dependents_for_dataset(db, dataset.id, owner_id) if d["collection"] != "degradation_models"]
+    if others:
+        raise FitError(f"{dependents_message(others)} Those models read this table as it is, so its life data "
+                       "can't be replaced; make a new dataset instead.")
+    check_size(csv_bytes)
+    if no_header:
+        csv_bytes = apply_generic_header(csv_bytes)
+    readings = DatasetPart(checksum=dataset.checksum, n_rows=dataset.n_rows, columns=list(dataset.columns),
+                           data=bytes(dataset.data))
+    check_dataset_size(csv_bytes, readings.data)
+    df = read_dataframe(csv_bytes)
+    res = db.datasets.update_one({"_id": dataset.id, "owner_id": owner_id}, {"$set": {
+        "data": csv_bytes,
+        "checksum": storage.checksum(csv_bytes),
+        "n_rows": int(df.shape[0]),
+        "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
+        "measurements": readings.model_dump(),
+        "updated_at": _now(),
+    }})
+    if res.matched_count == 0:
+        raise FitError("Dataset not found.")
+    return get_dataset(db, dataset.id)
+
+
+# ---- One table of life data and readings, split into the two parts ------------------
+
+def split_plan(df: pd.DataFrame) -> dict | None:
+    """How one long table of life data and readings would split into the
+    two parts, or None when the table isn't one.
+
+    Such a table has one row per reading, with each unit's outcome (its
+    censoring flag) written once, on one of its rows (its last, usually).
+    The plan: ``unit`` and ``age`` (both tables), ``censor`` (the life data),
+    ``life_columns`` (constant within a unit: covariates) and
+    ``measurement_columns`` (varying within a unit: the readings), plus the
+    counts the notice shows."""
+    unit = _unit_column(df)
+    censor = _censor_column(df)
+    if not unit or not censor:
+        return None
+    flagged = df[censor].notna()
+    if flagged.sum() >= len(df) or flagged.groupby(df[unit]).sum().max() > 1:
+        return None  # one flag per unit on some rows, readings on the rest
+    numeric = [str(c) for c in df.columns if str(c) not in (unit, censor) and pd.api.types.is_numeric_dtype(df[c])]
+    ages = [c for c in numeric if _TIME_NAME_RE.search(c)] or numeric[:1]
+    if not ages:
+        return None
+    age = ages[0]
+    life_columns, measurement_columns = [], []
+    for c in map(str, df.columns):
+        if c in (unit, censor, age):
+            continue
+        varies = bool((df.groupby(unit)[c].nunique(dropna=True) > 1).any())
+        (measurement_columns if varies else life_columns).append(c)
+    if not measurement_columns:
+        return None
+    n_units = int(df[unit].nunique(dropna=True))
+    return {
+        "unit": unit, "age": age, "censor": censor,
+        "life_columns": life_columns, "measurement_columns": measurement_columns,
+        "n_units": n_units, "n_readings": int(len(df)),
+        # Units with no flagged row have no outcome: they'd be left out of the life data.
+        "n_without_outcome": n_units - int(df.loc[flagged, unit].nunique(dropna=True)),
+    }
+
+
+def split_frames(df: pd.DataFrame, plan: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """``(life, readings)`` as the plan says: the life data is each unit's
+    flagged row (its age there is its age at failure or now), the readings
+    are every row. The column names are kept, so a model fitted to the one
+    table (its columns mapped) refits the same from the two."""
+    for key in ("unit", "age", "censor"):
+        if plan.get(key) not in df.columns:
+            raise FitError(f"The {key} column {plan.get(key)!r} isn't in the table.")
+    for c in [*(plan.get("life_columns") or []), *(plan.get("measurement_columns") or [])]:
+        if c not in df.columns:
+            raise FitError(f"Column {c!r} isn't in the table.")
+    unit, age, censor = plan["unit"], plan["age"], plan["censor"]
+    life = df.loc[df[censor].notna(), [unit, age, censor, *(plan.get("life_columns") or [])]]
+    readings = df[[unit, age, *(plan.get("measurement_columns") or [])]]
+    if life.empty:
+        raise FitError("No row has the censoring flag filled in, so there is no life data to split off.")
+    return life.reset_index(drop=True), readings.reset_index(drop=True)
+
+
+def split_dataset(db, dataset: Dataset, owner_id: str, plan: dict | None = None) -> tuple[Dataset, dict]:
+    """Split an owned dataset's one table of life data and readings into its
+    two parts, in place: the life data becomes the dataset's table and the
+    readings its measurements. ``plan`` overrides the guessed one (its
+    columns). Models that read the one table as readings (degradation,
+    condition and life) refit the same from the parts; any fitted to it as
+    life data make the split refuse."""
+    df = load_dataframe(dataset)
+    guessed = split_plan(df)
+    if plan:
+        plan = {**(guessed or {}), **{k: v for k, v in plan.items() if v is not None}}
+        if "measurement_columns" not in plan or "life_columns" not in plan:
+            raise FitError("Say which columns are the readings (measurement_columns) and which describe the unit "
+                           "(life_columns).")
+    else:
+        plan = guessed
+    if not plan:
+        raise FitError("This table doesn't look like life data and readings in one: it needs a unit id column, a "
+                       "censoring flag filled in once per unit, and a reading column that changes along a unit's rows.")
+    if dataset.measurements is not None:
+        raise FitError("This dataset already has its measurements as a part of its own.")
+    life_fits = [d for d in dependents_for_dataset(db, dataset.id, owner_id)
+                 if d["collection"] in ("models", "alt_models", "recurrent_models")
+                 and d.get("model_kind") != "joint"]
+    if life_fits:
+        raise FitError(f"{dependents_message(life_fits)} Those models read this table as life data, so it can't be "
+                       "split under them; make a new dataset from the file instead.")
+    life, readings = split_frames(df, plan)
+    life_bytes = life.to_csv(index=False).encode()
+    part = build_part(readings.to_csv(index=False).encode())
+    check_dataset_size(life_bytes, part.data)
+    res = db.datasets.update_one({"_id": dataset.id, "owner_id": owner_id}, {"$set": {
+        "data": life_bytes,
+        "checksum": storage.checksum(life_bytes),
+        "n_rows": int(life.shape[0]),
+        "columns": [{"name": str(c), "dtype": str(life[c].dtype)} for c in life.columns],
+        "measurements": part.model_dump(),
+        "updated_at": _now(),
+    }})
+    if res.matched_count == 0:
+        raise FitError("Dataset not found.")
+    return get_dataset(db, dataset.id), plan
 
 
 def models_for_dataset(db, dataset_id: str, owner_id: str, hidden=frozenset()) -> list[Model]:
@@ -288,8 +514,9 @@ def dependents_for_dataset(db, dataset_id: str, owner_id, hidden=frozenset()) ->
     leave unable to refit (#265). Hidden samples are left out."""
     out = []
     for collection, kind in DEPENDENT_COLLECTIONS:
-        # A condition-based (joint) model is fitted to a second dataset too,
-        # its readings (``spec.readings_dataset_id``).
+        # A condition and life (joint) model saved before datasets held their
+        # measurements was fitted to a second dataset too, its readings
+        # (``spec.readings_dataset_id``); one saved since reads one dataset.
         uses = ({"$or": [{"dataset_id": dataset_id}, {"spec.readings_dataset_id": dataset_id}]}
                 if collection == "models" else {"dataset_id": dataset_id})
         for d in db[collection].find(
@@ -297,9 +524,20 @@ def dependents_for_dataset(db, dataset_id: str, owner_id, hidden=frozenset()) ->
         ).sort("created_at", -1):
             if d["_id"] in hidden:
                 continue
-            out.append({"kind": kind, "collection": collection, "id": d["_id"], "name": d.get("name") or "",
-                        "owner_id": d.get("owner_id")})
+            model_kind = d.get("kind") if collection == "models" else None
+            out.append({"kind": "condition and life model" if model_kind == "joint" else kind,
+                        "collection": collection, "id": d["_id"], "name": d.get("name") or "",
+                        "owner_id": d.get("owner_id"), "model_kind": model_kind})
     return out
+
+
+def measurements_dependents(db, dataset_id: str, owner_id, hidden=frozenset()) -> list[dict]:
+    """The dependents that read the dataset's measurements: condition and
+    life models fitted to it, and degradation models (which take the
+    measurements part when there is one). Replacing or removing the part
+    would leave them unable to refit."""
+    return [d for d in dependents_for_dataset(db, dataset_id, owner_id, hidden)
+            if d["collection"] == "degradation_models" or d.get("model_kind") == "joint"]
 
 
 def dependent_counts(db, owner_id, hidden=frozenset()) -> dict[str, int]:
@@ -452,19 +690,39 @@ def detect_tags(df: pd.DataFrame) -> dict:
     use_for: list[str] = []
     covs = "Covariates" in tags
     if "Measurements" in tags:
-        use_for += ["Degradation", "Condition and life (the readings)"]
         if censor:
-            use_for.append("Non-repairable model")
+            # Life data and readings in one long table: the outcome once per
+            # unit, a reading on every row (the split offered on its page).
+            use_for += ["Condition and life model", "Degradation model", "Non-repairable model"]
+        else:
+            use_for += ["Degradation model", "Condition and life model (once life data is added)"]
     elif censor and unit and ("Time-varying covariates" in tags or start_stop):
         use_for.append("Non-repairable model with time-varying covariates")
     elif repeat:
         use_for.append("Repairable model" + (" with covariates" if covs else ""))
     elif censor or times:
         use_for.append("Non-repairable model" + (" with covariates" if covs else ""))
-        use_for.append("Condition and life (the lifetimes)")
+        use_for.append("Condition and life model (once measurements are added)")
     out_tags = [t for t in TAGS if t in tags]
     return {"tags": out_tags, "use_for": use_for, "summary": _summary(df, unit, censor, out_tags),
             "time_unit": _time_unit(times)}
+
+
+def with_measurements(primary: dict, part: DatasetPart, readings: dict | None = None) -> dict:
+    """The tags of a dataset with both parts: its table's, plus Measurements
+    for the part; "use for" leads with condition and life; the summary adds
+    the readings. ``readings`` is ``detect_tags`` of the part (for its time
+    unit) when the table names none."""
+    tags = [t for t in TAGS if t in set(primary.get("tags") or []) | {"Measurements"}]
+    use_for = ["Condition and life model"]
+    use_for += [u for u in primary.get("use_for") or [] if not u.startswith("Condition and life")]
+    if "Degradation model" not in use_for:
+        use_for.append("Degradation model")
+    summary = primary.get("summary") or ""
+    readings_text = f"{part.n_rows:,} readings"
+    summary = f"{summary} · {readings_text}" if summary else readings_text
+    return {"tags": tags, "use_for": use_for, "summary": summary,
+            "time_unit": primary.get("time_unit") or (readings or {}).get("time_unit")}
 
 
 # Units a life or usage axis is measured in, as SurPyval names them.
@@ -545,12 +803,23 @@ _TAG_CACHE: dict[str, dict] = {}
 
 
 def dataset_tags(dataset: Dataset) -> dict:
-    """``detect_tags`` for a saved dataset, cached by its content (datasets
-    are content-addressed, so the checksum names the file)."""
-    key = dataset.checksum or dataset.id
+    """``detect_tags`` for a saved dataset (with its measurements part folded
+    in), cached by its content (datasets are content-addressed, so the
+    checksums name the tables)."""
+    part = dataset.measurements
+    key = (dataset.checksum or dataset.id) + (f"|{part.checksum}" if part is not None else "")
     if key not in _TAG_CACHE:
         try:
-            _TAG_CACHE[key] = detect_tags(load_dataframe(dataset))
+            out = detect_tags(load_dataframe(dataset))
+            if part is not None:
+                readings = None
+                if not out.get("time_unit"):
+                    try:
+                        readings = detect_tags(read_dataframe(bytes(part.data)))
+                    except Exception:  # noqa: BLE001 - its time unit is only a suggestion
+                        readings = None
+                out = with_measurements(out, part, readings)
+            _TAG_CACHE[key] = out
         except Exception:  # noqa: BLE001 - an unreadable file just has no tags
             _TAG_CACHE[key] = {"tags": [], "use_for": [], "summary": "", "time_unit": None}
         if len(_TAG_CACHE) > 5000:
@@ -558,15 +827,16 @@ def dataset_tags(dataset: Dataset) -> dict:
     return _TAG_CACHE[key]
 
 
-
 def profile(dataset: Dataset) -> dict:
     """What the dataset page needs beyond the preview: each column's count of
-    distinct values (to pick a sensible "split by") and whether the rows are
-    unit histories (``repeated_units``)."""
+    distinct values (to pick a sensible "split by"), whether the rows are
+    unit histories (``repeated_units``), and — for a dataset whose one table
+    holds life data and readings together — how it would ``split``."""
     df = load_dataframe(dataset)
     return {
         "distinct": {str(c): int(df[c].nunique(dropna=True)) for c in df.columns},
         "repeated_units": repeated_units(df),
+        "split": None if dataset.measurements is not None else split_plan(df),
     }
 
 

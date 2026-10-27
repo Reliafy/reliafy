@@ -78,6 +78,38 @@ def _model_detail(model, ctx: AccessCtx) -> dict:
     }
 
 
+def _measurements_summary(dataset) -> dict | None:
+    """The measurements part as the list shows it, or None without one."""
+    part = dataset.measurements
+    if part is None:
+        return None
+    return {"n_rows": part.n_rows, "columns": part.columns, "n_columns": len(part.columns or []),
+            "checksum": part.checksum}
+
+
+def _measurements_detail(dataset) -> dict | None:
+    """The measurements part as its tab shows it: columns, a preview and the
+    column facts the fit forms use (as the dataset's own table has them)."""
+    summary = _measurements_summary(dataset)
+    if summary is None:
+        return None
+    try:
+        preview = datasets_service.preview_measurements(dataset, distinct=True) or {}
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to build measurements preview: %s", exc)
+        preview = {"columns": [c["name"] for c in summary["columns"]], "preview": []}
+    return {
+        **summary,
+        "preview": preview.get("preview", []),
+        "preview_columns": preview.get("columns", []),
+        "n_unique": preview.get("n_unique"),
+        "dtypes": preview.get("dtypes"),
+        "blanks": preview.get("blanks"),
+        "values": preview.get("values"),
+        "whole": preview.get("whole"),
+    }
+
+
 def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
     return {
         "id": dataset.id,
@@ -88,6 +120,7 @@ def _dataset_summary(dataset, ctx: AccessCtx, n_models: int = 0) -> dict:
         "n_models": n_models,
         "checksum": dataset.checksum,
         **datasets_service.dataset_tags(dataset),
+        "measurements": _measurements_summary(dataset),
         "created_at": dataset.created_at.isoformat(),
         "is_sample": samples_service.is_sample(dataset.owner_id),
         "read_only": not access_service.can_write(ctx, dataset.owner_id),
@@ -133,6 +166,9 @@ def _dataset_detail(dataset, session, ctx: AccessCtx) -> dict:
         "models": [_model_summary(m, ctx) for m in models],
         "other_models": others,
         "profile": profile,
+        # The measurements part (readings at ages), with its own preview and
+        # column facts, or null: see docs/datasets.md.
+        "measurements": _measurements_detail(dataset),
     }
 
 
@@ -149,6 +185,51 @@ def list_datasets(session=Depends(get_session), ctx: AccessCtx = Depends(get_acc
             for d in datasets
         ]
     }
+
+
+def _table_from_upload(ctx: AccessCtx, file: UploadFile, no_header: bool | None, sheet: str | None,
+                       header_row: str | None):
+    """An uploaded table as CSV bytes: ``(contents, header_guess, hint)``, or
+    the 422 to answer. A CSV as it is (its header guessed, #434); an Excel
+    workbook's ``sheet`` converted from ``header_row``."""
+    # Up to the Excel reader's limit here; a CSV (or the CSV a sheet becomes)
+    # is held to MAX_UPLOAD_BYTES by the dataset service.
+    contents = read_upload(file, max(excel_service.MAX_FILE_BYTES, config.MAX_UPLOAD_BYTES))
+    try:
+        if excel_service.is_excel(contents, file.filename or ""):
+            try:
+                row = excel_router.header_row_param(header_row)
+                # Under the user's import guard (a sync handler: FastAPI runs it
+                # in its threadpool, off the event loop).
+                table = excel_router.guarded(ctx.uid, excel_service.read_table, contents, sheet,
+                                             0 if no_header else row, file.filename or "")
+            except excel_service.ExcelError as exc:
+                return JSONResponse(status_code=422, content={"detail": str(exc)})
+            except Exception as exc:
+                return excel_router.excel_error(exc, "dataset", contents, file.filename or "")
+            contents = excel_service.to_csv(table)
+            # Already applied: header-less sheets get col 1, col 2, …
+            guess = table.header_row
+            hint = SHEET_HEADER_HINT if row is None and no_header is None and guess == 0 else None
+        else:
+            apply, guess = datasets_service.resolve_no_header(contents, no_header)
+            hint = HEADER_HINT if apply and no_header is None else None
+            if apply:
+                contents = datasets_service.apply_generic_header(contents)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return contents, guess, hint
+
+
+def _table_from_paste(content: str, no_header: bool | None):
+    """Pasted text as CSV bytes: ``(contents, header_guess, hint)``, or the 422."""
+    try:
+        guess = datasets_service.pasted_header_guess(content)
+        apply = guess == 0 if no_header is None else bool(no_header)
+        csv_bytes = datasets_service.normalize_pasted(content, no_header=apply)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return csv_bytes, guess, (HEADER_HINT if apply and no_header is None else None)
 
 
 @router.post("/datasets")
@@ -174,32 +255,10 @@ def upload_dataset(
     guessed header, 0 = none — as does ``no_header``) and stored exactly as
     that CSV would be.
     """
-    # Up to the Excel reader's limit here; a CSV (or the CSV a sheet becomes)
-    # is held to MAX_UPLOAD_BYTES by create_dataset.
-    contents = read_upload(file, max(excel_service.MAX_FILE_BYTES, config.MAX_UPLOAD_BYTES))
-    try:
-        if excel_service.is_excel(contents, file.filename or ""):
-            try:
-                row = excel_router.header_row_param(header_row)
-                # Under the user's import guard (a sync handler: FastAPI runs it
-                # in its threadpool, off the event loop).
-                table = excel_router.guarded(ctx.uid, excel_service.read_table, contents, sheet,
-                                             0 if no_header else row, file.filename or "")
-            except excel_service.ExcelError as exc:
-                return JSONResponse(status_code=422, content={"detail": str(exc)})
-            except Exception as exc:
-                return excel_router.excel_error(exc, "dataset", contents, file.filename or "")
-            contents = excel_service.to_csv(table)
-            # Already applied: header-less sheets get col 1, col 2, …
-            guess = table.header_row
-            hint = SHEET_HEADER_HINT if row is None and no_header is None and guess == 0 else None
-        else:
-            apply, guess = datasets_service.resolve_no_header(contents, no_header)
-            hint = HEADER_HINT if apply and no_header is None else None
-            if apply:
-                contents = datasets_service.apply_generic_header(contents)
-    except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    read = _table_from_upload(ctx, file, no_header, sheet, header_row)
+    if isinstance(read, JSONResponse):
+        return read
+    contents, guess, hint = read
     # Free-plan cap (new datasets only — re-uploading an existing file is fine).
     denied = _creation_denied(session, ctx, "datasets")
     if denied is not None:
@@ -232,12 +291,10 @@ def paste_dataset(
     """Create a dataset from pasted tabular text (CSV or TSV). Used by the
     paste-data form and the assistant. ``no_header`` and the response's
     ``header_guess`` / ``hint`` are as for an upload."""
-    try:
-        guess = datasets_service.pasted_header_guess(content)
-        apply = guess == 0 if no_header is None else bool(no_header)
-        csv_bytes = datasets_service.normalize_pasted(content, no_header=apply)
-    except FitError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    read = _table_from_paste(content, no_header)
+    if isinstance(read, JSONResponse):
+        return read
+    csv_bytes, guess, hint = read
     # Free-plan cap (skipped when the identical data already exists).
     denied = _creation_denied(session, ctx, "datasets")
     if denied is not None:
@@ -253,7 +310,6 @@ def paste_dataset(
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to store pasted dataset")
         return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
-    hint = HEADER_HINT if apply and no_header is None else None
     return JSONResponse(content=_created(dataset, reused, session, ctx, guess, hint))
 
 
@@ -336,6 +392,154 @@ def delete_dataset(
         status, payload = access_service.write_denial(ctx, dataset.owner_id)
         return JSONResponse(status_code=status, content=payload)
     return JSONResponse(content={"ok": True})
+
+
+# ---- A dataset's parts: its measurements, and life data for a dataset of readings ----------
+
+def _writable_dataset(session, dataset_id: str, ctx: AccessCtx):
+    """The dataset, or the error response: not found, or not the caller's to
+    change (a sample, a view-only share, a frozen team)."""
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if dataset is None or dataset.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    denial = access_service.write_denial(ctx, dataset.owner_id)
+    if denial:
+        status, payload = denial
+        return JSONResponse(status_code=status, content=payload)
+    return dataset
+
+
+def _set_part(session, ctx: AccessCtx, dataset_id: str, part: str, read) -> JSONResponse:
+    """Store an uploaded or pasted table as the dataset's ``part``
+    ("measurements", or "life" for a dataset of readings alone)."""
+    if isinstance(read, JSONResponse):
+        return read
+    dataset = _writable_dataset(session, dataset_id, ctx)
+    if isinstance(dataset, JSONResponse):
+        return dataset
+    contents, guess, hint = read
+    try:
+        if part == "measurements":
+            # Replacing readings a model was fitted to would change that model
+            # on its next refit: say which, rather than do it quietly.
+            used = datasets_service.measurements_dependents(session, dataset.id, ctx.read_owners, ctx.hidden)
+            if dataset.measurements is not None and used:
+                return JSONResponse(status_code=409, content={
+                    "detail": f"{datasets_service.dependents_message(used)} Those models read these measurements; "
+                              "delete them first, or add the new readings to a new dataset.",
+                    "model_count": len(used)})
+            dataset = datasets_service.set_measurements(session, dataset, contents, ctx.write_owner)
+        else:
+            dataset = datasets_service.set_life_data(session, dataset, contents, ctx.write_owner)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    access_service.stamp_editor(session, "datasets", dataset.id, ctx)
+    return JSONResponse(content={**_dataset_detail(dataset, session, ctx), "header_guess": guess,
+                                 **({"hint": hint} if hint else {})})
+
+
+@router.put("/datasets/{dataset_id}/measurements")
+def upload_measurements(
+    dataset_id: str,
+    file: UploadFile = File(...),
+    no_header: bool | None = Form(default=None),
+    sheet: str | None = Form(default=None),
+    header_row: str | None = Form(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Add a dataset's measurements (a CSV or Excel sheet of readings: unit
+    id, age since new, value, …), or replace them. 409 while a model reads
+    them. The form fields are the dataset upload's."""
+    return _set_part(session, ctx, dataset_id, "measurements",
+                     _table_from_upload(ctx, file, no_header, sheet, header_row))
+
+
+@router.put("/datasets/{dataset_id}/measurements/paste")
+def paste_measurements(
+    dataset_id: str,
+    content: str = Body(default=""),
+    no_header: bool | None = Body(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The same from pasted text (CSV or TSV)."""
+    return _set_part(session, ctx, dataset_id, "measurements", _table_from_paste(content, no_header))
+
+
+@router.delete("/datasets/{dataset_id}/measurements")
+def delete_measurements(
+    dataset_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    """Take the measurements off a dataset (the life data stays). 409 while
+    a condition and life or degradation model reads them."""
+    dataset = _writable_dataset(session, dataset_id, ctx)
+    if isinstance(dataset, JSONResponse):
+        return dataset
+    if dataset.measurements is None:
+        return JSONResponse(status_code=404, content={"detail": "This dataset has no measurements."})
+    used = datasets_service.measurements_dependents(session, dataset.id, ctx.read_owners, ctx.hidden)
+    if used:
+        return JSONResponse(status_code=409, content={
+            "detail": f"{datasets_service.dependents_message(used)} Those models read these measurements; delete "
+                      "them first.", "model_count": len(used)})
+    try:
+        dataset = datasets_service.remove_measurements(session, dataset, ctx.write_owner)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    access_service.stamp_editor(session, "datasets", dataset.id, ctx)
+    return JSONResponse(content=_dataset_detail(dataset, session, ctx))
+
+
+@router.put("/datasets/{dataset_id}/life")
+def upload_life_data(
+    dataset_id: str,
+    file: UploadFile = File(...),
+    no_header: bool | None = Form(default=None),
+    sheet: str | None = Form(default=None),
+    header_row: str | None = Form(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Give a dataset of readings alone its life data (one row per unit): the
+    readings it holds become its measurements."""
+    return _set_part(session, ctx, dataset_id, "life", _table_from_upload(ctx, file, no_header, sheet, header_row))
+
+
+@router.put("/datasets/{dataset_id}/life/paste")
+def paste_life_data(
+    dataset_id: str,
+    content: str = Body(default=""),
+    no_header: bool | None = Body(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The same from pasted text."""
+    return _set_part(session, ctx, dataset_id, "life", _table_from_paste(content, no_header))
+
+
+@router.post("/datasets/{dataset_id}/split")
+def split_dataset(
+    dataset_id: str,
+    body: dict = Body(default={}),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Split one table of life data and readings into the dataset's two
+    parts, as its page offers (``profile.split`` is the plan; the body may
+    override its ``unit``, ``age``, ``censor``, ``life_columns`` and
+    ``measurement_columns``)."""
+    dataset = _writable_dataset(session, dataset_id, ctx)
+    if isinstance(dataset, JSONResponse):
+        return dataset
+    plan = {k: body.get(k) for k in ("unit", "age", "censor", "life_columns", "measurement_columns")
+            if body.get(k) is not None} or None
+    try:
+        dataset, plan = datasets_service.split_dataset(session, dataset, ctx.write_owner, plan)
+    except FitError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    access_service.stamp_editor(session, "datasets", dataset.id, ctx)
+    return JSONResponse(content={**_dataset_detail(dataset, session, ctx), "split": plan})
 
 
 @router.get("/models")

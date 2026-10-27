@@ -2,7 +2,7 @@
 title: "Rank running units by risk from their condition readings"
 task: "Which of my running units is most likely to fail next, given its vibration (or wear, or oil) readings?"
 category: "Life data modelling"
-prerequisites: "A Pro plan to fit a model. Failure and running ages for a set of units, and condition readings taken on them over time."
+prerequisites: "A Pro plan to fit a model. One dataset holding failure and running ages for a set of units, with the condition readings taken on them over time as its measurements."
 related_href: "/models/joint/new"
 related_label: "Open condition and life"
 order: 18
@@ -23,11 +23,11 @@ needs a threshold that counts as failure ("replace at 3 mm of pad"). Here the
 failures are real failures, and the model works out how the reading relates to
 them. No threshold is needed.
 
-## Your two tables
+## Your dataset: life data and measurements
 
-A model is fitted to two tables, both saved as datasets.
+A model is fitted to **one dataset** that holds both parts.
 
-**Lifetimes: one row per unit.** Its id, its age when it failed (or its age now,
+**Life data: one row per unit.** Its id, its age when it failed (or its age now,
 if it is still running), whether it failed, and any facts about it that might
 matter, as numbers:
 
@@ -38,8 +38,8 @@ P1,63.3,0,1
 P6,120,1,0
 ```
 
-**Readings: one row per reading.** The unit's id, its age when it was read, and
-the value read:
+**Measurements: one row per reading.** The unit's id, its age when it was read,
+and the value read:
 
 ```
 pump,age,vibration
@@ -48,14 +48,25 @@ P0,10,2.10
 P0,20,2.36
 ```
 
-Three rules keep the two tables in step:
+Three rules keep the two parts in step:
 
-- **Ages are since new**, in the same time unit in both tables. A reading at age
+- **Ages are since new**, in the same time unit in both parts. A reading at age
   20 and a failure at age 69.5 are on one clock.
 - **The censoring flag is 0 = failed, 1 = still running.** If your sheet uses 1
   for failed, tick **My flag is 1 = failed, 0 = still running** rather than
   editing the data.
-- **The ids match.** Every reading belongs to a unit in the lifetimes table.
+- **The ids match.** Every reading belongs to a unit in the life data.
+
+To make the dataset, go to [Data](/data) → **New dataset**, give it the life
+data, and open **Add measurements for these units** to give it the readings in
+the same step (a file, or pasted). A dataset you already have takes readings
+later: open it and choose **Add measurements** from its ⋯ menu. Its page then
+shows the two parts as tabs, **Life data** and **Measurements**. If your
+readings came first, the dataset's page offers **Add life data** instead.
+
+If everything is in one long table — a reading per row, with each unit's flag
+on its last row — upload it as it is: its page notices and offers to **split**
+it into the two parts.
 
 If failures were found at inspections, so you only know a unit failed between
 two ages, tick **Failures found at inspections** and give both ages. Units that
@@ -64,14 +75,15 @@ were already in service when your records began can take an **Entry age**.
 ## Fit the model
 
 Go to **Model →** [Condition and life](/models/joint) and press **New
-model**. Under **1. Your two tables**, choose the two datasets, or upload or
-paste each one. Reliafy guesses the columns under **2. Columns**; check them.
+model**. Under **1. Your dataset**, choose the dataset, or upload or paste a new
+one with its measurements. Reliafy guesses the columns of each part under **2.
+Columns**; check them.
 
-![A new condition and life model: the columns of the two tables, and load ticked as a covariate](/guides/img/cbr-01-new.png)
+![A new condition and life model: the dataset's two parts and their columns, with load ticked as a covariate](/guides/img/cbr-01-new.png)
 
 ### Covariates: risk or reading?
 
-Any other numeric columns in the lifetimes table appear under **Covariates**,
+Any other numeric columns in the life data appear under **Covariates**,
 each with two boxes, because a fact about a unit can matter in two different
 ways:
 
@@ -173,3 +185,5 @@ parallel are a weaker pair than two new ones, and the diagram now shows it. See
   quadratic path).
 - **Download as Python**, in the page's **⋯** menu, gives a script that refits the model with
   [SurPyval](https://github.com/derrynknife/SurPyval) from the same data.
+- **Over the API**, `datasets add_measurements` puts the readings on a dataset
+  and `models fit_joint` takes its `dataset_id`; see [the API](/api-docs).

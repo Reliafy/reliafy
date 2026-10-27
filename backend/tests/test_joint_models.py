@@ -252,17 +252,23 @@ def client(monkeypatch):
         app.dependency_overrides.clear()
 
 
+def paste_dataset(client, life, readings=None, name="Pump lives"):
+    """One dataset: the life data pasted, its readings added as its measurements."""
+    r = client.post("/api/datasets/paste", json={"name": name, "content": life.to_csv(index=False)})
+    assert r.status_code == 200, r.text
+    ds = r.json()["id"]
+    if readings is not None:
+        r = client.put(f"/api/datasets/{ds}/measurements/paste", json={"content": readings.to_csv(index=False)})
+        assert r.status_code == 200, r.text
+        assert r.json()["measurements"]["n_rows"] == len(readings)
+    return ds
+
+
 def _body(client, n=60):
     L, R = fleet(n=n)
-
-    def paste(df, name):
-        r = client.post("/api/datasets/paste", json={"name": name, "content": df.to_csv(index=False)})
-        assert r.status_code == 200, r.text
-        return r.json()["id"]
-
-    return {"name": "Pumps", "lifetimes_dataset_id": paste(L, "Pump lives"),
-            "readings_dataset_id": paste(R, "Pump vibration"), "mapping": LIFE_MAP, "readings_mapping": READ_MAP,
-            "covariates": ["load"], "unit": "Days", "marker": "vibration", "marker_unit": "mm/s"}
+    return {"name": "Pumps", "dataset_id": paste_dataset(client, L, R), "mapping": LIFE_MAP,
+            "readings_mapping": READ_MAP, "covariates": ["load"], "unit": "Days", "marker": "vibration",
+            "marker_unit": "mm/s"}
 
 
 def test_fitting_is_pro_and_the_saved_model_reads_back(client):
@@ -292,9 +298,10 @@ def test_fitting_is_pro_and_the_saved_model_reads_back(client):
     assert bad.status_code == 422 and "load" in bad.json()["detail"]
     py = client.get(f"/api/joint/models/{mid}/export.py")
     assert py.status_code == 200 and "fit_from_df(" in py.text
-    # Both datasets are the model's: neither deletes while it stands.
-    for key in ("lifetimes_dataset_id", "readings_dataset_id"):
-        assert client.delete(f"/api/datasets/{body[key]}").status_code == 409
+    # The dataset is the model's: neither it nor its measurements go while it stands.
+    assert detail["spec"]["dataset_id"] == body["dataset_id"] and "lifetimes_dataset_id" not in detail["spec"]
+    assert client.delete(f"/api/datasets/{body['dataset_id']}").status_code == 409
+    assert client.delete(f"/api/datasets/{body['dataset_id']}/measurements").status_code == 409
     # Rehydrated through models_service.get_live_model, as an RBD resolves it.
     from backend.services import models as models_service
 
@@ -362,7 +369,43 @@ def test_one_table_of_readings_and_outcomes_is_both_inputs(client):
     assert pasted.status_code == 200, pasted.text
     ds = pasted.json()["id"]
     r = client.post("/api/joint/check", json={
-        "lifetimes_dataset_id": ds, "readings_dataset_id": ds, "mapping": {"id": "unit", "x": "age", "c": "outcome"},
-        "readings_mapping": READ_MAP})
+        "dataset_id": ds, "mapping": {"id": "unit", "x": "age", "c": "outcome"}, "readings_mapping": READ_MAP})
     assert r.status_code == 200, r.text
     assert r.json()["n_units"] == one["unit"].nunique()
+    # The way it was asked for before datasets held their measurements: the same id twice.
+    legacy = client.post("/api/joint/check", json={
+        "lifetimes_dataset_id": ds, "readings_dataset_id": ds, "mapping": {"id": "unit", "x": "age", "c": "outcome"},
+        "readings_mapping": READ_MAP})
+    assert legacy.status_code == 200 and legacy.json() == r.json()
+
+
+def test_two_datasets_still_fit_as_before_and_refit_the_same_as_one(client):
+    """A model saved with its life data and its readings in two datasets
+    (how it was before) opens, refits and exports as it did; the same data
+    as one dataset gives the same fit."""
+    from backend.services import joint as joint_service
+
+    client.act_as(PRO)
+    L, R = fleet(n=50)
+    life, reads = paste_dataset(client, L), paste_dataset(client, R, name="Pump vibration")
+    legacy = {"name": "Pumps (two datasets)", "lifetimes_dataset_id": life, "readings_dataset_id": reads,
+              "mapping": LIFE_MAP, "readings_mapping": READ_MAP, "covariates": ["load"], "unit": "Days",
+              "marker": "vibration"}
+    r = client.post("/api/joint/models", json=legacy)
+    assert r.status_code == 200, r.text
+    old = client.get(f"/api/joint/models/{r.json()['model_id']}").json()
+    assert old["spec"]["lifetimes_dataset_id"] == life and old["spec"]["readings_dataset_id"] == reads
+    assert client.delete(f"/api/datasets/{reads}").status_code == 409  # the readings dataset is still its data
+    one = {**legacy, "name": "Pumps (one dataset)", "dataset_id": paste_dataset(client, L, R)}
+    one.pop("lifetimes_dataset_id"), one.pop("readings_dataset_id")
+    r = client.post("/api/joint/models", json=one)
+    assert r.status_code == 200, r.text
+    new = client.get(f"/api/joint/models/{r.json()['model_id']}").json()
+    assert [p["value"] for p in new["results"]["params"]] == pytest.approx(
+        [p["value"] for p in old["results"]["params"]])
+    # Both read the same rows through the service.
+    owners = [PRO]
+    items_old, _ = joint_service.items_for(client.db, old["spec"], owners)
+    items_new, _ = joint_service.items_for(client.db, new["spec"], owners)
+    assert items_old == items_new
+    assert client.get(f"/api/joint/models/{old['id']}/export.py").status_code == 200

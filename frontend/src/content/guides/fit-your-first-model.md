@@ -69,6 +69,11 @@ If your file has no header row, upload it under [Data](/data) → **New dataset*
 tick **No header row**: Reliafy names the columns `col 1`, `col 2`, … so the
 first row stays data rather than being eaten as titles.
 
+A dataset can also carry **measurements**: readings taken on the same units
+over time (vibration, wear), one row per reading. They sit beside the life data
+on the dataset's page, on its **Measurements** tab, and feed a
+[condition and life model](/guides/condition-based-risk).
+
 ## Mapping the columns
 
 The **Data** step shows the first rows and asks what each column means, in plain

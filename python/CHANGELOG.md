@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- A dataset holds its life data and, when added, its measurements (readings
+  on the same units at ages since new) in one place. `Client.add_measurements
+  (dataset_id, "readings.csv")` and `reliafy upload readings.csv
+  --measurements-for DATASET_ID` add them (or replace them); the `datasets`
+  tool gains `add_measurements` (`csv`, `upload_id` or `from_dataset_id`),
+  `remove_measurements` and `split` (one table of life data and readings into
+  the two parts); `get kind dataset` takes `part: "measurements"`, and `list
+  kind datasets` shows each dataset's `measurements`.
+- Condition and life: `life_data_analysis fit_joint` and `models fit_joint`
+  take one `dataset_id` (its life data with its measurements, or one table
+  holding both) in place of `lifetimes_dataset_id` and `readings_dataset_id`.
+  Saved models keep working; `reliafy datasets add_measurements --dataset-id
+  LIVES --from-dataset-id READINGS` brings an old pair onto one dataset.
+
 ## 0.4.0
 
 - Best fit takes a score: `reliafy fit FILE --criterion bic` (or `criterion=`

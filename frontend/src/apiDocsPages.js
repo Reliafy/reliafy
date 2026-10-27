@@ -55,7 +55,7 @@ export const API_DOCS_PAGES = [
     blurb: "reliafy-client: Client.call, files and data, and the 0.2 functions.",
     title: "reliafy-client — the Python Client for the Reliafy API",
     description:
-      "The reliafy-client Python package: call any Reliafy tool from Python, upload datasets and diagrams, push usage and failures, and the original 0.2 functions.",
+      "The reliafy-client Python package: call any Reliafy tool from Python, upload datasets (and their measurements) and diagrams, push usage and failures, and the original 0.2 functions.",
   },
   {
     slug: "files",

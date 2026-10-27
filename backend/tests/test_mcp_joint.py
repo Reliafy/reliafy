@@ -18,12 +18,14 @@ COLUMNS = {"unit_id_column": "unit", "age_column": "age", "censor_column": "runn
 
 
 def _datasets(token, n=60):
+    """One dataset: the lives uploaded, the readings added as its measurements."""
     L, R = fleet(n=n)
     life = _ok(_call(token, "datasets", {"action": "upload", "name": "Pump lives", "csv": L.to_csv(index=False)}))
-    reads = _ok(_call(token, "datasets", {"action": "upload", "name": "Pump vibration",
+    added = _ok(_call(token, "datasets", {"action": "add_measurements", "dataset_id": life["id"],
                                           "csv": R.to_csv(index=False)}))
-    return {"lifetimes_dataset_id": life["id"], "readings_dataset_id": reads["id"], **COLUMNS,
-            "hazard_covariates": ["load"], "unit": "Days", "marker": "vibration"}
+    assert added["measurements"]["n_rows"] == len(R) and added["dataset_id"] == life["id"]
+    return {"dataset_id": life["id"], **COLUMNS, "hazard_covariates": ["load"], "unit": "Days",
+            "marker": "vibration"}
 
 
 def test_fit_joint_reports_and_models_fit_joint_saves(env):

@@ -407,7 +407,10 @@ def cmd_fit(client: Client, ns) -> int:
 
 
 def cmd_upload(client: Client, ns) -> int:
-    render(client.upload_dataset(ns.file, name=ns.name, sheet=ns.sheet), ns.json)
+    if ns.measurements_for:
+        render(client.add_measurements(ns.measurements_for, ns.file, sheet=ns.sheet), ns.json)
+    else:
+        render(client.upload_dataset(ns.file, name=ns.name, sheet=ns.sheet), ns.json)
     return 0
 
 
@@ -600,10 +603,12 @@ def builtin_parser() -> argparse.ArgumentParser:
                     help="With the best fit: the score the distributions are ranked by (default aic).")
     sp.add_argument("--unit")
     sp.add_argument("--save", metavar="NAME", help="Save the model under this name.")
-    sp = add("upload", cmd_upload, "Upload a CSV or .xlsx file as a dataset.")
+    sp = add("upload", cmd_upload, "Upload a CSV or .xlsx file as a dataset, or as a dataset's measurements.")
     sp.add_argument("file")
     sp.add_argument("--name")
     sp.add_argument("--sheet")
+    sp.add_argument("--measurements-for", metavar="DATASET_ID",
+                    help="Add the file as this dataset's measurements (readings: unit id, age, value) instead.")
     sp = add("import", cmd_import, "Import a diagram file (rbd) or an .xlsx workbook (excel).")
     sp.add_argument("what", choices=["rbd", "excel"])
     sp.add_argument("file")

@@ -22,7 +22,24 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class DatasetPart(BaseModel):
+    """A dataset's second table, its measurements: readings taken on the
+    units of the life data at ages (unit id, age, value, …), stored exactly
+    as the first table is (raw CSV bytes, content-addressed). See
+    docs/datasets.md."""
+
+    checksum: str = ""
+    n_rows: int = 0
+    columns: list = Field(default_factory=list)
+    data: bytes = b""
+
+
 class Dataset(BaseModel):
+    """One dataset: its table (``data``: the life data, or the readings when
+    that is all it holds) and, optionally, its measurements (``measurements``:
+    readings on the same units, at ages since new). A dataset stands alone;
+    the two parts are linked by unit id inside the one document."""
+
     id: str
     name: str
     owner_id: Optional[str] = None
@@ -33,6 +50,7 @@ class Dataset(BaseModel):
     columns: list = Field(default_factory=list)
     data: bytes = b""  # raw CSV bytes (excluded from API responses)
     notes: Optional[str] = None  # free-text annotation (set over MCP: datasets update)
+    measurements: Optional[DatasetPart] = None
 
 
 class Model(BaseModel):

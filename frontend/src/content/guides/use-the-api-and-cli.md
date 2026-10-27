@@ -157,7 +157,9 @@ readings (`reliafy ingest measurements`) and new failures for a dataset
 
 ## Files and photos
 
-`reliafy upload` sends a CSV or Excel file as a dataset. `reliafy import rbd`
+`reliafy upload` sends a CSV or Excel file as a dataset, or, with
+`--measurements-for DATASET_ID`, as a dataset's measurements (readings on its
+units: unit id, age, value, for a condition and life model). `reliafy import rbd`
 brings in a diagram from BlockSim, Open-PSA, Galileo or RePyability JSON, and
 `reliafy import excel` reads an .xlsx workbook: a sheet as a dataset, an FMEA or
 RCM worksheet onto a position's RCM (`--target rcm --position ID`), or Reliafy's
