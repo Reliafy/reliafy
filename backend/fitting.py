@@ -81,6 +81,7 @@ from surpyval import (
     WeibullAH,
 )
 from surpyval import GumbelPH, LogisticPH
+from surpyval import AFT, AH, PH, PO
 from surpyval.univariate.regression import CoxPH
 
 from backend import life_bounds, np_life, param_intervals
@@ -167,6 +168,13 @@ REGRESSION_MODELS = {
     "gamma_ah": {"name": "Gamma AH", "fitter": GammaAH, "effect": "additive"},
     "logistic_ah": {"name": "Logistic AH", "fitter": LogisticAH, "effect": "additive"},
     "gumbel_ah": {"name": "Gumbel AH", "fitter": GumbelAH, "effect": "additive"},
+    # Log-logistic baselines (SurPyval's generic PH/AFT/PO/AH on LogLogistic): the
+    # usual alternative to Weibull and lognormal when the hazard rises then falls.
+    # For the log-logistic, proportional odds and AFT are the same model.
+    "loglogistic_ph": {"name": "LogLogistic PH", "fitter": PH(LogLogistic), "effect": "hazard"},
+    "loglogistic_aft": {"name": "LogLogistic AFT", "fitter": AFT(LogLogistic), "effect": "aft"},
+    "loglogistic_po": {"name": "LogLogistic PO", "fitter": PO(LogLogistic), "effect": "odds"},
+    "loglogistic_ah": {"name": "LogLogistic AH", "fitter": AH(LogLogistic), "effect": "additive"},
 }
 
 # More models (#179, #72, #63) — bounded and discretized distributions, the
@@ -1086,6 +1094,8 @@ def options_from_form(
     c_invert: Optional[str] = None,
     include_mixtures: Optional[str] = None,
     c_map: Optional[str] = None,
+    criterion: Optional[str] = None,
+    frailty_family: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers).
     ``c_map`` is a JSON object of status words to censor codes."""
@@ -1120,6 +1130,10 @@ def options_from_form(
         opts["how"] = str(how).strip()
     if truthy(include_mixtures):
         opts["include_mixtures"] = True
+    if criterion and str(criterion).strip():
+        opts[CRITERION_KEY] = str(criterion).strip()
+    if frailty_family and str(frailty_family).strip():
+        opts[more_models.FAMILY_KEY] = str(frailty_family).strip()
     return opts if any(opts.values()) else None
 
 
@@ -1197,6 +1211,31 @@ def methods_for_data(mapping: Optional[dict]) -> dict:
 # Pseudo-distribution id: fit every plain distribution and keep the lowest-AIC.
 BEST_ID = "best"
 
+# Best fit's score: AIC unless asked (SurPyval's fit_best metrics).
+CRITERION_KEY = "criterion"
+CRITERIA = {
+    "aic": "AIC",
+    "aic_c": "AICc (AIC corrected for few failures)",
+    "bic": "BIC",
+    "neg_ll": "Negative log-likelihood",
+}
+DEFAULT_CRITERION = "aic"
+
+
+def clean_criterion(distribution: str, value) -> Optional[str]:
+    """Best fit's ranking score, None for the default (AIC) or when not
+    given. Refused where it doesn't apply."""
+    if value in (None, ""):
+        return None
+    key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    key = {"aicc": "aic_c", "nll": "neg_ll", "negll": "neg_ll", "neg_log_likelihood": "neg_ll"}.get(key, key)
+    if key not in CRITERIA:
+        raise FitError(f"criterion must be one of: {', '.join(CRITERIA)}.")
+    if distribution != BEST_ID:
+        raise FitError("criterion chooses how Best fit ranks the distributions: choose Best fit "
+                       "(distribution 'best'), or drop it.")
+    return None if key == DEFAULT_CRITERION else key
+
 
 def _normalize_mixture(value) -> int:
     """``mixture`` is the component count: absent/1 means an ordinary single fit."""
@@ -1233,6 +1272,19 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         # Best fit only: let two-component mixtures compete (#236).
         "include_mixtures": bool(opts.get("include_mixtures")),
     }
+    # Shared-frailty models: the frailty's own distribution (gamma or log-normal).
+    family = more_models.clean_family(distribution, opts.get(more_models.FAMILY_KEY))
+    # Best fit only: the score the candidates are ranked by.
+    criterion = clean_criterion(distribution, opts.get(CRITERION_KEY))
+    if family:
+        extra = {more_models.FAMILY_KEY: family}
+        if any([out["offset"], out["zi"], out["lfp"], out["fixed"], out["how"], out["include_mixtures"],
+                out["mixture"]]):
+            raise FitError("Fit options (offset/zi/lfp/fixed/method) apply to plain distributions only, "
+                           "not regression models.")
+        return extra
+    if criterion:
+        out[CRITERION_KEY] = criterion
     if out["include_mixtures"] and distribution != BEST_ID:
         raise FitError(
             "Two-mode mixtures compete only in Best fit — choose Best fit, or the Mixture "
@@ -1274,7 +1326,7 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         )
     if not any([out["offset"], out["zi"], out["lfp"], out["fixed"], out["how"],
                 out["include_mixtures"]]):
-        return {}
+        return {CRITERION_KEY: criterion} if criterion else {}
     if out["include_mixtures"]:
         # A mixture is fitted by maximum likelihood (EM) with none of these:
         # ranked beside fits that have them, it wouldn't be the same contest.
@@ -1421,7 +1473,8 @@ def fit(
                            "time. Drop them, or fit without the item column.")
         result = tvc.fit(distribution, df, mapping, covariates, formula, covariate_units)
     elif distribution in REGRESSION_MODELS:
-        result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units, cox_opts)
+        result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units, cox_opts,
+                                 frailty_family=options.get(more_models.FAMILY_KEY))
     elif cox_opts:
         raise FitError("Tie methods, strata and clusters apply to Cox PH only. Choose Cox PH, or drop them.")
     elif distribution == BEST_ID:
@@ -1784,9 +1837,63 @@ MIXTURE_CRITERION = "bic"  # decides only whether the best mixture beats the bes
 
 
 def _criteria(gof: list) -> dict:
-    """``{aic, aic_c, bic}`` from a goodness-of-fit list (finite ones only)."""
-    return {g["id"]: float(g["value"]) for g in gof
-            if g["id"] in ("aic", "aic_c", "bic") and math.isfinite(float(g["value"]))}
+    """``{aic, aic_c, bic, neg_ll}`` from a goodness-of-fit list (finite ones
+    only); ``neg_ll`` is the negative of the log-likelihood."""
+    out = {g["id"]: float(g["value"]) for g in gof
+           if g["id"] in ("aic", "aic_c", "bic") and math.isfinite(float(g["value"]))}
+    ll = next((float(g["value"]) for g in gof if g["id"] == "log_likelihood"), None)
+    if ll is not None and math.isfinite(ll):
+        out["neg_ll"] = -ll
+    return out
+
+
+# Failures below this: a distribution with three or more parameters is
+# fitted to very little, and its win is likely to be noise.
+FEW_FAILURES = 15
+# AIC-type scores this close are a tie: the data can't tell them apart.
+TIE_DELTA = 2.0
+
+
+def _failure_count(kwargs: dict) -> int:
+    """How many units failed in the fit's inputs (counts respected)."""
+    c = kwargs.get("c")
+    n = np.asarray(kwargs.get("n", 1), dtype=float)
+    if c is None:
+        x = np.atleast_1d(kwargs.get("x", []))
+        return int(np.sum(np.broadcast_to(n, x.shape)))
+    c = np.asarray(c, dtype=float)
+    return int(np.sum(np.broadcast_to(n, c.shape)[c != 1]))
+
+
+def best_fit_guidance(ranking: list, criterion: str, failures: int, singles_only: bool = True) -> list:
+    """Plain-word cautions for Best fit's ranking: a tie, a flexible
+    winner on few failures, and what the chosen score does not weigh."""
+    notes = []
+    label = CRITERIA[criterion].split(" (")[0]
+    if not ranking:
+        return notes
+    best = ranking[0]
+    if criterion == "neg_ll":
+        notes.append("The negative log-likelihood does not penalise extra parameters, so it favours the "
+                     "distribution with the most freedom. Prefer AIC, AICc or BIC to choose between models.")
+    near = [r for r in ranking[1:] if r.get(criterion) is not None
+            and float(r[criterion]) - float(best[criterion]) < TIE_DELTA and r.get("k") is not None]
+    if criterion != "neg_ll" and near:
+        names = ", ".join(r["name"] for r in near[:3])
+        fewer = [r for r in near if best.get("k") is not None and r["k"] < best["k"]]
+        text = (f"{best['name']} and {names} are within {TIE_DELTA:g} {label} of each other: the data can't "
+                "separate them.")
+        text += (f" {fewer[0]['name']} has fewer parameters, so it is the safer choice."
+                 if fewer else " Choose on what you know about the failure mechanism.")
+        notes.append(text)
+    if best.get("k") is not None and best["k"] >= 3 and failures < FEW_FAILURES:
+        notes.append(f"{best['name']} has {best['k']} parameters and only {failures} "
+                     f"failure{'s' if failures != 1 else ''} were observed. A flexible winner on this little "
+                     "data may just be fitting noise: check it against a two-parameter distribution.")
+    if criterion == "aic_c" and failures < 4:
+        notes.append("AICc needs more failures than parameters to be defined; candidates it cannot score are "
+                     "left out.")
+    return notes
 
 
 def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -> dict:
@@ -1809,7 +1916,8 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
     """
     options = dict(options or {})
     with_mixtures = bool(options.pop("include_mixtures", False))
-    criterion = "aic"  # the single distributions' ranking, mixtures or not
+    # The single distributions' ranking, mixtures or not (AIC unless asked).
+    criterion = options.pop(CRITERION_KEY, None) or DEFAULT_CRITERION
     try:
         base_kwargs = build_fit_inputs(df, mapping)
     except Exception as exc:
@@ -1851,7 +1959,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
             failed.append({"id": dist_id, "name": entry["name"],
                            "reason": f"no finite {criterion.upper()}"})
             continue
-        ranking.append({"id": dist_id, "name": entry["name"], **scores})
+        ranking.append({"id": dist_id, "name": entry["name"], "k": _param_count(model, kwargs), **scores})
 
     mixtures = {}  # candidate id -> (base id, fitted SurPyval mixture)
     mixture_ranking = []
@@ -1887,7 +1995,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
             continue
         mixtures[cid] = (base, raw)
         mixture_ranking.append({"id": cid, "name": label, "mixture": BEST_MIXTURE_COMPONENTS,
-                                "base_distribution_id": base, **scores})
+                                "base_distribution_id": base, "k": _param_count(raw, {}), **scores})
 
     if not ranking and not mixture_ranking:
         if support_msg:
@@ -1913,7 +2021,16 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         if win_options.get("offset") and not DISTRIBUTIONS[winner].get("offsetable"):
             win_options.pop("offset")
         result = _fit_distribution(winner, df, mapping, win_options)
-    result["selection"] = {"criterion": criterion, "candidates": ranking}
+    # Each candidate's distance from the best on the chosen score (mixtures
+    # are scored by BIC, but their rows carry every score).
+    scored = [float(r[criterion]) for r in ranking if r.get(criterion) is not None]
+    top = min(scored) if scored else None
+    for row in ranking:
+        row["delta"] = (float(row[criterion]) - float(top)
+                        if top is not None and row.get(criterion) is not None else None)
+    result["selection"] = {"criterion": criterion, "criterion_label": CRITERIA[criterion],
+                           "candidates": ranking,
+                           "guidance": best_fit_guidance(ranking, criterion, _failure_count(base_kwargs))}
     if with_mixtures:
         result["selection"].update({"include_mixtures": True, "mixture_criterion": MIXTURE_CRITERION,
                                     "decision": decision, "summary": decision["summary"]})
@@ -1925,6 +2042,15 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
             f"(failed: {', '.join(f['name'] for f in failed)}), so the choice is among those only.",
         ]
     return result
+
+
+def _param_count(model, kwargs: dict) -> Optional[int]:
+    """How many parameters the fitted model has (offset, cure fraction
+    and zero-inflation included)."""
+    try:
+        return int(np.atleast_1d(model.params).size)
+    except Exception:  # noqa: BLE001 - a column the table can do without
+        return None
 
 
 def _ic(value: float) -> str:
@@ -2676,9 +2802,10 @@ def _fit_regression(
     formula: Optional[str],
     covariate_units: Optional[dict] = None,
     cox_opts: Optional[dict] = None,
+    frailty_family: Optional[str] = None,
 ) -> dict:
     entry = REGRESSION_MODELS[distribution]
-    fitter = entry["fitter"]
+    fitter = more_models.frailty_fitter(distribution, frailty_family) if entry.get("frailty") else entry["fitter"]
     mapping = {k: v for k, v in mapping.items() if v}
     try:
         cox_opts = regression_diagnostics.clean_cox_options(distribution, cox_opts, df.columns, covariates)
@@ -2863,6 +2990,8 @@ def _fit_regression(
         extra["covariate_units"] = units
     if cox_opts:
         extra["options"] = {regression_diagnostics.COX_KEY: cox_opts}
+    if frailty_family:
+        extra["options"] = {**extra.get("options", {}), more_models.FAMILY_KEY: frailty_family}
     return more_models.enrich_regression(distribution, model, {
         **extra,
         "maximum": getattr(model, "maximum", None),

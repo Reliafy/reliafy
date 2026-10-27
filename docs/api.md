@@ -213,6 +213,7 @@ reliafy strategy optimal_replacement --distribution-id weibull \
     --planned-cost 200 --unplanned-cost 1500
 reliafy models list
 reliafy fit failures.csv --dist weibull --censor-column status
+reliafy fit failures.csv --dist best --criterion bic   # rank every distribution by BIC (aic, aic_c, bic, neg_ll)
 reliafy push model.json
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml

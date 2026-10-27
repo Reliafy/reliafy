@@ -2,6 +2,14 @@
 
 ## 0.4.0
 
+- Best fit takes a score: `reliafy fit FILE --criterion bic` (or `criterion=`
+  on `life_data_analysis fit` / `models fit`; aic, aic_c, bic or neg_ll). The
+  result's `selection` now gives each candidate's parameter count and delta to
+  the best, and guidance in words. Shared-frailty models take
+  `frailty_family` (`gamma` or `lognormal`). New model ids `loglogistic_ph`,
+  `loglogistic_aft`, `loglogistic_po` and `loglogistic_ah`, and regression
+  fits report `diagnostics.model_checks`. No client code changed beyond the
+  `--criterion` flag: the rest comes from the server's tool list.
 - `maintenance_apply`: many Reliafy Maintenance changes in one call. A list
   of the `maintenance_<area>` actions (`{"do": "failure_modes.add", "args":
   {...}, "ref": "m1"}`), run in order with `@ref`s between them, checked on

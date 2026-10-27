@@ -18,9 +18,14 @@ trunc_left (trunc_left_column), not a flag. trunc_right is the age past which a 
 models fit (same arguments plus name; inline data is saved as a dataset too). Fitted elsewhere (e.g. locally \
 with SurPyval, the way when fitting isn't on the plan): models save with the distribution and params.
 - distribution: weibull by default; 'best' fits every plain distribution and keeps the lowest AIC \
-(include_mixtures lets two-mode mixtures compete, decided by BIC); discrete, bounded, spline, regression (with \
-covariates and a dataset: weibull_ph, cox_ph, …; id_column for covariates that change over time), shared \
-frailty (group_column), competing risks (causes / cause_column: each failure mode's share). method: MLE unless \
+(criterion: aic_c, bic or neg_ll to rank by another score; selection gives each candidate's parameters, score \
+and delta to the best, under 2 is a tie, what it skipped and why, and guidance in words: relay it; \
+include_mixtures lets two-mode mixtures compete, decided by BIC); discrete, bounded, spline, regression (with \
+covariates and a dataset: weibull_ph, weibull_aft, loglogistic_aft, weibull_po, weibull_ah, cox_ph, …; \
+id_column for covariates that change over time; the read is a hazard ratio for _ph, a time ratio for _aft, an \
+odds ratio for _po and an added failure rate for _ah; diagnostics.model_checks says whether the model's own \
+assumption holds, with what to try if not), shared frailty (group_column; frailty_family lognormal for a \
+heavier-tailed frailty), competing risks (causes / cause_column: each failure mode's share). method: MLE unless \
 the user asks.
 - A fit that didn't converge or has no finite maximum leads with fit_ok false: don't quote its numbers.
 - Weibull beta < 1 = infant mortality, ≈ 1 = random failures, > 1 = wear-out.

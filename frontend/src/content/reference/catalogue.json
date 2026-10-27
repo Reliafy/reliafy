@@ -814,6 +814,42 @@
           "requires_covariates": true
         },
         {
+          "id": "loglogistic_ph",
+          "name": "LogLogistic PH",
+          "effect": "hazard",
+          "ratio_label": "hazard ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "loglogistic_aft",
+          "name": "LogLogistic AFT",
+          "effect": "aft",
+          "ratio_label": "time ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "loglogistic_po",
+          "name": "LogLogistic PO",
+          "effect": "odds",
+          "ratio_label": "odds ratio",
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
+          "id": "loglogistic_ah",
+          "name": "LogLogistic AH",
+          "effect": "additive",
+          "ratio_label": null,
+          "params": [],
+          "support": null,
+          "requires_covariates": true
+        },
+        {
           "id": "additive_hazards",
           "name": "Additive hazards (Lin-Ying)",
           "effect": "additive",
@@ -1034,5 +1070,5 @@
       "applies_to": "Plain continuous distributions, 2-4 components"
     }
   ],
-  "total": 75
+  "total": 79
 }

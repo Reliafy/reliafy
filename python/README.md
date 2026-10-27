@@ -144,6 +144,7 @@ reliafy tools                                    # every tool and action you may
 reliafy <tool> <action> --arg value …            # any of them; --help on each
 reliafy models list
 reliafy fit failures.csv --dist weibull --censor-column status --c-invert
+reliafy fit failures.csv --dist best --criterion bic   # Best fit ranked by aic (default), aic_c, bic or neg_ll
 reliafy push model.json                          # {distribution, params | data, name?, unit?}
 reliafy upload bearings.xlsx --name Bearings
 reliafy import rbd plant.xml

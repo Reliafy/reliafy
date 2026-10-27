@@ -109,6 +109,10 @@ A logistic baseline — symmetric like Normal but heavier in the tails. Covariat
 
 A smallest-extreme-value baseline — the weakest-link case, and the log-scale relative of the Weibull. Covariates act by multiplying the hazard — see **proportional hazards** above for how to read the coefficients (hazard ratio).
 
+## loglogistic_ph
+
+A log-logistic baseline — like the lognormal, the hazard rises then falls, but with a heavier tail, and its survival has a closed form. Covariates act by multiplying the hazard — see **proportional hazards** above for how to read the coefficients (hazard ratio).
+
 ## cox_ph
 
 **Semi-parametric.** Estimates covariate effects *without* assuming any baseline shape — the baseline hazard is left completely unspecified and only the ratios are estimated.
@@ -143,6 +147,10 @@ A logistic baseline — symmetric like Normal but heavier in the tails. Covariat
 
 A smallest-extreme-value baseline — the weakest-link case, and the log-scale relative of the Weibull. Covariates act by scaling time to failure — see **accelerated failure time** above for how to read the coefficients (time ratio).
 
+## loglogistic_aft
+
+A log-logistic baseline — like the lognormal, the hazard rises then falls, but with a heavier tail, and its survival has a closed form. Covariates act by scaling time to failure — see **accelerated failure time** above for how to read the coefficients (time ratio).
+
 ## weibull_po
 
 A Weibull baseline — the usual choice, since its shape parameter already spans infant mortality, random and wear-out behaviour. Covariates act by multiplying the odds of failure — see **proportional odds** above for how to read the coefficients (odds ratio).
@@ -171,6 +179,10 @@ A logistic baseline — symmetric like Normal but heavier in the tails. Covariat
 
 A smallest-extreme-value baseline — the weakest-link case, and the log-scale relative of the Weibull. Covariates act by multiplying the odds of failure — see **proportional odds** above for how to read the coefficients (odds ratio).
 
+## loglogistic_po
+
+A log-logistic baseline — like the lognormal, the hazard rises then falls, but with a heavier tail, and its survival has a closed form. Covariates act by multiplying the odds of failure — see **proportional odds** above for how to read the coefficients (odds ratio). For the log-logistic baseline, proportional odds and accelerated failure time are the same model: the odds coefficient is minus the shape times the time coefficient, and the fit is identical.
+
 ## weibull_ah
 
 A Weibull baseline — the usual choice, since its shape parameter already spans infant mortality, random and wear-out behaviour. Covariates act by adding to the hazard — see **additive hazards** above for how to read the coefficients (additive effect).
@@ -198,6 +210,10 @@ A logistic baseline — symmetric like Normal but heavier in the tails. Covariat
 ## gumbel_ah
 
 A smallest-extreme-value baseline — the weakest-link case, and the log-scale relative of the Weibull. Covariates act by adding to the hazard — see **additive hazards** above for how to read the coefficients (additive effect).
+
+## loglogistic_ah
+
+A log-logistic baseline — like the lognormal, the hazard rises then falls, but with a heavier tail, and its survival has a closed form. Covariates act by adding to the hazard — see **additive hazards** above for how to read the coefficients (additive effect).
 
 ## additive_hazards
 

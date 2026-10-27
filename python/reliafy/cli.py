@@ -400,7 +400,8 @@ def cmd_fit(client: Client, ns) -> int:
               + (f", censoring from {ccol!r} (0 = failed, 1 = still running" + (", inverted" if ns.c_invert else "")
                  + ")" if ccol else ", all failures") + ".", file=sys.stderr)
     result = client.fit(data, distribution=ns.dist, censored=censored, counts=counts,
-                        c_invert=True if ns.c_invert else None, unit=ns.unit, save_as=ns.save)
+                        c_invert=True if ns.c_invert else None, unit=ns.unit, save_as=ns.save,
+                        criterion=ns.criterion)
     render(result, ns.json)
     return 0
 
@@ -595,6 +596,8 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--censor-column")
     sp.add_argument("--count-column")
     sp.add_argument("--c-invert", action="store_true", help="The censor column uses 1 = failed.")
+    sp.add_argument("--criterion", choices=["aic", "aic_c", "bic", "neg_ll"],
+                    help="With the best fit: the score the distributions are ranked by (default aic).")
     sp.add_argument("--unit")
     sp.add_argument("--save", metavar="NAME", help="Save the model under this name.")
     sp = add("upload", cmd_upload, "Upload a CSV or .xlsx file as a dataset.")
