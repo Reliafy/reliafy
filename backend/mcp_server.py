@@ -1545,6 +1545,15 @@ _FitIncludeMixtures = Annotated[bool, Field(
                 "best mixture beats the best single distribution (then it is listed first, else the mixtures "
                 "follow the singles), and selection_summary says so in plain words. A winning mixture comes "
                 "with mixture_summary, the two modes in plain words. Slower, so off by default.")]
+_FitCriterion = Annotated[Optional[Literal["aic", "aic_c", "bic", "neg_ll"]], Field(
+    description="With distribution='best' only: the score the distributions are ranked by, lower is better. "
+                "aic (default); aic_c (AIC corrected for few failures); bic (a heavier penalty on parameters, "
+                "favours simpler distributions); neg_ll (negative log-likelihood, no penalty at all: favours "
+                "the most flexible). The result's selection lists each candidate's parameter count, score and "
+                "delta to the best (under 2 is a tie), any it skipped and why, and guidance in words.")]
+_FitFrailtyFamily = Annotated[Optional[Literal["gamma", "lognormal"]], Field(
+    description="Shared-frailty models (…_frailty) except cox_frailty: the distribution of the shared frailty "
+                "itself. gamma (default) or lognormal (heavier tail: a few very frail groups weigh less).")]
 
 
 _FitCauses = Annotated[Optional[list[Optional[str]]], Field(
@@ -1670,6 +1679,7 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
               censor_column, count_column, covariates, unit, data_right, trunc_left, trunc_right,
               time_right_column, trunc_left_column, trunc_right_column, method,
               save: bool, name: str | None, include_mixtures: bool = False,
+              criterion: str | None = None, frailty_family: str | None = None,
               covariate_units: dict | None = None, cox_options: CoxOptions | None = None,
               id_column: str | None = None, causes=None, groups=None, cause_column=None,
               group_column: str | None = None) -> dict[str, Any]:
@@ -1771,6 +1781,15 @@ def _fit_body(ctx: Context, *, distribution, data, censored, counts, c_invert, d
             raise ToolError("include_mixtures applies to distribution='best' only. To fit a mixture on "
                             "purpose, use distribution='mixture'.")
         options["include_mixtures"] = True
+    if criterion:
+        if dist != fitting.BEST_ID:
+            raise ToolError("criterion applies to distribution='best' only (it chooses how the distributions "
+                            "are ranked).")
+        options[fitting.CRITERION_KEY] = criterion
+    if frailty_family:
+        if not (fitting.REGRESSION_MODELS.get(dist) or {}).get("frailty"):
+            raise ToolError("frailty_family applies to the shared-frailty models only (e.g. weibull_frailty).")
+        options["frailty_family"] = frailty_family
     if cox_options is not None:
         cox = {k: v for k, v in (("tie_method", cox_options.tie_method), ("strata", cox_options.strata_column),
                                  ("cluster", cox_options.cluster_column)) if v}
@@ -1847,6 +1866,8 @@ def fit_distribution(
     method: _FitMethod = None,
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
+    criterion: _FitCriterion = None,
+    frailty_family: _FitFrailtyFamily = None,
     covariate_units: _FitCovariateUnits = None,
     cox_options: _FitCoxOptions = None,
     id_column: _FitIdCol = None,
@@ -1865,7 +1886,7 @@ def fit_distribution(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=False, name=None, covariate_units=covariate_units,
+                include_mixtures=include_mixtures, criterion=criterion, frailty_family=frailty_family, save=False, name=None, covariate_units=covariate_units,
                 cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
                 cause_column=cause_column, group_column=group_column)
 
@@ -1892,6 +1913,8 @@ def fit_and_save_model(
     method: _FitMethod = None,
     unit: _FitUnit = None,
     include_mixtures: _FitIncludeMixtures = False,
+    criterion: _FitCriterion = None,
+    frailty_family: _FitFrailtyFamily = None,
     covariate_units: _FitCovariateUnits = None,
     cox_options: _FitCoxOptions = None,
     id_column: _FitIdCol = None,
@@ -1928,7 +1951,7 @@ def fit_and_save_model(
                 dataset_id=dataset_id, time_column=time_column, time_right_column=time_right_column,
                 censor_column=censor_column, count_column=count_column, trunc_left_column=trunc_left_column,
                 trunc_right_column=trunc_right_column, covariates=covariates, method=method, unit=unit,
-                include_mixtures=include_mixtures, save=True, name=name, covariate_units=covariate_units,
+                include_mixtures=include_mixtures, criterion=criterion, frailty_family=frailty_family, save=True, name=name, covariate_units=covariate_units,
                 cox_options=cox_options, id_column=id_column, causes=causes, groups=groups,
                 cause_column=cause_column, group_column=group_column)
 

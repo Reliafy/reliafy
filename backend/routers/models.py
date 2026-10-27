@@ -379,6 +379,8 @@ def save_model(
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     include_mixtures: str | None = Form(default=None),
+    criterion: str | None = Form(default=None),
+    frailty_family: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     cox: str | None = Form(default=None),
@@ -422,7 +424,8 @@ def save_model(
             owner_id=ctx.write_owner,
             options=regression_diagnostics.with_cox_form(options_from_form(
                 offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
-                include_mixtures=include_mixtures, c_map=c_map,
+                include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
+            frailty_family=frailty_family,
             ), cox),
             covariate_units=covariate_units_from_form(covariate_units),
         )
@@ -561,6 +564,8 @@ def update_model_fit(
     how: str | None = Body(default=None),
     c_invert: bool = Body(default=False),
     include_mixtures: bool = Body(default=False),
+    criterion: str | None = Body(default=None),
+    frailty_family: str | None = Body(default=None),
     c_map: dict | None = Body(default=None),
     covariate_units: dict | None = Body(default=None),
     cox: dict | None = Body(default=None),
@@ -579,6 +584,7 @@ def update_model_fit(
     options = {"offset": offset, "zi": zi, "lfp": lfp, "fixed": fixed or None,
                "mixture": mixture, "mixture_distribution": mixture_distribution,
                "how": how, "c_invert": bool(c_invert), "include_mixtures": bool(include_mixtures),
+               "criterion": criterion or None, "frailty_family": frailty_family or None,
                "c_map": c_map or None, "cox": cox or None}
     try:
         model = models_service.update_fit(

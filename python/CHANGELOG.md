@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Best fit takes a score: `reliafy fit FILE --criterion bic` (or `criterion=`
+  on `life_data_analysis fit` / `models fit`; aic, aic_c, bic or neg_ll). The
+  result's `selection` now gives each candidate's parameter count and delta to
+  the best, and guidance in words. Shared-frailty models take
+  `frailty_family` (`gamma` or `lognormal`). New model ids `loglogistic_ph`,
+  `loglogistic_aft`, `loglogistic_po` and `loglogistic_ah`, and regression
+  fits report `diagnostics.model_checks`. No client code changed beyond the
+  `--criterion` flag: the rest comes from the server's tool list.
 - The `rcm` tool (study-based RCM worksheets as JSON) is gone, with `list`
   kind `rcm_studies` and `get` kind `rcm_study`. RCM is built on a position
   (`maintenance_failure_modes`), and a worksheet file goes in with `reliafy

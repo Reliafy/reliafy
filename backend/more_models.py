@@ -36,6 +36,7 @@ from surpyval import (
     CoxFrailty,
     Discretize,
     ExponentialFrailty,
+    Frailty,
     Gamma,
     GammaFrailty,
     LogLogistic,
@@ -80,18 +81,56 @@ SEMI_PARAMETRIC = {
 # column the frailty is shared over, mapped as ``mapping["group"]``.
 FRAILTY = {
     "weibull_frailty": {"name": "Weibull PH, shared frailty", "fitter": WeibullFrailty,
-                        "effect": "hazard", "frailty": True, "more": True},
+                        "effect": "hazard", "frailty": True, "baseline": "Weibull", "more": True},
     "exponential_frailty": {"name": "Exponential PH, shared frailty", "fitter": ExponentialFrailty,
-                            "effect": "hazard", "frailty": True, "more": True},
+                            "effect": "hazard", "frailty": True, "baseline": "Exponential", "more": True},
     "lognormal_frailty": {"name": "Lognormal PH, shared frailty", "fitter": LogNormalFrailty,
-                          "effect": "hazard", "frailty": True, "more": True},
+                          "effect": "hazard", "frailty": True, "baseline": "LogNormal", "more": True},
     "gamma_frailty": {"name": "Gamma PH, shared frailty", "fitter": GammaFrailty,
-                      "effect": "hazard", "frailty": True, "more": True},
+                      "effect": "hazard", "frailty": True, "baseline": "Gamma", "more": True},
     "cox_frailty": {"name": "Cox PH, shared frailty", "fitter": CoxFrailty, "effect": "hazard",
                     "frailty": True, "semi": True, "more": True},
 }
 
 REGRESSION = {**SEMI_PARAMETRIC, **FRAILTY}
+
+# The distribution of the shared frailty itself. Gamma (mean 1, variance θ) is
+# the default; log-normal (the log of the frailty is normal with variance θ,
+# median 1) has heavier tails, so a few very frail groups weigh less. A Cox
+# frailty has the gamma only.
+FRAILTY_FAMILIES = {"gamma": "gamma", "lognormal": "log-normal"}
+FAMILY_KEY = "frailty_family"
+
+
+def clean_family(distribution: str, family) -> Optional[str]:
+    """The frailty family asked for: None when not given or the default
+    (gamma), refused where it doesn't apply. Raises
+    :class:`backend.fitting.FitError`."""
+    from backend.fitting import FitError
+
+    if family in (None, ""):
+        return None
+    family = str(family).strip().lower().replace("-", "").replace("_", "")
+    if family not in FRAILTY_FAMILIES:
+        raise FitError("frailty_family must be 'gamma' or 'lognormal'.")
+    entry = REGRESSION.get(distribution) or {}
+    if not entry.get("frailty"):
+        raise FitError("frailty_family applies to the shared-frailty models only (e.g. weibull_frailty).")
+    if distribution == "cox_frailty" and family != "gamma":
+        raise FitError("Cox PH with shared frailty takes the gamma frailty only. Choose a parametric "
+                       "frailty model (e.g. weibull_frailty) for a log-normal frailty.")
+    return None if family == "gamma" else family
+
+
+def frailty_fitter(distribution: str, family: Optional[str]):
+    """The fitter of a shared-frailty model with the frailty family chosen
+    (the registered one, the gamma, when ``family`` is None)."""
+    entry = REGRESSION[distribution]
+    if not family:
+        return entry["fitter"]
+    import surpyval
+
+    return Frailty(getattr(surpyval, entry["baseline"]), family=family)
 
 # Univariate models fitted by their own fitter rather than a distribution's
 # ``from_params``; their results are kind "flexible".

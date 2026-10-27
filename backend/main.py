@@ -459,6 +459,8 @@ def fit_endpoint(
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     include_mixtures: str | None = Form(default=None),
+    criterion: str | None = Form(default=None),
+    frailty_family: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     cox: str | None = Form(default=None),
@@ -500,7 +502,8 @@ def fit_endpoint(
             )
         options = options_from_form(
             offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
-            include_mixtures=include_mixtures, c_map=c_map,
+            include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
+            frailty_family=frailty_family,
         )
         options = regression_diagnostics.with_cox_form(options, cox)  # Cox ties / strata / cluster (#61)
         result = fit(
