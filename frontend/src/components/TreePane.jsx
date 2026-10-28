@@ -5,7 +5,7 @@ import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { BasisInfo, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf, nextGutter } from "../assetTree.js";
-import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow } from "../explorerRcm.js";
+import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensItem } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 
@@ -215,9 +215,21 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     style: { top: pinned ? undefined : top, height, width: table && !phone ? table.total : rowW },
     onClick: (e) => {
       if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin, .rw-info")) return;
-      if (e.target.closest(".tp-chev")) onToggle(r.key);
-      else onPick(r.key, { go: true });
+      // In the table a double-click on the chevron opens or closes the row
+      // once (its second click isn't another toggle).
+      if (e.target.closest(".tp-chev")) {
+        if (!(table && e.detail > 1)) onToggle(r.key);
+      } else onPick(r.key, { go: true });
     },
+    // The RCM table (a wide screen): a double-click on a function, functional
+    // failure or failure mode opens its dialog; not on a cell edited in place
+    // (its own double-click edits it), a control or the chevron.
+    onDoubleClick: table && !phone && table.onOpen && opensItem(r) ? (e) => {
+      if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c.can, [contenteditable='true']")) return;
+      e.preventDefault();
+      window.getSelection?.()?.removeAllRanges?.();
+      table.onOpen(r.key);
+    } : undefined,
     // Right-click opens the row's menu (the browser's own stays on a field
     // being edited in it, and on a row with no menu).
     onContextMenu: onMenu ? (e) => {
@@ -251,7 +263,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
   return (
     <div {...common}>
       <div className="tt-tree" role="rowheader" style={{ width: table.treeW }}
-           onDoubleClick={table.canEditName(r) ? (e) => { e.stopPropagation(); table.onEdit(r.key, "name"); } : undefined}>
+           onDoubleClick={!table.onOpen && table.canEditName(r) ? (e) => { e.stopPropagation(); table.onEdit(r.key, "name"); } : undefined}>
         {editCol === "name"
           ? <CellEditor col={NAME_COLUMN} r={cr} onCommit={(raw) => table.onCommit(r, "name", raw)} onCancel={table.onCancel} />
           : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto}

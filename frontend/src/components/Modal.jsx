@@ -13,7 +13,31 @@ const openModals = [];
 // bar) regardless of where it's mounted in the tree. Focus moves into the dialog
 // when it opens (unless a field inside took it already, e.g. autoFocus) and
 // goes back to whatever had it, the button that opened it, when it closes.
-export default function Modal({ title, onClose, locked, children, footer, className }) {
+// `trapFocus`: Tab and Shift+Tab go round the dialog's own controls, never out
+// to the page behind it. `overlayClassName`: a class on the overlay too (e.g.
+// a dialog that becomes a sheet on a phone).
+const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+
+export function trapTab(e, node) {
+  if (e.key !== "Tab" || !node) return;
+  const all = [...node.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
+  if (!all.length) {
+    e.preventDefault();
+    return;
+  }
+  const first = all[0];
+  const last = all[all.length - 1];
+  const at = document.activeElement;
+  if (e.shiftKey && (at === first || at === node || !node.contains(at))) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && (at === last || !node.contains(at))) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+export default function Modal({ title, onClose, locked, children, footer, className, trapFocus = false, overlayClassName }) {
   const token = useRef({});
   const box = useRef(null);
   const titleId = useId();
@@ -50,7 +74,7 @@ export default function Modal({ title, onClose, locked, children, footer, classN
 
   return createPortal(
     <div
-      className="overlay"
+      className={"overlay" + (overlayClassName ? " " + overlayClassName : "")}
       onClick={(e) => {
         // Not the second click of a double-click on the button that opened it.
         if (!locked && e.detail < 2) onClose();
@@ -64,6 +88,7 @@ export default function Modal({ title, onClose, locked, children, footer, classN
         aria-labelledby={titleId}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={trapFocus ? (e) => { if (openModals[openModals.length - 1] === token.current) trapTab(e, box.current); } : undefined}
       >
         <div className="modal-head">
           <h3 id={titleId}>{title}</h3>

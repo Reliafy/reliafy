@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  NARROW_TABLE, TASK_WITH_INTERVAL, basisInName, causeKey, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols,
+  ITEM_FIELDS, NARROW_TABLE, TASK_WITH_INTERVAL, basisInName, causeKey, checkItem, failureStatusWords, itemChanges, itemValue, itemWrites, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -62,16 +62,17 @@ test("no Add rows in the tree: adding is from each row's menu", () => {
   const ids = (key, opts) => rowActions(d.rows.get(key), opts).map((a) => a.id);
   assert.deepEqual(ids("pump"), ["add-fn", "import-sheet", "export-csv"]);
   assert.deepEqual(ids("motor"), ["add-fn", "import-sheet", "export-csv"]); // a position with no RCM yet
-  assert.deepEqual(ids("f1"), ["add-fail", "rename", "delete"]);
-  assert.deepEqual(ids("x1"), ["add-mode", "link-cause", "link-effect", "rename", "delete"]); // pump has a position above it
-  assert.deepEqual(ids("m1"), ["decide", "rename", "delete"]);
+  assert.deepEqual(ids("f1"), ["open", "add-fail", "rename", "delete"]);
+  assert.deepEqual(ids("x1"), ["open", "add-mode", "link-cause", "link-effect", "rename", "delete"]); // pump has a position above it
+  assert.deepEqual(ids("m1"), ["open", "decide", "rename", "delete"]);
   assert.deepEqual(ids("U:pump"), []); // the "Not under a functional failure" heading has none
   // On a phone the details panel edits the description, so no Edit description.
-  assert.deepEqual(ids("f1", { canRename: false }), ["add-fail", "delete"]);
+  // Open… stays on a phone: it's the way to the dialog there (no double-click).
+  assert.deepEqual(ids("f1", { canRename: false }), ["open", "add-fail", "delete"]);
   const label = (key) => rowActions(d.rows.get(key)).map((a) => a.label);
-  assert.deepEqual(label("f1"), ["Add functional failure", "Edit description", "Delete function"]);
-  assert.equal(label("m2")[0], "Change the decision…");
-  assert.equal(label("m1")[0], "Decide…");
+  assert.deepEqual(label("f1"), ["Open…", "Add functional failure", "Edit description", "Delete function"]);
+  assert.equal(label("m2")[1], "Change the decision…");
+  assert.equal(label("m1")[1], "Decide…");
   assert.deepEqual(rowActions(null), []);
 });
 
@@ -301,11 +302,11 @@ test("a failure shows ↑ n for the failures above it that it causes (and only t
 test("row menus: a failure offers Link to a cause and, with a position above, Link to an effect; a reference row Go to it and Unlink", () => {
   const d = graftRcm(buildDisplay(DATA, "positions"), LINKED);
   const labels = (key) => rowActions(d.rows.get(key)).map((a) => a.label);
-  assert.deepEqual(labels("px"), ["Add failure mode", "Link to a cause…", "Edit description", "Delete functional failure"]); // the plant is the top
-  assert.deepEqual(labels("x1"), ["Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure"]);
+  assert.deepEqual(labels("px"), ["Open…", "Add failure mode", "Link to a cause…", "Edit description", "Delete functional failure"]); // the plant is the top
+  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure"]);
   assert.deepEqual(labels(causeKey("px", "x1")), ["Go to it", "Unlink"]);
   assert.deepEqual(rowActions(d.rows.get(causeKey("px", "x1")), { canRename: false }).map((a) => a.id), ["go", "unlink"]);
-  assert.deepEqual(rowActions(d.rows.get("f1")).map((a) => a.id), ["add-fail", "rename", "delete"]);
+  assert.deepEqual(rowActions(d.rows.get("f1")).map((a) => a.id), ["open", "add-fail", "rename", "delete"]);
 });
 
 test("opening a position's RCM opens functions and failures, so the reference rows show", () => {
@@ -366,4 +367,48 @@ test("a link whose cause is no longer inside still shows, and is said to be", ()
   // It doesn't count: no "explained below" on the failure.
   const f = { ...d.rows.get("py"), sum: d.rows.get("py").rsum };
   assert.equal(COLUMN.decision.text(f), "");
+});
+
+test("a row's dialog: which rows open one, and what Save sends", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), RCM);
+  const row = (k) => d.rows.get(k);
+  assert.deepEqual(["pump", "f1", "x1", "m1", "U:pump", "m4"].map((k) => opensItem(row(k))), [false, true, true, true, false, true]);
+  assert.equal(opensItem(null), false);
+  assert.deepEqual(ITEM_FIELDS.mode, ["name", "effects", "consequence", "notes"]);
+
+  // Only what was typed differently counts (spaces at the ends don't).
+  const m1 = row("m1");
+  assert.equal(itemValue(m1, "consequence"), "operational");
+  assert.deepEqual(itemChanges(m1, {}), {});
+  assert.deepEqual(itemChanges(m1, { name: " Bearing seizes " }), {});
+  assert.deepEqual(itemChanges(m1, { effects: "Pump stops", consequence: "hidden" }), { effects: "Pump stops", consequence: "hidden" });
+
+  // Checked as the table and the panel check them.
+  assert.deepEqual(checkItem(m1, { name: "  " }).errors, { name: "Every failure mode needs a description." });
+  const long = checkItem(row("f1"), { name: "x".repeat(201) });
+  assert.match(long.errors.name, /Shorten it to 200 characters/);
+  const ok = checkItem(m1, { name: " Bearing seizes early ", consequence: "", effects: " Stops " });
+  assert.deepEqual(ok, { values: { name: "Bearing seizes early", consequence: null, effects: "Stops" }, errors: {} });
+
+  // A failure mode's words in one write, its consequence in another; one write for the rest.
+  assert.deepEqual(itemWrites(m1, ok.values), [
+    { api: "mode", body: { text: "Bearing seizes early", effects: "Stops" } },
+    { api: "decide", body: { consequence: null } },
+  ]);
+  assert.deepEqual(itemWrites(m1, { notes: "n" }), [{ api: "mode", body: { notes: "n" } }]);
+  assert.deepEqual(itemWrites(row("f1"), { name: "Pump", standard: "10 L/s" }), [{ api: "function", body: { text: "Pump", standard: "10 L/s" } }]);
+  assert.deepEqual(itemWrites(row("x1"), { name: "No flow at all" }), [{ api: "failure", body: { text: "No flow at all" } }]);
+  assert.deepEqual(itemWrites(row("x1"), {}), []);
+});
+
+test("a functional failure's state in plain words", () => {
+  const blank = { modes: 0, undecided: 0 };
+  const ff = (sum, ref = {}) => ({ type: "fail", sum, rsum: sum, ref: { causes: [], ...ref } });
+  assert.equal(failureStatusWords(ff({ modes: 2, undecided: 1 })), "1 of its 2 failure modes still needs a decision.");
+  assert.equal(failureStatusWords(ff({ modes: 3, undecided: 0 })), "Analysed: all 3 of its failure modes have a decision.");
+  assert.equal(failureStatusWords(ff({ modes: 1, undecided: 0 })), "Analysed: its failure mode has a decision.");
+  assert.equal(failureStatusWords(ff(blank)), "Not analysed yet: it has no failure modes and nothing linked below.");
+  assert.match(failureStatusWords(ff(blank, { causes: [{ id: "c" }], explained_below: true })), /^Covered/);
+  assert.match(failureStatusWords(ff(blank, { causes: [{ id: "c" }], explained_below: false })), /^Not finished/);
+  assert.match(failureStatusWords(ff({ modes: 1, undecided: 0 }, { causes: [{ id: "c" }] })), /also caused by a failure below/);
 });

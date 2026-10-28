@@ -7,6 +7,7 @@ import TreeDetail, { HeaderTabs, KIND, SlimHeader, forgetPositions, prefetchPosi
 import DecisionModal from "../components/DecisionModal.jsx";
 import LinkFailurePicker from "../components/FailureLinks.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
+import RcmItemModal from "../components/RcmItemModal.jsx";
 import OverflowMenu from "../components/OverflowMenu.jsx";
 import { exportFilename, importSummary, positionRcmCsv } from "../rcmImport.js";
 import { saveText } from "../sparesPlan.js";
@@ -16,7 +17,7 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  NARROW_TABLE, basisInName, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols, unlinkEmptiesFailure, usualCols,
+  NARROW_TABLE, basisInName, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, opensItem, positionOf, rowActions, tableCols, unlinkEmptiesFailure, usualCols,
   withTableCols,
 } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
@@ -198,6 +199,7 @@ export default function AssetExplorer() {
   const [panel, setPanel] = useState(false); // its details beside the table
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
   const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
+  const [itemKey, setItemKey] = useState(null); // a function, failure or mode in its own dialog (double-click, Open…)
   const [linking, setLinking] = useState(null); // {row, direction}: the picker that links functional failures
   const [options, setOptions] = useState(null);
   const [rprefs, setRprefs] = useState(() => loadPrefs());
@@ -535,6 +537,7 @@ export default function AssetExplorer() {
         ops.editFunction(r).then((ok) => ok && say("Saved."));
       } else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
+      else if (id === "open") openItem(r.key);
       else if (id === "link-cause") openLink(r, "cause");
       else if (id === "link-effect") openLink(r, "effect");
       else if (id === "go") reveal(r.ref.cause_id);
@@ -584,6 +587,28 @@ export default function AssetExplorer() {
       return text;
     });
   };
+  // A function, failure or mode in its own dialog: picked in the tree, the
+  // cell being edited dropped. On a phone the Details sheet makes way for it.
+  const openItem = (key) => {
+    const r = whole.rows.get(key);
+    if (!opensItem(r)) return;
+    setEditing(null);
+    setRcmFocus(key);
+    if (display.rows.has(key)) setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
+    if (phone) setPanel(false);
+    setItemKey(key);
+  };
+  // Closed: the focus back on its row (the row of the one shown last).
+  const closeItem = () => {
+    const key = itemKey;
+    setItemKey(null);
+    setTimeout(() => document.getElementById(`tp-${key}`)?.focus({ preventScroll: true }), 0);
+  };
+  const saveItem = (r, values) => ops.saveItem(r, values).then(() => say("Saved."));
+  // A row deleted (or out of the RCM) while its dialog is open: the dialog goes.
+  useEffect(() => {
+    if (itemKey && rcm && !whole.rows.has(itemKey)) setItemKey(null);
+  }, [itemKey, rcm, whole]);
   // The dialog stays open (Apply saying "Saving…") until the server has it;
   // a refusal shows in the dialog, with everything as it was typed.
   const saveDecision = async (answer) => {
@@ -841,6 +866,8 @@ export default function AssetExplorer() {
     canEditName: (r) => EDITABLE.has(r.type),
     onEdit: (key, col) => { setRcmFocus(key); setEditing({ key, col }); },
     onCommit: commit, onCancel: () => setEditing(null), onDecision: (r) => setDeciding(r),
+    // A double-click on a function, failure or mode (not on a cell edited in place): its dialog.
+    onOpen: openItem,
     // The (i) beside a standard that has a working: the function is picked and
     // its panel opens with the working in full. With the Performance standard
     // column hidden (it is, by default) the (i) sits at the end of the name.
@@ -1071,6 +1098,13 @@ export default function AssetExplorer() {
                              setLinking(null);
                              if (n) say(`Linked ${n} ${linking.direction === "cause" ? (n === 1 ? "cause" : "causes") : (n === 1 ? "effect" : "effects")}.`);
                            }} />
+      )}
+      {itemKey && whole.rows.has(itemKey) && opensItem(whole.rows.get(itemKey)) && (
+        <RcmItemModal r={cellRow(whole.rows.get(itemKey))} display={whole} ops={panelOps} links={{ onLink: openLink, onUnlink: unlinkPair }}
+                      onSave={saveItem} onDecision={(r) => setDeciding(r)}
+                      onOpen={(key) => { openItem(key); if (display.rows.has(key)) reveal(key); }}
+                      onDetails={(r) => { setItemKey(null); reveal(r.key); setPanel(true); setTimeout(() => detailsHeading.current?.focus(), 0); }}
+                      onClose={closeItem} />
       )}
       {deciding && options && (
         <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} limits />
