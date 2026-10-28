@@ -374,7 +374,8 @@ def _create_task(m: Maintenance, body: dict, **subject) -> JSONResponse:
                 body.get("point_id"), body.get("instructions", ""), body.get("checklist"),
                 body.get("source") or "manual", body.get("reference", ""), body.get("failure_mode_id"),
                 body.get("last_done"), body.get("trade", ""), while_stored=body.get("while_stored"),
-                include_positions=body.get("include_positions"), **subject)
+                include_positions=body.get("include_positions"), failure_mode_ids=body.get("failure_mode_ids"),
+                **subject)
 
 
 @router.post("/positions/{position_id}/tasks")
@@ -522,11 +523,40 @@ def decide_failure_mode(mode_id: str, body: dict = Body(...), session=Depends(ge
             access_service.check_references(session, ctx, rcm_graph.evidence_refs(body["decision"]),
                                             keep=rcm_graph.evidence_refs(old))
         return m.decide_failure_mode(mode_id, body["consequence"] if "consequence" in body else ...,
-                                     body["decision"] if "decision" in body else ...)
+                                     body["decision"] if "decision" in body else ..., task_id=body.get("task_id"))
     try:
         return _rcm_read(session, ctx, go)
     except access_service.UnreadableReference as exc:
         return JSONResponse(status_code=exc.status, content={"detail": str(exc), "code": "unreadable_reference"})
+
+
+# ---- a failure mode's tasks: several may serve one mode, one may serve several ---------
+
+@router.get("/failure-modes/{mode_id}/tasks")
+def failure_mode_tasks(mode_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The mode's live tasks (its decision's own first) and the tasks on its position, or on
+    positions above it, that could serve it too (available)."""
+    return _run(m.mode_tasks, mode_id)
+
+
+@router.post("/failure-modes/{mode_id}/tasks")
+def add_failure_mode_task(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Another task for the failure mode: name, interval, unit (default months), outcome (default: the
+    decision's, when it schedules work), instructions."""
+    return _run(m.add_mode_task, mode_id, body.get("name"), body.get("interval"), body.get("unit") or "months",
+                body.get("outcome"), body.get("instructions", ""))
+
+
+@router.post("/tasks/{task_id}/failure-modes/{mode_id}")
+def link_task_failure_mode(task_id: str, mode_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The task also prevents that failure mode (on its position, or on a position inside it)."""
+    return _run(m.link_task, task_id, mode_id)
+
+
+@router.delete("/tasks/{task_id}/failure-modes/{mode_id}")
+def unlink_task_failure_mode(task_id: str, mode_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Take that one failure mode off the task (its other links stay)."""
+    return _run(m.unlink_task, task_id, mode_id)
 
 
 @router.delete("/failure-modes/{mode_id}")

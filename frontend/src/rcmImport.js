@@ -54,7 +54,9 @@ export function causedBy(fail) {
 // functional failure written out on every row (a function or functional
 // failure with no failure modes gets a row of its own). Failure modes under
 // no functional failure come first in their position's rows, with those cells
-// blank.
+// blank. A failure mode with several tasks gets one row per task: the first
+// carries everything, the others repeat the mode with that task and its
+// interval (the import reads a repeated mode's row as another task for it).
 export function positionRcmRows(worksheet) {
   const rows = [EXPORT_HEADER];
   const path = [];
@@ -80,12 +82,21 @@ export function positionRcmRows(worksheet) {
         d.status && d.status !== "unevidenced" ? STATUS_LABEL[d.status] || d.status : "", m?.notes || "",
       ];
     };
-    for (const m of p.unassigned || []) rows.push(modeRow(null, null, m));
+    const taskRow = (fn, fail, m, t) => [
+      where, fn?.text || "", fn?.standard || "", "", fail?.text || "", causedBy(fail), m.text || "", "",
+      "", OUTCOME_LABEL[t.outcome] || OUTCOME_LABEL[m.decision?.outcome] || "", "", t.text || t.name || "",
+      t.interval ?? "", t.interval ? t.unit || "" : "", "", "",
+    ];
+    const modeRows = (fn, fail, m) => {
+      rows.push(modeRow(fn, fail, m));
+      for (const t of (m?.decision?.tasks || []).slice(1)) rows.push(taskRow(fn, fail, m, t));
+    };
+    for (const m of p.unassigned || []) modeRows(null, null, m);
     for (const fn of p.functions || []) {
       if (!(fn.failures || []).length) rows.push(modeRow(fn, null, null));
       for (const fail of fn.failures || []) {
         if (!(fail.modes || []).length) rows.push(modeRow(fn, fail, null));
-        for (const m of fail.modes || []) rows.push(modeRow(fn, fail, m));
+        for (const m of fail.modes || []) modeRows(fn, fail, m);
       }
     }
   }

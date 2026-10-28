@@ -3,13 +3,14 @@ import { Link } from "react-router-dom";
 import Modal from "./Modal.jsx";
 import RcmBasis from "./RcmBasis.jsx";
 import RcmStatusBadge from "./RcmStatusBadge.jsx";
+import RcmModeTasks from "./RcmModeTasks.jsx";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
 import { LevelIcon } from "./RcmWorksheet.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { ancestorsOf } from "../outlineTree.js";
 import {
-  CONSEQUENCE_LABEL, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, decisionText, functionCount, intervalText, nameOf,
+  CONSEQUENCE_LABEL, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, decisionText, functionCount, intervalText, nameOf, tasksOf,
 } from "../rcmWorksheet.js";
 import { ITEM_FIELDS, checkItem, failureStatusWords, failureSummary, itemChanges, itemValue } from "../explorerRcm.js";
 import "./RcmItemModal.css";
@@ -30,7 +31,9 @@ import "./RcmItemModal.css";
 //   onOpen     (key) shows another function, failure or mode here
 //   onDetails  (r) closes this and shows the row in the Details panel
 //   onClose    ()
-export default function RcmItemModal({ r, display, ops, links, onSave, onDecision, onOpen, onDetails, onClose }) {
+//   start      what it opens on ({tasks: true}: a failure mode's Tasks, on the add form)
+//   onSaid     (text) a few words in the page's status line once a task was changed
+export default function RcmItemModal({ r, display, ops, links, onSave, onDecision, onOpen, onDetails, onClose, start = null, onSaid }) {
   const confirm = useConfirm();
   const level = LEVEL_OF[r.type];
   const [state, setState] = useState({ key: r.key, drafts: {}, errors: {} });
@@ -214,14 +217,12 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
           <h3>Decision</h3>
           {d ? (
             <>
-              <p className="rw-dline"><b>{decisionText(d)}</b></p>
-              {(d.task || d.interval != null) && (
+              <p className="rw-dline"><b>{decisionText(d)}</b>{intervalText(d) ? <span className="rw-fhelp"> · every {intervalText(d)}</span> : null}</p>
+              {/* The action on failure of a decision that schedules nothing; the tasks have their own section. */}
+              {d.task && !tasksOf(r.ref).some((t) => t.id) && (
                 <p className="rim-task">
                   <LevelIcon type="task" className="rw-ic rw-ic-task" />
-                  <span>
-                    {d.task ? <span className="rim-task-name">{d.task}</span> : "A task"}
-                    {intervalText(d) ? <span className="rw-fhelp"> · every {intervalText(d)}</span> : null}
-                  </span>
+                  <span><span className="rim-task-name">{d.task}</span></span>
                 </p>
               )}
               {d.notes && <p className="rim-dnotes">{d.notes}</p>}
@@ -243,6 +244,8 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
           </button>
         </section>
       )}
+
+      {r.type === "mode" && ops && <RcmModeTasks key={r.key} r={r} ops={ops} start={start} onSaid={onSaid} />}
 
       {r.type !== "mode" && (
         <section className="rim-kids" aria-label={r.type === "fn" ? "Functional failures" : "Failure modes"}>

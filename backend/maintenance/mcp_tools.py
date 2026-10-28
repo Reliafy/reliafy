@@ -252,12 +252,16 @@ FAILURE_MODES: Table = {
         functional failures. Failures and tasks then name it by id."""),
     "update": ("failure_mode_id", "text effects notes function failure consequence", """Edit one (editing an
         ad-hoc mode confirms it). effects and notes are its RCM analysis."""),
-    "decide": ("failure_mode_id", "consequence decision", """Its consequence and decision {outcome, rtf_basis,
+    "decide": ("failure_mode_id", "consequence decision task_id", """Its consequence and decision {outcome, rtf_basis,
         task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it), checked by the RCM decision
-        rules; adds, changes or retires its task. Returns it with the evidence check."""),
+        rules; adds, changes or retires its task (task_id: an existing task is the decision's instead; a task
+        serving other modes keeps its own interval). Returns it with the evidence check."""),
+    "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode (a
+        combination: an inspection plus a hard-time replacement); its decision's task stays first."""),
     "assign": ("failure_mode_id", "functional_failure_id", "Put it under one of its position's functional "
                "failures (left out: under none)."),
-    "retire": ("failure_mode_id", "", "Delete it from the position's RCM, with its task (recorded failures keep it)."),
+    "retire": ("failure_mode_id", "", "Delete it from the position's RCM, with its tasks (one serving other modes "
+               "too is unlinked, not retired; recorded failures keep it)."),
     "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
     "add_function": ("position_id text", "standard standard_basis", "A function the position performs, with its "
                      "performance standard and how it was worked out (standard_basis, Markdown)."),
@@ -282,22 +286,25 @@ FAILURE_MODES: Table = {
 
 TASKS: Table = {
     "create": ("name interval", "position_id item_id location_id unit outcome also_interval also_unit point_id "
-               "instructions checklist source reference failure_mode_id last_done trade while_stored "
+               "instructions checklist source reference failure_mode_id failure_mode_ids last_done trade while_stored "
                "include_positions", """A scheduled task added directly (not from an RCM decision), on exactly one subject:
         position_id (the job: lubricate the pump), item_id (follows the serial number: calibration,
         certification, a rotable's overhaul, preserving a stored spare) or location_id (a round; calendar units
         only). unit (default months): days, weeks, months, years, or hours / cycles / km from a counter
         (point_id). also_interval + also_unit: whichever comes first. outcome: fixed_interval, failure_finding,
         on_condition or none. source: manual (default), oem, statutory, other, with reference.
-        failure_mode_id: a position's mode. last_done if known. trade: who may do it. while_stored (item):
-        run or pause. include_positions (location): list the positions there. maintenance_guide topic plan has
-        examples."""),
+        failure_mode_id (or failure_mode_ids, several): modes it prevents, on the position or inside it.
+        last_done if known. trade: who may do it. while_stored (item): run or pause. include_positions
+        (location): list the positions there. maintenance_guide topic plan has examples."""),
     "update": ("task_id", "name interval unit also_interval also_unit point_id instructions checklist "
                "failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade while_stored "
                "include_positions", """Rename it or change its interval, second limit (also_interval 0 removes
         it), counter, instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions. Its subject can't change: move it, or retire it and create another."""),
+    "link": ("task_id failure_mode_id", "", "The task also prevents that mode (on its position or one inside it); "
+             "its other links stay."),
+    "unlink": ("task_id failure_mode_id", "", "Take that one mode off it."),
     "move": ("task_id position_id", "", "A position's task to another position."),
     "retire": ("task_id", "reason", "Stop scheduling it (it stays in the history)."),
     "restore": ("task_id", "", "Put a retired task back on the schedule as it was."),
@@ -1040,7 +1047,10 @@ def register() -> None:
                                   functional_failure_id: str | None = None, standard: str | None = None,
                                   standard_basis: str | None = None,
                                   decision: dict[str, Any] | None = None,
-                                  cause_id: str | None = None) -> dict[str, Any]:
+                                  cause_id: str | None = None, task_id: str | None = None,
+                                  name: str | None = None, interval: float | None = None,
+                                  unit: str | None = None, outcome: str | None = None,
+                                  instructions: str | None = None) -> dict[str, Any]:
         """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
         each fails (functional failures) and the modes causing each, with each mode's decision. Modes are
         added here (or from a worksheet: uploads import_excel), or typed in at a failure (ad hoc). Failures
@@ -1064,7 +1074,7 @@ def register() -> None:
                     access_service.check_references(_db(), reader, rcm_graph.evidence_refs(decision),
                                                     keep=rcm_graph.evidence_refs(old))
                 return m.decide_failure_mode(failure_mode_id, consequence if consequence is not None else ...,
-                                             decision if decision is not None else ...)
+                                             decision if decision is not None else ..., task_id=task_id)
             try:
                 mode = run(go)
             except access_service.UnreadableReference as err:
@@ -1072,6 +1082,9 @@ def register() -> None:
             from backend.maintenance import rcm_graph
 
             return rcm_graph.mode_status(_db(), mode, reader.read_owners)
+        if action == "add_task":
+            return run(m.add_mode_task, failure_mode_id, name, interval, _d(unit, "months"), outcome,
+                       instructions or "")
         if action == "assign":
             return run(m.assign_failure_mode, failure_mode_id, functional_failure_id)
         if action == "retire":
@@ -1112,6 +1125,7 @@ def register() -> None:
                           instructions: str | None = None, checklist: list[str] | None = None,
                           source: Literal["manual", "oem", "statutory", "other"] | None = None,
                           reference: str | None = None, failure_mode_id: str | None = None,
+                          failure_mode_ids: list[str] | None = None,
                           unlink_failure_mode: bool | None = None, last_done: DateText = None,
                           trade: str | None = None, while_stored: Literal["run", "pause"] | None = None,
                           include_positions: bool | None = None,
@@ -1128,13 +1142,18 @@ def register() -> None:
             return run(m.create_task, position_id, name, interval, _d(unit, "months"), outcome, also_interval,
                        also_unit, point_id, instructions or "", checklist, _d(source, "manual"), reference or "",
                        failure_mode_id, last_done, trade or "", item_id=item_id, location_id=location_id,
-                       while_stored=while_stored, include_positions=include_positions)
+                       while_stored=while_stored, include_positions=include_positions,
+                       failure_mode_ids=failure_mode_ids)
         if action == "update":
             mode = "" if unlink_failure_mode else failure_mode_id
             return run(m.update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
                        instructions, checklist, mode, source, reference,
                        None if clear_outcome else outcome if outcome is not None else ..., trade, while_stored,
                        include_positions)
+        if action == "link":
+            return run(m.link_task, task_id, failure_mode_id)
+        if action == "unlink":
+            return run(m.unlink_task, task_id, failure_mode_id)
         if action == "move":
             return run(m.move_task, task_id, position_id)
         if action == "retire":

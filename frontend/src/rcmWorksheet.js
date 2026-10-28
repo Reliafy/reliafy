@@ -93,7 +93,32 @@ export function modeCounts(m) {
   };
 }
 
-export const hasTask = (m) => !!(m.decision && (String(m.decision.task || "").trim() || m.decision.interval));
+export const hasTask = (m) => !!(m && (tasksOf(m).length || (m.decision && (String(m.decision.task || "").trim() || m.decision.interval))));
+
+// A failure mode's tasks: every live task serving it, its decision's own
+// first (the server's `tasks` on the mode, also on its decision). Takes the
+// mode or its decision; an older read with only the decision's one task
+// gives that.
+export function tasksOf(x) {
+  if (!x) return [];
+  if (Array.isArray(x.tasks) && x.tasks.length) return x.tasks;
+  if ("decision" in x && !("outcome" in x)) return tasksOf(x.decision);
+  if (x.task_id || (x.outcome && String(x.task || "").trim()) || x.interval != null) {
+    return [{ id: x.task_id || null, name: x.task || "", text: x.task || "", interval: x.interval, unit: x.interval_unit, shared_with: 0 }];
+  }
+  return [];
+}
+
+// "+1 task" / "+2 tasks": the tasks beyond the decision's own.
+export function moreTasks(d) {
+  const n = tasksOf(d).length - 1;
+  return n > 0 ? `+${n} task${n === 1 ? "" : "s"}` : "";
+}
+
+// "Weekly pH check · every 1 week": one task's line, and the tooltip listing them all.
+export const taskLine = (t) => [t.text || t.name, t.interval != null && t.unit ? `every ${intervalText({ interval: t.interval, interval_unit: t.unit })}` : null]
+  .filter(Boolean).join(" · ");
+export const tasksTip = (d) => tasksOf(d).map((t) => taskLine(t) + (t.shared_with ? ` (shared with ${t.shared_with} other failure mode${t.shared_with === 1 ? "" : "s"})` : "")).join("\n");
 
 // The display: rows {key, type, ref, at, parent, kids, depth, sum} keyed by
 // the node's id (a repeated id gets a suffix, so every row is drawn), and the
@@ -242,7 +267,7 @@ export function phoneLine(r) {
   if (r.type === "fn" && r.ref.has_basis) return [insideWords(r), "has a working"].filter(Boolean).join(" · ");
   if (r.type !== "mode") return insideWords(r);
   const d = r.ref.decision;
-  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", intervalText(d), d?.task]
+  return [CONSEQUENCE_LABEL[r.ref.consequence], d ? decisionText(d) : "To decide", intervalText(d), d?.task || tasksOf(r.ref)[0]?.text, moreTasks(r.ref)]
     .filter(Boolean).join(" · ");
 }
 
@@ -311,8 +336,8 @@ export const COLUMNS = [
   },
   {
     id: "task", label: "Task", width: 190, min: 110, on: true,
-    title: "What is done, and for run-to-failure the action on failure",
-    text: (r) => (isMode(r) ? d(r)?.task || ""
+    title: "What is done (the decision's own task, and how many more), and for run-to-failure the action on failure",
+    text: (r) => (isMode(r) ? [d(r)?.task || tasksOf(r.ref)[0]?.text || "", moreTasks(r.ref)].filter(Boolean).join(" · ")
       : [r.sum.tasks ? plural(r.sum.tasks, "task") : "", belowOf(r)?.tasks ? `${belowOf(r).tasks.toLocaleString("en-AU")} below` : ""].filter(Boolean).join(" · ")),
     sort: (r) => (isMode(r) ? d(r)?.task || null : r.sum.tasks || null),
     edit: "text", can: (r) => isMode(r) && TASK_OUTCOMES.has(d(r)?.outcome), field: "task", onDecision: true,
@@ -428,7 +453,8 @@ export function chipCounts(display) {
 // the first words of the working behind it), the effects, the task and the notes.
 export function rowText(r) {
   const p = r.ref;
-  return [p.text, p.standard, p.basis_preview, p.effects, p.notes, p.decision?.task, p.decision?.notes]
+  return [p.text, p.standard, p.basis_preview, p.effects, p.notes, p.decision?.task, p.decision?.notes,
+    ...tasksOf(p).map((t) => t.name)]
     .filter(Boolean).join(" ").toLowerCase();
 }
 

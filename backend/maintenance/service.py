@@ -887,6 +887,17 @@ def _links_note(n: int) -> str:
             f"{'their effects' if n != 1 else 'its effect'}' position.")
 
 
+def _tasks_unlinked_note(pairs: list) -> str:
+    """Tasks that stayed behind (they serve other modes too) and no longer reach
+    a moved mode: named, so nothing is unlinked silently."""
+    names = sorted({t["name"] for t, _ in pairs})
+    shown = ", ".join(names[:3]) + (" …" if len(names) > 3 else "")
+    return (f"{shown} {'stay' if len(names) != 1 else 'stays'} behind (serving other failure modes) and no "
+            f"longer {'prevent' if len(names) != 1 else 'prevents'} the moved "
+            f"{'mode' if len(pairs) == 1 else 'modes'}: {'they are' if len(names) != 1 else 'it is'} on a "
+            "position outside the new one. Link a task on the new position instead.")
+
+
 # ---- reading the links (over Maintenance._rcm_index) -------------------------------
 # A functional failure is *covered* when everything under it is answered: its own
 # failure modes (each with a decision) and the lower functional failures it
@@ -953,11 +964,21 @@ def _rcm_rollup(index: dict, mode_ids: set) -> dict:
     return {
         "modes": len(modes),
         "undecided": sum(1 for m in modes if not m.get("outcome")),
-        "tasks": sum(1 for m in modes if m["id"] in index["task_of"]),
+        "tasks": sum(1 for m in modes if m["id"] in index["tasks_of"]),
+        # A decision that schedules work with no live task to do it (the task
+        # was retired or unlinked): shown, never a gate.
+        "scheduled_without_task": sum(1 for m in modes if m.get("outcome") in SCHEDULED_OUTCOMES
+                                      and m["id"] not in index["tasks_of"]),
         "hidden": sum(1 for m in modes if m.get("consequence") == "hidden"),
         "safety": sum(1 for m in modes if m.get("consequence") in ("safety", "environmental")),
         "mode_ids": sorted(m["id"] for m in modes),
     }
+
+
+def _shares(index: dict, mode_id: str):
+    """``shares(task_id)`` for a mode's decision view: how many other live modes
+    each of its tasks serves (from the index's counts)."""
+    return lambda task_id: max(0, index["serves"].get(task_id, 1) - 1)
 
 
 def _rcm_place(index: dict, ff_id: str) -> tuple:
@@ -1090,20 +1111,35 @@ def _task_added(s: GraphStore, org: str, p: dict) -> None:
         "start": p["start"], "last_done": None,
     } | {k: p[k] for k in _TASK_EXTRAS if k in p})
     s.put_edge(org, "ON", p["id"], _subject_id(p))
-    if p.get("failure_mode_id"):
-        s.put_edge(org, "MITIGATES", p["id"], p["failure_mode_id"])
+    # The failure modes it prevents: one (failure_mode_id, as always) and, since
+    # a task could serve several, failure_mode_ids (older code reads the one).
+    for mode in [p.get("failure_mode_id"), *(p.get("failure_mode_ids") or [])]:
+        if mode:
+            s.put_edge(org, "MITIGATES", p["id"], mode)
 
 
 def _task_updated(s: GraphStore, org: str, p: dict) -> None:
     changes = dict(p["changes"])
     if "failure_mode_id" in changes:
-        # Linked to a failure mode (or unlinked: None), not a field.
+        # Linked to a failure mode (or unlinked: None), not a field. This is
+        # "the only link": every other link of the task goes, as it always has.
         mode = changes.pop("failure_mode_id")
         for old in s.out(org, p["id"], "MITIGATES"):
             s.delete_edge(org, "MITIGATES", p["id"], old["id"])
         if mode:
             s.put_edge(org, "MITIGATES", p["id"], mode)
     s.patch_node(org, p["id"], changes)
+
+
+# A task serving one more failure mode (its other links kept), or one fewer.
+# The edge id comes from its ends, so linking twice or replaying is the same edge.
+
+def _task_linked(s: GraphStore, org: str, p: dict) -> None:
+    s.put_edge(org, "MITIGATES", p["id"], p["failure_mode_id"])
+
+
+def _task_unlinked(s: GraphStore, org: str, p: dict) -> None:
+    s.delete_edge(org, "MITIGATES", p["id"], p["failure_mode_id"])
 
 
 def _work_order_opened(s: GraphStore, org: str, p: dict) -> None:
@@ -1893,6 +1929,9 @@ PROJECTORS = {
     "failure_mode.merged": _failure_mode_merged,
     "task.added": _task_added,
     "task.updated": _task_updated,
+    # One task may prevent several failure modes, and a mode may have several tasks.
+    "task.linked": _task_linked,
+    "task.unlinked": _task_unlinked,
     "work_order.opened": _work_order_opened,
     "action.recorded": _action_recorded,
     "work_order.closed": _work_order_closed,
@@ -2222,6 +2261,8 @@ class Maintenance:
 
         new = new_id()
         ff_ids: dict[str, str] = {}  # each copied functional failure -> its copy
+        copied_modes: dict[str, str] = {}  # every copied failure mode -> its copy (across the branch)
+        copied_tasks: list[tuple[list, str]] = []  # (the modes a task prevented, its copy's id)
         read(source, new, new_name, parent_id or None)
         self._quota("Position", MAX_POSITIONS, adding=len(plan))
         self._quota("PartListing", MAX_PART_LISTINGS, adding=sum(len(x[6]) for x in plan), what="parts-list entries")
@@ -2235,7 +2276,7 @@ class Maintenance:
               | ({"operating_context": src["operating_context"]} if src.get("operating_context") else {}))
             mode_ids = {}
             for fm in modes:
-                mode_ids[fm["id"]] = new_id()
+                mode_ids[fm["id"]] = copied_modes[fm["id"]] = new_id()
                 self._emit("failure_mode.added", {
                     "id": mode_ids[fm["id"]], "position_id": pid,
                     **{k: fm.get(k) for k in ("text", "function", "failure", "consequence", "outcome")},
@@ -2262,24 +2303,41 @@ class Maintenance:
                             self._emit("failure_mode.assigned", {"id": mode_ids[fm["id"]], "functional_failure_id": ff_id,
                                                                  "order": fm.get("order") or 0})
             for task in tasks:
-                mitigates = self.s.out(self.org, task["id"], "MITIGATES")
+                # Every failure mode it prevents that was copied (a mode on another
+                # position inside the branch is copied with that position, so its
+                # link is made when that position's tasks are: see below).
+                mitigates = [m["id"] for m in self.s.out(self.org, task["id"], "MITIGATES")]
+                linked = [mode_ids[x] for x in mitigates if x in mode_ids]
                 # A name longer than names may be now (from before the limit) is
                 # shortened on the copy, the whole of it kept in the instructions.
                 name, full = derived_title(task.get("name"))
+                tid = new_id()
                 self._emit("task.added", {
-                    "id": new_id(), "position_id": pid,
-                    "failure_mode_id": mitigates and mode_ids.get(mitigates[0]["id"]),
+                    "id": tid, "position_id": pid,
+                    "failure_mode_id": linked[0] if linked else None,
                     "start": today,
                     **{k: task.get(k) for k in ("outcome", "interval", "unit")},
                     # Not point_id: the copy has no measurement points yet.
                     **{k: task[k] for k in _TASK_EXTRAS if k in task and k != "point_id"},
                     "name": name,
-                } | ({"instructions": _with_first(full, task.get("instructions"))} if full else {}))
+                } | ({"instructions": _with_first(full, task.get("instructions"))} if full else {})
+                  | ({"failure_mode_ids": linked} if len(linked) > 1 else {}))
+                copied_tasks.append((mitigates, tid))
+                # The decision's own task, where this task was one: the copy's.
+                for fm in modes:
+                    if fm.get("task_id") == task["id"] and fm["id"] in mode_ids:
+                        self._emit("failure_mode.analysed", {"id": mode_ids[fm["id"]], "changes": {"task_id": tid}})
             for listing in listings:
                 self._emit("position_part.listed", {
                     "id": new_id(), "position_id": pid, "part_id": self.s.out(self.org, listing["id"], "LISTS")[0]["id"],
                     **{k: listing.get(k) for k in ("role", "quantity", "critical", "min_on_hand", "notes")},
                     "on": today})
+        # A task serving a mode on a position inside its own: that mode's copy was
+        # made after the task's, so the link is made now the whole branch is there.
+        for mitigates, tid in copied_tasks:
+            for old_mode in mitigates:
+                if old_mode in copied_modes and self.s.edge(self.org, "MITIGATES", tid, copied_modes[old_mode]) is None:
+                    self._emit("task.linked", {"id": tid, "failure_mode_id": copied_modes[old_mode], "on": today})
         skipped = self._copy_links(ff_ids, parent_id or None)
         return self.position(new) | ({"links_skipped": skipped} if skipped else {})
 
@@ -3013,7 +3071,8 @@ class Maintenance:
         causes (effects), and whether everything under it is answered (covered)."""
         ff, fn, position = self._live_ff(ff_id)
         index = self._rcm_index()
-        modes = [self._rcm_mode_view(m, index["task_of"].get(m["id"])) for m in index["own"].get(ff["id"], [])]
+        modes = [self._rcm_mode_view(m, index["tasks_of"].get(m["id"], []), _shares(index, m["id"]))
+                 for m in index["own"].get(ff["id"], [])]
         return {**self._ff_view(ff), "function": {"id": fn["id"], "text": fn["text"]},
                 "position": {"id": position["id"], "name": position["name"]}, "modes": modes,
                 **_rcm_links(index, ff["id"])}
@@ -3040,18 +3099,146 @@ class Maintenance:
         return [(e, c) for e, c in links
                 if ff_pos.get(c) in inside and ff_pos.get(e) not in inside and ff_pos.get(e) not in above]
 
-    def _mode_task(self, mode_id: str) -> dict | None:
-        """The live task that mitigates a failure mode (its decision's task)."""
+    # ---- a failure mode's tasks ------------------------------------------------------
+    # A failure mode may have several live tasks (a combination: an inspection that
+    # catches the slow failures and a replacement at a hard life), and one task may
+    # serve several failure modes (one shop water test for five chemistry modes).
+    # The first of a mode's tasks is the decision's own: the one its decision made or
+    # adopted (task_id on the mode), else the oldest-looking one. The task owns its
+    # interval: a decision changes a task's interval only while that task serves this
+    # mode alone.
+
+    def _mode_tasks(self, mode_id: str, fm: dict | None = None) -> list[dict]:
+        """A failure mode's live tasks, the decision's own first."""
         tasks = [t for t in self.s.inn(self.org, mode_id, "MITIGATES") if t["label"] == "Task" and not t.get("retired")]
+        return self._order_tasks(fm or self.s.node(self.org, mode_id) or {}, tasks)
+
+    @staticmethod
+    def _order_tasks(fm: dict, tasks: list[dict]) -> list[dict]:
+        own = fm.get("task_id")
+        return sorted(tasks, key=lambda t: (t["id"] != own, t.get("outcome") != fm.get("outcome"),
+                                            str(t.get("start") or ""), str(t.get("name") or "").lower(), t["id"]))
+
+    def _mode_task(self, mode_id: str) -> dict | None:
+        """The decision's own task (the first of the mode's), or None."""
+        tasks = self._mode_tasks(mode_id)
         return tasks[0] if tasks else None
 
-    def decide_failure_mode(self, mode_id: str, consequence=..., decision=...) -> dict:
+    def _task_modes(self, task_id: str) -> list[dict]:
+        """The live failure modes a task prevents."""
+        return [m for m in self.s.out(self.org, task_id, "MITIGATES")
+                if m["label"] == "FailureMode" and not m.get("retired") and not m.get("merged_into")]
+
+    def _shared_with(self, task_id: str, mode_id: str) -> int:
+        """How many other live failure modes a task serves."""
+        return sum(1 for m in self._task_modes(task_id) if m["id"] != mode_id)
+
+    def _task_can_serve(self, task: dict, position: dict) -> dict:
+        """The position a task is on, when that task may serve a failure mode on
+        ``position``: a position's task serves modes on its own position and on
+        the positions inside it (a round at the pool covers the chlorinator's
+        modes), never the other way. Raises otherwise."""
+        subject = _subject(self.s, self.org, task)
+        if subject is None or subject["label"] != "Position":
+            raise Invalid("Failure modes are on positions: only a position's task can prevent one.")
+        if subject["id"] != position["id"] and subject["id"] not in self._ancestor_ids(position["id"]):
+            raise Invalid(f"{task['name']} is on {subject['name']}: it can prevent a failure mode on "
+                          f"{subject['name']} or on a position inside it, not on {position['name']}.")
+        return subject
+
+    def _linkable_task(self, task_id, position: dict) -> dict:
+        """A live task that may serve a failure mode on ``position``."""
+        if not task_id:
+            raise Invalid("Say which task (task_id).")
+        task = self._get(str(task_id), "Task")
+        if task.get("retired"):
+            raise Invalid(f"{task['name']} has been retired: restore it first, or pick another task.")
+        self._task_can_serve(task, position)
+        return task
+
+    def link_task(self, task_id: str, failure_mode_id) -> dict:
+        """Say that a position's task also prevents a failure mode on its position
+        or on a position inside it. Linking what's linked changes nothing."""
+        if not failure_mode_id:
+            raise Invalid("Say which failure mode (failure_mode_id).")
+        fm, position = self._live_mode(str(failure_mode_id))
+        task = self._linkable_task(task_id, position)
+        if self.s.edge(self.org, "MITIGATES", task["id"], fm["id"]) is None:
+            self._emit("task.linked", {"id": task["id"], "failure_mode_id": fm["id"], "on": self.today()})
+        return self._task_view(self._get(task["id"], "Task"))
+
+    def unlink_task(self, task_id: str, failure_mode_id) -> dict:
+        """Take one failure mode off a task (the task stays, with its other links).
+        A mode left with no task keeps its decision; the worksheet says it has no
+        task. Unlinking what isn't linked changes nothing."""
+        if not failure_mode_id:
+            raise Invalid("Say which failure mode (failure_mode_id).")
+        task = self._get(task_id, "Task")
+        fm = self._get(str(failure_mode_id), "FailureMode")
+        if self.s.edge(self.org, "MITIGATES", task["id"], fm["id"]) is not None:
+            self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": fm["id"], "on": self.today()})
+        return self._task_view(self._get(task["id"], "Task"))
+
+    def add_mode_task(self, mode_id: str, name, interval, unit="months", outcome=None, instructions="") -> dict:
+        """Another task for a failure mode (its decision's task stays the first):
+        on the mode's position, part of its RCM (no source of its own). outcome:
+        what kind of task it is (left out: the decision's, when that schedules
+        work)."""
+        fm, position = self._live_mode(mode_id)
+        name = _text(name, "task's name", required=True)
+        unit = _unit(unit, "months")
+        interval = _interval(interval, unit, f"interval for {name[:80]}")
+        if outcome in ("", None):
+            outcome = fm.get("outcome") if fm.get("outcome") in SCHEDULED_OUTCOMES else None
+        elif outcome not in SCHEDULED_OUTCOMES:
+            raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
+        text = _text(instructions, "instructions", max_len=LONG_TEXT)
+        self._quota("Task", MAX_TASKS)
+        tid = new_id()
+        self._emit("task.added", {
+            "id": tid, "position_id": position["id"], "failure_mode_id": mode_id, "name": name,
+            "outcome": outcome, "interval": interval, "unit": unit, "start": self.today(),
+        } | ({"instructions": text} if text else {}))
+        return self._task_view(self._get(tid, "Task"))
+
+    def mode_tasks(self, mode_id: str) -> dict:
+        """A failure mode's tasks (the decision's own first), and the live tasks on
+        its position and the positions above it that could serve it too
+        (available), each with how many failure modes it serves."""
+        fm, position = self._live_mode(mode_id)
+        above = {position["id"], *self._ancestor_ids(position["id"])}
+        linked = {t["id"] for t in self.s.inn(self.org, mode_id, "MITIGATES")}
+        names = {p["id"]: p["name"] for p in self.s.nodes(self.org, "Position") if p["id"] in above}
+
+        def brief(t: dict) -> dict:
+            on = self.s.out(self.org, t["id"], "ON")
+            pid = on[0]["id"] if on else None
+            return {"id": t["id"], "name": t["name"], "interval": t["interval"], "unit": t["unit"],
+                    "outcome": t.get("outcome"), "instructions": t.get("instructions") or "",
+                    "position": {"id": pid, "name": names.get(pid, "")},
+                    "serves": len(self._task_modes(t["id"]))}
+        available = []
+        for t in self.s.nodes(self.org, "Task"):
+            if t.get("retired") or t["id"] in linked:
+                continue
+            on = self.s.out(self.org, t["id"], "ON")
+            if on and on[0]["id"] in above:
+                available.append(brief(t))
+        available.sort(key=lambda t: (t["position"]["id"] != position["id"], t["name"].lower()))
+        return {"failure_mode": {"id": fm["id"], "text": fm["text"]}, "position": {"id": position["id"],
+                "name": position["name"]}, "tasks": [brief(t) for t in self._mode_tasks(mode_id, fm)],
+                "available": available}
+
+    def decide_failure_mode(self, mode_id: str, consequence=..., decision=..., task_id=None) -> dict:
         """A failure mode's RCM decision: its consequence and the decision (outcome,
         rtf_basis, task, interval and interval_unit, notes, evidence: the saved model
         or analysis behind it), checked by the RCM decision rules (rcm_decisions).
         A decision that schedules a task (fixed interval, failure finding, on condition, with an
-        interval) gets one on the position, or changes the one it has; a decision
-        that doesn't retires it. decision None clears the decision."""
+        interval) gets one on the position, or changes the one it has (task_id: an
+        existing task on the position, or one above, is the decision's task instead);
+        a decision that doesn't retires the mode's tasks, or unlinks the ones that
+        serve other modes too. decision None clears the decision. A task that serves
+        other modes keeps its own interval and name: change those on the task."""
         fm, position = self._live_mode(mode_id)
         changes: dict = {}
         if consequence is not ...:
@@ -3059,7 +3246,9 @@ class Maintenance:
             if consequence is not None and consequence not in rcm_decisions.CONSEQUENCES:
                 raise Invalid(f"Unknown consequence '{consequence}'.")
             changes["consequence"] = consequence
-        task = self._mode_task(mode_id)
+        tasks = self._mode_tasks(mode_id, fm)
+        task = tasks[0] if tasks else None
+        adopt = None
         if decision is not ...:
             try:
                 cleaned = rcm_decisions.clean_decision(decision) if decision else None
@@ -3068,6 +3257,16 @@ class Maintenance:
             cleaned = cleaned or {}
             said = str(cleaned.get("task") or "").strip()
             outcome = cleaned.get("outcome")
+            if task_id:
+                # An existing task is the decision's: its name and interval stand in
+                # for any the decision doesn't give.
+                if outcome not in SCHEDULED_OUTCOMES:
+                    raise Invalid("A task goes with a decision that schedules one (fixed_interval, failure_finding "
+                                  "or on_condition).")
+                adopt = task = self._linkable_task(task_id, position)
+                said = said or task["name"]
+                if not cleaned.get("interval"):
+                    cleaned["interval"], cleaned["interval_unit"] = task["interval"], task["unit"]
             scheduled = outcome in SCHEDULED_OUTCOMES and cleaned.get("interval")
             changes |= {
                 "outcome": outcome, "rtf_basis": cleaned.get("rtf_basis"), "evidence": cleaned.get("evidence"),
@@ -3085,32 +3284,60 @@ class Maintenance:
                 unit = _norm_unit(cleaned.get("interval_unit")) or "days"
                 interval = _interval(cleaned["interval"], unit, f"interval for {str(name)[:80]}")
                 if task is None:
+                    tid = new_id()
                     self._emit("task.added", {
-                        "id": new_id(), "position_id": position["id"], "failure_mode_id": mode_id,
+                        "id": tid, "position_id": position["id"], "failure_mode_id": mode_id,
                         "name": name, "outcome": outcome, "interval": interval, "unit": unit, "start": self.today(),
                     } | ({"instructions": full} if full else {}))
+                    self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"task_id": tid}})
                 else:
+                    shared = self._shared_with(task["id"], mode_id)
                     wanted = {"name": name, "interval": interval, "unit": unit, "outcome": outcome}
                     if full:
                         wanted["instructions"] = full
                     task_changes = {k: v for k, v in wanted.items() if task.get(k) != v}
-                    if task_changes:
+                    if shared:
+                        # The same act for every mode it serves: its outcome is its own,
+                        # and its name and interval change on the task, for all of them.
+                        task_changes.pop("outcome", None)
+                        if task_changes:
+                            raise Invalid(f"{task['name']} also serves {shared} other failure "
+                                          f"mode{'s' if shared != 1 else ''}, so its name and interval are "
+                                          "changed on the task itself (maintenance_tasks update), for all of "
+                                          "them. Or give this failure mode a task of its own.")
+                    elif task_changes:
                         self._emit("task.updated", {"id": task["id"], "changes": task_changes})
-            elif task is not None:
-                self._emit("task.retired", {"id": task["id"], "on": self.today(),
-                                            "reason": "The failure mode's decision schedules no task now."})
+                    if adopt is not None and self.s.edge(self.org, "MITIGATES", task["id"], mode_id) is None:
+                        self._emit("task.linked", {"id": task["id"], "failure_mode_id": mode_id, "on": self.today()})
+                    if fm.get("task_id") != task["id"]:
+                        self._emit("failure_mode.analysed", {"id": mode_id, "changes": {"task_id": task["id"]}})
+            else:
+                self._drop_mode_tasks(mode_id, tasks, "The failure mode's decision schedules no task now.")
         return self.rcm_mode(mode_id)
 
+    def _drop_mode_tasks(self, mode_id: str, tasks: list[dict], reason: str) -> tuple[list[str], list[str]]:
+        """A mode's tasks when it no longer wants any: one serving it alone is
+        retired (with ``reason``); one serving other modes too is unlinked and
+        stays. Returns (retired ids, unlinked ids)."""
+        retired, unlinked = [], []
+        for t in tasks:
+            if self._shared_with(t["id"], mode_id):
+                self._emit("task.unlinked", {"id": t["id"], "failure_mode_id": mode_id, "on": self.today()})
+                unlinked.append(t["id"])
+            else:
+                self._emit("task.retired", {"id": t["id"], "on": self.today(), "reason": reason})
+                retired.append(t["id"])
+        return retired, unlinked
+
     def retire_failure_mode(self, mode_id: str) -> dict:
-        """Delete a failure mode from the position's RCM, with the task that mitigates
-        it. Failures already recorded against it keep it in their history."""
+        """Delete a failure mode from the position's RCM, with the tasks that serve
+        it alone (a task serving other modes too stays, unlinked from this one).
+        Failures already recorded against it keep it in their history."""
         fm, position = self._live_mode(mode_id)
-        task = self._mode_task(mode_id)
-        if task is not None:
-            self._emit("task.retired", {"id": task["id"], "on": self.today(),
-                                        "reason": "Its failure mode was deleted."})
+        retired, unlinked = self._drop_mode_tasks(mode_id, self._mode_tasks(mode_id, fm), "Its failure mode was deleted.")
         self._emit("failure_mode.retired", {"id": mode_id, "on": self.today()})
-        return {"removed": mode_id, "position_id": position["id"], "task_retired": task and task["id"]}
+        return {"removed": mode_id, "position_id": position["id"], "task_retired": retired[0] if retired else None,
+                "tasks_retired": retired, "tasks_unlinked": unlinked}
 
     def restore_failure_mode(self, mode_id: str) -> dict:
         """Put a deleted failure mode back on its position's RCM, with its decision,
@@ -3174,10 +3401,11 @@ class Maintenance:
             raise Invalid(f"Work has been done on {name} at {here} (work order #{wo.get('number')}): moving it "
                           f"would split its history. Retire it and add a new task on {there} instead.")
         for fm in self.s.out(self.org, task["id"], "MITIGATES"):
-            if fm["id"] in modes_moving:
+            if fm["id"] in modes_moving or fm.get("retired") or fm.get("merged_into"):
                 continue
             on = self.s.inn(self.org, fm["id"], "CAN_FAIL_AS")
-            if not on or on[0]["id"] != target["id"]:
+            # A task serves modes on its own position and the positions inside it.
+            if not on or (on[0]["id"] != target["id"] and target["id"] not in self._ancestor_ids(on[0]["id"])):
                 raise Invalid(f"{name} prevents the failure mode {fm['text']}, which stays on {here}: move the "
                               "failure mode instead (its tasks go with it), or unlink the task from it first.")
         point_id = task.get("point_id") or task.get("meter_id")
@@ -3211,10 +3439,28 @@ class Maintenance:
                      and _same_text(m["text"], text)), None)
         if same:
             raise Invalid(f"{there} already has the failure mode {same['text']}: rename one of them first.")
-        tasks = self._live_tasks_of(fm["id"])
-        for task in tasks:
+        tasks = []
+        for task in self._live_tasks_of(fm["id"]):
+            if any(m["id"] not in modes_moving for m in self._task_modes(task["id"])):
+                continue  # it serves modes that stay: it stays too (see _links_after_move)
             self._check_task_move(task, source, target, modes_moving)
+            tasks.append(task)
         return tasks
+
+    def _links_after_move(self, modes: list[dict], moving_tasks: set, target: dict) -> list[tuple[dict, dict]]:
+        """The links of the tasks that stay behind when modes move: a task on the
+        target or on a position above it keeps serving the moved mode; one that
+        would be on a position outside is unlinked, and the move says so."""
+        above = {target["id"], *self._ancestor_ids(target["id"])}
+        dropped = []
+        for fm in modes:
+            for task in self._live_tasks_of(fm["id"]):
+                if task["id"] in moving_tasks:
+                    continue
+                on = self.s.out(self.org, task["id"], "ON")
+                if not on or on[0]["id"] not in above:
+                    dropped.append((task, fm))
+        return dropped
 
     def move_function(self, function_id: str, position_id) -> dict:
         """Move a function to another position, with its functional failures, the
@@ -3245,15 +3491,22 @@ class Maintenance:
                     leaving.append((e["id"], ff["id"]))
         for effect_id, cause_id in leaving:
             self._link_event("functional_failure.unlinked", effect_id, cause_id)
+        unlinked = self._links_after_move(modes, set(tasks), target)
+        for task, fm in unlinked:
+            self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": fm["id"], "on": self.today()})
         self._emit("function.moved", {
             "id": function_id, "position_id": target["id"], "from_position_id": source["id"],
             "order": self._next_order(self.s.out(self.org, target["id"], "PERFORMS")),
             "failure_mode_ids": sorted(moving), "task_ids": sorted(tasks), "on": self.today(),
         })
+        notes = [_links_note(len(leaving))] if leaving else []
+        if unlinked:
+            notes.append(_tasks_unlinked_note(unlinked))
         return {"moved": function_id, "position_id": target["id"], "from_position_id": source["id"],
                 "function": self._function_view(self._get(function_id, "Function")),
                 "failure_modes_moved": len(moving), "tasks_moved": len(tasks), "links_removed": len(leaving),
-                **({"note": _links_note(len(leaving))} if leaving else {})}
+                "tasks_unlinked": sorted({t["id"] for t, _ in unlinked}),
+                **({"note": " ".join(notes)} if notes else {})}
 
     def move_failure_mode(self, mode_id: str, position_id, functional_failure_id=None) -> dict:
         """Move a failure mode to another position, with its decision and tasks, under
@@ -3267,12 +3520,16 @@ class Maintenance:
                 raise Invalid(f"That functional failure is on {on['name']}, not {target['name']}: pick one of "
                               f"{target['name']}'s, or leave it out to move the mode unassigned.")
         tasks = self._check_mode_move(fm, source, target, {mode_id})
+        unlinked = self._links_after_move([fm], {t["id"] for t in tasks}, target)
+        for task, _ in unlinked:
+            self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": mode_id, "on": self.today()})
         self._emit("failure_mode.moved", {
             "id": mode_id, "position_id": target["id"], "from_position_id": source["id"],
             "functional_failure_id": ff and ff["id"], "task_ids": sorted(t["id"] for t in tasks), "on": self.today(),
         } | ({"order": self._next_order(self._ff_modes(ff["id"]))} if ff else {}))
         return {**self.rcm_mode(mode_id), "position_id": target["id"], "from_position_id": source["id"],
-                "tasks_moved": len(tasks)}
+                "tasks_moved": len(tasks), "tasks_unlinked": [t["id"] for t, _ in unlinked],
+                **({"note": _tasks_unlinked_note(unlinked)} if unlinked else {})}
 
     def move_task(self, task_id: str, position_id) -> dict:
         """Move a position's task to another position. Its link to a failure mode is
@@ -3305,21 +3562,40 @@ class Maintenance:
         return {"id": ff["id"], "text": ff["text"]}
 
     @staticmethod
-    def _decision_of(fm: dict, task: dict | None) -> dict | None:
+    def _task_text(task: dict) -> str:
+        """A task's words as the decision shows them: the whole text when the name
+        was shortened from it."""
+        return task.get("instructions") if str(task.get("name") or "").endswith("…") and \
+            task.get("instructions") else task.get("name") or ""
+
+    @staticmethod
+    def _tasks_brief(tasks: list[dict], shares=None) -> list[dict]:
+        """A mode's tasks as reads list them, each with how many other live
+        modes share it (``shares(task_id)``)."""
+        return [{"id": t["id"], "name": t["name"], "text": Maintenance._task_text(t),
+                 "interval": t.get("interval"), "unit": t.get("unit"), "outcome": t.get("outcome"),
+                 "instructions": t.get("instructions") or "",
+                 "shared_with": shares(t["id"]) if shares else 0} for t in tasks]
+
+    @staticmethod
+    def _decision_of(fm: dict, tasks: list[dict], shares=None) -> dict | None:
         """A failure mode's decision as the worksheet shows it (outcome, rtf_basis,
-        task, interval, interval_unit, notes, evidence), from the mode and its task;
-        None when it has no outcome."""
+        task, interval, interval_unit, task_id: its own task's; tasks: every live
+        task serving it, its own first, each with how many other modes share it;
+        notes, evidence), from the mode and its tasks; None when it has no outcome.
+        ``shares(task_id)``: how many other live modes a task serves."""
         if not fm.get("outcome"):
             return None
         d = {"outcome": fm["outcome"]}
         if fm.get("rtf_basis"):
             d["rtf_basis"] = fm["rtf_basis"]
-        if task is not None:
-            d["task"] = task.get("instructions") if str(task.get("name") or "").endswith("…") and \
-                task.get("instructions") else task.get("name") or ""
+        if tasks:
+            task = tasks[0]
+            d["task"] = Maintenance._task_text(task)
             d["interval"] = task.get("interval")
             d["interval_unit"] = task.get("unit")
             d["task_id"] = task["id"]
+            d["tasks"] = Maintenance._tasks_brief(tasks, shares)
         elif fm.get("task_note"):
             d["task"] = fm["task_note"]
         if fm.get("decision_notes"):
@@ -3327,10 +3603,12 @@ class Maintenance:
         d["evidence"] = fm.get("evidence") or None
         return d
 
-    def _rcm_mode_view(self, fm: dict, task: dict | None) -> dict:
+    def _rcm_mode_view(self, fm: dict, tasks: list[dict], shares=None) -> dict:
         return {
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "", "notes": fm.get("notes") or "",
-            "consequence": fm.get("consequence"), "decision": self._decision_of(fm, task),
+            "consequence": fm.get("consequence"), "decision": self._decision_of(fm, tasks, shares),
+            # Its tasks whether or not it's decided yet (a task linked before the decision).
+            "tasks": self._tasks_brief(tasks, shares),
             "ad_hoc": bool(fm.get("ad_hoc")),
             # Words an earlier failure mode kept for its function and failure (before
             # functions were on the positions): a hint for where it belongs.
@@ -3339,7 +3617,7 @@ class Maintenance:
 
     def rcm_mode(self, mode_id: str) -> dict:
         fm = self._get(mode_id, "FailureMode")
-        return self._rcm_mode_view(fm, self._mode_task(mode_id))
+        return self._rcm_mode_view(fm, self._mode_tasks(mode_id, fm), lambda tid: self._shared_with(tid, mode_id))
 
     def _rcm_index(self) -> dict:
         """The whole RCM spine read in bulk (a fixed number of store reads): per
@@ -3383,10 +3661,16 @@ class Maintenance:
         parent: dict[str, str] = {}
         for src, dst in s.pairs(org, "PART_OF"):
             parent.setdefault(src, dst)
-        task_of: dict[str, dict] = {}
+        # Every live task serving each mode (its decision's own first), and how
+        # many live modes each task serves (for "shared with n").
+        tasks_of: dict[str, list] = {}
+        serves: dict[str, int] = {}
         for src, dst in s.pairs(org, "MITIGATES"):
             if src in tasks and dst in modes:
-                task_of.setdefault(dst, tasks[src])
+                tasks_of.setdefault(dst, []).append(tasks[src])
+                serves[src] = serves.get(src, 0) + 1
+        for mode_id, found in tasks_of.items():
+            found[:] = self._order_tasks(modes[mode_id], found)
         docs_of: dict[str, list] = {}  # function -> its documents (the working's PDFs)
         on_fns = [(src, dst) for src, dst in s.pairs(org, "OF") if dst in fns]
         if on_fns:
@@ -3400,8 +3684,8 @@ class Maintenance:
                 v.sort(key=order)
         for v in docs_of.values():
             v.sort(key=lambda d: (d["title"].lower(), d["id"]))
-        return {"functions": fns_of, "failures": ffs_of, "modes": modes_of, "ff_of": ff_of, "task_of": task_of,
-                "documents": docs_of,
+        return {"functions": fns_of, "failures": ffs_of, "modes": modes_of, "ff_of": ff_of, "tasks_of": tasks_of,
+                "serves": serves, "documents": docs_of,
                 "own": own, "mode": modes, "ff": ffs, "fn": fns, "ff_fn": ff_fn, "ff_pos": ff_pos,
                 "causes_of": causes_of, "effects_of": effects_of, "parent": parent,
                 "positions": {p["id"]: p for p in s.nodes(org, "Position")}, "memo": {}}
@@ -3428,11 +3712,11 @@ class Maintenance:
         return True
 
     def _position_rcm(self, index: dict, pid: str, full: bool = True) -> dict:
-        ff_of, task_of = index["ff_of"], index["task_of"]
+        ff_of, tasks_of = index["ff_of"], index["tasks_of"]
         by_ff: dict[str, list] = {}
         unassigned = []
         for fm in index["modes"].get(pid, []):
-            view = self._rcm_mode_view(fm, task_of.get(fm["id"]))
+            view = self._rcm_mode_view(fm, tasks_of.get(fm["id"], []), _shares(index, fm["id"]))
             if fm["id"] in ff_of:
                 by_ff.setdefault(ff_of[fm["id"]], []).append(view)
             else:
@@ -3624,7 +3908,7 @@ class Maintenance:
         dues = [lim["next_due"] for lim in limits if lim["next_due"]]
         nxt = min(dues) if dues else None
         open_wo = next((w for w in self.s.inn(self.org, task["id"], "FOR") if w.get("status") in OPEN_STATUSES), None)
-        mode = self.s.out(self.org, task["id"], "MITIGATES")
+        mode = sorted(self.s.out(self.org, task["id"], "MITIGATES"), key=lambda m: (m.get("text") or "", m["id"]))
         subject = _subject(self.s, self.org, task)
         out = {
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
@@ -3633,7 +3917,10 @@ class Maintenance:
             # A task with no source of its own is a decision's (maintenance_failure_modes decide).
             "source": task.get("source") or ("rcm" if mode else "manual"),
             "reference": task.get("reference", ""), "point_id": task.get("point_id"),
+            # The failure modes it prevents (several, since one task may serve many);
+            # failure_mode is the first, as older readers expect.
             "failure_mode": {"id": mode[0]["id"], "text": mode[0]["text"]} if mode else None,
+            "failure_modes": [{"id": m["id"], "text": m["text"]} for m in mode],
             "interval": task["interval"], "unit": task["unit"],
             "also_interval": task.get("also_interval"), "also_unit": task.get("also_unit"),
             "instructions": task.get("instructions", ""), "checklist": task.get("checklist") or [],
@@ -5522,13 +5809,35 @@ class Maintenance:
             raise Invalid("A task by use goes by a counter, not a condition point.")
         return point
 
+    def _mode_served_from(self, position_id: str, failure_mode_id) -> dict:
+        """A live failure mode a task on ``position_id`` may serve: on that
+        position, or on a position inside it."""
+        if self.s.node(self.org, str(failure_mode_id), "FailureMode") is None:
+            raise Invalid("There's no failure mode with that id in this workspace.")
+        fm, on = self._live_mode(str(failure_mode_id))
+        if on["id"] != position_id and position_id not in self._ancestor_ids(on["id"]):
+            here = self.s.node(self.org, position_id) or {}
+            raise Invalid(f"{fm['text']} is on {on['name']}: a task on {here.get('name') or 'this position'} can "
+                          "prevent a failure mode on it or on a position inside it, not that one.")
+        return fm
+
     def _task_link(self, position_id: str, failure_mode_id, task: dict | None = None) -> dict:
-        """The changes that link a task to one of its position's failure modes (or
-        unlink it: '')."""
+        """The changes that link a task to a failure mode on its position (or on a
+        position inside it), as its only link; or unlink it: ''."""
         if not failure_mode_id:
             return {"failure_mode_id": None}
-        ref = self._mode_ref(position_id, failure_mode_id)
-        return {"failure_mode_id": self._get(ref[1], "FailureMode")["id"]}
+        return {"failure_mode_id": self._mode_served_from(position_id, failure_mode_id)["id"]}
+
+    def _task_links(self, position_id: str, failure_mode_ids) -> list[str]:
+        """The failure modes a new task prevents (each on the position or inside it)."""
+        if not isinstance(failure_mode_ids, (list, tuple)):
+            raise Invalid("failure_mode_ids is a list of failure mode ids.")
+        out: list[str] = []
+        for mode_id in failure_mode_ids:
+            fid = self._mode_served_from(position_id, mode_id)["id"]
+            if fid not in out:
+                out.append(fid)
+        return out
 
     WHILE_STORED = ("run", "pause")
 
@@ -5575,7 +5884,7 @@ class Maintenance:
     def create_task(self, position_id: str | None, name, interval, unit="months", outcome=None, also_interval=None,
                     also_unit=None, point_id=None, instructions="", checklist=None, source="manual", reference="",
                     failure_mode_id=None, last_done=None, trade="", item_id=None, location_id=None,
-                    while_stored=None, include_positions=None) -> dict:
+                    while_stored=None, include_positions=None, failure_mode_ids=None) -> dict:
         """A scheduled task added directly (not an RCM decision's): from the maker's manual (source 'oem'),
         a law or standard ('statutory'), your own practice ('manual') or elsewhere
         ('other'). It's scheduled and raises work orders like a task from RCM. outcome
@@ -5616,7 +5925,17 @@ class Maintenance:
             self._task_counter(point_id, node, (unit, payload.get("also_unit")))
             payload["point_id"] = point_id
         if node["label"] == "Position":
-            payload |= self._task_link(node["id"], failure_mode_id)
+            # The failure modes it prevents: one (failure_mode_id), or several
+            # (failure_mode_ids; the first is failure_mode_id too, for older code).
+            linked = self._task_links(node["id"], failure_mode_ids) if failure_mode_ids else []
+            if failure_mode_id:
+                one = self._task_link(node["id"], failure_mode_id)["failure_mode_id"]
+                linked = [one, *(x for x in linked if x != one)]
+            payload["failure_mode_id"] = linked[0] if linked else None
+            if len(linked) > 1:
+                payload["failure_mode_ids"] = linked
+        elif failure_mode_ids:
+            raise Invalid("Failure modes are on positions: only a position's task can prevent one.")
         done = None
         if last_done not in (None, ""):
             done = _day(last_done, "last done date")
@@ -5678,8 +5997,10 @@ class Maintenance:
                 raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
             changes["outcome"] = outcome or None
         if failure_mode_id is not None:
-            linked = self.s.out(self.org, task_id, "MITIGATES")
-            if (linked[0]["id"] if linked else "") != (failure_mode_id or ""):
+            # "The only link": every other failure mode comes off it (maintenance_tasks
+            # link adds one without touching the rest).
+            linked = [m["id"] for m in self.s.out(self.org, task_id, "MITIGATES")]
+            if linked != ([failure_mode_id] if failure_mode_id else []):
                 if subject["label"] != "Position":
                     raise Invalid("Failure modes are on positions: only a position's task can prevent one.")
                 changes |= self._task_link(subject["id"], failure_mode_id, task)

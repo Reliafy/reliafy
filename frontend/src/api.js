@@ -2416,6 +2416,22 @@ export function decideFailureMode(id, body) {
 export function retireFailureMode(id) {
   return sendJson("DELETE")(`/api/maintenance/failure-modes/${id}`);
 }
+// A failure mode's tasks (its decision's own first) and the tasks on its
+// position, or above it, that could serve it too.
+export function getFailureModeTasks(id) {
+  return request(`/api/maintenance/failure-modes/${id}/tasks`);
+}
+// Another task for the failure mode: {name, interval, unit, outcome?, instructions?}.
+export function addFailureModeTask(id, body) {
+  return postJson(`/api/maintenance/failure-modes/${id}/tasks`, body);
+}
+// The task also prevents that failure mode (its other links stay); and the reverse.
+export function linkTaskFailureMode(taskId, modeId) {
+  return postJson(`/api/maintenance/tasks/${taskId}/failure-modes/${modeId}`);
+}
+export function unlinkTaskFailureMode(taskId, modeId) {
+  return sendJson("DELETE")(`/api/maintenance/tasks/${taskId}/failure-modes/${modeId}`);
+}
 export function addPastFitment(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/past-fitments`, body);
 }

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- A failure mode may have several tasks, and one task may serve several
+  failure modes. `maintenance_failure_modes add_task` adds another task to a
+  mode (its decision's task stays first); `decide` takes `task_id` to make an
+  existing task the decision's; `maintenance_tasks link` / `unlink` add or
+  remove one link (`create` takes `failure_mode_ids`); a task on a position
+  may serve modes on positions inside it. A decision's `tasks` lists them all
+  with `shared_with`; a task's `failure_modes` lists its modes. Shared tasks
+  keep their own interval: change it with `maintenance_tasks update`.
+  `maintenance_apply` undoes `tasks.link` with `tasks.unlink` (and back) and
+  `failure_modes.add_task` with `tasks.retire`. A worksheet row that repeats a
+  failure mode with another task adds that task; a task named on several rows
+  is one task, linked.
+
 - A dataset holds its life data and, when added, its measurements (readings
   on the same units at ages since new) in one place. `Client.add_measurements
   (dataset_id, "readings.csv")` and `reliafy upload readings.csv

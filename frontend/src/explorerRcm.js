@@ -10,7 +10,8 @@
 // (right-click, ⋯ or Shift+F10), and the RCM chips.
 
 import {
-  COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, intervalText, modeCounts, rowText as rcmText,
+  COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, intervalText, modeCounts, moreTasks,
+  rowText as rcmText, tasksOf,
 } from "./rcmWorksheet.js";
 
 export const RCM_TYPES = new Set(["fn", "fail", "mode", "unassigned", "cause"]);
@@ -164,6 +165,8 @@ export function rowActions(r, { canRename = true } = {}) {
     return [
       ...open,
       { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
+      // Another task for the mode (or an existing one linked): the dialog's Tasks.
+      { id: "add-task", label: "Add a task…" },
       ...rename,
       { id: "delete", label: "Delete failure mode", danger: true },
     ];
@@ -283,14 +286,27 @@ export function fitWidths(ids, widths, room) {
 
 // The Task cell with the interval folded into it (the Interval column not
 // shown): "Inspect roof tubes · every 12 months"; an interval with no task,
-// "Every 12 months". Other rows: as the Task column has them.
+// "Every 12 months"; more tasks, "… · +1 task". Other rows: as the Task
+// column has them.
 export function taskWithInterval(r) {
   if (r.type !== "mode") return COLUMN.task.text(r);
   const d = r.ref.decision;
-  const task = String(d?.task || "").trim();
-  const every = intervalText(d);
-  if (!every) return task;
-  return task ? `${task} · every ${every}` : `Every ${every}`;
+  const own = tasksOf(r.ref)[0];
+  const task = String(d?.task || own?.text || "").trim();
+  const every = intervalText(d) || (own?.interval != null && own.unit ? intervalText({ interval: own.interval, interval_unit: own.unit }) : "");
+  const more = moreTasks(r.ref);
+  const main = !every ? task : task ? `${task} · every ${every}` : `Every ${every}`;
+  return [main, more].filter(Boolean).join(" · ");
+}
+
+// A second task for a mode whose consequence is only a cost (operational or
+// non-operational) should earn its place: the classic sources ask why. For
+// safety, environmental and hidden consequences a combination is expected.
+export function secondTaskHint(r) {
+  const tasks = tasksOf(r?.ref);
+  if (!tasks.length || !["operational", "non_operational"].includes(r.ref.consequence)) return null;
+  const first = tasks[0].name || tasks[0].text || "the first task";
+  return `What does this task catch that “${first}” doesn't? For an ${r.ref.consequence === "operational" ? "operational" : "non-operational"} consequence a second task must earn its place: say why in the decision notes.`;
 }
 
 // The Task column with its interval (for the table when the Interval column

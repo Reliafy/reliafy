@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  ITEM_FIELDS, NARROW_TABLE, TASK_WITH_INTERVAL, basisInName, causeKey, checkItem, failureStatusWords, itemChanges, itemValue, itemWrites, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, tableCols,
+  ITEM_FIELDS, NARROW_TABLE, TASK_WITH_INTERVAL, basisInName, causeKey, checkItem, failureStatusWords, itemChanges, itemValue, itemWrites, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -64,7 +64,7 @@ test("no Add rows in the tree: adding is from each row's menu", () => {
   assert.deepEqual(ids("motor"), ["add-fn", "import-sheet", "export-csv"]); // a position with no RCM yet
   assert.deepEqual(ids("f1"), ["open", "add-fail", "rename", "delete"]);
   assert.deepEqual(ids("x1"), ["open", "add-mode", "link-cause", "link-effect", "rename", "delete"]); // pump has a position above it
-  assert.deepEqual(ids("m1"), ["open", "decide", "rename", "delete"]);
+  assert.deepEqual(ids("m1"), ["open", "decide", "add-task", "rename", "delete"]);
   assert.deepEqual(ids("U:pump"), []); // the "Not under a functional failure" heading has none
   // On a phone the details panel edits the description, so no Edit description.
   // Open… stays on a phone: it's the way to the dialog there (no double-click).
@@ -73,7 +73,28 @@ test("no Add rows in the tree: adding is from each row's menu", () => {
   assert.deepEqual(label("f1"), ["Open…", "Add functional failure", "Edit description", "Delete function"]);
   assert.equal(label("m2")[1], "Change the decision…");
   assert.equal(label("m1")[1], "Decide…");
+  assert.equal(label("m1")[2], "Add a task…");
   assert.deepEqual(rowActions(null), []);
+});
+
+test("the Task cell says how many more tasks a mode has; a second task on a cost-only consequence asks why", () => {
+  const two = { id: "m", text: "Acid under-dosed", consequence: "operational", decision: {
+    outcome: "on_condition", task: "Weekly pH check", interval: 1, interval_unit: "weeks", task_id: "t1",
+    tasks: [{ id: "t1", name: "Weekly pH check", text: "Weekly pH check", interval: 1, unit: "weeks", shared_with: 2 },
+      { id: "t2", name: "Replace the acid pump", text: "Replace the acid pump", interval: 24, unit: "months", shared_with: 0 }] } };
+  const row = (m) => ({ type: "mode", ref: m, sum: { modes: 1, tasks: 1 }, kids: [] });
+  assert.equal(taskWithInterval(row(two)), "Weekly pH check · every 1 week · +1 task");
+  assert.equal(COLUMN.task.text(row(two)), "Weekly pH check · +1 task");
+  assert.equal(TASK_WITH_INTERVAL.text(row(two)), "Weekly pH check · every 1 week · +1 task");
+  assert.match(secondTaskHint(row(two)), /What does this task catch that “Weekly pH check” doesn't\?/);
+  assert.equal(secondTaskHint(row({ ...two, consequence: "safety" })), null);
+  assert.equal(secondTaskHint(row({ ...two, decision: null })), null);
+  // One task, or an older read with only the decision's task: nothing more.
+  const one = { ...two, decision: { ...two.decision, tasks: two.decision.tasks.slice(0, 1) } };
+  assert.equal(taskWithInterval(row(one)), "Weekly pH check · every 1 week");
+  const old = { ...two, decision: { outcome: "on_condition", task: "Weekly pH check", interval: 1, interval_unit: "weeks" } };
+  assert.equal(taskWithInterval(row(old)), "Weekly pH check · every 1 week");
+  assert.equal(phoneLine(row(two)), "Operational · On-condition · 1 week · Weekly pH check · +1 task");
 });
 
 test("levels count functions and failures; the one search and the chips reach the RCM rows", () => {

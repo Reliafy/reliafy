@@ -16,13 +16,23 @@ import { INTERVAL_UNITS, NEEDS_INTERVAL, checkDecision, rememberUnit, startUnit 
 export default function DecisionModal({ options, mode, onSave, onClose, limits = false }) {
   const id = useId();
   const existing = mode.decision || {};
+  // The decision's own task, when it also serves other failure modes: it keeps
+  // one name and interval for all of them, changed on the task itself, so the
+  // dialog shows them read-only (the same values go back, and the decision
+  // may still change). A mode not decided yet but with a task linked starts
+  // from that task's name and interval.
+  const own = (mode.tasks || existing.tasks || [])[0];
+  const sharedWith = own?.shared_with || 0;
+  const sharedNote = sharedWith
+    ? `“${own.name}” also serves ${sharedWith} other failure mode${sharedWith === 1 ? "" : "s"}, so its name and interval are changed on the task (under Tasks in the failure mode's dialog), for all of them.`
+    : null;
   const [consequence, setConsequence] = useState(mode.consequence || null);
   const [outcome, setOutcome] = useState(existing.outcome || null);
   const [rtfBasis, setRtfBasis] = useState(existing.rtf_basis || null);
-  const [task, setTask] = useState(existing.task || "");
-  const [interval, setInterval_] = useState(existing.interval ?? "");
-  // The decision's own unit, else the one chosen last on this device, else hours.
-  const [intervalUnit, setIntervalUnit] = useState(() => startUnit(existing));
+  const [task, setTask] = useState(existing.task || own?.text || own?.name || "");
+  const [interval, setInterval_] = useState(existing.interval ?? own?.interval ?? "");
+  // The decision's own unit, else its task's, else the one chosen last on this device, else hours.
+  const [intervalUnit, setIntervalUnit] = useState(() => startUnit(existing.interval_unit ? existing : { interval_unit: own?.unit }));
   const [notes, setNotes] = useState(existing.notes || "");
   const [evidenceId, setEvidenceId] = useState(existing.evidence?.id || null);
 
@@ -183,6 +193,9 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                 type="text"
                 value={task}
                 placeholder={outcome === "rtf" ? "Corrective action on failure (optional)" : "e.g. Replace brake pads"}
+                readOnly={!!sharedNote && outcome !== "rtf"}
+                aria-describedby={sharedNote && outcome !== "rtf" ? `${id}-shared` : undefined}
+                title={sharedNote && outcome !== "rtf" ? "Shared with other failure modes: change it on the task" : undefined}
                 onChange={(e) => setTask(e.target.value)}
               />
             )}
@@ -195,6 +208,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                   step="any"
                   value={interval}
                   placeholder="Interval"
+                  readOnly={!!sharedNote}
                   aria-label={needsInterval ? "Interval (needed)" : "Interval"}
                   aria-required={needsInterval || undefined}
                   aria-invalid={check.intervalError ? "true" : undefined}
@@ -206,10 +220,12 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                   onChange={(u) => { setIntervalUnit(u); rememberUnit(u); }}
                   title="Use the same time unit as the linked analysis — a mismatch resolves as inconclusive."
                   options={INTERVAL_UNITS}
+                  disabled={!!sharedNote}
                 />
               </>
             )}
           </div>
+          {sharedNote && outcome !== "rtf" && <p className="option-hint decision-shared" id={`${id}-shared`} role="note">{sharedNote}</p>}
           {check.intervalError && <p className="field-error decision-interval-error" id={`${id}-interval`}>{check.intervalError}</p>}
           {check.notice && <p className="option-hint decision-notice" role="note">{check.notice}</p>}
           {fields.includes("interval") && expectedEvidence && (
