@@ -110,6 +110,18 @@ position does, with its performance standard), add_functional_failure (how that 
 functional_failure_id (the failure modes causing it), then decide (consequence and decision with its evidence: \
 a fixed-interval, failure-finding or on-condition decision with an interval makes or changes the mode's task). \
 maintenance_get kind rcm reads it back with each evidence check (scope below: everything inside too).
+- Several performance standards on one function: a function is one job (one verb, one object); how well it must \
+do it can be several numbers (pH, alkalinity and hardness; flow and pressure). Each is one standard, as a list: \
+maintenance_failure_modes add_standard (text: one parameter and one limit, 'pH 7.2-7.8'; parameter, comparator, \
+value, unit optional, for the day readings are checked against it; when: a condition such as 'while the filter \
+pump runs', never a standard; source: 'AS 1926.3'), update_standard, remove_standard, reorder_standards. A \
+functional failure may say which standard it breaches (add_functional_failure / update_functional_failure \
+standard_id; none: the whole function, as a total loss does); each standard should end up with a functional \
+failure, and a function's standards_without_failure says when one hasn't (a hint, never a gate on analysed). The \
+function's standard field is the list's texts joined with '; ' once it has a list; a function's old single text \
+shows until then, becomes the first item when a standard joins it, and split_standard (dry run first, then the \
+edited lines) turns it into several: the app never splits on its own. A standard that needs its own verb is \
+another function.
 - A standard worked out from the operating context (a demand, a capacity, a margin): put the working in \
 standard_basis on add_function / update_function (Markdown text, at most 20,000 characters; '' clears it; over \
 the CLI --standard_basis @working.md). A PDF of it: add_document with target_id = the function (at most 5). \

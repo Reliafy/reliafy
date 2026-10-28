@@ -4,6 +4,7 @@ import Modal from "./Modal.jsx";
 import RcmBasis from "./RcmBasis.jsx";
 import RcmStatusBadge from "./RcmStatusBadge.jsx";
 import RcmModeTasks from "./RcmModeTasks.jsx";
+import RcmFunctionStandards, { BreachesField } from "./RcmFunctionStandards.jsx";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
 import { LevelIcon } from "./RcmWorksheet.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
@@ -189,7 +190,6 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
           area: true,
           help: r.type === "fn" ? "What this position must do" : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
         })}
-        {r.type === "fn" && field("standard", "Performance standard", { help: "Optional, e.g. within 30 m from 60 km/h" })}
         {r.type === "mode" && field("effects", "Failure effects", { area: true, help: "What happens when it occurs" })}
         {r.type === "mode" && (
           <div className="rw-field">
@@ -204,8 +204,14 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
         {r.type === "mode" && field("notes", "Mode notes", { area: true })}
       </form>
 
+      {/* The standards and the working save at once, as in the Details panel. */}
+      {r.type === "fn" && ops?.standards && <RcmFunctionStandards key={r.key} r={r} ops={ops} onSaid={onSaid} />}
       {r.type === "fn" && ops?.basis && (
         <RcmBasis r={r} basis={ops.basis} context={ops.basisView?.context(r)} />
+      )}
+      {r.type === "fail" && ops?.setBreach && (
+        <BreachesField r={r} standards={display.rows.get(r.parent)?.ref.standards || []}
+                       onChange={(id) => ops.setBreach(r, id).then(() => onSaid?.("Saved."), (e) => setFailed(saveErrorText(e, { offline: navigator.onLine === false })))} />
       )}
 
       {r.type === "fail" && <p className="rim-status">{failureStatusWords(r)}</p>}

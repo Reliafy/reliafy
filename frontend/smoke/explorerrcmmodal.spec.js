@@ -53,7 +53,7 @@ test("double-click opens each kind's dialog; Save keeps it, Esc drops it, the fo
   let dlg = dialog(page, "Function");
   await expect(dlg).toBeVisible();
   await expect(dlg.getByRole("textbox", { name: /^Description/ })).toHaveValue(`Pump water ${tag}`);
-  await expect(dlg.getByRole("textbox", { name: "Performance standard" })).toHaveValue("10 L/s at 3 bar");
+  await expect(dlg.getByRole("region", { name: "Performance standards" })).toContainText("10 L/s at 3 bar");
   await expect(dlg.getByText(`On Dlg pump ${tag}`)).toBeVisible();
   await expect(dlg.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `No flow ${tag}` })).toBeVisible();
   await expect(dlg.getByRole("button", { name: "Add a working…" })).toBeVisible(); // the working behind the standard
@@ -194,8 +194,13 @@ test("at 400 px Open… in the ⋯ menu opens a sheet that fits, and Save works"
   expect(box.x + box.width).toBeLessThanOrEqual(400.5);
   expect(Math.round(box.y + box.height)).toBe(860); // a sheet from the foot of the screen
   expect(await overflow(page)).toBe(0);
-  await dlg.getByRole("textbox", { name: "Performance standard" }).fill("12 L/s at 3 bar");
-  await dlg.getByRole("button", { name: "Save" }).click();
+  // The standard is a list item with its own save: Edit…, the form, Save standard.
+  const standards = dlg.getByRole("region", { name: "Performance standards" });
+  await standards.getByRole("button", { name: "Edit 10 L/s at 3 bar" }).click();
+  await standards.getByRole("textbox", { name: "Standard" }).fill("12 L/s at 3 bar");
+  await standards.getByRole("button", { name: "Save standard" }).click();
+  await expect(standards).toContainText("12 L/s at 3 bar");
+  await dlg.getByRole("button", { name: "Cancel" }).click();
   await expect(dlg).toHaveCount(0);
   const rcm = await (await request.get(`${M}/rcm`)).json();
   expect(rcm.positions.find((x) => x.id === p.pump.id).functions[0].standard).toBe("12 L/s at 3 bar");

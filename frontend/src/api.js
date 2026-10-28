@@ -2416,6 +2416,25 @@ export function decideFailureMode(id, body) {
 export function retireFailureMode(id) {
   return sendJson("DELETE")(`/api/maintenance/failure-modes/${id}`);
 }
+// A function's performance standards, as a list: one added ({text, parameter?,
+// comparator?, value?, unit?, when?, source?}), one changed, one removed, the
+// order set, and the old single text split (a proposal with no body or
+// dry_run true; written from {standards: [{text, when?, source?}], dry_run: false}).
+export function addFunctionStandard(functionId, body) {
+  return postJson(`/api/maintenance/functions/${functionId}/standards`, body);
+}
+export function updateFunctionStandard(id, body) {
+  return sendJson("PATCH")(`/api/maintenance/standards/${id}`, body);
+}
+export function removeFunctionStandard(id) {
+  return sendJson("DELETE")(`/api/maintenance/standards/${id}`);
+}
+export function reorderFunctionStandards(functionId, standardIds) {
+  return sendJson("PUT")(`/api/maintenance/functions/${functionId}/standards/order`, { standard_ids: standardIds });
+}
+export function splitFunctionStandard(functionId, body = {}) {
+  return postJson(`/api/maintenance/functions/${functionId}/standards/split`, body);
+}
 // A failure mode's tasks (its decision's own first) and the tasks on its
 // position, or above it, that could serve it too.
 export function getFailureModeTasks(id) {

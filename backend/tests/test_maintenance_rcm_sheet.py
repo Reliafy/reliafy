@@ -157,10 +157,12 @@ def test_it_only_adds_reusing_what_matches_and_changing_nothing(m):
     assert out["counts"]["functions"] == 1 and out["counts"]["functions_existing"] == 1  # "Stop the belt…" is new
     assert out["counts"]["failures"] == 2 and out["counts"]["failures_existing"] == 1
     assert out["counts"]["modes"] == 2 and out["counts"]["modes_existing"] == 2
-    assert any("another performance standard" in w for w in out["warnings"])
+    assert any("went beside it, in its list of standards" in w for w in out["warnings"])
     p = _rcm(m, pid)
     move = p["functions"][0]
-    assert move["id"] == fn["id"] and move["standard"] == "At least 30 t/h"  # left as it was
+    # Its own standard stays, first; the sheet's joins the list beside it.
+    assert move["id"] == fn["id"] and move["standard"] == "At least 30 t/h; At least 40 t/h"
+    assert [st["text"] for st in move["standards"]] == ["At least 30 t/h", "At least 40 t/h"]
     assert [x["text"] for x in move["failures"][0]["modes"]] == ["Belt torn", "Head pulley bearing seizes"]
     kept = move["failures"][0]["modes"][0]
     assert kept["consequence"] == "safety" and kept["decision"]["outcome"] == "redesign"

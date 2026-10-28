@@ -49,6 +49,7 @@ EXCLUDED = {
     "workspace.import_history", "parts.import_bom", "parts.positions_from_structure", "item_classes.import",
     "item_classes.load_starter", "item_classes.import_conditions", "manufacturers.link_by_name",
     "positions.adopt_placements", "positions.add_sample_truck", "attachments.photo_link",
+    "failure_modes.split_standard",
 }
 
 #: Delete-type actions: the argument naming what goes, for the confirm check.
@@ -56,6 +57,7 @@ DELETES = {
     "positions.retire": "position_id", "locations.retire": "location_id", "items.retire": "item_id",
     "fitments.void": "fitment_id", "tasks.retire": "task_id", "failure_modes.retire": "failure_mode_id",
     "failure_modes.remove_function": "function_id", "failure_modes.remove_functional_failure": "functional_failure_id",
+    "failure_modes.remove_standard": "standard_id",
     "failure_modes.merge": "failure_mode_id", "work_orders.cancel": "work_order_id",
     "work_orders.remove_entry": "entry_id", "measurements.void": "reading_id",
     "measurements.retire_point": "point_id", "parts.retire": "part_id", "parts.remove_from_position": "listing_id",
@@ -75,6 +77,7 @@ CREATES = {
     "failure_modes.add_function": ("failure_modes.remove_function", "function_id"),
     "failure_modes.add_functional_failure": ("failure_modes.remove_functional_failure", "functional_failure_id"),
     "failure_modes.add_task": ("tasks.retire", "task_id"),
+    "failure_modes.add_standard": ("failure_modes.remove_standard", "standard_id"),
     "tasks.create": ("tasks.retire", "task_id"), "work_orders.open": ("work_orders.cancel", "work_order_id"),
     "measurements.add_point": ("measurements.retire_point", "point_id"), "parts.create": ("parts.retire", "part_id"),
     "topology.connect": ("topology.disconnect", "interface_id"),

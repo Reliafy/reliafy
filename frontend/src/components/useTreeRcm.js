@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addFailureMode, addFailureModeTask, addFunctionalFailure, addPositionFunction, assignFailureMode, decideFailureMode,
-  getFailureModeTasks, getPositionFunction, getWorkspaceRcm, linkFunctionalFailureCause, linkTaskFailureMode,
-  removeFunctionalFailure, removeMaintenanceDocument, removePositionFunction, retireFailureMode, retireMaintenanceTask,
-  unlinkFunctionalFailureCause, unlinkTaskFailureMode, updateFailureMode, updateFunctionalFailure, updateMaintenanceTask,
+  addFailureMode, addFailureModeTask, addFunctionStandard, addFunctionalFailure, addPositionFunction, assignFailureMode,
+  decideFailureMode, getFailureModeTasks, getPositionFunction, getWorkspaceRcm, linkFunctionalFailureCause,
+  linkTaskFailureMode, removeFunctionStandard, removeFunctionalFailure, removeMaintenanceDocument, removePositionFunction,
+  reorderFunctionStandards, retireFailureMode, retireMaintenanceTask, splitFunctionStandard, unlinkFunctionalFailureCause,
+  unlinkTaskFailureMode, updateFailureMode, updateFunctionStandard, updateFunctionalFailure, updateMaintenanceTask,
   updatePositionFunction, uploadMaintenanceDocument,
 } from "../api.js";
 import { COLUMN, FUNCTION_MAX, FUNCTION_NUDGE, decisionBody, tasksOf } from "../rcmWorksheet.js";
@@ -233,6 +234,19 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
     },
     linkTask(r, taskId) {
       return after(linkTaskFailureMode(taskId, r.ref.id));
+    },
+    // A function's performance standards, as a list (RcmFunctionStandards):
+    // each change written at once; split writes the user's edited lines.
+    standards: {
+      add: (r, body) => after(addFunctionStandard(r.ref.id, body)),
+      update: (standardId, body) => after(updateFunctionStandard(standardId, body)),
+      remove: (standardId) => after(removeFunctionStandard(standardId)),
+      reorder: (r, ids) => after(reorderFunctionStandards(r.ref.id, ids)),
+      split: (r, standards) => after(splitFunctionStandard(r.ref.id, { standards, dry_run: false })),
+    },
+    // The standard a functional failure breaches (null: the whole function).
+    setBreach(r, standardId) {
+      return after(updateFunctionalFailure(r.ref.id, { standard_id: standardId || null }));
     },
   }), [after, askText]);
 

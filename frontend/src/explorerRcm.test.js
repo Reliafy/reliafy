@@ -417,7 +417,8 @@ test("a row's dialog: which rows open one, and what Save sends", () => {
     { api: "decide", body: { consequence: null } },
   ]);
   assert.deepEqual(itemWrites(m1, { notes: "n" }), [{ api: "mode", body: { notes: "n" } }]);
-  assert.deepEqual(itemWrites(row("f1"), { name: "Pump", standard: "10 L/s" }), [{ api: "function", body: { text: "Pump", standard: "10 L/s" } }]);
+  assert.deepEqual(itemWrites(row("f1"), { name: "Pump", standard: "10 L/s" }), [{ api: "function", body: { text: "Pump" } }]); // the standards are a list, saved on their own
+  assert.deepEqual(ITEM_FIELDS.fn, ["name"]);
   assert.deepEqual(itemWrites(row("x1"), { name: "No flow at all" }), [{ api: "failure", body: { text: "No flow at all" } }]);
   assert.deepEqual(itemWrites(row("x1"), {}), []);
 });
