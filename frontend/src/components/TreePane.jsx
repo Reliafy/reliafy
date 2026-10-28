@@ -55,6 +55,8 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 
 const LEVELS = [1, 2, 3, 4];
 const HEAD_H = 30;
+// The tree column's header on the RCM tab: what its rows are.
+export const TREE_HEAD = "Position › function, standard, failure or mode";
 // The soft shadow on a side of the table with more to scroll to: its width,
 // and how far from the end it fades in.
 const SHADE_W = 16;
@@ -83,7 +85,9 @@ const ICON = {
 };
 
 function RowIcon({ r }) {
-  if (isRcmRow(r)) return <LevelIcon type={r.type === "unassigned" ? "fail" : r.type} className="tp-ic" />;
+  // The "Not under a functional failure" and "No standard" headings take the
+  // icon of what's under them.
+  if (isRcmRow(r)) return <LevelIcon type={r.type === "unassigned" ? "fail" : r.type === "nostd" ? "std" : r.type} className="tp-ic" />;
   let kind = r.type;
   // A position is a position: the icon only says whether an item is fitted.
   // The lines icon is for the pane's own headings ("No home yet" and so on).
@@ -572,8 +576,8 @@ export default function TreePane({
     <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable || pinHead ? undefined : "true"}
          style={{ width: wideTable ? table.total : width, height: HEAD_H }}>
       <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}
-           aria-label={wideTable && pinHead ? "Position › function, failure or mode" : undefined}>
-        {pinHead || (wideTable ? "Position › function, failure or mode" : treeLabel || title)}
+           aria-label={wideTable && pinHead ? TREE_HEAD : undefined}>
+        {pinHead || (wideTable ? TREE_HEAD : treeLabel || title)}
       </div>
       {wideTable && table.cols.map((c) => (
         <div key={c.id} role="columnheader" className={"tt-h" + (c.align === "num" ? " num" : "")} style={{ width: table.widths[c.id] }}

@@ -1350,3 +1350,18 @@ a.rw-cklink:focus-visible {
   /* Its position is on the row's second line. */
   .tt-l1 .tp-on { display: none; }
 }
+
+/* A performance standard as a level of the RCM tree: its rows, the muted
+   "No standard" heading (the function's failures that breach no one
+   standard), and the quiet "no failure yet" marker on a standard with none. */
+.tp-row.tt.tt-std .tp-nm { font-weight: 500; }
+.tt-std .tp-ic { color: var(--acc); }
+.tp-row.tt.tt-nostd .tp-nm { font-weight: 500; color: var(--muted); }
+.tt-nostd .tp-ic { color: var(--muted); }
+.tp-mini.nofail {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+  font-weight: 500;
+  white-space: nowrap;
+}

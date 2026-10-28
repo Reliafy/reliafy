@@ -312,6 +312,13 @@ const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n =
 // With `rcm` (the RCM tab open, or the Not analysed chip on), a quiet fourth:
 // a position not analysed yet (a parent: how many, inside it and itself).
 export function markersOf(r, { rcm = false } = {}) {
+  if (r.type === "std" && isRcmRow(r)) {
+    // On the RCM tab: a standard of the list with no functional failure yet.
+    // Quiet, in words: a hint for the reader, never a gate (the position's
+    // "analysed" doesn't rest on it).
+    return r.ref.no_failure
+      ? [{ kind: "nofail", text: "no failure yet", label: "No functional failure written yet for this standard" }] : [];
+  }
   if (r.type === "fail" && isRcmRow(r)) {
     // On the RCM tab: a functional failure that causes ones above it. Quiet
     // (no colour of its own); its text names them, and clicking it goes up.

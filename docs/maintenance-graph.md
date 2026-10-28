@@ -390,10 +390,25 @@ is reported (`standards_without_failure` on the function), never a gate:
   `function.added`), and each failure's breach re-pointed to the copy.
 - The worksheet: every distinct "Performance standard" cell under a function
   is one standard (a row with the function and a standard alone lists one);
-  when a function has more than one, a functional failure's own row names the
-  one it breaches. The CSV export writes a function's standards as such rows,
-  then each failure's rows with the standard it breaches; a function with one
-  standard reads and writes as before.
+  when a function has a list, a functional failure's own row names the one
+  it breaches. The CSV export writes a function's standards as such rows,
+  then each failure's rows with the standard it breaches (blank: the whole
+  function); a function with its one text (no list) reads and writes as
+  before, the text on every row.
+- The app's Explorer shows the standards as a level of the RCM tree
+  (`frontend/src/explorerRcm.js`, `graftRcm`): position › function ›
+  standard › functional failure › failure mode. Each functional failure sits
+  under the standard it `BREACHES`; the ones that breach none sit under one
+  "No standard" row after the standards (a total loss, or a link not made
+  yet); a function with no standard at all has its failures right under it.
+  A function that still has its one `standard` text (no list) shows that
+  text as one standard row with every functional failure under it: a display
+  rule only (with one standard there is nothing else to breach), so nothing
+  is written to read it that way, and the first list operation keeps the
+  rule's meaning (the text becomes the first item). The rows' menus call the
+  same routes as the dialogs (`add_standard`, `update_standard`,
+  `reorder_standards`, `remove_standard`, `update_functional_failure
+  standard_id`); the one text's row edits the function's `standard`.
 
 ### The working behind a performance standard
 

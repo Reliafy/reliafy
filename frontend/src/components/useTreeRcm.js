@@ -24,9 +24,12 @@ const WORDS = {
   // to put the standard in its own field).
   fn: { title: "Add a function", label: "What must this position do?", confirmLabel: "Add function",
     limit: { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } },
+  std: { title: "Add a performance standard", label: "One parameter and one limit, e.g. pH 7.2-7.8", confirmLabel: "Add standard" },
   fail: { title: "Add a functional failure", label: "How does it fail to do it?", confirmLabel: "Add functional failure" },
   mode: { title: "Add a failure mode", label: "What causes it?", confirmLabel: "Add failure mode" },
 };
+// A functional failure added from a standard's row: it breaches that standard.
+const WORDS_UNDER_STANDARD = { ...WORDS.fail, label: "How does it fail to meet this standard?" };
 
 export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askText }) {
   const [rcm, setRcm] = useState(null);
@@ -65,6 +68,11 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       const id = r.ref.id;
       if (col === "name") {
         if (r.type === "fn") return after(updatePositionFunction(id, { text: value }));
+        // A standard's text; the one text's row (legacy) edits the function's text.
+        if (r.type === "std") {
+          return after(r.ref.legacy ? updatePositionFunction(r.ref.function_id, { standard: value })
+            : updateFunctionStandard(r.ref.standard_id, { text: value }));
+        }
         if (r.type === "fail") return after(updateFunctionalFailure(id, { text: value }));
         return after(updateFailureMode(id, { text: value }));
       }
@@ -80,6 +88,8 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       const id = r.ref.id;
       const send = {
         function: (body) => updatePositionFunction(id, body),
+        standard: (body) => updateFunctionStandard(r.ref.standard_id, body),
+        "function-standard": (body) => updatePositionFunction(r.ref.function_id, body),
         failure: (body) => updateFunctionalFailure(id, body),
         mode: (body) => updateFailureMode(id, body),
         decide: (body) => decideFailureMode(id, body),
@@ -90,26 +100,37 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
         await after(Promise.resolve());
       }
     },
-    // Something new inside a row: a function on a position, a functional failure
-    // on a function, a failure mode on a functional failure (or under none). Asks
-    // for its words and adds it from the dialog, which stays open (its button
-    // saying "Adding…") until the RCM is read again, so a second click or Enter
-    // adds nothing more, and a refusal shows there with the words kept.
-    // Returns the new row's id (null when cancelled).
-    async add(kind, { positionId, functionId = null, failureId = null }) {
+    // Something new inside a row: a function on a position, a standard on a
+    // function, a functional failure on a function (breaching one of its
+    // standards, `standardId`, or none), a failure mode on a functional failure
+    // (or under none). Asks for its words and adds it from the dialog, which
+    // stays open (its button saying "Adding…") until the RCM is read again, so
+    // a second click or Enter adds nothing more, and a refusal shows there with
+    // the words kept. Returns the new row's id (null when cancelled).
+    async add(kind, { positionId, functionId = null, failureId = null, standardId = null }) {
       const id = await askText({
-        ...WORDS[kind],
+        ...(kind === "fail" && standardId ? WORDS_UNDER_STANDARD : WORDS[kind]),
         pendingLabel: "Adding…",
         run: async (text) => {
           let made;
           if (kind === "fn") made = await addPositionFunction(positionId, { text });
-          else if (kind === "fail") made = await addFunctionalFailure(functionId, { text });
+          else if (kind === "std") made = await addFunctionStandard(functionId, { text });
+          else if (kind === "fail") made = await addFunctionalFailure(functionId, { text, ...(standardId ? { standard_id: standardId } : {}) });
           else made = await addFailureMode(positionId, { text, functional_failure_id: failureId });
           await after(Promise.resolve());
           return made.id;
         },
       });
       return id || null;
+    },
+    // A standard moved up or down its function's list (the row menu).
+    moveStandard(r, by) {
+      const ids = [...(r.ref.standard_ids || [])];
+      const i = ids.indexOf(r.ref.standard_id);
+      const j = i + by;
+      if (i < 0 || j < 0 || j >= ids.length) return Promise.resolve(false);
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      return after(reorderFunctionStandards(r.ref.function_id, ids)).then(() => true);
     },
     // A function's description, in a dialog with its counter (the row menu's
     // Edit description): the text saved before, however long, to edit; saved
@@ -134,8 +155,17 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       const modes = r.rsum?.modes || 0;
       const stay = modes ? `Its ${plural(modes, "failure mode")} stay on the position, not under a functional failure, with their tasks.` : "";
       if (r.type === "fn") {
-        const fails = r.kids.length;
+        const fails = Array.isArray(r.ref.failures) ? r.ref.failures.length : r.kids.length;
         return `${name} and its ${plural(fails, "functional failure")} go. ${stay}`;
+      }
+      if (r.type === "std") {
+        // The one text's row: the function's text is cleared, nothing else moves.
+        if (r.ref.legacy) return `The performance standard ${name} is cleared from this function. Its functional failures stay on the function, with their failure modes.`;
+        const fails = r.kids.length;
+        const moved = fails
+          ? ` Its ${plural(fails, "functional failure")} move${fails === 1 ? "s" : ""} to the function with no standard (${fails === 1 ? "it breaches" : "they breach"} the whole function), with ${fails === 1 ? "its" : "their"} failure modes.`
+          : "";
+        return `${name} comes off this function.${moved}`;
       }
       if (r.type === "fail") return `${name} goes. ${stay}`;
       // Its tasks: one serving it alone is retired; one serving other modes too stays with them.
@@ -152,6 +182,9 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
     remove(r) {
       const id = r.ref.id;
       if (r.type === "fn") return after(removePositionFunction(id));
+      if (r.type === "std") {
+        return after(r.ref.legacy ? updatePositionFunction(r.ref.function_id, { standard: "" }) : removeFunctionStandard(r.ref.standard_id));
+      }
       if (r.type === "fail") return after(removeFunctionalFailure(id));
       return after(retireFailureMode(id));
     },

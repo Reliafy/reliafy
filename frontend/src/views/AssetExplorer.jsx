@@ -17,7 +17,8 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  NARROW_TABLE, basisInName, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, openFor, opensItem, positionOf, rowActions, tableCols, unlinkEmptiesFailure, usualCols,
+  NARROW_TABLE, basisInName, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, positionOf, rowActions, standardChoices,
+  standardKeys, tableCols, unlinkEmptiesFailure, usualCols,
   withTableCols,
 } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
@@ -39,6 +40,7 @@ import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, 
 import { EXPLORER_LABEL } from "../navigation.js";
 import { liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
+import { ChangeStandardModal } from "../components/RcmFunctionStandards.jsx";
 import usePhone from "../usePhone.js";
 import { SAMPLE_TRUCK_LABEL, addSampleTruck } from "../sampleTruck.js";
 import "./Maintenance.css";
@@ -202,6 +204,7 @@ export default function AssetExplorer() {
   const [itemKey, setItemKey] = useState(null); // a function, failure or mode in its own dialog (double-click, Open…)
   const [itemStart, setItemStart] = useState(null); // what the dialog opens on ({tasks: true}: the Tasks' add form)
   const [linking, setLinking] = useState(null); // {row, direction}: the picker that links functional failures
+  const [changingStd, setChangingStd] = useState(null); // a functional failure picking which standard it breaches
   const [options, setOptions] = useState(null);
   const [rprefs, setRprefs] = useState(() => loadPrefs());
   const [message, setMessage] = useState(null);
@@ -285,6 +288,28 @@ export default function AssetExplorer() {
     const more = openFor(display, selected.positions);
     setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
   }, [rcmOn, rcm, display, whole, selected.positions]);
+
+  // A standard row (or a "No standard" row) that arrives with a read under a
+  // function that is open opens too, so the functional failures on show stay
+  // on show when they move under it (the one text split into a list, a first
+  // standard added, a failure re-pointed). The rows known from the read
+  // before are remembered; the first read is the baseline (openFor opens the
+  // position picked).
+  const stdSeen = useRef(null);
+  useLayoutEffect(() => {
+    if (!rcmOn || !rcm) {
+      if (!rcmOn) stdSeen.current = null;
+      return;
+    }
+    if (stdSeen.current === null) {
+      stdSeen.current = standardKeys(whole);
+      return;
+    }
+    const now = standardKeys(whole);
+    const fresh = newStandardRows(whole, stdSeen.current, openBy.positions || defaultOpen);
+    stdSeen.current = now;
+    if (fresh.length) setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...fresh]) }));
+  }, [rcmOn, rcm, whole]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a worksheet is imported onto a position: that position opens down to
   // its failure modes once the RCM is read again.
@@ -428,29 +453,40 @@ export default function AssetExplorer() {
   // read again.
   const runAdd = (r) => {
     const kind = r.ref.add;
-    ops.add(kind, { positionId: r.ref.position_id, functionId: r.ref.function_id, failureId: r.ref.functional_failure_id ?? null })
+    ops.add(kind, {
+      positionId: r.ref.position_id, functionId: r.ref.function_id, failureId: r.ref.functional_failure_id ?? null,
+      standardId: r.ref.standard_id ?? null,
+    })
       .then((id) => {
         if (!id) return;
         pending.current = id;
         setPanel(true);
-        say(`Added the ${kind === "fn" ? "function" : kind === "fail" ? "functional failure" : "failure mode"}.`);
+        say(`Added the ${kind === "fn" ? "function" : kind === "std" ? "standard" : kind === "fail" ? "functional failure" : "failure mode"}.`);
       }, (e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error"));
   };
+  // Inside a function: a functional failure (under no standard); inside a
+  // standard's row: one that breaches it; inside the "No standard" row: one
+  // under none; inside a functional failure: a failure mode.
   const addInside = (r) => runAdd({ ref: {
-    add: r.type === "fn" ? "fail" : "mode", position_id: r.ref.position_id,
-    function_id: r.type === "fn" ? r.ref.id : null, functional_failure_id: r.type === "fail" ? r.ref.id : null,
+    add: r.type === "fn" || r.type === "std" || r.type === "nostd" ? "fail" : "mode", position_id: r.ref.position_id,
+    function_id: r.type === "fn" ? r.ref.id : r.type === "std" || r.type === "nostd" ? r.ref.function_id : null,
+    standard_id: r.type === "std" ? r.ref.standard_id : null,
+    functional_failure_id: r.type === "fail" ? r.ref.id : null,
   } });
   // The confirm stays open (its button saying "Deleting…") until the server
   // has done it, so it's sent once; a refusal shows in the confirm.
   const remove = async (r) => {
     const level = LEVEL_OF[r.type].label.toLowerCase();
+    // A standard comes off its function (its failures stay); the rest are deleted.
+    const verb = r.type === "std" ? "Remove" : "Delete";
     const ok = await confirm({
-      title: `Delete this ${level}?`, body: ops.removeText(r), confirmLabel: `Delete ${level}`,
-      pendingLabel: "Deleting…", failedWhat: "delete it", run: () => ops.remove(r).then(() => true),
+      title: `${verb} this ${level}?`, body: ops.removeText(r), confirmLabel: `${verb} ${level}`,
+      pendingLabel: `${verb === "Remove" ? "Removing" : "Deleting"}…`, failedWhat: `${verb.toLowerCase()} it`,
+      run: () => ops.remove(r).then(() => true),
     });
     if (!ok) return;
     setRcmFocus(isRcmRow(display.rows.get(r.parent)) ? r.parent : null);
-    say(`Deleted the ${level}.`);
+    say(`${verb === "Remove" ? "Removed" : "Deleted"} the ${level}.`);
   };
   // Linking functional failures (from a row's menu or the panel): the picker,
   // and taking a link off, with one confirm when it would leave the higher
@@ -531,7 +567,12 @@ export default function AssetExplorer() {
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id === "unpin") unpin();
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
+      else if (id === "add-std") runAdd({ ref: { add: "std", position_id: r.ref.position_id, function_id: r.ref.id } });
       else if (id === "add-fail" || id === "add-mode") addInside(r);
+      else if (id === "move-up" || id === "move-down") {
+        setRcmFocus(r.key);
+        ops.moveStandard(r, id === "move-up" ? -1 : 1).then((did) => did && say("Moved."), (e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error"));
+      } else if (id === "change-std") { setRcmFocus(r.key); setChangingStd(r); }
       else if (id === "rename" && r.type === "fn") {
         // A function's description: in a dialog with its counter.
         setRcmFocus(r.key);
@@ -1097,6 +1138,12 @@ export default function AssetExplorer() {
                      })} />
       )}
       {sheetFor && <RcmImportModal position={sheetFor} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
+      {changingStd && whole.rows.has(changingStd.key) && (
+        <ChangeStandardModal row={whole.rows.get(changingStd.key)} standards={standardChoices(whole, whole.rows.get(changingStd.key))}
+                             onClose={() => setChangingStd(null)}
+                             onDone={(to) => { setChangingStd(null); say(to ? `It now breaches “${to}”.` : "It now breaches the whole function."); }}
+                             onChange={(id) => ops.setBreach(whole.rows.get(changingStd.key), id)} />
+      )}
       {linking && (
         <LinkFailurePicker direction={linking.direction} row={linking.row} whole={whole} onLink={ops.linkMany}
                            onClose={(n) => {

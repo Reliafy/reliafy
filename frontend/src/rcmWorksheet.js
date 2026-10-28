@@ -13,6 +13,7 @@
 
 import { filterRows } from "./outlineTree.js";
 import { charCount } from "./maintenanceText.js";
+import { limitWords } from "./rcmStandards.js";
 
 // A function's text is a short statement (what it must do); the standard of
 // performance has its own field. Kept to 200 characters where it's typed (the
@@ -22,16 +23,24 @@ export const FUNCTION_NUDGE = "Keep it short. Put the standard of performance in
 // The counter for a function's text being typed (`before`: its saved text).
 export const functionCount = (value, before = null) => charCount(value, { max: FUNCTION_MAX, before });
 
+// The RCM's levels, as classic RCM reads them: a function, held to its
+// performance standards; each functional failure the loss of a standard (or
+// of the whole function); each failure mode a cause of that loss. A standard
+// is a level of the Explorer's tree (explorerRcm.js); the study worksheet
+// (buildRcmDisplay) shows a function's standards on its row.
 export const LEVELS = [
-  { type: "fn", label: "Function", plural: "Functions", child: "failures" },
+  { type: "fn", label: "Function", plural: "Functions", child: "standards" },
+  { type: "std", label: "Standard", plural: "Standards", child: "failures" },
   { type: "fail", label: "Functional failure", plural: "Functional failures", child: "modes" },
   { type: "mode", label: "Failure mode", plural: "Failure modes", child: null },
 ];
 export const LEVEL_OF = Object.fromEntries(LEVELS.map((l, i) => [l.type, { ...l, depth: i }]));
-// The RCM in the Explorer's tree (explorerRcm.js) has two more kinds of row:
-// the positions themselves, and a position's failure modes under no
+// The RCM in the Explorer's tree (explorerRcm.js) has three more kinds of row:
+// the positions themselves, a function's functional failures that breach no
+// one standard (while it has a list), and a position's failure modes under no
 // functional failure yet.
 LEVEL_OF.pos = { type: "pos", label: "Position", plural: "Positions", child: "functions", depth: 0 };
+LEVEL_OF.nostd = { type: "nostd", label: "No standard", plural: "No standard", child: "failures", depth: 0 };
 LEVEL_OF.unassigned = { type: "unassigned", label: "Not under a functional failure", plural: "Unassigned", child: "modes", depth: 0 };
 // A reference row under a functional failure: a lower functional failure that
 // causes it (a view of a row that lives on a position below, never edited here).
@@ -158,12 +167,24 @@ export function buildRcmDisplay(functions) {
   return { rows, roots, counts };
 }
 
+// The function a row sits under (a failure's parent is its standard, or the
+// "No standard" row, in the Explorer's tree; the function itself in the
+// study worksheet). null for a row under none.
+export function functionOf(display, r) {
+  for (let at = r?.parent; at != null; at = display.rows.get(at)?.parent) {
+    const up = display.rows.get(at);
+    if (!up) return null;
+    if (up.type === "fn") return up;
+  }
+  return null;
+}
+
 // The functional failures on a position, for a failure mode's "Under" choice.
 export function failuresOn(display, positionId) {
   const out = [];
   for (const r of display.rows.values()) {
     if (r.type === "fail" && r.ref.position_id === positionId) {
-      const fn = display.rows.get(r.parent);
+      const fn = functionOf(display, r);
       out.push({ id: r.key, text: r.ref.text, function: fn?.ref.text || "" });
     }
   }
@@ -245,7 +266,13 @@ export function insideWords(r) {
   const s = r.sum;
   if (r.type === "mode") return "";
   if (r.type === "fail" && !s.modes && (r.ref.causes || []).length) return r.ref.explained_below ? "Explained below" : "No failure modes of its own";
-  if (!s.modes) return r.kids.length ? plural(r.kids.length, "functional failure") + ", no failure modes yet" : "Nothing inside yet";
+  if (!s.modes) {
+    // A function's failures sit under its standards in the Explorer's tree,
+    // so its own kids aren't them: the read says how many it has.
+    const fails = r.type === "fn" && Array.isArray(r.ref.failures) ? r.ref.failures.length : r.kids.length;
+    if (r.type === "std" && !fails) return r.ref.legacy ? "Nothing inside yet" : "No functional failure written yet";
+    return fails ? plural(fails, "functional failure") + ", no failure modes yet" : "Nothing inside yet";
+  }
   return [
     plural(s.modes, "failure mode"),
     s.undecided ? `${s.undecided.toLocaleString("en-AU")} to decide` : "all decided",
@@ -255,6 +282,7 @@ export function insideWords(r) {
 
 // The phone's second line: the main columns, in words.
 export function phoneLine(r) {
+  if (r.type === "std") return [limitWords(r.ref), insideWords(r)].filter(Boolean).join(" · ");
   if (r.type === "cause") {
     const s = r.sum;
     const where = r.ref.inside === false ? `no longer inside ${r.ref.effect_position || "it"}` : null;
@@ -302,8 +330,10 @@ const d = (r) => r.ref.decision || null;
 export const COLUMNS = [
   {
     id: "standard", label: "Performance standard", width: 200, min: 150, on: false,
-    title: "What the function must achieve, e.g. within 30 m from 60 km/h; several standards on one line",
-    text: (r) => (r.type === "fn" ? r.ref.standard || "" : ""),
+    title: "What the function must achieve, e.g. within 30 m from 60 km/h; several standards on one line, and each on its own row",
+    // A standard's own row: its text is the row's name, so the cell has its
+    // structured limit, condition and source, if any.
+    text: (r) => (r.type === "fn" ? r.ref.standard || "" : r.type === "std" ? limitWords(r.ref) : ""),
     sort: (r) => (r.type === "fn" ? r.ref.standard || null : null),
     // Edited in the cell only while the function has its one text: a list is
     // edited as a list, in the function's dialog or Details.
@@ -456,7 +486,9 @@ export function chipCounts(display) {
 export function rowText(r) {
   const p = r.ref;
   return [p.text, p.standard, p.basis_preview, p.effects, p.notes, p.decision?.task, p.decision?.notes,
-    ...tasksOf(p).map((t) => t.name), ...(p.standards || []).map((st) => [st.parameter, st.when, st.source].filter(Boolean).join(" "))]
+    ...tasksOf(p).map((t) => t.name), ...(p.standards || []).map((st) => [st.parameter, st.when, st.source].filter(Boolean).join(" ")),
+    // A standard's own row: its structured limit, condition and source too.
+    p.parameter, p.when, p.source]
     .filter(Boolean).join(" ").toLowerCase();
 }
 

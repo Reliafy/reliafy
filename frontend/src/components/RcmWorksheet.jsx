@@ -5,13 +5,14 @@ import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
-  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, checkCounts, decisionText, insideWords,
+  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, functionOf, checkCounts, decisionText, insideWords,
   intervalText, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
 import RcmFunctionStandards, { BreachesField } from "./RcmFunctionStandards.jsx";
 import { plainFirstLine } from "../basisMarkdown.js";
+import { limitWords } from "../rcmStandards.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
 import "./RcmWorksheet.css";
 
@@ -28,6 +29,8 @@ import "./RcmWorksheet.css";
 
 const ICONS = {
   fn: <path d="M3 3.5h10v9H3z M6.5 6v4l3.5-2z" strokeWidth="1.4" strokeLinejoin="round" />,
+  // A performance standard: a limit on a scale.
+  std: <><path d="M2 10.5h12M4 10.5v-3M7 10.5v-4.5M10 10.5v-3M13 10.5v-4.5" strokeWidth="1.4" strokeLinecap="round" /><path d="M2 13h12" strokeWidth="1.4" strokeLinecap="round" /></>,
   fail: <><path d="M8 2.2 14.2 13H1.8z" strokeWidth="1.4" strokeLinejoin="round" /><path d="M8 6.5v3" strokeWidth="1.6" strokeLinecap="round" /><circle cx="8" cy="11.2" r=".9" fill="currentColor" stroke="none" /></>,
   mode: <path d="M9.2 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" strokeWidth="1.4" strokeLinejoin="round" />,
   cause: <path d="M4 2.5v6a2 2 0 0 0 2 2h6M9.5 7.5l3 3-3 3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />,
@@ -262,8 +265,9 @@ export function PhoneStatus({ r }) {
 // The details panel for the row picked: every field, the decision, adding
 // inside and deleting.
 // The kinds of row whose description is edited (not a position's, nor the
-// unassigned failure modes' heading, in the Explorer).
-export const EDITABLE = new Set(["fn", "fail", "mode"]);
+// unassigned failure modes' or the "No standard" heading, in the Explorer).
+// A standard's description is its text.
+export const EDITABLE = new Set(["fn", "std", "fail", "mode"]);
 
 // With `ops` (the Explorer), a failure mode can be put under another of its
 // position's functional failures.
@@ -307,15 +311,27 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
       {r.type !== "mode" && <p className="rw-inside">{insideWords(r)}</p>}
 
       <div className="rw-fields">
-        {EDITABLE.has(r.type) && field("Description", "name", {
+        {EDITABLE.has(r.type) && field(r.type === "std" ? "Standard" : "Description", "name", {
           area: true,
-          help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
+          help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "std" ? "One parameter and one limit, e.g. pH 7.2-7.8"
+            : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
           limit: r.type === "fn" ? { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } : null,
         })}
+        {r.type === "std" && (
+          <div className="rw-field">
+            <span className="rw-flabel">Limit</span>
+            <span className="rw-fval">{limitWords(r.ref) || "—"}</span>
+            <span className="rw-fhelp">
+              {r.ref.legacy
+                ? "The function's one standard, as written. Open the function to make it a list (Add standard, or Split into standards…)."
+                : "The structured limit, when it applies and its source: Open… (or double-click the row) to change them."}
+            </span>
+          </div>
+        )}
         {r.type === "fn" && !ops && field("Performance standard", "standard", { help: "Optional, e.g. within 30 m from 60 km/h" })}
         {r.type === "mode" && field("Failure effects", "effects", { area: true })}
         {r.type === "fail" && ops?.setBreach && (
-          <BreachesField r={r} readOnly={readOnly} standards={display.rows.get(r.parent)?.ref.standards || []}
+          <BreachesField r={r} readOnly={readOnly} standards={functionOf(display, r)?.ref.standards || []}
                          onChange={(id) => ops.setBreach(r, id).catch(() => {})} />
         )}
         {r.type === "mode" && (
@@ -430,11 +446,11 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
         <div className="rw-panel-acts">
           {level.child && (
             <button type="button" className="secondary" onClick={(e) => { if (e.detail < 2) onAdd(r); }}>
-              Add {r.type === "fn" ? "a functional failure" : "a failure mode"}
+              Add {r.type === "fn" || r.type === "std" || r.type === "nostd" ? "a functional failure" : "a failure mode"}
             </button>
           )}
           {EDITABLE.has(r.type) && (
-            <button type="button" className="secondary danger" onClick={(e) => { if (e.detail < 2) onDelete(r); }}>Delete this {level.label.toLowerCase()}</button>
+            <button type="button" className="secondary danger" onClick={(e) => { if (e.detail < 2) onDelete(r); }}>{r.type === "std" ? "Remove this standard" : `Delete this ${level.label.toLowerCase()}`}</button>
           )}
         </div>
       )}
