@@ -145,6 +145,36 @@ A decision with an interval becomes a scheduled task on the position, shown in
 the **Task** column. Change the decision and the task follows; a decision with
 no schedule (run-to-failure, redesign, accept) retires it.
 
+## Several tasks for one failure mode, one task for several
+
+Sometimes one task isn't enough: an inspection catches the slow failures, and
+a replacement at a hard life catches the ones it can't see. And sometimes one
+act of work answers several failure modes: one monthly water sample covers
+five chemistry failure modes. Both are in the failure mode's dialog
+(double-click its row, or **Open…** in its menu), under **Tasks**:
+
+- **Add another task…** adds a second task to the failure mode, with its own
+  name, interval and instructions. For an operational or non-operational
+  consequence the dialog asks what the second task catches that the first
+  doesn't: put the answer in the decision's notes. (**Add a task…** in the
+  row's menu opens the same form.)
+- **Use an existing task…** links a task that is already on the position, or
+  on a position above it, so one task serves several failure modes. A task on
+  a position can serve the failure modes on it and on the positions inside it,
+  never the other way round.
+- Each task shows how many other failure modes share it. A shared task keeps
+  one interval for all of them: change it on the task (**Edit…** in the list),
+  not in the decision dialog, which shows it read-only.
+- **Remove** takes a task off the failure mode: a task that serves only this
+  mode is retired; one that serves others too is unlinked and stays.
+
+The **Task** column shows the decision's own task and *+1 task* when there are
+more; the dialog lists them all. The evidence linked on a decision applies to
+its own (first) task. Deleting a failure mode retires the tasks that served it
+alone and unlinks the shared ones. In a worksheet, a second row for the same
+failure mode with another task adds that task, and a task named on several
+rows is one task linked to each; **Export CSV** writes one row per task.
+
 If the evidence you need doesn't exist yet, the dialog says what to make, for
 example *No saved failure-finding analyses (run the Strategy tool and save it)*.
 Make it, then come back. A saved analysis comes from the Strategy tools: run

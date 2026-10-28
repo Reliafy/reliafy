@@ -17,6 +17,14 @@ failure mode already on the position is left as it is, wherever it is (a
 position's failure modes are unique by text). Nothing on the position is
 changed or removed, so importing the same sheet again adds nothing.
 
+A failure mode may have several tasks: a second row for the same failure mode
+(the same text, under the same function and functional failure) whose task
+differs is that mode's next task, so the export's one-row-per-task layout
+reads back. A task named in the sheet that is on the position already (the
+same name, case and spacing aside) is linked, not made again: one task then
+serves several modes. A shared task keeps its own interval: a row that names
+it with another interval is a row error.
+
 As every maintenance import: every row is checked first (:func:`plan`), and
 with any error nothing is written; ``dry_run`` only reports what would be
 added.
@@ -166,7 +174,12 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     warnings: list[str] = list(built["warnings"])
     here = {" ".join(fm["text"].lower().split()): fm for fm in m._modes_on(position_id)}
     existing_fns = m._functions_of(position_id)
-    seen: dict[str, int] = {}  # failure mode text -> the row it's first added from
+    seen: dict[str, dict] = {}  # failure mode text -> the mode planned from its first row
+    # Tasks by name: on the position already, and (as the sheet is read) the ones
+    # it will make, so a name used on several rows is one task serving them all.
+    live_tasks = {_norm(t["name"]): {"id": t["id"], "name": t["name"], "interval": t["interval"], "unit": t["unit"]}
+                  for t in m._tasks_on(position_id)}
+    sheet_tasks: dict[str, dict] = {}
     already: list[int] = []  # rows whose failure mode is on the position already
     repeated: list[int] = []
     no_unit: list[int] = []
@@ -174,7 +187,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     standards_kept: list[str] = []
     workings_kept: list[str] = []
     functions: list[dict] = []
-    counts = {"functions": 0, "failures": 0, "modes": 0, "decisions": 0, "tasks": 0,
+    counts = {"functions": 0, "failures": 0, "modes": 0, "decisions": 0, "tasks": 0, "tasks_linked": 0,
               "functions_existing": 0, "failures_existing": 0, "modes_existing": 0, "links": 0, "links_existing": 0}
     places = _Places(m, position_id)
 
@@ -219,16 +232,23 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
                 if key in here:
                     already.append(row)
                     continue
+                decision = mode.get("decision")
                 if key in seen:
-                    repeated.append(row)
+                    # The same failure mode again: another task for it (the export
+                    # writes one row per task), or a repeat to pass over.
+                    extra = _extra_task(decision, seen[key], live_tasks, sheet_tasks, row, errors)
+                    if extra is None:
+                        repeated.append(row)
+                    else:
+                        seen[key]["extra_tasks"].append(extra)
+                        counts["tasks_linked" if extra["shared"] else "tasks"] += 1
                     continue
-                seen[key] = row
                 notes = mode.get("notes") or ""
                 if full:
                     notes = f"Failure mode in full: {full}" + (f"\n{notes}" if notes else "")
                 notes, cut = shortened(notes, LONG_TEXT) if len(notes) > LONG_TEXT else (notes, False)
-                decision = mode.get("decision")
                 task = False
+                shared = False  # a task on the position already (or an earlier row's), linked instead of made
                 if decision and decision["outcome"] in SCHEDULED_OUTCOMES and decision.get("interval"):
                     unit = _norm_unit(decision.get("interval_unit")) or "days"
                     if not decision.get("interval_unit"):
@@ -238,13 +258,17 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
                     except Invalid as err:
                         errors.append(f"Row {row}: {err} Change it in the sheet and try again.")
                     task = True
-                ff_plan["modes"].append({
+                    shared = _shared_task(decision, live_tasks, sheet_tasks, row, errors)
+                planned = {
                     "row": row, "text": text, "effects": mode.get("effects") or "", "notes": notes,
                     "consequence": mode.get("consequence"), "decision": decision, "task": task,
-                })
+                    "shared": shared, "extra_tasks": [],
+                }
+                seen[key] = planned
+                ff_plan["modes"].append(planned)
                 counts["modes"] += 1
                 counts["decisions"] += bool(decision)
-                counts["tasks"] += task
+                counts["tasks" if not shared else "tasks_linked"] += task
             if not ff_match and not ff_plan["modes"] and not ff_plan["links"] and ff["text"] == rcm_import.IMPORTED:
                 continue  # a stand-in name for modes with none above them, and they're all here already
             counts["failures_existing" if ff_match else "failures"] += 1
@@ -293,7 +317,60 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
             "built": built, "errors": errors, "warnings": warnings}
 
 
+def _shared_task(decision: dict, live_tasks: dict, sheet_tasks: dict, row: int, errors: list[str]) -> bool:
+    """Whether a scheduled decision's task is one the position has already, or
+    one an earlier row of the sheet makes (then it's linked, not made again).
+    Such a task keeps its interval: a row asking for another is a row error."""
+    name = str(decision.get("task") or "").strip()
+    if not name:
+        return False
+    unit = _norm_unit(decision.get("interval_unit")) or "days"
+    try:
+        interval = _interval(decision["interval"], unit, "interval")
+    except Invalid:
+        return False  # said already
+    key = _norm(name)
+    task = live_tasks.get(key) or sheet_tasks.get(key)
+    if task is None:
+        sheet_tasks[key] = {"name": name, "interval": interval, "unit": unit, "row": row}
+        return False
+    if (interval, unit) != (task["interval"], task["unit"]):
+        where = "a task on the position already" if key in live_tasks else f"the task row {task['row']} makes"
+        errors.append(f"Row {row}: “{task['name']}” is {where}, every {task['interval']:g} {task['unit']}; this "
+                      f"row says every {interval:g} {unit}. Use the task's interval (it is shared), or give this "
+                      "task another name.")
+    return True
+
+
+def _extra_task(decision, planned: dict, live_tasks: dict, sheet_tasks: dict, row: int,
+                errors: list[str]) -> dict | None:
+    """A repeat row's task for a failure mode planned already: its next task
+    ({name, interval, unit, outcome, shared}), or None when the row brings no
+    new task (the same task again, or none)."""
+    if not decision or decision["outcome"] not in SCHEDULED_OUTCOMES or not decision.get("interval"):
+        return None
+    name = str(decision.get("task") or "").strip()
+    first = planned["decision"] or {}
+    have = [_norm(first.get("task"))] + [_norm(x["name"]) for x in planned["extra_tasks"]]
+    if not name or _norm(name) in have:
+        return None
+    unit = _norm_unit(decision.get("interval_unit")) or "days"
+    try:
+        interval = _interval(decision["interval"], unit, "interval")
+    except Invalid as err:
+        errors.append(f"Row {row}: {err} Change it in the sheet and try again.")
+        return None
+    shared = _shared_task(decision, live_tasks, sheet_tasks, row, errors)
+    return {"name": shortened(name, SHORT_TEXT)[0], "interval": interval, "unit": unit,
+            "outcome": decision["outcome"], "shared": shared}
+
+
 def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
+    def task_named(name) -> str | None:
+        """A live task on the position with that name (one the sheet made just now too)."""
+        key = _norm(name)
+        return next((t["id"] for t in m._tasks_on(position_id) if _norm(t["name"]) == key), None) if key else None
+
     for fn in functions:
         fn_id = fn["id"] or m.add_function(position_id, fn["text"], fn["standard"], standard_basis=fn["standard_basis"])["id"]
         for ff in fn["failures"]:
@@ -303,8 +380,17 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
                 if mode["effects"] or mode["notes"]:
                     m.update_failure_mode(mode_id, effects=mode["effects"] or None, notes=mode["notes"] or None)
                 if mode["consequence"] or mode["decision"]:
-                    m.decide_failure_mode(mode_id, mode["consequence"] or None,
-                                          mode["decision"] if mode["decision"] else ...)
+                    decision = mode["decision"]
+                    # A task the position has (or an earlier row made) is the decision's, linked.
+                    shared = task_named(decision.get("task")) if mode.get("shared") and decision else None
+                    m.decide_failure_mode(mode_id, mode["consequence"] or None, decision if decision else ...,
+                                          task_id=shared)
+                for extra in mode.get("extra_tasks") or []:
+                    have = task_named(extra["name"])
+                    if have:
+                        m.link_task(have, mode_id)
+                    else:
+                        m.add_mode_task(mode_id, extra["name"], extra["interval"], extra["unit"], extra["outcome"])
             for link in ff["links"]:
                 if not link["existing"]:
                     m.link_cause(ff_id, link["cause_id"])

@@ -6,7 +6,7 @@ import { ancestorsOf } from "../outlineTree.js";
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
   belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, checkCounts, decisionText, insideWords,
-  intervalText, nameOf, shownStatus,
+  intervalText, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
@@ -145,8 +145,19 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onBasis 
     case "task": {
       const text = col.text(r);
       if (!text) return null;
+      // A mode with several tasks: its own, then "+1 task" (kept whole when the
+      // name is cut short); the tooltip lists them all.
+      const more = mode ? moreTasks(r.ref) : "";
+      const main = more && text.endsWith(` · ${more}`) ? text.slice(0, -(more.length + 3)) : text;
+      const tip = mode && tasksOf(r.ref).length > 1 ? tasksTip(r.ref) : text;
       return mode
-        ? <span className="rw-txt rw-task" title={text}><LevelIcon type="task" className="rw-ic rw-ic-task" /><span className="rw-task-t"><Highlight text={text} query={query} /></span></span>
+        ? (
+          <span className="rw-txt rw-task" title={tip}>
+            <LevelIcon type="task" className="rw-ic rw-ic-task" />
+            <span className="rw-task-t"><Highlight text={main} query={query} /></span>
+            {more && <span className="rw-more">· {more}</span>}
+          </span>
+        )
         : <span className="rw-sum">{text}</span>;
     }
     case "standard": {
@@ -255,15 +266,19 @@ export const EDITABLE = new Set(["fn", "fail", "mode"]);
 
 // With `ops` (the Explorer), a failure mode can be put under another of its
 // position's functional failures.
-export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops, links }) {
+export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onTasks, onClose, onSelect, phone, headingRef, ops, links }) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
   const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k));
-  const field = (label, col, { area, help, limit } = {}) => {
+  // The decision's own task, when it also serves other modes: its name and
+  // interval change on the task (Manage tasks…), not here.
+  const tasks = r.type === "mode" ? tasksOf(r.ref) : [];
+  const sharedOwn = tasks[0]?.shared_with || 0;
+  const field = (label, col, { area, help, limit, locked = false } = {}) => {
     const column = col === "name" ? NAME_COLUMN : COLUMN[col];
     const value = col === "name" ? r.ref.text || "" : column.onDecision ? d?.[column.field] ?? "" : r.ref[column.field] || "";
     return (
-      <Field key={`${r.key}:${col}`} label={label} help={help} value={value} area={area} readOnly={readOnly} limit={limit}
+      <Field key={`${r.key}:${col}`} label={label} help={help} value={value} area={area} readOnly={readOnly || locked} limit={limit}
              type={col === "interval" ? "number" : "text"} suffix={col === "interval" ? d?.interval_unit || "hours" : null}
              onCommit={(raw) => onCommit(r, col, raw)} autoFocus={col === "name" && !r.ref.text && !readOnly} />
     );
@@ -339,8 +354,34 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
           {d ? (
             <>
               <p className="rw-dline"><b>{decisionText(d)}</b>{d.interval ? ` · every ${intervalText(d)}` : ""}</p>
-              {COLUMN.task.can(r) && field("Task", "task", { area: true })}
-              {COLUMN.interval.can(r) && field("Interval", "interval")}
+              {COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
+              {COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
+              {sharedOwn > 0 && (
+                <p className="rw-fhelp">
+                  Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
+                </p>
+              )}
+              {ops && tasks.length > 0 && (
+                <div className="rw-field">
+                  <span className="rw-flabel">{tasks.length === 1 ? "Task" : `Tasks (${tasks.length})`}</span>
+                  <ul className="rw-tasks">
+                    {tasks.map((t, i) => (
+                      <li key={t.id || i}>
+                        <LevelIcon type="task" className="rw-ic rw-ic-task" />
+                        <span>
+                          {taskLine(t)}
+                          {t.shared_with ? <span className="rw-fhelp"> · shared with {t.shared_with} other failure mode{t.shared_with === 1 ? "" : "s"}</span> : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {!readOnly && onTasks && (
+                    <button type="button" className="link rw-tasks-go" onClick={(e) => { if (e.detail < 2) onTasks(r); }}>
+                      Manage tasks…
+                    </button>
+                  )}
+                </div>
+              )}
               {field("Decision notes", "dnotes", { area: true })}
               {d.status === "unevidenced" ? (
                 // Nothing linked: a gentle way to link it, not a warning.

@@ -249,6 +249,7 @@
 .rw-nm { flex: 0 1 auto; }
 .rw-task { display: inline-flex; align-items: center; max-width: 100%; }
 .rw-task-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rw-task .rw-more { flex: none; margin-left: 4px; white-space: nowrap; color: var(--muted); }
 .rw-blank { color: var(--muted); font-style: italic; }
 .rw-sum { color: var(--muted); font-size: var(--fs-12); overflow: hidden; text-overflow: ellipsis; }
 .rw-todo {
@@ -486,3 +487,9 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-md table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 8px; }
 .rw-md th, .rw-md td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; white-space: nowrap; }
 .rw-md th { background: var(--surf-2); }
+
+/* A failure mode's tasks in the Details (its decision's own first). */
+.rw-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); }
+.rw-tasks li { display: flex; align-items: flex-start; gap: 6px; overflow-wrap: anywhere; }
+.rw-tasks .rw-ic { flex: none; margin-top: 3px; }
+.rw-tasks-go { align-self: flex-start; font-size: var(--fs-13); }

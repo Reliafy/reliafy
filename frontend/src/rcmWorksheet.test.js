@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import { flatten, levelSet } from "./outlineTree.js";
 import {
   COLUMN, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
-  insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody,
-} from "./rcmWorksheet.js";
+  insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, hasTask, moreTasks, rowText, tasksOf, tasksTip } from "./rcmWorksheet.js";
 
 // A house pool pump's RCM, as the server sends it back (decisions resolved).
 const RCM = [
@@ -164,4 +163,24 @@ test("a function's text is kept to 200 characters where it's typed; one saved lo
   assert.equal(c.tone, "near");
   assert.equal(c.text, "190 / 200");
   assert.equal(FUNCTION_MAX, 200);
+});
+
+
+test("a decision's tasks: its own first, how many more, the tooltip, and an older read with one", () => {
+  const d = { outcome: "on_condition", task: "Weekly pH check", interval: 1, interval_unit: "weeks", task_id: "t1",
+    tasks: [{ id: "t1", name: "Weekly pH check", text: "Weekly pH check", interval: 1, unit: "weeks", shared_with: 1 },
+      { id: "t2", name: "Replace the acid pump", text: "Replace the acid pump", interval: 24, unit: "months", shared_with: 0 }] };
+  assert.equal(tasksOf(d).length, 2);
+  assert.equal(moreTasks(d), "+1 task");
+  assert.equal(moreTasks({ ...d, tasks: [...d.tasks, { id: "t3", name: "Look", interval: 1, unit: "months" }] }), "+2 tasks");
+  assert.equal(tasksTip(d), "Weekly pH check · every 1 week (shared with 1 other failure mode)\nReplace the acid pump · every 24 months");
+  const old = { outcome: "on_condition", task: "Weekly pH check", interval: 1, interval_unit: "weeks" };
+  assert.deepEqual(tasksOf(old), [{ id: null, name: "Weekly pH check", text: "Weekly pH check", interval: 1, unit: "weeks", shared_with: 0 }]);
+  assert.equal(moreTasks(old), "");
+  assert.deepEqual(tasksOf(null), []);
+  assert.deepEqual(tasksOf({ outcome: "rtf", rtf_basis: "random" }), []);
+  assert.equal(hasTask({ decision: { outcome: "on_condition", tasks: d.tasks } }), true);
+  assert.equal(hasTask({ decision: { outcome: "on_condition" } }), false);
+  // The search reaches the other tasks' names too.
+  assert.match(rowText({ ref: { text: "Acid", decision: d } }), /replace the acid pump/);
 });

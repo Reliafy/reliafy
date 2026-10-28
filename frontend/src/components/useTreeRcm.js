@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addFailureMode, addFunctionalFailure, addPositionFunction, assignFailureMode, decideFailureMode, getPositionFunction,
-  getWorkspaceRcm, linkFunctionalFailureCause, removeFunctionalFailure, removeMaintenanceDocument, removePositionFunction,
-  retireFailureMode, unlinkFunctionalFailureCause, updateFailureMode, updateFunctionalFailure, updatePositionFunction,
-  uploadMaintenanceDocument,
+  addFailureMode, addFailureModeTask, addFunctionalFailure, addPositionFunction, assignFailureMode, decideFailureMode,
+  getFailureModeTasks, getPositionFunction, getWorkspaceRcm, linkFunctionalFailureCause, linkTaskFailureMode,
+  removeFunctionalFailure, removeMaintenanceDocument, removePositionFunction, retireFailureMode, retireMaintenanceTask,
+  unlinkFunctionalFailureCause, unlinkTaskFailureMode, updateFailureMode, updateFunctionalFailure, updateMaintenanceTask,
+  updatePositionFunction, uploadMaintenanceDocument,
 } from "../api.js";
-import { COLUMN, FUNCTION_MAX, FUNCTION_NUDGE, decisionBody } from "../rcmWorksheet.js";
+import { COLUMN, FUNCTION_MAX, FUNCTION_NUDGE, decisionBody, tasksOf } from "../rcmWorksheet.js";
 import { itemWrites } from "../explorerRcm.js";
 
 // The RCM in the Explorer's tree (the RCM tab): every position's functions,
@@ -136,7 +137,15 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
         return `${name} and its ${plural(fails, "functional failure")} go. ${stay}`;
       }
       if (r.type === "fail") return `${name} goes. ${stay}`;
-      const task = r.ref.decision?.task_id ? ` Its task “${(r.ref.decision.task || "").slice(0, 60)}” is retired too.` : "";
+      // Its tasks: one serving it alone is retired; one serving other modes too stays with them.
+      const tasks = tasksOf(r.ref).filter((t) => t.id);
+      const sole = tasks.filter((t) => !t.shared_with);
+      const shared = tasks.length - sole.length;
+      const bits = [];
+      if (sole.length === 1) bits.push(`its task “${(sole[0].name || "").slice(0, 60)}” is retired too`);
+      else if (sole.length) bits.push(`its ${plural(sole.length, "task")} are retired too`);
+      if (shared) bits.push(`${shared === 1 ? "a task" : `${shared} tasks`} shared with other failure modes ${shared === 1 ? "stays" : "stay"} with them`);
+      const task = bits.length ? ` ${bits.join("; ")[0].toUpperCase()}${bits.join("; ").slice(1)}.` : "";
       return `${name} goes from this position's RCM.${task} Failures already recorded against it keep it in their history.`;
     },
     remove(r) {
@@ -202,6 +211,28 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
     },
     decide(r, { consequence, decision }) {
       return after(decideFailureMode(r.ref.id, { consequence: consequence || null, decision }));
+    },
+    // A failure mode's tasks (the dialog's Tasks section): the tasks it has and
+    // the ones on its position, or above it, that could serve it; another task
+    // added; one changed (a shared task changes for every mode it serves); one
+    // taken off (a task serving other modes too is unlinked and stays; one
+    // serving this mode alone is retired); an existing task linked.
+    modeTasks(r) {
+      return getFailureModeTasks(r.ref.id);
+    },
+    addTask(r, body) {
+      return after(addFailureModeTask(r.ref.id, body));
+    },
+    editTask(taskId, body) {
+      return after(updateMaintenanceTask(taskId, body));
+    },
+    removeTask(r, task) {
+      return after(task.shared_with
+        ? unlinkTaskFailureMode(task.id, r.ref.id)
+        : retireMaintenanceTask(task.id, "Taken off its failure mode."));
+    },
+    linkTask(r, taskId) {
+      return after(linkTaskFailureMode(taskId, r.ref.id));
     },
   }), [after, askText]);
 

@@ -106,3 +106,21 @@ test("the working is written on a function's first row only, and quoted with its
   assert.deepEqual(rows.map((r) => r[col]), ["Standard working", "", "## Rate\n\n40 t/h = 10 t over 15 min", "", "", ""]);
   assert.ok(positionRcmCsv(WS).includes('"## Rate\n\n40 t/h = 10 t over 15 min"'));
 });
+
+
+test("a failure mode with several tasks is one row per task, the first carrying everything", () => {
+  const rows = positionRcmRows({ positions: [{ id: "p", name: "Pool", depth: 0, unassigned: [], functions: [
+    { id: "f", text: "Keep the water balanced", standard: "pH 7.2-7.8", failures: [
+      { id: "x", text: "pH above 7.8", modes: [
+        { id: "m", text: "Acid under-dosed", effects: "pH climbs", consequence: "operational", notes: "",
+          decision: { outcome: "on_condition", task: "Weekly pH check", interval: 1, interval_unit: "weeks", status: "unevidenced", task_id: "t1",
+            tasks: [{ id: "t1", name: "Weekly pH check", text: "Weekly pH check", interval: 1, unit: "weeks", outcome: "on_condition", shared_with: 0 },
+              { id: "t2", name: "Replace the acid pump", text: "Replace the acid pump", interval: 24, unit: "months", outcome: "fixed_interval", shared_with: 0 }] } },
+      ] },
+    ] },
+  ] }] });
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[1].slice(6, 14), ["Acid under-dosed", "pH climbs", "Operational", "On-condition", "", "Weekly pH check", 1, "weeks"]);
+  assert.deepEqual(rows[2], ["Pool", "Keep the water balanced", "pH 7.2-7.8", "", "pH above 7.8", "", "Acid under-dosed", "",
+    "", "Fixed-interval", "", "Replace the acid pump", 24, "months", "", ""]);
+});

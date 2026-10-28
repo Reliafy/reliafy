@@ -286,21 +286,71 @@ failure is caused by some of the position's failure modes:
 (:FunctionalFailure)-[:CAUSED_BY]->(:FailureMode)
 (:FunctionalFailure)-[:RESULTS_FROM]->(:FunctionalFailure)   # effect -> cause, on a position inside
 (:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
-(:Task)-[:MITIGATES]->(:FailureMode)                # the decision's task, as before
+(:Task)-[:MITIGATES]->(:FailureMode)                # many-to-many: see below
 ```
 
 A failure mode's analysis and decision are properties on the mode
 (`effects`, `notes`, `consequence`, `outcome`, `rtf_basis`, `decision_notes`,
-`task_note` for a decision with no scheduled task, and `evidence`: the saved
-model or analysis behind it, `{type, id}`). The interval and unit of a
-scheduled decision are its task's. A failure mode under no functional failure
-still belongs to its position (the app lists it as unassigned).
+`task_note` for a decision with no scheduled task, `task_id`: the decision's
+own task, and `evidence`: the saved model or analysis behind it, `{type,
+id}`). The interval and unit of a scheduled decision are its task's. A
+failure mode under no functional failure still belongs to its position (the
+app lists it as unassigned).
 
 Events: `function.added` / `updated` / `removed`, `functional_failure.added`
 / `updated` / `removed`, `failure_mode.assigned` (under a functional failure,
 or none), `failure_mode.analysed` and `failure_mode.retired`. Deleting a
 function or a functional failure leaves its failure modes on the position,
-unassigned; deleting a failure mode retires the task that mitigates it.
+unassigned; deleting a failure mode retires the tasks that serve it alone and
+unlinks the ones that serve other modes too.
+
+### Several tasks for one failure mode, one task for several
+
+`MITIGATES` is many-to-many. A failure mode's decision may be a combination
+of tasks (an inspection that catches the slow failures and a replacement at a
+hard life; the classic RCM sources expect this for safety, environmental and
+hidden consequences), and one act of work may be the task for several modes
+(one monthly water sample for five chemistry modes). A task on a position may
+serve failure modes on that position and on the positions inside it, never
+the other way: a round at the pool covers the chlorinator's modes.
+
+- The decision's own task is the first of the mode's tasks: the one its
+  decision made or adopted, recorded as `task_id` on the mode
+  (`failure_mode.analysed`, `changes.task_id`; older code stores the key
+  unused). Without one, the first live task by outcome, start and name.
+- The task owns its interval. `decide` changes a task's name and interval
+  only while that task serves this mode alone; once it serves others, those
+  change on the task (`maintenance_tasks update`), for every mode, or the mode
+  gets a task of its own. The evidence on a decision applies to its own task.
+- Events: `task.linked` and `task.unlinked` (`id`: the task, `failure_mode_id`,
+  `on`) add or remove one link, the task's other links kept. `task.added` may
+  carry `failure_mode_ids` beside `failure_mode_id` (the first of them): the
+  projector links every one; code from before the field links the one it
+  knows. `task.updated` with `failure_mode_id` still means "the only link", so
+  every event in the log replays as it did. `PROJECTION_VERSION` stays.
+- Reads: `decision.tasks` lists every live task serving the mode, its own
+  first, each with `shared_with` (how many other modes it serves);
+  `decision.task`, `interval`, `interval_unit` and `task_id` stay the first
+  one's, so older readers see what they saw. A task's view lists
+  `failure_modes`, `failure_mode` being the first. The roll-up's `tasks`
+  counts modes with at least one live task; `scheduled_without_task` counts
+  decisions that schedule work with no live task to do it (shown, never a
+  gate: `analysed` rests on decisions, as before).
+- Retiring a mode retires its sole tasks and unlinks shared ones; restoring
+  it brings its sole tasks back (`tasks_restored`), not the shared links.
+  Merging a mode moves every link across. Moving a mode (or a function) takes
+  the tasks serving only the moving modes; a shared task stays and keeps
+  serving a moved mode while the new position is inside the task's, else that
+  link is unlinked and the move says so (`tasks_unlinked`, `note`). Moving a
+  task is allowed when every mode it serves is on the target or inside it.
+  Copying a position copies every link, the decision's own task re-pointed to
+  the copy; a task serving a mode on a position inside the branch is linked
+  once that position's copy exists (`task.linked`).
+- The worksheet import: a row that repeats a failure mode (same text, same
+  function and functional failure) with another task adds that task to the
+  mode; a task named on several rows, or on the position already, is one task
+  linked to each (a row asking it to have another interval is a row error).
+  The CSV export writes one row per task, so it reads back as written.
 
 ### The working behind a performance standard
 

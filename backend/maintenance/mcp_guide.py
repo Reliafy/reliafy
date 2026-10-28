@@ -127,8 +127,21 @@ failures, modes and their tasks) or move (one mode with its decision and tasks; 
 the new position), and maintenance_tasks move (a position's task). Ids, decisions and dates stay. Anything with \
 history stays put (failures or findings recorded against a mode, work done on a task, a task's use counted from \
 the old position's counter): the refusal says what to do instead.
+- Several tasks for one failure mode, one task for several. A mode's decision has one task, the first in its \
+decision.tasks; maintenance_failure_modes add_task adds another (a combination: an inspection that catches the \
+slow failures plus a replacement at a hard life; the classic sources expect it for safety, environmental and \
+hidden consequences, and ask what a second task earns on operational and non-operational ones: say so in the \
+decision's notes). One act of work for several modes (one monthly water sample for five chemistry modes): \
+maintenance_tasks link task_id failure_mode_id, or decide with task_id so an existing task is the decision's. A \
+task on a position may serve modes on it or on positions inside it. The task owns its interval: while it \
+serves one mode alone, decide changes it; once shared, change it with maintenance_tasks update (for every mode \
+it serves) or give the mode a task of its own. The evidence linked on a decision applies to its own (first) \
+task. Retiring a mode retires the tasks serving it alone and unlinks shared ones (unlink takes one off by \
+hand); moving a mode takes its own tasks with it, and a shared task stays, still serving the mode while the \
+new position is inside the task's. A worksheet row that repeats a failure mode with another task adds that \
+task; a task named on several rows (or on the position already) is one task, linked.
 - Failure modes without RCM: maintenance_failure_modes add on the position; a task links to one with \
-failure_mode_id.
+failure_mode_id (or several with failure_mode_ids).
 - Tasks done before they were tracked here: maintenance_tasks set_last_done, so the next due date counts from \
 then.
 - A whole RCM in one call (every function, functional failure, mode and decision for a position, or a new \

@@ -74,6 +74,7 @@ CREATES = {
     "failure_modes.add": ("failure_modes.retire", "failure_mode_id"),
     "failure_modes.add_function": ("failure_modes.remove_function", "function_id"),
     "failure_modes.add_functional_failure": ("failure_modes.remove_functional_failure", "functional_failure_id"),
+    "failure_modes.add_task": ("tasks.retire", "task_id"),
     "tasks.create": ("tasks.retire", "task_id"), "work_orders.open": ("work_orders.cancel", "work_order_id"),
     "measurements.add_point": ("measurements.retire_point", "point_id"), "parts.create": ("parts.retire", "part_id"),
     "topology.connect": ("topology.disconnect", "interface_id"),
@@ -94,6 +95,9 @@ RESTORES = {
     "attachments.remove_document": "attachments.restore_document",
 }
 RETIRES = {restore: retire for retire, restore in RESTORES.items()}
+
+#: Links and the unlink that undoes each (and back): the same arguments.
+LINKS = {"tasks.link": "tasks.unlink", "tasks.unlink": "tasks.link"}
 
 _UPDATE_WORDS = ("update", "set_", "assign", "decide", "move", "link", "correct", "check", "status", "place",
                  "reorder", "stock", "labour", "part_used", "cost", "accept", "reject", "apply_", "exclude_",
@@ -315,6 +319,8 @@ def _undo_for(op: dict, result) -> dict | None:
         target = op["args"].get(arg)
         name = result.get("name") or result.get("text") or result.get("title") if isinstance(result, dict) else None
         return {"do": retire, "args": {arg: target}, **({"confirm": name} if name else {})}
+    if do in LINKS:
+        return {"do": LINKS[do], "args": dict(op["args"])}
     return None
 
 
@@ -354,7 +360,7 @@ def run_pass(ops: list[dict], call, m, on_error: str, dry: bool) -> dict:
             if isinstance(result, dict) and result.get("id"):
                 entry["id"] = result["id"]
             entry["result"] = result
-            undo = _undo_for(op, result)
+            undo = _undo_for({**op, "args": args}, result)  # with its @refs resolved
             if undo:
                 entry["undo"] = undo
             results.append(entry)

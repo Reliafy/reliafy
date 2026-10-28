@@ -200,6 +200,7 @@ export default function AssetExplorer() {
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
   const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
   const [itemKey, setItemKey] = useState(null); // a function, failure or mode in its own dialog (double-click, Open…)
+  const [itemStart, setItemStart] = useState(null); // what the dialog opens on ({tasks: true}: the Tasks' add form)
   const [linking, setLinking] = useState(null); // {row, direction}: the picker that links functional failures
   const [options, setOptions] = useState(null);
   const [rprefs, setRprefs] = useState(() => loadPrefs());
@@ -538,6 +539,7 @@ export default function AssetExplorer() {
       } else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
       else if (id === "open") openItem(r.key);
+      else if (id === "add-task") openItem(r.key, { tasks: true });
       else if (id === "link-cause") openLink(r, "cause");
       else if (id === "link-effect") openLink(r, "effect");
       else if (id === "go") reveal(r.ref.cause_id);
@@ -589,19 +591,21 @@ export default function AssetExplorer() {
   };
   // A function, failure or mode in its own dialog: picked in the tree, the
   // cell being edited dropped. On a phone the Details sheet makes way for it.
-  const openItem = (key) => {
+  const openItem = (key, start = null) => {
     const r = whole.rows.get(key);
     if (!opensItem(r)) return;
     setEditing(null);
     setRcmFocus(key);
     if (display.rows.has(key)) setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
     if (phone) setPanel(false);
+    setItemStart(start);
     setItemKey(key);
   };
   // Closed: the focus back on its row (the row of the one shown last).
   const closeItem = () => {
     const key = itemKey;
     setItemKey(null);
+    setItemStart(null);
     setTimeout(() => document.getElementById(`tp-${key}`)?.focus({ preventScroll: true }), 0);
   };
   const saveItem = (r, values) => ops.saveItem(r, values).then(() => say("Saved."));
@@ -952,6 +956,7 @@ export default function AssetExplorer() {
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
       <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={panelOps} links={{ onLink: openLink, onUnlink: unlinkPair }}
                onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
+               onTasks={(r) => openItem(r.key, { tasks: true })}
                onClose={() => { setPanel(false); document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }); }}
                onSelect={(k) => reveal(k)} />
     </div>
@@ -1101,7 +1106,7 @@ export default function AssetExplorer() {
       )}
       {itemKey && whole.rows.has(itemKey) && opensItem(whole.rows.get(itemKey)) && (
         <RcmItemModal r={cellRow(whole.rows.get(itemKey))} display={whole} ops={panelOps} links={{ onLink: openLink, onUnlink: unlinkPair }}
-                      onSave={saveItem} onDecision={(r) => setDeciding(r)}
+                      start={itemStart} onSave={saveItem} onDecision={(r) => setDeciding(r)} onSaid={say}
                       onOpen={(key) => { openItem(key); if (display.rows.has(key)) reveal(key); }}
                       onDetails={(r) => { setItemKey(null); reveal(r.key); setPanel(true); setTimeout(() => detailsHeading.current?.focus(), 0); }}
                       onClose={closeItem} />
