@@ -420,7 +420,8 @@ export const opensItem = (r) => !!r && ITEM_KINDS.has(r.type);
 
 // The fields each kind's dialog edits, in order: the table's column ids
 // ("name" is the description).
-export const ITEM_FIELDS = { fn: ["name", "standard"], fail: ["name"], mode: ["name", "effects", "consequence", "notes"] };
+// A function's performance standards are a list with their own saves (RcmFunctionStandards), not a field.
+export const ITEM_FIELDS = { fn: ["name"], fail: ["name"], mode: ["name", "effects", "consequence", "notes"] };
 
 // A field's value as saved (a string, as the dialog's boxes hold it).
 export function itemValue(r, col) {
@@ -466,7 +467,7 @@ export function itemWrites(r, values) {
   };
   const out = [];
   if (r.type === "fn") {
-    const body = pick(["name", "standard"], { name: "text" });
+    const body = pick(["name"], { name: "text" });
     if (Object.keys(body).length) out.push({ api: "function", body });
   } else if (r.type === "fail") {
     if ("name" in values) out.push({ api: "failure", body: { text: values.name } });

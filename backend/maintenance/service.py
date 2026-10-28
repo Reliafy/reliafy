@@ -200,6 +200,22 @@ def _joined(ch: str) -> bool:
         or 0x1F3FB <= ord(ch) <= 0x1F3FF or 0xE0020 <= ord(ch) <= 0xE007F
 
 
+MAX_STANDARDS = 50  # performance standards on one function
+# A structured limit's comparator (a standard's text is what people read).
+STANDARD_COMPARATORS = ("<", "<=", "=", ">=", ">", "between", "not")
+_SPLIT_STANDARD = re.compile(r"\s*(?:;|\r?\n)+\s*")
+
+
+def propose_split(text) -> list[str]:
+    """The lines a single standard text splits into, on ';' and line breaks:
+    a proposal for the user to edit, never written on its own."""
+    return [part.strip() for part in _SPLIT_STANDARD.split(str(text or "")) if part.strip()]
+
+
+def _same_key(text) -> str:
+    return " ".join(str(text or "").lower().split())
+
+
 def shortened(text, limit: int = SHORT_TEXT) -> tuple[str, bool]:
     """Text made to fit ``limit`` characters where it's derived (a work order's title
     from its task's name, a task's name from an RCM decision), so it never fails
@@ -857,6 +873,45 @@ def _function_updated(s: GraphStore, org: str, p: dict) -> None:
 def _functional_failure_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "FunctionalFailure", {"text": p["text"], "order": p.get("order", 0)})
     s.put_edge(org, "FAILS_AS", p["function_id"], p["id"])
+    # The standard it breaches, when the event names one (older events don't).
+    if p.get("standard_id"):
+        s.put_edge(org, "BREACHES", p["id"], p["standard_id"])
+
+
+def _functional_failure_updated(s: GraphStore, org: str, p: dict) -> None:
+    """functional_failure.updated: its text; standard_id in changes re-points the
+    standard it breaches (None: the whole function). Code from before standards
+    stored the key on the node, unused."""
+    changes = dict(p["changes"])
+    if "standard_id" in changes:
+        standard = changes.pop("standard_id")
+        for old in s.out(org, p["id"], "BREACHES"):
+            s.delete_edge(org, "BREACHES", p["id"], old["id"])
+        if standard:
+            s.put_edge(org, "BREACHES", p["id"], standard)
+    if changes:
+        s.patch_node(org, p["id"], changes)
+
+
+# A function's performance standards as a list: each one parameter and one
+# limit ("pH 7.2-7.8"), optionally structured (parameter, comparator, value,
+# unit), with when it applies and where it comes from. The function is HELD_TO
+# each; a functional failure may BREACH one (none: the whole function).
+_STANDARD_FIELDS = ("parameter", "comparator", "value", "unit", "when", "source")
+
+
+def _standard_added(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "Standard", {"text": p["text"], "order": p.get("order", 0), "created": p.get("on")}
+               | {k: p[k] for k in _STANDARD_FIELDS if k in p})
+    s.put_edge(org, "HELD_TO", p["function_id"], p["id"])
+
+
+def _standard_removed(s: GraphStore, org: str, p: dict) -> None:
+    """A standard taken off its function: flagged (history kept), and no
+    functional failure breaches it any more."""
+    _flag("removed")(s, org, p)
+    for ff in s.inn(org, p["id"], "BREACHES"):
+        s.delete_edge(org, "BREACHES", ff["id"], p["id"])
 
 
 def _failure_mode_assigned(s: GraphStore, org: str, p: dict) -> None:
@@ -2017,8 +2072,12 @@ PROJECTORS = {
     "function.updated": _function_updated,
     "function.removed": _flag("removed"),
     "functional_failure.added": _functional_failure_added,
-    "functional_failure.updated": _patch,
+    "functional_failure.updated": _functional_failure_updated,
     "functional_failure.removed": _flag("removed"),
+    # A function's performance standards, as a list.
+    "standard.added": _standard_added,
+    "standard.updated": _patch,
+    "standard.removed": _standard_removed,
     "failure_mode.assigned": _failure_mode_assigned,
     "failure_mode.analysed": _patch,
     "failure_mode.retired": _flag("retired"),
@@ -2293,11 +2352,19 @@ class Maintenance:
                     "order": fn.get("order") or 0,
                 } | ({"standard_basis": fn["standard_basis"], "on": fn.get("basis_on") or self.today()}
                      if fn.get("standard_basis") else {}))
+                standard_ids: dict[str, str] = {}
+                for st in self._standards_of(fn["id"]):
+                    standard_ids[st["id"]] = new_id()
+                    self._emit("standard.added", {
+                        "id": standard_ids[st["id"]], "function_id": fn_id, "text": st.get("text") or "",
+                        "order": st.get("order") or 0, "on": today,
+                    } | {k: st[k] for k in _STANDARD_FIELDS if st.get(k) not in (None, "")})
                 for ff in self._failures_of(fn["id"]):
                     ff_id = ff_ids[ff["id"]] = new_id()
+                    breach = [x["id"] for x in self.s.out(self.org, ff["id"], "BREACHES") if x["id"] in standard_ids]
                     self._emit("functional_failure.added", {
                         "id": ff_id, "function_id": fn_id, "text": ff["text"], "order": ff.get("order") or 0,
-                    })
+                    } | ({"standard_id": standard_ids[breach[0]]} if breach else {}))
                     for fm in self._ff_modes(ff["id"]):
                         if fm["id"] in mode_ids:
                             self._emit("failure_mode.assigned", {"id": mode_ids[fm["id"]], "functional_failure_id": ff_id,
@@ -2907,6 +2974,9 @@ class Maintenance:
         if text is not None:
             changes["text"] = _text(text, "function", required=True, max_len=LONG_TEXT)
         if standard is not None:
+            if self._standards_of(function_id):
+                raise Invalid("This function's performance standard is its list of standards: change those "
+                              "(maintenance_failure_modes update_standard, add_standard, remove_standard).")
             changes["standard"] = _text(standard, "performance standard", max_len=LONG_TEXT)
         if standard_basis is not None:
             changes["standard_basis"] = _basis_text(standard_basis)
@@ -2928,6 +2998,8 @@ class Maintenance:
         docs = self.documents_of(function_id)
         for d in docs:
             self._emit("document.removed", {"id": d["id"], "on": self.today()})
+        for st in self._standards_of(function_id):
+            self._emit("standard.removed", {"id": st["id"], "on": self.today()})
         self._emit("function.removed", {"id": function_id, "on": self.today()})
         return {"removed": function_id, "position_id": position["id"], "failure_modes_unassigned": moved,
                 "documents_removed": [d["id"] for d in docs], "links_removed": links}
@@ -2940,23 +3012,203 @@ class Maintenance:
                 "failures": [self._ff_view(ff) for ff in self._failures_of(function_id)],
                 "documents": self.documents_of(function_id)}
 
-    def add_functional_failure(self, function_id: str, text) -> dict:
-        """A way the function fails ('No flow', 'Flow below 40 L/s')."""
+    def add_functional_failure(self, function_id: str, text, standard_id=None) -> dict:
+        """A way the function fails ('No flow', 'Flow below 40 L/s'). standard_id:
+        one of the function's performance standards it breaches (left out: the
+        whole function, as a total loss does)."""
         self._live_function(function_id)
+        standard = self._standard_on(function_id, standard_id) if standard_id else None
         fid = new_id()
         self._emit("functional_failure.added", {
             "id": fid, "function_id": function_id,
             "text": _text(text, "functional failure", required=True, max_len=LONG_TEXT),
             "order": self._next_order(self.s.out(self.org, function_id, "FAILS_AS")),
-        })
+        } | ({"standard_id": standard["id"]} if standard else {}))
         return self._ff_view(self._get(fid, "FunctionalFailure"))
 
-    def update_functional_failure(self, ff_id: str, text) -> dict:
-        ff, _, _ = self._live_ff(ff_id)
-        value = _text(text, "functional failure", required=True, max_len=LONG_TEXT)
-        if value != ff["text"]:
-            self._emit("functional_failure.updated", {"id": ff_id, "changes": {"text": value}})
+    def update_functional_failure(self, ff_id: str, text=None, standard_id=...) -> dict:
+        """Change a functional failure's text, or the standard it breaches
+        (standard_id: one of its function's; None: the whole function)."""
+        ff, fn, _ = self._live_ff(ff_id)
+        changes: dict = {}
+        if text is not None:
+            value = _text(text, "functional failure", required=True, max_len=LONG_TEXT)
+            if value != ff["text"]:
+                changes["text"] = value
+        if standard_id is not ...:
+            wanted = self._standard_on(fn["id"], standard_id)["id"] if standard_id else None
+            now = [st["id"] for st in self.s.out(self.org, ff_id, "BREACHES") if not st.get("removed")]
+            if now != ([wanted] if wanted else []):
+                changes["standard_id"] = wanted
+        if changes:
+            self._emit("functional_failure.updated", {"id": ff_id, "changes": changes})
         return self._ff_view(self._get(ff_id, "FunctionalFailure"))
+
+    # ---- a function's performance standards, as a list --------------------------------
+    # A function is one job (one verb, one object); how well it must do it can
+    # be several numbers (flow and pressure; pH, alkalinity and hardness). Each
+    # is one standard, and a functional failure may say which one it breaches.
+    # A function's old single standard text stays on the node and shows as its
+    # standard until the function has a list; the first list operation keeps
+    # that text as the first item (nothing is split by the app: that's the
+    # user's call, with split_standard).
+
+    def _standards_of(self, function_id: str) -> list[dict]:
+        found = [st for st in self.s.out(self.org, function_id, "HELD_TO") if not st.get("removed")]
+        return sorted(found, key=lambda st: (st.get("order") or 0, str(st.get("text") or "").lower(), st["id"]))
+
+    def _live_standard(self, standard_id: str) -> tuple[dict, dict]:
+        """A standard that hasn't been removed, and its function (live)."""
+        st = self._get(standard_id, "Standard")
+        if st.get("removed"):
+            raise Invalid("That performance standard was removed.")
+        fn, _ = self._live_function(self.s.inn(self.org, standard_id, "HELD_TO")[0]["id"])
+        return st, fn
+
+    def _standard_on(self, function_id: str, standard_id) -> dict:
+        if self.s.node(self.org, str(standard_id), "Standard") is None:
+            raise Invalid("There's no performance standard with that id in this workspace.")
+        st, fn = self._live_standard(str(standard_id))
+        if fn["id"] != function_id:
+            raise Invalid(f"“{st['text']}” is a standard of another function: pick one of this function's.")
+        return st
+
+    @staticmethod
+    def _standard_fields(parameter, comparator, value, unit, when, source) -> dict:
+        """The optional structured limit, checked: each given field as text
+        (value a number, or text such as '7.2-7.8'); None leaves it out."""
+        out = {}
+        for key, given in (("parameter", parameter), ("comparator", comparator), ("unit", unit), ("when", when),
+                           ("source", source)):
+            if given is not None:
+                out[key] = _text(given, key, max_len=SHORT_TEXT)
+        if value is not None:
+            if isinstance(value, bool):
+                raise Invalid("value is a number or text, such as 7.2-7.8.")
+            if isinstance(value, (int, float)):
+                if value != value or value in (float("inf"), float("-inf")):
+                    raise Invalid("value must be a number.")
+                out["value"] = value
+            else:
+                out["value"] = _text(value, "value", max_len=SHORT_TEXT)
+        if "comparator" in out and out["comparator"] and out["comparator"] not in STANDARD_COMPARATORS:
+            raise Invalid(f"comparator is one of {', '.join(STANDARD_COMPARATORS)}.")
+        return out
+
+    def _standard_view(self, st: dict, breached_by: int | None = None) -> dict:
+        out = {"id": st["id"], "text": st.get("text") or "", "order": st.get("order") or 0}
+        for key in _STANDARD_FIELDS:
+            out[key] = st.get(key) if st.get(key) not in (None, "") else None
+        if breached_by is not None:
+            out["failures"] = breached_by  # how many functional failures breach it
+        return out
+
+    def _adopt_legacy_standard(self, fn: dict) -> None:
+        """Before the first list item: a function's old single standard text
+        becomes the list's first item, verbatim, so nothing is lost."""
+        if (fn.get("standard") or "").strip() and not self._standards_of(fn["id"]):
+            self._emit("standard.added", {"id": new_id(), "function_id": fn["id"], "text": fn["standard"].strip(),
+                                          "order": 1, "on": self.today()})
+
+    def add_standard(self, function_id: str, text, parameter=None, comparator=None, value=None, unit=None,
+                     when=None, source=None) -> dict:
+        """A performance standard on a function: one parameter and one limit
+        ('pH 7.2-7.8'), with the limit structured if wanted (parameter,
+        comparator, value, unit), when it applies ('while the filter pump
+        runs') and where it comes from ('AS 1926.3'). The function's old single
+        standard text, if any, becomes the first item."""
+        fn, _ = self._live_function(function_id)
+        wanted = _text(text, "performance standard", required=True, max_len=LONG_TEXT)
+        fields = self._standard_fields(parameter, comparator, value, unit, when, source)
+        if len(self._standards_of(function_id)) >= MAX_STANDARDS:
+            raise Invalid(f"A function has at most {MAX_STANDARDS} performance standards.")
+        self._adopt_legacy_standard(fn)
+        have = self._standards_of(function_id)
+        same = next((st for st in have if _same_text(st.get("text"), wanted)), None)
+        if same is not None:
+            return self._standard_view(same)
+        sid = new_id()
+        self._emit("standard.added", {"id": sid, "function_id": function_id, "text": wanted,
+                                      "order": self._next_order(have), "on": self.today()}
+                   | {k: v for k, v in fields.items() if v not in (None, "")})
+        return self._standard_view(self._get(sid, "Standard"))
+
+    def update_standard(self, standard_id: str, text=None, parameter=None, comparator=None, value=None, unit=None,
+                        when=None, source=None) -> dict:
+        """Change a standard's text or its structured limit ('' clears a field)."""
+        st, _ = self._live_standard(standard_id)
+        changes = self._standard_fields(parameter, comparator, value, unit, when, source)
+        if text is not None:
+            changes["text"] = _text(text, "performance standard", required=True, max_len=LONG_TEXT)
+        changes = {k: v for k, v in changes.items() if (st.get(k) if st.get(k) not in (None, "") else "") != v}
+        if changes:
+            self._emit("standard.updated", {"id": standard_id, "changes": changes})
+        return self._standard_view(self._get(standard_id, "Standard"))
+
+    def remove_standard(self, standard_id: str) -> dict:
+        """Take a standard off its function. A functional failure that breached it
+        goes back to breaching the whole function."""
+        st, fn = self._live_standard(standard_id)
+        breached = [ff for ff in self.s.inn(self.org, standard_id, "BREACHES") if not ff.get("removed")]
+        self._emit("standard.removed", {"id": standard_id, "on": self.today()})
+        return {"removed": standard_id, "function_id": fn["id"], "failures_unlinked": len(breached)}
+
+    def reorder_standards(self, function_id: str, standard_ids) -> dict:
+        """The function's standards in the order given (every live one named once)."""
+        fn, _ = self._live_function(function_id)
+        have = self._standards_of(function_id)
+        ids = [str(x) for x in (standard_ids or [])]
+        if sorted(ids) != sorted(st["id"] for st in have):
+            raise Invalid("Name each of the function's standards once (standard_ids), in the order wanted.")
+        by_id = {st["id"]: st for st in have}
+        for n, sid in enumerate(ids, start=1):
+            if (by_id[sid].get("order") or 0) != n:
+                self._emit("standard.updated", {"id": sid, "changes": {"order": n}})
+        return self._function_view(self._get(function_id, "Function"))
+
+    def split_standard(self, function_id: str, standards=None, dry_run: bool = True) -> dict:
+        """Turn a function's old single standard text into a list, one standard
+        per line: proposed from its ';' and line breaks (dry run, the default:
+        nothing written), or as given in ``standards`` ([{text, when?, source?}],
+        the user's edited list) and written with dry_run false. Only for a
+        function that has the text and no list yet; the text itself stays."""
+        fn, _ = self._live_function(function_id)
+        legacy = (fn.get("standard") or "").strip()
+        if self._standards_of(function_id):
+            raise Invalid("This function has its list of standards already: add to it, or change the ones there.")
+        if not legacy:
+            raise Invalid("This function has no performance standard text to split: add standards instead.")
+        if standards is None:
+            proposed = [{"text": part} for part in propose_split(legacy)]
+        else:
+            if not isinstance(standards, list) or not standards:
+                raise Invalid("standards is a list of {text, when?, source?}, at least one.")
+            proposed = []
+            for i, item in enumerate(standards):
+                if not isinstance(item, dict):
+                    raise Invalid(f"standards[{i}] is an object {{text, when?, source?}}.")
+                row = {"text": _text(item.get("text"), "performance standard", required=True, max_len=LONG_TEXT)}
+                for key in ("when", "source"):
+                    if item.get(key):
+                        row[key] = _text(item.get(key), key, max_len=SHORT_TEXT)
+                proposed.append(row)
+        if len(proposed) > MAX_STANDARDS:
+            raise Invalid(f"A function has at most {MAX_STANDARDS} performance standards.")
+        seen: list[str] = []
+        for row in proposed:
+            key = _same_key(row["text"])
+            if key in seen:
+                raise Invalid(f"“{row['text']}” is listed twice.")
+            seen.append(key)
+        if dry_run or standards is None:
+            return {"dry_run": True, "function": {"id": fn["id"], "text": fn["text"]}, "standard": legacy,
+                    "proposed": proposed,
+                    "detail": "Nothing written: edit the lines, then send them back as standards with dry_run false."}
+        for n, row in enumerate(proposed, start=1):
+            self._emit("standard.added", {"id": new_id(), "function_id": function_id, "text": row["text"],
+                                          "order": n, "on": self.today()}
+                       | {k: row[k] for k in ("when", "source") if row.get(k)})
+        return {"dry_run": False, **self._function_view(self._get(function_id, "Function"))}
 
     def _drop_ff(self, ff: dict) -> tuple[int, int]:
         """Delete a functional failure: its links to failures above and below go
@@ -3548,18 +3800,37 @@ class Maintenance:
                                   "on": self.today()})
         return self._task_view(self._get(task_id, "Task"))
 
-    @staticmethod
-    def _function_view(fn: dict, full: bool = True) -> dict:
+    def _function_view(self, fn: dict, full: bool = True, standards: list | None = None,
+                       breached: dict | None = None) -> dict:
         """A function as reads show it. full: the working behind the standard in
-        full (a per-position read); otherwise has_basis and a short plain preview."""
+        full (a per-position read); otherwise has_basis and a short plain preview.
+        standards: its list (read here when not given), each with how many
+        functional failures breach it (breached: standard id -> count); standard
+        is the list's texts joined with '; ' when there is one, else the old
+        single text, so older readers and the sheet see one line."""
         basis = fn.get("standard_basis") or ""
-        out = {"id": fn["id"], "text": fn["text"], "standard": fn.get("standard") or "",
+        if standards is None:
+            standards = self._standards_of(fn["id"])
+            breached = {}
+            for st in standards:
+                breached[st["id"]] = sum(1 for ff in self.s.inn(self.org, st["id"], "BREACHES") if not ff.get("removed"))
+        listed = [self._standard_view(st, (breached or {}).get(st["id"], 0)) for st in standards]
+        out = {"id": fn["id"], "text": fn["text"],
+               "standard": "; ".join(st["text"] for st in listed) if listed else (fn.get("standard") or ""),
+               "standards": listed,
+               # The old single text, as typed, while the list stands in for it (empty otherwise).
+               "legacy_standard": (fn.get("standard") or "") if listed else "",
+               "standards_without_failure": sum(1 for st in listed if not st["failures"]),
                "has_basis": bool(basis), "basis_on": fn.get("basis_on") if basis else None}
         return out | ({"standard_basis": basis} if full else {"basis_preview": basis_preview(basis)})
 
-    @staticmethod
-    def _ff_view(ff: dict) -> dict:
-        return {"id": ff["id"], "text": ff["text"]}
+    def _ff_view(self, ff: dict, standard=...) -> dict:
+        """A functional failure with the standard it breaches ({id, text}, or
+        None: the whole function), read here when not given."""
+        if standard is ...:
+            found = [st for st in self.s.out(self.org, ff["id"], "BREACHES") if not st.get("removed")]
+            standard = {"id": found[0]["id"], "text": found[0].get("text") or ""} if found else None
+        return {"id": ff["id"], "text": ff["text"], "standard": standard}
 
     @staticmethod
     def _task_text(task: dict) -> str:
@@ -3671,6 +3942,21 @@ class Maintenance:
                 serves[src] = serves.get(src, 0) + 1
         for mode_id, found in tasks_of.items():
             found[:] = self._order_tasks(modes[mode_id], found)
+        # Each function's performance standards (its list), and the one each
+        # functional failure breaches, with how many breach each standard.
+        standards = {st["id"]: st for st in s.nodes(org, "Standard") if not st.get("removed")}
+        standards_of: dict[str, list] = {}
+        for src, dst in s.pairs(org, "HELD_TO"):
+            if src in fns and dst in standards:
+                standards_of.setdefault(src, []).append(standards[dst])
+        for found in standards_of.values():
+            found.sort(key=lambda st: (st.get("order") or 0, str(st.get("text") or "").lower(), st["id"]))
+        breach_of: dict[str, dict] = {}
+        breached: dict[str, int] = {}
+        for src, dst in s.pairs(org, "BREACHES"):
+            if src in ffs and dst in standards:
+                breach_of[src] = {"id": dst, "text": standards[dst].get("text") or ""}
+                breached[dst] = breached.get(dst, 0) + 1
         docs_of: dict[str, list] = {}  # function -> its documents (the working's PDFs)
         on_fns = [(src, dst) for src, dst in s.pairs(org, "OF") if dst in fns]
         if on_fns:
@@ -3685,7 +3971,8 @@ class Maintenance:
         for v in docs_of.values():
             v.sort(key=lambda d: (d["title"].lower(), d["id"]))
         return {"functions": fns_of, "failures": ffs_of, "modes": modes_of, "ff_of": ff_of, "tasks_of": tasks_of,
-                "serves": serves, "documents": docs_of,
+                "serves": serves, "documents": docs_of, "standards_of": standards_of, "breach_of": breach_of,
+                "breached": breached,
                 "own": own, "mode": modes, "ff": ffs, "fn": fns, "ff_fn": ff_fn, "ff_pos": ff_pos,
                 "causes_of": causes_of, "effects_of": effects_of, "parent": parent,
                 "positions": {p["id"]: p for p in s.nodes(org, "Position")}, "memo": {}}
@@ -3723,10 +4010,12 @@ class Maintenance:
                 unassigned.append(view)
         functions = []
         for fn in index["functions"].get(pid, []):
-            failures = [{**self._ff_view(ff), "modes": by_ff.get(ff["id"], []), **_rcm_links(index, ff["id"])}
+            failures = [{**self._ff_view(ff, index["breach_of"].get(ff["id"])), "modes": by_ff.get(ff["id"], []),
+                         **_rcm_links(index, ff["id"])}
                         for ff in index["failures"].get(fn["id"], [])]
             docs = index["documents"].get(fn["id"], [])
-            functions.append({**self._function_view(fn, full), "failures": failures,
+            functions.append({**self._function_view(fn, full, index["standards_of"].get(fn["id"], []), index["breached"]),
+                              "failures": failures,
                               "documents": [self._document_view(d, self._DOCUMENT_FIELDS) if full else
                                             {"id": d["id"], "title": d["title"], "size": d.get("size")}
                                             for d in docs]})

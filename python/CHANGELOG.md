@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A function may have several performance standards, as a list.
+  `maintenance_failure_modes add_standard` (text, and optionally parameter,
+  comparator, value, unit, when, source), `update_standard`, `remove_standard`,
+  `reorder_standards` and `split_standard` (a dry run proposing lines from a
+  single text, then the edited lines); `add_functional_failure` and
+  `update_functional_failure` take `standard_id`, the standard a failure
+  breaches. A function's `standards` lists them; its `standard` is their texts
+  joined with "; " once it has a list. In a worksheet every distinct standard
+  cell under a function is one standard.
+
 - A failure mode may have several tasks, and one task may serve several
   failure modes. `maintenance_failure_modes add_task` adds another task to a
   mode (its decision's task stays first); `decide` takes `task_id` to make an

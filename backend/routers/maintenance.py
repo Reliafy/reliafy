@@ -474,13 +474,54 @@ def delete_function(function_id: str, m: Maintenance = Depends(maintenance_write
 @router.post("/functions/{function_id}/failures")
 def add_functional_failure(function_id: str, body: dict = Body(...),
                            m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.add_functional_failure, function_id, body.get("text"))
+    """standard_id: the function's standard it breaches (left out: the whole function)."""
+    return _run(m.add_functional_failure, function_id, body.get("text"), body.get("standard_id"))
 
 
 @router.patch("/functional-failures/{ff_id}")
 def update_functional_failure(ff_id: str, body: dict = Body(...),
                               m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.update_functional_failure, ff_id, body.get("text"))
+    """text, and/or standard_id (null: the whole function)."""
+    return _run(m.update_functional_failure, ff_id, body.get("text"),
+                body["standard_id"] if "standard_id" in body else ...)
+
+
+# ---- a function's performance standards, as a list -----------------------------------------
+
+_STANDARD_KEYS = ("text", "parameter", "comparator", "value", "unit", "when", "source")
+
+
+@router.post("/functions/{function_id}/standards")
+def add_standard(function_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """One performance standard: text (one parameter, one limit), and optionally parameter, comparator,
+    value, unit, when, source. The function's old single text becomes the list's first item."""
+    return _run(m.add_standard, function_id, **{k: body.get(k) for k in _STANDARD_KEYS})
+
+
+@router.patch("/standards/{standard_id}")
+def update_standard(standard_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.update_standard, standard_id, **{k: body[k] for k in _STANDARD_KEYS if k in body})
+
+
+@router.delete("/standards/{standard_id}")
+def remove_standard(standard_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.remove_standard, standard_id)
+
+
+@router.put("/functions/{function_id}/standards/order")
+def reorder_standards(function_id: str, body: dict = Body(...),
+                      m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """standard_ids: every one of the function's standards, in the order wanted."""
+    return _run(m.reorder_standards, function_id, body.get("standard_ids"))
+
+
+@router.post("/functions/{function_id}/standards/split")
+def split_standard(function_id: str, body: dict | None = Body(None),
+                   m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The function's single standard text as a list: proposed (dry_run true, the default, or no
+    standards given), or written from standards [{text, when?, source?}] with dry_run false."""
+    body = body or {}
+    return _run(m.split_standard, function_id, body.get("standards"), bool(body.get("dry_run", True)))
 
 
 @router.delete("/functional-failures/{ff_id}")

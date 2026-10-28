@@ -493,3 +493,31 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-tasks li { display: flex; align-items: flex-start; gap: 6px; overflow-wrap: anywhere; }
 .rw-tasks .rw-ic { flex: none; margin-top: 3px; }
 .rw-tasks-go { align-self: flex-start; font-size: var(--fs-13); }
+
+/* A function's performance standards as a list (RcmFunctionStandards.jsx), in
+   the function's dialog and its Details. */
+.rfs { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.rfs h3 { margin: 0; font-size: var(--fs-14); }
+.rfs-list { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-14); }
+.rfs-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.rfs-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.rfs-acts { display: flex; gap: 8px; flex: none; }
+.rfs-acts .link { font-size: var(--fs-13); min-height: 28px; }
+.rfs-hint { margin: 0; }
+.rfs-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.rfs-form { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.rfs-form h4 { margin: 0; font-size: var(--fs-13); }
+.rfs-form .rw-fhelp { margin: 0; }
+.rfs-fold { align-self: flex-start; font-size: var(--fs-13); }
+.rfs-limit { display: flex; flex-direction: column; gap: 8px; }
+.rfs-limit input { max-width: 100%; }
+.rfs-split { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 6px; }
+.rfs-split li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rfs-split li input { flex: 1 1 200px; min-width: 0; }
+.rfs-split li.dropped input { text-decoration: line-through; color: var(--muted); }
+.rfs .rim-tform-acts { display: flex; gap: 8px; justify-content: flex-end; }
+.rfs .rim-trow { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+@media (max-width: 600px) {
+  .rfs-list li { flex-wrap: wrap; }
+  .rfs-acts .link { min-height: 36px; }
+}

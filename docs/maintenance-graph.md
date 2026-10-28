@@ -282,7 +282,9 @@ failure is caused by some of the position's failure modes:
 
 ```
 (:Position)-[:PERFORMS]->(:Function {text, standard, standard_basis?, basis_on?})
+(:Function)-[:HELD_TO]->(:Standard {text, parameter?, comparator?, value?, unit?, when?, source?, order})
 (:Function)-[:FAILS_AS]->(:FunctionalFailure {text})
+(:FunctionalFailure)-[:BREACHES]->(:Standard)       # optional: none means the whole function
 (:FunctionalFailure)-[:CAUSED_BY]->(:FailureMode)
 (:FunctionalFailure)-[:RESULTS_FROM]->(:FunctionalFailure)   # effect -> cause, on a position inside
 (:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
@@ -351,6 +353,47 @@ the other way: a round at the pool covers the chlorinator's modes.
   mode; a task named on several rows, or on the position already, is one task
   linked to each (a row asking it to have another interval is a row error).
   The CSV export writes one row per task, so it reads back as written.
+
+### Several performance standards on one function
+
+A function is one job (one verb, one object); how well it must do it can be
+several numbers (pH, alkalinity and hardness; flow and pressure). Each is a
+`Standard` node the function is `HELD_TO`: `text` (what people read: "pH
+7.2-7.8", required), and optionally the structured limit (`parameter`,
+`comparator`, `value`, `unit`, for the day readings are checked against it),
+`when` it applies (a condition, never a standard of its own) and its `source`.
+A functional failure may `BREACH` one of its function's standards (none: the
+whole function, as a total loss does). A standard with no functional failure
+is reported (`standards_without_failure` on the function), never a gate:
+`analysed` rests on decisions, as before.
+
+- Events: `standard.added` (`id, function_id, text, order, on` and the
+  optional fields), `standard.updated` (`changes`, `order` among them),
+  `standard.removed` (flagged, history kept; the `BREACHES` edges into it go).
+  `functional_failure.added` may carry `standard_id`; `functional_failure.updated`
+  takes `standard_id` in `changes` (None: the whole function), re-pointing the
+  edge. Code from before standards stores that key on the node, unused, and
+  logs the three new types and passes over them. `PROJECTION_VERSION` stays.
+- The function's old single `standard` text stays on the node. Reads give
+  `standards` (the list, each with how many failures breach it) and `standard`
+  as the list's texts joined with "; " once there is a list, else the old
+  text, so older readers, the worksheet and the CSV see one line;
+  `legacy_standard` shows the old text while a list stands in for it. The
+  first list operation (`add_standard`, or a sheet adding a second standard)
+  keeps that text as the list's first item, verbatim. `update_function`
+  refuses `standard` once the list exists. Nothing is split by the app:
+  `split_standard` proposes lines from ";" and line breaks (a dry run) and
+  writes the user's edited lines.
+- Standards hang off the function, so they move with it (`function.moved`)
+  and are flagged with it (`remove_function` emits `standard.removed` for
+  each). A copied position copies them (`standard.added` after each
+  `function.added`), and each failure's breach re-pointed to the copy.
+- The worksheet: every distinct "Performance standard" cell under a function
+  is one standard (a row with the function and a standard alone lists one);
+  when a function has more than one, a functional failure's own row names the
+  one it breaches. The CSV export writes a function's standards as such rows,
+  then each failure's rows with the standard it breaches; a function with one
+  standard reads and writes as before.
 
 ### The working behind a performance standard
 

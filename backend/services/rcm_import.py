@@ -322,6 +322,10 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     skipped: list[int] = []
     truncated = 0
     cur_fn = cur_standard = cur_fail = cur_basis = ""
+    # A function's performance standards as a list: every distinct standard cell
+    # under it (one row may list a standard on its own: a function with several).
+    # A functional failure breaches the standard its first row names outright
+    # (not one carried down), when the function has more than one.
     n_modes = n_decisions = n_links = 0
     stashed_tasks = 0
 
@@ -332,18 +336,31 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             return text[:MAX_TEXT - 1] + "…"
         return text
 
+    standards_by_fn: dict[str, list[str]] = {}
+    breach_by_fail: dict[tuple[str, str], str] = {}
+
+    def note_standard(fn_text: str, standard: str) -> None:
+        if fn_text and standard:
+            listed = standards_by_fn.setdefault(fn_text.lower(), [])
+            if standard.lower() not in [x.lower() for x in listed]:
+                listed.append(standard)
+
     for rnum, r in zip(numbers, rows):
         fn_text = cell(r, "function")
+        explicit_standard = cell(r, "standard")
         if fn_text and fn_text != cur_fn:
-            cur_fn, cur_standard, cur_fail, cur_basis = fn_text, cell(r, "standard"), "", cell(r, "standard_basis")
+            cur_fn, cur_standard, cur_fail, cur_basis = fn_text, explicit_standard, "", cell(r, "standard_basis")
         else:
-            if cell(r, "standard"):
-                cur_standard = cell(r, "standard")
+            if explicit_standard:
+                cur_standard = explicit_standard
             if cell(r, "standard_basis"):
                 cur_basis = cell(r, "standard_basis")
+        note_standard(cur_fn, explicit_standard)
         fail_text = cell(r, "failure")
         if fail_text:
             cur_fail = fail_text
+            if explicit_standard and cur_fn:
+                breach_by_fail.setdefault((cur_fn.lower(), fail_text.lower()), explicit_standard)
         mode_text = cell(r, "mode")
         cause_text = cell(r, "causes") if keep_rows else ""
         if not mode_text and not cause_text:
@@ -447,6 +464,15 @@ def build_tree(header: list[str], rows: list[list], options: dict,
 
     for fn in functions:
         fn.pop("_by_key", None)
+        # Its standards as a list (clipped like the one), and which each failure breaches.
+        listed = [clip(x) for x in standards_by_fn.get(fn["text"].lower(), [])]
+        if listed:
+            fn["standards"] = listed
+            if len(listed) > 1:
+                for failure in fn["failures"]:
+                    named = breach_by_fail.get((fn["text"].lower(), failure["text"].lower()))
+                    if named and named.lower() in [x.lower() for x in listed]:
+                        failure["breaches"] = clip(named)
 
     if n_modes == 0 and not n_links:
         raise RcmImportError(
@@ -469,7 +495,13 @@ def build_tree(header: list[str], rows: list[list], options: dict,
         cleaned = rcm.clean_tree(functions)
     except rcm.RcmValidationError as exc:  # pragma: no cover - built to be valid
         raise RcmImportError(str(exc)) from None
-    if keep_rows:  # clean_tree keeps the order, and drops the row
+    for fn, cfn in zip(functions, cleaned):  # clean_tree keeps the order; these ride along
+        if fn.get("standards"):
+            cfn["standards"] = fn["standards"]
+        for failure, cfailure in zip(fn["failures"], cfn["failures"]):
+            if failure.get("breaches"):
+                cfailure["breaches"] = failure["breaches"]
+    if keep_rows:  # clean_tree drops the row
         for fn, cfn in zip(functions, cleaned):
             if fn.get("standard_basis"):
                 cfn["standard_basis"] = fn["standard_basis"]

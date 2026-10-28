@@ -57,6 +57,10 @@ export function causedBy(fail) {
 // blank. A failure mode with several tasks gets one row per task: the first
 // carries everything, the others repeat the mode with that task and its
 // interval (the import reads a repeated mode's row as another task for it).
+// A function with several standards gets a row per standard first (the
+// function and the standard alone), and each failure's rows carry the
+// standard it breaches, if any; a function with one standard is written as
+// before (the import reads either back).
 export function positionRcmRows(worksheet) {
   const rows = [EXPORT_HEADER];
   const path = [];
@@ -72,18 +76,29 @@ export function positionRcmRows(worksheet) {
       written.add(fn.id);
       return true;
     };
+    // A function's standard cell: its one text, or, with a list, the standard
+    // the failure breaches (blank: the whole function).
+    const listed = (fn) => (fn?.standards || []).length > 1;
+    const standardCell = (fn, fail) => (listed(fn) ? fail?.standard?.text || "" : fn?.standard || "");
     const modeRow = (fn, fail, m) => {
       const first = firstRow(fn);
       const d = m?.decision || {};
       return [
-        where, fn?.text || "", fn?.standard || "", (first && fn.standard_basis) || "", fail?.text || "", causedBy(fail), m?.text || "", m?.effects || "",
+        where, fn?.text || "", standardCell(fn, fail), (first && fn.standard_basis) || "", fail?.text || "", causedBy(fail), m?.text || "", m?.effects || "",
         CONSEQUENCE_LABEL[m?.consequence] || "", OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
         d.interval ?? "", d.interval ? d.interval_unit || "" : "",
         d.status && d.status !== "unevidenced" ? STATUS_LABEL[d.status] || d.status : "", m?.notes || "",
       ];
     };
+    const standardRows = (fn) => {
+      if (!listed(fn)) return;
+      const first = firstRow(fn);
+      for (const [i, st] of fn.standards.entries()) {
+        rows.push([where, fn.text || "", st.text || "", (first && i === 0 && fn.standard_basis) || "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      }
+    };
     const taskRow = (fn, fail, m, t) => [
-      where, fn?.text || "", fn?.standard || "", "", fail?.text || "", causedBy(fail), m.text || "", "",
+      where, fn?.text || "", standardCell(fn, fail), "", fail?.text || "", causedBy(fail), m.text || "", "",
       "", OUTCOME_LABEL[t.outcome] || OUTCOME_LABEL[m.decision?.outcome] || "", "", t.text || t.name || "",
       t.interval ?? "", t.interval ? t.unit || "" : "", "", "",
     ];
@@ -93,7 +108,8 @@ export function positionRcmRows(worksheet) {
     };
     for (const m of p.unassigned || []) modeRows(null, null, m);
     for (const fn of p.functions || []) {
-      if (!(fn.failures || []).length) rows.push(modeRow(fn, null, null));
+      standardRows(fn);
+      if (!(fn.failures || []).length && !listed(fn)) rows.push(modeRow(fn, null, null));
       for (const fail of fn.failures || []) {
         if (!(fail.modes || []).length) rows.push(modeRow(fn, fail, null));
         for (const m of fail.modes || []) modeRows(fn, fail, m);

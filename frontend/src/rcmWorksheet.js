@@ -302,10 +302,12 @@ const d = (r) => r.ref.decision || null;
 export const COLUMNS = [
   {
     id: "standard", label: "Performance standard", width: 200, min: 150, on: false,
-    title: "What the function must achieve, e.g. within 30 m from 60 km/h",
+    title: "What the function must achieve, e.g. within 30 m from 60 km/h; several standards on one line",
     text: (r) => (r.type === "fn" ? r.ref.standard || "" : ""),
     sort: (r) => (r.type === "fn" ? r.ref.standard || null : null),
-    edit: "text", can: (r) => r.type === "fn", field: "standard",
+    // Edited in the cell only while the function has its one text: a list is
+    // edited as a list, in the function's dialog or Details.
+    edit: "text", can: (r) => r.type === "fn" && !(r.ref.standards || []).length, field: "standard",
   },
   {
     id: "effects", label: "Failure effects", width: 180, min: 112, on: true,
@@ -454,7 +456,7 @@ export function chipCounts(display) {
 export function rowText(r) {
   const p = r.ref;
   return [p.text, p.standard, p.basis_preview, p.effects, p.notes, p.decision?.task, p.decision?.notes,
-    ...tasksOf(p).map((t) => t.name)]
+    ...tasksOf(p).map((t) => t.name), ...(p.standards || []).map((st) => [st.parameter, st.when, st.source].filter(Boolean).join(" "))]
     .filter(Boolean).join(" ").toLowerCase();
 }
 

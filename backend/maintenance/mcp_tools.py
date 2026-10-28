@@ -265,12 +265,25 @@ FAILURE_MODES: Table = {
     "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
     "add_function": ("position_id text", "standard standard_basis", "A function the position performs, with its "
                      "performance standard and how it was worked out (standard_basis, Markdown)."),
-    "update_function": ("function_id", "text standard standard_basis", "Change a function's text, standard or "
-                        "standard_basis ('' clears it)."),
+    "update_function": ("function_id", "text standard standard_basis", "Change a function's text, standard (not "
+                        "once it has a list: see add_standard) or standard_basis ('' clears it)."),
+    "add_standard": ("function_id text", "parameter comparator value unit when source", """One of the function's
+        performance standards, one parameter and one limit ('pH 7.2-7.8'); the structured limit, when it
+        applies and its source are optional. A function may hold several."""),
+    "update_standard": ("standard_id", "text parameter comparator value unit when source", "Change one ('' clears "
+                        "a field)."),
+    "remove_standard": ("standard_id", "", "Take one off its function (a failure breaching it breaches the whole "
+                        "function again)."),
+    "reorder_standards": ("function_id standard_ids", "", "The function's standards in that order."),
+    "split_standard": ("function_id", "standards dry_run", """Turn a function's single standard text into a list:
+        proposed from its ';' and line breaks (dry_run true, default), then sent back edited as standards
+        [{text, when?, source?}] with dry_run false. Never automatic."""),
     "remove_function": ("function_id", "", "Delete a function, its functional failures and documents; their modes "
                         "stay, unassigned."),
-    "add_functional_failure": ("function_id text", "", "A way the function fails ('No flow')."),
-    "update_functional_failure": ("functional_failure_id text", "", "Change a functional failure's text."),
+    "add_functional_failure": ("function_id text", "standard_id", "A way the function fails ('No flow'); "
+                               "standard_id: the standard it breaches (none: the whole function)."),
+    "update_functional_failure": ("functional_failure_id", "text standard_id", "Change its text, or the standard "
+                                  "it breaches (standard_id 'none': the whole function)."),
     "remove_functional_failure": ("functional_failure_id", "", "Delete a functional failure; its modes stay, "
                                   "unassigned."),
     "link_cause": ("functional_failure_id cause_id", "", "It results from cause_id, a functional failure on a "
@@ -1050,7 +1063,12 @@ def register() -> None:
                                   cause_id: str | None = None, task_id: str | None = None,
                                   name: str | None = None, interval: float | None = None,
                                   unit: str | None = None, outcome: str | None = None,
-                                  instructions: str | None = None) -> dict[str, Any]:
+                                  instructions: str | None = None, standard_id: str | None = None,
+                                  standard_ids: list[str] | None = None, parameter: str | None = None,
+                                  comparator: str | None = None, value: float | str | None = None,
+                                  when: str | None = None, source: str | None = None,
+                                  standards: list[dict[str, Any]] | None = None,
+                                  dry_run: bool | None = None) -> dict[str, Any]:
         """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
         each fails (functional failures) and the modes causing each, with each mode's decision. Modes are
         added here (or from a worksheet: uploads import_excel), or typed in at a failure (ad hoc). Failures
@@ -1098,9 +1116,20 @@ def register() -> None:
         if action == "remove_function":
             return run(remove_function_bytes, m, function_id)
         if action == "add_functional_failure":
-            return run(m.add_functional_failure, function_id, text)
+            return run(m.add_functional_failure, function_id, text, standard_id)
         if action == "update_functional_failure":
-            return run(m.update_functional_failure, functional_failure_id, text)
+            return run(m.update_functional_failure, functional_failure_id, text,
+                       none_is_null(standard_id) if standard_id is not None else ...)
+        if action == "add_standard":
+            return run(m.add_standard, function_id, text, parameter, comparator, value, unit, when, source)
+        if action == "update_standard":
+            return run(m.update_standard, standard_id, text, parameter, comparator, value, unit, when, source)
+        if action == "remove_standard":
+            return run(m.remove_standard, standard_id)
+        if action == "reorder_standards":
+            return run(m.reorder_standards, function_id, standard_ids)
+        if action == "split_standard":
+            return run(m.split_standard, function_id, standards, _d(dry_run, True))
         if action == "remove_functional_failure":
             return run(m.remove_functional_failure, functional_failure_id)
         if action == "link_cause":

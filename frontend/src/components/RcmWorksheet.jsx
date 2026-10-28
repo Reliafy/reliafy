@@ -10,6 +10,7 @@ import {
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
+import RcmFunctionStandards, { BreachesField } from "./RcmFunctionStandards.jsx";
 import { plainFirstLine } from "../basisMarkdown.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
 import "./RcmWorksheet.css";
@@ -311,8 +312,12 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
           help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
           limit: r.type === "fn" ? { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } : null,
         })}
-        {r.type === "fn" && field("Performance standard", "standard", { help: "Optional, e.g. within 30 m from 60 km/h" })}
+        {r.type === "fn" && !ops && field("Performance standard", "standard", { help: "Optional, e.g. within 30 m from 60 km/h" })}
         {r.type === "mode" && field("Failure effects", "effects", { area: true })}
+        {r.type === "fail" && ops?.setBreach && (
+          <BreachesField r={r} readOnly={readOnly} standards={display.rows.get(r.parent)?.ref.standards || []}
+                         onChange={(id) => ops.setBreach(r, id).catch(() => {})} />
+        )}
         {r.type === "mode" && (
           <label className="rw-field">
             <span className="rw-flabel">Consequence</span>
@@ -341,8 +346,9 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
         )}
       </div>
 
-      {/* The panel's order: Description → (function: Performance standard → Working behind it) /
+      {/* The panel's order: Description → (function: Performance standards → Working behind it) /
           (failure: Caused by below → Causes above) → the actions. */}
+      {r.type === "fn" && ops?.standards && <RcmFunctionStandards key={r.key} r={r} ops={ops} readOnly={readOnly} />}
       {r.type === "fn" && ops?.basis && (
         <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
                   openToken={ops.basisView?.token(r)} />

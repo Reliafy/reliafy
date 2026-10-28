@@ -235,6 +235,44 @@ worksheet…**, downloads a position's RCM (and everything inside it) one row pe
 failure mode, with each decision's evidence and status, in the same layout the
 import reads.
 
+## Several performance standards on one function
+
+A function is one job: one verb, one object. How well it must do that job is
+often several numbers: flow and pressure; pH, total alkalinity and calcium
+hardness. Each is its own performance standard, and losing any one of them is
+its own functional failure. Keeping them as a list, rather than a sentence
+with *and* in it, keeps the function's words short and lets each functional
+failure say what it breaches.
+
+Open a function (double-click its row, or **Open…** in its menu) and look
+under **Performance standards**:
+
+- Each standard is one line: one parameter and one limit, such as *pH
+  7.2–7.8*. **Add standard** adds another; **Edit** changes one; **Remove**
+  takes it off; the arrows move it up or down. **Limit…** unfolds the
+  structured fields (parameter, comparator, value, unit), **when** it applies
+  (a condition such as *while the filter pump runs*, which is never a
+  standard on its own) and its **source** (*AS 1926.3*, *the E25 manual*).
+  Keep the text as the thing people read; the structured limit is optional.
+- A function that had one standard before shows it as the first item. The
+  moment you add a second, that text becomes the first item of the list,
+  as written. Nothing is split for you: if the old text was a list joined by
+  semicolons, **Split into standards…** proposes one standard per part, lets
+  you edit each line or drop it, and writes them when you confirm.
+- Open a functional failure to say which standard it **Breaches**: *pH above
+  7.8* breaches *pH 7.2–7.8*; *No flow* breaches the whole function. It is a
+  hint for the reader, not a rule: the dialog says *2 standards have no
+  functional failure yet* under a function, in grey, so you can decide
+  whether those are standards of this function at all.
+- A standard that needs its own verb is another function: *produce chlorine*
+  and *not raise the pH* are two jobs.
+
+The table's **Performance standard** column shows the list on one line. In a
+worksheet, every distinct standard cell under a function is one standard (a
+row with the function and a standard alone lists one), and when a function
+has several, a functional failure's row names the one it breaches; **Export
+CSV** writes them that way.
+
 ## Show the working behind a performance standard
 
 Some standards come from sums, not a book: how much chlorine a pool needs from
