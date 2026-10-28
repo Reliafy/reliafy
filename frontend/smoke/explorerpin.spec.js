@@ -192,7 +192,7 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   // A function's menu is unchanged.
   await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
   await expect(rowMenu(page, `Function: Pump water ${tag}`).getByRole("menuitem"))
-    .toHaveText(["Open…", "Add functional failure", "Edit description", "Delete function"]);
+    .toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Delete function"]);
   await page.keyboard.press("Escape");
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click();
   await shot(page, "3-pinned-rcm-tab");

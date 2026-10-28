@@ -198,10 +198,10 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   await page.keyboard.press("Shift+F10");
   const menu = rowMenu(page, fnName);
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add functional failure", "Edit description", "Delete function"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Delete function"]);
   await expect(menu.getByRole("menuitem", { name: "Open…" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
-  await expect(menu.getByRole("menuitem", { name: "Add functional failure" })).toBeFocused();
+  await expect(menu.getByRole("menuitem", { name: "Add a standard…" })).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp"); // round to the last
   await expect(menu.getByRole("menuitem", { name: "Delete function" })).toBeFocused();
@@ -212,6 +212,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   // in a dialog (with its counter).
   await page.keyboard.press("ContextMenu");
   await expect(menu).toBeVisible();
+  await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
@@ -304,7 +305,7 @@ test("at 400 px each row shows its ⋯: a tap opens the menu, and adding works",
   await more.click();
   const menu = rowMenu(page, fnName);
   // On a phone the details panel edits the description: no Edit description here.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add functional failure", "Delete function"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a standard…", "Add functional failure", "Delete function"]);
   const mbox = await menu.boundingBox();
   expect(mbox.x).toBeGreaterThanOrEqual(0);
   expect(mbox.x + mbox.width).toBeLessThanOrEqual(400);
