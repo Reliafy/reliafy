@@ -1143,6 +1143,34 @@ def _task_moved(s: GraphStore, org: str, p: dict) -> None:
     _task_on(s, org, p["id"], p["position_id"])
 
 
+def _functional_failure_moved(s: GraphStore, org: str, p: dict) -> None:
+    """A functional failure moved under another function, on the same position
+    or another, with the failure modes named in the event and their tasks. The
+    standard it breached stays with its old function; standard_id names one of
+    the new function's it breaches instead (none: the whole function). Every
+    named mode is put on the new position (nothing changes when it's the same
+    one); a mode under it that isn't named (a deleted or merged one, when the
+    position changes) stays where it was and is taken from under it, so no
+    edge crosses positions."""
+    for fn in s.inn(org, p["id"], "FAILS_AS"):
+        if fn["id"] != p["function_id"]:
+            s.delete_edge(org, "FAILS_AS", fn["id"], p["id"])
+    s.put_edge(org, "FAILS_AS", p["function_id"], p["id"])
+    s.patch_node(org, p["id"], {"order": p.get("order", 0)})
+    for st in s.out(org, p["id"], "BREACHES"):
+        s.delete_edge(org, "BREACHES", p["id"], st["id"])
+    if p.get("standard_id"):
+        s.put_edge(org, "BREACHES", p["id"], p["standard_id"])
+    moved = set(p.get("failure_mode_ids") or [])
+    for mode_id in moved:
+        _on_position(s, org, "CAN_FAIL_AS", mode_id, p["position_id"])
+    for mode in s.out(org, p["id"], "CAUSED_BY"):
+        if mode["id"] not in moved:
+            s.delete_edge(org, "CAUSED_BY", p["id"], mode["id"])
+    for task_id in p.get("task_ids") or []:
+        _task_on(s, org, task_id, p["position_id"])
+
+
 # A failure mode's RCM analysis, beyond what failure_mode.added carries.
 _ANALYSIS = ("effects", "notes", "rtf_basis", "evidence", "decision_notes", "task_note")
 
@@ -2088,6 +2116,8 @@ PROJECTORS = {
     "function.moved": _function_moved,
     "failure_mode.moved": _failure_mode_moved,
     "task.moved": _task_moved,
+    # A functional failure under another function (same position or another).
+    "functional_failure.moved": _functional_failure_moved,
     # Taking the rest of the tree out of use (history kept), and bringing anything
     # retired or removed back; the edits that had no event before.
     "location.retired": _flag("retired"),
@@ -3035,14 +3065,15 @@ class Maintenance:
             value = _text(text, "functional failure", required=True, max_len=LONG_TEXT)
             if value != ff["text"]:
                 changes["text"] = value
+        now = [st["id"] for st in self.s.out(self.org, ff_id, "BREACHES") if not st.get("removed")]
         if standard_id is not ...:
             wanted = self._standard_on(fn["id"], standard_id)["id"] if standard_id else None
-            now = [st["id"] for st in self.s.out(self.org, ff_id, "BREACHES") if not st.get("removed")]
             if now != ([wanted] if wanted else []):
                 changes["standard_id"] = wanted
         if changes:
             self._emit("functional_failure.updated", {"id": ff_id, "changes": changes})
-        return self._ff_view(self._get(ff_id, "FunctionalFailure"))
+        # The standard it breached before (None: the whole function), so a batch can undo the change.
+        return {**self._ff_view(self._get(ff_id, "FunctionalFailure")), "from_standard_id": now[0] if now else None}
 
     # ---- a function's performance standards, as a list --------------------------------
     # A function is one job (one verb, one object); how well it must do it can
@@ -3164,7 +3195,8 @@ class Maintenance:
         for n, sid in enumerate(ids, start=1):
             if (by_id[sid].get("order") or 0) != n:
                 self._emit("standard.updated", {"id": sid, "changes": {"order": n}})
-        return self._function_view(self._get(function_id, "Function"))
+        # The order before, so a batch can undo it.
+        return {**self._function_view(self._get(function_id, "Function")), "previous_ids": [st["id"] for st in have]}
 
     def split_standard(self, function_id: str, standards=None, dry_run: bool = True) -> dict:
         """Turn a function's old single standard text into a list, one standard
@@ -3234,12 +3266,14 @@ class Maintenance:
         fm, position = self._live_mode(mode_id)
         target = self._ff_on(functional_failure_id, position["id"]) if functional_failure_id else None
         now = [ff["id"] for ff in self.s.inn(self.org, mode_id, "CAUSED_BY") if not ff.get("removed")]
+        # Where it was (None: under none), so a batch can undo the change.
+        was = {"from_functional_failure_id": now[0] if now else None}
         if (target and now == [target["id"]]) or (not target and not now):
-            return self._mode_view(fm)
+            return self._mode_view(fm) | was
         self._emit("failure_mode.assigned", {
             "id": mode_id, "functional_failure_id": target and target["id"],
         } | ({"order": self._next_order(self._ff_modes(target["id"]))} if target else {}))
-        return self._mode_view(self._get(mode_id, "FailureMode"))
+        return self._mode_view(self._get(mode_id, "FailureMode")) | was
 
     # ---- a functional failure caused by lower ones -------------------------------------
     # A higher functional failure results from functional failures on positions
@@ -3773,6 +3807,7 @@ class Maintenance:
                               f"{target['name']}'s, or leave it out to move the mode unassigned.")
         tasks = self._check_mode_move(fm, source, target, {mode_id})
         unlinked = self._links_after_move([fm], {t["id"] for t in tasks}, target)
+        was = [x["id"] for x in self.s.inn(self.org, mode_id, "CAUSED_BY") if not x.get("removed")]
         for task, _ in unlinked:
             self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": mode_id, "on": self.today()})
         self._emit("failure_mode.moved", {
@@ -3780,6 +3815,8 @@ class Maintenance:
             "functional_failure_id": ff and ff["id"], "task_ids": sorted(t["id"] for t in tasks), "on": self.today(),
         } | ({"order": self._next_order(self._ff_modes(ff["id"]))} if ff else {}))
         return {**self.rcm_mode(mode_id), "position_id": target["id"], "from_position_id": source["id"],
+                # The functional failure it was under (None: none), so a batch can undo the move.
+                "from_functional_failure_id": was[0] if was else None,
                 "tasks_moved": len(tasks), "tasks_unlinked": [t["id"] for t, _ in unlinked],
                 **({"note": _tasks_unlinked_note(unlinked)} if unlinked else {})}
 
@@ -3798,7 +3835,108 @@ class Maintenance:
         self._check_task_move(task, source, target, set())
         self._emit("task.moved", {"id": task_id, "position_id": target["id"], "from_position_id": source["id"],
                                   "on": self.today()})
-        return self._task_view(self._get(task_id, "Task"))
+        # Where it came from, so a batch can undo the move.
+        return {**self._task_view(self._get(task_id, "Task")), "from_position_id": source["id"]}
+
+    def move_functional_failure(self, ff_id: str, function_id, standard_id=None) -> dict:
+        """Move a functional failure under another function, on the same position
+        or another, with its failure modes and their tasks: ids, decisions,
+        effects, notes, evidence and task dates stay. The standard it breached
+        stays with its old function; standard_id names one of the new function's
+        it breaches instead (left out: the whole function). Moving to another
+        position follows move_function's rules: nothing with history moves, and
+        links that would no longer run downwards go, saying so."""
+        ff, fn_from, source = self._live_ff(ff_id)
+        if not function_id:
+            raise Invalid("Say which function to move it under (function_id).")
+        if self.s.node(self.org, str(function_id), "Function") is None:
+            raise Invalid("There's no function with that id in this workspace: pick one from the RCM tree.")
+        fn_to, target = self._live_function(str(function_id))
+        if fn_to["id"] == fn_from["id"]:
+            raise Invalid(f"It's already under {shortened(fn_to['text'])[0]}: pick another function (to change "
+                          "the order of a function's failures, reorder them).")
+        if target.get("retired"):
+            raise Invalid(f"{target['name']} has been retired: pick a function on a position that's still in use.")
+        standard = self._standard_on(fn_to["id"], standard_id) if standard_id else None
+        modes = self._ff_modes(ff_id)
+        moving = {m["id"] for m in modes}
+        tasks: dict[str, dict] = {}
+        leaving: list[tuple[str, str]] = []
+        unlinked: list[tuple[dict, dict]] = []
+        if target["id"] == source["id"]:
+            # Same position: every mode under it (deleted and merged ones too) stays
+            # under it, tasks and links are untouched.
+            named = sorted(m["id"] for m in self.s.out(self.org, ff_id, "CAUSED_BY"))
+        else:
+            for fm in modes:
+                for task in self._check_mode_move(fm, source, target, moving):
+                    tasks[task["id"]] = task
+            if len(modes) + len(tasks) > MAX_COPY_NODES:
+                raise Invalid(f"That functional failure has more than {MAX_COPY_NODES} failure modes and tasks to "
+                              "move at once: move some of its failure modes first.")
+            above = set(self._ancestor_ids(target["id"]))
+            for c in self.s.out(self.org, ff_id, "RESULTS_FROM"):
+                cp = self._ff_position_id(c["id"])
+                if not cp or target["id"] not in self._ancestor_ids(cp):
+                    leaving.append((ff_id, c["id"]))
+            for e in self.s.inn(self.org, ff_id, "RESULTS_FROM"):
+                if self._ff_position_id(e["id"]) not in above:
+                    leaving.append((e["id"], ff_id))
+            for effect_id, cause_id in leaving:
+                self._link_event("functional_failure.unlinked", effect_id, cause_id)
+            unlinked = self._links_after_move(modes, set(tasks), target)
+            for task, fm in unlinked:
+                self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": fm["id"], "on": self.today()})
+            named = sorted(moving)
+        was = [st["id"] for st in self.s.out(self.org, ff_id, "BREACHES") if not st.get("removed")]
+        self._emit("functional_failure.moved", {
+            "id": ff_id, "function_id": fn_to["id"], "from_function_id": fn_from["id"],
+            "position_id": target["id"], "from_position_id": source["id"],
+            "order": self._next_order(self._failures_of(fn_to["id"])),
+            "failure_mode_ids": named, "task_ids": sorted(tasks), "on": self.today(),
+        } | ({"standard_id": standard["id"]} if standard else {}))
+        notes = [_links_note(len(leaving))] if leaving else []
+        if unlinked:
+            notes.append(_tasks_unlinked_note(unlinked))
+        return {"moved": ff_id, "function_id": fn_to["id"], "from_function_id": fn_from["id"],
+                "position_id": target["id"], "from_position_id": source["id"],
+                # The standard it breached before (None: the whole function), so a batch can undo the move.
+                "from_standard_id": was[0] if was else None,
+                "failure": self._ff_view(self._get(ff_id, "FunctionalFailure")),
+                "failure_modes_moved": len(moving), "tasks_moved": len(tasks), "links_removed": len(leaving),
+                "tasks_unlinked": sorted({t["id"] for t, _ in unlinked}),
+                **({"note": " ".join(notes)} if notes else {})}
+
+    def reorder_rcm(self, parent_id, ids) -> dict:
+        """Siblings in the RCM tree in the order given: a position's functions, a
+        function's functional failures or a functional failure's failure modes
+        (parent_id says which), every live one named once. Returns the order
+        before too (previous_ids), so a batch can undo it."""
+        if not parent_id:
+            raise Invalid("Say whose children to reorder (parent_id: a position, a function or a functional failure).")
+        node = self.s.node(self.org, str(parent_id))
+        if node is None or node["label"] not in ("Position", "Function", "FunctionalFailure"):
+            raise Invalid("parent_id is a position (its functions), a function (its functional failures) or a "
+                          "functional failure (its failure modes).")
+        if node["label"] == "Position":
+            if node.get("retired"):
+                raise Invalid(f"{node['name']} has been retired.")
+            have, what, event = self._functions_of(node["id"]), "functions", "function.updated"
+        elif node["label"] == "Function":
+            self._live_function(node["id"])
+            have, what, event = self._failures_of(node["id"]), "functional failures", "functional_failure.updated"
+        else:
+            self._live_ff(node["id"])
+            have, what, event = self._ff_modes(node["id"]), "failure modes", "failure_mode.updated"
+        wanted = [str(x) for x in (ids or [])]
+        if sorted(wanted) != sorted(n["id"] for n in have):
+            raise Invalid(f"Name each of its {what} once (ids), in the order wanted.")
+        by_id = {n["id"]: n for n in have}
+        for n, nid in enumerate(wanted, start=1):
+            if (by_id[nid].get("order") or 0) != n:
+                self._emit(event, {"id": nid, "changes": {"order": n}})
+        return {"parent_id": node["id"], "kind": what.replace(" ", "_"), "ids": wanted,
+                "previous_ids": [n["id"] for n in have]}
 
     def _function_view(self, fn: dict, full: bool = True, standards: list | None = None,
                        breached: dict | None = None) -> dict:

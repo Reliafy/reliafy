@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Rearranging the RCM tree. `maintenance_failure_modes move_functional_failure`
+  moves a functional failure under another function (on the same position or
+  another) with its failure modes and their tasks; the standard it breached
+  stays with the old function, `standard_id` names one of the new function's.
+  `reorder` places a position's functions, a function's functional failures or
+  a functional failure's failure modes (`parent_id`, `ids`). Every move's
+  result says where the thing came from (`from_position_id`,
+  `from_functional_failure_id`, `from_function_id`, `from_standard_id`;
+  reorders give `previous_ids`), and `maintenance_apply` now lists the reverse
+  of moves, assigns and reorders in `undo`, so several moves sent as one batch
+  are all or nothing and can be undone as one.
+
 - A function may have several performance standards, as a list.
   `maintenance_failure_modes add_standard` (text, and optionally parameter,
   comparator, value, unit, when, source), `update_standard`, `remove_standard`,
