@@ -508,8 +508,12 @@ everything that moved with it, so a replay never works the rule out again:
 | `function.moved` | `id, position_id, from_position_id, order, failure_mode_ids, task_ids, on` | the function, its functional failures, the live failure modes under them and those modes' live tasks |
 | `failure_mode.moved` | `id, position_id, from_position_id, functional_failure_id, order?, task_ids, on` | one mode with its decision and live tasks, under one of the new position's functional failures (or none) |
 | `task.moved` | `id, position_id, from_position_id, on` | one position's task |
+| `functional_failure.moved` | `id, function_id, from_function_id, position_id, from_position_id, order, standard_id?, failure_mode_ids, task_ids, on` | one functional failure under another function (same position or another) with the modes named and their live tasks; the standard it breached stays with the old function, `standard_id` names one of the new function's |
 
 Who moved it and when are the event's `actor` and `at`, as for every event.
+A functional failure moving on its own position names every mode under it
+(deleted and merged ones too), so they stay under it; moving to another
+position names the live ones, as `function.moved` does.
 A deleted or merged mode still under a moved functional failure stays on the
 old position (it's history there) and is taken from under the functional
 failure, so no edge crosses positions. Retired tasks stay where they were.
@@ -542,6 +546,18 @@ The events are new types, so no existing projection changes meaning and
 `PROJECTION_VERSION` stays. Code from before them logs an event it doesn't
 know and passes over it (see `GraphStore._project`), so during a rolling
 deploy an older instance shows the thing where it was until it's replaced.
+
+**Order and undo.** A moved thing goes last among its new siblings.
+`reorder_rcm(parent_id, ids)` (`PUT /rcm/order`; `maintenance_failure_modes
+reorder`) places a position's functions, a function's functional failures or a
+functional failure's failure modes, emitting the existing `*.updated` events
+with `order`, as `reorder_standards` does. Each move's result names where the
+thing came from (`from_position_id`, `from_functional_failure_id`,
+`from_function_id`, `from_standard_id`; reorders give `previous_ids`), so a
+`maintenance_apply` batch of moves answers with an `undo` list that puts them
+back. The app's RCM tab sends one batch per drag-and-drop through `POST
+/rcm/apply` (the arranging actions only, `apply.ARRANGE`, run through the
+service directly; the same checked-on-a-copy-first rule, the same answer).
 
 The evidence check (`backend/maintenance/rcm_decisions.py`, applied by
 `rcm_graph.resolve`) is done on every read, never stored. A task with no unit

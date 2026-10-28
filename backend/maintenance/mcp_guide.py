@@ -134,11 +134,17 @@ retire.
 - An FMEA / RCM worksheet the user has (Excel or CSV, one row per failure mode): uploads create (purpose excel), \
 then uploads import_excel target=rcm position_id=… It only adds (same-text functions and functional failures are \
 reused, modes already there are left alone), so importing again adds nothing; with errors nothing is written.
-- RCM put on the wrong position: maintenance_failure_modes move_function (the function with its functional \
-failures, modes and their tasks) or move (one mode with its decision and tasks; functional_failure_id: one on \
-the new position), and maintenance_tasks move (a position's task). Ids, decisions and dates stay. Anything with \
-history stays put (failures or findings recorded against a mode, work done on a task, a task's use counted from \
-the old position's counter): the refusal says what to do instead.
+- RCM put on the wrong position or under the wrong thing: maintenance_failure_modes move_function (the function \
+with its standards, functional failures, modes and their tasks), move_functional_failure (under another \
+function, on the same position or another, with its modes and their tasks; the standard it breached stays with \
+the old function, standard_id names one of the new function's), assign (a mode under another of its position's \
+functional failures, or none) or move (one mode to another position with its decision and tasks; \
+functional_failure_id: one there), and maintenance_tasks move (a position's task). Ids, decisions and dates \
+stay. Anything with history stays put (failures or findings recorded against a mode, work done on a task, a \
+task's use counted from the old position's counter): the refusal says what to do instead. A moved thing goes \
+last among its new siblings; reorder (parent_id: the position, function or functional failure; ids: its \
+children in the order wanted) and reorder_standards place things. Several moves at once (five modes under one \
+functional failure): maintenance_apply, all or nothing, and its undo list puts them back.
 - Several tasks for one failure mode, one task for several. A mode's decision has one task, the first in its \
 decision.tasks; maintenance_failure_modes add_task adds another (a combination: an inspection that catches the \
 slow failures plus a replacement at a hard life; the classic sources expect it for safety, environmental and \
@@ -276,8 +282,9 @@ the first run's result (replayed true) instead of running again. Use one when a 
 - The answer: ok, applied, counts (creates, updates, deletes, other), events written, results per operation \
 ({index, ref, do, status ok | would | failed | skipped, id, result, error}; over 50 operations each result is \
 cut to id and name, so read records back with maintenance_get afterwards), undo (the reverse operations, newest first: \
-send them back through maintenance_apply to undo the batch) and irreversible (operations with no automatic \
-reverse: updates, voids, corrections, closes, cancels, merges, stock, photo or PDF removals).
+send them back through maintenance_apply to undo the batch; moves, assigns and reorders in the RCM tree are \
+reversed too, a moved thing coming back last among its old siblings) and irreversible (operations with no \
+automatic reverse: updates, voids, corrections, closes, cancels, merges, stock, photo or PDF removals).
 - Build a pump branch, RCM and parts in one call: {operations: [
   {ref: 'p', do: 'positions.create', args: {name: 'Feed pump A', parent_id: '<system id>', position_class: 'Feed pump'}},
   {ref: 'f', do: 'failure_modes.add_function', args: {position_id: '@p', text: 'Deliver 40 L/s at 6 bar'}},

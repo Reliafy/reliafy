@@ -102,6 +102,58 @@ RETIRES = {restore: retire for retire, restore in RESTORES.items()}
 #: Links and the unlink that undoes each (and back): the same arguments.
 LINKS = {"tasks.link": "tasks.unlink", "tasks.unlink": "tasks.link"}
 
+
+def _without_none(**kw) -> dict:
+    return {k: v for k, v in kw.items() if v is not None}
+
+
+#: Moves and reorders in the RCM tree, and the operation that puts each back:
+#: the result names where the thing came from (from_position_id,
+#: from_functional_failure_id, from_function_id, from_standard_id,
+#: previous_ids). A moved thing comes back last among its old siblings; a
+#: reorder in the same undo batch places it exactly.
+MOVES = {
+    "failure_modes.assign": lambda a, r: {"do": "failure_modes.assign", "args": _without_none(
+        failure_mode_id=a.get("failure_mode_id"), functional_failure_id=r.get("from_functional_failure_id"))},
+    "failure_modes.move": lambda a, r: {"do": "failure_modes.move", "args": _without_none(
+        failure_mode_id=a.get("failure_mode_id"), position_id=r.get("from_position_id"),
+        functional_failure_id=r.get("from_functional_failure_id"))},
+    "failure_modes.move_function": lambda a, r: {"do": "failure_modes.move_function", "args": _without_none(
+        function_id=a.get("function_id"), position_id=r.get("from_position_id"))},
+    "failure_modes.move_functional_failure": lambda a, r: {
+        "do": "failure_modes.move_functional_failure", "args": _without_none(
+            functional_failure_id=a.get("functional_failure_id"), function_id=r.get("from_function_id"),
+            standard_id=r.get("from_standard_id"))},
+    "failure_modes.update_functional_failure": lambda a, r: {
+        "do": "failure_modes.update_functional_failure", "args": {
+            "functional_failure_id": a.get("functional_failure_id"),
+            "standard_id": r.get("from_standard_id") or "none"}} if "standard_id" in a and "text" not in a else None,
+    "failure_modes.reorder": lambda a, r: {"do": "failure_modes.reorder", "args": {
+        "parent_id": a.get("parent_id"), "ids": r.get("previous_ids")}},
+    "failure_modes.reorder_standards": lambda a, r: {"do": "failure_modes.reorder_standards", "args": {
+        "function_id": a.get("function_id"), "standard_ids": r.get("previous_ids")}},
+    "tasks.move": lambda a, r: {"do": "tasks.move", "args": _without_none(
+        task_id=a.get("task_id"), position_id=r.get("from_position_id"))},
+}
+
+#: The arranging actions the app's RCM tab sends as one batch per drop (``POST
+#: /api/maintenance/rcm/apply``): each with the Maintenance method it runs and
+#: that method's positional arguments, by the names the action takes. Nothing
+#: here deletes, so no confirm is needed.
+ARRANGE = {
+    "failure_modes.assign": ("assign_failure_mode", "failure_mode_id functional_failure_id"),
+    "failure_modes.move": ("move_failure_mode", "failure_mode_id position_id functional_failure_id"),
+    "failure_modes.move_function": ("move_function", "function_id position_id"),
+    "failure_modes.move_functional_failure": ("move_functional_failure",
+                                              "functional_failure_id function_id standard_id"),
+    "failure_modes.update_functional_failure": ("update_functional_failure", "functional_failure_id text standard_id"),
+    "failure_modes.reorder": ("reorder_rcm", "parent_id ids"),
+    "failure_modes.reorder_standards": ("reorder_standards", "function_id standard_ids"),
+    "tasks.link": ("link_task", "task_id failure_mode_id"),
+    "tasks.unlink": ("unlink_task", "task_id failure_mode_id"),
+    "tasks.move": ("move_task", "task_id position_id"),
+}
+
 _UPDATE_WORDS = ("update", "set_", "assign", "decide", "move", "link", "correct", "check", "status", "place",
                  "reorder", "stock", "labour", "part_used", "cost", "accept", "reject", "apply_", "exclude_",
                  "add_to_position", "add_component", "fit", "remove", "close", "generate", "record", "photo",
@@ -324,7 +376,44 @@ def _undo_for(op: dict, result) -> dict | None:
         return {"do": retire, "args": {arg: target}, **({"confirm": name} if name else {})}
     if do in LINKS:
         return {"do": LINKS[do], "args": dict(op["args"])}
+    if do in MOVES and isinstance(result, dict):
+        return MOVES[do](op["args"], result)
     return None
+
+
+# ---- the app's RCM tab: one batch per drop ---------------------------------------------
+
+def parse_arranging(operations) -> list[dict]:
+    """The operations of an app-side batch, checked as :func:`parse` checks them
+    and limited to the arranging actions (:data:`ARRANGE`)."""
+    from backend.maintenance import mcp_tools
+
+    ops = parse(operations, {name: mcp_tools.TABLES[name] for name in mcp_tools.TABLES})
+    for op in ops:
+        if op["do"] not in ARRANGE:
+            raise BatchRefused(f"op {op['index']}: {op['do']} isn't one of the arranging actions this call runs "
+                               f"({', '.join(sorted(ARRANGE))}).")
+    return ops
+
+
+def arrange(m, do: str, args: dict):
+    """Run one arranging operation on ``m`` through the service method it names
+    (the app's batch, which doesn't go through the MCP tools). 'none' or '' for
+    standard_id clears it, as over MCP; a standard_id left out leaves it alone."""
+    method, names = ARRANGE[do]
+    names = names.split()
+    unknown = sorted(set(args) - set(names))
+    if unknown:
+        raise BatchRefused(f"{do} doesn't take {', '.join(unknown)}: its arguments are {', '.join(names)}.")
+    given = []
+    for name in names:
+        value = args.get(name)
+        if name == "standard_id" and do == "failure_modes.update_functional_failure":
+            value = ... if name not in args else (None if value in ("none", "") else value)
+        elif name == "standard_id" and value in ("none", ""):
+            value = None
+        given.append(value)
+    return getattr(m, method)(*given)
 
 
 def run_pass(ops: list[dict], call, m, on_error: str, dry: bool) -> dict:

@@ -622,6 +622,58 @@ def move_function(function_id: str, body: dict = Body(...),
     return _run(m.move_function, function_id, body.get("position_id"))
 
 
+@router.post("/functional-failures/{ff_id}/move")
+def move_functional_failure(ff_id: str, body: dict = Body(...),
+                            m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Under another function (function_id), on the same position or another, with its failure
+    modes and their tasks; standard_id: one of that function's standards it breaches there."""
+    return _run(m.move_functional_failure, ff_id, body.get("function_id"), body.get("standard_id"))
+
+
+@router.put("/rcm/order")
+def reorder_rcm(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """ids: the children of parent_id (a position's functions, a function's functional failures or a
+    functional failure's failure modes) in the order wanted, every live one named once."""
+    return _run(m.reorder_rcm, body.get("parent_id"), body.get("ids"))
+
+
+@router.post("/rcm/apply")
+def rcm_apply(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The RCM tab's drag and drop: operations [{do, args}] (the maintenance_apply shape, arranging
+    actions only: assign, move, move_function, move_functional_failure, update_functional_failure,
+    reorder, reorder_standards, tasks link / unlink / move) run as one batch. Every operation is
+    first checked on a throwaway copy of the workspace: with any refusal nothing is written (422,
+    detail says which operation and why). The answer is maintenance_apply's: each operation's
+    result, counts and undo (the operations that put everything back, newest first; send them here
+    as a batch). dry_run true checks only."""
+    from backend.maintenance import apply as apply_mod
+    from backend.maintenance.store import scratch_copy
+
+    try:
+        ops = apply_mod.parse_arranging(body.get("operations"))
+    except apply_mod.BatchRefused as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+
+    def call(area, action, args):
+        return apply_mod.arrange(apply_mod.ACTIVE_M.get(), f"{area}.{action}", args)
+
+    copy = Maintenance(scratch_copy(m.s, m.org), m.org, m.actor, time_zone=m.time_zone)
+    rehearsal = apply_mod.run_pass(ops, call, copy, "stop", dry=True)
+    if rehearsal["failed"]:
+        out = apply_mod.summarise(ops, rehearsal, True, 0)
+        out["detail"] = f"Nothing was changed: {rehearsal['failed']['error']}"
+        return JSONResponse(status_code=422, content=out)
+    if body.get("dry_run"):
+        return JSONResponse(content=apply_mod.summarise(ops, rehearsal, True, copy.s.event_count(m.org)))
+    before = m.s.event_count(m.org)
+    real = apply_mod.run_pass(ops, call, m, "stop", dry=False)
+    out = apply_mod.summarise(ops, real, False, m.s.event_count(m.org) - before)
+    if real["failed"]:
+        out["detail"] = (f"Stopped at {real['failed']['error']} The operations before it were applied (undo lists "
+                         "their reverse); the rest were skipped.")
+    return JSONResponse(content=out)
+
+
 @router.post("/failure-modes/{mode_id}/merge")
 def merge_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Fold this mode into another on the same position (into_id)."""

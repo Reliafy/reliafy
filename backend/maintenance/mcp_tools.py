@@ -293,6 +293,11 @@ FAILURE_MODES: Table = {
              "tasks; functional_failure_id: one there (or none)."),
     "move_function": ("function_id position_id", "", "To another position, with its functional failures, modes "
                       "and tasks."),
+    "move_functional_failure": ("functional_failure_id function_id", "standard_id", "Under another function "
+                                "(same position or another), with its modes and tasks; standard_id: one it "
+                                "breaches there."),
+    "reorder": ("parent_id ids", "", "parent_id's children in that order: a position's functions, a function's "
+                "failures or a failure's modes, every live one named once."),
     "merge": ("failure_mode_id into_failure_mode_id", "", """Fold a mode into another on the same position (a
         duplicate, an ad-hoc one): its failures, findings and tasks move across. Returns the position."""),
 }
@@ -1068,7 +1073,8 @@ def register() -> None:
                                   comparator: str | None = None, value: float | str | None = None,
                                   when: str | None = None, source: str | None = None,
                                   standards: list[dict[str, Any]] | None = None,
-                                  dry_run: bool | None = None) -> dict[str, Any]:
+                                  dry_run: bool | None = None, parent_id: str | None = None,
+                                  ids: list[str] | None = None) -> dict[str, Any]:
         """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
         each fails (functional failures) and the modes causing each, with each mode's decision. Modes are
         added here (or from a worksheet: uploads import_excel), or typed in at a failure (ad hoc). Failures
@@ -1140,6 +1146,10 @@ def register() -> None:
             return run(m.move_failure_mode, failure_mode_id, position_id, functional_failure_id)
         if action == "move_function":
             return run(m.move_function, function_id, position_id)
+        if action == "move_functional_failure":
+            return run(m.move_functional_failure, functional_failure_id, function_id, none_is_null(standard_id))
+        if action == "reorder":
+            return run(m.reorder_rcm, parent_id, ids)
         return run(m.merge_failure_mode, failure_mode_id, into_failure_mode_id)
 
     Outcome = Literal["fixed_interval", "failure_finding", "on_condition"]
