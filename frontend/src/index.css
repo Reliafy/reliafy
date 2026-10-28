@@ -228,12 +228,25 @@ h6 {
 }
 
 /* The menu can be taller than the window (a section open, More open): the
-   rail scrolls on its own. */
+   rail scrolls on its own. Its scrollbar stays out of sight until the pointer
+   is over the menu, so a mouse or "always show scroll bars" setting doesn't
+   draw a permanent grey bar beside it. */
 .sidebar:not(.drawer) {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
+.sidebar:not(.drawer):hover,
+.sidebar:not(.drawer):focus-within {
+  scrollbar-color: var(--faint) transparent;
+}
+.sidebar:not(.drawer)::-webkit-scrollbar { width: 6px; }
+.sidebar:not(.drawer)::-webkit-scrollbar-track { background: transparent; }
+.sidebar:not(.drawer)::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.sidebar:not(.drawer):hover::-webkit-scrollbar-thumb,
+.sidebar:not(.drawer):focus-within::-webkit-scrollbar-thumb { background: var(--faint); }
 
 /* Header row: "Workspace" label + the collapse toggle on one line. */
 .side-head {
