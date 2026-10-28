@@ -6,6 +6,7 @@ import {
   uploadMaintenanceDocument,
 } from "../api.js";
 import { COLUMN, FUNCTION_MAX, FUNCTION_NUDGE, decisionBody } from "../rcmWorksheet.js";
+import { itemWrites } from "../explorerRcm.js";
 
 // The RCM in the Explorer's tree (the RCM tab): every position's functions,
 // functional failures and failure modes, read once when the tab opens and
@@ -69,6 +70,23 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       if (col === "effects" || col === "notes") return after(updateFailureMode(id, { [col]: value }));
       if (col === "consequence") return after(decideFailureMode(id, { consequence: value || null }));
       return after(decideFailureMode(id, { decision: decisionBody(r.ref.decision, { [COLUMN[col].field]: value }) }));
+    },
+    // A row's dialog saved (values checked by checkItem): its writes in order,
+    // then the RCM and the tree read again once, also when one is refused (so
+    // what was saved shows); the refusal goes to the dialog.
+    async saveItem(r, values) {
+      const id = r.ref.id;
+      const send = {
+        function: (body) => updatePositionFunction(id, body),
+        failure: (body) => updateFunctionalFailure(id, body),
+        mode: (body) => updateFailureMode(id, body),
+        decide: (body) => decideFailureMode(id, body),
+      };
+      try {
+        for (const w of itemWrites(r, values)) await send[w.api](w.body);
+      } finally {
+        await after(Promise.resolve());
+      }
     },
     // Something new inside a row: a function on a position, a functional failure
     // on a function, a failure mode on a functional failure (or under none). Asks

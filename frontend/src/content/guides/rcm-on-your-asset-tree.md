@@ -50,6 +50,10 @@ still see what needs doing. Click a row to open its **Details** beside the
 tree: for a failure mode, that's its effects, consequence, notes, the decision,
 and the link to the evidence with one line saying what it shows, for example
 *Optimal interval ≈ 580 hours (50% saving vs run-to-failure)*.
+Double-click a function, functional failure or failure mode (or choose
+**Open…**, first in its row menu) to see all of it in one dialog: where it
+sits, what's inside it and, for a failure mode, its decision. Changes there are
+kept when you press **Save**; **Cancel** leaves it as it was.
 
 To find your way around a big tree:
 

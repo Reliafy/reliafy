@@ -10,7 +10,7 @@
 // (right-click, ⋯ or Shift+F10), and the RCM chips.
 
 import {
-  COLUMN, COLUMNS, DEFAULT_COLUMNS, blank as rcmBlank, intervalText, modeCounts, rowText as rcmText,
+  COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, intervalText, modeCounts, rowText as rcmText,
 } from "./rcmWorksheet.js";
 
 export const RCM_TYPES = new Set(["fn", "fail", "mode", "unassigned", "cause"]);
@@ -134,6 +134,10 @@ export const rcmRowText = (r) => rcmText(r);
 // the table (not on a phone, where the details panel edits it).
 export function rowActions(r, { canRename = true } = {}) {
   if (!r) return [];
+  // A function, functional failure or failure mode opens in its own dialog
+  // (a double-click on the row does the same): first, so it's found without
+  // the double-click, and on a phone, where there's none.
+  const open = opensItem(r) ? [{ id: "open", label: "Open…" }] : [];
   const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
   if (r.type === "pos") {
     return [
@@ -143,10 +147,11 @@ export function rowActions(r, { canRename = true } = {}) {
     ];
   }
   if (r.type === "fn") {
-    return [{ id: "add-fail", label: "Add functional failure" }, ...rename, { id: "delete", label: "Delete function", danger: true }];
+    return [...open, { id: "add-fail", label: "Add functional failure" }, ...rename, { id: "delete", label: "Delete function", danger: true }];
   }
   if (r.type === "fail") {
     return [
+      ...open,
       { id: "add-mode", label: "Add failure mode" },
       { id: "link-cause", label: "Link to a cause…" },
       ...(r.ref.has_above ? [{ id: "link-effect", label: "Link to an effect…" }] : []),
@@ -157,6 +162,7 @@ export function rowActions(r, { canRename = true } = {}) {
   if (r.type === "cause") return [{ id: "go", label: "Go to it" }, { id: "unlink", label: "Unlink", danger: true }];
   if (r.type === "mode") {
     return [
+      ...open,
       { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
       ...rename,
       { id: "delete", label: "Delete failure mode", danger: true },
@@ -387,4 +393,90 @@ export function unlinkEmptiesFailure(whole, effectId, causeId) {
   if (!e || e.type !== "fail") return false;
   const counted = (e.ref.causes || []).filter((c) => c.inside);
   return !(e.rsum?.modes) && counted.length === 1 && counted[0].id === causeId;
+}
+
+// ---- a row's own dialog (double-click, or Open… in its menu) ---------------------------
+// A function, functional failure or failure mode opens in a dialog with all of
+// it in one place: its fields to edit (kept with Save, dropped with Cancel),
+// what it sits under and what's inside it, and (a failure mode) its decision.
+export const ITEM_KINDS = new Set(["fn", "fail", "mode"]);
+export const opensItem = (r) => !!r && ITEM_KINDS.has(r.type);
+
+// The fields each kind's dialog edits, in order: the table's column ids
+// ("name" is the description).
+export const ITEM_FIELDS = { fn: ["name", "standard"], fail: ["name"], mode: ["name", "effects", "consequence", "notes"] };
+
+// A field's value as saved (a string, as the dialog's boxes hold it).
+export function itemValue(r, col) {
+  if (col === "name") return r.ref.text || "";
+  if (col === "consequence") return CONSEQUENCE_LABEL[r.ref.consequence] ? r.ref.consequence : "";
+  return String(r.ref[COLUMN[col]?.field || col] ?? "");
+}
+
+// The fields typed differently from what's saved: {col: typed}. `drafts`
+// holds only the fields that were typed in.
+export function itemChanges(r, drafts) {
+  const out = {};
+  for (const col of ITEM_FIELDS[r.type] || []) {
+    if (!(col in drafts)) continue;
+    const typed = String(drafts[col] ?? "");
+    if (typed.trim() !== itemValue(r, col).trim()) out[col] = typed;
+  }
+  return out;
+}
+
+// The changes checked as the panel and the table check them (checkValue):
+// {values: {col: value}, errors: {col: reason}}.
+export function checkItem(r, changes) {
+  const values = {};
+  const errors = {};
+  for (const [col, raw] of Object.entries(changes)) {
+    const res = checkValue(col, r, raw);
+    if (res.error) errors[col] = res.error;
+    else values[col] = res.value;
+  }
+  return { values, errors };
+}
+
+// The writes that save the checked values, fewest first: one for the
+// function or functional failure; for a failure mode, its words in one and
+// its consequence in another (the decision keeps everything else).
+// [{api, body}], api one of "function", "failure", "mode", "decide".
+export function itemWrites(r, values) {
+  const pick = (keys, rename = {}) => {
+    const body = {};
+    for (const k of keys) if (k in values) body[rename[k] || k] = values[k];
+    return body;
+  };
+  const out = [];
+  if (r.type === "fn") {
+    const body = pick(["name", "standard"], { name: "text" });
+    if (Object.keys(body).length) out.push({ api: "function", body });
+  } else if (r.type === "fail") {
+    if ("name" in values) out.push({ api: "failure", body: { text: values.name } });
+  } else if (r.type === "mode") {
+    const body = pick(["name", "effects", "notes"], { name: "text" });
+    if (Object.keys(body).length) out.push({ api: "mode", body });
+    if ("consequence" in values) out.push({ api: "decide", body: { consequence: values.consequence || null } });
+  }
+  return out;
+}
+
+// A functional failure's state, in words, for its dialog: whether its
+// failure modes are decided, and what's explained by links below.
+export function failureStatusWords(r) {
+  const s = r.rsum || r.sum || rcmBlank();
+  const causes = r.ref.causes || [];
+  if (s.modes) {
+    const own = s.undecided
+      ? `${s.undecided.toLocaleString("en-AU")} of its ${s.modes.toLocaleString("en-AU")} failure mode${s.modes === 1 ? "" : "s"} still need${s.undecided === 1 ? "s" : ""} a decision.`
+      : `Analysed: ${s.modes === 1 ? "its failure mode has" : `all ${s.modes.toLocaleString("en-AU")} of its failure modes have`} a decision.`;
+    return causes.length ? `${own} It is also caused by ${causes.length === 1 ? "a failure" : "failures"} below.` : own;
+  }
+  if (causes.length) {
+    return r.ref.explained_below
+      ? "Covered: it is explained by the failures linked below, and their failure modes are decided there."
+      : "Not finished: it is linked to failures below, but some of their failure modes still need a decision.";
+  }
+  return "Not analysed yet: it has no failure modes and nothing linked below.";
 }
