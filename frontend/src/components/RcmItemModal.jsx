@@ -11,17 +11,22 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { ancestorsOf } from "../outlineTree.js";
 import {
-  CONSEQUENCE_LABEL, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, decisionText, functionCount, intervalText, nameOf, tasksOf,
+  CONSEQUENCE_LABEL, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, decisionText, functionCount, functionOf, intervalText, nameOf, tasksOf,
 } from "../rcmWorksheet.js";
-import { ITEM_FIELDS, checkItem, failureStatusWords, failureSummary, itemChanges, itemValue } from "../explorerRcm.js";
+import { checkItem, failureRows, failureStatusWords, failureSummary, itemChanges, itemFields, itemValue } from "../explorerRcm.js";
+import { COMPARATORS, COMPARATOR_LABEL } from "../rcmStandards.js";
 import "./RcmItemModal.css";
 
-// A function, functional failure or failure mode in its own dialog (the
-// Explorer's RCM tab: double-click its row, or Open… in its menu): all of it
-// in one place. Its words are edited here and kept with Save (Cancel, Escape
-// or × drops them, asking first when something was typed); the working behind
-// a standard, the links between failures and the decision keep their own
-// buttons, which save at once, as in the Details panel.
+// A function, performance standard, functional failure or failure mode in
+// its own dialog (the Explorer's RCM tab: double-click its row, or Open… in
+// its menu): all of it in one place. Its words are edited here and kept with
+// Save (Cancel, Escape or × drops them, asking first when something was
+// typed); the working behind a standard, the links between failures and the
+// decision keep their own buttons, which save at once, as in the Details
+// panel. A standard's dialog has its text, its structured limit (parameter,
+// comparator, value, unit), when it applies and its source, and the
+// functional failures that breach it; a function's one text (its legacy
+// standard row) has the text alone, saved as the function's.
 //
 //   r          the row (cellRow: sum is its own counts), read afresh after each save
 //   display    the whole tree with the RCM in it (what it sits under, what's inside)
@@ -97,7 +102,7 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
     const { values, errors: bad } = checkItem(r, changes);
     if (Object.keys(bad).length) {
       setState((s) => ({ ...s, errors: bad }));
-      const first = ITEM_FIELDS[r.type].find((c) => bad[c]);
+      const first = itemFields(r).find((c) => bad[c]);
       setTimeout(() => form.current?.querySelector(`[name="${first}"]`)?.focus(), 0);
       return;
     }
@@ -125,11 +130,14 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
   const position = posAt >= 0 ? up[posAt] : display.rows.get(r.ref.position_id);
   const above = posAt >= 0 ? up.slice(posAt + 1) : [];
   const where = position?.ref.name || "";
-  const kids = r.kids.map((k) => display.rows.get(k)).filter((k) => k && (k.type === "fail" || k.type === "mode"));
+  // What's inside: a function's functional failures (through its standard
+  // rows), a standard's functional failures, a failure's failure modes.
+  const kids = r.type === "fn" ? failureRows(display, r)
+    : r.kids.map((k) => display.rows.get(k)).filter((k) => k && (k.type === "fail" || k.type === "mode"));
   const d = r.ref.decision;
   const fnCount = r.type === "fn" ? functionCount(value("name"), r.ref.text || "") : null;
 
-  const field = (col, label, { area = false, help = null } = {}) => {
+  const field = (col, label, { area = false, help = null, placeholder = null } = {}) => {
     const id = `rim-${col}`;
     const count = col === "name" ? fnCount : null;
     const Tag = area ? "textarea" : "input";
@@ -140,7 +148,7 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
           {count && <span className={"char-count" + (count.tone ? ` ${count.tone}` : "")} aria-hidden="true">{count.text}</span>}
         </label>
         <span className="rw-fin">
-          <Tag id={id} name={col} value={value(col)} rows={area ? 3 : undefined} readOnly={saving}
+          <Tag id={id} name={col} value={value(col)} rows={area ? 3 : undefined} readOnly={saving} placeholder={placeholder || undefined}
                maxLength={count ? FUNCTION_MAX : undefined}
                aria-description={count ? `${count.n} of ${count.max} characters. ${FUNCTION_NUDGE}` : undefined}
                aria-invalid={errors[col] || count?.over ? "true" : undefined}
@@ -176,7 +184,7 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
         {above.map((a) => (
           <span key={a.key} className="rim-crumb">
             <span aria-hidden="true"> › </span>
-            {a.type === "fn" || a.type === "fail" ? (
+            {a.type === "fn" || a.type === "std" || a.type === "fail" ? (
               <button type="button" className="link" onClick={() => openOther(a.key)} title={`Open the ${LEVEL_OF[a.type].label.toLowerCase()}`}>
                 {nameOf(a) || `(${LEVEL_OF[a.type].label.toLowerCase()})`}
               </button>
@@ -186,10 +194,39 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
       </p>
 
       <form id="rim-form" ref={form} className="rw-fields" onSubmit={save} noValidate>
-        {field("name", "Description", {
+        {field("name", r.type === "std" ? "Standard" : "Description", {
           area: true,
-          help: r.type === "fn" ? "What this position must do" : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
+          help: r.type === "fn" ? "What this position must do" : r.type === "std" ? "One parameter and one limit, e.g. pH 7.2-7.8"
+            : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
         })}
+        {r.type === "std" && r.ref.legacy && (
+          <p className="rw-fhelp rim-legacy">
+            This is the function's one standard, as written. To make it a list (one row each, with a limit on each), open the
+            function and press <b>Add standard</b>, or <b>Split into standards…</b> when the text is several joined by “;”.
+          </p>
+        )}
+        {r.type === "std" && !r.ref.legacy && (
+          <fieldset className="rim-limit">
+            <legend className="rw-flabel">Limit (optional)</legend>
+            <div className="rim-trow">
+              {field("parameter", "Parameter", { placeholder: "e.g. pH" })}
+              <div className="rw-field">
+                <label className="rw-flabel" htmlFor="rim-comparator">Comparator</label>
+                <span className="rw-fin">
+                  <select id="rim-comparator" name="comparator" value={value("comparator")} disabled={saving}
+                          onChange={(e) => type("comparator", e.target.value)}>
+                    <option value="">—</option>
+                    {COMPARATORS.map((c) => <option key={c} value={c}>{COMPARATOR_LABEL[c]} ({c})</option>)}
+                  </select>
+                </span>
+              </div>
+              {field("value", "Value", { placeholder: "7.2-7.8" })}
+              {field("unit", "Unit", { placeholder: "ppm" })}
+            </div>
+            {field("when", "When it applies", { placeholder: "e.g. while the filter pump runs" })}
+            {field("source", "Source", { placeholder: "e.g. AS 1926.3, the E25 manual" })}
+          </fieldset>
+        )}
         {r.type === "mode" && field("effects", "Failure effects", { area: true, help: "What happens when it occurs" })}
         {r.type === "mode" && (
           <div className="rw-field">
@@ -210,7 +247,7 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
         <RcmBasis r={r} basis={ops.basis} context={ops.basisView?.context(r)} />
       )}
       {r.type === "fail" && ops?.setBreach && (
-        <BreachesField r={r} standards={display.rows.get(r.parent)?.ref.standards || []}
+        <BreachesField r={r} standards={functionOf(display, r)?.ref.standards || []}
                        onChange={(id) => ops.setBreach(r, id).then(() => onSaid?.("Saved."), (e) => setFailed(saveErrorText(e, { offline: navigator.onLine === false })))} />
       )}
 
@@ -254,10 +291,14 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
       {r.type === "mode" && ops && <RcmModeTasks key={r.key} r={r} ops={ops} start={start} onSaid={onSaid} />}
 
       {r.type !== "mode" && (
-        <section className="rim-kids" aria-label={r.type === "fn" ? "Functional failures" : "Failure modes"}>
-          <h3>{r.type === "fn" ? "Functional failures" : "Failure modes"}</h3>
+        <section className="rim-kids" aria-label={r.type === "fail" ? "Failure modes" : "Functional failures"}>
+          <h3>{r.type === "fail" ? "Failure modes" : "Functional failures"}</h3>
           {kids.length === 0 ? (
-            <p className="rw-fhelp">{r.type === "fn" ? "No functional failures yet." : "No failure modes of its own yet."}</p>
+            <p className="rw-fhelp">
+              {r.type === "fn" ? "No functional failures yet."
+                : r.type === "std" ? (r.ref.legacy ? "No functional failures yet." : "No functional failure written yet: add one from the standard's row menu (Add a functional failure…).")
+                : "No failure modes of its own yet."}
+            </p>
           ) : (
             <ul className="rim-list">
               {kids.map((k) => (

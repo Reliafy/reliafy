@@ -65,3 +65,11 @@
   .rim-tlist li { flex-wrap: wrap; }
   .rim-tacts .link { min-height: 36px; }
 }
+
+/* A standard's dialog: its structured limit, condition and source in a
+   fieldset drawn like the other fields; the one text's note. */
+.rim-limit { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.rim-limit legend { padding: 0; margin-bottom: 2px; }
+.rim-limit .rim-trow .rw-field { flex: 1 1 120px; min-width: 0; }
+.rim-limit .rim-trow input, .rim-limit .rim-trow select { width: 100%; }
+.rim-legacy { margin: 0; }

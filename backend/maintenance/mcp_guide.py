@@ -121,7 +121,10 @@ failure, and a function's standards_without_failure says when one hasn't (a hint
 function's standard field is the list's texts joined with '; ' once it has a list; a function's old single text \
 shows until then, becomes the first item when a standard joins it, and split_standard (dry run first, then the \
 edited lines) turns it into several: the app never splits on its own. A standard that needs its own verb is \
-another function.
+another function. In the app the standards are a level of the Explorer's RCM tree (position > function > \
+standard > functional failure > failure mode): each functional failure sits under the standard it breaches, the \
+ones that breach none under a "No standard" row, and a function's old single text shows as one standard row \
+with every functional failure under it (no link written).
 - A standard worked out from the operating context (a demand, a capacity, a margin): put the working in \
 standard_basis on add_function / update_function (Markdown text, at most 20,000 characters; '' clears it; over \
 the CLI --standard_basis @working.md). A PDF of it: add_document with target_id = the function (at most 5). \

@@ -1,9 +1,9 @@
 // The Explorer's RCM tab: the asset tree and the RCM are one table. The tree
 // (assetTree.js, arranged by positions) is the first column; on this tab each
-// position's rows go on into its functions › functional failures › failure
-// modes, nested in the same tree (the same open rows, the same selection), and
-// every row has the RCM's columns beside it. On the Summary tab the tree is the
-// positions alone, as it always was.
+// position's rows go on into its functions › performance standards ›
+// functional failures › failure modes, nested in the same tree (the same open
+// rows, the same selection), and every row has the RCM's columns beside it.
+// On the Summary tab the tree is the positions alone, as it always was.
 //
 // Pure functions (no React), tested in explorerRcm.test.js: the tree with the
 // RCM grafted in, which position a row is on, what each row's menu offers
@@ -13,20 +13,38 @@ import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, blank as rcmBlank, checkValue, intervalText, modeCounts, moreTasks,
   rowText as rcmText, tasksOf,
 } from "./rcmWorksheet.js";
+import { standardsShown } from "./rcmStandards.js";
 
-export const RCM_TYPES = new Set(["fn", "fail", "mode", "unassigned", "cause"]);
+export const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode", "unassigned", "cause"]);
 export const isRcmRow = (r) => !!r && RCM_TYPES.has(r.type);
 
 const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, not_analysed: 0, positions: 0, empty: 0 });
 
 // The tree with each position's RCM in it (from GET /api/maintenance/rcm:
 // {positions: [{id, functions, unassigned}]}). Under a position: its functions
-// (each with its functional failures, each with its failure modes), then its
-// failure modes under no functional failure (an "unassigned" row), then the
-// positions inside it. Adding is from each row's menu (rowActions) and the
-// heading's Add function, not from rows in the tree. The display given is left
-// as it is; position rows gain `rsum` (their own failure modes' counts) and
-// `rcmKids` (how many of their kids are RCM rows).
+// (each with its performance standards, each with the functional failures
+// that breach it, each with its failure modes), then its failure modes under
+// no functional failure (an "unassigned" row), then the positions inside it.
+// Adding is from each row's menu (rowActions) and the heading's Add function,
+// not from rows in the tree. The display given is left as it is; position
+// rows gain `rsum` (their own failure modes' counts) and `rcmKids` (how many
+// of their kids are RCM rows).
+//
+// The standards are a level of the tree, the way classic RCM reads it: each
+// functional failure is the loss of a standard. Under a function:
+// - its list of standards, one row each (key: the standard's id), with the
+//   functional failures that breach it nested under it;
+// - a function that still has its one standard text (no list) shows that
+//   text as one standard row (key `S:<function>`, `legacy: true`), and every
+//   functional failure sits under it: with one standard there is nothing
+//   else to breach, so no link is needed (or written) to read it that way;
+// - with a list, the functional failures that breach no one standard (a
+//   total loss breaches them all, or the link isn't made yet) sit under one
+//   muted "No standard" row (key `N:<function>`) after the standards, so
+//   every functional failure is at the same depth and every failure mode
+//   too, and the rows to re-point stand together;
+// - a function with no standard at all has its functional failures right
+//   under it, as before.
 //
 // A functional failure caused by lower ones gets a reference row ("cause", key
 // `L:<failure>:<cause>`) after its own failure modes for each lower failure
@@ -70,17 +88,57 @@ export function graftRcm(display, rcm) {
     const d = r.depth;
     for (const fn of p?.functions || []) {
       if (!add(fn.id, "fn", { ...fn, position_id: r.key }, r.key, d + 1)) continue;
-      for (const ff of fn.failures || []) {
-        if (!add(ff.id, "fail", { ...ff, position_id: r.key, function_id: fn.id, has_above: !!r.ref.parent_id }, fn.id, d + 2)) continue;
-        for (const m of ff.modes || []) modeRow(m, ff.id, d + 3, ff.id);
+      // Its standards, as rows: the list, or its one text as one (legacy) row.
+      const shown = standardsShown(fn);
+      const legacy = shown.length === 1 && shown[0].legacy;
+      const listed = new Set(shown.filter((st) => !st.legacy).map((st) => st.id));
+      const stdIds = shown.filter((st) => !st.legacy).map((st) => st.id);
+      const stdKey = (st) => (st.legacy ? legacyKey(fn.id) : st.id);
+      for (const st of shown) {
+        add(stdKey(st), "std", {
+          ...st, id: stdKey(st), standard_id: st.legacy ? null : st.id, position_id: r.key, function_id: fn.id,
+          function_text: fn.text || "", standard_ids: stdIds,
+        }, fn.id, d + 2);
+      }
+      // Each functional failure under the standard it breaches; the ones
+      // under none after the standards (one "No standard" row), or, with no
+      // list, right under the function (the one text's row, or the function).
+      const failRow = (ff, parent, depth) => {
+        const under = rows.get(parent);
+        const breach = ff.standard?.id && listed.has(ff.standard.id) ? ff.standard : null;
+        if (!add(ff.id, "fail", {
+          ...ff, standard: breach, position_id: r.key, function_id: fn.id, has_above: !!r.ref.parent_id,
+          has_standards: listed.size > 0,
+        }, parent, depth)) return;
+        for (const m of ff.modes || []) modeRow(m, ff.id, depth + 1, ff.id);
         for (const c of ff.causes || []) {
           const key = causeKey(ff.id, c.id);
           const row = add(key, "cause", {
             id: key, text: c.text, cause_id: c.id, effect_id: ff.id, position_id: r.key, effect_position: r.ref.name,
             on: c.position?.name || "", cause_position_id: c.position?.id || null, inside: c.inside !== false, covered: !!c.covered,
-          }, ff.id, d + 3);
+          }, ff.id, depth + 1);
           if (row) row.rsum = chainCounts(c.chain, modeById);
         }
+        if (under?.type === "std") under.ref.failures_here = (under.ref.failures_here || 0) + 1;
+      };
+      const loose = [];
+      for (const ff of fn.failures || []) {
+        if (legacy) failRow(ff, legacyKey(fn.id), d + 3);
+        else if (ff.standard?.id && listed.has(ff.standard.id)) failRow(ff, ff.standard.id, d + 3);
+        else loose.push(ff);
+      }
+      if (loose.length && listed.size) {
+        const n = add(noStdKey(fn.id), "nostd", {
+          id: noStdKey(fn.id), text: "No standard", position_id: r.key, function_id: fn.id, function_text: fn.text || "",
+        }, fn.id, d + 2);
+        for (const ff of loose) failRow(ff, n ? n.key : fn.id, n ? d + 3 : d + 2);
+      } else {
+        for (const ff of loose) failRow(ff, fn.id, d + 2);
+      }
+      for (const st of shown) {
+        const row = rows.get(stdKey(st));
+        // The quiet marker: a standard of the list with no functional failure yet.
+        if (row) row.ref.no_failure = !st.legacy && !(row.ref.failures_here || 0);
       }
     }
     if ((p?.unassigned || []).length) {
@@ -95,6 +153,30 @@ export function graftRcm(display, rcm) {
 }
 
 export const causeKey = (effectId, causeId) => `L:${effectId}:${causeId}`;
+// A function's one standard text, shown as a row; and its "No standard" row.
+export const legacyKey = (fnId) => `S:${fnId}`;
+export const noStdKey = (fnId) => `N:${fnId}`;
+
+// A function row's functional failures, in tree order, through its standard
+// rows (and its "No standard" row).
+export function failureRows(display, fnRow) {
+  const out = [];
+  for (const k of fnRow?.kids || []) {
+    const c = display.rows.get(k);
+    if (!c) continue;
+    if (c.type === "fail") out.push(c);
+    else if (c.type === "std" || c.type === "nostd") for (const f of c.kids) if (display.rows.get(f)?.type === "fail") out.push(display.rows.get(f));
+  }
+  return out;
+}
+
+// The standards a functional failure may breach: its function's list (none
+// while the function has its one text, or no standard).
+export function standardChoices(display, failRow) {
+  if (!failRow || failRow.type !== "fail") return [];
+  const fn = display.rows.get(failRow.ref.function_id);
+  return (fn?.ref.standards || []).map((st) => ({ id: st.id, text: st.text || "" }));
+}
 
 // A reference row's counts: the failure modes in the chain it stands for (the
 // `chain` the server read with the link), counted as a failure mode's own are;
@@ -135,9 +217,9 @@ export const rcmRowText = (r) => rcmText(r);
 // the table (not on a phone, where the details panel edits it).
 export function rowActions(r, { canRename = true } = {}) {
   if (!r) return [];
-  // A function, functional failure or failure mode opens in its own dialog
-  // (a double-click on the row does the same): first, so it's found without
-  // the double-click, and on a phone, where there's none.
+  // A function, standard, functional failure or failure mode opens in its own
+  // dialog (a double-click on the row does the same): first, so it's found
+  // without the double-click, and on a phone, where there's none.
   const open = opensItem(r) ? [{ id: "open", label: "Open…" }] : [];
   const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
   if (r.type === "pos") {
@@ -148,7 +230,29 @@ export function rowActions(r, { canRename = true } = {}) {
     ];
   }
   if (r.type === "fn") {
-    return [...open, { id: "add-fail", label: "Add functional failure" }, ...rename, { id: "delete", label: "Delete function", danger: true }];
+    return [
+      ...open,
+      { id: "add-std", label: "Add a standard…" },
+      { id: "add-fail", label: "Add functional failure" },
+      ...rename,
+      { id: "delete", label: "Delete function", danger: true },
+    ];
+  }
+  if (r.type === "std") {
+    // The list's rows move up and down; the one text's row (legacy) is alone.
+    const ids = r.ref.standard_ids || [];
+    const at = ids.indexOf(r.ref.standard_id);
+    const move = r.ref.legacy ? [] : [
+      { id: "move-up", label: "Move up", disabled: at <= 0 },
+      { id: "move-down", label: "Move down", disabled: at < 0 || at >= ids.length - 1 },
+    ];
+    return [
+      ...open,
+      ...(canRename ? [{ id: "rename", label: "Edit text" }] : []),
+      { id: "add-fail", label: "Add a functional failure…" },
+      ...move,
+      { id: "delete", label: "Remove standard", danger: true },
+    ];
   }
   if (r.type === "fail") {
     return [
@@ -156,6 +260,8 @@ export function rowActions(r, { canRename = true } = {}) {
       { id: "add-mode", label: "Add failure mode" },
       { id: "link-cause", label: "Link to a cause…" },
       ...(r.ref.has_above ? [{ id: "link-effect", label: "Link to an effect…" }] : []),
+      // Which of its function's standards it breaches (only with a list).
+      ...(r.ref.has_standards ? [{ id: "change-std", label: "Change standard…" }] : []),
       ...rename,
       { id: "delete", label: "Delete functional failure", danger: true },
     ];
@@ -318,7 +424,7 @@ export const TASK_WITH_INTERVAL = {
 };
 
 // The rows to open when the RCM tab opens on a position: it, and its
-// functions and functional failures, so its failure modes show.
+// functions, standards and functional failures, so its failure modes show.
 export function openFor(display, positionKey) {
   const out = new Set();
   const r = display.rows.get(positionKey);
@@ -328,11 +434,33 @@ export function openFor(display, positionKey) {
     const c = display.rows.get(k);
     if (c.type === "fn" || c.type === "unassigned") {
       out.add(k);
-      for (const f of c.kids) if (display.rows.get(f).type === "fail") out.add(f);
+      for (const f of c.kids) {
+        const x = display.rows.get(f);
+        if (x.type === "fail") out.add(f);
+        else if (x.type === "std" || x.type === "nostd") {
+          out.add(f);
+          for (const g of x.kids) if (display.rows.get(g).type === "fail") out.add(g);
+        }
+      }
     }
   }
   return out;
 }
+
+// The standard rows (and "No standard" rows) that arrived with a read and
+// weren't there before, under a function that is open: to open at once, so
+// the functional failures that were on show stay on show when they move
+// under a new row (a one text split into a list, a first standard added, a
+// failure re-pointed to a standard that had none). `seen`: the keys known
+// from the read before.
+export function newStandardRows(display, seen, open) {
+  const out = [];
+  for (const r of display.rows.values()) {
+    if ((r.type === "std" || r.type === "nostd") && !seen.has(r.key) && open.has(r.parent)) out.push(r.key);
+  }
+  return out;
+}
+export const standardKeys = (display) => new Set([...display.rows.values()].filter((r) => r.type === "std" || r.type === "nostd").map((r) => r.key));
 
 // ---- linking functional failures ----------------------------------------------------
 // The picker's lists, from the grafted display (`whole`, not a pinned branch of
@@ -370,9 +498,7 @@ export function linkChoices(whole, ffKey, direction) {
       const fn = rows.get(fk);
       if (fn?.type !== "fn") continue;
       functions.push({ id: fn.key, text: fn.ref.text || "" });
-      for (const xk of fn.kids) {
-        const x = rows.get(xk);
-        if (x?.type !== "fail") continue;
+      for (const x of failureRows(whole, fn)) {
         items.push({
           id: x.key, text: x.ref.text || "", function: fn.ref.text || "", linked: linked.has(x.key),
           summary: failureSummary(x),
@@ -412,16 +538,23 @@ export function unlinkEmptiesFailure(whole, effectId, causeId) {
 }
 
 // ---- a row's own dialog (double-click, or Open… in its menu) ---------------------------
-// A function, functional failure or failure mode opens in a dialog with all of
-// it in one place: its fields to edit (kept with Save, dropped with Cancel),
-// what it sits under and what's inside it, and (a failure mode) its decision.
-export const ITEM_KINDS = new Set(["fn", "fail", "mode"]);
+// A function, standard, functional failure or failure mode opens in a dialog
+// with all of it in one place: its fields to edit (kept with Save, dropped
+// with Cancel), what it sits under and what's inside it, and (a failure mode)
+// its decision.
+export const ITEM_KINDS = new Set(["fn", "std", "fail", "mode"]);
 export const opensItem = (r) => !!r && ITEM_KINDS.has(r.type);
 
 // The fields each kind's dialog edits, in order: the table's column ids
-// ("name" is the description).
+// ("name" is the description; a standard's is its text), and a standard's
+// structured limit, condition and source.
 // A function's performance standards are a list with their own saves (RcmFunctionStandards), not a field.
-export const ITEM_FIELDS = { fn: ["name"], fail: ["name"], mode: ["name", "effects", "consequence", "notes"] };
+export const STANDARD_FIELDS = ["parameter", "comparator", "value", "unit", "when", "source"];
+export const ITEM_FIELDS = { fn: ["name"], std: ["name", ...STANDARD_FIELDS], fail: ["name"], mode: ["name", "effects", "consequence", "notes"] };
+
+// The fields a row's dialog edits: a function's one standard text (a legacy
+// standard row) is the text alone, edited as the function's.
+export const itemFields = (r) => (r.type === "std" && r.ref.legacy ? ["name"] : ITEM_FIELDS[r.type] || []);
 
 // A field's value as saved (a string, as the dialog's boxes hold it).
 export function itemValue(r, col) {
@@ -434,7 +567,7 @@ export function itemValue(r, col) {
 // holds only the fields that were typed in.
 export function itemChanges(r, drafts) {
   const out = {};
-  for (const col of ITEM_FIELDS[r.type] || []) {
+  for (const col of itemFields(r)) {
     if (!(col in drafts)) continue;
     const typed = String(drafts[col] ?? "");
     if (typed.trim() !== itemValue(r, col).trim()) out[col] = typed;
@@ -456,9 +589,11 @@ export function checkItem(r, changes) {
 }
 
 // The writes that save the checked values, fewest first: one for the
-// function or functional failure; for a failure mode, its words in one and
-// its consequence in another (the decision keeps everything else).
-// [{api, body}], api one of "function", "failure", "mode", "decide".
+// function, standard or functional failure; for a failure mode, its words in
+// one and its consequence in another (the decision keeps everything else).
+// [{api, body}], api one of "function", "standard", "function-standard" (a
+// function's one text, from its legacy standard row), "failure", "mode",
+// "decide".
 export function itemWrites(r, values) {
   const pick = (keys, rename = {}) => {
     const body = {};
@@ -469,6 +604,13 @@ export function itemWrites(r, values) {
   if (r.type === "fn") {
     const body = pick(["name"], { name: "text" });
     if (Object.keys(body).length) out.push({ api: "function", body });
+  } else if (r.type === "std" && r.ref.legacy) {
+    if ("name" in values) out.push({ api: "function-standard", body: { standard: values.name } });
+  } else if (r.type === "std") {
+    const body = pick(["name", ...STANDARD_FIELDS], { name: "text" });
+    // A value that reads as a number is sent as one (the server keeps either).
+    if (typeof body.value === "string" && body.value.trim() !== "" && Number.isFinite(Number(body.value))) body.value = Number(body.value);
+    if (Object.keys(body).length) out.push({ api: "standard", body });
   } else if (r.type === "fail") {
     if ("name" in values) out.push({ api: "failure", body: { text: values.name } });
   } else if (r.type === "mode") {

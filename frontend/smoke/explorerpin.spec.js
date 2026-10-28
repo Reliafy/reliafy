@@ -175,7 +175,7 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   await expect(table).toBeVisible();
   await expect(bar(page)).toContainText(`Pinned: Works line A ${tag}`);
   // The column still says what it is, to a screen reader.
-  await expect(table.getByRole("columnheader", { name: "Position › function, failure or mode" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Position › function, standard, failure or mode" })).toBeVisible();
   await expect(trow(`^Works line A ${tag}`)).toHaveAttribute("aria-level", "1");
   await expect(trow(`^Function: Pump water ${tag}`)).toBeVisible();
   await expect(trow(`Failure mode: Seal leaks ${tag}`)).toBeVisible();

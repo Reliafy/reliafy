@@ -57,10 +57,10 @@ export function causedBy(fail) {
 // blank. A failure mode with several tasks gets one row per task: the first
 // carries everything, the others repeat the mode with that task and its
 // interval (the import reads a repeated mode's row as another task for it).
-// A function with several standards gets a row per standard first (the
+// A function with a list of standards gets a row per standard first (the
 // function and the standard alone), and each failure's rows carry the
-// standard it breaches, if any; a function with one standard is written as
-// before (the import reads either back).
+// standard it breaches, if any; a function with its one text (no list) is
+// written as before, the text on every row (the import reads either back).
 export function positionRcmRows(worksheet) {
   const rows = [EXPORT_HEADER];
   const path = [];
@@ -76,9 +76,11 @@ export function positionRcmRows(worksheet) {
       written.add(fn.id);
       return true;
     };
-    // A function's standard cell: its one text, or, with a list, the standard
-    // the failure breaches (blank: the whole function).
-    const listed = (fn) => (fn?.standards || []).length > 1;
+    // A function's standard cell: its one text, or, with a list (of any
+    // length), the standard the failure breaches (blank: the whole function),
+    // so a sheet reads back with each failure under its standard, as the
+    // Explorer's tree shows it.
+    const listed = (fn) => (fn?.standards || []).length > 0;
     const standardCell = (fn, fail) => (listed(fn) ? fail?.standard?.text || "" : fn?.standard || "");
     const modeRow = (fn, fail, m) => {
       const first = firstRow(fn);

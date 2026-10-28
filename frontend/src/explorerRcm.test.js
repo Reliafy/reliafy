@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  ITEM_FIELDS, NARROW_TABLE, TASK_WITH_INTERVAL, basisInName, causeKey, checkItem, failureStatusWords, itemChanges, itemValue, itemWrites, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, tableCols,
+  ITEM_FIELDS, NARROW_TABLE, TASK_WITH_INTERVAL, basisInName, causeKey, cellRow, checkItem, failureRows, failureStatusWords, itemChanges, itemFields, itemValue, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardChoices, standardKeys, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -62,15 +62,15 @@ test("no Add rows in the tree: adding is from each row's menu", () => {
   const ids = (key, opts) => rowActions(d.rows.get(key), opts).map((a) => a.id);
   assert.deepEqual(ids("pump"), ["add-fn", "import-sheet", "export-csv"]);
   assert.deepEqual(ids("motor"), ["add-fn", "import-sheet", "export-csv"]); // a position with no RCM yet
-  assert.deepEqual(ids("f1"), ["open", "add-fail", "rename", "delete"]);
-  assert.deepEqual(ids("x1"), ["open", "add-mode", "link-cause", "link-effect", "rename", "delete"]); // pump has a position above it
+  assert.deepEqual(ids("f1"), ["open", "add-std", "add-fail", "rename", "delete"]);
+  assert.deepEqual(ids("x1"), ["open", "add-mode", "link-cause", "link-effect", "rename", "delete"]); // pump has a position above it, no standards
   assert.deepEqual(ids("m1"), ["open", "decide", "add-task", "rename", "delete"]);
   assert.deepEqual(ids("U:pump"), []); // the "Not under a functional failure" heading has none
   // On a phone the details panel edits the description, so no Edit description.
   // Open… stays on a phone: it's the way to the dialog there (no double-click).
-  assert.deepEqual(ids("f1", { canRename: false }), ["open", "add-fail", "delete"]);
+  assert.deepEqual(ids("f1", { canRename: false }), ["open", "add-std", "add-fail", "delete"]);
   const label = (key) => rowActions(d.rows.get(key)).map((a) => a.label);
-  assert.deepEqual(label("f1"), ["Open…", "Add functional failure", "Edit description", "Delete function"]);
+  assert.deepEqual(label("f1"), ["Open…", "Add a standard…", "Add functional failure", "Edit description", "Delete function"]);
   assert.equal(label("m2")[1], "Change the decision…");
   assert.equal(label("m1")[1], "Decide…");
   assert.equal(label("m1")[2], "Add a task…");
@@ -327,7 +327,7 @@ test("row menus: a failure offers Link to a cause and, with a position above, Li
   assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure"]);
   assert.deepEqual(labels(causeKey("px", "x1")), ["Go to it", "Unlink"]);
   assert.deepEqual(rowActions(d.rows.get(causeKey("px", "x1")), { canRename: false }).map((a) => a.id), ["go", "unlink"]);
-  assert.deepEqual(rowActions(d.rows.get("f1")).map((a) => a.id), ["open", "add-fail", "rename", "delete"]);
+  assert.deepEqual(rowActions(d.rows.get("f1")).map((a) => a.id), ["open", "add-std", "add-fail", "rename", "delete"]);
 });
 
 test("opening a position's RCM opens functions and failures, so the reference rows show", () => {
@@ -433,4 +433,181 @@ test("a functional failure's state in plain words", () => {
   assert.match(failureStatusWords(ff(blank, { causes: [{ id: "c" }], explained_below: true })), /^Covered/);
   assert.match(failureStatusWords(ff(blank, { causes: [{ id: "c" }], explained_below: false })), /^Not finished/);
   assert.match(failureStatusWords(ff({ modes: 1, undecided: 0 }, { causes: [{ id: "c" }] })), /also caused by a failure below/);
+});
+
+// ---- performance standards as a level of the tree -----------------------------------
+
+const st = (id, text, failures = 0, extra = {}) => ({ id, text, order: 1, parameter: null, comparator: null, value: null, unit: null, when: null, source: null, failures, ...extra });
+const STANDARDS = {
+  positions: [{
+    id: "pump",
+    functions: [
+      // A list: each failure under the standard it breaches; one under none.
+      { id: "f1", text: "Pump water", standard: "At least 50 L/s; At 4 bar", legacy_standard: "", standards_without_failure: 1,
+        standards: [st("s1", "At least 50 L/s", 1), st("s2", "At 4 bar", 0, { order: 2, parameter: "Pressure", comparator: ">=", value: 4, unit: "bar", source: "E25 manual" })],
+        failures: [
+          { id: "x1", text: "No flow", standard: null, modes: [mode("m1", "Bearing seizes")] },
+          { id: "x2", text: "Low flow", standard: { id: "s1", text: "At least 50 L/s" }, modes: [mode("m3", "Impeller worn", { outcome: "rtf" })] },
+        ] },
+      // The one text (no list): one legacy standard row with every failure under it.
+      { id: "f2", text: "Contain the water", standard: "No leak past the seal", standards: [], failures: [
+        { id: "x3", text: "Leaks", standard: null, modes: [mode("m4", "Seal worn")] },
+      ] },
+      // No standard at all: failures right under the function, as before.
+      { id: "f3", text: "Stop on the lanyard", standard: "", standards: [], failures: [{ id: "x4", text: "Doesn't stop", standard: null, modes: [] }] },
+    ],
+    unassigned: [],
+  }],
+};
+
+test("standards are a level: a list's rows with their failures, a 'No standard' row for the rest, the one text as one row", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const row = (k) => d.rows.get(k);
+  // The list: a row per standard, then the "No standard" row, before the positions inside.
+  assert.deepEqual(row("f1").kids, ["s1", "s2", noStdKey("f1")]);
+  assert.deepEqual(row("s1").kids, ["x2"]);
+  assert.deepEqual(row("s2").kids, []);
+  assert.deepEqual(row(noStdKey("f1")).kids, ["x1"]);
+  assert.equal(row("s1").type, "std");
+  assert.equal(row(noStdKey("f1")).type, "nostd");
+  assert.ok(isRcmRow(row("s1")) && isRcmRow(row(noStdKey("f1"))));
+  // Depths: function 2, standard 3, failure 4, mode 5 (the pump is inside the plant).
+  assert.deepEqual([row("f1").depth, row("s1").depth, row("x2").depth, row("m3").depth], [2, 3, 4, 5]);
+  assert.deepEqual([row(noStdKey("f1")).depth, row("x1").depth, row("m1").depth], [3, 4, 5]);
+  // The row's ref: which function and position, the list's ids (for Move up/down), the quiet marker.
+  assert.equal(row("s1").ref.function_id, "f1");
+  assert.equal(row("s1").ref.standard_id, "s1");
+  assert.equal(row("s1").ref.legacy, false);
+  assert.deepEqual(row("s1").ref.standard_ids, ["s1", "s2"]);
+  assert.equal(row("s1").ref.no_failure, false);
+  assert.equal(row("s2").ref.no_failure, true);
+  assert.deepEqual(markersOf(row("s2")), [{ kind: "nofail", text: "no failure yet", label: "No functional failure written yet for this standard" }]);
+  assert.deepEqual(markersOf(row("s1")), []);
+  assert.equal(positionOf(row("s1")), "pump");
+  assert.equal(positionOf(row(noStdKey("f1"))), "pump");
+  // Counts roll up through the standard: the failure's modes are the standard's, and the function's.
+  assert.equal(row("s1").rsum.modes, 1);
+  assert.equal(row("s1").rsum.undecided, 0);
+  assert.equal(row(noStdKey("f1")).rsum.undecided, 1);
+  assert.equal(row("f1").rsum.modes, 2);
+  assert.equal(row("pump").rsum.modes, 3);
+  // The failure knows it has standards to pick from (Change standard…), and which it breaches.
+  assert.equal(row("x1").ref.has_standards, true);
+  assert.equal(row("x1").ref.standard, null);
+  assert.equal(row("x2").ref.standard.id, "s1");
+
+  // The one text: a legacy row, every failure under it, no "No standard" row, no marker, not re-pointable.
+  assert.deepEqual(row("f2").kids, [legacyKey("f2")]);
+  const legacy = row(legacyKey("f2"));
+  assert.equal(legacy.type, "std");
+  assert.equal(legacy.ref.legacy, true);
+  assert.equal(legacy.ref.standard_id, null);
+  assert.equal(legacy.ref.text, "No leak past the seal");
+  assert.deepEqual(legacy.kids, ["x3"]);
+  assert.equal(legacy.ref.no_failure, false);
+  assert.deepEqual(markersOf(legacy), []);
+  assert.equal(row("x3").ref.has_standards, false);
+  assert.equal(row("x3").depth, 4);
+  // No standard at all: as before.
+  assert.deepEqual(row("f3").kids, ["x4"]);
+  assert.equal(row("x4").depth, 3);
+  assert.equal(row("x4").ref.has_standards, false);
+
+  // The helpers that walk a function's failures go through the standards.
+  assert.deepEqual(failureRows(d, row("f1")).map((x) => x.key), ["x2", "x1"]);
+  assert.deepEqual(failureRows(d, row("f2")).map((x) => x.key), ["x3"]);
+  assert.deepEqual(failureRows(d, row("f3")).map((x) => x.key), ["x4"]);
+  assert.deepEqual(failuresOn(d, "pump").map((f) => [f.id, f.function]), [["x2", "Pump water"], ["x1", "Pump water"], ["x3", "Contain the water"], ["x4", "Stop on the lanyard"]]);
+  assert.deepEqual(standardChoices(d, row("x1")), [{ id: "s1", text: "At least 50 L/s" }, { id: "s2", text: "At 4 bar" }]);
+  assert.deepEqual(standardChoices(d, row("x3")), []);
+  assert.deepEqual(standardChoices(d, row("s1")), []);
+  // Opening the tab on the pump opens the standards too, so the failures and modes show.
+  const open = openFor(d, "pump");
+  assert.ok(open.has("s1") && open.has("s2") && open.has(noStdKey("f1")) && open.has(legacyKey("f2")) && open.has("x2") && open.has("x3"));
+  // Levels and the filter reach the standard rows; the chips still count modes.
+  assert.ok(flatten(d, levelSet(d, 4)).list.some((v) => v.key === "s1"));
+  assert.ok(!flatten(d, levelSet(d, 4)).list.some((v) => v.key === "x2"));
+  assert.deepEqual([...computeFilter(d, { query: "e25 manual" }).match].sort(), ["f1", "s2"]); // the function searches its list too
+  assert.ok(computeFilter(d, { query: "4 bar" }).keep.has("f1"));
+  assert.deepEqual([...computeFilter(d, { chips: ["undecided"] }).match].sort(), ["m1", "m4"]);
+  // The Summary tab's tree (no RCM) is untouched.
+  assert.deepEqual(buildDisplay(DATA, "positions").rows.get("pump").kids, ["motor"]);
+});
+
+test("the standard rows' cells and phone line: the limit in words, what's inside", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const cell = (k) => cellRow(d.rows.get(k));
+  assert.equal(COLUMN.standard.text(cell("s2")), "Pressure at least 4 bar · E25 manual");
+  assert.equal(COLUMN.standard.text(cell("s1")), "");
+  assert.equal(COLUMN.standard.text(cell("f1")), "At least 50 L/s; At 4 bar");
+  assert.equal(COLUMN.standard.can(cell("s1")), false); // a standard's text is the row's name
+  assert.equal(phoneLine(cell("s2")), "Pressure at least 4 bar · E25 manual · No functional failure written yet");
+  assert.equal(phoneLine(cell("s1")), "1 failure mode · all decided");
+  assert.equal(insideWords(cell("f1")), "2 failure modes · 1 to decide");
+  assert.equal(insideWords(cell(legacyKey("f2"))), "1 failure mode · 1 to decide");
+  // A function with failures and no modes counts its failures, not its standard rows.
+  const bare = graftRcm(buildDisplay(DATA, "positions"), { positions: [{ id: "pump", functions: [
+    { id: "f", text: "Keep it", standard: "", standards: [st("s", "pH 7.2-7.8"), st("t", "TA 80-120 ppm")], failures: [{ id: "x", text: "pH high", standard: null, modes: [] }] }], unassigned: [] }] });
+  assert.equal(insideWords(cellRow(bare.rows.get("f"))), "1 functional failure, no failure modes yet");
+  assert.equal(insideWords(cellRow(bare.rows.get("s"))), "No functional failure written yet");
+  assert.equal(insideWords(cellRow(bare.rows.get(noStdKey("f")))), "1 functional failure, no failure modes yet");
+});
+
+test("row menus for the standards level: add, edit, move, remove; a failure changes its standard", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const items = (k, opts) => rowActions(d.rows.get(k), opts);
+  const labels = (k, opts) => items(k, opts).map((a) => a.label);
+  assert.deepEqual(labels("s1"), ["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Remove standard"]);
+  // The first can't move up, the last can't move down (disabled, still listed).
+  assert.deepEqual(items("s1").map((a) => [a.id, !!a.disabled]), [["open", false], ["rename", false], ["add-fail", false], ["move-up", true], ["move-down", false], ["delete", false]]);
+  assert.deepEqual(items("s2").filter((a) => a.id.startsWith("move")).map((a) => [a.id, !!a.disabled]), [["move-up", false], ["move-down", true]]);
+  assert.equal(items("s1").find((a) => a.id === "delete").danger, true);
+  // The one text's row: no moving; on a phone no in-place edit.
+  assert.deepEqual(labels(legacyKey("f2")), ["Open…", "Edit text", "Add a functional failure…", "Remove standard"]);
+  assert.deepEqual(items(legacyKey("f2"), { canRename: false }).map((a) => a.id), ["open", "add-fail", "delete"]);
+  assert.deepEqual(items(noStdKey("f1")), []); // the "No standard" heading has none
+  // A failure under a function with a list offers Change standard…; one without doesn't.
+  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Change standard…", "Edit description", "Delete functional failure"]);
+  assert.ok(!labels("x3").includes("Change standard…"));
+  assert.ok(!labels("x4").includes("Change standard…"));
+  assert.deepEqual(labels("f1").slice(0, 3), ["Open…", "Add a standard…", "Add functional failure"]);
+});
+
+test("a standard's dialog: its text and limit fields, saved as one write; the one text saved as the function's", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const row = (k) => d.rows.get(k);
+  assert.equal(opensItem(row("s1")), true);
+  assert.equal(opensItem(row(noStdKey("f1"))), false);
+  assert.deepEqual(ITEM_FIELDS.std, ["name", "parameter", "comparator", "value", "unit", "when", "source"]);
+  assert.deepEqual(itemFields(row("s2")), ITEM_FIELDS.std);
+  assert.deepEqual(itemFields(row(legacyKey("f2"))), ["name"]);
+  assert.equal(itemValue(row("s2"), "name"), "At 4 bar");
+  assert.equal(itemValue(row("s2"), "value"), "4");
+  assert.equal(itemValue(row("s2"), "when"), "");
+  assert.deepEqual(itemChanges(row("s2"), { name: "At 4 bar ", value: "4", unit: " bar" }), {});
+  assert.deepEqual(itemChanges(row("s2"), { value: "4.5", when: "at full flow" }), { value: "4.5", when: "at full flow" });
+  const checked = checkItem(row("s2"), { name: " At 4.5 bar ", value: "4.5", when: "at full flow", comparator: ">=" });
+  assert.deepEqual(checked.errors, {});
+  assert.deepEqual(itemWrites(row("s2"), checked.values), [{ api: "standard", body: { text: "At 4.5 bar", value: 4.5, when: "at full flow", comparator: ">=" } }]);
+  assert.deepEqual(itemWrites(row("s2"), { value: "7.2-7.8" }), [{ api: "standard", body: { value: "7.2-7.8" } }]);
+  assert.deepEqual(checkItem(row("s1"), { name: " " }).errors, { name: "Every standard needs a description." });
+  // The one text's row: the text, as the function's standard; the limit fields are ignored.
+  assert.deepEqual(itemWrites(row(legacyKey("f2")), { name: "No leak past the seal or the gland", unit: "x" }), [{ api: "function-standard", body: { standard: "No leak past the seal or the gland" } }]);
+  assert.deepEqual(itemWrites(row("s2"), {}), []);
+});
+
+test("standard rows that arrive under an open function open at once, so the failures stay on show", () => {
+  const before = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
+  const seen = standardKeys(before);
+  assert.deepEqual([...seen].sort(), [noStdKey("f1"), legacyKey("f2"), "s1", "s2"].sort());
+  // The one text split into two standards: its failure moves under a new "No standard" row.
+  const after = graftRcm(buildDisplay(DATA, "positions"), { positions: [{ id: "pump", functions: [
+    STANDARDS.positions[0].functions[0],
+    { id: "f2", text: "Contain the water", standard: "No leak; No overflow", standards: [st("t1", "No leak"), st("t2", "No overflow")],
+      failures: [{ id: "x3", text: "Leaks", standard: null, modes: [] }] },
+  ], unassigned: [] }] });
+  assert.deepEqual(newStandardRows(after, seen, new Set(["pump", "f1", "f2"])).sort(), [noStdKey("f2"), "t1", "t2"].sort());
+  // Under a closed function nothing opens (it wasn't on show).
+  assert.deepEqual(newStandardRows(after, seen, new Set(["pump", "f1"])), []);
+  assert.deepEqual(newStandardRows(after, standardKeys(after), new Set(["pump", "f1", "f2"])), []);
 });

@@ -23,7 +23,8 @@ marks each decision **Supported**, **Contradicted** or **Inconclusive**.
 
 Open **Operate → Assets → Explorer** and pick the **RCM** tab. The tree of
 positions is the first column, and under each position sit its functions,
-functional failures and failure modes, with the RCM's columns beside every row.
+their performance standards, functional failures and failure modes, with the
+RCM's columns beside every row.
 
 If your tree is empty, press **Add the sample truck**. (With positions already
 there, it's in the tree's **⋯** menu, under *Tree options*.) A position called
@@ -33,11 +34,17 @@ evidence behind it, and the RCM tab opens on it.
 
 ![The Explorer's RCM tab on the sample truck: its functions, failures and modes, each decision with its evidence check](/guides/img/rcm-01-explorer.png)
 
-The three levels under a position are:
+The levels under a position are the ones classic RCM uses:
 
-- **Function** — what the position must do, ideally with a performance
-  standard: *Stop the vehicle within the rated distance*.
-- **Functional failure** — how it fails to do it: *Insufficient braking force*.
+- **Function** — what the position must do: *Stop the vehicle within the
+  rated distance*.
+- **Performance standard** — how well it must do it, one parameter and one
+  limit each: *within 30 m from 60 km/h*. A function may have several; each
+  is a row under the function. A function with none (the sample truck's)
+  has its functional failures right under it.
+- **Functional failure** — how it fails to do it, nested under the standard
+  it is the loss of: *Insufficient braking force*. A total loss, or a failure
+  not tied to one standard yet, sits under a grey **No standard** row.
 - **Failure mode** — what causes that failure: *Brake pad wear beyond the 8 mm
   limit*.
 
@@ -86,17 +93,21 @@ Pick a position in the tree on the RCM tab. Build from the top down:
 1. **Add function** (at the top of the position's panel, or in the position's
    row menu: right-click the row, press its **⋯** button, or Shift+F10). Type
    what the position must do and press **Add function**.
-2. In the function's row menu, **Add functional failure** adds a way it can
-   fail; the function's **Details** has the same button.
+2. In the function's row menu, **Add a standard…** adds a performance
+   standard (one parameter and one limit), and **Add functional failure**
+   adds a way it can fail. In a standard's row menu, **Add a functional
+   failure…** adds one that breaches that standard, nested under it.
 3. In the functional failure's row menu, **Add failure mode** adds a cause.
    Add one per cause.
 
 Each new row opens in **Details**, where you can change its **Description**,
-and for a function its **Performance standard**, for a failure mode its
+and for a function its **Performance standards**, for a failure mode its
 **Failure effects**, **Consequence** and **Mode notes**. **Edit description**
-in a row's menu changes the text in the table itself. **Delete this function**
-(or functional failure, or failure mode) in the Details removes a row and
-everything inside it, after asking.
+(on a standard, **Edit text**) in a row's menu changes the text in the table
+itself. **Delete this function** (or functional failure, or failure mode) in
+the Details removes a row and everything inside it, after asking; **Remove
+this standard** takes a standard off its function and its functional failures
+stay, under **No standard**.
 
 Every change is saved as you make it: there is no Save button, and what you
 see is what everyone in the workspace sees.
@@ -244,6 +255,30 @@ its own functional failure. Keeping them as a list, rather than a sentence
 with *and* in it, keeps the function's words short and lets each functional
 failure say what it breaches.
 
+Each standard is a row of the tree under its function, and the functional
+failures that breach it are nested under it: *pH above 7.8* and *pH below
+7.2* under *pH 7.2–7.8*. A standard with no functional failure yet says so
+in grey at the end of its row (*no failure yet*): a hint, not a rule. From
+the rows:
+
+- In a function's row menu, **Add a standard…** adds one. In a standard's
+  row menu, **Add a functional failure…** adds one that breaches it,
+  **Edit text** changes its words in the table, **Move up** and **Move down**
+  change the order, and **Remove standard** takes it off the function after
+  asking (its functional failures move under **No standard**, with their
+  failure modes).
+- In a functional failure's row menu, **Change standard…** moves it under
+  another of the function's standards, or under **No standard** (the whole
+  function, as a total loss is).
+- Double-click a standard's row (or **Open…** in its menu) for its dialog:
+  the text, the structured limit (parameter, comparator, value, unit), when
+  it applies, its source, and the functional failures that breach it.
+- A function that still has its one standard as a sentence shows it as one
+  standard row, with every functional failure under it (there is nothing
+  else to breach). The row's menu edits or removes that text; to make it a
+  list, open the function and press **Add standard** or **Split into
+  standards…**, as below.
+
 Open a function (double-click its row, or **Open…** in its menu) and look
 under **Performance standards**:
 
@@ -267,11 +302,13 @@ under **Performance standards**:
 - A standard that needs its own verb is another function: *produce chlorine*
   and *not raise the pH* are two jobs.
 
-The table's **Performance standard** column shows the list on one line. In a
+The table's **Performance standard** column shows the list on one line on
+the function's row, and a standard's own limit in words on its row. In a
 worksheet, every distinct standard cell under a function is one standard (a
 row with the function and a standard alone lists one), and when a function
-has several, a functional failure's row names the one it breaches; **Export
-CSV** writes them that way.
+has a list, a functional failure's row names the one it breaches; **Export
+CSV** writes them that way, so a sheet reads back with each failure under its
+standard.
 
 ## Show the working behind a performance standard
 
