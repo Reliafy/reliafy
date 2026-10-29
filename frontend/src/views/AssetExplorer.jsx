@@ -43,7 +43,8 @@ import {
 } from "../assetTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
-import { liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
+import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
+import { canIsolate, depthWords, isolateOpen } from "../treeIsolate.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
 import { ChangeStandardModal } from "../components/RcmFunctionStandards.jsx";
 import usePhone from "../usePhone.js";
@@ -91,6 +92,16 @@ import "./AssetExplorer.css";
 // above the pinned row moves the pin up to it. Asked to show a row outside the
 // branch (?sel=, a link, a new row), the page shows the whole tree again and
 // says so; a pinned row that's gone (retired, deleted) quietly un-pins.
+//
+// "Isolate ›" in a row's menu (both tabs; treeIsolate.js) is a one-off change
+// to what's open: every other branch closes (still on show), the rows above
+// it stay open, and it opens 1, 2 or 3 levels below it, or all of them. Then
+// it's picked and brought into view. Nothing is hidden and the address stays.
+//
+// The RCM tab's row menus: the moves a drag does (Move to…, Move up / down,
+// Move a task…, a standard's Move up / down) are offered only where there's
+// no dragging: on a phone, and in a menu opened from the keyboard (Shift+F10
+// or the Menu key), so the keyboard can still make every move a drag can.
 //
 // Switching tabs moves nothing but what's meant to change (a wide screen): the
 // same frame on both (TreePane's two slim rows over the tree, the panel's
@@ -574,6 +585,26 @@ export default function AssetExplorer() {
   } : null);
   const pinItem = (r) => (canPin(r, mode)
     ? [r.key === pinKey ? { id: "unpin", label: "Show whole tree" } : { id: "pin", label: "Pin this branch" }] : []);
+  const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) });
+  // Isolate: the rest of the tree closed, this row opened `depth` levels
+  // below it, picked and brought into view; said to screen readers.
+  const isolateAt = (r, depth) => {
+    const row = display.rows.get(r.key);
+    if (!row) return;
+    const next = isolateOpen(display, open, r.key, depth);
+    setLevelBy((l) => ({ ...l, [mode]: null }));
+    setOpenSet(next);
+    if (isRcmRow(row)) {
+      setRcmFocus(row.key);
+      setSelected((x) => ({ ...x, [mode]: positionOf(row) }));
+    } else {
+      setRcmFocus(null);
+      setSelected((x) => ({ ...x, [mode]: row.key }));
+    }
+    setScrollTo({ key: row.key, at: Date.now() });
+    const name = row.ref.name || row.ref.text || "(no name)";
+    announce(row.kids.length ? `Collapsed the rest of the tree; ${name} opened ${depthWords(depth)}.` : `Collapsed the rest of the tree around ${name}.`);
+  };
 
   // A row's menu (TreePane's rowMenu): what it offers, and doing it. On the
   // RCM tab, adding inside the row and its other actions; on the Summary tab,
@@ -687,15 +718,21 @@ export default function AssetExplorer() {
   const viewOnly = viewOnlyReason(activeTeam);
   const kids = useMemo(() => liveKids(data?.positions), [data]);
   const rowMenu = {
-    actions: (r) => (rcmOn
-      ? [...(rcm ? withPin(rowActions(r, { canRename: !phone }), moveItems(whole, whole.rows.get(r.key) || r, { picked })) : []), ...pinItem(r)]
-      : withPin(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), pinItem(r))),
+    // The moves a drag does: on a phone, or from the keyboard (no dragging there).
+    actions: (r, { keyboard = false } = {}) => {
+      if (!rcmOn) return withPin(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), [...isolateItem(r), ...pinItem(r)]);
+      if (!rcm) return [...isolateItem(r), ...pinItem(r)];
+      const moves = phone || keyboard;
+      const own = withPin(rowActions(r, { canRename: !phone, moves }), moves ? moveItems(whole, whole.rows.get(r.key) || r, { picked }) : []);
+      return [...withPin(own, isolateItem(r)), ...pinItem(r)];
+    },
     onAction: (r, id) => {
       if (id === "tree-new") {
         setNewParent(r.key);
         setModal(r.type === "loc" ? "location" : "position");
       } else if (id === "tree-rename" || id === "tree-move" || id === "tree-retire") setRowModal({ kind: id.slice(5), row: r });
       else if (id === "pin") pinTo(r.key, { select: true });
+      else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
       else if (id === "unpin") unpin();
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       else if (id === "add-std") runAdd({ ref: { add: "std", position_id: r.ref.position_id, function_id: r.ref.id } });

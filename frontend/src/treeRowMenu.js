@@ -1,6 +1,6 @@
 // The Explorer's row menu on the Summary tab (right-click a row, its ⋯
 // button, or Shift+F10): changing the tree itself. New position (or location)
-// inside, Rename, Move to… and Retire, beside Pin this branch. The RCM tab's
+// inside, Rename, Move to… and Retire, beside Isolate › and Pin this branch. The RCM tab's
 // rows keep their own menu (explorerRcm.js rowActions).
 //
 // Each item is offered only where the server allows it: a position can be
@@ -68,6 +68,25 @@ export function withPin(items, pin) {
   const at = items.findIndex((i) => i.danger);
   if (at < 0) return [...items, ...pin];
   return [...items.slice(0, at), ...pin, ...items.slice(at)];
+}
+
+// A row's Isolate (closes the rest of the tree, opens this row so far): a
+// submenu, "with 1 level open", "2 levels open", "3 levels open", "everything
+// open" (ids isolate:1, isolate:2, isolate:3, isolate:all); a row with nothing
+// inside it has just "Isolate" (it closes the rest; there's nothing to open).
+// `can`: whether this row can be isolated (treeIsolate.canIsolate).
+export function isolateItems(r, { can } = {}) {
+  if (!r || !can) return [];
+  if (!r.kids?.length) return [{ id: "isolate:1", label: "Isolate" }];
+  return [{
+    id: "isolate", label: "Isolate",
+    items: [
+      { id: "isolate:1", label: "With 1 level open" },
+      { id: "isolate:2", label: "With 2 levels open" },
+      { id: "isolate:3", label: "With 3 levels open" },
+      { id: "isolate:all", label: "With everything open" },
+    ],
+  }];
 }
 
 // How many live positions sit directly inside each position (the tree's rows).

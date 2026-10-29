@@ -184,15 +184,15 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   await expect(page.locator(".tt-top .tp-status")).toHaveText(/^3 positions · \d+ not analysed · RCM is by position$/);
   // A position's menu: Add function, the worksheet in and out, then Pin this branch (the pinned row: Show whole tree).
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Pin this branch"]);
+  await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Pin this branch"]);
   await page.keyboard.press("Escape");
   await trow(`^Works line A ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Show whole tree"]);
+  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Show whole tree"]);
   await page.keyboard.press("Escape");
-  // A function's menu is unchanged.
+  // A function's menu (with the mouse: no moves, a drag does them; Isolate before Delete).
   await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
   await expect(rowMenu(page, `Function: Pump water ${tag}`).getByRole("menuitem"))
-    .toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Move to another position…", "Move up", "Move down", "Delete function"]);
+    .toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
   await page.keyboard.press("Escape");
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click();
   await shot(page, "3-pinned-rcm-tab");

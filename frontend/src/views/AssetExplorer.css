@@ -1135,6 +1135,18 @@ a.rw-cklink:focus-visible {
 /* An item that can't be used now: greyed, with the reason under it. */
 .row-menu .ovm-item.off { color: var(--subtle); cursor: not-allowed; }
 .row-menu .ovm-item.off:hover, .row-menu .ovm-item.off:focus-visible { background: var(--surf-2, transparent); color: var(--muted); }
+/* A submenu (Isolate ›): its item has the arrow at its end; beside the menu
+   on a wide screen, in place under its item on a phone. The arrow is drawn,
+   not text (no alt text: the item's name stays "Isolate"). */
+.row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: 12px; }
+.row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--muted); }
+.row-menu-parent.inline::after { content: "▸" / ""; }
+.row-menu-parent.inline.open::after { content: "▾" / ""; }
+.row-menu .ovm-item.row-menu-parent.open { background: var(--acc-t); color: var(--acc); }
+.ovm-menu.row-submenu { z-index: 71; min-width: 190px; }
+.row-menu-inline { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; }
+.row-menu .ovm-item.row-menu-radio { display: flex; align-items: center; gap: 6px; }
+.row-menu-tick { display: inline-block; width: 1em; color: var(--acc); }
 .row-menu-why { display: block; max-width: 260px; margin-top: 2px; font-size: var(--fs-12); color: var(--muted); white-space: normal; line-height: 1.35; }
 
 /* The tree's ⋯ menu (TreeControlsMenu): Arrange by, the levels, Close

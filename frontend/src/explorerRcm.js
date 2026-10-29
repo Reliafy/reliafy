@@ -214,8 +214,10 @@ export const rcmRowText = (r) => rcmText(r);
 // Shift+F10 / the Menu key): adding inside it, and the actions the table and
 // the details already have for it. [] for a row with none (the "Not under a
 // functional failure" heading). `canRename`: the description is edited in
-// the table (not on a phone, where the details panel edits it).
-export function rowActions(r, { canRename = true } = {}) {
+// the table (not on a phone, where the details panel edits it). `moves`: a
+// standard's Move up / Move down (a wide screen drags them instead, so the page
+// passes false there unless the menu was opened from the keyboard).
+export function rowActions(r, { canRename = true, moves = true } = {}) {
   if (!r) return [];
   // A function, standard, functional failure or failure mode opens in its own
   // dialog (a double-click on the row does the same): first, so it's found
@@ -242,7 +244,7 @@ export function rowActions(r, { canRename = true } = {}) {
     // The list's rows move up and down; the one text's row (legacy) is alone.
     const ids = r.ref.standard_ids || [];
     const at = ids.indexOf(r.ref.standard_id);
-    const move = r.ref.legacy ? [] : [
+    const move = r.ref.legacy || !moves ? [] : [
       { id: "move-up", label: "Move up", disabled: at <= 0 },
       { id: "move-down", label: "Move down", disabled: at < 0 || at >= ids.length - 1 },
     ];

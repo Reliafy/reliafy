@@ -40,7 +40,10 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 // main columns in words). Each row's actions (adding inside it,
 // editing, deleting, deciding) are in its menu (`rowMenu`): right-click the
 // row, press its ⋯ button (shown on hover and focus; always on a touch screen),
-// or Shift+F10 / the Menu key on the focused row.
+// or Shift+F10 / the Menu key on the focused row. `rowMenu.actions(r, {keyboard})`
+// is told how the menu was opened: from the keyboard (Shift+F10, the Menu key)
+// or with a pointer (right-click, the ⋯ button), so the page can offer the
+// moves a drag does only where there's no dragging.
 //
 // A branch can be pinned (treePin.js): the tree then starts at that row. It
 // says so without a row of its own: on a wide screen the tree's column header
@@ -135,7 +138,8 @@ function MoreButton({ r, open, onMenu }) {
             onClick={(e) => {
               e.stopPropagation();
               const b = e.currentTarget.getBoundingClientRect();
-              onMenu(r.key, { x: b.left, y: b.bottom + 2 });
+              // A click from the keyboard (Enter on it, a screen reader) has no pointer: detail 0.
+              onMenu(r.key, { x: b.left, y: b.bottom + 2 }, { keyboard: e.detail === 0 });
             }}>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
         <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
@@ -260,7 +264,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
       e.preventDefault();
       // From the keyboard (the Menu key, Shift+F10) there's no pointer: under the row's name.
       const kb = e.button !== 2 || (!e.clientX && !e.clientY);
-      onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY });
+      onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY }, { keyboard: kb });
     } : undefined,
   };
   const more = onMenu && <MoreButton r={r} open={!!menuOpen} onMenu={onMenu} />;
@@ -364,15 +368,16 @@ export default function TreePane({
     nameOf: (r) => label(r),
   });
 
-  // A row's menu (rowMenu: {actions(r) → [{id, label}], onAction(r, id)}):
-  // {key, at} while it's open. Opening it picks the row; closing puts the
-  // focus back on the row.
+  // A row's menu (rowMenu: {actions(r, {keyboard}) → [{id, label}], onAction(r, id)}):
+  // {key, at, keyboard} while it's open. Opening it picks the row; closing
+  // puts the focus back on the row. Whether a row has a menu at all (its ⋯
+  // button) is asked as the keyboard would see it (the most it can offer).
   const [rowOpen, setRowOpen] = useState(null);
-  const itemsFor = (key) => (rowMenu && display.rows.has(key) ? rowMenu.actions(display.rows.get(key)) : []);
-  const openMenu = (key, at) => {
-    if (!itemsFor(key).length) return;
+  const itemsFor = (key, { keyboard = true } = {}) => (rowMenu && display.rows.has(key) ? rowMenu.actions(display.rows.get(key), { keyboard }) : []);
+  const openMenu = (key, at, { keyboard = false } = {}) => {
+    if (!itemsFor(key, { keyboard }).length) return;
     if (key !== focus) onPick(key, {});
-    setRowOpen({ key, at });
+    setRowOpen({ key, at, keyboard });
   };
   const closeMenu = () => {
     const key = rowOpen?.key;
@@ -387,7 +392,7 @@ export default function TreePane({
         && !e.target.closest("input, select, textarea, [contenteditable='true']")) {
       e.preventDefault();
       const row = document.getElementById(`tp-${focus}`);
-      if (row) openMenu(focus, cornerOf(row));
+      if (row) openMenu(focus, cornerOf(row), { keyboard: true });
       return;
     }
     // A reference row (a failure below that causes the one above): Enter or
@@ -665,8 +670,8 @@ export default function TreePane({
         )}
         {side}
       </div>
-      {rowOpen && itemsFor(rowOpen.key).length > 0 && (
-        <RowMenu items={itemsFor(rowOpen.key)} at={rowOpen.at} label={menuLabel(display.rows.get(rowOpen.key))} anchorId={`tp-${rowOpen.key}`} onClose={closeMenu}
+      {rowOpen && itemsFor(rowOpen.key, rowOpen).length > 0 && (
+        <RowMenu items={itemsFor(rowOpen.key, rowOpen)} at={rowOpen.at} label={menuLabel(display.rows.get(rowOpen.key))} anchorId={`tp-${rowOpen.key}`} onClose={closeMenu}
                  onChoose={(id) => rowMenu.onAction(display.rows.get(rowOpen.key), id)} />
       )}
       {wide && !railed && (

@@ -58,9 +58,9 @@ test("Summary row menu: new inside, rename, move to…, retire, pin; the server'
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.skim.id}`); // the way down to it opens
   await expect(row(page, `Menu skimmer ${tag}`)).toHaveAttribute("aria-selected", "true");
 
-  // The menu: the changes, then Pin this branch, then Retire (greyed: positions are inside it).
+  // The menu: the changes, then Isolate and Pin this branch, then Retire (greyed: positions are inside it).
   let menu = await menuOf(page, `Menu circulation ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Rename…", "Move to…", "Pin this branch", /^Retire…/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Rename…", "Move to…", "Isolate", "Pin this branch", /^Retire…/]);
   await expect(menu.getByRole("menuitem", { name: "New position inside" })).toBeFocused();
   const retire = menu.getByRole("menuitem", { name: "Retire…" });
   await expect(retire).toHaveAttribute("aria-disabled", "true");
@@ -180,7 +180,7 @@ test("Summary row menu: new inside, rename, move to…, retire, pin; the server'
   await page.getByRole("tab", { name: "RCM" }).click();
   const trow = page.getByRole("row", { name: new RegExp(`^Menu heating ${tag}`) });
   await trow.locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Menu heating ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Show whole tree"]);
+  await expect(rowMenu(page, `Menu heating ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Show whole tree"]);
   await page.keyboard.press("Escape");
   // The refusals above were made up here (a 422 each): the browser logs them.
   problems.splice(0, problems.length, ...problems.filter((x) => !/status of 422/.test(x)));
@@ -193,7 +193,7 @@ test("Locations: a location's menu has new inside, rename and move; at 400 px th
   await page.setViewportSize({ width: 1280, height: 720 });
   await open(page, `/asset-register/explorer?arrange=locations&sel=${p.shed.id}`);
   let menu = await menuOf(page, `Menu shed ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New location inside", "Rename…", "Move to…", "Pin this branch"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New location inside", "Rename…", "Move to…", "Isolate", "Pin this branch"]);
   await menu.getByRole("menuitem", { name: "Move to…" }).click();
   const dialog = page.getByRole("dialog", { name: `Move “Menu shed ${tag}”` });
   await dialog.getByRole("combobox").selectOption(p.store.id);
