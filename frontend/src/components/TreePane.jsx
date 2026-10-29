@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import RowMenu from "./RowMenu.jsx";
 import TreeControlsMenu from "./TreeControlsMenu.jsx";
-import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
+import { Chevron, Highlight, IsolateIcon } from "./OutlineBits.jsx";
 import { BasisInfo, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
 import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensItem } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
+import { depthWords } from "../treeIsolate.js";
 
 // The asset tree as a second-level menu beside the site menu: the outline
 // (indent, arrow, name, at most three markers), with the search box and the
@@ -40,16 +41,21 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 // main columns in words). Each row's actions (adding inside it,
 // editing, deleting, deciding) are in its menu (`rowMenu`): right-click the
 // row, press its ⋯ button (shown on hover and focus; always on a touch screen),
-// or Shift+F10 / the Menu key on the focused row.
+// or Shift+F10 / the Menu key on the focused row. `rowMenu.actions(r, {keyboard})`
+// is told how the menu was opened: from the keyboard (Shift+F10, the Menu key)
+// or with a pointer (right-click, the ⋯ button), so the page can offer the
+// moves a drag does only where there's no dragging.
 //
-// A branch can be pinned (treePin.js): the tree then starts at that row. It
-// says so without a row of its own: on a wide screen the tree's column header
-// reads "Pinned: <name>" with a ✕ (Show everything) beside it; on a phone (no
-// column header) the pinned row itself has the pin before its name and the ✕
-// at its end. "Show whole tree" at the top of the ⋯ menu un-pins too.
-// `branch`: {key, name, path, onUnpin} while one is; `branchNote`: a few words
-// in the same place (the column header; the counts on a phone) when the page
-// un-pinned to show something outside the branch.
+// A branch can be isolated (treeIsolate.js): the tree then starts at that row.
+// It says so without a row of its own: on a wide screen the tree's column
+// header reads "Isolated: <name>", how many levels are open (a list to change
+// it) and Show everything; on a phone (no column header) the isolated row
+// itself has the mark before its name, the levels list and a ✕ at its end.
+// Esc in the tree, and "Show everything" at the top of the ⋯ menu, leave it
+// too. `branch`: {key, name, path, depth, onDepth(depth), onShowAll} while one
+// is; `branchNote`: a few words in the same place (the column header; the
+// counts on a phone) when the page left it to show something outside the
+// branch.
 //
 // Presentational: the page (AssetExplorer) holds the state.
 
@@ -135,7 +141,8 @@ function MoreButton({ r, open, onMenu }) {
             onClick={(e) => {
               e.stopPropagation();
               const b = e.currentTarget.getBoundingClientRect();
-              onMenu(r.key, { x: b.left, y: b.bottom + 2 });
+              // A click from the keyboard (Enter on it, a screen reader) has no pointer: detail 0.
+              onMenu(r.key, { x: b.left, y: b.bottom + 2 }, { keyboard: e.detail === 0 });
             }}>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
         <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
@@ -164,7 +171,7 @@ const causeTip = (r) => (r.ref.inside === false
   : `Caused by: ${r.ref.text} (on ${r.ref.on}). Click to go there.`);
 
 // The tree's own part of a row: indent, arrow, icon, name, markers.
-function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info = null }) {
+function TreeBit({ r, v, open, phone, query, rcm, table, isoRoot, onGoto, info = null }) {
   const has = r.kids.length > 0;
   const inner = r.kids.length;
   const indent = Math.min(v.depth, phone ? 8 : 30) * 14;
@@ -175,7 +182,7 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info =
         <span className={"tp-chev" + (open ? " open" : "")} aria-hidden="true"><Chevron /></span>
       ) : <span className="tp-chev-sp" />}
       <RowIcon r={r} />
-      {pinRoot && <span className="tp-pinmark" title={`Pinned: ${pinRoot.path}`}><PinIcon size={13} /><span className="sr-only">Pinned: </span></span>}
+      {isoRoot && <span className="tp-isomark" title={`Isolated: ${isoRoot.path}`}><IsolateIcon size={13} /><span className="sr-only">Isolated: </span></span>}
       {isRcmRow(r) && <span className="sr-only">{LEVEL_OF[r.type]?.label}: </span>}
       <span className="tp-nm" title={r.type === "cause" ? causeTip(r) : label(r).length > 24 ? label(r) : undefined}>
         <Highlight text={label(r)} query={query} />
@@ -188,15 +195,39 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info =
   );
 }
 
-// The ✕ on the pinned row (a phone): the whole tree again. Always shown, a
-// 36 px target; not a tab stop (the ⋯ menu's Show whole tree is, from the keyboard).
-function UnpinButton({ pinRoot }) {
+// How many levels are open below the isolated row: a list to change it (the
+// column header; the isolated row itself on a phone). Its keys stay its own
+// (the tree's arrow keys don't take them). With no depth (an old pin link),
+// it says "Levels" until one is picked.
+function DepthSelect({ branch, inRow = false }) {
   return (
-    <button type="button" className="tp-unpin" tabIndex={-1} aria-label="Show everything" title="Show everything"
-            onDoubleClick={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); pinRoot.onUnpin(); }}>
-      <span aria-hidden="true">✕</span>
-    </button>
+    <select className={"tp-depth" + (inRow ? " in-row" : "")} value={branch.depth ?? ""} tabIndex={inRow ? -1 : undefined}
+            aria-label={`Levels open below ${branch.name}`} title="How many levels are open below it"
+            onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            onChange={(e) => branch.onDepth(e.target.value === "all" ? "all" : Number(e.target.value))}>
+      {branch.depth == null && <option value="" disabled>Levels</option>}
+      <option value="1">1 level</option>
+      <option value="2">2 levels</option>
+      <option value="3">3 levels</option>
+      <option value="all">Everything</option>
+    </select>
+  );
+}
+
+// The isolated row's own controls (a phone): the levels list and a ✕ to show
+// everything. Always shown, 36 px targets; not tab stops (the ⋯ menu's Show
+// everything and Esc are, from the keyboard).
+function IsolateRowControls({ isoRoot }) {
+  return (
+    <>
+      <DepthSelect branch={isoRoot} inRow />
+      <button type="button" className="tp-unpin" tabIndex={-1} aria-label="Show everything" title="Show everything"
+              onDoubleClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); isoRoot.onShowAll(); }}>
+        <span aria-hidden="true">✕</span>
+      </button>
+    </>
   );
 }
 
@@ -209,7 +240,7 @@ function dropClass(drag, key) {
   return o.state === "no" ? " drop-no" : ` drop-${o.zone || "into"}`;
 }
 
-function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
+function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, isoRoot }) {
   const has = r.kids.length > 0;
   const drag = table && !phone ? table.drag : null;
   const movable = !!drag && !pinned && drag.canDrag(r);
@@ -230,7 +261,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     tabIndex: pinned ? undefined : focused ? 0 : -1,
     style: { top: pinned ? undefined : top, height, width: table && !phone ? table.total : rowW },
     onClick: (e) => {
-      if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin, .rw-info")) return;
+      if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin, .tp-depth, .rw-info")) return;
       // Failure modes picked with Shift / Ctrl / Cmd-click, to drag (or move) together.
       if (drag && r.type === "mode" && (e.shiftKey || e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -260,20 +291,20 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
       e.preventDefault();
       // From the keyboard (the Menu key, Shift+F10) there's no pointer: under the row's name.
       const kb = e.button !== 2 || (!e.clientX && !e.clientY);
-      onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY });
+      onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY }, { keyboard: kb });
     } : undefined,
   };
   const more = onMenu && <MoreButton r={r} open={!!menuOpen} onMenu={onMenu} />;
-  const unpin = pinRoot && <UnpinButton pinRoot={pinRoot} />;
+  const unpin = isoRoot && <IsolateRowControls isoRoot={isoRoot} />;
   if (!table) {
-    return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} pinRoot={pinRoot} />{unpin}{more}</div>;
+    return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} isoRoot={isoRoot} />{unpin}{more}</div>;
   }
   if (phone) {
     const line = r.type === "pos" ? posLine(r, table.hint === r.key) : phoneLine(cellRow(r));
     return (
       <div {...common}>
         <div className="tt-l1">
-          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pinRoot={pinRoot} onGoto={table.onGoto} />
+          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table isoRoot={isoRoot} onGoto={table.onGoto} />
           {isRcmRow(r) && <span className="tt-st"><PhoneStatus r={cellRow(r)} /></span>}
           {unpin}{more}
         </div>
@@ -364,15 +395,16 @@ export default function TreePane({
     nameOf: (r) => label(r),
   });
 
-  // A row's menu (rowMenu: {actions(r) → [{id, label}], onAction(r, id)}):
-  // {key, at} while it's open. Opening it picks the row; closing puts the
-  // focus back on the row.
+  // A row's menu (rowMenu: {actions(r, {keyboard}) → [{id, label}], onAction(r, id)}):
+  // {key, at, keyboard} while it's open. Opening it picks the row; closing
+  // puts the focus back on the row. Whether a row has a menu at all (its ⋯
+  // button) is asked as the keyboard would see it (the most it can offer).
   const [rowOpen, setRowOpen] = useState(null);
-  const itemsFor = (key) => (rowMenu && display.rows.has(key) ? rowMenu.actions(display.rows.get(key)) : []);
-  const openMenu = (key, at) => {
-    if (!itemsFor(key).length) return;
+  const itemsFor = (key, { keyboard = true } = {}) => (rowMenu && display.rows.has(key) ? rowMenu.actions(display.rows.get(key), { keyboard }) : []);
+  const openMenu = (key, at, { keyboard = false } = {}) => {
+    if (!itemsFor(key, { keyboard }).length) return;
     if (key !== focus) onPick(key, {});
-    setRowOpen({ key, at });
+    setRowOpen({ key, at, keyboard });
   };
   const closeMenu = () => {
     const key = rowOpen?.key;
@@ -387,7 +419,15 @@ export default function TreePane({
         && !e.target.closest("input, select, textarea, [contenteditable='true']")) {
       e.preventDefault();
       const row = document.getElementById(`tp-${focus}`);
-      if (row) openMenu(focus, cornerOf(row));
+      if (row) openMenu(focus, cornerOf(row), { keyboard: true });
+      return;
+    }
+    // Esc in the tree leaves the isolated branch (a menu, a drag or full
+    // screen takes its Esc first).
+    if (branch && e.key === "Escape" && !e.defaultPrevented && !e.ctrlKey && !e.metaKey && !e.altKey
+        && !e.target.closest("input, select, textarea, [contenteditable='true']")) {
+      e.preventDefault();
+      branch.onShowAll();
       return;
     }
     // A reference row (a failure below that causes the one above): Enter or
@@ -537,7 +577,7 @@ export default function TreePane({
         </button>
       )}
       <TreeControlsMenu
-        pinned={branch ? { name: branch.name, onUnpin: branch.onUnpin } : null}
+        pinned={branch ? { name: branch.name, onUnpin: branch.onShowAll } : null}
         arrange={arrangeLocked ? null : { value: mode, options: ARRANGEMENTS, onChange: onMode }}
         note={arrangeLocked}
         levels={levelsOn ? { value: level, onLevel, onCloseAll } : null}
@@ -561,16 +601,21 @@ export default function TreePane({
              aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
     </label>
   );
-  // While a branch is pinned, the tree's column header says so (a wide screen,
-  // both tabs): the pin, "Pinned: <name>" (cut short, the whole path in its
-  // tooltip) and a ✕ to show everything. Just after un-pinning to show
-  // something outside the branch, a few words in its place.
+  // While a branch is isolated, the tree's column header says so (a wide
+  // screen, both tabs): the mark, "Isolated: <name>" (cut short, the whole path
+  // in its tooltip), the levels open (a list to change it) and Show everything
+  // (a ✕ when the column is narrow). Just after leaving it to show something
+  // outside the branch, a few words in its place.
   const pinHead = branch ? (
-    <span className="tt-pinned" role="group" aria-label="Pinned branch">
-      <PinIcon size={13} />
-      <span className="tt-pinned-nm" title={`Pinned: ${branch.path || branch.name}`}>Pinned: <strong>{branch.name}</strong></span>
-      <button type="button" className="tt-pinned-x" onClick={branch.onUnpin} aria-label="Show everything" title="Show everything">
-        <span aria-hidden="true">✕</span>
+    <span className="tt-pinned" role="group" aria-label="Isolated branch">
+      <IsolateIcon size={13} />
+      <span className="tt-pinned-nm" title={`Isolated: ${branch.path || branch.name}${branch.depth != null ? `, ${depthWords(branch.depth)}` : ""}`}>
+        Isolated: <strong>{branch.name}</strong>
+      </span>
+      <span className="tt-iso-sep" aria-hidden="true">·</span>
+      <DepthSelect branch={branch} />
+      <button type="button" className="tt-pinned-x" onClick={branch.onShowAll} aria-label="Show everything" title="Show everything (Esc)">
+        <span className="tt-x-text">Show everything</span><span className="tt-x-icon" aria-hidden="true">✕</span>
       </button>
     </span>
   ) : branchNote ? <span className="tt-pinned-note" role="status">{branchNote}</span> : null;
@@ -603,7 +648,7 @@ export default function TreePane({
 
   // A row on the Summary tab (a wide screen) is as wide as the RCM tab's tree cell.
   const rowProps = { phone, query, onToggle, rcm: rcmMarks, table, rowW: wide && !table ? width : undefined };
-  // The pinned row on a phone: the pin before its name and the ✕ at its end.
+  // The isolated row on a phone: the mark before its name, the levels and the ✕ at its end.
   const pinRootOf = (key) => (phone && branch && key === branch.key ? branch : undefined);
   const menuProps = (key) => (itemsFor(key).length ? { onMenu: openMenu, menuOpen: rowOpen?.key === key } : {});
   const columnHeads = !phone && (
@@ -637,7 +682,7 @@ export default function TreePane({
                   const v = list[index.get(k)];
                   const r = display.rows.get(k);
                   return (
-                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned {...rowProps} {...menuProps(k)} pinRoot={pinRootOf(k)}
+                    <Row key={k} v={v} r={r} height={H} open={open.has(k)} focused={k === focus} pinned {...rowProps} {...menuProps(k)} isoRoot={pinRootOf(k)}
                          onPick={(key) => { onPick(key, {}); reveal(key, true); }} />
                   );
                 })}
@@ -650,7 +695,7 @@ export default function TreePane({
               const r = display.rows.get(v.key);
               return (
                 <Row key={v.key} v={v} r={r} top={i * H} height={H} open={open.has(v.key)} focused={v.key === focus}
-                     dim={dim(v.key)} onPick={onPick} {...rowProps} {...menuProps(v.key)} pinRoot={pinRootOf(v.key)} />
+                     dim={dim(v.key)} onPick={onPick} {...rowProps} {...menuProps(v.key)} isoRoot={pinRootOf(v.key)} />
               );
             })}
           </div>
@@ -665,8 +710,8 @@ export default function TreePane({
         )}
         {side}
       </div>
-      {rowOpen && itemsFor(rowOpen.key).length > 0 && (
-        <RowMenu items={itemsFor(rowOpen.key)} at={rowOpen.at} label={menuLabel(display.rows.get(rowOpen.key))} anchorId={`tp-${rowOpen.key}`} onClose={closeMenu}
+      {rowOpen && itemsFor(rowOpen.key, rowOpen).length > 0 && (
+        <RowMenu items={itemsFor(rowOpen.key, rowOpen)} at={rowOpen.at} label={menuLabel(display.rows.get(rowOpen.key))} anchorId={`tp-${rowOpen.key}`} onClose={closeMenu}
                  onChoose={(id) => rowMenu.onAction(display.rows.get(rowOpen.key), id)} />
       )}
       {wide && !railed && (

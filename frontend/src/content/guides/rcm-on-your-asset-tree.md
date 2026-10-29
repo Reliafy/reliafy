@@ -70,8 +70,14 @@ To find your way around a big tree:
   (positions with no RCM yet). **Reset to the usual view** puts it all back.
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
-- **Pin this branch** in a position's row menu shows that position and what's
-  inside it on its own; **Show whole tree** brings the rest back.
+- **Isolate** in any row's menu (a position, function, standard, functional
+  failure or failure mode) shows that row and what's inside it on its own,
+  opened **with 1 level open**, **2 levels open**, **3 levels open** or
+  **everything open** below it, whatever level the rest of the tree is at.
+  You can still open and close rows by hand after. The tree's column header
+  says *Isolated: Pump A · 2 levels*: change the levels there, or press
+  **Show everything** (or Esc in the tree) to bring the rest back. The address
+  keeps it, so a link opens on the same branch.
 - **Columns** shows or hides columns, such as **Performance standard**,
   **Evidence**, **What the evidence shows** and **Decision notes**. Drag a
   column's edge to resize it. The Explorer remembers these choices on this
@@ -263,10 +269,11 @@ the rows:
 
 - In a function's row menu, **Add a standard…** adds one. In a standard's
   row menu, **Add a functional failure…** adds one that breaches it,
-  **Edit text** changes its words in the table, **Move up** and **Move down**
-  change the order, and **Remove standard** takes it off the function after
-  asking (its functional failures move under **No standard**, with their
-  failure modes).
+  **Edit text** changes its words in the table, and **Remove standard**
+  takes it off the function after asking (its functional failures move under
+  **No standard**, with their failure modes). Drag a standard above or below
+  another to change the order (from the keyboard: **Move up** and **Move
+  down** in its menu).
 - In a functional failure's row menu, **Change standard…** moves it under
   another of the function's standards, or under **No standard** (the whole
   function, as a total loss is).
@@ -348,9 +355,13 @@ between functional failures that a move took away (a cause must sit on a
 position inside its effect's) is named in the note and isn't put back by Undo:
 link them again if you need to.
 
-**No mouse, or on a phone:** each row's menu has a **Move to…** item (a list of the
-places it can go, with the same checks before you press Move) and **Move up** /
-**Move down**. A failure mode's menu also has **Move a task…**.
+**From the keyboard, or on a phone:** there's no dragging, so the row's menu
+has the moves instead. Press Shift+F10 (or the Menu key) on a row, or on a
+phone tap its **⋯**, for **Move to…** (a list of the places it can go, with
+the same checks before you press Move) and **Move up** / **Move down**; a
+standard's menu has **Move up** / **Move down** to change the order, and a
+failure mode's menu also has **Move a task…**. With a mouse on a wide screen,
+right-click and **⋯** leave them out: drag the row instead.
 
 ## Show the working behind a performance standard
 

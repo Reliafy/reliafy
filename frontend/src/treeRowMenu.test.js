@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
-import { liveKids, moveTargets, retireBlock, summaryActions, viewOnlyReason, withPin } from "./treeRowMenu.js";
+import { isolateItems, liveKids, moveTargets, retireBlock, summaryActions, viewOnlyReason, withIsolate } from "./treeRowMenu.js";
 
 const DATA = {
   positions: [
@@ -23,16 +23,16 @@ const DATA = {
 const ids = (items) => items.map((i) => i.id);
 const opts = (mode, extra = {}) => ({ mode, kidsOf: (k) => liveKids(DATA.positions).get(k) || 0, ...extra });
 
-test("a position's menu: new inside, rename, move, retire; Pin goes before Retire", () => {
+test("a position's menu: new inside, rename, move, retire; Isolate goes before Retire", () => {
   const d = buildDisplay(DATA, "positions");
   const skim = summaryActions(d.rows.get("skim"), opts("positions"));
   assert.deepEqual(ids(skim), ["tree-new", "tree-rename", "tree-move", "tree-retire"]);
   assert.deepEqual(skim.map((i) => i.label), ["New position inside", "Rename…", "Move to…", "Retire…"]);
   assert.ok(skim.every((i) => !i.disabled));
   assert.equal(skim.at(-1).danger, true);
-  assert.deepEqual(ids(withPin(skim, [{ id: "pin", label: "Pin this branch" }])),
-    ["tree-new", "tree-rename", "tree-move", "pin", "tree-retire"]);
-  assert.deepEqual(ids(withPin([{ id: "tree-rename" }], [{ id: "pin" }])), ["tree-rename", "pin"]);
+  assert.deepEqual(ids(withIsolate(skim, [{ id: "isolate", label: "Isolate" }])),
+    ["tree-new", "tree-rename", "tree-move", "isolate", "tree-retire"]);
+  assert.deepEqual(ids(withIsolate([{ id: "tree-rename" }], [{ id: "isolate" }])), ["tree-rename", "isolate"]);
   // Flat: the same. Locations: a position's place there is where it is, so no Move.
   assert.deepEqual(ids(summaryActions(buildDisplay(DATA, "flat").rows.get("skim"), opts("flat"))),
     ["tree-new", "tree-rename", "tree-move", "tree-retire"]);
@@ -55,7 +55,7 @@ test("Retire is greyed with the reason when the tree already shows the server wo
   assert.match(turbo.find((i) => i.id === "tree-move").reason, /moves with it/);
 });
 
-test("a team that's view only: every change greyed with the reason; Pin still works", () => {
+test("a team that's view only: every change greyed with the reason; Isolate still works", () => {
   assert.equal(viewOnlyReason(null), null);
   assert.equal(viewOnlyReason({ can_edit: true }), null);
   assert.match(viewOnlyReason({ frozen: true }), /lapsed/);
@@ -63,8 +63,8 @@ test("a team that's view only: every change greyed with the reason; Pin still wo
   const d = buildDisplay(DATA, "positions");
   const items = summaryActions(d.rows.get("skim"), opts("positions", { viewOnly: "View only: editing this team needs a Pro plan." }));
   assert.ok(items.every((i) => i.disabled && /View only/.test(i.reason)));
-  const withPinned = withPin(items, [{ id: "pin", label: "Pin this branch" }]);
-  assert.equal(withPinned.find((i) => i.id === "pin").disabled, undefined);
+  const withPinned = withIsolate(items, [{ id: "isolate", label: "Isolate" }]);
+  assert.equal(withPinned.find((i) => i.id === "isolate").disabled, undefined);
 });
 
 test("locations: new inside, rename, move (no retiring a location); items: rename; headings: nothing", () => {
@@ -86,4 +86,28 @@ test("Move to…: every position or location but the row itself and what's insid
   assert.deepEqual(where(moveTargets(DATA.locations, "site")), []);
   assert.deepEqual(where(moveTargets(DATA.locations, "shed")), ["site", "-store"]);
   assert.deepEqual(moveTargets(null, "x"), []);
+});
+
+test("Isolate: a submenu of levels; just Isolate on a row with nothing inside; Show everything on the row isolated", () => {
+  const branch = { key: "a", kids: ["b"] };
+  const items = isolateItems(branch, { can: true });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].label, "Isolate");
+  assert.deepEqual(items[0].items.map((i) => [i.id, i.label]), [
+    ["isolate:1", "With 1 level open"], ["isolate:2", "With 2 levels open"], ["isolate:3", "With 3 levels open"], ["isolate:all", "With everything open"],
+  ]);
+  assert.ok(items[0].items.every((i) => i.checked === undefined)); // not isolated: plain items
+  // The row isolated now: its depth ticked, then Show everything.
+  const here = isolateItems(branch, { can: true, current: { key: "a", depth: 2 } });
+  assert.deepEqual(here[0].items.map((i) => i.checked), [false, true, false, false]);
+  assert.deepEqual(here.map((i) => i.id), ["isolate", "show-all"]);
+  // Another row while one is isolated: as usual.
+  assert.deepEqual(isolateItems(branch, { can: true, current: { key: "z", depth: 1 } }).map((i) => i.id), ["isolate"]);
+  // A leaf: one item, no levels.
+  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true }), [{ id: "isolate:all", label: "Isolate" }]);
+  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true, current: { key: "m", depth: "all" } }).map((i) => i.id), ["show-all"]);
+  // Can't be isolated (Flat, a heading): nothing.
+  assert.deepEqual(isolateItems(branch, { can: false }), []);
+  // Placed before Retire / Delete.
+  assert.deepEqual(withIsolate([{ id: "x" }, { id: "del", danger: true }], items).map((i) => i.id), ["x", "isolate", "del"]);
 });

@@ -561,6 +561,8 @@ test("row menus for the standards level: add, edit, move, remove; a failure chan
   // The first can't move up, the last can't move down (disabled, still listed).
   assert.deepEqual(items("s1").map((a) => [a.id, !!a.disabled]), [["open", false], ["rename", false], ["add-fail", false], ["move-up", true], ["move-down", false], ["delete", false]]);
   assert.deepEqual(items("s2").filter((a) => a.id.startsWith("move")).map((a) => [a.id, !!a.disabled]), [["move-up", false], ["move-down", true]]);
+  // A wide screen's pointer menu drags them instead (moves: false): no Move up / down.
+  assert.deepEqual(labels("s1", { moves: false }), ["Open…", "Edit text", "Add a functional failure…", "Remove standard"]);
   assert.equal(items("s1").find((a) => a.id === "delete").danger, true);
   // The one text's row: no moving; on a phone no in-place edit.
   assert.deepEqual(labels(legacyKey("f2")), ["Open…", "Edit text", "Add a functional failure…", "Remove standard"]);

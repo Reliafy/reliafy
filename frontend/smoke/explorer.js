@@ -9,7 +9,7 @@ export const details = (page) =>
 
 // Where the parts of the Explorer's frame are on screen, rounded to 0.1 px:
 // the pane, the tree's title row (title, +, ⋯), the search box, the counts,
-// the pinned branch's note in the column header (if any), the tree's column header, the tree's
+// the isolated branch's notice in the column header (if any), the tree's column header, the tree's
 // scroll area (its top, its scroll and the place of each row drawn on screen,
 // by key), and the panel's heading and tabs.
 export function frameOf(page) {

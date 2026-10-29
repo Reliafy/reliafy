@@ -12,14 +12,14 @@ export function levelShown(levelBy, mode) {
   return Object.prototype.hasOwnProperty.call(levelBy, mode) ? levelBy[mode] : DEFAULT_LEVEL;
 }
 
-// What's not as usual, each with a short name: a branch pinned (only part of
+// What's not as usual, each with a short name: a branch isolated (only part of
 // the tree shown), an arrangement other than Positions (offered only when
 // `arrange` is), a level other than the usual one (when the levels are
 // offered), and each Show only filter that's on. `chips`: the filters on that
 // this tree offers.
 export function changedFromUsual({ mode, arrange = true, level, levels = true, chips = [], pinned = false }) {
   const out = [];
-  if (pinned) out.push({ id: "pin", label: "Pinned branch" });
+  if (pinned) out.push({ id: "isolate", label: "Isolated branch" });
   if (arrange && mode !== DEFAULT_ARRANGEMENT) out.push({ id: "arrange", label: "Arrangement" });
   if (levels && typeof level === "number" && level !== DEFAULT_LEVEL) out.push({ id: "level", label: "Level" });
   for (const c of chips) out.push({ id: `chip:${c.id}`, label: c.label });

@@ -271,19 +271,19 @@ test("pinned: the crumb for the whole tree's one top row shows everything instea
   });
   await page.setViewportSize({ width: 1280, height: 720 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&pin=${p.pump.id}`);
-  const bar = page.locator(".tt-head").getByRole("group", { name: "Pinned branch" });
-  await expect(bar).toContainText(`Pinned: Yard pump ${tag}`);
+  const bar = page.locator(".tt-head").getByRole("group", { name: "Isolated branch" });
+  await expect(bar).toContainText(`Isolated: Yard pump ${tag}`);
   const crumbs = page.locator(".tt-headslot").getByRole("navigation", { name: "Breadcrumb" });
   // A crumb above the pin that isn't the top: the pin moves up to it, as before.
   await crumbs.getByRole("button", { name: `Yard circulation ${tag}` }).click();
-  await expect.poll(() => new URL(page.url()).searchParams.get("pin")).toBe(p.circ.id);
+  await expect.poll(() => new URL(page.url()).searchParams.get("isolate")).toBe(p.circ.id);
   // The ⋯ badge counts the pin.
   const changed = async () => Number((await page.getByRole("button", { name: /^Tree options/ }).getAttribute("aria-label")).match(/(\d+) changed/)?.[1] || 0);
   const pinned = await changed();
   expect(pinned).toBeGreaterThanOrEqual(1);
   // The whole tree's one top row: everything shows, nothing pinned, the pin no longer counted.
   await crumbs.getByRole("button", { name: `Yard pool ${tag}` }).click();
-  await expect.poll(() => new URL(page.url()).searchParams.get("pin")).toBe(null);
+  await expect.poll(() => new URL(page.url()).searchParams.get("isolate") ?? new URL(page.url()).searchParams.get("pin")).toBe(null);
   await expect(bar).toHaveCount(0);
   await expect.poll(changed).toBe(pinned - 1);
   await expect(page.getByRole("treeitem", { name: new RegExp(`^Yard pool ${tag}`) })).toHaveAttribute("aria-selected", "true");

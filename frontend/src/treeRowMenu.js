@@ -1,7 +1,7 @@
 // The Explorer's row menu on the Summary tab (right-click a row, its ⋯
 // button, or Shift+F10): changing the tree itself. New position (or location)
-// inside, Rename, Move to… and Retire, beside Pin this branch. The RCM tab's
-// rows keep their own menu (explorerRcm.js rowActions).
+// inside, Rename, Move to… and Retire, beside Isolate (isolateItems, on both
+// tabs). The RCM tab's rows keep their own menu (explorerRcm.js rowActions).
 //
 // Each item is offered only where the server allows it: a position can be
 // renamed, moved (PATCH parent_id) and retired; a location renamed and moved
@@ -38,7 +38,7 @@ export function retireBlock(r, liveKids = 0) {
 // [{id, label, danger?, disabled?, reason?}]. `viewOnly`: the reason the
 // workspace can't be changed (every change greyed), else null. `kidsOf(id)`:
 // how many live positions sit directly inside a position (from the tree's
-// rows, whatever the arrangement shows). Pin this branch is added by the page.
+// rows, whatever the arrangement shows). Isolate is added by the page.
 export function summaryActions(r, { mode, viewOnly = null, kidsOf = () => 0 } = {}) {
   if (!r) return [];
   const out = [];
@@ -62,12 +62,41 @@ export function summaryActions(r, { mode, viewOnly = null, kidsOf = () => 0 } = 
   return out;
 }
 
-// The menu with Pin this branch (or Show whole tree) added: after the
-// changes, before Retire.
-export function withPin(items, pin) {
+// The menu with Isolate (and Show everything) added: after the changes,
+// before Retire or Delete.
+export function withIsolate(items, more) {
   const at = items.findIndex((i) => i.danger);
-  if (at < 0) return [...items, ...pin];
-  return [...items.slice(0, at), ...pin, ...items.slice(at)];
+  if (at < 0) return [...items, ...more];
+  return [...items.slice(0, at), ...more, ...items.slice(at)];
+}
+
+// A row's Isolate: a submenu, "with 1 level open", "2 levels open", "3 levels
+// open", "everything open" (ids isolate:1, isolate:2, isolate:3, isolate:all),
+// the one shown ticked on the row isolated now; a row with nothing inside it
+// has just "Isolate" (no levels to open). The row isolated now also has Show
+// everything. `can`: whether this row can be isolated (treeIsolate.canIsolate);
+// `current`: {key, depth} while a branch is isolated, else null.
+export function isolateItems(r, { can, current = null } = {}) {
+  if (!r || !can) return [];
+  const here = current?.key === r.key;
+  const out = [];
+  if (!r.kids?.length) {
+    if (!here) out.push({ id: "isolate:all", label: "Isolate" });
+  } else {
+    const depth = here ? current.depth : undefined;
+    const tick = (d) => (here ? { checked: depth === d } : {});
+    out.push({
+      id: "isolate", label: "Isolate",
+      items: [
+        { id: "isolate:1", label: "With 1 level open", ...tick(1) },
+        { id: "isolate:2", label: "With 2 levels open", ...tick(2) },
+        { id: "isolate:3", label: "With 3 levels open", ...tick(3) },
+        { id: "isolate:all", label: "With everything open", ...tick("all") },
+      ],
+    });
+  }
+  if (here) out.push({ id: "show-all", label: "Show everything" });
+  return out;
 }
 
 // How many live positions sit directly inside each position (the tree's rows).
