@@ -428,3 +428,149 @@ def test_the_rcm_tabs_batch_over_the_app_route(api):
         "functional_failure_id": a["id"], "standard_id": "none"}}]
     r = api.post(f"{M}/rcm/apply", json={"operations": r.json()["undo"]})
     assert r.status_code == 200 and r.json()["results"][0]["result"]["standard"] is None
+
+
+# ---- standard.moved: a standard to another function, alone ------------------------------
+
+def test_a_standard_moves_to_another_function_and_its_failures_stay(m):
+    pump, fn, st, ff, mode, gone, other, task = _pump(m)
+    st2 = m.add_standard(fn["id"], "At 4 bar")
+    b = m.create_position("Pump B")
+    fn_b = m.add_function(b["id"], "Pump 20 L/s")
+    m.add_standard(fn_b["id"], "At least 20 L/s")
+
+    out = m.move_standard(st["id"], fn_b["id"])
+    assert out["from_function_id"] == fn["id"] and out["function_id"] == fn_b["id"]
+    assert out["from_position_id"] == pump["id"] and out["position_id"] == b["id"]
+    assert out["unlinked_functional_failure_ids"] == [ff["id"]] and out["failures_unlinked"] == 1
+    assert out["previous_ids"] == [st["id"], st2["id"]] and "stays with the old function" in out["note"]
+    # The standard went alone, last on its new function; the failure stayed, under no standard.
+    assert [x["id"] for x in m.s.inn(ORG, st["id"], "HELD_TO")] == [fn_b["id"]]
+    assert [x["id"] for x in m._standards_of(fn_b["id"])][-1] == st["id"]
+    assert [x["id"] for x in m._standards_of(fn["id"])] == [st2["id"]]
+    assert m.s.out(ORG, ff["id"], "BREACHES") == []
+    assert [x["id"] for x in m.s.inn(ORG, ff["id"], "FAILS_AS")] == [fn["id"]]
+    assert {x["id"] for x in m.s.out(ORG, ff["id"], "CAUSED_BY")} == {mode["id"], gone["id"]}
+    sheet = _rcm(m, b["id"])
+    assert [x["text"] for x in sheet["functions"][0]["standards"]] == ["At least 20 L/s", "At least 50 L/s"]
+    _rebuilds_the_same(m)
+
+    # Back, with the failure breaching it again (what the undo sends).
+    back = m.move_standard(st["id"], fn["id"], [ff["id"]])
+    assert back["unlinked_functional_failure_ids"] == [] and "note" not in back
+    assert [x["id"] for x in m.s.out(ORG, ff["id"], "BREACHES")] == [st["id"]]
+    _rebuilds_the_same(m)
+
+
+def test_moving_a_standard_onto_a_function_with_its_one_text_keeps_that_text(m):
+    pump, fn, st, ff, mode, gone, other, task = _pump(m)
+    m.update_function(other["id"], standard="No visible leaks")
+    m.move_standard(st["id"], other["id"])
+    assert [x["text"] for x in m._standards_of(other["id"])] == ["No visible leaks", "At least 50 L/s"]
+    _rebuilds_the_same(m)
+
+
+def test_refusals_for_moving_a_standard(m):
+    pump, fn, st, ff, mode, gone, other, task = _pump(m)
+    leaks = m._failures_of(other["id"])[0]
+    n = m.s.event_count(ORG)
+    with pytest.raises(Invalid, match="already a standard of"):
+        m.move_standard(st["id"], fn["id"])
+    with pytest.raises(Invalid, match="no performance standard"):
+        m.move_standard("nope", other["id"])
+    with pytest.raises(Invalid, match="which function"):
+        m.move_standard(st["id"], None)
+    with pytest.raises(Invalid, match="no function with that id"):
+        m.move_standard(st["id"], "nope")
+    with pytest.raises(Invalid, match="functional failures of the function it moves to"):
+        m.move_standard(st["id"], other["id"], [ff["id"]])
+    b = m.create_position("Old pump")
+    fn_b = m.add_function(b["id"], "Pump")
+    m.retire_position(b["id"])
+    n = m.s.event_count(ORG)
+    with pytest.raises(Invalid, match="retired"):
+        m.move_standard(st["id"], fn_b["id"])
+    m.remove_standard(st["id"])
+    n = m.s.event_count(ORG)
+    with pytest.raises(Invalid, match="removed"):
+        m.move_standard(st["id"], other["id"])
+    assert m.s.event_count(ORG) == n and leaks
+
+
+@pytest.mark.sqlite_only
+def test_standard_moved_is_idempotent_and_older_code_passes_it_over(m):
+    pump, fn, st, ff, mode, gone, other, task = _pump(m)
+    leaks = m._failures_of(other["id"])[0]
+    m.move_standard(st["id"], other["id"], [leaks["id"]])
+    before = m.s.snapshot()
+    m.s._conn.execute("BEGIN")
+    PROJECTORS["standard.moved"](m.s, ORG, _events(m, "standard.moved")[0]["payload"])
+    m.s._conn.execute("COMMIT")
+    assert m.s.snapshot() == before
+    older = {k: v for k, v in PROJECTORS.items() if k != "standard.moved"}
+    old = GraphStore(":memory:", older)
+    for e in m.s.log.since(0, 10_000):
+        old.log.append({"id": new_id(), "org": e["org"], "type": e["type"], "at": "", "actor": None,
+                        "payload": e["payload"]})
+    old.sync()
+    assert [f["id"] for f in old.inn(ORG, st["id"], "HELD_TO")] == [fn["id"]]
+    assert [x["id"] for x in old.out(ORG, ff["id"], "BREACHES")] == [st["id"]]
+    assert len(old.skipped()) == 1
+
+
+def test_a_standard_moved_through_the_app_batch_undoes_with_its_breaches(api):
+    pump = api.post(f"{M}/positions", json={"name": "Pump"}).json()
+    other = api.post(f"{M}/positions", json={"name": "Pump B"}).json()
+    fn = api.post(f"{M}/positions/{pump['id']}/functions", json={"text": "Pump water"}).json()
+    fn_b = api.post(f"{M}/positions/{other['id']}/functions", json={"text": "Pump more water"}).json()
+    st = api.post(f"{M}/functions/{fn['id']}/standards", json={"text": "50 L/s"}).json()
+    st2 = api.post(f"{M}/functions/{fn['id']}/standards", json={"text": "4 bar"}).json()
+    a = api.post(f"{M}/functions/{fn['id']}/failures", json={"text": "No flow", "standard_id": st["id"]}).json()
+
+    def breach():
+        rcm = api.get(f"{M}/positions/{pump['id']}/rcm?scope=this").json()["positions"][0]
+        f = rcm["functions"][0]
+        return [s["text"] for s in f["standards"]], (f["failures"][0]["standard"] or {}).get("text")
+
+    dry = api.post(f"{M}/rcm/apply", json={"dry_run": True, "operations": [
+        {"do": "failure_modes.move_standard", "args": {"standard_id": st["id"], "function_id": fn_b["id"]}}]})
+    assert dry.status_code == 200 and dry.json()["would_apply"] == 1 and breach() == (["50 L/s", "4 bar"], "50 L/s")
+    r = api.post(f"{M}/rcm/apply", json={"operations": [
+        {"do": "failure_modes.move_standard", "args": {"standard_id": st["id"], "function_id": fn_b["id"]}}]})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["irreversible"] == [] and breach() == (["4 bar"], None)
+    assert out["results"][0]["result"]["unlinked_functional_failure_ids"] == [a["id"]]
+    assert out["undo"] == [{"do": "failure_modes.move_standard", "args": {
+        "standard_id": st["id"], "function_id": fn["id"], "ids": [a["id"]]}}]
+    # The page adds the old order to the undo, so the standard comes back where it was.
+    undo = out["undo"] + [{"do": "failure_modes.reorder_standards", "args": {
+        "function_id": fn["id"], "standard_ids": [st["id"], st2["id"]]}}]
+    r = api.post(f"{M}/rcm/apply", json={"operations": undo})
+    assert r.status_code == 200, r.text
+    assert breach() == (["50 L/s", "4 bar"], "50 L/s")
+    # The single route, and a refusal before anything is written.
+    r = api.post(f"{M}/standards/{st['id']}/move", json={"function_id": fn["id"]})
+    assert r.status_code == 422 and "already a standard" in r.json()["detail"]
+    r = api.post(f"{M}/standards/{st['id']}/move", json={"function_id": fn_b["id"]})
+    assert r.status_code == 200 and r.json()["function_id"] == fn_b["id"]
+
+
+def test_move_standard_over_mcp(env):
+    async def flow(client):
+        pump = _ok(await _do(client, "maintenance_positions", "create", name="Pump"))["id"]
+        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pump, text="Pump"))["id"]
+        other = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pump,
+                              text="Contain"))["id"]
+        st = _ok(await _do(client, "maintenance_failure_modes", "add_standard", function_id=fn,
+                           text="No drips"))["id"]
+        leaks = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=other,
+                              text="Leaks"))["id"]
+        moved = _ok(await _do(client, "maintenance_failure_modes", "move_standard", standard_id=st,
+                              function_id=other, ids=[leaks]))
+        again = await _do(client, "maintenance_failure_modes", "move_standard", standard_id=st, function_id=other)
+        return moved, again, leaks
+
+    moved, again, leaks = _session(env["token"], flow)
+    assert moved["standard"]["text"] == "No drips" and moved["unlinked_functional_failure_ids"] == []
+    assert again.is_error and "already a standard" in again.content[0].text

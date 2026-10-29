@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addFailureMode, addFailureModeTask, addFunctionStandard, addFunctionalFailure, addPositionFunction, assignFailureMode,
+  addFailureMode, addFailureModeTask, applyRcm, addFunctionStandard, addFunctionalFailure, addPositionFunction, assignFailureMode,
   decideFailureMode, getFailureModeTasks, getPositionFunction, getWorkspaceRcm, linkFunctionalFailureCause,
   linkTaskFailureMode, removeFunctionStandard, removeFunctionalFailure, removeMaintenanceDocument, removePositionFunction,
   reorderFunctionStandards, retireFailureMode, retireMaintenanceTask, splitFunctionStandard, unlinkFunctionalFailureCause,
@@ -13,8 +13,9 @@ import { itemWrites } from "../explorerRcm.js";
 // The RCM in the Explorer's tree (the RCM tab): every position's functions,
 // functional failures and failure modes, read once when the tab opens and
 // again after each change, and the changes themselves, each written at once as
-// the graph's own events (no Undo yet). After a change the tree is read again
-// too (its "not analysed" marks follow). With `prefetch` it's read once a
+// the graph's own events (a move, by drag and drop or Move to…, is one batch
+// that can be undone). After a change the tree is read again too (its "not
+// analysed" marks follow). With `prefetch` it's read once a
 // moment early (the Summary tab), so opening the tab doesn't wait for it.
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
@@ -276,6 +277,12 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       remove: (standardId) => after(removeFunctionStandard(standardId)),
       reorder: (r, ids) => after(reorderFunctionStandards(r.ref.id, ids)),
       split: (r, standards) => after(splitFunctionStandard(r.ref.id, { standards, dry_run: false })),
+    },
+    // A drop (or a Move to…): one batch, all or nothing; the RCM and the
+    // tree read again after it's written. dryRun: only checked, nothing read.
+    arrange(operations, { dryRun = false } = {}) {
+      if (dryRun) return applyRcm(operations, { dryRun: true });
+      return after(applyRcm(operations));
     },
     // The standard a functional failure breaches (null: the whole function).
     setBreach(r, standardId) {

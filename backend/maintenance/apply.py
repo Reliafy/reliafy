@@ -132,6 +132,10 @@ MOVES = {
         "parent_id": a.get("parent_id"), "ids": r.get("previous_ids")}},
     "failure_modes.reorder_standards": lambda a, r: {"do": "failure_modes.reorder_standards", "args": {
         "function_id": a.get("function_id"), "standard_ids": r.get("previous_ids")}},
+    # A standard back to its old function, the failures that breached it breaching it again.
+    "failure_modes.move_standard": lambda a, r: {"do": "failure_modes.move_standard", "args": {
+        "standard_id": a.get("standard_id"), "function_id": r.get("from_function_id"),
+        "ids": r.get("unlinked_functional_failure_ids") or []}},
     "tasks.move": lambda a, r: {"do": "tasks.move", "args": _without_none(
         task_id=a.get("task_id"), position_id=r.get("from_position_id"))},
 }
@@ -149,6 +153,7 @@ ARRANGE = {
     "failure_modes.update_functional_failure": ("update_functional_failure", "functional_failure_id text standard_id"),
     "failure_modes.reorder": ("reorder_rcm", "parent_id ids"),
     "failure_modes.reorder_standards": ("reorder_standards", "function_id standard_ids"),
+    "failure_modes.move_standard": ("move_standard", "standard_id function_id ids"),
     "tasks.link": ("link_task", "task_id failure_mode_id"),
     "tasks.unlink": ("unlink_task", "task_id failure_mode_id"),
     "tasks.move": ("move_task", "task_id position_id"),

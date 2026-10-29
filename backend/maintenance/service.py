@@ -913,6 +913,24 @@ def _standard_removed(s: GraphStore, org: str, p: dict) -> None:
     for ff in s.inn(org, p["id"], "BREACHES"):
         s.delete_edge(org, "BREACHES", ff["id"], p["id"])
 
+def _standard_moved(s: GraphStore, org: str, p: dict) -> None:
+    """A performance standard moved to another function (on the same position
+    or another), alone. No functional failure breaches it any more (the ones
+    that did stay with their function, under no standard), except those the
+    event names (functional_failure_ids, failures of the new function), which
+    now breach it instead of whatever they breached before."""
+    for fn in s.inn(org, p["id"], "HELD_TO"):
+        if fn["id"] != p["function_id"]:
+            s.delete_edge(org, "HELD_TO", fn["id"], p["id"])
+    s.put_edge(org, "HELD_TO", p["function_id"], p["id"])
+    s.patch_node(org, p["id"], {"order": p.get("order", 0)})
+    for ff in s.inn(org, p["id"], "BREACHES"):
+        s.delete_edge(org, "BREACHES", ff["id"], p["id"])
+    for ff_id in p.get("functional_failure_ids") or []:
+        for old in s.out(org, ff_id, "BREACHES"):
+            s.delete_edge(org, "BREACHES", ff_id, old["id"])
+        s.put_edge(org, "BREACHES", ff_id, p["id"])
+
 
 def _failure_mode_assigned(s: GraphStore, org: str, p: dict) -> None:
     """A failure mode put under a functional failure (or under none: null)."""
@@ -2106,6 +2124,8 @@ PROJECTORS = {
     "standard.added": _standard_added,
     "standard.updated": _patch,
     "standard.removed": _standard_removed,
+    # A standard to another function, alone (its failures stay where they are).
+    "standard.moved": _standard_moved,
     "failure_mode.assigned": _failure_mode_assigned,
     "failure_mode.analysed": _patch,
     "failure_mode.retired": _flag("retired"),
@@ -3198,6 +3218,56 @@ class Maintenance:
         # The order before, so a batch can undo it.
         return {**self._function_view(self._get(function_id, "Function")), "previous_ids": [st["id"] for st in have]}
 
+    def move_standard(self, standard_id, function_id, functional_failure_ids=None) -> dict:
+        """Move a performance standard to another function, on the same position
+        or another (a workshop rearranging the analysis as it's discussed). The
+        standard moves alone: the functional failures that breached it stay
+        with their function and breach the whole function there ("No
+        standard"); the answer names them. functional_failure_ids: failures of
+        the new function that breach it from now on (an undo puts the breaches
+        back this way). It goes last among the new function's standards."""
+        if not standard_id or self.s.node(self.org, str(standard_id), "Standard") is None:
+            raise Invalid("There's no performance standard with that id in this workspace.")
+        st, fn_from = self._live_standard(str(standard_id))
+        _, source = self._live_function(fn_from["id"])
+        if not function_id:
+            raise Invalid("Say which function to move it to (function_id).")
+        if self.s.node(self.org, str(function_id), "Function") is None:
+            raise Invalid("There's no function with that id in this workspace: pick one from the RCM tree.")
+        fn_to, target = self._live_function(str(function_id))
+        if fn_to["id"] == fn_from["id"]:
+            raise Invalid(f"It's already a standard of {shortened(fn_to['text'])[0]}: pick another function (to "
+                          "change the order of a function's standards, reorder them).")
+        if target.get("retired"):
+            raise Invalid(f"{target['name']} has been retired: pick a function on a position that's still in use.")
+        if len(self._standards_of(fn_to["id"])) >= MAX_STANDARDS:
+            raise Invalid(f"A function has at most {MAX_STANDARDS} performance standards.")
+        theirs = {ff["id"] for ff in self._failures_of(fn_to["id"])}
+        wanted = sorted({str(x) for x in (functional_failure_ids or [])})
+        stray = [x for x in wanted if x not in theirs]
+        if stray:
+            raise Invalid("functional_failure_ids are functional failures of the function it moves to.")
+        # The new function's old single text becomes its list's first item, as
+        # adding a standard there would make it, so nothing is hidden.
+        self._adopt_legacy_standard(fn_to)
+        unlinked = sorted(ff["id"] for ff in self.s.inn(self.org, st["id"], "BREACHES") if not ff.get("removed"))
+        previous = [x["id"] for x in self._standards_of(fn_from["id"])]
+        self._emit("standard.moved", {
+            "id": st["id"], "function_id": fn_to["id"], "from_function_id": fn_from["id"],
+            "position_id": target["id"], "from_position_id": source["id"],
+            "order": self._next_order(self._standards_of(fn_to["id"])),
+            "functional_failure_ids": wanted, "unlinked_functional_failure_ids": unlinked, "on": self.today(),
+        })
+        n = len(unlinked)
+        return {"moved": st["id"], "function_id": fn_to["id"], "from_function_id": fn_from["id"],
+                "position_id": target["id"], "from_position_id": source["id"],
+                "standard": self._standard_view(self._get(st["id"], "Standard")),
+                # The failures that breached it (they stay, under no standard), so a batch can undo
+                # the move, and the old function's order before, to put it back in its place.
+                "unlinked_functional_failure_ids": unlinked, "failures_unlinked": n, "previous_ids": previous,
+                **({"note": f"{n} functional failure{' that breached it stays' if n == 1 else 's that breached it stay'}"
+                            " with the old function, under no standard."} if n else {})}
+
     def split_standard(self, function_id: str, standards=None, dry_run: bool = True) -> dict:
         """Turn a function's old single standard text into a list, one standard
         per line: proposed from its ';' and line breaks (dry run, the default:
@@ -3984,7 +4054,8 @@ class Maintenance:
         return [{"id": t["id"], "name": t["name"], "text": Maintenance._task_text(t),
                  "interval": t.get("interval"), "unit": t.get("unit"), "outcome": t.get("outcome"),
                  "instructions": t.get("instructions") or "",
-                 "shared_with": shares(t["id"]) if shares else 0} for t in tasks]
+                 "shared_with": shares(t["id"]) if shares else 0}
+                | ({"position_id": t["position_id"]} if t.get("position_id") else {}) for t in tasks]
 
     @staticmethod
     def _decision_of(fm: dict, tasks: list[dict], shares=None) -> dict | None:
@@ -4072,6 +4143,11 @@ class Maintenance:
             parent.setdefault(src, dst)
         # Every live task serving each mode (its decision's own first), and how
         # many live modes each task serves (for "shared with n").
+        # The position each task is on (the RCM tab's drag and drop works out a task's moves from it).
+        positions_now = {p["id"] for p in s.nodes(org, "Position")}
+        for src, dst in s.pairs(org, "ON"):
+            if src in tasks and dst in positions_now:
+                tasks[src] = {**tasks[src], "position_id": dst}
         tasks_of: dict[str, list] = {}
         serves: dict[str, int] = {}
         for src, dst in s.pairs(org, "MITIGATES"):

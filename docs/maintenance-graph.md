@@ -524,6 +524,7 @@ everything that moved with it, so a replay never works the rule out again:
 | `failure_mode.moved` | `id, position_id, from_position_id, functional_failure_id, order?, task_ids, on` | one mode with its decision and live tasks, under one of the new position's functional failures (or none) |
 | `task.moved` | `id, position_id, from_position_id, on` | one position's task |
 | `functional_failure.moved` | `id, function_id, from_function_id, position_id, from_position_id, order, standard_id?, failure_mode_ids, task_ids, on` | one functional failure under another function (same position or another) with the modes named and their live tasks; the standard it breached stays with the old function, `standard_id` names one of the new function's |
+| `standard.moved` | `id, function_id, from_function_id, position_id, from_position_id, order, functional_failure_ids, unlinked_functional_failure_ids, on` | one performance standard to another function, alone: the functional failures that breached it stay with their function under no standard (`unlinked_functional_failure_ids` names them); `functional_failure_ids` are the new function's failures that breach it now (an undo puts the breaches back this way) |
 
 Who moved it and when are the event's `actor` and `at`, as for every event.
 A functional failure moving on its own position names every mode under it
@@ -573,6 +574,13 @@ thing came from (`from_position_id`, `from_functional_failure_id`,
 back. The app's RCM tab sends one batch per drag-and-drop through `POST
 /rcm/apply` (the arranging actions only, `apply.ARRANGE`, run through the
 service directly; the same checked-on-a-copy-first rule, the same answer).
+`move_standard(standard_id, function_id, functional_failure_ids)` (`POST
+/standards/{id}/move`; `maintenance_failure_modes move_standard`) moves a
+standard to another function on any position: a workshop rearranges the
+analysis as it talks it through. The new function's old single text becomes its
+list's first item first, as `add_standard` does. Its undo moves it back with
+the failures that breached it (`ids`); the app adds a `reorder_standards` to put
+it back in its place.
 
 The evidence check (`backend/maintenance/rcm_decisions.py`, applied by
 `rcm_graph.resolve`) is done on every read, never stored. A task with no unit

@@ -146,7 +146,8 @@ functional_failure_id: one there), and maintenance_tasks move (a position's task
 stay. Anything with history stays put (failures or findings recorded against a mode, work done on a task, a \
 task's use counted from the old position's counter): the refusal says what to do instead. A moved thing goes \
 last among its new siblings; reorder (parent_id: the position, function or functional failure; ids: its \
-children in the order wanted) and reorder_standards place things. Several moves at once (five modes under one \
+children in the order wanted) and reorder_standards place things; move_standard takes a standard to \
+another function (alone: the failures breaching it stay, under no standard). Several moves at once (five modes under one \
 functional failure): maintenance_apply, all or nothing, and its undo list puts them back.
 - Several tasks for one failure mode, one task for several. A mode's decision has one task, the first in its \
 decision.tasks; maintenance_failure_modes add_task adds another (a combination: an inspection that catches the \

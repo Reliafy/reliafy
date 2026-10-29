@@ -275,6 +275,8 @@ FAILURE_MODES: Table = {
     "remove_standard": ("standard_id", "", "Take one off its function (a failure breaching it breaches the whole "
                         "function again)."),
     "reorder_standards": ("function_id standard_ids", "", "The function's standards in that order."),
+    "move_standard": ("standard_id function_id", "ids", "To another function, alone (failures breaching it stay, "
+                      "under no standard); ids: that function's failures that breach it."),
     "split_standard": ("function_id", "standards dry_run", """Turn a function's single standard text into a list:
         proposed from its ';' and line breaks (dry_run true, default), then sent back edited as standards
         [{text, when?, source?}] with dry_run false. Never automatic."""),
@@ -1134,6 +1136,8 @@ def register() -> None:
             return run(m.remove_standard, standard_id)
         if action == "reorder_standards":
             return run(m.reorder_standards, function_id, standard_ids)
+        if action == "move_standard":
+            return run(m.move_standard, standard_id, function_id, ids)
         if action == "split_standard":
             return run(m.split_standard, function_id, standards, _d(dry_run, True))
         if action == "remove_functional_failure":
