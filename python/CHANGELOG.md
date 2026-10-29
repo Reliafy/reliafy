@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `maintenance_failure_modes move_standard` moves a performance standard to
+  another function (on the same position or another). It moves alone: the
+  functional failures that breached it stay with their function, under no
+  standard, and the result names them (`unlinked_functional_failure_ids`).
+  `ids` names failures of the new function that breach it from now on.
+  `maintenance_apply` undoes it.
+
 - Rearranging the RCM tree. `maintenance_failure_modes move_functional_failure`
   moves a functional failure under another function (on the same position or
   another) with its failure modes and their tasks; the standard it breached

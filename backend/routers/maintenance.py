@@ -515,6 +515,14 @@ def reorder_standards(function_id: str, body: dict = Body(...),
     return _run(m.reorder_standards, function_id, body.get("standard_ids"))
 
 
+@router.post("/standards/{standard_id}/move")
+def move_standard(standard_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """To another function (function_id), on the same position or another, alone: the functional
+    failures that breached it stay with their function, under no standard. functional_failure_ids:
+    failures of the new function that breach it from now on."""
+    return _run(m.move_standard, standard_id, body.get("function_id"), body.get("functional_failure_ids"))
+
+
 @router.post("/functions/{function_id}/standards/split")
 def split_standard(function_id: str, body: dict | None = Body(None),
                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
@@ -641,7 +649,7 @@ def reorder_rcm(body: dict = Body(...), m: Maintenance = Depends(maintenance_wri
 def rcm_apply(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """The RCM tab's drag and drop: operations [{do, args}] (the maintenance_apply shape, arranging
     actions only: assign, move, move_function, move_functional_failure, update_functional_failure,
-    reorder, reorder_standards, tasks link / unlink / move) run as one batch. Every operation is
+    reorder, reorder_standards, move_standard, tasks link / unlink / move) run as one batch. Every operation is
     first checked on a throwaway copy of the workspace: with any refusal nothing is written (422,
     detail says which operation and why). The answer is maintenance_apply's: each operation's
     result, counts and undo (the operations that put everything back, newest first; send them here
