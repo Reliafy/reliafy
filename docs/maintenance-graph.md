@@ -582,6 +582,18 @@ list's first item first, as `add_standard` does. Its undo moves it back with
 the failures that breached it (`ids`); the app adds a `reorder_standards` to put
 it back in its place.
 
+Dragging a standard in the app carries everything under it: one batch of
+`move_standard` then `move_functional_failure` for each functional failure that
+breached it (`function_id` the same, `standard_id` the moved standard), so they
+and their failure modes, decisions and tasks go with it, by `move_function`'s
+rules across positions. No new event: `standard.moved` and
+`functional_failure.moved`, all or nothing (the trial run first). Its undo list,
+newest first, moves each failure back (breaching nothing), then the standard
+back with them breaching it again; the app adds the old order of the standards
+and of the function's failures. Links dropped because they would no longer run
+downwards are said in the answer and aren't put back by Undo, as for a
+function's move.
+
 The evidence check (`backend/maintenance/rcm_decisions.py`, applied by
 `rcm_graph.resolve`) is done on every read, never stored. A task with no unit
 given runs in days, so days are checked against the linked analysis's unit.

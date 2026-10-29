@@ -3225,7 +3225,9 @@ class Maintenance:
         with their function and breach the whole function there ("No
         standard"); the answer names them. functional_failure_ids: failures of
         the new function that breach it from now on (an undo puts the breaches
-        back this way). It goes last among the new function's standards."""
+        back this way). It goes last among the new function's standards.
+        Dragging a standard on the RCM tab carries its failures too: one batch
+        of this, then move_functional_failure for each (standard_id: this one)."""
         if not standard_id or self.s.node(self.org, str(standard_id), "Standard") is None:
             raise Invalid("There's no performance standard with that id in this workspace.")
         st, fn_from = self._live_standard(str(standard_id))

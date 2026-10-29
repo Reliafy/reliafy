@@ -574,3 +574,213 @@ def test_move_standard_over_mcp(env):
     moved, again, leaks = _session(env["token"], flow)
     assert moved["standard"]["text"] == "No drips" and moved["unlinked_functional_failure_ids"] == []
     assert again.is_error and "already a standard" in again.content[0].text
+
+
+# ---- a standard dragged with everything under it (29 Oct) ------------------------------
+# The RCM tab sends one batch: the standard's move, then each functional failure
+# breaching it moved to the same function, breaching it again (their failure
+# modes, decisions and tasks go with them). No new event: standard.moved and
+# functional_failure.moved, all or nothing, and one undo.
+
+def _batch(m, operations, dry_run=False):
+    """What POST /rcm/apply does, on this Maintenance: the trial run on a copy,
+    then (unless dry_run) the real one. Returns the answer, or raises
+    BatchRefused-like AssertionError text on a refusal ({failed} in the answer)."""
+    from backend.maintenance import apply as apply_mod
+    from backend.maintenance.store import scratch_copy
+
+    ops = apply_mod.parse_arranging(operations)
+
+    def call(area, action, args):
+        return apply_mod.arrange(apply_mod.ACTIVE_M.get(), f"{area}.{action}", args)
+
+    copy = Maintenance(scratch_copy(m.s, m.org), m.org, m.actor)
+    trial = apply_mod.run_pass(ops, call, copy, "stop", dry=True)
+    if trial["failed"] or dry_run:
+        return apply_mod.summarise(ops, trial, True, 0)
+    real = apply_mod.run_pass(ops, call, m, "stop", dry=False)
+    return apply_mod.summarise(ops, real, False, 0)
+
+
+def _carry(standard_id, function_id, ff_ids):
+    """The batch the RCM tab sends for a standard dragged onto a function."""
+    return [{"do": "failure_modes.move_standard", "args": {"standard_id": standard_id, "function_id": function_id}}] + [
+        {"do": "failure_modes.move_functional_failure",
+         "args": {"functional_failure_id": x, "function_id": function_id, "standard_id": standard_id}}
+        for x in ff_ids]
+
+
+def _two_under_a_standard(m):
+    """Pump A's function with two standards: the first breached by two
+    functional failures (one with a decided mode and its task, one with a
+    plain mode), the second by one that stays. Pump B: a function with a
+    standard of its own."""
+    pump, fn, st, ff, mode, gone, other, task = _pump(m)
+    st2 = m.add_standard(fn["id"], "At 4 bar")
+    low = m.add_functional_failure(fn["id"], "Low flow", standard_id=st["id"])
+    worn = m.add_failure_mode(pump["id"], "Impeller worn", functional_failure_id=low["id"])
+    stays = m.add_functional_failure(fn["id"], "Low pressure", standard_id=st2["id"])
+    b = m.create_position("Pump B")
+    fn_b = m.add_function(b["id"], "Pump 20 L/s")
+    st_b = m.add_standard(fn_b["id"], "At least 20 L/s")
+    return dict(pump=pump, fn=fn, st=st, st2=st2, ff=ff, low=low, stays=stays, mode=mode, gone=gone, worn=worn,
+                task=task, b=b, fn_b=fn_b, st_b=st_b)
+
+
+def test_a_standard_dragged_to_another_position_carries_its_failures_modes_and_tasks(m):
+    x = _two_under_a_standard(m)
+    before_a, before_b = _rcm(m, x["pump"]["id"]), _rcm(m, x["b"]["id"])
+    decided = m.rcm_mode(x["mode"]["id"])
+    n = m.s.event_count(ORG)
+    dry = _batch(m, _carry(x["st"]["id"], x["fn_b"]["id"], [x["ff"]["id"], x["low"]["id"]]), dry_run=True)
+    assert dry["ok"] and m.s.event_count(ORG) == n  # the trial run writes nothing
+
+    out = _batch(m, _carry(x["st"]["id"], x["fn_b"]["id"], [x["ff"]["id"], x["low"]["id"]]))
+    assert out["ok"] and out["applied"] == 3 and out["irreversible"] == []
+    # Only the existing events: one standard.moved, one functional_failure.moved per failure.
+    assert len(_events(m, "standard.moved")) == 1 and len(_events(m, "functional_failure.moved")) == 2
+    # The standard and both failures breaching it are on Pump B's function, in their order.
+    assert [s["id"] for s in m.s.inn(ORG, x["st"]["id"], "HELD_TO")] == [x["fn_b"]["id"]]
+    sheet = _rcm(m, x["b"]["id"])["functions"][0]
+    assert [s["text"] for s in sheet["standards"]] == ["At least 20 L/s", "At least 50 L/s"]
+    assert [(f["text"], f["standard"]["text"]) for f in sheet["failures"]] == [
+        ("No flow", "At least 50 L/s"), ("Low flow", "At least 50 L/s")]
+    assert [[md["text"] for md in f["modes"]] for f in sheet["failures"]] == [["Bearing seizes"], ["Impeller worn"]]
+    # The modes and the task are on Pump B, the decision as it was; the deleted mode stays on Pump A.
+    assert [p["id"] for p in m.s.inn(ORG, x["mode"]["id"], "CAN_FAIL_AS")] == [x["b"]["id"]]
+    assert [p["id"] for p in m.s.inn(ORG, x["worn"]["id"], "CAN_FAIL_AS")] == [x["b"]["id"]]
+    assert [p["id"] for p in m.s.out(ORG, x["task"]["id"], "ON")] == [x["b"]["id"]]
+    assert [p["id"] for p in m.s.inn(ORG, x["gone"]["id"], "CAN_FAIL_AS")] == [x["pump"]["id"]]
+    assert m.rcm_mode(x["mode"]["id"])["decision"] == decided["decision"]
+    # What breached the other standard stays.
+    left = _rcm(m, x["pump"]["id"])["functions"][0]
+    assert [s["text"] for s in left["standards"]] == ["At 4 bar"]
+    assert [(f["text"], f["standard"]["text"]) for f in left["failures"]] == [("Low pressure", "At 4 bar")]
+    _rebuilds_the_same(m)
+
+    # One undo (the server's list, then the page's reorders) puts all of it back: order and breaches too.
+    undo = out["undo"] + [
+        {"do": "failure_modes.reorder_standards", "args": {"function_id": x["fn"]["id"],
+                                                           "standard_ids": [x["st"]["id"], x["st2"]["id"]]}},
+        {"do": "failure_modes.reorder", "args": {"parent_id": x["fn"]["id"], "ids": [
+            x["ff"]["id"], x["low"]["id"], x["stays"]["id"]]}}]
+    back = _batch(m, undo)
+    assert back["ok"], back.get("failed")
+    assert _rcm(m, x["pump"]["id"]) == before_a and _rcm(m, x["b"]["id"]) == before_b
+    assert m.rcm_mode(x["mode"]["id"]) == decided
+    _rebuilds_the_same(m)
+
+
+def test_the_undo_list_moves_the_failures_back_before_the_standard(m):
+    x = _two_under_a_standard(m)
+    out = _batch(m, _carry(x["st"]["id"], x["fn_b"]["id"], [x["ff"]["id"], x["low"]["id"]]))
+    # Newest first: each failure back to the old function (breaching nothing yet), then the
+    # standard back with both failures breaching it again.
+    assert out["undo"] == [
+        {"do": "failure_modes.move_functional_failure", "args": {"functional_failure_id": x["low"]["id"],
+                                                                 "function_id": x["fn"]["id"]}},
+        {"do": "failure_modes.move_functional_failure", "args": {"functional_failure_id": x["ff"]["id"],
+                                                                 "function_id": x["fn"]["id"]}},
+        {"do": "failure_modes.move_standard", "args": {"standard_id": x["st"]["id"], "function_id": x["fn"]["id"],
+                                                       "ids": sorted([x["ff"]["id"], x["low"]["id"]])}},
+    ]
+    back = _batch(m, out["undo"])
+    assert back["ok"]
+    assert sorted(f["id"] for f in m.s.inn(ORG, x["st"]["id"], "BREACHES")) == sorted([x["ff"]["id"], x["low"]["id"]])
+    assert [p["id"] for p in m.s.out(ORG, x["task"]["id"], "ON")] == [x["pump"]["id"]]
+    _rebuilds_the_same(m)
+
+
+def test_a_standard_carried_to_another_function_on_its_own_position(m):
+    x = _two_under_a_standard(m)
+    other = m._functions_of(x["pump"]["id"])[1]
+    out = _batch(m, _carry(x["st"]["id"], other["id"], [x["ff"]["id"], x["low"]["id"]]))
+    assert out["ok"]
+    sheet = _rcm(m, x["pump"]["id"])["functions"]
+    assert [f["text"] for f in sheet[1]["failures"]] == ["Leaks", "No flow", "Low flow"]
+    assert [f["standard"]["text"] if f["standard"] else None for f in sheet[1]["failures"]] == [
+        None, "At least 50 L/s", "At least 50 L/s"]
+    # Same position: tasks and modes didn't move.
+    assert [p["id"] for p in m.s.out(ORG, x["task"]["id"], "ON")] == [x["pump"]["id"]]
+    _rebuilds_the_same(m)
+
+
+def test_one_refusal_under_the_standard_refuses_the_whole_drag(m):
+    x = _two_under_a_standard(m)
+    n = m.s.event_count(ORG)
+    before = _rcm(m, x["pump"]["id"])
+    # An open work order on a task under the standard: nothing moves, the standard neither.
+    wo = m.open_work_order(x["pump"]["id"], "Bearings", "preventive", task_id=x["task"]["id"])
+    n = m.s.event_count(ORG)
+    out = _batch(m, _carry(x["st"]["id"], x["fn_b"]["id"], [x["ff"]["id"], x["low"]["id"]]))
+    assert out["ok"] is False and out["failed"]["index"] == 1 and "open work order" in out["failed"]["error"]
+    assert m.s.event_count(ORG) == n and _rcm(m, x["pump"]["id"]) == before
+    m.cancel_work_order(wo["id"], "not needed")
+    # Failures recorded against a mode under it: it can't leave its position.
+    m.fit(x["pump"]["id"], new_item={"name": "P-1"})
+    m.remove(x["pump"]["id"], m.today(), "failure", x["worn"]["id"])
+    n = m.s.event_count(ORG)
+    out = _batch(m, _carry(x["st"]["id"], x["fn_b"]["id"], [x["ff"]["id"], x["low"]["id"]]))
+    assert out["ok"] is False and out["failed"]["index"] == 2 and "split that history" in out["failed"]["error"]
+    assert m.s.event_count(ORG) == n
+    # A same-named mode on the other position.
+    m.add_failure_mode(x["b"]["id"], "Bearing seizes")
+    out = _batch(m, _carry(x["st"]["id"], x["fn_b"]["id"], [x["ff"]["id"]]))
+    assert out["ok"] is False and "already has the failure mode" in out["failed"]["error"]
+    assert m.s.event_count(ORG) == n + 1  # only the mode added above
+    _rebuilds_the_same(m)
+
+
+def test_a_carried_failures_links_that_would_no_longer_run_downwards_go_and_say_so(m):
+    plant = m.create_position("Plant")
+    pump = m.create_position("Pump", parent_id=plant["id"])
+    fn_plant = m.add_function(plant["id"], "Supply water")
+    effect = m.add_functional_failure(fn_plant["id"], "No supply")
+    fn = m.add_function(pump["id"], "Pump water")
+    st = m.add_standard(fn["id"], "50 L/s")
+    cause = m.add_functional_failure(fn["id"], "No flow", standard_id=st["id"])
+    m.link_cause(effect["id"], cause["id"])
+    elsewhere = m.create_position("Spare pump")
+    fn_e = m.add_function(elsewhere["id"], "Pump water")
+    out = _batch(m, _carry(st["id"], fn_e["id"], [cause["id"]]))
+    assert out["ok"]
+    moved = out["results"][1]["result"]
+    assert moved["links_removed"] == 1 and "no longer on a position inside" in moved["note"]
+    assert m.s.out(ORG, effect["id"], "RESULTS_FROM") == []
+    assert [x["id"] for x in m.s.out(ORG, cause["id"], "BREACHES")] == [st["id"]]
+    _rebuilds_the_same(m)
+
+
+def test_a_standard_carried_through_the_app_route_with_a_dry_run_first(api):
+    pump = api.post(f"{M}/positions", json={"name": "Pump"}).json()
+    other = api.post(f"{M}/positions", json={"name": "Pump B"}).json()
+    fn = api.post(f"{M}/positions/{pump['id']}/functions", json={"text": "Pump water"}).json()
+    fn_b = api.post(f"{M}/positions/{other['id']}/functions", json={"text": "Pump more water"}).json()
+    st = api.post(f"{M}/functions/{fn['id']}/standards", json={"text": "50 L/s"}).json()
+    a = api.post(f"{M}/functions/{fn['id']}/failures", json={"text": "No flow", "standard_id": st["id"]}).json()
+    m1 = api.post(f"{M}/positions/{pump['id']}/failure-modes",
+                  json={"text": "Bearing seizes", "functional_failure_id": a["id"]}).json()
+    api.post(f"{M}/failure-modes/{m1['id']}/tasks", json={"name": "Check bearings", "interval": 3})
+
+    def sheet(pid):
+        return api.get(f"{M}/positions/{pid}/rcm?scope=this").json()["positions"][0]
+
+    ops = _carry(st["id"], fn_b["id"], [a["id"]])
+    before = sheet(pump["id"])
+    dry = api.post(f"{M}/rcm/apply", json={"operations": ops, "dry_run": True})
+    assert dry.status_code == 200 and dry.json()["would_apply"] == 2 and sheet(pump["id"]) == before
+    done = api.post(f"{M}/rcm/apply", json={"operations": ops})
+    assert done.status_code == 200, done.text
+    f = sheet(other["id"])["functions"][0]
+    assert [s["text"] for s in f["standards"]] == ["50 L/s"]
+    assert [(x["text"], x["standard"]["text"], [md["text"] for md in x["modes"]]) for x in f["failures"]] == [
+        ("No flow", "50 L/s", ["Bearing seizes"])]
+    assert sheet(other["id"])["functions"][0]["failures"][0]["modes"][0]["tasks"][0]["name"] == "Check bearings"
+    undone = api.post(f"{M}/rcm/apply", json={"operations": done.json()["undo"]})
+    assert undone.status_code == 200, undone.text
+    assert sheet(pump["id"]) == before and sheet(other["id"])["functions"][0]["failures"] == []
+    # The same drag refused (the other position has a mode of that name): 422 with the reason, nothing written.
+    api.post(f"{M}/positions/{other['id']}/failure-modes", json={"text": "Bearing seizes"})
+    r = api.post(f"{M}/rcm/apply", json={"operations": ops, "dry_run": True})
+    assert r.status_code == 422 and "op 1 (failure_modes.move_functional_failure)" in r.json()["detail"]
+    assert "already has the failure mode" in r.json()["detail"] and sheet(pump["id"]) == before

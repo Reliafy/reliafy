@@ -4,7 +4,7 @@ import { buildDisplay } from "./assetTree.js";
 import { graftRcm } from "./explorerRcm.js";
 import {
   answerNotes, dragBlock, dragSource, dropZones, moveChoices, moveItems, place, planDrop, positionWithin, refusalText,
-  stepTarget, undoBatch, zoneAt,
+  sourceWords, stepTarget, undoBatch, zoneAt,
 } from "./rcmDrag.js";
 
 const DATA = {
@@ -147,21 +147,73 @@ test("failure modes, one or several: under a functional failure (assigned here, 
   assert.match(planDrop(d, src(d, "m1"), "f1", "into").refuse, /under a functional failure/);
 });
 
-test("a standard: placed among its function's, or to another function, alone (its failures stay, said so)", () => {
+test("a standard: placed among its function's, or to another function with everything under it", () => {
   const d = whole();
   assert.deepEqual(planDrop(d, src(d, "s1"), "s2", "after").ops,
     [{ do: "failure_modes.reorder_standards", args: { function_id: "f1", standard_ids: ["s2", "s1"] } }]);
+  // To another function, on another position: the standard, then its functional failure
+  // (with its modes and tasks), breaching it again there. One batch.
   const away = planDrop(d, src(d, "s1"), "g1", "into");
-  assert.deepEqual(away.ops, [{ do: "failure_modes.move_standard", args: { standard_id: "s1", function_id: "g1" } }]);
-  assert.match(away.text, /Its functional failure stays here, under No standard/);
-  assert.deepEqual(away.extraUndo, [{ do: "failure_modes.reorder_standards", args: { function_id: "f1", standard_ids: ["s1", "s2"] } }]);
+  assert.deepEqual(away.ops, [
+    { do: "failure_modes.move_standard", args: { standard_id: "s1", function_id: "g1" } },
+    { do: "failure_modes.move_functional_failure", args: { functional_failure_id: "x1", function_id: "g1", standard_id: "s1" } },
+  ]);
+  assert.equal(away.text, "Move the standard “50 L/s” and its functional failure to “Pump more water”, with its failure modes and tasks");
+  assert.equal(away.done, "Moved the standard “50 L/s” and its functional failure to “Pump more water”.");
+  // Undo: the server's list, then the old order of the standards and of the failures.
+  assert.deepEqual(away.extraUndo, [
+    { do: "failure_modes.reorder_standards", args: { function_id: "f1", standard_ids: ["s1", "s2"] } },
+    { do: "failure_modes.reorder", args: { parent_id: "f1", ids: ["x1", "x2", "x3"] } },
+  ]);
+  // Before a standard of another function: moved, its failure with it, and placed.
   assert.deepEqual(planDrop(d, src(d, "s2"), "s9", "before").ops, [
     { do: "failure_modes.move_standard", args: { standard_id: "s2", function_id: "g1" } },
+    { do: "failure_modes.move_functional_failure", args: { functional_failure_id: "x2", function_id: "g1", standard_id: "s2" } },
     { do: "failure_modes.reorder_standards", args: { function_id: "g1", standard_ids: ["s2", "s9"] } },
   ]);
-  // Onto a function with its one text: the move alone (the text becomes its first standard).
-  assert.deepEqual(planDrop(d, src(d, "s1"), "S:f2", "into").ops, [{ do: "failure_modes.move_standard", args: { standard_id: "s1", function_id: "f2" } }]);
+  // Onto a function with its one text, on the same position: the standard and its failure.
+  assert.deepEqual(planDrop(d, src(d, "s1"), "S:f2", "into").ops.map((o) => [o.do, o.args.function_id]), [
+    ["failure_modes.move_standard", "f2"], ["failure_modes.move_functional_failure", "f2"]]);
   assert.match(planDrop(d, src(d, "s1"), "f1", "into").refuse, /standard of this function already/);
+  // Not into a row under itself.
+  assert.deepEqual(dropZones(d, src(d, "s1"), "x1").zones, []);
+});
+
+test("a standard with nothing under it moves alone; the label says what moves", () => {
+  const RCM2 = structuredClone(RCM);
+  RCM2.positions[0].functions[0].standards.push({ id: "s3", text: "Quiet" });
+  RCM2.positions[0].functions[0].failures.push({ id: "x5", text: "Rattles", standard: { id: "s2", text: "4 bar" }, modes: [] });
+  const d = graftRcm(buildDisplay(DATA, "positions"), RCM2);
+  const lone = planDrop(d, src(d, "s3"), "g1", "into");
+  assert.deepEqual(lone.ops, [{ do: "failure_modes.move_standard", args: { standard_id: "s3", function_id: "g1" } }]);
+  assert.deepEqual(lone.extraUndo, [{ do: "failure_modes.reorder_standards", args: { function_id: "f1", standard_ids: ["s1", "s2", "s3"] } }]);
+  assert.equal(lone.text, "Move the standard “Quiet” to “Pump more water”");
+  assert.equal(sourceWords(d, src(d, "s3")), "the standard “Quiet”");
+  assert.equal(sourceWords(d, src(d, "s2")), "the standard “4 bar” and its 2 functional failures");
+  assert.deepEqual(planDrop(d, src(d, "s2"), "g1", "into").ops.slice(1).map((o) => o.args.functional_failure_id), ["x2", "x5"]);
+  assert.match(planDrop(d, src(d, "s2"), "g1", "into").text, /with their failure modes and tasks$/);
+});
+
+test("everything under a standard row stays draggable: its failures, their modes (one or picked), their tasks", () => {
+  const d = whole();
+  assert.equal(d.rows.get("x1").parent, "s1"); // the failure sits under its standard's row
+  assert.deepEqual(src(d, "x1"), { kind: "fail", keys: ["x1"] });
+  assert.deepEqual(src(d, "m2"), { kind: "modes", keys: ["m2"] });
+  assert.deepEqual(src(d, "m1", { picked: new Set(["m1", "m2", "m3"]) }).keys, ["m1", "m2", "m3"]);
+  assert.equal(src(d, "m1", { task: { id: "t1", name: "Grease bearings", position_id: "pump" } }).kind, "task");
+  assert.deepEqual(planDrop(d, src(d, "x1"), "g1", "into").ops.map((o) => o.do), ["failure_modes.move_functional_failure"]);
+  assert.deepEqual(planDrop(d, src(d, "m2"), "y1", "into").ops.map((o) => o.do), ["failure_modes.move"]);
+  assert.equal(dragBlock(d.rows.get("x1")), null);
+});
+
+test("a standard's note that its failures stay isn't said when the batch moves them too", () => {
+  const moved = { results: [
+    { do: "failure_modes.move_standard", result: { unlinked_functional_failure_ids: ["x1"], note: "1 functional failure that breached it stays with the old function, under no standard." } },
+    { do: "failure_modes.move_functional_failure", result: { moved: "x1", note: "1 link went." } },
+  ] };
+  assert.deepEqual(answerNotes(moved), ["1 link went."]);
+  const alone = { results: [moved.results[0]] };
+  assert.equal(answerNotes(alone).length, 1);
 });
 
 test("a task moves from its failure mode to another (moved to that position when it can't reach), or to a position", () => {

@@ -318,9 +318,11 @@ can drag rows in the RCM table to rearrange it:
 - **A function** onto another position (it takes its standards, functional
   failures, failure modes and tasks with it), or above or below another
   function to change the order.
-- **A performance standard** onto another function, on any position. It moves
-  alone: the functional failures that breached it stay where they were, under
-  **No standard**. Drop it above or below another standard to change the order.
+- **A performance standard** onto another function, on any position. It takes
+  everything under it: the functional failures that breach it, their failure
+  modes, decisions and tasks. The label says what moves, for example "the
+  standard “At least 50 L/s” and its 3 functional failures". Drop it above or
+  below another standard to change the order.
 - **A functional failure** onto another function, onto a standard (it then
   breaches that one) or onto **No standard**, or above or below another
   functional failure.
@@ -337,9 +339,14 @@ and the label says why before you let go: for example, the other position
 already has a failure mode with the same name, a task has an open work order,
 or failures are recorded against a mode. Press **Esc** to cancel a drag.
 
-Each drop is done in one go, or not at all. A note at the bottom of the page
+Each drop is done in one go, or not at all: if one failure mode under a
+standard can't move, nothing does. A note at the bottom of the page
 says what moved and has an **Undo** button (or press Ctrl+Z, Cmd+Z on a Mac,
-while it shows). Undo puts everything back where it was.
+while it shows). Undo puts everything back where it was, in the same order,
+with each functional failure breaching the same standard as before. A link
+between functional failures that a move took away (a cause must sit on a
+position inside its effect's) is named in the note and isn't put back by Undo:
+link them again if you need to.
 
 **No mouse, or on a phone:** each row's menu has a **Move to…** item (a list of the
 places it can go, with the same checks before you press Move) and **Move up** /
