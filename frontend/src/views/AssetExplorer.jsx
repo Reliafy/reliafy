@@ -41,12 +41,10 @@ import {
   ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, flatten, levelSet, loadTreeState, saveTreeState,
 } from "../assetTree.js";
-import {
-  DEFAULT_DEPTH, canIsolate, crumbAction, depthWords, inBranch, isolateCoversAll, isolateDisplay, isolateOpen, isolatePath, levelMatches,
-  levelOfDepth, parseIsolate, resolveIsolate, writeIsolate,
-} from "../treeIsolate.js";
+import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
-import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withIsolate } from "../treeRowMenu.js";
+import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
+import { canIsolate, depthWords, isolateOpen } from "../treeIsolate.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
 import { ChangeStandardModal } from "../components/RcmFunctionStandards.jsx";
 import usePhone from "../usePhone.js";
@@ -85,22 +83,20 @@ import "./AssetExplorer.css";
 // and the page about the row picked is beside it. Full screen (F, Esc to leave)
 // gives the tree and the panel the whole screen, as the RBD editor's.
 //
-// "Isolate" (a row's menu: Isolate › with 1, 2 or 3 levels open, or
-// everything open; or the Isolate button in the panel's heading, 2 levels)
-// shows only that row and what's inside it, opened exactly that far below it
-// (treeIsolate.js): ?isolate=<id>&depth=1|2|3|all, so Back leaves it and a
-// link opens isolated; not remembered on this device. Any row of the tree
-// can be isolated: positions, locations, and on the RCM tab functions,
-// standards, functional failures and failure modes (on the Summary tab, one of
-// those isolates its position). Old ?pin=<id> links open isolated with what's
-// open left as it was. The tree's column header says so ("Isolated: <name> ·
-// 2 levels · Show everything", the levels a list to change them; on a phone
-// the isolated row itself), with no row of its own, and "Show everything"
-// heads the ⋯ menu; Esc in the tree leaves it too. The way up in the panel's
-// heading still shows the whole path: a crumb above the isolated row isolates
-// that one instead. Asked to show a row outside the branch (?sel=, a link, a
-// new row), the page shows everything again and says so; an isolated row
-// that's gone (retired, deleted) quietly shows everything.
+// "Pin this branch" (a row's menu, or the pin in the panel's heading) shows
+// only that row and what's inside it (treePin.js): ?pin=<id>, so Back un-pins
+// and a link opens pinned; not remembered on this device. The tree's column
+// header says so ("Pinned: <name>", its path in the tooltip, and a ✕ to show
+// everything; on a phone the pinned row itself), with no row of its own, and
+// "Show whole tree" heads the ⋯ menu. The way up in the panel's heading still shows the whole path: a crumb
+// above the pinned row moves the pin up to it. Asked to show a row outside the
+// branch (?sel=, a link, a new row), the page shows the whole tree again and
+// says so; a pinned row that's gone (retired, deleted) quietly un-pins.
+//
+// "Isolate ›" in a row's menu (both tabs; treeIsolate.js) is a one-off change
+// to what's open: every other branch closes (still on show), the rows above
+// it stay open, and it opens 1, 2 or 3 levels below it, or all of them. Then
+// it's picked and brought into view. Nothing is hidden and the address stays.
 //
 // The RCM tab's row menus: the moves a drag does (Move to…, Move up / down,
 // Move a task…, a standard's Move up / down) are offered only where there's
@@ -277,23 +273,17 @@ export default function AssetExplorer() {
       return kept.length === was.size ? was : new Set(kept);
     });
   }, [whole]);
-  // A branch isolated (?isolate=, or an old ?pin=): the pane's tree starts at
-  // that row, and everything below (open rows, levels, the filter, counts)
-  // works on it alone. On the Summary tab a function, failure or mode
-  // isolated on the RCM tab isolates its position (the address keeps the row).
-  const iso = parseIsolate(params);
-  const rcmWhole = useMemo(() => (iso.id && !rcmOn && rcm && data && !base.rows.has(iso.id)
-    ? graftRcm(mode === "positions" ? base : buildDisplay(data, "positions"), rcm) : null), [iso.id, rcmOn, rcm, data, base, mode]);
-  const isoFound = data ? resolveIsolate(whole, mode, iso.id, { rcmWhole, waiting: !rcm && !rcmError }) : { key: null, pending: !!iso.id };
-  const pinKey = isoFound.key;
-  const isoDepth = iso.depth;
-  const display = useMemo(() => (pinKey ? isolateDisplay(whole, pinKey) : whole), [whole, pinKey]);
+  // A branch pinned (?pin=): the pane's tree starts at that row, and
+  // everything below (open rows, levels, the filter, counts) works on it alone.
+  const pinParam = params.get("pin");
+  const pinKey = data ? pinTarget(whole, mode, pinParam) : null;
+  const display = useMemo(() => (pinKey ? pinDisplay(whole, pinKey) : whole), [whole, pinKey]);
   const [pinNote, setPinNote] = useState(null);
-  // An isolated row that isn't in the tree (retired, deleted, or not one this
+  // A pinned row that isn't in the tree (retired, deleted, or not one this
   // arrangement shows): quietly the whole tree again.
   useEffect(() => {
-    if (data && iso.id && !pinKey && !isoFound.pending) setQuery_((q) => writeIsolate(q, null));
-  }, [data, iso.id, pinKey, isoFound.pending, setQuery_]);
+    if (data && pinParam && !pinKey) setQuery_((q) => q.delete("pin"));
+  }, [data, pinParam, pinKey, setQuery_]);
   useEffect(() => {
     if (!pinNote) return undefined;
     const t = setTimeout(() => setPinNote(null), 8000);
@@ -457,11 +447,11 @@ export default function AssetExplorer() {
   const shown = useRef(null);
   useEffect(() => {
     if (!data) return;
-    // Asked for a row outside the isolated branch: the whole tree again, and say so.
+    // Asked for a row outside the pinned branch: the whole tree again, and say so.
     const want = pending.current;
     if (want && pinKey && !display.rows.has(want) && whole.rows.has(want)) {
-      setPinNote("Showing everything again");
-      setQuery_((q) => writeIsolate(q, null));
+      setPinNote("Showing the whole tree again");
+      setQuery_((q) => q.delete("pin"));
       return;
     }
     if (pending.current && display.rows.has(pending.current)) {
@@ -553,29 +543,22 @@ export default function AssetExplorer() {
     }
     ops.unlink(effectId, causeId).then(() => say("Unlinked."), (e) => say(saveErrorText(e, { what: "unlink it", offline: navigator.onLine === false }), "error"));
   };
-  // Isolate a branch, `depth` levels open below it (null: what's open stays as
-  // it is): the address says so (Back undoes it; a new depth on the same row
-  // replaces it). The selection stays when it's inside the branch, else it's
-  // the isolated row; with `select`, the isolated row is picked.
-  const pinTo = (key, { select = false, state, depth = isoDepth ?? DEFAULT_DEPTH } = {}) => {
-    if (!canIsolate(whole.rows.get(key), mode)) return;
+  // Pin a branch: the address says so (Back undoes it). The selection stays
+  // when it's inside the branch, else it's the pinned row; with `select`, the
+  // pinned row is picked.
+  const pinTo = (key, { select = false, state } = {}) => {
+    if (!canPin(whole.rows.get(key), mode)) return;
     setPinNote(null);
     const keep = select || focus == null || !inBranch(whole, focus, key) ? key : focus;
-    const kr = whole.rows.get(keep);
     if (keep !== focus) {
-      setRcmFocus(isRcmRow(kr) ? keep : null);
-      setSelected((s) => ({ ...s, [mode]: isRcmRow(kr) ? positionOf(kr) : keep }));
+      setRcmFocus(null);
+      setSelected((s) => ({ ...s, [mode]: keep }));
     }
-    const change = (q) => {
-      writeIsolate(q, key, depth);
+    const kr = whole.rows.get(keep);
+    pushQuery((q) => {
+      q.set("pin", key);
       q.set("sel", isRcmRow(kr) ? positionOf(kr) : keep);
-    };
-    if (key === iso.id) setQuery_(change);
-    else pushQuery(change, state);
-  };
-  // A new depth for the branch isolated now (the notice's list).
-  const setIsoDepth = (depth) => {
-    if (iso.id) setQuery_((q) => writeIsolate(q, iso.id, depth));
+    }, state);
   };
   // The whole tree again; with `select`, that row picked.
   const unpin = ({ select = null } = {}) => {
@@ -584,31 +567,49 @@ export default function AssetExplorer() {
       setRcmFocus(null);
       setSelected((s) => ({ ...s, [mode]: select }));
     }
-    pushQuery((q) => writeIsolate(q, null));
+    pushQuery((q) => q.delete("pin"));
   };
   // A crumb in the panel's heading: inside the branch it's picked; above it,
-  // that row is isolated instead (one step at a time, at the same depth), or,
-  // for one of the pane's own headings or the whole tree's one top row, the
-  // whole tree shows with it picked.
+  // the pin moves up to it (one step at a time), or, for one of the pane's own
+  // headings or the whole tree's one top row, the whole tree shows with it picked.
   const crumbGo = (key, select) => {
     const act = crumbAction(pinKey ? display : null, whole, mode, key);
     if (act === "select") return select(key);
-    if (act === "isolate") return pinTo(key, { select: true, depth: isoDepth, state: phone && !rcmOn ? { treeDetail: key } : undefined });
+    if (act === "pin") return pinTo(key, { select: true, state: phone && !rcmOn ? { treeDetail: key } : undefined });
     return unpin({ select: key });
   };
   const above = pinKey ? (key) => !display.rows.has(key) : null;
-  const pinFor = (r) => (r && canIsolate(whole.rows.get(r.key), mode) ? {
+  const pinFor = (r) => (r && canPin(whole.rows.get(r.key), mode) ? {
     on: r.key === pinKey,
-    onClick: () => (r.key === pinKey ? unpin() : pinTo(r.key, { select: true, depth: DEFAULT_DEPTH })),
+    onClick: () => (r.key === pinKey ? unpin() : pinTo(r.key, { select: true })),
   } : null);
-  const pinItem = (r) => isolateItems(whole.rows.get(r.key) || r, {
-    can: canIsolate(whole.rows.get(r.key) || r, mode), current: pinKey ? { key: pinKey, depth: isoDepth } : null,
-  });
+  const pinItem = (r) => (canPin(r, mode)
+    ? [r.key === pinKey ? { id: "unpin", label: "Show whole tree" } : { id: "pin", label: "Pin this branch" }] : []);
+  const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) });
+  // Isolate: the rest of the tree closed, this row opened `depth` levels
+  // below it, picked and brought into view; said to screen readers.
+  const isolateAt = (r, depth) => {
+    const row = display.rows.get(r.key);
+    if (!row) return;
+    const next = isolateOpen(display, open, r.key, depth);
+    setLevelBy((l) => ({ ...l, [mode]: null }));
+    setOpenSet(next);
+    if (isRcmRow(row)) {
+      setRcmFocus(row.key);
+      setSelected((x) => ({ ...x, [mode]: positionOf(row) }));
+    } else {
+      setRcmFocus(null);
+      setSelected((x) => ({ ...x, [mode]: row.key }));
+    }
+    setScrollTo({ key: row.key, at: Date.now() });
+    const name = row.ref.name || row.ref.text || "(no name)";
+    announce(row.kids.length ? `Collapsed the rest of the tree; ${name} opened ${depthWords(depth)}.` : `Collapsed the rest of the tree around ${name}.`);
+  };
 
   // A row's menu (TreePane's rowMenu): what it offers, and doing it. On the
   // RCM tab, adding inside the row and its other actions; on the Summary tab,
   // changing the tree (new inside, rename, move, retire: treeRowMenu.js); and
-  // on any row that can be isolated, Isolate ›.
+  // on any row that can be pinned, Pin this branch.
   // ---- moving things in the RCM tree (drag and drop, Move to…, Move up / down) ----
   // Every move is one batch, checked by the server first and all or nothing;
   // the toast says what moved and offers Undo (also Ctrl+Z / Cmd+Z while it
@@ -719,21 +720,20 @@ export default function AssetExplorer() {
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
-      if (!rcmOn) return withIsolate(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), pinItem(r));
-      if (!rcm) return pinItem(r);
+      if (!rcmOn) return withPin(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), [...isolateItem(r), ...pinItem(r)]);
+      if (!rcm) return [...isolateItem(r), ...pinItem(r)];
       const moves = phone || keyboard;
-      const own = rowActions(r, { canRename: !phone, moves });
-      return withIsolate(withIsolate(own, moves ? moveItems(whole, whole.rows.get(r.key) || r, { picked }) : []), pinItem(r));
+      const own = withPin(rowActions(r, { canRename: !phone, moves }), moves ? moveItems(whole, whole.rows.get(r.key) || r, { picked }) : []);
+      return [...withPin(own, isolateItem(r)), ...pinItem(r)];
     },
     onAction: (r, id) => {
       if (id === "tree-new") {
         setNewParent(r.key);
         setModal(r.type === "loc" ? "location" : "position");
       } else if (id === "tree-rename" || id === "tree-move" || id === "tree-retire") setRowModal({ kind: id.slice(5), row: r });
-      else if (id.startsWith("isolate:")) {
-        const d = id.slice(8);
-        pinTo(r.key, { select: true, depth: d === "all" ? "all" : Number(d) });
-      } else if (id === "show-all") unpin();
+      else if (id === "pin") pinTo(r.key, { select: true });
+      else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
+      else if (id === "unpin") unpin();
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       else if (id === "add-std") runAdd({ ref: { add: "std", position_id: r.ref.position_id, function_id: r.ref.id } });
       else if (id === "add-fail" || id === "add-mode") addInside(r);
@@ -879,7 +879,7 @@ export default function AssetExplorer() {
   const chipsOn = CHIPS.filter((c) => chips.includes(c.id) && (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || rcmOn));
   // A pin on the whole tree's one top row shows everything: not a change.
   const changed = changedFromUsual({
-    mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn, pinned: !!pinKey && !isolateCoversAll(whole, pinKey),
+    mode, arrange: !rcmOn, level, levels: levelsOn, chips: chipsOn, pinned: !!pinKey && !pinCoversAll(whole, pinKey),
   });
   const resetView = () => {
     setChips([]);
@@ -898,59 +898,25 @@ export default function AssetExplorer() {
     }
   };
 
-  // When the isolated branch changes (isolated, a new depth, moved up, left,
-  // or Back). With a depth: the branch opens exactly that many levels below
-  // its row and closes beyond (rows outside it stay as they were), whatever
-  // the tree's level; the ⋯ menu ticks the level that matches; a row picked
-  // that's now hidden gives way to the row it's inside. With none (an old pin
-  // link) and on leaving: the row opens, and the way down to the row picked
-  // (and to the branch just left), so it's in view; the ⋯ menu ticks a level
-  // only while what's open still is one. Said to screen readers. It follows
-  // the address's row and depth (not the row shown), so switching tabs (a
-  // function isolated shows its position on Summary) opens and closes nothing.
-  // On the RCM tab it waits for the RCM, so its rows open too.
+  // When the pin changes (pinned, moved up, un-pinned, or Back): the pinned
+  // row opens, and the way down to the row picked (and to the branch just
+  // left), so it's in view. The ⋯ menu ticks a level only while what's open
+  // still is one, counted from the tree's top.
   const seenPin = useRef(undefined);
-  const seenKey = useRef(null);
   const skipPinOpen = useRef(false);
   useEffect(() => {
-    if (!data || isoFound.pending) return;
-    const sig = pinKey ? `${iso.id}|${isoDepth ?? ""}` : null;
-    if (seenPin.current === sig) return;
-    if (sig && rcmOn && !rcm && !rcmError) return;
+    if (!data || seenPin.current === pinKey) return;
     const was = seenPin.current;
-    const wasKey = seenKey.current;
-    seenPin.current = sig;
-    seenKey.current = pinKey;
+    seenPin.current = pinKey;
     if (skipPinOpen.current) {
       skipPinOpen.current = false;
-      if (!sig) announce("Showing everything.");
       return;
     }
-    if (was === undefined && sig == null) return;
-    const nameOf = (k) => whole.rows.get(k)?.ref.name || whole.rows.get(k)?.ref.text || "(no name)";
-    if (sig && isoDepth != null) {
-      const base0 = filter ? fopen || filterOpen(filter) : openBy[mode] || defaultOpen;
-      const next = isolateOpen(whole, base0, pinKey, isoDepth);
-      if (filter) setFopen(next);
-      else setOpenBy((o) => ({ ...o, [mode]: next }));
-      if (levelsOn) setLevelBy((l) => ({ ...l, [mode]: levelOfDepth(isoDepth) }));
-      // The row picked, if it's now closed away: the row it's inside.
-      const shownNow = flatten(display, next, filter).index;
-      let k = focus;
-      while (k != null && !shownNow.has(k)) k = display.rows.get(k)?.parent ?? null;
-      if (k != null && k !== focus) {
-        const kr = display.rows.get(k);
-        setRcmFocus(isRcmRow(kr) ? k : null);
-        setSelected((x) => ({ ...x, [mode]: isRcmRow(kr) ? positionOf(kr) : k }));
-      }
-      setScrollTo({ key: k ?? pinKey, at: Date.now() });
-      announce(`Isolated ${nameOf(pinKey)}, ${depthWords(isoDepth)}. Press Escape to show everything.`);
-      return;
-    }
+    if (was === undefined && pinKey == null) return;
     const keys = [];
     if (pinKey) keys.push(pinKey);
     if (focus != null) keys.push(...ancestorsOf(whole, focus));
-    if (wasKey) keys.push(wasKey, ...ancestorsOf(whole, wasKey));
+    if (was) keys.push(was, ...ancestorsOf(whole, was));
     if (filter) setFopen((s) => new Set([...(s || filterOpen(filter)), ...keys]));
     else {
       const next = new Set([...(openBy[mode] || defaultOpen), ...keys]);
@@ -958,7 +924,6 @@ export default function AssetExplorer() {
       if (levelsOn && typeof level === "number" && !levelMatches(display, next, level)) setLevelBy((l) => ({ ...l, [mode]: null }));
     }
     if (focus != null) setScrollTo({ key: focus, at: Date.now() });
-    announce(sig ? `Isolated ${nameOf(pinKey)}. Press Escape to show everything.` : "Showing everything.");
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+\ folds the pane away and back.
@@ -1075,14 +1040,10 @@ export default function AssetExplorer() {
 
   const placedCount = data ? display.positions : 0;
   const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
-  // Isolated: the branch's own counts.
+  // Pinned: the branch's own counts.
   const notAnalysed = !data ? 0 : pinKey ? display.notAnalysed : data.positions.filter((p) => p.not_analysed).length;
   const locationCount = !data ? 0 : pinKey ? display.locations : data.locations.length;
-  // Isolated on an RCM row (a function, standard, failure or mode): how many rows are inside it.
-  const isoRcm = pinKey && isRcmRow(display.rows.get(pinKey)) ? display.rows.get(pinKey) : null;
-  const statusText = !data ? "" : isoRcm && !filter
-    ? `${n(display.rows.size - 1, "row")} inside this ${["nostd", "unassigned"].includes(isoRcm.type) ? "group" : LEVEL_OF[isoRcm.type].label.toLowerCase()} · RCM is by position`
-    : rcmOn && !filter
+  const statusText = !data ? "" : rcmOn && !filter
     ? (rcmError ? `The RCM didn't load: ${rcmError}` : !rcm ? `${n(placedCount, "position")} · loading the RCM…`
       : `${n(placedCount, "position")} · ${notAnalysed.toLocaleString("en-AU")} not analysed · RCM is by position`)
     : filter
@@ -1100,8 +1061,7 @@ export default function AssetExplorer() {
 
   // The panel shows the row from the whole tree, so its way up is the whole path.
   const row = (phone ? detailKey : focus) != null ? whole.rows.get(phone ? detailKey : focus) ?? null : null;
-  // From the whole tree: with a function, failure or mode isolated its position is above the branch, but still the heading.
-  const posRow = selPos != null ? whole.rows.get(selPos) : null;
+  const posRow = selPos != null ? display.rows.get(selPos) : null;
   const fullButton = !phone && <FullScreenButton ref={fullBtn} full={full} onClick={toggleFull} shortcutNote="also in the tree" />;
 
   // The RCM tab: the table's columns beside the tree, the heading over them,
@@ -1320,8 +1280,7 @@ export default function AssetExplorer() {
         layoutKey={`${tab}:${rcmOn && rcm ? "rcm" : ""}`}
         anchorKey={selPos}
         branch={pinKey ? {
-          key: pinKey, name: whole.rows.get(pinKey).ref.name || whole.rows.get(pinKey).ref.text || "(no name)", path: isolatePath(whole, pinKey),
-          depth: isoDepth, onDepth: setIsoDepth, onShowAll: () => unpin(),
+          key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
         } : null}
         branchNote={pinNote}
         arrangeLocked={rcmOn ? "RCM is by position, so the RCM tab shows the positions tree" : null}

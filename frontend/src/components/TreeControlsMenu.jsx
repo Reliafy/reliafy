@@ -17,8 +17,8 @@ import { menuMove } from "../treeControls.js";
 // Drawn in the shared portal host (so it shows in full screen, and isn't cut
 // off by the pane), under the button, kept on screen at phone width.
 //
-//   pinned   {name, onUnpin} while a branch is isolated: "Show everything"
-//            heads the menu; or null
+//   pinned   {name, onUnpin} while a branch is pinned: "Show whole tree" heads
+//            the menu; or null
 //   arrange  {value, options: [{value, label, title}], onChange} or null
 //   note     a line in place of Arrange by (why it isn't offered here), or null
 //   levels   {value (1..4, Infinity, 0, or null), onLevel(n), onCloseAll} or null
@@ -154,7 +154,7 @@ export default function TreeControlsMenu({
         <>
           <button type="button" role="menuitem" tabIndex={-1} data-id="unpin" className="ovm-item tm-item tm-plain"
                   title={`Showing only ${pinned.name}: show the whole tree again`}
-                  onClick={() => { close(true); pinned.onUnpin(); }}>Show everything</button>
+                  onClick={() => { close(true); pinned.onUnpin(); }}>Show whole tree</button>
           <div className="tm-sep" role="separator" />
         </>
       )}

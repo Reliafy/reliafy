@@ -4,7 +4,7 @@ import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
 import ClampText from "./ClampText.jsx";
 import { DueChip, fmtDate, fmtDated } from "./MaintenanceParts.jsx";
-import { IsolateIcon } from "./OutlineBits.jsx";
+import { PinIcon } from "./OutlineBits.jsx";
 import { ancestorsOf, byName, insideWords, statusWords } from "../assetTree.js";
 import { shownTab, tabsFor } from "../explorerTabs.js";
 import OperatingContextCard from "./OperatingContextCard.jsx";
@@ -304,10 +304,10 @@ function Summary({ row, display, today, onSelect, version }) {
 // tree's own two over the tree, on both tabs (TreePane's head and headTabs);
 // on a phone they head the panel.
 //
-// With a branch of the tree isolated, the way up still shows the whole path:
-// `above(key)` says which crumbs are above the isolated row (a click there
-// isolates that row instead, `onCrumb` decides). `pin` ({on, onClick}): the
-// Isolate button for the row (isolated now when `on`), or null where it can't be.
+// With a branch of the tree pinned, the way up still shows the whole path:
+// `above(key)` says which crumbs are above the pinned row (a click there moves
+// the pin up, `onCrumb` decides). `pin` ({on, onClick}): the pin button for
+// the row (pinned now when `on`), or null where it can't be pinned.
 export function SlimHeader({
   display, row, onSelect, onCrumb = onSelect, above = null, pin = null, fullScreenButton, headingRef, meta, actions, message,
   primaryOpen = false,
@@ -326,7 +326,7 @@ export function SlimHeader({
                   <span key={c.key}>
                     {i > 0 && <span className="crumb-sep" aria-hidden="true"> / </span>}
                     <button type="button" className={"crumb-link" + (c.above ? " crumb-above" : "")}
-                            title={c.above ? `${c.label}: isolate this branch instead` : c.label} onClick={() => onCrumb(c.key)}>{c.label}</button>
+                            title={c.above ? `${c.label}: pin this branch instead` : c.label} onClick={() => onCrumb(c.key)}>{c.label}</button>
                   </span>
                 ))}
               </nav>
@@ -344,10 +344,10 @@ export function SlimHeader({
         {actions}
         {pin && (
           <button type="button" className={"secondary sm tt-pin" + (pin.on ? " on" : "")} aria-pressed={pin.on}
-                  aria-label="Isolate this branch"
-                  title={pin.on ? "Isolated: show everything again" : "Isolate this branch: show only it and what's inside it, 2 levels open"}
+                  aria-label="Pin this branch"
+                  title={pin.on ? "Pinned: show the whole tree again" : "Pin this branch: show only it and what's inside it"}
                   onClick={pin.onClick}>
-            <IsolateIcon size={16} />
+            <PinIcon size={16} />
           </button>
         )}
         {fullScreenButton}

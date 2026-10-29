@@ -136,8 +136,8 @@ test("switching tabs moves nothing with a branch pinned, and a long operating co
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&pin=${p.top.id}`);
   // The pin is said in the tree's column header, with no row of its own: the
   // tree starts exactly where it does without a pin.
-  const pinNote = page.locator(".tt-head").getByRole("group", { name: "Isolated branch" });
-  await expect(pinNote).toContainText(`Isolated: Steady plant ${tag}`);
+  const pinNote = page.locator(".tt-head").getByRole("group", { name: "Pinned branch" });
+  await expect(pinNote).toContainText(`Pinned: Steady plant ${tag}`);
   await expect(page.getByRole("region", { name: "Operating context" })).toBeVisible();
   expect((await frameOf(page)).boxes.tree).toEqual(treeTop.Summary);
   await switchEveryWay(page, "Summary");
@@ -166,7 +166,7 @@ test("on a phone with a branch pinned, switching tabs leaves the frame where it 
   const tag = `q${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&pin=${p.top.id}`);
-  await expect(page.getByRole("treeitem", { name: new RegExp(`^Isolated: Steady plant ${tag}`) })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: new RegExp(`^Pinned: Steady plant ${tag}`) })).toBeVisible();
   const scrolls = { Summary: (await frameOf(page)).scrollTop };
   await check(page, "phone, pinned: to RCM", () => tab(page, "RCM").click(), { wantTab: "RCM", rows: false, scrolls });
   await check(page, "phone, pinned: to Summary", () => tab(page, "Summary").click(), { wantTab: "Summary", rows: false, scrolls });

@@ -465,7 +465,7 @@ export function newStandardRows(display, seen, open) {
 export const standardKeys = (display) => new Set([...display.rows.values()].filter((r) => r.type === "std" || r.type === "nostd").map((r) => r.key));
 
 // ---- linking functional failures ----------------------------------------------------
-// The picker's lists, from the grafted display (`whole`, not an isolated branch of
+// The picker's lists, from the grafted display (`whole`, not a pinned branch of
 // it): for a functional failure's causes, the functional failures on the
 // positions inside its own (in tree order, any depth); for its effects, those
 // on the positions above it (nearest first). Grouped by position, each with

@@ -19,9 +19,9 @@ test("what's changed from the usual view", () => {
   assert.deepEqual(changedFromUsual({
     mode: "locations", level: 1, chips: [{ id: "overdue", label: "Overdue" }, { id: "alarm", label: "Alarm" }],
   }).map((c) => c.id), ["arrange", "level", "chip:overdue", "chip:alarm"]);
-  // An isolated branch isn't the usual view: it counts, first.
-  assert.deepEqual(changedFromUsual({ mode: "positions", level: 2, pinned: true }).map((c) => c.id), ["isolate"]);
-  assert.deepEqual(changedFromUsual({ mode: "locations", level: 3, pinned: true }).map((c) => c.id), ["isolate", "arrange", "level"]);
+  // A pinned branch isn't the usual view: it counts, first.
+  assert.deepEqual(changedFromUsual({ mode: "positions", level: 2, pinned: true }).map((c) => c.id), ["pin"]);
+  assert.deepEqual(changedFromUsual({ mode: "locations", level: 3, pinned: true }).map((c) => c.id), ["pin", "arrange", "level"]);
   // Not offered, not counted: the RCM tab has no Arrange by; Flat has no levels.
   assert.deepEqual(changedFromUsual({ mode: "locations", arrange: false, level: 3, levels: false }), []);
 });

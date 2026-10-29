@@ -71,13 +71,12 @@ To find your way around a big tree:
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
 - **Isolate** in any row's menu (a position, function, standard, functional
-  failure or failure mode) shows that row and what's inside it on its own,
-  opened **with 1 level open**, **2 levels open**, **3 levels open** or
-  **everything open** below it, whatever level the rest of the tree is at.
-  You can still open and close rows by hand after. The tree's column header
-  says *Isolated: Pump A · 2 levels*: change the levels there, or press
-  **Show everything** (or Esc in the tree) to bring the rest back. The address
-  keeps it, so a link opens on the same branch.
+  failure or failure mode) closes every other branch of the tree and opens
+  that row **with 1 level open**, **2 levels open**, **3 levels open** or
+  **everything open** below it. The other rows stay on show, closed, so you
+  can still see where you are; open and close rows by hand after as usual.
+- **Pin this branch** in a position's row menu shows that position and what's
+  inside it on its own; **Show whole tree** brings the rest back.
 - **Columns** shows or hides columns, such as **Performance standard**,
   **Evidence**, **What the evidence shows** and **Decision notes**. Drag a
   column's edge to resize it. The Explorer remembers these choices on this
