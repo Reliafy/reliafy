@@ -2406,6 +2406,13 @@ export function linkFunctionalFailureCause(id, causeId) {
 export function unlinkFunctionalFailureCause(id, causeId) {
   return sendJson("DELETE")(`/api/maintenance/functional-failures/${id}/causes/${causeId}`);
 }
+// The RCM tab's drag and drop: one batch of arranging operations
+// ([{do, args}]), checked on a copy of the workspace first and all or
+// nothing. dryRun only checks. A refusal throws (status 422) with the
+// answer in err.data ({detail, failed}); the answer's undo puts it back.
+export function applyRcm(operations, { dryRun = false } = {}) {
+  return postJson("/api/maintenance/rcm/apply", { operations, ...(dryRun ? { dry_run: true } : {}) });
+}
 export function assignFailureMode(id, functionalFailureId) {
   return postJson(`/api/maintenance/failure-modes/${id}/assign`, { functional_failure_id: functionalFailureId || null });
 }

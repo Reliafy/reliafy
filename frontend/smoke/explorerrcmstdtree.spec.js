@@ -171,7 +171,7 @@ test("row menus: add a standard, a failure under it, change a failure's standard
 
   // A function's menu: Add a standard… (the first standard; its loose failure stays on show, under "No standard").
   let menu = await menuOf(page, circulate);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Delete function"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Move to another position…", "Move up", "Move down", "Delete function"]);
   await menu.getByRole("menuitem", { name: "Add a standard…" }).click();
   const ask = page.getByRole("dialog", { name: "Add a performance standard" });
   await ask.getByRole("textbox").fill(`At least 50 L/s ${tag}`);
@@ -187,7 +187,7 @@ test("row menus: add a standard, a failure under it, change a failure's standard
 
   // A standard's menu: Add a functional failure… (it breaches this standard).
   menu = await menuOf(page, fifty);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Remove standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Remove standard"]);
   await expect(menu.getByRole("menuitem", { name: "Move up" })).toHaveAttribute("aria-disabled", "true"); // the only one
   await menu.getByRole("menuitem", { name: "Add a functional failure…" }).click();
   const askFail = page.getByRole("dialog", { name: "Add a functional failure" });
@@ -340,7 +340,7 @@ test("at 400 px the standard rows, their menus and the dialog fit", async ({ pag
   // The menu: no in-place edit on a phone (the dialog edits the text); Open… reaches the dialog.
   await ca.getByRole("button", { name: "Actions", exact: true }).click();
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Remove standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Remove standard"]);
   await menu.getByRole("menuitem", { name: "Open…" }).click();
   const dlg = dialog(page, "Standard");
   await expect(dlg).toBeVisible();

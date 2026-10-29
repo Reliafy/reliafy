@@ -200,10 +200,22 @@ function UnpinButton({ pinRoot }) {
   );
 }
 
+// The RCM table's drag and drop (a wide screen): the mark on the row under
+// the pointer (into: an outline; before / after: a line at its top or
+// bottom; no: a red outline), drawn inside the row so nothing moves.
+function dropClass(drag, key) {
+  const o = drag?.over;
+  if (!o || o.key !== key) return "";
+  return o.state === "no" ? " drop-no" : ` drop-${o.zone || "into"}`;
+}
+
 function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
   const has = r.kids.length > 0;
+  const drag = table && !phone ? table.drag : null;
+  const movable = !!drag && !pinned && drag.canDrag(r);
   const cls = "tp-row" + (focused ? " focus" : "") + (dim ? " dim" : "") + (pinned ? " pin" : "") + (heading(r) ? " grp" : "")
-    + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "");
+    + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "") + (drag?.picked?.has(r.key) ? " picked" : "")
+    + (movable ? " movable" : "") + dropClass(drag, r.key) + (drag?.dragging?.has(r.key) ? " dragged" : "");
   const common = {
     className: cls,
     role: pinned ? undefined : table ? "row" : "treeitem",
@@ -214,11 +226,18 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     "aria-setsize": pinned ? undefined : v.size,
     "aria-posinset": pinned ? undefined : v.pos,
     "aria-expanded": pinned || !has ? undefined : open,
-    "aria-selected": pinned ? undefined : focused,
+    "aria-selected": pinned ? undefined : focused || (drag?.picked?.has(r.key) ? true : undefined),
     tabIndex: pinned ? undefined : focused ? 0 : -1,
     style: { top: pinned ? undefined : top, height, width: table && !phone ? table.total : rowW },
     onClick: (e) => {
       if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin, .rw-info")) return;
+      // Failure modes picked with Shift / Ctrl / Cmd-click, to drag (or move) together.
+      if (drag && r.type === "mode" && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        drag.onPickMany(r.key, e);
+        return;
+      }
+      if (drag?.picked?.size) drag.onPickMany(null, e);
       // In the table a double-click on the chevron opens or closes the row
       // once (its second click isn't another toggle).
       if (e.target.closest(".tp-chev")) {
@@ -267,7 +286,10 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
   return (
     <div {...common}>
       <div className="tt-tree" role="rowheader" style={{ width: table.treeW }}
+           title={drag && !movable ? drag.block(r) || undefined : undefined}
+           onPointerDown={movable && editCol !== "name" ? (e) => drag.begin(e, r.key) : undefined}
            onDoubleClick={!table.onOpen && table.canEditName(r) ? (e) => { e.stopPropagation(); table.onEdit(r.key, "name"); } : undefined}>
+        {movable && editCol !== "name" && <span className="tt-grip" aria-hidden="true" style={{ left: Math.max(0, Math.min(v.depth, 30) * 14 - 13) }}><GripIcon /></span>}
         {editCol === "name"
           ? <CellEditor col={NAME_COLUMN} r={cr} onCommit={(raw) => table.onCommit(r, "name", raw)} onCancel={table.onCancel} />
           : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto}
@@ -281,9 +303,12 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
       ) : table.cols.map((c) => {
         const rcmRow = isRcmRow(r);
         const can = rcmRow && !table.readOnly && c.edit && c.can(cr);
+        // A failure mode's Task cell drags its (first) task to another failure mode or a position.
+        const task = drag && !pinned && c.id === "task" && r.type === "mode" && editCol !== c.id ? drag.taskOf(r) : null;
         return (
-          <div key={c.id} role="gridcell" className={"rw-c" + (c.align === "num" ? " num" : "") + (can ? " can" : "")}
+          <div key={c.id} role="gridcell" className={"rw-c" + (c.align === "num" ? " num" : "") + (can ? " can" : "") + (task ? " tt-task-drag" : "")}
                style={{ width: table.widths[c.id] }}
+               onPointerDown={task ? (e) => drag.begin(e, r.key, task) : undefined}
                onDoubleClick={can ? (e) => { e.stopPropagation(); table.onEdit(r.key, c.id); } : undefined}
                title={editCol !== c.id ? cellTip(c, cr, can) : undefined} aria-description={editCol !== c.id ? cellHint(can) : undefined}>
             {editCol === c.id
@@ -295,6 +320,15 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
       })}
       <div className="rw-c rw-fill" aria-hidden="true" />
     </div>
+  );
+}
+
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 10 16" width="8" height="13" fill="currentColor">
+      <circle cx="3" cy="3" r="1.3" /><circle cx="7" cy="3" r="1.3" /><circle cx="3" cy="8" r="1.3" />
+      <circle cx="7" cy="8" r="1.3" /><circle cx="3" cy="13" r="1.3" /><circle cx="7" cy="13" r="1.3" />
+    </svg>
   );
 }
 
@@ -594,7 +628,7 @@ export default function TreePane({
         {railed ? <div className="tp-railcol" style={{ width: PANE.rail }} /> : (
         <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); if (wideTable) paintShade(); }} onKeyDown={keys}
              role={table ? "treegrid" : "tree"} aria-label={table ? `${treeLabel || title} and their RCM` : treeLabel || title}
-             aria-multiselectable="false" style={wide && !table ? { width: width + gutter } : undefined}>
+             aria-multiselectable={table?.drag?.picked?.size ? "true" : "false"} style={wide && !table ? { width: width + gutter } : undefined}>
           {columnHeads}
           {pins.length > 0 && (
             <div className="tp-pins" style={{ top: headH }}>

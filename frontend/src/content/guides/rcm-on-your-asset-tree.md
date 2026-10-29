@@ -310,6 +310,41 @@ has a list, a functional failure's row names the one it breaches; **Export
 CSV** writes them that way, so a sheet reads back with each failure under its
 standard.
 
+## Move things around: drag and drop, and Undo
+
+In a workshop the analysis changes shape as people talk. On a wide screen you
+can drag rows in the RCM table to rearrange it:
+
+- **A function** onto another position (it takes its standards, functional
+  failures, failure modes and tasks with it), or above or below another
+  function to change the order.
+- **A performance standard** onto another function, on any position. It moves
+  alone: the functional failures that breached it stay where they were, under
+  **No standard**. Drop it above or below another standard to change the order.
+- **A functional failure** onto another function, onto a standard (it then
+  breaches that one) or onto **No standard**, or above or below another
+  functional failure.
+- **Failure modes** onto a functional failure, on this position or another. To
+  move several at once, pick them with Ctrl-click (Cmd-click on a Mac) or
+  Shift-click, then drag one of them; the label shows how many.
+- **A task**: drag a failure mode's **Task** cell onto another failure mode. The
+  task moves there and stops preventing the mode it came from. To have one task
+  prevent several modes, use **Add a task…** › **Use an existing task**.
+
+While you drag, a line shows where it will go (above, below), or the row is
+outlined (inside). If it can't go there, the pointer changes to a no-entry sign
+and the label says why before you let go: for example, the other position
+already has a failure mode with the same name, a task has an open work order,
+or failures are recorded against a mode. Press **Esc** to cancel a drag.
+
+Each drop is done in one go, or not at all. A note at the bottom of the page
+says what moved and has an **Undo** button (or press Ctrl+Z, Cmd+Z on a Mac,
+while it shows). Undo puts everything back where it was.
+
+**No mouse, or on a phone:** each row's menu has a **Move to…** item (a list of the
+places it can go, with the same checks before you press Move) and **Move up** /
+**Move down**. A failure mode's menu also has **Move a task…**.
+
 ## Show the working behind a performance standard
 
 Some standards come from sums, not a book: how much chlorine a pool needs from

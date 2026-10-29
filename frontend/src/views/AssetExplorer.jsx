@@ -8,6 +8,11 @@ import DecisionModal from "../components/DecisionModal.jsx";
 import LinkFailurePicker from "../components/FailureLinks.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
 import RcmItemModal from "../components/RcmItemModal.jsx";
+import RcmMoveModal from "../components/RcmMoveModal.jsx";
+import useRcmDrag from "../components/useRcmDrag.js";
+import {
+  answerNotes, dragBlock, dragSource, moveItems, planDrop, refusalText, shownAfter, stepTarget, undoBatch,
+} from "../rcmDrag.js";
 import OverflowMenu from "../components/OverflowMenu.jsx";
 import { exportFilename, importSummary, positionRcmCsv } from "../rcmImport.js";
 import { saveText } from "../sparesPlan.js";
@@ -21,7 +26,7 @@ import {
   standardKeys, tableCols, unlinkEmptiesFailure, usualCols,
   withTableCols,
 } from "../explorerRcm.js";
-import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs } from "../rcmWorksheet.js";
+import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs, tasksOf } from "../rcmWorksheet.js";
 import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
@@ -222,6 +227,19 @@ export default function AssetExplorer() {
     const t = setTimeout(() => setMessage((m) => (m === message ? null : m)), 6000);
     return () => clearTimeout(t);
   }, [message]);
+  // Rearranging the RCM by drag and drop (or a row menu's Move to…): the
+  // failure modes picked to move together, the toast with Undo after a move,
+  // the Move to… dialog, and the words said to screen readers.
+  const [picked, setPicked] = useState(() => new Set());
+  const [toast, setToast] = useState(null); // {text, undo, extra, show, at, busy}
+  const [moving, setMoving] = useState(null); // {src} or {taskFrom}: the Move to… dialog
+  const [spoken, setSpoken] = useState("");
+  const announce = useCallback((text) => setSpoken((was) => (was === text ? `${text}\u00a0` : text)), []);
+  useEffect(() => {
+    if (!toast || toast.busy) return undefined;
+    const t = setTimeout(() => setToast((x) => (x === toast ? null : x)), toast.undo ? 12000 : 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
   const wantItems = mode === "items";
   useEffect(() => {
     if (!wantItems || !version) return undefined;
@@ -236,6 +254,14 @@ export default function AssetExplorer() {
   const base = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
   const whole = useMemo(() => (rcmOn && rcm ? graftRcm(base, rcm) : base), [base, rcmOn, rcm]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
+  // The modes picked that are still in the tree after a read.
+  useEffect(() => {
+    setPicked((was) => {
+      if (!was.size) return was;
+      const kept = [...was].filter((k) => whole.rows.get(k)?.type === "mode");
+      return kept.length === was.size ? was : new Set(kept);
+    });
+  }, [whole]);
   // A branch pinned (?pin=): the pane's tree starts at that row, and
   // everything below (open rows, levels, the filter, counts) works on it alone.
   const pinParam = params.get("pin");
@@ -553,11 +579,116 @@ export default function AssetExplorer() {
   // RCM tab, adding inside the row and its other actions; on the Summary tab,
   // changing the tree (new inside, rename, move, retire: treeRowMenu.js); and
   // on any row that can be pinned, Pin this branch.
+  // ---- moving things in the RCM tree (drag and drop, Move to…, Move up / down) ----
+  // Every move is one batch, checked by the server first and all or nothing;
+  // the toast says what moved and offers Undo (also Ctrl+Z / Cmd+Z while it
+  // shows), which sends the batch's undo back as one batch.
+  const offline = () => navigator.onLine === false;
+  const checkMove = useCallback((operations) => ops.arrange(operations, { dryRun: true }).then(
+    (a) => ({ ok: true, notes: answerNotes(a) }),
+    // Not a refusal (no connection, a server error): the drop goes ahead and the server checks it then.
+    (e) => (e.status === 422 ? { ok: false, reason: refusalText(e) } : { ok: true, notes: [] }),
+  ), [ops]);
+  const applyMove = async (src, plan, key) => {
+    let answer;
+    try {
+      answer = await ops.arrange(plan.ops);
+    } catch (e) {
+      throw new Error(e.status === 422 ? refusalText(e) : saveErrorText(e, { offline: offline() }));
+    }
+    const notes = answerNotes(answer);
+    const text = [plan.done, ...notes].join(" ");
+    const show = shownAfter(src, key);
+    pending.current = show;
+    setPicked(new Set());
+    setToast({ text, undo: undoBatch(answer), extra: plan.extraUndo || [], show, at: Date.now() });
+    announce(`${text} Press Control Z to undo.`);
+    return answer;
+  };
+  const dropMove = (src, plan, key) => {
+    if (plan.refuse) {
+      say(`Not moved: ${plan.refuse}`, "error");
+      announce(`Not moved: ${plan.refuse}`);
+      return;
+    }
+    applyMove(src, plan, key).catch((e) => {
+      say(`Not moved: ${e.message}`, "error");
+      announce(`Not moved: ${e.message}`);
+    });
+  };
+  const undoMove = async () => {
+    const t = toast;
+    if (!t?.undo?.length || t.busy) return;
+    setToast({ ...t, busy: true });
+    try {
+      try {
+        await ops.arrange([...t.undo, ...t.extra]);
+      } catch (e) {
+        // The places it came from have changed meanwhile: put it back, anywhere among them.
+        if (e.status !== 422 || !t.extra.length) throw e;
+        await ops.arrange(t.undo);
+      }
+      pending.current = t.show;
+      setToast({ text: "Undone: everything is back where it was.", undo: null, at: Date.now() });
+      announce("Undone.");
+    } catch (e) {
+      const why = e.status === 422 ? refusalText(e) : saveErrorText(e, { offline: offline() });
+      setToast({ text: `Couldn't undo it: ${why}`, undo: null, tone: "error", at: Date.now() });
+      announce(`Couldn't undo it: ${why}`);
+    }
+  };
+  useEffect(() => {
+    if (!toast?.undo?.length) return undefined;
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "z") return;
+      if (e.target.closest?.("input, textarea, select, [contenteditable='true']") || hasOpenLayer(document)) return;
+      e.preventDefault();
+      undoMove();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+  // Shift / Ctrl / Cmd-click on failure modes: picked, to drag or move together
+  // (Ctrl / Cmd adds or takes one; Shift picks the run from the last one
+  // picked). A plain click clears them (null).
+  const pickMany = (key, e) => {
+    if (key == null) return setPicked(new Set());
+    const r = whole.rows.get(key);
+    if (r?.type !== "mode") return null;
+    setRcmFocus(key);
+    setSelected((x) => ({ ...x, [mode]: positionOf(r) }));
+    setPicked((was) => {
+      const next = new Set(was);
+      const anchorKey = [...was].pop() || (focusRow?.type === "mode" ? focusRow.key : null);
+      if (e.shiftKey && anchorKey && index.has(anchorKey) && index.has(key)) {
+        const [a, b] = [index.get(anchorKey), index.get(key)].sort((x, y) => x - y);
+        for (let i = a; i <= b; i += 1) if (whole.rows.get(list[i].key)?.type === "mode") next.add(list[i].key);
+      } else {
+        if (!was.size && anchorKey && anchorKey !== key) next.add(anchorKey);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+      }
+      announce(`${next.size} failure mode${next.size === 1 ? "" : "s"} picked.`);
+      return next;
+    });
+    return null;
+  };
+  const { drag, begin: beginDrag } = useRcmDrag({
+    whole, picked, enabled: rcmOn && !phone && !!rcm, check: checkMove, drop: dropMove, say: announce,
+  });
+  // A row menu's Move up / Move down: the drop before the one above, or after the one below.
+  const stepMove = (r, by) => {
+    const to = stepTarget(whole, r.key, by);
+    const src = dragSource(whole, r.key);
+    if (!to || !src) return;
+    dropMove(src, planDrop(whole, src, to.key, to.zone), to.key);
+  };
+
   const viewOnly = viewOnlyReason(activeTeam);
   const kids = useMemo(() => liveKids(data?.positions), [data]);
   const rowMenu = {
     actions: (r) => (rcmOn
-      ? [...(rcm ? rowActions(r, { canRename: !phone }) : []), ...pinItem(r)]
+      ? [...(rcm ? withPin(rowActions(r, { canRename: !phone }), moveItems(whole, whole.rows.get(r.key) || r, { picked })) : []), ...pinItem(r)]
       : withPin(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), pinItem(r))),
     onAction: (r, id) => {
       if (id === "tree-new") {
@@ -569,6 +700,9 @@ export default function AssetExplorer() {
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       else if (id === "add-std") runAdd({ ref: { add: "std", position_id: r.ref.position_id, function_id: r.ref.id } });
       else if (id === "add-fail" || id === "add-mode") addInside(r);
+      else if (id === "move-to") setMoving({ src: dragSource(whole, r.key, { picked }) });
+      else if (id === "move-task") setMoving({ taskFrom: r.key });
+      else if (id === "step-up" || id === "step-down") stepMove(r, id === "step-up" ? -1 : 1);
       else if (id === "move-up" || id === "move-down") {
         setRcmFocus(r.key);
         ops.moveStandard(r, id === "move-up" ? -1 : 1).then((did) => did && say("Moved."), (e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error"));
@@ -921,6 +1055,18 @@ export default function AssetExplorer() {
     onGoto: (key) => reveal(key),
     // The position picked, when it has no functions yet: its row says how to start.
     hint: rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
+    // Drag and drop (a wide screen): which rows move, the mark on the row
+    // under the pointer, the failure modes picked to move together.
+    drag: rcm && !phone ? {
+      begin: beginDrag,
+      canDrag: (r) => !!dragSource(whole, r.key),
+      block: (r) => dragBlock(r),
+      taskOf: (r) => tasksOf(r.ref).find((t) => t.id) || null,
+      picked,
+      onPickMany: pickMany,
+      over: drag?.key ? { key: drag.key, zone: drag.zone, state: drag.verdict?.state } : null,
+      dragging: drag ? new Set(drag.src.kind === "task" ? [] : drag.src.keys) : null,
+    } : null,
   } : null;
   const msg = message && <p className={"tt-msg " + message.tone} role="status" title={message.text}>{message.text}</p>;
   // The panel's heading and tabs, in the two slim rows over the tree on both
@@ -1103,6 +1249,37 @@ export default function AssetExplorer() {
         arrangeLocked={rcmOn ? "RCM is by position, so the RCM tab shows the positions tree" : null}
       />
       {phone && summary}
+      <div className="sr-only" role="status" aria-live="polite">{spoken}</div>
+      {drag && (
+        <div className={"rcm-ghost" + (drag.verdict ? ` is-${drag.verdict.state}` : "")} aria-hidden="true"
+             style={{ left: Math.min(drag.x + 16, window.innerWidth - 320), top: drag.y + 18 }}>
+          <span className="rcm-ghost-what">
+            {drag.src.kind === "modes" && drag.src.keys.length > 1 && <span className="rcm-ghost-n">{drag.src.keys.length}</span>}
+            {drag.words}
+          </span>
+          {drag.verdict && (
+            <span className="rcm-ghost-say">
+              {drag.verdict.state === "no" ? `Can't go here: ${drag.verdict.text}` : String(drag.verdict.text || "").replace(/\.?$/, ".")}
+              {drag.verdict.state === "checking" ? " Checking…" : ""}
+              {drag.verdict.notes?.length ? ` ${drag.verdict.notes.join(" ")}` : ""}
+            </span>
+          )}
+        </div>
+      )}
+      {toast && (
+        <div className={"rcm-toast" + (toast.tone === "error" ? " error" : "")}>
+          <span>{toast.text}</span>
+          {toast.undo?.length > 0 && (
+            <button type="button" className="secondary sm" onClick={undoMove} disabled={toast.busy}
+                    title="Undo (Ctrl+Z or Cmd+Z)">{toast.busy ? "Undoing…" : "Undo"}</button>
+          )}
+          <button type="button" className="rcm-toast-x" onClick={() => setToast(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+      {moving && (moving.src || moving.taskFrom) && (
+        <RcmMoveModal whole={whole} src={moving.src || null} taskFrom={moving.taskFrom || null} check={checkMove}
+                      onApply={applyMove} onClose={() => setMoving(null)} />
+      )}
 
       {modal === "position" && (
         <NewPositionModal positions={pickerList(data)}

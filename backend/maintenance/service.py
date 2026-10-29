@@ -4054,7 +4054,8 @@ class Maintenance:
         return [{"id": t["id"], "name": t["name"], "text": Maintenance._task_text(t),
                  "interval": t.get("interval"), "unit": t.get("unit"), "outcome": t.get("outcome"),
                  "instructions": t.get("instructions") or "",
-                 "shared_with": shares(t["id"]) if shares else 0} for t in tasks]
+                 "shared_with": shares(t["id"]) if shares else 0}
+                | ({"position_id": t["position_id"]} if t.get("position_id") else {}) for t in tasks]
 
     @staticmethod
     def _decision_of(fm: dict, tasks: list[dict], shares=None) -> dict | None:
@@ -4142,6 +4143,11 @@ class Maintenance:
             parent.setdefault(src, dst)
         # Every live task serving each mode (its decision's own first), and how
         # many live modes each task serves (for "shared with n").
+        # The position each task is on (the RCM tab's drag and drop works out a task's moves from it).
+        positions_now = {p["id"] for p in s.nodes(org, "Position")}
+        for src, dst in s.pairs(org, "ON"):
+            if src in tasks and dst in positions_now:
+                tasks[src] = {**tasks[src], "position_id": dst}
         tasks_of: dict[str, list] = {}
         serves: dict[str, int] = {}
         for src, dst in s.pairs(org, "MITIGATES"):
