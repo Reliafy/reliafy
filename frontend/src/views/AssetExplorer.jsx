@@ -1255,7 +1255,8 @@ export default function AssetExplorer() {
              style={{ left: Math.min(drag.x + 16, window.innerWidth - 320), top: drag.y + 18 }}>
           <span className="rcm-ghost-what">
             {drag.src.kind === "modes" && drag.src.keys.length > 1 && <span className="rcm-ghost-n">{drag.src.keys.length}</span>}
-            {drag.words}
+            {/* "The standard “…” and its 3 functional failures": a label, so a capital first. */}
+            {String(drag.words || "").replace(/^\p{Ll}/u, (c) => c.toUpperCase())}
           </span>
           {drag.verdict && (
             <span className="rcm-ghost-say">

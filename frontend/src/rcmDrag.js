@@ -8,9 +8,10 @@
 //   it), or before / after another function (the order; on another position,
 //   it moves there and goes in that place);
 // - a performance standard: before / after another standard (the order; of
-//   another function, it moves there), or onto another function. It moves
-//   alone: the functional failures that breached it stay where they are,
-//   under "No standard";
+//   another function, it moves there), or onto another function on any
+//   position. It carries everything under it: the functional failures that
+//   breach it, their failure modes, decisions and tasks (one batch: the
+//   standard's move, then each failure's move, breaching it again there);
 // - a functional failure: onto a function, a standard (it breaches that one)
 //   or "No standard", or before / after another functional failure (it takes
 //   that one's standard);
@@ -64,8 +65,17 @@ export function dragBlock(r) {
 export function sourceWords(whole, src) {
   if (src.kind === "task") return `the task ${q(src.task.name)}`;
   if (src.kind === "modes" && src.keys.length > 1) return plural(src.keys.length, "failure mode");
+  if (src.kind === "std") {
+    // A standard carries the functional failures under it: say how many.
+    const n = failsUnder(whole, src.keys[0]).length;
+    const r = whole.rows.get(src.keys[0]);
+    return `the standard ${q(textOf(r))}${n ? ` and its ${n === 1 ? "functional failure" : plural(n, "functional failure")}` : ""}`;
+  }
   return q(textOf(whole.rows.get(src.keys[0])));
 }
+
+// The functional failures under a standard's row (those breaching it), in order.
+export const failsUnder = (whole, stdKey) => (whole.rows.get(stdKey)?.kids || []).filter((k) => whole.rows.get(k)?.type === "fail");
 
 // Is `key` the row `top` or a row inside it?
 function within(whole, key, top) {
@@ -193,24 +203,30 @@ function planFunction(whole, src, t, zone, what, plan, where) {
 function planStandard(whole, src, t, zone, what, plan, where) {
   const s = whole.rows.get(src.keys[0]);
   const from = s.ref.function_id;
-  const fails = s.kids.filter((k) => whole.rows.get(k)?.type === "fail").length;
-  const stay = fails ? ` ${fails === 1 ? "Its functional failure stays" : `Its ${fails} functional failures stay`} here, under No standard.` : "";
-  const back = [op("reorder_standards", { function_id: from, standard_ids: stdIdsOf(whole, from) })];
+  const std = s.ref.standard_id;
+  const fails = failsUnder(whole, s.key);
   const toFn = t.type === "fn" ? t.key : t.ref.function_id;
   const fnRow = whole.rows.get(toFn);
-  if (t.type === "fn" || t.ref.legacy) {
-    if (toFn === from) return { refuse: "It's a standard of this function already. To change the order, drop it before or after another standard." };
-    return plan([op("move_standard", { standard_id: s.ref.standard_id, function_id: toFn })],
-      `Move ${what} to ${q(textOf(fnRow))}.${stay}`, `Moved ${what} to ${q(textOf(fnRow))}.${stay}`, back);
-  }
-  const ids = place(stdIdsOf(whole, toFn), [s.ref.standard_id], t.ref.standard_id, zone);
+  const place2 = t.type === "fn" || t.ref.legacy ? null : t.ref.standard_id;
   if (toFn === from) {
+    if (!place2) return { refuse: "It's a standard of this function already. To change the order, drop it before or after another standard." };
+    // The order among the function's standards (its failures go with it on screen).
+    const ids = place(stdIdsOf(whole, from), [std], place2, zone);
     if (same(ids, stdIdsOf(whole, from))) return { none: true };
     return plan([op("reorder_standards", { function_id: from, standard_ids: ids })], `Put ${what} ${where(zone)} ${q(textOf(t))}`, `Moved ${what}.`);
   }
-  return plan([op("move_standard", { standard_id: s.ref.standard_id, function_id: toFn }),
-    op("reorder_standards", { function_id: toFn, standard_ids: ids })],
-  `Move ${what} to ${q(textOf(fnRow))}, ${where(zone)} ${q(textOf(t))}.${stay}`, `Moved ${what} to ${q(textOf(fnRow))}.${stay}`, back);
+  // To another function: the standard, then each functional failure under it
+  // (with its failure modes, decisions and tasks), breaching it again there.
+  // One batch: all of it moves, or none. Undo moves them back (the server's
+  // undo list) and puts the standards and failures back in their order.
+  const ops = [op("move_standard", { standard_id: std, function_id: toFn }),
+    ...fails.map((ff) => op("move_functional_failure", { functional_failure_id: ff, function_id: toFn, standard_id: std }))];
+  if (place2) ops.push(op("reorder_standards", { function_id: toFn, standard_ids: place(stdIdsOf(whole, toFn), [std], place2, zone) }));
+  const back = [op("reorder_standards", { function_id: from, standard_ids: stdIdsOf(whole, from) })];
+  if (fails.length) back.push(op("reorder", { parent_id: from, ids: failIdsOf(whole, from) }));
+  const carry = fails.length ? `, with ${fails.length === 1 ? "its failure modes and tasks" : "their failure modes and tasks"}` : "";
+  return plan(ops, `Move ${what} to ${q(textOf(fnRow))}${place2 ? `, ${where(zone)} ${q(textOf(t))}` : ""}${carry}`,
+    `Moved ${what} to ${q(textOf(fnRow))}.`, back);
 }
 
 function planFailure(whole, src, t, zone, what, plan, where) {
@@ -333,11 +349,16 @@ export const shownAfter = (src, targetKey) => (src.kind === "task" ? targetKey :
 // things back in their places.
 export const undoBatch = (answer, extraUndo = []) => [...(answer?.undo || []), ...extraUndo];
 
-// What the server said beyond "done" (links removed, tasks unlinked, failures
-// left under no standard), once each.
+// What the server said beyond "done" (links removed, tasks unlinked), once
+// each.
 export function answerNotes(answer) {
   const out = [];
-  for (const r of answer?.results || []) {
+  const results = answer?.results || [];
+  // Failures the same batch moves on (a standard dragged with its failures):
+  // a standard's "they stay with the old function" isn't so, so it's not said.
+  const carried = new Set(results.filter((r) => r.do === "failure_modes.move_functional_failure").map((r) => r.result?.moved));
+  for (const r of results) {
+    if (r.do === "failure_modes.move_standard" && (r.result?.unlinked_functional_failure_ids || []).every((id) => carried.has(id))) continue;
     const note = r.result?.note;
     if (note && !out.includes(note)) out.push(note);
   }

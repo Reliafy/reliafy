@@ -147,8 +147,10 @@ stay. Anything with history stays put (failures or findings recorded against a m
 task's use counted from the old position's counter): the refusal says what to do instead. A moved thing goes \
 last among its new siblings; reorder (parent_id: the position, function or functional failure; ids: its \
 children in the order wanted) and reorder_standards place things; move_standard takes a standard to \
-another function (alone: the failures breaching it stay, under no standard). Several moves at once (five modes under one \
-functional failure): maintenance_apply, all or nothing, and its undo list puts them back.
+another function (alone: the failures breaching it stay, under no standard). To take its failures with it (what \
+dragging a standard in the app does), send one maintenance_apply batch: move_standard, then move_functional_failure \
+for each failure that breached it (function_id: the same, standard_id: the standard). Several moves at once (five \
+modes under one functional failure): maintenance_apply, all or nothing, and its undo list puts them back.
 - Several tasks for one failure mode, one task for several. A mode's decision has one task, the first in its \
 decision.tasks; maintenance_failure_modes add_task adds another (a combination: an inspection that catches the \
 slow failures plus a replacement at a hard life; the classic sources expect it for safety, environmental and \
