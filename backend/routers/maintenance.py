@@ -22,7 +22,7 @@ from backend.db import get_db, get_session, is_simulated
 from backend.maintenance.access import allowed
 from backend.maintenance import documents as documents_mod
 from backend.maintenance import photos as photos_mod
-from backend.maintenance.service import PROJECTORS, Invalid, LimitReached, Maintenance, NotFound, summary
+from backend.maintenance.service import PROJECTORS, Invalid, LimitReached, Maintenance, NeedsChoice, NotFound, summary
 from backend.maintenance.store import new_id
 from backend.maintenance.store import GraphStore, MongoEventLog
 from backend.services import access as access_service
@@ -284,6 +284,9 @@ def _run(fn, *args, **kwargs) -> JSONResponse:
         return JSONResponse(content=fn(*args, **kwargs))
     except NotFound:
         return JSONResponse(status_code=404, content={"detail": "Not found."})
+    except NeedsChoice as err:
+        # Not a refusal: the move goes ahead once the caller says what its tasks count there.
+        return JSONResponse(status_code=409, content={"detail": str(err), "needs_choice": err.choice})
     except LimitReached as err:
         return JSONResponse(status_code=err.status, content={"detail": str(err)})
     except photos_mod.Busy as err:
@@ -618,24 +621,28 @@ def retire_failure_mode(mode_id: str, m: Maintenance = Depends(maintenance_write
 def move_failure_mode(mode_id: str, body: dict = Body(...),
                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """To another position (position_id), with its decision and tasks, under one of that
-    position's functional failures (functional_failure_id) or none."""
-    return _run(m.move_failure_mode, mode_id, body.get("position_id"), body.get("functional_failure_id"))
+    position's functional failures (functional_failure_id) or none. measurement: what its
+    tasks by use count there when what they count now doesn't fit (409 needs_choice asks)."""
+    return _run(m.move_failure_mode, mode_id, body.get("position_id"), body.get("functional_failure_id"),
+                body.get("measurement"))
 
 
 @router.post("/functions/{function_id}/move")
 def move_function(function_id: str, body: dict = Body(...),
                   m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """To another position (position_id), with its functional failures, their failure
-    modes and those modes' tasks."""
-    return _run(m.move_function, function_id, body.get("position_id"))
+    modes and those modes' tasks. measurement: as for a failure mode's move."""
+    return _run(m.move_function, function_id, body.get("position_id"), body.get("measurement"))
 
 
 @router.post("/functional-failures/{ff_id}/move")
 def move_functional_failure(ff_id: str, body: dict = Body(...),
                             m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Under another function (function_id), on the same position or another, with its failure
-    modes and their tasks; standard_id: one of that function's standards it breaches there."""
-    return _run(m.move_functional_failure, ff_id, body.get("function_id"), body.get("standard_id"))
+    modes and their tasks; standard_id: one of that function's standards it breaches there.
+    measurement: as for a failure mode's move."""
+    return _run(m.move_functional_failure, ff_id, body.get("function_id"), body.get("standard_id"),
+                body.get("measurement"))
 
 
 @router.put("/rcm/order")
@@ -669,6 +676,11 @@ def rcm_apply(body: dict = Body(...), m: Maintenance = Depends(maintenance_write
     rehearsal = apply_mod.run_pass(ops, call, copy, "stop", dry=True)
     if rehearsal["failed"]:
         out = apply_mod.summarise(ops, rehearsal, True, 0)
+        if rehearsal["failed"].get("needs_choice"):
+            # Not a refusal: say what its tasks count there (that operation's measurement) and send it again.
+            out["detail"] = rehearsal["failed"]["error"].split(": ", 1)[-1]
+            out["needs_choice"] = {**rehearsal["failed"]["needs_choice"], "op_index": rehearsal["failed"]["index"]}
+            return JSONResponse(status_code=409, content=out)
         out["detail"] = f"Nothing was changed: {rehearsal['failed']['error']}"
         return JSONResponse(status_code=422, content=out)
     if body.get("dry_run"):
@@ -765,7 +777,7 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
             view = m.set_last_done(task_id, body["last_done"])
         if any(k in body for k in ("name", "interval", "unit", "also_interval", "also_unit", "point_id",
                                    "instructions", "checklist", "failure_mode_id", "source", "reference",
-                                   "outcome", "trade", "while_stored", "include_positions")):
+                                   "outcome", "trade", "while_stored", "include_positions", "last_done_reading")):
             view = m.update_task(task_id, body.get("name"), body.get("interval"), body.get("unit"),
                                  body.get("also_interval"), body.get("also_unit"), body.get("point_id"),
                                  body.get("instructions"), body.get("checklist"),
@@ -773,7 +785,8 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
                                  if "failure_mode_id" in body else None,
                                  body.get("source"), body.get("reference"),
                                  body["outcome"] if "outcome" in body else ..., body.get("trade"),
-                                 body.get("while_stored"), body.get("include_positions"))
+                                 body.get("while_stored"), body.get("include_positions"),
+                                 body.get("last_done_reading"))
         if view is None:
             raise Invalid("Nothing to change.")
         return view
@@ -782,8 +795,10 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
 
 @router.post("/tasks/{task_id}/move")
 def move_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """To another position (position_id): a position's task, with no work done on it yet."""
-    return _run(m.move_task, task_id, body.get("position_id"))
+    """To another position (position_id): a position's task, with no work done on it yet. By use,
+    it keeps counting what it counted while that fits there; otherwise measurement says what it
+    counts there (keep, switch or calendar), and without it the answer is 409 with needs_choice."""
+    return _run(m.move_task, task_id, body.get("position_id"), body.get("measurement"))
 
 
 @router.post("/tasks/{task_id}/retire")
@@ -913,6 +928,14 @@ def decide_proposal(proposal_id: str, decision: str, body: dict = Body(default={
 @router.get("/tasks/{task_id}/explain")
 def explain_task(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     return _run(m.explain_task, task_id)
+
+
+@router.get("/tasks/{task_id}/measurement")
+def task_measurement(task_id: str, position_id: str | None = None,
+                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What a task by use counts and what it could count instead (in its unit); position_id:
+    a position it would move to (does its measurement fit there, and the choices there)."""
+    return _run(m.task_measurement, task_id, position_id)
 
 
 @router.post("/import")

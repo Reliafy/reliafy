@@ -2326,6 +2326,11 @@ export function cancelWorkOrder(id, reason) {
 export function updateMaintenanceTask(id, body) {
   return patchJson(`/api/maintenance/tasks/${id}`, body);
 }
+// What a task by use counts and what it could count instead ({measurement,
+// choices, last_done_reading, ...}); positionId: at a position it would move to.
+export function getTaskMeasurement(id, positionId = null) {
+  return request(`/api/maintenance/tasks/${id}/measurement${positionId ? `?position_id=${encodeURIComponent(positionId)}` : ""}`);
+}
 export function createMaintenanceTask(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/tasks`, body);
 }
@@ -2409,7 +2414,10 @@ export function unlinkFunctionalFailureCause(id, causeId) {
 // The RCM tab's drag and drop: one batch of arranging operations
 // ([{do, args}]), checked on a copy of the workspace first and all or
 // nothing. dryRun only checks. A refusal throws (status 422) with the
-// answer in err.data ({detail, failed}); the answer's undo puts it back.
+// answer in err.data ({detail, failed}); a move that needs to know what its
+// tasks by use count there throws 409 with err.data.needs_choice ({op_index,
+// position, tasks}): send the batch again with that operation's measurement.
+// The answer's undo puts it back.
 export function applyRcm(operations, { dryRun = false } = {}) {
   return postJson("/api/maintenance/rcm/apply", { operations, ...(dryRun ? { dry_run: true } : {}) });
 }

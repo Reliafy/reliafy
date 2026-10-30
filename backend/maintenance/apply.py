@@ -117,13 +117,14 @@ MOVES = {
         failure_mode_id=a.get("failure_mode_id"), functional_failure_id=r.get("from_functional_failure_id"))},
     "failure_modes.move": lambda a, r: {"do": "failure_modes.move", "args": _without_none(
         failure_mode_id=a.get("failure_mode_id"), position_id=r.get("from_position_id"),
-        functional_failure_id=r.get("from_functional_failure_id"))},
+        functional_failure_id=r.get("from_functional_failure_id"), measurement=r.get("undo_measurement"))},
     "failure_modes.move_function": lambda a, r: {"do": "failure_modes.move_function", "args": _without_none(
-        function_id=a.get("function_id"), position_id=r.get("from_position_id"))},
+        function_id=a.get("function_id"), position_id=r.get("from_position_id"),
+        measurement=r.get("undo_measurement"))},
     "failure_modes.move_functional_failure": lambda a, r: {
         "do": "failure_modes.move_functional_failure", "args": _without_none(
             functional_failure_id=a.get("functional_failure_id"), function_id=r.get("from_function_id"),
-            standard_id=r.get("from_standard_id"))},
+            standard_id=r.get("from_standard_id"), measurement=r.get("undo_measurement"))},
     "failure_modes.update_functional_failure": lambda a, r: {
         "do": "failure_modes.update_functional_failure", "args": {
             "functional_failure_id": a.get("functional_failure_id"),
@@ -137,7 +138,7 @@ MOVES = {
         "standard_id": a.get("standard_id"), "function_id": r.get("from_function_id"),
         "ids": r.get("unlinked_functional_failure_ids") or []}},
     "tasks.move": lambda a, r: {"do": "tasks.move", "args": _without_none(
-        task_id=a.get("task_id"), position_id=r.get("from_position_id"))},
+        task_id=a.get("task_id"), position_id=r.get("from_position_id"), measurement=r.get("undo_measurement"))},
 }
 
 #: The arranging actions the app's RCM tab sends as one batch per drop (``POST
@@ -146,17 +147,17 @@ MOVES = {
 #: here deletes, so no confirm is needed.
 ARRANGE = {
     "failure_modes.assign": ("assign_failure_mode", "failure_mode_id functional_failure_id"),
-    "failure_modes.move": ("move_failure_mode", "failure_mode_id position_id functional_failure_id"),
-    "failure_modes.move_function": ("move_function", "function_id position_id"),
+    "failure_modes.move": ("move_failure_mode", "failure_mode_id position_id functional_failure_id measurement"),
+    "failure_modes.move_function": ("move_function", "function_id position_id measurement"),
     "failure_modes.move_functional_failure": ("move_functional_failure",
-                                              "functional_failure_id function_id standard_id"),
+                                              "functional_failure_id function_id standard_id measurement"),
     "failure_modes.update_functional_failure": ("update_functional_failure", "functional_failure_id text standard_id"),
     "failure_modes.reorder": ("reorder_rcm", "parent_id ids"),
     "failure_modes.reorder_standards": ("reorder_standards", "function_id standard_ids"),
     "failure_modes.move_standard": ("move_standard", "standard_id function_id ids"),
     "tasks.link": ("link_task", "task_id failure_mode_id"),
     "tasks.unlink": ("unlink_task", "task_id failure_mode_id"),
-    "tasks.move": ("move_task", "task_id position_id"),
+    "tasks.move": ("move_task", "task_id position_id measurement"),
 }
 
 _UPDATE_WORDS = ("update", "set_", "assign", "decide", "move", "link", "correct", "check", "status", "place",
@@ -448,6 +449,11 @@ def run_pass(ops: list[dict], call, m, on_error: str, dry: bool) -> dict:
                 continue
             except Exception as err:  # noqa: BLE001 - a refusal, said by the action itself
                 entry.update(status="failed", error=f"{at}: {_message(err)}")
+                # A move that needs a choice (what its tasks count there): what to ask, so the
+                # caller can send the same batch again with the operation's measurement filled in.
+                choice = getattr(err, "choice", None) or getattr(getattr(err, "__cause__", None), "choice", None)
+                if choice:
+                    entry["needs_choice"] = choice
                 results.append(entry)
                 failed = failed or entry
                 continue
@@ -498,7 +504,7 @@ def summarise(ops: list[dict], passed: dict, dry: bool, events: int) -> dict:
         "dry_run": dry, "ok": failed is None,
         "applied": sum(1 for r in results if r["status"] == "ok"),
         "would_apply": sum(1 for r in results if r["status"] == "would"),
-        "failed": {k: failed[k] for k in ("index", "do", "error")} if failed else None,
+        "failed": {k: failed[k] for k in ("index", "do", "error", "needs_choice") if k in failed} if failed else None,
         "skipped": sum(1 for r in results if r["status"] == "skipped"),
         "counts": counts, "events": events, "results": shown,
         # The reverse of what ran, newest first: send it back through maintenance_apply to undo.

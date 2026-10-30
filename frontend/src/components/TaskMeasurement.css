@@ -1,0 +1,32 @@
+/* What a task by use counts: the Measurement field in a task's dialogs and the
+   question a move asks (TaskMeasurement.jsx). Fits 400 px: options wrap, the
+   selects take the width they're given, touch targets are at least 32 px. */
+.tm-field, .tm-task, .tm-reading { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 10px; margin: 0; min-width: 0; }
+.tm-field legend, .tm-task legend, .tm-reading legend { padding: 0 4px; font-size: var(--fs-13); font-weight: 600; }
+.tm-reading { border-style: dashed; margin-top: 8px; }
+.tm-reading legend { font-weight: 500; }
+.tm-counts, .tm-now { margin: 2px 0 4px; overflow-wrap: anywhere; }
+.tm-help { color: var(--muted); font-size: var(--fs-13); margin: 2px 0; overflow-wrap: anywhere; }
+.tm-err { color: var(--danger); }
+.tm-change { margin-top: 4px; min-height: 32px; }
+.tm-edit { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.tm-edit > .link { align-self: flex-start; min-height: 32px; }
+.tm-label { display: flex; flex-direction: column; gap: 4px; }
+.tm-label > span { font-size: var(--fs-13); font-weight: 500; }
+.tm-field select, .tm-task select { max-width: 100%; min-height: 32px; }
+.tm-opt { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-height: 32px; cursor: pointer; }
+.tm-opt input[type="radio"] { width: 18px; height: 18px; margin: 0; flex: none; }
+.tm-opt > span { flex: 1 1 12rem; min-width: 0; }
+.tm-enter > span:first-of-type { flex: 0 0 auto; }
+.tm-sub { margin: 2px 0 6px 26px; }
+.tm-num { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.tm-num input[type="number"] { width: 7rem; min-height: 32px; }
+.tm-move { display: flex; flex-direction: column; gap: 12px; }
+.tm-opt input:focus-visible, .tm-field select:focus-visible, .tm-task select:focus-visible,
+.tm-num input:focus-visible, .tm-change:focus-visible, .tm-edit > .link:focus-visible {
+  outline: 2px solid var(--acc); outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  .tm-sub { margin-left: 0; }
+  .tm-field select, .tm-task select { width: 100%; }
+}

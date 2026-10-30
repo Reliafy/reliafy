@@ -5,6 +5,7 @@ import { saveErrorText } from "../confirm.js";
 import { INTERVAL_UNITS, startUnit } from "../decisionCheck.js";
 import { OUTCOME_LABEL, intervalText, tasksOf } from "../rcmWorksheet.js";
 import { secondTaskHint } from "../explorerRcm.js";
+import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 
 // A failure mode's tasks, in its dialog (RcmItemModal): the decision's own
 // task first, then any more (a combination: an inspection that catches the
@@ -127,7 +128,8 @@ export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
 }
 
 // Adding a task, or changing one: its name, interval and unit, what kind of
-// task it is, its instructions. Saved once (the button says so until the
+// task it is, its instructions; a task by use being changed, its measurement
+// (what it counts, with the last-done reading on a new one). Saved once (the button says so until the
 // server answers); a refusal shows here with everything as typed.
 function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
   const d = r.ref.decision;
@@ -136,16 +138,17 @@ function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
   const [unit, setUnit] = useState(task?.unit || startUnit(d || {}));
   const [outcome, setOutcome] = useState(task?.outcome || (d && SCHEDULED.includes(d.outcome) ? d.outcome : ""));
   const [instructions, setInstructions] = useState(task?.instructions || "");
+  const [meas, setMeas] = useState({ body: null, error: null });
   const nameBox = useRef(null);
   useEffect(() => { nameBox.current?.focus(); }, []);
   const n = Number(interval);
-  const can = !!name.trim() && interval.trim() !== "" && Number.isFinite(n) && n > 0 && !busy;
+  const can = !!name.trim() && interval.trim() !== "" && Number.isFinite(n) && n > 0 && !busy && !meas.error;
   const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
   return (
     <form className="rim-tform" onSubmit={(e) => {
       e.preventDefault();
       if (!can) return;
-      onSubmit({ name: name.trim(), interval: n, unit, outcome: outcome || null, instructions: instructions.trim() });
+      onSubmit({ name: name.trim(), interval: n, unit, outcome: outcome || null, instructions: instructions.trim(), ...(meas.body || {}) });
     }}>
       <h4>{task ? "Change the task" : "Another task for this failure mode"}</h4>
       {task?.shared_with ? (
@@ -176,6 +179,10 @@ function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
           </select>
         </label>
       </div>
+      {task?.id && (
+        <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
+      )}
+      {meas.error && <p className="rw-fhelp">{meas.error}</p>}
       <label className="rw-field">
         <span className="rw-flabel">Instructions (optional)</span>
         <textarea rows={2} value={instructions} readOnly={busy} onChange={(e) => setInstructions(e.target.value)} />

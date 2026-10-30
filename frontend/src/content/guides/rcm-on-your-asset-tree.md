@@ -181,6 +181,12 @@ five chemistry failure modes. Both are in the failure mode's dialog
 - Each task shows how many other failure modes share it. A shared task keeps
   one interval for all of them: change it on the task (**Edit…** in the list),
   not in the decision dialog, which shows it read-only.
+- A task by use (hours, cycles, km) shows its **Measurement** under **Edit…**:
+  what it counts, the latest reading and the reading when it was last done.
+  **Change the measurement…** picks another in the same unit, on the position,
+  above or below it, or on the item fitted there, and asks for the last-done
+  reading on the new one (or works it out from the date, marked as an
+  estimate).
 - **Remove** takes a task off the failure mode: a task that serves only this
   mode is retired; one that serves others too is unlinked and stays.
 
@@ -344,6 +350,14 @@ outlined (inside). If it can't go there, the pointer changes to a no-entry sign
 and the label says why before you let go: for example, the other position
 already has a failure mode with the same name, a task has an open work order,
 or failures are recorded against a mode. Press **Esc** to cancel a drag.
+
+A task by use keeps counting the same measurement when it moves, as long as
+that measurement is on the new position, a position above or below it, or the
+item fitted there. When it isn't (a task counting Truck 12's engine hours,
+dropped on Truck 14), the drop asks what it should count there: a measurement
+on the new position in the same unit (with its reading when the task was last
+done, typed in or worked out from the date), the old one anyway, or calendar
+time instead.
 
 Each drop is done in one go, or not at all: if one failure mode under a
 standard can't move, nothing does. A note at the bottom of the page

@@ -102,7 +102,9 @@ preserving a stored spare (rotate a stored motor's shaft monthly; while_stored r
   - location_id: a place. An inspection round or walkdown, Ex inspections, a building's statutory checks. \
 Calendar units only; include_positions lists the positions there as checklist lines.
   interval + unit: days, weeks, months, years, or a unit of use (hours, cycles, km) counted by a counter \
-(point_id picks one); also_interval + also_unit for whichever comes first. outcome: fixed_interval, \
+(point_id picks the measurement: on the position, above or below it, or on the fitted item; changing it \
+later takes last_done_reading on the new one, or works it out from the date); also_interval + also_unit for \
+whichever comes first. outcome: fixed_interval, \
 failure_finding (a hidden function), on_condition, or none for routine work. source (oem, statutory, manual, \
 other) with reference; trade (who may do it); last_done.
 - RCM on the position itself (the asset tree is its spine): maintenance_failure_modes add_function (what the \
@@ -143,8 +145,15 @@ function, on the same position or another, with its modes and their tasks; the s
 the old function, standard_id names one of the new function's), assign (a mode under another of its position's \
 functional failures, or none) or move (one mode to another position with its decision and tasks; \
 functional_failure_id: one there), and maintenance_tasks move (a position's task). Ids, decisions and dates \
-stay. Anything with history stays put (failures or findings recorded against a mode, work done on a task, a \
-task's use counted from the old position's counter): the refusal says what to do instead. A moved thing goes \
+stay. Anything with history stays put (failures or findings recorded against a mode, work done on a task): \
+the refusal says what to do instead. A task by use keeps counting the same measurement (and its last-done \
+reading) when that is on the new position, a position above or below it, or the item fitted to one of those. \
+When it isn't (Truck 12's engine hours, moving to Truck 14), the move answers needs a choice, listing each \
+task with what it counts and the measurements there (maintenance_get kind task_measurement with position_id \
+reads the same): ask the user, then send the move again with measurement ({task_id: choice}, or one choice \
+for all): {choice: keep} counts the old one anyway; {choice: switch, point_id, last_done_reading} counts one \
+there in the same unit (last_done_reading left out: worked out from the last-done date and marked an \
+estimate); {choice: calendar, interval, unit} goes by the calendar instead. A moved thing goes \
 last among its new siblings; reorder (parent_id: the position, function or functional failure; ids: its \
 children in the order wanted) and reorder_standards place things; move_standard takes a standard to \
 another function (alone: the failures breaching it stay, under no standard). To take its failures with it (what \

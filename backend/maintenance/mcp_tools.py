@@ -55,6 +55,13 @@ HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_workspace
                "maintenance_apply")
 
 
+# A move's answer to "what do its tasks by use count there?" (Maintenance._measurement_moves).
+Measurement = Annotated[dict[str, Any] | str | None, Field(description=(
+    "Moves: what tasks by use count at the new position when theirs doesn't fit: {task_id: choice} or one "
+    "choice for all: {choice: keep}, {choice: switch, point_id, last_done_reading?} or {choice: calendar, "
+    "interval, unit}."))]
+
+
 # ---- actions: what each takes -------------------------------------------------------
 #
 # action: (required arguments, optional arguments, what it does). "Required"
@@ -112,6 +119,8 @@ GET_KINDS: Table = {
         with value, note and source (own or where it's inherited from), and those excluded."""),
     "task": ("id", "", """Why a task is what it is: where it came from (RCM), every change, and the proposals
         behind them."""),
+    "task_measurement": ("id", "position_id", "What a task by use counts and could count (position_id: if "
+                         "moved there)."),
     "class_life_data": ("id", "", """id = a position class's name. Every fitment at every position of the
         class, pooled: x = days in service, c = 0 failed or 1 censored; rough dates add xl / xr (a failure is
         then c = 2, interval censored)."""),
@@ -291,11 +300,11 @@ FAILURE_MODES: Table = {
     "link_cause": ("functional_failure_id cause_id", "", "It results from cause_id, a functional failure on a "
                    "position inside its own; returns it with its causes."),
     "unlink_cause": ("functional_failure_id cause_id", "", "Take that cause off it."),
-    "move": ("failure_mode_id position_id", "functional_failure_id", "To another position, with its decision and "
-             "tasks; functional_failure_id: one there (or none)."),
-    "move_function": ("function_id position_id", "", "To another position, with its functional failures, modes "
-                      "and tasks."),
-    "move_functional_failure": ("functional_failure_id function_id", "standard_id", "Under another function "
+    "move": ("failure_mode_id position_id", "functional_failure_id measurement", "To another position, with its "
+             "decision and tasks; functional_failure_id: one there (or none)."),
+    "move_function": ("function_id position_id", "measurement", "To another position, with its functional "
+                      "failures, modes and tasks."),
+    "move_functional_failure": ("functional_failure_id function_id", "standard_id measurement", "Under another function "
                                 "(same position or another), with its modes and tasks; standard_id: one it "
                                 "breaches there."),
     "reorder": ("parent_id ids", "", "parent_id's children in that order: a position's functions, a function's "
@@ -316,16 +325,17 @@ TASKS: Table = {
         failure_mode_id (or failure_mode_ids, several): modes it prevents, on the position or inside it.
         last_done if known. trade: who may do it. while_stored (item): run or pause. include_positions
         (location): list the positions there. maintenance_guide topic plan has examples."""),
-    "update": ("task_id", "name interval unit also_interval also_unit point_id instructions checklist "
-               "failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade while_stored "
-               "include_positions", """Rename it or change its interval, second limit (also_interval 0 removes
-        it), counter, instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
+    "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
+               "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
+               "while_stored include_positions", """Rename it or change its interval, second limit (also_interval 0
+        removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions. Its subject can't change: move it, or retire it and create another."""),
     "link": ("task_id failure_mode_id", "", "The task also prevents that mode (on its position or one inside it); "
              "its other links stay."),
     "unlink": ("task_id failure_mode_id", "", "Take that one mode off it."),
-    "move": ("task_id position_id", "", "A position's task to another position."),
+    "move": ("task_id position_id", "measurement", "A position's task to another position (by use: guide topic "
+             "plan)."),
     "retire": ("task_id", "reason", "Stop scheduling it (it stays in the history)."),
     "restore": ("task_id", "", "Put a retired task back on the schedule as it was."),
     "set_last_done": ("task_id on", "", """When it was last done before it was tracked here, so its next due
@@ -566,6 +576,22 @@ WORKSPACE: Table = {
 
 
 # Each tool that does several things: the argument choosing what, and its table.
+def _choice_words(choice: dict) -> str:
+    """A move's needs-a-choice in words: each task, what it counts now and the
+    measurements it could count at the new position."""
+    out = []
+    for t in choice.get("tasks") or []:
+        now = t.get("measurement")
+        counts = "nothing yet"
+        if now:
+            counts = now["name"] + " on " + ((now.get("on") or {}).get("name") or "?")
+        there = ", ".join(c["name"] + " on " + ((c.get("on") or {}).get("name") or "?") + " (" + c["id"] + ")"
+                          for c in t.get("choices") or [])
+        out.append(f"Task {t['name']} ({t['task_id']}, by {t.get('unit')}) counts {counts}; there: "
+                   + (there or "no counter in " + str(t.get("unit"))) + ".")
+    return " ".join(out)
+
+
 TABLES: dict[str, tuple[str, Table]] = {
     "maintenance_get": ("kind", GET_KINDS), "maintenance_list": ("kind", LIST_KINDS),
     "maintenance_positions": ("action", POSITIONS), "maintenance_fitments": ("action", FITMENTS),
@@ -595,7 +621,7 @@ def register() -> None:
     from backend.maintenance import conditions as register_io
     from backend.maintenance import graph_cypher
     from backend.maintenance.access import allowed, graph_query_allowed
-    from backend.maintenance.service import Invalid, Maintenance, NotFound, summary
+    from backend.maintenance.service import Invalid, Maintenance, NeedsChoice, NotFound, summary
     from backend.mcp_server import _READ, _WRITE, _caller, _db, _reader, _tool, mcp
     from backend.routers.maintenance import (document_link, get_store, ingest_document, link_payload, photo_links,
                                              remove_document, remove_photo, served_photo)
@@ -619,6 +645,11 @@ def register() -> None:
             return fn(*args, **kwargs)
         except NotFound:
             raise ToolError("Not found in your maintenance workspace.") from None
+        except NeedsChoice as err:
+            # The choices in words, so an agent can ask the user and send the move again.
+            failed = ToolError(f"{err} {_choice_words(err.choice)}")
+            failed.choice = err.choice
+            raise failed from None
         except Invalid as err:
             raise ToolError(str(err)) from None
 
@@ -753,7 +784,9 @@ def register() -> None:
                             "A lead time for every spare (default: each part's own, else 30)."))] = None,
                         review_days: Annotated[float | None, Field(description=(
                             "How often stock is checked (default 0)."))] = None,
-                        scope: Literal["below", "this"] | None = None) -> dict[str, Any]:
+                        scope: Literal["below", "this"] | None = None,
+                        position_id: Annotated[str | None, Field(description=(
+                            "task_measurement: a position the task would move to."))] = None) -> dict[str, Any]:
         """One maintenance record, or one answer about a record, by kind and id. Ids come from
         maintenance_overview, maintenance_list and the records themselves."""
         m = m_for(ctx)
@@ -781,6 +814,8 @@ def register() -> None:
             return run(m.match_manufacturer, text)
         if kind == "document":
             return run(document_link, base_url(ctx), m, rid)
+        if kind == "task_measurement":
+            return run(m.task_measurement, rid, position_id)
         read = {"position": m.position, "item": m.item, "work_order": m.work_order, "location": m.location,
                 "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
@@ -1076,7 +1111,8 @@ def register() -> None:
                                   when: str | None = None, source: str | None = None,
                                   standards: list[dict[str, Any]] | None = None,
                                   dry_run: bool | None = None, parent_id: str | None = None,
-                                  ids: list[str] | None = None) -> dict[str, Any]:
+                                  ids: list[str] | None = None,
+                                  measurement: Measurement = None) -> dict[str, Any]:
         """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
         each fails (functional failures) and the modes causing each, with each mode's decision. Modes are
         added here (or from a worksheet: uploads import_excel), or typed in at a failure (ad hoc). Failures
@@ -1147,11 +1183,12 @@ def register() -> None:
         if action == "unlink_cause":
             return run(m.unlink_cause, functional_failure_id, cause_id)
         if action == "move":
-            return run(m.move_failure_mode, failure_mode_id, position_id, functional_failure_id)
+            return run(m.move_failure_mode, failure_mode_id, position_id, functional_failure_id, measurement)
         if action == "move_function":
-            return run(m.move_function, function_id, position_id)
+            return run(m.move_function, function_id, position_id, measurement)
         if action == "move_functional_failure":
-            return run(m.move_functional_failure, functional_failure_id, function_id, none_is_null(standard_id))
+            return run(m.move_functional_failure, functional_failure_id, function_id, none_is_null(standard_id),
+                       measurement)
         if action == "reorder":
             return run(m.reorder_rcm, parent_id, ids)
         return run(m.merge_failure_mode, failure_mode_id, into_failure_mode_id)
@@ -1173,7 +1210,8 @@ def register() -> None:
                           trade: str | None = None, while_stored: Literal["run", "pause"] | None = None,
                           include_positions: bool | None = None,
                           on: Annotated[str | None, Field(description="set_last_done: a date like 2026-10-13.")] = None,
-                          reason: str | None = None) -> dict[str, Any]:
+                          reason: str | None = None, measurement: Measurement = None,
+                          last_done_reading: float | None = None) -> dict[str, Any]:
         """Scheduled tasks: they fall due and raise work orders (maintenance_work_orders generate). A task
         is on a position (the job; it counts again from each new item fitted), an item (follows the serial
         number, into a store too) or a location (a round). A task from an RCM decision comes with
@@ -1192,13 +1230,13 @@ def register() -> None:
             return run(m.update_task, task_id, name, interval, unit, also_interval, also_unit, point_id,
                        instructions, checklist, mode, source, reference,
                        None if clear_outcome else outcome if outcome is not None else ..., trade, while_stored,
-                       include_positions)
+                       include_positions, last_done_reading)
         if action == "link":
             return run(m.link_task, task_id, failure_mode_id)
         if action == "unlink":
             return run(m.unlink_task, task_id, failure_mode_id)
         if action == "move":
-            return run(m.move_task, task_id, position_id)
+            return run(m.move_task, task_id, position_id, measurement)
         if action == "retire":
             return run(lambda: (m.retire_task(task_id, reason or ""), {"retired": task_id})[1])
         if action == "restore":

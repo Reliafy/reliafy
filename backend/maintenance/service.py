@@ -88,6 +88,18 @@ class Invalid(ValueError):
     """The request can't be done as asked (HTTP 422)."""
 
 
+class NeedsChoice(Invalid):
+    """A move can go ahead only once someone says what each of its tasks by use
+    should count at the new position (HTTP 409): ``choice`` lists those tasks,
+    each with what it counts now and the measurements it could count there."""
+
+    status = 409
+
+    def __init__(self, text: str, choice: dict):
+        super().__init__(text)
+        self.choice = choice
+
+
 class LimitReached(Invalid):
     """An organisation has reached one of its limits (HTTP 422)."""
 
@@ -1126,6 +1138,18 @@ def _task_on(s: GraphStore, org: str, task_id: str, position_id: str) -> None:
     s.put_edge(org, "ON", task_id, position_id)
 
 
+def _task_changes(s: GraphStore, org: str, p: dict) -> None:
+    """What a move changed on its tasks by use (since 31 Oct 2026; older events
+    have none): task_changes {task_id: fields}, fields among point_id (the
+    measurement it counts, pinned so it counts the same one as before the move,
+    or the one chosen), last_done_reading (on that measurement, and
+    last_done_reading_estimated when worked out from the date), and unit /
+    interval / also_unit / also_interval (switched to the calendar)."""
+    for task_id, changes in sorted((p.get("task_changes") or {}).items()):
+        if s.node(org, task_id) is not None:
+            s.patch_node(org, task_id, dict(changes))
+
+
 def _function_moved(s: GraphStore, org: str, p: dict) -> None:
     """A function moved with its functional failures, the failure modes under
     them and those modes' tasks. A deleted or merged mode still under one of its
@@ -1142,6 +1166,7 @@ def _function_moved(s: GraphStore, org: str, p: dict) -> None:
                 s.delete_edge(org, "CAUSED_BY", ff["id"], mode["id"])
     for task_id in p.get("task_ids") or []:
         _task_on(s, org, task_id, p["position_id"])
+    _task_changes(s, org, p)
 
 
 def _failure_mode_moved(s: GraphStore, org: str, p: dict) -> None:
@@ -1155,10 +1180,12 @@ def _failure_mode_moved(s: GraphStore, org: str, p: dict) -> None:
         s.patch_node(org, p["id"], {"order": p.get("order", 0)})
     for task_id in p.get("task_ids") or []:
         _task_on(s, org, task_id, p["position_id"])
+    _task_changes(s, org, p)
 
 
 def _task_moved(s: GraphStore, org: str, p: dict) -> None:
     _task_on(s, org, p["id"], p["position_id"])
+    _task_changes(s, org, p)
 
 
 def _functional_failure_moved(s: GraphStore, org: str, p: dict) -> None:
@@ -1187,6 +1214,7 @@ def _functional_failure_moved(s: GraphStore, org: str, p: dict) -> None:
             s.delete_edge(org, "CAUSED_BY", p["id"], mode["id"])
     for task_id in p.get("task_ids") or []:
         _task_on(s, org, task_id, p["position_id"])
+    _task_changes(s, org, p)
 
 
 # A failure mode's RCM analysis, beyond what failure_mode.added carries.
@@ -1510,6 +1538,27 @@ def _rate(readings: list[dict]) -> float | None:
     return (last["value"] - first["value"]) / days if days > 0 else None
 
 
+def _estimate_reading(readings: list[dict], day: str) -> tuple[float | None, bool]:
+    """A counter's reading on ``day`` worked out from its readings, and whether it is
+    an estimate (False only for a reading taken that day): interpolated between the
+    readings either side, else carried forward or back from the recent rate (never
+    below 0), else the one reading there is. (None, True) with no readings."""
+    if not readings:
+        return None, True
+    same = [r for r in readings if r["on"] == day]
+    if same:
+        return same[-1]["value"], False
+    first, last = readings[0], readings[-1]
+    if first["on"] < day < last["on"]:
+        return _reading_at(readings, day), True
+    rate = _rate(readings) or 0.0
+    if day > last["on"]:
+        days = (date.fromisoformat(day) - date.fromisoformat(last["on"])).days
+        return round(last["value"] + max(rate, 0.0) * days, 2), True
+    days = (date.fromisoformat(first["on"]) - date.fromisoformat(day)).days
+    return round(max(0.0, first["value"] - max(rate, 0.0) * days), 2), True
+
+
 def _reread_tasks(s: GraphStore, org: str, point_id: str, day: str) -> None:
     """A manual counter's readings changed on or before ``day`` (one backdated, struck
     out or corrected): each task by use that goes by it and was last done since then
@@ -1638,6 +1687,8 @@ def _renew_task(s: GraphStore, org: str, task: dict, day: str, reading=None) -> 
     if task.get("last_done") and task["last_done"] >= day:
         return
     changes = {"last_done": day}
+    if task.get("last_done_reading_estimated"):
+        changes["last_done_reading_estimated"] = False  # read when it was done, not worked out
     if reading is not None:
         changes["last_done_reading"] = reading
     else:
@@ -3766,15 +3817,308 @@ class Maintenance:
             if not on or (on[0]["id"] != target["id"] and target["id"] not in self._ancestor_ids(on[0]["id"])):
                 raise Invalid(f"{name} prevents the failure mode {fm['text']}, which stays on {here}: move the "
                               "failure mode instead (its tasks go with it), or unlink the task from it first.")
-        point_id = task.get("point_id") or task.get("meter_id")
-        point = point_id and self.s.node(self.org, point_id)
-        if point and any(n["id"] == source["id"] for n in self.s.out(self.org, point_id, "ON")):
-            raise Invalid(f"{name} goes by the counter {point.get('name')} on {here}: pick a counter on {there} "
-                          "(or clear it) first.")
-        if _use_unit(task) and task.get("last_done_reading") is not None:
-            raise Invalid(f"{name} counts use from {here}'s counter since it was last done: moving it would "
-                          f"compare that reading with another counter. Retire it and add a new task on {there} "
-                          "(with when it was last done) instead.")
+        # What a task by use counts is settled by _measurement_moves, not refused here.
+
+    # ---- what a task by use counts: kept through a move, or changed ------------------
+    # A measurement point belongs to the position (or item) it describes: the pool's
+    # free chlorine is the pool's, a truck's engine hours the truck's. A task by use
+    # counts one: the one chosen (point_id), else its subject's counter in its unit.
+    # A task that moves keeps counting what it counted (the implicit one is pinned as
+    # its point_id in the move event, so the meaning never changes silently) while
+    # that measurement fits the new position: on it, on a position above or below it,
+    # or on the item fitted to one of those. When it doesn't (Truck 12 to Truck 14),
+    # the move needs a choice: keep it anyway, switch to a measurement that fits in
+    # the same unit (with the last-done reading on it, given or worked out from the
+    # date), or switch the task to the calendar.
+
+    MEASUREMENT_CHOICES = ("keep", "switch", "calendar")
+    # What a measurement choice may change on a task (a move's undo puts these back).
+    _MEASURED = ("point_id", "last_done_reading", "last_done_reading_estimated", "unit", "interval", "also_unit",
+                 "also_interval")
+    _MAX_BELOW = 2000  # positions searched below one for measurements
+    _MAX_CHOICES = 40
+    _RELATION_ORDER = {"here": 0, "fitted item": 1, "above": 2, "below": 3}
+
+    def _below_ids(self, node_id: str) -> list[str]:
+        """The live positions inside ``node_id``, nearest first (at most _MAX_BELOW)."""
+        out, queue, seen = [], [node_id], {node_id}
+        while queue and len(out) < self._MAX_BELOW:
+            nid = queue.pop(0)
+            for c in sorted(self.s.inn(self.org, nid, "PART_OF"), key=lambda c: (c.get("name") or "").lower()):
+                if c["label"] == "Position" and c["id"] not in seen and not c.get("retired"):
+                    seen.add(c["id"])
+                    out.append(c["id"])
+                    queue.append(c["id"])
+        return out
+
+    def _measurement_zone(self, node_id: str) -> dict[str, str]:
+        """Where a task on ``node_id`` may count use from: {node id: here, above or below}."""
+        zone = {nid: "below" for nid in self._below_ids(node_id)}
+        zone.update({nid: "above" for nid in self._ancestor_ids(node_id)})
+        zone[node_id] = "here"
+        return zone
+
+    def _point_fit(self, point: dict, node_id: str, zone: dict | None = None) -> str | None:
+        """How a measurement point stands to ``node_id``: here, above, below or fitted
+        item (on the item fitted to one of those); None when it doesn't fit there."""
+        on = _subject(self.s, self.org, point)
+        if on is None:
+            return None
+        zone = self._measurement_zone(node_id) if zone is None else zone
+        if on["id"] in zone:
+            return zone[on["id"]]
+        if on["label"] == "Item":
+            fitted = self._current_fitment_of_item(on["id"])
+            at = fitted and self.s.out(self.org, fitted["id"], "AT")
+            if at and at[0]["id"] in zone:
+                return "fitted item"
+        return None
+
+    def _point_brief(self, point: dict, relation: str | None = None, readings: list | None = None) -> dict:
+        """A measurement point as the measurement field shows it: its name, unit, what
+        it's on, its latest reading and how it stands to the task's place."""
+        if readings is None:
+            readings = _readings(self.s, self.org, point, self.tz)
+        last = readings[-1] if readings else None
+        return {"id": point["id"], "name": point.get("name", ""), "unit": point.get("unit"),
+                "source": point.get("source") or "manual", "retired": bool(point.get("retired")),
+                "on": self._subject_brief(_subject(self.s, self.org, point)), "relation": relation,
+                "reading": last and last["value"], "read_on": last and last["on"]}
+
+    def _measurement_choices(self, node: dict, unit: str, last_done=None) -> list[dict]:
+        """The counters in ``unit`` a task on ``node`` may count: an item's own, or for a
+        position its own, those above and below it and those on the items fitted
+        there (nearest first). With ``last_done``, each says what it read then (or
+        worked out from the date: estimated)."""
+        if node["label"] == "Item":
+            zone, places = {node["id"]: "here"}, [node]
+        else:
+            zone = self._measurement_zone(node["id"])
+            places = [self.s.node(self.org, nid) for nid in zone]
+        found = []
+        for rank, place in enumerate(p for p in places if p):
+            holders = [(place, zone[place["id"]])]
+            if place["label"] == "Position":
+                fitted = self.current_fitment(place["id"])
+                item = fitted and self.s.inn(self.org, fitted["id"], "IN")
+                if item:
+                    holders.append((item[0], "fitted item"))
+            for holder, relation in holders:
+                for mp in self.s.inn(self.org, holder["id"], "ON"):
+                    if mp["label"] == "MeasurementPoint" and mp.get("kind") == "counter" and not mp.get("retired") \
+                            and _norm_unit(mp.get("unit")) == _norm_unit(unit):
+                        found.append((self._RELATION_ORDER[relation], rank, mp["name"].lower(), mp, relation))
+        out = []
+        for *_, mp, relation in sorted(found, key=lambda x: x[:3])[:self._MAX_CHOICES]:
+            readings = _readings(self.s, self.org, mp, self.tz)
+            row = self._point_brief(mp, relation, readings)
+            if last_done:
+                value, estimated = _estimate_reading(readings, last_done)
+                row["at_last_done"] = {"value": value, "estimated": estimated}
+            out.append(row)
+        return out
+
+    def _measurement_view(self, task: dict, at: dict | None = None) -> dict:
+        """What a task counts and what it could count instead: at its own subject, or
+        at ``at`` (a position it would move to)."""
+        unit = _use_unit(task)
+        subject = _subject(self.s, self.org, task)
+        place = at or subject
+        out = {"task_id": task["id"], "name": task["name"], "by_use": bool(unit), "unit": unit,
+               "interval": task.get("interval") if unit == task.get("unit") else task.get("also_interval"),
+               "subject": self._subject_brief(subject), "last_done": task.get("last_done"),
+               "last_done_reading": task.get("last_done_reading"),
+               "last_done_reading_estimated": bool(task.get("last_done_reading_estimated")),
+               "chosen": bool(task.get("point_id") or task.get("meter_id")),
+               "measurement": None, "fits": True, "choices": [], "suggested_point_id": None}
+        if at is not None:
+            out["position"] = self._subject_brief(at)
+        if not unit or place is None or place["label"] == "Location":
+            return out
+        point = _task_point(self.s, self.org, task)
+        if point is not None:
+            relation = self._point_fit(point, place["id"]) if place["label"] == "Position" else \
+                ("here" if (_subject(self.s, self.org, point) or {}).get("id") == place["id"] else None)
+            out["measurement"] = self._point_brief(point, relation)
+            out["fits"] = relation is not None and not point.get("retired")
+        elif subject and subject["label"] == "Item":
+            out["measurement"] = {"id": None, "name": f"{unit} while fitted", "unit": unit, "derived": True,
+                                  "on": self._subject_brief(subject), "relation": "here"}
+        out["choices"] = self._measurement_choices(place, unit, task.get("last_done"))
+        own = _counter_on(self.s, self.org, place["id"], unit)
+        out["suggested_point_id"] = own["id"] if own else (out["choices"][0]["id"] if out["choices"] else None)
+        return out
+
+    def task_measurement(self, task_id: str, position_id=None) -> dict:
+        """What a task by use counts (the measurement, what it's on, its latest
+        reading, the last-done reading and whether that was worked out from the date),
+        and the measurements in its unit it could count instead. position_id: a
+        position the task would move to: whether its measurement fits there, and the
+        choices there."""
+        task = self._get(task_id, "Task")
+        at = None
+        if position_id:
+            at = self.s.node(self.org, str(position_id), "Position")
+            if at is None:
+                raise Invalid("There's no position with that id in this workspace: pick one from the asset tree.")
+        return self._measurement_view(task, at)
+
+    def _reading_then(self, task: dict, day: str) -> tuple[float | None, bool]:
+        """The reading a task by use (as ``task`` says: its point_id and unit) would
+        have had on ``day``, worked out from the date, and whether it's an estimate."""
+        point = _task_point(self.s, self.org, task)
+        if point is not None:
+            return _estimate_reading(_readings(self.s, self.org, point, self.tz), day)
+        subject = _subject(self.s, self.org, task) or {}
+        if subject.get("label") == "Item" and _use_unit(task):
+            used = self.item_usage(subject["id"], _use_unit(task))
+            return (used and _reading_at(used["rows"], day)), True
+        return None, True
+
+    def _last_done_on(self, task: dict, changes: dict, given=None) -> dict:
+        """The last-done reading once ``changes`` (a new point or unit) apply: as
+        given, else worked out from the last-done date and marked an estimate."""
+        out = {}
+        if not task.get("last_done"):
+            if task.get("last_done_reading") is not None:
+                out["last_done_reading"] = None
+            return out
+        if given not in (None, ""):
+            out["last_done_reading"] = _number(given, "last-done reading", -1e12, 1e12)
+            estimated = False
+        else:
+            out["last_done_reading"], estimated = self._reading_then({**task, **changes}, task["last_done"])
+        if estimated or task.get("last_done_reading_estimated"):
+            out["last_done_reading_estimated"] = estimated
+        return out
+
+    def _check_point_for(self, point_id, task: dict, place: dict, unit: str) -> dict:
+        """A counter a task by use may count at ``place``: in its unit, on the place,
+        above or below it, or on the item fitted there (an item's task: its own)."""
+        point = self._counter(point_id)
+        if _norm_unit(point.get("unit")) != _norm_unit(unit):
+            raise Invalid(f"{point['name']} counts {point.get('unit')}, but {task['name']} goes by {unit}: pick a "
+                          f"measurement in {unit}, or switch the task to calendar time.")
+        if place["label"] == "Item":
+            if (_subject(self.s, self.org, point) or {}).get("id") != place["id"]:
+                raise Invalid(f"An item's task counts the item's own counter: {point['name']} isn't on "
+                              f"{place['name']}. Leave it out to count the use it has had where it was fitted.")
+        elif self._point_fit(point, place["id"]) is None:
+            raise Invalid(f"{point['name']} isn't on {place['name']}, a position above or below it, or the item "
+                          "fitted to one of those: pick one that is.")
+        return point
+
+    def _choose_measurement(self, task: dict, at: dict, choice, current: dict | None) -> dict:
+        """The fields a measurement choice changes on a task by use that will count at
+        ``at``: keep (pin what it counts now), switch (point_id; last_done_reading, or
+        left out to work it out from the date), calendar (interval, unit) or restore
+        (a move's undo: the fields as they were)."""
+        if not isinstance(choice, dict):
+            raise Invalid("Each measurement choice is an object: {choice: keep}, {choice: switch, point_id, "
+                          "last_done_reading?} or {choice: calendar, interval, unit}.")
+        kind = choice.get("choice")
+        unit = _use_unit(task)
+        if kind == "restore":
+            fields = {k: choice[k] for k in self._MEASURED if k in choice}
+            if fields.get("point_id"):
+                self._get(str(fields["point_id"]), "MeasurementPoint")
+            return fields
+        if not unit:
+            return {}
+        if kind == "keep":
+            return {"point_id": current["id"]} if current and task.get("point_id") != current["id"] else {}
+        if kind == "switch":
+            if not choice.get("point_id"):
+                raise Invalid(f"Say which measurement {task['name']} should count (point_id).")
+            point = self._check_point_for(str(choice["point_id"]), task, at, unit)
+            changes = {"point_id": point["id"]}
+            return changes | self._last_done_on(task, changes, choice.get("last_done_reading"))
+        if kind == "calendar":
+            cal = _unit(choice.get("unit"), "months")
+            if not _is_calendar(cal):
+                raise Invalid("Calendar time is days, weeks, months or years.")
+            if choice.get("interval") in (None, ""):
+                raise Invalid(f"Say how often {task['name']} falls due on the calendar (interval, with unit).")
+            every = _interval(choice.get("interval"), cal)
+            changes = {"point_id": None, "last_done_reading": None}
+            if task.get("last_done_reading_estimated"):
+                changes["last_done_reading_estimated"] = False
+            if not _is_calendar(task["unit"]):
+                changes |= {"unit": cal, "interval": every}
+                if task.get("also_unit") and not _is_calendar(task["also_unit"]):
+                    changes |= {"also_unit": None, "also_interval": None}
+            else:
+                changes |= {"also_unit": cal, "also_interval": every}
+            return changes
+        raise Invalid("A measurement choice is keep, switch (point_id; last_done_reading, or leave it out to work "
+                      "it out from the date) or calendar (interval and unit).")
+
+    @staticmethod
+    def _measurement_arg(measurement) -> dict:
+        """measurement as a move takes it: {task_id: choice} or one choice (it then
+        applies to every task whose measurement doesn't fit); 'keep' alone keeps them all."""
+        if measurement in (None, "", {}):
+            return {}
+        if measurement == "keep":
+            return {"*": {"choice": "keep"}}
+        if not isinstance(measurement, dict):
+            raise Invalid("measurement is {task_id: choice}, or one choice for every task that needs one.")
+        if "choice" in measurement:
+            return {"*": measurement}
+        return {str(k): ({"choice": v} if isinstance(v, str) else v) for k, v in measurement.items()}
+
+    def _measurement_moves(self, tasks: list[dict], target: dict, measurement=None) -> tuple[dict, dict]:
+        """What moving ``tasks`` to ``target`` changes on what they count: (changes,
+        undo), each {task_id: fields}. A task by use keeps what it counts (pinned)
+        while that fits the target; otherwise ``measurement`` must say what to do,
+        or NeedsChoice lists each such task with the measurements it could count."""
+        given = self._measurement_arg(measurement)
+        known = {t["id"] for t in tasks}
+        stray = sorted(k for k in given if k != "*" and k not in known)
+        if stray:
+            raise Invalid(f"measurement names a task that isn't moving: {', '.join(stray)}.")
+        zone = self._measurement_zone(target["id"])
+        changes, undo, asks = {}, {}, []
+        for task in tasks:
+            current = _task_point(self.s, self.org, task) if _use_unit(task) else None
+            choice = given.get(task["id"])
+            if choice is None and _use_unit(task):
+                fits = (self._point_fit(current, target["id"], zone) is not None and not current.get("retired")) \
+                    if current else task.get("last_done_reading") is None
+                if fits:
+                    choice = {"choice": "keep"}
+                else:
+                    choice = given.get("*")
+                    if choice is None:
+                        asks.append(task)
+                        continue
+            if choice is None:
+                continue
+            ch = self._choose_measurement(task, target, choice, current)
+            ch = {k: v for k, v in ch.items() if task.get(k) != v}
+            if ch:
+                changes[task["id"]] = ch
+                undo[task["id"]] = {"choice": "restore", **{k: task.get(k) for k in ch}}
+        if asks:
+            views = [self._measurement_view(t, target) for t in asks]
+            first = views[0]
+            m = first["measurement"]
+            what = f"{m['name']} on {m['on']['name']}" if m and m.get("on") else "a measurement"
+            text = (f"{first['name']} counts {what}, which isn't on {target['name']}, above it or below it."
+                    if len(asks) == 1 else
+                    f"{len(asks)} tasks count measurements that aren't on {target['name']}, above it or below it.")
+            text += (" Say what to count there (measurement): keep counting the same one, switch to one there in the "
+                     "same unit (with its reading when it was last done, or work it out from the date), or switch "
+                     "to calendar time.")
+            raise NeedsChoice(text, {"code": "measurement_choice", "position": self._subject_brief(target),
+                                     "tasks": views})
+        return changes, undo
+
+    @staticmethod
+    def _measurement_result(changes: dict, undo: dict) -> dict:
+        """What a move's answer says about its tasks' measurements: measurement_changes
+        {task_id: fields} and, so a batch can undo the move, undo_measurement."""
+        return {"measurement_changes": changes, "undo_measurement": undo} if changes else {}
 
     def _check_mode_move(self, fm: dict, source: dict, target: dict, modes_moving: set) -> list[dict]:
         """Refuse moving a failure mode with history at its position, or one the target
@@ -3820,11 +4164,12 @@ class Maintenance:
                     dropped.append((task, fm))
         return dropped
 
-    def move_function(self, function_id: str, position_id) -> dict:
+    def move_function(self, function_id: str, position_id, measurement=None) -> dict:
         """Move a function to another position, with its functional failures, the
         failure modes under them and those modes' tasks: ids, decisions, effects,
         notes, evidence and task dates stay. The position's other failure modes
-        stay where they are."""
+        stay where they are. measurement: what its tasks by use count there, when
+        what they count now doesn't fit (see _measurement_moves)."""
         fn, source = self._live_function(function_id)
         target = self._move_target(position_id, source["id"])
         modes = [m for ff in self._failures_of(function_id) for m in self._ff_modes(ff["id"])]
@@ -3836,6 +4181,7 @@ class Maintenance:
         if len(modes) + len(tasks) > MAX_COPY_NODES:
             raise Invalid(f"That function has more than {MAX_COPY_NODES} failure modes and tasks to move at "
                           "once: move some of its failure modes first.")
+        counts, undo_counts = self._measurement_moves(list(tasks.values()), target, measurement)
         # Links that would no longer run from a position down into one inside it go.
         above = set(self._ancestor_ids(target["id"]))
         leaving = []
@@ -3856,7 +4202,7 @@ class Maintenance:
             "id": function_id, "position_id": target["id"], "from_position_id": source["id"],
             "order": self._next_order(self.s.out(self.org, target["id"], "PERFORMS")),
             "failure_mode_ids": sorted(moving), "task_ids": sorted(tasks), "on": self.today(),
-        })
+        } | ({"task_changes": counts} if counts else {}))
         notes = [_links_note(len(leaving))] if leaving else []
         if unlinked:
             notes.append(_tasks_unlinked_note(unlinked))
@@ -3864,11 +4210,13 @@ class Maintenance:
                 "function": self._function_view(self._get(function_id, "Function")),
                 "failure_modes_moved": len(moving), "tasks_moved": len(tasks), "links_removed": len(leaving),
                 "tasks_unlinked": sorted({t["id"] for t, _ in unlinked}),
+                **self._measurement_result(counts, undo_counts),
                 **({"note": " ".join(notes)} if notes else {})}
 
-    def move_failure_mode(self, mode_id: str, position_id, functional_failure_id=None) -> dict:
+    def move_failure_mode(self, mode_id: str, position_id, functional_failure_id=None, measurement=None) -> dict:
         """Move a failure mode to another position, with its decision and tasks, under
-        one of that position's functional failures (or under none)."""
+        one of that position's functional failures (or under none). measurement:
+        what its tasks by use count there (see _measurement_moves)."""
         fm, source = self._live_mode(mode_id)
         target = self._move_target(position_id, source["id"])
         ff = None
@@ -3878,6 +4226,7 @@ class Maintenance:
                 raise Invalid(f"That functional failure is on {on['name']}, not {target['name']}: pick one of "
                               f"{target['name']}'s, or leave it out to move the mode unassigned.")
         tasks = self._check_mode_move(fm, source, target, {mode_id})
+        counts, undo_counts = self._measurement_moves(tasks, target, measurement)
         unlinked = self._links_after_move([fm], {t["id"] for t in tasks}, target)
         was = [x["id"] for x in self.s.inn(self.org, mode_id, "CAUSED_BY") if not x.get("removed")]
         for task, _ in unlinked:
@@ -3885,17 +4234,21 @@ class Maintenance:
         self._emit("failure_mode.moved", {
             "id": mode_id, "position_id": target["id"], "from_position_id": source["id"],
             "functional_failure_id": ff and ff["id"], "task_ids": sorted(t["id"] for t in tasks), "on": self.today(),
-        } | ({"order": self._next_order(self._ff_modes(ff["id"]))} if ff else {}))
+        } | ({"order": self._next_order(self._ff_modes(ff["id"]))} if ff else {})
+          | ({"task_changes": counts} if counts else {}))
         return {**self.rcm_mode(mode_id), "position_id": target["id"], "from_position_id": source["id"],
                 # The functional failure it was under (None: none), so a batch can undo the move.
                 "from_functional_failure_id": was[0] if was else None,
                 "tasks_moved": len(tasks), "tasks_unlinked": [t["id"] for t, _ in unlinked],
+                **self._measurement_result(counts, undo_counts),
                 **({"note": _tasks_unlinked_note(unlinked)} if unlinked else {})}
 
-    def move_task(self, task_id: str, position_id) -> dict:
+    def move_task(self, task_id: str, position_id, measurement=None) -> dict:
         """Move a position's task to another position. Its link to a failure mode is
         kept only when that mode is on the new position; otherwise the move is
-        refused (move the mode, which takes its tasks, or unlink the task first)."""
+        refused (move the mode, which takes its tasks, or unlink the task first).
+        By use, it keeps counting what it counted while that fits the new position;
+        otherwise measurement says what it counts there (see _measurement_moves)."""
         task = self._get(task_id, "Task")
         if task.get("retired"):
             raise Invalid("That task has been retired: add a new one on the other position instead.")
@@ -3905,12 +4258,14 @@ class Maintenance:
                           "for a location's, retire it and add a new one.")
         target = self._move_target(position_id, source["id"])
         self._check_task_move(task, source, target, set())
+        counts, undo_counts = self._measurement_moves([task], target, measurement)
         self._emit("task.moved", {"id": task_id, "position_id": target["id"], "from_position_id": source["id"],
-                                  "on": self.today()})
+                                  "on": self.today()} | ({"task_changes": counts} if counts else {}))
         # Where it came from, so a batch can undo the move.
-        return {**self._task_view(self._get(task_id, "Task")), "from_position_id": source["id"]}
+        return {**self._task_view(self._get(task_id, "Task")), "from_position_id": source["id"],
+                **self._measurement_result(counts, undo_counts)}
 
-    def move_functional_failure(self, ff_id: str, function_id, standard_id=None) -> dict:
+    def move_functional_failure(self, ff_id: str, function_id, standard_id=None, measurement=None) -> dict:
         """Move a functional failure under another function, on the same position
         or another, with its failure modes and their tasks: ids, decisions,
         effects, notes, evidence and task dates stay. The standard it breached
@@ -3935,6 +4290,8 @@ class Maintenance:
         tasks: dict[str, dict] = {}
         leaving: list[tuple[str, str]] = []
         unlinked: list[tuple[dict, dict]] = []
+        counts: dict = {}
+        undo_counts: dict = {}
         if target["id"] == source["id"]:
             # Same position: every mode under it (deleted and merged ones too) stays
             # under it, tasks and links are untouched.
@@ -3946,6 +4303,7 @@ class Maintenance:
             if len(modes) + len(tasks) > MAX_COPY_NODES:
                 raise Invalid(f"That functional failure has more than {MAX_COPY_NODES} failure modes and tasks to "
                               "move at once: move some of its failure modes first.")
+            counts, undo_counts = self._measurement_moves(list(tasks.values()), target, measurement)
             above = set(self._ancestor_ids(target["id"]))
             for c in self.s.out(self.org, ff_id, "RESULTS_FROM"):
                 cp = self._ff_position_id(c["id"])
@@ -3966,7 +4324,7 @@ class Maintenance:
             "position_id": target["id"], "from_position_id": source["id"],
             "order": self._next_order(self._failures_of(fn_to["id"])),
             "failure_mode_ids": named, "task_ids": sorted(tasks), "on": self.today(),
-        } | ({"standard_id": standard["id"]} if standard else {}))
+        } | ({"standard_id": standard["id"]} if standard else {}) | ({"task_changes": counts} if counts else {}))
         notes = [_links_note(len(leaving))] if leaving else []
         if unlinked:
             notes.append(_tasks_unlinked_note(unlinked))
@@ -3977,6 +4335,7 @@ class Maintenance:
                 "failure": self._ff_view(self._get(ff_id, "FunctionalFailure")),
                 "failure_modes_moved": len(moving), "tasks_moved": len(tasks), "links_removed": len(leaving),
                 "tasks_unlinked": sorted({t["id"] for t, _ in unlinked}),
+                **self._measurement_result(counts, undo_counts),
                 **({"note": " ".join(notes)} if notes else {})}
 
     def reorder_rcm(self, parent_id, ids) -> dict:
@@ -4430,6 +4789,8 @@ class Maintenance:
             "also_interval": task.get("also_interval"), "also_unit": task.get("also_unit"),
             "instructions": task.get("instructions", ""), "checklist": task.get("checklist") or [],
             "trade": task.get("trade", ""), "last_done": task.get("last_done"), "last_done_reading": task.get("last_done_reading"),
+            # True when the last-done reading was worked out from the date (a measurement changed).
+            "last_done_reading_estimated": bool(task.get("last_done_reading_estimated")),
             "limits": limits, "next_due": nxt, "by_use": not _is_calendar(task["unit"]),
             "overdue": bool(nxt and nxt < self.today()),
             "open_work_order": open_wo and {"id": open_wo["id"], "number": open_wo["number"]},
@@ -5647,6 +6008,8 @@ class Maintenance:
         changes = {"last_done": day}
         if _use_unit(task):
             changes["last_done_reading"] = self._task_reading(task, day)
+            if task.get("last_done_reading_estimated"):
+                changes["last_done_reading_estimated"] = False
         self._emit("task.updated", {"id": task_id, "changes": changes})
         return self._task_view(self._get(task_id, "Task"))
 
@@ -6455,11 +6818,14 @@ class Maintenance:
     def update_task(self, task_id: str, name=None, interval=None, unit=None, also_interval=None,
                     also_unit=None, point_id=None, instructions=None, checklist=None, failure_mode_id=None,
                     source=None, reference=None, outcome=..., trade=None, while_stored=None,
-                    include_positions=None) -> dict:
+                    include_positions=None, last_done_reading=None) -> dict:
         """Change a task. also_interval / also_unit add a second limit, whichever comes
         first (500 hours or 6 months); also_interval 0 removes it. point_id picks the
-        meter a task by use goes by (otherwise its position's, or item's, meter in its
-        unit). failure_mode_id links a position's task to one of the position's failure
+        measurement a task by use counts ('' : its position's, or item's, counter in its
+        unit): for a position's task, one in its unit on the position, above or below
+        it, or on the item fitted to one of those; for an item's, its own. A task done
+        before takes its last-done reading on the new one: last_done_reading, or left
+        out, worked out from the last-done date (marked an estimate). failure_mode_id links a position's task to one of the position's failure
         modes ('' unlinks). trade: who may do it ("licensed electrician"); its work orders
         carry it. while_stored (an item's task): run or pause. include_positions (a
         location's task): list the positions there on its work orders."""
@@ -6485,12 +6851,23 @@ class Maintenance:
         new_unit, new_also = changes.get("unit", task["unit"]), changes.get("also_unit", task.get("also_unit"))
         changes |= self._subject_checks(subject, new_unit, new_also, None, while_stored, include_positions)
         if point_id is not None:
+            use = next((u for u in (new_unit, new_also) if u and not _is_calendar(u)), None)
             if point_id:
-                if subject["label"] == "Position":
+                if subject["label"] == "Position" and use:
+                    self._check_point_for(point_id, task, subject, use)
+                elif subject["label"] == "Position":
                     self._counter(point_id)
                 else:
                     self._task_counter(point_id, subject, (new_unit, new_also))
             changes["point_id"] = point_id or None
+            before = _task_point(self.s, self.org, task) if _use_unit(task) else None
+            after = _task_point(self.s, self.org, {**task, **changes}) if use else None
+            if use and ((before or {}).get("id") != (after or {}).get("id") or last_done_reading not in (None, "")):
+                # Counting another measurement: the last-done reading is on that one now.
+                changes |= self._last_done_on(task, changes, last_done_reading)
+        elif last_done_reading not in (None, ""):
+            raise Invalid("last_done_reading goes with point_id: the reading on that measurement when the task was "
+                          "last done.")
         if source is not None:
             if source not in TASK_SOURCES:
                 raise Invalid(f"The source is one of {', '.join(TASK_SOURCES)}.")
