@@ -9,6 +9,12 @@ on:
 
 # Third-party actions are pinned to commit SHAs (the version tag each was
 # resolved from is in the comment). The jobs only read the repository.
+# A newer push to the same pull request cancels its older, out-of-date run;
+# pushes to a branch and scheduled runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
