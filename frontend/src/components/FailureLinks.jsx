@@ -53,7 +53,7 @@ export function CausedBySection({ r, where, readOnly, links, onSelect }) {
         ))}
       </ul>
       {!readOnly && (
-        <button type="button" className="secondary fl-add" onClick={(e) => { if (e.detail < 2) links.onLink(r, "cause"); }}>Link to a cause…</button>
+        <button type="button" className="secondary sm fl-add" onClick={(e) => { if (e.detail < 2) links.onLink(r, "cause"); }}>Link to a cause…</button>
       )}
     </section>
   );
@@ -83,7 +83,7 @@ export function CausesSection({ r, where, readOnly, links, onSelect }) {
         ))}
       </ul>
       {!readOnly && canUp && (
-        <button type="button" className="secondary fl-add" onClick={(e) => { if (e.detail < 2) links.onLink(r, "effect"); }}>Link to an effect…</button>
+        <button type="button" className="secondary sm fl-add" onClick={(e) => { if (e.detail < 2) links.onLink(r, "effect"); }}>Link to an effect…</button>
       )}
     </section>
   );

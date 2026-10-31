@@ -69,7 +69,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await list.getByRole("combobox", { name: "Comparator" }).selectOption("between");
   await list.getByRole("textbox", { name: "Value" }).fill("200-400");
   await list.getByRole("textbox", { name: "Unit" }).fill("ppm");
-  await list.getByRole("textbox", { name: "Source (optional)" }).fill("E25 manual");
+  await list.getByRole("textbox", { name: "Source optional" }).fill("E25 manual");
   let writes = 0;
   page.on("request", (r) => { if (r.method() === "POST" && r.url().includes(`/functions/${p.fn.id}/standards`)) writes += 1; });
   await list.getByRole("button", { name: "Add performance standard", exact: true }).last().dblclick();

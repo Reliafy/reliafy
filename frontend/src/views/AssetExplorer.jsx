@@ -19,6 +19,7 @@ import { exportFilename, importSummary, positionRcmCsv } from "../rcmImport.js";
 import { saveText } from "../sparesPlan.js";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx";
+import { ShrinkIcon } from "../components/icons.jsx";
 import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
@@ -1251,7 +1252,7 @@ export default function AssetExplorer() {
         <div className="rw-panel-head">
           <div className="rw-panel-kind">Details</div>
           <div className="rw-panel-btns">
-            <button type="button" className="secondary rw-x" onClick={collapseDetails}>Back to table</button>
+            <button type="button" className="ghost sm rw-x" onClick={collapseDetails} aria-label="Back to table" title="Back to table (Esc)"><ShrinkIcon /></button>
           </div>
         </div>
         <p className="rw-inside">Pick a function, performance standard, functional failure or failure mode in the tree to see it here.</p>

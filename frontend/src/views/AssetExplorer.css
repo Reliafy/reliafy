@@ -1076,8 +1076,14 @@ a.rw-cklink:focus-visible {
   }
   .tt-l1 .tp-nm { flex: 0 1 auto; }
   .tt-st { margin-left: auto; flex: none; }
+  /* Room for a whole line of 12 px text under the 36 px first line (its
+     touch targets' height, the text centred higher), so descenders
+     ("analysed yet") aren't cut: it starts 2 px into the first line's box. */
   .tt-l2 {
+    flex: none;
+    margin-top: -2px;
     font-size: var(--fs-12);
+    line-height: 15px;
     color: var(--muted);
     white-space: nowrap;
     overflow: hidden;
