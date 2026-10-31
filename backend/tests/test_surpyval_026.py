@@ -1,5 +1,6 @@
-"""SurPyval 0.25 (with RePyability 0.15): the pins, the renamed names, the
-newly refused data, and the expectations that moved since 0.23.
+"""SurPyval 0.26 (with RePyability 0.16): the pins, the names 0.26 removed or
+deprecated, saved models from 0.25 that must still load, and the
+expectations that moved since 0.23.
 
 Every call into SurPyval goes through its current names, so these run clean
 with SurPyval's own deprecations as errors (the suite does that everywhere:
@@ -8,7 +9,9 @@ still load.
 """
 
 import copy
+import json
 import warnings
+from pathlib import Path
 
 import matplotlib
 
@@ -45,13 +48,98 @@ def strict():
         ctx.__exit__(None, None, None)
 
 
-def test_the_pins_are_surpyval_0_25_and_repyability_0_15():
-    """Reliafy runs SurPyval 0.25, the version RePyability 0.15 targets."""
+def test_the_pins_are_surpyval_0_26_and_repyability_0_16():
+    """Reliafy runs SurPyval 0.26, the version RePyability 0.16 targets."""
+    import importlib.metadata as md
+
     import repyability
 
-    assert sp.__version__ == "0.25"
-    assert repyability.__version__ == "0.15"
-    assert rbd_export.detect_versions() == {"surpyval": "0.25", "repyability": "0.15"}
+    assert sp.__version__ == "0.26" and md.version("surpyval") == "0.26"
+    assert repyability.__version__ == "0.16" and md.version("repyability") == "0.16"
+    assert rbd_export.detect_versions() == {"surpyval": "0.26", "repyability": "0.16"}
+
+
+# ---------------------------------------------------------------------------
+# What 0.26 removed or deprecated
+# ---------------------------------------------------------------------------
+_BACKEND = Path(__file__).resolve().parents[1]
+
+
+def test_the_backend_uses_none_of_the_names_0_26_removed_or_deprecated():
+    """0.26 removes ``RecurrentEventData``, ``EventHistoryData.items`` and
+    ``get_times_to_first_events()``, and deprecates Cox's ``check_ph()``
+    (removal in 0.28) for ``diagnose()``."""
+    banned = ("RecurrentEventData", "get_times_to_first_events", "recurrent_event_data",
+              ".check_ph(", "_rcs_basis", "_rcs_deriv", "_place_knots")
+    hits = []
+    for path in _BACKEND.rglob("*.py"):
+        if "tests" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        hits += [f"{path.relative_to(_BACKEND)}: {name}" for name in banned if name in text]
+    assert hits == []
+    with pytest.raises(AttributeError, match="EventHistoryData"):
+        sp.RecurrentEventData  # noqa: B018
+
+
+def test_the_ph_test_comes_from_diagnose_with_no_deprecation(strict):
+    """The proportional-hazards test is ``diagnose()``'s
+    ``proportional_hazards`` table: the numbers ``check_ph()`` gave, on every
+    transform, without its DeprecationWarning (``strict``)."""
+    from backend import regression_diagnostics as rd
+
+    rng = np.random.default_rng(11)
+    n = 120
+    z = rng.integers(0, 2, n)
+    age = rng.normal(size=n)
+    t = sp.Weibull.random(n, 100, 1.5, random_state=rng) * np.exp(-0.6 * z + 0.3 * age)
+    df = pd.DataFrame({"t": t, "c": (rng.uniform(size=n) < 0.2).astype(int), "z": z, "age": age})
+    cox = sp.CoxPH.fit_from_df(df, x_col="t", c_col="c", Z_cols=["z", "age"])
+    for transform in ("km", "rank", "identity", "log"):
+        got = rd.ph_test(cox, transform=transform)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            want = cox.check_ph(transform=transform)
+        assert got["global"]["p"] == pytest.approx(float(want.loc["GLOBAL", "p"]), rel=1e-12)
+        assert {r["covariate"]: r["statistic"] for r in got["rows"]} == pytest.approx(
+            {k: float(v) for k, v in want["statistic"].drop("GLOBAL").items()}, rel=1e-12)
+    r = fitting.fit("cox_ph", df, {"x": "t", "c": "c"}, ["z", "age"])
+    assert r["diagnostics"]["ph_test"]["available"] is True
+
+
+# ---------------------------------------------------------------------------
+# Models saved under 0.25 load under 0.26 and give the same numbers
+# ---------------------------------------------------------------------------
+# Fitted and saved (``to_dict``) by SurPyval 0.25, with what they gave then.
+_SAVED_025 = json.loads((_BACKEND / "tests" / "fixtures" / "surpyval_025_models.json").read_text())
+
+
+def test_the_fixture_was_saved_by_0_25():
+    assert _SAVED_025["surpyval"] == "0.25"
+    assert {"weibull", "weibull_offset", "weibull_lfp", "kaplan_meier", "mixture", "cox_ph",
+            "weibull_ph", "weibull_aft", "crow_amsaa"} <= set(_SAVED_025["models"])
+
+
+@pytest.mark.parametrize("name", sorted(_SAVED_025["models"]))
+def test_a_model_saved_by_0_25_loads_with_the_same_numbers(name, strict):
+    from backend import recurrent as rec
+
+    saved = _SAVED_025["models"][name]
+    grid = np.array(_SAVED_025["grid"])
+    if saved["kind"] == "recurrent":
+        model = rec.get_live(rec.restore_live({"model": copy.deepcopy(saved["model"])}))
+        assert np.allclose(np.asarray(model.cif(grid), float), saved["cif"], rtol=1e-9, atol=0)
+        return
+    # The way a saved model is rehydrated: fitting.restore_live.
+    cache_id = fitting.restore_live({"model": copy.deepcopy(saved["model"]), "grid": list(grid), "fields": []})
+    model = fitting._entry_for(cache_id, None)["model"]
+    if saved["kind"] == "regression":
+        got = np.asarray(model.sf(grid, np.array(saved["Z"])), float).ravel()
+    else:
+        got = np.asarray(model.sf(grid), float)
+    assert np.allclose(got, saved["sf"], rtol=1e-9, atol=1e-12)
+    # ... and saves again in a form that loads.
+    assert sp.from_dict(json.loads(json.dumps(model.to_dict()))) is not None
 
 
 # ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ each checked against SurPyval called directly — through the fit, the REST
 endpoints and MCP."""
 
 import io
+from types import SimpleNamespace
 
 import matplotlib
 
@@ -44,10 +45,15 @@ def _cox(**kw):
 
 # ---- The proportional-hazards test --------------------------------------------------
 
-def test_cox_ph_test_is_check_ph_with_a_global_row_and_a_verdict():
+def _ph_table(cox, transform="km"):
+    """SurPyval's Grambsch-Therneau table (``check_ph`` until 0.26)."""
+    return cox.diagnose(transform=transform).tables["proportional_hazards"]
+
+
+def test_cox_ph_test_is_the_diagnose_table_with_a_global_row_and_a_verdict():
     d = fit("cox_ph", _rossi(), MAPPING, covariates=COVS)["diagnostics"]
     ph = d["ph_test"]
-    want = _cox().check_ph().reset_index()
+    want = _ph_table(_cox()).reset_index()
     rows = {r["covariate"]: r for r in [*ph["rows"], ph["global"]]}
     for rec in want.to_dict("records"):
         got = rows[rec["covariate"]]
@@ -62,7 +68,7 @@ def test_cox_ph_test_is_check_ph_with_a_global_row_and_a_verdict():
 
 def test_parametric_ph_is_tested_with_cox_on_the_same_covariates():
     ph = fit("weibull_ph", _rossi(), MAPPING, covariates=COVS)["diagnostics"]["ph_test"]
-    want = _cox().check_ph()
+    want = _ph_table(_cox())
     assert ph["global"]["p"] == pytest.approx(want.loc["GLOBAL", "p"])
     assert ph["source"] == "cox" and "Cox model on the same covariates" in ph["source_note"]
 
@@ -79,8 +85,8 @@ def test_verdicts():
         def __init__(self, rows):
             self.rows = rows
 
-        def check_ph(self, transform="km"):
-            return pd.DataFrame(self.rows).set_index("covariate")
+        def diagnose(self, transform="km"):
+            return SimpleNamespace(tables={"proportional_hazards": pd.DataFrame(self.rows).set_index("covariate")})
 
     holds = rd.ph_test(Fake([{"covariate": "a", "statistic": 0.1, "df": 1, "p": 0.7},
                              {"covariate": "GLOBAL", "statistic": 0.1, "df": 1, "p": 0.7}]))
@@ -367,7 +373,7 @@ def test_mcp_fit_get_model_and_cox_options(env):
     saved = _ok(_call(env.token[MCP_A], "models", {"action": "fit", **args, "name": "Rossi Cox"}))
     env.db.models.update_one({"_id": saved["model_id"]}, {"$unset": {"results.diagnostics": ""}})
     got = _ok(_call(env.token[MCP_A], "get", {"kind": "model", "id": saved["model_id"]}))
-    assert got["diagnostics"]["ph_test"]["global"]["p"] == pytest.approx(_cox().check_ph().loc["GLOBAL", "p"])
+    assert got["diagnostics"]["ph_test"]["global"]["p"] == pytest.approx(_ph_table(_cox()).loc["GLOBAL", "p"])
 
     stray = _call(env.token[MCP_A], "life_data_analysis", {"action": "fit", "data": [1, 2, 3],
                                                            "cox_options": {"tie_method": "exact"}})
