@@ -52,7 +52,7 @@ slots:
     title: "What's new in Reliafy: November 2026"
   - date: "2026-11-09"
     type: technical
-    title: "How long will this take? Survival analysis on our own run times"
+    title: "to be chosen"
   - date: "2026-11-16"
     type: commentary
     title: "AI agents will read your failure data next: what to check"
@@ -67,7 +67,7 @@ slots:
     title: "What's new in Reliafy: December 2026"
   - date: "2026-12-14"
     type: technical
-    title: "Failure modes that compete"
+    title: "Titan GPUs, part 2: should you replace them before they fail?"
   - date: "2026-12-21"
     type: commentary
     title: "Run to failure is a decision, not a default"
@@ -76,7 +76,7 @@ slots:
     title: "What's new in Reliafy: January 2027"
   - date: "2027-01-11"
     type: technical
-    title: "to be chosen"
+    title: "How long will this take? Survival analysis on our own run times"
   - date: "2027-01-18"
     type: commentary
     title: "to be chosen"
