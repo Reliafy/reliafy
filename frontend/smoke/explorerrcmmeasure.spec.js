@@ -1,5 +1,5 @@
 // What a task by use counts, on the Explorer's RCM tab: the task's Edit…
-// form (in the failure mode's dialog) shows its Measurement (what it counts,
+// form (in the failure mode's details) shows its Measurement (what it counts,
 // the latest reading, the last-done reading) and can change it; moving RCM
 // whose task counts a measurement that isn't on the new position (Truck 12's
 // engine hours, moved to Truck 14) asks what it should count there: the new
@@ -59,7 +59,7 @@ test("a task's Edit… shows what it counts and can change it", async ({ page, r
   const p = await fleet(request, tag);
   await openFleet(page, p);
   await trow(page, `^Failure mode: Engine wears ${tag}`).locator(".tp-nm").dblclick();
-  const dlg = page.getByRole("dialog", { name: "Failure mode", exact: true });
+  const dlg = page.getByRole("complementary", { name: "Details" });
   const tasks = dlg.getByRole("region", { name: "Tasks" });
   await tasks.getByRole("button", { name: `Edit Service ${tag}` }).click();
   const field = tasks.getByRole("group", { name: "Measurement" });

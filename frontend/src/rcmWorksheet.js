@@ -327,18 +327,10 @@ const STATUS_RANK = { contradicted: 0, stale: 1, inconclusive: 3, supported: 4 }
 const isMode = (r) => r.type === "mode";
 const d = (r) => r.ref.decision || null;
 
+// A function's performance standards are rows in the tree (each one's limit
+// in its details), not a column: a saved choice that still names the old
+// Performance standard column just drops it (loadPrefs keeps known ids only).
 export const COLUMNS = [
-  {
-    id: "standard", label: "Performance standard", width: 200, min: 150, on: false,
-    title: "What the function must achieve, e.g. within 30 m from 60 km/h; several performance standards on one line, and each on its own row",
-    // A standard's own row: its text is the row's name, so the cell has its
-    // structured limit, condition and source, if any.
-    text: (r) => (r.type === "fn" ? r.ref.standard || "" : r.type === "std" ? limitWords(r.ref) : ""),
-    sort: (r) => (r.type === "fn" ? r.ref.standard || null : null),
-    // Edited in the cell only while the function has its one text: a list is
-    // edited as a list, in the function's dialog or Details.
-    edit: "text", can: (r) => r.type === "fn" && !(r.ref.standards || []).length, field: "standard",
-  },
   {
     id: "effects", label: "Failure effects", width: 180, min: 112, on: true,
     title: "What happens when the failure mode occurs",
@@ -426,7 +418,7 @@ export const COLUMNS = [
   },
 ];
 export const COLUMN = Object.fromEntries(COLUMNS.map((c) => [c.id, c]));
-export const NAME_COLUMN = { id: "name", label: "Function, failure or mode", width: 270, min: 180 };
+export const NAME_COLUMN = { id: "name", label: "Function, performance standard, failure or mode", width: 270, min: 180 };
 export const DEFAULT_COLUMNS = COLUMNS.filter((c) => c.on).map((c) => c.id);
 
 // A parent row's consequences: the most serious kind inside it (all of them

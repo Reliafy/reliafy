@@ -33,9 +33,7 @@ test("the limit in words, and the hint for standards with no failure", () => {
   assert.equal(unbreachedWords({ standards: [], standards_without_failure: 0 }), "");
 });
 
-test("the standard cell is edited in place only while the function has its one text; the search reaches the list", () => {
-  assert.equal(COLUMN.standard.can({ type: "fn", ref: { standard: "x", standards: [] } }), true);
-  assert.equal(COLUMN.standard.can({ type: "fn", ref: { standard: "x; y", standards: [{ id: "s1", text: "x" }, { id: "s2", text: "y" }] } }), false);
+test("the search reaches a function's list of performance standards", () => {
   assert.match(rowText({ ref: { text: "Keep", standard: "pH 7.2-7.8; TA", standards: [{ id: "s", text: "TA", parameter: "alkalinity", source: "E25 manual" }] } }), /alkalinity e25 manual/);
 });
 

@@ -53,9 +53,12 @@ test("the working behind a standard: write, preview, save, read, the (i), a .md 
   await trow(page, `^Function: Keep the water safe ${tag}`).locator(".tt-tree").click();
   await expect(panel(page)).toBeVisible();
 
-  // Empty: a quiet prompt and two links; no (i) in the row.
+  // Empty: a quiet prompt and two links; no (i) on the function or its performance standard.
   await expect(section(page).getByText(/Optional\. Say how the performance standard was worked out/)).toBeVisible();
-  await expect(trow(page, `^Function: Keep the water safe ${tag}`).locator(".rw-info")).toHaveCount(0);
+  const fnRow = trow(page, `^Function: Keep the water safe ${tag}`);
+  const stdRow = trow(page, "^Performance standard: 1-3 ppm free chlorine");
+  await expect(stdRow).toBeVisible();
+  await expect(table(page).locator(".rw-info")).toHaveCount(0);
   await shot(page, "01-empty");
 
   // Write, then Preview: tables and code render; raw HTML and scripts are inert.
@@ -71,13 +74,14 @@ test("the working behind a standard: write, preview, save, read, the (i), a .md 
   await expect(section(page).locator(".rw-md a[href='https://reliafy.com']")).toHaveAttribute("rel", /noopener/);
   await shot(page, "03-preview");
 
-  // Save: collapsed to a preview line with Read more, the (i) in the function's row.
+  // Save: collapsed to a preview line with Read more, the (i) on the performance standard's row (not the function's).
   await section(page).getByRole("radio", { name: "Write" }).click();
   await section(page).getByRole("button", { name: "Save" }).click();
   await expect(section(page).getByRole("button", { name: /Read more/ })).toBeVisible();
   await expect(section(page).locator(".rw-basis-preview")).toContainText("Chlorine demand");
-  const info = trow(page, `^Function: Keep the water safe ${tag}`).locator(".rw-info");
+  const info = stdRow.locator(".tt-tree .rw-info");
   await expect(info).toHaveCount(1);
+  await expect(fnRow.locator(".rw-info")).toHaveCount(0);
   await expect(info).toHaveAttribute("title", /How this performance standard was worked out: Chlorine demand/);
   await shot(page, "04-collapsed-with-info");
 
@@ -87,20 +91,16 @@ test("the working behind a standard: write, preview, save, read, the (i), a .md 
   await shot(page, "05-expanded");
   await expect(section(page).getByRole("link", { name: /operating context of Basis pool/ })).toBeVisible();
 
-  // With the Performance standard column shown, the (i) moves into its cell and the name has none.
+  // No Performance standard column to move it into: the Columns menu doesn't offer one.
   await page.getByRole("button", { name: "Columns" }).click();
-  await page.getByRole("checkbox", { name: /Performance standard/ }).check();
+  await expect(page.getByRole("checkbox", { name: /Performance standard/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
-  const fnRow = trow(page, `^Function: Keep the water safe ${tag}`);
-  await expect(fnRow.locator("[role=gridcell] .rw-info")).toHaveCount(1);
-  await expect(fnRow.locator(".tt-tree .rw-info")).toHaveCount(0);
-  await expect(fnRow.getByText("1-3 ppm free chlorine")).toBeVisible();
-  await shot(page, "05b-info-in-standard-column");
 
-  // The (i) opens the working in full, from another row.
+  // The (i) opens the function's working in full, from another row.
   await trow(page, `^Failure mode: Dosing pump fails ${tag}`).locator(".tt-tree").click();
   await expect(section(page)).toHaveCount(0);
-  await fnRow.locator(".rw-info").click();
+  await info.click();
+  await expect(panel(page).getByRole("heading", { name: `Keep the water safe ${tag}` })).toBeVisible();
   await expect(section(page).locator(".rw-md h2")).toBeVisible();
 
   // A .md file: replace the text. Then a PDF.

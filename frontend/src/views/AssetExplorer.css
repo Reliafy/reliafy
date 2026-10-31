@@ -1018,6 +1018,11 @@ a.rw-cklink:focus-visible {
   flex: 1 1 auto;
   width: auto;
 }
+/* The details expanded: the tree column stays (TreePane sets its width) and
+   the panel takes the rest of the table's room. */
+.tt-main.tt-expanded > .tp-scroll { flex: none; }
+.tt-main.tt-expanded > .tt-side { flex: 1 1 auto; width: auto; min-width: 0; padding: 8px 10px; }
+.tt-side > .rw-panel-empty { flex: 1 1 auto; }
 .tp-tabs {
   margin: 2px 0 0;
 }

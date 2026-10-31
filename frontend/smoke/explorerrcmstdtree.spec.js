@@ -7,8 +7,8 @@
 // function with no standard has its failures right under it. The row menus
 // add a standard, add a failure under a standard, change a failure's
 // standard, move a standard up or down, edit its text in place and remove it
-// (its failures go back to the function); double-click opens the Standard
-// dialog with its limit fields. Switching tabs moves nothing in the frame.
+// (its failures go back to the function); double-click on its name shows its
+// details across the table, with its limit fields. Switching tabs moves nothing in the frame.
 // At 400 px it all fits. Each test makes its own small plant through the API
 // and pins it (?pin=), so its rows start at the top of the tree whatever else
 // the shared workspace holds (rows below the fold aren't drawn).
@@ -51,7 +51,7 @@ async function plant(request, tag) {
 
 const table = (page) => page.getByRole("treegrid", { name: /and their RCM/ });
 const trow = (page, name) => table(page).getByRole("row", { name: new RegExp(name) });
-const dialog = (page, name) => page.getByRole("dialog", { name, exact: true });
+const panel = (page) => page.getByRole("complementary", { name: "Details" });
 const level = async (row) => Number(await row.getAttribute("aria-level"));
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 const settled = async (page) => {
@@ -124,11 +124,10 @@ test("standards are a level of the tree: a list's rows, the 'No standard' row, t
   await expect(trow(page, `^No performance standard`)).toHaveCount(1);
   // No standard at all: the failure right under the function.
   expect(await level(trow(page, `^Functional failure: No flow ${tag}`))).toBe(fnLevel + 1);
-  // The standard column (from the Columns menu): the limit in words on the standard's row.
-  await page.getByRole("button", { name: "Columns" }).click();
-  await page.getByRole("checkbox", { name: /Performance standard/ }).check();
-  await page.keyboard.press("Escape");
-  await expect(ca).toContainText("Calcium hardness between 200-400 ppm · E25 manual");
+  // The limit in words is in the standard's details (no column for it).
+  await ca.locator(".tp-nm").click();
+  await expect(page.getByRole("complementary", { name: "Details" }).getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("Calcium hardness");
+  await page.getByRole("button", { name: "Close the details" }).click();
   // The level control and the filter reach the standards.
   await page.getByRole("button", { name: /^Tree options/ }).click();
   await page.getByRole("menuitemradio", { name: "Open to level 2" }).click();
@@ -279,66 +278,60 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   await expectHealthy(page, problems, { label: "rcm standards tree menus" });
 });
 
-test("double-click opens the Standard dialog: text, limit fields and its failures; the one text's dialog saves the function's text", async ({ page, request, problems }) => {
+test("double-click a standard's name: its details across the table, text, limit fields and its failures, each kept as you go; the one text saves the function's", async ({ page, request, problems }) => {
   const tag = `d${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
   const ca = trow(page, `^Performance standard: Calcium hardness 200-400 ppm ${tag}`);
   await ca.locator(".tp-nm").dblclick();
-  const dlg = dialog(page, "Performance standard");
-  await expect(dlg).toBeVisible();
-  await expect(dlg.getByText(`On Std tree pool ${tag}`)).toBeVisible();
-  await expect(dlg.getByRole("button", { name: `Keep the water balanced ${tag}` })).toBeVisible(); // the way up
+  const dlg = panel(page);
+  await expect(dlg.getByRole("heading", { name: `Calcium hardness 200-400 ppm ${tag}` })).toBeFocused();
+  await expect(dlg.getByRole("button", { name: `Std tree pool ${tag}` })).toBeVisible(); // the way up
+  await expect(dlg.getByRole("button", { name: `Keep the water balanced ${tag}` })).toBeVisible();
   await expect(dlg.getByRole("textbox", { name: /^Performance standard/ })).toHaveValue(`Calcium hardness 200-400 ppm ${tag}`);
-  await expect(dlg.getByRole("textbox", { name: "Parameter" })).toHaveValue("Calcium hardness");
+  await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("Calcium hardness");
   await expect(dlg.getByRole("combobox", { name: "Comparator" })).toHaveValue("between");
-  await expect(dlg.getByRole("textbox", { name: "Value" })).toHaveValue("200-400");
-  await expect(dlg.getByRole("textbox", { name: "Unit" })).toHaveValue("ppm");
-  await expect(dlg.getByRole("textbox", { name: "Source" })).toHaveValue("E25 manual");
+  await expect(dlg.getByRole("textbox", { name: "Value", exact: true })).toHaveValue("200-400");
+  await expect(dlg.getByRole("textbox", { name: "Unit", exact: true })).toHaveValue("ppm");
+  await expect(dlg.getByRole("textbox", { name: "Source", exact: true })).toHaveValue("E25 manual");
   await expect(dlg.getByRole("region", { name: "Functional failures" })).toContainText("No functional failure written yet");
-  // Saved once: one write with the fields that changed.
-  await dlg.getByRole("textbox", { name: "When it applies" }).fill("while the pool is in use");
-  await dlg.getByRole("textbox", { name: "Value" }).fill("200-350");
+  // Each field kept as you leave it: one write each, no Save.
   let writes = 0;
   page.on("request", (r) => { if (r.method() === "PATCH" && r.url().includes(`/standards/${p.standards.ca.id}`)) writes += 1; });
-  await dlg.getByRole("button", { name: "Save" }).dblclick();
-  await expect(dlg).toHaveCount(0);
-  expect(writes).toBe(1);
-  await expect(ca).toBeFocused();
-  let fn = await readFn(request, p.balance.id);
-  const saved = fn.standards.find((st) => st.id === p.standards.ca.id);
-  expect([saved.value, saved.when, saved.unit]).toEqual(["200-350", "while the pool is in use", "ppm"]);
-  // A standard with failures lists them, and one opens from the list.
-  await trow(page, `^Performance standard: pH 7.2-7.8 ${tag}`).locator(".tp-nm").dblclick();
-  const dlg2 = dialog(page, "Performance standard");
-  await expect(dlg2.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `pH above 7.8 ${tag}` })).toBeVisible();
-  await dlg2.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `pH below 7.2 ${tag}` }).click();
-  await expect(dialog(page, "Functional failure")).toBeVisible();
-  await expect(dialog(page, "Functional failure").getByRole("combobox", { name: "Breaches" })).toHaveValue(p.standards.ph.id);
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  // The function's dialog still lists every functional failure, through the standards.
-  await trow(page, `^Function: Keep the water balanced ${tag}`).locator(".tp-nm").dblclick();
-  const fdlg = dialog(page, "Function");
-  await expect(fdlg.getByRole("region", { name: "Functional failures" }).getByRole("button")).toHaveCount(3);
-  await page.keyboard.press("Escape");
-  // The one text's dialog: the text alone, a note instead of the limit; Save writes the function's standard.
-  await trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`).locator(".tp-nm").dblclick();
-  const ldlg = dialog(page, "Performance standard");
-  await expect(ldlg).toBeVisible();
-  await expect(ldlg.getByText("This is the function's one performance standard, as written.")).toBeVisible();
-  await expect(ldlg.getByRole("textbox", { name: "Parameter" })).toHaveCount(0);
-  await ldlg.getByRole("textbox", { name: /^Performance standard/ }).fill(`FC 1-3 ppm; CC under 0.4 ppm ${tag}`);
-  await ldlg.getByRole("button", { name: "Save" }).click();
-  await expect(ldlg).toHaveCount(0);
+  await dlg.getByRole("textbox", { name: "When it applies", exact: true }).fill("while the pool is in use");
+  await dlg.getByRole("textbox", { name: "Value", exact: true }).click();
+  await dlg.getByRole("textbox", { name: "Value", exact: true }).fill("200-350");
+  await dlg.getByRole("textbox", { name: "Value", exact: true }).press("Enter");
+  await expect.poll(async () => {
+    const saved = (await readFn(request, p.balance.id)).standards.find((st) => st.id === p.standards.ca.id);
+    return [saved.value, saved.when, saved.unit];
+  }).toEqual(["200-350", "while the pool is in use", "ppm"]);
+  expect(writes).toBe(2);
+  await expect(dlg.getByRole("button", { name: "Save" })).toHaveCount(0);
+  // A standard with failures lists them, and one shows from the list.
+  await trow(page, `^Performance standard: pH 7.2-7.8 ${tag}`).locator(".tp-nm").click();
+  await expect(dlg.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `pH above 7.8 ${tag}` })).toBeVisible();
+  await dlg.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `pH below 7.2 ${tag}` }).click();
+  await expect(dlg.getByRole("heading", { name: `pH below 7.2 ${tag}` })).toBeVisible();
+  await expect(dlg.getByRole("combobox", { name: "Breaches" })).toHaveValue(p.standards.ph.id);
+  // The function's details still list every functional failure, through the standards.
+  await trow(page, `^Function: Keep the water balanced ${tag}`).locator(".tp-nm").click();
+  await expect(dlg.getByRole("region", { name: "Functional failures" }).getByRole("button")).toHaveCount(3);
+  // The one text: the text alone, a note instead of the limit; kept as the function's standard.
+  await trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`).locator(".tp-nm").click();
+  await expect(dlg.getByText("This is the function's one performance standard, as written.")).toBeVisible();
+  await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveCount(0);
+  await dlg.getByRole("textbox", { name: /^Performance standard/ }).fill(`FC 1-3 ppm; CC under 0.4 ppm ${tag}`);
+  await dlg.getByRole("textbox", { name: /^Performance standard/ }).blur();
   await expect(trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.4 ppm ${tag}`)).toBeVisible();
-  fn = await readFn(request, p.sanitise.id);
+  const fn = await readFn(request, p.sanitise.id);
   expect([fn.standard, fn.standards]).toEqual([`FC 1-3 ppm; CC under 0.4 ppm ${tag}`, []]);
-  await expectHealthy(page, problems, { label: "rcm standard dialog" });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expectHealthy(page, problems, { label: "rcm standard details" });
 });
 
-test("at 400 px the standard rows, their menus and the dialog fit", async ({ page, request, problems }) => {
+test("at 400 px the standard rows, their menus and the details sheet fit", async ({ page, request, problems }) => {
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
@@ -349,19 +342,19 @@ test("at 400 px the standard rows, their menus and the dialog fit", async ({ pag
   await expect(trow(page, `^Functional failure: pH above 7.8 ${tag}`)).toBeVisible();
   await expect(trow(page, `^No performance standard`).first()).toBeVisible();
   expect(await overflow(page)).toBe(0);
-  // The menu: no in-place edit on a phone (the dialog edits the text); Open… reaches the dialog.
+  // The menu: no in-place edit on a phone (the details edit the text); Open… shows them.
   await ca.getByRole("button", { name: "Actions", exact: true }).click();
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Isolate", "Remove performance standard"]);
   await menu.getByRole("menuitem", { name: "Open…" }).click();
-  const dlg = dialog(page, "Performance standard");
+  const dlg = panel(page);
   await expect(dlg).toBeVisible();
-  await expect(dlg.getByRole("textbox", { name: "Parameter" })).toBeVisible();
+  await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toBeVisible();
   expect(await overflow(page)).toBe(0);
   const box = await dlg.boundingBox();
   expect(box.x + box.width).toBeLessThanOrEqual(400.5);
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await dlg.getByRole("button", { name: "Close the details" }).click();
+  await expect(panel(page)).toHaveCount(0);
   expect(await overflow(page)).toBe(0);
   await expectHealthy(page, problems, { label: "rcm standards tree phone" });
 });

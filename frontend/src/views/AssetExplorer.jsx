@@ -7,7 +7,6 @@ import TreeDetail, { HeaderTabs, KIND, SlimHeader, forgetPositions, prefetchPosi
 import DecisionModal from "../components/DecisionModal.jsx";
 import LinkFailurePicker from "../components/FailureLinks.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
-import RcmItemModal from "../components/RcmItemModal.jsx";
 import RcmMoveModal from "../components/RcmMoveModal.jsx";
 import { MeasurementMoveModal } from "../components/TaskMeasurement.jsx";
 import { withMeasurement } from "../taskMeasurement.js";
@@ -24,7 +23,7 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  NARROW_TABLE, basisInName, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, positionOf, rowActions, standardChoices,
+  NARROW_TABLE, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, positionOf, rowActions, standardChoices,
   standardKeys, tableCols, unlinkEmptiesFailure, usualCols,
   withTableCols,
 } from "../explorerRcm.js";
@@ -32,7 +31,7 @@ import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs, tasksOf } from "../
 import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
-import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
+import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
 import { shownTab, tabParam, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -219,8 +218,13 @@ export default function AssetExplorer() {
   const [panel, setPanel] = useState(false); // its details beside the table
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
   const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
-  const [itemKey, setItemKey] = useState(null); // a function, failure or mode in its own dialog (double-click, Open…)
-  const [itemStart, setItemStart] = useState(null); // what the dialog opens on ({tasks: true}: the Tasks' add form)
+  // The details filling the table's room, the tree column kept beside them
+  // (a double-click on a row's name, Open…, Expand). Picking another row
+  // keeps it; once the details close it ends, so the next click on a row
+  // shows them beside the table again.
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => { if (!panel && expanded) setExpanded(false); }, [panel, expanded]);
+  const [taskStart, setTaskStart] = useState(null); // {key, at}: a failure mode's Tasks opened on the add form (Add a task…)
   const [linking, setLinking] = useState(null); // {row, direction}: the picker that links functional failures
   const [changingStd, setChangingStd] = useState(null); // a functional failure picking which standard it breaches
   const [options, setOptions] = useState(null);
@@ -828,30 +832,46 @@ export default function AssetExplorer() {
       return text;
     });
   };
-  // A function, failure or mode in its own dialog: picked in the tree, the
-  // cell being edited dropped. On a phone the Details sheet makes way for it.
+  // A function, standard, failure or mode opened (a double-click on its
+  // name, Open… in its menu): picked in the tree, the cell being edited
+  // dropped, and its details shown filling the table's room (a phone: the
+  // details sheet), the focus on their heading; `start` {tasks: true} opens
+  // its Tasks on the add form instead.
   const openItem = (key, start = null) => {
     const r = whole.rows.get(key);
     if (!opensItem(r)) return;
     setEditing(null);
     setRcmFocus(key);
     if (display.rows.has(key)) setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
-    if (phone) setPanel(false);
-    setItemStart(start);
-    setItemKey(key);
+    setPanel(true);
+    if (!phone) setExpanded(true);
+    setTaskStart(start?.tasks ? { key, at: Date.now() } : null);
+    if (!start?.tasks) setTimeout(() => detailsHeading.current?.focus(), 0);
   };
-  // Closed: the focus back on its row (the row of the one shown last).
-  const closeItem = () => {
-    const key = itemKey;
-    setItemKey(null);
-    setItemStart(null);
-    setTimeout(() => document.getElementById(`tp-${key}`)?.focus({ preventScroll: true }), 0);
+  // Expanded and back: the focus goes into the details' heading, and back to the row.
+  const expandDetails = () => {
+    setExpanded(true);
+    setTimeout(() => detailsHeading.current?.focus(), 0);
   };
-  const saveItem = (r, values) => ops.saveItem(r, values).then(() => say("Saved."));
-  // A row deleted (or out of the RCM) while its dialog is open: the dialog goes.
+  const collapseDetails = () => {
+    setExpanded(false);
+    setTimeout(() => document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }), 0);
+  };
+  // Esc anywhere on the page (the tree too, not only the details) returns
+  // from expanded, unless a dialog or menu is open (Esc closes that first) or
+  // a field is being typed in. The details' own Esc is handled there.
+  const collapseRef = useRef(null);
+  collapseRef.current = collapseDetails;
+  const wideOn = rcmOn && !phone && panel && expanded; // the details across the table
   useEffect(() => {
-    if (itemKey && rcm && !whole.rows.has(itemKey)) setItemKey(null);
-  }, [itemKey, rcm, whole]);
+    if (!wideOn) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented || hasOpenLayer(document) || isTyping(e)) return;
+      collapseRef.current?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [wideOn]);
   // The dialog stays open (Apply saying "Saving…") until the server has it;
   // a refusal shows in the dialog, with everything as it was typed.
   const saveDecision = async (answer) => {
@@ -1098,27 +1118,28 @@ export default function AssetExplorer() {
   // (no Interval, folded into the Task cell, nor Evidence check), so the table
   // fits beside the tree; its columns narrow to fit too (TreePane).
   const shownCols = tableCols(rprefs, linkedEvidence, { narrow });
-  const cols = shownCols.map((id) => COLUMN[id]).filter(Boolean);
+  // The details expanded (a wide screen, the details shown): only the tree column beside them.
+  const wideDetails = wideOn;
+  const cols = wideDetails ? [] : shownCols.map((id) => COLUMN[id]).filter(Boolean);
   const widths = {};
   for (const c of cols) widths[c.id] = rprefs.widths[c.id] ?? c.width;
   const table = rcmOn ? {
-    cols, widths, treeW: width, total: width + cols.reduce((t, c) => t + widths[c.id], 0),
+    cols, widths, treeW: width, total: width + cols.reduce((t, c) => t + widths[c.id], 0), expanded: wideDetails,
     foldInterval: !shownCols.includes("interval"),
     intervalW: rprefs.widths.interval ?? COLUMN.interval.width,
     editing, readOnly: false,
     canEditName: (r) => EDITABLE.has(r.type),
     onEdit: (key, col) => { setRcmFocus(key); setEditing({ key, col }); },
     onCommit: commit, onCancel: () => setEditing(null), onDecision: (r) => setDeciding(r),
-    // A double-click on a function, failure or mode (not on a cell edited in place): its dialog.
+    // A double-click on a function, standard, failure or mode (on its name, not on a cell edited in place): its details, expanded.
     onOpen: openItem,
-    // The (i) beside a standard that has a working: the function is picked and
-    // its panel opens with the working in full. With the Performance standard
-    // column hidden (it is, by default) the (i) sits at the end of the name.
-    onBasis: (r) => { pick(r.key, { go: true }); setBasisAt({ key: r.key, at: Date.now() }); },
-    basisInName: basisInName(shownCols),
+    // The (i) at the end of a performance standard's name (or a function's
+    // with none) that has a working: the function is picked and its details
+    // open with the working in full.
+    onBasis: (r) => openBasis(r.type === "std" ? r.ref.function_id : r.key),
     onGoto: (key) => reveal(key),
     // The position picked, when it has no functions yet: its row says how to start.
-    hint: rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
+    hint: !wideDetails && rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
     // Drag and drop (a wide screen): which rows move, the mark on the row
     // under the pointer, the failure modes picked to move together.
     drag: rcm && !phone ? {
@@ -1197,19 +1218,44 @@ export default function AssetExplorer() {
       },
     };
   };
+  // A function's working opened: the function picked, its details shown with the working in full.
+  const openBasis = (fnKey) => {
+    pick(fnKey, { go: true });
+    setBasisAt({ key: fnKey, at: Date.now() });
+  };
   const panelOps = {
     ...ops,
     basisView: { context: contextOf, token: (r) => (basisAt?.key === r.key ? basisAt.at : null) },
     assign: (r, ffId) => ops.assign(r, ffId).catch((e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error")),
   };
-  const rcmSide = detailsRow && (
+  const closeDetails = () => {
+    setPanel(false);
+    document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true });
+  };
+  const rcmSide = detailsRow ? (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
-      <Details r={detailsRow} display={display} readOnly={false} phone={phone} headingRef={detailsHeading} ops={panelOps} links={{ onLink: openLink, onUnlink: unlinkPair }}
+      <Details r={detailsRow} display={display} whole={whole} readOnly={false} phone={phone} headingRef={detailsHeading} ops={panelOps}
+               links={{ onLink: openLink, onUnlink: unlinkPair }}
                onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
-               onTasks={(r) => openItem(r.key, { tasks: true })}
-               onClose={() => { setPanel(false); document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }); }}
-               onSelect={(k) => reveal(k)} />
+               expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
+               taskStart={taskStart} onSaid={say}
+               onClose={closeDetails}
+               onSelect={(k, o) => (o?.basis ? openBasis(k) : reveal(k))} />
+    </div>
+  ) : wideDetails && (
+    // Expanded with a position picked: the room says what to pick (the tree beside it).
+    <div className="rw tt-side">
+      <aside className="rw-panel rw-panel-empty is-expanded" aria-label="Details"
+             onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); collapseDetails(); } }}>
+        <div className="rw-panel-head">
+          <div className="rw-panel-kind">Details</div>
+          <div className="rw-panel-btns">
+            <button type="button" className="secondary rw-x" onClick={collapseDetails}>Back to table</button>
+          </div>
+        </div>
+        <p className="rw-inside">Pick a function, performance standard, functional failure or failure mode in the tree to see it here.</p>
+      </aside>
     </div>
   );
   const phoneTabs = phone && posRow && posRow.type === "pos" && (
@@ -1393,13 +1439,6 @@ export default function AssetExplorer() {
                              setLinking(null);
                              if (n) say(`Linked ${n} ${linking.direction === "cause" ? (n === 1 ? "cause" : "causes") : (n === 1 ? "effect" : "effects")}.`);
                            }} />
-      )}
-      {itemKey && whole.rows.has(itemKey) && opensItem(whole.rows.get(itemKey)) && (
-        <RcmItemModal r={cellRow(whole.rows.get(itemKey))} display={whole} ops={panelOps} links={{ onLink: openLink, onUnlink: unlinkPair }}
-                      start={itemStart} onSave={saveItem} onDecision={(r) => setDeciding(r)} onSaid={say}
-                      onOpen={(key) => { openItem(key); if (display.rows.has(key)) reveal(key); }}
-                      onDetails={(r) => { setItemKey(null); reveal(r.key); setPanel(true); setTimeout(() => detailsHeading.current?.focus(), 0); }}
-                      onClose={closeItem} />
       )}
       {deciding && options && (
         <DecisionModal options={options} mode={deciding.ref} onSave={saveDecision} onClose={() => setDeciding(null)} limits />

@@ -1,14 +1,14 @@
 // A function's performance standards as a list, on the Explorer's RCM tab
-// (Operate › Assets › Explorer › RCM): the function's dialog lists them under
+// (Operate › Assets › Explorer › RCM): the function's details list them under
 // Performance standards with Add standard, Edit…, Remove and the arrows; a
 // function's one text shows as the first item and becomes the list's first
 // when a second joins it; Split into standards… proposes a line per part and
-// writes them on Confirm; the functional failure's dialog picks which standard
-// it Breaches; the table's standard cell shows the list on one line; at
-// 400 px it all fits. Each test makes its own small plant through the API.
+// writes them on Confirm; the functional failure's details pick which standard
+// it Breaches; the standards are rows of the tree, not a column; at 400 px it
+// all fits. Each test makes its own small plant through the API.
 //
-// With SMOKE_SHOTS_DIR set, it also saves screenshots of the function dialog
-// with its standards list at 1280 and 400 px (for the pull request).
+// With SMOKE_SHOTS_DIR set, it also saves screenshots of the function's
+// details with its standards list at 1280 and 400 px (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 
 const M = "/api/maintenance";
@@ -25,8 +25,8 @@ async function plant(request, tag, standard = "pH 7.2-7.8; Total alkalinity 80-1
 
 const table = (page) => page.getByRole("treegrid", { name: /and their RCM/ });
 const trow = (page, name) => table(page).getByRole("row", { name: new RegExp(name) });
-const dialog = (page, name) => page.getByRole("dialog", { name, exact: true });
-const standardsOf = (page) => dialog(page, "Function").getByRole("region", { name: "Performance standards" });
+const panel = (page) => page.getByRole("complementary", { name: "Details" });
+const standardsOf = (page) => panel(page).getByRole("region", { name: "Performance standards" });
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 
 test("the function's one text splits into a list on confirm; add, edit, reorder, remove; the failure picks what it breaches", async ({ page, request, problems }) => {
@@ -37,7 +37,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   const fnRow = trow(page, `^Function: Keep the water balanced ${tag}`);
   await expect(fnRow).toBeVisible();
   await fnRow.locator(".tp-nm").dblclick();
-  const dlg = dialog(page, "Function");
+  const dlg = panel(page);
   await expect(dlg).toBeVisible();
   const list = standardsOf(page);
   // The one text, as the first (and only) item; the split helper offered.
@@ -94,7 +94,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   // The functional failure: which standard it breaches.
   const ffRow = trow(page, `^Functional failure: pH above 7.8 ${tag}`);
   await ffRow.locator(".tp-nm").dblclick();
-  const fdlg = dialog(page, "Functional failure");
+  const fdlg = panel(page);
   await expect(fdlg).toBeVisible();
   const breaches = fdlg.getByRole("combobox", { name: "Breaches" });
   await expect(breaches).toHaveValue("");
@@ -105,15 +105,16 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   fn = await (await request.get(`${M}/functions/${p.fn.id}`)).json();
   expect(fn.standards.map((st) => [st.text, st.failures])).toEqual([[`Calcium hardness 200-400 ppm ${tag}`, 0], ["pH 7.4-7.6", 1]]);
   expect(fn.failures[0].standard.text).toBe("pH 7.4-7.6");
-  // The hint follows: one standard still has no failure; the dialog says so.
+  // The hint follows: one standard still has no failure; the details say so.
   await fnRow.locator(".tp-nm").dblclick();
   await expect(standardsOf(page)).toContainText("1 performance standard has no functional failure yet.");
   await page.keyboard.press("Escape");
-  // The standard column (shown from the Columns menu) has the list on one line.
+  // The standards are rows of the tree, not a column: the Columns menu doesn't offer one.
   await page.getByRole("button", { name: "Columns" }).click();
-  await page.getByRole("checkbox", { name: /Performance standard/ }).check();
+  await expect(page.getByRole("group", { name: "Columns to show" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /Performance standard/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(fnRow).toContainText(`Calcium hardness 200-400 ppm ${tag}; pH 7.4-7.6`);
+  await expect(trow(page, `^Performance standard: Calcium hardness 200-400 ppm ${tag}`)).toBeVisible();
   await expectHealthy(page, problems, { label: "rcm standards dialog" });
 });
 
@@ -148,7 +149,7 @@ test("at 400 px the standards list and its forms fit the sheet", async ({ page, 
   const fnRow = trow(page, `^Function: Keep the water balanced ${tag}`);
   await fnRow.getByRole("button", { name: "Actions", exact: true }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Open…" }).click();
-  const dlg = dialog(page, "Function");
+  const dlg = panel(page);
   await expect(dlg).toBeVisible();
   const list = standardsOf(page);
   await expect(list.getByRole("listitem")).toHaveCount(2);
@@ -164,7 +165,7 @@ test("at 400 px the standards list and its forms fit the sheet", async ({ page, 
   await expectHealthy(page, problems, { label: "rcm standards phone" });
 });
 
-test("screenshots of the function dialog's standards list (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
+test("screenshots of the function's standards list in its details (SMOKE_SHOTS_DIR)", async ({ page, request }) => {
   test.skip(!SHOTS, "only when saving screenshots");
   const tag = "shot";
   const p = await plant(request, tag, "pH 7.2-7.8");
@@ -183,10 +184,10 @@ test("screenshots of the function dialog's standards list (SMOKE_SHOTS_DIR)", as
       await row.getByRole("button", { name: "Actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Open…" }).click();
     }
-    await expect(dialog(page, "Function")).toBeVisible();
+    await expect(panel(page)).toBeVisible();
     await standardsOf(page).scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
-    await page.screenshot({ path: `${SHOTS}/rcm-standards-dialog-${w}.png` });
+    await page.screenshot({ path: `${SHOTS}/rcm-standards-panel-${w}.png` });
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
   }

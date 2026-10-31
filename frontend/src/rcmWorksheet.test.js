@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flatten, levelSet } from "./outlineTree.js";
 import {
-  COLUMN, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
+  COLUMN, COLUMNS, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, hasTask, moreTasks, rowText, tasksOf, tasksTip } from "./rcmWorksheet.js";
 
 // A house pool pump's RCM, as the server sends it back (decisions resolved).
@@ -69,7 +69,9 @@ test("the cells, as text: decisions, intervals, roll-ups", () => {
   assert.equal(m("f2").sum.unsure, 0);
   assert.equal(COLUMN.consequence.text(m("f2")), "1 safety or env.");
   assert.equal(COLUMN.evident.text(m("m4")), "Hidden");
-  assert.equal(COLUMN.standard.text(m("f1")), "12 m³/h");
+  // Performance standards are rows of the tree now, not a column.
+  assert.equal(COLUMN.standard, undefined);
+  assert.equal(COLUMNS.some((c) => c.id === "standard"), false);
   // The default set fits a 1440 px window with the menu open (about 1,140 px for the grid).
   const width = DEFAULT_COLUMNS.reduce((s, id) => s + COLUMN[id].width, NAME_COLUMN.width);
   assert.ok(width <= 1140, `default columns are ${width} px wide`);
@@ -133,6 +135,18 @@ test("remembered on this device: columns, widths and row height; an earlier vers
   const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
   assert.equal(loadPrefs(broken).density, "comfortable");
   assert.doesNotThrow(() => savePrefs(p, broken));
+});
+
+test("columns saved with the old Performance standard column load without it", () => {
+  const store = new Map([["reliafy.rcmWorksheet", JSON.stringify({ cols: ["standard", "effects", "task"], widths: { standard: 220, task: 300 } })]]);
+  const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  const p = loadPrefs(storage);
+  assert.deepEqual(p.cols, ["effects", "task"]);
+  assert.deepEqual(p.widths, { task: 300 });
+  assert.equal(p.colsChosen, true); // still the user's own choice
+  // Only the old column chosen: nothing left, the chooser still shows the name column (always on).
+  store.set("reliafy.rcmWorksheet", JSON.stringify({ cols: ["standard"] }));
+  assert.deepEqual(loadPrefs(storage).cols, []);
 });
 
 // ---- the RCM in the Explorer's tree -----------------------------------------
