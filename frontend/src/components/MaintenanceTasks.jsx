@@ -7,6 +7,7 @@ import { PlusIcon } from "./LibRows.jsx";
 import { DueChip, Field, FormModal, TASK_SOURCES, everyText, fmtDate, today } from "./MaintenanceParts.jsx";
 import { subjectPath, taskUnits, whileStoredText } from "../maintenanceSubjects.js";
 import { TASK_HINT, tooLong } from "../maintenanceText.js";
+import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 
 // What a task on each kind of subject is for, under the Add task form.
 const SUBJECT_NOTES = {
@@ -120,9 +121,9 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
         </div>
       </Field>
       {counters.length > 0 && (
-        <Field label="Counter (for a task by use, optional)">
+        <Field label="Measurement (for a task by use, optional)">
           <select value={f.point_id} onChange={set("point_id")}>
-            <option value="">{kind === "item" ? "Its own counter in that unit, else its use where fitted" : "The position's counter in that unit"}</option>
+            <option value="">{kind === "item" ? "Automatic: its own counter in that unit, else its use where fitted" : "Automatic: this position's counter in that unit"}</option>
             {counters.map((mp) => <option key={mp.id} value={mp.id}>{mp.name} ({mp.unit})</option>)}
           </select>
         </Field>
@@ -189,10 +190,12 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
   const [trade, setTrade] = useState(task.trade || "");
   const [whileStored, setWhileStored] = useState(task.while_stored || "run");
   const [includePositions, setIncludePositions] = useState(!!task.include_positions);
+  const [meas, setMeas] = useState({ body: null, error: null });
   const [busy, setBusy] = useState(false);
   return (
-    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && !tooLong(name) && Number(interval) > 0} onClose={onClose}
+    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && !tooLong(name) && Number(interval) > 0 && !meas.error} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenanceTask(task.id, {
+                 ...(meas.body || {}),
                  name, interval: Number(interval), unit, also_interval: also ? Number(also) : 0, also_unit: alsoUnit,
                  instructions, checklist: checklist.split("\n").map((x) => x.trim()).filter(Boolean), trade,
                  ...(byHand ? { source, reference } : {}),
@@ -216,6 +219,10 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
           <UnitPicker units={units} value={alsoUnit} onChange={(e) => setAlsoUnit(e.target.value)} />
         </div>
       </Field>
+      {kind !== "location" && (
+        <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
+      )}
+      {meas.error && <p className="lib-date">{meas.error}</p>}
       {kind === "item" && (
         <Field label="While it's out of a position (in a store, or away)">
           <select value={whileStored} onChange={(e) => setWhileStored(e.target.value)}>

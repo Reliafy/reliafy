@@ -520,10 +520,10 @@ everything that moved with it, so a replay never works the rule out again:
 
 | Event | Payload | What moves |
 |---|---|---|
-| `function.moved` | `id, position_id, from_position_id, order, failure_mode_ids, task_ids, on` | the function, its functional failures, the live failure modes under them and those modes' live tasks |
-| `failure_mode.moved` | `id, position_id, from_position_id, functional_failure_id, order?, task_ids, on` | one mode with its decision and live tasks, under one of the new position's functional failures (or none) |
-| `task.moved` | `id, position_id, from_position_id, on` | one position's task |
-| `functional_failure.moved` | `id, function_id, from_function_id, position_id, from_position_id, order, standard_id?, failure_mode_ids, task_ids, on` | one functional failure under another function (same position or another) with the modes named and their live tasks; the standard it breached stays with the old function, `standard_id` names one of the new function's |
+| `function.moved` | `id, position_id, from_position_id, order, failure_mode_ids, task_ids, on, task_changes?` | the function, its functional failures, the live failure modes under them and those modes' live tasks |
+| `failure_mode.moved` | `id, position_id, from_position_id, functional_failure_id, order?, task_ids, on, task_changes?` | one mode with its decision and live tasks, under one of the new position's functional failures (or none) |
+| `task.moved` | `id, position_id, from_position_id, on, task_changes?` | one position's task |
+| `functional_failure.moved` | `id, function_id, from_function_id, position_id, from_position_id, order, standard_id?, failure_mode_ids, task_ids, on, task_changes?` | one functional failure under another function (same position or another) with the modes named and their live tasks; the standard it breached stays with the old function, `standard_id` names one of the new function's |
 | `standard.moved` | `id, function_id, from_function_id, position_id, from_position_id, order, functional_failure_ids, unlinked_functional_failure_ids, on` | one performance standard to another function, alone: the functional failures that breached it stay with their function under no standard (`unlinked_functional_failure_ids` names them); `functional_failure_ids` are the new function's failures that breach it now (an undo puts the breaches back this way) |
 
 Who moved it and when are the event's `actor` and `at`, as for every event.
@@ -546,13 +546,22 @@ A move is refused, with a message saying what to do instead, when:
 - a task has an open work order (close or cancel it first) or work done on it
   (retire it and add a new task on the target); cancelled work orders don't
   count;
-- a task goes by a counter on the old position (pick one on the target, or
-  clear it, first), or by use with a last-done reading from the old position's
-  counter (retire it and add a new task on the target);
 - a task prevents a failure mode that isn't moving with it and isn't on the
   target. It isn't unlinked silently: move the mode (its tasks go with it), or
   unlink the task first;
 - only an item's or a location's task: those don't move between positions.
+
+A task by use isn't refused. It keeps counting the measurement it counted
+(`_task_point` at the moment of the move, pinned as its `point_id`) and its
+last-done reading while that measurement fits the target: on it, on a position
+above or below it, or on the item fitted to one of those. When it doesn't, the
+move raises `NeedsChoice` (HTTP 409, `needs_choice`: each such task with what
+it counts and the counters in its unit at the target) until `measurement` says,
+per task: `keep`, `switch` (`point_id`; `last_done_reading`, or worked out from
+the last-done date and marked `last_done_reading_estimated`) or `calendar`
+(`interval`, `unit`). What changes is carried in the move event's
+`task_changes` ({task_id: fields}), so replaying it never works anything out
+again; moves logged before it have none and replay as they did.
 
 After a move, failures and work orders on the new position name the mode as
 usual (`_mode_ref` finds it there); naming it on the old position says where it

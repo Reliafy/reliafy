@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- A task by use keeps counting the same measurement when it moves
+  (`maintenance_tasks move`, and the `maintenance_failure_modes` moves that
+  take tasks with them), as long as that measurement is on the new position, a
+  position above or below it, or the item fitted there. When it isn't, the move
+  answers with what it needs to know; send it again with `measurement`
+  (`{task_id: choice}` or one choice: `keep`, `switch` with `point_id` and
+  optionally `last_done_reading`, or `calendar` with `interval` and `unit`).
+  `maintenance_get kind task_measurement` reads what a task counts and the
+  measurements it could count (`position_id`: at a position it would move to).
+  `maintenance_tasks update` takes `last_done_reading` with a new `point_id`;
+  left out, it's worked out from the last-done date and marked an estimate
+  (`last_done_reading_estimated` on the task).
+
 - `maintenance_failure_modes move_standard` moves a performance standard to
   another function (on the same position or another). It moves alone: the
   functional failures that breached it stay with their function, under no

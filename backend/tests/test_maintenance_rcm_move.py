@@ -322,21 +322,7 @@ def test_a_mode_whose_task_has_work_stays(m):
         m.move_function(fn["id"], other["id"])
 
 
-def test_a_task_by_use_from_the_old_counter_stays(m):
-    pump = m.create_position("Pump A")
-    other = m.create_position("Pump B")
-    hours = m.add_point(pump["id"], "Run hours", kind="counter", unit="hours")
-    m.record_reading(hours["id"], 100, on="2026-01-01")
-    chosen = m.create_task(pump["id"], "Overhaul", 5000, "hours", point_id=hours["id"])
-    with pytest.raises(Invalid, match="Overhaul goes by the counter Run hours on Pump A: pick a counter on Pump B"):
-        m.move_task(chosen["id"], other["id"])
-    by_use = m.create_task(pump["id"], "Grease", 500, "hours", last_done="2026-01-01")
-    assert m._get(by_use["id"], "Task")["last_done_reading"] == 100
-    with pytest.raises(Invalid, match="Grease counts use from Pump A's counter since it was last done"):
-        m.move_task(by_use["id"], other["id"])
-    # Not done yet: it counts from whatever counter its new position has.
-    fresh = m.create_task(pump["id"], "Inspect", 1000, "hours")
-    m.move_task(fresh["id"], other["id"])
+# What a task by use counts through a move: test_maintenance_task_measurement.py.
 
 
 def test_a_task_for_a_mode_staying_behind_is_refused_not_unlinked(m):

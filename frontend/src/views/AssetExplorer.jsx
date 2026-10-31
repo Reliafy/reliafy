@@ -9,6 +9,8 @@ import LinkFailurePicker from "../components/FailureLinks.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
 import RcmItemModal from "../components/RcmItemModal.jsx";
 import RcmMoveModal from "../components/RcmMoveModal.jsx";
+import { MeasurementMoveModal } from "../components/TaskMeasurement.jsx";
+import { withMeasurement } from "../taskMeasurement.js";
 import useRcmDrag from "../components/useRcmDrag.js";
 import {
   answerNotes, dragBlock, dragSource, moveItems, planDrop, refusalText, shownAfter, stepTarget, undoBatch,
@@ -244,6 +246,8 @@ export default function AssetExplorer() {
   const [picked, setPicked] = useState(() => new Set());
   const [toast, setToast] = useState(null); // {text, undo, extra, show, at, busy}
   const [moving, setMoving] = useState(null); // {src} or {taskFrom}: the Move to… dialog
+  // A move asking what its tasks by use count there: {need, choose, cancel}.
+  const [measuring, setMeasuring] = useState(null);
   const [spoken, setSpoken] = useState("");
   const announce = useCallback((text) => setSpoken((was) => (was === text ? `${text}\u00a0` : text)), []);
   useEffect(() => {
@@ -618,13 +622,31 @@ export default function AssetExplorer() {
   const checkMove = useCallback((operations) => ops.arrange(operations, { dryRun: true }).then(
     (a) => ({ ok: true, notes: answerNotes(a) }),
     // Not a refusal (no connection, a server error): the drop goes ahead and the server checks it then.
-    (e) => (e.status === 422 ? { ok: false, reason: refusalText(e) } : { ok: true, notes: [] }),
+    // A move that needs a choice goes ahead too: the drop asks what its tasks count there.
+    (e) => (e.status === 409 && e.data?.needs_choice ? { ok: true, notes: ["It will ask what its tasks count there."] }
+      : e.status === 422 ? { ok: false, reason: refusalText(e) } : { ok: true, notes: [] }),
   ), [ops]);
+  // What a move's tasks by use should count at the new position, asked in a
+  // dialog: resolves with the measurement choices, or rejects (cancelled) when
+  // the user leaves it where it is.
+  const askMeasurement = (need) => new Promise((resolve, reject) => {
+    setMeasuring({
+      need,
+      choose: (measurement) => { setMeasuring(null); resolve(measurement); },
+      cancel: () => { setMeasuring(null); reject(Object.assign(new Error("Not moved: nothing was changed."), { cancelled: true })); },
+    });
+  });
   const applyMove = async (src, plan, key) => {
     let answer;
     try {
       answer = await ops.arrange(plan.ops);
     } catch (e) {
+      if (e.status === 409 && e.data?.needs_choice) {
+        const need = e.data.needs_choice;
+        announce(`${e.message} Choose what it should count.`);
+        const measurement = await askMeasurement(need);
+        return applyMove(src, { ...plan, ops: withMeasurement(plan.ops, need.op_index ?? 0, measurement) }, key);
+      }
       throw new Error(e.status === 422 ? refusalText(e) : saveErrorText(e, { offline: offline() }));
     }
     const notes = answerNotes(answer);
@@ -643,6 +665,11 @@ export default function AssetExplorer() {
       return;
     }
     applyMove(src, plan, key).catch((e) => {
+      if (e.cancelled) {
+        say(e.message);
+        announce(e.message);
+        return;
+      }
       say(`Not moved: ${e.message}`, "error");
       announce(`Not moved: ${e.message}`);
     });
@@ -1318,6 +1345,7 @@ export default function AssetExplorer() {
         <RcmMoveModal whole={whole} src={moving.src || null} taskFrom={moving.taskFrom || null} check={checkMove}
                       onApply={applyMove} onClose={() => setMoving(null)} />
       )}
+      {measuring && <MeasurementMoveModal key={`${measuring.need.op_index}:${(measuring.need.tasks || []).map((t) => t.task_id).join(",")}`} need={measuring.need} onChoose={measuring.choose} onCancel={measuring.cancel} />}
 
       {modal === "position" && (
         <NewPositionModal positions={pickerList(data)}

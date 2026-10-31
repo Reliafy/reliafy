@@ -40,6 +40,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/rcm"], // the RCM in the Explorer's tree
   ["GET", "/api/maintenance/positions/smoke/rcm"], // a position's RCM
   ["PUT", "/api/maintenance/failure-modes/smoke/decision"],
+  ["GET", "/api/maintenance/tasks/smoke/measurement"], // what a task by use counts (its dialog, a move's question)
   ["GET", "/api/maintenance/overview"],
   ["GET", "/api/maintenance/tree"], // the asset tree pane
   ["GET", "/api/maintenance/places"], // Assets: the top-level places
