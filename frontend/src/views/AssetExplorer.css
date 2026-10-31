@@ -151,6 +151,7 @@
   white-space: nowrap;
   cursor: pointer;
   outline: none;
+  border-bottom: 1px solid var(--line2); /* a line between rows on every tab, as on the RCM tab */
 }
 
 .tp-row:hover {
@@ -669,7 +670,7 @@ a.rw-cklink:focus-visible {
 .tx:not(.phone) .tp:not(.tp-table) .tp-row {
   right: auto;
   border-right: 1px solid var(--line);
-  border-bottom: 1px solid transparent; /* as the RCM tab's rows: the text at the same height */
+  border-bottom: 1px solid var(--line2); /* as the RCM tab's rows: the same line, the text at the same height */
 }
 .tp button.tp-fold.is-off { visibility: hidden; }
 .tp-table .tp-scroll { scrollbar-gutter: stable; }
