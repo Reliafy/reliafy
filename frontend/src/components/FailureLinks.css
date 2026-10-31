@@ -1,6 +1,5 @@
 /* A functional failure caused by lower ones: the panel's two sections and the picker. */
-.fl-sec { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
-.fl-sec h3 { margin: 0; font-size: var(--fs-14); }
+.fl-sec { display: flex; flex-direction: column; gap: var(--sp-2); border-top: 1px solid var(--line2); padding-top: var(--sp-4); }
 .fl-sum, .fl-note { margin: 0; font-size: var(--fs-13); color: var(--muted); }
 .fl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .fl-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
@@ -10,7 +9,7 @@
 .fl-warn { color: var(--warn); font-size: var(--fs-12); }
 .fl-chip { font-size: var(--fs-12); }
 .fl-list .fl-unlink { flex: none; font-size: var(--fs-13); min-height: 28px; }
-.fl-add { align-self: flex-start; }
+.fl-add { align-self: stretch; }
 
 .overlay .modal.link-picker { max-width: 640px; }
 .link-picker .modal-body { padding: 0; }

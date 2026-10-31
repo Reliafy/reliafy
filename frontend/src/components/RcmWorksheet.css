@@ -632,3 +632,122 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   .rfs-list li { flex-wrap: wrap; }
   .rfs-acts .link { min-height: 36px; }
 }
+
+/* ---- the panel's head, title and cards (shared Field, Section, chips) ------------ */
+
+/* The head: the kind and its icon buttons; "in ‹the way up›"; the title (the
+   description, a click edits it); the status chips. */
+.rw-panel-top { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.rw-panel.is-expanded > .rw-panel-top { width: 100%; max-width: 1180px; box-sizing: border-box; }
+.rw-grab { align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: -4px 0 2px; flex: none; }
+.rw-in { flex: none; color: var(--muted); }
+.rw-crumbs .rw-in + button::before { content: none; }
+.rw-title-btn {
+  all: unset; box-sizing: border-box; display: block; width: 100%; cursor: text; border-radius: var(--r-sm);
+  margin: -2px -6px; padding: 2px 6px; width: calc(100% + 12px);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.rw-panel.is-expanded .rw-title-btn { -webkit-line-clamp: 3; line-clamp: 3; }
+.rw-title-btn:hover { background: var(--acc-hover); box-shadow: inset 0 0 0 1px var(--line); }
+.rw-title-btn:focus-visible { box-shadow: var(--focus); }
+.rw-panel-title:has(> .rw-title-btn) { display: block; -webkit-line-clamp: unset; line-clamp: unset; overflow: visible; }
+.rw-title-edit .ctl.rw-title-box { font-size: var(--fs-16); font-weight: 600; line-height: 1.35; }
+.rw-title-edit .ctl.rw-title-box.big { font-size: var(--fs-20); }
+.rw-chips-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+.rw-sec-note { margin: -4px 0 0; }
+.rw-limit { border-top: 1px solid var(--line2); padding-top: var(--sp-4); }
+.rw-fields > .field + .rw-limit, .rw-fields > .rw-limit:first-child { border-top: 0; padding-top: 0; }
+
+/* The decision as label/value rows, as on the model page's cards. */
+.rw-card { margin: 0; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 12px; background: var(--surf); }
+.rw-dcard > div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 8px; padding: 3px 0; font-size: var(--fs-13); }
+.rw-dcard dt { color: var(--muted); }
+.rw-dcard dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.rw-dcard .rw-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--fs-13); }
+.rw-dwhy { margin: 4px 0 0; font-size: var(--fs-12); color: var(--muted); }
+
+/* What's inside: one row each, the icon, the name (a link) and a meta line. */
+.rw-klist li { flex-wrap: nowrap; align-items: flex-start; gap: 6px; }
+.rw-klist li > .rw-ic { flex: none; margin-top: 3px; color: var(--muted); }
+.rw-kbody { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rw-kgo { font-size: var(--fs-14); }
+
+/* The footer: add inside (left), delete as red text (right; it asks first). */
+.rw-panel-acts { justify-content: space-between; align-items: center; }
+.rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 1180px; box-sizing: border-box; }
+.rw-panel-acts button.rw-del { margin-left: auto; color: var(--danger); }
+.rw-panel-acts button.rw-del:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger); }
+.rw-panel-acts button.rw-del:focus-visible { outline: none; box-shadow: var(--focus); }
+
+/* A task card: the name, chips for its interval and kind, its instructions
+   folded to two lines, ⋯ for Edit and Remove; Edit opens the form in the
+   card, with an accent border. */
+.rim-tlist { gap: var(--sp-2); }
+.rim-tlist li.rim-card { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.rim-card { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; background: var(--surf); min-width: 0; }
+.rim-card.editing { border-color: var(--acc-line); box-shadow: 0 0 0 1px var(--acc-line); padding: 0; }
+.rim-card.editing > .rim-tform { border: 0; }
+.rim-chead { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.rim-chead .rw-ic { flex: none; margin-top: 3px; }
+.rim-tname { flex: 1 1 auto; min-width: 0; font-weight: 600; font-size: var(--fs-14); overflow-wrap: anywhere; }
+.rim-chead .more-btn { margin: -5px -6px -5px 0; flex: none; }
+.rim-chips { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 20px; }
+.rim-card .rim-tinst { padding-left: 20px; }
+.rim-card .rim-tmore { margin-left: 20px; }
+.rim-tadd { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.rim-tform-acts { align-items: center; }
+.rim-why { margin: 0 auto 0 0; font-size: var(--fs-12); color: var(--muted); min-width: 0; flex: 1 1 10rem; }
+.rim-trow > .field { flex: 1 1 140px; min-width: 0; }
+
+/* A performance standard's row: a grip to drag it, the text and its limit,
+   ⋯ for Edit, Move up / down and Remove. */
+.rfs-list { gap: 0; }
+.rfs-list li.rfs-row { display: flex; align-items: flex-start; gap: 6px; padding: 6px 4px; border-bottom: 1px solid var(--line2); border-radius: var(--r-sm); position: relative; }
+.rfs-list li.rfs-row:last-child { border-bottom: 0; }
+.rfs-list li.rfs-row:hover { background: var(--acc-hover); }
+.rfs-list li.rfs-row.editing { display: block; padding: 0; border: 0; background: none; }
+.rfs-list li.rfs-row.dragging { opacity: 0.5; }
+.rfs-list li.rfs-row.drop-before::before, .rfs-list li.rfs-row.drop-after::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--acc);
+}
+.rfs-list li.rfs-row.drop-before::before { top: -2px; }
+.rfs-list li.rfs-row.drop-after::after { bottom: -2px; }
+.rfs-grip { flex: none; display: inline-flex; align-items: center; color: var(--faint); cursor: grab; margin-top: 2px; }
+.rfs-grip svg { width: 14px; height: 14px; }
+.rfs-main { flex: 1 1 auto; }
+.rfs-text { font-size: var(--fs-14); }
+.rfs-list .more-btn { flex: none; margin: -4px 0; }
+/* The ⋯ shows on hover or focus on a wide screen; always on a touch screen. */
+@media (hover: hover) and (pointer: fine) {
+  .rfs-row .more-btn:not([aria-expanded="true"]) { opacity: 0; }
+  .rfs-row:hover .more-btn, .rfs-row:focus-within .more-btn, .rfs-row .more-btn:focus-visible { opacity: 1; }
+}
+.rfs-add { flex-direction: column; align-items: flex-start; gap: 8px; }
+.rfs-add .add-row { align-self: stretch; }
+
+.rw-panel .reads-as { margin-top: -4px; }
+.rw-panel.sheet .rw-title-btn { -webkit-line-clamp: 3; line-clamp: 3; }
+
+/* Under a cell being edited: the consequence chips, or why a value wasn't kept. */
+.rw-pop-under {
+  position: fixed; z-index: 95; max-width: min(320px, calc(100vw - 16px));
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: var(--r-sm);
+  background: var(--surf); border: 1px solid var(--line); box-shadow: var(--shadow-overlay);
+}
+.rw-pop-under:has(> .rw-cell-why:only-child) { border-color: var(--danger); }
+.rw-cell-why {
+  display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-12); font-weight: 500; line-height: 1.4; color: var(--danger);
+  white-space: normal; overflow-wrap: anywhere;
+}
+.rw-cell-why::before {
+  content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
+  border-radius: 50%; background: var(--danger); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+}
+.rw .rw-edit[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-line); }
+.rw-edit-chips { outline: none; }
+/* The limit's comparator: as wide as "between (between)" needs, no wider. */
+.ctl-group > select.ctl.rw-cmp, .rfs-limit .ctl-group > select.ctl { flex: 0 0 6.5rem; width: 6.5rem; }
+/* Touch targets on a phone: the footer's buttons and the title at 40 px. */
+.rw-panel.sheet .rw-panel-acts button { min-height: 40px; }
+.rw-panel.sheet .rw-title-btn { min-height: 40px; }

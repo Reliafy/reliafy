@@ -818,20 +818,15 @@ export default function AssetExplorer() {
   // it isn't (no connection, a refusal), it stays as typed with the reason, to
   // try again. Resolves true once saved, else to the reason.
   const commit = (r, col, raw) => {
+    // A refusal shows where the value was typed (under the cell, or the
+    // field), the value kept: not as a toast that cuts the reason short.
     const res = checkValue(col, cellRow(r), raw);
-    if (res.error) {
-      say(res.error, "error");
-      return res.error;
-    }
+    if (res.error) return res.error;
     return ops.set(r, col, res.value).then(() => {
       setEditing((e) => (e && e.key === r.key && e.col === col ? null : e));
       say("Saved.");
       return true;
-    }, (e) => {
-      const text = saveErrorText(e, { offline: navigator.onLine === false });
-      say(text, "error");
-      return text;
-    });
+    }, (e) => saveErrorText(e, { offline: navigator.onLine === false }));
   };
   // A function, standard, failure or mode opened (a double-click on its
   // name, Open… in its menu): picked in the tree, the cell being edited
