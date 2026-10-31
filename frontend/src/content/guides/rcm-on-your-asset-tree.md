@@ -42,9 +42,9 @@ The levels under a position are the ones classic RCM uses:
   limit each: *within 30 m from 60 km/h*. A function may have several; each
   is a row under the function. A function with none (the sample truck's)
   has its functional failures right under it.
-- **Functional failure** — how it fails to do it, nested under the standard
+- **Functional failure** — how it fails to do it, nested under the performance standard
   it is the loss of: *Insufficient braking force*. A total loss, or a failure
-  not tied to one standard yet, sits under a grey **No standard** row.
+  not tied to one performance standard yet, sits under a grey **No performance standard** row.
 - **Failure mode** — what causes that failure: *Brake pad wear beyond the 8 mm
   limit*.
 
@@ -70,7 +70,7 @@ To find your way around a big tree:
   (positions with no RCM yet). **Reset to the usual view** puts it all back.
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
-- **Isolate** in any row's menu (a position, function, standard, functional
+- **Isolate** in any row's menu (a position, function, performance standard, functional
   failure or failure mode) closes every other branch of the tree and opens
   that row **with 1 level open**, **2 levels open**, **3 levels open** or
   **everything open** below it. The other rows stay on show, closed, so you
@@ -98,21 +98,21 @@ Pick a position in the tree on the RCM tab. Build from the top down:
 1. **Add function** (at the top of the position's panel, or in the position's
    row menu: right-click the row, press its **⋯** button, or Shift+F10). Type
    what the position must do and press **Add function**.
-2. In the function's row menu, **Add a standard…** adds a performance
+2. In the function's row menu, **Add a performance standard…** adds a performance
    standard (one parameter and one limit), and **Add functional failure**
-   adds a way it can fail. In a standard's row menu, **Add a functional
-   failure…** adds one that breaches that standard, nested under it.
+   adds a way it can fail. In a performance standard's row menu, **Add a functional
+   failure…** adds one that breaches that performance standard, nested under it.
 3. In the functional failure's row menu, **Add failure mode** adds a cause.
    Add one per cause.
 
 Each new row opens in **Details**, where you can change its **Description**,
 and for a function its **Performance standards**, for a failure mode its
 **Failure effects**, **Consequence** and **Mode notes**. **Edit description**
-(on a standard, **Edit text**) in a row's menu changes the text in the table
+(on a performance standard, **Edit text**) in a row's menu changes the text in the table
 itself. **Delete this function** (or functional failure, or failure mode) in
 the Details removes a row and everything inside it, after asking; **Remove
-this standard** takes a standard off its function and its functional failures
-stay, under **No standard**.
+this performance standard** takes a performance standard off its function and its functional failures
+stay, under **No performance standard**.
 
 Every change is saved as you make it: there is no Save button, and what you
 see is what everyone in the workspace sees.
@@ -266,77 +266,77 @@ its own functional failure. Keeping them as a list, rather than a sentence
 with *and* in it, keeps the function's words short and lets each functional
 failure say what it breaches.
 
-Each standard is a row of the tree under its function, and the functional
+Each performance standard is a row of the tree under its function, and the functional
 failures that breach it are nested under it: *pH above 7.8* and *pH below
-7.2* under *pH 7.2–7.8*. A standard with no functional failure yet says so
+7.2* under *pH 7.2–7.8*. A performance standard with no functional failure yet says so
 in grey at the end of its row (*no failure yet*): a hint, not a rule. From
 the rows:
 
-- In a function's row menu, **Add a standard…** adds one. In a standard's
+- In a function's row menu, **Add a performance standard…** adds one. In a performance standard's
   row menu, **Add a functional failure…** adds one that breaches it,
-  **Edit text** changes its words in the table, and **Remove standard**
+  **Edit text** changes its words in the table, and **Remove performance standard**
   takes it off the function after asking (its functional failures move under
-  **No standard**, with their failure modes). Drag a standard above or below
+  **No performance standard**, with their failure modes). Drag a performance standard above or below
   another to change the order (from the keyboard: **Move up** and **Move
   down** in its menu).
-- In a functional failure's row menu, **Change standard…** moves it under
-  another of the function's standards, or under **No standard** (the whole
+- In a functional failure's row menu, **Change performance standard…** moves it under
+  another of the function's performance standards, or under **No performance standard** (the whole
   function, as a total loss is).
-- Double-click a standard's row (or **Open…** in its menu) for its dialog:
+- Double-click a performance standard's row (or **Open…** in its menu) for its dialog:
   the text, the structured limit (parameter, comparator, value, unit), when
   it applies, its source, and the functional failures that breach it.
-- A function that still has its one standard as a sentence shows it as one
-  standard row, with every functional failure under it (there is nothing
+- A function that still has its one performance standard as a sentence shows it as one
+  performance standard row, with every functional failure under it (there is nothing
   else to breach). The row's menu edits or removes that text; to make it a
-  list, open the function and press **Add standard** or **Split into
-  standards…**, as below.
+  list, open the function and press **Add performance standard** or **Split into
+  performance standards…**, as below.
 
 Open a function (double-click its row, or **Open…** in its menu) and look
 under **Performance standards**:
 
-- Each standard is one line: one parameter and one limit, such as *pH
-  7.2–7.8*. **Add standard** adds another; **Edit** changes one; **Remove**
+- Each performance standard is one line: one parameter and one limit, such as *pH
+  7.2–7.8*. **Add performance standard** adds another; **Edit** changes one; **Remove**
   takes it off; the arrows move it up or down. **Limit…** unfolds the
   structured fields (parameter, comparator, value, unit), **when** it applies
   (a condition such as *while the filter pump runs*, which is never a
-  standard on its own) and its **source** (*AS 1926.3*, *the E25 manual*).
+  performance standard on its own) and its **source** (*AS 1926.3*, *the E25 manual*).
   Keep the text as the thing people read; the structured limit is optional.
-- A function that had one standard before shows it as the first item. The
+- A function that had one performance standard before shows it as the first item. The
   moment you add a second, that text becomes the first item of the list,
   as written. Nothing is split for you: if the old text was a list joined by
-  semicolons, **Split into standards…** proposes one standard per part, lets
+  semicolons, **Split into performance standards…** proposes one performance standard per part, lets
   you edit each line or drop it, and writes them when you confirm.
-- Open a functional failure to say which standard it **Breaches**: *pH above
+- Open a functional failure to say which performance standard it **Breaches**: *pH above
   7.8* breaches *pH 7.2–7.8*; *No flow* breaches the whole function. It is a
-  hint for the reader, not a rule: the dialog says *2 standards have no
+  hint for the reader, not a rule: the dialog says *2 performance standards have no
   functional failure yet* under a function, in grey, so you can decide
-  whether those are standards of this function at all.
-- A standard that needs its own verb is another function: *produce chlorine*
+  whether those are performance standards of this function at all.
+- A performance standard that needs its own verb is another function: *produce chlorine*
   and *not raise the pH* are two jobs.
 
 The table's **Performance standard** column shows the list on one line on
-the function's row, and a standard's own limit in words on its row. In a
-worksheet, every distinct standard cell under a function is one standard (a
-row with the function and a standard alone lists one), and when a function
+the function's row, and a performance standard's own limit in words on its row. In a
+worksheet, every distinct performance standard cell under a function is one performance standard (a
+row with the function and a performance standard alone lists one), and when a function
 has a list, a functional failure's row names the one it breaches; **Export
 CSV** writes them that way, so a sheet reads back with each failure under its
-standard.
+performance standard.
 
 ## Move things around: drag and drop, and Undo
 
 In a workshop the analysis changes shape as people talk. On a wide screen you
 can drag rows in the RCM table to rearrange it:
 
-- **A function** onto another position (it takes its standards, functional
+- **A function** onto another position (it takes its performance standards, functional
   failures, failure modes and tasks with it), or above or below another
   function to change the order.
 - **A performance standard** onto another function, on any position. It takes
   everything under it: the functional failures that breach it, their failure
   modes, decisions and tasks. The label says what moves, for example "the
-  standard “At least 50 L/s” and its 3 functional failures". Drop it above or
-  below another standard to change the order.
-- **A functional failure** onto another function, onto a standard (it then
-  breaches that one) or onto **No standard**, or above or below another
+  performance standard “At least 50 L/s” and its 3 functional failures". Drop it above or
+  below another performance standard to change the order.
+- **A functional failure** onto another function, onto a performance standard (it then
+  breaches that one) or onto **No performance standard**, or above or below another
   functional failure.
 - **Failure modes** onto a functional failure, on this position or another. To
   move several at once, pick them with Ctrl-click (Cmd-click on a Mac) or
@@ -360,10 +360,10 @@ done, typed in or worked out from the date), the old one anyway, or calendar
 time instead.
 
 Each drop is done in one go, or not at all: if one failure mode under a
-standard can't move, nothing does. A note at the bottom of the page
+performance standard can't move, nothing does. A note at the bottom of the page
 says what moved and has an **Undo** button (or press Ctrl+Z, Cmd+Z on a Mac,
 while it shows). Undo puts everything back where it was, in the same order,
-with each functional failure breaching the same standard as before. A link
+with each functional failure breaching the same performance standard as before. A link
 between functional failures that a move took away (a cause must sit on a
 position inside its effect's) is named in the note and isn't put back by Undo:
 link them again if you need to.
@@ -372,16 +372,16 @@ link them again if you need to.
 has the moves instead. Press Shift+F10 (or the Menu key) on a row, or on a
 phone tap its **⋯**, for **Move to…** (a list of the places it can go, with
 the same checks before you press Move) and **Move up** / **Move down**; a
-standard's menu has **Move up** / **Move down** to change the order, and a
+performance standard's menu has **Move up** / **Move down** to change the order, and a
 failure mode's menu also has **Move a task…**. With a mouse on a wide screen,
 right-click and **⋯** leave them out: drag the row instead.
 
 ## Show the working behind a performance standard
 
-Some standards come from sums, not a book: how much chlorine a pool needs from
+Some performance standards come from sums, not a book: how much chlorine a pool needs from
 its volume, its sunlight and its swimmers, or how many tonnes an hour a belt
 must move to keep a silo filling. Open a function's Details and look under
-**Performance standard** for **Working behind the standard**. It is optional.
+**Performance standard** for **Working behind the performance standard**. It is optional.
 
 - **Add a working…** (or **Edit**) opens a box where you write in Markdown:
   headings, lists, tables, bold, code and links. **Preview** shows what readers
@@ -392,7 +392,7 @@ must move to keep a silo filling. Open a function's Details and look under
 - **Attach PDF** keeps a PDF of the working with the function, up to five, each
   up to 20 MB. Open one from its name; its **⋯** menu downloads, replaces or
   removes it.
-- A small **i** beside the standard in the table means a working is there.
+- A small **i** beside the performance standard in the table means a working is there.
   Click it to open the working. If the Performance standard column is hidden,
   the **i** sits at the end of the function's name instead.
 

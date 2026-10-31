@@ -194,15 +194,15 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
       </p>
 
       <form id="rim-form" ref={form} className="rw-fields" onSubmit={save} noValidate>
-        {field("name", r.type === "std" ? "Standard" : "Description", {
+        {field("name", r.type === "std" ? "Performance standard" : "Description", {
           area: true,
           help: r.type === "fn" ? "What this position must do" : r.type === "std" ? "One parameter and one limit, e.g. pH 7.2-7.8"
             : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
         })}
         {r.type === "std" && r.ref.legacy && (
           <p className="rw-fhelp rim-legacy">
-            This is the function's one standard, as written. To make it a list (one row each, with a limit on each), open the
-            function and press <b>Add standard</b>, or <b>Split into standards…</b> when the text is several joined by “;”.
+            This is the function's one performance standard, as written. To make it a list (one row each, with a limit on each), open the
+            function and press <b>Add performance standard</b>, or <b>Split into performance standards…</b> when the text is several joined by “;”.
           </p>
         )}
         {r.type === "std" && !r.ref.legacy && (
@@ -296,7 +296,7 @@ export default function RcmItemModal({ r, display, ops, links, onSave, onDecisio
           {kids.length === 0 ? (
             <p className="rw-fhelp">
               {r.type === "fn" ? "No functional failures yet."
-                : r.type === "std" ? (r.ref.legacy ? "No functional failures yet." : "No functional failure written yet: add one from the standard's row menu (Add a functional failure…).")
+                : r.type === "std" ? (r.ref.legacy ? "No functional failures yet." : "No functional failure written yet: add one from the performance standard's row menu (Add a functional failure…).")
                 : "No failure modes of its own yet."}
             </p>
           ) : (

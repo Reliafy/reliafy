@@ -45,7 +45,7 @@ test("what can be dragged: functions, standards of a list, failures, modes (one 
   assert.deepEqual(src(d, "f1"), { kind: "fn", keys: ["f1"] });
   assert.deepEqual(src(d, "s1"), { kind: "std", keys: ["s1"] });
   assert.equal(src(d, "S:f2"), null); // the one text's row
-  assert.match(dragBlock(d.rows.get("S:f2")), /one standard text/);
+  assert.match(dragBlock(d.rows.get("S:f2")), /one performance standard text/);
   assert.equal(src(d, "pump"), null);
   assert.equal(src(d, "U:pump"), null);
   assert.deepEqual(src(d, "m1", { picked: new Set(["m1", "m3"]) }), { kind: "modes", keys: ["m1", "m3"] });
@@ -94,7 +94,7 @@ test("a functional failure: to a function, onto a standard, under No standard, o
   const x1 = src(d, "x1");
   assert.deepEqual(planDrop(d, x1, "s2", "into").ops,
     [{ do: "failure_modes.update_functional_failure", args: { functional_failure_id: "x1", standard_id: "s2" } }]);
-  assert.match(planDrop(d, x1, "s1", "into").refuse, /breaches this standard already/);
+  assert.match(planDrop(d, x1, "s1", "into").refuse, /breaches this performance standard already/);
   assert.deepEqual(planDrop(d, x1, "N:f1", "into").ops,
     [{ do: "failure_modes.update_functional_failure", args: { functional_failure_id: "x1", standard_id: "none" } }]);
   assert.match(planDrop(d, x1, "f1", "into").refuse, /under this function already/);
@@ -117,7 +117,7 @@ test("a functional failure: to a function, onto a standard, under No standard, o
     { do: "failure_modes.move_functional_failure", args: { functional_failure_id: "x1", function_id: "g1", standard_id: "s9" } },
     { do: "failure_modes.reorder", args: { parent_id: "g1", ids: ["x1", "y1"] } },
   ]);
-  assert.match(planDrop(d, x1, "m3", "into").refuse, /goes under a function or a standard/);
+  assert.match(planDrop(d, x1, "m3", "into").refuse, /goes under a function or a performance standard/);
 });
 
 test("failure modes, one or several: under a functional failure (assigned here, moved from elsewhere), placed, or under none", () => {
@@ -158,8 +158,8 @@ test("a standard: placed among its function's, or to another function with every
     { do: "failure_modes.move_standard", args: { standard_id: "s1", function_id: "g1" } },
     { do: "failure_modes.move_functional_failure", args: { functional_failure_id: "x1", function_id: "g1", standard_id: "s1" } },
   ]);
-  assert.equal(away.text, "Move the standard “50 L/s” and its functional failure to “Pump more water”, with its failure modes and tasks");
-  assert.equal(away.done, "Moved the standard “50 L/s” and its functional failure to “Pump more water”.");
+  assert.equal(away.text, "Move the performance standard “50 L/s” and its functional failure to “Pump more water”, with its failure modes and tasks");
+  assert.equal(away.done, "Moved the performance standard “50 L/s” and its functional failure to “Pump more water”.");
   // Undo: the server's list, then the old order of the standards and of the failures.
   assert.deepEqual(away.extraUndo, [
     { do: "failure_modes.reorder_standards", args: { function_id: "f1", standard_ids: ["s1", "s2"] } },
@@ -174,7 +174,7 @@ test("a standard: placed among its function's, or to another function with every
   // Onto a function with its one text, on the same position: the standard and its failure.
   assert.deepEqual(planDrop(d, src(d, "s1"), "S:f2", "into").ops.map((o) => [o.do, o.args.function_id]), [
     ["failure_modes.move_standard", "f2"], ["failure_modes.move_functional_failure", "f2"]]);
-  assert.match(planDrop(d, src(d, "s1"), "f1", "into").refuse, /standard of this function already/);
+  assert.match(planDrop(d, src(d, "s1"), "f1", "into").refuse, /performance standard of this function already/);
   // Not into a row under itself.
   assert.deepEqual(dropZones(d, src(d, "s1"), "x1").zones, []);
 });
@@ -187,9 +187,9 @@ test("a standard with nothing under it moves alone; the label says what moves", 
   const lone = planDrop(d, src(d, "s3"), "g1", "into");
   assert.deepEqual(lone.ops, [{ do: "failure_modes.move_standard", args: { standard_id: "s3", function_id: "g1" } }]);
   assert.deepEqual(lone.extraUndo, [{ do: "failure_modes.reorder_standards", args: { function_id: "f1", standard_ids: ["s1", "s2", "s3"] } }]);
-  assert.equal(lone.text, "Move the standard “Quiet” to “Pump more water”");
-  assert.equal(sourceWords(d, src(d, "s3")), "the standard “Quiet”");
-  assert.equal(sourceWords(d, src(d, "s2")), "the standard “4 bar” and its 2 functional failures");
+  assert.equal(lone.text, "Move the performance standard “Quiet” to “Pump more water”");
+  assert.equal(sourceWords(d, src(d, "s3")), "the performance standard “Quiet”");
+  assert.equal(sourceWords(d, src(d, "s2")), "the performance standard “4 bar” and its 2 functional failures");
   assert.deepEqual(planDrop(d, src(d, "s2"), "g1", "into").ops.slice(1).map((o) => o.args.functional_failure_id), ["x2", "x5"]);
   assert.match(planDrop(d, src(d, "s2"), "g1", "into").text, /with their failure modes and tasks$/);
 });
@@ -208,7 +208,7 @@ test("everything under a standard row stays draggable: its failures, their modes
 
 test("a standard's note that its failures stay isn't said when the batch moves them too", () => {
   const moved = { results: [
-    { do: "failure_modes.move_standard", result: { unlinked_functional_failure_ids: ["x1"], note: "1 functional failure that breached it stays with the old function, under no standard." } },
+    { do: "failure_modes.move_standard", result: { unlinked_functional_failure_ids: ["x1"], note: "1 functional failure that breached it stays with the old function, under no performance standard." } },
     { do: "failure_modes.move_functional_failure", result: { moved: "x1", note: "1 link went." } },
   ] };
   assert.deepEqual(answerNotes(moved), ["1 link went."]);

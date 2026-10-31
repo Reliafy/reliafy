@@ -257,10 +257,10 @@ def _basis_text(value) -> str:
     lines = str(value or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
     text = "\n".join(line.rstrip() for line in lines).strip()
     if any(ord(ch) < 32 and ch not in "\n\t" for ch in text):
-        raise Invalid("The working behind the standard is plain text (Markdown is fine); it has a control "
+        raise Invalid("The working behind the performance standard is plain text (Markdown is fine); it has a control "
                       "character in it. Paste it as text, or attach the file as a PDF.")
     if len(text) > BASIS_TEXT:
-        raise Invalid(f"The working behind the standard is at most {BASIS_TEXT:,} characters; this one is "
+        raise Invalid(f"The working behind the performance standard is at most {BASIS_TEXT:,} characters; this one is "
                       f"{len(text):,}. Shorten it, or attach it as a PDF.")
     return text
 
@@ -3076,7 +3076,7 @@ class Maintenance:
             changes["text"] = _text(text, "function", required=True, max_len=LONG_TEXT)
         if standard is not None:
             if self._standards_of(function_id):
-                raise Invalid("This function's performance standard is its list of standards: change those "
+                raise Invalid("This function's performance standard is its list of performance standards: change those "
                               "(maintenance_failure_modes update_standard, add_standard, remove_standard).")
             changes["standard"] = _text(standard, "performance standard", max_len=LONG_TEXT)
         if standard_basis is not None:
@@ -3172,7 +3172,7 @@ class Maintenance:
             raise Invalid("There's no performance standard with that id in this workspace.")
         st, fn = self._live_standard(str(standard_id))
         if fn["id"] != function_id:
-            raise Invalid(f"“{st['text']}” is a standard of another function: pick one of this function's.")
+            raise Invalid(f"“{st['text']}” is a performance standard of another function: pick one of this function's.")
         return st
 
     @staticmethod
@@ -3261,7 +3261,7 @@ class Maintenance:
         have = self._standards_of(function_id)
         ids = [str(x) for x in (standard_ids or [])]
         if sorted(ids) != sorted(st["id"] for st in have):
-            raise Invalid("Name each of the function's standards once (standard_ids), in the order wanted.")
+            raise Invalid("Name each of the function's performance standards once (standard_ids), in the order wanted.")
         by_id = {st["id"]: st for st in have}
         for n, sid in enumerate(ids, start=1):
             if (by_id[sid].get("order") or 0) != n:
@@ -3289,8 +3289,8 @@ class Maintenance:
             raise Invalid("There's no function with that id in this workspace: pick one from the RCM tree.")
         fn_to, target = self._live_function(str(function_id))
         if fn_to["id"] == fn_from["id"]:
-            raise Invalid(f"It's already a standard of {shortened(fn_to['text'])[0]}: pick another function (to "
-                          "change the order of a function's standards, reorder them).")
+            raise Invalid(f"It's already a performance standard of {shortened(fn_to['text'])[0]}: pick another function "
+                          "(to change the order of a function's performance standards, reorder them).")
         if target.get("retired"):
             raise Invalid(f"{target['name']} has been retired: pick a function on a position that's still in use.")
         if len(self._standards_of(fn_to["id"])) >= MAX_STANDARDS:
@@ -3319,7 +3319,7 @@ class Maintenance:
                 # the move, and the old function's order before, to put it back in its place.
                 "unlinked_functional_failure_ids": unlinked, "failures_unlinked": n, "previous_ids": previous,
                 **({"note": f"{n} functional failure{' that breached it stays' if n == 1 else 's that breached it stay'}"
-                            " with the old function, under no standard."} if n else {})}
+                            " with the old function, under no performance standard."} if n else {})}
 
     def split_standard(self, function_id: str, standards=None, dry_run: bool = True) -> dict:
         """Turn a function's old single standard text into a list, one standard
@@ -3330,9 +3330,9 @@ class Maintenance:
         fn, _ = self._live_function(function_id)
         legacy = (fn.get("standard") or "").strip()
         if self._standards_of(function_id):
-            raise Invalid("This function has its list of standards already: add to it, or change the ones there.")
+            raise Invalid("This function has its list of performance standards already: add to it, or change the ones there.")
         if not legacy:
-            raise Invalid("This function has no performance standard text to split: add standards instead.")
+            raise Invalid("This function has no performance standard text to split: add performance standards instead.")
         if standards is None:
             proposed = [{"text": part} for part in propose_split(legacy)]
         else:

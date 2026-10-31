@@ -70,7 +70,7 @@ test("no Add rows in the tree: adding is from each row's menu", () => {
   // Open… stays on a phone: it's the way to the dialog there (no double-click).
   assert.deepEqual(ids("f1", { canRename: false }), ["open", "add-std", "add-fail", "delete"]);
   const label = (key) => rowActions(d.rows.get(key)).map((a) => a.label);
-  assert.deepEqual(label("f1"), ["Open…", "Add a standard…", "Add functional failure", "Edit description", "Delete function"]);
+  assert.deepEqual(label("f1"), ["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Delete function"]);
   assert.equal(label("m2")[1], "Change the decision…");
   assert.equal(label("m1")[1], "Decide…");
   assert.equal(label("m1")[2], "Add a task…");
@@ -481,7 +481,7 @@ test("standards are a level: a list's rows with their failures, a 'No standard' 
   assert.deepEqual(row("s1").ref.standard_ids, ["s1", "s2"]);
   assert.equal(row("s1").ref.no_failure, false);
   assert.equal(row("s2").ref.no_failure, true);
-  assert.deepEqual(markersOf(row("s2")), [{ kind: "nofail", text: "no failure yet", label: "No functional failure written yet for this standard" }]);
+  assert.deepEqual(markersOf(row("s2")), [{ kind: "nofail", text: "no failure yet", label: "No functional failure written yet for this performance standard" }]);
   assert.deepEqual(markersOf(row("s1")), []);
   assert.equal(positionOf(row("s1")), "pump");
   assert.equal(positionOf(row(noStdKey("f1"))), "pump");
@@ -557,22 +557,22 @@ test("row menus for the standards level: add, edit, move, remove; a failure chan
   const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
   const items = (k, opts) => rowActions(d.rows.get(k), opts);
   const labels = (k, opts) => items(k, opts).map((a) => a.label);
-  assert.deepEqual(labels("s1"), ["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Remove standard"]);
+  assert.deepEqual(labels("s1"), ["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Remove performance standard"]);
   // The first can't move up, the last can't move down (disabled, still listed).
   assert.deepEqual(items("s1").map((a) => [a.id, !!a.disabled]), [["open", false], ["rename", false], ["add-fail", false], ["move-up", true], ["move-down", false], ["delete", false]]);
   assert.deepEqual(items("s2").filter((a) => a.id.startsWith("move")).map((a) => [a.id, !!a.disabled]), [["move-up", false], ["move-down", true]]);
   // A wide screen's pointer menu drags them instead (moves: false): no Move up / down.
-  assert.deepEqual(labels("s1", { moves: false }), ["Open…", "Edit text", "Add a functional failure…", "Remove standard"]);
+  assert.deepEqual(labels("s1", { moves: false }), ["Open…", "Edit text", "Add a functional failure…", "Remove performance standard"]);
   assert.equal(items("s1").find((a) => a.id === "delete").danger, true);
   // The one text's row: no moving; on a phone no in-place edit.
-  assert.deepEqual(labels(legacyKey("f2")), ["Open…", "Edit text", "Add a functional failure…", "Remove standard"]);
+  assert.deepEqual(labels(legacyKey("f2")), ["Open…", "Edit text", "Add a functional failure…", "Remove performance standard"]);
   assert.deepEqual(items(legacyKey("f2"), { canRename: false }).map((a) => a.id), ["open", "add-fail", "delete"]);
   assert.deepEqual(items(noStdKey("f1")), []); // the "No standard" heading has none
   // A failure under a function with a list offers Change standard…; one without doesn't.
-  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Change standard…", "Edit description", "Delete functional failure"]);
-  assert.ok(!labels("x3").includes("Change standard…"));
-  assert.ok(!labels("x4").includes("Change standard…"));
-  assert.deepEqual(labels("f1").slice(0, 3), ["Open…", "Add a standard…", "Add functional failure"]);
+  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Change performance standard…", "Edit description", "Delete functional failure"]);
+  assert.ok(!labels("x3").includes("Change performance standard…"));
+  assert.ok(!labels("x4").includes("Change performance standard…"));
+  assert.deepEqual(labels("f1").slice(0, 3), ["Open…", "Add a performance standard…", "Add functional failure"]);
 });
 
 test("a standard's dialog: its text and limit fields, saved as one write; the one text saved as the function's", () => {
@@ -592,7 +592,7 @@ test("a standard's dialog: its text and limit fields, saved as one write; the on
   assert.deepEqual(checked.errors, {});
   assert.deepEqual(itemWrites(row("s2"), checked.values), [{ api: "standard", body: { text: "At 4.5 bar", value: 4.5, when: "at full flow", comparator: ">=" } }]);
   assert.deepEqual(itemWrites(row("s2"), { value: "7.2-7.8" }), [{ api: "standard", body: { value: "7.2-7.8" } }]);
-  assert.deepEqual(checkItem(row("s1"), { name: " " }).errors, { name: "Every standard needs a description." });
+  assert.deepEqual(checkItem(row("s1"), { name: " " }).errors, { name: "Every performance standard needs a description." });
   // The one text's row: the text, as the function's standard; the limit fields are ignored.
   assert.deepEqual(itemWrites(row(legacyKey("f2")), { name: "No leak past the seal or the gland", unit: "x" }), [{ api: "function-standard", body: { standard: "No leak past the seal or the gland" } }]);
   assert.deepEqual(itemWrites(row("s2"), {}), []);

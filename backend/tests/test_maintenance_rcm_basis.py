@@ -74,7 +74,7 @@ def test_the_cap_and_plain_text(m):
     m.update_function(fn["id"], standard_basis="x" * BASIS_TEXT)
     with pytest.raises(Invalid) as err:
         m.update_function(fn["id"], standard_basis="y" * (BASIS_TEXT + 1))
-    assert str(err.value) == ("The working behind the standard is at most 20,000 characters; this one is 20,001. "
+    assert str(err.value) == ("The working behind the performance standard is at most 20,000 characters; this one is 20,001. "
                               "Shorten it, or attach it as a PDF.")
     with pytest.raises(Invalid, match="at most 20,000"):
         m.add_function(pid, "Another", standard_basis="z" * (BASIS_TEXT + 1))

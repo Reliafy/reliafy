@@ -82,7 +82,7 @@ test("at 1280x720 the RCM table fits: no column cut off, the interval in the Tas
   await expect(basket).toBeVisible();
   // The usual columns under 1400 px: no Interval, no Evidence check; every header whole.
   expect((await headers(page)).map((h) => h.name)).toEqual([
-    "Position › function, standard, failure or mode", "Failure effects", "Consequence", "Decision", "Task",
+    "Function, performance standard, failure or mode", "Failure effects", "Consequence", "Decision", "Task",
   ]);
   expect((await headers(page)).filter((h) => h.clipped)).toEqual([]);
   await expect(basket.getByRole("gridcell").nth(3)).toHaveText("Empty the pump basket · every 12 months");
@@ -167,7 +167,7 @@ test("a function's text is kept to 200 characters where it's typed; one saved lo
   await page.locator(".tt-headslot").getByRole("button", { name: "Add function" }).click();
   const dialog = page.getByRole("dialog", { name: "Add a function" });
   const box = dialog.getByRole("textbox", { name: "What must this position do?" });
-  await expect(dialog).toContainText("Keep it short. Put the standard of performance in its own field.");
+  await expect(dialog).toContainText("Keep it short. Put the performance standard in its own field.");
   await box.fill("a".repeat(190));
   await expect(dialog.locator(".char-count")).toHaveText("190 / 200");
   await expect(dialog.locator(".char-count")).toHaveClass(/near/);
@@ -201,7 +201,7 @@ test("a function's text is kept to 200 characters where it's typed; one saved lo
   const panel = page.locator("aside.rw-panel");
   await expect(panel).toBeVisible();
   await expect(panel.locator(".rw-flabel .char-count")).toHaveClass(/over/);
-  await expect(panel).toContainText("Keep it short. Put the standard of performance in its own field.");
+  await expect(panel).toContainText("Keep it short. Put the performance standard in its own field.");
   // The heading: two lines at most, the whole text in its tooltip.
   const title = panel.locator(".rw-panel-title");
   await expect(title).toHaveAttribute("title", long);

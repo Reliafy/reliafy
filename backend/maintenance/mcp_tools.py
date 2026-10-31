@@ -274,7 +274,7 @@ FAILURE_MODES: Table = {
     "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
     "add_function": ("position_id text", "standard standard_basis", "A function the position performs, with its "
                      "performance standard and how it was worked out (standard_basis, Markdown)."),
-    "update_function": ("function_id", "text standard standard_basis", "Change a function's text, standard (not "
+    "update_function": ("function_id", "text standard standard_basis", "Change a function's text, performance standard (not "
                         "once it has a list: see add_standard) or standard_basis ('' clears it)."),
     "add_standard": ("function_id text", "parameter comparator value unit when source", """One of the function's
         performance standards, one parameter and one limit ('pH 7.2-7.8'); the structured limit, when it
@@ -283,18 +283,18 @@ FAILURE_MODES: Table = {
                         "a field)."),
     "remove_standard": ("standard_id", "", "Take one off its function (a failure breaching it breaches the whole "
                         "function again)."),
-    "reorder_standards": ("function_id standard_ids", "", "The function's standards in that order."),
+    "reorder_standards": ("function_id standard_ids", "", "The function's performance standards in that order."),
     "move_standard": ("standard_id function_id", "ids", "To another function, alone (failures breaching it stay, "
-                      "under no standard); ids: that function's failures that breach it."),
-    "split_standard": ("function_id", "standards dry_run", """Turn a function's single standard text into a list:
+                      "under no performance standard); ids: that function's failures that breach it."),
+    "split_standard": ("function_id", "standards dry_run", """Turn a function's single performance standard text into a list:
         proposed from its ';' and line breaks (dry_run true, default), then sent back edited as standards
         [{text, when?, source?}] with dry_run false. Never automatic."""),
     "remove_function": ("function_id", "", "Delete a function, its functional failures and documents; their modes "
                         "stay, unassigned."),
     "add_functional_failure": ("function_id text", "standard_id", "A way the function fails ('No flow'); "
-                               "standard_id: the standard it breaches (none: the whole function)."),
-    "update_functional_failure": ("functional_failure_id", "text standard_id", "Change its text, or the standard "
-                                  "it breaches (standard_id 'none': the whole function)."),
+                               "standard_id: the performance standard it breaches (none: the whole function)."),
+    "update_functional_failure": ("functional_failure_id", "text standard_id", "Change its text, or the performance "
+                                  "standard it breaches (standard_id 'none': the whole function)."),
     "remove_functional_failure": ("functional_failure_id", "", "Delete a functional failure; its modes stay, "
                                   "unassigned."),
     "link_cause": ("functional_failure_id cause_id", "", "It results from cause_id, a functional failure on a "

@@ -151,7 +151,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   // The function's menu with the mouse: no Move to… / Move up / Move down.
   await fnRow.locator(".tt-tree").click({ button: "right" });
   const fmenu = rowMenu(page, `Function: Pump water ${tag}`);
-  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
+  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
   await shot(page, "v2-3-rcm-function-menu-no-moves-1280");
   await page.keyboard.press("Escape");
   // Its ⋯: the same.
@@ -167,7 +167,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   // From the keyboard: the moves are there.
   await fnRow.locator(".tt-tree").click();
   await fnRow.press("Shift+F10");
-  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Move to another position…", "Move up", "Move down", "Isolate", "Delete function"]);
+  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to another position…", "Move up", "Move down", "Isolate", "Delete function"]);
   await page.keyboard.press("Escape");
 
   // Isolate the function, 1 level: its failure shows, closed; line B closed, still on show; the pin stays.

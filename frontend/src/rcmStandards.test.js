@@ -28,8 +28,8 @@ test("the limit in words, and the hint for standards with no failure", () => {
   assert.equal(limitWords({ when: "the pool is in use" }), "when the pool is in use");
   assert.equal(limitWords({ when: "while the filter pump runs" }), "while the filter pump runs");
   assert.equal(limitWords({ text: "pH 7.2-7.8" }), "");
-  assert.equal(unbreachedWords({ standards: [{ id: "a" }, { id: "b" }], standards_without_failure: 2 }), "2 standards have no functional failure yet.");
-  assert.equal(unbreachedWords({ standards: [{ id: "a" }], standards_without_failure: 1 }), "1 standard has no functional failure yet.");
+  assert.equal(unbreachedWords({ standards: [{ id: "a" }, { id: "b" }], standards_without_failure: 2 }), "2 performance standards have no functional failure yet.");
+  assert.equal(unbreachedWords({ standards: [{ id: "a" }], standards_without_failure: 1 }), "1 performance standard has no functional failure yet.");
   assert.equal(unbreachedWords({ standards: [], standards_without_failure: 0 }), "");
 });
 

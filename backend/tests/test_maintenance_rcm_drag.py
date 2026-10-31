@@ -474,7 +474,7 @@ def test_refusals_for_moving_a_standard(m):
     pump, fn, st, ff, mode, gone, other, task = _pump(m)
     leaks = m._failures_of(other["id"])[0]
     n = m.s.event_count(ORG)
-    with pytest.raises(Invalid, match="already a standard of"):
+    with pytest.raises(Invalid, match="already a performance standard of"):
         m.move_standard(st["id"], fn["id"])
     with pytest.raises(Invalid, match="no performance standard"):
         m.move_standard("nope", other["id"])
@@ -551,7 +551,7 @@ def test_a_standard_moved_through_the_app_batch_undoes_with_its_breaches(api):
     assert breach() == (["50 L/s", "4 bar"], "50 L/s")
     # The single route, and a refusal before anything is written.
     r = api.post(f"{M}/standards/{st['id']}/move", json={"function_id": fn["id"]})
-    assert r.status_code == 422 and "already a standard" in r.json()["detail"]
+    assert r.status_code == 422 and "already a performance standard" in r.json()["detail"]
     r = api.post(f"{M}/standards/{st['id']}/move", json={"function_id": fn_b["id"]})
     assert r.status_code == 200 and r.json()["function_id"] == fn_b["id"]
 
@@ -573,7 +573,7 @@ def test_move_standard_over_mcp(env):
 
     moved, again, leaks = _session(env["token"], flow)
     assert moved["standard"]["text"] == "No drips" and moved["unlinked_functional_failure_ids"] == []
-    assert again.is_error and "already a standard" in again.content[0].text
+    assert again.is_error and "already a performance standard" in again.content[0].text
 
 
 # ---- a standard dragged with everything under it (29 Oct) ------------------------------

@@ -57,7 +57,7 @@ export function dragSource(whole, key, { picked = null, task = null } = {}) {
 
 // Why a row can't be dragged (shown as its tooltip), or null.
 export function dragBlock(r) {
-  if (r?.type === "std" && r.ref.legacy) return "This is the function's one standard text. Add it as a standard (Add a standard… on the function) to move it.";
+  if (r?.type === "std" && r.ref.legacy) return "This is the function's one performance standard text. Add it as a performance standard (Add a performance standard… on the function) to move it.";
   return null;
 }
 
@@ -69,7 +69,7 @@ export function sourceWords(whole, src) {
     // A standard carries the functional failures under it: say how many.
     const n = failsUnder(whole, src.keys[0]).length;
     const r = whole.rows.get(src.keys[0]);
-    return `the standard ${q(textOf(r))}${n ? ` and its ${n === 1 ? "functional failure" : plural(n, "functional failure")}` : ""}`;
+    return `the performance standard ${q(textOf(r))}${n ? ` and its ${n === 1 ? "functional failure" : plural(n, "functional failure")}` : ""}`;
   }
   return q(textOf(whole.rows.get(src.keys[0])));
 }
@@ -134,7 +134,7 @@ export function dropZones(whole, src, targetKey) {
   if (src.kind === "fail") {
     if (t.type === "fn" || t.type === "std" || t.type === "nostd") return { zones: ["into"] };
     if (t.type === "fail") return { zones: ["before", "after"] };
-    return no("A functional failure goes under a function or a standard: drop it there, or before or after another functional failure.");
+    return no("A functional failure goes under a function or a performance standard: drop it there, or before or after another functional failure.");
   }
   if (src.kind === "modes") {
     if (t.type === "fail" || t.type === "unassigned" || t.type === "pos") return { zones: ["into"] };
@@ -209,7 +209,7 @@ function planStandard(whole, src, t, zone, what, plan, where) {
   const fnRow = whole.rows.get(toFn);
   const place2 = t.type === "fn" || t.ref.legacy ? null : t.ref.standard_id;
   if (toFn === from) {
-    if (!place2) return { refuse: "It's a standard of this function already. To change the order, drop it before or after another standard." };
+    if (!place2) return { refuse: "It's a performance standard of this function already. To change the order, drop it before or after another performance standard." };
     // The order among the function's standards (its failures go with it on screen).
     const ids = place(stdIdsOf(whole, from), [std], place2, zone);
     if (same(ids, stdIdsOf(whole, from))) return { none: true };
@@ -258,13 +258,13 @@ function planFailure(whole, src, t, zone, what, plan, where) {
   const fnRow = whole.rows.get(toFn);
   const standard = t.type === "std" && !t.ref.legacy ? t.ref.standard_id : null;
   if (toFn === from) {
-    if (t.type === "fn" || t.ref.legacy) return { refuse: "It's under this function already. Drop it on one of its standards, or before or after another functional failure." };
-    if ((standard || null) === had) return { refuse: standard ? "It breaches this standard already." : "It's under No standard already." };
+    if (t.type === "fn" || t.ref.legacy) return { refuse: "It's under this function already. Drop it on one of its performance standards, or before or after another functional failure." };
+    if ((standard || null) === had) return { refuse: standard ? "It breaches this performance standard already." : "It's under No performance standard already." };
     return plan([op("update_functional_failure", { functional_failure_id: x.key, standard_id: standard || "none" })],
-      standard ? `${what} breaches ${q(textOf(t))} instead` : `${what} breaches no one standard (the whole function)`,
+      standard ? `${what} breaches ${q(textOf(t))} instead` : `${what} breaches no one performance standard (the whole function)`,
       standard ? `${what} now breaches ${q(textOf(t))}.` : `${what} now breaches the whole function.`);
   }
-  const note = standard ? `, breaching ${q(textOf(t))}` : hasList(whole, toFn) ? ", under No standard" : "";
+  const note = standard ? `, breaching ${q(textOf(t))}` : hasList(whole, toFn) ? ", under No performance standard" : "";
   return plan([moveTo(toFn, standard)], `Move ${what} under ${q(textOf(fnRow))}${note}, with its failure modes`,
     `Moved ${what} under ${q(textOf(fnRow))}.`, back);
 }
@@ -403,8 +403,8 @@ export function moveChoices(whole, src) {
         for (const sk of fn.kids) {
           const c = whole.rows.get(sk);
           if (!c) continue;
-          if (c.type === "std" && src.kind === "fail" && !c.ref.legacy) offer(c.key, `${textOf(fn)} › standard ${textOf(c)}`);
-          if (c.type === "nostd" && src.kind === "fail") offer(c.key, `${textOf(fn)} › No standard`);
+          if (c.type === "std" && src.kind === "fail" && !c.ref.legacy) offer(c.key, `${textOf(fn)} › performance standard ${textOf(c)}`);
+          if (c.type === "nostd" && src.kind === "fail") offer(c.key, `${textOf(fn)} › No performance standard`);
           const fails = c.type === "fail" ? [c]
             : (c.type === "std" || c.type === "nostd") ? c.kids.map((x) => whole.rows.get(x)).filter((x) => x?.type === "fail") : [];
           for (const ff of fails) {

@@ -80,12 +80,12 @@ test("standards are a level of the tree: a list's rows, the 'No standard' row, t
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
-  await expect(table(page).getByRole("columnheader", { name: "Position › function, standard, failure or mode" })).toBeVisible();
+  await expect(table(page).getByRole("columnheader", { name: "Function, performance standard, failure or mode" })).toBeVisible();
   const fnRow = trow(page, `^Function: Keep the water balanced ${tag}`);
-  const ph = trow(page, `^Standard: pH 7.2-7.8 ${tag}`);
-  const ta = trow(page, `^Standard: Total alkalinity 80-120 ppm ${tag}`);
-  const ca = trow(page, `^Standard: Calcium hardness 200-400 ppm ${tag}`);
-  const none = trow(page, `^No standard`).first();
+  const ph = trow(page, `^Performance standard: pH 7.2-7.8 ${tag}`);
+  const ta = trow(page, `^Performance standard: Total alkalinity 80-120 ppm ${tag}`);
+  const ca = trow(page, `^Performance standard: Calcium hardness 200-400 ppm ${tag}`);
+  const none = trow(page, `^No performance standard`).first();
   await expect(fnRow).toBeVisible();
   await expect(ph).toBeVisible();
   await expect(ta).toBeVisible();
@@ -109,19 +109,19 @@ test("standards are a level of the tree: a list's rows, the 'No standard' row, t
   const at = (text) => order.findIndex((t) => t.includes(text));
   expect(at(`pH 7.2-7.8 ${tag}`)).toBeLessThan(at(`pH above 7.8 ${tag}`));
   expect(at(`pH above 7.8 ${tag}`)).toBeLessThan(at(`Total alkalinity 80-120 ppm ${tag}`));
-  expect(at(`Calcium hardness 200-400 ppm ${tag}`)).toBeLessThan(at("No standard"));
-  expect(at("No standard")).toBeLessThan(at(`Water scale-forming ${tag}`));
+  expect(at(`Calcium hardness 200-400 ppm ${tag}`)).toBeLessThan(at("No performance standard"));
+  expect(at("No performance standard")).toBeLessThan(at(`Water scale-forming ${tag}`));
   // The quiet marker on a standard with no functional failure, and nothing on one with.
   await expect(ta.getByText("no failure yet")).toBeVisible();
   await expect(ca.getByText("no failure yet")).toBeVisible();
   await expect(ph.getByText("no failure yet")).toHaveCount(0);
   // The one text: one standard row with its failure under it, and no "No standard" row for it.
-  const legacy = trow(page, `^Standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`);
+  const legacy = trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`);
   await expect(legacy).toBeVisible();
   expect(await level(legacy)).toBe(fnLevel + 1);
   expect(await level(trow(page, `^Functional failure: FC below 1 ppm ${tag}`))).toBe(fnLevel + 2);
   await expect(legacy.getByText("no failure yet")).toHaveCount(0);
-  await expect(trow(page, `^No standard`)).toHaveCount(1);
+  await expect(trow(page, `^No performance standard`)).toHaveCount(1);
   // No standard at all: the failure right under the function.
   expect(await level(trow(page, `^Functional failure: No flow ${tag}`))).toBe(fnLevel + 1);
   // The standard column (from the Columns menu): the limit in words on the standard's row.
@@ -176,34 +176,34 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   const flow = trow(page, `^Functional failure: No flow ${tag}`);
   await expect(flow).toBeVisible();
 
-  // A function's menu: Add a standard… (the first standard; its loose failure stays on show, under "No standard").
+  // A function's menu: Add a performance standard… (the first standard; its loose failure stays on show, under "No standard").
   let menu = await menuOf(page, circulate);
   // With the mouse there are no moves (a drag does them); Isolate › before Delete.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
-  await menu.getByRole("menuitem", { name: "Add a standard…" }).click();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
+  await menu.getByRole("menuitem", { name: "Add a performance standard…" }).click();
   const ask = page.getByRole("dialog", { name: "Add a performance standard" });
   await ask.getByRole("textbox").fill(`At least 50 L/s ${tag}`);
-  await ask.getByRole("button", { name: "Add standard" }).click();
-  const fifty = trow(page, `^Standard: At least 50 L/s ${tag}`);
+  await ask.getByRole("button", { name: "Add performance standard" }).click();
+  const fifty = trow(page, `^Performance standard: At least 50 L/s ${tag}`);
   await expect(fifty).toBeVisible();
   await expect(fifty).toHaveAttribute("aria-selected", "true");
   expect(await level(fifty)).toBe((await level(circulate)) + 1);
   await expect(flow).toBeVisible();
   expect(await level(flow)).toBe((await level(circulate)) + 2); // now under "No standard"
-  await expect(trow(page, `^No standard`)).toHaveCount(2);
+  await expect(trow(page, `^No performance standard`)).toHaveCount(2);
   await expect(fifty.getByText("no failure yet")).toBeVisible();
 
   // A standard's menu: Add a functional failure… (it breaches this standard).
   menu = await menuOf(page, fifty);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Isolate", "Remove standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Isolate", "Remove performance standard"]);
   await page.keyboard.press("Escape");
   // From the keyboard: the moves too.
   menu = await menuOf(page, fifty, { keyboard: true });
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Isolate", "Remove standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Isolate", "Remove performance standard"]);
   await expect(menu.getByRole("menuitem", { name: "Move up" })).toHaveAttribute("aria-disabled", "true"); // the only one
   await menu.getByRole("menuitem", { name: "Add a functional failure…" }).click();
   const askFail = page.getByRole("dialog", { name: "Add a functional failure" });
-  await expect(askFail.getByText("How does it fail to meet this standard?")).toBeVisible();
+  await expect(askFail.getByText("How does it fail to meet this performance standard?")).toBeVisible();
   await askFail.getByRole("textbox").fill(`Low flow ${tag}`);
   await askFail.getByRole("button", { name: "Add functional failure" }).click();
   const lowFlow = trow(page, `^Functional failure: Low flow ${tag}`);
@@ -215,21 +215,21 @@ test("row menus: add a standard, a failure under it, change a failure's standard
 
   // A failure's menu: Change standard… (it moves under the standard; the "No standard" row goes).
   menu = await menuOf(page, flow);
-  await menu.getByRole("menuitem", { name: "Change standard…" }).click();
-  const pick = page.getByRole("dialog", { name: "Which standard does it breach?" });
+  await menu.getByRole("menuitem", { name: "Change performance standard…" }).click();
+  const pick = page.getByRole("dialog", { name: "Which performance standard does it breach?" });
   await expect(pick.getByRole("combobox", { name: "Breaches" })).toHaveValue("");
   await pick.getByRole("combobox", { name: "Breaches" }).selectOption({ label: `At least 50 L/s ${tag}` });
   await pick.getByRole("button", { name: "Save" }).click();
   await expect(pick).toHaveCount(0);
   await expect(flow).toBeVisible();
   expect(await level(flow)).toBe((await level(fifty)) + 1);
-  await expect(trow(page, `^No standard`)).toHaveCount(1);
+  await expect(trow(page, `^No performance standard`)).toHaveCount(1);
   fn = await readFn(request, p.circulate.id);
   expect(fn.failures.find((f) => f.id === p.failures.flow.id).standard.text).toBe(`At least 50 L/s ${tag}`);
 
   // Move down: the list's order changes, in the tree and on the server.
-  const ph = trow(page, `^Standard: pH 7.2-7.8 ${tag}`);
-  const ta = trow(page, `^Standard: Total alkalinity 80-120 ppm ${tag}`);
+  const ph = trow(page, `^Performance standard: pH 7.2-7.8 ${tag}`);
+  const ta = trow(page, `^Performance standard: Total alkalinity 80-120 ppm ${tag}`);
   menu = await menuOf(page, ph, { keyboard: true });
   await menu.getByRole("menuitem", { name: "Move down" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Moved." })).toBeVisible();
@@ -245,16 +245,16 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   await expect(box).toHaveValue(`Total alkalinity 80-120 ppm ${tag}`);
   await box.fill(`Total alkalinity 80-110 ppm ${tag}`);
   await box.press("Enter");
-  await expect(trow(page, `^Standard: Total alkalinity 80-110 ppm ${tag}`)).toBeVisible();
+  await expect(trow(page, `^Performance standard: Total alkalinity 80-110 ppm ${tag}`)).toBeVisible();
   fn = await readFn(request, p.balance.id);
   expect(fn.standards[0].text).toBe(`Total alkalinity 80-110 ppm ${tag}`);
 
   // Remove: asked first, saying where its failures go; they move under "No standard".
   menu = await menuOf(page, ph);
-  await menu.getByRole("menuitem", { name: "Remove standard" }).click();
-  const confirm = page.getByRole("alertdialog", { name: "Remove this standard?" });
-  await expect(confirm).toContainText("Its 2 functional failures move to the function with no standard (they breach the whole function), with their failure modes.");
-  await confirm.getByRole("button", { name: "Remove standard" }).click();
+  await menu.getByRole("menuitem", { name: "Remove performance standard" }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Remove this performance standard?" });
+  await expect(confirm).toContainText("Its 2 functional failures move to the function with no performance standard (they breach the whole function), with their failure modes.");
+  await confirm.getByRole("button", { name: "Remove performance standard" }).click();
   await expect(ph).toHaveCount(0);
   const high = trow(page, `^Functional failure: pH above 7.8 ${tag}`);
   await expect(high).toBeVisible();
@@ -263,13 +263,13 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   expect(fn.standards.length).toBe(2);
   expect(fn.failures.every((f) => f.standard === null)).toBe(true);
   // The one text's row: Edit text changes the function's text; Remove clears it; no event for a standard.
-  const legacy = trow(page, `^Standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`);
+  const legacy = trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`);
   menu = await menuOf(page, legacy);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Isolate", "Remove standard"]);
-  await menu.getByRole("menuitem", { name: "Remove standard" }).click();
-  const confirm2 = page.getByRole("alertdialog", { name: "Remove this standard?" });
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Isolate", "Remove performance standard"]);
+  await menu.getByRole("menuitem", { name: "Remove performance standard" }).click();
+  const confirm2 = page.getByRole("alertdialog", { name: "Remove this performance standard?" });
   await expect(confirm2).toContainText("is cleared from this function. Its functional failures stay on the function");
-  await confirm2.getByRole("button", { name: "Remove standard" }).click();
+  await confirm2.getByRole("button", { name: "Remove performance standard" }).click();
   await expect(legacy).toHaveCount(0);
   const fc = trow(page, `^Functional failure: FC below 1 ppm ${tag}`);
   await expect(fc).toBeVisible();
@@ -284,13 +284,13 @@ test("double-click opens the Standard dialog: text, limit fields and its failure
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
-  const ca = trow(page, `^Standard: Calcium hardness 200-400 ppm ${tag}`);
+  const ca = trow(page, `^Performance standard: Calcium hardness 200-400 ppm ${tag}`);
   await ca.locator(".tp-nm").dblclick();
-  const dlg = dialog(page, "Standard");
+  const dlg = dialog(page, "Performance standard");
   await expect(dlg).toBeVisible();
   await expect(dlg.getByText(`On Std tree pool ${tag}`)).toBeVisible();
   await expect(dlg.getByRole("button", { name: `Keep the water balanced ${tag}` })).toBeVisible(); // the way up
-  await expect(dlg.getByRole("textbox", { name: /^Standard/ })).toHaveValue(`Calcium hardness 200-400 ppm ${tag}`);
+  await expect(dlg.getByRole("textbox", { name: /^Performance standard/ })).toHaveValue(`Calcium hardness 200-400 ppm ${tag}`);
   await expect(dlg.getByRole("textbox", { name: "Parameter" })).toHaveValue("Calcium hardness");
   await expect(dlg.getByRole("combobox", { name: "Comparator" })).toHaveValue("between");
   await expect(dlg.getByRole("textbox", { name: "Value" })).toHaveValue("200-400");
@@ -310,8 +310,8 @@ test("double-click opens the Standard dialog: text, limit fields and its failure
   const saved = fn.standards.find((st) => st.id === p.standards.ca.id);
   expect([saved.value, saved.when, saved.unit]).toEqual(["200-350", "while the pool is in use", "ppm"]);
   // A standard with failures lists them, and one opens from the list.
-  await trow(page, `^Standard: pH 7.2-7.8 ${tag}`).locator(".tp-nm").dblclick();
-  const dlg2 = dialog(page, "Standard");
+  await trow(page, `^Performance standard: pH 7.2-7.8 ${tag}`).locator(".tp-nm").dblclick();
+  const dlg2 = dialog(page, "Performance standard");
   await expect(dlg2.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `pH above 7.8 ${tag}` })).toBeVisible();
   await dlg2.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `pH below 7.2 ${tag}` }).click();
   await expect(dialog(page, "Functional failure")).toBeVisible();
@@ -324,15 +324,15 @@ test("double-click opens the Standard dialog: text, limit fields and its failure
   await expect(fdlg.getByRole("region", { name: "Functional failures" }).getByRole("button")).toHaveCount(3);
   await page.keyboard.press("Escape");
   // The one text's dialog: the text alone, a note instead of the limit; Save writes the function's standard.
-  await trow(page, `^Standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`).locator(".tp-nm").dblclick();
-  const ldlg = dialog(page, "Standard");
+  await trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`).locator(".tp-nm").dblclick();
+  const ldlg = dialog(page, "Performance standard");
   await expect(ldlg).toBeVisible();
-  await expect(ldlg.getByText("This is the function's one standard, as written.")).toBeVisible();
+  await expect(ldlg.getByText("This is the function's one performance standard, as written.")).toBeVisible();
   await expect(ldlg.getByRole("textbox", { name: "Parameter" })).toHaveCount(0);
-  await ldlg.getByRole("textbox", { name: /^Standard/ }).fill(`FC 1-3 ppm; CC under 0.4 ppm ${tag}`);
+  await ldlg.getByRole("textbox", { name: /^Performance standard/ }).fill(`FC 1-3 ppm; CC under 0.4 ppm ${tag}`);
   await ldlg.getByRole("button", { name: "Save" }).click();
   await expect(ldlg).toHaveCount(0);
-  await expect(trow(page, `^Standard: FC 1-3 ppm; CC under 0.4 ppm ${tag}`)).toBeVisible();
+  await expect(trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.4 ppm ${tag}`)).toBeVisible();
   fn = await readFn(request, p.sanitise.id);
   expect([fn.standard, fn.standards]).toEqual([`FC 1-3 ppm; CC under 0.4 ppm ${tag}`, []]);
   await expectHealthy(page, problems, { label: "rcm standard dialog" });
@@ -343,18 +343,18 @@ test("at 400 px the standard rows, their menus and the dialog fit", async ({ pag
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
-  const ca = trow(page, `^Standard: Calcium hardness 200-400 ppm ${tag}`);
+  const ca = trow(page, `^Performance standard: Calcium hardness 200-400 ppm ${tag}`);
   await expect(ca).toBeVisible();
   await expect(ca).toContainText("Calcium hardness between 200-400 ppm · E25 manual · No functional failure written yet"); // the phone's second line
   await expect(trow(page, `^Functional failure: pH above 7.8 ${tag}`)).toBeVisible();
-  await expect(trow(page, `^No standard`).first()).toBeVisible();
+  await expect(trow(page, `^No performance standard`).first()).toBeVisible();
   expect(await overflow(page)).toBe(0);
   // The menu: no in-place edit on a phone (the dialog edits the text); Open… reaches the dialog.
   await ca.getByRole("button", { name: "Actions", exact: true }).click();
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Isolate", "Remove standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Isolate", "Remove performance standard"]);
   await menu.getByRole("menuitem", { name: "Open…" }).click();
-  const dlg = dialog(page, "Standard");
+  const dlg = dialog(page, "Performance standard");
   await expect(dlg).toBeVisible();
   await expect(dlg.getByRole("textbox", { name: "Parameter" })).toBeVisible();
   expect(await overflow(page)).toBe(0);
@@ -379,7 +379,7 @@ test("screenshots: the sample truck, and a function with three standards (SMOKE_
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/rcm-standards-tree-truck-${w}.png` });
     await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pool.id}&pin=${p.pool.id}&tab=rcm`);
-    await expect(trow(page, `^Standard: Calcium hardness 200-400 ppm ${tag}`).first()).toBeVisible();
+    await expect(trow(page, `^Performance standard: Calcium hardness 200-400 ppm ${tag}`).first()).toBeVisible();
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/rcm-standards-tree-pool-${w}.png` });
   }

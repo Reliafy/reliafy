@@ -129,7 +129,7 @@ export function graftRcm(display, rcm) {
       }
       if (loose.length && listed.size) {
         const n = add(noStdKey(fn.id), "nostd", {
-          id: noStdKey(fn.id), text: "No standard", position_id: r.key, function_id: fn.id, function_text: fn.text || "",
+          id: noStdKey(fn.id), text: "No performance standard", position_id: r.key, function_id: fn.id, function_text: fn.text || "",
         }, fn.id, d + 2);
         for (const ff of loose) failRow(ff, n ? n.key : fn.id, n ? d + 3 : d + 2);
       } else {
@@ -234,7 +234,7 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
   if (r.type === "fn") {
     return [
       ...open,
-      { id: "add-std", label: "Add a standard…" },
+      { id: "add-std", label: "Add a performance standard…" },
       { id: "add-fail", label: "Add functional failure" },
       ...rename,
       { id: "delete", label: "Delete function", danger: true },
@@ -253,7 +253,7 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
       ...(canRename ? [{ id: "rename", label: "Edit text" }] : []),
       { id: "add-fail", label: "Add a functional failure…" },
       ...move,
-      { id: "delete", label: "Remove standard", danger: true },
+      { id: "delete", label: "Remove performance standard", danger: true },
     ];
   }
   if (r.type === "fail") {
@@ -263,7 +263,7 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
       { id: "link-cause", label: "Link to a cause…" },
       ...(r.ref.has_above ? [{ id: "link-effect", label: "Link to an effect…" }] : []),
       // Which of its function's standards it breaches (only with a list).
-      ...(r.ref.has_standards ? [{ id: "change-std", label: "Change standard…" }] : []),
+      ...(r.ref.has_standards ? [{ id: "change-std", label: "Change performance standard…" }] : []),
       ...rename,
       { id: "delete", label: "Delete functional failure", danger: true },
     ];

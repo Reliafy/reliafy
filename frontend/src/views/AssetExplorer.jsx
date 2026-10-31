@@ -502,7 +502,7 @@ export default function AssetExplorer() {
         if (!id) return;
         pending.current = id;
         setPanel(true);
-        say(`Added the ${kind === "fn" ? "function" : kind === "std" ? "standard" : kind === "fail" ? "functional failure" : "failure mode"}.`);
+        say(`Added the ${kind === "fn" ? "function" : kind === "std" ? "performance standard" : kind === "fail" ? "functional failure" : "failure mode"}.`);
       }, (e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error"));
   };
   // Inside a function: a functional failure (under no standard); inside a
@@ -1319,7 +1319,7 @@ export default function AssetExplorer() {
              style={{ left: Math.min(drag.x + 16, window.innerWidth - 320), top: drag.y + 18 }}>
           <span className="rcm-ghost-what">
             {drag.src.kind === "modes" && drag.src.keys.length > 1 && <span className="rcm-ghost-n">{drag.src.keys.length}</span>}
-            {/* "The standard “…” and its 3 functional failures": a label, so a capital first. */}
+            {/* "The performance standard “…” and its 3 functional failures": a label, so a capital first. */}
             {String(drag.words || "").replace(/^\p{Ll}/u, (c) => c.toUpperCase())}
           </span>
           {drag.verdict && (

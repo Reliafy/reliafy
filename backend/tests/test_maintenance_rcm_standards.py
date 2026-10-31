@@ -64,7 +64,7 @@ def test_a_function_holds_several_standards_and_its_old_text_becomes_the_first(m
     with pytest.raises(Invalid):
         m.reorder_standards(fn["id"], [hardness["id"]])
     # The single text can't be edited round the list.
-    with pytest.raises(Invalid, match="list of standards"):
+    with pytest.raises(Invalid, match="list of performance standards"):
         m.update_function(fn["id"], standard="something else")
     m.update_function(fn["id"], text="Keep the water balanced always")  # the words still can
     # Refusals.
@@ -296,7 +296,7 @@ def test_over_mcp_and_the_batch(env):
     assert ff["standard"]["id"] == ta["id"] and cleared["standard"] is None
     assert [st["text"] for st in read["standards"]] == ["pH 7.2-7.8", "Total alkalinity 80-120 ppm"]
     assert read["standard"] == "pH 7.2-7.8; Total alkalinity 80-120 ppm"
-    assert refused.is_error and "list of standards" in refused.content[0].text
+    assert refused.is_error and "list of performance standards" in refused.content[0].text
     assert proposed["dry_run"] and [x["text"] for x in proposed["proposed"]] == ["FC 1-3 ppm", "CC < 0.5 ppm"]
     assert not split["dry_run"] and [st["text"] for st in split["standards"]] == ["FC 1-3 ppm", "CC < 0.5 ppm"]
     assert batch["ok"] and batch["undo"][-1]["do"] == "failure_modes.remove_standard"
@@ -324,7 +324,7 @@ def test_over_the_routes(api):
     r = api.put(f"{M}/functions/{fn['id']}/standards/order", json={"standard_ids": ids[::-1]})
     assert r.status_code == 200 and [st["id"] for st in r.json()["standards"]] == ids[::-1]
     r = api.patch(f"{M}/functions/{fn['id']}", json={"standard": "x"})
-    assert r.status_code == 422 and "list of standards" in r.json()["detail"]
+    assert r.status_code == 422 and "list of performance standards" in r.json()["detail"]
     r = api.get(f"{M}/positions/{pool['id']}/rcm")
     assert [st["text"] for st in r.json()["positions"][0]["functions"][0]["standards"]] == [
         "Total alkalinity 80-120 ppm", "pH 7.2-7.8"]

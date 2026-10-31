@@ -40,7 +40,7 @@ export function limitWords(st) {
 export function unbreachedWords(fn) {
   const n = fn?.standards_without_failure || 0;
   if (!(fn?.standards || []).length || !n) return "";
-  return `${n} standard${n === 1 ? " has" : "s have"} no functional failure yet.`;
+  return `${n} performance standard${n === 1 ? " has" : "s have"} no functional failure yet.`;
 }
 
 // The split helper's lines, as edited: each kept line a standard, or the

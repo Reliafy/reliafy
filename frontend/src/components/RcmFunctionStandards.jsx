@@ -60,10 +60,10 @@ export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid 
       ? `The performance standard “${st.text}” is cleared from this function.`
       : `“${st.text}” comes off this function${st.failures ? `; the ${plural(st.failures, "functional failure")} that breached it breach the whole function instead` : ""}.`;
     const ok = await confirm({
-      title: "Remove this standard?", body, confirmLabel: "Remove standard", pendingLabel: "Removing…", failedWhat: "remove it",
+      title: "Remove this performance standard?", body, confirmLabel: "Remove performance standard", pendingLabel: "Removing…", failedWhat: "remove it",
       run: () => (st.legacy ? ops.set(r, "standard", "") : ops.standards.remove(st.id)).then(() => true),
     });
-    if (ok) onSaid?.("Removed the standard.");
+    if (ok) onSaid?.("Removed the performance standard.");
   };
   const move = (i, by) => {
     const ids = shown.map((st) => st.id);
@@ -112,19 +112,19 @@ export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid 
                       onSubmit={(body) => run(
                         () => (form.st?.legacy ? ops.set(r, "standard", body.text)
                           : form.st ? ops.standards.update(form.st.id, body) : ops.standards.add(r, body)),
-                        form.st ? "Saved the standard." : "Added the standard.",
+                        form.st ? "Saved the performance standard." : "Added the performance standard.",
                       )} />
       ) : form?.mode === "split" ? (
         <SplitForm text={fn.standard} busy={busy} failed={failed} onCancel={() => { setForm(null); setFailed(null); }}
-                   onSubmit={(standards) => run(() => ops.standards.split(r, standards), `Split into ${plural(standards.length, "standard")}.`)} />
+                   onSubmit={(standards) => run(() => ops.standards.split(r, standards), `Split into ${plural(standards.length, "performance standard")}.`)} />
       ) : !readOnly && (
         <div className="rfs-add">
           <button type="button" className="secondary" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "add" }); } }}>
-            Add standard
+            Add performance standard
           </button>
           {canSplit(fn) && (
             <button type="button" className="link" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "split" }); } }}>
-              Split into standards…
+              Split into performance standards…
             </button>
           )}
         </div>
@@ -158,12 +158,12 @@ function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
         text: text.trim(), parameter: parameter.trim(), comparator, value: num, unit: unit.trim(), when: when.trim(), source: source.trim(),
       });
     }}>
-      <h4>{st ? "Change the standard" : "Another performance standard"}</h4>
+      <h4>{st ? "Change the performance standard" : "Another performance standard"}</h4>
       <label className="rw-field">
-        <span className="rw-flabel">Standard</span>
+        <span className="rw-flabel">Performance standard</span>
         <input ref={box} value={text} readOnly={busy} placeholder="One parameter and one limit, e.g. pH 7.2-7.8"
                onChange={(e) => setText(e.target.value)} />
-        <span className="rw-fhelp">A standard with “and” in it is two standards; one that needs its own verb is another function.</span>
+        <span className="rw-fhelp">A performance standard with “and” in it is two; one that needs its own verb is another function.</span>
       </label>
       {!legacy && (
         <>
@@ -196,7 +196,7 @@ function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
       {failed && <p className="rw-ferr" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
         <button type="button" className="secondary" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="submit" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : st ? "Save standard" : "Add standard"}</button>
+        <button type="submit" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : st ? "Save performance standard" : "Add performance standard"}</button>
       </div>
     </form>
   );
@@ -211,29 +211,29 @@ function SplitForm({ text, busy, failed, onCancel, onSubmit }) {
   const edit = (id, patch) => setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   return (
     <form className="rfs-form" onSubmit={(e) => { e.preventDefault(); if (out && !busy) onSubmit(out); }}>
-      <h4>Split into standards</h4>
+      <h4>Split into performance standards</h4>
       <p className="rw-fhelp">
-        One standard per line, from the text's “;” and line breaks. Edit a line, drop one, or mark a “given …” clause as a
-        condition of the standard before it. Nothing is written until you confirm; the text itself stays.
+        One performance standard per line, from the text's “;” and line breaks. Edit a line, drop one, or mark a “given …” clause as a
+        condition of the performance standard before it. Nothing is written until you confirm; the text itself stays.
       </p>
       <ol className="rfs-split">
         {lines.map((l) => (
           <li key={l.id} className={l.drop ? "dropped" : ""}>
             <input value={l.text} readOnly={busy || l.drop} aria-label={`Line ${l.id + 1}`} onChange={(e) => edit(l.id, { text: e.target.value })} />
             <select value={l.kind} disabled={busy || l.drop} aria-label={`Line ${l.id + 1} is`} onChange={(e) => edit(l.id, { kind: e.target.value })}>
-              <option value="standard">A standard</option>
+              <option value="standard">A performance standard</option>
               <option value="when">A condition (when)</option>
             </select>
             <button type="button" className="link" disabled={busy} onClick={() => edit(l.id, { drop: !l.drop })}>{l.drop ? "Keep" : "Drop"}</button>
           </li>
         ))}
       </ol>
-      {!out && <p className="rw-fhelp">Nothing left to write: keep at least one standard.</p>}
+      {!out && <p className="rw-fhelp">Nothing left to write: keep at least one performance standard.</p>}
       {failed && <p className="rw-ferr" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
         <button type="button" className="secondary" onClick={onCancel} disabled={busy}>Cancel</button>
         <button type="submit" disabled={!out || busy} aria-busy={busy || undefined}>
-          {busy ? "Writing…" : `Confirm: ${out ? plural(out.length, "standard") : "nothing"}`}
+          {busy ? "Writing…" : `Confirm: ${out ? plural(out.length, "performance standard") : "nothing"}`}
         </button>
       </div>
     </form>
@@ -272,13 +272,13 @@ export function ChangeStandardModal({ row, standards, onClose, onChange, onDone 
   const [to, setTo] = useState(before);
   const name = `“${String(row.ref.text || "").slice(0, 80)}”`;
   return (
-    <FormModal title="Which standard does it breach?" submitLabel="Save" pendingLabel="Saving…" onClose={onClose}
+    <FormModal title="Which performance standard does it breach?" submitLabel="Save" pendingLabel="Saving…" onClose={onClose}
                canSubmit={to !== before}
                onSubmit={async () => {
                  await onChange(to || null);
                  onDone(to ? standards.find((st) => st.id === to)?.text || null : null);
                }}>
-      <p className="lib-date">{name} moves under the standard it breaches in the tree. A total loss breaches the whole function.</p>
+      <p className="lib-date">{name} moves under the performance standard it breaches in the tree. A total loss breaches the whole function.</p>
       <Field label="Breaches">
         <select value={to} onChange={(e) => setTo(e.target.value)} autoFocus aria-label="Breaches">
           <option value="">The whole function</option>
