@@ -117,7 +117,7 @@ test("at 1280x720 the RCM table fits: no column cut off, the interval in the Tas
   // More columns than fit: the table scrolls sideways, and a shadow shows on the side with more.
   await page.getByRole("button", { name: "Columns", exact: true }).click();
   const pop = page.getByRole("group", { name: "Columns to show" });
-  for (const n of ["Interval", "Performance standard", "Mode notes", "Decision notes", "What the evidence shows"]) {
+  for (const n of ["Interval", "Mode notes", "Decision notes", "What the evidence shows"]) {
     await pop.getByRole("checkbox", { name: n }).check();
   }
   await page.keyboard.press("Escape");

@@ -59,6 +59,8 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 const LEVELS = [1, 2, 3, 4];
 const HEAD_H = 30;
 // The tree column's header on the RCM tab: what its rows are.
+// The table's vertical scrollbar (styled 12 px wide in AssetExplorer.css).
+const SCROLLBAR_W = 12;
 export const TREE_HEAD = "Function, performance standard, failure or mode";
 // The soft shadow on a side of the table with more to scroll to: its width,
 // and how far from the end it fades in.
@@ -248,11 +250,12 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
         if (!(table && e.detail > 1)) onToggle(r.key);
       } else onPick(r.key, { go: true });
     },
-    // The RCM table (a wide screen): a double-click on a function, functional
-    // failure or failure mode opens its dialog; not on a cell edited in place
-    // (its own double-click edits it), a control or the chevron.
+    // The RCM table (a wide screen): a double-click on the name of a function,
+    // performance standard, functional failure or failure mode opens its
+    // details across the table; not on a data cell (an editable one's own
+    // double-click edits it in place), a control or the chevron.
     onDoubleClick: table && !phone && table.onOpen && opensItem(r) ? (e) => {
-      if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c.can, [contenteditable='true']")) return;
+      if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();
       table.onOpen(r.key);
@@ -297,7 +300,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
         {editCol === "name"
           ? <CellEditor col={NAME_COLUMN} r={cr} onCommit={(raw) => table.onCommit(r, "name", raw)} onCancel={table.onCancel} />
           : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto}
-                       info={table.basisInName ? <BasisInfo r={r} onBasis={table.onBasis} /> : null} />{more}</>}
+                       info={<BasisInfo r={r} onBasis={table.onBasis} />} />{more}</>}
       </div>
       {table.hint === r.key && editCol == null ? (
         <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-empty-hint"
@@ -318,7 +321,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
             {editCol === c.id
               ? <CellEditor col={c} r={cr} onCommit={(raw) => table.onCommit(r, c.id, raw)} onCancel={table.onCancel} />
               : (rcmRow || cr.sum.modes) ? <Cell col={c} r={r.type === "pos" ? { ...cr, type: "fn" } : cr} query={query} readOnly={table.readOnly}
-                                               onDecision={table.onDecision} onBasis={table.onBasis} linkChecks /> : null}
+                                               onDecision={table.onDecision} linkChecks /> : null}
           </div>
         );
       })}
@@ -353,6 +356,10 @@ export default function TreePane({
   const H = phone ? (tableIn ? 54 : 44) : 30;
   const wide = !phone;
   const wideTable = !!tableIn && wide;
+  // The details panel filling the table's room (table.expanded, a wide
+  // screen): only the tree column shows, beside it, so the place is kept and
+  // another row can be picked; the panel follows it.
+  const expanded = wideTable && !!tableIn.expanded;
   // The scroll area's width inside its scrollbar (the RCM tab, a wide screen),
   // measured before each paint, so the columns fit it from the first frame.
   const [room, setRoom] = useState(null);
@@ -629,11 +636,12 @@ export default function TreePane({
   return (
     <aside className={"tp" + (table ? " tp-table" : "") + (railed ? " tp-railed" : "")} aria-label={title}>
       {controls}
-      <div className="tt-main">
+      <div className={"tt-main" + (expanded ? " tt-expanded" : "")}>
         {railed ? <div className="tp-railcol" style={{ width: PANE.rail }} /> : (
         <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); if (wideTable) paintShade(); }} onKeyDown={keys}
              role={table ? "treegrid" : "tree"} aria-label={table ? `${treeLabel || title} and their RCM` : treeLabel || title}
-             aria-multiselectable={table?.drag?.picked?.size ? "true" : "false"} style={wide && !table ? { width: width + gutter } : undefined}>
+             aria-multiselectable={table?.drag?.picked?.size ? "true" : "false"}
+             style={wide && !table ? { width: width + gutter } : expanded ? { width: table.treeW + SCROLLBAR_W } : undefined}>
           {columnHeads}
           {pins.length > 0 && (
             <div className="tp-pins" style={{ top: headH }}>

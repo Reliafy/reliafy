@@ -98,6 +98,8 @@ export function graftRcm(display, rcm) {
         add(stdKey(st), "std", {
           ...st, id: stdKey(st), standard_id: st.legacy ? null : st.id, position_id: r.key, function_id: fn.id,
           function_text: fn.text || "", standard_ids: stdIds,
+          // The function's working, marked on this row (basisMarked).
+          function_has_basis: !!fn.has_basis, function_basis_preview: fn.basis_preview || "",
         }, fn.id, d + 2);
       }
       // Each functional failure under the standard it breaches; the ones
@@ -219,9 +221,10 @@ export const rcmRowText = (r) => rcmText(r);
 // passes false there unless the menu was opened from the keyboard).
 export function rowActions(r, { canRename = true, moves = true } = {}) {
   if (!r) return [];
-  // A function, standard, functional failure or failure mode opens in its own
-  // dialog (a double-click on the row does the same): first, so it's found
-  // without the double-click, and on a phone, where there's none.
+  // A function, standard, functional failure or failure mode opens its
+  // details across the table (a double-click on its name does the same):
+  // first, so it's found without the double-click, and on a phone, where
+  // there's none (there the details are a sheet).
   const open = opensItem(r) ? [{ id: "open", label: "Open…" }] : [];
   const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
   if (r.type === "pos") {
@@ -273,7 +276,7 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
     return [
       ...open,
       { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
-      // Another task for the mode (or an existing one linked): the dialog's Tasks.
+      // Another task for the mode (or an existing one linked): the details' Tasks, on the add form.
       { id: "add-task", label: "Add a task…" },
       ...rename,
       { id: "delete", label: "Delete failure mode", danger: true },
@@ -311,11 +314,15 @@ export function hasLinkedEvidence(rcm) {
   return false;
 }
 
-// Where the (i) for a function's working sits: at the end of its Performance
-// standard cell, or, while that column is hidden (it is by default), at the
-// end of the function's name, so a working is never out of sight and no column
-// has to appear or change width.
-export const basisInName = (colIds) => !colIds.includes("standard");
+// Where the (i) for a function's working sits: at the end of each of its
+// performance standards' names (the working is how they were worked out), or,
+// for a function with no performance standard, at the end of its own name.
+// Fixed size, so no row or column changes width with it.
+export function basisMarked(r) {
+  if (r?.type === "std") return !!r.ref.function_has_basis;
+  if (r?.type === "fn") return !!r.ref.has_basis && !standardsShown(r.ref).length;
+  return false;
+}
 
 const inOrder = (ids) => COLUMNS.map((c) => c.id).filter((id) => ids.includes(id));
 
@@ -539,56 +546,15 @@ export function unlinkEmptiesFailure(whole, effectId, causeId) {
   return !(e.rsum?.modes) && counted.length === 1 && counted[0].id === causeId;
 }
 
-// ---- a row's own dialog (double-click, or Open… in its menu) ---------------------------
-// A function, standard, functional failure or failure mode opens in a dialog
-// with all of it in one place: its fields to edit (kept with Save, dropped
-// with Cancel), what it sits under and what's inside it, and (a failure mode)
-// its decision.
+// ---- a row opened (double-click its name, or Open… in its menu) ------------------------
+// A function, standard, functional failure or failure mode opens its details
+// across the table (the tree kept beside them): all of it in one place, each
+// field kept as you go.
 export const ITEM_KINDS = new Set(["fn", "std", "fail", "mode"]);
 export const opensItem = (r) => !!r && ITEM_KINDS.has(r.type);
 
-// The fields each kind's dialog edits, in order: the table's column ids
-// ("name" is the description; a standard's is its text), and a standard's
-// structured limit, condition and source.
-// A function's performance standards are a list with their own saves (RcmFunctionStandards), not a field.
+// A standard's structured limit, condition and source (its text is "name").
 export const STANDARD_FIELDS = ["parameter", "comparator", "value", "unit", "when", "source"];
-export const ITEM_FIELDS = { fn: ["name"], std: ["name", ...STANDARD_FIELDS], fail: ["name"], mode: ["name", "effects", "consequence", "notes"] };
-
-// The fields a row's dialog edits: a function's one standard text (a legacy
-// standard row) is the text alone, edited as the function's.
-export const itemFields = (r) => (r.type === "std" && r.ref.legacy ? ["name"] : ITEM_FIELDS[r.type] || []);
-
-// A field's value as saved (a string, as the dialog's boxes hold it).
-export function itemValue(r, col) {
-  if (col === "name") return r.ref.text || "";
-  if (col === "consequence") return CONSEQUENCE_LABEL[r.ref.consequence] ? r.ref.consequence : "";
-  return String(r.ref[COLUMN[col]?.field || col] ?? "");
-}
-
-// The fields typed differently from what's saved: {col: typed}. `drafts`
-// holds only the fields that were typed in.
-export function itemChanges(r, drafts) {
-  const out = {};
-  for (const col of itemFields(r)) {
-    if (!(col in drafts)) continue;
-    const typed = String(drafts[col] ?? "");
-    if (typed.trim() !== itemValue(r, col).trim()) out[col] = typed;
-  }
-  return out;
-}
-
-// The changes checked as the panel and the table check them (checkValue):
-// {values: {col: value}, errors: {col: reason}}.
-export function checkItem(r, changes) {
-  const values = {};
-  const errors = {};
-  for (const [col, raw] of Object.entries(changes)) {
-    const res = checkValue(col, r, raw);
-    if (res.error) errors[col] = res.error;
-    else values[col] = res.value;
-  }
-  return { values, errors };
-}
 
 // The writes that save the checked values, fewest first: one for the
 // function, standard or functional failure; for a failure mode, its words in
@@ -623,7 +589,7 @@ export function itemWrites(r, values) {
   return out;
 }
 
-// A functional failure's state, in words, for its dialog: whether its
+// A functional failure's state, in words, for its details: whether its
 // failure modes are decided, and what's explained by links below.
 export function failureStatusWords(r) {
   const s = r.rsum || r.sum || rcmBlank();

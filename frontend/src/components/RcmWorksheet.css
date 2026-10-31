@@ -379,6 +379,69 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-decision > button { align-self: flex-start; }
 .rw-panel-acts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 
+/* The panel's head: its kind, then Expand (or Back to table) and Close. */
+.rw-panel-btns { display: flex; gap: 6px; flex: none; }
+/* Its body: one column beside the table; expanded, two side by side (the
+   fields and the decision; the lists: performance standards, working, tasks,
+   links, what's inside), one again when there isn't room for two. */
+.rw-pbody, .rw-pcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rw-panel.is-expanded { padding: 16px 20px 20px; gap: 12px; }
+.rw-panel.is-expanded > .rw-panel-head,
+.rw-panel.is-expanded > .rw-crumbs,
+.rw-panel.is-expanded > .rw-panel-title,
+.rw-panel.is-expanded > .rw-inside,
+.rw-panel.is-expanded > .rw-pbody,
+.rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 1180px; box-sizing: border-box; }
+.rw-panel.is-expanded > .rw-pbody {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px 28px;
+  align-items: start;
+}
+.rw-panel.is-expanded .rw-panel-title { font-size: var(--fs-18, 18px); -webkit-line-clamp: 3; line-clamp: 3; }
+.rw-pcol:empty { display: none; }
+.rw-status { margin: 0; font-size: var(--fs-14); }
+/* A performance standard's structured limit, when it applies and its source. */
+.rw-limit { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.rw-limit legend { padding: 0; margin-bottom: 2px; }
+.rw-limit-row { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.rw-limit-row > .rw-field { flex: 1 1 120px; min-width: 0; }
+.rw-limit-row select { width: 100%; }
+/* What's inside the row, each a link that shows it in the panel. */
+.rw-kids { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.rw-kids h3 { margin: 0; font-size: var(--fs-14); }
+.rw-klist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rw-klist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+.rw-kgo { display: inline-flex; align-items: center; gap: 4px; text-align: left; overflow-wrap: anywhere; min-width: 0; }
+.rw-kgo .rw-ic { flex: none; }
+.rw-panel.sheet .rw-fin input, .rw-panel.sheet .rw-fin textarea, .rw-panel.sheet select { font-size: 16px; } /* no zoom on focus */
+
+/* A failure mode's tasks (RcmModeTasks.jsx): the list, and the add, edit and
+   link forms under it. */
+.rim-tasks { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.rim-tasks h3 { margin: 0; font-size: var(--fs-14); }
+.rim-tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rim-tlist li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.rim-tmain { display: flex; align-items: flex-start; gap: 6px; min-width: 0; font-size: var(--fs-14); }
+.rim-tmain .rw-ic { flex: none; margin-top: 3px; }
+.rim-tbody { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.rim-tinst { font-size: var(--fs-12); color: var(--muted); white-space: pre-wrap; }
+.rim-tacts { display: flex; gap: 10px; flex: none; }
+.rim-tacts .link { font-size: var(--fs-13); min-height: 28px; }
+.rim-tadd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.rim-tform { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.rim-tform h4 { margin: 0; font-size: var(--fs-13); }
+.rim-tform .rw-fhelp { margin: 0; }
+.rim-thint { color: var(--warn); }
+.rim-trow { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.rim-trow .rw-fin { display: flex; gap: 6px; }
+.rim-trow input[type="number"] { width: 6.5rem; }
+.rim-tform-acts { display: flex; gap: 8px; justify-content: flex-end; }
+@media (max-width: 600px) {
+  .rim-tlist li { flex-wrap: wrap; }
+  .rim-tacts .link { min-height: 36px; }
+}
+
 /* ---- phone ---------------------------------------------------------------------- */
 
 @media (max-width: 720px) {
@@ -437,8 +500,6 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 }
 .rw-info:hover { background: var(--acc-t); }
 .rw-info:focus-visible { outline: none; box-shadow: var(--focus); }
-.rw-withinfo { display: flex; align-items: center; min-width: 0; width: 100%; }
-.rw-withinfo > .rw-txt { flex: 0 1 auto; min-width: 0; }
 .rw-c .rw-info:only-child { margin-left: 0; }
 .tt-tree .rw-info { margin-left: 6px; }
 
@@ -492,10 +553,9 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); }
 .rw-tasks li { display: flex; align-items: flex-start; gap: 6px; overflow-wrap: anywhere; }
 .rw-tasks .rw-ic { flex: none; margin-top: 3px; }
-.rw-tasks-go { align-self: flex-start; font-size: var(--fs-13); }
 
 /* A function's performance standards as a list (RcmFunctionStandards.jsx), in
-   the function's dialog and its Details. */
+   the function's Details. */
 .rfs { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 .rfs h3 { margin: 0; font-size: var(--fs-14); }
 .rfs-list { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-14); }

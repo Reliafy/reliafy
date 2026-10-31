@@ -6,24 +6,28 @@ import { ancestorsOf } from "../outlineTree.js";
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
   belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, functionOf, checkCounts, decisionText, insideWords,
-  intervalText, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip,
+  intervalText, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
 import RcmFunctionStandards, { BreachesField } from "./RcmFunctionStandards.jsx";
 import { plainFirstLine } from "../basisMarkdown.js";
-import { limitWords } from "../rcmStandards.js";
+import { COMPARATORS, COMPARATOR_LABEL } from "../rcmStandards.js";
+import RcmModeTasks from "./RcmModeTasks.jsx";
+import { saveErrorText } from "../confirm.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
+import { basisMarked, failureRows, failureStatusWords, failureSummary } from "../explorerRcm.js";
 import "./RcmWorksheet.css";
 
 // The RCM worksheet's pieces, drawn by the Explorer's RCM tab (the asset tree
 // and the RCM as one table, TreePane): the level icons, a cell and its
 // tooltip, the cell editor (a double-click edits the commonest cells in
 // place: description, effects, consequence, task, interval, notes, checked as
-// the server checks them), a row's status on a phone, the details panel (every
-// field of the row, adding inside it, deleting it, and the failure mode's
-// decision dialog) and the column chooser. Edits are written at once (Details'
-// `ops`); a refused value stays in the cell with the reason.
+// the server checks them), a row's status on a phone, the details panel (the
+// one place a row is edited in full: every field, its lists, adding inside
+// it, deleting it; beside the table, or expanded across it) and the column
+// chooser. Edits are written at once (Details' `ops`); a refused value stays
+// in the cell or field with the reason.
 //
 // On a phone the details panel opens as a sheet.
 
@@ -61,16 +65,18 @@ export function cellTip(col, r, can) {
 }
 export const cellHint = (can) => (can ? "Double-click to edit" : undefined);
 
-// The (i) beside a function's standard (or its name, when the standard column
-// is hidden) when the standard has a working behind it. It opens the details
-// panel with the working in full. A letter, a label and a tooltip: never
-// colour alone. Fixed size, so a row never changes height or width with it.
+// The (i) at the end of a performance standard's name (or a function's, when
+// it has no performance standard) when its function has a working behind it
+// (basisMarked). It opens the function's details with the working in full. A
+// letter, a label and a tooltip: never colour alone. Fixed size, so a row
+// never changes height or width with it.
 export function BasisInfo({ r, onBasis }) {
-  if (!onBasis || r.type !== "fn" || !r.ref.has_basis) return null;
-  const first = plainFirstLine(r.ref.basis_preview, 80);
+  if (!onBasis || !basisMarked(r)) return null;
+  const first = plainFirstLine(r.type === "std" ? r.ref.function_basis_preview : r.ref.basis_preview, 80);
+  const what = r.type === "std" ? "this performance standard" : "this function's performance standard";
   return (
-    <button type="button" className="rw-info" aria-label="This performance standard has a working: open it"
-            title={`How this performance standard was worked out${first ? `: ${first}` : ""}. Open the working.`}
+    <button type="button" className="rw-info" aria-label={`How ${what} was worked out: open the working`}
+            title={`How ${what} was worked out${first ? `: ${first}` : ""}. Open the working.`}
             onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); if (e.detail < 2) onBasis(r); }}>
       <span aria-hidden="true">i</span>
@@ -79,7 +85,7 @@ export function BasisInfo({ r, onBasis }) {
 }
 
 // One cell's content (desktop).
-export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onBasis }) {
+export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
   const d = r.ref.decision;
   const mode = r.type === "mode";
   switch (col.id) {
@@ -163,17 +169,6 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks, onBasis 
           </span>
         )
         : <span className="rw-sum">{text}</span>;
-    }
-    case "standard": {
-      const text = col.text(r);
-      const info = <BasisInfo r={r} onBasis={onBasis} />;
-      if (!text) return info;
-      return (
-        <span className="rw-withinfo">
-          <span className="rw-txt" title={text}><Highlight text={text} query={query} /></span>
-          {info}
-        </span>
-      );
     }
     default: {
       const text = col.text(r);
@@ -262,22 +257,47 @@ export function PhoneStatus({ r }) {
   return null;
 }
 
-// The details panel for the row picked: every field, the decision, adding
-// inside and deleting.
+// The details panel for the row picked: every field, the decision, the tasks,
+// adding inside and deleting. Beside the table at its usual width (a click on
+// a row), or filling the table's room (`expanded`: a double-click on a row's
+// name, Open… in its menu, or Expand here), with the tree column still beside
+// it so another row can be picked; the panel follows the row picked. Every
+// field is kept as you go (when you leave it, or Enter in a one-line field);
+// a value the server would refuse stays as typed with the reason. Escape (or
+// Back to table) returns from expanded to side by side; Escape again closes.
 // The kinds of row whose description is edited (not a position's, nor the
 // unassigned failure modes' or the "No standard" heading, in the Explorer).
 // A standard's description is its text.
 export const EDITABLE = new Set(["fn", "std", "fail", "mode"]);
 
-// With `ops` (the Explorer), a failure mode can be put under another of its
-// position's functional failures.
-export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDecision, onTasks, onClose, onSelect, phone, headingRef, ops, links }) {
+// A performance standard's structured limit, when it applies and its source,
+// as the panel's fields: each one kept as you go.
+const LIMIT_FIELDS = [
+  { col: "parameter", label: "Parameter", placeholder: "e.g. pH" },
+  { col: "value", label: "Value", placeholder: "7.2-7.8" },
+  { col: "unit", label: "Unit", placeholder: "ppm" },
+];
+
+//   r          the row (cellRow: sum is its own counts)
+//   display    the tree as shown (the way up); whole: the whole tree (what's inside)
+//   ops        the Explorer's ops (useTreeRcm, with basis, basisView, standards, tasks, saveItem)
+//   links      { onLink, onUnlink } (a functional failure's links)
+//   expanded   filling the table's room; onExpand / onCollapse switch it (none on a phone)
+//   taskStart  {key, at}: open this failure mode's tasks on the add form (the row menu's Add a task…)
+//   onSaid     (text) a few words in the page's status line once something saved
+export function Details({
+  r, display, whole = display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops, links,
+  expanded = false, onExpand = null, onCollapse = null, taskStart = null, onSaid = null,
+}) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
-  const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k));
-  // The decision's own task, when it also serves other modes: its name and
-  // interval change on the task (Manage tasks…), not here.
+  const up = ancestorsOf(display, r.key).map((k) => display.rows.get(k)).filter(Boolean);
   const tasks = r.type === "mode" ? tasksOf(r.ref) : [];
+  // A failure mode's tasks (RcmModeTasks) are where its tasks are changed;
+  // the decision's own task and interval stay as fields only while no task
+  // does the work (an action on failure, a decision written before tasks).
+  const taskList = r.type === "mode" && !!ops?.addTask;
+  const ownFields = !taskList || !tasks.some((t) => t.id);
   const sharedOwn = tasks[0]?.shared_with || 0;
   const field = (label, col, { area, help, limit, locked = false } = {}) => {
     const column = col === "name" ? NAME_COLUMN : COLUMN[col];
@@ -288,12 +308,50 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
              onCommit={(raw) => onCommit(r, col, raw)} autoFocus={col === "name" && !r.ref.text && !readOnly} />
     );
   };
+  // A standard's limit field, kept at once (as the table's cells are).
+  const saveStd = (col, raw) => {
+    const res = checkValue(col, r, raw);
+    if (res.error) return res.error;
+    return ops.saveItem(r, { [col]: res.value }).then(() => { onSaid?.("Saved."); return true; },
+      (e) => saveErrorText(e, { offline: navigator.onLine === false }));
+  };
+  const stdField = ({ col, label, placeholder }) => (
+    <Field key={`${r.key}:${col}`} label={label} value={String(r.ref[col] ?? "")} readOnly={readOnly} placeholder={placeholder}
+           onCommit={(raw) => saveStd(col, raw)} />
+  );
+  const [stdFailed, setStdFailed] = useState(null);
+  useEffect(() => setStdFailed(null), [r.key]);
+  // What's inside: a function's functional failures (through its standard
+  // rows), a standard's functional failures, a failure's failure modes.
+  const inTree = whole.rows.get(r.key) || r;
+  const kids = r.type === "fn" ? failureRows(whole, inTree)
+    : (inTree.kids || []).map((k) => whole.rows.get(k)).filter((k) => k && (k.type === "fail" || k.type === "mode"));
+  const where = display.rows.get(r.ref.position_id)?.ref.name || whole.rows.get(r.ref.position_id)?.ref.name;
+  const said = (text) => onSaid?.(text);
+  const canExpand = !phone && onExpand && onCollapse;
   return (
-    <aside className={"rw-panel" + (phone ? " sheet" : "")} aria-label="Details"
-           onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
+    <aside className={"rw-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
+           onKeyDown={(e) => {
+             if (e.key !== "Escape" || e.defaultPrevented) return;
+             e.stopPropagation();
+             if (expanded && canExpand) onCollapse();
+             else onClose();
+           }}>
       <div className="rw-panel-head">
         <div className="rw-panel-kind"><LevelIcon type={r.type} /> {level.label}</div>
-        <button type="button" className="secondary rw-x" onClick={onClose} aria-label="Close the details">Close</button>
+        <div className="rw-panel-btns">
+          {canExpand && (expanded ? (
+            <button type="button" className="secondary rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)">
+              Back to table
+            </button>
+          ) : (
+            <button type="button" className="secondary rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them"
+                    aria-label="Expand the details">
+              Expand
+            </button>
+          ))}
+          <button type="button" className="secondary rw-x" onClick={onClose} aria-label="Close the details">Close</button>
+        </div>
       </div>
       {up.length > 0 && (
         <nav className="rw-crumbs" aria-label="Inside">
@@ -310,136 +368,194 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
       </h2>
       {r.type !== "mode" && <p className="rw-inside">{insideWords(r)}</p>}
 
-      <div className="rw-fields">
-        {EDITABLE.has(r.type) && field(r.type === "std" ? "Performance standard" : "Description", "name", {
-          area: true,
-          help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "std" ? "One parameter and one limit, e.g. pH 7.2-7.8"
-            : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
-          limit: r.type === "fn" ? { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } : null,
-        })}
-        {r.type === "std" && (
-          <div className="rw-field">
-            <span className="rw-flabel">Limit</span>
-            <span className="rw-fval">{limitWords(r.ref) || "—"}</span>
-            <span className="rw-fhelp">
-              {r.ref.legacy
-                ? "The function's one performance standard, as written. Open the function to make it a list (Add performance standard, or Split into performance standards…)."
-                : "The structured limit, when it applies and its source: Open… (or double-click the row) to change them."}
-            </span>
-          </div>
-        )}
-        {r.type === "fn" && !ops && field("Performance standard", "standard", { help: "Optional, e.g. within 30 m from 60 km/h" })}
-        {r.type === "mode" && field("Failure effects", "effects", { area: true })}
-        {r.type === "fail" && ops?.setBreach && (
-          <BreachesField r={r} readOnly={readOnly} standards={functionOf(display, r)?.ref.standards || []}
-                         onChange={(id) => ops.setBreach(r, id).catch(() => {})} />
-        )}
-        {r.type === "mode" && (
-          <label className="rw-field">
-            <span className="rw-flabel">Consequence</span>
-            {readOnly ? <span className="rw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
-              <select value={r.ref.consequence || ""} onChange={(e) => onCommit(r, "consequence", e.target.value)}>
-                <option value="">Not set</option>
-                {Object.entries(CONSEQUENCE_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-              </select>
+      <div className="rw-pbody">
+        <div className="rw-pcol">
+          <div className="rw-fields">
+            {EDITABLE.has(r.type) && field(r.type === "std" ? "Performance standard" : "Description", "name", {
+              area: true,
+              help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "std" ? "One parameter and one limit, e.g. pH 7.2-7.8"
+                : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
+              limit: r.type === "fn" ? { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } : null,
+            })}
+            {r.type === "std" && r.ref.legacy && (
+              <p className="rw-fhelp">
+                This is the function's one performance standard, as written. To make it a list (one row each, with a limit on each), pick the
+                function and press <b>Add performance standard</b>, or <b>Split into performance standards…</b> when the text is several joined by “;”.
+              </p>
             )}
-          </label>
-        )}
-        {r.type === "mode" && field("Mode notes", "notes", { area: true })}
-        {r.type === "mode" && ops && (
-          <label className="rw-field">
-            <span className="rw-flabel">Under</span>
-            {readOnly ? <span className="rw-fval">{display.rows.get(r.parent)?.ref.text}</span> : (
-              <select value={r.ref.functional_failure_id || ""} onChange={(e) => ops.assign(r, e.target.value || null)}>
-                <option value="">No functional failure yet</option>
-                {failuresOn(display, r.ref.position_id).map((f) => (
-                  <option key={f.id} value={f.id}>{f.function ? `${f.function} › ` : ""}{f.text}</option>
-                ))}
-              </select>
-            )}
-            {r.ref.was_under && !r.ref.functional_failure_id && <span className="rw-fhelp">It was noted as under: {r.ref.was_under}</span>}
-          </label>
-        )}
-      </div>
-
-      {/* The panel's order: Description → (function: Performance standards → Working behind it) /
-          (failure: Caused by below → Causes above) → the actions. */}
-      {r.type === "fn" && ops?.standards && <RcmFunctionStandards key={r.key} r={r} ops={ops} readOnly={readOnly} />}
-      {r.type === "fn" && ops?.basis && (
-        <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
-                  openToken={ops.basisView?.token(r)} />
-      )}
-
-      {r.type === "mode" && (
-        <section className="rw-decision" aria-label="Decision">
-          <h3>Decision</h3>
-          {d ? (
-            <>
-              <p className="rw-dline"><b>{decisionText(d)}</b>{d.interval ? ` · every ${intervalText(d)}` : ""}</p>
-              {COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
-              {COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
-              {sharedOwn > 0 && (
-                <p className="rw-fhelp">
-                  Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
-                </p>
-              )}
-              {ops && tasks.length > 0 && (
-                <div className="rw-field">
-                  <span className="rw-flabel">{tasks.length === 1 ? "Task" : `Tasks (${tasks.length})`}</span>
-                  <ul className="rw-tasks">
-                    {tasks.map((t, i) => (
-                      <li key={t.id || i}>
-                        <LevelIcon type="task" className="rw-ic rw-ic-task" />
-                        <span>
-                          {taskLine(t)}
-                          {t.shared_with ? <span className="rw-fhelp"> · shared with {t.shared_with} other failure mode{t.shared_with === 1 ? "" : "s"}</span> : null}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  {!readOnly && onTasks && (
-                    <button type="button" className="link rw-tasks-go" onClick={(e) => { if (e.detail < 2) onTasks(r); }}>
-                      Manage tasks…
-                    </button>
-                  )}
+            {r.type === "std" && !r.ref.legacy && ops?.saveItem && (
+              <fieldset className="rw-limit">
+                <legend className="rw-flabel">Limit (optional)</legend>
+                <div className="rw-limit-row">
+                  {stdField(LIMIT_FIELDS[0])}
+                  <label className="rw-field">
+                    <span className="rw-flabel">Comparator</span>
+                    {readOnly ? <span className="rw-fval">{COMPARATOR_LABEL[r.ref.comparator] || "—"}</span> : (
+                      <select value={r.ref.comparator || ""}
+                              onChange={(e) => {
+                                setStdFailed(null);
+                                ops.saveItem(r, { comparator: e.target.value }).then(() => said("Saved."),
+                                  (err) => setStdFailed(saveErrorText(err, { offline: navigator.onLine === false })));
+                              }}>
+                        <option value="">—</option>
+                        {COMPARATORS.map((c) => <option key={c} value={c}>{COMPARATOR_LABEL[c]} ({c})</option>)}
+                      </select>
+                    )}
+                    {stdFailed && <span className="rw-ferr" role="alert">{stdFailed}</span>}
+                  </label>
+                  {stdField(LIMIT_FIELDS[1])}
+                  {stdField(LIMIT_FIELDS[2])}
                 </div>
-              )}
-              {field("Decision notes", "dnotes", { area: true })}
-              {d.status === "unevidenced" ? (
-                // Nothing linked: a gentle way to link it, not a warning.
-                <p className="rw-evidence rw-unlinked">
-                  No evidence linked yet{readOnly ? "." : ": "}
-                  {!readOnly && (
-                    <button type="button" className="link" onClick={() => onDecision(r)}
-                            title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button>
+                {stdField({ col: "when", label: "When it applies", placeholder: "e.g. while the filter pump runs" })}
+                {stdField({ col: "source", label: "Source", placeholder: "e.g. AS 1926.3, the E25 manual" })}
+              </fieldset>
+            )}
+            {r.type === "std" && r.ref.function_has_basis && ops?.basis && (
+              <p className="rw-fhelp">
+                The working behind it is the function's:{" "}
+                <button type="button" className="link" onClick={() => onSelect(r.ref.function_id, { basis: true })}>open the working</button>.
+              </p>
+            )}
+            {r.type === "mode" && field("Failure effects", "effects", { area: true })}
+            {r.type === "fail" && ops?.setBreach && (
+              <BreachesField r={r} readOnly={readOnly} standards={functionOf(display, r)?.ref.standards || []}
+                             onChange={(id) => ops.setBreach(r, id).then(() => said("Saved."), () => {})} />
+            )}
+            {r.type === "fail" && ops && <p className="rw-status">{failureStatusWords(r)}</p>}
+            {r.type === "mode" && (
+              <label className="rw-field">
+                <span className="rw-flabel">Consequence</span>
+                {readOnly ? <span className="rw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
+                  <select value={r.ref.consequence || ""} onChange={(e) => onCommit(r, "consequence", e.target.value)}>
+                    <option value="">Not set</option>
+                    {Object.entries(CONSEQUENCE_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
+                  </select>
+                )}
+              </label>
+            )}
+            {r.type === "mode" && field("Mode notes", "notes", { area: true })}
+            {r.type === "mode" && ops && (
+              <label className="rw-field">
+                <span className="rw-flabel">Under</span>
+                {readOnly ? <span className="rw-fval">{display.rows.get(r.parent)?.ref.text}</span> : (
+                  <select value={r.ref.functional_failure_id || ""} onChange={(e) => ops.assign(r, e.target.value || null)}>
+                    <option value="">No functional failure yet</option>
+                    {failuresOn(whole, r.ref.position_id).map((f) => (
+                      <option key={f.id} value={f.id}>{f.function ? `${f.function} › ` : ""}{f.text}</option>
+                    ))}
+                  </select>
+                )}
+                {r.ref.was_under && !r.ref.functional_failure_id && <span className="rw-fhelp">It was noted as under: {r.ref.was_under}</span>}
+              </label>
+            )}
+          </div>
+
+          {r.type === "mode" && (
+            <section className="rw-decision" aria-label="Decision">
+              <h3>Decision</h3>
+              {d ? (
+                <>
+                  <p className="rw-dline"><b>{decisionText(d)}</b>{d.interval ? ` · every ${intervalText(d)}` : ""}</p>
+                  {ownFields && COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
+                  {ownFields && COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
+                  {ownFields && sharedOwn > 0 && (
+                    <p className="rw-fhelp">
+                      Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
+                    </p>
                   )}
+                  {!taskList && tasks.length > 0 && (
+                    <div className="rw-field">
+                      <span className="rw-flabel">{tasks.length === 1 ? "Task" : `Tasks (${tasks.length})`}</span>
+                      <ul className="rw-tasks">
+                        {tasks.map((t, i) => (
+                          <li key={t.id || i}>
+                            <LevelIcon type="task" className="rw-ic rw-ic-task" />
+                            <span>{taskLine(t)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {field("Decision notes", "dnotes", { area: true })}
+                  {d.status === "unevidenced" ? (
+                    // Nothing linked: a gentle way to link it, not a warning.
+                    <p className="rw-evidence rw-unlinked">
+                      No evidence linked yet{readOnly ? "." : ": "}
+                      {!readOnly && (
+                        <button type="button" className="link" onClick={() => onDecision(r)}
+                                title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button>
+                      )}
+                    </p>
+                  ) : (
+                  <div className="rw-evidence">
+                    {d.status && <RcmStatusBadge status={d.status} />}
+                    {d.artifact_name && (d.artifact_link_path
+                      ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
+                    {(d.summary || d.reason) && <p>{d.summary || d.reason}</p>}
+                  </div>
+                  )}
+                </>
+              ) : <p className="rw-dline">No decision yet.</p>}
+              {!readOnly && (
+                <button type="button" className={d ? "secondary" : ""} onClick={(e) => { if (e.detail < 2) onDecision(r); }}>
+                  {d ? "Change the decision…" : "Decide…"}
+                </button>
+              )}
+            </section>
+          )}
+        </div>
+
+        <div className="rw-pcol">
+          {/* A function: its performance standards, then the working behind them. */}
+          {r.type === "fn" && ops?.standards && <RcmFunctionStandards key={r.key} r={r} ops={ops} readOnly={readOnly} onSaid={said} />}
+          {r.type === "fn" && ops?.basis && (
+            <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
+                      openToken={ops.basisView?.token(r)} />
+          )}
+
+          {/* A failure mode's tasks: several under one mode, each with its own interval, kind and measurement. */}
+          {taskList && !readOnly && (
+            <RcmModeTasks key={`${r.key}:${taskStart?.key === r.key ? taskStart.at : ""}`} r={r} ops={ops}
+                          start={taskStart?.key === r.key ? { tasks: true } : null} onSaid={said} />
+          )}
+
+          {/* A functional failure: Caused by below, then Causes above. */}
+          {r.type === "fail" && ops && links && (
+            <CausedBySection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
+          )}
+          {r.type === "fail" && ops && links && (
+            <CausesSection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
+          )}
+
+          {/* What's inside it, each one a link that shows it here. */}
+          {ops && r.type !== "mode" && EDITABLE.has(r.type) && (
+            <section className="rw-kids" aria-label={r.type === "fail" ? "Failure modes" : "Functional failures"}>
+              <h3>{r.type === "fail" ? "Failure modes" : "Functional failures"}</h3>
+              {kids.length === 0 ? (
+                <p className="rw-fhelp">
+                  {r.type === "fn" ? "No functional failures yet."
+                    : r.type === "std" ? (r.ref.legacy ? "No functional failures yet." : "No functional failure written yet: add one below, or from the performance standard's row menu.")
+                    : "No failure modes of its own yet."}
                 </p>
               ) : (
-              <div className="rw-evidence">
-                {d.status && <RcmStatusBadge status={d.status} />}
-                {d.artifact_name && (d.artifact_link_path
-                  ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
-                {(d.summary || d.reason) && <p>{d.summary || d.reason}</p>}
-              </div>
+                <ul className="rw-klist">
+                  {kids.map((k) => (
+                    <li key={k.key}>
+                      <button type="button" className="link rw-kgo" onClick={() => onSelect(k.key)}
+                              title={`Show the ${LEVEL_OF[k.type].label.toLowerCase()}`}>
+                        <LevelIcon type={k.type} /> {nameOf(k) || `(${LEVEL_OF[k.type].label.toLowerCase()})`}
+                      </button>
+                      <span className={"rw-fhelp" + (k.type === "mode" && !k.ref.decision ? " rw-todo" : "")}>
+                        {k.type === "fail" ? failureSummary(k) : k.ref.decision ? decisionText(k.ref.decision) : "To decide"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </>
-          ) : <p className="rw-dline">No decision yet.</p>}
-          {!readOnly && (
-            <button type="button" className={d ? "secondary" : ""} onClick={(e) => { if (e.detail < 2) onDecision(r); }}>
-              {d ? "Change the decision…" : "Decide…"}
-            </button>
+            </section>
           )}
-        </section>
-      )}
-
-      {/* Order of the panel: Description, then (function) its standard and basis, or (failure) Caused by below
-          and Causes above, then the actions. */}
-      {r.type === "fail" && ops && links && (
-        <CausedBySection r={r} where={display.rows.get(r.ref.position_id)?.ref.name} readOnly={readOnly} links={links} onSelect={onSelect} />
-      )}
-      {r.type === "fail" && ops && links && (
-        <CausesSection r={r} where={display.rows.get(r.ref.position_id)?.ref.name} readOnly={readOnly} links={links} onSelect={onSelect} />
-      )}
+        </div>
+      </div>
 
       {/* Each button acts on its first click only: a double-click opens one dialog. */}
       {!readOnly && (
@@ -464,7 +580,7 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
 // limit, red past it), the box stopping at `max`, and the nudge under it. A
 // text saved longer before stays as it is, red, and a change to it is saved
 // only once it's short enough (onCommit says so).
-function Field({ label, help, value, area, readOnly, type, suffix, onCommit, autoFocus, limit = null }) {
+function Field({ label, help, value, area, readOnly, type, suffix, onCommit, autoFocus, limit = null, placeholder = null }) {
   const [draft, setDraft] = useState(String(value ?? ""));
   const [error, setError] = useState(null);
   // What was last sent: Enter then leaving the field (or Enter twice) sends it
@@ -504,7 +620,7 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
         {count && <span className={"char-count" + (count.tone ? ` ${count.tone}` : "")} aria-hidden="true">{count.text}</span>}
       </span>
       <span className="rw-fin">
-        <Tag value={draft} rows={area ? 2 : undefined} type={area ? undefined : type} autoFocus={autoFocus}
+        <Tag value={draft} rows={area ? 2 : undefined} type={area ? undefined : type} autoFocus={autoFocus} placeholder={placeholder || undefined}
              maxLength={limit ? limit.max : undefined}
              aria-description={count ? `${count.n} of ${count.max} characters.${limit.nudge ? ` ${limit.nudge}` : ""}` : undefined}
              inputMode={type === "number" ? "decimal" : undefined} min={type === "number" ? "0" : undefined}

@@ -82,9 +82,10 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       if (col === "consequence") return after(decideFailureMode(id, { consequence: value || null }));
       return after(decideFailureMode(id, { decision: decisionBody(r.ref.decision, { [COLUMN[col].field]: value }) }));
     },
-    // A row's dialog saved (values checked by checkItem): its writes in order,
-    // then the RCM and the tree read again once, also when one is refused (so
-    // what was saved shows); the refusal goes to the dialog.
+    // A row's fields saved from its details (values checked by checkValue):
+    // its writes in order, then the RCM and the tree read again once, also
+    // when one is refused (so what was saved shows); the refusal goes back to
+    // the field.
     async saveItem(r, values) {
       const id = r.ref.id;
       const send = {

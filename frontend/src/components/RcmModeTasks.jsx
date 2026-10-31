@@ -7,7 +7,7 @@ import { OUTCOME_LABEL, intervalText, tasksOf } from "../rcmWorksheet.js";
 import { secondTaskHint } from "../explorerRcm.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 
-// A failure mode's tasks, in its dialog (RcmItemModal): the decision's own
+// A failure mode's tasks, in its details (the Explorer's RCM tab): the decision's own
 // task first, then any more (a combination: an inspection that catches the
 // slow failures plus a replacement at a hard life), each with its interval,
 // kind and instructions, and whether other failure modes share it. Add

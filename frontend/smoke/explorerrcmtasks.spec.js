@@ -1,13 +1,13 @@
 // Several tasks for one failure mode, and one task for several, on the
 // Explorer's RCM tab (Operate › Assets › Explorer › RCM): the failure mode's
-// dialog lists its tasks under the decision (the decision's own first) with
-// Add another task…, Edit…, Remove and Use an existing task…; the row menu's
-// Add a task… opens the dialog on the add form; the Task cell says "+1 task"
+// details list its tasks (the decision's own first) with Add another task…,
+// Edit…, Remove and Use an existing task…; the row menu's Add a task… opens
+// the details on the add form; the Task cell says "+1 task"
 // without the row changing height; the decision dialog shows a shared task's
 // interval read-only; at 400 px it all fits. Each test makes its own small
 // plant through the API.
 //
-// With SMOKE_SHOTS_DIR set, it also saves screenshots of the dialog with
+// With SMOKE_SHOTS_DIR set, it also saves screenshots of the details with
 // several tasks and of the table rows, at 1280 and 400 px (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 
@@ -35,14 +35,15 @@ async function plant(request, tag) {
 const table = (page) => page.getByRole("treegrid", { name: /and their RCM/ });
 const trow = (page, name) => table(page).getByRole("row", { name: new RegExp(name) });
 const dialog = (page, name) => page.getByRole("dialog", { name, exact: true });
-const tasksOf = (page) => dialog(page, "Failure mode").getByRole("region", { name: "Tasks" });
+const panel = (page) => page.getByRole("complementary", { name: "Details" });
+const tasksOf = (page) => panel(page).getByRole("region", { name: "Tasks" });
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 const settled = async (page) => {
   await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
   await page.waitForTimeout(250);
 };
 
-test("a failure mode's dialog lists its tasks; add another, link an existing one, edit, remove; the cell says +1 task", async ({ page, request, problems }) => {
+test("a failure mode's details list its tasks; add another, link an existing one, edit, remove; the cell says +1 task", async ({ page, request, problems }) => {
   const tag = `t${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -53,9 +54,9 @@ test("a failure mode's dialog lists its tasks; add another, link an existing one
   await settled(page);
   const heightBefore = (await acidRow.boundingBox()).height;
 
-  // The dialog: one task, the decision's.
+  // Its details (a double-click on its name): one task, the decision's.
   await acidRow.locator(".tp-nm").dblclick();
-  let dlg = dialog(page, "Failure mode");
+  let dlg = panel(page);
   await expect(dlg).toBeVisible();
   let tasks = tasksOf(page);
   await expect(tasks.getByRole("listitem")).toHaveCount(1);
@@ -104,7 +105,7 @@ test("a failure mode's dialog lists its tasks; add another, link an existing one
   await expect(ask).toContainText("serves only this failure mode, so it is retired");
   await ask.getByRole("button", { name: "Retire the task" }).click();
   await expect(tasks.getByRole("listitem")).toHaveCount(2);
-  await page.keyboard.press("Escape");
+  await panel(page).getByRole("button", { name: "Back to table" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // The table: the decision's own task and "+1 task", the row no taller; the tooltip lists both.
@@ -130,11 +131,11 @@ test("one task for several modes: shared, read-only in the decision dialog, unli
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.cell.id}&tab=rcm`);
   const saltRow = trow(page, `^Failure mode: Salinity low ${tag}`);
   await expect(saltRow).toBeVisible();
-  // Add a task… in the row menu opens the dialog on the add form.
+  // Add a task… in the row menu opens the details on the add form.
   await saltRow.locator(".tp-nm").click();
   await page.keyboard.press("Shift+F10");
   await page.getByRole("menu").getByRole("menuitem", { name: "Add a task…" }).click();
-  const dlg = dialog(page, "Failure mode");
+  const dlg = panel(page);
   await expect(dlg).toBeVisible();
   const tasks = tasksOf(page);
   await expect(tasks.getByRole("textbox", { name: "Task" })).toBeFocused();
@@ -178,7 +179,7 @@ test("at 400 px the Tasks section and its forms fit the sheet", async ({ page, r
   await expect(row).toContainText("+1 task");
   await row.getByRole("button", { name: "Actions", exact: true }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Add a task…" }).click();
-  const dlg = dialog(page, "Failure mode");
+  const dlg = panel(page);
   await expect(dlg).toBeVisible();
   const tasks = tasksOf(page);
   await expect(tasks.getByRole("listitem")).toHaveCount(2);
@@ -214,10 +215,10 @@ test("screenshots of a failure mode with several tasks and the table rows (SMOKE
       await row.getByRole("button", { name: "Actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Open…" }).click();
     }
-    await expect(dialog(page, "Failure mode")).toBeVisible();
+    await expect(panel(page)).toBeVisible();
     await tasksOf(page).scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
-    await page.screenshot({ path: `${SHOTS}/rcm-tasks-dialog-${w}.png` });
+    await page.screenshot({ path: `${SHOTS}/rcm-tasks-panel-${w}.png` });
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
   }

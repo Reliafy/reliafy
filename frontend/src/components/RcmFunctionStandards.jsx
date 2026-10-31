@@ -6,8 +6,8 @@ import {
   COMPARATORS, COMPARATOR_LABEL, canSplit, limitWords, proposeSplit, splitLines, standardsShown, unbreachedWords,
 } from "../rcmStandards.js";
 
-// A function's performance standards, as a list, in its dialog and its
-// Details (the Explorer's RCM tab): each one a line of text (one parameter,
+// A function's performance standards, as a list, in its details (the
+// Explorer's RCM tab): each one a line of text (one parameter,
 // one limit: "pH 7.2-7.8"), with the structured limit, when it applies and
 // its source folded away. Add, edit, remove, move up or down; and, for a
 // function that still has its one text with ';' or line breaks in it, "Split

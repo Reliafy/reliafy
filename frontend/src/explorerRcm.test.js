@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  ITEM_FIELDS, NARROW_TABLE, TASK_WITH_INTERVAL, basisInName, causeKey, cellRow, checkItem, failureRows, failureStatusWords, itemChanges, itemFields, itemValue, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardChoices, standardKeys, tableCols,
+  NARROW_TABLE, TASK_WITH_INTERVAL, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardChoices, standardKeys, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
-import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
+import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
 
 const DATA = {
   positions: [
@@ -218,10 +218,20 @@ test("the Task cell with the interval folded in", () => {
   assert.equal(TASK_WITH_INTERVAL.edit, "text"); // still edits the task itself
 });
 
-test("the (i) for a working sits in the name while the Performance standard column is hidden", () => {
-  assert.equal(basisInName(tableCols({}, false)), true);
-  assert.equal(basisInName(["standard", "effects"]), false);
-  assert.equal(basisInName(tableCols({ colsChosen: true, cols: ["standard", "effects"] }, false)), false);
+test("the (i) for a working sits on each of the function's performance standards, or on the function with none", () => {
+  const rcm = (fn) => ({ positions: [{ id: "pump", functions: [{ id: "f", text: "Keep it clean", has_basis: true, basis_preview: "Demand 4.3 ppm", failures: [], ...fn }] }] });
+  const listed = graftRcm(buildDisplay(DATA, "positions"), rcm({ standards: [st("a", "FC 1-3 ppm"), st("b", "pH 7.2-7.8")] }));
+  assert.equal(basisMarked(listed.rows.get("f")), false);
+  assert.deepEqual(["a", "b"].map((k) => basisMarked(listed.rows.get(k))), [true, true]);
+  assert.equal(listed.rows.get("a").ref.function_basis_preview, "Demand 4.3 ppm");
+  const one = graftRcm(buildDisplay(DATA, "positions"), rcm({ standard: "FC 1-3 ppm" }));
+  assert.equal(basisMarked(one.rows.get(legacyKey("f"))), true); // the one text's row
+  assert.equal(basisMarked(one.rows.get("f")), false);
+  const none = graftRcm(buildDisplay(DATA, "positions"), rcm({ standard: "" }));
+  assert.equal(basisMarked(none.rows.get("f")), true); // no performance standard: on the function
+  const noWorking = graftRcm(buildDisplay(DATA, "positions"), rcm({ has_basis: false, standards: [st("a", "FC 1-3 ppm")] }));
+  assert.equal(basisMarked(noWorking.rows.get("a")), false);
+  assert.equal(basisMarked(null), false);
 });
 
 test("the one search box also reaches the first words of a working, never the whole text", () => {
@@ -390,35 +400,19 @@ test("a link whose cause is no longer inside still shows, and is said to be", ()
   assert.equal(COLUMN.decision.text(f), "");
 });
 
-test("a row's dialog: which rows open one, and what Save sends", () => {
+test("a row opened: which rows open their details, and what a field kept sends", () => {
   const d = graftRcm(buildDisplay(DATA, "positions"), RCM);
   const row = (k) => d.rows.get(k);
   assert.deepEqual(["pump", "f1", "x1", "m1", "U:pump", "m4"].map((k) => opensItem(row(k))), [false, true, true, true, false, true]);
   assert.equal(opensItem(null), false);
-  assert.deepEqual(ITEM_FIELDS.mode, ["name", "effects", "consequence", "notes"]);
-
-  // Only what was typed differently counts (spaces at the ends don't).
   const m1 = row("m1");
-  assert.equal(itemValue(m1, "consequence"), "operational");
-  assert.deepEqual(itemChanges(m1, {}), {});
-  assert.deepEqual(itemChanges(m1, { name: " Bearing seizes " }), {});
-  assert.deepEqual(itemChanges(m1, { effects: "Pump stops", consequence: "hidden" }), { effects: "Pump stops", consequence: "hidden" });
-
-  // Checked as the table and the panel check them.
-  assert.deepEqual(checkItem(m1, { name: "  " }).errors, { name: "Every failure mode needs a description." });
-  const long = checkItem(row("f1"), { name: "x".repeat(201) });
-  assert.match(long.errors.name, /Shorten it to 200 characters/);
-  const ok = checkItem(m1, { name: " Bearing seizes early ", consequence: "", effects: " Stops " });
-  assert.deepEqual(ok, { values: { name: "Bearing seizes early", consequence: null, effects: "Stops" }, errors: {} });
-
-  // A failure mode's words in one write, its consequence in another; one write for the rest.
-  assert.deepEqual(itemWrites(m1, ok.values), [
-    { api: "mode", body: { text: "Bearing seizes early", effects: "Stops" } },
-    { api: "decide", body: { consequence: null } },
-  ]);
+  // Checked as the table checks it, then sent: a failure mode's words in one write, its consequence in another.
+  assert.deepEqual(checkValue("name", m1, "  "), { error: "Every failure mode needs a description." });
+  assert.match(checkValue("name", row("f1"), "x".repeat(201)).error, /Shorten it to 200 characters/);
+  assert.deepEqual(itemWrites(m1, { name: "Bearing seizes early", effects: "Stops" }), [{ api: "mode", body: { text: "Bearing seizes early", effects: "Stops" } }]);
+  assert.deepEqual(itemWrites(m1, { consequence: null }), [{ api: "decide", body: { consequence: null } }]);
   assert.deepEqual(itemWrites(m1, { notes: "n" }), [{ api: "mode", body: { notes: "n" } }]);
   assert.deepEqual(itemWrites(row("f1"), { name: "Pump", standard: "10 L/s" }), [{ api: "function", body: { text: "Pump" } }]); // the standards are a list, saved on their own
-  assert.deepEqual(ITEM_FIELDS.fn, ["name"]);
   assert.deepEqual(itemWrites(row("x1"), { name: "No flow at all" }), [{ api: "failure", body: { text: "No flow at all" } }]);
   assert.deepEqual(itemWrites(row("x1"), {}), []);
 });
@@ -537,10 +531,7 @@ test("standards are a level: a list's rows with their failures, a 'No standard' 
 test("the standard rows' cells and phone line: the limit in words, what's inside", () => {
   const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
   const cell = (k) => cellRow(d.rows.get(k));
-  assert.equal(COLUMN.standard.text(cell("s2")), "Pressure at least 4 bar · E25 manual");
-  assert.equal(COLUMN.standard.text(cell("s1")), "");
-  assert.equal(COLUMN.standard.text(cell("f1")), "At least 50 L/s; At 4 bar");
-  assert.equal(COLUMN.standard.can(cell("s1")), false); // a standard's text is the row's name
+  assert.equal(COLUMN.standard, undefined); // a row of the tree, not a column
   assert.equal(phoneLine(cell("s2")), "Pressure at least 4 bar · E25 manual · No functional failure written yet");
   assert.equal(phoneLine(cell("s1")), "1 failure mode · all decided");
   assert.equal(insideWords(cell("f1")), "2 failure modes · 1 to decide");
@@ -575,24 +566,18 @@ test("row menus for the standards level: add, edit, move, remove; a failure chan
   assert.deepEqual(labels("f1").slice(0, 3), ["Open…", "Add a performance standard…", "Add functional failure"]);
 });
 
-test("a standard's dialog: its text and limit fields, saved as one write; the one text saved as the function's", () => {
+test("a standard's limit fields, each kept as you go; the one text saved as the function's", () => {
   const d = graftRcm(buildDisplay(DATA, "positions"), STANDARDS);
   const row = (k) => d.rows.get(k);
   assert.equal(opensItem(row("s1")), true);
   assert.equal(opensItem(row(noStdKey("f1"))), false);
-  assert.deepEqual(ITEM_FIELDS.std, ["name", "parameter", "comparator", "value", "unit", "when", "source"]);
-  assert.deepEqual(itemFields(row("s2")), ITEM_FIELDS.std);
-  assert.deepEqual(itemFields(row(legacyKey("f2"))), ["name"]);
-  assert.equal(itemValue(row("s2"), "name"), "At 4 bar");
-  assert.equal(itemValue(row("s2"), "value"), "4");
-  assert.equal(itemValue(row("s2"), "when"), "");
-  assert.deepEqual(itemChanges(row("s2"), { name: "At 4 bar ", value: "4", unit: " bar" }), {});
-  assert.deepEqual(itemChanges(row("s2"), { value: "4.5", when: "at full flow" }), { value: "4.5", when: "at full flow" });
-  const checked = checkItem(row("s2"), { name: " At 4.5 bar ", value: "4.5", when: "at full flow", comparator: ">=" });
-  assert.deepEqual(checked.errors, {});
-  assert.deepEqual(itemWrites(row("s2"), checked.values), [{ api: "standard", body: { text: "At 4.5 bar", value: 4.5, when: "at full flow", comparator: ">=" } }]);
+  // One field at a time (the panel keeps each as it's left): a number is sent as one, other text as typed.
+  assert.deepEqual(checkValue("when", row("s2"), " at full flow "), { value: "at full flow" });
+  assert.deepEqual(itemWrites(row("s2"), { value: checkValue("value", row("s2"), "4.5").value }), [{ api: "standard", body: { value: 4.5 } }]);
   assert.deepEqual(itemWrites(row("s2"), { value: "7.2-7.8" }), [{ api: "standard", body: { value: "7.2-7.8" } }]);
-  assert.deepEqual(checkItem(row("s1"), { name: " " }).errors, { name: "Every performance standard needs a description." });
+  assert.deepEqual(itemWrites(row("s2"), { comparator: ">=" }), [{ api: "standard", body: { comparator: ">=" } }]);
+  assert.deepEqual(itemWrites(row("s2"), { unit: "" }), [{ api: "standard", body: { unit: "" } }]); // cleared
+  assert.deepEqual(checkValue("name", row("s1"), " "), { error: "Every performance standard needs a description." });
   // The one text's row: the text, as the function's standard; the limit fields are ignored.
   assert.deepEqual(itemWrites(row(legacyKey("f2")), { name: "No leak past the seal or the gland", unit: "x" }), [{ api: "function-standard", body: { standard: "No leak past the seal or the gland" } }]);
   assert.deepEqual(itemWrites(row("s2"), {}), []);

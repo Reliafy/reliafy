@@ -229,7 +229,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   const modeRow = trow(page, `^Failure mode: Seal leaks No flow Pump water ${tag}`);
   await modeRow.locator(".tt-tree").click({ button: "right" });
   await rowMenu(page, "Failure mode: Seal leaks").getByRole("menuitem", { name: "Edit description" }).click();
-  const inPlace = table(page).getByRole("textbox", { name: `Function, failure or mode of Seal leaks No flow Pump water ${tag}` });
+  const inPlace = table(page).getByRole("textbox", { name: `Function, performance standard, failure or mode of Seal leaks No flow Pump water ${tag}` });
   await expect(inPlace).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(inPlace).toHaveCount(0);

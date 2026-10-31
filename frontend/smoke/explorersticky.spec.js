@@ -123,7 +123,7 @@ test("the RCM table scrolled sideways: the tree column stays on top and opaque, 
   // More columns than fit, so the table scrolls sideways.
   await page.getByRole("button", { name: "Columns", exact: true }).click();
   const pop = page.getByRole("group", { name: "Columns to show" });
-  for (const n of ["Interval", "Performance standard", "Mode notes", "Decision notes", "What the evidence shows"]) await pop.getByRole("checkbox", { name: n }).check();
+  for (const n of ["Interval", "Evidence", "Mode notes", "Decision notes", "What the evidence shows"]) await pop.getByRole("checkbox", { name: n, exact: true }).check();
   await page.keyboard.press("Escape");
   await expect(table(page).getByRole("columnheader", { name: "Interval" })).toBeVisible();
   // A wider tree column (as dragged out to read long names).

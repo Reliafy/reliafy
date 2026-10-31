@@ -54,13 +54,16 @@ linked, **Evidence check**. On a narrower screen the interval folds into the
 Task cell (*every 580 hours*). A position, function or functional failure row
 counts what's inside it, for example *1 to decide*, so you can close it and
 still see what needs doing. Click a row to open its **Details** beside the
-tree: for a failure mode, that's its effects, consequence, notes, the decision,
-and the link to the evidence with one line saying what it shows, for example
-*Optimal interval ≈ 580 hours (50% saving vs run-to-failure)*.
-Double-click a function, functional failure or failure mode (or choose
-**Open…**, first in its row menu) to see all of it in one dialog: where it
-sits, what's inside it and, for a failure mode, its decision. Changes there are
-kept when you press **Save**; **Cancel** leaves it as it was.
+table: for a failure mode, that's its effects, consequence, notes, the decision,
+its tasks and the link to the evidence with one line saying what it shows, for
+example *Optimal interval ≈ 580 hours (50% saving vs run-to-failure)*. Move up
+and down the tree with the arrow keys and the Details follow.
+
+Double-click a row's name (or choose **Open…**, first in its row menu, or
+**Expand** in the Details) to spread the Details across the table, with the
+tree still on the left so you keep your place: pick another row there and the
+Details show that one. **Back to table** (or **Esc**) puts the columns back.
+Double-clicking a cell in the columns still edits that cell in place.
 
 To find your way around a big tree:
 
@@ -77,8 +80,7 @@ To find your way around a big tree:
   can still see where you are; open and close rows by hand after as usual.
 - **Pin this branch** in a position's row menu shows that position and what's
   inside it on its own; **Show whole tree** brings the rest back.
-- **Columns** shows or hides columns, such as **Performance standard**,
-  **Evidence**, **What the evidence shows** and **Decision notes**. Drag a
+- **Columns** shows or hides columns, such as **Evidence**, **What the evidence shows** and **Decision notes**. Drag a
   column's edge to resize it. The Explorer remembers these choices on this
   device.
 
@@ -166,12 +168,12 @@ no schedule (run-to-failure, redesign, accept) retires it.
 Sometimes one task isn't enough: an inspection catches the slow failures, and
 a replacement at a hard life catches the ones it can't see. And sometimes one
 act of work answers several failure modes: one monthly water sample covers
-five chemistry failure modes. Both are in the failure mode's dialog
-(double-click its row, or **Open…** in its menu), under **Tasks**:
+five chemistry failure modes. Both are in the failure mode's Details, under
+**Tasks**:
 
 - **Add another task…** adds a second task to the failure mode, with its own
   name, interval and instructions. For an operational or non-operational
-  consequence the dialog asks what the second task catches that the first
+  consequence the form asks what the second task catches that the first
   doesn't: put the answer in the decision's notes. (**Add a task…** in the
   row's menu opens the same form.)
 - **Use an existing task…** links a task that is already on the position, or
@@ -191,7 +193,7 @@ five chemistry failure modes. Both are in the failure mode's dialog
   mode is retired; one that serves others too is unlinked and stays.
 
 The **Task** column shows the decision's own task and *+1 task* when there are
-more; the dialog lists them all. The evidence linked on a decision applies to
+more; its Details list them all. The evidence linked on a decision applies to
 its own (first) task. Deleting a failure mode retires the tasks that served it
 alone and unlinks the shared ones. In a worksheet, a second row for the same
 failure mode with another task adds that task, and a task named on several
@@ -282,17 +284,16 @@ the rows:
 - In a functional failure's row menu, **Change performance standard…** moves it under
   another of the function's performance standards, or under **No performance standard** (the whole
   function, as a total loss is).
-- Double-click a performance standard's row (or **Open…** in its menu) for its dialog:
-  the text, the structured limit (parameter, comparator, value, unit), when
-  it applies, its source, and the functional failures that breach it.
+- A performance standard's Details have its text, the structured limit
+  (parameter, comparator, value, unit), when it applies, its source, and the
+  functional failures that breach it. Each field is kept as you leave it.
 - A function that still has its one performance standard as a sentence shows it as one
   performance standard row, with every functional failure under it (there is nothing
   else to breach). The row's menu edits or removes that text; to make it a
-  list, open the function and press **Add performance standard** or **Split into
+  list, pick the function and press **Add performance standard** or **Split into
   performance standards…**, as below.
 
-Open a function (double-click its row, or **Open…** in its menu) and look
-under **Performance standards**:
+Pick a function and look under **Performance standards** in its Details:
 
 - Each performance standard is one line: one parameter and one limit, such as *pH
   7.2–7.8*. **Add performance standard** adds another; **Edit** changes one; **Remove**
@@ -306,17 +307,15 @@ under **Performance standards**:
   as written. Nothing is split for you: if the old text was a list joined by
   semicolons, **Split into performance standards…** proposes one performance standard per part, lets
   you edit each line or drop it, and writes them when you confirm.
-- Open a functional failure to say which performance standard it **Breaches**: *pH above
+- Pick a functional failure to say which performance standard it **Breaches**: *pH above
   7.8* breaches *pH 7.2–7.8*; *No flow* breaches the whole function. It is a
-  hint for the reader, not a rule: the dialog says *2 performance standards have no
+  hint for the reader, not a rule: the Details say *2 performance standards have no
   functional failure yet* under a function, in grey, so you can decide
   whether those are performance standards of this function at all.
 - A performance standard that needs its own verb is another function: *produce chlorine*
   and *not raise the pH* are two jobs.
 
-The table's **Performance standard** column shows the list on one line on
-the function's row, and a performance standard's own limit in words on its row. In a
-worksheet, every distinct performance standard cell under a function is one performance standard (a
+In a worksheet, every distinct performance standard cell under a function is one performance standard (a
 row with the function and a performance standard alone lists one), and when a function
 has a list, a functional failure's row names the one it breaches; **Export
 CSV** writes them that way, so a sheet reads back with each failure under its
@@ -392,9 +391,9 @@ must move to keep a silo filling. Open a function's Details and look under
 - **Attach PDF** keeps a PDF of the working with the function, up to five, each
   up to 20 MB. Open one from its name; its **⋯** menu downloads, replaces or
   removes it.
-- A small **i** beside the performance standard in the table means a working is there.
-  Click it to open the working. If the Performance standard column is hidden,
-  the **i** sits at the end of the function's name instead.
+- A small **i** at the end of each of the function's performance standards in
+  the tree means a working is there (on a function with no performance
+  standard, at the end of the function's name). Click it to open the working.
 
 When the position (or one above it) has an operating context, the working links
 to it, so the figures it uses are one click away. Over a spreadsheet, the
