@@ -43,7 +43,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   // The one text, as the first (and only) item; the split helper offered.
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list).toContainText("pH 7.2-7.8; Total alkalinity 80-120 ppm; given the filter pump runs");
-  await list.getByRole("button", { name: "Split into standards…" }).click();
+  await list.getByRole("button", { name: "Split into performance standards…" }).click();
   const lines = list.getByRole("listitem").filter({ has: page.getByRole("textbox") });
   await expect(lines).toHaveCount(3);
   await expect(list.getByRole("textbox", { name: "Line 1" })).toHaveValue("pH 7.2-7.8");
@@ -51,19 +51,19 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await list.getByRole("combobox", { name: "Line 3 is" }).selectOption("when");
   const beforeSplit = await (await request.get(`${M}/functions/${p.fn.id}`)).json();
   expect(beforeSplit.standards).toEqual([]);
-  await list.getByRole("button", { name: "Confirm: 2 standards" }).click();
+  await list.getByRole("button", { name: "Confirm: 2 performance standards" }).click();
   await expect(list.getByRole("listitem")).toHaveCount(2);
   await expect(list.getByRole("listitem").nth(1)).toContainText("Total alkalinity 80-120 ppm");
   await expect(list.getByRole("listitem").nth(1)).toContainText("given the filter pump runs");
-  await expect(list).toContainText("2 standards have no functional failure yet.");
+  await expect(list).toContainText("2 performance standards have no functional failure yet.");
   let fn = await (await request.get(`${M}/functions/${p.fn.id}`)).json();
   expect(fn.standards.map((st) => [st.text, st.when])).toEqual([["pH 7.2-7.8", null], ["Total alkalinity 80-120 ppm", "given the filter pump runs"]]);
   expect(fn.standard).toBe("pH 7.2-7.8; Total alkalinity 80-120 ppm");
   expect(fn.legacy_standard).toBe("pH 7.2-7.8; Total alkalinity 80-120 ppm; given the filter pump runs"); // the text itself stays
 
   // Add a third, with its structured limit folded under Limit…; saved once.
-  await list.getByRole("button", { name: "Add standard" }).click();
-  await list.getByRole("textbox", { name: "Standard" }).fill(`Calcium hardness 200-400 ppm ${tag}`);
+  await list.getByRole("button", { name: "Add performance standard" }).click();
+  await list.getByRole("textbox", { name: "Performance standard" }).fill(`Calcium hardness 200-400 ppm ${tag}`);
   await list.getByRole("button", { name: "Limit…" }).click();
   await list.getByRole("textbox", { name: "Parameter" }).fill("Calcium hardness");
   await list.getByRole("combobox", { name: "Comparator" }).selectOption("between");
@@ -72,7 +72,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await list.getByRole("textbox", { name: "Source (optional)" }).fill("E25 manual");
   let writes = 0;
   page.on("request", (r) => { if (r.method() === "POST" && r.url().includes(`/functions/${p.fn.id}/standards`)) writes += 1; });
-  await list.getByRole("button", { name: "Add standard", exact: true }).last().dblclick();
+  await list.getByRole("button", { name: "Add performance standard", exact: true }).last().dblclick();
   await expect(list.getByRole("listitem")).toHaveCount(3);
   expect(writes).toBe(1);
   await expect(list.getByRole("listitem").nth(2)).toContainText("Calcium hardness between 200-400 ppm · E25 manual");
@@ -81,12 +81,12 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await list.getByRole("button", { name: `Move Calcium hardness 200-400 ppm ${tag} up` }).click();
   await expect(list.getByRole("listitem").nth(0)).toContainText("Calcium hardness");
   await list.getByRole("button", { name: "Edit pH 7.2-7.8" }).click();
-  await list.getByRole("textbox", { name: "Standard" }).fill("pH 7.4-7.6");
-  await list.getByRole("button", { name: "Save standard" }).click();
+  await list.getByRole("textbox", { name: "Performance standard" }).fill("pH 7.4-7.6");
+  await list.getByRole("button", { name: "Save performance standard" }).click();
   await expect(list).toContainText("pH 7.4-7.6");
   // Remove one, after asking.
   await list.getByRole("button", { name: "Remove Total alkalinity 80-120 ppm" }).click();
-  await page.getByRole("alertdialog", { name: "Remove this standard?" }).getByRole("button", { name: "Remove standard" }).click();
+  await page.getByRole("alertdialog", { name: "Remove this performance standard?" }).getByRole("button", { name: "Remove performance standard" }).click();
   await expect(list.getByRole("listitem")).toHaveCount(2);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -107,7 +107,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   expect(fn.failures[0].standard.text).toBe("pH 7.4-7.6");
   // The hint follows: one standard still has no failure; the dialog says so.
   await fnRow.locator(".tp-nm").dblclick();
-  await expect(standardsOf(page)).toContainText("1 standard has no functional failure yet.");
+  await expect(standardsOf(page)).toContainText("1 performance standard has no functional failure yet.");
   await page.keyboard.press("Escape");
   // The standard column (shown from the Columns menu) has the list on one line.
   await page.getByRole("button", { name: "Columns" }).click();
@@ -128,10 +128,10 @@ test("the Details panel edits the list too, and a second standard keeps the one 
   const details = page.getByRole("complementary", { name: "Details" });
   const list = details.getByRole("region", { name: "Performance standards" });
   await expect(list.getByRole("listitem")).toHaveCount(1);
-  await expect(list.getByRole("button", { name: "Split into standards…" })).toHaveCount(0); // one text, no ';': nothing to split
-  await list.getByRole("button", { name: "Add standard" }).click();
-  await list.getByRole("textbox", { name: "Standard" }).fill("At 4 bar");
-  await list.getByRole("button", { name: "Add standard", exact: true }).last().click();
+  await expect(list.getByRole("button", { name: "Split into performance standards…" })).toHaveCount(0); // one text, no ';': nothing to split
+  await list.getByRole("button", { name: "Add performance standard" }).click();
+  await list.getByRole("textbox", { name: "Performance standard" }).fill("At 4 bar");
+  await list.getByRole("button", { name: "Add performance standard", exact: true }).last().click();
   await expect(list.getByRole("listitem")).toHaveCount(2);
   await expect(list.getByRole("listitem").nth(0)).toContainText("At least 50 L/s");
   const fn = await (await request.get(`${M}/functions/${p.fn.id}`)).json();
@@ -152,7 +152,7 @@ test("at 400 px the standards list and its forms fit the sheet", async ({ page, 
   await expect(dlg).toBeVisible();
   const list = standardsOf(page);
   await expect(list.getByRole("listitem")).toHaveCount(2);
-  await list.getByRole("button", { name: "Add standard" }).click();
+  await list.getByRole("button", { name: "Add performance standard" }).click();
   await list.getByRole("button", { name: "Limit…" }).click();
   expect(await overflow(page)).toBe(0);
   const box = await dlg.boundingBox();

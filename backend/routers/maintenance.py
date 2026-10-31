@@ -455,7 +455,7 @@ def add_function(position_id: str, body: dict = Body(...), m: Maintenance = Depe
 
 @router.get("/functions/{function_id}")
 def get_function(function_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """One function in full: the working behind its standard and the documents on it."""
+    """One function in full: the working behind its performance standard and the documents on it."""
     return _run(m.function, function_id)
 
 
@@ -521,7 +521,7 @@ def reorder_standards(function_id: str, body: dict = Body(...),
 @router.post("/standards/{standard_id}/move")
 def move_standard(standard_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """To another function (function_id), on the same position or another, alone: the functional
-    failures that breached it stay with their function, under no standard. functional_failure_ids:
+    failures that breached it stay with their function, under no performance standard. functional_failure_ids:
     failures of the new function that breach it from now on."""
     return _run(m.move_standard, standard_id, body.get("function_id"), body.get("functional_failure_ids"))
 
@@ -529,7 +529,7 @@ def move_standard(standard_id: str, body: dict = Body(...), m: Maintenance = Dep
 @router.post("/functions/{function_id}/standards/split")
 def split_standard(function_id: str, body: dict | None = Body(None),
                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """The function's single standard text as a list: proposed (dry_run true, the default, or no
+    """The function's single performance standard text as a list: proposed (dry_run true, the default, or no
     standards given), or written from standards [{text, when?, source?}] with dry_run false."""
     body = body or {}
     return _run(m.split_standard, function_id, body.get("standards"), bool(body.get("dry_run", True)))

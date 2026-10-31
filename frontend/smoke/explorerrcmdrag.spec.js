@@ -126,7 +126,7 @@ test("a functional failure onto another function's standard, and before a siblin
     const fn = (await rcmOf(request, p.a.id)).functions[0];
     return fn.failures.map((f) => [f.text, f.standard?.text]);
   }).toEqual([[`Low pressure ${tag}`, `At least 50 L/s ${tag}`], [`No flow ${tag}`, `At least 50 L/s ${tag}`]]);
-  await dragTo(page, trow(page, `^Functional failure: Low pressure ${tag}`), trow(page, `^Standard: At least 20 L/s ${tag}`));
+  await dragTo(page, trow(page, `^Functional failure: Low pressure ${tag}`), trow(page, `^Performance standard: At least 20 L/s ${tag}`));
   await expect(toast(page)).toContainText(`under “Pump more water ${tag}”`);
   await expect.poll(async () => (await rcmOf(request, p.b.id)).functions[0].failures.map((f) => [f.text, f.standard?.text]))
     .toContainEqual([`Low pressure ${tag}`, `At least 20 L/s ${tag}`]);
@@ -161,8 +161,8 @@ test("a standard dragged to a function on another position carries its failures,
   await postOk(request, `${M}/failure-modes/${p.impeller.id}/tasks`, { name: `Check impeller ${tag}`, interval: 6 });
   await openPlant(page, p);
   const before = await frameOf(page);
-  await dragTo(page, trow(page, `^Standard: At 4 bar ${tag}`), trow(page, `^Function: Pump more water ${tag}`), { hold: true });
-  await expect(ghost(page).locator(".rcm-ghost-what")).toHaveText(`The standard “At 4 bar ${tag}” and its functional failure`);
+  await dragTo(page, trow(page, `^Performance standard: At 4 bar ${tag}`), trow(page, `^Function: Pump more water ${tag}`), { hold: true });
+  await expect(ghost(page).locator(".rcm-ghost-what")).toHaveText(`The performance standard “At 4 bar ${tag}” and its functional failure`);
   await expect(ghost(page)).toContainText("with its failure modes and tasks");
   await expect(ghost(page)).toHaveClass(/is-ok/);
   // Nothing on the page moved while dragging.
@@ -171,7 +171,7 @@ test("a standard dragged to a function on another position carries its failures,
   expect(during.boxes).toEqual(before.boxes);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/standard-subtree-drag-1280.png` });
   await page.mouse.up();
-  await expect(toast(page)).toContainText(`Moved the standard “At 4 bar ${tag}” and its functional failure to “Pump more water ${tag}”.`);
+  await expect(toast(page)).toContainText(`Moved the performance standard “At 4 bar ${tag}” and its functional failure to “Pump more water ${tag}”.`);
   await expect(toast(page)).not.toContainText("stays");
   await expect.poll(async () => {
     const fn = (await rcmOf(request, p.b.id)).functions[0];
@@ -183,7 +183,7 @@ test("a standard dragged to a function on another position carries its failures,
   expect((await rcmOf(request, p.a.id)).functions[0].failures.map((f) => f.text)).toEqual([`No flow ${tag}`]);
   // On screen too: the standard's row on Pump B, with its failure under it.
   await settled(page);
-  const stdB = trow(page, `^Standard: At 4 bar ${tag}`);
+  const stdB = trow(page, `^Performance standard: At 4 bar ${tag}`);
   await expect(stdB).toHaveCount(1);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/standard-subtree-toast-1280.png` });
   await toast(page).getByRole("button", { name: "Undo" }).click();
@@ -203,7 +203,7 @@ test("under a standard's row every row still drags: its functional failure, a mo
   const tag = `u${Date.now()}`;
   const p = await plant(request, tag);
   await openPlant(page, p);
-  await expect(trow(page, `^Standard: At least 50 L/s ${tag}`).locator(".tt-grip")).toHaveCount(1);
+  await expect(trow(page, `^Performance standard: At least 50 L/s ${tag}`).locator(".tt-grip")).toHaveCount(1);
   for (const name of [`^Functional failure: No flow ${tag}`, `^Failure mode: Bearing seizes ${tag}`, `^Failure mode: Seal leaks ${tag}`]) {
     await expect(trow(page, name).first().locator(".tt-grip")).toHaveCount(1);
   }
@@ -220,8 +220,8 @@ test("a standard whose failure can't go there is refused before the drop, with t
   const p = await plant(request, tag);
   await openPlant(page, p);
   // Under "At least 50 L/s": a mode named like one on Pump B.
-  await dragTo(page, trow(page, `^Standard: At least 50 L/s ${tag}`), trow(page, `^Function: Pump more water ${tag}`), { hold: true });
-  await expect(ghost(page).locator(".rcm-ghost-what")).toHaveText(`The standard “At least 50 L/s ${tag}” and its functional failure`);
+  await dragTo(page, trow(page, `^Performance standard: At least 50 L/s ${tag}`), trow(page, `^Function: Pump more water ${tag}`), { hold: true });
+  await expect(ghost(page).locator(".rcm-ghost-what")).toHaveText(`The performance standard “At least 50 L/s ${tag}” and its functional failure`);
   await expect(ghost(page)).toHaveClass(/is-no/);
   await expect(ghost(page)).toContainText(`Can't go here: Pump B ${tag} already has the failure mode Seal leaks ${tag}`);
   await expect(table(page).locator(".tp-row.drop-no")).toHaveCount(1);
@@ -237,10 +237,10 @@ test("at 400 px a standard's Move to… carries its failures too, with Undo", as
   const tag = `v${Date.now()}`;
   const p = await plant(request, tag);
   await openPlant(page, p, 400);
-  const row = trow(page, `^Standard: At 4 bar ${tag}`);
+  const row = trow(page, `^Performance standard: At 4 bar ${tag}`);
   await row.getByRole("button", { name: "Actions", exact: true }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Move to another function…" }).click();
-  const dlg = page.getByRole("dialog", { name: `Move the standard “At 4 bar ${tag}” and its functional failure` });
+  const dlg = page.getByRole("dialog", { name: `Move the performance standard “At 4 bar ${tag}” and its functional failure` });
   await expect(dlg).toBeVisible();
   await dlg.getByRole("listbox", { name: "Where it goes" }).selectOption(p.more.id);
   await expect(dlg.getByRole("status")).toContainText(`to “Pump more water ${tag}”, with its failure modes and tasks.`);
@@ -249,7 +249,7 @@ test("at 400 px a standard's Move to… carries its failures too, with Undo", as
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/standard-subtree-move-to-400.png` });
   await dlg.getByRole("button", { name: "Move", exact: true }).click();
   await expect(dlg).toHaveCount(0);
-  await expect(toast(page)).toContainText(`Moved the standard “At 4 bar ${tag}”`);
+  await expect(toast(page)).toContainText(`Moved the performance standard “At 4 bar ${tag}”`);
   await expect.poll(async () => (await rcmOf(request, p.b.id)).functions[0].failures.map((f) => [f.text, f.standard?.text]))
     .toEqual([[`No flow at B ${tag}`, `At least 20 L/s ${tag}`], [`Low pressure ${tag}`, `At 4 bar ${tag}`]]);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/standard-subtree-toast-400.png` });
@@ -257,9 +257,9 @@ test("at 400 px a standard's Move to… carries its failures too, with Undo", as
   await expect.poll(async () => (await rcmOf(request, p.a.id)).functions[0].failures.map((f) => [f.text, f.standard?.text]))
     .toEqual([[`No flow ${tag}`, `At least 50 L/s ${tag}`], [`Low pressure ${tag}`, `At 4 bar ${tag}`]]);
   // The other way too: the refused one says why before Move.
-  await trow(page, `^Standard: At least 50 L/s ${tag}`).getByRole("button", { name: "Actions", exact: true }).click();
+  await trow(page, `^Performance standard: At least 50 L/s ${tag}`).getByRole("button", { name: "Actions", exact: true }).click();
   await page.getByRole("menu").getByRole("menuitem", { name: "Move to another function…" }).click();
-  const dlg2 = page.getByRole("dialog", { name: /Move the standard “At least 50 L\/s/ });
+  const dlg2 = page.getByRole("dialog", { name: /Move the performance standard “At least 50 L\/s/ });
   await dlg2.getByRole("listbox", { name: "Where it goes" }).selectOption(p.more.id);
   await expect(dlg2.getByRole("status")).toContainText("It can't go there:");
   await expect(dlg2.getByRole("button", { name: "Move", exact: true })).toBeDisabled();

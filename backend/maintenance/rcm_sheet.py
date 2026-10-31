@@ -210,7 +210,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
         counts["standards"] += len(new_standards) if (match or len(listed) > 1) else 0
         basis = fn.get("standard_basis") or ""
         if len(basis) > BASIS_TEXT:
-            errors.append(f"“{fn['text'][:60]}”: the standard working is {len(basis):,} characters; at most "
+            errors.append(f"“{fn['text'][:60]}”: the working behind the performance standard is {len(basis):,} characters; at most "
                           f"{BASIS_TEXT:,}. Shorten it in the sheet, or attach it as a PDF after the import.")
             basis = ""
         elif basis:
@@ -320,9 +320,9 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
                         "Map an Interval unit column to say otherwise.")
     for text in standards_kept[:5]:
         warnings.append(f"“{text[:80]}” is on {name} already with a performance standard; the sheet's "
-                        "went beside it, in its list of standards.")
+                        "went beside it, in its list of performance standards.")
     for text in workings_kept[:5]:
-        warnings.append(f"“{text[:80]}” is on {name} already with another working behind its standard; it was left as it is.")
+        warnings.append(f"“{text[:80]}” is on {name} already with another working behind its performance standard; it was left as it is.")
 
     if m.limited:
         events = counts["functions"] + counts["failures"] + 4 * counts["modes"] + counts["tasks"] + counts["links"] \

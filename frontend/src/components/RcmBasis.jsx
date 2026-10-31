@@ -200,9 +200,9 @@ export default function RcmBasis({ r, basis, context = null, openToken = null, r
   const empty = !has && !docs.length && !editing && !attach;
 
   return (
-    <section className="rw-basis" aria-label="Working behind the standard">
+    <section className="rw-basis" aria-label="Working behind the performance standard">
       <div className="rw-basis-head">
-        <h3>Working behind the standard</h3>
+        <h3>Working behind the performance standard</h3>
         {!readOnly && !editing && has && (
           <button type="button" className="secondary sm" ref={editBtn} onClick={start}>
             Edit<span className="sr-only"> the working</span>
@@ -217,7 +217,7 @@ export default function RcmBasis({ r, basis, context = null, openToken = null, r
       {empty && (
         <>
           <p className="rw-fhelp">
-            Optional. Say how the standard was worked out from the operating context: the demand, the capacity, the margin.
+            Optional. Say how the performance standard was worked out from the operating context: the demand, the capacity, the margin.
             Markdown text, a .md file, or a PDF.
           </p>
           {!readOnly && (
@@ -248,7 +248,7 @@ export default function RcmBasis({ r, basis, context = null, openToken = null, r
           {mode === "write" ? (
             <span className="rw-fin">
               <textarea ref={area} className="rw-basis-area" rows={9} value={draft} disabled={busy} spellCheck="true"
-                        aria-label="The working behind the standard, in Markdown" aria-invalid={count.over || error ? "true" : undefined}
+                        aria-label="The working behind the performance standard, in Markdown" aria-invalid={count.over || error ? "true" : undefined}
                         placeholder={"## Chlorine demand\n\n150 g ÷ 35,000 L = 4.3 ppm/day"}
                         onChange={(e) => setDraft(e.target.value)} onKeyDown={keys} />
             </span>

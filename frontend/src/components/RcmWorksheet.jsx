@@ -69,8 +69,8 @@ export function BasisInfo({ r, onBasis }) {
   if (!onBasis || r.type !== "fn" || !r.ref.has_basis) return null;
   const first = plainFirstLine(r.ref.basis_preview, 80);
   return (
-    <button type="button" className="rw-info" aria-label="This standard has a working: open it"
-            title={`How this standard was worked out${first ? `: ${first}` : ""}. Open the working.`}
+    <button type="button" className="rw-info" aria-label="This performance standard has a working: open it"
+            title={`How this performance standard was worked out${first ? `: ${first}` : ""}. Open the working.`}
             onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); if (e.detail < 2) onBasis(r); }}>
       <span aria-hidden="true">i</span>
@@ -311,7 +311,7 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
       {r.type !== "mode" && <p className="rw-inside">{insideWords(r)}</p>}
 
       <div className="rw-fields">
-        {EDITABLE.has(r.type) && field(r.type === "std" ? "Standard" : "Description", "name", {
+        {EDITABLE.has(r.type) && field(r.type === "std" ? "Performance standard" : "Description", "name", {
           area: true,
           help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "std" ? "One parameter and one limit, e.g. pH 7.2-7.8"
             : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
@@ -323,7 +323,7 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
             <span className="rw-fval">{limitWords(r.ref) || "—"}</span>
             <span className="rw-fhelp">
               {r.ref.legacy
-                ? "The function's one standard, as written. Open the function to make it a list (Add standard, or Split into standards…)."
+                ? "The function's one performance standard, as written. Open the function to make it a list (Add performance standard, or Split into performance standards…)."
                 : "The structured limit, when it applies and its source: Open… (or double-click the row) to change them."}
             </span>
           </div>
@@ -450,7 +450,7 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
             </button>
           )}
           {EDITABLE.has(r.type) && (
-            <button type="button" className="secondary danger" onClick={(e) => { if (e.detail < 2) onDelete(r); }}>{r.type === "std" ? "Remove this standard" : `Delete this ${level.label.toLowerCase()}`}</button>
+            <button type="button" className="secondary danger" onClick={(e) => { if (e.detail < 2) onDelete(r); }}>{r.type === "std" ? "Remove this performance standard" : `Delete this ${level.label.toLowerCase()}`}</button>
           )}
         </div>
       )}

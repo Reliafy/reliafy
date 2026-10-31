@@ -317,7 +317,7 @@ export function markersOf(r, { rcm = false } = {}) {
     // Quiet, in words: a hint for the reader, never a gate (the position's
     // "analysed" doesn't rest on it).
     return r.ref.no_failure
-      ? [{ kind: "nofail", text: "no failure yet", label: "No functional failure written yet for this standard" }] : [];
+      ? [{ kind: "nofail", text: "no failure yet", label: "No functional failure written yet for this performance standard" }] : [];
   }
   if (r.type === "fail" && isRcmRow(r)) {
     // On the RCM tab: a functional failure that causes ones above it. Quiet

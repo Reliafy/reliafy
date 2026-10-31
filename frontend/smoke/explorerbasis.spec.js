@@ -41,7 +41,7 @@ async function plant(request, tag) {
 const table = (page) => page.getByRole("treegrid", { name: /and their RCM/ });
 const trow = (page, name) => table(page).getByRole("row", { name: new RegExp(name) });
 const panel = (page) => page.locator("aside.rw-panel");
-const section = (page) => panel(page).getByRole("region", { name: "Working behind the standard" });
+const section = (page) => panel(page).getByRole("region", { name: "Working behind the performance standard" });
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 
 test("the working behind a standard: write, preview, save, read, the (i), a .md file and a PDF", async ({ page, request, problems }) => {
@@ -54,7 +54,7 @@ test("the working behind a standard: write, preview, save, read, the (i), a .md 
   await expect(panel(page)).toBeVisible();
 
   // Empty: a quiet prompt and two links; no (i) in the row.
-  await expect(section(page).getByText(/Optional\. Say how the standard was worked out/)).toBeVisible();
+  await expect(section(page).getByText(/Optional\. Say how the performance standard was worked out/)).toBeVisible();
   await expect(trow(page, `^Function: Keep the water safe ${tag}`).locator(".rw-info")).toHaveCount(0);
   await shot(page, "01-empty");
 
@@ -78,7 +78,7 @@ test("the working behind a standard: write, preview, save, read, the (i), a .md 
   await expect(section(page).locator(".rw-basis-preview")).toContainText("Chlorine demand");
   const info = trow(page, `^Function: Keep the water safe ${tag}`).locator(".rw-info");
   await expect(info).toHaveCount(1);
-  await expect(info).toHaveAttribute("title", /How this standard was worked out: Chlorine demand/);
+  await expect(info).toHaveAttribute("title", /How this performance standard was worked out: Chlorine demand/);
   await shot(page, "04-collapsed-with-info");
 
   await section(page).getByRole("button", { name: /Read more/ }).click();

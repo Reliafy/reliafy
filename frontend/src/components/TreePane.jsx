@@ -59,7 +59,7 @@ import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
 const LEVELS = [1, 2, 3, 4];
 const HEAD_H = 30;
 // The tree column's header on the RCM tab: what its rows are.
-export const TREE_HEAD = "Position › function, standard, failure or mode";
+export const TREE_HEAD = "Function, performance standard, failure or mode";
 // The soft shadow on a side of the table with more to scroll to: its width,
 // and how far from the end it fades in.
 const SHADE_W = 16;

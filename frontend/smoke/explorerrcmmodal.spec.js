@@ -197,8 +197,8 @@ test("at 400 px Open… in the ⋯ menu opens a sheet that fits, and Save works"
   // The standard is a list item with its own save: Edit…, the form, Save standard.
   const standards = dlg.getByRole("region", { name: "Performance standards" });
   await standards.getByRole("button", { name: "Edit 10 L/s at 3 bar" }).click();
-  await standards.getByRole("textbox", { name: "Standard" }).fill("12 L/s at 3 bar");
-  await standards.getByRole("button", { name: "Save standard" }).click();
+  await standards.getByRole("textbox", { name: "Performance standard" }).fill("12 L/s at 3 bar");
+  await standards.getByRole("button", { name: "Save performance standard" }).click();
   await expect(standards).toContainText("12 L/s at 3 bar");
   await dlg.getByRole("button", { name: "Cancel" }).click();
   await expect(dlg).toHaveCount(0);

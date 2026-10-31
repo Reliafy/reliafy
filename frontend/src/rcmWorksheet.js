@@ -19,7 +19,7 @@ import { limitWords } from "./rcmStandards.js";
 // performance has its own field. Kept to 200 characters where it's typed (the
 // server takes longer, and a longer one saved before stays as it is).
 export const FUNCTION_MAX = 200;
-export const FUNCTION_NUDGE = "Keep it short. Put the standard of performance in its own field.";
+export const FUNCTION_NUDGE = "Keep it short. Put the performance standard in its own field.";
 // The counter for a function's text being typed (`before`: its saved text).
 export const functionCount = (value, before = null) => charCount(value, { max: FUNCTION_MAX, before });
 
@@ -30,7 +30,7 @@ export const functionCount = (value, before = null) => charCount(value, { max: F
 // (buildRcmDisplay) shows a function's standards on its row.
 export const LEVELS = [
   { type: "fn", label: "Function", plural: "Functions", child: "standards" },
-  { type: "std", label: "Standard", plural: "Standards", child: "failures" },
+  { type: "std", label: "Performance standard", plural: "Performance standards", child: "failures" },
   { type: "fail", label: "Functional failure", plural: "Functional failures", child: "modes" },
   { type: "mode", label: "Failure mode", plural: "Failure modes", child: null },
 ];
@@ -40,7 +40,7 @@ export const LEVEL_OF = Object.fromEntries(LEVELS.map((l, i) => [l.type, { ...l,
 // one standard (while it has a list), and a position's failure modes under no
 // functional failure yet.
 LEVEL_OF.pos = { type: "pos", label: "Position", plural: "Positions", child: "functions", depth: 0 };
-LEVEL_OF.nostd = { type: "nostd", label: "No standard", plural: "No standard", child: "failures", depth: 0 };
+LEVEL_OF.nostd = { type: "nostd", label: "No performance standard", plural: "No performance standard", child: "failures", depth: 0 };
 LEVEL_OF.unassigned = { type: "unassigned", label: "Not under a functional failure", plural: "Unassigned", child: "modes", depth: 0 };
 // A reference row under a functional failure: a lower functional failure that
 // causes it (a view of a row that lives on a position below, never edited here).
@@ -330,7 +330,7 @@ const d = (r) => r.ref.decision || null;
 export const COLUMNS = [
   {
     id: "standard", label: "Performance standard", width: 200, min: 150, on: false,
-    title: "What the function must achieve, e.g. within 30 m from 60 km/h; several standards on one line, and each on its own row",
+    title: "What the function must achieve, e.g. within 30 m from 60 km/h; several performance standards on one line, and each on its own row",
     // A standard's own row: its text is the row's name, so the cell has its
     // structured limit, condition and source, if any.
     text: (r) => (r.type === "fn" ? r.ref.standard || "" : r.type === "std" ? limitWords(r.ref) : ""),

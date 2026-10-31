@@ -25,12 +25,12 @@ const WORDS = {
   // to put the standard in its own field).
   fn: { title: "Add a function", label: "What must this position do?", confirmLabel: "Add function",
     limit: { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } },
-  std: { title: "Add a performance standard", label: "One parameter and one limit, e.g. pH 7.2-7.8", confirmLabel: "Add standard" },
+  std: { title: "Add a performance standard", label: "One parameter and one limit, e.g. pH 7.2-7.8", confirmLabel: "Add performance standard" },
   fail: { title: "Add a functional failure", label: "How does it fail to do it?", confirmLabel: "Add functional failure" },
   mode: { title: "Add a failure mode", label: "What causes it?", confirmLabel: "Add failure mode" },
 };
 // A functional failure added from a standard's row: it breaches that standard.
-const WORDS_UNDER_STANDARD = { ...WORDS.fail, label: "How does it fail to meet this standard?" };
+const WORDS_UNDER_STANDARD = { ...WORDS.fail, label: "How does it fail to meet this performance standard?" };
 
 export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askText }) {
   const [rcm, setRcm] = useState(null);
@@ -164,7 +164,7 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
         if (r.ref.legacy) return `The performance standard ${name} is cleared from this function. Its functional failures stay on the function, with their failure modes.`;
         const fails = r.kids.length;
         const moved = fails
-          ? ` Its ${plural(fails, "functional failure")} move${fails === 1 ? "s" : ""} to the function with no standard (${fails === 1 ? "it breaches" : "they breach"} the whole function), with ${fails === 1 ? "its" : "their"} failure modes.`
+          ? ` Its ${plural(fails, "functional failure")} move${fails === 1 ? "s" : ""} to the function with no performance standard (${fails === 1 ? "it breaches" : "they breach"} the whole function), with ${fails === 1 ? "its" : "their"} failure modes.`
           : "";
         return `${name} comes off this function.${moved}`;
       }

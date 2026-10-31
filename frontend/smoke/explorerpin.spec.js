@@ -175,7 +175,7 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   await expect(table).toBeVisible();
   await expect(bar(page)).toContainText(`Pinned: Works line A ${tag}`);
   // The column still says what it is, to a screen reader.
-  await expect(table.getByRole("columnheader", { name: "Position › function, standard, failure or mode" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Function, performance standard, failure or mode" })).toBeVisible();
   await expect(trow(`^Works line A ${tag}`)).toHaveAttribute("aria-level", "1");
   await expect(trow(`^Function: Pump water ${tag}`)).toBeVisible();
   await expect(trow(`Failure mode: Seal leaks ${tag}`)).toBeVisible();
@@ -192,7 +192,7 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   // A function's menu (with the mouse: no moves, a drag does them; Isolate before Delete).
   await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
   await expect(rowMenu(page, `Function: Pump water ${tag}`).getByRole("menuitem"))
-    .toHaveText(["Open…", "Add a standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
+    .toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
   await page.keyboard.press("Escape");
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click();
   await shot(page, "3-pinned-rcm-tab");
