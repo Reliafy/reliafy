@@ -4,10 +4,11 @@ The checks SurPyval gives a Cox proportional-hazards model, shaped for the
 app's Validation tab and the API, with a plain verdict first and the numbers
 second:
 
-* the proportional-hazards test (Grambsch-Therneau, ``check_ph``; since
-  SurPyval 0.25 the exact score test of R's ``cox.zph``, survival 3.0 and
-  later, rather than the older approximation): one row per covariate and a
-  GLOBAL row. A small p-value says a covariate's effect
+* the proportional-hazards test (Grambsch-Therneau: the
+  ``proportional_hazards`` table of ``diagnose()``, which replaced
+  ``check_ph`` in SurPyval 0.26; since SurPyval 0.25 the exact score test
+  of R's ``cox.zph``, survival 3.0 and later, rather than the older
+  approximation): one row per covariate and a GLOBAL row. A small p-value says a covariate's effect
   changes over time, so one hazard ratio misstates it. A parametric PH model
   (Weibull PH, …) makes the same assumption; it is tested with a Cox model on
   the same covariates, the standard test of it;
@@ -272,11 +273,12 @@ def _names(names: list) -> str:
 
 
 def ph_test(cox, source: str = "model", transform: str = "km") -> dict:
-    """The Grambsch-Therneau test of ``cox`` (SurPyval's ``check_ph``), with
-    a verdict: ``holds`` (no covariate and not the GLOBAL row below
+    """The Grambsch-Therneau test of ``cox`` (the ``proportional_hazards``
+    table of SurPyval's ``diagnose()``, what ``check_ph`` gave), with a
+    verdict: ``holds`` (no covariate and not the GLOBAL row below
     ``ALPHA``), ``check`` (the GLOBAL row is fine but a covariate isn't) or
     ``fails`` (the GLOBAL row is below ``ALPHA``)."""
-    table = cox.check_ph(transform=transform).reset_index()
+    table = cox.diagnose(transform=transform).tables["proportional_hazards"].reset_index()
     rows, glob = [], None
     for rec in table.to_dict("records"):
         row = {"covariate": str(rec["covariate"]), "statistic": _num(rec["statistic"]),

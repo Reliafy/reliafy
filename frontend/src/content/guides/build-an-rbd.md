@@ -175,9 +175,9 @@ swap in a different SurPyval) and run the file. The script's header
 lists the exact commands for the versions Reliafy runs:
 
 ```
-pip install "surpyval==0.25"
+pip install "surpyval==0.26"
 pip install networkx tqdm
-pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.15"
+pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.16"
 python my_diagram.py
 ```
 

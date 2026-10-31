@@ -156,7 +156,7 @@ jobs:
           pip install --require-hashes -r requirements.lock
           pip install --no-deps "firebase-admin==7.7.0"
           pip install pytest
-          pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@af15a3eccd4806cafed95a0c8fa9b0d1ebcc4010"
+          pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@c552cc44349a6f21d68a01aa1c342dec50d3b893"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: steps.open.outputs.skip != 'true'
         with:
