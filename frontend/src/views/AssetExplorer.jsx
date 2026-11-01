@@ -225,7 +225,7 @@ export default function AssetExplorer() {
   // shows them beside the table again.
   const [expanded, setExpanded] = useState(false);
   useEffect(() => { if (!panel && expanded) setExpanded(false); }, [panel, expanded]);
-  const [taskStart, setTaskStart] = useState(null); // {key, at}: a failure mode's Tasks opened on the add form (Add a task…)
+  const [addStart, setAddStart] = useState(null); // {key, list, at}: a row's list in its details opened on its add row (a row menu's Add …)
   const [linking, setLinking] = useState(null); // {row, direction}: the picker that links functional failures
   const [changingStd, setChangingStd] = useState(null); // a functional failure picking which standard it breaches
   const [options, setOptions] = useState(null);
@@ -450,6 +450,20 @@ export default function AssetExplorer() {
     }
     setScrollTo({ key, at: Date.now() });
   }, [display, filter, mode, defaultOpen]);
+
+  // Something added in place in the details (a new row of one of its lists):
+  // the way down to it opened in the tree, once the RCM is read again, the
+  // pick staying where it is (the details keep adding to the same list).
+  const openNew = useRef(null);
+  const [newTick, setNewTick] = useState(0);
+  useEffect(() => {
+    const id = openNew.current;
+    if (!id || !display.rows.has(id)) return;
+    openNew.current = null;
+    const up = ancestorsOf(display, id);
+    if (filter) setFopen((s) => new Set([...(s || filterOpen(filter)), ...up]));
+    else setOpenBy((o) => ({ ...o, [mode]: new Set([...(o[mode] || defaultOpen), ...up]) }));
+  }, [display, filter, mode, defaultOpen, newTick]);
 
   // A row asked for by the address, or carried over from another arrangement;
   // else the one remembered, brought into view once the tree is drawn.
@@ -767,8 +781,9 @@ export default function AssetExplorer() {
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
       else if (id === "unpin") unpin();
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
-      else if (id === "add-std") runAdd({ ref: { add: "std", position_id: r.ref.position_id, function_id: r.ref.id } });
-      else if (id === "add-fail" || id === "add-mode") addInside(r);
+      // Adding inside a row: its details open on that list's add row (a new row typed in place).
+      else if (id === "add-std") openItem(r.key, { add: "std" });
+      else if (id === "add-fail" || id === "add-mode") openItem(r.key, { add: "inside" });
       else if (id === "move-to") setMoving({ src: dragSource(whole, r.key, { picked }) });
       else if (id === "move-task") setMoving({ taskFrom: r.key });
       else if (id === "step-up" || id === "step-down") stepMove(r, id === "step-up" ? -1 : 1);
@@ -783,7 +798,7 @@ export default function AssetExplorer() {
       } else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
       else if (id === "open") openItem(r.key);
-      else if (id === "add-task") openItem(r.key, { tasks: true });
+      else if (id === "add-task") openItem(r.key, { add: "task" });
       else if (id === "link-cause") openLink(r, "cause");
       else if (id === "link-effect") openLink(r, "effect");
       else if (id === "go") reveal(r.ref.cause_id);
@@ -831,18 +846,20 @@ export default function AssetExplorer() {
   // A function, standard, failure or mode opened (a double-click on its
   // name, Open… in its menu): picked in the tree, the cell being edited
   // dropped, and its details shown filling the table's room (a phone: the
-  // details sheet), the focus on their heading; `start` {tasks: true} opens
-  // its Tasks on the add form instead.
+  // details sheet), the focus on their heading; `start` {add: "std" | "inside"
+  // | "task"} opens one of its lists on its add row instead (the focus there).
+  // The "No performance standard" and "Not under a functional failure" rows
+  // open only to add inside them.
   const openItem = (key, start = null) => {
     const r = whole.rows.get(key);
-    if (!opensItem(r)) return;
+    if (!opensItem(r) && !(start?.add && (r?.type === "nostd" || r?.type === "unassigned"))) return;
     setEditing(null);
     setRcmFocus(key);
     if (display.rows.has(key)) setSelected((s) => ({ ...s, [mode]: positionOf(r) }));
     setPanel(true);
     if (!phone) setExpanded(true);
-    setTaskStart(start?.tasks ? { key, at: Date.now() } : null);
-    if (!start?.tasks) setTimeout(() => detailsHeading.current?.focus(), 0);
+    setAddStart(start?.add ? { key, list: start.add, at: Date.now() } : null);
+    if (!start?.add) setTimeout(() => detailsHeading.current?.focus(), 0);
   };
   // Expanded and back: the focus goes into the details' heading, and back to the row.
   const expandDetails = () => {
@@ -1221,6 +1238,7 @@ export default function AssetExplorer() {
   };
   const panelOps = {
     ...ops,
+    create: (kind, where, text) => ops.create(kind, where, text).then((id) => { openNew.current = id; setNewTick((t) => t + 1); return id; }),
     basisView: { context: contextOf, token: (r) => (basisAt?.key === r.key ? basisAt.at : null) },
     assign: (r, ffId) => ops.assign(r, ffId).catch((e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error")),
   };
@@ -1235,7 +1253,7 @@ export default function AssetExplorer() {
                links={{ onLink: openLink, onUnlink: unlinkPair }}
                onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
                expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
-               taskStart={taskStart} onSaid={say}
+               addStart={addStart} onSaid={say}
                onClose={closeDetails}
                onSelect={(k, o) => (o?.basis ? openBasis(k) : reveal(k))} />
     </div>

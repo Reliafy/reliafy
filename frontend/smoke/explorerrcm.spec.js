@@ -132,6 +132,15 @@ async function ask(page, title, text) {
   await d.getByRole("textbox").fill(text);
   await d.getByRole("button", { name: title.replace(/^Add an? /, "Add ") }).click();
 }
+// A row menu's Add … opens the row's details on that list's add row: a new
+// row of the list, its box focused; Enter writes it (no dialog).
+async function typeIn(page, label, text) {
+  const box = page.getByRole("complementary", { name: "Details" }).getByRole("textbox", { name: label });
+  await expect(box).toBeFocused();
+  await box.fill(text);
+  await box.press("Enter");
+  await expect(box).toHaveCount(0);
+}
 const rowMenu = (page, name) => page.getByRole("menu", { name: new RegExp(`^Actions for ${name}`) });
 // Right-click a row on its tree cell, and pick from its menu.
 async function fromMenu(page, rowName, menuName, item) {
@@ -160,18 +169,20 @@ test("adding from each row's menu grows the tree: a function, its failures and m
   await fromMenu(page, `^Rcm motor ${tag}`, `Rcm motor ${tag}`, "Add function");
   await ask(page, "Add a function", `Stay cool ${tag}`);
   await expect(trow(page, `^Function: Stay cool ${tag}`)).toHaveAttribute("aria-selected", "true");
-  // Right-click a function: Add functional failure; the new row opens under it, picked.
+  // Right-click a function: Add functional failure; its details open on their add row, typed in
+  // place; the new row shows under it in the tree, the function still picked.
   await fromMenu(page, `^Function: Turn the shaft ${tag}`, `Function: Turn the shaft ${tag}`, "Add functional failure");
-  await ask(page, "Add a functional failure", `Shaft stops ${tag}`);
+  await typeIn(page, "New functional failure", `Shaft stops ${tag}`);
   const ff = trow(page, `^Functional failure: Shaft stops ${tag}`);
-  await expect(ff).toHaveAttribute("aria-selected", "true");
+  await expect(ff).toBeVisible();
+  await expect(fn).toHaveAttribute("aria-selected", "true");
   await expect(fn).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("Added the functional failure.")).toBeVisible();
   // Right-click the functional failure: Add failure mode (twice).
   for (const m of ["Winding burnt", "Bearing worn"]) {
     await fromMenu(page, `^Functional failure: Shaft stops ${tag}`, `Functional failure: Shaft stops ${tag}`, "Add failure mode");
-    await ask(page, "Add a failure mode", `${m} ${tag}`);
-    await expect(trow(page, `^Failure mode: ${m} ${tag}`)).toHaveAttribute("aria-selected", "true");
+    await typeIn(page, "New failure mode", `${m} ${tag}`);
+    await expect(trow(page, `^Failure mode: ${m} ${tag}`)).toBeVisible();
   }
   await expect(ff).toHaveAttribute("aria-expanded", "true");
   const sheet = await (await request.get(`${M}/positions/${p.motor.id}/rcm?scope=this`)).json();
@@ -261,8 +272,15 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   expect(mbox.x + mbox.width).toBeLessThanOrEqual(1280 - 7);
   expect(mbox.y + mbox.height).toBeLessThanOrEqual(720);
   await page.keyboard.press("Escape");
-  // The heading of failure modes under no functional failure has no menu: the browser's stays.
-  await expect(trow(page, "Not under a functional failure").first().getByRole("button", { name: "Actions", exact: true })).toHaveCount(0);
+  // The heading of failure modes under no functional failure: its menu adds one there, in its
+  // details, on their add row (typed in place).
+  const loose = trow(page, "Not under a functional failure").first();
+  await loose.getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Add a failure mode…" }).click();
+  const looseBox = page.getByRole("complementary", { name: "Details" }).getByRole("textbox", { name: "New failure mode" });
+  await expect(looseBox).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(looseBox).toHaveCount(0);
   await expectHealthy(page, problems, { label: "row menu keyboard", root: ".tx" });
 });
 
@@ -311,8 +329,12 @@ test("at 400 px each row shows its ⋯: a tap opens the menu, and adding works",
   expect(mbox.x + mbox.width).toBeLessThanOrEqual(400);
   expect((await overflow(page)).side).toBe(0);
   await menu.getByRole("menuitem", { name: "Add functional failure" }).click();
-  await ask(page, "Add a functional failure", `Leaks out ${tag}`);
-  await expect(trow(page, `^Functional failure: Leaks out ${tag}`)).toHaveAttribute("aria-selected", "true");
+  // The details sheet, on its add row: the new row fits.
+  const newBox = page.getByRole("complementary", { name: "Details" }).getByRole("textbox", { name: "New functional failure" });
+  await expect(newBox).toBeFocused();
+  expect((await overflow(page)).side).toBe(0);
+  await typeIn(page, "New functional failure", `Leaks out ${tag}`);
+  await expect(page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: `Leaks out ${tag}` })).toBeVisible();
   expect((await overflow(page)).side).toBe(0);
   await expectHealthy(page, problems, { label: "row menu at 400 px", root: ".tx" });
 });
@@ -702,17 +724,25 @@ test("adding, deleting and deciding go once: a double-click, three clicks at onc
   expect(posts).toHaveLength(3);
   for (const f of ["Double", "Triple", "Enter"]) await expect(trow(page, `^Function: ${f} ${tag}`)).toHaveCount(1);
 
-  // A functional failure and a failure mode from a row's menu, double-clicked: one each.
+  // A functional failure and a failure mode from a row's menu, typed in place, Enter
+  // pressed twice: one each (the second Enter comes while the first is saving).
+  const failPosts = sent(page, "POST", "/failures");
+  const modePosts = sent(page, "POST", "/failure-modes");
   await fromMenu(page, `^Function: Double ${tag}`, `Function: Double ${tag}`, "Add functional failure");
-  const ffDialog = page.getByRole("dialog", { name: "Add a functional failure" });
-  await ffDialog.getByRole("textbox").fill(`Stops ${tag}`);
-  await ffDialog.getByRole("button", { name: "Add functional failure" }).dblclick();
-  await expect(ffDialog).toHaveCount(0);
+  const details = page.getByRole("complementary", { name: "Details" });
+  const ffBox = details.getByRole("textbox", { name: "New functional failure" });
+  await ffBox.fill(`Stops ${tag}`);
+  await ffBox.press("Enter");
+  await ffBox.press("Enter").catch(() => {});
+  await expect(ffBox).toHaveCount(0);
   await fromMenu(page, `^Functional failure: Stops ${tag}`, `Functional failure: Stops ${tag}`, "Add failure mode");
-  const fmDialog = page.getByRole("dialog", { name: "Add a failure mode" });
-  await fmDialog.getByRole("textbox").fill(`Burns out ${tag}`);
-  await fmDialog.getByRole("button", { name: "Add failure mode" }).dblclick();
-  await expect(fmDialog).toHaveCount(0);
+  const fmBox = details.getByRole("textbox", { name: "New failure mode" });
+  await fmBox.fill(`Burns out ${tag}`);
+  await fmBox.press("Enter");
+  await fmBox.press("Enter").catch(() => {});
+  await expect(fmBox).toHaveCount(0);
+  expect(failPosts).toHaveLength(1);
+  expect(modePosts).toHaveLength(1);
   await expect(trow(page, `^Functional failure: Stops ${tag}`)).toHaveCount(1);
   await expect(trow(page, `^Failure mode: Burns out ${tag}`)).toHaveCount(1);
 

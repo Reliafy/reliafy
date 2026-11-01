@@ -65,7 +65,7 @@ test("no Add rows in the tree: adding is from each row's menu", () => {
   assert.deepEqual(ids("f1"), ["open", "add-std", "add-fail", "rename", "delete"]);
   assert.deepEqual(ids("x1"), ["open", "add-mode", "link-cause", "link-effect", "rename", "delete"]); // pump has a position above it, no standards
   assert.deepEqual(ids("m1"), ["open", "decide", "add-task", "rename", "delete"]);
-  assert.deepEqual(ids("U:pump"), []); // the "Not under a functional failure" heading has none
+  assert.deepEqual(ids("U:pump"), ["add-mode"]); // the "Not under a functional failure" heading: add a mode there
   // On a phone the details panel edits the description, so no Edit description.
   // Open… stays on a phone: it's the way to the dialog there (no double-click).
   assert.deepEqual(ids("f1", { canRename: false }), ["open", "add-std", "add-fail", "delete"]);
@@ -86,7 +86,7 @@ test("the Task cell says how many more tasks a mode has; a second task on a cost
   assert.equal(taskWithInterval(row(two)), "Weekly pH check · every 1 week · +1 task");
   assert.equal(COLUMN.task.text(row(two)), "Weekly pH check · +1 task");
   assert.equal(TASK_WITH_INTERVAL.text(row(two)), "Weekly pH check · every 1 week · +1 task");
-  assert.match(secondTaskHint(row(two)), /What does this task catch that “Weekly pH check” doesn't\?/);
+  assert.match(secondTaskHint(row(two)), /What does this catch that “Weekly pH check” doesn't\?/);
   assert.equal(secondTaskHint(row({ ...two, consequence: "safety" })), null);
   assert.equal(secondTaskHint(row({ ...two, decision: null })), null);
   // One task, or an older read with only the decision's task: nothing more.
@@ -558,7 +558,7 @@ test("row menus for the standards level: add, edit, move, remove; a failure chan
   // The one text's row: no moving; on a phone no in-place edit.
   assert.deepEqual(labels(legacyKey("f2")), ["Open…", "Edit text", "Add a functional failure…", "Remove performance standard"]);
   assert.deepEqual(items(legacyKey("f2"), { canRename: false }).map((a) => a.id), ["open", "add-fail", "delete"]);
-  assert.deepEqual(items(noStdKey("f1")), []); // the "No standard" heading has none
+  assert.deepEqual(labels(noStdKey("f1")), ["Add a functional failure…"]); // the "No standard" heading: its details, on the add row
   // A failure under a function with a list offers Change standard…; one without doesn't.
   assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Change performance standard…", "Edit description", "Delete functional failure"]);
   assert.ok(!labels("x3").includes("Change performance standard…"));

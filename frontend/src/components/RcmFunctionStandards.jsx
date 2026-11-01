@@ -5,20 +5,23 @@ import { Field, FormModal } from "./MaintenanceParts.jsx";
 import UiField from "./ui/Field.jsx";
 import InputGroup, { ReadsAs } from "./ui/InputGroup.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
-import Section, { AddRow } from "./ui/Section.jsx";
+import Section from "./ui/Section.jsx";
+import { InlineAddButton, InlineAddRow, useInlineAdd } from "./ui/InlineAdd.jsx";
 import Chip from "./ui/Chip.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
 import { GripIcon } from "./icons.jsx";
 import {
-  COMPARATORS, COMPARATOR_LABEL, canSplit, limitReads, limitWords, proposeSplit, splitLines, standardsShown, unbreachedWords,
+  COMPARATORS, COMPARATOR_LABEL, canSplit, limitReads, limitWords, proposeSplit, splitLines, standardsShown,
 } from "../rcmStandards.js";
 import { moveItem } from "../listMove.js";
 
 // A function's performance standards, as a list, in its details (the
 // Explorer's RCM tab): each one a line of text (one parameter,
 // one limit: "pH 7.2-7.8"), with the structured limit, when it applies and
-// its source folded away. Add (the section's "+ Add", or the dashed row at
-// the end), and from each row's ⋯: edit, move up or down, remove; or drag a
+// its source folded away. Add from the dashed row at the end: it becomes a
+// new row of the list, a box for the text (Enter or leaving it saves; Esc
+// drops it); the limit, when it applies and the source are then the row's
+// ⋯ Edit…, as for any other row. From each row's ⋯: edit, move up or down, remove; or drag a
 // row by its grip to reorder. For a function that still has its one text with
 // ';' or line breaks in it, "Split into standards…" proposes a line per part
 // for the user to edit, drop or mark as a condition, and writes them on
@@ -29,15 +32,19 @@ import { moveItem } from "../listMove.js";
 //   r         the function's row (read afresh after each save)
 //   ops       standards.add / update / remove / reorder / split, set (the one text)
 //   readOnly  a team workspace that's view only
+//   addStart  a value that, when it changes, opens the add row (a row menu's Add a performance standard…)
 //   onSaid    (text) a few words in the page's status line once done
+
+// What a performance standard is, behind the "?" by the heading.
+const STANDARD_TIP = "One parameter and one limit each, e.g. pH 7.2–7.8. One with “and” in it is two; one that needs its own verb is another function.";
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
-export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid }) {
+export default function RcmFunctionStandards({ r, ops, readOnly = false, addStart = null, onSaid }) {
   const confirm = useConfirm();
   const fn = r.ref;
   const shown = standardsShown(fn);
-  const [form, setForm] = useState(null); // {mode: "add"} | {mode: "edit", st} | {mode: "split"}
+  const [form, setForm] = useState(null); // {mode: "edit", st} | {mode: "split"}
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [drag, setDrag] = useState(null); // {from, over}
@@ -81,16 +88,18 @@ export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid 
     run(() => ops.standards.reorder(r, ids), "Moved the performance standard.");
   };
   const canMove = !readOnly && shown.length > 1 && !shown.some((st) => st.legacy);
-  const add = () => { setFailed(null); setForm({ mode: "add" }); };
+  // The add row: a new row of the list, saved on Enter or leaving it.
+  const add = useInlineAdd({
+    disabled: busy || readOnly,
+    startToken: addStart,
+    onSave: (text) => ops.standards.add(r, { text }).then(() => { onSaid?.("Added the performance standard."); }),
+    errorText: (e) => saveErrorText(e, { offline: navigator.onLine === false }),
+  });
+  const adding = add.open && !readOnly && form?.mode !== "split";
 
-  const hint = unbreachedWords(fn);
   return (
-    <Section title="Performance standards" count={shown.length} className="rfs"
-             action={readOnly || form ? null : { label: "Add", plus: true, ariaLabel: "Add a performance standard", disabled: busy, onClick: add }}>
-      {shown.length === 0 && !form && (
-        <p className="rw-fhelp">None yet. One parameter and one limit each, e.g. within 30 m from 60 km/h.</p>
-      )}
-      {shown.length > 0 && (
+    <Section title="Performance standards" count={shown.length} className="rfs" tip={STANDARD_TIP}>
+      {(shown.length > 0 || adding) && (
         <ol className="rfs-list">
           {shown.map((st, i) => (
             form?.mode === "edit" && (form.st.id ?? null) === (st.id ?? null) ? (
@@ -128,19 +137,18 @@ export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid 
               </li>
             )
           ))}
+          {adding && (
+            <InlineAddRow add={add} as="li" className="rfs-row rfs-new" label="New performance standard" placeholder="e.g. pH 7.2–7.8"
+                          lead={canMove || shown.length > 0 ? <span className="rfs-grip" aria-hidden="true" /> : null} />
+          )}
         </ol>
       )}
-      {hint && <p className="rw-fhelp rfs-hint">{hint}</p>}
-      {form?.mode === "add" ? (
-        <StandardForm key="add" st={null} busy={busy} failed={failed}
-                      onCancel={() => { setForm(null); setFailed(null); }}
-                      onSubmit={(body) => run(() => ops.standards.add(r, body), "Added the performance standard.")} />
-      ) : form?.mode === "split" ? (
+      {form?.mode === "split" ? (
         <SplitForm text={fn.standard} busy={busy} failed={failed} onCancel={() => { setForm(null); setFailed(null); }}
                    onSubmit={(standards) => run(() => ops.standards.split(r, standards), `Split into ${plural(standards.length, "performance standard")}.`)} />
       ) : !readOnly && !form && (
         <div className="rfs-add">
-          {shown.length === 0 && <AddRow disabled={busy} onClick={add}>Add a performance standard</AddRow>}
+          {!add.open && <InlineAddButton add={add}>Add a performance standard</InlineAddButton>}
           {canSplit(fn) && (
             <button type="button" className="link" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "split" }); } }}>
               Split into performance standards…
@@ -153,8 +161,9 @@ export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid 
   );
 }
 
-// One standard: its text, and the structured limit, condition and source
-// folded under "Limit…". Saved once; a refusal shows here with everything as typed.
+// Changing one standard (its ⋯ Edit…): its text, and the structured limit,
+// condition and source folded under "Limit…". Saved once; a refusal shows
+// here with everything as typed.
 function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
   const [text, setText] = useState(st?.text || "");
   const [open, setOpen] = useState(!!(st && (st.parameter || st.comparator || st.value != null || st.unit || st.when || st.source)));
@@ -178,9 +187,8 @@ function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
         text: text.trim(), parameter: parameter.trim(), comparator, value: num, unit: unit.trim(), when: when.trim(), source: source.trim(),
       });
     }}>
-      <h4>{st ? "Change the performance standard" : "Another performance standard"}</h4>
-      <UiField label="Performance standard" help="One parameter and one limit. One with “and” in it is two; one that needs its own verb is another function.">
-        <TextInput ref={box} value={text} readOnly={busy} placeholder="One parameter and one limit" onChange={(e) => setText(e.target.value)} />
+      <UiField label="Performance standard">
+        <TextInput ref={box} value={text} readOnly={busy} placeholder="e.g. pH 7.2–7.8" onChange={(e) => setText(e.target.value)} />
       </UiField>
       {!legacy && (
         <>
@@ -211,7 +219,7 @@ function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
       <div className="rim-tform-acts">
         {!can && !busy && <p className="rim-why">Write the performance standard first.</p>}
         <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : st ? "Save performance standard" : "Add performance standard"}</button>
+        <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save performance standard"}</button>
       </div>
     </form>
   );

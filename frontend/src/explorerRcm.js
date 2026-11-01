@@ -214,9 +214,8 @@ export const rcmRowText = (r) => rcmText(r);
 
 // What a row's menu offers on the RCM tab (right-click, its ⋯ button, or
 // Shift+F10 / the Menu key): adding inside it, and the actions the table and
-// the details already have for it. [] for a row with none (the "Not under a
-// functional failure" heading). `canRename`: the description is edited in
-// the table (not on a phone, where the details panel edits it). `moves`: a
+// the details already have for it ([] for a row with none). `canRename`:
+// the description is edited in the table (not on a phone, where the details panel edits it). `moves`: a
 // standard's Move up / Move down (a wide screen drags them instead, so the page
 // passes false there unless the menu was opened from the keyboard).
 export function rowActions(r, { canRename = true, moves = true } = {}) {
@@ -272,11 +271,14 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
     ];
   }
   if (r.type === "cause") return [{ id: "go", label: "Go to it" }, { id: "unlink", label: "Unlink", danger: true }];
+  // The group rows: adding inside them (their details open on the add row).
+  if (r.type === "nostd") return [{ id: "add-fail", label: "Add a functional failure…" }];
+  if (r.type === "unassigned") return [{ id: "add-mode", label: "Add a failure mode…" }];
   if (r.type === "mode") {
     return [
       ...open,
       { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
-      // Another task for the mode (or an existing one linked): the details' Tasks, on the add form.
+      // Another task for the mode (or an existing one linked): the details' Tasks, on their add row.
       { id: "add-task", label: "Add a task…" },
       ...rename,
       { id: "delete", label: "Delete failure mode", danger: true },
@@ -421,7 +423,7 @@ export function secondTaskHint(r) {
   const tasks = tasksOf(r?.ref);
   if (!tasks.length || !["operational", "non_operational"].includes(r.ref.consequence)) return null;
   const first = tasks[0].name || tasks[0].text || "the first task";
-  return `What does this task catch that “${first}” doesn't? For an ${r.ref.consequence === "operational" ? "operational" : "non-operational"} consequence a second task must earn its place: say why in the decision notes.`;
+  return `What does this catch that “${first}” doesn't? Say why in the decision notes.`;
 }
 
 // The Task column with its interval (for the table when the Interval column

@@ -746,3 +746,14 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 /* Touch targets on a phone: the footer's buttons and the title at 40 px. */
 .rw-panel.sheet .rw-panel-acts button { min-height: 40px; }
 .rw-panel.sheet .rw-title-btn { min-height: 40px; }
+
+/* The new row of each list (the add row, pressed): the same row as the ones
+   above it, its text a box. A standard keeps the grip's column, blank. */
+.rfs-list li.rfs-row.rfs-new { background: none; }
+.rfs-list li.rfs-new .rfs-grip { width: 14px; }
+.rw-klist li.rw-knew > .rw-ic { margin-top: 7px; }
+.rim-tlist li.rim-card.rim-new { flex-direction: row; align-items: flex-start; gap: 6px; border-color: var(--acc-line); }
+.rim-tlist li.rim-new > .rw-ic { flex: none; margin-top: 7px; }
+.rim-every { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-13); color: var(--muted); }
+.rim-every .ctl-group { flex: 0 1 15rem; min-width: 0; }
+.rim-every input[type="number"] { width: 5rem; }

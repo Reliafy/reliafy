@@ -63,6 +63,17 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
     return out;
   }, [load, onTreeChanged]);
 
+  // Something new inside a row, written, then the RCM read again: its id.
+  const make = useCallback(async (kind, { positionId, functionId = null, failureId = null, standardId = null }, text) => {
+    let made;
+    if (kind === "fn") made = await addPositionFunction(positionId, { text });
+    else if (kind === "std") made = await addFunctionStandard(functionId, { text });
+    else if (kind === "fail") made = await addFunctionalFailure(functionId, { text, ...(standardId ? { standard_id: standardId } : {}) });
+    else made = await addFailureMode(positionId, { text, functional_failure_id: failureId });
+    await after(Promise.resolve());
+    return made.id;
+  }, [after]);
+
   const ops = useMemo(() => ({
     // One cell changed (the value checked as the server checks it).
     set(r, col, value) {
@@ -109,21 +120,19 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
     // stays open (its button saying "Adding…") until the RCM is read again, so
     // a second click or Enter adds nothing more, and a refusal shows there with
     // the words kept. Returns the new row's id (null when cancelled).
-    async add(kind, { positionId, functionId = null, failureId = null, standardId = null }) {
+    async add(kind, where) {
       const id = await askText({
-        ...(kind === "fail" && standardId ? WORDS_UNDER_STANDARD : WORDS[kind]),
+        ...(kind === "fail" && where.standardId ? WORDS_UNDER_STANDARD : WORDS[kind]),
         pendingLabel: "Adding…",
-        run: async (text) => {
-          let made;
-          if (kind === "fn") made = await addPositionFunction(positionId, { text });
-          else if (kind === "std") made = await addFunctionStandard(functionId, { text });
-          else if (kind === "fail") made = await addFunctionalFailure(functionId, { text, ...(standardId ? { standard_id: standardId } : {}) });
-          else made = await addFailureMode(positionId, { text, functional_failure_id: failureId });
-          await after(Promise.resolve());
-          return made.id;
-        },
+        run: (text) => make(kind, where, text),
       });
       return id || null;
+    },
+    // The same, with its words already typed (the details' lists add in
+    // place, with no dialog): written, then the RCM read again. Resolves the
+    // new row's id; a refusal rejects.
+    create(kind, where, text) {
+      return make(kind, where, text);
     },
     // A standard moved up or down its function's list (the row menu).
     moveStandard(r, by) {
@@ -289,7 +298,7 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
     setBreach(r, standardId) {
       return after(updateFunctionalFailure(r.ref.id, { standard_id: standardId || null }));
     },
-  }), [after, askText]);
+  }), [after, askText, make]);
 
   return { rcm, error, setError, load, ops };
 }
