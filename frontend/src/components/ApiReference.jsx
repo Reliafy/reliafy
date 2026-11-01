@@ -1208,8 +1208,9 @@ function McpDocs({ tokenNote }) {
         <h3>Tools</h3>
         <p className="muted-line">
           Six tools: an agent picks the tool, then the action (or, for <code>get</code> and{" "}
-          <code>list</code>, the kind). Each tool’s description lists its actions and what each takes;{" "}
-          <code>guide</code> gives the agent how-tos by topic and any action’s full argument schema.
+          <code>list</code>, the kind), with the action’s arguments in <code>args</code>. Each tool lists its
+          actions and what each needs; <code>guide</code> gives the agent how-tos by topic and any action’s
+          full argument schema.
         </p>
         <div className="api-tools">
           {MCP_TOOLS.map(({ name, desc, actions }) => (actions ? (

@@ -165,5 +165,5 @@ def test_the_fallback_and_guide_name_the_in_connection_route(env):
     from backend import config, mcp_server
     from backend.services import uploads
 
-    schema = mcp_server.full_schema("change")["properties"]["data_base64"]["anyOf"][0]  # or null
+    schema = mcp_server.action_arguments("change", "upload_send_part")["properties"]["data_base64"]
     assert uploads.PART_MAX_BYTES * 4 // 3 < schema["maxLength"] < config.MAX_REQUEST_BYTES // 4

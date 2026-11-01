@@ -828,8 +828,11 @@ def test_upgrade_link_offers_only_pro_and_works_past_the_free_allowance(stripe_c
     monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 1)
     s = stripe_client
     tools = _run(s.oauth[FREE], lambda c: c.list_tools()).tools
-    schema = next(t for t in tools if t.name == "get").input_schema["properties"]["plan"]
-    assert schema["enum"] == ["pro"]
+    from backend.mcp_server import action_schema
+
+    assert "upgrade_link" in next(t for t in tools if t.name == "get").input_schema["properties"]["kind"]["enum"]
+    schema = action_schema("get.upgrade_link")["arguments"]["properties"]["plan"]
+    assert schema.get("enum", [schema.get("const")]) == ["pro"]
 
     _ok(_call(s.oauth[FREE], "list", {"kind": "models"}))
     assert "this month's 1 free" in _err(_call(s.oauth[FREE], "list", {"kind": "models"}))  # allowance used...

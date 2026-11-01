@@ -82,7 +82,9 @@ def test_simulation_note_names_a_parameter_analyze_rbd_has(pro):
         {"op": "update_node", "id": "p1", "model": _weibull(500, 1.2)}]}))
     note = edited["simulation_note"]
     tools = {t.name: t for t in _run(pro.token[A], lambda c: c.list_tools()).tools}
-    params = set(tools["analyse"].input_schema["properties"])
+    from backend.mcp_server import action_schema
+
+    params = set(action_schema("analyse.rbd")["arguments"]["properties"])
     import re
 
     named = set(re.findall(r"(\w+)=(?:true|false)", note))

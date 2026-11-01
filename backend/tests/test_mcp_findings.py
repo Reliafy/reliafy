@@ -886,8 +886,8 @@ def test_every_argument_a_tool_takes_is_in_its_published_schema(env):
 
     tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
     for name, actions in mcp_server.ACTIONS.items():
-        props = set(tools[name].input_schema["properties"])
         for value, act in actions.items():
+            props = set(mcp_server.action_arguments(name, value)["properties"])  # what guide and REST publish
             inverse = {param: arg for arg, param in act.renames.items()}
             params = {inverse.get(p, p) for p, spec in inspect.signature(act.fn).parameters.items()
                       if spec.annotation is not Context}

@@ -193,11 +193,12 @@ def test_schema_descriptions_and_instructions_name_the_new_inputs(env):
 
     from backend.mcp_server import action_schema
 
-    tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
     for name, action in (("analyse", "fit"), ("change", "model_fit")):
         schema = action_schema(f"{name}.{action}")["arguments"]
         for key in ("data_right", "trunc_left", "trunc_right", "time_right_column", "trunc_left_column",
                     "trunc_right_column", "method"):
-            assert key in schema["properties"] and key in tools[name].input_schema["properties"], (name, key)
-        assert "2 = interval-censored" in str(schema) and "trunc_left?" in tools[name].description
-    assert "2 = interval-censored" in INSTRUCTIONS and "trunc_left" in INSTRUCTIONS
+            assert key in schema["properties"], (name, key)
+        assert "2 = interval-censored" in str(schema) and "trunc_left?" in action_schema(f"{name}.{action}")["takes"]
+    from backend import mcp_guide
+
+    assert "2 = interval-censored" in INSTRUCTIONS and "trunc_left" in mcp_guide.TOPICS["life_data"][1]

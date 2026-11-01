@@ -128,17 +128,21 @@ always be rebuilt. See [docs/maintenance-graph.md](docs/maintenance-graph.md).
 
 ## MCP tools
 
-- Six core tools, each action-based: `get` / `list` (reads, by `kind`),
-  `analyse` (every calculation, saves nothing), `change` (every write),
-  `guide`, `report_problem`. A new action goes in the right tool's table in
-  `_A` (`mcp_server.py`, "The tools"); a table in `mcp_actions.py` style both
-  checks each call's arguments and writes the description. The description
-  shows each action's first sentence only: put what an agent must read
-  before calling first.
-- `tools/list` carries a compact input schema (types only); the full one
-  (descriptions, limits, nested types) is the REST spec's and
-  `guide(action='<tool>.<action>')`'s. Nested shapes an agent needs go in the
-  argument's `Field(description=…)`, which reaches both.
+- Six core tools, each taking an `action` (`kind` for `get` / `list`) and an
+  `args` object: `get` / `list` (reads), `analyse` (every calculation, saves
+  nothing), `change` (every write), `guide`, `report_problem`; plus one
+  operator-only `maintenance` tool (`<area>.<action>`,
+  `backend/maintenance/mcp_tools.py`). A new core action goes in the right
+  tool in `_A` (`mcp_server.py`, "The tools"): a plain function whose
+  signature and docstring are its schema and text.
+- `tools/list` carries only the action enum, an open `args` object and a
+  one-line description with each action's required arguments (`ONE_OF` for
+  "this or that"). Each action's own schema (`ACTION_SCHEMAS`) is what calls
+  are validated against, the REST spec and CLI flags, and
+  `guide(action='<tool>.<action>')`. Nested shapes an agent needs go in the
+  argument's `Field(description=…)`. A refused call says what's missing and
+  points at `guide(action=…)`. Keep `tools/list` under 8,000 characters for
+  the core tools (`test_mcp_tools.py`) and the instructions about 1,000.
 - The tool names before Nov 2026 are gone (no aliases); `LEGACY` in
   `test_mcp_tools.py` maps every old action to its new home, and
   `python/CHANGELOG.md` (0.5.0) lists them.

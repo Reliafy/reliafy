@@ -30,6 +30,17 @@
   | `upgrade_link` | `get upgrade_link` |
   | `get`, `list`, `guide`, `report_problem` | unchanged |
 
+  Reliafy Maintenance's 22 `maintenance_*` tools are one `maintenance` tool
+  (operators only): `maintenance_positions create` is `maintenance
+  positions.create`, `maintenance_get kind position` is `maintenance
+  get.position`, `maintenance_overview` / `_guide` / `_apply` are `maintenance
+  overview` / `guide` / `apply`. On the command line:
+  `reliafy maintenance positions.create --name …`; in Python:
+  `rf.call("maintenance", "positions.create", name=…)`. `Client.apply`,
+  `add_document`, `download_document` and `reliafy photo` call the new names.
+  Over MCP each tool now takes its action and an `args` object; REST bodies
+  and CLI flags are as before.
+
 - RCM for agents. `maintenance_get kind failure_mode` reads one failure mode by
   its id: its decision with the evidence check, its tasks, where it sits
   (position, function, functional failure) and `available`, the tasks on its
