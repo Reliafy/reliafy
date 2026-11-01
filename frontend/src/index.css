@@ -2189,6 +2189,18 @@ button.add-row {
 button.add-row:hover:not(:disabled) { background: var(--acc-hover); border-color: var(--acc-line); }
 button.add-row:focus-visible { outline: none; box-shadow: var(--focus); }
 button.add-row svg { width: 14px; height: 14px; }
+/* The new row an add row turns into (components/ui/InlineAdd.jsx): the
+   list's own row, a box where its text goes, one line under it. */
+.ia-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ctl.ia-box { width: 100%; min-height: 28px; padding: 2px 8px; font-size: inherit; }
+/* A section's "?": its guidance, on press. */
+button.psec-tip {
+  width: 20px; height: 20px; min-height: 0; padding: 0; justify-content: center; border-radius: 50%;
+  border: 1px solid var(--line); color: var(--muted); font-size: var(--fs-12); font-weight: 600; box-shadow: none;
+}
+button.psec-tip[aria-expanded="true"] { color: var(--acc); border-color: var(--acc-line); }
+button.psec-tip:focus-visible { outline: none; box-shadow: var(--focus); }
+.psec-tipText { margin-top: -4px; }
 
 /* ⋯: an item's actions. */
 button.more-btn { width: 30px; height: 30px; padding: 0; justify-content: center; color: var(--muted); }
@@ -2198,6 +2210,8 @@ button.more-btn svg { width: 16px; height: 16px; }
 @media (max-width: 600px) {
   button.more-btn { width: 40px; height: 40px; }
   button.add-row, button.psec-act { min-height: 40px; }
+  .ctl.ia-box { min-height: 40px; }
+  button.psec-tip { width: 28px; height: 28px; }
 }
 
 /* Chip (#310; components/ui/Chip.jsx): 12px sans, sentence case, 6px

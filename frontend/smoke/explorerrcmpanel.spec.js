@@ -208,14 +208,15 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   await expect(panel(page).getByRole("heading", { name: `Seal leaks ${tag}` })).toBeFocused();
   expect(await isExpanded(page)).toBe(false);
 
-  // Add a task…: across the table, on the add form, its name box focused; the two tasks listed.
+  // Add a task…: across the table, on the add row, its name box focused; the two tasks and the new one listed.
   await sealRow.locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Add a task…" }).click();
   const tasks = panel(page).getByRole("region", { name: "Tasks" });
-  await expect(tasks.getByRole("textbox", { name: "Task" })).toBeFocused();
+  await expect(tasks.getByRole("textbox", { name: "New task" })).toBeFocused();
   expect(await isExpanded(page)).toBe(true);
+  await expect(tasks.getByRole("listitem")).toHaveCount(3);
+  await page.keyboard.press("Escape");
   await expect(tasks.getByRole("listitem")).toHaveCount(2);
-  await tasks.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expectHealthy(page, problems, { label: "rcm open from menu" });
 });

@@ -10,7 +10,8 @@ import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field, { SavedMark } from "./ui/Field.jsx";
 import InputGroup, { Addon, ReadsAs } from "./ui/InputGroup.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
-import Section, { AddRow } from "./ui/Section.jsx";
+import Section from "./ui/Section.jsx";
+import { InlineAddButton, InlineAddRow, useInlineAdd } from "./ui/InlineAdd.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
@@ -348,11 +349,12 @@ const toneOf = (text) => (/to decide|not analysed|no functional failure|no failu
 //   ops        the Explorer's ops (useTreeRcm, with basis, basisView, standards, tasks, saveItem)
 //   links      { onLink, onUnlink } (a functional failure's links)
 //   expanded   filling the table's room; onExpand / onCollapse switch it (none on a phone)
-//   taskStart  {key, at}: open this failure mode's tasks on the add form (the row menu's Add a task…)
+//   addStart   {key, list, at}: open one of this row's lists on its add row (a row menu's Add …):
+//              list "std" (a function's performance standards), "inside" (what's inside it), "task" (a mode's tasks)
 //   onSaid     (text) a few words in the page's status line once something saved
 export function Details({
   r, display, whole = display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops, links,
-  expanded = false, onExpand = null, onCollapse = null, taskStart = null, onSaid = null,
+  expanded = false, onExpand = null, onCollapse = null, addStart = null, onSaid = null,
 }) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
@@ -406,9 +408,21 @@ export function Details({
   const name = nameOf(r);
   const kindWord = level.label.toLowerCase();
   const addLabel = r.type === "fn" || r.type === "std" || r.type === "nostd" ? "Add a functional failure" : "Add a failure mode";
+  // What's inside it is listed (and added to, in place) here: a function's,
+  // a standard's and the "No performance standard" row's functional failures;
+  // a functional failure's and the "Not under a functional failure" row's failure modes.
+  const insideList = !!ops?.create && (EDITABLE.has(r.type) || r.type === "nostd" || r.type === "unassigned") && r.type !== "mode";
+  // A row menu's Add … (or the ⋯ here): that list's add row, opened.
+  const [ownStart, setOwnStart] = useState(null);
+  useEffect(() => setOwnStart(null), [r.key]);
+  const startOf = (list) => {
+    const from = addStart?.key === r.key && addStart.list === list ? addStart.at : null;
+    const own = ownStart?.list === list ? ownStart.at : null;
+    return from == null && own == null ? null : Math.max(from ?? 0, own ?? 0);
+  };
   const deleteLabel = r.type === "std" ? "Remove this performance standard" : `Delete this ${kindWord}`;
   const headItems = readOnly ? [] : [
-    ...(level.child ? [{ id: "add", label: `${addLabel}…`, onSelect: () => onAdd(r) }] : []),
+    ...(level.child ? [{ id: "add", label: `${addLabel}…`, onSelect: () => (insideList ? setOwnStart({ list: "inside", at: Date.now() }) : onAdd(r)) }] : []),
     ...(EDITABLE.has(r.type) ? [{ id: "delete", label: `${deleteLabel}…`, danger: true, onSelect: () => onDelete(r) }] : []),
   ];
   // The status chips under the title.
@@ -471,7 +485,7 @@ export function Details({
             {r.type === "std" && r.ref.legacy && (
               <p className="rw-fhelp">
                 This is the function's one performance standard, as written. To make it a list (one row each, with a limit on each), pick the
-                function and press <b>Add</b> by Performance standards, or <b>Split into performance standards…</b> when the text is several joined by “;”.
+                function and use <b>Add a performance standard</b> at the end of its list, or <b>Split into performance standards…</b> when the text is several joined by “;”.
               </p>
             )}
             {r.type === "std" && !r.ref.legacy && ops?.saveItem && (
@@ -592,7 +606,9 @@ export function Details({
 
         <div className="rw-pcol">
           {/* A function: its performance standards, then the working behind them. */}
-          {r.type === "fn" && ops?.standards && <RcmFunctionStandards key={r.key} r={r} ops={ops} readOnly={readOnly} onSaid={said} />}
+          {r.type === "fn" && ops?.standards && (
+            <RcmFunctionStandards key={`${r.key}:std`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("std")} onSaid={said} />
+          )}
           {r.type === "fn" && ops?.basis && (
             <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
                       openToken={ops.basisView?.token(r)} />
@@ -600,8 +616,7 @@ export function Details({
 
           {/* A failure mode's tasks: several under one mode, each with its own interval, kind and measurement. */}
           {taskList && !readOnly && (
-            <RcmModeTasks key={`${r.key}:${taskStart?.key === r.key ? taskStart.at : ""}`} r={r} ops={ops}
-                          start={taskStart?.key === r.key ? { tasks: true } : null} onSaid={said} />
+            <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} addStart={startOf("task")} onSaid={said} />
           )}
 
           {/* A functional failure: Caused by below, then Causes above. */}
@@ -612,46 +627,19 @@ export function Details({
             <CausesSection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
           )}
 
-          {/* What's inside it, each one a link that shows it here. */}
-          {ops && r.type !== "mode" && EDITABLE.has(r.type) && (
-            <Section title={r.type === "fail" ? "Failure modes" : "Functional failures"} count={kids.length} className="rw-kids">
-              {kids.length === 0 ? (
-                <p className="rw-fhelp">
-                  {r.type === "fn" ? "None yet."
-                    : r.type === "std" ? (r.ref.legacy ? "None yet." : "None yet. A breach of this limit, e.g. “Alkalinity below 80 ppm”.")
-                    : "No failure modes of its own yet."}
-                </p>
-              ) : (
-                <ul className="rw-klist">
-                  {kids.map((k) => (
-                    <li key={k.key}>
-                      <LevelIcon type={k.type} />
-                      <span className="rw-kbody">
-                        <button type="button" className="link rw-kgo" onClick={() => onSelect(k.key)}
-                                title={`Show the ${LEVEL_OF[k.type].label.toLowerCase()}`}>
-                          {nameOf(k) || `(${LEVEL_OF[k.type].label.toLowerCase()})`}
-                        </button>
-                        <span className={"rw-fhelp" + (k.type === "mode" && !k.ref.decision ? " rw-todo" : "")}>
-                          {k.type === "fail" ? failureSummary(k) : k.ref.decision ? decisionText(k.ref.decision) : "To decide"}
-                        </span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {!readOnly && level.child && (
-                <AddRow onClick={() => onAdd(r)}>{addLabel}</AddRow>
-              )}
-            </Section>
+          {/* What's inside it, each one a link that shows it here; the list ends in its add row. */}
+          {insideList && (
+            <InsideList key={`${r.key}:inside`} r={r} kids={kids} ops={ops} readOnly={readOnly} addLabel={addLabel} addStart={startOf("inside")}
+                        onSelect={onSelect} onSaid={said} />
           )}
         </div>
       </div>
 
       {/* Each button acts on its first click only: a double-click opens one dialog. */}
-      {!readOnly && (level.child || EDITABLE.has(r.type)) && (
+      {!readOnly && ((level.child && !insideList) || EDITABLE.has(r.type)) && (
         <div className="rw-panel-acts">
           {/* The add lives at the end of its list (above); here only where there's no list. */}
-          {level.child && !(ops && EDITABLE.has(r.type)) && (
+          {level.child && !insideList && (
             <button type="button" className="secondary sm" onClick={(e) => { if (e.detail < 2) onAdd(r); }}>
               <PlusIcon /> {addLabel}
             </button>
@@ -662,6 +650,64 @@ export function Details({
         </div>
       )}
     </aside>
+  );
+}
+
+// What's inside a row, in its details: a function's (or a standard's, or the
+// "No performance standard" row's) functional failures, a functional
+// failure's failure modes; each a link that shows it here. The list ends in
+// its add row, which becomes a new row of the list: Enter or leaving it
+// writes it (no dialog) and the add row is back for the next; the new one is
+// opened from its link, like any other.
+function InsideList({ r, kids, ops, readOnly, addLabel, addStart, onSelect, onSaid }) {
+  const failures = addLabel === "Add a functional failure";
+  const where = {
+    positionId: r.ref.position_id,
+    functionId: r.type === "fn" ? r.ref.id : r.type === "std" || r.type === "nostd" ? r.ref.function_id : null,
+    standardId: r.type === "std" ? r.ref.standard_id ?? null : null,
+    failureId: r.type === "fail" ? r.ref.id : null,
+  };
+  const add = useInlineAdd({
+    disabled: readOnly,
+    startToken: addStart,
+    onSave: (text) => ops.create(failures ? "fail" : "mode", where, text)
+      .then(() => { onSaid?.(failures ? "Added the functional failure." : "Added the failure mode."); }),
+    errorText: (e) => saveErrorText(e, { offline: navigator.onLine === false }),
+  });
+  const kind = failures ? "fail" : "mode";
+  return (
+    <Section title={failures ? "Functional failures" : "Failure modes"} count={kids.length} className="rw-kids">
+      {kids.length === 0 && !add.open && (
+        <p className="rw-fhelp">
+          {r.type === "std" && !r.ref.legacy ? "None yet. A breach of this limit, e.g. “Alkalinity below 80 ppm”."
+            : r.type === "fail" ? "No failure modes of its own yet." : "None yet."}
+        </p>
+      )}
+      {(kids.length > 0 || add.open) && (
+        <ul className="rw-klist">
+          {kids.map((k) => (
+            <li key={k.key}>
+              <LevelIcon type={k.type} />
+              <span className="rw-kbody">
+                <button type="button" className="link rw-kgo" onClick={() => onSelect(k.key)}
+                        title={`Show the ${LEVEL_OF[k.type].label.toLowerCase()}`}>
+                  {nameOf(k) || `(${LEVEL_OF[k.type].label.toLowerCase()})`}
+                </button>
+                <span className={"rw-fhelp" + (k.type === "mode" && !k.ref.decision ? " rw-todo" : "")}>
+                  {k.type === "fail" ? failureSummary(k) : k.ref.decision ? decisionText(k.ref.decision) : "To decide"}
+                </span>
+              </span>
+            </li>
+          ))}
+          {add.open && (
+            <InlineAddRow add={add} as="li" className="rw-knew" lead={<LevelIcon type={kind} />}
+                          label={failures ? "New functional failure" : "New failure mode"}
+                          placeholder={failures ? (r.type === "std" ? "e.g. pH above 7.8" : "e.g. No flow at all") : "e.g. Impeller worn"} />
+          )}
+        </ul>
+      )}
+      {!readOnly && !add.open && <InlineAddButton add={add}>{addLabel}</InlineAddButton>}
+    </Section>
   );
 }
 

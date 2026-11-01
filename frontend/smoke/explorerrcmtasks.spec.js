@@ -1,7 +1,7 @@
 // Several tasks for one failure mode, and one task for several, on the
 // Explorer's RCM tab (Operate › Assets › Explorer › RCM): the failure mode's
-// details list its tasks (the decision's own first) with Add a task,
-// Edit…, Remove and Use an existing task…; the row menu's Add a task… opens
+// details list its tasks (the decision's own first) with Add a task (a new
+// card typed in place), Edit…, Remove and Use an existing task…; the row menu's Add a task… opens
 // the details on the add form; the Task cell says "+1 task"
 // without the row changing height; the decision dialog shows a shared task's
 // interval read-only; at 400 px it all fits. Each test makes its own small
@@ -68,21 +68,33 @@ test("a failure mode's details list its tasks; add another, link an existing one
   await expect(tasks).toContainText(`Weekly pH check ${tag}`);
   await expect(tasks).toContainText("every 1 week");
 
-  // Add another task: the hint asks what it catches (an operational consequence); saved once.
+  // Add another task in place: a new card of the list, its name and how often; the hint
+  // asks what it catches (an operational consequence). No interval yet: the row says so.
   await tasks.getByRole("button", { name: "Add a task" }).click();
-  await expect(tasks.getByText(/What does this task catch that/)).toBeVisible();
-  await expect(tasks.getByRole("textbox", { name: "Task" })).toBeFocused();
-  await tasks.getByRole("textbox", { name: "Task" }).fill(`Replace the acid pump ${tag}`);
-  await tasks.getByRole("spinbutton", { name: "Interval" }).fill("24");
-  await tasks.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
-  await tasks.getByRole("combobox", { name: "Kind of task" }).selectOption("fixed_interval");
-  await tasks.getByRole("textbox", { name: "Instructions" }).fill("Swap the pump head.");
+  await expect(tasks.getByText(/What does this catch that/)).toBeVisible();
+  const name = tasks.getByRole("textbox", { name: "New task" });
+  await expect(name).toBeFocused();
+  await expect(tasks.getByRole("listitem")).toHaveCount(2);
   let writes = 0;
   page.on("request", (r) => { if (r.method() === "POST" && r.url().includes(`/failure-modes/${p.acid.id}/tasks`)) writes += 1; });
-  await tasks.getByRole("button", { name: "Add task" }).dblclick();
+  await name.fill(`Replace the acid pump ${tag}`);
+  await name.press("Enter");
+  await expect(tasks.getByRole("alert")).toHaveText("Enter how often: an interval above 0.");
+  await expect(name).toHaveValue(`Replace the acid pump ${tag}`);
+  expect(writes).toBe(0);
+  await tasks.getByRole("spinbutton", { name: "Interval" }).fill("24");
+  await tasks.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
+  await tasks.getByRole("spinbutton", { name: "Interval" }).press("Enter");
+  await expect(name).toHaveCount(0);
   await expect(tasks.getByRole("listitem")).toHaveCount(2);
+  await expect(tasks.getByRole("button", { name: "Add a task" })).toBeFocused();
   expect(writes).toBe(1);
   const item = (name) => tasks.getByRole("listitem").filter({ hasText: name });
+  // Its kind and instructions: the card's ⋯ Edit…, as for any other task.
+  await taskMenu(page, tasks, `Replace the acid pump ${tag}`, "Edit…");
+  await tasks.getByRole("combobox", { name: "Kind of task" }).selectOption("fixed_interval");
+  await tasks.getByRole("textbox", { name: "Instructions" }).fill("Swap the pump head.");
+  await tasks.getByRole("button", { name: "Save task" }).click();
   await expect(tasks.getByRole("listitem").nth(0)).toContainText(/the decision's own/i);
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 24 months");
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("Fixed-interval");
@@ -137,16 +149,17 @@ test("one task for several modes: shared, read-only in the decision dialog, unli
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.cell.id}&tab=rcm`);
   const saltRow = trow(page, `^Failure mode: Salinity low ${tag}`);
   await expect(saltRow).toBeVisible();
-  // Add a task… in the row menu opens the details on the add form.
+  // Add a task… in the row menu opens the details on the add row (a new card, its name focused).
   await saltRow.locator(".tp-nm").click();
   await page.keyboard.press("Shift+F10");
   await page.getByRole("menu").getByRole("menuitem", { name: "Add a task…" }).click();
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
   const tasks = tasksOf(page);
-  await expect(tasks.getByRole("textbox", { name: "Task" })).toBeFocused();
-  await expect(tasks.getByText(/What does this task catch/)).toHaveCount(0); // no consequence set: no hint
-  await tasks.getByRole("button", { name: "Cancel" }).click();
+  await expect(tasks.getByRole("textbox", { name: "New task" })).toBeFocused();
+  await expect(tasks.getByText(/What does this catch/)).toHaveCount(0); // no consequence set: no hint
+  await page.keyboard.press("Escape"); // drops the new row; the details stay
+  await expect(dlg).toBeVisible();
   await expect(tasks.getByRole("listitem")).toHaveCount(1);
   await expect(tasks.getByRole("listitem").first()).toContainText(/shared with 1 other failure mode/i);
   // Decide… with that task: the decision dialog shows its interval read-only and says why.
@@ -188,12 +201,16 @@ test("at 400 px the Tasks section and its forms fit the sheet", async ({ page, r
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
   const tasks = tasksOf(page);
-  await expect(tasks.getByRole("listitem")).toHaveCount(2);
-  await expect(tasks.getByRole("textbox", { name: "Task" })).toBeVisible();
+  await expect(tasks.getByRole("listitem")).toHaveCount(3); // two tasks and the new one
+  await expect(tasks.getByRole("textbox", { name: "New task" })).toBeVisible();
+  await expect(tasks.getByRole("spinbutton", { name: "Interval" })).toBeVisible();
   expect(await overflow(page)).toBe(0);
   const box = await dlg.boundingBox();
   expect(box.x + box.width).toBeLessThanOrEqual(400.5);
-  await tasks.getByRole("button", { name: "Cancel" }).click();
+  const iv = await tasks.getByRole("combobox", { name: "Interval unit" }).boundingBox();
+  expect(iv.x + iv.width).toBeLessThanOrEqual(400.5);
+  await page.keyboard.press("Escape");
+  await expect(tasks.getByRole("listitem")).toHaveCount(2);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await overflow(page)).toBe(0);

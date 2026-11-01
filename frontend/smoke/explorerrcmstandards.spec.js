@@ -1,6 +1,7 @@
 // A function's performance standards as a list, on the Explorer's RCM tab
 // (Operate › Assets › Explorer › RCM): the function's details list them under
-// Performance standards with Add standard, Edit…, Remove and the arrows; a
+// Performance standards with an add row that becomes a new row of the list
+// (Enter saves it, Esc drops it), Edit…, Remove and the arrows; a
 // function's one text shows as the first item and becomes the list's first
 // when a second joins it; Split into standards… proposes a line per part and
 // writes them on Confirm; the functional failure's details pick which standard
@@ -60,26 +61,35 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await expect(list.getByRole("listitem")).toHaveCount(2);
   await expect(list.getByRole("listitem").nth(1)).toContainText("Total alkalinity 80-120 ppm");
   await expect(list.getByRole("listitem").nth(1)).toContainText("given the filter pump runs");
-  await expect(list).toContainText("2 performance standards have no functional failure yet.");
+  await expect(list.getByText("No functional failure yet")).toHaveCount(2); // each row says so; no summary line
+  await expect(list).not.toContainText("have no functional failure yet");
   let fn = await (await request.get(`${M}/functions/${p.fn.id}`)).json();
   expect(fn.standards.map((st) => [st.text, st.when])).toEqual([["pH 7.2-7.8", null], ["Total alkalinity 80-120 ppm", "given the filter pump runs"]]);
   expect(fn.standard).toBe("pH 7.2-7.8; Total alkalinity 80-120 ppm");
   expect(fn.legacy_standard).toBe("pH 7.2-7.8; Total alkalinity 80-120 ppm; given the filter pump runs"); // the text itself stays
 
-  // Add a third, with its structured limit folded under Limit…; saved once.
-  await list.getByRole("button", { name: "Add a performance standard" }).first().click();
-  await list.getByRole("textbox", { name: "Performance standard" }).fill(`Calcium hardness 200-400 ppm ${tag}`);
+  // Add a third in place: the add row becomes a new row, its box focused; Enter saves it once.
+  let writes = 0;
+  page.on("request", (r) => { if (r.method() === "POST" && r.url().includes(`/functions/${p.fn.id}/standards`)) writes += 1; });
+  await list.getByRole("button", { name: "Add a performance standard" }).click();
+  const box = list.getByRole("textbox", { name: "New performance standard" });
+  await expect(box).toBeFocused();
+  await expect(list.getByRole("listitem")).toHaveCount(3); // the new row is a row of the list
+  await box.fill(`Calcium hardness 200-400 ppm ${tag}`);
+  await box.press("Enter");
+  await box.press("Enter").catch(() => {});
+  await expect(list.getByRole("listitem")).toHaveCount(3);
+  await expect(list.getByRole("button", { name: "Add a performance standard" })).toBeFocused(); // ready for the next
+  expect(writes).toBe(1);
+  // Its limit: the row's ⋯ Edit…, as for any other row; Limit… folded there.
+  await stdMenu(page, list, `Calcium hardness 200-400 ppm ${tag}`, "Edit…");
   await list.getByRole("button", { name: "Limit…" }).click();
   await list.getByRole("textbox", { name: "Parameter" }).fill("Calcium hardness");
   await list.getByRole("combobox", { name: "Comparator" }).selectOption("between");
   await list.getByRole("textbox", { name: "Value" }).fill("200-400");
   await list.getByRole("textbox", { name: "Unit" }).fill("ppm");
   await list.getByRole("textbox", { name: "Source" }).fill("E25 manual");
-  let writes = 0;
-  page.on("request", (r) => { if (r.method() === "POST" && r.url().includes(`/functions/${p.fn.id}/standards`)) writes += 1; });
-  await list.getByRole("button", { name: "Add performance standard", exact: true }).last().dblclick();
-  await expect(list.getByRole("listitem")).toHaveCount(3);
-  expect(writes).toBe(1);
+  await list.getByRole("button", { name: "Save performance standard" }).click();
   await expect(list.getByRole("listitem").nth(2)).toContainText("Calcium hardness between 200-400 ppm · E25 manual");
   // Move it to the top; edit the text; the table's cell shows the list on one line.
   await stdMenu(page, list, `Calcium hardness 200-400 ppm ${tag}`, "Move up");
@@ -113,7 +123,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   expect(fn.failures[0].standard.text).toBe("pH 7.4-7.6");
   // The hint follows: one standard still has no failure; the details say so.
   await fnRow.locator(".tp-nm").dblclick();
-  await expect(standardsOf(page)).toContainText("1 performance standard has no functional failure yet.");
+  await expect(standardsOf(page).getByText("No functional failure yet")).toHaveCount(1);
   await page.keyboard.press("Escape");
   // The standards are rows of the tree, not a column: the Columns menu doesn't offer one.
   await page.getByRole("button", { name: "Columns" }).click();
@@ -124,7 +134,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await expectHealthy(page, problems, { label: "rcm standards dialog" });
 });
 
-test("the Details panel edits the list too, and a second standard keeps the one text as the first", async ({ page, request, problems }) => {
+test("the Details panel adds in place (Enter, Esc, leaving the box, several in a row), and a second standard keeps the one text as the first", async ({ page, request, problems }) => {
   const tag = `d${Date.now()}`;
   const p = await plant(request, tag, "At least 50 L/s");
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -136,13 +146,38 @@ test("the Details panel edits the list too, and a second standard keeps the one 
   const list = details.getByRole("region", { name: "Performance standards" });
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list.getByRole("button", { name: "Split into performance standards…" })).toHaveCount(0); // one text, no ';': nothing to split
-  await list.getByRole("button", { name: "Add a performance standard" }).first().click();
-  await list.getByRole("textbox", { name: "Performance standard" }).fill("At 4 bar");
-  await list.getByRole("button", { name: "Add performance standard", exact: true }).last().click();
+  // Enter on the add row starts it; Esc drops it quietly (the details stay open).
+  const addRow = list.getByRole("button", { name: "Add a performance standard" });
+  await addRow.focus();
+  await page.keyboard.press("Enter");
+  const box = list.getByRole("textbox", { name: "New performance standard" });
+  await expect(box).toBeFocused();
+  await box.fill("Never kept");
+  await page.keyboard.press("Escape");
+  await expect(box).toHaveCount(0);
+  await expect(details).toBeVisible();
+  await expect(addRow).toBeFocused();
+  // Two in a row: Enter saves each, the add row back for the next.
+  await page.keyboard.press("Enter");
+  await box.fill("At 4 bar");
+  await box.press("Enter");
   await expect(list.getByRole("listitem")).toHaveCount(2);
+  await expect(addRow).toBeFocused();
+  await page.keyboard.press("Enter");
+  await box.fill("Below 60 °C");
+  await box.press("Enter");
+  await expect(list.getByRole("listitem")).toHaveCount(3);
+  // Leaving an empty box drops it; leaving a typed one keeps it.
+  await addRow.click();
+  await details.getByRole("heading", { level: 3, name: "Performance standards" }).click();
+  await expect(box).toHaveCount(0);
+  await addRow.click();
+  await box.fill("Under 70 dB");
+  await details.getByRole("heading", { level: 3, name: "Performance standards" }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(4);
   await expect(list.getByRole("listitem").nth(0)).toContainText("At least 50 L/s");
   const fn = await (await request.get(`${M}/functions/${p.fn.id}`)).json();
-  expect(fn.standards.map((st) => st.text)).toEqual(["At least 50 L/s", "At 4 bar"]);
+  expect(fn.standards.map((st) => st.text)).toEqual(["At least 50 L/s", "At 4 bar", "Below 60 °C", "Under 70 dB"]);
   await expectHealthy(page, problems, { label: "rcm standards details" });
 });
 
@@ -159,7 +194,19 @@ test("at 400 px the standards list and its forms fit the sheet", async ({ page, 
   await expect(dlg).toBeVisible();
   const list = standardsOf(page);
   await expect(list.getByRole("listitem")).toHaveCount(2);
-  await list.getByRole("button", { name: "Add a performance standard" }).first().click();
+  // The add row: full width, a touch target; its new row fits.
+  const addRow = list.getByRole("button", { name: "Add a performance standard" });
+  const ab = await addRow.boundingBox();
+  expect(ab.height).toBeGreaterThanOrEqual(40);
+  await addRow.click();
+  await expect(list.getByRole("textbox", { name: "New performance standard" })).toBeFocused();
+  expect(await overflow(page)).toBe(0);
+  const nb = await list.getByRole("textbox", { name: "New performance standard" }).boundingBox();
+  expect(nb.x + nb.width).toBeLessThanOrEqual(400.5);
+  await page.keyboard.press("Escape");
+  await expect(addRow).toBeVisible();
+  // A row's Edit… with its Limit… open fits too.
+  await stdMenu(page, list, "Calcium hardness 200-400 ppm", "Edit…");
   await list.getByRole("button", { name: "Limit…" }).click();
   expect(await overflow(page)).toBe(0);
   const box = await dlg.boundingBox();

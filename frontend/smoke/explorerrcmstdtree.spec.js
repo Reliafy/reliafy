@@ -180,12 +180,16 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   // With the mouse there are no moves (a drag does them); Isolate › before Delete.
   await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
   await menu.getByRole("menuitem", { name: "Add a performance standard…" }).click();
-  const ask = page.getByRole("dialog", { name: "Add a performance standard" });
-  await ask.getByRole("textbox").fill(`At least 50 L/s ${tag}`);
-  await ask.getByRole("button", { name: "Add performance standard" }).click();
+  // The function's details, on the standards' add row: typed in place, Enter writes it.
+  const details = page.getByRole("complementary", { name: "Details" });
+  const stdBox = details.getByRole("textbox", { name: "New performance standard" });
+  await expect(stdBox).toBeFocused();
+  await stdBox.fill(`At least 50 L/s ${tag}`);
+  await stdBox.press("Enter");
+  await expect(stdBox).toHaveCount(0);
   const fifty = trow(page, `^Performance standard: At least 50 L/s ${tag}`);
   await expect(fifty).toBeVisible();
-  await expect(fifty).toHaveAttribute("aria-selected", "true");
+  await expect(circulate).toHaveAttribute("aria-selected", "true");
   expect(await level(fifty)).toBe((await level(circulate)) + 1);
   await expect(flow).toBeVisible();
   expect(await level(flow)).toBe((await level(circulate)) + 2); // now under "No standard"
@@ -201,10 +205,13 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Isolate", "Remove performance standard"]);
   await expect(menu.getByRole("menuitem", { name: "Move up" })).toHaveAttribute("aria-disabled", "true"); // the only one
   await menu.getByRole("menuitem", { name: "Add a functional failure…" }).click();
-  const askFail = page.getByRole("dialog", { name: "Add a functional failure" });
-  await expect(askFail.getByText("How does it fail to meet this performance standard?")).toBeVisible();
-  await askFail.getByRole("textbox").fill(`Low flow ${tag}`);
-  await askFail.getByRole("button", { name: "Add functional failure" }).click();
+  // The standard's details, on their functional failures' add row (one that breaches it).
+  await expect(details.getByRole("region", { name: "Functional failures" })).toBeVisible();
+  const failBox = details.getByRole("textbox", { name: "New functional failure" });
+  await expect(failBox).toBeFocused();
+  await failBox.fill(`Low flow ${tag}`);
+  await failBox.press("Enter");
+  await expect(failBox).toHaveCount(0);
   const lowFlow = trow(page, `^Functional failure: Low flow ${tag}`);
   await expect(lowFlow).toBeVisible();
   expect(await level(lowFlow)).toBe((await level(fifty)) + 1);
@@ -321,7 +328,7 @@ test("double-click a standard's name: its details across the table, text, limit 
   await expect(dlg.getByRole("combobox", { name: "Breaches" })).toHaveValue(p.standards.ph.id);
   // The function's details still list every functional failure, through the standards.
   await trow(page, `^Function: Keep the water balanced ${tag}`).locator(".tp-nm").click();
-  await expect(dlg.getByRole("region", { name: "Functional failures" }).getByRole("button")).toHaveCount(3);
+  await expect(dlg.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: new RegExp(tag) })).toHaveCount(3);
   // The one text: the text alone, a note instead of the limit; kept as the function's standard.
   await trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`).locator(".tp-nm").click();
   await expect(dlg.getByText("This is the function's one performance standard, as written.")).toBeVisible();

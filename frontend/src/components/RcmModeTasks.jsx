@@ -10,14 +10,18 @@ import Chip from "./ui/Chip.jsx";
 import Field from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
-import Section, { AddRow } from "./ui/Section.jsx";
+import Section from "./ui/Section.jsx";
+import { InlineAddButton, InlineAddRow, useInlineAdd } from "./ui/InlineAdd.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 
 // A failure mode's tasks, in its details (the Explorer's RCM tab): the decision's own
 // task first, then any more (a combination: an inspection that catches the
 // slow failures plus a replacement at a hard life), each with its interval,
 // kind and instructions, and whether other failure modes share it. Add
-// another task, change one (a shared task changes for every mode it serves),
+// another from the dashed row at the end: it becomes a new task card, its
+// name and how often (the two a task can't do without); Enter or leaving it
+// writes it, and its kind, instructions and measurement are then its ⋯ Edit…,
+// as for any other task. Change one (a shared task changes for every mode it serves),
 // take one off (a shared task is unlinked and stays; one serving this mode
 // alone is retired), or link a task that is on the position already, or on a
 // position above it. Each write goes at once through `ops` (useTreeRcm) and
@@ -25,18 +29,18 @@ import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 //
 //   r       the failure mode's row (read afresh after each save)
 //   ops     modeTasks, addTask, editTask, removeTask, linkTask
-//   start   {tasks: true}: open on the add form (the row menu's Add a task…)
+//   addStart  a value that, when it changes, opens the add row (the row menu's Add a task…)
 //   onSaid  (text) a few words in the page's status line once something's done
 
 const SCHEDULED = ["on_condition", "fixed_interval", "failure_finding"];
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 const every = (t) => (t.interval != null && t.unit ? `every ${intervalText({ interval: t.interval, interval_unit: t.unit })}` : "");
 
-export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
+export default function RcmModeTasks({ r, ops, addStart = null, onSaid }) {
   const confirm = useConfirm();
   const d = r.ref.decision;
   const tasks = tasksOf(r.ref).filter((t) => t.id);
-  const [form, setForm] = useState(() => (start?.tasks ? { mode: "add" } : null));
+  const [form, setForm] = useState(null); // {mode: "edit", task} | {mode: "link"}
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const alive = useRef(true);
@@ -74,7 +78,21 @@ export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
     if (ok) onSaid?.(t.shared_with ? "Removed the task from this failure mode." : "Retired the task.");
   };
 
-  const add = () => { setFailed(null); setForm({ mode: "add" }); };
+  // The add row: a task's name and how often, in a new card of the list.
+  const [interval, setInterval_] = useState("");
+  const [unit, setUnit] = useState(() => startUnit(d || {}));
+  const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
+  const add = useInlineAdd({
+    disabled: busy,
+    startToken: addStart,
+    check: () => intervalWhy(interval) || null,
+    onSave: (name) => ops.addTask(r, { name, interval: Number(interval), unit }).then(() => {
+      setInterval_("");
+      onSaid?.("Added the task.");
+    }),
+    errorText: (e) => saveErrorText(e, { offline: navigator.onLine === false }),
+  });
+  const hint = secondTaskHint(r);
   const link = () => { setFailed(null); setForm({ mode: "link" }); };
   const submitTask = (task) => (body) => run(
     () => (task ? ops.editTask(task.id, body) : ops.addTask(r, body)),
@@ -82,14 +100,14 @@ export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
   );
   return (
     <Section title="Tasks" count={tasks.length} className="rim-tasks">
-      {tasks.length === 0 && form?.mode !== "add" && (
+      {tasks.length === 0 && !add.open && (
         <p className="rw-fhelp">
           {d && SCHEDULED.includes(d.outcome)
             ? "The decision schedules work, but no task does it yet: add one, or use an existing task."
             : "No tasks yet."}
         </p>
       )}
-      {tasks.length > 0 && (
+      {(tasks.length > 0 || add.open) && (
         <ul className="rim-tlist">
           {tasks.map((t, i) => (
             <li key={t.id} className={"rim-card" + (form?.mode === "edit" && form.task.id === t.id ? " editing" : "")}>
@@ -117,14 +135,24 @@ export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
               )}
             </li>
           ))}
+          {add.open && (
+            <InlineAddRow add={add} as="li" className="rim-card rim-new" lead={<LevelIcon type="task" className="rw-ic rw-ic-task" />}
+                          label="New task" placeholder="e.g. Replace the acid pump" help={hint}>
+              <span className="rim-every">
+                <span className="rim-every-word" aria-hidden="true">every</span>
+                <InputGroup label="How often">
+                  <TextInput type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={add.busy} aria-label="Interval"
+                             aria-invalid={add.error && !add.onText ? "true" : undefined} placeholder="e.g. 6" onChange={(e) => setInterval_(e.target.value)} />
+                  <Select value={unit} disabled={add.busy} aria-label="Interval unit" onChange={(e) => setUnit(e.target.value)}>
+                    {units.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </Select>
+                </InputGroup>
+              </span>
+            </InlineAddRow>
+          )}
         </ul>
       )}
-      {form?.mode === "add" ? (
-        <div className="rim-card editing">
-          <TaskForm key="add" r={r} task={null} hint={secondTaskHint(r)} busy={busy} failed={failed}
-                    onCancel={() => { setForm(null); setFailed(null); }} onSubmit={submitTask(null)} />
-        </div>
-      ) : form?.mode === "link" ? (
+      {form?.mode === "link" ? (
         <div className="rim-card editing">
           <LinkForm r={r} ops={ops} busy={busy} failed={failed} onCancel={() => { setForm(null); setFailed(null); }}
                     onFailed={(e) => setFailed(saveErrorText(e, { offline: navigator.onLine === false }))}
@@ -132,7 +160,7 @@ export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
         </div>
       ) : !form && (
         <div className="rim-tadd">
-          <AddRow disabled={busy} onClick={add}>Add a task</AddRow>
+          {!add.open && <InlineAddButton add={add}>Add a task</InlineAddButton>}
           <button type="button" className="link" disabled={busy} onClick={(e) => { if (e.detail < 2) link(); }}>
             Use an existing task…
           </button>
@@ -143,11 +171,18 @@ export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
   );
 }
 
-// Adding a task, or changing one: its name, interval and unit, what kind of
+// The reason an interval can't be kept ("" when it can).
+function intervalWhy(raw) {
+  const n = Number(raw);
+  if (String(raw).trim() === "") return "Enter how often: an interval above 0.";
+  return Number.isFinite(n) && n > 0 ? "" : "Enter an interval above 0.";
+}
+
+// Changing a task (its ⋯ Edit…): its name, interval and unit, what kind of
 // task it is, its instructions; a task by use being changed, its measurement
 // (what it counts, with the last-done reading on a new one). Saved once (the button says so until the
 // server answers); a refusal shows here with everything as typed.
-function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
+function TaskForm({ r, task, busy, failed, onCancel, onSubmit }) {
   const d = r.ref.decision;
   const [name, setName] = useState(task?.name || "");
   const [interval, setInterval_] = useState(task?.interval != null ? String(task.interval) : "");
@@ -174,11 +209,10 @@ function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
       if (!can) return;
       onSubmit({ name: name.trim(), interval: n, unit, outcome: outcome || null, instructions: instructions.trim(), ...(meas.body || {}) });
     }}>
-      <h4>{task ? "Change the task" : "Another task for this failure mode"}</h4>
+      <h4>Change the task</h4>
       {task?.shared_with ? (
         <p className="rw-fhelp">It also serves {plural(task.shared_with, "other failure mode")}: the change applies to all of them.</p>
       ) : null}
-      {hint && <p className="rw-fhelp rim-thint">{hint}</p>}
       <Field label="Task">
         <TextInput ref={nameBox} value={name} readOnly={busy} placeholder="What to do, e.g. Replace the acid pump"
                    onChange={(e) => setName(e.target.value)} />
@@ -211,7 +245,7 @@ function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
       <div className="rim-tform-acts">
         {why && <p className="rim-why">{why}</p>}
         <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : task ? "Save task" : "Add task"}</button>
+        <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save task"}</button>
       </div>
     </form>
   );

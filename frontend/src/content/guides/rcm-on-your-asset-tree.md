@@ -107,7 +107,15 @@ Pick a position in the tree on the RCM tab. Build from the top down:
 3. In the functional failure's row menu, **Add failure mode** adds a cause.
    Add one per cause.
 
-Each new row opens in **Details**. Its title is its description: click it to
+Each of these opens the row's **Details** on the list you're adding to. The
+list ends in a dashed **+ Add …** row; press it (or the row menu's item) and
+it becomes a new row of the list: type the words and press Enter (or click
+away) to keep it, Esc to drop it. The add row comes back under it, ready for
+the next one, so you can type several in a row. If the app can't keep one, the
+reason shows under it with your words still there. Open a new row from its
+link in the list.
+
+In a row's **Details**, its title is its description: click it to
 change it. A function's Details also list its **Performance standards**; a
 failure mode's hold its **Failure effects**, **Consequence** (one tap on a
 choice) and **Notes**. **Edit description**
@@ -174,11 +182,12 @@ act of work answers several failure modes: one monthly water sample covers
 five chemistry failure modes. Both are in the failure mode's Details, under
 **Tasks**:
 
-- **Add a task** adds another task to the failure mode, with its own
-  name, interval and instructions. For an operational or non-operational
-  consequence the form asks what the second task catches that the first
-  doesn't: put the answer in the decision's notes. (**Add a task…** in the
-  row's menu opens the same form.)
+- **Add a task** adds another task to the failure mode as a new card of the
+  list: its name and how often, then Enter. Its kind and instructions are its
+  **⋯** › **Edit…**, as for any other task. For an operational or
+  non-operational consequence the new card asks what the second task catches
+  that the first doesn't: put the answer in the decision's notes. (**Add a
+  task…** in the row's menu opens the same card.)
 - **Use an existing task…** links a task that is already on the position, or
   on a position above it, so one task serves several failure modes. A task on
   a position can serve the failure modes on it and on the positions inside it,
@@ -293,16 +302,18 @@ the rows:
 - A function that still has its one performance standard as a sentence shows it as one
   performance standard row, with every functional failure under it (there is nothing
   else to breach). The row's menu edits or removes that text; to make it a
-  list, pick the function and press **Add** by **Performance standards**, or **Split into
+  list, pick the function and use **Add a performance standard** at the end of its list, or **Split into
   performance standards…**, as below.
 
 Pick a function and look under **Performance standards** in its Details:
 
 - Each performance standard is one line: one parameter and one limit, such as *pH
-  7.2–7.8*. **Add** adds another. Each one's **⋯** has **Edit…**, **Move up**,
+  7.2–7.8*. **Add a performance standard**, at the end of the list, adds
+  another in place (the **?** by the heading says what makes a good one).
+  Each one's **⋯** has **Edit…**, **Move up**,
   **Move down** and **Remove…**; on a computer you can also drag one by its grip
   to change the order. **Limit…** unfolds the
-  structured fields (parameter, comparator, value, unit), **when** it applies
+  structured fields in **Edit…** (parameter, comparator, value, unit), **when** it applies
   (a condition such as *while the filter pump runs*, which is never a
   performance standard on its own) and its **source** (*AS 1926.3*, *the E25 manual*).
   Keep the text as the thing people read; the structured limit is optional.
@@ -313,8 +324,8 @@ Pick a function and look under **Performance standards** in its Details:
   you edit each line or drop it, and writes them when you confirm.
 - Pick a functional failure to say which performance standard it **Breaches**: *pH above
   7.8* breaches *pH 7.2–7.8*; *No flow* breaches the whole function. It is a
-  hint for the reader, not a rule: the Details say *2 performance standards have no
-  functional failure yet* under a function, in grey, so you can decide
+  hint for the reader, not a rule: in a function's Details each performance
+  standard with none says *No functional failure yet*, so you can decide
   whether those are performance standards of this function at all.
 - A performance standard that needs its own verb is another function: *produce chlorine*
   and *not raise the pH* are two jobs.
