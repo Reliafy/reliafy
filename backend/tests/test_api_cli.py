@@ -86,13 +86,17 @@ def run(capsys, *argv):
 def test_client_calls_any_tool(server):
     rf = Client()
     assert rf.base_url == server["base"]
-    saved = rf.call("models", "save", name="Handbook", distribution="weibull", params=WEIBULL)
+    saved = rf.call("change", "model_save", name="Handbook", distribution="weibull", params=WEIBULL)
     assert saved["saved"] and saved["model_id"]
     at = rf.reliability(saved["model_id"], [500])
     assert at["model_id"] == saved["model_id"]
     fit = rf.fit([120, 340, 510, 700, 980], censored=[0, 0, 1, 0, 0], distribution="weibull")
     assert fit["distribution_id"] == "weibull" and not fit["saved"]
-    assert {t["name"] for t in rf.tools()["tools"]} >= {"life_data_analysis", "maintenance_positions"}
+    assert {t["name"] for t in rf.tools()["tools"]} >= {"analyse", "change", "maintenance"}
+    # The earlier tool names are gone (Nov 2026): a plain "no such tool".
+    with pytest.raises(Exception) as gone:
+        rf.call("models", "save", name="Old name", distribution="weibull", params=WEIBULL)
+    assert gone.value.status == 404
     assert "/api/v1/list/models" in rf.spec()["paths"]
     with pytest.raises(Exception) as err:
         rf.call("get", "model", id="nope")
@@ -122,20 +126,22 @@ def test_cli_login_tools_and_generic_commands(server, capsys, monkeypatch):
     assert oct(os.stat(os.path.join(os.environ["RELIAFY_CONFIG_DIR"], "config.json")).st_mode)[-3:] == "600"
 
     code, out, _ = run(capsys, "tools")
-    assert code == 0 and "life_data_analysis" in out and "fit(" in out and "API/CLI only" in out
-    code, out, _ = run(capsys, "strategy", "optimal_replacement", "--distribution-id", "weibull",
+    assert code == 0 and "analyse" in out and "fit(" in out and "API/CLI only" in out
+    code, out, _ = run(capsys, "analyse", "optimal_replacement", "--distribution-id", "weibull",
                        "--params", json.dumps(WEIBULL), "--planned-cost", "100", "--unplanned-cost", "1000",
                        "--json")
     assert code == 0 and json.loads(out)["optimal_time"] > 0
-    code, out, _ = run(capsys, "life_data_analysis", "fit", "--data", "120,340,510,700,980",
+    code, out, _ = run(capsys, "analyse", "fit", "--data", "120,340,510,700,980",
                        "--censored", "0,0,1,0,0")
     assert code == 0 and "distribution: " in out
+    code, _, err = run(capsys, "life_data_analysis", "fit", "--data", "120,340,510,700,980")
+    assert code == 2 and "reliafy tools" in err  # the earlier names are gone
     code, out, _ = run(capsys, "guide", "--topic", "units")
     assert code == 0 and "unit" in out
     code, out, _ = run(capsys, "models", "list")
     assert code == 0
     with pytest.raises(SystemExit):
-        run(capsys, "strategy", "optimal_replacement", "--help")
+        run(capsys, "analyse", "optimal_replacement", "--help")
     assert "--planned-cost" in capsys.readouterr().out
     code, _, err = run(capsys, "get", "model", "--id", "nope")
     assert code == 1 and "Model not found" in err
@@ -146,21 +152,23 @@ def test_cli_login_tools_and_generic_commands(server, capsys, monkeypatch):
 
 
 def test_cli_and_client_search_the_library(server, capsys):
-    code, out, _ = run(capsys, "library", "search", "--query", "motor-driven pump fails to start")
+    code, out, _ = run(capsys, "list", "library", "--query", "motor-driven pump fails to start")
     assert code == 0 and "total: 4" in out and "results (4):" in out and "nrc-inl-2020:mdp-fts-ns" in out
-    code, out, _ = run(capsys, "library", "get", "--id", "nrc-inl-2020:mdp-fts-ns", "--json")
+    code, out, _ = run(capsys, "get", "library_record", "--id", "nrc-inl-2020:mdp-fts-ns", "--json")
     rec = json.loads(out)["record"]
     assert code == 0 and rec["licence"]["id"] == "us-government-work" and rec["citation"]["table"] == "Table 1"
-    code, out, _ = run(capsys, "library", "sources")
+    code, out, _ = run(capsys, "list", "library_sources")
     assert code == 0 and "total_records: 458" in out
-    code, out, _ = run(capsys, "library", "get", "--id", "mil-hdbk-217f-n2:9-1-rc-11", "--environment", "GF",
+    code, out, _ = run(capsys, "get", "library_record", "--id", "mil-hdbk-217f-n2:9-1-rc-11", "--environment", "GF",
                        "--json")
     model = json.loads(out)["block_model"]
     assert code == 0 and model["environment"]["code"] == "GF" and abs(model["failure_rate"] - 6.8e-9) < 1e-15
-    code, _, err = run(capsys, "library", "get", "--id", "nope")
+    code, _, err = run(capsys, "get", "library_record", "--id", "nope")
     assert code == 1 and "not found" in err
-    found = Client().call("library", "search", query="check valve", kind="rate", page_size=2)
+    found = Client().call("list", "library", query="check valve", record_kind="rate", page_size=2)
     assert found["total"] == 5 and len(found["results"]) == 2
+    code, out, _ = run(capsys, "list", "library", "--query", "check valve", "--record-kind", "rate")
+    assert code == 0 and "total: 5" in out
 
 
 def test_cli_fit_upload_import_push_ingest(server, capsys):
@@ -213,7 +221,7 @@ def _jpeg() -> bytes:
 def test_cli_photo_add(server, capsys):
     tmp = server["tmp"]
     rf = Client()
-    pid = rf.call("maintenance_positions", "create", name="Pump A")["id"]
+    pid = rf.call("maintenance", "positions.create", name="Pump A")["id"]
     (tmp / "a.jpg").write_bytes(_jpeg())
     (tmp / "b.jpg").write_bytes(_jpeg())
     buf = io.BytesIO()
@@ -226,7 +234,7 @@ def test_cli_photo_add(server, capsys):
     code, out, _ = run(capsys, "photo", "add", str(tmp / "a.jpg"), str(tmp / "bad.jpg"), "--to", pid, "--json")
     rows = json.loads(out)
     assert code == 1 and [r["ok"] for r in rows] == [True, False] and "photo" in rows[1]["detail"]
-    detail = rf.call("maintenance_get", "position", id=pid)
+    detail = rf.call("maintenance", "get.position", id=pid)
     assert len(detail["photos"]) == 4
 
 
@@ -235,8 +243,8 @@ def test_cli_photo_heic_link_and_move(server, capsys):
 
     tmp = server["tmp"]
     rf = Client()
-    a = rf.call("maintenance_positions", "create", name="Pump A")["id"]
-    b = rf.call("maintenance_positions", "create", name="Pump B")["id"]
+    a = rf.call("maintenance", "positions.create", name="Pump A")["id"]
+    b = rf.call("maintenance", "positions.create", name="Pump B")["id"]
     buf = io.BytesIO()
     pillow_heif.from_pillow(Image.new("RGB", (64, 48), (10, 120, 200))).save(buf, quality=80)
     (tmp / "IMG_0001.HEIC").write_bytes(buf.getvalue())
@@ -251,7 +259,7 @@ def test_cli_photo_heic_link_and_move(server, capsys):
     assert code == 1 and "only place" in err
     code, out, _ = run(capsys, "photo", "move", photo_id, "--to", a)
     assert code == 0 and "Pump A" in out
-    assert rf.call("maintenance_get", "position", id=b)["photos"] == []
+    assert rf.call("maintenance", "get.position", id=b)["photos"] == []
     code, _, err = run(capsys, "photo", "link", photo_id)
     assert code == 1 and "--to" in err
 
@@ -259,36 +267,36 @@ def test_cli_photo_heic_link_and_move(server, capsys):
 def test_cli_moves_rcm_between_positions(server, capsys):
     """The move actions over the REST API from the client and the command line."""
     rf = Client()
-    a = rf.call("maintenance_positions", "create", name="Pump A")["id"]
-    b = rf.call("maintenance_positions", "create", name="Pump B")["id"]
-    fn = rf.call("maintenance_failure_modes", "add_function", position_id=a, text="Pump water")["id"]
-    ff = rf.call("maintenance_failure_modes", "add_functional_failure", function_id=fn, text="No flow")["id"]
-    mode = rf.call("maintenance_failure_modes", "add", position_id=a, text="Seal leaks", functional_failure_id=ff)
-    task = rf.call("maintenance_tasks", "create", position_id=a, name="Grease", interval=3)["id"]
+    a = rf.call("maintenance", "positions.create", name="Pump A")["id"]
+    b = rf.call("maintenance", "positions.create", name="Pump B")["id"]
+    fn = rf.call("maintenance", "failure_modes.add_function", position_id=a, text="Pump water")["id"]
+    ff = rf.call("maintenance", "failure_modes.add_functional_failure", function_id=fn, text="No flow")["id"]
+    mode = rf.call("maintenance", "failure_modes.add", position_id=a, text="Seal leaks", functional_failure_id=ff)
+    task = rf.call("maintenance", "tasks.create", position_id=a, name="Grease", interval=3)["id"]
 
-    code, out, _ = run(capsys, "maintenance_failure_modes", "move_function", "--function-id", fn,
+    code, out, _ = run(capsys, "maintenance", "failure_modes.move_function", "--function-id", fn,
                        "--position-id", b, "--json")
     assert code == 0 and json.loads(out)["failure_modes_moved"] == 1
-    code, out, _ = run(capsys, "maintenance_failure_modes", "move", "--failure-mode-id", mode["id"],
+    code, out, _ = run(capsys, "maintenance", "failure_modes.move", "--failure-mode-id", mode["id"],
                        "--position-id", a, "--json")
     assert code == 0 and json.loads(out)["position_id"] == a
-    code, out, _ = run(capsys, "maintenance_tasks", "move", "--task-id", task, "--position-id", b, "--json")
+    code, out, _ = run(capsys, "maintenance", "tasks.move", "--task-id", task, "--position-id", b, "--json")
     assert code == 0 and json.loads(out)["id"] == task
-    code, _, err = run(capsys, "maintenance_tasks", "move", "--task-id", task, "--position-id", b)
+    code, _, err = run(capsys, "maintenance", "tasks.move", "--task-id", task, "--position-id", b)
     assert code == 1 and "already on Pump B" in err
-    assert rf.call("maintenance_get", "rcm", id=a, scope="this")["positions"][0]["unassigned"][0]["id"] == mode["id"]
+    assert rf.call("maintenance", "get.rcm", id=a, scope="this")["positions"][0]["unassigned"][0]["id"] == mode["id"]
 
 
 def test_cli_adds_the_sample_truck(server, capsys):
     """maintenance_positions add_sample_truck from the command line: once, then --again for another copy."""
-    code, out, _ = run(capsys, "maintenance_positions", "add_sample_truck", "--json")
+    code, out, _ = run(capsys, "maintenance", "positions.add_sample_truck", "--json")
     made = json.loads(out)
     assert code == 0 and made["added"] and made["failure_modes"] == 5 and made["decisions"] == 5
-    code, out, _ = run(capsys, "maintenance_positions", "add_sample_truck", "--json")
+    code, out, _ = run(capsys, "maintenance", "positions.add_sample_truck", "--json")
     assert code == 0 and json.loads(out)["added"] is False
-    code, out, _ = run(capsys, "maintenance_positions", "add_sample_truck", "--again", "--json")
+    code, out, _ = run(capsys, "maintenance", "positions.add_sample_truck", "--again", "--json")
     assert code == 0 and json.loads(out)["position"]["name"] == "Delivery truck (sample 2)"
-    sheet = Client().call("maintenance_get", "rcm", id=made["position"]["id"], scope="this")
+    sheet = Client().call("maintenance", "get.rcm", id=made["position"]["id"], scope="this")
     assert sheet["rollup"]["modes"] == 5
 
 
@@ -296,7 +304,7 @@ def test_cli_and_client_add_a_worksheet_to_a_position(server, capsys):
     """An FMEA / RCM worksheet (CSV here) onto a position: the command, then the
     client's import_excel, which adds nothing the second time."""
     rf = Client()
-    pid = rf.call("maintenance_positions", "create", name="Conveyor C-2")["id"]
+    pid = rf.call("maintenance", "positions.create", name="Conveyor C-2")["id"]
     sheet = server["tmp"] / "conveyor.csv"
     sheet.write_text("Function,Functional failure,Failure mode,Task type,Proposed task,Interval,Unit\n"
                      "Move grain,Moves no grain,Belt torn,On-condition,Walk the belt,1,weeks\n"
@@ -306,34 +314,34 @@ def test_cli_and_client_add_a_worksheet_to_a_position(server, capsys):
     assert code == 0 and body["written"] and body["counts"]["modes"] == 2 and body["counts"]["tasks"] == 2
     again = rf.import_excel(str(sheet), target="rcm", position_id=pid)
     assert again["counts"]["modes"] == 0 and again["counts"]["modes_existing"] == 2
-    rcm = rf.call("maintenance_get", "rcm", id=pid, scope="this")["positions"][0]
+    rcm = rf.call("maintenance", "get.rcm", id=pid, scope="this")["positions"][0]
     assert [x["text"] for x in rcm["functions"][0]["failures"][0]["modes"]] == ["Belt torn", "Drive bearing seizes"]
 
 
 def test_cli_sets_and_clears_a_positions_operating_context(server, capsys):
     rf = Client()
-    pid = rf.call("maintenance_positions", "create", name="Fan 3", operating_context="Dusty; runs on demand.")["id"]
-    assert rf.call("maintenance_get", "position", id=pid)["operating_context"] == "Dusty; runs on demand."
-    code, out, _ = run(capsys, "maintenance_positions", "update", "--position-id", pid,
+    pid = rf.call("maintenance", "positions.create", name="Fan 3", operating_context="Dusty; runs on demand.")["id"]
+    assert rf.call("maintenance", "get.position", id=pid)["operating_context"] == "Dusty; runs on demand."
+    code, out, _ = run(capsys, "maintenance", "positions.update", "--position-id", pid,
                        "--operating-context", "Indoors, 8 hours a day.", "--json")
     assert code == 0 and json.loads(out)["operating_context"] == "Indoors, 8 hours a day."
-    code, out, _ = run(capsys, "maintenance_positions", "update", "--position-id", pid, "--operating-context", "",
+    code, out, _ = run(capsys, "maintenance", "positions.update", "--position-id", pid, "--operating-context", "",
                        "--json")
     assert code == 0 and json.loads(out)["operating_context"] == ""
 
 
 def test_cli_sets_the_working_behind_a_standard_from_a_file(server, capsys):
     rf = Client()
-    pid = rf.call("maintenance_positions", "create", name="Tank")["id"]
-    fn = rf.call("maintenance_failure_modes", "add_function", position_id=pid, text="Hold water")["id"]
+    pid = rf.call("maintenance", "positions.create", name="Tank")["id"]
+    fn = rf.call("maintenance", "failure_modes.add_function", position_id=pid, text="Hold water")["id"]
     working = server["tmp"] / "working.md"
     working.write_text("## Sizing\n\n| Days | kL |\n|---|---|\n| 2 | 10 |\n", encoding="utf-8")
-    code, out, _ = run(capsys, "maintenance_failure_modes", "update_function", "--function_id", fn,
+    code, out, _ = run(capsys, "maintenance", "failure_modes.update_function", "--function_id", fn,
                        "--standard_basis", f"@{working}", "--json")
     assert code == 0 and json.loads(out)["standard_basis"] == working.read_text().strip()
-    code, out, _ = run(capsys, "maintenance_get", "function", "--id", fn, "--json")
+    code, out, _ = run(capsys, "maintenance", "get.function", "--id", fn, "--json")
     assert code == 0 and json.loads(out)["standard_basis"].startswith("## Sizing")
-    code, out, _ = run(capsys, "maintenance_failure_modes", "update_function", "--function-id", fn,
+    code, out, _ = run(capsys, "maintenance", "failure_modes.update_function", "--function-id", fn,
                        "--standard-basis", "", "--json")
     assert code == 0 and json.loads(out)["has_basis"] is False
 
@@ -343,7 +351,7 @@ def test_cli_document_add_and_get(server, capsys):
 
     tmp = server["tmp"]
     rf = Client()
-    pid = rf.call("maintenance_positions", "create", name="Pump A", position_class="Pump")["id"]
+    pid = rf.call("maintenance", "positions.create", name="Pump A", position_class="Pump")["id"]
     (tmp / "Pump manual.pdf").write_bytes(pdf())
     (tmp / "notes.pdf").write_bytes(b"<html>not a pdf</html>")
     code, out, _ = run(capsys, "document", "add", str(tmp / "Pump manual.pdf"), str(tmp / "notes.pdf"),
@@ -353,7 +361,7 @@ def test_cli_document_add_and_get(server, capsys):
     code, out, _ = run(capsys, "document", "add", str(tmp / "Pump manual.pdf"), "--class", "Pump",
                        "--title", "Pump datasheet", "--kind", "datasheet")
     assert code == 0 and "1 of 1 added" in out, out
-    docs = rf.call("maintenance_get", "position", id=pid)["documents"]
+    docs = rf.call("maintenance", "get.position", id=pid)["documents"]
     assert [(d["title"], d["kind"], d["stored"]) for d in docs] == [("Pump manual", "manual", True)]
 
     code, out, _ = run(capsys, "document", "get", docs[0]["id"], "-o", str(tmp / "copy.pdf"), "--json")
@@ -361,16 +369,16 @@ def test_cli_document_add_and_get(server, capsys):
     assert (tmp / "copy.pdf").read_bytes() == pdf()
     code, _, err = run(capsys, "document", "add", str(tmp / "Pump manual.pdf"))
     assert code == 1 and "--to" in err
-    linked = rf.call("maintenance_attachments", "add_document", url="https://example.com/a.pdf", target_id=pid)
+    linked = rf.call("maintenance", "attachments.add_document", url="https://example.com/a.pdf", target_id=pid)
     code, _, err = run(capsys, "document", "get", linked["id"])
     assert code == 1 and "a link" in err
 
 
 def test_cli_and_client_apply_a_batch_of_maintenance_changes(server, capsys):
     """reliafy apply FILE: a dry run, then --run (writing the undo file beside it);
-    the generic maintenance_apply command and Client.apply do the same."""
+    the generic maintenance apply command and Client.apply do the same."""
     rf = Client()
-    system = rf.call("maintenance_positions", "create", name="Boiler feed")["id"]
+    system = rf.call("maintenance", "positions.create", name="Boiler feed")["id"]
     ops = [{"ref": "p", "do": "positions.create", "args": {"name": "Feed pump A", "parent_id": system}},
            {"ref": "f", "do": "failure_modes.add_function", "args": {"position_id": "@p", "text": "Deliver feed"}},
            {"ref": "ff", "do": "failure_modes.add_functional_failure", "args": {"function_id": "@f", "text": "No flow"}},
@@ -382,17 +390,17 @@ def test_cli_and_client_apply_a_batch_of_maintenance_changes(server, capsys):
     path.write_text(json.dumps({"operations": ops}))
     code, out, _ = run(capsys, "apply", str(path))
     assert code == 0 and "dry_run: true" in out and "would_apply: 5" in out and "results (5):" in out
-    assert rf.call("maintenance_get", "position", id=system)["children"] == []
+    assert rf.call("maintenance", "get.position", id=system)["children"] == []
     code, out, _ = run(capsys, "apply", str(path), "--run", "--key", "pump-a")
     assert code == 0 and "applied: 5" in out and "To undo it: reliafy apply" in out
     undo = json.loads((server["tmp"] / "pump.undo.json").read_text())["operations"]
     assert [u["do"] for u in undo] == ["failure_modes.retire", "failure_modes.remove_functional_failure",
                                        "failure_modes.remove_function", "positions.retire"]
-    pump = rf.call("maintenance_get", "position", id=system)["children"][0]
+    pump = rf.call("maintenance", "get.position", id=system)["children"][0]
     assert pump["name"] == "Feed pump A"
-    assert [t["name"] for t in rf.call("maintenance_get", "position", id=pump["id"])["tasks"]] == ["Vibration check"]
+    assert [t["name"] for t in rf.call("maintenance", "get.position", id=pump["id"])["tasks"]] == ["Vibration check"]
     # The generic command, straight from the spec; and the client's shortcut.
-    code, out, _ = run(capsys, "maintenance_apply", "--operations", json.dumps(
+    code, out, _ = run(capsys, "maintenance", "apply", "--operations", json.dumps(
         [{"do": "tasks.create", "args": {"position_id": pump["id"], "name": "Grease", "interval": 1}}]),
         "--dry-run", "false", "--json")
     assert code == 0 and json.loads(out)["applied"] == 1

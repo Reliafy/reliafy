@@ -247,7 +247,7 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
     node = m.s.node(m.org, class_id(m.org, name)) or {}
     model = node.get("model")
     if not model:
-        raise Invalid(f"Fit a non-repairable model for {name} first (maintenance_reliability fit_class_model).")
+        raise Invalid(f"Fit a non-repairable model for {name} first (maintenance reliability.fit_class_model).")
     unit = svc._norm_unit(model.get("unit")) or "days"
     calendar = unit in svc.CALENDAR_UNITS
     if (model.get("extras") or {}).get("p") is not None:

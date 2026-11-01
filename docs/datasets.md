@@ -96,9 +96,9 @@ summary adds the readings ("40 pumps · 35 failed · 314 readings").
   (readings alone), `POST /api/datasets/{id}/split`. The dataset's detail
   carries `measurements` (columns, row count, preview, column facts) and
   `profile.split` (the plan for one table).
-- **MCP, REST v1, CLI**: `datasets add_measurements` (`csv`, an `upload_id`,
+- **MCP, REST v1, CLI**: `change dataset_add_measurements` (`csv`, an `upload_id`,
   or `from_dataset_id` to copy another dataset's table in),
-  `datasets remove_measurements`, `datasets split`; `get kind dataset` takes
+  `change dataset_remove_measurements`, `change dataset_split`; `get kind dataset` takes
   `part=measurements`; `list kind datasets` shows each dataset's
   `measurements`. On the command line, `reliafy upload readings.csv
   --measurements-for DATASET_ID`.

@@ -25,7 +25,7 @@ Grouped by area:
 
     # any tool action (0.3; needs a server with the tools API)
     reliafy.call("list", "models")
-    reliafy.call("life_data_analysis", "fit", data=[120, 340, 510], censored=[0, 0, 1])
+    reliafy.call("analyse", "fit", data=[120, 340, 510], censored=[0, 0, 1])
     reliafy.default_client().upload_dataset("bearings.xlsx")
 
     # ingest
@@ -46,7 +46,7 @@ import urllib.request
 
 from reliafy import config as _saved
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __all__ = ["configure", "default_client", "call", "Client", "models", "data", "strategy", "fleet", "ReliafyError",
            "ServerTooOld", "push", "push_params", "push_usage", "push_readings", "push_lives",
            "push_measurements"]

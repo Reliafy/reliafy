@@ -1,6 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { portalHost } from "../fullScreen.js";
+import useAutoGrow from "./ui/useAutoGrow.js";
 import { Link } from "react-router-dom";
 import RcmStatusBadge from "./RcmStatusBadge.jsx";
+import { CloseIcon, ExpandIcon, PlusIcon, ShrinkIcon } from "./icons.jsx";
+import Chip from "./ui/Chip.jsx";
+import ChoiceChips from "./ui/ChoiceChips.jsx";
+import Field, { SavedMark } from "./ui/Field.jsx";
+import InputGroup, { Addon, ReadsAs } from "./ui/InputGroup.jsx";
+import MoreMenu from "./ui/MoreMenu.jsx";
+import Section from "./ui/Section.jsx";
+import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
@@ -12,7 +23,7 @@ import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
 import RcmFunctionStandards, { BreachesField } from "./RcmFunctionStandards.jsx";
 import { plainFirstLine } from "../basisMarkdown.js";
-import { COMPARATORS, COMPARATOR_LABEL } from "../rcmStandards.js";
+import { COMPARATORS, COMPARATOR_LABEL, limitReads } from "../rcmStandards.js";
 import RcmModeTasks from "./RcmModeTasks.jsx";
 import { saveErrorText } from "../confirm.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
@@ -196,6 +207,9 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
     : COLUMN[col.id]?.onDecision ? d[COLUMN[col.id].field] || "" : r.ref[COLUMN[col.id].field] || "";
   const [value, setValue] = useState(String(start));
   const [busy, setBusy] = useState(false);
+  // Why the value wasn't kept: shown in a bubble under the cell (the whole
+  // reason, as the drag refusal shows), the cell outlined red, its text kept.
+  const [refused, setRefused] = useState(null);
   const done = useRef(false);
   const field = useRef(null);
   const commit = (v = value) => {
@@ -203,6 +217,7 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
     if (String(v) === String(start)) { done.current = true; onCancel(); return; }
     const out = onCommit(v);
     if (out === true) done.current = true;
+    else if (typeof out === "string") { setRefused(out); field.current?.focus({ preventScroll: true }); }
     else if (out && typeof out.then === "function") {
       done.current = true;
       setBusy(true);
@@ -210,6 +225,7 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
         if (ok === true) return;
         done.current = false;
         setBusy(false);
+        if (typeof ok === "string") setRefused(ok);
         field.current?.focus({ preventScroll: true });
       });
     }
@@ -221,12 +237,25 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
   };
   const label = `${col.label} of ${nameOf(r) || LEVEL_OF[r.type].label.toLowerCase()}`;
   if (col.id === "consequence") {
+    // One tap: the consequences as chips under the cell (the Decide dialog's
+    // tiles); ← → move, Enter or a click chooses, Escape or leaving them drops it.
     return (
-      <select className="rw-edit" autoFocus ref={field} value={value} aria-label={label} onKeyDown={keys} disabled={busy}
-              onChange={(e) => { setValue(e.target.value); commit(e.target.value); }} onBlur={() => commit()}>
-        <option value="">Not set</option>
-        {Object.entries(CONSEQUENCE_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-      </select>
+      <span className="rw-edit-wrap rw-edit-chips" ref={field} tabIndex={-1}
+            onBlur={(e) => {
+              const to = e.relatedTarget;
+              if (busy || (to && (e.currentTarget.contains(to) || to.closest?.(".rw-pop-under")))) return;
+              done.current = true;
+              onCancel();
+            }}>
+        <span className="rw-txt">{CONSEQUENCE_LABEL[value] || "Not set"}</span>
+        <Popover>
+          <ChoiceChips label={label} value={value} moveOnly autoFocus disabled={busy}
+                       options={[...Object.entries(CONSEQUENCE_LABEL).map(([v, l]) => ({ value: v, label: l })), { value: "", label: "Not set" }]}
+                       onKeyDown={keys}
+                       onChange={(v) => { setValue(v); setRefused(null); commit(v); }} />
+          {refused && <span className="rw-cell-why" role="alert">{refused}</span>}
+        </Popover>
+      </span>
     );
   }
   // A function's text: kept to 200 characters, with a counter at its end.
@@ -235,14 +264,48 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
     <span className="rw-edit-wrap">
       <input className="rw-edit" autoFocus ref={field} aria-label={label} value={value} onKeyDown={keys} readOnly={busy} aria-busy={busy || undefined}
              maxLength={count ? FUNCTION_MAX : undefined} title={count ? FUNCTION_NUDGE : undefined}
-             aria-description={count ? `${count.n} of ${count.max} characters. ${FUNCTION_NUDGE}` : undefined}
-             aria-invalid={count?.over ? "true" : undefined}
+             aria-description={count ? `${count.n} of ${count.max} characters. ${FUNCTION_NUDGE}` : refused || undefined}
+             aria-invalid={count?.over || refused ? "true" : undefined}
              type={col.id === "interval" ? "number" : "text"} inputMode={col.id === "interval" ? "decimal" : undefined}
              min={col.id === "interval" ? "0" : undefined} step={col.id === "interval" ? "any" : undefined}
-             onChange={(e) => setValue(e.target.value)} onBlur={() => commit()} />
+             onChange={(e) => { setValue(e.target.value); setRefused(null); }} onBlur={() => commit()} />
       {col.id === "interval" && <span className="rw-unit">{d.interval_unit || "hours"}</span>}
       {count && <span className={"char-count rw-count" + (count.tone ? ` ${count.tone}` : "")} aria-hidden="true">{count.text}</span>}
+      {refused && (
+        <Popover>
+          <span className="rw-cell-why" role="alert">{refused}</span>
+        </Popover>
+      )}
     </span>
+  );
+}
+
+// A small box fixed under the table cell it's drawn in (a cell being
+// edited), drawn in the shared portal host so the cell's clipping can't cut
+// it, and kept on screen at the edges. A probe in the cell finds the cell.
+function Popover({ children }) {
+  const probe = useRef(null);
+  const [at, setAt] = useState(null);
+  useLayoutEffect(() => {
+    const place = () => {
+      const el = probe.current?.closest(".rw-c") || probe.current?.parentElement;
+      if (!el) return;
+      const b = el.getBoundingClientRect();
+      setAt({ left: Math.max(8, Math.min(b.left, window.innerWidth - 328)), top: b.bottom + 4 });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, []);
+  return (
+    <>
+      <span ref={probe} hidden />
+      {createPortal(
+        <div className="rw-pop-under" style={at ? { left: at.left, top: at.top } : { visibility: "hidden" }}>{children}</div>,
+        portalHost(),
+      )}
+    </>
   );
 }
 
@@ -262,21 +325,23 @@ export function PhoneStatus({ r }) {
 // a row), or filling the table's room (`expanded`: a double-click on a row's
 // name, Open… in its menu, or Expand here), with the tree column still beside
 // it so another row can be picked; the panel follows the row picked. Every
-// field is kept as you go (when you leave it, or Enter in a one-line field);
-// a value the server would refuse stays as typed with the reason. Escape (or
-// Back to table) returns from expanded to side by side; Escape again closes.
+// field is kept as you go (when you leave it, or Enter in a one-line field),
+// and says "✓ Saved" by its label when it is; a value the server would refuse
+// stays as typed with the reason under it. Escape (or Back to table) returns
+// from expanded to side by side; Escape again closes.
+//
+// Its head: the kind, then Expand, ⋯ (add inside, delete) and Close as icon
+// buttons; one line "in ‹the way up›"; the title, which is the description
+// (a click edits it in place); status chips under it. Delete is also red
+// text in the footer (it still asks first).
 // The kinds of row whose description is edited (not a position's, nor the
 // unassigned failure modes' or the "No standard" heading, in the Explorer).
 // A standard's description is its text.
 export const EDITABLE = new Set(["fn", "std", "fail", "mode"]);
 
-// A performance standard's structured limit, when it applies and its source,
-// as the panel's fields: each one kept as you go.
-const LIMIT_FIELDS = [
-  { col: "parameter", label: "Parameter", placeholder: "e.g. pH" },
-  { col: "value", label: "Value", placeholder: "7.2-7.8" },
-  { col: "unit", label: "Unit", placeholder: "ppm" },
-];
+// A status chip's tone from its words (the words always say it too).
+const toneOf = (text) => (/to decide|not analysed|no functional failure|no failure modes|nothing inside|not finished/i.test(text) ? "warning"
+  : /all decided|covered/i.test(text) ? "success" : "neutral");
 
 //   r          the row (cellRow: sum is its own counts)
 //   display    the tree as shown (the way up); whole: the whole tree (what's inside)
@@ -299,25 +364,34 @@ export function Details({
   const taskList = r.type === "mode" && !!ops?.addTask;
   const ownFields = !taskList || !tasks.some((t) => t.id);
   const sharedOwn = tasks[0]?.shared_with || 0;
-  const field = (label, col, { area, help, limit, locked = false } = {}) => {
+  // "✓ Saved" by a field's label: a count per field that goes up on each save.
+  const [saved, setSaved] = useState({});
+  useEffect(() => setSaved({}), [r.key]);
+  const markSaved = (col) => setSaved((s) => ({ ...s, [col]: (s[col] || 0) + 1 }));
+  const keep = (col, out) => {
+    if (out === true) markSaved(col);
+    else if (out && typeof out.then === "function") return out.then((v) => { if (v === true) markSaved(col); return v; });
+    return out;
+  };
+  const field = (label, col, { area, help, locked = false, optional = false } = {}) => {
     const column = col === "name" ? NAME_COLUMN : COLUMN[col];
     const value = col === "name" ? r.ref.text || "" : column.onDecision ? d?.[column.field] ?? "" : r.ref[column.field] || "";
     return (
-      <Field key={`${r.key}:${col}`} label={label} help={help} value={value} area={area} readOnly={readOnly || locked} limit={limit}
-             type={col === "interval" ? "number" : "text"} suffix={col === "interval" ? d?.interval_unit || "hours" : null}
-             onCommit={(raw) => onCommit(r, col, raw)} autoFocus={col === "name" && !r.ref.text && !readOnly} />
+      <PanelField key={`${r.key}:${col}`} label={label} help={help} value={value} area={area} readOnly={readOnly || locked} optional={optional}
+                  type={col === "interval" ? "number" : "text"} suffix={col === "interval" ? d?.interval_unit || "hours" : null}
+                  saved={saved[col]} onCommit={(raw) => keep(col, onCommit(r, col, raw))} />
     );
   };
   // A standard's limit field, kept at once (as the table's cells are).
   const saveStd = (col, raw) => {
     const res = checkValue(col, r, raw);
     if (res.error) return res.error;
-    return ops.saveItem(r, { [col]: res.value }).then(() => { onSaid?.("Saved."); return true; },
+    return ops.saveItem(r, { [col]: res.value }).then(() => { onSaid?.("Saved."); markSaved(col); return true; },
       (e) => saveErrorText(e, { offline: navigator.onLine === false }));
   };
-  const stdField = ({ col, label, placeholder }) => (
-    <Field key={`${r.key}:${col}`} label={label} value={String(r.ref[col] ?? "")} readOnly={readOnly} placeholder={placeholder}
-           onCommit={(raw) => saveStd(col, raw)} />
+  const stdField = ({ col, label, placeholder, optional = false }) => (
+    <PanelField key={`${r.key}:${col}`} label={label} value={String(r.ref[col] ?? "")} readOnly={readOnly} placeholder={placeholder}
+                optional={optional} saved={saved[col]} onCommit={(raw) => saveStd(col, raw)} />
   );
   const [stdFailed, setStdFailed] = useState(null);
   useEffect(() => setStdFailed(null), [r.key]);
@@ -329,6 +403,24 @@ export function Details({
   const where = display.rows.get(r.ref.position_id)?.ref.name || whole.rows.get(r.ref.position_id)?.ref.name;
   const said = (text) => onSaid?.(text);
   const canExpand = !phone && onExpand && onCollapse;
+  const name = nameOf(r);
+  const kindWord = level.label.toLowerCase();
+  const addLabel = r.type === "fn" || r.type === "std" || r.type === "nostd" ? "Add a functional failure" : "Add a failure mode";
+  const deleteLabel = r.type === "std" ? "Remove this performance standard" : `Delete this ${kindWord}`;
+  const headItems = readOnly ? [] : [
+    ...(level.child ? [{ id: "add", label: `${addLabel}…`, onSelect: () => onAdd(r) }] : []),
+    ...(EDITABLE.has(r.type) ? [{ id: "delete", label: `${deleteLabel}…`, danger: true, onSelect: () => onDelete(r) }] : []),
+  ];
+  // The status chips under the title.
+  const chips = r.type === "mode"
+    ? [
+      r.ref.consequence ? { text: CONSEQUENCE_LABEL[r.ref.consequence], tone: "neutral" } : null,
+      d ? { text: [decisionText(d), d.interval ? `every ${intervalText(d)}` : null].filter(Boolean).join(" · "), tone: "accent" }
+        : { text: "No decision yet", tone: "warning" },
+      d && d.status === "unevidenced" ? { text: "No evidence linked", tone: "neutral" } : null,
+    ].filter(Boolean)
+    : (insideWords(r) || "").split(" · ").filter(Boolean).map((t) => ({ text: t, tone: toneOf(t) }));
+  const limitNow = r.type === "std" ? limitReads(r.ref) : "";
   return (
     <aside className={"rw-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
            onKeyDown={(e) => {
@@ -337,78 +429,70 @@ export function Details({
              if (expanded && canExpand) onCollapse();
              else onClose();
            }}>
-      <div className="rw-panel-head">
-        <div className="rw-panel-kind"><LevelIcon type={r.type} /> {level.label}</div>
-        <div className="rw-panel-btns">
-          {canExpand && (expanded ? (
-            <button type="button" className="secondary rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)">
-              Back to table
-            </button>
-          ) : (
-            <button type="button" className="secondary rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them"
-                    aria-label="Expand the details">
-              Expand
-            </button>
-          ))}
-          <button type="button" className="secondary rw-x" onClick={onClose} aria-label="Close the details">Close</button>
+      <div className="rw-panel-top">
+        <div className="rw-panel-head">
+          <div className="rw-panel-kind"><LevelIcon type={r.type} /> {level.label}</div>
+          <div className="rw-panel-btns">
+            {canExpand && (expanded ? (
+              <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)"
+                      aria-label="Back to table">
+                <ShrinkIcon />
+              </button>
+            ) : (
+              <button type="button" className="ghost sm rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them"
+                      aria-label="Expand the details">
+                <ExpandIcon />
+              </button>
+            ))}
+            {headItems.length > 0 && <MoreMenu label={`More for this ${kindWord}`} items={headItems} className="rw-x" />}
+            <button type="button" className="ghost sm rw-x" onClick={onClose} aria-label="Close the details" title="Close (Esc)"><CloseIcon /></button>
+          </div>
         </div>
+        {up.length > 0 && <Crumbs up={up} onSelect={onSelect} />}
+        <PanelTitle key={r.key} r={r} name={name} headingRef={headingRef} expanded={expanded}
+                    editable={EDITABLE.has(r.type) && !readOnly}
+                    label={r.type === "std" ? "Performance standard" : "Description"}
+                    help={r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "std" ? "One parameter and one limit, e.g. pH 7.2-7.8"
+                      : r.type === "fail" ? "How it fails to do it" : "What causes the failure"}
+                    limit={r.type === "fn" ? { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } : null}
+                    onCommit={(raw) => keep("name", onCommit(r, "name", raw))} />
+        {(chips.length > 0 || saved.name) && (
+          <div className="rw-chips-row">
+            {chips.map((c) => <Chip key={c.text} tone={c.tone}>{c.text}</Chip>)}
+            {d?.status && shownStatus(d.status) && <RcmStatusBadge status={d.status} />}
+            <SavedMark saved={saved.name} />
+          </div>
+        )}
       </div>
-      {up.length > 0 && (
-        <nav className="rw-crumbs" aria-label="Inside">
-          {up.map((a) => (
-            <button key={a.key} type="button" className="link" onClick={() => onSelect(a.key)}
-                    title={nameOf(a) || undefined}>
-              {nameOf(a) || `(${LEVEL_OF[a.type].label.toLowerCase()})`}
-            </button>
-          ))}
-        </nav>
-      )}
-      <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef} title={nameOf(r).length > 80 ? nameOf(r) : undefined}>
-        {nameOf(r) || <span className="rw-blank">(no description yet)</span>}
-      </h2>
-      {r.type !== "mode" && <p className="rw-inside">{insideWords(r)}</p>}
 
       <div className="rw-pbody">
         <div className="rw-pcol">
           <div className="rw-fields">
-            {EDITABLE.has(r.type) && field(r.type === "std" ? "Performance standard" : "Description", "name", {
-              area: true,
-              help: r.type === "fn" ? (ops ? "What this position must do" : "What the system must do") : r.type === "std" ? "One parameter and one limit, e.g. pH 7.2-7.8"
-                : r.type === "fail" ? "How it fails to do it" : "What causes the failure",
-              limit: r.type === "fn" ? { max: FUNCTION_MAX, nudge: FUNCTION_NUDGE } : null,
-            })}
             {r.type === "std" && r.ref.legacy && (
               <p className="rw-fhelp">
                 This is the function's one performance standard, as written. To make it a list (one row each, with a limit on each), pick the
-                function and press <b>Add performance standard</b>, or <b>Split into performance standards…</b> when the text is several joined by “;”.
+                function and press <b>Add</b> by Performance standards, or <b>Split into performance standards…</b> when the text is several joined by “;”.
               </p>
             )}
             {r.type === "std" && !r.ref.legacy && ops?.saveItem && (
-              <fieldset className="rw-limit">
-                <legend className="rw-flabel">Limit (optional)</legend>
-                <div className="rw-limit-row">
-                  {stdField(LIMIT_FIELDS[0])}
-                  <label className="rw-field">
-                    <span className="rw-flabel">Comparator</span>
-                    {readOnly ? <span className="rw-fval">{COMPARATOR_LABEL[r.ref.comparator] || "—"}</span> : (
-                      <select value={r.ref.comparator || ""}
-                              onChange={(e) => {
-                                setStdFailed(null);
-                                ops.saveItem(r, { comparator: e.target.value }).then(() => said("Saved."),
-                                  (err) => setStdFailed(saveErrorText(err, { offline: navigator.onLine === false })));
-                              }}>
-                        <option value="">—</option>
-                        {COMPARATORS.map((c) => <option key={c} value={c}>{COMPARATOR_LABEL[c]} ({c})</option>)}
-                      </select>
-                    )}
-                    {stdFailed && <span className="rw-ferr" role="alert">{stdFailed}</span>}
-                  </label>
-                  {stdField(LIMIT_FIELDS[1])}
-                  {stdField(LIMIT_FIELDS[2])}
-                </div>
-                {stdField({ col: "when", label: "When it applies", placeholder: "e.g. while the filter pump runs" })}
-                {stdField({ col: "source", label: "Source", placeholder: "e.g. AS 1926.3, the E25 manual" })}
-              </fieldset>
+              <Section title="Limit" label="Limit" className="rw-limit">
+                <p className="rw-fhelp rw-sec-note">Optional: lets checks read it.</p>
+                {stdField({ col: "parameter", label: "Parameter" })}
+                <LimitGroup r={r} readOnly={readOnly} saved={saved.limit} failed={stdFailed}
+                            onComparator={(c) => {
+                              setStdFailed(null);
+                              ops.saveItem(r, { comparator: c }).then(() => { said("Saved."); markSaved("limit"); },
+                                (err) => setStdFailed(saveErrorText(err, { offline: navigator.onLine === false })));
+                            }}
+                            onField={(col, raw) => {
+                              const out = saveStd(col, raw);
+                              if (out && typeof out.then === "function") out.then((v) => { if (v === true) markSaved("limit"); });
+                              return out;
+                            }} />
+                <ReadsAs>{limitNow}</ReadsAs>
+                {stdField({ col: "when", label: "When it applies", placeholder: "Always", optional: true })}
+                {stdField({ col: "source", label: "Source", placeholder: "A standard, manual or study", optional: true })}
+              </Section>
             )}
             {r.type === "std" && r.ref.function_has_basis && ops?.basis && (
               <p className="rw-fhelp">
@@ -418,44 +502,67 @@ export function Details({
             )}
             {r.type === "mode" && field("Failure effects", "effects", { area: true })}
             {r.type === "fail" && ops?.setBreach && (
-              <BreachesField r={r} readOnly={readOnly} standards={functionOf(display, r)?.ref.standards || []}
-                             onChange={(id) => ops.setBreach(r, id).then(() => said("Saved."), () => {})} />
+              <BreachesField r={r} readOnly={readOnly} standards={functionOf(display, r)?.ref.standards || []} saved={saved.breach}
+                             onChange={(id) => ops.setBreach(r, id).then(() => { said("Saved."); markSaved("breach"); }, () => {})} />
             )}
-            {r.type === "fail" && ops && <p className="rw-status">{failureStatusWords(r)}</p>}
+            {r.type === "fail" && ops && <p className="rw-fstatus">{failureStatusWords(r)}</p>}
             {r.type === "mode" && (
-              <label className="rw-field">
-                <span className="rw-flabel">Consequence</span>
+              <Field label="Consequence" saved={saved.consequence}>
                 {readOnly ? <span className="rw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
-                  <select value={r.ref.consequence || ""} onChange={(e) => onCommit(r, "consequence", e.target.value)}>
-                    <option value="">Not set</option>
-                    {Object.entries(CONSEQUENCE_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-                  </select>
+                  <ChoiceChips label="Consequence" clearable value={r.ref.consequence || ""}
+                               options={Object.entries(CONSEQUENCE_LABEL).map(([value, label]) => ({ value, label }))}
+                               onChange={(v) => keep("consequence", onCommit(r, "consequence", v))} />
                 )}
-              </label>
+              </Field>
             )}
-            {r.type === "mode" && field("Mode notes", "notes", { area: true })}
+            {r.type === "mode" && field("Notes", "notes", { area: true, optional: true })}
             {r.type === "mode" && ops && (
-              <label className="rw-field">
-                <span className="rw-flabel">Under</span>
+              <Field label="Under" saved={saved.under}
+                     help={r.ref.was_under && !r.ref.functional_failure_id ? `It was noted as under: ${r.ref.was_under}` : null}>
                 {readOnly ? <span className="rw-fval">{display.rows.get(r.parent)?.ref.text}</span> : (
-                  <select value={r.ref.functional_failure_id || ""} onChange={(e) => ops.assign(r, e.target.value || null)}>
+                  <Select value={r.ref.functional_failure_id || ""}
+                          onChange={(e) => {
+                            const out = ops.assign(r, e.target.value || null);
+                            if (out && typeof out.then === "function") out.then((v) => { if (v !== false) markSaved("under"); });
+                          }}>
                     <option value="">No functional failure yet</option>
                     {failuresOn(whole, r.ref.position_id).map((f) => (
                       <option key={f.id} value={f.id}>{f.function ? `${f.function} › ` : ""}{f.text}</option>
                     ))}
-                  </select>
+                  </Select>
                 )}
-                {r.ref.was_under && !r.ref.functional_failure_id && <span className="rw-fhelp">It was noted as under: {r.ref.was_under}</span>}
-              </label>
+              </Field>
             )}
           </div>
 
           {r.type === "mode" && (
-            <section className="rw-decision" aria-label="Decision">
-              <h3>Decision</h3>
+            <Section title="Decision" label="Decision" className="rw-decision"
+                     action={readOnly ? null : { label: d ? "Change…" : "Decide…", ariaLabel: d ? "Change the decision…" : "Decide…", onClick: () => onDecision(r) }}>
               {d ? (
                 <>
-                  <p className="rw-dline"><b>{decisionText(d)}</b>{d.interval ? ` · every ${intervalText(d)}` : ""}</p>
+                  <dl className="rw-card rw-dcard">
+                    <div><dt>Decision</dt><dd><b>{decisionText(d)}</b></dd></div>
+                    {d.interval ? <div><dt>Interval</dt><dd>every {intervalText(d)}</dd></div> : null}
+                    <div>
+                      <dt>Evidence</dt>
+                      <dd className="rw-evidence">
+                        {d.status === "unevidenced" ? (
+                          <>
+                            None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
+                                                                 title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button></>}
+                          </>
+                        ) : (
+                          <>
+                            {d.status && <RcmStatusBadge status={d.status} />}
+                            {d.artifact_name && (d.artifact_link_path
+                              ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
+                            {!d.status && !d.artifact_name && "—"}
+                          </>
+                        )}
+                      </dd>
+                    </div>
+                    {d.status !== "unevidenced" && (d.summary || d.reason) ? <p className="rw-dwhy">{d.summary || d.reason}</p> : null}
+                  </dl>
                   {ownFields && COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
                   {ownFields && COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
                   {ownFields && sharedOwn > 0 && (
@@ -476,32 +583,10 @@ export function Details({
                       </ul>
                     </div>
                   )}
-                  {field("Decision notes", "dnotes", { area: true })}
-                  {d.status === "unevidenced" ? (
-                    // Nothing linked: a gentle way to link it, not a warning.
-                    <p className="rw-evidence rw-unlinked">
-                      No evidence linked yet{readOnly ? "." : ": "}
-                      {!readOnly && (
-                        <button type="button" className="link" onClick={() => onDecision(r)}
-                                title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button>
-                      )}
-                    </p>
-                  ) : (
-                  <div className="rw-evidence">
-                    {d.status && <RcmStatusBadge status={d.status} />}
-                    {d.artifact_name && (d.artifact_link_path
-                      ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
-                    {(d.summary || d.reason) && <p>{d.summary || d.reason}</p>}
-                  </div>
-                  )}
+                  {field("Decision notes", "dnotes", { area: true, optional: true })}
                 </>
               ) : <p className="rw-dline">No decision yet.</p>}
-              {!readOnly && (
-                <button type="button" className={d ? "secondary" : ""} onClick={(e) => { if (e.detail < 2) onDecision(r); }}>
-                  {d ? "Change the decision…" : "Decide…"}
-                </button>
-              )}
-            </section>
+            </Section>
           )}
         </div>
 
@@ -529,44 +614,46 @@ export function Details({
 
           {/* What's inside it, each one a link that shows it here. */}
           {ops && r.type !== "mode" && EDITABLE.has(r.type) && (
-            <section className="rw-kids" aria-label={r.type === "fail" ? "Failure modes" : "Functional failures"}>
-              <h3>{r.type === "fail" ? "Failure modes" : "Functional failures"}</h3>
+            <Section title={r.type === "fail" ? "Failure modes" : "Functional failures"} count={kids.length} className="rw-kids">
               {kids.length === 0 ? (
                 <p className="rw-fhelp">
-                  {r.type === "fn" ? "No functional failures yet."
-                    : r.type === "std" ? (r.ref.legacy ? "No functional failures yet." : "No functional failure written yet: add one below, or from the performance standard's row menu.")
+                  {r.type === "fn" ? "None yet."
+                    : r.type === "std" ? (r.ref.legacy ? "None yet." : "None yet. A breach of this limit, e.g. “Alkalinity below 80 ppm”.")
                     : "No failure modes of its own yet."}
                 </p>
               ) : (
                 <ul className="rw-klist">
                   {kids.map((k) => (
                     <li key={k.key}>
-                      <button type="button" className="link rw-kgo" onClick={() => onSelect(k.key)}
-                              title={`Show the ${LEVEL_OF[k.type].label.toLowerCase()}`}>
-                        <LevelIcon type={k.type} /> {nameOf(k) || `(${LEVEL_OF[k.type].label.toLowerCase()})`}
-                      </button>
-                      <span className={"rw-fhelp" + (k.type === "mode" && !k.ref.decision ? " rw-todo" : "")}>
-                        {k.type === "fail" ? failureSummary(k) : k.ref.decision ? decisionText(k.ref.decision) : "To decide"}
+                      <LevelIcon type={k.type} />
+                      <span className="rw-kbody">
+                        <button type="button" className="link rw-kgo" onClick={() => onSelect(k.key)}
+                                title={`Show the ${LEVEL_OF[k.type].label.toLowerCase()}`}>
+                          {nameOf(k) || `(${LEVEL_OF[k.type].label.toLowerCase()})`}
+                        </button>
+                        <span className={"rw-fhelp" + (k.type === "mode" && !k.ref.decision ? " rw-todo" : "")}>
+                          {k.type === "fail" ? failureSummary(k) : k.ref.decision ? decisionText(k.ref.decision) : "To decide"}
+                        </span>
                       </span>
                     </li>
                   ))}
                 </ul>
               )}
-            </section>
+            </Section>
           )}
         </div>
       </div>
 
       {/* Each button acts on its first click only: a double-click opens one dialog. */}
-      {!readOnly && (
+      {!readOnly && (level.child || EDITABLE.has(r.type)) && (
         <div className="rw-panel-acts">
           {level.child && (
-            <button type="button" className="secondary" onClick={(e) => { if (e.detail < 2) onAdd(r); }}>
-              Add {r.type === "fn" || r.type === "std" || r.type === "nostd" ? "a functional failure" : "a failure mode"}
+            <button type="button" className="secondary sm" onClick={(e) => { if (e.detail < 2) onAdd(r); }}>
+              <PlusIcon /> {addLabel}
             </button>
           )}
           {EDITABLE.has(r.type) && (
-            <button type="button" className="secondary danger" onClick={(e) => { if (e.detail < 2) onDelete(r); }}>{r.type === "std" ? "Remove this performance standard" : `Delete this ${level.label.toLowerCase()}`}</button>
+            <button type="button" className="ghost sm rw-del" onClick={(e) => { if (e.detail < 2) onDelete(r); }}>{deleteLabel}</button>
           )}
         </div>
       )}
@@ -574,13 +661,166 @@ export function Details({
   );
 }
 
-// A field in the panel: kept when you leave it (or press Enter in a one-line
-// field); a value the server would refuse shows why and isn't kept.
-// `limit` ({max, nudge}): a live counter beside the label (amber near the
-// limit, red past it), the box stopping at `max`, and the nudge under it. A
-// text saved longer before stays as it is, red, and a change to it is saved
-// only once it's short enough (onCommit says so).
-function Field({ label, help, value, area, readOnly, type, suffix, onCommit, autoFocus, limit = null, placeholder = null }) {
+// The title: the row's description, a heading. A click (or Enter on it)
+// edits it in place: one box that grows with the text, kept on Enter or
+// leaving it, Escape to drop the change; a refusal keeps the box open with
+// the reason. A function's text has its counter (200 at most). A row with no
+// text yet opens editing.
+function PanelTitle({ r, name, headingRef, editable, label, help, limit, onCommit, expanded }) {
+  const [editing, setEditing] = useState(editable && !r.ref.text);
+  const [draft, setDraft] = useState(name || "");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const box = useRef(null);
+  const grow = useAutoGrow(editing ? draft : null, box);
+  useEffect(() => { if (!editing) setDraft(name || ""); }, [name, editing]);
+  useEffect(() => {
+    if (!editing) return;
+    const el = box.current;
+    if (el && document.activeElement !== el) { el.focus({ preventScroll: true }); el.setSelectionRange?.(el.value.length, el.value.length); }
+  }, [editing]);
+  const stop = () => {
+    setEditing(false);
+    setError(null);
+    setTimeout(() => headingRef?.current?.focus({ preventScroll: true }), 0);
+  };
+  const commit = () => {
+    if (busy) return;
+    if (draft === (name || "")) { if (r.ref.text) stop(); return; }
+    const out = onCommit(draft);
+    if (typeof out === "string") { setError(out); return; }
+    if (out && typeof out.then === "function") {
+      setBusy(true);
+      out.then((v) => {
+        setBusy(false);
+        if (typeof v === "string") setError(v);
+        else { setError(null); setEditing(false); }
+      });
+      return;
+    }
+    setEditing(false);
+  };
+  const count = limit ? charCount(draft, { max: limit.max, before: name || "" }) : null;
+  if (editing) {
+    return (
+      <Field label={label} className="rw-title-edit" error={error || (count?.over ? `${count.message}${limit?.nudge ? ` ${limit.nudge}` : ""}` : null)}
+             help={limit?.nudge ? `${help}. ${limit.nudge}` : help}
+             count={count ? <span className={"char-count" + (count.tone ? ` ${count.tone}` : "")}>{count.text}</span> : null}>
+        <TextArea ref={grow} value={draft} readOnly={busy} aria-busy={busy || undefined} maxLength={limit ? limit.max : undefined}
+                  className={"rw-title-box" + (expanded ? " big" : "")}
+                  aria-description={count ? `${count.n} of ${count.max} characters.` : undefined}
+                  onChange={(e) => { setDraft(e.target.value); }}
+                  onBlur={commit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
+                    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setDraft(name || ""); if (r.ref.text) stop(); }
+                  }} />
+      </Field>
+    );
+  }
+  return (
+    <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef} title={name.length > 80 ? name : undefined}>
+      {editable ? (
+        <button type="button" className="rw-title-btn" onClick={() => setEditing(true)}
+                aria-description={`Edit the ${label.toLowerCase()}`} title={`Click to edit the ${label.toLowerCase()}`}>
+          {name || <span className="rw-blank">(no description yet)</span>}
+        </button>
+      ) : (name || <span className="rw-blank">(no description yet)</span>)}
+    </h2>
+  );
+}
+
+// A standard's limit: the comparator, the value and the unit as one control.
+function LimitGroup({ r, readOnly, onComparator, onField, failed, saved }) {
+  const [vals, setVals] = useState({ value: String(r.ref.value ?? ""), unit: String(r.ref.unit ?? "") });
+  const [errs, setErrs] = useState({});
+  const sent = useRef({});
+  useEffect(() => { setVals({ value: String(r.ref.value ?? ""), unit: String(r.ref.unit ?? "") }); setErrs({}); sent.current = {}; }, [r.ref.value, r.ref.unit]);
+  if (readOnly) {
+    return (
+      <Field label="Limit">
+        <span className="rw-fval">{limitReads(r.ref) || "—"}</span>
+      </Field>
+    );
+  }
+  const commit = (col) => {
+    const v = vals[col];
+    if (v === String(r.ref[col] ?? "") || v === sent.current[col]) return;
+    sent.current[col] = v;
+    const out = onField(col, v);
+    const fail = (text) => { sent.current[col] = null; setErrs((e) => ({ ...e, [col]: text })); };
+    if (typeof out === "string") fail(out);
+    else if (out && typeof out.then === "function") out.then((x) => { if (typeof x === "string") fail(x); else setErrs((e) => ({ ...e, [col]: null })); });
+  };
+  const error = failed || errs.value || errs.unit || null;
+  return (
+    <Field label="Limit" as="fieldset" saved={saved} error={error}
+           help={r.ref.comparator === "between" ? "A range as “80-120”; one limit as a number." : null}>
+      <InputGroup label="Limit">
+        <Select aria-label="Comparator" value={r.ref.comparator || ""} onChange={(e) => onComparator(e.target.value)} className="rw-cmp">
+          <option value="">—</option>
+          {COMPARATORS.map((c) => <option key={c} value={c}>{COMPARATOR_LABEL[c]}</option>)}
+        </Select>
+        {["value", "unit"].map((col) => (
+          <TextInput key={col} aria-label={col === "value" ? "Value" : "Unit"} value={vals[col]} id={undefined}
+                     className={col === "unit" ? "ctl-unit" : undefined} placeholder={col === "value" ? "Value" : "Unit"}
+                     aria-invalid={errs[col] ? "true" : undefined}
+                     onChange={(e) => { setVals((x) => ({ ...x, [col]: e.target.value })); sent.current[col] = null; }}
+                     onBlur={() => commit(col)}
+                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(col); } }} />
+        ))}
+      </InputGroup>
+    </Field>
+  );
+}
+
+// The way up, on one muted line: the nearest kept, those above it folded
+// into "…" when they don't fit (the whole path in its tooltip; a click on it
+// shows them all, wrapped).
+function Crumbs({ up, onSelect }) {
+  const box = useRef(null);
+  const [skip, setSkip] = useState(0);
+  const [all, setAll] = useState(false);
+  const path = up.map((a) => nameOf(a) || LEVEL_OF[a.type].label).join(" › ");
+  const key = up.map((a) => a.key).join("/");
+  useEffect(() => { setSkip(0); setAll(false); }, [key]);
+  // Fold one more each pass until it fits (or only the nearest is left).
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (el && !all && el.scrollWidth > el.clientWidth + 1 && skip < up.length - 1) setSkip(skip + 1);
+  }, [skip, all, up.length, key]);
+  // A new width: start again from the whole path.
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver !== "function") return undefined;
+    let w = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth !== w) { w = el.clientWidth; setSkip(0); }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const shown = all ? up : up.slice(skip);
+  return (
+    <nav ref={box} className={"rw-crumbs" + (all ? " all" : "")} aria-label="Inside" title={path}>
+      <span className="rw-in">in</span>
+      {!all && skip > 0 && (
+        <button type="button" className="link rw-crumb-more" aria-label={`Show the whole way up: ${path}`} onClick={() => setAll(true)}>…</button>
+      )}
+      {shown.map((a) => (
+        <button key={a.key} type="button" className="link" onClick={() => onSelect(a.key)} title={nameOf(a) || undefined}>
+          {nameOf(a) || `(${LEVEL_OF[a.type].label.toLowerCase()})`}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+// A field in the panel (the shared Field): kept when you leave it (or press
+// Enter in a one-line field), "✓ Saved" by its label once it is; a value the
+// server would refuse stays as typed with the reason under it, and leaving
+// the field again sends it again. `suffix`: the unit inside the box.
+function PanelField({ label, help, value, area, readOnly, type, suffix, onCommit, placeholder = null, optional = false, saved = 0 }) {
   const [draft, setDraft] = useState(String(value ?? ""));
   const [error, setError] = useState(null);
   // What was last sent: Enter then leaving the field (or Enter twice) sends it
@@ -589,8 +829,8 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
   useEffect(() => { setDraft(String(value ?? "")); setError(null); sent.current = null; }, [value]);
   if (readOnly) {
     return (
-      <div className="rw-field">
-        <span className="rw-flabel">{label}</span>
+      <div className="field">
+        <span className="field-label">{label}</span>
         <span className="rw-fval">{value === "" || value == null ? "—" : `${value}${suffix ? ` ${suffix}` : ""}`}</span>
       </div>
     );
@@ -600,8 +840,6 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
     const err = onCommit(draft);
     if (typeof err !== "string") sent.current = draft;
     setError(typeof err === "string" ? err : null);
-    // Written at once (the Explorer): if it didn't save, the text stays as
-    // typed with the reason, and leaving the field again sends it again.
     if (err && typeof err.then === "function") {
       const was = draft;
       err.then((out) => {
@@ -611,30 +849,21 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
       });
     }
   };
-  const Tag = area ? "textarea" : "input";
-  const count = limit ? charCount(draft, { max: limit.max, before: String(value ?? "") }) : null;
+  const props = {
+    value: draft, placeholder: placeholder || undefined,
+    onChange: (e) => { setDraft(e.target.value); sent.current = null; },
+    onBlur: commit,
+    onFocus: () => { sent.current = null; },
+  };
+  const control = area
+    ? <TextArea {...props} />
+    : <TextInput {...props} type={type === "number" ? "number" : "text"} inputMode={type === "number" ? "decimal" : undefined}
+                 min={type === "number" ? "0" : undefined} step={type === "number" ? "any" : undefined}
+                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />;
   return (
-    <label className="rw-field">
-      <span className={"rw-flabel" + (count ? " rw-flabel-count" : "")}>
-        {label}
-        {count && <span className={"char-count" + (count.tone ? ` ${count.tone}` : "")} aria-hidden="true">{count.text}</span>}
-      </span>
-      <span className="rw-fin">
-        <Tag value={draft} rows={area ? 2 : undefined} type={area ? undefined : type} autoFocus={autoFocus} placeholder={placeholder || undefined}
-             maxLength={limit ? limit.max : undefined}
-             aria-description={count ? `${count.n} of ${count.max} characters.${limit.nudge ? ` ${limit.nudge}` : ""}` : undefined}
-             inputMode={type === "number" ? "decimal" : undefined} min={type === "number" ? "0" : undefined}
-             step={type === "number" ? "any" : undefined} aria-invalid={error || count?.over ? "true" : undefined}
-             onChange={(e) => { setDraft(e.target.value); sent.current = null; }} onBlur={commit}
-             onFocus={() => { sent.current = null; }}
-             onKeyDown={(e) => { if (e.key === "Enter" && !area) { e.preventDefault(); commit(); } }} />
-        {suffix && <span className="rw-unit">{suffix}</span>}
-      </span>
-      {help && !error && <span className="rw-fhelp">{help}</span>}
-      {limit?.nudge && !error && <span className="rw-fhelp rw-nudge">{limit.nudge}</span>}
-      {count?.over && !error && <span className="rw-ferr">{count.message}</span>}
-      {error && <span className="rw-ferr" role="alert">{error}</span>}
-    </label>
+    <Field label={label} help={help} error={error} optional={optional} saved={saved}>
+      {suffix ? <InputGroup>{control}<Addon>{suffix}</Addon></InputGroup> : control}
+    </Field>
   );
 }
 

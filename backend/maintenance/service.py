@@ -2953,7 +2953,7 @@ class Maintenance:
         if fm.get("merged_into"):
             raise Invalid("That failure mode was merged into another.")
         if fm.get("retired"):
-            raise Invalid("That failure mode was deleted.")
+            raise Invalid("That failure mode was deleted (restore brings it back).")
         return fm, self.s.inn(self.org, mode_id, "CAN_FAIL_AS")[0]
 
     def update_failure_mode(self, mode_id: str, text=None, function=None, failure=None, consequence=None,
@@ -3077,7 +3077,7 @@ class Maintenance:
         if standard is not None:
             if self._standards_of(function_id):
                 raise Invalid("This function's performance standard is its list of performance standards: change those "
-                              "(maintenance_failure_modes update_standard, add_standard, remove_standard).")
+                              "(maintenance failure_modes.update_standard, add_standard, remove_standard).")
             changes["standard"] = _text(standard, "performance standard", max_len=LONG_TEXT)
         if standard_basis is not None:
             changes["standard_basis"] = _basis_text(standard_basis)
@@ -3341,11 +3341,16 @@ class Maintenance:
             proposed = []
             for i, item in enumerate(standards):
                 if not isinstance(item, dict):
-                    raise Invalid(f"standards[{i}] is an object {{text, when?, source?}}.")
+                    raise Invalid(f"standards[{i}] is an object {{text, parameter?, comparator?, value?, unit?, "
+                                  "when?, source?}.")
+                stray = sorted(set(item) - {"text", *_STANDARD_FIELDS})
+                if stray:
+                    raise Invalid(f"standards[{i}] takes text, {', '.join(_STANDARD_FIELDS)}; not "
+                                  f"{', '.join(stray)}.")
                 row = {"text": _text(item.get("text"), "performance standard", required=True, max_len=LONG_TEXT)}
-                for key in ("when", "source"):
-                    if item.get(key):
-                        row[key] = _text(item.get(key), key, max_len=SHORT_TEXT)
+                # Each line's structured limit too, as add_standard takes it.
+                fields = self._standard_fields(*(item.get(k) for k in _STANDARD_FIELDS))
+                row |= {k: v for k, v in fields.items() if v not in (None, "")}
                 proposed.append(row)
         if len(proposed) > MAX_STANDARDS:
             raise Invalid(f"A function has at most {MAX_STANDARDS} performance standards.")
@@ -3362,7 +3367,7 @@ class Maintenance:
         for n, row in enumerate(proposed, start=1):
             self._emit("standard.added", {"id": new_id(), "function_id": function_id, "text": row["text"],
                                           "order": n, "on": self.today()}
-                       | {k: row[k] for k in ("when", "source") if row.get(k)})
+                       | {k: row[k] for k in _STANDARD_FIELDS if row.get(k) not in (None, "")})
         return {"dry_run": False, **self._function_view(self._get(function_id, "Function"))}
 
     def _drop_ff(self, ff: dict) -> tuple[int, int]:
@@ -3442,11 +3447,16 @@ class Maintenance:
             raise Invalid(f"Both are on {here['name']}: link a functional failure on a position inside it, "
                           "or add the cause here as a failure mode.")
         if here["id"] not in self._ancestor_ids(there["id"]):
+            if there["id"] in self._ancestor_ids(here["id"]):
+                # The other way round: the higher one is the effect.
+                raise Invalid(f"{there['name']} is above {here['name']}, so the link goes the other way: "
+                              "functional_failure_id is the higher one (the effect), cause_id the lower one. "
+                              "Swap them.")
             raise Invalid(f"Pick a functional failure on a position inside {here['name']}: "
                           f"{there['name']} isn't inside it.")
         linked = {c["id"] for c in self.s.out(self.org, effect["id"], "RESULTS_FROM")}
         if cause["id"] in linked:
-            return self.functional_failure(effect["id"])
+            return self.functional_failure(effect["id"]) | {"changed": False}
         seen, stack = set(), [cause["id"]]
         while stack:
             at = stack.pop()
@@ -3459,7 +3469,7 @@ class Maintenance:
         if len(linked) >= MAX_CAUSES:
             raise Invalid(f"A functional failure can have at most {MAX_CAUSES} causes below it: unlink one first.")
         self._link_event("functional_failure.linked", effect["id"], cause["id"])
-        return self.functional_failure(effect["id"])
+        return self.functional_failure(effect["id"]) | {"changed": True}
 
     def unlink_cause(self, ff_id: str, cause_id) -> dict:
         """Take a cause off a functional failure. Unlinking what isn't linked
@@ -3468,11 +3478,13 @@ class Maintenance:
             raise Invalid("Say which cause to unlink (cause_id).")
         effect = self._get(ff_id, "FunctionalFailure")
         cause = self._get(str(cause_id), "FunctionalFailure")
-        if self.s.edge(self.org, "RESULTS_FROM", effect["id"], cause["id"]) is not None:
+        changed = self.s.edge(self.org, "RESULTS_FROM", effect["id"], cause["id"]) is not None
+        if changed:
             self._link_event("functional_failure.unlinked", effect["id"], cause["id"])
+        # changed: whether there was a link to take off (a batch undoes only a real change).
         if effect.get("removed"):
-            return self._ff_view(effect)
-        return self.functional_failure(effect["id"])
+            return self._ff_view(effect) | {"changed": changed}
+        return self.functional_failure(effect["id"]) | {"changed": changed}
 
     def functional_failure(self, ff_id: str) -> dict:
         """A functional failure with its function, position and failure modes, the
@@ -3653,7 +3665,8 @@ class Maintenance:
         if consequence is not ...:
             consequence = consequence or None
             if consequence is not None and consequence not in rcm_decisions.CONSEQUENCES:
-                raise Invalid(f"Unknown consequence '{consequence}'.")
+                raise Invalid(f"Unknown consequence '{consequence}': it's one of "
+                              f"{', '.join(rcm_decisions.CONSEQUENCES)}.")
             changes["consequence"] = consequence
         tasks = self._mode_tasks(mode_id, fm)
         task = tasks[0] if tasks else None
@@ -3712,7 +3725,7 @@ class Maintenance:
                         if task_changes:
                             raise Invalid(f"{task['name']} also serves {shared} other failure "
                                           f"mode{'s' if shared != 1 else ''}, so its name and interval are "
-                                          "changed on the task itself (maintenance_tasks update), for all of "
+                                          "changed on the task itself (maintenance tasks.update), for all of "
                                           "them. Or give this failure mode a task of its own.")
                     elif task_changes:
                         self._emit("task.updated", {"id": task["id"], "changes": task_changes})
@@ -4456,6 +4469,22 @@ class Maintenance:
             "was_under": " › ".join(x for x in (fm.get("function"), fm.get("failure")) if x) or None,
         }
 
+    def failure_mode_rcm(self, mode_id: str) -> dict:
+        """One failure mode's RCM in full, for a reader that has only its id (an
+        agent): its words, consequence, decision and tasks (rcm_mode), where it
+        sits (position, functional failure and function, or none) and the tasks on
+        its position or above that could serve it too (available)."""
+        fm, position = self._live_mode(mode_id)
+        tasks = self.mode_tasks(mode_id)
+        ffs = [ff for ff in self.s.inn(self.org, mode_id, "CAUSED_BY") if not ff.get("removed")]
+        ff = fn = None
+        if ffs:
+            ff = self._ff_view(ffs[0])
+            fns = self.s.inn(self.org, ffs[0]["id"], "FAILS_AS")
+            fn = {"id": fns[0]["id"], "text": fns[0]["text"]} if fns else None
+        return {**self.rcm_mode(mode_id), "position": tasks["position"], "functional_failure": ff,
+                "function": fn, "available": tasks["available"]}
+
     def rcm_mode(self, mode_id: str) -> dict:
         fm = self._get(mode_id, "FailureMode")
         return self._rcm_mode_view(fm, self._mode_tasks(mode_id, fm), lambda tid: self._shared_with(tid, mode_id))
@@ -4778,7 +4807,7 @@ class Maintenance:
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
             # What it's on: a position (its job), an item (it follows the serial number) or a location.
             "subject": self._subject_brief(subject),
-            # A task with no source of its own is a decision's (maintenance_failure_modes decide).
+            # A task with no source of its own is a decision's (maintenance failure_modes.decide).
             "source": task.get("source") or ("rcm" if mode else "manual"),
             "reference": task.get("reference", ""), "point_id": task.get("point_id"),
             # The failure modes it prevents (several, since one task may serve many);
@@ -4886,8 +4915,8 @@ class Maintenance:
         held = [(st, self.s.out(self.org, st["id"], "AT")) for st in self._stocks(part_id) if (st.get("quantity") or 0) > 0]
         if held:
             where = ", ".join(f"{st['quantity']:g} at {at[0]['name'] if at else 'a location'}" for st, at in held[:3])
-            why.append(f"{pt['part_number']} is in stock ({where}): issue or write it off first (maintenance_parts "
-                       "stock with a negative quantity).")
+            why.append(f"{pt['part_number']} is in stock ({where}): issue or write it off first (maintenance parts.stock "
+                       " with a negative quantity).")
         listed = self._listings_of(part_id)
         if listed:
             names = ", ".join(self.s.out(self.org, x["id"], "LISTED_AT")[0]["name"] for x in listed[:3])
@@ -5650,8 +5679,8 @@ class Maintenance:
     def _live_point(self, point_id) -> dict:
         point = self._get(str(point_id or ""), "MeasurementPoint")
         if point.get("retired"):
-            raise Invalid(f"{point['name']} has been retired: restore it first (maintenance_measurements "
-                          "restore_point).")
+            raise Invalid(f"{point['name']} has been retired: restore it first (maintenance measurements.restore_point "
+                          ").")
         return point
 
     def update_point(self, point_id: str, name=None, alarm_above=..., alarm_below=..., tag=None) -> dict:
@@ -5687,7 +5716,7 @@ class Maintenance:
                  if not t.get("retired") and (t.get("point_id") or t.get("meter_id")) == point_id]
         if by_it:
             raise Invalid(f"{by_it[0]['name']} goes by {point['name']}: pick another counter for the task "
-                          "(maintenance_tasks update point_id, or '' to clear it) first.")
+                          "(maintenance tasks.update point_id, or '' to clear it) first.")
         if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES
                for w in self.s.inn(self.org, point_id, "ALARM_FOR")):
             raise Invalid("It has an open alarm work order. Close or cancel it first.")
@@ -6341,8 +6370,8 @@ class Maintenance:
         fitted = self._current_fitment_of_item(item_id)
         if fitted:
             position = self.s.out(self.org, fitted["id"], "AT")[0]
-            raise Invalid(f"{item['name']} is fitted to {position['name']}: remove it first (maintenance_fitments "
-                          "remove, or a work order's replace), then retire it.")
+            raise Invalid(f"{item['name']} is fitted to {position['name']}: remove it first (maintenance fitments.remove "
+                          ", or a work order's replace), then retire it.")
         if self._live_children(item_id, "Position"):
             raise Invalid("Positions inside it are still in use. Retire or move them first.")
         if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES for w in self.s.inn(self.org, item_id, "ON")):
@@ -6879,8 +6908,8 @@ class Maintenance:
                 raise Invalid(f"The outcome is one of {', '.join(SCHEDULED_OUTCOMES)}, or none.")
             changes["outcome"] = outcome or None
         if failure_mode_id is not None:
-            # "The only link": every other failure mode comes off it (maintenance_tasks
-            # link adds one without touching the rest).
+            # "The only link": every other failure mode comes off it (maintenance tasks.link
+            #  adds one without touching the rest).
             linked = [m["id"] for m in self.s.out(self.org, task_id, "MITIGATES")]
             if linked != ([failure_mode_id] if failure_mode_id else []):
                 if subject["label"] != "Position":
@@ -6912,7 +6941,7 @@ class Maintenance:
         for fm in self.s.out(self.org, task_id, "MITIGATES"):
             if fm.get("retired") or fm.get("merged_into"):
                 raise Invalid(f"The failure mode it prevents, {fm['text']}, was deleted: restore that first "
-                              "(maintenance_failure_modes restore), or add the task again without it.")
+                              "(maintenance failure_modes.restore), or add the task again without it.")
         self._emit("task.restored", {"id": task_id, "on": self.today()})
         return self._task_view(self._get(task_id, "Task"))
 
@@ -7013,16 +7042,16 @@ class Maintenance:
                      if n["label"] == "Position" and not n.get("retired")]
         if positions:
             why.append(f"{len(positions)} position{'s are' if len(positions) != 1 else ' is'} located at {loc['name']}: "
-                       "give them another location first (maintenance_positions update location_id, or "
+                       "give them another location first (maintenance positions.update location_id, or "
                        "clear_location).")
         items = [i for i, _, _ in self._loose_items([location_id]) if not i.get("retired")]
         if items:
             why.append(f"{len(items)} item{'s are' if len(items) != 1 else ' is'} placed at {loc['name']}: place "
-                       "them elsewhere first (maintenance_items place).")
+                       "them elsewhere first (maintenance items.place).")
         stock = [st for st in self.s.inn(self.org, location_id, "AT")
                  if st["label"] == "Stock" and (st.get("quantity") or 0) > 0]
         if stock:
-            why.append(f"Stock is on hand at {loc['name']}: issue or write it off first (maintenance_parts stock "
+            why.append(f"Stock is on hand at {loc['name']}: issue or write it off first (maintenance parts.stock "
                        "with a negative quantity).")
         if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES
                for w in self.s.inn(self.org, location_id, "ON")):
@@ -7498,7 +7527,7 @@ class Maintenance:
         if linked:
             items = sum(1 for x in linked if x["label"] == "Item")
             raise Invalid(f"{items} item(s) and {len(linked) - items} part(s) are linked to {node['name']}: link them "
-                          "to another maker first (maintenance_manufacturers link; 'none' unlinks), or merge "
+                          "to another maker first (maintenance manufacturers.link; 'none' unlinks), or merge "
                           "this entry into another.")
         self._emit("manufacturer.retired", {"id": node["id"], "on": self.today(), "reason": _text(reason, "reason")})
         return {"retired": node["id"]}
@@ -8760,7 +8789,7 @@ class Maintenance:
         d = self._get(document_id, "Document")
         self._not_retired(d, "removed")
         if d.get("stored"):
-            raise Invalid("That PDF was deleted when the document was removed: add it again (uploads create, "
+            raise Invalid("That PDF was deleted when the document was removed: add it again (change upload_create, "
                           "then add_document with its upload_id).")
         of = self.s.out(self.org, document_id, "OF")
         if of and (of[0].get("removed") or of[0].get("retired")):

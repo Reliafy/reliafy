@@ -265,29 +265,29 @@ def test_the_import_adds_standards_once_and_links_breaches(m):
 
 def test_over_mcp_and_the_batch(env):
     async def flow(client):
-        pool = _ok(await _do(client, "maintenance_positions", "create", name="Pool"))
-        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pool["id"],
+        pool = _ok(await _do(client, "maintenance", "positions.create", name="Pool"))
+        fn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pool["id"],
                            text="Keep the water balanced", standard="pH 7.2-7.8"))
-        ta = _ok(await _do(client, "maintenance_failure_modes", "add_standard", function_id=fn["id"],
+        ta = _ok(await _do(client, "maintenance", "failure_modes.add_standard", function_id=fn["id"],
                            text="Total alkalinity 80-120 ppm", unit="ppm", comparator="between", value="80-120"))
-        ff = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn["id"],
+        ff = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=fn["id"],
                            text="Alkalinity low", standard_id=ta["id"]))
-        cleared = _ok(await _do(client, "maintenance_failure_modes", "update_functional_failure",
+        cleared = _ok(await _do(client, "maintenance", "failure_modes.update_functional_failure",
                                 functional_failure_id=ff["id"], standard_id="none"))
         read = _ok(await _get(client, "function", fn["id"]))
-        refused = await _do(client, "maintenance_failure_modes", "update_function", function_id=fn["id"], standard="x")
-        sanitised = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pool["id"],
+        refused = await _do(client, "maintenance", "failure_modes.update_function", function_id=fn["id"], standard="x")
+        sanitised = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pool["id"],
                                   text="Keep the water sanitised", standard="FC 1-3 ppm; CC < 0.5 ppm"))
-        proposed = _ok(await _do(client, "maintenance_failure_modes", "split_standard", function_id=sanitised["id"]))
-        split = _ok(await _do(client, "maintenance_failure_modes", "split_standard", function_id=sanitised["id"],
+        proposed = _ok(await _do(client, "maintenance", "failure_modes.split_standard", function_id=sanitised["id"]))
+        split = _ok(await _do(client, "maintenance", "failure_modes.split_standard", function_id=sanitised["id"],
                               standards=[{"text": "FC 1-3 ppm"}, {"text": "CC < 0.5 ppm"}], dry_run=False))
-        batch = _ok(await client.call_tool("maintenance_apply", {"operations": [
+        batch = _ok(await client.call_tool("maintenance", {"action": "apply", "operations": [
             {"ref": "s", "do": "failure_modes.add_standard", "args": {"function_id": fn["id"], "text": "LSI -0.3 to +0.3"}},
             {"do": "failure_modes.update_standard", "args": {"standard_id": "@s", "source": "Langelier"}},
         ]}))
-        no_batch = await client.call_tool("maintenance_apply", {"operations": [
+        no_batch = await client.call_tool("maintenance", {"action": "apply", "operations": [
             {"do": "failure_modes.split_standard", "args": {"function_id": fn["id"]}}]})
-        needs_confirm = await client.call_tool("maintenance_apply", {"operations": [
+        needs_confirm = await client.call_tool("maintenance", {"action": "apply", "operations": [
             {"do": "failure_modes.remove_standard", "args": {"standard_id": ta["id"]}}]})
         return fn, ta, ff, cleared, read, refused, proposed, split, batch, no_batch, needs_confirm
 

@@ -1,8 +1,7 @@
 """An FMEA / RCM worksheet (Excel or CSV) added to a position's RCM
 (backend/maintenance/rcm_sheet.py): read and mapped by backend/services/rcm_import.py,
 written only through the service's methods, only ever adding, checked
-first and all or nothing; over REST (preview and import) and MCP (uploads
-import_excel target=rcm position_id). Invented worksheets only."""
+first and all or nothing; over REST (preview and import) and MCP (change import_excel target=rcm position_id). Invented worksheets only."""
 
 import io
 
@@ -379,7 +378,7 @@ def test_usage_names_the_import():
     assert usage.app_feature("POST", "/api/maintenance/positions/p1/rcm/import/preview") == "rcm_import_preview"
 
 
-# ---- MCP: uploads import_excel target=rcm position_id ------------------------------------------
+# ---- MCP: change import_excel target=rcm position_id ------------------------------------------
 
 @pytest.fixture()
 def mcp(monkeypatch, mcp_on):
@@ -404,7 +403,7 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
     m = Maintenance(mcp.store, up.A, up.A)
     pid = m.create_position("Conveyor C-2")["id"]
     link, _ = up._upload(mcp, _xlsx(), "c2.xlsx", purpose="excel")
-    out = _ok(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+    out = _ok(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link["upload_id"],
                                                      "target": "rcm", "position_id": pid, "header_row": 2}))
     assert out["ok"] and out["written"] and out["position_id"] == pid
     assert out["counts"]["modes"] == 4 and out["counts"]["tasks"] == 3
@@ -415,7 +414,7 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
 
     # The same rows again, as CSV: nothing more.
     link2, _ = up._upload(mcp, _csv(), "c2.csv", purpose="excel")
-    again = _ok(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link2["upload_id"],
+    again = _ok(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link2["upload_id"],
                                                        "target": "rcm", "position_id": pid}))
     assert again["counts"]["modes"] == 0 and again["counts"]["modes_existing"] == 4
 
@@ -424,7 +423,7 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
     rows = [list(r) for r in ROWS]
     rows[0][8], rows[0][9] = 101, "years"
     link3, _ = up._upload(mcp, _xlsx(rows=rows), "bad.xlsx", purpose="excel")
-    bad = _ok(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link3["upload_id"],
+    bad = _ok(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link3["upload_id"],
                                                      "target": "rcm", "position_id": fresh, "header_row": 2}))
     assert not bad["ok"] and not bad["written"] and "Nothing was added" in bad["note"]
     assert bad["errors"] == ["Row 3: The interval is at most 100 years. Change it in the sheet and try again."]
@@ -432,16 +431,64 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
     assert m.rcm_worksheet(fresh, "this")["positions"][0]["functions"] == []
 
     # Arguments that don't go together, a position that isn't there, someone without Maintenance.
-    msg = _err(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link3["upload_id"],
+    msg = _err(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link3["upload_id"],
                                                       "target": "dataset", "position_id": pid}))
     assert "position_id applies to target rcm" in msg
-    msg = _err(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link3["upload_id"],
+    msg = _err(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link3["upload_id"],
                                                       "target": "rcm", "position_id": "nope"}))
     assert "Position not found" in msg
     link4, _ = up._upload(mcp, _xlsx(), "c2.xlsx", purpose="excel", uid=up.B)
-    msg = _err(up._call(mcp.token[up.B], "uploads", {"action": "import_excel", "upload_id": link4["upload_id"],
+    msg = _err(up._call(mcp.token[up.B], "change", {"action": "import_excel", "upload_id": link4["upload_id"],
                                                       "target": "rcm", "position_id": pid}))
     assert "positions aren't available" in msg
+
+
+def test_mcp_previews_a_worksheet_and_maps_unknown_words_before_writing(mcp):
+    """dry_run true: what it would add, nothing written, the upload kept; the
+    maps alone (no column mapping) keep the mapping guessed from the header."""
+    from backend.tests.test_mcp import _err, _ok
+
+    up = mcp.up
+    m = Maintenance(mcp.store, up.A, up.A)
+    pid = m.create_position("Conveyor C-4")["id"]
+    rows = [list(r) for r in ROWS]
+    rows[2][6] = "Breakdown OK"  # a decision word it can't place
+    link, _ = up._upload(mcp, _csv(rows=rows), "c4.csv", purpose="excel")
+    call = {"action": "import_excel", "upload_id": link["upload_id"], "target": "rcm", "position_id": pid}
+    preview = _ok(up._call(mcp.token[up.A], "change", {**call, "dry_run": True}))
+    assert preview["ok"] and not preview["written"] and "A preview" in preview["note"]
+    assert preview["counts"]["modes"] == 4 and preview["functions"][0]["new"]
+    assert preview["unmapped_values"]["outcome"][0]["value"] == "Breakdown OK"
+    assert "rtf:random" in preview["unmapped_note"] and "preview again" in preview["unmapped_note"]
+    assert mcp.db.uploads.count_documents({"_id": link["upload_id"]}) == 1
+    assert m.rcm_worksheet(pid, "this")["positions"][0]["functions"] == []
+
+    mapped = _ok(up._call(mcp.token[up.A], "change", {**call, "dry_run": True,
+                                                        "mapping": {"outcome_map": {"Breakdown OK": "rtf:random"}}}))
+    assert mapped["mapping"]["mode"] == "Failure mode" and "unmapped_values" not in mapped
+    assert "dry_run applies to target rcm" in _err(up._call(mcp.token[up.A], "change", {
+        "action": "import_excel", "upload_id": link["upload_id"], "target": "dataset", "dry_run": True}))
+    out = _ok(up._call(mcp.token[up.A], "change", {**call, "dry_run": False,
+                                                     "mapping": {"outcome_map": {"Breakdown OK": "rtf:random"}}}))
+    assert out["written"] and out["counts"]["decisions"] == 4
+    slipping = next(mode for fn in m.rcm_worksheet(pid, "this")["positions"][0]["functions"]
+                    for ff in fn["failures"] for mode in ff["modes"] if mode["text"] == "Belt slips on the drive drum")
+    assert slipping["decision"]["outcome"] == "rtf" and slipping["decision"]["rtf_basis"] == "random"
+
+
+def test_mcp_says_how_to_finish_values_it_left_unset_after_writing(mcp):
+    from backend.tests.test_mcp import _ok
+
+    up = mcp.up
+    m = Maintenance(mcp.store, up.A, up.A)
+    pid = m.create_position("Conveyor C-5")["id"]
+    rows = [list(r) for r in ROWS]
+    rows[2][6] = "Breakdown OK"
+    link, _ = up._upload(mcp, _csv(rows=rows), "c5.csv", purpose="excel")
+    out = _ok(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link["upload_id"],
+                                                     "target": "rcm", "position_id": pid}))
+    assert out["written"] and "importing again won't change them" in out["unmapped_note"]
+    assert "maintenance failure_modes.decide" in out["unmapped_note"]
 
 
 def test_the_tabs_csv_export_imports_again_adding_nothing(m):

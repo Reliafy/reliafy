@@ -1,6 +1,62 @@
 # Changelog
 
-## Unreleased
+## Unreleased (0.5.0)
+
+- **Six tools instead of sixteen.** The server's core tools are now `get`,
+  `list`, `analyse` (every calculation: fits, evaluations, test plans,
+  repairable systems, strategy, fleet forecasts and RBD analyses, saving
+  nothing), `change` (every write), `guide` and `report_problem`. Actions
+  that moved get the area as a prefix: `life_data_analysis fit` is
+  `analyse fit`, `rbd_analysis analyze` is `analyse rbd`, `models save` is
+  `change model_save`, `uploads create` is `change upload_create`,
+  `sharing create_link` is `change share_link`, `library search` is
+  `list library` (its `kind` argument is `record_kind`), `upgrade_link` is
+  `get upgrade_link`. `guide --action analyse.fit` prints one action's full
+  argument schema. Client helpers (`fit`, `reliability`, `upload_dataset`,
+  `import_rbd`, …) call the new names; their signatures are unchanged.
+  **The earlier tool names are removed** (over MCP, REST and the CLI), and
+  this client needs a server from the November 2026 release. Every earlier
+  tool and action, and where it went:
+
+  | Earlier | Now |
+  |---|---|
+  | `life_data_analysis X`, `repairable_analysis X`, `strategy X` | `analyse X` |
+  | `rbd_analysis analyze`, `rbd_analysis X` | `analyse rbd`, `analyse rbd_X` |
+  | `models X`, `datasets X`, `rbd X` | `change model_X`, `change dataset_X`, `change rbd_X` |
+  | `uploads create`, `send_part`, `import_rbd`, `import_excel` | `change upload_create`, `upload_send_part`, `import_rbd`, `import_excel` |
+  | `sharing create_link`, `create_report`, `revoke_link` | `change share_link`, `share_report`, `share_revoke` |
+  | `fleet create_alert` | `change fleet_create_alert` |
+  | `library search` (`kind`), `get`, `sources` | `list library` (`record_kind`), `get library_record`, `list library_sources` |
+  | `upgrade_link` | `get upgrade_link` |
+  | `get`, `list`, `guide`, `report_problem` | unchanged |
+
+  Reliafy Maintenance's 22 `maintenance_*` tools are one `maintenance` tool
+  (operators only): `maintenance_positions create` is `maintenance
+  positions.create`, `maintenance_get kind position` is `maintenance
+  get.position`, `maintenance_overview` / `_guide` / `_apply` are `maintenance
+  overview` / `guide` / `apply`. On the command line:
+  `reliafy maintenance positions.create --name …`; in Python:
+  `rf.call("maintenance", "positions.create", name=…)`. `Client.apply`,
+  `add_document`, `download_document` and `reliafy photo` call the new names.
+  Over MCP each tool now takes its action and an `args` object; REST bodies
+  and CLI flags are as before.
+
+- RCM for agents. `maintenance_get kind failure_mode` reads one failure mode by
+  its id: its decision with the evidence check, its tasks, where it sits
+  (position, function, functional failure) and `available`, the tasks on its
+  position or above it it could share. `maintenance_list kind rcm_gaps` says
+  what an RCM still lacks (modes with no decision or no task, hidden failures
+  with no failure-finding task, evidence to check, and functions, performance
+  standards and functional failures with nothing under them), for the whole
+  workspace or a branch (`target_id`). `uploads import_excel target=rcm` takes
+  `dry_run` true for a preview; a `mapping` of only `consequence_map` /
+  `outcome_map` keeps the guessed column mapping. `split_standard` keeps each
+  line's structured limit (`parameter`, `comparator`, `value`, `unit`).
+  `maintenance_apply` undoes `link_cause` / `unlink_cause`; their results say
+  `changed`. `decide` answers with `advice` when the outcome is unusual for the
+  consequence. Over MCP, an RCM read lists a mode's tasks once, on the mode
+  (not again under `decision.tasks`). Refusals name what wasn't found and what
+  the id is instead.
 
 - A task by use keeps counting the same measurement when it moves
   (`maintenance_tasks move`, and the `maintenance_failure_modes` moves that

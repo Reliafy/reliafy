@@ -237,23 +237,23 @@ def test_routes_attach_read_and_remove_a_functions_pdf(app):
 
 
 def test_the_rest_api_and_agents(maint):
-    pid = maint.post("/api/v1/maintenance_positions/create", {"name": "Pool"}).json()["id"]
-    fn = maint.post("/api/v1/maintenance_failure_modes/add_function",
+    pid = maint.post("/api/v1/maintenance/positions.create", {"name": "Pool"}).json()["id"]
+    fn = maint.post("/api/v1/maintenance/failure_modes.add_function",
                     {"position_id": pid, "text": "Keep the water sanitised", "standard_basis": WORKING})
     assert fn.status_code == 200, fn.text
     fid = fn.json()["id"]
     assert fn.json()["standard_basis"] == WORKING
-    r = maint.post("/api/v1/maintenance_failure_modes/update_function",
+    r = maint.post("/api/v1/maintenance/failure_modes.update_function",
                    {"function_id": fid, "standard_basis": "35 kL / 6 h"})
     assert r.json()["standard_basis"] == "35 kL / 6 h"
-    read = maint.post("/api/v1/maintenance_get/function", {"id": fid}).json()
+    read = maint.post("/api/v1/maintenance/get.function", {"id": fid}).json()
     assert read["standard_basis"] == "35 kL / 6 h" and read["position"]["id"] == pid
-    sheet = maint.post("/api/v1/maintenance_get/rcm", {"id": pid}).json()
+    sheet = maint.post("/api/v1/maintenance/get.rcm", {"id": pid}).json()
     assert sheet["positions"][0]["functions"][0]["standard_basis"] == "35 kL / 6 h"
-    linked = maint.post("/api/v1/maintenance_attachments/add_document",
+    linked = maint.post("/api/v1/maintenance/attachments.add_document",
                         {"url": "https://example.com/working.pdf", "target_id": fid}).json()
     assert linked["of"]["kind"] == "Function"
-    gone = maint.post("/api/v1/maintenance_failure_modes/remove_function", {"function_id": fid}).json()
+    gone = maint.post("/api/v1/maintenance/failure_modes.remove_function", {"function_id": fid}).json()
     assert gone["documents_removed"] == [linked["id"]]
-    tools = {t["name"]: t for t in maint.client.get("/api/v1/tools", headers=_auth(maint.token[A])).json()["tools"]}
-    assert "standard_basis" in str(tools["maintenance_failure_modes"])
+    spec = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[A])).json()
+    assert "standard_basis" in str(spec["paths"]["/api/v1/maintenance/failure_modes.add_function"])

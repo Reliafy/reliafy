@@ -143,7 +143,7 @@ holds. So:
   (`MAINTENANCE_GRAPH=neo4j`, which holds every workspace): there they're
   unavailable.
 - For everyone else the tools and routes don't exist: MCP leaves them out of
-  `tools/list` (and the guide's `graph` topic out of `maintenance_guide`'s
+  `tools/list` (and the guide's `graph` topic out of `maintenance guide`'s
   choices) and answers a call with "Unknown tool"; the REST routes answer 404.
 
 **Settings** (as well as the mirror's, above):
@@ -173,7 +173,7 @@ The query runs for the caller's workspace: over MCP their personal one, over
 REST the active one (`X-Workspace-Id`). `$org` (that workspace) and `$ns` (the
 mirror's namespace) are always passed, and queries should match on them:
 `MATCH (p:Position {ns: $ns, org: $org})`. A query that doesn't mention `$org`
-gets a hint saying so. `maintenance_guide` topic `graph` (allowed users only)
+gets a hint saying so. `maintenance guide` topic `graph` (allowed users only)
 has the rules for agents.
 
 **What gets through.** Three layers:
@@ -322,7 +322,7 @@ the other way: a round at the pool covers the chlorinator's modes.
   unused). Without one, the first live task by outcome, start and name.
 - The task owns its interval. `decide` changes a task's name and interval
   only while that task serves this mode alone; once it serves others, those
-  change on the task (`maintenance_tasks update`), for every mode, or the mode
+  change on the task (`maintenance tasks.update`), for every mode, or the mode
   gets a task of its own. The evidence on a decision applies to its own task.
 - Events: `task.linked` and `task.unlinked` (`id`: the task, `failure_mode_id`,
   `on`) add or remove one link, the task's other links kept. `task.added` may
@@ -428,8 +428,8 @@ The server stores it as text and never renders it.
   projector (`_patch`) stores `changes.standard_basis` on the node, unused and
   unshown; the top-level `on` is ignored. Nothing fails.
 - Reads: the full text is only in per-position reads (`rcm_worksheet`: `GET
-  /positions/{id}/rcm` and `maintenance_get kind rcm`) and in one function's
-  read (`GET /functions/{id}`, `maintenance_get kind function`). The bulk
+  /positions/{id}/rcm` and `maintenance get.rcm`) and in one function's
+  read (`GET /functions/{id}`, `maintenance get.function`). The bulk
   `rcm_all` (the asset tree's RCM tab) gives each function `has_basis` and
   `basis_preview` (its first 240 characters as one plain line) instead.
 - A PDF of the working is a Document with its `OF` edge to the Function (no
@@ -504,10 +504,10 @@ until it's replaced.
 Where to write them: `POST /api/maintenance/functional-failures/{ff_id}/causes`
 `{cause_id}` and `DELETE /api/maintenance/functional-failures/{ff_id}/causes/{cause_id}`
 in the app (both answer with the functional failure, its causes and effects);
-`maintenance_failure_modes` `link_cause` / `unlink_cause`
+`maintenance failure_modes.link_cause` / `unlink_cause`
 (`functional_failure_id`, `cause_id`) over MCP, with their REST twins
-(`POST /api/v1/maintenance_failure_modes/link_cause`) and CLI commands
-(`reliafy maintenance_failure_modes link_cause --functional-failure-id … --cause-id …`)
+(`POST /api/v1/maintenance/failure_modes.link_cause`) and CLI commands
+(`reliafy maintenance failure_modes.link_cause --functional-failure-id … --cause-id …`)
 built from the same table. The graph schema's examples `failure_causes` and
 `failure_effects` walk the links in Cypher.
 
@@ -573,18 +573,18 @@ know and passes over it (see `GraphStore._project`), so during a rolling
 deploy an older instance shows the thing where it was until it's replaced.
 
 **Order and undo.** A moved thing goes last among its new siblings.
-`reorder_rcm(parent_id, ids)` (`PUT /rcm/order`; `maintenance_failure_modes
-reorder`) places a position's functions, a function's functional failures or a
+`reorder_rcm(parent_id, ids)` (`PUT /rcm/order`; `maintenance failure_modes.reorder
+) places a position's functions, a function's functional failures or a
 functional failure's failure modes, emitting the existing `*.updated` events
 with `order`, as `reorder_standards` does. Each move's result names where the
 thing came from (`from_position_id`, `from_functional_failure_id`,
 `from_function_id`, `from_standard_id`; reorders give `previous_ids`), so a
-`maintenance_apply` batch of moves answers with an `undo` list that puts them
+`maintenance apply` batch of moves answers with an `undo` list that puts them
 back. The app's RCM tab sends one batch per drag-and-drop through `POST
 /rcm/apply` (the arranging actions only, `apply.ARRANGE`, run through the
 service directly; the same checked-on-a-copy-first rule, the same answer).
 `move_standard(standard_id, function_id, functional_failure_ids)` (`POST
-/standards/{id}/move`; `maintenance_failure_modes move_standard`) moves a
+/standards/{id}/move`; `maintenance failure_modes.move_standard`) moves a
 standard to another function on any position: a workshop rearranges the
 analysis as it talks it through. The new function's old single text becomes its
 list's first item first, as `add_standard` does. Its undo moves it back with
@@ -614,12 +614,26 @@ and every row has the RCM's columns. Adding a function, failure or mode there
 adds a row to the tree. A position that isn't analysed (above) is marked "not
 analysed" in the tree.
 
+### Reading the RCM as an agent
+
+Besides `maintenance get.rcm` (a position, or its branch), two reads
+answer an agent's questions in one call: `maintenance get.failure_mode`
+(one mode by its id: decision with its evidence check, tasks, where it sits,
+and the tasks on its position or above it that could serve it too, as
+`GET /api/maintenance/failure-modes/{id}/tasks` lists them) and
+`maintenance list.rcm_gaps` (`rcm_graph.gaps`: modes undecided, with no
+task, hidden without a failure-finding task, or with evidence to check;
+functions, performance standards and functional failures with nothing under
+them; the whole workspace or one branch with `target_id`). The RCM reads over
+MCP list a mode's tasks once, on the mode, not again under its decision.
+
 ### Importing an FMEA / RCM worksheet onto a position
 
 `backend/maintenance/rcm_sheet.py` adds a worksheet (Excel or CSV, one row per
 failure mode) to one position's RCM: `POST
 /api/maintenance/positions/{id}/rcm/import/preview` (nothing written) and
-`…/rcm/import`, MCP `uploads import_excel target=rcm position_id`, and the
+`…/rcm/import`, MCP `change import_excel target=rcm position_id` (`dry_run`
+true: the preview), and the
 RCM tab's "Import worksheet…". The sheet is read and mapped by the worksheet
 parser (`services/rcm_import.build_tree`), and written through the
 service's methods (`add_function`, `add_functional_failure`,
@@ -680,7 +694,7 @@ and `parts.not_interchangeable`. All of these are new event types:
 `PROJECTION_VERSION` stays, and code from before them passes over each
 (logged, skipped) and projects the rest.
 
-`maintenance_apply` (backend/maintenance/apply.py) runs a list of the typed
+`maintenance apply` (backend/maintenance/apply.py) runs a list of the typed
 tools' actions as one call. Every operation first runs on a throwaway copy of
 the organisation's graph (`store.scratch_copy`: an in-memory `GraphStore`
 filled from `snapshot(org)`, with an empty log of its own), so a failure

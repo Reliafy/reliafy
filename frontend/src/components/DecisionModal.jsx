@@ -3,6 +3,11 @@ import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
 import Chip from "./ui/Chip.jsx";
+import Field from "./ui/Field.jsx";
+import { TextArea } from "./ui/Controls.jsx";
+
+// The chosen tile's ✓, so the choice isn't shown by colour alone (not part of its name).
+const Tick = () => <span className="choice-tick" aria-hidden="true">✓ </span>;
 import { saveErrorText } from "../confirm.js";
 import { INTERVAL_UNITS, NEEDS_INTERVAL, checkDecision, rememberUnit, startUnit } from "../decisionCheck.js";
 
@@ -128,7 +133,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               aria-pressed={consequence === c.id}
               onClick={() => setConsequence(c.id)}
             >
-              <span className="option-title">{c.label}</span>
+              <span className="option-title">{consequence === c.id && <Tick />}{c.label}</span>
             </button>
           ))}
         </div>
@@ -155,6 +160,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               }}
             >
               <span className="option-title">
+                {outcome === o.id && <Tick />}
                 {o.label}
                 {suggested.includes(o.id) && <Chip tone="accent" style={{ marginLeft: 6 }}>Suggested</Chip>}
               </span>
@@ -176,7 +182,7 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
                 aria-pressed={rtfBasis === b.id}
                 onClick={() => { setRtfBasis(b.id); setEvidenceId(null); }}
               >
-                <span className="option-title">{b.label}</span>
+                <span className="option-title">{rtfBasis === b.id && <Tick />}{b.label}</span>
               </button>
             ))}
           </div>
@@ -250,13 +256,11 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       )}
 
       <div className="decision-step">
-        <label className="field-label">Notes</label>
-        <textarea
-          rows={2}
-          value={notes}
-          placeholder={outcome === "redesign" || outcome === "accept" ? "Document the rationale" : "Optional"}
-          onChange={(e) => setNotes(e.target.value)}
-        />
+        <Field label="Notes" optional={!(outcome === "redesign" || outcome === "accept")}>
+          <TextArea value={notes} rows={2}
+                    placeholder={outcome === "redesign" || outcome === "accept" ? "Document the rationale" : "Why this decision"}
+                    onChange={(e) => setNotes(e.target.value)} />
+        </Field>
       </div>
     </Modal>
   );

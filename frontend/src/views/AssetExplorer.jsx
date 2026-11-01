@@ -19,6 +19,7 @@ import { exportFilename, importSummary, positionRcmCsv } from "../rcmImport.js";
 import { saveText } from "../sparesPlan.js";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { ColumnChooser, Details, EDITABLE } from "../components/RcmWorksheet.jsx";
+import { ShrinkIcon } from "../components/icons.jsx";
 import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
@@ -817,20 +818,15 @@ export default function AssetExplorer() {
   // it isn't (no connection, a refusal), it stays as typed with the reason, to
   // try again. Resolves true once saved, else to the reason.
   const commit = (r, col, raw) => {
+    // A refusal shows where the value was typed (under the cell, or the
+    // field), the value kept: not as a toast that cuts the reason short.
     const res = checkValue(col, cellRow(r), raw);
-    if (res.error) {
-      say(res.error, "error");
-      return res.error;
-    }
+    if (res.error) return res.error;
     return ops.set(r, col, res.value).then(() => {
       setEditing((e) => (e && e.key === r.key && e.col === col ? null : e));
       say("Saved.");
       return true;
-    }, (e) => {
-      const text = saveErrorText(e, { offline: navigator.onLine === false });
-      say(text, "error");
-      return text;
-    });
+    }, (e) => saveErrorText(e, { offline: navigator.onLine === false }));
   };
   // A function, standard, failure or mode opened (a double-click on its
   // name, Open… in its menu): picked in the tree, the cell being edited
@@ -1251,7 +1247,7 @@ export default function AssetExplorer() {
         <div className="rw-panel-head">
           <div className="rw-panel-kind">Details</div>
           <div className="rw-panel-btns">
-            <button type="button" className="secondary rw-x" onClick={collapseDetails}>Back to table</button>
+            <button type="button" className="ghost sm rw-x" onClick={collapseDetails} aria-label="Back to table" title="Back to table (Esc)"><ShrinkIcon /></button>
           </div>
         </div>
         <p className="rw-inside">Pick a function, performance standard, functional failure or failure mode in the tree to see it here.</p>

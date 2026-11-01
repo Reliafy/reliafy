@@ -1,4 +1,4 @@
-"""``maintenance_apply``: many changes to the maintenance tree in one call.
+"""``maintenance apply``: many changes to the maintenance tree in one call.
 
 A batch is a list of the write actions the typed ``maintenance_<area>`` tools
 already have (``{"do": "failure_modes.add", "args": {...}}``), run in order.
@@ -100,7 +100,9 @@ RESTORES = {
 RETIRES = {restore: retire for retire, restore in RESTORES.items()}
 
 #: Links and the unlink that undoes each (and back): the same arguments.
-LINKS = {"tasks.link": "tasks.unlink", "tasks.unlink": "tasks.link"}
+LINKS = {"tasks.link": "tasks.unlink", "tasks.unlink": "tasks.link",
+         "failure_modes.link_cause": "failure_modes.unlink_cause",
+         "failure_modes.unlink_cause": "failure_modes.link_cause"}
 
 
 def _without_none(**kw) -> dict:
@@ -221,7 +223,7 @@ def parse(operations, tables: dict) -> list[dict]:
         if not isinstance(args, dict):
             raise BatchRefused(f"{at} ({do}): args is an object of the action's arguments.")
         if do == "attachments.add_document" and args.get("upload_id"):
-            raise BatchRefused(f"{at} ({do}): a PDF (upload_id) goes through maintenance_attachments add_document "
+            raise BatchRefused(f"{at} ({do}): a PDF (upload_id) goes through maintenance attachments.add_document "
                                "on its own; in a batch, add a link (url).")
         ref = op.get("ref")
         if ref is not None:
@@ -381,6 +383,8 @@ def _undo_for(op: dict, result) -> dict | None:
         name = result.get("name") or result.get("text") or result.get("title") if isinstance(result, dict) else None
         return {"do": retire, "args": {arg: target}, **({"confirm": name} if name else {})}
     if do in LINKS:
+        if isinstance(result, dict) and result.get("changed") is False:
+            return None  # it was linked (or unlinked) already: nothing to put back
         return {"do": LINKS[do], "args": dict(op["args"])}
     if do in MOVES and isinstance(result, dict):
         return MOVES[do](op["args"], result)
@@ -493,13 +497,14 @@ def summarise(ops: list[dict], passed: dict, dry: bool, events: int) -> dict:
         else:
             irreversible.append(r["index"])
     cut = len(ops) > SHOW_FULL_RESULTS_UP_TO
+    failed = passed["failed"]
     shown = []
     for r in results:
-        row = {k: v for k, v in r.items() if k != "undo"}
+        # A move's needs-a-choice is shown once, under failed.
+        row = {k: v for k, v in r.items() if k != "undo" and not (k == "needs_choice" and failed)}
         if cut and "result" in row:
             row["result"] = _brief(row["result"])
         shown.append(row)
-    failed = passed["failed"]
     return {
         "dry_run": dry, "ok": failed is None,
         "applied": sum(1 for r in results if r["status"] == "ok"),
@@ -507,7 +512,7 @@ def summarise(ops: list[dict], passed: dict, dry: bool, events: int) -> dict:
         "failed": {k: failed[k] for k in ("index", "do", "error", "needs_choice") if k in failed} if failed else None,
         "skipped": sum(1 for r in results if r["status"] == "skipped"),
         "counts": counts, "events": events, "results": shown,
-        # The reverse of what ran, newest first: send it back through maintenance_apply to undo.
+        # The reverse of what ran, newest first: send it back through maintenance apply to undo.
         "undo": list(reversed(undo)), "irreversible": irreversible,
         **({"results_cut": "Over 50 operations: each result is cut to its id and name; read records back with "
                            "maintenance_get."} if cut else {}),

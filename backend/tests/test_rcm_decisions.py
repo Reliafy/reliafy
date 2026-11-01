@@ -40,7 +40,8 @@ def test_the_public_names_are_the_rules():
 
 
 @pytest.mark.parametrize("decision, message", [
-    ({"outcome": "maybe"}, "Unknown outcome 'maybe'."),
+    ({"outcome": "maybe"}, "Unknown outcome 'maybe': it's one of on_condition, fixed_interval, rtf, failure_finding, "
+                          "redesign, accept."),
     ({"outcome": "rtf"}, "A run-to-failure decision needs its basis: 'random' or 'uneconomic'."),
     ({"outcome": "fixed_interval", "interval": "soon"}, "The task interval must be a number."),
     ({"outcome": "fixed_interval", "interval": -4}, "The task interval must be positive."),
@@ -68,7 +69,8 @@ def test_an_unknown_consequence_is_refused_with_the_same_words_everywhere(m):
     mode = m.add_failure_mode(pid, "Bearing seized")
     with pytest.raises(Invalid) as tree_err:
         m.decide_failure_mode(mode["id"], consequence="cosmic")
-    assert str(tree_err.value) == str(sheet_err.value) == "Unknown consequence 'cosmic'."
+    assert str(tree_err.value) == str(sheet_err.value) == (
+        "Unknown consequence 'cosmic': it's one of safety, environmental, operational, non_operational, hidden.")
 
 
 def test_a_worksheet_tree_is_normalised():

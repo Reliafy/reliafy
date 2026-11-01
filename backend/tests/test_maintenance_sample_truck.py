@@ -1,7 +1,7 @@
 """The sample truck: a copy-in template for the Explorer. "Add the sample truck"
 copies the sample delivery truck, with its RCM, into the caller's own tree
 through the ordinary service methods (events), once unless asked again; over
-the app's route, MCP (maintenance_positions add_sample_truck) and the CLI."""
+the app's route, MCP (maintenance positions.add_sample_truck) and the CLI."""
 
 import mongomock
 import pytest
@@ -163,15 +163,15 @@ def test_over_mcp(env):  # noqa: F811
     samples.seed_samples(env["db"])
 
     async def go(client):
-        made = _ok(await _do(client, "maintenance_positions", "add_sample_truck"))
+        made = _ok(await _do(client, "maintenance", "positions.add_sample_truck"))
         assert made["added"] and made["functions"] == 2 and made["failure_modes"] == 5 and made["tasks"] == 1
         sheet = _ok(await _get(client, "rcm", made["position"]["id"], scope="this"))
         assert sheet["rollup"]["decided"] == 5 and sheet["rollup"]["contradicted"] == 1
-        twice = _ok(await _do(client, "maintenance_positions", "add_sample_truck"))
+        twice = _ok(await _do(client, "maintenance", "positions.add_sample_truck"))
         assert twice["added"] is False and twice["position"] == made["position"]
-        another = _ok(await _do(client, "maintenance_positions", "add_sample_truck", again=True))
+        another = _ok(await _do(client, "maintenance", "positions.add_sample_truck", again=True))
         assert another["added"] and another["position"]["name"] == "Delivery truck (sample 2)"
-        wrong = await _do(client, "maintenance_positions", "add_sample_truck", name="Truck")
+        wrong = await _do(client, "maintenance", "positions.add_sample_truck", name="Truck")
         assert wrong.is_error and "doesn't take name" in wrong.content[0].text
         return True
 

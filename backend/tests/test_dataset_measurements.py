@@ -257,12 +257,12 @@ def test_degradation_fits_read_the_measurements_part(client):
 def test_mcp_adds_reads_removes_and_splits_measurements(env):
     a = env.token[MCP_A]
     L, R = fleet(n=20)
-    life = _ok(_call(a, "datasets", {"action": "upload", "name": "Pump lives", "csv": _csv(L)}))
+    life = _ok(_call(a, "change", {"action": "dataset_upload", "name": "Pump lives", "csv": _csv(L)}))
     ds = life["id"]
-    assert "one way" in _err(_call(a, "datasets", {"action": "add_measurements", "dataset_id": ds}))
-    assert "one way" in _err(_call(a, "datasets", {"action": "add_measurements", "dataset_id": ds, "csv": _csv(R),
+    assert "one way" in _err(_call(a, "change", {"action": "dataset_add_measurements", "dataset_id": ds}))
+    assert "one way" in _err(_call(a, "change", {"action": "dataset_add_measurements", "dataset_id": ds, "csv": _csv(R),
                                                    "upload_id": "x"}))
-    added = _ok(_call(a, "datasets", {"action": "add_measurements", "dataset_id": ds, "csv": _csv(R)}))
+    added = _ok(_call(a, "change", {"action": "dataset_add_measurements", "dataset_id": ds, "csv": _csv(R)}))
     assert added["added"] and added["measurements"]["columns"] == ["unit", "age", "value"]
     assert added["measurements"]["n_rows"] == len(R) and added["tags"][-1] == "Measurements"
     assert len(added["measurements"]["preview"]["preview"]) == 5
@@ -274,42 +274,42 @@ def test_mcp_adds_reads_removes_and_splits_measurements(env):
     part = _ok(_call(a, "get", {"kind": "dataset", "id": ds, "part": "measurements", "limit": 3}))
     assert part["part"] == "measurements" and part["row_count"] == len(R) and len(part["rows"]) == 3
     assert [c["name"] for c in part["columns"]] == ["unit", "age", "value"]
-    # From a file sent through uploads create, and from another dataset's table.
+    # From a file sent through change upload_create, and from another dataset's table.
     link, _ = _upload(env, _csv(R[R.age < 60]).encode(), "readings.csv", purpose="dataset", uid=MCP_A)
-    added = _ok(_call(a, "datasets", {"action": "add_measurements", "dataset_id": ds, "upload_id": link["upload_id"]}))
+    added = _ok(_call(a, "change", {"action": "dataset_add_measurements", "dataset_id": ds, "upload_id": link["upload_id"]}))
     assert added["measurements"]["n_rows"] == int((R.age < 60).sum())
-    other = _ok(_call(a, "datasets", {"action": "upload", "name": "Vibration", "csv": _csv(R)}))
-    added = _ok(_call(a, "datasets", {"action": "add_measurements", "dataset_id": ds,
+    other = _ok(_call(a, "change", {"action": "dataset_upload", "name": "Vibration", "csv": _csv(R)}))
+    added = _ok(_call(a, "change", {"action": "dataset_add_measurements", "dataset_id": ds,
                                       "from_dataset_id": other["id"]}))
     assert added["measurements"]["n_rows"] == len(R)
     assert env.db.datasets.find_one({"_id": other["id"]})["n_rows"] == len(R)  # the source is left as it is
-    assert "itself" in _err(_call(a, "datasets", {"action": "add_measurements", "dataset_id": ds,
+    assert "itself" in _err(_call(a, "change", {"action": "dataset_add_measurements", "dataset_id": ds,
                                                   "from_dataset_id": ds}))
     # The part is the model's while one reads it.
-    mid = _ok(_call(a, "models", {"action": "fit_joint", "name": "Pumps", "dataset_id": ds,
+    mid = _ok(_call(a, "change", {"action": "model_fit_joint", "name": "Pumps", "dataset_id": ds,
                                   "unit_id_column": "unit", "age_column": "age", "censor_column": "running",
                                   "reading_age_column": "age", "reading_value_column": "value",
                                   "unit": "Days"}))["model_id"]
-    assert "Pumps" in _err(_call(a, "datasets", {"action": "remove_measurements", "dataset_id": ds}))
-    assert "Pumps" in _err(_call(a, "datasets", {"action": "add_measurements", "dataset_id": ds, "csv": _csv(R)}))
-    _ok(_call(a, "models", {"action": "delete", "model_id": mid}))
-    removed = _ok(_call(a, "datasets", {"action": "remove_measurements", "dataset_id": ds}))
+    assert "Pumps" in _err(_call(a, "change", {"action": "dataset_remove_measurements", "dataset_id": ds}))
+    assert "Pumps" in _err(_call(a, "change", {"action": "dataset_add_measurements", "dataset_id": ds, "csv": _csv(R)}))
+    _ok(_call(a, "change", {"action": "model_delete", "model_id": mid}))
+    removed = _ok(_call(a, "change", {"action": "dataset_remove_measurements", "dataset_id": ds}))
     assert removed["removed"] and "measurements" not in removed
-    assert "no measurements" in _err(_call(a, "datasets", {"action": "remove_measurements", "dataset_id": ds}))
+    assert "no measurements" in _err(_call(a, "change", {"action": "dataset_remove_measurements", "dataset_id": ds}))
     assert "no measurements" in _err(_call(a, "get", {"kind": "dataset", "id": ds, "part": "measurements"}))
     # Samples are nobody's to change.
     from backend.services import samples
 
     samples.seed_samples(env.db)
-    assert "sample" in _err(_call(a, "datasets", {"action": "add_measurements", "dataset_id": "sample-ds-pumps",
+    assert "sample" in _err(_call(a, "change", {"action": "dataset_add_measurements", "dataset_id": "sample-ds-pumps",
                                                   "csv": _csv(R)}))
     # One table, split.
     one, _, _ = _combined(n=20)
-    ds2 = _ok(_call(a, "datasets", {"action": "upload", "name": "In one", "csv": _csv(one)}))["id"]
-    out = _ok(_call(a, "datasets", {"action": "split", "dataset_id": ds2}))
+    ds2 = _ok(_call(a, "change", {"action": "dataset_upload", "name": "In one", "csv": _csv(one)}))["id"]
+    out = _ok(_call(a, "change", {"action": "dataset_split", "dataset_id": ds2}))
     assert out["split"]["unit"] == "unit" and out["split"]["measurement_columns"] == ["value"]
     assert out["n_rows"] == 20 and out["measurements"]["n_rows"] == len(one)
-    assert "doesn't look like" in _err(_call(a, "datasets", {"action": "split", "dataset_id": ds}))
+    assert "doesn't look like" in _err(_call(a, "change", {"action": "dataset_split", "dataset_id": ds}))
 
 
 # ---- Models saved with two datasets ------------------------------------------------------

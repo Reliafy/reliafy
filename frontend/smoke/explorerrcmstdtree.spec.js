@@ -289,13 +289,17 @@ test("double-click a standard's name: its details across the table, text, limit 
   await expect(dlg.getByRole("heading", { name: `Calcium hardness 200-400 ppm ${tag}` })).toBeFocused();
   await expect(dlg.getByRole("button", { name: `Std tree pool ${tag}` })).toBeVisible(); // the way up
   await expect(dlg.getByRole("button", { name: `Keep the water balanced ${tag}` })).toBeVisible();
+  // Its title is its text: a click edits it in place, Escape leaves it.
+  await dlg.locator(".rw-title-btn").click();
   await expect(dlg.getByRole("textbox", { name: /^Performance standard/ })).toHaveValue(`Calcium hardness 200-400 ppm ${tag}`);
+  await page.keyboard.press("Escape");
+  await expect(dlg.locator(".reads-as")).toHaveText("Reads as: Calcium hardness between 200 and 400 ppm");
   await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("Calcium hardness");
   await expect(dlg.getByRole("combobox", { name: "Comparator" })).toHaveValue("between");
   await expect(dlg.getByRole("textbox", { name: "Value", exact: true })).toHaveValue("200-400");
   await expect(dlg.getByRole("textbox", { name: "Unit", exact: true })).toHaveValue("ppm");
   await expect(dlg.getByRole("textbox", { name: "Source", exact: true })).toHaveValue("E25 manual");
-  await expect(dlg.getByRole("region", { name: "Functional failures" })).toContainText("No functional failure written yet");
+  await expect(dlg.getByRole("region", { name: "Functional failures" })).toContainText("None yet.");
   // Each field kept as you leave it: one write each, no Save.
   let writes = 0;
   page.on("request", (r) => { if (r.method() === "PATCH" && r.url().includes(`/standards/${p.standards.ca.id}`)) writes += 1; });
@@ -322,6 +326,7 @@ test("double-click a standard's name: its details across the table, text, limit 
   await trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`).locator(".tp-nm").click();
   await expect(dlg.getByText("This is the function's one performance standard, as written.")).toBeVisible();
   await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveCount(0);
+  await dlg.locator(".rw-title-btn").click();
   await dlg.getByRole("textbox", { name: /^Performance standard/ }).fill(`FC 1-3 ppm; CC under 0.4 ppm ${tag}`);
   await dlg.getByRole("textbox", { name: /^Performance standard/ }).blur();
   await expect(trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.4 ppm ${tag}`)).toBeVisible();

@@ -1,7 +1,7 @@
 """Rearranging the RCM tree (the backend behind drag and drop): a functional
 failure moved under another function (same position or another) with its modes
 and tasks, siblings reordered, every move's result naming where the thing came
-from, and a batch of moves (maintenance_apply over MCP, POST /rcm/apply in the
+from, and a batch of moves (maintenance apply over MCP, POST /rcm/apply in the
 app) that is all or nothing and answers with the operations that undo it."""
 
 import pytest
@@ -329,18 +329,18 @@ def test_a_drop_over_maintenance_apply_is_all_or_nothing_and_undoes(env):
 
 def test_the_new_actions_over_mcp(env):
     async def flow(client):
-        pump = _ok(await _do(client, "maintenance_positions", "create", name="Pump"))["id"]
-        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pump, text="Pump"))["id"]
-        other = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pump,
+        pump = _ok(await _do(client, "maintenance", "positions.create", name="Pump"))["id"]
+        fn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pump, text="Pump"))["id"]
+        other = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pump,
                               text="Contain"))["id"]
-        ff = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn,
+        ff = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=fn,
                            text="No flow"))["id"]
-        st = _ok(await _do(client, "maintenance_failure_modes", "add_standard", function_id=other,
+        st = _ok(await _do(client, "maintenance", "failure_modes.add_standard", function_id=other,
                            text="No drips"))["id"]
-        moved = _ok(await _do(client, "maintenance_failure_modes", "move_functional_failure",
+        moved = _ok(await _do(client, "maintenance", "failure_modes.move_functional_failure",
                               functional_failure_id=ff, function_id=other, standard_id=st))
-        order = _ok(await _do(client, "maintenance_failure_modes", "reorder", parent_id=pump, ids=[other, fn]))
-        unknown = await _do(client, "maintenance_failure_modes", "reorder", parent_id=pump, ids=[fn])
+        order = _ok(await _do(client, "maintenance", "failure_modes.reorder", parent_id=pump, ids=[other, fn]))
+        unknown = await _do(client, "maintenance", "failure_modes.reorder", parent_id=pump, ids=[fn])
         return moved, order, unknown
 
     moved, order, unknown = _session(env["token"], flow)
@@ -411,7 +411,7 @@ def test_the_rcm_tabs_batch_over_the_app_route(api):
     assert r.json()["detail"].startswith("Nothing was changed: op 1 (failure_modes.move): It's already on Pump")
     assert r.json()["failed"]["index"] == 1 and r.json()["results"][0]["status"] == "would"
     assert router.get_store().event_count(API_UID) == events and modes() == [["Impeller worn", "Bearing seizes"], []]
-    # Only arranging actions run here; the shape is checked as maintenance_apply checks it.
+    # Only arranging actions run here; the shape is checked as maintenance apply checks it.
     r = api.post(f"{M}/rcm/apply", json={"operations": [{"do": "positions.create", "args": {"name": "X"}}]})
     assert r.status_code == 422 and "arranging actions" in r.json()["detail"]
     r = api.post(f"{M}/rcm/apply", json={"operations": [{"do": "failure_modes.reorder", "args": {"parent_id": a["id"],
@@ -558,17 +558,17 @@ def test_a_standard_moved_through_the_app_batch_undoes_with_its_breaches(api):
 
 def test_move_standard_over_mcp(env):
     async def flow(client):
-        pump = _ok(await _do(client, "maintenance_positions", "create", name="Pump"))["id"]
-        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pump, text="Pump"))["id"]
-        other = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pump,
+        pump = _ok(await _do(client, "maintenance", "positions.create", name="Pump"))["id"]
+        fn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pump, text="Pump"))["id"]
+        other = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pump,
                               text="Contain"))["id"]
-        st = _ok(await _do(client, "maintenance_failure_modes", "add_standard", function_id=fn,
+        st = _ok(await _do(client, "maintenance", "failure_modes.add_standard", function_id=fn,
                            text="No drips"))["id"]
-        leaks = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=other,
+        leaks = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=other,
                               text="Leaks"))["id"]
-        moved = _ok(await _do(client, "maintenance_failure_modes", "move_standard", standard_id=st,
+        moved = _ok(await _do(client, "maintenance", "failure_modes.move_standard", standard_id=st,
                               function_id=other, ids=[leaks]))
-        again = await _do(client, "maintenance_failure_modes", "move_standard", standard_id=st, function_id=other)
+        again = await _do(client, "maintenance", "failure_modes.move_standard", standard_id=st, function_id=other)
         return moved, again, leaks
 
     moved, again, leaks = _session(env["token"], flow)
