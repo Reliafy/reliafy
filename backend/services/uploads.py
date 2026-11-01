@@ -287,7 +287,7 @@ def next_step(purpose: Optional[str]) -> str:
     """What to call once the file has arrived."""
     tool = {"rbd_import": "change import_rbd", "excel": "change import_excel", "dataset": "change dataset_upload",
             "outage_log": "change rbd_upload_outage_log",
-            "document": "maintenance_attachments add_document"}.get(purpose or "", "the import")
+            "document": "maintenance attachments.add_document"}.get(purpose or "", "the import")
     return f"Uploaded. Now call {tool} with this upload_id (get kind upload first to see sheets and columns)."
 
 
@@ -541,8 +541,8 @@ def inspect(doc: dict, data: bytes) -> dict:
     if fmt in ("csv", "text"):
         return {"kind": "table", **_inspect_text(data)}
     if fmt == "pdf":
-        return {"kind": "pdf", "note": "A PDF: keep it on a maintenance record with maintenance_attachments "
-                                       "add_document and this upload_id."}
+        return {"kind": "pdf", "note": "A PDF: keep it on a maintenance record with maintenance attachments.add_document "
+                                       " and this upload_id."}
     return {"kind": "unknown", "note": "Reliafy doesn't recognise this file's format."}
 
 

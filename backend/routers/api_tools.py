@@ -73,12 +73,7 @@ def _tables() -> dict[str, tuple[str, dict]]:
     """Each tool with actions: (its choosing argument, its action table)."""
     from backend import mcp_server
 
-    out = dict(mcp_server.TABLES)
-    if config.MAINTENANCE_ENABLED:
-        from backend.maintenance import mcp_tools as maintenance_tools
-
-        out.update({k: v for k, v in maintenance_tools.TABLES.items() if k in maintenance_tools.TOOL_NAMES})
-    return out
+    return mcp_server._all_tables()
 
 
 def _choices(prop: dict) -> list[str]:
@@ -180,6 +175,7 @@ async def _caller(request: Request) -> dict:
 # ---- calls -------------------------------------------------------------------
 
 _PREFIX = re.compile(r"^Error executing tool [\w.-]+: ")
+_MCP_POINTER = re.compile(r" Arguments go in args; guide\(action='[\w.]+'\) gives each one\.")
 
 
 def _cause(exc: BaseException, kind) -> BaseException | None:
@@ -244,6 +240,7 @@ async def call(request: Request, user: dict, tool: str, args: dict) -> JSONRespo
         return JSONResponse(status_code=500, content={"detail": f"Error executing tool {tool}."})
     except ToolError as exc:
         detail = _PREFIX.sub("", str(exc), count=1)
+        detail = _MCP_POINTER.sub("", detail)  # over REST the arguments are the body, its schema the spec
         invalid = exc.__cause__ if isinstance(exc.__cause__, ValidationError) else None
         if invalid is not None:  # the arguments against the tool's schema, said plainly
             detail = "; ".join(f"{'.'.join(str(x) for x in e.get('loc') or ()) or 'arguments'}: {e.get('msg')}"
@@ -254,7 +251,11 @@ async def call(request: Request, user: dict, tool: str, args: dict) -> JSONRespo
     if getattr(result, "is_error", False):
         text = result.content[0].text if result.content else "Error."
         return JSONResponse(status_code=422, content={"detail": text})
-    body = result.structured_content if result.structured_content is not None else _content_json(result.content)
+    if result.structured_content is None:
+        return JSONResponse(content=_content_json(result.content))
+    body = result.structured_content
+    if any(getattr(b, "type", "") == "image" for b in result.content or []):
+        body = {**body, **_content_json(result.content)}  # a photo: its bytes too (MCP carries them as content)
     return JSONResponse(content=body)
 
 
@@ -391,7 +392,8 @@ async def call_action(tool: str, action: str, request: Request) -> JSONResponse:
     args = await _body(request)
     if selector in args and args[selector] != action:
         raise HTTPException(status_code=422, detail=f"The {selector} is in the path; leave it out of the body.")
-    return await call(request, user, tool, {**args, selector: action})
+    args.pop(selector, None)
+    return await call(request, user, tool, {selector: action, "args": args})
 
 
 @router.post("/{tool}")
@@ -431,6 +433,15 @@ _ERROR = {"description": "Refused: see detail.", "content": {"application/json":
     "$ref": "#/components/schemas/Error"}}}}
 
 
+def _scope(tool, key: str) -> str:
+    """The API-token scope one call needs (Reliafy Maintenance's reads need read)."""
+    if tool.name == "maintenance":
+        from backend.maintenance import mcp_tools as maintenance_tools
+
+        return maintenance_tools.scope_of(key)
+    return "read" if (tool.annotations and tool.annotations.read_only_hint) else "write"
+
+
 def build_spec(tools: list) -> dict:
     """OpenAPI 3.1 for these tools: one POST operation per tool action."""
     from backend import mcp_server
@@ -439,21 +450,22 @@ def build_spec(tools: list) -> dict:
     schemas: dict[str, Any] = {"Error": {"type": "object", "properties": {"detail": {"type": "string"}},
                                          "required": ["detail"]}}
     for t in tools:
-        # The full schema (every argument's description and limits), not the
-        # compact one tools/list carries.
-        schema = copy.deepcopy(mcp_server.full_schema(t.name) or t.input_schema or {})
-        for name, d in (schema.pop("$defs", None) or {}).items():
-            schemas[_schema_name(t.name, name)] = _rewrite_refs(d, t.name)
-        props = _rewrite_refs(schema.get("properties", {}), t.name)
+        plain = copy.deepcopy(t.input_schema or {})  # a tool without actions (guide)
         selector = _selector_of(t)
-        scope = "read" if (t.annotations and t.annotations.read_only_hint) else "write"
         for action, spec in actions_of(t).items():
+            # Each action's own arguments (descriptions, limits, nested types), not the
+            # action names and open args object tools/list carries.
+            own = copy.deepcopy(mcp_server.action_arguments(t.name, action) or plain) if action else plain
+            for name, d in (own.get("$defs") or {}).items():
+                schemas[_schema_name(t.name, name)] = _rewrite_refs(d, t.name)
+            props = _rewrite_refs(own.get("properties", {}), t.name)
             names = [*spec["required"], *spec["optional"]]
             body = {"type": "object", "additionalProperties": False,
                     "properties": {n: props[n] for n in names if n in props}}
             if spec["required"]:
                 body["required"] = spec["required"]
             key = f"{t.name}.{action}" if action else t.name
+            scope = _scope(t, key)
             doc = spec["doc"] or (t.description or "")
             paths[_path(t.name, action)] = {"post": {
                 "operationId": key,

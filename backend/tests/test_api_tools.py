@@ -193,7 +193,8 @@ def test_errors(env):
     r = env.post("/api/v1/get/nope")
     assert r.status_code == 404 and "model" in r.json()["detail"]
     r = env.post("/api/v1/analyse/fit", {"data": "x"})
-    assert r.status_code == 422 and r.json()["detail"].startswith("data:")
+    assert r.status_code == 422 and "data: Input should be a valid list" in r.json()["detail"]
+    assert "args" not in r.json()["detail"]  # over REST the arguments are the body
     r = env.post("/api/v1/analyse/optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL})
     assert r.status_code == 422 and "needs planned_cost" in r.json()["detail"]
     r = env.post("/api/v1/get/model", {"kind": "rbd", "id": "x"})
@@ -271,26 +272,28 @@ def maint(env, monkeypatch, tmp_path):
 
 
 def test_maintenance_tools_only_for_its_users(maint):
-    r = maint.post("/api/v1/maintenance_overview")
+    r = maint.post("/api/v1/maintenance/overview")
     assert r.status_code == 200 and "summary" in r.json()
-    assert maint.post("/api/v1/maintenance_overview", uid=B).status_code == 404
-    pos = maint.post("/api/v1/maintenance_positions/create", {"name": "Pump A"})
+    assert maint.post("/api/v1/maintenance/overview", uid=B).status_code == 404
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"})
     assert pos.status_code == 200, pos.text
     tools_a = {t["name"] for t in maint.client.get("/api/v1/tools", headers=_auth(maint.token[A])).json()["tools"]}
     tools_b = {t["name"] for t in maint.client.get("/api/v1/tools", headers=_auth(maint.token[B])).json()["tools"]}
-    assert "maintenance_positions" in tools_a and not any(t.startswith("maintenance_") for t in tools_b)
-    assert "maintenance_graph_query" not in tools_a  # graph queries: a narrower audience still
+    assert "maintenance" in tools_a and not any(t.startswith("maintenance") for t in tools_b)
+    spec_a = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[A])).json()
+    assert "/api/v1/maintenance/positions.create" in spec_a["paths"]
+    assert "/api/v1/maintenance/graph_query" not in spec_a["paths"]  # graph queries: a narrower audience still
     spec_b = maint.client.get("/api/v1/openapi.json", headers=_auth(maint.token[B])).json()
-    assert not any("/maintenance_" in p for p in spec_b["paths"])
+    assert not any("/maintenance/" in p for p in spec_b["paths"] if p != "/api/v1/maintenance/photos")
 
 
 def test_maintenance_names_over_the_limit_say_what_to_do(maint):
-    pos = maint.post("/api/v1/maintenance_positions/create", {"name": "Filter"}).json()
-    r = maint.post("/api/v1/maintenance_tasks/create", {"position_id": pos["id"], "name": "x" * 397, "interval": 1})
+    pos = maint.post("/api/v1/maintenance/positions.create", {"name": "Filter"}).json()
+    r = maint.post("/api/v1/maintenance/tasks.create", {"position_id": pos["id"], "name": "x" * 397, "interval": 1})
     assert r.status_code >= 400
     assert "The task's name is at most 200 characters; this one is 397. Shorten it and put the detail in the " \
            "task's instructions." in r.text
-    r = maint.post("/api/v1/maintenance_work_orders/generate", {})
+    r = maint.post("/api/v1/maintenance/work_orders.generate", {})
     assert r.status_code == 200 and r.json()["skipped"] == [] and r.json()["work_orders"] == []
 
 
@@ -314,7 +317,7 @@ def test_photos_over_the_api(maint, monkeypatch):
     from backend.maintenance import photos
     from backend.services import usage
 
-    pid = maint.post("/api/v1/maintenance_positions/create", {"name": "Pump A"}).json()["id"]
+    pid = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"}).json()["id"]
     hdr = {**_auth(maint.token[A]), "Content-Type": "image/jpeg"}
     r = maint.client.post(f"/api/v1/maintenance/photos?target_id={pid}&caption=Front", content=_jpeg(), headers=hdr)
     assert r.status_code == 200, r.text
@@ -326,7 +329,7 @@ def test_photos_over_the_api(maint, monkeypatch):
     files = {"file": ("p.png", _png(), "image/png")}
     r = maint.client.post(f"/api/v1/maintenance/photos?target_id={pid}", files=files, headers=_auth(maint.token[A]))
     assert r.status_code == 200, r.text
-    view = maint.post("/api/v1/maintenance_view_photo", {"photo_id": photo_id})
+    view = maint.post("/api/v1/maintenance/view_photo", {"photo_id": photo_id})
     assert view.status_code == 200 and view.json()["content"][0]["type"] == "image"
 
     bad = maint.client.post(f"/api/v1/maintenance/photos?target_id={pid}", content=b"%PDF nope", headers=hdr)
@@ -384,7 +387,7 @@ def test_parity_every_mcp_action_has_rest_openapi_and_cli(maint, monkeypatch):
     from backend import mcp_server
     from backend.maintenance import mcp_tools
 
-    tables = {**mcp_server.TABLES, **{k: v for k, v in mcp_tools.TABLES.items() if k in mcp_tools.TOOL_NAMES}}
+    tables = {**mcp_server.TABLES, **mcp_tools.TOOL_TABLES}
     from_tables = {(tool, a) for tool, (_, table) in tables.items() for a in table}
     assert from_tables - actions == set(), "MCP actions REST doesn't route"
     assert {t for t, a in actions if a is None} == {t.name for t in tools if t.name not in tables}

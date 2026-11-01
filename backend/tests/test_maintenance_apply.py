@@ -38,7 +38,7 @@ BRANCH = [
 
 
 async def _apply(client, operations, **more):
-    return await client.call_tool("maintenance_apply", {"operations": operations, **more})
+    return await client.call_tool("maintenance", {"action": "apply", "operations": operations, **more})
 
 
 def _events(client_env):
@@ -115,7 +115,7 @@ def test_a_failing_operation_anywhere_means_nothing_is_written(env):
             {"do": "positions.create", "args": {"name": "Q"}}]))
         typed = _ok(await _apply(client, [{"do": "positions.create", "args": {"name": "P", "cascade": 3}}]))
         extra = _ok(await _apply(client, [{"do": "positions.create", "args": {"name": "P", "reason": "x"}}]))
-        return before, _events(env), out, typed, extra, _ok(await client.call_tool("maintenance_overview", {}))
+        return before, _events(env), out, typed, extra, _ok(await client.call_tool("maintenance", {"action": "overview"}))
 
     before, after, out, typed, extra, overview = _session(env["token"], flow)
     assert before == after and overview["summary"]["positions"] == 0
@@ -128,9 +128,9 @@ def test_a_failing_operation_anywhere_means_nothing_is_written(env):
 
 def test_deletes_need_confirm_dry_run_by_default_and_undo_restores(env):
     async def flow(client):
-        pump = _ok(await _do(client, "maintenance_positions", "create", name="Pump A"))["id"]
-        mode = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=pump, text="Bearing worn"))["id"]
-        task = _ok(await _do(client, "maintenance_tasks", "create", position_id=pump, name="Grease", interval=3))["id"]
+        pump = _ok(await _do(client, "maintenance", "positions.create", name="Pump A"))["id"]
+        mode = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=pump, text="Bearing worn"))["id"]
+        task = _ok(await _do(client, "maintenance", "tasks.create", position_id=pump, name="Grease", interval=3))["id"]
         unconfirmed = await _apply(client, [{"do": "failure_modes.retire", "args": {"failure_mode_id": mode}}])
         wrong = await _apply(client, [{"do": "failure_modes.retire", "args": {"failure_mode_id": mode},
                                        "confirm": "Seal leaks"}])
@@ -202,7 +202,7 @@ def test_a_big_batch_dry_runs_by_default_and_cuts_the_results(env):
     async def flow(client):
         rehearsed = _ok(await _apply(client, ops))
         done = _ok(await _apply(client, ops, dry_run=False))
-        overview = _ok(await client.call_tool("maintenance_overview", {}))
+        overview = _ok(await client.call_tool("maintenance", {"action": "overview"}))
         return rehearsed, done, overview
 
     rehearsed, done, overview = _session(env["token"], flow)
@@ -278,21 +278,22 @@ def test_the_dry_pass_leaves_bytes_outside_the_log_alone(env, monkeypatch, tmp_p
 
 
 def test_over_rest(env):
-    """The twin route: POST /api/v1/maintenance_apply with the same body."""
+    """The twin route: POST /api/v1/maintenance/apply with the same body."""
     from fastapi.testclient import TestClient
 
     from backend.main import app
 
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {env['token']}"}
-    r = client.post("/api/v1/maintenance_apply", json={"operations": BRANCH[:3]}, headers=headers)
+    r = client.post("/api/v1/maintenance/apply", json={"operations": BRANCH[:3]}, headers=headers)
     assert r.status_code == 200 and r.json()["applied"] == 3, r.text
-    r = client.post("/api/v1/maintenance_apply", json={"operations": [{"do": "rockets.launch", "args": {}}]},
+    r = client.post("/api/v1/maintenance/apply", json={"operations": [{"do": "rockets.launch", "args": {}}]},
                     headers=headers)
     assert r.status_code == 422 and "no write action" in r.json()["detail"]
-    r = client.post("/api/v1/maintenance_apply/run", json={}, headers=headers)
+    r = client.post("/api/v1/maintenance/apply/run", json={}, headers=headers)
     assert r.status_code == 404
     listing = client.get("/api/v1/tools", headers=headers).json()
-    tool = next(t for t in listing["tools"] if t["name"] == "maintenance_apply")
-    assert tool["scope"] == "write" and tool["actions"][0]["path"] == "/api/v1/maintenance_apply"
+    tool = next(t for t in listing["tools"] if t["name"] == "maintenance")
+    apply = next(a for a in tool["actions"] if a["action"] == "apply")
+    assert tool["scope"] == "write" and apply["path"] == "/api/v1/maintenance/apply"
     assert json.dumps(listing)  # serialisable

@@ -219,12 +219,12 @@ class Client:
 
     def apply(self, operations: list, *, dry_run: bool | None = None, on_error: str | None = None,
               idempotency_key: str | None = None) -> dict:
-        """Many Reliafy Maintenance changes in one call (``maintenance_apply``):
+        """Many Reliafy Maintenance changes in one call (``maintenance apply``):
         a list of ``{"do": "<area>.<action>", "args": {...}, "ref"?: "p",
         "confirm"?: "name"}`` run in order, checked first; ``"@p"`` in a later
         argument is op p's id. ``dry_run`` reports what would happen (the
         default when the batch deletes or has over 25 operations)."""
-        return self.call("maintenance_apply", operations=list(operations), dry_run=dry_run, on_error=on_error,
+        return self.call("maintenance", "apply", operations=list(operations), dry_run=dry_run, on_error=on_error,
                          idempotency_key=idempotency_key)
 
     # ---- files (REST only: MCP can't carry bytes) -----------------------------
@@ -306,13 +306,13 @@ class Client:
         manual, datasheet, invoice, drawing, certificate or other. Reliafy
         Maintenance only."""
         up = self.upload_file(path, "document")
-        return self.call("maintenance_attachments", "add_document", upload_id=up["upload_id"], target_id=target_id,
+        return self.call("maintenance", "attachments.add_document", upload_id=up["upload_id"], target_id=target_id,
                          position_class=position_class, title=title, kind=kind)
 
     def download_document(self, document_id: str, path: str | None = None) -> str:
         """Save a PDF kept in Reliafy Maintenance to ``path`` (default: its own
         file name, in the current folder). Returns the path written."""
-        doc = self.call("maintenance_get", "document", id=document_id)
+        doc = self.call("maintenance", "get.document", id=document_id)
         url = doc.get("download_url")
         if not url:
             raise ReliafyError("That document is a link, not a stored PDF: open its url instead.")

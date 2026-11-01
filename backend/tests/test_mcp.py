@@ -225,7 +225,7 @@ def test_tools_list_has_every_tool_with_annotations(env):
     from backend import mcp_server
 
     assert "Redundancy must be modelled as redundancy" in mcp_server.action_schema("change.rbd_create")["does"]
-    assert "redundancy must be modelled as redundancy" in mcp_server.INSTRUCTIONS
+    assert "Redundancy is modelled as redundancy" in mcp_server.mcp_guide.TOPICS["rbds"][1]
     assert "0 = failed, 1 = still running" in str(mcp_server.full_schema("analyse"))
 
 

@@ -654,11 +654,11 @@ def reorder_rcm(body: dict = Body(...), m: Maintenance = Depends(maintenance_wri
 
 @router.post("/rcm/apply")
 def rcm_apply(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """The RCM tab's drag and drop: operations [{do, args}] (the maintenance_apply shape, arranging
+    """The RCM tab's drag and drop: operations [{do, args}] (the maintenance apply shape, arranging
     actions only: assign, move, move_function, move_functional_failure, update_functional_failure,
     reorder, reorder_standards, move_standard, tasks link / unlink / move) run as one batch. Every operation is
     first checked on a throwaway copy of the workspace: with any refusal nothing is written (422,
-    detail says which operation and why). The answer is maintenance_apply's: each operation's
+    detail says which operation and why). The answer is maintenance apply's: each operation's
     result, counts and undo (the operations that put everything back, newest first; send them here
     as a batch). dry_run true checks only."""
     from backend.maintenance import apply as apply_mod

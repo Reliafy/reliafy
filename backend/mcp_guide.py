@@ -14,6 +14,8 @@ saying nearly every row is censored almost always means the flags are inverted; 
 and censored units a fit used: check them against what the user said.
 - Units already in service when records began are left-truncated (delayed entry): their entry age goes in \
 trunc_left (trunc_left_column), not a flag. trunc_right is the age past which a failure couldn't be seen.
+- Params are lists of {name, value} with SurPyval's names: weibull [alpha (scale), beta (shape)], exponential \
+[failure_rate], normal / lognormal [mu, sigma], gamma [alpha, beta]; in the model's time unit.
 - Fit and report: analyse fit (inline data, or dataset_id with time_column / censor_column). Keep it: \
 change model_fit (same arguments plus name; inline data is saved as a dataset too). Fitted elsewhere (e.g. locally \
 with SurPyval, the way when fitting isn't on the plan): change model_save with the distribution and params.

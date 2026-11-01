@@ -24,7 +24,7 @@ Each token has **scopes**, chosen when you create it:
 |---|---|
 | `ingest` (Push data) | the `/api/ingest/*` endpoints and `/api/import/models` |
 | `read` | `/api/v1` reads and calculations: the read-only tools (`guide`, `get`, `list`, `life_data_analysis`, `repairable_analysis`, `strategy`, `rbd_analysis`, `library`, `upgrade_link`, and Reliafy Maintenance's reads) |
-| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`models`, `datasets`, `rbd`, `uploads`, `sharing`, `fleet`, Reliafy Maintenance's writes and `maintenance_apply`), and photo uploads |
+| `write` | `/api/v1` creates; every tool that saves, changes, deletes or shares (`models`, `datasets`, `rbd`, `uploads`, `sharing`, `fleet`, Reliafy Maintenance's writes and `maintenance apply`), and photo uploads |
 
 A request outside the token's scopes gets `403`. A token that only has
 `ingest` can push data but can never read your analyses; no token can touch
@@ -105,7 +105,7 @@ the command line wait for you.
 ### Many maintenance changes in one call
 
 Reliafy Maintenance's write actions can run as one batch, `POST
-/api/v1/maintenance_apply`: a list of the `maintenance_<area>` actions with
+/api/v1/maintenance/apply`: a list of the `maintenance_<area>` actions with
 their own arguments, in order, with `@ref`s between them (`"@p"` is op p's
 id; `"@p.fitted.item.id"` a field of its result). Every operation is first run
 on a throwaway copy of the workspace, so with any failure nothing is written
@@ -116,7 +116,7 @@ answer has each operation's result, counts, the events written and `undo`,
 the reverse operations.
 
 ```bash
-curl -X POST https://reliafy.com/api/v1/maintenance_apply \
+curl -X POST https://reliafy.com/api/v1/maintenance/apply \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"operations": [
         {"ref": "p", "do": "positions.create", "args": {"name": "Feed pump A"}},
@@ -136,13 +136,13 @@ the same key and operations within 24 hours answer with the first run's
 result. At most 200 operations and 50 deletes per batch; `fit_class_model`,
 `generate_rbd`, the imports and the workspace settings stay single calls.
 The Python client has `Client.apply(...)`, the command line
-`reliafy apply ops.json [--run]`, and `maintenance_guide` topic `apply` the
+`reliafy apply ops.json [--run]`, and `maintenance guide` topic `apply` the
 worked examples.
 
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
 points, tasks, failure modes, classes, conditions, groups, connections and
-document links): nothing is erased, and `maintenance_list` kind `events`
+document links): nothing is erased, and `maintenance list.events`
 shows what changed, with the ids to restore.
 
 ### Things only the API can do
@@ -152,7 +152,7 @@ MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
 | Call | Does |
 |---|---|
 | `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
-| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `change upload_create` (no other credentials; at most 30 MB). Then import it: `change dataset_upload`, `change import_rbd`, `change import_excel` or `change rbd_upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance_attachments add_document`. |
+| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `change upload_create` (no other credentials; at most 30 MB). Then import it: `change dataset_upload`, `change import_rbd`, `change import_excel` or `change rbd_upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance attachments.add_document`. |
 
 ### The reliability data library
 

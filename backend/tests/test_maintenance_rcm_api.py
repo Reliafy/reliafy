@@ -104,14 +104,14 @@ def test_someone_elses_model_cant_be_linked(api, monkeypatch):
 
 def test_the_same_over_mcp(env):  # noqa: F811
     async def go(client):
-        pump = _ok(await _do(client, "maintenance_positions", "create", name="Pump"))
-        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pump["id"],
+        pump = _ok(await _do(client, "maintenance", "positions.create", name="Pump"))
+        fn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pump["id"],
                            text="Pump water", standard="50 L/s"))
-        ff = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn["id"],
+        ff = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=fn["id"],
                            text="No flow"))
-        mode = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=pump["id"], text="Seal",
+        mode = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=pump["id"], text="Seal",
                              functional_failure_id=ff["id"]))
-        decided = _ok(await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=mode["id"],
+        decided = _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode["id"],
                                 consequence="safety", decision={"outcome": "fixed_interval", "interval": 6,
                                                                 "interval_unit": "months", "task": "Replace seal"}))
         assert decided["decision"]["status"] == "unevidenced" and decided["decision"]["task"] == "Replace seal"
@@ -124,8 +124,8 @@ def test_the_same_over_mcp(env):  # noqa: F811
                              ("remove_functional_failure", {"functional_failure_id": ff["id"]}),
                              ("remove_function", {"function_id": fn["id"]}),
                              ("retire", {"failure_mode_id": mode["id"]})):
-            _ok(await _do(client, "maintenance_failure_modes", action, **args))
-        bad = await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=mode["id"],
+            _ok(await _do(client, "maintenance", f"failure_modes.{action}", **args))
+        bad = await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode["id"],
                         decision={"outcome": "rtf"})
         assert bad.is_error
         return True
@@ -167,32 +167,32 @@ def test_move_rcm_over_the_routes(api):
 
 def test_move_rcm_over_mcp(env):  # noqa: F811
     async def go(client):
-        a = _ok(await _do(client, "maintenance_positions", "create", name="Pump A"))
-        b = _ok(await _do(client, "maintenance_positions", "create", name="Pump B"))
-        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=a["id"], text="Pump"))
-        ff = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn["id"],
+        a = _ok(await _do(client, "maintenance", "positions.create", name="Pump A"))
+        b = _ok(await _do(client, "maintenance", "positions.create", name="Pump B"))
+        fn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=a["id"], text="Pump"))
+        ff = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=fn["id"],
                            text="No flow"))
-        mode = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=a["id"], text="Seal",
+        mode = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=a["id"], text="Seal",
                              functional_failure_id=ff["id"]))
-        _ok(await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=mode["id"],
+        _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=mode["id"],
                       decision={"outcome": "fixed_interval", "interval": 6, "interval_unit": "months",
                                 "task": "Replace seal"}))
-        moved = _ok(await _do(client, "maintenance_failure_modes", "move_function", function_id=fn["id"],
+        moved = _ok(await _do(client, "maintenance", "failure_modes.move_function", function_id=fn["id"],
                               position_id=b["id"]))
         assert moved["failure_modes_moved"] == 1 and moved["tasks_moved"] == 1
-        back = _ok(await _do(client, "maintenance_failure_modes", "move", failure_mode_id=mode["id"],
+        back = _ok(await _do(client, "maintenance", "failure_modes.move", failure_mode_id=mode["id"],
                              position_id=a["id"]))
         assert back["position_id"] == a["id"] and back["decision"]["task"] == "Replace seal"
-        spare = _ok(await _do(client, "maintenance_tasks", "create", position_id=a["id"], name="Grease",
+        spare = _ok(await _do(client, "maintenance", "tasks.create", position_id=a["id"], name="Grease",
                               interval=3))
-        task = _ok(await _do(client, "maintenance_tasks", "move", task_id=spare["id"], position_id=b["id"]))
+        task = _ok(await _do(client, "maintenance", "tasks.move", task_id=spare["id"], position_id=b["id"]))
         assert task["id"] == spare["id"]
         sheet = _ok(await _get(client, "rcm", a["id"], scope="this"))
         assert sheet["positions"][0]["unassigned"][0]["id"] == mode["id"]
-        refused = await _do(client, "maintenance_tasks", "move", task_id=spare["id"], position_id=b["id"])
+        refused = await _do(client, "maintenance", "tasks.move", task_id=spare["id"], position_id=b["id"])
         assert refused.is_error and "already on Pump B" in refused.content[0].text
-        missing = await _do(client, "maintenance_failure_modes", "move", failure_mode_id=mode["id"])
-        assert missing.is_error and "action 'move' needs position_id" in missing.content[0].text
+        missing = await _do(client, "maintenance", "failure_modes.move", failure_mode_id=mode["id"])
+        assert missing.is_error and "action 'failure_modes.move' needs position_id" in missing.content[0].text
         return True
 
     assert _session(env["token"], go)
@@ -201,16 +201,16 @@ def test_move_rcm_over_mcp(env):  # noqa: F811
 def test_the_working_behind_a_standard_over_mcp(env):  # noqa: F811
     """standard_basis on add_function / update_function ('' clears it), read in full with kind function."""
     async def go(client):
-        pool = _ok(await _do(client, "maintenance_positions", "create", name="Tank"))
-        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pool["id"],
+        pool = _ok(await _do(client, "maintenance", "positions.create", name="Tank"))
+        fn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pool["id"],
                            text="Hold water", standard="10 kL", standard_basis="## Sizing\n\n2 days x 5 kL"))
         assert fn["standard_basis"] == "## Sizing\n\n2 days x 5 kL" and fn["has_basis"]
         got = _ok(await _get(client, "function", fn["id"]))
         assert got["standard_basis"] == fn["standard_basis"] and got["position"]["id"] == pool["id"]
-        cleared = _ok(await _do(client, "maintenance_failure_modes", "update_function", function_id=fn["id"],
+        cleared = _ok(await _do(client, "maintenance", "failure_modes.update_function", function_id=fn["id"],
                                 standard_basis=""))
         assert cleared["standard_basis"] == "" and not cleared["has_basis"]
-        too_long = await _do(client, "maintenance_failure_modes", "update_function", function_id=fn["id"],
+        too_long = await _do(client, "maintenance", "failure_modes.update_function", function_id=fn["id"],
                              standard_basis="x" * 20_001)
         assert too_long.is_error and "attach it as a PDF" in too_long.content[0].text
         return True
@@ -259,30 +259,30 @@ def test_link_a_cause_over_the_routes(api):
 
 def test_link_a_cause_over_mcp(env):  # noqa: F811
     async def go(client):
-        pool = _ok(await _do(client, "maintenance_positions", "create", name="Swimming Pool"))
-        salt = _ok(await _do(client, "maintenance_positions", "create", name="Salt chlorinator",
+        pool = _ok(await _do(client, "maintenance", "positions.create", name="Swimming Pool"))
+        salt = _ok(await _do(client, "maintenance", "positions.create", name="Salt chlorinator",
                              parent_id=pool["id"]))
-        fn = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=pool["id"],
+        fn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=pool["id"],
                            text="Sanitise the water"))
-        top = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn["id"],
+        top = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=fn["id"],
                             text="Free chlorine below 1 ppm"))
-        fn2 = _ok(await _do(client, "maintenance_failure_modes", "add_function", position_id=salt["id"],
+        fn2 = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=salt["id"],
                             text="Produce up to 25 g/h"))
-        low = _ok(await _do(client, "maintenance_failure_modes", "add_functional_failure", function_id=fn2["id"],
+        low = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=fn2["id"],
                             text="No output"))
-        linked = _ok(await _do(client, "maintenance_failure_modes", "link_cause", functional_failure_id=top["id"],
+        linked = _ok(await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=top["id"],
                                cause_id=low["id"]))
         assert [c["id"] for c in linked["causes"]] == [low["id"]] and linked["covered"] is False
         sheet = _ok(await _get(client, "rcm", pool["id"]))
         failure = sheet["positions"][0]["functions"][0]["failures"][0]
         assert failure["explained_below"] is True and failure["causes"][0]["position"]["name"] == "Salt chlorinator"
         assert sheet["positions"][1]["functions"][0]["failures"][0]["effects"][0]["id"] == top["id"]
-        refused = await _do(client, "maintenance_failure_modes", "link_cause", functional_failure_id=low["id"],
+        refused = await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=low["id"],
                             cause_id=top["id"])
         assert refused.is_error and "Swap them" in refused.content[0].text
-        missing = await _do(client, "maintenance_failure_modes", "link_cause", functional_failure_id=top["id"])
+        missing = await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=top["id"])
         assert missing.is_error and "needs cause_id" in missing.content[0].text
-        gone = _ok(await _do(client, "maintenance_failure_modes", "unlink_cause", functional_failure_id=top["id"],
+        gone = _ok(await _do(client, "maintenance", "failure_modes.unlink_cause", functional_failure_id=top["id"],
                              cause_id=low["id"]))
         assert gone["causes"] == []
         return True

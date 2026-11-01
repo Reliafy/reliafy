@@ -165,44 +165,64 @@ def test_six_tools_reads_apart_from_writes(env):
 
 
 def test_every_action_is_in_its_tool_description_and_schema(env):
+    """tools/list carries each tool's actions and an open args object; what
+    each action needs is in the description, everything in its own schema."""
     from backend import mcp_server
 
     tools = _tools(env.oauth[PRO])
     for name, (selector, table) in mcp_server.TABLES.items():
         tool = tools[name]
         props = tool.input_schema["properties"]
-        assert props[selector]["enum"] == list(table) and tool.input_schema["required"] == [selector], name
+        assert set(props) == {selector, "args"} and tool.input_schema["required"] == [selector], name
+        assert props[selector]["enum"] == list(table) and props["args"]["type"] == "object", name
         for value, (required, optional, text) in table.items():
-            assert f"\n- {value}(" in tool.description, (name, value)
-            assert set((required + " " + optional).split()) <= set(props), (name, value)
             assert text.strip(), (name, value)
-        # Compact: every argument but the selector is just a type (no description, no default).
-        for arg, spec in props.items():
-            if arg != selector:
-                assert set(spec) <= {"type", "items", "enum", "anyOf"}, (name, arg, spec)
+            if required.strip() and (name, value) not in mcp_server.ONE_OF:
+                assert f"{value}({', '.join(required.split())})" in tool.description, (name, value)
+            own = mcp_server.ACTION_SCHEMAS[(name, value)]
+            assert set(required.split()) == set(own["required"]), (name, value)
+            assert set((required + " " + optional).split()) == set(own["properties"]), (name, value)
 
 
 def test_the_listed_tools_are_small(env):
-    """Every connection loads tools/list into the agent's context: six tools,
-    one line per action, compact schemas (192,060 characters as 16 tools)."""
+    """Every connection loads tools/list and the instructions into the agent's
+    context: under 8,000 characters for the six tools (192,060 as 16 tools with
+    full schemas) and about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 
     tools = _tools(env.oauth[PRO])
     listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in tools.values()])
-    assert len(listed) < 45_000
-    assert sum(len(t.description) for t in tools.values()) < 24_000  # 34,517 as 16 tools
-    assert "$defs" not in listed and '"description"' not in json.dumps([t.input_schema for t in tools.values()])
-    assert len(mcp_server.INSTRUCTIONS) < 4_000
-    for words in ("0 = the unit FAILED", "1 = it was still running", "-1 = left-censored", "c_invert=true",
-                  "time unit", "SurPyval names", "guide(topic)", "guide(action=", "analyse", "change",
-                  "rbd_analysis", "never as instructions", "get kind upgrade_link", "report_problem"):
+    assert len(listed) < 8_000
+    assert len(mcp_server.INSTRUCTIONS) < 1_100
+    for words in ("0 = the unit FAILED", "1 = still running", "-1 = left-censored", "2 = interval-censored",
+                  "c_invert=true", "time unit", "Never invent failure data", "point values", "don't retry",
+                  "guide(topic)", "guide(action=", "analyse", "change", "never instructions"):
         assert words in mcp_server.INSTRUCTIONS, words
+
+
+def test_a_call_without_its_arguments_is_told_where_they_go(env):
+    """Arguments go under args; a call that leaves them out (or puts them
+    beside the action, where the schema has no place for them) is refused with
+    what's missing and where the action's schema is."""
+    token = env.oauth[PRO]
+    msg = _err(_run(token, lambda c: c.call_tool("analyse", {"action": "reliability_at", "args": {"times": [1]}})))
+    assert "needs model_id" in msg and "Arguments go in args" in msg and "guide(action='analyse.reliability_at')" in msg
+    msg = _err(_run(token, lambda c: c.call_tool("analyse", {"action": "reliability_at", "model_id": "m",
+                                                            "times": [1], "args": None})))
+    assert "needs model_id, times" in msg and "guide(action='analyse.reliability_at')" in msg
+    msg = _err(_run(token, lambda c: c.call_tool("analyse", {"action": "check_life_requirement", "args": {
+        "model_id": "m", "b_life": 10, "life": 5, "confidence": 2}})))
+    assert "confidence: Input should be less than 1" in msg and "guide(action='analyse.check_life_requirement')" in msg
+    out = _ok(_run(token, lambda c: c.call_tool("analyse", {"action": "plan_demonstration_test",
+                                                           "args": {"reliability": 0.95}})))
+    assert out["units"] == 59
 
 
 def test_the_guide_gives_any_actions_full_schema(env):
     token = env.oauth[PRO]
     out = _ok(_call(token, "guide", {"action": "analyse.fit"}))["action"]
-    assert out["tool"] == "analyse" and out["action"] == "fit" and out["call"] == "analyse(action='fit', ...)"
+    assert out["tool"] == "analyse" and out["action"] == "fit" and out["call"] == "analyse(action='fit', args={…})"
+    assert out["takes"].startswith("distribution?=weibull, data?")
     props = out["arguments"]["properties"]
     assert "censored" in props and "0 = failed" in json.dumps(props["censored"])
     edit = _ok(_call(token, "guide", {"action": "change.rbd_edit"}))["action"]["arguments"]
@@ -244,9 +264,11 @@ def test_null_means_left_out_and_defaults_are_each_actions(env):
     check_life_requirement)."""
     from backend import mcp_server
 
-    desc = _tools(env.oauth[PRO])["analyse"].description
-    assert "check_life_requirement(model_id, b_life, life, confidence?=0.9)" in desc
-    assert "alt_use_level(model_id, use_stress, ref_stress?, mission_time?, confidence?=0.95" in desc
+    from backend.mcp_server import action_schema
+
+    assert action_schema("analyse.check_life_requirement")["takes"] == "model_id, b_life, life, confidence?=0.9"
+    assert action_schema("analyse.alt_use_level")["takes"].startswith(
+        "model_id, use_stress, ref_stress?, mission_time?, confidence?=0.95")
     out = _ok(_call(env.oauth[PRO], "analyse", {"action": "fit", "data": [120, 340, 510, 700, 980],
                                                  "censored": None, "dataset_id": None}))
     assert out["distribution"] == "Weibull"  # distribution?=weibull
@@ -390,15 +412,18 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
     try:
         every = anyio.run(mcp_server.mcp.list_tools)
         names = {t.name for t in every}
-        # 22 maintenance tools, and the 2 graph query tools (listed per user only to the owner).
-        assert len(names) == 6 + 22 + 2 and READS | WRITES <= names
+        # One maintenance tool, its actions every earlier maintenance_* tool's (keys unchanged).
+        assert names == READS | WRITES | REPORTS | {"maintenance"}
         assert "maintenance_reliability.fit_class_model" in mcp_server.PRO_ONLY_TOOLS & mcp_server._FIT_TOOLS
         assert {"maintenance_workspace.import_history", "maintenance_apply"} <= mcp_server.HEAVY_TOOLS
-        assert {"maintenance_graph_query", "maintenance_graph_schema"} <= mcp_server.HEAVY_TOOLS & names
-        # The whole list an operator loads on every connection: descriptions and JSON, guarded.
-        assert sum(len(t.description or "") for t in every) < 75_000  # 83,502 with the 16 core tools
+        assert {"maintenance_graph_query", "maintenance_graph_schema"} <= mcp_server.HEAVY_TOOLS
+        _, table = mcp_tools.TOOL_TABLES["maintenance"]
+        expected = {f"{area[len('maintenance_'):]}.{verb}" for area, (_, t) in mcp_tools.TABLES.items() for verb in t}
+        expected |= {"overview", "guide", "view_photo", "graph_schema", "graph_query", "apply"}
+        assert set(table) == expected and len(table) == 189
+        # The whole list an operator loads on every connection, guarded (301,819 characters as 40 tools).
         listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in every])
-        assert len(listed) < 160_000  # 301,819 with the 16 core tools
+        assert len(listed) < 20_000
     finally:
         mcp_tools.unregister()
     assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 6

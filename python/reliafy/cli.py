@@ -460,7 +460,7 @@ def cmd_photo(client: Client, ns) -> int:
 
 
 def _photo_links(client: Client, ns) -> int:
-    """photo link / move / unlink: maintenance_attachments link_photo,
+    """photo link / move / unlink: maintenance attachments.link_photo,
     move_photo and unlink_photo for each photo id."""
     if ns.verb == "unlink":
         if not ns.from_id:
@@ -470,9 +470,9 @@ def _photo_links(client: Client, ns) -> int:
     results = []
     for photo_id in ns.files:
         if ns.verb == "unlink":
-            out = client.call("maintenance_attachments", "unlink_photo", photo_id=photo_id, target_id=ns.from_id)
+            out = client.call("maintenance", "attachments.unlink_photo", photo_id=photo_id, target_id=ns.from_id)
         else:
-            out = client.call("maintenance_attachments", f"{ns.verb}_photo", photo_id=photo_id, target_id=ns.to,
+            out = client.call("maintenance", f"attachments.{ns.verb}_photo", photo_id=photo_id, target_id=ns.to,
                               from_id=ns.from_id if ns.verb == "move" else None)
         results.append({"photo_id": photo_id, "on": ", ".join(t.get("name") or t["id"] for t in out.get("on", []))})
     render(results, ns.json)
@@ -535,7 +535,7 @@ def cmd_ingest(client: Client, ns) -> int:
 
 def cmd_apply(client: Client, ns) -> int:
     """apply FILE.json: a list of maintenance operations (or {operations: [...]})
-    as one maintenance_apply call. A dry run unless --run; the per-operation
+    as one maintenance apply call. A dry run unless --run; the per-operation
     results as a table, and the undo list written beside the file."""
     with open(ns.file, encoding="utf-8") as fh:
         body = json.load(fh)
@@ -642,7 +642,7 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--fleet")
     sp.add_argument("--dataset")
     sp.add_argument("--no-refit", action="store_true")
-    sp = add("apply", cmd_apply, "Run a JSON file of Reliafy Maintenance operations as one maintenance_apply "
+    sp = add("apply", cmd_apply, "Run a JSON file of Reliafy Maintenance operations as one maintenance apply "
                                  "call: a dry run unless --run.")
     sp.add_argument("file", help="A JSON list of {do, args, ref?, confirm?}, or {operations: [...]}.")
     sp.add_argument("--run", action="store_true", help="Write the changes (default: a dry run).")

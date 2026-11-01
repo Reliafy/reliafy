@@ -356,16 +356,16 @@ def test_mcp_move_says_what_to_choose(env):  # noqa: F811
     from backend.tests.test_maintenance_mcp import _do, _ok, _session
 
     async def flow(client):
-        t12 = _ok(await _do(client, "maintenance_positions", "create", name="Truck 12"))["id"]
-        t14 = _ok(await _do(client, "maintenance_positions", "create", name="Truck 14"))["id"]
-        await _do(client, "maintenance_measurements", "add_point", position_id=t12, name="Engine hours",
+        t12 = _ok(await _do(client, "maintenance", "positions.create", name="Truck 12"))["id"]
+        t14 = _ok(await _do(client, "maintenance", "positions.create", name="Truck 14"))["id"]
+        await _do(client, "maintenance", "measurements.add_point", position_id=t12, name="Engine hours",
                   kind="counter", unit="hours")
-        h14 = _ok(await _do(client, "maintenance_measurements", "add_point", position_id=t14, name="Engine hours",
+        h14 = _ok(await _do(client, "maintenance", "measurements.add_point", position_id=t14, name="Engine hours",
                             kind="counter", unit="hours"))["id"]
-        task = _ok(await _do(client, "maintenance_tasks", "create", position_id=t12, name="Service", interval=500,
+        task = _ok(await _do(client, "maintenance", "tasks.create", position_id=t12, name="Service", interval=500,
                              unit="hours"))["id"]
-        asked = await _do(client, "maintenance_tasks", "move", task_id=task, position_id=t14)
-        moved = _ok(await _do(client, "maintenance_tasks", "move", task_id=task, position_id=t14,
+        asked = await _do(client, "maintenance", "tasks.move", task_id=task, position_id=t14)
+        moved = _ok(await _do(client, "maintenance", "tasks.move", task_id=task, position_id=t14,
                               measurement={"choice": "switch", "point_id": h14}))
         return asked, moved, h14
 

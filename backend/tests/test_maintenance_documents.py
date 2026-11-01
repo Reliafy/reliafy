@@ -211,7 +211,7 @@ def test_upload_open_download_and_remove_in_the_app(app, monkeypatch):
 
 def test_agents_upload_attach_read_and_remove(app):
     maint, client, _ = app
-    pid = maint.post("/api/v1/maintenance_positions/create", {"name": "Pump A"}).json()["id"]
+    pid = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"}).json()["id"]
     link = maint.post("/api/v1/change/upload_create", {"purpose": "document", "filename": "manual.pdf"}).json()
     assert link["max_bytes"] == 20 * 1024 * 1024
     put = client.put(link["url"].split("testserver", 1)[-1], content=pdf())
@@ -220,19 +220,19 @@ def test_agents_upload_attach_read_and_remove(app):
     seen = maint.post("/api/v1/get/upload", {"id": link["upload_id"]}).json()
     assert seen["kind"] == "pdf"
 
-    both = maint.post("/api/v1/maintenance_attachments/add_document",
+    both = maint.post("/api/v1/maintenance/attachments.add_document",
                       {"upload_id": link["upload_id"], "url": "https://example.com/a.pdf", "target_id": pid})
     assert both.status_code == 422 and "exactly one" in both.json()["detail"]
-    added = maint.post("/api/v1/maintenance_attachments/add_document",
+    added = maint.post("/api/v1/maintenance/attachments.add_document",
                        {"upload_id": link["upload_id"], "target_id": pid, "kind": "manual"})
     assert added.status_code == 200, added.text
     doc = added.json()
     assert doc["stored"] and doc["title"] == "manual"
-    again = maint.post("/api/v1/maintenance_attachments/add_document", {"upload_id": link["upload_id"],
+    again = maint.post("/api/v1/maintenance/attachments.add_document", {"upload_id": link["upload_id"],
                                                                           "target_id": pid})
     assert again.status_code in (404, 422)  # the upload is used up once kept
 
-    read = maint.post("/api/v1/maintenance_get/document", {"id": doc["id"]}).json()
+    read = maint.post("/api/v1/maintenance/get.document", {"id": doc["id"]}).json()
     opened = client.get(read["open_url"].split("testserver", 1)[-1], headers={"Authorization": ""})
     assert opened.status_code == 200 and opened.content == pdf()
     assert opened.headers["content-type"] == "application/pdf" and opened.headers["cache-control"] == "no-store"
@@ -242,13 +242,13 @@ def test_agents_upload_attach_read_and_remove(app):
     wrong = read["open_url"].split("testserver", 1)[-1].replace("t=", "t=x")
     assert client.get(wrong).status_code == 404
 
-    gone = maint.post("/api/v1/maintenance_attachments/remove_document", {"document_id": doc["id"]})
+    gone = maint.post("/api/v1/maintenance/attachments.remove_document", {"document_id": doc["id"]})
     assert gone.status_code == 200
     assert client.get(read["open_url"].split("testserver", 1)[-1]).status_code == 404
-    assert maint.post("/api/v1/maintenance_get/document", {"id": doc["id"]}).json()["removed"] is True
+    assert maint.post("/api/v1/maintenance/get.document", {"id": doc["id"]}).json()["removed"] is True
 
     # A link still works as before.
-    linked = maint.post("/api/v1/maintenance_attachments/add_document",
+    linked = maint.post("/api/v1/maintenance/attachments.add_document",
                         {"url": "https://example.com/manual.pdf", "target_id": pid}).json()
     assert linked["url"] == "https://example.com/manual.pdf" and linked["stored"] is False
 
@@ -265,9 +265,9 @@ def test_a_link_expires(app, monkeypatch):
     from datetime import datetime, timedelta, timezone
 
     maint, client, _ = app
-    pid = maint.post("/api/v1/maintenance_positions/create", {"name": "Pump A"}).json()["id"]
+    pid = maint.post("/api/v1/maintenance/positions.create", {"name": "Pump A"}).json()["id"]
     doc = client.post(f"/api/maintenance/documents/upload?target_id={pid}", content=pdf()).json()
-    read = maint.post("/api/v1/maintenance_get/document", {"id": doc["id"]}).json()
+    read = maint.post("/api/v1/maintenance/get.document", {"id": doc["id"]}).json()
     later = datetime.now(timezone.utc) + timedelta(minutes=documents.LINK_MINUTES + 1)
     monkeypatch.setattr(documents, "_now", lambda: later)
     assert client.get(read["open_url"].split("testserver", 1)[-1]).status_code == 404
