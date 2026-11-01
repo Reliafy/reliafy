@@ -10,7 +10,7 @@ import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field, { SavedMark } from "./ui/Field.jsx";
 import InputGroup, { Addon, ReadsAs } from "./ui/InputGroup.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
-import Section from "./ui/Section.jsx";
+import Section, { AddRow } from "./ui/Section.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
@@ -639,6 +639,9 @@ export function Details({
                   ))}
                 </ul>
               )}
+              {!readOnly && level.child && (
+                <AddRow onClick={() => onAdd(r)}>{addLabel}</AddRow>
+              )}
             </Section>
           )}
         </div>
@@ -647,7 +650,8 @@ export function Details({
       {/* Each button acts on its first click only: a double-click opens one dialog. */}
       {!readOnly && (level.child || EDITABLE.has(r.type)) && (
         <div className="rw-panel-acts">
-          {level.child && (
+          {/* The add lives at the end of its list (above); here only where there's no list. */}
+          {level.child && !(ops && EDITABLE.has(r.type)) && (
             <button type="button" className="secondary sm" onClick={(e) => { if (e.detail < 2) onAdd(r); }}>
               <PlusIcon /> {addLabel}
             </button>
