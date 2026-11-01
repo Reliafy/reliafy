@@ -147,7 +147,7 @@ rf = Client(token="rlf_...")      # or RELIAFY_TOKEN, or the token saved by \`re
         endpoint="POST /api/v1/{tool}/{action}"
         desc="Call any tool action with its arguments, exactly as the Claude connector does. Leave out action for a tool without actions. wait=True (or a number of seconds) polls a long-running job until it finishes."
         params={[
-          { name: "tool", type: "str", req: true, desc: "The tool, e.g. \"life_data_analysis\"." },
+          { name: "tool", type: "str", req: true, desc: "The tool, e.g. \"analyse\"." },
           { name: "action", type: "str", req: false, desc: "The action (or kind), e.g. \"fit\"." },
           { name: "wait", type: "bool | float", req: false, desc: "Wait for a job_id result to finish (True, or at most this many seconds)." },
           { name: "**args", type: "any", req: false, desc: "The action's arguments; None values are left out." },
@@ -155,10 +155,10 @@ rf = Client(token="rlf_...")      # or RELIAFY_TOKEN, or the token saved by \`re
         returns={`{ … }   # the tool's result, the same JSON an AI assistant gets`}
       />
       <Code>{`rf.call("list", "models")
-rf.call("life_data_analysis", "fit", distribution="weibull",
+rf.call("analyse", "fit", distribution="weibull",
         data=[120, 340, 510, 700, 980], censored=[0, 0, 1, 0, 0], unit="hours")
 rf.call("guide", topic="life_data")                       # a tool without actions
-rf.call("rbd_analysis", "analyze", rbd_id="…", simulate=True, wait=True)
+rf.call("analyse", "rbd", rbd_id="…", simulate=True, wait=True)
 
 rf.tools()     # the tools and actions you may call (GET /api/v1/tools)
 rf.spec()      # the OpenAPI spec`}</Code>
@@ -637,31 +637,31 @@ const EXAMPLES = [
     id: "fit",
     label: "Fit a distribution",
     note: "Fit a Weibull to five failure times, one still running (censored 1). Fitting is Pro.",
-    curl: (base) => `curl -X POST ${base}/api/v1/life_data_analysis/fit \\
+    curl: (base) => `curl -X POST ${base}/api/v1/analyse/fit \\
   -H "Authorization: Bearer $RELIAFY_TOKEN" -H "Content-Type: application/json" \\
   -d '{"distribution": "weibull", "data": [120, 340, 510, 700, 980],
        "censored": [0, 0, 1, 0, 0], "unit": "hours"}'`,
-    python: `rf.call("life_data_analysis", "fit", distribution="weibull",
+    python: `rf.call("analyse", "fit", distribution="weibull",
         data=[120, 340, 510, 700, 980], censored=[0, 0, 1, 0, 0], unit="hours")`,
   },
   {
     id: "rbd",
     label: "Analyse an RBD",
     note: "System reliability, MTTF and importance for a saved diagram (list rbds gives the ids). With simulate, a long run answers with a job to poll.",
-    curl: (base) => `curl -X POST ${base}/api/v1/rbd_analysis/analyze \\
+    curl: (base) => `curl -X POST ${base}/api/v1/analyse/rbd \\
   -H "Authorization: Bearer $RELIAFY_TOKEN" -H "Content-Type: application/json" \\
   -d '{"rbd_id": "RBD_ID", "times": [1000, 8760]}'`,
-    python: `rf.call("rbd_analysis", "analyze", rbd_id="RBD_ID", times=[1000, 8760])
-rf.call("rbd_analysis", "analyze", rbd_id="RBD_ID", simulate=True, wait=True)  # waits for the job`,
+    python: `rf.call("analyse", "rbd", rbd_id="RBD_ID", times=[1000, 8760])
+rf.call("analyse", "rbd", rbd_id="RBD_ID", simulate=True, wait=True)  # waits for the job`,
   },
   {
     id: "plan",
     label: "Plan a test",
     note: "How many units to test, and for how long, to show 90% reliability over 1,000 hours with 90% confidence.",
-    curl: (base) => `curl -X POST ${base}/api/v1/life_data_analysis/plan_demonstration_test \\
+    curl: (base) => `curl -X POST ${base}/api/v1/analyse/plan_demonstration_test \\
   -H "Authorization: Bearer $RELIAFY_TOKEN" -H "Content-Type: application/json" \\
   -d '{"reliability": 0.9, "confidence": 0.9, "mission_time": 1000, "unit": "hours"}'`,
-    python: `rf.call("life_data_analysis", "plan_demonstration_test",
+    python: `rf.call("analyse", "plan_demonstration_test",
         reliability=0.9, confidence=0.9, mission_time=1000, unit="hours")`,
   },
 ];
@@ -939,7 +939,7 @@ function Examples({ base }) {
         The Python lines use <code>rf = Client()</code> from <code>reliafy-client</code> (see{" "}
         <Link className="evidence-link" to={apiDocsPath("python")}>the Python client</Link>). The same calls from{" "}
         <Link className="evidence-link" to={apiDocsPath("cli")}>the command line</Link>:{" "}
-        <code>reliafy life_data_analysis fit --distribution weibull …</code>. A long job, such as a
+        <code>reliafy analyse fit --distribution weibull …</code>. A long job, such as a
         simulation, is polled as in <Link className="evidence-link" to={`${apiDocsPath("tools")}#jobs`}>long-running calculations</Link>.
       </p>
     </div>
@@ -957,7 +957,7 @@ function Files({ base }) {
       <Endpoint
         method="PUT"
         path="/api/uploads/{upload_id}?t=…"
-        desc="Send a file to the single-use link from uploads create (at most 30 MB; the link’s t is the credential, no other sign-in). Then import it by its upload_id: datasets upload, uploads import_rbd, uploads import_excel or rbd upload_outage_log. Reliafy Maintenance users can also send a PDF (purpose document, at most 20 MB) and keep it on an item or position with maintenance_attachments add_document."
+        desc="Send a file to the single-use link from change upload_create (at most 30 MB; the link’s t is the credential, no other sign-in). Then import it by its upload_id: change dataset_upload, change import_rbd, change import_excel or change rbd_upload_outage_log. Reliafy Maintenance users can also send a PDF (purpose document, at most 20 MB) and keep it on an item or position with maintenance_attachments add_document."
         example={`curl -X POST ${base}/api/v1/uploads/create -H "Authorization: Bearer $RELIAFY_TOKEN" \\
   -H "Content-Type: application/json" -d '{"purpose": "rbd_import", "filename": "plant.xml"}'   # → url, upload_id
 curl -X PUT --data-binary @plant.xml "UPLOAD_URL"
@@ -971,7 +971,7 @@ reliafy upload bearings.xlsx --name Bearings`}
         <li><code>PUT /api/uploads/{"{upload_id}"}?t=…</code> (or <code>POST</code> with the raw body) — no sign-in: the link’s token is the credential. It works once and expires after 15 minutes. Answers <code>{`{ upload_id, size, sha256, detected_format }`}</code>.</li>
         <li>Errors: <code>404</code> (no such upload, or a wrong token), <code>409</code> (already used), <code>410</code> (expired), <code>413</code> (over the size limit — 30 MB at most), <code>429</code> (too many attempts).</li>
         <li>Uploads are private to you, are never served back, and are deleted once imported or after an hour.</li>
-        <li>The upload URL points straight at Reliafy’s app service, which is fastest. Some sandboxes and corporate proxies refuse that host (for example <code>CONNECT tunnel failed, response 403</code>). For those, <code>uploads create</code> also returns <code>url_fallback</code> (with a ready <code>curl_fallback</code>): the same link on reliafy.com. Send the same PUT there once. It’s slower for large files. A PUT that a proxy refused never reached Reliafy, so the link is still unused.</li>
+        <li>The upload URL points straight at Reliafy’s app service, which is fastest. Some sandboxes and corporate proxies refuse that host (for example <code>CONNECT tunnel failed, response 403</code>). For those, <code>change upload_create</code> also returns <code>url_fallback</code> (with a ready <code>curl_fallback</code>): the same link on reliafy.com. Send the same PUT there once. It’s slower for large files. A PUT that a proxy refused never reached Reliafy, so the link is still unused.</li>
       </ul>
       <Endpoint
         method="POST"
@@ -1018,8 +1018,8 @@ reliafy logout                    # forget the saved token`}</Code>
       <h3>Any tool action</h3>
       <Code>{`reliafy tools                                  # every tool and action you may call
 reliafy <tool> <action> --arg value …          # any of them
-reliafy life_data_analysis fit --help          # one action's arguments
-reliafy strategy optimal_replacement --distribution-id weibull \\
+reliafy analyse fit --help          # one action's arguments
+reliafy analyse optimal_replacement --distribution-id weibull \\
     --params '[{"name":"alpha","value":1200},{"name":"beta","value":2.5}]' \\
     --planned-cost 200 --unplanned-cost 1500
 reliafy models list
@@ -1054,8 +1054,8 @@ reliafy photo add IMG_*.jpg --to POSITION_ID   # Reliafy Maintenance users`}</Co
 // few tools, each doing one area's work by action (or, for get and list, kind).
 // Reads and calculations are separate from the tools that change your workspace.
 const MCP_TOOLS = [
-  { name: "guide", desc: "Short how-tos by topic — life data and censoring, units, accelerated tests, repairable systems, building RBDs, analysing them, strategy, fleets, uploads, sharing, published failure data, the workspace, plans — so the agent reads the one it needs before a task. Never counted against the allowance." },
-  { name: "get", desc: "One saved item in full, by kind and id.", actions: [
+  { name: "guide", desc: "Short how-tos by topic — life data and censoring, units, accelerated tests, repairable systems, building RBDs, analysing them, strategy, fleets, uploads, sharing, published failure data, the workspace, plans — so the agent reads the one it needs before a task. Never counted against the allowance. guide(action=\"analyse.fit\") gives any action’s full argument schema." },
+  { name: "get", desc: "One saved item in full, by kind and id; your account and the upgrade link.", actions: [
     ["model", "A saved life or recurrent model — distribution, parameters with confidence intervals, goodness of fit, MTTF and B-lives with lower bounds. Regression models add how good the model is (Harrell’s C, the integrated Brier score, the time-dependent AUC) and whether it holds (the proportional-hazards test with a plain verdict; for Cox PH robust standard errors, the tie method and strata). A model fitted by failure mode reports each mode’s share with 95% intervals and Gray’s test. Recurrent models give the growth verdict, ROCOF and MTBF with bounds and the trend tests."],
     ["dataset", "A dataset’s columns and rows, a page at a time."],
     ["rbd", "A diagram’s structure."],
@@ -1063,15 +1063,19 @@ const MCP_TOOLS = [
     ["job", "A calculation queued on the calculation service (a long simulation, a what-to-improve or interval search, an ALT’s bootstrap bounds) — its place in the queue, then the result."],
     ["upload", "An uploaded file before importing it: a workbook’s sheets with their header rows, columns, row counts and a guessed mapping; a diagram file’s diagrams and block counts."],
     ["account", "Your plan; on Free, the tool calls used and left this month and the date they reset (Pro is unlimited); storage used against your plan’s limits, and whether simulation is included. Never counted against the allowance."],
+    ["library_record", "One published failure-data record in full: the mean with its 5th to 95th percentile spread, the evidence behind it (failures, demands or hours), conditions, citation and licence, and the model an RBD block would use. For a handbook rate, give the environment the part works in (e.g. GF, ground, fixed). Never counted against the allowance."],
+    ["upgrade_link", "A Stripe checkout link for Reliafy Pro, for you to open and pay yourself — nothing is charged until you complete it. Works before you have Pro."],
   ] },
-  { name: "list", desc: "Your saved items of one kind, with the shared samples.", actions: [
+  { name: "list", desc: "Your saved items of one kind, with the shared samples; what changed; the published failure-data library.", actions: [
     ["models / datasets / rbds", "Your models (life or recurrent), datasets and diagrams."],
     ["rbd_runs", "Simulation history, from the app or any connector: who ran each run and from where, its status, method, runtime and result. Kept 7 days on the free plan and 90 on Pro."],
     ["fleets / fleet_alerts", "Your fleet forecasts and a fleet’s email alerts (Pro)."],
     ["share_links", "Your live share links."],
     ["workspace_changes", "What changed in your workspace over a period — the last 30 days by default, a number of days, a date, or since your last visit — worked out from what Reliafy stores, never estimated: new and changed items; refits whose B10 or MTTF moved by more than 10%; fleet forecasts that moved and alerts that fired (Pro); RCM decisions whose linked model was refitted; simulations that moved. It says what it can’t compare."],
+    ["library", "Published generic failure data, each record cited with its source and licence (free to read without an account at /api/library too): failure rates and probabilities of failure on demand by component and failure mode (“motor-driven pump fails to start”), filtered by source, equipment type and record_kind, 25 a page with counts. Never counted against the allowance."],
+    ["library_sources", "The sources, their licences and what each holds. Today: the NRC / INL industry averages for U.S. nuclear power plant components (2020 update), and base failure rates for electronic parts from MIL-HDBK-217F, Notice 2."],
   ] },
-  { name: "life_data_analysis", desc: "Life data analysis that saves nothing.", actions: [
+  { name: "analyse", desc: "Every calculation; nothing is saved: life data, test plans, repairable systems, maintenance strategy, fleet forecasts and RBD analyses.", actions: [
     ["fit", "Fit a distribution (or “best”) to failure times given inline or from a saved dataset — every model id, from Beta and Royston-Parmar to Buckley-James; shared frailty with group_column (frailty_family: gamma or lognormal); Cox PH with cox_options; covariates that change over time with id_column; by failure mode with causes and “competing_risks”. A fit whose data don’t pin the model down says so (fit_ok: false) so its numbers aren’t quoted. With “best”, criterion ranks by aic, aic_c, bic or neg_ll (the ranking gives each candidate’s parameters, score and delta) and include_mixtures lets two-mode mixtures compete. Regression fits report diagnostics.model_checks. Fitting is Pro."],
     ["fit_per_demand", "Per-demand (one-shot) reliability — a valve that must open, a standby start — from batches of demands and failures, with exact (Clopper-Pearson) bounds; zero failures is the success-run demonstration."],
     ["reliability_at", "Reliability, failure probability and hazard of a saved model at given times — for a unit that has already survived to some age too, with confidence bounds where the model has them. A regression model is evaluated at your covariates (or along a covariate schedule), with its B-lives and their lower bounds."],
@@ -1079,65 +1083,44 @@ const MCP_TOOLS = [
     ["compare_groups", "Is A better than B? The log-rank test, each group’s average life over a common window (RMST) with the difference and its interval, Gray’s test per failure mode, and a one-line verdict — without fitting."],
     ["alt_use_level", "Extrapolate a saved accelerated-life model to the use stress: characteristic, mean and B-lives, the mission reliability and the acceleration factor, with Wald, likelihood-ratio or bootstrap bounds (bootstrap: Pro, as a job)."],
     ["plan_demonstration_test", "Plan a reliability demonstration test — units, test time per unit and allowed failures — with a trade-off table; with producer_risk a plan that keeps both risks; the Weibull shape from a saved model if you like."],
-  ] },
-  { name: "repairable_analysis", desc: "Repairable systems from a saved recurrent model.", actions: [
     ["next_failure", "A system’s next failure at its current age: the chance of a failure within a time (say, before its next service), and the mean and percentiles of the time to it."],
     ["growth_projection", "Reliability growth projection (MIL-HDBK-189C, AMSAA-Crow): the MTBF a growth test reaches once its delayed fixes are in. Inline data is Pro (it fits)."],
-  ] },
-  { name: "strategy", desc: "Maintenance strategy calculators and fleet forecasts.", actions: [
     ["optimal_replacement / failure_finding_interval", "Cost-optimal replacement interval, and proof-test interval for a hidden function — for a saved Weibull fitted to data, at each end of the shape’s 95% interval too, with a note when that makes the recommendation less firm."],
     ["optimal_overhaul", "Optimal overhaul interval from a minimal-repair recurrent model."],
     ["fleet_forecast", "Expected failures across a fleet of in-service items, with exact P10–P90 intervals per period and each item’s chance of failing; regression and ALT fleets at each item’s covariates or stress; recurrent fleets count every repeat failure. Pro."],
+    ["rbd", "System reliability, MTTF, B-lives and importance; for a repairable diagram exact availability over time, the window’s expected failures, downtime and cost, a safety function’s PFDavg and SIL, a priced diagram’s cost of ownership and capacities’ production availability — from new or from the blocks’ state now. The Monte-Carlo simulation adds the spread and the time to the next failure (Pro; a long one comes back as a job)."],
+    ["rbd_quote_simulation", "How long a simulation should take, before anything runs."],
+    ["rbd_sensitivity", "What to improve first in a repairable diagram: every lever moved a step, ranked by the gain in availability or cost, in plain words — by benefit per unit of cost when you price the changes — plus over_time, shares, joint, rate and uncertainty measures."],
+    ["rbd_optimise_intervals", "Choose a repairable diagram’s age-replacement or proof-test intervals together (lowest cost, a target availability, PFDavg or SIL, or a cost cap), staggering tests if you like; returns the edits that apply the plan."],
+    ["rbd_cheapest_design", "The redundancy that owns a repairable diagram at the lowest total cost, whole trains included, over several horizons. Pro."],
+    ["rbd_compare", "Is design B better than design A? The difference in availability (and cost of ownership) over a window. Pro."],
+    ["rbd_fault_tree", "The diagram as a fault tree: top event, ranked minimal cut sets, basic events by importance and each common-cause group’s share. Exact and free."],
+    ["rbd_allocate_targets", "What reliability, availability or MTTF / MTTR each block needs for the system to meet a target. Exact and free."],
+    ["rbd_system_history", "The observed availability from an outage log, each outage with the block that caused it, and the blocks ranked by downtime share."],
+    ["rbd_export_python / rbd_export_json", "A standalone SurPyval + RePyability script, or RePyability’s JSON (rbd_from_json loads it; change import_rbd brings it back)."],
   ] },
-  { name: "rbd_analysis", desc: "Analyse a saved reliability block diagram; nothing is saved.", actions: [
-    ["analyze", "System reliability, MTTF, B-lives and importance; for a repairable diagram exact availability over time, the window’s expected failures, downtime and cost, a safety function’s PFDavg and SIL, a priced diagram’s cost of ownership and capacities’ production availability — from new or from the blocks’ state now. The Monte-Carlo simulation adds the spread and the time to the next failure (Pro; a long one comes back as a job)."],
-    ["quote_simulation", "How long a simulation should take, before anything runs."],
-    ["sensitivity", "What to improve first in a repairable diagram: every lever moved a step, ranked by the gain in availability or cost, in plain words — by benefit per unit of cost when you price the changes — plus over_time, shares, joint, rate and uncertainty measures."],
-    ["optimise_intervals", "Choose a repairable diagram’s age-replacement or proof-test intervals together (lowest cost, a target availability, PFDavg or SIL, or a cost cap), staggering tests if you like; returns the edits that apply the plan."],
-    ["cheapest_design", "The redundancy that owns a repairable diagram at the lowest total cost, whole trains included, over several horizons. Pro."],
-    ["compare", "Is design B better than design A? The difference in availability (and cost of ownership) over a window. Pro."],
-    ["fault_tree", "The diagram as a fault tree: top event, ranked minimal cut sets, basic events by importance and each common-cause group’s share. Exact and free."],
-    ["allocate_targets", "What reliability, availability or MTTF / MTTR each block needs for the system to meet a target. Exact and free."],
-    ["system_history", "The observed availability from an outage log, each outage with the block that caused it, and the blocks ranked by downtime share."],
-    ["export_python / export_json", "A standalone SurPyval + RePyability script, or RePyability’s JSON (rbd_from_json loads it; uploads import_rbd brings it back)."],
-  ] },
-  { name: "library", desc: "Published generic failure data, each record cited with its source and licence; free to read without an account at /api/library too. Never counted against the allowance.", actions: [
-    ["search", "Failure rates and probabilities of failure on demand by component and failure mode (“motor-driven pump fails to start”), filtered by source, equipment type and kind, 25 a page with counts."],
-    ["get", "One record in full: the mean with its 5th to 95th percentile spread, the evidence behind it (failures, demands or hours), conditions, citation and licence, and the model an RBD block would use. For a handbook rate, give the environment the part works in (e.g. GF, ground, fixed)."],
-    ["sources", "The sources, their licences and what each holds. Today: the NRC / INL industry averages for U.S. nuclear power plant components (2020 update), and base failure rates for electronic parts from MIL-HDBK-217F, Notice 2."],
-  ] },
-  { name: "models", desc: "Save and change models (Claude asks before running it).", actions: [
-    ["fit", "The same fit as life_data_analysis fit, saved as a model; with demand_batches, a per-demand model. Pro."],
-    ["save", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval."],
-    ["fit_alt", "Fit and save an accelerated life test model — failure times at several stress levels and a life-stress relationship, inspection data and delayed entry included. Pro."],
-    ["fit_recurrent", "Fit and save a recurrent-event (repairable-system) model: Crow-AMSAA and the other minimal-repair models, proportional intensity, or imperfect repair (Kijima I/II, ARA, ARI, G1). Pro."],
-    ["update / delete", "Rename or annotate your own models, or delete one (never shared samples; not one a fleet forecast runs on)."],
-  ] },
-  { name: "datasets", desc: "Save and change datasets.", actions: [
-    ["upload", "Save CSV text, or a CSV or Excel file sent with uploads create."],
-    ["update / delete", "Rename or annotate your own datasets, or delete one (not one a model was fitted to)."],
-  ] },
-  { name: "rbd", desc: "Build and change reliability block diagrams.", actions: [
-    ["create", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — that opens in the RBD builder: mixtures of failure modes, imperfect repair, common-cause groups (beta factor or multiple Greek letter), capacities and a demand, phased missions, networks, covariate schedules, costs, scheduled and condition-based replacement and proof tests."],
-    ["clone / edit", "Copy a sample or one of your diagrams, and change a diagram with a short batch of edits, all or nothing, instead of rebuilding it."],
-    ["delete", "Delete one of your own diagrams."],
-    ["upload_outage_log", "Save a real outage log (asset, down, back up) — CSV text or an uploaded file — against one of your diagrams."],
-  ] },
-  { name: "uploads", desc: "Files into Reliafy without pasting them.", actions: [
-    ["create", "A single-use link (15 minutes) to send a file with a plain HTTP PUT — a ready curl command — with a reliafy.com fallback URL for networks that block the direct one. Up to 30 MB; deleted after its import, or after an hour."],
-    ["send_part", "For an agent that can’t reach the upload URL at all: the file in base64 parts through the MCP connection, into the same upload. For files up to a few hundred KB; not counted against the Free allowance."],
+  { name: "change", desc: "Every write to your workspace (Claude asks before running it): models, datasets, diagrams, files in, share links, fleet alerts.", actions: [
+    ["model_fit", "The same fit as analyse fit, saved as a model; with demand_batches, a per-demand model. Pro."],
+    ["model_save", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval."],
+    ["model_fit_alt", "Fit and save an accelerated life test model — failure times at several stress levels and a life-stress relationship, inspection data and delayed entry included. Pro."],
+    ["model_fit_recurrent", "Fit and save a recurrent-event (repairable-system) model: Crow-AMSAA and the other minimal-repair models, proportional intensity, or imperfect repair (Kijima I/II, ARA, ARI, G1). Pro."],
+    ["model_update / model_delete", "Rename or annotate your own models, or delete one (never shared samples; not one a fleet forecast runs on)."],
+    ["dataset_upload", "Save CSV text, or a CSV or Excel file sent with change upload_create."],
+    ["dataset_update / dataset_delete", "Rename or annotate your own datasets, or delete one (not one a model was fitted to)."],
+    ["rbd_create", "Build and save a diagram — series, parallel, k-of-n, standby, sub-systems — that opens in the RBD builder: mixtures of failure modes, imperfect repair, common-cause groups (beta factor or multiple Greek letter), capacities and a demand, phased missions, networks, covariate schedules, costs, scheduled and condition-based replacement and proof tests."],
+    ["rbd_clone / rbd_edit", "Copy a sample or one of your diagrams, and change a diagram with a short batch of edits, all or nothing, instead of rebuilding it."],
+    ["rbd_delete", "Delete one of your own diagrams."],
+    ["rbd_upload_outage_log", "Save a real outage log (asset, down, back up) — CSV text or an uploaded file — against one of your diagrams."],
+    ["upload_create", "A single-use link (15 minutes) to send a file with a plain HTTP PUT — a ready curl command — with a reliafy.com fallback URL for networks that block the direct one. Up to 30 MB; deleted after its import, or after an hour."],
+    ["upload_send_part", "For an agent that can’t reach the upload URL at all: the file in base64 parts through the MCP connection, into the same upload. For files up to a few hundred KB; not counted against the Free allowance."],
     ["import_rbd", "Import diagrams from ReliaSoft BlockSim, Open-PSA XML, Galileo DFT, RePyability JSON or Reliafy’s Excel RBD template, with notes on anything approximated; preview first to check the structure."],
     ["import_excel", "A sheet as a dataset, an FMEA / RCM worksheet onto a maintenance position’s RCM (give its position_id), or the RBD template as a diagram (as a copy of an existing one, unless you ask to replace it)."],
+    ["share_link", "Publish one of your own items — a model, dataset, diagram, strategy analysis or fleet — optionally password-protected (a passphrase shown once, for you to send separately) and expiring."],
+    ["share_report", "Several of your items on one print-ready page, with a title, an author line, an introduction and a note per item."],
+    ["share_revoke", "End a link at once."],
+    ["fleet_create_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
   ] },
-  { name: "sharing", desc: "Read-only pages anyone with the link can open, no account needed.", actions: [
-    ["create_link", "Publish one of your own items — a model, dataset, diagram, strategy analysis or fleet — optionally password-protected (a passphrase shown once, for you to send separately) and expiring."],
-    ["create_report", "Several of your items on one print-ready page, with a title, an author line, an introduction and a note per item."],
-    ["revoke_link", "End a link at once."],
-  ] },
-  { name: "fleet", desc: "Fleet alerts (Pro).", actions: [
-    ["create_alert", "Email alerts on a fleet’s expected failures — checked each time usage arrives through the ingest API."],
-  ] },
-  { name: "upgrade_link", desc: "A Stripe checkout link for Reliafy Pro, for you to open and pay yourself — nothing is charged until you complete it. Works before you have Pro." },
+  { name: "report_problem", desc: "Tell Reliafy’s developers when a tool got in the agent’s way, and check later whether it’s fixed. Never counted against the allowance." },
 ];
 
 // "Use Reliafy from Claude (MCP)": what the MCP server is and how to connect
@@ -1218,15 +1201,16 @@ function McpDocs({ tokenNote }) {
   "${base}/api/uploads/UPLOAD_ID?t=TOKEN"`}</Code>
         <ul className="api-list">
           <li>The link works once, expires after 15 minutes and takes at most 30 MB. Its answer, errors and privacy: <Link className="evidence-link" to={apiDocsPath("files")}>Files and photos</Link>.</li>
-          <li>The upload URL points straight at Reliafy’s app service, which is fastest. Some sandboxes and corporate proxies refuse that host (for example <code>CONNECT tunnel failed, response 403</code>). For those, <code>uploads create</code> also returns <code>url_fallback</code> (with a ready <code>curl_fallback</code>): the same link on reliafy.com. Send the same PUT there once. It’s slower for large files. A PUT that a proxy refused never reached Reliafy, so the link is still unused.</li>
-          <li>If Claude’s environment can’t reach either URL (no network), small text files (up to 200 KB) can be pasted instead — CSV into <code>datasets upload</code> or <code>rbd upload_outage_log</code>, Open-PSA or Galileo text into <code>uploads import_rbd</code>. Other files of up to a few hundred KB (an Excel workbook, a BlockSim project) can go through the MCP connection itself with <code>uploads send_part</code>: base64 parts into the same upload, checked against the file’s SHA-256. An FMEA / RCM worksheet goes onto a position’s RCM with <code>uploads import_excel</code> (target <code>rcm</code> and a <code>position_id</code>). Anything larger is uploaded in the app.</li>
+          <li>The upload URL points straight at Reliafy’s app service, which is fastest. Some sandboxes and corporate proxies refuse that host (for example <code>CONNECT tunnel failed, response 403</code>). For those, <code>change upload_create</code> also returns <code>url_fallback</code> (with a ready <code>curl_fallback</code>): the same link on reliafy.com. Send the same PUT there once. It’s slower for large files. A PUT that a proxy refused never reached Reliafy, so the link is still unused.</li>
+          <li>If Claude’s environment can’t reach either URL (no network), small text files (up to 200 KB) can be pasted instead — CSV into <code>change dataset_upload</code> or <code>change rbd_upload_outage_log</code>, Open-PSA or Galileo text into <code>change import_rbd</code>. Other files of up to a few hundred KB (an Excel workbook, a BlockSim project) can go through the MCP connection itself with <code>change upload_send_part</code>: base64 parts into the same upload, checked against the file’s SHA-256. An FMEA / RCM worksheet goes onto a position’s RCM with <code>change import_excel</code> (target <code>rcm</code> and a <code>position_id</code>). Anything larger is uploaded in the app.</li>
         </ul>
 
         <h3>Tools</h3>
         <p className="muted-line">
-          A few tools, each doing one area’s work: an agent picks the tool, then the action (or, for{" "}
-          <code>get</code> and <code>list</code>, the kind). Each tool’s description lists its actions and what
-          each takes, and <code>guide</code> gives the agent how-tos by topic.
+          Six tools: an agent picks the tool, then the action (or, for <code>get</code> and{" "}
+          <code>list</code>, the kind). Each tool’s description lists its actions and what each takes;{" "}
+          <code>guide</code> gives the agent how-tos by topic and any action’s full argument schema. The
+          tool names before November 2026 still work for a while, so connected agents keep running.
         </p>
         <div className="api-tools">
           {MCP_TOOLS.map(({ name, desc, actions }) => (actions ? (
@@ -1250,7 +1234,7 @@ function McpDocs({ tokenNote }) {
         </div>
         <ul className="api-list">
           <li>Censoring follows Reliafy’s convention: <b>0 = failed</b>, <b>1 = still running</b>. Data coded the other way round can be fitted with the inverted-flags option.</li>
-          <li>Reading and calculating tools (<code>guide</code>, <code>get</code>, <code>list</code>, the four analysis tools and <code>upgrade_link</code>) are marked read-only; the tools that save, change, share or delete in your workspace are marked as writes, so Claude asks before running them, and deletes only what you ask it to, after confirming by name.</li>
+          <li>Reading and calculating tools (<code>guide</code>, <code>get</code>, <code>list</code> and <code>analyse</code>) are marked read-only; <code>change</code>, which saves, changes, shares or deletes in your workspace, is marked as a write, so Claude asks before running them, and deletes only what you ask it to, after confirming by name.</li>
           <li>Errors: <code>401</code> (not signed in, or a missing, expired or revoked token), <code>403</code> (an API token whose owner isn’t on Pro — tokens are Pro-only; a signed-in Claude connection without Pro connects, and each tool says it needs Pro), <code>429</code> (over 120 requests/minute), <code>503</code> (the MCP connector isn’t switched on — it’s available on request).</li>
         </ul>
     </div>

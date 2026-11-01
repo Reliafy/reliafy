@@ -152,7 +152,7 @@ MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
 | Call | Does |
 |---|---|
 | `POST /api/v1/maintenance/photos?target_id=…&caption=…` | Adds a photo to a maintenance position, item, location or work order. The body is the image (JPEG, PNG, WebP or HEIC; at most 20 MB), or multipart with a `file` field. Cleaned and stripped of camera and location metadata, like a photo added in the app. Reliafy Maintenance only; `write` scope. |
-| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `uploads create` (no other credentials; at most 30 MB). Then import it: `datasets upload`, `uploads import_rbd`, `uploads import_excel` or `rbd upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance_attachments add_document`. |
+| `PUT /api/uploads/{upload_id}?t=…` | Sends a file's bytes to the single-use link from `change upload_create` (no other credentials; at most 30 MB). Then import it: `change dataset_upload`, `change import_rbd`, `change import_excel` or `change rbd_upload_outage_log` with that `upload_id`; a PDF (purpose `document`, at most 20 MB) goes on a maintenance item, position or class with `maintenance_attachments add_document`. |
 
 ### The reliability data library
 
@@ -169,7 +169,7 @@ everyone, so it's readable without an account:
 The same reads are the `library` tool: `POST /api/v1/library/search`
 (`query`, `source`, `equipment_type`, `kind`, `page`, `page_size`), `POST
 /api/v1/library/get` (`id`, `environment`) and `POST
-/api/v1/library/sources`, and on the command line `reliafy library search
+/api/v1/library/sources`, and on the command line `reliafy list kind library
 --query "motor-driven pump"`. Library lookups are never counted against the
 Free plan's tool calls. These are generic estimates (today: U.S. nuclear
 power plant industry averages, and base failure rates for electronic parts
@@ -225,8 +225,8 @@ rf.push_usage(fleet_id, [{"name": "Truck 01", "current_use": 5230}])
 ```bash
 reliafy login                                    # saves the token in your config folder
 reliafy tools                                    # every tool and action you may call
-reliafy life_data_analysis fit --help            # one action's arguments
-reliafy strategy optimal_replacement --distribution-id weibull \
+reliafy analyse fit --help            # one action's arguments
+reliafy analyse optimal_replacement --distribution-id weibull \
     --params '[{"name":"alpha","value":1200},{"name":"beta","value":2.5}]' \
     --planned-cost 200 --unplanned-cost 1500
 reliafy models list

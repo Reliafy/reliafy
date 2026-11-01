@@ -207,7 +207,7 @@ def test_upload_open_download_and_remove_in_the_app(app, monkeypatch):
     assert client.get(f"/api/maintenance/positions/{pid}").json()["documents"] == []
 
 
-# ---- agents: uploads create -> PUT -> add_document -> get kind document ----------------
+# ---- agents: change upload_create -> PUT -> add_document -> get kind document ----------------
 
 def test_agents_upload_attach_read_and_remove(app):
     maint, client, _ = app

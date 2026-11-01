@@ -334,7 +334,7 @@ def test_routes(session, monkeypatch):
     assert client.post("/api/strategy/calendar-replacement", json=_inputs()).status_code == 401
 
 
-# ---- MCP: strategy calendar_replacement / next_replacement -----------------------------------------
+# ---- MCP: analyse calendar_replacement / next_replacement -----------------------------------------
 
 from backend.tests.test_mcp_plans import FREE, PRO, _call, env  # noqa: E402,F401
 from backend.tests.test_mcp import _ok  # noqa: E402
@@ -357,9 +357,9 @@ def test_mcp_calendar_replacement_and_next_replacement(env):
                                                   "action": "next_replacement", "age": 200}))
     assert nxt["best"]["kind"] == "outage" and nxt["replace_from_age"] == pytest.approx(263.9, abs=0.1)
     # A saved model brings its unit.
-    saved = _ok(_call(env.oauth[PRO], "models", {"action": "save", "name": "Bearing", "distribution": "weibull",
+    saved = _ok(_call(env.oauth[PRO], "change", {"action": "model_save", "name": "Bearing", "distribution": "weibull",
                                                   "params": BEARING, "unit": "days"}))
-    by_id = _ok(_call(env.oauth[PRO], "strategy", {"action": "calendar_replacement", "model_id": saved["model_id"],
+    by_id = _ok(_call(env.oauth[PRO], "analyse", {"action": "calendar_replacement", "model_id": saved["model_id"],
                                                    "shuts": MCP_SHUTS, "failure_cost": 400, "anytime_cost": 150,
                                                    "today": TODAY}))
     assert by_id["cost_rate"] == pytest.approx(out["cost_rate"], rel=1e-12) and by_id["unit"] == "Days"

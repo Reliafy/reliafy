@@ -343,14 +343,14 @@ from backend.tests.test_mcp import A as MCP_A, _call, _ok, env  # noqa: E402,F40
 
 
 def test_mcp_fit_and_get_model_report_the_scores(env):
-    ds = _ok(_call(env.token[MCP_A], "datasets", {"action": "upload", "name": "Rossi", "csv": _csv(_rossi()).decode()}))
+    ds = _ok(_call(env.token[MCP_A], "change", {"action": "dataset_upload", "name": "Rossi", "csv": _csv(_rossi()).decode()}))
     args = {"dataset_id": ds["id"], "distribution": "weibull_ph", "time_column": "week",
             "censor_column": "c", "covariates": ["fin", "age", "prio"]}
-    fitted = _ok(_call(env.token[MCP_A], "life_data_analysis", {"action": "fit", **args}))
+    fitted = _ok(_call(env.token[MCP_A], "analyse", {"action": "fit", **args}))
     v = fitted["validation"]
     assert v["available"] is True and v["brier"]["model"] < v["brier"]["baseline"] and v["auc"]
 
-    saved = _ok(_call(env.token[MCP_A], "models", {"action": "fit", **args, "name": "Rossi PH"}))
+    saved = _ok(_call(env.token[MCP_A], "change", {"action": "model_fit", **args, "name": "Rossi PH"}))
     assert saved["validation"]["concordance"] == v["concordance"]
 
     # A model saved before #176 is scored on read, and the scores are cached.
@@ -361,5 +361,5 @@ def test_mcp_fit_and_get_model_report_the_scores(env):
 
 
 def test_mcp_plain_fits_have_no_scores(env):
-    out = _ok(_call(env.token[MCP_A], "life_data_analysis", {"action": "fit", "data": [10, 20, 30, 45, 60]}))
+    out = _ok(_call(env.token[MCP_A], "analyse", {"action": "fit", "data": [10, 20, 30, 45, 60]}))
     assert "validation" not in out

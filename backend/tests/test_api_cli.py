@@ -86,13 +86,16 @@ def run(capsys, *argv):
 def test_client_calls_any_tool(server):
     rf = Client()
     assert rf.base_url == server["base"]
-    saved = rf.call("models", "save", name="Handbook", distribution="weibull", params=WEIBULL)
+    saved = rf.call("change", "model_save", name="Handbook", distribution="weibull", params=WEIBULL)
     assert saved["saved"] and saved["model_id"]
     at = rf.reliability(saved["model_id"], [500])
     assert at["model_id"] == saved["model_id"]
     fit = rf.fit([120, 340, 510, 700, 980], censored=[0, 0, 1, 0, 0], distribution="weibull")
     assert fit["distribution_id"] == "weibull" and not fit["saved"]
-    assert {t["name"] for t in rf.tools()["tools"]} >= {"life_data_analysis", "maintenance_positions"}
+    assert {t["name"] for t in rf.tools()["tools"]} >= {"analyse", "change", "maintenance_positions"}
+    # An older client's names still answer (for a release), unlisted.
+    old = rf.call("models", "save", name="Old name", distribution="weibull", params=WEIBULL)
+    assert old["saved"] and "models" not in {t["name"] for t in rf.tools()["tools"]}
     assert "/api/v1/list/models" in rf.spec()["paths"]
     with pytest.raises(Exception) as err:
         rf.call("get", "model", id="nope")
@@ -122,20 +125,23 @@ def test_cli_login_tools_and_generic_commands(server, capsys, monkeypatch):
     assert oct(os.stat(os.path.join(os.environ["RELIAFY_CONFIG_DIR"], "config.json")).st_mode)[-3:] == "600"
 
     code, out, _ = run(capsys, "tools")
-    assert code == 0 and "life_data_analysis" in out and "fit(" in out and "API/CLI only" in out
-    code, out, _ = run(capsys, "strategy", "optimal_replacement", "--distribution-id", "weibull",
+    assert code == 0 and "analyse" in out and "fit(" in out and "API/CLI only" in out
+    code, out, _ = run(capsys, "analyse", "optimal_replacement", "--distribution-id", "weibull",
                        "--params", json.dumps(WEIBULL), "--planned-cost", "100", "--unplanned-cost", "1000",
                        "--json")
     assert code == 0 and json.loads(out)["optimal_time"] > 0
-    code, out, _ = run(capsys, "life_data_analysis", "fit", "--data", "120,340,510,700,980",
+    code, out, _ = run(capsys, "analyse", "fit", "--data", "120,340,510,700,980",
                        "--censored", "0,0,1,0,0")
     assert code == 0 and "distribution: " in out
+    # The earlier command still runs, saying the new one.
+    code, out, err = run(capsys, "life_data_analysis", "fit", "--data", "120,340,510,700,980")
+    assert code == 0 and "distribution: " in out and "'life_data_analysis fit' is now 'analyse fit'" in err
     code, out, _ = run(capsys, "guide", "--topic", "units")
     assert code == 0 and "unit" in out
     code, out, _ = run(capsys, "models", "list")
     assert code == 0
     with pytest.raises(SystemExit):
-        run(capsys, "strategy", "optimal_replacement", "--help")
+        run(capsys, "analyse", "optimal_replacement", "--help")
     assert "--planned-cost" in capsys.readouterr().out
     code, _, err = run(capsys, "get", "model", "--id", "nope")
     assert code == 1 and "Model not found" in err
@@ -145,22 +151,35 @@ def test_cli_login_tools_and_generic_commands(server, capsys, monkeypatch):
     assert code == 0 and not os.path.exists(os.path.join(os.environ["RELIAFY_CONFIG_DIR"], "config.json"))
 
 
+def test_the_cli_knows_every_earlier_command():
+    """reliafy-client's own table of the earlier names is the server's."""
+    from backend import mcp_server
+
+    server_side = {(old, a or None): (t, na) for old, (_, table) in mcp_server.LEGACY.items()
+                   if old in mcp_server.LEGACY_TOOLS for a, (t, na) in table.items()}
+    assert {k: v[:2] for k, v in cli.LEGACY_COMMANDS.items()} == server_side
+
+
 def test_cli_and_client_search_the_library(server, capsys):
-    code, out, _ = run(capsys, "library", "search", "--query", "motor-driven pump fails to start")
+    code, out, _ = run(capsys, "list", "library", "--query", "motor-driven pump fails to start")
     assert code == 0 and "total: 4" in out and "results (4):" in out and "nrc-inl-2020:mdp-fts-ns" in out
-    code, out, _ = run(capsys, "library", "get", "--id", "nrc-inl-2020:mdp-fts-ns", "--json")
+    code, out, _ = run(capsys, "get", "library_record", "--id", "nrc-inl-2020:mdp-fts-ns", "--json")
     rec = json.loads(out)["record"]
     assert code == 0 and rec["licence"]["id"] == "us-government-work" and rec["citation"]["table"] == "Table 1"
-    code, out, _ = run(capsys, "library", "sources")
+    code, out, _ = run(capsys, "list", "library_sources")
     assert code == 0 and "total_records: 458" in out
-    code, out, _ = run(capsys, "library", "get", "--id", "mil-hdbk-217f-n2:9-1-rc-11", "--environment", "GF",
+    code, out, _ = run(capsys, "get", "library_record", "--id", "mil-hdbk-217f-n2:9-1-rc-11", "--environment", "GF",
                        "--json")
     model = json.loads(out)["block_model"]
     assert code == 0 and model["environment"]["code"] == "GF" and abs(model["failure_rate"] - 6.8e-9) < 1e-15
-    code, _, err = run(capsys, "library", "get", "--id", "nope")
+    code, _, err = run(capsys, "get", "library_record", "--id", "nope")
     assert code == 1 and "not found" in err
-    found = Client().call("library", "search", query="check valve", kind="rate", page_size=2)
+    found = Client().call("list", "library", query="check valve", record_kind="rate", page_size=2)
     assert found["total"] == 5 and len(found["results"]) == 2
+    # The earlier names, as an older client sends them.
+    assert Client().call("library", "search", query="check valve", kind="rate", page_size=2)["total"] == 5
+    code, out, _ = run(capsys, "library", "search", "--query", "check valve", "--kind", "rate")
+    assert code == 0 and "total: 5" in out
 
 
 def test_cli_fit_upload_import_push_ingest(server, capsys):

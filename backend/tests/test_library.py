@@ -372,17 +372,17 @@ def test_public_routes_are_rate_limited(client, monkeypatch):
 @pytest.mark.usefixtures("mcp_on")
 def test_the_library_tool_over_mcp_and_rest(env):
     token = env.oauth[FREE]  # a lookup: on the Free plan too, and never counted (below)
-    found = _ok(_call(token, "library", {"action": "search", "query": "motor-driven pump", "kind": "rate",
+    found = _ok(_call(token, "list", {"kind": "library", "query": "motor-driven pump", "record_kind": "rate",
                                          "page_size": 3}))
     assert found["data_notice"] and found["total"] > 3 and len(found["results"]) == 3
-    one = _ok(_call(token, "library", {"action": "get", "id": found["results"][0]["id"]}))
+    one = _ok(_call(token, "get", {"kind": "library_record", "id": found["results"][0]["id"]}))
     assert one["data_notice"] and one["record"]["licence"]["attribution"]
     assert one["block_model"]["model"]["distribution_id"] == "exponential"
-    assert _ok(_call(token, "library", {"action": "sources"}))["total_records"] == N_NRC + N_MIL
-    assert "not found" in _err(_call(token, "library", {"action": "get", "id": "nope"}))
-    assert "Unknown equipment_type" in _err(_call(token, "library", {"action": "search",
+    assert _ok(_call(token, "list", {"kind": "library_sources"}))["total_records"] == N_NRC + N_MIL
+    assert "not found" in _err(_call(token, "get", {"kind": "library_record", "id": "nope"}))
+    assert "Unknown equipment_type" in _err(_call(token, "list", {"kind": "library",
                                                                      "equipment_type": "spaceship"}))
-    assert "doesn't take" in _err(_call(token, "library", {"action": "sources", "query": "pump"}))
+    assert "doesn't take" in _err(_call(token, "list", {"kind": "library_sources", "query": "pump"}))
 
     api = TestClient(__import__("backend.main", fromlist=["app"]).app)
     r = api.post("/api/v1/library/search", json={"query": "check valve", "kind": "rate", "page_size": 2},
@@ -612,7 +612,7 @@ def test_mil_source_and_public_route(client):
 
 @pytest.mark.usefixtures("mcp_on")
 def test_library_lookups_are_never_counted(env, monkeypatch):
-    """Lookups aren't calculations: on every plan, library search / get /
+    """Lookups aren't calculations: on every plan, list kind library / get /
     sources don't use the Free plan's monthly calls (or a grandfathered Agent
     plan's daily ones), and still work once the allowance is used up."""
     from backend import config
@@ -621,26 +621,26 @@ def test_library_lookups_are_never_counted(env, monkeypatch):
     monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 1)
     token = env.oauth[FREE]
     for _ in range(3):
-        _ok(_call(token, "library", {"action": "search", "query": "resistor"}))
-    _ok(_call(token, "library", {"action": "get", "id": f"{MIL}:9-1-rc-11", "environment": "GB"}))
-    _ok(_call(token, "library", {"action": "sources"}))
-    assert "not found" in _err(_call(token, "library", {"action": "get", "id": "nope"}))
+        _ok(_call(token, "list", {"kind": "library", "query": "resistor"}))
+    _ok(_call(token, "get", {"kind": "library_record", "id": f"{MIL}:9-1-rc-11", "environment": "GB"}))
+    _ok(_call(token, "list", {"kind": "library_sources"}))
+    assert "not found" in _err(_call(token, "get", {"kind": "library_record", "id": "nope"}))
     assert _calls_used(env.db, FREE) == 0
     _ok(_call(token, "list", {"kind": "models"}))  # the month's one call
     assert "this month's 1 free" in _err(_call(token, "list", {"kind": "models"}))
-    out = _ok(_call(token, "library", {"action": "get", "id": f"{MIL}:9-1-rc-11", "environment": "GF"}))
+    out = _ok(_call(token, "get", {"kind": "library_record", "id": f"{MIL}:9-1-rc-11", "environment": "GF"}))
     assert out["block_model"]["failure_rate"] == pytest.approx(6.8e-9)  # past the allowance, still there
     assert _calls_used(env.db, FREE) == 1
     agent = env.oauth[AGENT]
-    _ok(_call(agent, "library", {"action": "search", "query": "capacitor"}))
+    _ok(_call(agent, "list", {"kind": "library", "query": "capacitor"}))
     assert _calls_used(env.db, AGENT, "agent") == 0
 
 
 @pytest.mark.usefixtures("mcp_on")
 def test_the_library_environment_over_mcp_and_rest(env):
-    one = _ok(_call(env.oauth[PRO], "library", {"action": "get", "id": f"{MIL}:17-1-crimp", "environment": "NU"}))
+    one = _ok(_call(env.oauth[PRO], "get", {"kind": "library_record", "id": f"{MIL}:17-1-crimp", "environment": "NU"}))
     assert one["block_model"]["failure_rate"] == pytest.approx(0.00286e-6)
-    assert "Unknown environment" in _err(_call(env.oauth[PRO], "library", {"action": "get",
+    assert "Unknown environment" in _err(_call(env.oauth[PRO], "get", {"kind": "library_record",
                                                                           "id": f"{MIL}:17-1-crimp",
                                                                           "environment": "XX"}))
     api = TestClient(__import__("backend.main", fromlist=["app"]).app)

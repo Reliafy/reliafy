@@ -1,6 +1,6 @@
-"""MCP file uploads and imports (#141): uploads create -> PUT /api/uploads/{id}
--> get kind upload -> uploads import_rbd / uploads import_excel / datasets upload /
-rbd upload_outage_log, with the upload link's security properties (single-use,
+"""MCP file uploads and imports (#141): change upload_create -> PUT /api/uploads/{id}
+-> get kind upload -> change import_rbd / change import_excel / change dataset_upload /
+change rbd_upload_outage_log, with the upload link's security properties (single-use,
 expiring, owner-only, size-capped, rate-limited, never logged).
 
 Every file here is built in the test (hand-written Open-PSA and Galileo text,
@@ -136,7 +136,7 @@ def _target(url: str) -> str:
 
 
 def _upload(env, data: bytes, filename: str, purpose: str = "rbd_import", uid: str = A, method: str = "PUT"):
-    link = _ok(_call(env.token[uid], "uploads", {"action": "create", "purpose": purpose, "filename": filename}))
+    link = _ok(_call(env.token[uid], "change", {"action": "upload_create", "purpose": purpose, "filename": filename}))
     r = _http().request(method, _target(link["url"]), content=data,
                         headers={"Content-Type": "application/octet-stream"})
     assert r.status_code == 200, r.text
@@ -152,7 +152,7 @@ def _no_uploads_left(db) -> bool:
 def test_create_upload_gives_a_single_use_link_and_stores_only_a_hash(env):
     from backend.services import uploads
 
-    link = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "plant.rsgz"}))
+    link = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "plant.rsgz"}))
     assert set(link) >= {"upload_id", "url", "method", "headers", "max_bytes", "expires_at", "curl", "note"}
     assert link["method"] == "PUT" and link["headers"] == {"Content-Type": "application/octet-stream"}
     assert link["url"].startswith(f"https://reliafy.example/api/uploads/{link['upload_id']}?t=")
@@ -175,15 +175,15 @@ def test_create_upload_gives_a_single_use_link_and_stores_only_a_hash(env):
     # Limits per purpose: CSV datasets keep the dataset limit; workbooks the Excel one (capped).
     from backend import config
 
-    csv = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "dataset", "filename": "lives.csv"}))
+    csv = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "dataset", "filename": "lives.csv"}))
     assert csv["max_bytes"] == config.MAX_UPLOAD_BYTES
-    xlsx = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "dataset", "filename": "lives.xlsx"}))
+    xlsx = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "dataset", "filename": "lives.xlsx"}))
     assert xlsx["max_bytes"] == 30 * 1024 * 1024
     # A declared size over the limit is refused at once.
-    msg = _err(_call(env.token[A], "uploads", {"action": "create", "purpose": "excel", "filename": "big.xlsx",
+    msg = _err(_call(env.token[A], "change", {"action": "upload_create", "purpose": "excel", "filename": "big.xlsx",
                                                       "size_bytes": 40 * 1024 * 1024}))
     assert "limited to 30 MB" in msg
-    assert _call(env.token[A], "uploads", {"action": "create", "purpose": "photos", "filename": "x.jpg"}).is_error
+    assert _call(env.token[A], "change", {"action": "upload_create", "purpose": "photos", "filename": "x.jpg"}).is_error
 
 
 def test_create_upload_says_what_to_do_when_the_put_cant_get_through(env):
@@ -192,23 +192,20 @@ def test_create_upload_says_what_to_do_when_the_put_cant_get_through(env):
     text, or the user uploads in the app."""
     from backend import mcp_guide
 
-    link = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "dataset", "filename": "lives.csv"}))
+    link = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "dataset", "filename": "lives.csv"}))
     fallback = link["fallback"]
     assert "proxy 403" in fallback and "don't retry" in fallback
-    assert "datasets upload csv" in fallback and "uploads import_rbd content" in fallback and "200 KB" in fallback
+    assert "change dataset_upload csv" in fallback and "change import_rbd content" in fallback and "200 KB" in fallback
     assert fallback.endswith("(Data: https://reliafy.example/data).")
-    rbd = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "plant.rsgz"}))
+    rbd = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "plant.rsgz"}))
     assert "Systems › RBDs › Import: https://reliafy.example/systems/rbds" in rbd["fallback"]
 
-    async def tools(client):
-        return {t.name: t for t in (await client.list_tools()).tools}
+    from backend.mcp_server import action_schema
 
-    from backend.tests.test_mcp import _run
-
-    desc = _run(env.token[A], tools)["uploads"].description
+    desc = action_schema("change.upload_create")["does"]
     assert "url_fallback" in desc and "the response's fallback" in desc and "guide topic uploads" in desc
     guide = mcp_guide.TOPICS["uploads"][1]
-    assert "datasets upload csv" in guide and "create's fallback says where" in guide
+    assert "change dataset_upload csv" in guide and "create's fallback says where" in guide
 
 
 def test_put_stores_the_file_in_chunks_and_reports_its_format(env, monkeypatch):
@@ -252,7 +249,7 @@ def test_galileo_upload_inspect_import_then_cleanup(env):
     assert seen["kind"] == "diagram_file" and seen["detected_format"] == "galileo"
     assert seen["n_diagrams"] == 1 and seen["diagrams"][0]["n_blocks"] >= 4
 
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "upload_id": link["upload_id"],
+    out = _ok(_call(env.token[A], "change", {"action": "import_rbd", "upload_id": link["upload_id"],
                                               "name": "Sensor train"}))
     assert out["saved"] is True
     (d,) = out["diagrams"]
@@ -262,7 +259,7 @@ def test_galileo_upload_inspect_import_then_cleanup(env):
     assert "graph" not in d  # lean: never the whole graph
     assert env.db.rbds.find_one({"_id": d["id"], "owner_id": A}) is not None
     assert _no_uploads_left(env.db)  # deleted once imported
-    assert "Upload not found" in _err(_call(env.token[A], "uploads", {"action": "import_rbd",
+    assert "Upload not found" in _err(_call(env.token[A], "change", {"action": "import_rbd",
                                                                       "upload_id": link["upload_id"]}))
 
 
@@ -272,13 +269,13 @@ def test_open_psa_via_post_preview_then_pick_one(env):
     seen = _ok(_call(env.token[A], "get", {"kind": "upload", "id": link["upload_id"]}))
     assert seen["n_diagrams"] == 2
 
-    preview = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "upload_id": link["upload_id"],
+    preview = _ok(_call(env.token[A], "change", {"action": "import_rbd", "upload_id": link["upload_id"],
                                                   "save": False}))
     assert preview["saved"] is False and len(preview["diagrams"]) == 2 and "Preview only" in preview["note"]
     assert env.db.rbds.count_documents({}) == 0 and env.db.uploads.count_documents({}) == 1  # kept
 
     names = [d["name"] for d in preview["diagrams"]]
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "upload_id": link["upload_id"],
+    out = _ok(_call(env.token[A], "change", {"action": "import_rbd", "upload_id": link["upload_id"],
                                               "only": [names[1]],
                                                  "format": "openpsa"}))
     assert [d["name"] for d in out["diagrams"]] == [names[1]]
@@ -301,7 +298,7 @@ def test_excel_rbd_template_through_import_excel_and_import_rbd(env):
     assert "rbd_blocks" in sheets["Blocks"]["looks_like"]
     assert seen["rbd_template"]["n_diagrams"] == 1
 
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+    out = _ok(_call(env.token[A], "change", {"action": "import_excel", "upload_id": link["upload_id"],
                                               "target": "rbd_template",
                                                    "name": "Pump skid"}))
     assert out["target"] == "rbd_template" and out["saved"] is True
@@ -309,15 +306,15 @@ def test_excel_rbd_template_through_import_excel_and_import_rbd(env):
     assert d["name"] == "Pump skid" and "Pump A" in {n["label"] for n in d["nodes"]}
     assert _no_uploads_left(env.db)
 
-    # uploads import_rbd takes a template workbook too.
+    # change import_rbd takes a template workbook too.
     link2, _ = _upload(env, template, "skid.xlsx", purpose="rbd_import")
-    again = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "upload_id": link2["upload_id"]}))
+    again = _ok(_call(env.token[A], "change", {"action": "import_rbd", "upload_id": link2["upload_id"]}))
     assert again["diagrams"][0]["source_format"] == "Excel"
     assert env.db.rbds.count_documents({"owner_id": A}) == 2
 
 
 def test_import_excel_with_rbd_id_saves_a_copy_unless_replace(env):
-    """uploads import_excel with rbd_id used to overwrite that diagram. It now saves
+    """change import_excel with rbd_id used to overwrite that diagram. It now saves
     a new copy (the original unchanged), as the app's import always opens a
     new diagram; replace=true overwrites, and the result says which."""
     from backend.services import rbds as rbds_service
@@ -329,7 +326,7 @@ def test_import_excel_with_rbd_id_saves_a_copy_unless_replace(env):
     n0 = env.db.rbds.count_documents({"owner_id": A})
 
     link, _ = _upload(env, template, "skid.xlsx", purpose="excel")
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+    out = _ok(_call(env.token[A], "change", {"action": "import_excel", "upload_id": link["upload_id"],
                                               "target": "rbd_template",
                                                    "rbd_id": mine["id"]}))
     assert out["action"] == "copied" and out["copy_of"] == mine["id"] and out["id"] != mine["id"]
@@ -340,7 +337,7 @@ def test_import_excel_with_rbd_id_saves_a_copy_unless_replace(env):
     assert env.db.rbds.find_one({"_id": mine["id"]})["graph"] == before["graph"]  # untouched
 
     link2, _ = _upload(env, template, "skid.xlsx", purpose="excel")
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link2["upload_id"],
+    out = _ok(_call(env.token[A], "change", {"action": "import_excel", "upload_id": link2["upload_id"],
                                               "target": "rbd_template",
                                                    "rbd_id": mine["id"], "replace": True}))
     assert out["action"] == "replaced" and out["replaced"] == out["id"] == mine["id"]
@@ -349,7 +346,7 @@ def test_import_excel_with_rbd_id_saves_a_copy_unless_replace(env):
     assert env.db.rbds.find_one({"_id": mine["id"]})["graph"] != before["graph"]
 
     link3, _ = _upload(env, template, "skid.xlsx", purpose="excel")
-    assert "replace applies with rbd_id" in _err(_call(env.token[A], "uploads", {"action": "import_excel",
+    assert "replace applies with rbd_id" in _err(_call(env.token[A], "change", {"action": "import_excel",
         "upload_id": link3["upload_id"], "target": "rbd_template", "replace": True}))
 
 
@@ -367,7 +364,7 @@ def test_blocksim_project_end_to_end(env, name, fmt):
     assert put["detected_format"] == fmt
     seen = _ok(_call(env.token[A], "get", {"kind": "upload", "id": link["upload_id"]}))
     assert "Storage Cluster System" in [d["name"] for d in seen["diagrams"]]
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "upload_id": link["upload_id"],
+    out = _ok(_call(env.token[A], "change", {"action": "import_rbd", "upload_id": link["upload_id"],
                                               "only": ["Storage Cluster System"]}))
     (d,) = out["diagrams"]
     assert d["source_format"] == "ReliaSoft BlockSim" and d["n_blocks"] == 10
@@ -376,7 +373,7 @@ def test_blocksim_project_end_to_end(env, name, fmt):
 
 def test_import_rbd_explains_an_unrecognised_workbook(env):
     link, _ = _upload(env, LIVES, "lives.xlsx", purpose="excel")
-    msg = _err(_call(env.token[A], "uploads", {"action": "import_rbd", "upload_id": link["upload_id"]}))
+    msg = _err(_call(env.token[A], "change", {"action": "import_rbd", "upload_id": link["upload_id"]}))
     assert "target=rbd_template" in msg and "“Lives”" in msg and "Run hours" in msg
     assert env.db.uploads.count_documents({}) == 1  # a failed import keeps the upload
 
@@ -384,20 +381,20 @@ def test_import_rbd_explains_an_unrecognised_workbook(env):
 # ---- inline content ------------------------------------------------------------------------
 
 def test_inline_content_for_small_text_formats(env):
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "content": GALILEO}))
+    out = _ok(_call(env.token[A], "change", {"action": "import_rbd", "content": GALILEO}))
     assert out["saved"] and out["diagrams"][0]["source_format"] == "Galileo DFT"
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "content": OPENPSA, "format": "openpsa",
+    out = _ok(_call(env.token[A], "change", {"action": "import_rbd", "content": OPENPSA, "format": "openpsa",
                                               "save": False}))
     assert len(out["diagrams"]) == 2 and not out["saved"]
 
     big = GALILEO + "// padding\n" * 20_000
     assert len(big.encode()) > 200 * 1024
-    msg = _err(_call(env.token[A], "uploads", {"action": "import_rbd", "content": big}))
-    assert "limited to 200 KB" in msg and "uploads create" in msg
-    assert "binary" in _err(_call(env.token[A], "uploads", {"action": "import_rbd", "content": "x",
+    msg = _err(_call(env.token[A], "change", {"action": "import_rbd", "content": big}))
+    assert "limited to 200 KB" in msg and "change upload_create" in msg
+    assert "binary" in _err(_call(env.token[A], "change", {"action": "import_rbd", "content": "x",
                                                             "format": "blocksim"}))
-    assert "exactly one" in _err(_call(env.token[A], "uploads", {"action": "import_rbd"}))
-    assert "Unrecognised file" in _err(_call(env.token[A], "uploads", {"action": "import_rbd",
+    assert "exactly one" in _err(_call(env.token[A], "change", {"action": "import_rbd"}))
+    assert "Unrecognised file" in _err(_call(env.token[A], "change", {"action": "import_rbd",
                                                                        "content": "hello world"}))
 
 
@@ -412,7 +409,7 @@ toplevel "System";
 def test_import_preview_shows_the_structure_and_asks_for_the_unit(env):
     """#187: a preview is enough to check the conversion (structure, edges,
     minimal cut sets), and a file with no unit is flagged, not left blank."""
-    preview = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "content": PUMPS_DFT, "save": False}))
+    preview = _ok(_call(env.token[A], "change", {"action": "import_rbd", "content": PUMPS_DFT, "save": False}))
     (d,) = preview["diagrams"]
     assert d["structure"] == "(PA ∥ PB) → MCC → Valve"
     assert d["minimal_cut_sets"] == [["MCC"], ["Valve"], ["PA", "PB"]] and d["n_cut_sets"] == 3
@@ -420,7 +417,7 @@ def test_import_preview_shows_the_structure_and_asks_for_the_unit(env):
     assert d["unit"] == "" and "Ask the user" in d["unit_warning"] and "time_unit" in d["unit_warning"]
     assert "doesn't state a time unit" in d["import_notes"][0]
 
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "content": PUMPS_DFT, "time_unit": "Hours"}))
+    out = _ok(_call(env.token[A], "change", {"action": "import_rbd", "content": PUMPS_DFT, "time_unit": "Hours"}))
     (d,) = out["diagrams"]
     assert d["unit"] == "Hours" and "unit_warning" not in d
     assert d["structure"] == "(PA ∥ PB) → MCC → Valve"
@@ -437,7 +434,7 @@ def test_open_psa_fixed_probability_events_import_as_blocks_needing_a_model(env)
            '</define-gate><define-gate name="Pumps"><and><basic-event name="PA"/><basic-event name="PB"/>'
            '</and></define-gate><define-basic-event name="MCC"><float value="0.01"/></define-basic-event>'
            + _event("PA", 1e-4) + _event("PB", 1e-4) + "</opsa-mef>")
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "content": xml, "format": "openpsa",
+    out = _ok(_call(env.token[A], "change", {"action": "import_rbd", "content": xml, "format": "openpsa",
                                               "time_unit": "Hours"}))
     assert out["saved"] is True
     (d,) = out["diagrams"]
@@ -453,7 +450,7 @@ def test_galileo_prob_events_import_as_blocks_needing_a_model(env):
     """Galileo ``prob=`` events get the same treatment as Open-PSA's: saved as
     a block with no non-repairable model, listed in needs_model; nothing invented."""
     dft = PUMPS_DFT.replace('"MCC" lambda=1e-5;', '"MCC" prob=0.01;')
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_rbd", "content": dft, "format": "galileo",
+    out = _ok(_call(env.token[A], "change", {"action": "import_rbd", "content": dft, "format": "galileo",
                                               "time_unit": "Hours"}))
     assert out["saved"] is True
     (d,) = out["diagrams"]
@@ -463,7 +460,7 @@ def test_galileo_prob_events_import_as_blocks_needing_a_model(env):
     saved = env.db.rbds.find_one({"_id": d["id"]})["graph"]
     (mcc,) = [n for n in saved["nodes"] if n["data"].get("label") == "MCC"]
     assert "model" not in mcc["data"]
-    assert "isn't between 0 and 1" in _err(_call(env.token[A], "uploads", {"action": "import_rbd",
+    assert "isn't between 0 and 1" in _err(_call(env.token[A], "change", {"action": "import_rbd",
         "content": dft.replace("prob=0.01", "prob=1.01"), "format": "galileo"}))
 
 
@@ -476,21 +473,21 @@ def test_excel_dataset_needs_a_sheet_then_maps_columns(env):
     assert lives["columns"] == ["Unit", "Run hours", "Failed?"] and lives["data_rows"] == 12
     assert len(lives["sample_rows"]) == 3
 
-    msg = _err(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+    msg = _err(_call(env.token[A], "change", {"action": "import_excel", "upload_id": link["upload_id"],
                                                "target": "dataset"}))
     assert "several sheets" in msg and "“Lives” (13 rows: Unit, Run hours, Failed?)" in msg
-    msg = _err(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+    msg = _err(_call(env.token[A], "change", {"action": "import_excel", "upload_id": link["upload_id"],
                                                "target": "dataset",
                                                     "sheet": "Lives", "mapping": {"time": "Hours"}}))
     assert "no column “Hours”" in msg and "Run hours" in msg
 
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_excel",
+    out = _ok(_call(env.token[A], "change", {"action": "import_excel",
         "upload_id": link["upload_id"], "target": "dataset", "sheet": "Lives",
         "mapping": {"time": "Run hours", "failed": "Failed?"}}))
     assert out["target"] == "dataset" and out["sheet"] == "Lives"
     assert out["columns"] == ["time", "failed"] and out["n_rows"] == 12
     assert out["name"] == "bearings - Lives" and out["url"].endswith(f"/data/{out['id']}")
-    assert set(out) >= {"id", "name", "n_rows", "columns", "preview", "url"}  # as datasets upload
+    assert set(out) >= {"id", "name", "n_rows", "columns", "preview", "url"}  # as change dataset_upload
     assert _no_uploads_left(env.db)
 
 
@@ -499,21 +496,21 @@ def test_excel_rcm_worksheet_needs_a_position(env):
     seen = _ok(_call(env.token[A], "get", {"kind": "upload", "id": link["upload_id"]}))
     assert seen["sheets"][0]["looks_like"]["rcm"]["mode"] == "Failure mode"
     # RCM lives on a position; the old study-based import is gone.
-    msg = _err(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+    msg = _err(_call(env.token[A], "change", {"action": "import_excel", "upload_id": link["upload_id"],
                                                "target": "rcm"}))
     assert "needs position_id" in msg
 
 
 def test_import_excel_refuses_non_workbooks_and_misplaced_ids(env):
     link, _ = _upload(env, b"time,c\n1,0\n2,0\n", "x.csv", purpose="dataset")
-    assert "isn't an Excel workbook" in _err(_call(env.token[A], "uploads", {"action": "import_excel",
+    assert "isn't an Excel workbook" in _err(_call(env.token[A], "change", {"action": "import_excel",
         "upload_id": link["upload_id"], "target": "dataset"}))
     link2, _ = _upload(env, FMEA, "f.xlsx", purpose="excel")
-    assert "position_id applies to target rcm" in _err(_call(env.token[A], "uploads", {"action": "import_excel",
+    assert "position_id applies to target rcm" in _err(_call(env.token[A], "change", {"action": "import_excel",
         "upload_id": link2["upload_id"], "target": "dataset", "position_id": "x"}))
 
 
-# ---- datasets upload / rbd upload_outage_log ---------------------------------------------------
+# ---- change dataset_upload / change rbd_upload_outage_log ---------------------------------------------------
 
 def test_upload_dataset_from_a_csv_or_workbook_upload(env):
     csv = "time,censored\n120,0\n340,0\n510,1\n700,0\n"
@@ -522,26 +519,26 @@ def test_upload_dataset_from_a_csv_or_workbook_upload(env):
     seen = _ok(_call(env.token[A], "get", {"kind": "upload", "id": link["upload_id"]}))
     assert seen["kind"] == "table" and seen["columns"] == ["time", "censored"] and seen["rows"] == 4
 
-    out = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Bearings", "upload_id": link["upload_id"]}))
+    out = _ok(_call(env.token[A], "change", {"action": "dataset_upload", "name": "Bearings", "upload_id": link["upload_id"]}))
     assert out["columns"] == ["time", "censored"] and out["n_rows"] == 4
     assert _no_uploads_left(env.db)
 
     link2, _ = _upload(env, LIVES, "lives.xlsx", purpose="dataset")
-    assert "several sheets" in _err(_call(env.token[A], "datasets", {"action": "upload", "name": "x",
+    assert "several sheets" in _err(_call(env.token[A], "change", {"action": "dataset_upload", "name": "x",
                                                                             "upload_id": link2["upload_id"]}))
-    out = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Bearings 2",
+    out = _ok(_call(env.token[A], "change", {"action": "dataset_upload", "name": "Bearings 2",
                                                "upload_id": link2["upload_id"],
                                                      "sheet": "Lives"}))
     assert out["columns"] == ["Unit", "Run hours", "Failed?"] and out["n_rows"] == 12
 
     # Same validation as pasted CSV.
     link3, _ = _upload(env, b"just one column\n1\n2\n", "bad.csv", purpose="dataset")
-    assert "Only one column" in _err(_call(env.token[A], "datasets", {"action": "upload", "name": "x",
+    assert "Only one column" in _err(_call(env.token[A], "change", {"action": "dataset_upload", "name": "x",
                                                                              "upload_id": link3["upload_id"]}))
-    assert "exactly one" in _err(_call(env.token[A], "datasets", {"action": "upload", "name": "x", "csv": csv,
+    assert "exactly one" in _err(_call(env.token[A], "change", {"action": "dataset_upload", "name": "x", "csv": csv,
                                                                          "upload_id": link3["upload_id"]}))
     link4, _ = _upload(env, GALILEO.encode(), "s.dft", purpose="dataset")
-    assert "not a table" in _err(_call(env.token[A], "datasets", {"action": "upload", "name": "x",
+    assert "not a table" in _err(_call(env.token[A], "change", {"action": "dataset_upload", "name": "x",
                                                                          "upload_id": link4["upload_id"]}))
 
 
@@ -550,28 +547,28 @@ def test_upload_dataset_guesses_a_missing_header_and_says_so(env):
 
     # #434: a first row of only numbers is data, with a one-line hint.
     csv = "300,544966.3125\n410,612000.5\n520,701234.25\n"
-    out = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Raw", "csv": csv}))
+    out = _ok(_call(env.token[A], "change", {"action": "dataset_upload", "name": "Raw", "csv": csv}))
     assert out["columns"] == ["col 1", "col 2"] and out["n_rows"] == 3
     assert out["header_guess"] == 0 and out["hint"] == fitting.HEADER_HINT
 
     # no_header=false: the numbers are the names after all.
-    out = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Raw 2", "csv": csv,
+    out = _ok(_call(env.token[A], "change", {"action": "dataset_upload", "name": "Raw 2", "csv": csv,
                                                "no_header": False}))
     assert out["columns"] == ["300", "544966.3125"] and out["n_rows"] == 2 and "hint" not in out
 
-    named = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Named",
+    named = _ok(_call(env.token[A], "change", {"action": "dataset_upload", "name": "Named",
                                                  "csv": "hours,failed\n1,0\n2,1\n"}))
     assert named["header_guess"] == 1 and "hint" not in named
 
     # A sheet of numbers: the same guess, over an upload and over import_excel.
     book = _workbook({"Lives": [[300, 1.5], [410, 2.5], [520, 3.5]]})
     link, _ = _upload(env, book, "lives.xlsx", purpose="dataset")
-    out = _ok(_call(env.token[A], "datasets", {"action": "upload", "name": "Sheet",
+    out = _ok(_call(env.token[A], "change", {"action": "dataset_upload", "name": "Sheet",
                                                "upload_id": link["upload_id"]}))
     assert out["columns"] == ["col 1", "col 2"] and out["n_rows"] == 3
     assert out["header_guess"] == 0 and "import_excel" in out["hint"]
     link2, _ = _upload(env, book, "lives.xlsx", purpose="excel")
-    out = _ok(_call(env.token[A], "uploads", {"action": "import_excel", "upload_id": link2["upload_id"],
+    out = _ok(_call(env.token[A], "change", {"action": "import_excel", "upload_id": link2["upload_id"],
                                               "target": "dataset", "name": "Sheet 2"}))
     assert out["header_row"] == 0 and out["hint"] == fitting.SHEET_HEADER_HINT
 
@@ -583,24 +580,24 @@ def test_upload_outage_log_from_an_upload(env):
     rows = [line.split(",") for line in LOG.strip().splitlines()]
     book = _workbook({"Cover": [["Outage log, site 4"]], "Outages": rows})
     link, _ = _upload(env, book, "outages.xlsx", purpose="outage_log")
-    out = _ok(_call(env.token[A], "rbd", {"action": "upload_outage_log",
+    out = _ok(_call(env.token[A], "change", {"action": "rbd_upload_outage_log",
         "rbd_id": rbd.id, "upload_id": link["upload_id"], "sheet": "Outages",
         "window_start": "0", "window_end": "1000"}))
     assert out["n_outages"] == 9 and out["history"]["kpis"]["availability"] == pytest.approx(0.91)
     assert _no_uploads_left(env.db)
 
     link2, _ = _upload(env, LOG.encode(), "outages.csv", purpose="outage_log")
-    out = _ok(_call(env.token[A], "rbd", {"action": "upload_outage_log", "rbd_id": rbd.id,
+    out = _ok(_call(env.token[A], "change", {"action": "rbd_upload_outage_log", "rbd_id": rbd.id,
                                           "upload_id": link2["upload_id"],
                                                         "window_start": "0", "window_end": "1000"}))
     assert out["n_outages"] == 9
-    assert "exactly one" in _err(_call(env.token[A], "rbd", {"action": "upload_outage_log", "rbd_id": rbd.id}))
+    assert "exactly one" in _err(_call(env.token[A], "change", {"action": "rbd_upload_outage_log", "rbd_id": rbd.id}))
 
 
 # ---- the link's security ------------------------------------------------------------------
 
 def test_token_is_single_use_and_checked(env):
-    link = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "s.dft"}))
+    link = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "s.dft"}))
     upload_id, token = link["upload_id"], link["url"].split("?t=", 1)[1]
     client = _http()
     wrong = client.put(f"/api/uploads/{upload_id}?t={token[:-2]}xx", content=b"x")
@@ -624,7 +621,7 @@ def test_fallback_url_on_the_public_site_when_the_direct_host_is_refused(env, mo
     from backend import config, mcp_guide
 
     monkeypatch.setattr(config, "UPLOAD_BASE_URL", "https://direct.example.run.app")
-    link = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "s.dft"}))
+    link = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "s.dft"}))
     path = f"/api/uploads/{link['upload_id']}?t="
     assert link["url"].startswith("https://direct.example.run.app" + path)
     assert link["url_fallback"].startswith("https://reliafy.example" + path)
@@ -647,14 +644,14 @@ def test_fallback_url_on_the_public_site_when_the_direct_host_is_refused(env, mo
     assert again.status_code == 409 and "already been used" in again.json()["detail"]
 
     # The other way round: the direct PUT works, then the fallback is refused.
-    other = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "t.dft"}))
+    other = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "t.dft"}))
     assert client.put(_target(other["url"]), content=GALILEO.encode(),
                       headers={"Host": "direct.example.run.app"}).status_code == 200
     refused = client.put(_target(other["url_fallback"]), content=b"x", headers={"Host": "reliafy.example"})
     assert refused.status_code == 409
 
     # A first attempt that reached us but failed (too large) leaves the link usable on the fallback.
-    big = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "dataset", "filename": "lives.csv"}))
+    big = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "dataset", "filename": "lives.csv"}))
     too_big = client.put(_target(big["url"]), content=b"x" * (big["max_bytes"] + 1))
     assert too_big.status_code == 413
     assert client.put(_target(big["url_fallback"]), content=b"hours\n1\n2\n").status_code == 200
@@ -665,14 +662,14 @@ def test_no_fallback_url_when_uploads_use_the_public_site(env, monkeypatch):
 
     for base in (None, "https://reliafy.example"):
         monkeypatch.setattr(config, "UPLOAD_BASE_URL", base)
-        link = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "dataset", "filename": "lives.csv"}))
+        link = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "dataset", "filename": "lives.csv"}))
         assert link["url"].startswith("https://reliafy.example/api/uploads/")
         assert "url_fallback" not in link and "curl_fallback" not in link
         assert link["fallback"].startswith("If the PUT can't reach this URL") and "url_fallback" not in link["fallback"]
 
 
 def test_expired_link_is_refused(env):
-    link = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "s.dft"}))
+    link = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "s.dft"}))
     past = datetime.now(timezone.utc) - timedelta(seconds=1)
     env.db.uploads.update_one({"_id": link["upload_id"]}, {"$set": {"expires_at": past}})
     r = _http().put(_target(link["url"]), content=GALILEO.encode())
@@ -684,20 +681,20 @@ def test_expired_link_is_refused(env):
 def test_upload_is_private_to_its_creator(env):
     link, _ = _upload(env, GALILEO.encode(), "s.dft")
     ref = link["upload_id"]
-    for tool, args in [("get", {"kind": "upload", "id": ref}), ("uploads", {"action": "import_rbd", "upload_id": ref}),
-                       ("datasets", {"action": "upload", "name": "x", "upload_id": ref}),
-                       ("uploads", {"action": "import_excel", "target": "dataset", "upload_id": ref})]:
+    for tool, args in [("get", {"kind": "upload", "id": ref}), ("change", {"action": "import_rbd", "upload_id": ref}),
+                       ("change", {"action": "dataset_upload", "name": "x", "upload_id": ref}),
+                       ("change", {"action": "import_excel", "target": "dataset", "upload_id": ref})]:
         msg = _err(_call(env.token[B], tool, args))
         assert "Upload not found" in msg, tool
     assert env.db.rbds.count_documents({}) == 0 and env.db.uploads.count_documents({}) == 1
     # Not yet sent: the tools say what to do.
-    pending = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "s.dft"}))
-    assert "hasn't arrived yet" in _err(_call(env.token[A], "uploads", {"action": "import_rbd",
+    pending = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "s.dft"}))
+    assert "hasn't arrived yet" in _err(_call(env.token[A], "change", {"action": "import_rbd",
                                                                         "upload_id": pending["upload_id"]}))
 
 
 def test_size_cap_413_declared_and_streamed_then_retry(env):
-    link = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "s.dft"}))
+    link = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "s.dft"}))
     env.db.uploads.update_one({"_id": link["upload_id"]}, {"$set": {"max_bytes": 1000}})
     client = _http()
     declared = client.put(_target(link["url"]), content=b"x" * 1001)
@@ -720,7 +717,7 @@ def test_rate_limited_per_upload_and_per_ip(env, monkeypatch):
     from backend.services import uploads
 
     monkeypatch.setattr(uploads, "UPLOAD_ATTEMPTS", 3)
-    link = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "s.dft"}))
+    link = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "s.dft"}))
     client = _http()
     bad = f"/api/uploads/{link['upload_id']}?t=wrong"
     assert [client.put(bad, content=b"x").status_code for _ in range(3)] == [404] * 3
@@ -728,7 +725,7 @@ def test_rate_limited_per_upload_and_per_ip(env, monkeypatch):
     assert r.status_code == 429 and int(r.headers["retry-after"]) > 0
 
     monkeypatch.setattr(uploads, "IP_ATTEMPTS", 4)  # this client has used 4 already
-    other = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "s.dft"}))
+    other = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "s.dft"}))
     assert client.put(_target(other["url"]), content=GALILEO.encode()).status_code == 429
 
 
@@ -744,7 +741,7 @@ def test_token_never_reaches_usage_events_or_access_log(env, monkeypatch, caplog
     events = list(env.db.usage_events.find({}, {"_id": 0}))
     put = [e for e in events if e["feature"] == "upload_put"]
     assert len(put) == 1 and put[0]["uid"] == A and put[0]["channel"] == "mcp" and put[0]["outcome"] == "ok"
-    assert {"uploads.create"} <= {e["feature"] for e in events}
+    assert {"change.upload_create"} <= {e["feature"] for e in events}
     assert token not in str(events) and link["upload_id"] not in str(events)
 
     # uvicorn's access log line for the PUT has the token redacted.
@@ -824,15 +821,15 @@ def test_rbd_cap_is_all_or_nothing(free_env, monkeypatch):
     monkeypatch.setattr(config, "FREE_MAX_RBDS", 2)
     rbds_service.save_rbd(env.db, "Existing", MCP_GRAPH, FREE)
     link, _ = _upload(env, OPENPSA.encode(), "plant.xml", uid=FREE)  # two diagrams, room for one
-    result = _call(env.token[FREE], "uploads", {"action": "import_rbd", "upload_id": link["upload_id"]})
+    result = _call(env.token[FREE], "change", {"action": "import_rbd", "upload_id": link["upload_id"]})
     msg = _err(result)
     assert "would save 2 RBDs" in msg and "allows 2 and you have 1" in msg and "nothing was saved" in msg
     assert env.db.rbds.count_documents({"owner_id": FREE}) == 1
     assert env.db.uploads.count_documents({"_id": link["upload_id"]}) == 1  # kept, to retry with only=
 
-    names = [d["name"] for d in _ok(_call(env.token[FREE], "uploads", {"action": "import_rbd",
+    names = [d["name"] for d in _ok(_call(env.token[FREE], "change", {"action": "import_rbd",
         "upload_id": link["upload_id"], "save": False}))["diagrams"]]
-    out = _ok(_call(env.token[FREE], "uploads", {"action": "import_rbd", "upload_id": link["upload_id"],
+    out = _ok(_call(env.token[FREE], "change", {"action": "import_rbd", "upload_id": link["upload_id"],
                                                  "only": names[:1]}))
     assert len(out["diagrams"]) == 1 and env.db.rbds.count_documents({"owner_id": FREE}) == 2
 
@@ -842,6 +839,6 @@ def test_upload_links_can_point_straight_at_cloud_run(env, monkeypatch):
     """UPLOAD_BASE_URL sends the PUT around the Firebase Hosting proxy."""
     from backend import config
     monkeypatch.setattr(config, "UPLOAD_BASE_URL", "https://reliafy-123.australia-southeast1.run.app")
-    out = _ok(_call(env.token[A], "uploads", {"action": "create", "purpose": "rbd_import", "filename": "x.xml"}))
+    out = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "x.xml"}))
     assert out["url"].startswith("https://reliafy-123.australia-southeast1.run.app/api/uploads/")
     assert out["url"] in out["curl"]

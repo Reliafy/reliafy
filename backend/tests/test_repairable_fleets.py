@@ -217,12 +217,12 @@ def test_mcp_fleet_forecast_and_delete_guard(env):
                      [{"name": "P1", "current_use": 200, "next_service_at": 260}], tm.A)
     listed = tm._ok(tm._call(env.token[tm.A], "list", {"kind": "fleets"}))["fleets"]
     assert listed[0]["model_kind"] == "recurrent"
-    out = tm._ok(tm._call(env.token[tm.A], "strategy", {"action": "fleet_forecast", "fleet_id": fleet.id}))
+    out = tm._ok(tm._call(env.token[tm.A], "analyse", {"action": "fleet_forecast", "fleet_id": fleet.id}))
     assert out["fleet"]["model_kind"] == "recurrent" and out["forecast"]["method"] == "repairable"
     lam = CrowAMSAA.from_params([ALPHA, BETA]).cif
     assert out["forecast"]["expected"] == pytest.approx(float(lam(300) - lam(200)), rel=1e-12)
     assert out["forecast"]["per_item"][0]["prob_before_service"] == pytest.approx(
         1 - np.exp(-float(lam(260) - lam(200))), rel=1e-12)
-    msg = tm._err(tm._call(env.token[tm.A], "models", {"action": "delete", "model_id": model.id}))
+    msg = tm._err(tm._call(env.token[tm.A], "change", {"action": "model_delete", "model_id": model.id}))
     assert "can't be deleted" in msg and "Pumps" in msg
     assert env.db.recurrent_models.find_one({"_id": model.id}) is not None

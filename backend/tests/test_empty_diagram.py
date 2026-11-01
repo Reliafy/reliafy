@@ -193,7 +193,7 @@ def test_saved_empty_diagram(client):
 # ---- MCP ---------------------------------------------------------------------------------------
 
 def _saved(env, graph):
-    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Empty", **GRAPH}))["id"]
+    rid = _ok(_call(env.token[A], "change", {"action": "rbd_create", "name": "Empty", **GRAPH}))["id"]
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
     return rid
 

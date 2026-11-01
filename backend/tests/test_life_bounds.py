@@ -205,7 +205,7 @@ def test_saved_model_life_and_compare(client):
 
 
 def test_mcp_get_model_gives_the_same_life(env):  # noqa: F811 - the fixture
-    saved = _ok(_call(env.token[MCP_USER], "models", {"action": "fit",
+    saved = _ok(_call(env.token[MCP_USER], "change", {"action": "model_fit",
         "data": TIMES, "censored": FLAGS, "unit": "hours", "name": "MCP bearings"}))
     detail = _ok(_call(env.token[MCP_USER], "get", {"kind": "model", "id": saved["model_id"]}))
     model = Weibull.fit(np.asarray(TIMES, dtype=float), np.asarray(FLAGS))

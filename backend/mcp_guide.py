@@ -14,9 +14,9 @@ saying nearly every row is censored almost always means the flags are inverted; 
 and censored units a fit used: check them against what the user said.
 - Units already in service when records began are left-truncated (delayed entry): their entry age goes in \
 trunc_left (trunc_left_column), not a flag. trunc_right is the age past which a failure couldn't be seen.
-- Fit and report: life_data_analysis fit (inline data, or dataset_id with time_column / censor_column). Keep it: \
-models fit (same arguments plus name; inline data is saved as a dataset too). Fitted elsewhere (e.g. locally \
-with SurPyval, the way when fitting isn't on the plan): models save with the distribution and params.
+- Fit and report: analyse fit (inline data, or dataset_id with time_column / censor_column). Keep it: \
+change model_fit (same arguments plus name; inline data is saved as a dataset too). Fitted elsewhere (e.g. locally \
+with SurPyval, the way when fitting isn't on the plan): change model_save with the distribution and params.
 - distribution: weibull by default; 'best' fits every plain distribution and keeps the lowest AIC \
 (criterion: aic_c, bic or neg_ll to rank by another score; selection gives each candidate's parameters, score \
 and delta to the best, under 2 is a tie, what it skipped and why, and guidance in words: relay it; \
@@ -31,29 +31,29 @@ the user asks.
 - Weibull beta < 1 = infant mortality, ≈ 1 = random failures, > 1 = wear-out.
 - Read saved models: list kind models, get kind model (parameters with 95% CIs, goodness of fit, B-lives with \
 one-sided 90% lower bounds; regression models: validation and the proportional-hazards checks).
-- Evaluate: life_data_analysis reliability_at (R(t), F(t), hazard; conditional_age for a unit still working; \
+- Evaluate: analyse reliability_at (R(t), F(t), hazard; conditional_age for a unit still working; \
 confidence for bounds, quoted with the point values; covariates or a covariate_schedule for regression \
 models). Bounds are null, with bounds_note saying why, where a model has none: never invent them.
-- Requirements: life_data_analysis check_life_requirement ("B10 >= 50,000 at 90% confidence": meets only on \
-the B-life's lower bound) and life_data_analysis plan_demonstration_test (units, test time and failures \
+- Requirements: analyse check_life_requirement ("B10 >= 50,000 at 90% confidence": meets only on \
+the B-life's lower bound) and analyse plan_demonstration_test (units, test time and failures \
 allowed; b_life, shape_model_id, producer_risk). Relay plan warnings. Other test plans: guide topic test_planning.
-- One-shot items (a valve that must open): life_data_analysis fit_per_demand (batches of demands and \
-failures; exact bounds); models fit with demand_batches saves one.
-- "Is A better than B?": life_data_analysis compare_groups (split by a column or give a group per time; \
+- One-shot items (a valve that must open): analyse fit_per_demand (batches of demands and \
+failures; exact bounds); change model_fit with demand_batches saves one.
+- "Is A better than B?": analyse compare_groups (split by a column or give a group per time; \
 log-rank, RMST difference, Gray's test per mode, a verdict to relay). Nothing is fitted.
 - Condition and life: remaining life from condition readings (a joint model, Pro): a reading taken again and again on each unit (vibration, wear, oil \
 debris) and the units' lives, fitted together. One dataset (dataset_id) holding both: its life data, one row \
 per unit (unit_id_column, age_column = age since new at failure or when last seen running, censor_column, \
 optional entry_age_column and numeric covariates; age_right_column for units found failed between two ages, \
 flag 2), and its measurements, one row per reading (reading_unit_column, reading_age_column since new, \
-reading_value_column; datasets add_measurements puts them on the dataset: csv, an upload_id, or \
+reading_value_column; change dataset_add_measurements puts them on the dataset: csv, an upload_id, or \
 from_dataset_id to copy another dataset's table in). A dataset whose one table holds both (the flag filled in \
-once per unit, a reading on every row) works as it is, or datasets split makes the two parts. Ages are since \
+once per unit, a reading on every row) works as it is, or change dataset_split makes the two parts. Ages are since \
 new, in one time unit (say it). hazard_covariates change the failure rate at a given reading; path_covariates \
 change how the reading drifts; one may be in both. path_model: linear unless the readings clearly curve. \
-life_data_analysis fit_joint reports; models fit_joint saves. The fit runs on the calculation service (8-40 s): \
+analyse fit_joint reports; change model_fit_joint saves. The fit runs on the calculation service (8-40 s): \
 it may come back as a job (get kind job). Quote each hazard ratio with its 95% CI, as its text says.
-- A running unit's risk: life_data_analysis predict_joint (unit_id, or age_now + readings + unit_covariates): \
+- A running unit's risk: analyse predict_joint (unit_id, or age_now + readings + unit_covariates): \
 survival over the horizons with bounds, and the median remaining life. Never quote a mean life for these \
 units: a reading that levels off can leave a chance of never failing, so the mean can be infinite; "not \
 reached" means the median is beyond any finite age."""),
@@ -61,31 +61,31 @@ reached" means the median is beyond any finite age."""),
     "units": ("Time units for data, models and diagrams.", """\
 Units.
 - A model's parameters and every time given to or returned by it are in the model's time unit; a diagram's in \
-the diagram's unit (rbd create unit; rbd edit set unit relabels, never rescales). Always state the unit with a \
+the diagram's unit (change rbd_create unit; change rbd_edit set unit relabels, never rescales). Always state the unit with a \
 number, and ask the user when unsure: never assume hours.
 - A saved model used on a diagram block must be in the diagram's unit; analyses warn when they differ.
 - Rates: an exponential failure_rate is per unit time (1/MTBF). An MTBF or MTTR can be given as a block's mean \
 (with its shape, e.g. weibull {beta}) instead of params.
-- Imported diagram files that state no unit come back with unit_warning: ask, then pass time_unit (or rbd \
-edit set unit).
+- Imported diagram files that state no unit come back with unit_warning: ask, then pass time_unit (or change \
+rbd_edit set unit).
 - Calendar-based figures (discount rates, by-horizon costs in years, proof-test calendars) need a calendar \
 unit (hours … years).
 - Accelerated tests: thermal life-stress models need absolute temperature (kelvin)."""),
 
     "accelerated": ("Accelerated life tests: fit, extrapolate, bounds.", """\
 Accelerated life tests (ALT).
-- models fit_alt fits and saves failure times at several stress levels with a life-stress relationship \
+- change model_fit_alt fits and saves failure times at several stress levels with a life-stress relationship \
 (life_model: arrhenius, eyring, inverse_power, dual models…) and a distribution: inline data + stresses (one \
 row per unit) or a dataset (time_column + stress_columns). Same censoring flags as life data, inspection data \
 (flag 2 with data_right) and delayed entry (trunc_left) included. Thermal models need kelvin. Fitting is Pro.
-- life_data_analysis alt_use_level extrapolates it to the use stress: characteristic and mean life, B-lives, \
+- analyse alt_use_level extrapolates it to the use stress: characteristic and mean life, B-lives, \
 mission reliability, the acceleration factor against a test stress, with bounds: wald (default), lr, or \
 bootstrap (Pro, runs as a job: get kind job until done; not for interval or left-censored data). Quote the \
 bounds with the values: an ALT answer is an extrapolation, and with few failures (a warning says so) no bound \
 holds its stated confidence."""),
 
     "test_planning": ("Planning tests: demonstration, sequential, life, accelerated and before/after comparisons.", """\
-Test planning: every plan is exact or numerical and saves nothing (life_data_analysis actions). Each answer \
+Test planning: every plan is exact or numerical and saves nothing (analyse actions). Each answer \
 leads with a plain summary: relay it, with the assumptions that matter.
 - Show a target is met: plan_demonstration_test (fixed length; method attribute or mtbf; with a good design and \
 producer_risk it keeps both risks). plan_sequential_test decides as failures come in, usually sooner: it needs \
@@ -95,7 +95,7 @@ units_seen) says accept, reject or continue. Budget for its longest run (max_tim
 B-life or the mean for units on test (solve_for precision), the units for a precision (units, within_pct: 20 = \
 ±20%) or how long to run (length). test_end time (censor_time), failures (failure_fraction) or all.
 - Accelerated tests: plan_accelerated_test from planning values of the non-repairable model (life_params; a similar \
-part's models fit_alt gives them) and shape: stresses, units at each and expected failures up to high_stress \
+part's change model_fit_alt gives them) and shape: stresses, units at each and expected failures up to high_stress \
 (levels 2 = optimum, 3 = compromise, which can show the model is wrong), or the precision of your own stresses \
 and units_at. Relay warnings: stresses with under 3 expected failures make the precision optimistic.
 - Did the change work? plan_comparison. kind logrank: old and new units side by side (hazard_ratio new/old, \
@@ -106,20 +106,20 @@ detectable drop for exposure_after, or power. A null exposure_after means no exp
 
     "repairable": ("Recurrent-event (repairable-system) models.", """\
 Repairable systems: many failures per system.
-- models fit_recurrent fits (and saves, unless save=false) a recurrent-event model from event histories: \
+- change model_fit_recurrent fits (and saves, unless save=false) a recurrent-event model from event histories: \
 inline times + systems (censored: 0 failure, 1 end of observation; or observed_to) or a dataset. Minimal \
 repair: crow_amsaa (default), duane, hpp, cox_lewis; covariates on the repair rate: pi_nhpp; imperfect repair: \
 grp_i / grp_ii, ara, ari, g1. windows give observation gaps; causes add each cause's growth. Fitting is Pro.
 - get kind model on one: the growth verdict with β's 95% interval, ROCOF and MTBF with bounds, the \
 demonstrated MTBF's lower bound, trend and goodness-of-fit tests, and (imperfect repair) the repair \
 effectiveness and each system's next failure.
-- repairable_analysis next_failure: at a system's age, the chance of a failure within given times and the \
-time to the next one. repairable_analysis growth_projection: the MTBF a growth test reaches once its fixes \
+- analyse next_failure: at a system's age, the chance of a failure within given times and the \
+time to the next one. analyse growth_projection: the MTBF a growth test reaches once its fixes \
 are in (BD modes with fix-effectiveness factors).
-- strategy optimal_overhaul: the overhaul interval for a deteriorating system (minimal-repair model, β > 1)."""),
+- analyse optimal_overhaul: the overhaul interval for a deteriorating system (minimal-repair model, β > 1)."""),
 
     "rbds": ("Building and editing reliability block diagrams: the structure rules.", """\
-Building RBDs (rbd create / clone / edit).
+Building RBDs (change rbd_create / clone / edit).
 - Structure is everything: pure series only for items that must ALL work. Redundancy is modelled as \
 redundancy: items named A/B, 1/2, duplex, dual, twin, standby, spare, backup, N+1 or "2 of 3" go in parallel \
 (a standby node when the spare sits idle; a knode for k-of-n). Never wire "Pump A" -> "Pump B" in series. State \
@@ -127,7 +127,7 @@ your structural assumptions; if unclear, ask one question first. Check structure
 line, against what the user described.
 - Never invent failure data: ask for MTBFs (or saved models) per class of block. If the user wants a starting \
 point, give different values per class, set placeholder=true on every guessed model and tell the user.
-- rbd create, graph form: nodes + edges, exactly one {id: input, type: input} and one {id: output, type: \
+- change rbd_create, graph form: nodes + edges, exactly one {id: input, type: input} and one {id: output, type: \
 output}; two parallel blocks fan out from the node before and join at the node after; "2 of 3": three blocks \
 into one knode (n=2). Stages form: stages in series, each with components in parallel (k_of_n voting).
 - Block models: inline distribution_id + params, a mean (MTBF/MTTR) with its shape, a mixture, or a saved \
@@ -145,18 +145,18 @@ covariate_schedules on a block with a saved regression model.
 value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \
 unit's survival to age + t given its readings. Don't give it an age in current_state (it is already as of \
 now). Repairable diagrams, exports to RePyability JSON and Download as Python refuse it (it lives in Reliafy).
-- Edit, don't rebuild: rbd edit with one batch of ops (add_node / remove_node / update_node / add_edge / \
+- Edit, don't rebuild: change rbd_edit with one batch of ops (add_node / remove_node / update_node / add_edge / \
 remove_edge / set / add_ccf / remove_ccf), all or nothing; dry_run checks first; if_updated_at refuses if the \
-diagram changed. Samples are read-only: rbd clone first. get kind rbd reads a diagram's full graph.
-- rbd upload_outage_log attaches a real outage log (asset, start, end; blank end = still down) to the user's \
-diagram; rbd_analysis system_history reads it back."""),
+diagram changed. Samples are read-only: change rbd_clone first. get kind rbd reads a diagram's full graph.
+- change rbd_upload_outage_log attaches a real outage log (asset, start, end; blank end = still down) to the user's \
+diagram; analyse rbd_system_history reads it back."""),
 
     "library": ("Published failure data: units, citing it, using it in a block.", """\
-The reliability data library (library search / get / sources): published generic failure data. Each record is \
+The reliability data library (list kind library, get kind library_record, list kind library_sources): published generic failure data. Each record is \
 one component and failure mode from one source, with its citation and licence.
-- library search finds records by words (component, failure mode, system: "motor-driven pump fails to start"), \
-filtered by source, equipment_type and kind (rate, per_demand, life); 25 a page, best first, with counts. \
-library get gives a record in full, with block_model: the model a block would use.
+- list kind library finds records by words (component, failure mode, system: "motor-driven pump fails to start"), \
+filtered by source, equipment_type and record_kind (rate, per_demand, life); 25 a page, best first, with counts. \
+get kind library_record gives a record in full, with block_model: the model a block would use.
 - Read the units. A rate is per hour: per hour of running (fails to run) or per calendar hour (leaks, spurious \
 operation, running or not). per_demand is a probability on each demand (a start, an opening), not a rate.
 - Quote the mean with its 5th to 95th percentile range (the source's spread: gamma for a rate, beta for a \
@@ -165,8 +165,8 @@ demand), and the evidence (failures, demands or hours).
 per-demand probability p is a cold-standby spare's startProb (1 - p), or a proof-tested item's failure on test. \
 Converting a calendar rate to hours of running needs the hours a year it runs: ask the user, never guess.
 - Handbook records (basis prediction_model, MIL-HDBK-217F: electronic parts) are a base failure rate per part \
-type, not counted failures, and never mixed with field data. The rate depends on where the part works: library \
-get with environment (GB ground, benign; GF ground, fixed; GM ground, mobile; NS naval, sheltered; AIC \
+type, not counted failures, and never mixed with field data. The rate depends on where the part works: get kind \
+library_record with environment (GB ground, benign; GF ground, fixed; GM ground, mobile; NS naval, sheltered; AIC \
 airborne, inhabited, cargo; and so on: the record's environments list each with its rate) gives the block model, \
 base rate x the environment factor. Ask the user which environment; never guess. Say plainly that the handbook's \
 other factors (temperature, stress, quality: prediction.not_applied) aren't applied and can move the rate a lot.
@@ -176,43 +176,43 @@ and suggest replacing it with their own data.
 - Library lookups are never counted against the Free plan's tool calls.
 """),
     "rbd_analysis": ("Analysing RBDs: figures, simulation, jobs and the other analyses.", """\
-Analysing RBDs (rbd_analysis).
-- analyze, non-repairable: reliability curve (~21 points; `times` gives exact values in reliability_at), MTTF, \
+Analysing RBDs (analyse rbd and the other rbd_ actions).
+- rbd, non-repairable: reliability curve (~21 points; `times` gives exact values in reliability_at), MTTF, \
 B-lives, importance and cut sets; current_state ({node: {failed: true} | {age}}) gives the remaining life from \
 now; target_reliability the design life; confidence intervals from fitted blocks (with b_lives, times).
-- analyze, repairable, on every plan: exact (or numerical, never simulated) long-run availability, mean up / \
+- rbd, repairable, on every plan: exact (or numerical, never simulated) long-run availability, mean up / \
 down time, failure frequency, and in `exact` A(t), the mission availability and the window's expected \
 failures, outages, downtime and cost — from new, or from now with current_state ({node: {down: true, since} | \
 {age}}) over t_max. Safety functions add PFDavg and SIL; priced diagrams costs (a present value with \
 discount_rate); capacities the production availability. The Monte-Carlo simulation adds only the spread \
 (percentiles, P(no outage), criticality; from current_state the time to the next failure) and is Pro; it runs \
 only where a figure needs it unless simulate=true. A saved result is served when one matches. When a response \
-says figures are simulation-only (e.g. one crew for wear-out lives), say so; offer export_python to run it \
+says figures are simulation-only (e.g. one crew for wear-out lives), say so; offer rbd_export_python to run it \
 locally. summary_only gives the headline figures.
 - Jobs: a long simulation or calculation returns a job_id: call get kind job every few seconds until done. \
-quote_simulation says how long one should take before anything runs; list kind rbd_runs / get kind rbd_run read \
+rbd_quote_simulation says how long one should take before anything runs; list kind rbd_runs / get kind rbd_run read \
 past simulations.
-- What to improve (repairable): sensitivity ranks every lever by what a 10% step gains (exact or numerical \
+- What to improve (repairable): rbd_sensitivity ranks every lever by what a 10% step gains (exact or numerical \
 free; simulated Pro); costs_to_change with order benefit_per_cost ranks by benefit per cost; measure gives \
 over_time, shares, joint, rate or uncertainty. Quote `top` with its basis.
-- optimise_intervals chooses age-replacement or proof-test intervals together (lowest cost, or a target \
-availability / PFDavg / SIL, or a cost cap), returns edit_rbd_ops to apply with rbd edit. cheapest_design: \
+- rbd_optimise_intervals chooses age-replacement or proof-test intervals together (lowest cost, or a target \
+availability / PFDavg / SIL, or a cost cap), returns edit_rbd_ops to apply with change rbd_edit. rbd_cheapest_design: \
 the redundancy with the lowest total cost (needs block acquisition prices, a horizon and a downtime_rate; \
-trains copy whole chains). compare: design B against A (rbd clone A, edit, compare). allocate_targets: what \
-each block needs for a system target. fault_tree: ranked cut sets with common causes. These answer only; apply a choice \
-with rbd edit.
-- system_history: observed availability from the diagram's outage log. export_python: a standalone script \
-(SurPyval + RePyability) with the run command; export_json: RePyability's JSON (uploads import_rbd takes it \
+trains copy whole chains). rbd_compare: design B against A (change rbd_clone A, edit, compare). rbd_allocate_targets: \
+what each block needs for a system target. rbd_fault_tree: ranked cut sets with common causes. These answer only; apply a choice \
+with change rbd_edit.
+- rbd_system_history: observed availability from the diagram's outage log. rbd_export_python: a standalone script \
+(SurPyval + RePyability) with the run command; rbd_export_json: RePyability's JSON (change import_rbd takes it \
 back)."""),
 
     "strategy": ("Replacement (also over a shut calendar), proof-test and overhaul intervals; shape uncertainty.", """\
-Maintenance strategy (strategy).
-- strategy optimal_replacement: the cost-optimal age-replacement interval from a non-repairable model (model_id, or \
+Maintenance strategy (analyse actions).
+- analyse optimal_replacement: the cost-optimal age-replacement interval from a non-repairable model (model_id, or \
 distribution_id + params) and the planned and unplanned costs. beneficial=false: run to failure is cheaper.
-- strategy failure_finding_interval: the proof-test interval keeping a hidden protective function (relief valve, trip, \
+- analyse failure_finding_interval: the proof-test interval keeping a hidden protective function (relief valve, trip, \
 standby unit) at a target availability.
-- strategy optimal_overhaul: the overhaul interval of a repairable system from a minimal-repair recurrent model.
-- strategy calendar_replacement: when replacing costs less at shuts (annual, quarterly, weekly stops) than between \
+- analyse optimal_overhaul: the overhaul interval of a repairable system from a minimal-repair recurrent model.
+- analyse calendar_replacement: when replacing costs less at shuts (annual, quarterly, weekly stops) than between \
 them, the long-run best rule: at each shut, replace the part if it is older than a threshold age (the threshold \
 depends on when the next cheaper shut comes). Give the model in a time unit, the shuts (name, cost, every N \
 days/weeks/months/years from a start date, or dates), failure_cost and anytime_cost (a planned replacement between \
@@ -221,20 +221,20 @@ unit) and cost_per_year, the rule in words, by_kind (replacements and cost a yea
 comparisons (run to failure, age replacement ignoring the shuts, every shut of a kind) and the next 12 months' \
 shuts with each one's threshold and chance of a replacement. method dp (default) and integration (no anytime_cost) \
 are exact and free; sampling (Pro) is for calendars whose cycle is very long, with cost_rate_se. Quote the unit.
-- strategy next_replacement: the same calendar plus the age of the unit in service today: replace it now, at the \
+- analyse next_replacement: the same calendar plus the age of the unit in service today: replace it now, at the \
 next shut of each kind, between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
 (from that age replacing now beats waiting).
 - With a saved Weibull (or Crow-AMSAA) model fitted to data, shape_uncertainty gives the answer at each end of \
 the shape's 95% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
 (for a protective function, the shorter interval is the safe side).
-- A whole diagram's intervals together: rbd_analysis optimise_intervals. A demonstration test or a B-life \
-check: life_data_analysis plan_demonstration_test / check_life_requirement. Fleets: guide topic fleets."""),
+- A whole diagram's intervals together: analyse rbd_optimise_intervals. A demonstration test or a B-life \
+check: analyse plan_demonstration_test / check_life_requirement. Fleets: guide topic fleets."""),
 
     "fleets": ("Fleet failure forecasts and their email alerts (Pro).", """\
 Fleets (Reliafy Pro).
 - A fleet is in-service items run against one saved model; the app creates them and usage arrives through \
 the ingest API. list kind fleets lists them (model_kind life, regression, alt or recurrent).
-- strategy fleet_forecast: expected failures over the horizon with a P10–P90 range, per period and per item (the \
+- analyse fleet_forecast: expected failures over the horizon with a P10–P90 range, per period and per item (the \
 top 20 unless include_items; item_probabilities adds each item's chance by period). Recurrent fleets count every \
 repeat failure.
 - Spares: fleet_forecast with spares = {lead_time (in the fleet's periods), service_level (default 0.95), review, \
@@ -242,43 +242,43 @@ per_failure, stock, unit_cost} (or the fleet's saved spares settings) adds spare
 of no stock-out over the lead time plus review), reorder_at, risk_at_stock, hold_cost, the same per period, and \
 risk_curve ([stock, chance of running out]). repairable with turnaround: the pool covers the repair turnaround \
 (one site). Read off the forecast's own distribution, not a normal approximation.
-- Alerts: list kind fleet_alerts reads a fleet's rules with their current values; fleet create_alert adds one \
+- Alerts: list kind fleet_alerts reads a fleet's rules with their current values; change fleet_create_alert adds one \
 (above a threshold, a percent change, or x failures within y periods), checked whenever usage arrives, emailing \
 the user once per crossing; at most 10 per fleet, own fleets only."""),
 
     "uploads": ("Sending files: the upload link, its fallbacks, inspecting and importing.", """\
 Files (BlockSim / Open-PSA / Galileo / RePyability diagrams, Excel workbooks, CSVs of failure times or \
 outages). Never read a file into your context to paste it while the upload link works.
-1. uploads create (purpose: rbd_import, excel, dataset, outage_log, or document for a PDF to keep; filename): a single-use URL (15 minutes) \
+1. change upload_create (purpose: rbd_import, excel, dataset, outage_log, or document for a PDF to keep; filename): a single-use URL (15 minutes) \
 and a ready curl PUT. Run it from a shell that can read the file.
 2. If the PUT can't connect or a proxy refuses the host (e.g. CONNECT 403), retry the same PUT once on \
 url_fallback (curl_fallback): the same link on reliafy.com, slower for large files, still unused after a \
 refused attempt.
 3. If that fails too (no network), don't retry: a small text file (at most 200 KB) can be passed as text instead \
-(datasets upload csv, rbd upload_outage_log csv, uploads import_rbd content for Open-PSA XML, Galileo or \
+(change dataset_upload csv, change rbd_upload_outage_log csv, change import_rbd content for Open-PSA XML, Galileo or \
 RePyability JSON); any other file of up to a few hundred KB (an .xlsx, a BlockSim project) goes through this \
-connection with uploads send_part (base64 parts 0, 1, 2… into the same upload_id, last=true with sha256 on the \
+connection with change upload_send_part (base64 parts 0, 1, 2… into the same upload_id, last=true with sha256 on the \
 final one; not counted against the Free allowance), then import as usual (an FMEA / RCM worksheet goes onto a \
-position's RCM with uploads import_excel target rcm and position_id). Anything larger: ask the user to upload it in the app (create's \
+position's RCM with change import_excel target rcm and position_id). Anything larger: ask the user to upload it in the app (create's \
 fallback says where).
 4. get kind upload shows a workbook's sheets, columns and a guessed mapping, or a diagram file's diagrams.
-5. Import with the upload_id: uploads import_rbd (diagrams; save=false previews with edges and cut sets; only \
-picks diagrams by name; time_unit when the file states none), uploads import_excel (target dataset, rcm with a position_id, or \
-rbd_template), datasets upload, or rbd upload_outage_log.
+5. Import with the upload_id: change import_rbd (diagrams; save=false previews with edges and cut sets; only \
+picks diagrams by name; time_unit when the file states none), change import_excel (target dataset, rcm with a position_id, or \
+rbd_template), change dataset_upload, or change rbd_upload_outage_log.
 Relay the import notes: they say what was approximated. Blocks imported without a non-repairable model (needs_model) \
 need one before analysis: ask the user, don't invent values."""),
 
     "sharing": ("Share links and reports: read-only pages anyone with the URL can open.", """\
 Sharing (only when the user asks; confirm before publishing anything).
-- sharing create_link publishes a read-only page of one of the user's own items (model, dataset, rbd, \
+- change share_link publishes a read-only page of one of the user's own items (model, dataset, rbd, \
 degradation_model, strategy_analysis, fleet, recurrent_model) that anyone with the URL can open \
 without an account. password=true: Reliafy generates a passphrase, returned once — tell the user to send the \
 link and the passphrase to the recipient separately. expires_in_days for a link that ends; label says who it's \
-for. Samples can't be shared (rbd clone one first).
-- sharing create_report puts several items on one print-ready page with a title, an author line, an \
+for. Samples can't be shared (change rbd_clone one first).
+- change share_report puts several items on one print-ready page with a title, an author line, an \
 introduction and a note per item. Write the notes from the items' results, quoting their figures as the tools \
 returned them.
-- list kind share_links shows the live links; sharing revoke_link ends one at once."""),
+- list kind share_links shows the live links; change share_revoke ends one at once."""),
 
     "workspace": ("Reading, tidying and deleting saved items; what changed.", """\
 The workspace.
@@ -286,14 +286,14 @@ The workspace.
 / dataset (a page of rows at a time; part=measurements for a dataset's readings) / rbd / rbd_run / job / \
 upload. Shared samples are listed (is_sample) and readable, never changed.
 - A dataset is one document: its life data (its table) and, when added, its measurements (readings on the \
-same units at ages since new; datasets add_measurements / remove_measurements). The list shows a \
+same units at ages since new; change dataset_add_measurements / dataset_remove_measurements). The list shows a \
 measurements entry where there is one. Datasets never point at each other: readings for a dataset's units \
 go on that dataset.
 - list kind workspace_changes: what changed over a period (since a date or the last visit, or days), computed \
 from what Reliafy stores: new and changed items, refits that moved B10 or MTTF, moved forecasts, fired alerts, \
 RCM evidence changes, moved simulations. Start from its sentence; report not_compared as unknown, never guess.
-- Tidying: models update / datasets update rename or annotate (never the data or the fit).
-- Deleting: models delete, datasets delete, rbd delete — permanent, own items only. Only on the user's \
+- Tidying: change model_update / change dataset_update rename or annotate (never the data or the fit).
+- Deleting: change model_delete, change dataset_delete, change rbd_delete — permanent, own items only. Only on the user's \
 explicit request: confirm by name first, and relay what the response lists as affected. A dataset a model was \
 fitted to, or a model a fleet runs on, can't be deleted until those are dealt with.
 - Every saved item has a url: give it to the user so they can open it in Reliafy.
@@ -309,11 +309,11 @@ Plans and limits.
 to try it (every tool except fitting and fleets, within the Free storage limits; availability simulation and \
 some design searches are Pro too). A retired Agent plan keeps a daily quota until it ends.
 - get kind account: the plan, the calls used and left (and when they reset), storage against the limits, \
-whether simulation is included. It, guide, upgrade_link, uploads send_part and library lookups are never counted.
+whether simulation is included. It, guide, get kind upgrade_link, change upload_send_part and library lookups are never counted.
 - When a tool says a limit or the plan stops it, tell the user plainly what it says — the limit, when it \
 resets, how to upgrade — and don't retry. Calls refused that way aren't counted.
 - Without Pro, fit locally with SurPyval (pip install surpyval; 0 = failed, 1 = still running) and save the \
-parameters with models save; run a diagram's simulation locally with rbd_analysis export_python.
-- upgrade_link gives the user a Stripe payment link to open themselves; nothing is charged until they complete \
+parameters with change model_save; run a diagram's simulation locally with analyse rbd_export_python.
+- get kind upgrade_link gives the user a Stripe payment link to open themselves; nothing is charged until they complete \
 it. Never say an upgrade has happened."""),
 }

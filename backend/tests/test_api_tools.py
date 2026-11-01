@@ -99,7 +99,7 @@ def test_a_token_without_api_access_is_402_and_a_free_session_gets_the_allowance
         "uid": FREE, "email": "free@example.org", "email_verified": True})
     monkeypatch.setattr(config, "MCP_FREE_MONTHLY_CALLS", 2)
     session = {"Authorization": "Bearer firebase-id-token"}
-    r = env.client.post("/api/v1/life_data_analysis/fit", json=FIT, headers=session)
+    r = env.client.post("/api/v1/analyse/fit", json=FIT, headers=session)
     assert r.status_code == 402 and "Pro" in r.json()["detail"]  # fitting is Pro-only, not counted
     assert env.client.post("/api/v1/guide", json={}, headers=session).status_code == 200  # never counted
     assert env.client.post("/api/v1/list/models", json={}, headers=session).status_code == 200
@@ -113,10 +113,10 @@ def test_operators_and_self_hosted_have_everything(env, monkeypatch):
 
     monkeypatch.setattr(config, "BILLING_ENABLED", True)
     monkeypatch.setattr(config, "ADMIN_EMAILS", {"op@example.org"})
-    assert env.post("/api/v1/life_data_analysis/fit", FIT, uid=OP).status_code == 200
+    assert env.post("/api/v1/analyse/fit", FIT, uid=OP).status_code == 200
     monkeypatch.setattr(config, "BILLING_ENABLED", False)
     monkeypatch.setattr(config, "AUTH_DISABLED", True)
-    assert env.client.post("/api/v1/life_data_analysis/fit", json=FIT).status_code == 200  # no token needed
+    assert env.client.post("/api/v1/analyse/fit", json=FIT).status_code == 200  # no token needed
 
 
 # ---- calls -----------------------------------------------------------------------
@@ -132,18 +132,20 @@ GRAPH = {"nodes": [{"id": "input", "type": "input"},
 
 
 def test_results_are_the_mcp_results(env):
-    mid = env.post("/api/v1/models/save", {"name": "Handbook", "distribution": "weibull",
-                                           "params": WEIBULL}).json()["model_id"]
+    mid = env.post("/api/v1/change/model_save", {"name": "Handbook", "distribution": "weibull",
+                                                 "params": WEIBULL}).json()["model_id"]
+    # An earlier tool name (unlisted, answering for a release), as an older client calls it.
     rid = env.post("/api/v1/rbd/create", {"name": "Two pumps", **GRAPH}).json()["id"]
+    assert "/api/v1/rbd/create" not in env.client.get("/api/v1/openapi.json").json()["paths"]
     calls = [
         ("guide", None, {"topic": "units"}),
         ("list", "models", {}),
         ("get", "model", {"id": mid}),
-        ("life_data_analysis", "reliability_at", {"model_id": mid, "times": [100, 500]}),
-        ("life_data_analysis", "fit", FIT),
-        ("strategy", "optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL,
+        ("analyse", "reliability_at", {"model_id": mid, "times": [100, 500]}),
+        ("analyse", "fit", FIT),
+        ("analyse", "optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL,
                                              "planned_cost": 100, "unplanned_cost": 1000}),
-        ("rbd_analysis", "analyze", {"rbd_id": rid}),
+        ("analyse", "rbd", {"rbd_id": rid}),
     ]
 
     async def over_mcp(client):
@@ -169,7 +171,7 @@ def test_a_sample_of_every_tool(env):
     saved = env.post("/api/v1/models/save", {"name": "Handbook", "distribution": "weibull", "params": WEIBULL})
     assert saved.status_code == 200 and saved.json()["model_id"]
     mid = saved.json()["model_id"]
-    assert env.post("/api/v1/life_data_analysis/reliability_at", {"model_id": mid, "times": [500]}).status_code == 200
+    assert env.post("/api/v1/analyse/reliability_at", {"model_id": mid, "times": [500]}).status_code == 200
     r = env.post("/api/v1/repairable_analysis/next_failure", {"model_id": "nope", "age": 10})
     assert r.status_code == 404 and "not found" in r.json()["detail"]
     rbd = env.post("/api/v1/rbd/create", {"name": "Two pumps", **GRAPH})
@@ -191,7 +193,7 @@ def test_errors(env):
     assert r.status_code == 404 and "/api/v1/tools" in r.json()["detail"]
     r = env.post("/api/v1/get/nope")
     assert r.status_code == 404 and "model" in r.json()["detail"]
-    r = env.post("/api/v1/life_data_analysis/fit", {"data": "x"})
+    r = env.post("/api/v1/analyse/fit", {"data": "x"})
     assert r.status_code == 422 and r.json()["detail"].startswith("data:")
     r = env.post("/api/v1/strategy/optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL})
     assert r.status_code == 422 and "needs planned_cost" in r.json()["detail"]
@@ -209,7 +211,7 @@ def test_heavy_calls_share_the_mcp_heavy_slots(env, monkeypatch):
     from backend import mcp_server
 
     monkeypatch.setattr(mcp_server, "MCP_USER_HEAVY", 0)
-    r = env.post("/api/v1/life_data_analysis/fit", FIT)
+    r = env.post("/api/v1/analyse/fit", FIT)
     assert r.status_code == 429 and "running at once" in r.json()["detail"]
     assert env.post("/api/v1/list/models").status_code == 200  # not heavy
 
@@ -414,7 +416,7 @@ def test_parity_every_mcp_action_has_rest_openapi_and_cli(maint, monkeypatch):
 def test_spec_is_valid_and_public_safe(env):
     spec = env.client.get("/api/v1/openapi.json").json()  # no credentials: the core tools
     assert spec["openapi"].startswith("3.1")
-    assert "/api/v1/life_data_analysis/fit" in spec["paths"]
+    assert "/api/v1/analyse/fit" in spec["paths"]
     assert not any(p.startswith("/api/v1/maintenance_") for p in spec["paths"])
     schemas = spec["components"]["schemas"]
     import json
@@ -427,13 +429,13 @@ def test_spec_is_valid_and_public_safe(env):
     # Built only from the public tool definitions: no private names.
     for word in ("accelerator", "mojo", "planning repo", "partner"):
         assert word not in text.lower(), word
-    op = spec["paths"]["/api/v1/life_data_analysis/fit"]["post"]
+    op = spec["paths"]["/api/v1/analyse/fit"]["post"]
     assert op["x-reliafy-pro-only"] and op["x-reliafy-heavy"] and op["x-reliafy-scope"] == "read"
 
 
 def test_report_a_problem_and_check_it(env):
     r = env.post("/api/v1/report_problem/report", {"kind": "missing_capability", "summary": "No way to undo a fit",
-                                                   "tool": "models", "trying": "refit with other columns"})
+                                                   "tool": "change", "trying": "refit with other columns"})
     assert r.status_code == 200, r.text
     rid = r.json()["report_id"]
     assert env.post("/api/v1/report_problem/status", {"report_id": rid}).json()["status"] == "new"

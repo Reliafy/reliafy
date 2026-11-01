@@ -1,8 +1,7 @@
 """An FMEA / RCM worksheet (Excel or CSV) added to a position's RCM
 (backend/maintenance/rcm_sheet.py): read and mapped by backend/services/rcm_import.py,
 written only through the service's methods, only ever adding, checked
-first and all or nothing; over REST (preview and import) and MCP (uploads
-import_excel target=rcm position_id). Invented worksheets only."""
+first and all or nothing; over REST (preview and import) and MCP (change import_excel target=rcm position_id). Invented worksheets only."""
 
 import io
 
@@ -379,7 +378,7 @@ def test_usage_names_the_import():
     assert usage.app_feature("POST", "/api/maintenance/positions/p1/rcm/import/preview") == "rcm_import_preview"
 
 
-# ---- MCP: uploads import_excel target=rcm position_id ------------------------------------------
+# ---- MCP: change import_excel target=rcm position_id ------------------------------------------
 
 @pytest.fixture()
 def mcp(monkeypatch, mcp_on):
@@ -404,7 +403,7 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
     m = Maintenance(mcp.store, up.A, up.A)
     pid = m.create_position("Conveyor C-2")["id"]
     link, _ = up._upload(mcp, _xlsx(), "c2.xlsx", purpose="excel")
-    out = _ok(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link["upload_id"],
+    out = _ok(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link["upload_id"],
                                                      "target": "rcm", "position_id": pid, "header_row": 2}))
     assert out["ok"] and out["written"] and out["position_id"] == pid
     assert out["counts"]["modes"] == 4 and out["counts"]["tasks"] == 3
@@ -415,7 +414,7 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
 
     # The same rows again, as CSV: nothing more.
     link2, _ = up._upload(mcp, _csv(), "c2.csv", purpose="excel")
-    again = _ok(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link2["upload_id"],
+    again = _ok(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link2["upload_id"],
                                                        "target": "rcm", "position_id": pid}))
     assert again["counts"]["modes"] == 0 and again["counts"]["modes_existing"] == 4
 
@@ -424,7 +423,7 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
     rows = [list(r) for r in ROWS]
     rows[0][8], rows[0][9] = 101, "years"
     link3, _ = up._upload(mcp, _xlsx(rows=rows), "bad.xlsx", purpose="excel")
-    bad = _ok(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link3["upload_id"],
+    bad = _ok(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link3["upload_id"],
                                                      "target": "rcm", "position_id": fresh, "header_row": 2}))
     assert not bad["ok"] and not bad["written"] and "Nothing was added" in bad["note"]
     assert bad["errors"] == ["Row 3: The interval is at most 100 years. Change it in the sheet and try again."]
@@ -432,14 +431,14 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
     assert m.rcm_worksheet(fresh, "this")["positions"][0]["functions"] == []
 
     # Arguments that don't go together, a position that isn't there, someone without Maintenance.
-    msg = _err(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link3["upload_id"],
+    msg = _err(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link3["upload_id"],
                                                       "target": "dataset", "position_id": pid}))
     assert "position_id applies to target rcm" in msg
-    msg = _err(up._call(mcp.token[up.A], "uploads", {"action": "import_excel", "upload_id": link3["upload_id"],
+    msg = _err(up._call(mcp.token[up.A], "change", {"action": "import_excel", "upload_id": link3["upload_id"],
                                                       "target": "rcm", "position_id": "nope"}))
     assert "Position not found" in msg
     link4, _ = up._upload(mcp, _xlsx(), "c2.xlsx", purpose="excel", uid=up.B)
-    msg = _err(up._call(mcp.token[up.B], "uploads", {"action": "import_excel", "upload_id": link4["upload_id"],
+    msg = _err(up._call(mcp.token[up.B], "change", {"action": "import_excel", "upload_id": link4["upload_id"],
                                                       "target": "rcm", "position_id": pid}))
     assert "positions aren't available" in msg
 

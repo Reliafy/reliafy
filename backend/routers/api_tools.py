@@ -43,7 +43,7 @@ from backend import config
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
 
-API_VERSION = "1.1.0"
+API_VERSION = "2.0.0"
 #: The server version that first answers these routes (clients check it).
 TOOLS_API = 1
 
@@ -61,7 +61,7 @@ REST_ONLY = {
     },
     "uploads.put": {
         "method": "PUT", "path": "/api/uploads/{upload_id}",
-        "summary": "Send a file's bytes to the single-use link from uploads create (the raw body; the link's t "
+        "summary": "Send a file's bytes to the single-use link from change upload_create (the raw body; the link's t "
                    "query parameter is the credential), then import it with its upload_id.",
     },
 }
@@ -73,7 +73,7 @@ def _tables() -> dict[str, tuple[str, dict]]:
     """Each tool with actions: (its choosing argument, its action table)."""
     from backend import mcp_server
 
-    out = dict(mcp_server.TABLES)
+    out = {**mcp_server.LEGACY_TABLES, **mcp_server.TABLES}
     if config.MAINTENANCE_ENABLED:
         from backend.maintenance import mcp_tools as maintenance_tools
 
@@ -273,8 +273,24 @@ async def _body(request: Request) -> dict:
     return body
 
 
+def _legacy_tool(name: str):
+    """An earlier tool name (unlisted, still answering for a release): the tool
+    as tools/list would have carried it, for an older client's calls."""
+    from mcp.types import Tool as MCPTool
+
+    from backend import mcp_server
+
+    info = mcp_server.mcp._tool_manager.get_tool(name)
+    return MCPTool(name=info.name, title=info.title, description=info.description, input_schema=info.parameters,
+                   annotations=info.annotations)
+
+
 async def _tool_for(user: dict, name: str):
+    from backend import mcp_server
+
     tool = next((t for t in await visible_tools(user) if t.name == name), None)
+    if tool is None and name in mcp_server.LEGACY_TOOLS:
+        tool = _legacy_tool(name)
     if tool is None:
         raise HTTPException(status_code=404, detail=f"No tool '{name}'. GET /api/v1/tools lists them.")
     return tool
@@ -439,7 +455,9 @@ def build_spec(tools: list) -> dict:
     schemas: dict[str, Any] = {"Error": {"type": "object", "properties": {"detail": {"type": "string"}},
                                          "required": ["detail"]}}
     for t in tools:
-        schema = copy.deepcopy(t.input_schema or {})
+        # The full schema (every argument's description and limits), not the
+        # compact one tools/list carries.
+        schema = copy.deepcopy(mcp_server.full_schema(t.name) or t.input_schema or {})
         for name, d in (schema.pop("$defs", None) or {}).items():
             schemas[_schema_name(t.name, name)] = _rewrite_refs(d, t.name)
         props = _rewrite_refs(schema.get("properties", {}), t.name)

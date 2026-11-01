@@ -651,6 +651,58 @@ def builtin_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _legacy_commands() -> dict:
+    """The tool names before November 2026 (reliafy-client 0.4 and earlier):
+    (old tool, old action) -> (new tool, new action, {old argument: new})."""
+    out: dict = {}
+
+    def add(old, new_tool, pairs, prefix=""):
+        for a in pairs.split():
+            out[(old, a)] = (new_tool, prefix + a, {})
+
+    add("life_data_analysis", "analyse", "fit fit_per_demand reliability_at check_life_requirement compare_groups "
+        "alt_use_level plan_demonstration_test plan_sequential_test plan_life_test plan_accelerated_test "
+        "plan_comparison fit_joint predict_joint")
+    add("repairable_analysis", "analyse", "next_failure growth_projection")
+    add("strategy", "analyse", "optimal_replacement failure_finding_interval optimal_overhaul fleet_forecast "
+        "calendar_replacement next_replacement")
+    out[("rbd_analysis", "analyze")] = ("analyse", "rbd", {})
+    add("rbd_analysis", "analyse", "quote_simulation sensitivity optimise_intervals cheapest_design compare "
+        "fault_tree allocate_targets system_history export_python export_json", "rbd_")
+    add("models", "change", "fit save fit_alt fit_recurrent fit_joint update delete", "model_")
+    add("datasets", "change", "upload add_measurements remove_measurements split update delete", "dataset_")
+    add("rbd", "change", "create clone edit delete upload_outage_log", "rbd_")
+    add("uploads", "change", "create send_part", "upload_")
+    add("uploads", "change", "import_rbd import_excel")
+    out.update({("sharing", "create_link"): ("change", "share_link", {}),
+                ("sharing", "create_report"): ("change", "share_report", {}),
+                ("sharing", "revoke_link"): ("change", "share_revoke", {}),
+                ("fleet", "create_alert"): ("change", "fleet_create_alert", {}),
+                ("library", "search"): ("list", "library", {"--kind": "--record-kind"}),
+                ("library", "get"): ("get", "library_record", {}),
+                ("library", "sources"): ("list", "library_sources", {}),
+                ("upgrade_link", None): ("get", "upgrade_link", {})})
+    return out
+
+
+#: Earlier commands still accepted (with a note saying the new one).
+LEGACY_COMMANDS = _legacy_commands()
+
+
+def _from_legacy(rest: list[str]) -> list[str]:
+    """``reliafy life_data_analysis fit …`` as ``reliafy analyse fit …``."""
+    if not rest:
+        return rest
+    action = rest[1] if len(rest) > 1 and not rest[1].startswith("-") else None
+    hit = LEGACY_COMMANDS.get((rest[0], action))
+    if hit is None:
+        return rest
+    tool, new_action, args = hit
+    tail = rest[2:] if action else rest[1:]
+    print(f"reliafy: '{' '.join(filter(None, (rest[0], action)))}' is now '{tool} {new_action}'.", file=sys.stderr)
+    return [tool, new_action, *(args.get(a, a) for a in tail)]
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     client = Client()
@@ -660,6 +712,7 @@ def main(argv: list[str] | None = None) -> int:
         _global_options(pre)
         known, rest = pre.parse_known_args(argv)
         _apply_globals(client, known)
+        rest = _from_legacy(rest)
         command = rest[0] if rest else None
         if command == "models" and len(rest) > 1 and rest[1] == "list":
             ns = argparse.Namespace(json=known.json or "--json" in rest[2:])

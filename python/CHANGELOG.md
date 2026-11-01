@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased
+## Unreleased (0.5.0)
+
+- **Six tools instead of sixteen.** The server's core tools are now `get`,
+  `list`, `analyse` (every calculation: fits, evaluations, test plans,
+  repairable systems, strategy, fleet forecasts and RBD analyses, saving
+  nothing), `change` (every write), `guide` and `report_problem`. Actions
+  that moved get the area as a prefix: `life_data_analysis fit` is
+  `analyse fit`, `rbd_analysis analyze` is `analyse rbd`, `models save` is
+  `change model_save`, `uploads create` is `change upload_create`,
+  `sharing create_link` is `change share_link`, `library search` is
+  `list library` (its `kind` argument is `record_kind`), `upgrade_link` is
+  `get upgrade_link`. `guide --action analyse.fit` prints one action's full
+  argument schema. Client helpers (`fit`, `reliability`, `upload_dataset`,
+  `import_rbd`, …) call the new names; their signatures are unchanged. The
+  earlier names still answer on the server for a release, and the CLI
+  accepts the earlier commands with a note naming the new one. Needs a
+  server from the November 2026 release.
 
 - A task by use keeps counting the same measurement when it moves
   (`maintenance_tasks move`, and the `maintenance_failure_modes` moves that

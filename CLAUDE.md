@@ -128,9 +128,20 @@ always be rebuilt. See [docs/maintenance-graph.md](docs/maintenance-graph.md).
 
 ## MCP tools
 
-- Tools are action-based: one tool, an `action` (or `kind`) argument, and a
-  table in `mcp_actions.py` style that both checks each call's arguments and
-  writes the description. One short sentence per action.
+- Six core tools, each action-based: `get` / `list` (reads, by `kind`),
+  `analyse` (every calculation, saves nothing), `change` (every write),
+  `guide`, `report_problem`. A new action goes in the right tool's table in
+  `_A` (`mcp_server.py`, "The tools"); a table in `mcp_actions.py` style both
+  checks each call's arguments and writes the description. The description
+  shows each action's first sentence only: put what an agent must read
+  before calling first.
+- `tools/list` carries a compact input schema (types only); the full one
+  (descriptions, limits, nested types) is the REST spec's and
+  `guide(action='<tool>.<action>')`'s. Nested shapes an agent needs go in the
+  argument's `Field(description=…)`, which reaches both.
+- The earlier tool names (to 1 Nov 2026) still answer, unlisted, through
+  `LEGACY`; `test_mcp_tools.py` holds that table to every action. Don't add
+  to it; remove it once the usage log shows no calls on the old names.
 - How-to text goes in guide topics (`backend/mcp_guide.py`,
   `backend/maintenance/mcp_guide.py`), not in tool descriptions. Why: every
   tool definition loads into every agent's context on each connection; a guide

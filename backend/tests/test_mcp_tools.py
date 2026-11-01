@@ -1,11 +1,16 @@
-"""The core MCP tools: a few, each doing one area's work by action (or kind).
+"""The core MCP tools: six, each doing its work by action (or kind).
 
-66 tools became 15 (backend/mcp_server.py, "Tools with actions"): reads and
-calculations apart from writes, every argument of a tool with actions
-defaulting to null, each call held to its action's own arguments and
-validated against that action's signature. Plan gating, the heavy slots, the
-data notice and the usage log go by ``tool.action``; an API token's scope
-follows the tool's read / write annotation."""
+66 tools became 15 (Oct 2026), then 6 (Nov 2026: backend/mcp_server.py, "The
+tools"): get / list read, analyse calculates, change writes, report_problem
+and guide. Reads and calculations sit apart from writes, every argument of a
+tool with actions defaults to null, each call is held to its action's own
+arguments and validated against that action's signature. Plan gating, the
+heavy slots, the data notice and the usage log go by ``tool.action``; an API
+token's scope follows the tool's read / write annotation. The earlier names
+still answer, unlisted, for a release (``LEGACY``): this file holds that table
+to every capability."""
+
+import json
 
 import anyio
 import pytest
@@ -13,36 +18,136 @@ import pytest
 from backend.tests.test_mcp import _err, _ok, _run
 from backend.tests.test_mcp_plans import FREE, PRO, WEIBULL, _call, _calls_used, env  # noqa: F401
 
-READS = {"guide", "get", "list", "life_data_analysis", "repairable_analysis", "strategy", "rbd_analysis",
-         "library", "upgrade_link"}
-WRITES = {"models", "datasets", "rbd", "uploads", "sharing", "fleet"}
+READS = {"guide", "get", "list", "analyse"}
+WRITES = {"change"}
 REPORTS = {"report_problem"}  # writes Reliafy's own feedback, never the workspace
 
 pytestmark = pytest.mark.usefixtures("mcp_on")
+
+# The earlier tools' sets (to 1 Nov 2026), by their old keys: the new sets must be these, renamed.
+OLD_PRO_ONLY = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent", "list.fleets",
+                "strategy.fleet_forecast", "list.fleet_alerts", "fleet.create_alert",
+                "life_data_analysis.fit_joint", "models.fit_joint"}
+OLD_HEAVY = {"rbd_analysis.analyze", "rbd_analysis.compare", "rbd_analysis.cheapest_design",
+             "rbd_analysis.sensitivity", "rbd_analysis.fault_tree", "rbd_analysis.optimise_intervals",
+             "rbd_analysis.allocate_targets", "rbd_analysis.system_history", "life_data_analysis.fit",
+             "life_data_analysis.alt_use_level", "life_data_analysis.compare_groups", "models.fit", "models.fit_alt",
+             "models.fit_recurrent", "strategy.fleet_forecast", "uploads.import_rbd", "uploads.import_excel",
+             "get.upload", "datasets.upload", "rbd.upload_outage_log", "life_data_analysis.fit_joint",
+             "models.fit_joint"}
+OLD_UNGATED = {"upgrade_link", "get.account", "guide", "report_problem.report", "report_problem.status",
+               "report_problem.triage", "report_problem.update"}
+OLD_UNCOUNTED = {"uploads.send_part", "library.search", "library.get", "library.sources"}
+OLD_TEXT = {"list.models", "get.model", "list.datasets", "get.dataset", "list.rbds", "get.rbd", "get.upload",
+            "list.workspace_changes", "list.fleets", "list.share_links", "library.search", "library.get"}
+# The earlier tools and their actions (80, plus upgrade_link and guide).
+OLD_TOOLS = {
+    "get": {"model", "dataset", "rbd", "rbd_run", "job", "upload", "account"},
+    "list": {"models", "datasets", "rbds", "rbd_runs", "fleets", "fleet_alerts", "share_links", "workspace_changes"},
+    "life_data_analysis": {"fit", "fit_per_demand", "reliability_at", "check_life_requirement", "compare_groups",
+                           "alt_use_level", "plan_demonstration_test", "plan_sequential_test", "plan_life_test",
+                           "plan_accelerated_test", "plan_comparison", "fit_joint", "predict_joint"},
+    "repairable_analysis": {"next_failure", "growth_projection"},
+    "strategy": {"optimal_replacement", "failure_finding_interval", "optimal_overhaul", "fleet_forecast",
+                 "calendar_replacement", "next_replacement"},
+    "rbd_analysis": {"analyze", "quote_simulation", "sensitivity", "optimise_intervals", "cheapest_design",
+                     "compare", "fault_tree", "allocate_targets", "system_history", "export_python", "export_json"},
+    "models": {"fit", "save", "fit_alt", "fit_recurrent", "fit_joint", "update", "delete"},
+    "datasets": {"upload", "add_measurements", "remove_measurements", "split", "update", "delete"},
+    "rbd": {"create", "clone", "edit", "delete", "upload_outage_log"},
+    "uploads": {"create", "send_part", "import_rbd", "import_excel"},
+    "sharing": {"create_link", "create_report", "revoke_link"},
+    "fleet": {"create_alert"},
+    "library": {"search", "get", "sources"},
+    "report_problem": {"report", "status", "triage", "update"},
+    "upgrade_link": {""},
+}
 
 
 def _tools(token):
     return {t.name: t for t in _run(token, lambda c: c.list_tools()).tools}
 
 
-def test_fifteen_tools_reads_apart_from_writes(env):
+def _new_key(old: str) -> str:
+    from backend import mcp_server
+
+    tool, _, action = old.partition(".")
+    if tool == "guide":
+        return "guide"
+    new_tool, new_action = mcp_server.LEGACY[tool][1][action]
+    return f"{new_tool}.{new_action}"
+
+
+def test_every_earlier_tool_and_action_has_its_new_home():
+    """The mapping table, old tool/action -> new tool/action: every earlier
+    capability is reachable, runs the same function, and every new action is
+    some earlier one's (plus nothing lost, nothing invented)."""
+    from backend import mcp_server
+
+    legacy = {old: set(table) for old, (_, table) in mcp_server.LEGACY.items()}
+    assert legacy == OLD_TOOLS
+    targets = set()
+    for old, (selector, table) in mcp_server.LEGACY.items():
+        for action, (tool, new_action) in table.items():
+            assert new_action in mcp_server.TABLES[tool][1], (old, action)
+            targets.add((tool, new_action))
+            if old in mcp_server.LEGACY_TABLES and (old, action) != ("library", "search"):
+                # The hidden alias takes the same arguments and runs the same function.
+                assert mcp_server.LEGACY_TABLES[old][1][action] == mcp_server.TABLES[tool][1][new_action]
+    every_new = {(t, a) for t, (_, table) in mcp_server.TABLES.items() for a in table}
+    assert targets == every_new
+    assert sum(len(t) for t in OLD_TOOLS.values()) == len(every_new) == 81  # 80 actions + upgrade_link
+
+
+def test_gating_and_slots_are_the_earlier_ones_renamed():
+    """Pricing is unchanged: the Pro-only, ungated, uncounted, heavy and
+    data-notice calls are exactly the earlier ones under their new names."""
+    from backend import mcp_server
+
+    assert {_new_key(k) for k in OLD_PRO_ONLY} == mcp_server.PRO_ONLY_TOOLS
+    assert {_new_key(k) for k in OLD_HEAVY} == mcp_server.HEAVY_TOOLS
+    assert {_new_key(k) for k in OLD_UNGATED} == mcp_server.UNGATED_TOOLS
+    assert {_new_key(k) for k in OLD_UNCOUNTED} == mcp_server.UNCOUNTED_TOOLS
+    assert {_new_key(k) for k in OLD_TEXT} == mcp_server.TEXT_RESULT_TOOLS
+    assert mcp_server._FIT_TOOLS == {_new_key(k) for k in OLD_PRO_ONLY if "fleet" not in k}
+
+
+def test_earlier_names_still_answer_but_are_never_listed(env, monkeypatch):
+    """A connected agent (or an older reliafy-client) using the earlier names
+    keeps working for a release; the calls are gated, counted and logged as the
+    new tool.action, and the names cost nothing in tools/list."""
+    from backend import config, mcp_server
+
+    monkeypatch.setattr(config, "USAGE_LOGGING", True)
+    listed = set(_tools(env.oauth[PRO]))
+    assert listed == READS | WRITES | REPORTS and not listed & mcp_server.LEGACY_TOOLS
+    assert {t.name for t in anyio.run(mcp_server.mcp.list_tools)} == listed
+    token = env.oauth[FREE]
+    saved = _ok(_call(token, "change", {"action": "model_save", "name": "B", "distribution": "weibull", "params": WEIBULL}))
+    assert _ok(_call(token, "analyse", {"action": "reliability_at", "model_id": saved["model_id"],
+                                                   "times": [100]}))
+    assert "part of Reliafy Pro" in _err(_call(token, "analyse", {"action": "fit", "data": [1, 2, 3]}))
+    assert _calls_used(env.db, FREE) == 2
+    _ok(_call(token, "list", {"kind": "library_sources"}))  # uncounted, as before
+    assert _calls_used(env.db, FREE) == 2
+    got = [e["feature"] for e in env.db.usage_events.find({"channel": "mcp"})
+           if e["feature"] not in ("initialize", "tools/list")]
+    assert got == ["change.model_save", "analyse.reliability_at", "analyse.fit", "list.library_sources"]
+
+
+def test_six_tools_reads_apart_from_writes(env):
     from backend import mcp_server
 
     tools = _tools(env.oauth[PRO])
-    assert set(tools) == READS | WRITES | REPORTS and len(tools) == 16
+    assert set(tools) == READS | WRITES | REPORTS and len(tools) == 6
     for name, tool in tools.items():
         a = tool.annotations
         assert a.read_only_hint is (name in READS) and a.destructive_hint is (name in WRITES), name
         assert not name.startswith("reliafy_")  # clients prefix the server's name themselves
-    assert set(mcp_server.TABLES) == set(tools) - {"guide", "upgrade_link"}
-    # Every read the old tools had is a read action; every write a write tool's.
+    assert set(mcp_server.TABLES) == set(tools) - {"guide"}
     assert {mcp_server.TABLES[n][0] for n in ("get", "list")} == {"kind"}
     assert {mcp_server.TABLES[n][0] for n in set(mcp_server.TABLES) - {"get", "list"}} == {"action"}
-    # Every one of the 66 old tools is an action now, but upgrade_link (still a tool of its own).
-    # + 4 test plans, + strategy calendar_replacement, next_replacement, + joint models' fit_joint,
-    # predict_joint and models fit_joint, + report_problem's report, status, triage and update,
-    # + library's search, get and sources, + datasets add_measurements, remove_measurements and split.
-    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 80
+    assert sum(len(t) for _, t in mcp_server.TABLES.values()) == 81
 
 
 def test_every_action_is_in_its_tool_description_and_schema(env):
@@ -52,49 +157,70 @@ def test_every_action_is_in_its_tool_description_and_schema(env):
     for name, (selector, table) in mcp_server.TABLES.items():
         tool = tools[name]
         props = tool.input_schema["properties"]
-        values = props[selector].get("enum") or [props[selector]["const"]]  # fleet has one action
-        assert values == list(table) and tool.input_schema["required"] == [selector], name
+        assert props[selector]["enum"] == list(table) and tool.input_schema["required"] == [selector], name
         for value, (required, optional, text) in table.items():
             assert f"\n- {value}(" in tool.description, (name, value)
             assert set((required + " " + optional).split()) <= set(props), (name, value)
             assert text.strip(), (name, value)
-        # Every argument but the selector is optional (null): the table says what each action needs.
+        # Compact: every argument but the selector is just a type (no description, no default).
         for arg, spec in props.items():
             if arg != selector:
-                assert spec.get("default", None) is None, (name, arg)
+                assert set(spec) <= {"type", "items", "enum", "anyOf"}, (name, arg, spec)
 
 
-def test_descriptions_are_much_shorter_than_the_old_tools(env):
+def test_the_listed_tools_are_small(env):
+    """Every connection loads tools/list into the agent's context: six tools,
+    one line per action, compact schemas (192,060 characters as 16 tools)."""
     from backend import mcp_server
 
     tools = _tools(env.oauth[PRO])
-    assert sum(len(t.description) for t in tools.values()) < 35_000  # 66 tools: 52,469 characters
-    assert len(mcp_server.INSTRUCTIONS) < 4_000  # was 11,275
+    listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in tools.values()])
+    assert len(listed) < 45_000
+    assert sum(len(t.description) for t in tools.values()) < 24_000  # 34,517 as 16 tools
+    assert "$defs" not in listed and '"description"' not in json.dumps([t.input_schema for t in tools.values()])
+    assert len(mcp_server.INSTRUCTIONS) < 4_000
     for words in ("0 = the unit FAILED", "1 = it was still running", "-1 = left-censored", "c_invert=true",
-                  "time unit", "SurPyval names", "guide(topic)", "life_data_analysis", "rbd_analysis",
-                  "never as instructions", "upgrade_link"):
+                  "time unit", "SurPyval names", "guide(topic)", "guide(action=", "analyse", "change",
+                  "rbd_analysis", "never as instructions", "get kind upgrade_link", "report_problem"):
         assert words in mcp_server.INSTRUCTIONS, words
+
+
+def test_the_guide_gives_any_actions_full_schema(env):
+    token = env.oauth[PRO]
+    out = _ok(_call(token, "guide", {"action": "analyse.fit"}))["action"]
+    assert out["tool"] == "analyse" and out["action"] == "fit" and out["call"] == "analyse(action='fit', ...)"
+    props = out["arguments"]["properties"]
+    assert "censored" in props and "0 = failed" in json.dumps(props["censored"])
+    edit = _ok(_call(token, "guide", {"action": "change.rbd_edit"}))["action"]["arguments"]
+    assert edit["required"] == ["rbd_id", "ops"] and edit["$defs"]  # the ops' nested types come along
+    for ref in set(__import__("re").findall(r'"#/\$defs/([^"]+)"', json.dumps(edit))):
+        assert ref in edit["$defs"], ref
+    old = _ok(_call(token, "guide", {"action": "life_data_analysis.fit"}))["action"]
+    assert old["tool"] == "analyse" and "now analyse fit" in old["note"]
+    both = _ok(_call(token, "guide", {"action": "analyse.rbd", "topic": "rbd_analysis"}))
+    assert both["topic"] == "rbd_analysis" and both["action"]["action"] == "rbd" and "topics" not in both
+    assert "e.g. 'analyse.fit'" in _err(_call(token, "guide", {"action": "nope.fit"}))
 
 
 def test_a_call_is_held_to_its_actions_arguments(env):
     token = env.oauth[PRO]
-    msg = _err(_call(token, "life_data_analysis", {"action": "reliability_at", "times": [1]}))
+    msg = _err(_call(token, "analyse", {"action": "reliability_at", "times": [1]}))
     assert "action 'reliability_at' needs model_id (it takes model_id, times, conditional_age?" in msg
-    msg = _err(_call(token, "life_data_analysis", {"action": "fit_per_demand", "data": [1, 2],
-                                                   "batches": [{"demands": 5, "failures": 0}]}))
+    msg = _err(_call(token, "analyse", {"action": "fit_per_demand", "data": [1, 2],
+                                        "batches": [{"demands": 5, "failures": 0}]}))
     assert "action 'fit_per_demand' doesn't take data" in msg
     msg = _err(_call(token, "get", {"kind": "account", "id": "x"}))
     assert "kind 'account' doesn't take id (it takes nothing else)" in msg
     assert "kind 'model' needs id" in _err(_call(token, "get", {"kind": "model"}))
     # The action's own limits still hold, said plainly.
-    msg = _err(_call(token, "life_data_analysis", {"action": "check_life_requirement", "model_id": "m",
-                                                   "b_life": 10, "life": 5, "confidence": 2}))
+    msg = _err(_call(token, "analyse", {"action": "check_life_requirement", "model_id": "m",
+                                        "b_life": 10, "life": 5, "confidence": 2}))
     assert "action 'check_life_requirement': confidence: Input should be less than 1" in msg
     # An argument only one action takes keeps its limits in the schema itself.
-    msg = _err(_call(token, "rbd_analysis", {"action": "fault_tree", "rbd_id": "r", "max_cut_sets": 0}))
+    msg = _err(_call(token, "analyse", {"action": "rbd_fault_tree", "rbd_id": "r", "max_cut_sets": 0}))
     assert "max_cut_sets" in msg and "greater than or equal to 1" in msg
     # A value no action has is refused by the schema.
-    assert _call(token, "strategy", {"action": "nope"}).is_error
+    assert _call(token, "analyse", {"action": "nope"}).is_error
     # Renamed for get / list: the tool's argument names in the message, not the function's.
     msg = _err(_call(token, "get", {"kind": "upload", "id": "x" * 65}))
     assert "kind 'upload': id: String should have at most 64 characters" in msg
@@ -106,59 +232,51 @@ def test_null_means_left_out_and_defaults_are_each_actions(env):
     check_life_requirement)."""
     from backend import mcp_server
 
-    _, table = mcp_server.TABLES["life_data_analysis"]
-    desc = _tools(env.oauth[PRO])["life_data_analysis"].description
+    desc = _tools(env.oauth[PRO])["analyse"].description
     assert "check_life_requirement(model_id, b_life, life, confidence?=0.9)" in desc
     assert "alt_use_level(model_id, use_stress, ref_stress?, mission_time?, confidence?=0.95" in desc
-    out = _ok(_call(env.oauth[PRO], "life_data_analysis", {"action": "fit", "data": [120, 340, 510, 700, 980],
-                                                            "censored": None, "dataset_id": None}))
+    out = _ok(_call(env.oauth[PRO], "analyse", {"action": "fit", "data": [120, 340, 510, 700, 980],
+                                                 "censored": None, "dataset_id": None}))
     assert out["distribution"] == "Weibull"  # distribution?=weibull
 
 
 def test_plan_gating_goes_by_action(env):
-    """Free has life_data_analysis' evaluations but not its fit, list's models but
+    """Free has analyse's evaluations but not its fit, list's models but
     not its fleets; refusals aren't counted, and get kind account and the guide
     never are."""
-    from backend import mcp_server
-
     token = env.oauth[FREE]
-    _ok(_call(token, "models", {"action": "save", "name": "B", "distribution": "weibull", "params": WEIBULL}))
+    _ok(_call(token, "change", {"action": "model_save", "name": "B", "distribution": "weibull", "params": WEIBULL}))
     mid = _ok(_call(token, "list", {"kind": "models"}))["life_models"][0]["id"]
-    assert _ok(_call(token, "life_data_analysis", {"action": "reliability_at", "model_id": mid, "times": [100]}))
+    assert _ok(_call(token, "analyse", {"action": "reliability_at", "model_id": mid, "times": [100]}))
     assert _calls_used(env.db, FREE) == 3
-    assert "part of Reliafy Pro" in _err(_call(token, "life_data_analysis", {"action": "fit", "data": [1, 2, 3]}))
+    assert "part of Reliafy Pro" in _err(_call(token, "analyse", {"action": "fit", "data": [1, 2, 3]}))
     assert "Fleet forecasts" in _err(_call(token, "list", {"kind": "fleets"}))
-    assert "part of Reliafy Pro" in _err(_call(token, "models", {"action": "fit_recurrent", "name": "r",
-                                                               "times": [1, 2]}))
+    assert "part of Reliafy Pro" in _err(_call(token, "change", {"action": "model_fit_recurrent", "name": "r",
+                                                          "times": [1, 2]}))
     assert _calls_used(env.db, FREE) == 3  # refused: not counted
     _ok(_call(token, "get", {"kind": "account"}))
     _ok(_call(token, "guide", {"topic": "life_data"}))
     assert _calls_used(env.db, FREE) == 3
-    assert {"get.account", "guide", "upgrade_link", "report_problem.report", "report_problem.status",
-            "report_problem.triage", "report_problem.update"} == mcp_server.UNGATED_TOOLS
-    assert mcp_server.UNCOUNTED_TOOLS == {"uploads.send_part", "library", "library.search", "library.get",
-                                          "library.sources"}
-    assert mcp_server.PRO_ONLY_TOOLS == {"life_data_analysis.fit", "models.fit", "models.fit_alt",
-                                         "models.fit_recurrent", "list.fleets", "strategy.fleet_forecast",
-                                         "list.fleet_alerts", "fleet.create_alert",
-                                         "life_data_analysis.fit_joint", "models.fit_joint"}
-    assert "models save" in mcp_server._pro_only_message("life_data_analysis.fit")
-    assert "AcceleratedLife" in mcp_server._pro_only_message("models.fit_alt")
+    from backend import mcp_server
+
+    assert "change model_save" in mcp_server._pro_only_message("analyse.fit")
+    assert "AcceleratedLife" in mcp_server._pro_only_message("change.model_fit_alt")
+    assert "WeibullJointPH" in mcp_server._pro_only_message("analyse.fit_joint")
 
 
 def test_a_soft_refusal_is_refunded_by_action(env):
-    """rbd_analysis cheapest_design answers available=false without Pro: the call
-    isn't counted, while analyze in the same tool is."""
+    """analyse rbd_cheapest_design answers available=false without Pro: the call
+    isn't counted, while rbd_fault_tree in the same tool is."""
     from backend.tests.test_mcp import REPAIRABLE_STAGES
 
     token = env.oauth[FREE]
-    rid = _ok(_call(token, "rbd", {"action": "create", "name": "P", "repairable": True,
-                                   "stages": REPAIRABLE_STAGES}))["id"]
+    rid = _ok(_call(token, "change", {"action": "rbd_create", "name": "P", "repairable": True,
+                                      "stages": REPAIRABLE_STAGES}))["id"]
     assert _calls_used(env.db, FREE) == 1
-    out = _ok(_call(token, "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
+    out = _ok(_call(token, "analyse", {"action": "rbd_cheapest_design", "rbd_id": rid}))
     assert out["available"] is False and out["code"] == "pro_required"
     assert _calls_used(env.db, FREE) == 1
-    assert _ok(_call(token, "rbd_analysis", {"action": "fault_tree", "rbd_id": rid}))["kind"]
+    assert _ok(_call(token, "analyse", {"action": "rbd_fault_tree", "rbd_id": rid}))["kind"]
     assert _calls_used(env.db, FREE) == 2
 
 
@@ -174,12 +292,12 @@ def test_heavy_slots_go_by_action(env, monkeypatch):
 
     monkeypatch.setattr(mcp_server, "_run_in_slot", spy)
     token = env.oauth[PRO]
-    _ok(_call(token, "life_data_analysis", {"action": "fit", "data": [120, 340, 510, 700, 980]}))
-    _ok(_call(token, "life_data_analysis", {"action": "plan_demonstration_test", "reliability": 0.9}))
+    _ok(_call(token, "analyse", {"action": "fit", "data": [120, 340, 510, 700, 980]}))
+    _ok(_call(token, "analyse", {"action": "plan_demonstration_test", "reliability": 0.9}))
     _ok(_call(token, "get", {"kind": "account"}))
     assert seen == [True, False, False]
-    assert "life_data_analysis.fit" in mcp_server.HEAVY_TOOLS and "get.upload" in mcp_server.HEAVY_TOOLS
-    assert "life_data_analysis.plan_demonstration_test" not in mcp_server.HEAVY_TOOLS
+    assert "analyse.fit" in mcp_server.HEAVY_TOOLS and "get.upload" in mcp_server.HEAVY_TOOLS
+    assert "analyse.plan_demonstration_test" not in mcp_server.HEAVY_TOOLS
 
 
 def test_usage_is_logged_by_action(env, monkeypatch):
@@ -188,13 +306,13 @@ def test_usage_is_logged_by_action(env, monkeypatch):
     monkeypatch.setattr(config, "USAGE_LOGGING", True)
     token = env.oauth[FREE]
     _ok(_call(token, "list", {"kind": "rbds"}))
-    _err(_call(token, "life_data_analysis", {"action": "fit", "data": [1, 2, 3]}))
-    _err(_call(token, "life_data_analysis", {"action": "reliability_at", "times": [1]}))  # needs model_id
+    _err(_call(token, "analyse", {"action": "fit", "data": [1, 2, 3]}))
+    _err(_call(token, "analyse", {"action": "reliability_at", "times": [1]}))  # needs model_id
     _ok(_call(token, "guide"))
     got = {(e["feature"], e["outcome"]) for e in env.db.usage_events.find({"channel": "mcp"})
            if e["feature"] not in ("initialize", "tools/list")}
-    assert got == {("list.rbds", "ok"), ("life_data_analysis.fit", "pro_only"),
-                   ("life_data_analysis.reliability_at", "error"), ("guide", "ok")}
+    assert got == {("list.rbds", "ok"), ("analyse.fit", "pro_only"),
+                   ("analyse.reliability_at", "error"), ("guide", "ok")}
 
 
 def test_a_read_only_token_reads_and_calculates_but_never_writes(env):
@@ -205,12 +323,14 @@ def test_a_read_only_token_reads_and_calculates_but_never_writes(env):
     _ok(_call(read, "list", {"kind": "models"}))
     _ok(_call(read, "get", {"kind": "account"}))
     _ok(_call(read, "guide"))
-    _ok(_call(read, "life_data_analysis", {"action": "fit", "data": [120, 340, 510, 700, 980]}))
-    for tool, args in [("models", {"action": "save", "name": "B", "distribution": "weibull", "params": WEIBULL}),
-                       ("datasets", {"action": "delete", "dataset_id": "x"}),
-                       ("uploads", {"action": "create", "purpose": "dataset", "filename": "a.csv"}),
-                       ("sharing", {"action": "revoke_link", "token": "x"})]:
-        assert "write" in _err(_call(read, tool, args)), tool
+    _ok(_call(read, "analyse", {"action": "fit", "data": [120, 340, 510, 700, 980]}))
+    for args in [{"action": "model_save", "name": "B", "distribution": "weibull", "params": WEIBULL},
+                 {"action": "dataset_delete", "dataset_id": "x"},
+                 {"action": "upload_create", "purpose": "dataset", "filename": "a.csv"},
+                 {"action": "share_revoke", "token": "x"}]:
+        assert "write" in _err(_call(read, "change", args)), args
+    # The earlier names keep their scope too.
+    assert "write" in _err(_call(read, "models", {"action": "delete", "model_id": "x"}))
     assert env.db.models.count_documents({}) == 0
 
 
@@ -218,12 +338,13 @@ def test_the_data_notice_goes_by_action(env):
     from backend.mcp_server import DATA_NOTICE
 
     token = env.oauth[PRO]
-    saved = _ok(_call(token, "models", {"action": "save", "name": "B", "distribution": "weibull", "params": WEIBULL}))
+    saved = _ok(_call(token, "change", {"action": "model_save", "name": "B", "distribution": "weibull",
+                                        "params": WEIBULL}))
     assert "data_notice" not in saved
     assert _ok(_call(token, "list", {"kind": "models"}))["data_notice"] == DATA_NOTICE
     assert _ok(_call(token, "get", {"kind": "model", "id": saved["model_id"]}))["data_notice"] == DATA_NOTICE
     assert "data_notice" not in _ok(_call(token, "get", {"kind": "account"}))
-    assert "data_notice" not in _ok(_call(token, "life_data_analysis", {
+    assert "data_notice" not in _ok(_call(token, "analyse", {
         "action": "reliability_at", "model_id": saved["model_id"], "times": [100]}))
 
 
@@ -240,7 +361,7 @@ def test_the_guide_by_topic(env):
         assert page["topic"] == topic and len(page["guide"]) > 300
     assert _call(token, "guide", {"topic": "nope"}).is_error
     uploads = mcp_guide.TOPICS["uploads"][1]
-    assert "uploads send_part" in uploads and "url_fallback" in uploads and "200 KB" in uploads
+    assert "change upload_send_part" in uploads and "url_fallback" in uploads and "200 KB" in uploads
     assert "placeholder=true" in mcp_guide.TOPICS["rbds"][1]
     # Every tool and action the guide names exists.
     from backend import mcp_server
@@ -260,16 +381,14 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
         every = anyio.run(mcp_server.mcp.list_tools)
         names = {t.name for t in every}
         # 22 maintenance tools, and the 2 graph query tools (listed per user only to the owner).
-        assert len(names) == 16 + 22 + 2 and READS | WRITES <= names
+        assert len(names) == 6 + 22 + 2 and READS | WRITES <= names
         assert "maintenance_reliability.fit_class_model" in mcp_server.PRO_ONLY_TOOLS & mcp_server._FIT_TOOLS
         assert {"maintenance_workspace.import_history", "maintenance_apply"} <= mcp_server.HEAVY_TOOLS
         assert {"maintenance_graph_query", "maintenance_graph_schema"} <= mcp_server.HEAVY_TOOLS & names
         # The whole list an operator loads on every connection: descriptions and JSON, guarded.
-        import json
-
-        assert sum(len(t.description or "") for t in every) < 85_000  # 75,611 before maintenance_apply
+        assert sum(len(t.description or "") for t in every) < 75_000  # 83,502 with the 16 core tools
         listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in every])
-        assert len(listed) < 310_000  # 284,258 before maintenance_apply
+        assert len(listed) < 160_000  # 301,819 with the 16 core tools
     finally:
         mcp_tools.unregister()
-    assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 16
+    assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 6

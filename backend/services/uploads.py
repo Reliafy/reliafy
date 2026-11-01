@@ -1,10 +1,10 @@
 """Upload links: files reach Reliafy without passing through an agent's context.
 
 An MCP agent that wants to import a file (a BlockSim project, an Excel
-workbook, a CSV of failure times) calls the ``uploads create`` tool, gets a
+workbook, a CSV of failure times) calls the ``change upload_create`` tool, gets a
 single-use URL, sends the bytes there with a plain HTTP ``PUT`` (``curl``),
-then calls ``uploads import_rbd`` / ``uploads import_excel`` / ``datasets upload`` /
-``rbd upload_outage_log`` with the ``upload_id``. The file's contents never sit
+then calls ``change import_rbd`` / ``change import_excel`` / ``change dataset_upload`` /
+``change rbd_upload_outage_log`` with the ``upload_id``. The file's contents never sit
 in a tool call, so a 20 MB workbook costs the agent a few hundred tokens,
 not millions.
 
@@ -280,18 +280,18 @@ def status_refusal(doc: dict) -> tuple[int, str]:
         return 409, "This upload link has already been used — the file is uploaded. Create a new upload to send another file."
     if doc.get("status") == "receiving":
         return 409, "A file is already being sent to this upload link."
-    return 410, "This upload link has expired (links last 15 minutes). Call uploads create for a new one."
+    return 410, "This upload link has expired (links last 15 minutes). Call change upload_create for a new one."
 
 
 def next_step(purpose: Optional[str]) -> str:
     """What to call once the file has arrived."""
-    tool = {"rbd_import": "uploads import_rbd", "excel": "uploads import_excel", "dataset": "datasets upload",
-            "outage_log": "rbd upload_outage_log",
+    tool = {"rbd_import": "change import_rbd", "excel": "change import_excel", "dataset": "change dataset_upload",
+            "outage_log": "change rbd_upload_outage_log",
             "document": "maintenance_attachments add_document"}.get(purpose or "", "the import")
     return f"Uploaded. Now call {tool} with this upload_id (get kind upload first to see sheets and columns)."
 
 
-# ---- receiving in parts (the uploads send_part MCP tool) -----------------------------
+# ---- receiving in parts (the change upload_send_part MCP tool) -----------------------------
 #
 # An agent whose sandbox can't reach the upload URL at all (an egress proxy
 # refusing both hosts) sends the file through the MCP connection instead:
@@ -304,7 +304,7 @@ def next_step(purpose: Optional[str]) -> str:
 # ``config.MAX_REQUEST_BYTES``) and on the number of parts. A part sent again
 # replaces itself, so a retry after a dropped call is harmless. The file must
 # be complete before the slot's original ``delete_at`` (75 minutes after
-# uploads create); the token's 15 minutes only bound when the first part may
+# change upload_create); the token's 15 minutes only bound when the first part may
 # arrive.
 
 PART_MAX_BYTES = CHUNK_BYTES   # decoded bytes per part: one stored chunk
@@ -316,7 +316,7 @@ def _parts_slot(db, upload_id: str, uid: str) -> dict:
     doc = db.uploads.find_one({"_id": str(upload_id or "")[:64], "uid": uid})
     now = _now()
     if doc is None or (_aware(doc.get("delete_at")) or now) <= now:
-        raise UploadError("Upload not found — it may have expired. Call uploads create and send the file again.")
+        raise UploadError("Upload not found — it may have expired. Call change upload_create and send the file again.")
     if doc.get("status") == "pending":
         claimed = db.uploads.find_one_and_update(
             {"_id": doc["_id"], "uid": uid, "status": "pending", "expires_at": {"$gt": now}},
@@ -328,13 +328,13 @@ def _parts_slot(db, upload_id: str, uid: str) -> dict:
     status = doc.get("status")
     if status == "ready":
         raise UploadError("This upload is already complete. Call the import tool with its upload_id, or "
-                          "uploads create for another file.")
+                          "change upload_create for another file.")
     if status == "pending":
         raise UploadError("This upload's link expired before any of the file arrived (it lasts 15 minutes). "
-                          "Call uploads create again.")
+                          "Call change upload_create again.")
     if doc.get("via") != "parts":
         raise UploadError("This file is already being sent to the upload URL by HTTP. Wait for that, or call "
-                          "uploads create for a new upload.")
+                          "change upload_create for a new upload.")
     return doc
 
 
@@ -375,7 +375,7 @@ def write_part(db, upload_id: str, uid: str, index: int, data: bytes, last: bool
         release(db, doc["_id"], claim_id)
         raise UploadError(f"The file is larger than this upload allows ({cap / 1048576:.0f} MB), so the parts "
                           "sent were dropped. Export just the part you need (one sheet, one project) and send "
-                          "that with a new uploads create.")
+                          "that with a new change upload_create.")
     db.upload_chunks.replace_one(
         {"_id": f"{doc['_id']}:{claim_id}:{index:05d}"},
         {"upload_id": doc["_id"], "claim": claim_id, "n": index, "data": bytes(data), "size": len(data),
@@ -403,11 +403,11 @@ def write_part(db, upload_id: str, uid: str, index: int, data: bytes, last: bool
     if sha256 and digest != sha256.strip().lower():
         release(db, doc["_id"], claim_id)
         raise UploadError("The parts put together don't match the sha256 you gave (a part was mistyped or "
-                          "cut short), so they were dropped. Send the file again from part 0 (call uploads create "
+                          "cut short), so they were dropped. Send the file again from part 0 (call change upload_create "
                           "first if its 15 minutes are up).")
     done = finish(db, doc["_id"], claim_id, len(whole), digest, whole[:65536])
     if done is None:
-        raise UploadError("Another upload to this link took its place. Call uploads create to send this file.")
+        raise UploadError("Another upload to this link took its place. Call change upload_create to send this file.")
     # The chunks live as long as the received upload (finish moved its delete_at).
     received = db.uploads.find_one({"_id": doc["_id"]}, {"delete_at": 1}) or {}
     if received.get("delete_at"):
@@ -465,16 +465,16 @@ def get(db, upload_id: str, uid: str) -> dict:
     doc = db.uploads.find_one({"_id": str(upload_id or ""), "uid": uid})
     if doc is None or (_aware(doc.get("delete_at")) or _now()) <= _now():
         raise UploadError("Upload not found — it may have expired (uploads are kept for an hour). "
-                          "Call uploads create and send the file again.")
+                          "Call change upload_create and send the file again.")
     if doc.get("status") != "ready":
         if doc.get("via") == "parts":
-            raise UploadError("The file isn't complete yet: send its remaining parts with uploads send_part "
+            raise UploadError("The file isn't complete yet: send its remaining parts with change upload_send_part "
                               "(last=true on the final one), then call this again.")
         if _aware(doc.get("expires_at")) and _aware(doc["expires_at"]) <= _now():
-            raise UploadError("Nothing was sent to this upload before its link expired. Call uploads create again.")
+            raise UploadError("Nothing was sent to this upload before its link expired. Call change upload_create again.")
         raise UploadError("The file hasn't arrived yet: send it with an HTTP PUT to the upload URL "
-                          "(the curl command uploads create gave) — or, if that can't get through, in parts "
-                          "with uploads send_part — then call this again.")
+                          "(the curl command change upload_create gave) — or, if that can't get through, in parts "
+                          "with change upload_send_part — then call this again.")
     return doc
 
 
@@ -486,7 +486,7 @@ def read(db, upload_id: str, uid: str) -> tuple[dict, bytes]:
     data = b"".join(bytes(c["data"]) for c in parts)
     if len(data) != doc.get("size") or hashlib.sha256(data).hexdigest() != doc.get("sha256"):
         logger.warning("upload %s failed its integrity check", doc["_id"])
-        raise UploadError("The uploaded file is incomplete. Call uploads create and send it again.")
+        raise UploadError("The uploaded file is incomplete. Call change upload_create and send it again.")
     return doc, data
 
 
