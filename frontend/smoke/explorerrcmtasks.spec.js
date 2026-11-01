@@ -1,6 +1,6 @@
 // Several tasks for one failure mode, and one task for several, on the
 // Explorer's RCM tab (Operate › Assets › Explorer › RCM): the failure mode's
-// details list its tasks (the decision's own first) with Add another task…,
+// details list its tasks (the decision's own first) with Add a task,
 // Edit…, Remove and Use an existing task…; the row menu's Add a task… opens
 // the details on the add form; the Task cell says "+1 task"
 // without the row changing height; the decision dialog shows a shared task's
@@ -38,6 +38,11 @@ const dialog = (page, name) => page.getByRole("dialog", { name, exact: true });
 const panel = (page) => page.getByRole("complementary", { name: "Details" });
 const tasksOf = (page) => panel(page).getByRole("region", { name: "Tasks" });
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+// A task card's ⋯ (Actions for ‹task›), then one of its items.
+const taskMenu = async (page, tasks, name, item) => {
+  await tasks.getByRole("button", { name: `Actions for ${name}` }).click();
+  await page.getByRole("menu", { name: `Actions for ${name}` }).getByRole("menuitem", { name: item }).click();
+};
 const settled = async (page) => {
   await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
   await page.waitForTimeout(250);
@@ -64,24 +69,25 @@ test("a failure mode's details list its tasks; add another, link an existing one
   await expect(tasks).toContainText("every 1 week");
 
   // Add another task: the hint asks what it catches (an operational consequence); saved once.
-  await tasks.getByRole("button", { name: "Add another task…" }).click();
+  await tasks.getByRole("button", { name: "Add a task" }).click();
   await expect(tasks.getByText(/What does this task catch that/)).toBeVisible();
   await expect(tasks.getByRole("textbox", { name: "Task" })).toBeFocused();
   await tasks.getByRole("textbox", { name: "Task" }).fill(`Replace the acid pump ${tag}`);
   await tasks.getByRole("spinbutton", { name: "Interval" }).fill("24");
   await tasks.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
   await tasks.getByRole("combobox", { name: "Kind of task" }).selectOption("fixed_interval");
-  await tasks.getByRole("textbox", { name: "Instructions optional" }).fill("Swap the pump head.");
+  await tasks.getByRole("textbox", { name: "Instructions" }).fill("Swap the pump head.");
   let writes = 0;
   page.on("request", (r) => { if (r.method() === "POST" && r.url().includes(`/failure-modes/${p.acid.id}/tasks`)) writes += 1; });
   await tasks.getByRole("button", { name: "Add task" }).dblclick();
   await expect(tasks.getByRole("listitem")).toHaveCount(2);
   expect(writes).toBe(1);
   const item = (name) => tasks.getByRole("listitem").filter({ hasText: name });
-  await expect(tasks.getByRole("listitem").nth(0)).toContainText("the decision's own");
-  await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 24 months · Fixed-interval");
+  await expect(tasks.getByRole("listitem").nth(0)).toContainText(/the decision's own/i);
+  await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 24 months");
+  await expect(item(`Replace the acid pump ${tag}`)).toContainText("Fixed-interval");
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("Swap the pump head.");
-  await expect(dlg.getByRole("heading", { name: "Tasks (2)" })).toBeVisible();
+  await expect(tasks.locator(".psec-count")).toHaveText("2");
 
   // Link an existing task on the position: it serves this mode too.
   await tasks.getByRole("button", { name: "Use an existing task…" }).click();
@@ -91,16 +97,16 @@ test("a failure mode's details list its tasks; add another, link an existing one
   await pick.selectOption({ label: await pick.locator("option").nth(1).textContent() });
   await tasks.getByRole("button", { name: "Link task" }).click();
   await expect(tasks.getByRole("listitem")).toHaveCount(3);
-  await expect(dlg.getByRole("heading", { name: "Tasks (3)" })).toBeVisible();
+  await expect(tasks.locator(".psec-count")).toHaveText("3");
 
   // Edit the second task: a plain change, kept.
-  await tasks.getByRole("button", { name: `Edit Replace the acid pump ${tag}` }).click();
+  await taskMenu(page, tasks, `Replace the acid pump ${tag}`, "Edit…");
   await tasks.getByRole("spinbutton", { name: "Interval" }).fill("36");
   await tasks.getByRole("button", { name: "Save task" }).click();
   await expect(item(`Replace the acid pump ${tag}`)).toContainText("every 36 months");
 
   // Remove the linked task: it serves only this mode, so it is retired (after asking).
-  await tasks.getByRole("button", { name: `Remove Backwash the filter ${tag}` }).click();
+  await taskMenu(page, tasks, `Backwash the filter ${tag}`, "Remove…");
   const ask = page.getByRole("alertdialog", { name: "Remove this task?" });
   await expect(ask).toContainText("serves only this failure mode, so it is retired");
   await ask.getByRole("button", { name: "Retire the task" }).click();
@@ -142,7 +148,7 @@ test("one task for several modes: shared, read-only in the decision dialog, unli
   await expect(tasks.getByText(/What does this task catch/)).toHaveCount(0); // no consequence set: no hint
   await tasks.getByRole("button", { name: "Cancel" }).click();
   await expect(tasks.getByRole("listitem")).toHaveCount(1);
-  await expect(tasks.getByRole("listitem").first()).toContainText("shared with 1 other failure mode");
+  await expect(tasks.getByRole("listitem").first()).toContainText(/shared with 1 other failure mode/i);
   // Decide… with that task: the decision dialog shows its interval read-only and says why.
   await dlg.getByRole("button", { name: "Decide…" }).click();
   const decide = page.getByRole("dialog", { name: /^Decision/ });
@@ -157,7 +163,7 @@ test("one task for several modes: shared, read-only in the decision dialog, unli
   await page.keyboard.press("Escape");
   await expect(decide).toHaveCount(0);
   // Remove: unlinked, not retired; the pool's mode keeps it.
-  await tasks.getByRole("button", { name: `Remove Weekly pH check ${tag}` }).click();
+  await taskMenu(page, tasks, `Weekly pH check ${tag}`, "Remove from this failure mode…");
   const ask = page.getByRole("alertdialog", { name: "Remove this task?" });
   await expect(ask).toContainText("also serves 1 other failure mode, so it stays with them");
   await ask.getByRole("button", { name: "Remove from this failure mode" }).click();

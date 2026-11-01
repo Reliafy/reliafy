@@ -2,20 +2,29 @@ import { useEffect, useRef, useState } from "react";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
 import { Field, FormModal } from "./MaintenanceParts.jsx";
+import UiField from "./ui/Field.jsx";
+import InputGroup, { ReadsAs } from "./ui/InputGroup.jsx";
+import MoreMenu from "./ui/MoreMenu.jsx";
+import Section, { AddRow } from "./ui/Section.jsx";
+import Chip from "./ui/Chip.jsx";
+import { Select, TextInput } from "./ui/Controls.jsx";
+import { GripIcon } from "./icons.jsx";
 import {
-  COMPARATORS, COMPARATOR_LABEL, canSplit, limitWords, proposeSplit, splitLines, standardsShown, unbreachedWords,
+  COMPARATORS, COMPARATOR_LABEL, canSplit, limitReads, limitWords, proposeSplit, splitLines, standardsShown, unbreachedWords,
 } from "../rcmStandards.js";
+import { moveItem } from "../listMove.js";
 
 // A function's performance standards, as a list, in its details (the
 // Explorer's RCM tab): each one a line of text (one parameter,
 // one limit: "pH 7.2-7.8"), with the structured limit, when it applies and
-// its source folded away. Add, edit, remove, move up or down; and, for a
-// function that still has its one text with ';' or line breaks in it, "Split
-// into standards…", which proposes a line per part for the user to edit,
-// drop or mark as a condition, and writes them on Confirm. Each change is
-// written at once through `ops.standards` (useTreeRcm) and the row is read
-// again, so the list follows. A function's one text (no list yet) shows as
-// the first item and is edited as the function's text.
+// its source folded away. Add (the section's "+ Add", or the dashed row at
+// the end), and from each row's ⋯: edit, move up or down, remove; or drag a
+// row by its grip to reorder. For a function that still has its one text with
+// ';' or line breaks in it, "Split into standards…" proposes a line per part
+// for the user to edit, drop or mark as a condition, and writes them on
+// Confirm. Each change is written at once through `ops.standards` (useTreeRcm)
+// and the row is read again, so the list follows. A function's one text (no
+// list yet) shows as the first item and is edited as the function's text.
 //
 //   r         the function's row (read afresh after each save)
 //   ops       standards.add / update / remove / reorder / split, set (the one text)
@@ -31,6 +40,7 @@ export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid 
   const [form, setForm] = useState(null); // {mode: "add"} | {mode: "edit", st} | {mode: "split"}
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
+  const [drag, setDrag] = useState(null); // {from, over}
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
@@ -65,63 +75,72 @@ export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid 
     });
     if (ok) onSaid?.("Removed the performance standard.");
   };
-  const move = (i, by) => {
-    const ids = shown.map((st) => st.id);
-    const j = i + by;
-    if (j < 0 || j >= ids.length) return;
-    [ids[i], ids[j]] = [ids[j], ids[i]];
-    run(() => ops.standards.reorder(r, ids), null);
+  const moveTo = (i, j) => {
+    const ids = moveItem(shown.map((st) => st.id), i, j);
+    if (!ids) return;
+    run(() => ops.standards.reorder(r, ids), "Moved the performance standard.");
   };
+  const canMove = !readOnly && shown.length > 1 && !shown.some((st) => st.legacy);
+  const add = () => { setFailed(null); setForm({ mode: "add" }); };
 
   const hint = unbreachedWords(fn);
   return (
-    <section className="rfs" aria-label="Performance standards">
-      <h3>{shown.length > 1 ? `Performance standards (${shown.length})` : "Performance standards"}</h3>
+    <Section title="Performance standards" count={shown.length} className="rfs"
+             action={readOnly || form ? null : { label: "Add", plus: true, ariaLabel: "Add a performance standard", disabled: busy, onClick: add }}>
       {shown.length === 0 && !form && (
         <p className="rw-fhelp">None yet. One parameter and one limit each, e.g. within 30 m from 60 km/h.</p>
       )}
       {shown.length > 0 && (
         <ol className="rfs-list">
           {shown.map((st, i) => (
-            <li key={st.id || "legacy"}>
-              <span className="rfs-main">
-                <span className="rfs-text">{st.text}</span>
-                {limitWords(st) && <span className="rw-fhelp">{limitWords(st)}</span>}
-              </span>
-              {!readOnly && (
-                <span className="rfs-acts">
-                  {shown.length > 1 && !st.legacy && (
-                    <>
-                      <button type="button" className="link" disabled={busy || i === 0} onClick={() => move(i, -1)} aria-label={`Move ${st.text} up`}>↑</button>
-                      <button type="button" className="link" disabled={busy || i === shown.length - 1} onClick={() => move(i, 1)} aria-label={`Move ${st.text} down`}>↓</button>
-                    </>
-                  )}
-                  <button type="button" className="link" disabled={busy} aria-label={`Edit ${st.text}`}
-                          onClick={() => { setFailed(null); setForm({ mode: "edit", st }); }}>Edit…</button>
-                  <button type="button" className="link" disabled={busy} aria-label={`Remove ${st.text}`} onClick={() => remove(st)}>Remove</button>
+            form?.mode === "edit" && (form.st.id ?? null) === (st.id ?? null) ? (
+              <li key={st.id || "legacy"} className="rfs-row editing">
+                <StandardForm st={st} busy={busy} failed={failed} onCancel={() => { setForm(null); setFailed(null); }}
+                              onSubmit={(body) => run(
+                                () => (st.legacy ? ops.set(r, "standard", body.text) : ops.standards.update(st.id, body)),
+                                "Saved the performance standard.",
+                              )} />
+              </li>
+            ) : (
+              <li key={st.id || "legacy"}
+                  className={"rfs-row" + (drag?.over === i && drag.from !== i ? (drag.from < i ? " drop-after" : " drop-before") : "") + (drag?.from === i ? " dragging" : "")}
+                  draggable={canMove && !busy}
+                  onDragStart={(e) => { setDrag({ from: i, over: i }); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", st.text); }}
+                  onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (drag.over !== i) setDrag({ ...drag, over: i }); }}
+                  onDrop={(e) => { e.preventDefault(); if (drag && drag.from !== i) moveTo(drag.from, i); setDrag(null); }}
+                  onDragEnd={() => setDrag(null)}>
+                {canMove && <span className="rfs-grip" title="Drag to reorder (or use ⋯: Move up, Move down)" aria-hidden="true"><GripIcon /></span>}
+                <span className="rfs-main">
+                  <span className="rfs-text">{st.text}</span>
+                  {limitWords(st) && <span className="rw-fhelp">{limitWords(st)}</span>}
+                  {!st.legacy && st.failures === 0 && <span><Chip tone="warning">No functional failure yet</Chip></span>}
                 </span>
-              )}
-            </li>
+                {!readOnly && (
+                  <MoreMenu label={`Actions for ${st.text}`} disabled={busy} className="rfs-more" items={[
+                    { id: "edit", label: "Edit…", onSelect: () => { setFailed(null); setForm({ mode: "edit", st }); } },
+                    ...(canMove ? [
+                      { id: "up", label: "Move up", disabled: i === 0, reason: i === 0 ? "It's first already." : undefined, onSelect: () => moveTo(i, i - 1) },
+                      { id: "down", label: "Move down", disabled: i === shown.length - 1, reason: i === shown.length - 1 ? "It's last already." : undefined, onSelect: () => moveTo(i, i + 1) },
+                    ] : []),
+                    { id: "remove", label: "Remove…", danger: true, onSelect: () => remove(st) },
+                  ]} />
+                )}
+              </li>
+            )
           ))}
         </ol>
       )}
       {hint && <p className="rw-fhelp rfs-hint">{hint}</p>}
-      {form?.mode === "add" || form?.mode === "edit" ? (
-        <StandardForm key={form.st?.id || "add"} st={form.st || null} busy={busy} failed={failed}
+      {form?.mode === "add" ? (
+        <StandardForm key="add" st={null} busy={busy} failed={failed}
                       onCancel={() => { setForm(null); setFailed(null); }}
-                      onSubmit={(body) => run(
-                        () => (form.st?.legacy ? ops.set(r, "standard", body.text)
-                          : form.st ? ops.standards.update(form.st.id, body) : ops.standards.add(r, body)),
-                        form.st ? "Saved the performance standard." : "Added the performance standard.",
-                      )} />
+                      onSubmit={(body) => run(() => ops.standards.add(r, body), "Added the performance standard.")} />
       ) : form?.mode === "split" ? (
         <SplitForm text={fn.standard} busy={busy} failed={failed} onCancel={() => { setForm(null); setFailed(null); }}
                    onSubmit={(standards) => run(() => ops.standards.split(r, standards), `Split into ${plural(standards.length, "performance standard")}.`)} />
-      ) : !readOnly && (
+      ) : !readOnly && !form && (
         <div className="rfs-add">
-          <button type="button" className="secondary sm" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "add" }); } }}>
-            Add performance standard
-          </button>
+          {shown.length === 0 && <AddRow disabled={busy} onClick={add}>Add a performance standard</AddRow>}
           {canSplit(fn) && (
             <button type="button" className="link" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "split" }); } }}>
               Split into performance standards…
@@ -129,8 +148,8 @@ export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid 
           )}
         </div>
       )}
-      {failed && !form && <p className="rw-ferr" role="alert">{failed}</p>}
-    </section>
+      {failed && !form && <p className="field-error" role="alert">{failed}</p>}
+    </Section>
   );
 }
 
@@ -150,6 +169,7 @@ function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
   const legacy = !!st?.legacy;
   const can = !!text.trim() && !busy;
   const num = value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : value.trim();
+  const reads = limitReads({ parameter, comparator, value, unit, when });
   return (
     <form className="rfs-form" onSubmit={(e) => {
       e.preventDefault();
@@ -159,12 +179,9 @@ function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
       });
     }}>
       <h4>{st ? "Change the performance standard" : "Another performance standard"}</h4>
-      <label className="rw-field">
-        <span className="rw-flabel">Performance standard</span>
-        <input ref={box} value={text} readOnly={busy} placeholder="One parameter and one limit"
-               onChange={(e) => setText(e.target.value)} />
-        <span className="rw-fhelp">A performance standard with “and” in it is two; one that needs its own verb is another function.</span>
-      </label>
+      <UiField label="Performance standard" help="One parameter and one limit. One with “and” in it is two; one that needs its own verb is another function.">
+        <TextInput ref={box} value={text} readOnly={busy} placeholder="One parameter and one limit" onChange={(e) => setText(e.target.value)} />
+      </UiField>
       {!legacy && (
         <>
           <button type="button" className="link rfs-fold" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
@@ -172,29 +189,27 @@ function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
           </button>
           {open && (
             <div className="rfs-limit">
-              <div className="rim-trow">
-                <label className="rw-field"><span className="rw-flabel">Parameter</span>
-                  <input value={parameter} readOnly={busy} onChange={(e) => setParameter(e.target.value)} /></label>
-                <label className="rw-field"><span className="rw-flabel">Comparator</span>
-                  <select value={comparator} disabled={busy} onChange={(e) => setComparator(e.target.value)}>
+              <UiField label="Parameter"><TextInput value={parameter} readOnly={busy} onChange={(e) => setParameter(e.target.value)} /></UiField>
+              <UiField label="Limit" as="fieldset" help={comparator === "between" ? "A range as “80-120”; one limit as a number." : null}>
+                <InputGroup label="Limit">
+                  <Select aria-label="Comparator" value={comparator} disabled={busy} onChange={(e) => setComparator(e.target.value)}>
                     <option value="">—</option>
-                    {COMPARATORS.map((c) => <option key={c} value={c}>{COMPARATOR_LABEL[c]} ({c})</option>)}
-                  </select></label>
-                <label className="rw-field"><span className="rw-flabel">Value</span>
-                  <input value={value} readOnly={busy} placeholder="Number or range" onChange={(e) => setValue(e.target.value)} /></label>
-                <label className="rw-field"><span className="rw-flabel">Unit</span>
-                  <input value={unit} readOnly={busy} onChange={(e) => setUnit(e.target.value)} /></label>
-              </div>
-              <label className="rw-field"><span className="rw-flabel">When it applies <span className="rw-opt">optional</span></span>
-                <input value={when} readOnly={busy} placeholder="Always" onChange={(e) => setWhen(e.target.value)} /></label>
-              <label className="rw-field"><span className="rw-flabel">Source <span className="rw-opt">optional</span></span>
-                <input value={source} readOnly={busy} placeholder="A standard, manual or study" onChange={(e) => setSource(e.target.value)} /></label>
+                    {COMPARATORS.map((c) => <option key={c} value={c}>{COMPARATOR_LABEL[c]}</option>)}
+                  </Select>
+                  <TextInput aria-label="Value" value={value} readOnly={busy} placeholder="Value" onChange={(e) => setValue(e.target.value)} />
+                  <TextInput aria-label="Unit" className="ctl-unit" value={unit} readOnly={busy} placeholder="Unit" onChange={(e) => setUnit(e.target.value)} />
+                </InputGroup>
+              </UiField>
+              <ReadsAs>{reads}</ReadsAs>
+              <UiField label="When it applies" optional><TextInput value={when} readOnly={busy} placeholder="Always" onChange={(e) => setWhen(e.target.value)} /></UiField>
+              <UiField label="Source" optional><TextInput value={source} readOnly={busy} placeholder="A standard, manual or study" onChange={(e) => setSource(e.target.value)} /></UiField>
             </div>
           )}
         </>
       )}
-      {failed && <p className="rw-ferr" role="alert">{failed}</p>}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
+        {!can && !busy && <p className="rim-why">Write the performance standard first.</p>}
         <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
         <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : st ? "Save performance standard" : "Add performance standard"}</button>
       </div>
@@ -219,17 +234,17 @@ function SplitForm({ text, busy, failed, onCancel, onSubmit }) {
       <ol className="rfs-split">
         {lines.map((l) => (
           <li key={l.id} className={l.drop ? "dropped" : ""}>
-            <input value={l.text} readOnly={busy || l.drop} aria-label={`Line ${l.id + 1}`} onChange={(e) => edit(l.id, { text: e.target.value })} />
-            <select value={l.kind} disabled={busy || l.drop} aria-label={`Line ${l.id + 1} is`} onChange={(e) => edit(l.id, { kind: e.target.value })}>
+            <TextInput value={l.text} readOnly={busy || l.drop} aria-label={`Line ${l.id + 1}`} onChange={(e) => edit(l.id, { text: e.target.value })} />
+            <Select value={l.kind} disabled={busy || l.drop} aria-label={`Line ${l.id + 1} is`} onChange={(e) => edit(l.id, { kind: e.target.value })}>
               <option value="standard">A performance standard</option>
               <option value="when">A condition (when)</option>
-            </select>
+            </Select>
             <button type="button" className="link" disabled={busy} onClick={() => edit(l.id, { drop: !l.drop })}>{l.drop ? "Keep" : "Drop"}</button>
           </li>
         ))}
       </ol>
       {!out && <p className="rw-fhelp">Nothing left to write: keep at least one performance standard.</p>}
-      {failed && <p className="rw-ferr" role="alert">{failed}</p>}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
         <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
         <button type="submit" className="sm" disabled={!out || busy} aria-busy={busy || undefined}>
@@ -242,20 +257,18 @@ function SplitForm({ text, busy, failed, onCancel, onSubmit }) {
 
 // The standard a functional failure breaches: one of its function's, or the
 // whole function (a total loss). Saved at once.
-export function BreachesField({ r, standards, readOnly = false, onChange }) {
+export function BreachesField({ r, standards, readOnly = false, onChange, saved = 0 }) {
   const current = r.ref.standard?.id || "";
   if (!standards.length) return null;
   return (
-    <label className="rw-field">
-      <span className="rw-flabel">Breaches</span>
+    <UiField label="Breaches" saved={saved} help="Which performance standard this failure is a breach of, as a hint for the reader.">
       {readOnly ? <span className="rw-fval">{r.ref.standard?.text || "The whole function"}</span> : (
-        <select value={current} onChange={(e) => onChange(e.target.value || null)} aria-label="Breaches">
+        <Select value={current} onChange={(e) => onChange(e.target.value || null)}>
           <option value="">The whole function</option>
           {standards.map((st) => <option key={st.id} value={st.id}>{st.text}</option>)}
-        </select>
+        </Select>
       )}
-      <span className="rw-fhelp">Which performance standard this failure is a breach of, as a hint for the reader.</span>
-    </label>
+    </UiField>
   );
 }
 

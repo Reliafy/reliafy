@@ -6,7 +6,12 @@ import { INTERVAL_UNITS, startUnit } from "../decisionCheck.js";
 import { OUTCOME_LABEL, intervalText, tasksOf } from "../rcmWorksheet.js";
 import { secondTaskHint } from "../explorerRcm.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
-import useAutoGrow from "./ui/useAutoGrow.js";
+import Chip from "./ui/Chip.jsx";
+import Field from "./ui/Field.jsx";
+import InputGroup from "./ui/InputGroup.jsx";
+import MoreMenu from "./ui/MoreMenu.jsx";
+import Section, { AddRow } from "./ui/Section.jsx";
+import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 
 // A failure mode's tasks, in its details (the Explorer's RCM tab): the decision's own
 // task first, then any more (a combination: an inspection that catches the
@@ -69,62 +74,72 @@ export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
     if (ok) onSaid?.(t.shared_with ? "Removed the task from this failure mode." : "Retired the task.");
   };
 
+  const add = () => { setFailed(null); setForm({ mode: "add" }); };
+  const link = () => { setFailed(null); setForm({ mode: "link" }); };
+  const submitTask = (task) => (body) => run(
+    () => (task ? ops.editTask(task.id, body) : ops.addTask(r, body)),
+    task ? "Saved the task." : "Added the task.",
+  );
   return (
-    <section className="rim-tasks" aria-label="Tasks">
-      <h3>{tasks.length > 1 ? `Tasks (${tasks.length})` : "Tasks"}</h3>
-      {tasks.length === 0 ? (
+    <Section title="Tasks" count={tasks.length} className="rim-tasks">
+      {tasks.length === 0 && form?.mode !== "add" && (
         <p className="rw-fhelp">
           {d && SCHEDULED.includes(d.outcome)
             ? "The decision schedules work, but no task does it yet: add one, or use an existing task."
             : "No tasks yet."}
         </p>
-      ) : (
+      )}
+      {tasks.length > 0 && (
         <ul className="rim-tlist">
           {tasks.map((t, i) => (
-            <li key={t.id}>
-              <span className="rim-tmain">
-                <LevelIcon type="task" className="rw-ic rw-ic-task" />
-                <span className="rim-tbody">
-                  <span className="rim-tname">{t.text || t.name}</span>
-                  <span className="rw-fhelp">
-                    {[every(t), OUTCOME_LABEL[t.outcome] || null, i === 0 && tasks.length > 1 ? "the decision's own" : null,
-                      t.shared_with ? `shared with ${plural(t.shared_with, "other failure mode")}` : null].filter(Boolean).join(" · ")}
-                  </span>
+            <li key={t.id} className={"rim-card" + (form?.mode === "edit" && form.task.id === t.id ? " editing" : "")}>
+              {form?.mode === "edit" && form.task.id === t.id ? (
+                <TaskForm key={t.id} r={r} task={t} busy={busy} failed={failed}
+                          onCancel={() => { setForm(null); setFailed(null); }} onSubmit={submitTask(t)} />
+              ) : (
+                <>
+                  <div className="rim-chead">
+                    <LevelIcon type="task" className="rw-ic rw-ic-task" />
+                    <span className="rim-tname">{t.text || t.name}</span>
+                    <MoreMenu label={`Actions for ${t.name}`} disabled={busy} items={[
+                      { id: "edit", label: "Edit…", onSelect: () => { setFailed(null); setForm({ mode: "edit", task: t }); } },
+                      { id: "remove", label: t.shared_with ? "Remove from this failure mode…" : "Remove…", danger: true, onSelect: () => remove(t) },
+                    ]} />
+                  </div>
+                  <div className="rim-chips">
+                    {every(t) && <Chip tone="accent">{every(t)}</Chip>}
+                    {OUTCOME_LABEL[t.outcome] && <Chip>{OUTCOME_LABEL[t.outcome]}</Chip>}
+                    {i === 0 && tasks.length > 1 && <Chip>The decision's own</Chip>}
+                    {t.shared_with ? <Chip>Shared with {plural(t.shared_with, "other failure mode")}</Chip> : null}
+                  </div>
                   {t.instructions && <Instructions text={t.instructions} />}
-                </span>
-              </span>
-              <span className="rim-tacts">
-                <button type="button" className="link" disabled={busy} onClick={() => { setFailed(null); setForm({ mode: "edit", task: t }); }}
-                        aria-label={`Edit ${t.name}`}>Edit…</button>
-                <button type="button" className="link" disabled={busy} onClick={() => remove(t)} aria-label={`Remove ${t.name}`}>Remove</button>
-              </span>
+                </>
+              )}
             </li>
           ))}
         </ul>
       )}
-      {form?.mode === "add" || form?.mode === "edit" ? (
-        <TaskForm key={form.task?.id || "add"} r={r} task={form.task || null} hint={form.mode === "add" ? secondTaskHint(r) : null}
-                  busy={busy} failed={failed} onCancel={() => { setForm(null); setFailed(null); }}
-                  onSubmit={(body) => run(
-                    () => (form.task ? ops.editTask(form.task.id, body) : ops.addTask(r, body)),
-                    form.task ? "Saved the task." : "Added the task.",
-                  )} />
+      {form?.mode === "add" ? (
+        <div className="rim-card editing">
+          <TaskForm key="add" r={r} task={null} hint={secondTaskHint(r)} busy={busy} failed={failed}
+                    onCancel={() => { setForm(null); setFailed(null); }} onSubmit={submitTask(null)} />
+        </div>
       ) : form?.mode === "link" ? (
-        <LinkForm r={r} ops={ops} busy={busy} failed={failed} onCancel={() => { setForm(null); setFailed(null); }}
-                  onFailed={(e) => setFailed(saveErrorText(e, { offline: navigator.onLine === false }))}
-                  onSubmit={(taskId) => run(() => ops.linkTask(r, taskId), "Linked the task.")} />
-      ) : (
+        <div className="rim-card editing">
+          <LinkForm r={r} ops={ops} busy={busy} failed={failed} onCancel={() => { setForm(null); setFailed(null); }}
+                    onFailed={(e) => setFailed(saveErrorText(e, { offline: navigator.onLine === false }))}
+                    onSubmit={(taskId) => run(() => ops.linkTask(r, taskId), "Linked the task.")} />
+        </div>
+      ) : !form && (
         <div className="rim-tadd">
-          <button type="button" className="secondary sm" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "add" }); } }}>
-            {tasks.length ? "Add another task…" : "Add a task…"}
-          </button>
-          <button type="button" className="link" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "link" }); } }}>
+          <AddRow disabled={busy} onClick={add}>Add a task</AddRow>
+          <button type="button" className="link" disabled={busy} onClick={(e) => { if (e.detail < 2) link(); }}>
             Use an existing task…
           </button>
         </div>
       )}
-      {failed && !form && <p className="rw-ferr" role="alert">{failed}</p>}
-    </section>
+      {failed && !form && <p className="field-error" role="alert">{failed}</p>}
+    </Section>
   );
 }
 
@@ -141,7 +156,6 @@ function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
   const [instructions, setInstructions] = useState(task?.instructions || "");
   const [meas, setMeas] = useState({ body: null, error: null });
   const nameBox = useRef(null);
-  const grow = useAutoGrow(instructions);
   useEffect(() => {
     // Focused, its start in view (a long name isn't shown scrolled to its end).
     const el = nameBox.current;
@@ -151,6 +165,9 @@ function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
   const n = Number(interval);
   const can = !!name.trim() && interval.trim() !== "" && Number.isFinite(n) && n > 0 && !busy && !meas.error;
   const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
+  const why = busy ? null : !name.trim() ? "Name the task first."
+    : interval.trim() === "" ? "Enter how often: an interval above 0."
+    : !(Number.isFinite(n) && n > 0) ? "Enter an interval above 0." : meas.error ? "Settle the measurement first." : null;
   return (
     <form className="rim-tform" onSubmit={(e) => {
       e.preventDefault();
@@ -162,40 +179,37 @@ function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
         <p className="rw-fhelp">It also serves {plural(task.shared_with, "other failure mode")}: the change applies to all of them.</p>
       ) : null}
       {hint && <p className="rw-fhelp rim-thint">{hint}</p>}
-      <label className="rw-field">
-        <span className="rw-flabel">Task</span>
-        <input ref={nameBox} value={name} readOnly={busy} placeholder="e.g. Replace the acid pump at its rated life"
-               onChange={(e) => setName(e.target.value)} />
-      </label>
+      <Field label="Task">
+        <TextInput ref={nameBox} value={name} readOnly={busy} placeholder="What to do, e.g. Replace the acid pump"
+                   onChange={(e) => setName(e.target.value)} />
+      </Field>
       <div className="rim-trow">
-        <label className="rw-field">
-          <span className="rw-flabel">Every</span>
-          <span className="rw-fin">
-            <input type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={busy} aria-label="Interval"
-                   onChange={(e) => setInterval_(e.target.value)} />
-            <select value={unit} disabled={busy} aria-label="Interval unit" onChange={(e) => setUnit(e.target.value)}>
+        <Field label="Every" as="fieldset" error={interval.trim() !== "" && !(Number.isFinite(n) && n > 0) ? "Enter an interval above 0." : null}>
+          <InputGroup label="Every">
+            <TextInput type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={busy} aria-label="Interval"
+                       onChange={(e) => setInterval_(e.target.value)} />
+            <Select value={unit} disabled={busy} aria-label="Interval unit" onChange={(e) => setUnit(e.target.value)}>
               {units.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </span>
-        </label>
-        <label className="rw-field">
-          <span className="rw-flabel">Kind of task</span>
-          <select value={outcome} disabled={busy} onChange={(e) => setOutcome(e.target.value)}>
+            </Select>
+          </InputGroup>
+        </Field>
+        <Field label="Kind of task">
+          <Select value={outcome} disabled={busy} onChange={(e) => setOutcome(e.target.value)}>
             <option value="">Routine work</option>
             {SCHEDULED.map((o) => <option key={o} value={o}>{OUTCOME_LABEL[o]}</option>)}
-          </select>
-        </label>
+          </Select>
+        </Field>
       </div>
       {task?.id && (
         <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
       )}
-      {meas.error && <p className="rw-ferr" role="alert">{meas.error}</p>}
-      <label className="rw-field">
-        <span className="rw-flabel">Instructions <span className="rw-opt">optional</span></span>
-        <textarea ref={grow} rows={1} value={instructions} readOnly={busy} onChange={(e) => setInstructions(e.target.value)} />
-      </label>
-      {failed && <p className="rw-ferr" role="alert">{failed}</p>}
+      {meas.error && <p className="field-error" role="alert">{meas.error}</p>}
+      <Field label="Instructions" optional>
+        <TextArea value={instructions} readOnly={busy} onChange={(e) => setInstructions(e.target.value)} />
+      </Field>
+      {failed && <p className="field-error" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
+        {why && <p className="rim-why">{why}</p>}
         <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
         <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : task ? "Save task" : "Add task"}</button>
       </div>
@@ -223,19 +237,18 @@ function LinkForm({ r, ops, busy, failed, onCancel, onFailed, onSubmit }) {
       {choices === null ? <p className="rw-fhelp">Reading the tasks…</p> : choices.length === 0 ? (
         <p className="rw-fhelp">No other task on this position or above it. Add a task instead.</p>
       ) : (
-        <label className="rw-field">
-          <span className="rw-flabel">Task</span>
-          <select value={picked} disabled={busy} onChange={(e) => setPicked(e.target.value)} aria-label="Existing task">
+        <Field label="Task">
+          <Select value={picked} disabled={busy} onChange={(e) => setPicked(e.target.value)} aria-label="Existing task">
             <option value="">Choose a task…</option>
             {choices.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}{every(t) ? ` · ${every(t)}` : ""}{t.position?.id !== here ? ` · on ${t.position?.name}` : ""}{t.serves ? ` · serves ${plural(t.serves, "failure mode")}` : ""}
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </Field>
       )}
-      {failed && <p className="rw-ferr" role="alert">{failed}</p>}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
         <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
         <button type="submit" className="sm" disabled={!picked || busy} aria-busy={busy || undefined}>{busy ? "Linking…" : "Link task"}</button>

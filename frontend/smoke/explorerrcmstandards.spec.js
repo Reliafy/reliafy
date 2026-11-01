@@ -28,6 +28,11 @@ const trow = (page, name) => table(page).getByRole("row", { name: new RegExp(nam
 const panel = (page) => page.getByRole("complementary", { name: "Details" });
 const standardsOf = (page) => panel(page).getByRole("region", { name: "Performance standards" });
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+// A performance standard's ⋯ (Actions for ‹it›), then one of its items.
+const stdMenu = async (page, list, name, item) => {
+  await list.getByRole("button", { name: `Actions for ${name}` }).click();
+  await page.getByRole("menu", { name: `Actions for ${name}` }).getByRole("menuitem", { name: item }).click();
+};
 
 test("the function's one text splits into a list on confirm; add, edit, reorder, remove; the failure picks what it breaches", async ({ page, request, problems }) => {
   const tag = `s${Date.now()}`;
@@ -62,14 +67,14 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   expect(fn.legacy_standard).toBe("pH 7.2-7.8; Total alkalinity 80-120 ppm; given the filter pump runs"); // the text itself stays
 
   // Add a third, with its structured limit folded under Limit…; saved once.
-  await list.getByRole("button", { name: "Add performance standard" }).click();
+  await list.getByRole("button", { name: "Add a performance standard" }).first().click();
   await list.getByRole("textbox", { name: "Performance standard" }).fill(`Calcium hardness 200-400 ppm ${tag}`);
   await list.getByRole("button", { name: "Limit…" }).click();
   await list.getByRole("textbox", { name: "Parameter" }).fill("Calcium hardness");
   await list.getByRole("combobox", { name: "Comparator" }).selectOption("between");
   await list.getByRole("textbox", { name: "Value" }).fill("200-400");
   await list.getByRole("textbox", { name: "Unit" }).fill("ppm");
-  await list.getByRole("textbox", { name: "Source optional" }).fill("E25 manual");
+  await list.getByRole("textbox", { name: "Source" }).fill("E25 manual");
   let writes = 0;
   page.on("request", (r) => { if (r.method() === "POST" && r.url().includes(`/functions/${p.fn.id}/standards`)) writes += 1; });
   await list.getByRole("button", { name: "Add performance standard", exact: true }).last().dblclick();
@@ -77,15 +82,16 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   expect(writes).toBe(1);
   await expect(list.getByRole("listitem").nth(2)).toContainText("Calcium hardness between 200-400 ppm · E25 manual");
   // Move it to the top; edit the text; the table's cell shows the list on one line.
-  await list.getByRole("button", { name: `Move Calcium hardness 200-400 ppm ${tag} up` }).click();
-  await list.getByRole("button", { name: `Move Calcium hardness 200-400 ppm ${tag} up` }).click();
+  await stdMenu(page, list, `Calcium hardness 200-400 ppm ${tag}`, "Move up");
+  await expect(list.getByRole("button", { name: `Actions for Calcium hardness 200-400 ppm ${tag}` })).toBeEnabled();
+  await stdMenu(page, list, `Calcium hardness 200-400 ppm ${tag}`, "Move up");
   await expect(list.getByRole("listitem").nth(0)).toContainText("Calcium hardness");
-  await list.getByRole("button", { name: "Edit pH 7.2-7.8" }).click();
+  await stdMenu(page, list, "pH 7.2-7.8", "Edit…");
   await list.getByRole("textbox", { name: "Performance standard" }).fill("pH 7.4-7.6");
   await list.getByRole("button", { name: "Save performance standard" }).click();
   await expect(list).toContainText("pH 7.4-7.6");
   // Remove one, after asking.
-  await list.getByRole("button", { name: "Remove Total alkalinity 80-120 ppm" }).click();
+  await stdMenu(page, list, "Total alkalinity 80-120 ppm", "Remove…");
   await page.getByRole("alertdialog", { name: "Remove this performance standard?" }).getByRole("button", { name: "Remove performance standard" }).click();
   await expect(list.getByRole("listitem")).toHaveCount(2);
   await page.keyboard.press("Escape");
@@ -130,7 +136,7 @@ test("the Details panel edits the list too, and a second standard keeps the one 
   const list = details.getByRole("region", { name: "Performance standards" });
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list.getByRole("button", { name: "Split into performance standards…" })).toHaveCount(0); // one text, no ';': nothing to split
-  await list.getByRole("button", { name: "Add performance standard" }).click();
+  await list.getByRole("button", { name: "Add a performance standard" }).first().click();
   await list.getByRole("textbox", { name: "Performance standard" }).fill("At 4 bar");
   await list.getByRole("button", { name: "Add performance standard", exact: true }).last().click();
   await expect(list.getByRole("listitem")).toHaveCount(2);
@@ -153,7 +159,7 @@ test("at 400 px the standards list and its forms fit the sheet", async ({ page, 
   await expect(dlg).toBeVisible();
   const list = standardsOf(page);
   await expect(list.getByRole("listitem")).toHaveCount(2);
-  await list.getByRole("button", { name: "Add performance standard" }).click();
+  await list.getByRole("button", { name: "Add a performance standard" }).first().click();
   await list.getByRole("button", { name: "Limit…" }).click();
   expect(await overflow(page)).toBe(0);
   const box = await dlg.boundingBox();

@@ -108,8 +108,9 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   await modeRow.press("Enter");
   const panel = page.locator("aside.rw-panel");
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("No evidence linked yet");
-  await expect(panel.locator(".chip")).toHaveCount(0);
+  await expect(panel).toContainText("No evidence linked");
+  // Quiet: its status chips say so in neutral grey, never a warning.
+  await expect(panel.locator(".chip-warning, .chip-danger")).toHaveCount(0);
   await panel.getByRole("button", { name: "Link evidence…" }).scrollIntoViewIfNeeded();
   await shot(page, "quiet-2-mode-panel-link-evidence");
   await panel.getByRole("button", { name: "Link evidence…" }).click();

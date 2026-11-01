@@ -35,6 +35,20 @@ export function limitWords(st) {
   return [limit || null, when, st.source || null].filter(Boolean).join(" · ");
 }
 
+// What a limit reads as, in words, for the "Reads as:" line under its
+// controls: "total alkalinity between 80 and 120 ppm while the pump runs".
+// "" until there's a comparator or a value.
+export function limitReads({ parameter, comparator, value, unit, when }) {
+  const v = String(value ?? "").trim();
+  if (!comparator && !v) return "";
+  const range = comparator === "between" ? v.match(/^(.+?)\s*(?:-|–|to)\s*(.+)$/) : null;
+  const val = range ? `${range[1]} and ${range[2]}` : v;
+  const w = String(when || "").trim();
+  const cond = w ? (/^(while|when|whenever|given|if|unless|during|after|before|at|in|on|once)\b/i.test(w) ? w : `when ${w}`) : null;
+  return [String(parameter || "").trim() || "it", comparator ? COMPARATOR_LABEL[comparator] || comparator : null, val || "…",
+    String(unit || "").trim(), cond].filter(Boolean).join(" ");
+}
+
 // "2 standards have no functional failure yet": the quiet hint under a
 // function with a list; nothing for one standard or none.
 export function unbreachedWords(fn) {

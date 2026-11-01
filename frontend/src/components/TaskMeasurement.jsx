@@ -27,7 +27,7 @@ function LastDoneReading({ name, lastDone, unit, estimate, mode, value, disabled
         <span>Enter it</span>
         {mode === "enter" && (
           <span className="tm-num">
-            <input type="number" inputMode="decimal" step="any" value={value} disabled={disabled} autoFocus
+            <input type="number" className="ctl" inputMode="decimal" step="any" value={value} disabled={disabled} autoFocus
                    aria-label={`Reading when it was last done, in ${unit}`} onChange={(e) => onValue(e.target.value)} />
             <span>{unit}</span>
           </span>
@@ -100,7 +100,7 @@ export function TaskMeasurementField({ taskId, unit, disabled = false, onChange 
         <div className="tm-edit">
           <label className="tm-label">
             <span>Count</span>
-            <select value={pick} disabled={disabled} onChange={(e) => setPick(e.target.value)} aria-label="Measurement to count">
+            <select className="ctl" value={pick} disabled={disabled} onChange={(e) => setPick(e.target.value)} aria-label="Measurement to count">
               <option value="">{auto}</option>
               {view.choices.map((c) => <option key={c.id} value={c.id}>{choiceLabel(c)}</option>)}
             </select>
@@ -148,7 +148,7 @@ function MoveChoice({ view, there, state, many, disabled, onState }) {
       )}
       {state.mode === "switch" && view.choices.length > 0 && (
         <div className="tm-sub">
-          <select value={state.pointId} disabled={disabled} onChange={(e) => set("pointId")(e.target.value)}
+          <select className="ctl" value={state.pointId} disabled={disabled} onChange={(e) => set("pointId")(e.target.value)}
                   aria-label={`Measurement for ${view.name} to count`}>
             {view.choices.map((c) => <option key={c.id} value={c.id}>{choiceLabel(c)}</option>)}
           </select>
@@ -170,9 +170,9 @@ function MoveChoice({ view, there, state, many, disabled, onState }) {
       {state.mode === "calendar" && (
         <div className="tm-sub tm-num">
           <span>Every</span>
-          <input type="number" inputMode="decimal" min="0" step="any" value={state.interval} disabled={disabled} autoFocus
+          <input type="number" className="ctl" inputMode="decimal" min="0" step="any" value={state.interval} disabled={disabled} autoFocus
                  aria-label={`How often ${view.name} falls due`} onChange={(e) => set("interval")(e.target.value)} />
-          <select value={state.calendarUnit} disabled={disabled} aria-label="Calendar unit" onChange={(e) => set("calendarUnit")(e.target.value)}>
+          <select className="ctl" value={state.calendarUnit} disabled={disabled} aria-label="Calendar unit" onChange={(e) => set("calendarUnit")(e.target.value)}>
             {CALENDAR_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>

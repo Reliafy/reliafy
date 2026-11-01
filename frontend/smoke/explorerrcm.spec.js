@@ -731,6 +731,7 @@ test("adding, deleting and deciding go once: a double-click, three clicks at onc
 
   // A rename from the panel: Enter, then leaving the field, saves once.
   const patches = sent(page, "PATCH", "");
+  await page.getByRole("complementary", { name: "Details" }).locator(".rw-title-btn").click();
   const desc = page.getByRole("complementary", { name: "Details" }).getByRole("textbox", { name: /Description/ });
   await desc.fill(`Burns out fast ${tag}`);
   await desc.press("Tab");

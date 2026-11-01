@@ -1139,7 +1139,7 @@ a.rw-cklink:focus-visible {
 .ovm-menu.row-menu {
   position: fixed;
   right: auto;
-  z-index: 70;
+  z-index: 95; /* over the details sheet on a phone (90), under dialogs (100) */
   min-width: 200px;
 }
 .row-menu .ovm-item:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; background: var(--acc-t); color: var(--acc); }
@@ -1155,7 +1155,7 @@ a.rw-cklink:focus-visible {
 .row-menu-parent.inline::after { content: "▸" / ""; }
 .row-menu-parent.inline.open::after { content: "▾" / ""; }
 .row-menu .ovm-item.row-menu-parent.open { background: var(--acc-t); color: var(--acc); }
-.ovm-menu.row-submenu { z-index: 71; min-width: 190px; }
+.ovm-menu.row-submenu { z-index: 96; min-width: 190px; }
 .row-menu-inline { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; }
 .row-menu .ovm-item.row-menu-radio { display: flex; align-items: center; gap: 6px; }
 .row-menu-tick { display: inline-block; width: 1em; color: var(--acc); }

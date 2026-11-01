@@ -107,17 +107,20 @@ Pick a position in the tree on the RCM tab. Build from the top down:
 3. In the functional failure's row menu, **Add failure mode** adds a cause.
    Add one per cause.
 
-Each new row opens in **Details**, where you can change its **Description**,
-and for a function its **Performance standards**, for a failure mode its
-**Failure effects**, **Consequence** and **Mode notes**. **Edit description**
+Each new row opens in **Details**. Its title is its description: click it to
+change it. A function's Details also list its **Performance standards**; a
+failure mode's hold its **Failure effects**, **Consequence** (one tap on a
+choice) and **Notes**. **Edit description**
 (on a performance standard, **Edit text**) in a row's menu changes the text in the table
-itself. **Delete this function** (or functional failure, or failure mode) in
-the Details removes a row and everything inside it, after asking; **Remove
+itself. **Delete this function** (or functional failure, or failure mode), at the
+foot of the Details or in their **⋯**, removes a row and everything inside it, after asking; **Remove
 this performance standard** takes a performance standard off its function and its functional failures
 stay, under **No performance standard**.
 
-Every change is saved as you make it: there is no Save button, and what you
-see is what everyone in the workspace sees.
+Every change is saved as you make it: there is no Save button. A field says
+**✓ Saved** by its label once it is; if a change can't be kept, it stays as you
+typed it with the reason under it. What you see is what everyone in the
+workspace sees.
 
 ## Make a decision for each failure mode
 
@@ -171,7 +174,7 @@ act of work answers several failure modes: one monthly water sample covers
 five chemistry failure modes. Both are in the failure mode's Details, under
 **Tasks**:
 
-- **Add another task…** adds a second task to the failure mode, with its own
+- **Add a task** adds another task to the failure mode, with its own
   name, interval and instructions. For an operational or non-operational
   consequence the form asks what the second task catches that the first
   doesn't: put the answer in the decision's notes. (**Add a task…** in the
@@ -181,15 +184,15 @@ five chemistry failure modes. Both are in the failure mode's Details, under
   a position can serve the failure modes on it and on the positions inside it,
   never the other way round.
 - Each task shows how many other failure modes share it. A shared task keeps
-  one interval for all of them: change it on the task (**Edit…** in the list),
+  one interval for all of them: change it on the task (**Edit…** in the task's **⋯**),
   not in the decision dialog, which shows it read-only.
-- A task by use (hours, cycles, km) shows its **Measurement** under **Edit…**:
+- A task by use (hours, cycles, km) shows its **Measurement** when you edit it:
   what it counts, the latest reading and the reading when it was last done.
   **Change the measurement…** picks another in the same unit, on the position,
   above or below it, or on the item fitted there, and asks for the last-done
   reading on the new one (or works it out from the date, marked as an
   estimate).
-- **Remove** takes a task off the failure mode: a task that serves only this
+- **Remove…** in the task's **⋯** takes it off the failure mode: a task that serves only this
   mode is retired; one that serves others too is unlinked and stays.
 
 The **Task** column shows the decision's own task and *+1 task* when there are
@@ -290,14 +293,15 @@ the rows:
 - A function that still has its one performance standard as a sentence shows it as one
   performance standard row, with every functional failure under it (there is nothing
   else to breach). The row's menu edits or removes that text; to make it a
-  list, pick the function and press **Add performance standard** or **Split into
+  list, pick the function and press **Add** by **Performance standards**, or **Split into
   performance standards…**, as below.
 
 Pick a function and look under **Performance standards** in its Details:
 
 - Each performance standard is one line: one parameter and one limit, such as *pH
-  7.2–7.8*. **Add performance standard** adds another; **Edit** changes one; **Remove**
-  takes it off; the arrows move it up or down. **Limit…** unfolds the
+  7.2–7.8*. **Add** adds another. Each one's **⋯** has **Edit…**, **Move up**,
+  **Move down** and **Remove…**; on a computer you can also drag one by its grip
+  to change the order. **Limit…** unfolds the
   structured fields (parameter, comparator, value, unit), **when** it applies
   (a condition such as *while the filter pump runs*, which is never a
   performance standard on its own) and its **source** (*AS 1926.3*, *the E25 manual*).
