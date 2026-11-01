@@ -161,9 +161,15 @@ def test_interval_flags_and_misplaced_inputs_explain_themselves(env):
     msg = _err(_call(a, "life_data_analysis", {"action": "fit", "data": LOWER, "data_right": UPPER,
                                                "censored": [0] * len(LOWER)}))
     assert "isn't 2" in msg and "x:" not in msg
-    msg = _err(_call(a, "life_data_analysis", {"action": "fit", "data": TIMES, "data_right": TIMES,
-                                               "censored": [2] + FLAGS[1:]}))
-    assert "upper bound equals its lower bound" in msg
+    # A row flagged 2 with equal bounds is a failure at that time (SurPyval 0.26 fits it so, as
+    # fit_from_df always did): the fit says so, and counts it as a failure.
+    out = _ok(_call(a, "life_data_analysis", {"action": "fit", "data": TIMES, "data_right": TIMES,
+                                              "censored": [2] + FLAGS[1:]}))
+    exact = _ok(_call(a, "life_data_analysis", {"action": "fit", "data": TIMES, "censored": [0] + FLAGS[1:]}))
+    assert out["censoring"]["n_failed"] == exact["censoring"]["n_failed"]
+    assert "n_interval_censored" not in out["censoring"]
+    assert "1 row flagged 2" in out["censoring"]["note"] and "data_right" in out["censoring"]["note"]
+    assert [p["value"] for p in out["params"]] == pytest.approx([p["value"] for p in exact["params"]], rel=1e-6)
 
     msg = _err(_call(a, "life_data_analysis", {"action": "fit", "data": TIMES, "trunc_left_column": "entry"}))
     assert "trunc_left_column only applies with dataset_id" in msg
