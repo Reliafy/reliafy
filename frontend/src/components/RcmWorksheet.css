@@ -421,9 +421,9 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 
 /* The panel's head: its kind, then Expand (or Back to table) and Close. */
 .rw-panel-btns { display: flex; gap: 6px; flex: none; }
-/* Its body: one column beside the table; expanded, two side by side (the
-   fields and the decision; the lists: performance standards, working, tasks,
-   links, what's inside), one again when there isn't room for two. */
+/* Its body: one column, at every width (expanded, it only gets a readable
+   width): fields and the decision first, then the lists, each list ending in
+   its own "+ Add". */
 .rw-pbody, .rw-pcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .rw-panel.is-expanded { padding: 16px 20px 20px; gap: 12px; }
 .rw-panel.is-expanded > .rw-panel-head,
@@ -431,13 +431,8 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-panel.is-expanded > .rw-panel-title,
 .rw-panel.is-expanded > .rw-inside,
 .rw-panel.is-expanded > .rw-pbody,
-.rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 1180px; box-sizing: border-box; }
-.rw-panel.is-expanded > .rw-pbody {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  gap: 16px 28px;
-  align-items: start;
-}
+.rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 760px; box-sizing: border-box; }
+.rw-panel.is-expanded > .rw-pbody { gap: 16px; }
 .rw-panel.is-expanded .rw-panel-title { font-size: var(--fs-20); -webkit-line-clamp: 3; line-clamp: 3; }
 .rw-pcol:empty { display: none; }
 .rw-fstatus { margin: 0; font-size: var(--fs-13); color: var(--muted); }
@@ -638,7 +633,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 /* The head: the kind and its icon buttons; "in ‹the way up›"; the title (the
    description, a click edits it); the status chips. */
 .rw-panel-top { display: flex; flex-direction: column; gap: 6px; flex: none; }
-.rw-panel.is-expanded > .rw-panel-top { width: 100%; max-width: 1180px; box-sizing: border-box; }
+.rw-panel.is-expanded > .rw-panel-top { width: 100%; max-width: 760px; box-sizing: border-box; }
 .rw-grab { align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: -4px 0 2px; flex: none; }
 .rw-in { flex: none; color: var(--muted); }
 .rw-crumbs .rw-in + button::before { content: none; }
@@ -675,7 +670,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 
 /* The footer: add inside (left), delete as red text (right; it asks first). */
 .rw-panel-acts { justify-content: space-between; align-items: center; }
-.rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 1180px; box-sizing: border-box; }
+.rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 760px; box-sizing: border-box; }
 .rw-panel-acts button.rw-del { margin-left: auto; color: var(--danger); }
 .rw-panel-acts button.rw-del:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger); }
 .rw-panel-acts button.rw-del:focus-visible { outline: none; box-shadow: var(--focus); }
