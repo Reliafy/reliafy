@@ -104,10 +104,11 @@ GET_KINDS: Table = {
                                  "in one (rollup)."),
     "where_used": ("id", "", "The parts a part is in (with the quantity in one), and the positions and items "
                              "using it."),
-    "rcm": ("id", "scope", """A position's RCM: functions › functional failures › failure modes, each mode's
-        decision, task and evidence check, and modes under none (unassigned); each functional failure's causes
-        below, effects above, covered and explained_below; scope below (default: it and everything inside it)
-        or this."""),
+    "rcm": ("id", "scope", """A position's RCM: functions, performance standards › functional failures
+        (causes, effects, covered) › modes with decision, tasks and evidence check; unassigned. scope below
+        (default: inside too) or this."""),
+    "failure_mode": ("id", "", """One mode's RCM: decision, evidence check, tasks, where it sits, and
+        available (tasks above it could share)."""),
     "measurement_point": ("id", "", """Kind, source and tag, latest reading, rate (counter) or trend and the
         date it should reach an alarm limit (condition), status, recent readings (each with status ok,
         correction, voided or replaced; reading ids for maintenance_measurements void / correct)."""),
@@ -179,6 +180,9 @@ LIST_KINDS: Table = {
         below their position's minimum, counting supersessions and alternatives in every store), no_spare
         (positions whose critical replacement part has none usable); include_unlisted adds
         without_parts_list."""),
+    "rcm_gaps": ("", "target_id", """What the RCM lacks: modes undecided, with no task, hidden without a
+        failure-finding task, evidence to check; empty functions, standards, functional failures. target_id: a
+        branch (default: all)."""),
     "events": ("", "limit since type", """What changed, newest first: each event's seq, type, at, actor and
         payload (the ids it touched: what to restore or undo). limit up to 500 (default 100); since: a seq to
         read forward from; type: one event type."""),
@@ -261,34 +265,34 @@ FAILURE_MODES: Table = {
         functional failures. Failures and tasks then name it by id."""),
     "update": ("failure_mode_id", "text effects notes function failure consequence", """Edit one (editing an
         ad-hoc mode confirms it). effects and notes are its RCM analysis."""),
-    "decide": ("failure_mode_id", "consequence decision task_id", """Its consequence and decision {outcome, rtf_basis,
-        task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it), checked by the RCM decision
-        rules; adds, changes or retires its task (task_id: an existing task is the decision's instead; a task
-        serving other modes keeps its own interval). Returns it with the evidence check."""),
-    "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode (a
-        combination: an inspection plus a hard-time replacement); its decision's task stays first."""),
+    "decide": ("failure_mode_id", "consequence decision task_id", """consequence and the whole decision
+        {outcome, rtf_basis, task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it; values:
+        guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
+        Returns it with the evidence check and any advice to relay."""),
+    "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode
+        (an inspection plus a hard-time replacement); its decision's stays first."""),
     "assign": ("failure_mode_id", "functional_failure_id", "Put it under one of its position's functional "
                "failures (left out: under none)."),
-    "retire": ("failure_mode_id", "", "Delete it from the position's RCM, with its tasks (one serving other modes "
-               "too is unlinked, not retired; recorded failures keep it)."),
+    "retire": ("failure_mode_id", "", "Delete it, with its tasks (a shared one is unlinked; recorded failures "
+               "keep it)."),
     "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
-    "add_function": ("position_id text", "standard standard_basis", "A function the position performs, with its "
-                     "performance standard and how it was worked out (standard_basis, Markdown)."),
-    "update_function": ("function_id", "text standard standard_basis", "Change a function's text, performance standard (not "
-                        "once it has a list: see add_standard) or standard_basis ('' clears it)."),
+    "add_function": ("position_id text", "standard standard_basis", "A function the position performs (its "
+                     "performance standards: add_standard), with the working behind them (standard_basis)."),
+    "update_function": ("function_id", "text standard standard_basis", "Change its text, single standard text "
+                        "(before add_standard) or standard_basis ('' clears it)."),
     "add_standard": ("function_id text", "parameter comparator value unit when source", """One of the function's
         performance standards, one parameter and one limit ('pH 7.2-7.8'); the structured limit, when it
         applies and its source are optional. A function may hold several."""),
     "update_standard": ("standard_id", "text parameter comparator value unit when source", "Change one ('' clears "
                         "a field)."),
-    "remove_standard": ("standard_id", "", "Take one off its function (a failure breaching it breaches the whole "
-                        "function again)."),
+    "remove_standard": ("standard_id", "", "Take one off its function (functional failures breaching it then "
+                        "breach none)."),
     "reorder_standards": ("function_id standard_ids", "", "The function's performance standards in that order."),
-    "move_standard": ("standard_id function_id", "ids", "To another function, alone (failures breaching it stay, "
-                      "under no performance standard); ids: that function's failures that breach it."),
-    "split_standard": ("function_id", "standards dry_run", """Turn a function's single performance standard text into a list:
-        proposed from its ';' and line breaks (dry_run true, default), then sent back edited as standards
-        [{text, when?, source?}] with dry_run false. Never automatic."""),
+    "move_standard": ("standard_id function_id", "ids", "To another function, alone (functional failures "
+                      "breaching it stay, under none); ids: that function's ones that breach it."),
+    "split_standard": ("function_id", "standards dry_run", """A function's single performance standard text as
+        a list: proposed from its ';' and line breaks (dry_run true, default), then sent back edited as
+        standards [{text, parameter?, comparator?, value?, unit?, when?, source?}] with dry_run false."""),
     "remove_function": ("function_id", "", "Delete a function, its functional failures and documents; their modes "
                         "stay, unassigned."),
     "add_functional_failure": ("function_id text", "standard_id", "A way the function fails ('No flow'); "
@@ -297,8 +301,8 @@ FAILURE_MODES: Table = {
                                   "standard it breaches (standard_id 'none': the whole function)."),
     "remove_functional_failure": ("functional_failure_id", "", "Delete a functional failure; its modes stay, "
                                   "unassigned."),
-    "link_cause": ("functional_failure_id cause_id", "", "It results from cause_id, a functional failure on a "
-                   "position inside its own; returns it with its causes."),
+    "link_cause": ("functional_failure_id cause_id", "", "functional_failure_id (the effect) results from "
+                   "cause_id, a functional failure on a position inside its own."),
     "unlink_cause": ("functional_failure_id cause_id", "", "Take that cause off it."),
     "move": ("failure_mode_id position_id", "functional_failure_id measurement", "To another position, with its "
              "decision and tasks; functional_failure_id: one there (or none)."),
@@ -307,8 +311,8 @@ FAILURE_MODES: Table = {
     "move_functional_failure": ("functional_failure_id function_id", "standard_id measurement", "Under another function "
                                 "(same position or another), with its modes and tasks; standard_id: one it "
                                 "breaches there."),
-    "reorder": ("parent_id ids", "", "parent_id's children in that order: a position's functions, a function's "
-                "failures or a failure's modes, every live one named once."),
+    "reorder": ("parent_id ids", "", "parent_id's children in that order, each named once: a position's "
+                "functions, a function's functional failures or a functional failure's modes."),
     "merge": ("failure_mode_id into_failure_mode_id", "", """Fold a mode into another on the same position (a
         duplicate, an ad-hoc one): its failures, findings and tasks move across. Returns the position."""),
 }
@@ -575,6 +579,62 @@ WORKSPACE: Table = {
 }
 
 
+# A record's label as the tools name it, with the argument its id goes in.
+_LABELS = {
+    "Position": ("position", "position_id"), "Function": ("function", "function_id"),
+    "Standard": ("performance standard", "standard_id"),
+    "FunctionalFailure": ("functional failure", "functional_failure_id"),
+    "FailureMode": ("failure mode", "failure_mode_id"), "Task": ("task", "task_id"), "Item": ("item", "item_id"),
+    "Location": ("location", "location_id"), "WorkOrder": ("work order", "work_order_id"),
+    "Part": ("part", "part_id"), "MeasurementPoint": ("measurement point", "point_id"),
+    "Fitment": ("fitment", "fitment_id"), "Reading": ("reading", "reading_id"),
+    "ItemClass": ("item class", "item_class_id"), "Manufacturer": ("manufacturer", "manufacturer_id"),
+    "Condition": ("condition", "condition_id"), "Document": ("document", "document_id"),
+    "Photo": ("photo", "photo_id"), "Interface": ("connection", "interface_id"),
+    "RedundancyGroup": ("redundancy group", "group_id"),
+}
+
+
+def _not_found(err: KeyError, m) -> str:
+    """What wasn't found, in words an agent can act on: the kind of record
+    wanted, and what the id is instead when it's another kind (a function's
+    id given as a functional failure's)."""
+    said = str(err.args[0]) if err.args else ""
+    label, _, rid = said.partition(" ")
+    if label not in _LABELS or not rid:
+        return "Not found in your maintenance workspace."
+    want = _LABELS[label][0]
+    msg = f"Not found: no {want} with id {rid} in your maintenance workspace."
+    try:
+        node = m.s.node(m.org, rid) if m is not None else None
+    except Exception:  # noqa: BLE001 - the hint is a nicety; the error stands without it
+        node = None
+    if node is not None and node.get("label") in _LABELS:
+        have, arg = _LABELS[node["label"]]
+        msg += f" {rid} is a {have} ({arg})."
+    elif label in ("Function", "Standard", "FunctionalFailure", "FailureMode"):
+        msg += " RCM ids are in maintenance_get kind rcm."
+    return msg
+
+
+def _lean_rcm(value):
+    """An RCM read for an agent, without the copies the app's table uses: a
+    decision's tasks are the mode's tasks (kept once, on the mode), and a
+    task's text is dropped when it's its name."""
+    if isinstance(value, list):
+        return [_lean_rcm(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    out = {}
+    for k, v in value.items():
+        if k == "decision" and isinstance(v, dict) and "tasks" in value:
+            v = {dk: dv for dk, dv in v.items() if dk != "tasks"}
+        out[k] = _lean_rcm(v)
+    if "text" in out and out.get("name") == out["text"] and "interval" in out:
+        del out["text"]
+    return out
+
+
 # Each tool that does several things: the argument choosing what, and its table.
 def _choice_words(choice: dict) -> str:
     """A move's needs-a-choice in words: each task, what it counts now and the
@@ -589,6 +649,12 @@ def _choice_words(choice: dict) -> str:
                           for c in t.get("choices") or [])
         out.append(f"Task {t['name']} ({t['task_id']}, by {t.get('unit')}) counts {counts}; there: "
                    + (there or "no counter in " + str(t.get("unit"))) + ".")
+    tasks = choice.get("tasks") or []
+    pick = next((t.get("suggested_point_id") for t in tasks if t.get("suggested_point_id")), None)
+    example = (f"{{choice: 'switch', point_id: '{pick}'}}" if pick
+               else "{choice: 'calendar', interval: 12, unit: 'months'}")
+    out.append(f"Ask the user, then send it again with measurement, e.g. {example} or {{choice: 'keep'}} "
+               "(one choice for all, or {task_id: choice}).")
     return " ".join(out)
 
 
@@ -643,8 +709,8 @@ def register() -> None:
     def run(fn, *args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except NotFound:
-            raise ToolError("Not found in your maintenance workspace.") from None
+        except NotFound as err:
+            raise ToolError(_not_found(err, getattr(fn, "__self__", None))) from None
         except NeedsChoice as err:
             # The choices in words, so an agent can ask the user and send the move again.
             failed = ToolError(f"{err} {_choice_words(err.choice)}")
@@ -795,7 +861,12 @@ def register() -> None:
             from backend.maintenance import rcm_graph
 
             sheet = run(m.rcm_worksheet, rid, _d(scope, "below"))
-            return rcm_graph.resolve(_db(), sheet, _reader(_caller(ctx)).read_owners)
+            return _lean_rcm(rcm_graph.resolve(_db(), sheet, _reader(_caller(ctx)).read_owners))
+        if kind == "failure_mode":
+            from backend.maintenance import rcm_graph
+
+            mode = run(m.failure_mode_rcm, rid)
+            return _lean_rcm(rcm_graph.mode_status(_db(), mode, _reader(_caller(ctx)).read_owners))
         if kind == "photo_link":
             doc = photo_links().get(rid, org=m.org)
             if doc is None:
@@ -850,6 +921,11 @@ def register() -> None:
             raise ToolError(f"kind '{kind}' takes status {', '.join(statuses[kind])}.")
         if kind == "events":
             return {"events": run(m.s.events, m.org, _d(limit, 100), since, type or None)}
+        if kind == "rcm_gaps":
+            from backend.maintenance import rcm_graph
+
+            sheet = run(m.rcm_worksheet, target_id, "below") if target_id else run(m.rcm_all)
+            return rcm_graph.gaps(rcm_graph.resolve(_db(), sheet, _reader(_caller(ctx)).read_owners))
         if kind == "work_orders":
             return {"work_orders": run(m.work_orders, status, location_id)}
         if kind == "items":
@@ -1113,11 +1189,10 @@ def register() -> None:
                                   dry_run: bool | None = None, parent_id: str | None = None,
                                   ids: list[str] | None = None,
                                   measurement: Measurement = None) -> dict[str, Any]:
-        """Failure modes: how a position fails, and the position's RCM: the functions it performs, how
-        each fails (functional failures) and the modes causing each, with each mode's decision. Modes are
-        added here (or from a worksheet: uploads import_excel), or typed in at a failure (ad hoc). Failures
-        (maintenance_fitments remove / add_past, maintenance_work_orders close) and tasks name them by id.
-        Read it with maintenance_get kind rcm."""
+        """Failure modes and a position's RCM: functions › performance standards › functional failures (each
+        breaching one standard, or the whole function) › failure modes, each with its decision. Read it with
+        maintenance_get kind rcm (one mode: kind failure_mode; what's missing: maintenance_list kind rcm_gaps);
+        the workflow: maintenance_guide topic plan. Failures and tasks name modes by id."""
         m = m_for(ctx)
         if action == "add":
             return run(m.add_failure_mode, position_id, text, function or "", failure or "", consequence or "",
@@ -1141,9 +1216,11 @@ def register() -> None:
                 mode = run(go)
             except access_service.UnreadableReference as err:
                 raise ToolError(str(err)) from None
-            from backend.maintenance import rcm_graph
+            from backend.maintenance import rcm_decisions, rcm_graph
 
-            return rcm_graph.mode_status(_db(), mode, reader.read_owners)
+            out = rcm_graph.mode_status(_db(), mode, reader.read_owners)
+            advice = rcm_decisions.advice(out.get("consequence"), (out.get("decision") or {}).get("outcome"))
+            return out | ({"advice": advice} if advice else {})
         if action == "add_task":
             return run(m.add_mode_task, failure_mode_id, name, interval, _d(unit, "months"), outcome,
                        instructions or "")

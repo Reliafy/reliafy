@@ -50,9 +50,10 @@ def test_over_mcp_a_mode_gets_several_tasks_and_a_task_several_modes(env):
     assert sorted(x["text"] for x in made["failure_modes"]) == ["Salinity low", "Stabiliser low"]
     assert [x["text"] for x in unlinked["failure_modes"]] == ["Acid under-dosed", "Stabiliser low"]
     modes = {x["text"]: x for p in rcm["positions"] for x in p["unassigned"]}
-    assert [t["name"] for t in modes["Acid under-dosed"]["decision"]["tasks"]] == ["Weekly pH check", "Replace the acid pump"]
-    assert modes["Acid under-dosed"]["decision"]["tasks"][0]["shared_with"] == 1
-    assert [t["name"] for t in modes["Salinity low"]["decision"]["tasks"]] if modes["Salinity low"]["decision"] else True
+    # Over MCP a mode's tasks are listed once, on the mode (its decision keeps task_id).
+    assert [t["name"] for t in modes["Acid under-dosed"]["tasks"]] == ["Weekly pH check", "Replace the acid pump"]
+    assert modes["Acid under-dosed"]["tasks"][0]["shared_with"] == 1
+    assert "tasks" not in modes["Acid under-dosed"]["decision"]
     assert retired["tasks_retired"] == [second["id"]] and retired["tasks_unlinked"] == [decided["decision"]["task_id"]]
 
 
