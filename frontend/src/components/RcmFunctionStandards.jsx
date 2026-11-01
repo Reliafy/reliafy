@@ -119,7 +119,7 @@ export default function RcmFunctionStandards({ r, ops, readOnly = false, onSaid 
                    onSubmit={(standards) => run(() => ops.standards.split(r, standards), `Split into ${plural(standards.length, "performance standard")}.`)} />
       ) : !readOnly && (
         <div className="rfs-add">
-          <button type="button" className="secondary" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "add" }); } }}>
+          <button type="button" className="secondary sm" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "add" }); } }}>
             Add performance standard
           </button>
           {canSplit(fn) && (
@@ -161,7 +161,7 @@ function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
       <h4>{st ? "Change the performance standard" : "Another performance standard"}</h4>
       <label className="rw-field">
         <span className="rw-flabel">Performance standard</span>
-        <input ref={box} value={text} readOnly={busy} placeholder="One parameter and one limit, e.g. pH 7.2-7.8"
+        <input ref={box} value={text} readOnly={busy} placeholder="One parameter and one limit"
                onChange={(e) => setText(e.target.value)} />
         <span className="rw-fhelp">A performance standard with “and” in it is two; one that needs its own verb is another function.</span>
       </label>
@@ -174,29 +174,29 @@ function StandardForm({ st, busy, failed, onCancel, onSubmit }) {
             <div className="rfs-limit">
               <div className="rim-trow">
                 <label className="rw-field"><span className="rw-flabel">Parameter</span>
-                  <input value={parameter} readOnly={busy} placeholder="e.g. pH" onChange={(e) => setParameter(e.target.value)} /></label>
+                  <input value={parameter} readOnly={busy} onChange={(e) => setParameter(e.target.value)} /></label>
                 <label className="rw-field"><span className="rw-flabel">Comparator</span>
                   <select value={comparator} disabled={busy} onChange={(e) => setComparator(e.target.value)}>
                     <option value="">—</option>
                     {COMPARATORS.map((c) => <option key={c} value={c}>{COMPARATOR_LABEL[c]} ({c})</option>)}
                   </select></label>
                 <label className="rw-field"><span className="rw-flabel">Value</span>
-                  <input value={value} readOnly={busy} placeholder="7.2-7.8" onChange={(e) => setValue(e.target.value)} /></label>
+                  <input value={value} readOnly={busy} placeholder="Number or range" onChange={(e) => setValue(e.target.value)} /></label>
                 <label className="rw-field"><span className="rw-flabel">Unit</span>
-                  <input value={unit} readOnly={busy} placeholder="ppm" onChange={(e) => setUnit(e.target.value)} /></label>
+                  <input value={unit} readOnly={busy} onChange={(e) => setUnit(e.target.value)} /></label>
               </div>
-              <label className="rw-field"><span className="rw-flabel">When it applies (optional)</span>
-                <input value={when} readOnly={busy} placeholder="e.g. while the filter pump runs" onChange={(e) => setWhen(e.target.value)} /></label>
-              <label className="rw-field"><span className="rw-flabel">Source (optional)</span>
-                <input value={source} readOnly={busy} placeholder="e.g. AS 1926.3, the E25 manual" onChange={(e) => setSource(e.target.value)} /></label>
+              <label className="rw-field"><span className="rw-flabel">When it applies <span className="rw-opt">optional</span></span>
+                <input value={when} readOnly={busy} placeholder="Always" onChange={(e) => setWhen(e.target.value)} /></label>
+              <label className="rw-field"><span className="rw-flabel">Source <span className="rw-opt">optional</span></span>
+                <input value={source} readOnly={busy} placeholder="A standard, manual or study" onChange={(e) => setSource(e.target.value)} /></label>
             </div>
           )}
         </>
       )}
       {failed && <p className="rw-ferr" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
-        <button type="button" className="secondary" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="submit" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : st ? "Save performance standard" : "Add performance standard"}</button>
+        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : st ? "Save performance standard" : "Add performance standard"}</button>
       </div>
     </form>
   );
@@ -231,8 +231,8 @@ function SplitForm({ text, busy, failed, onCancel, onSubmit }) {
       {!out && <p className="rw-fhelp">Nothing left to write: keep at least one performance standard.</p>}
       {failed && <p className="rw-ferr" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
-        <button type="button" className="secondary" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="submit" disabled={!out || busy} aria-busy={busy || undefined}>
+        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="submit" className="sm" disabled={!out || busy} aria-busy={busy || undefined}>
           {busy ? "Writing…" : `Confirm: ${out ? plural(out.length, "performance standard") : "nothing"}`}
         </button>
       </div>

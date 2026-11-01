@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import useAutoGrow from "./ui/useAutoGrow.js";
 import { Link } from "react-router-dom";
 import RcmStatusBadge from "./RcmStatusBadge.jsx";
+import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
@@ -273,9 +275,9 @@ export const EDITABLE = new Set(["fn", "std", "fail", "mode"]);
 // A performance standard's structured limit, when it applies and its source,
 // as the panel's fields: each one kept as you go.
 const LIMIT_FIELDS = [
-  { col: "parameter", label: "Parameter", placeholder: "e.g. pH" },
-  { col: "value", label: "Value", placeholder: "7.2-7.8" },
-  { col: "unit", label: "Unit", placeholder: "ppm" },
+  { col: "parameter", label: "Parameter" },
+  { col: "value", label: "Value", placeholder: "Number or range" },
+  { col: "unit", label: "Unit" },
 ];
 
 //   r          the row (cellRow: sum is its own counts)
@@ -341,28 +343,20 @@ export function Details({
         <div className="rw-panel-kind"><LevelIcon type={r.type} /> {level.label}</div>
         <div className="rw-panel-btns">
           {canExpand && (expanded ? (
-            <button type="button" className="secondary rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)">
-              Back to table
+            <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)"
+                    aria-label="Back to table">
+              <ShrinkIcon />
             </button>
           ) : (
-            <button type="button" className="secondary rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them"
+            <button type="button" className="ghost sm rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them"
                     aria-label="Expand the details">
-              Expand
+              <ExpandIcon />
             </button>
           ))}
-          <button type="button" className="secondary rw-x" onClick={onClose} aria-label="Close the details">Close</button>
+          <button type="button" className="ghost sm rw-x" onClick={onClose} aria-label="Close the details" title="Close (Esc)"><CloseIcon /></button>
         </div>
       </div>
-      {up.length > 0 && (
-        <nav className="rw-crumbs" aria-label="Inside">
-          {up.map((a) => (
-            <button key={a.key} type="button" className="link" onClick={() => onSelect(a.key)}
-                    title={nameOf(a) || undefined}>
-              {nameOf(a) || `(${LEVEL_OF[a.type].label.toLowerCase()})`}
-            </button>
-          ))}
-        </nav>
-      )}
+      {up.length > 0 && <Crumbs up={up} onSelect={onSelect} />}
       <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef} title={nameOf(r).length > 80 ? nameOf(r) : undefined}>
         {nameOf(r) || <span className="rw-blank">(no description yet)</span>}
       </h2>
@@ -385,7 +379,7 @@ export function Details({
             )}
             {r.type === "std" && !r.ref.legacy && ops?.saveItem && (
               <fieldset className="rw-limit">
-                <legend className="rw-flabel">Limit (optional)</legend>
+                <legend className="rw-legend-h">Limit <span className="rw-opt">optional</span></legend>
                 <div className="rw-limit-row">
                   {stdField(LIMIT_FIELDS[0])}
                   <label className="rw-field">
@@ -406,8 +400,8 @@ export function Details({
                   {stdField(LIMIT_FIELDS[1])}
                   {stdField(LIMIT_FIELDS[2])}
                 </div>
-                {stdField({ col: "when", label: "When it applies", placeholder: "e.g. while the filter pump runs" })}
-                {stdField({ col: "source", label: "Source", placeholder: "e.g. AS 1926.3, the E25 manual" })}
+                {stdField({ col: "when", label: "When it applies", placeholder: "Always" })}
+                {stdField({ col: "source", label: "Source", placeholder: "A standard, manual or study" })}
               </fieldset>
             )}
             {r.type === "std" && r.ref.function_has_basis && ops?.basis && (
@@ -421,7 +415,7 @@ export function Details({
               <BreachesField r={r} readOnly={readOnly} standards={functionOf(display, r)?.ref.standards || []}
                              onChange={(id) => ops.setBreach(r, id).then(() => said("Saved."), () => {})} />
             )}
-            {r.type === "fail" && ops && <p className="rw-status">{failureStatusWords(r)}</p>}
+            {r.type === "fail" && ops && <p className="rw-fstatus">{failureStatusWords(r)}</p>}
             {r.type === "mode" && (
               <label className="rw-field">
                 <span className="rw-flabel">Consequence</span>
@@ -497,7 +491,7 @@ export function Details({
                 </>
               ) : <p className="rw-dline">No decision yet.</p>}
               {!readOnly && (
-                <button type="button" className={d ? "secondary" : ""} onClick={(e) => { if (e.detail < 2) onDecision(r); }}>
+                <button type="button" className={d ? "secondary sm" : "sm"} onClick={(e) => { if (e.detail < 2) onDecision(r); }}>
                   {d ? "Change the decision…" : "Decide…"}
                 </button>
               )}
@@ -561,16 +555,57 @@ export function Details({
       {!readOnly && (
         <div className="rw-panel-acts">
           {level.child && (
-            <button type="button" className="secondary" onClick={(e) => { if (e.detail < 2) onAdd(r); }}>
+            <button type="button" className="secondary sm" onClick={(e) => { if (e.detail < 2) onAdd(r); }}>
               Add {r.type === "fn" || r.type === "std" || r.type === "nostd" ? "a functional failure" : "a failure mode"}
             </button>
           )}
           {EDITABLE.has(r.type) && (
-            <button type="button" className="secondary danger" onClick={(e) => { if (e.detail < 2) onDelete(r); }}>{r.type === "std" ? "Remove this performance standard" : `Delete this ${level.label.toLowerCase()}`}</button>
+            <button type="button" className="secondary danger sm" onClick={(e) => { if (e.detail < 2) onDelete(r); }}>{r.type === "std" ? "Remove this performance standard" : `Delete this ${level.label.toLowerCase()}`}</button>
           )}
         </div>
       )}
     </aside>
+  );
+}
+
+// The way up, on one muted line: the nearest kept, those above it folded
+// into "…" when they don't fit (the whole path in its tooltip; a click on it
+// shows them all, wrapped).
+function Crumbs({ up, onSelect }) {
+  const box = useRef(null);
+  const [skip, setSkip] = useState(0);
+  const [all, setAll] = useState(false);
+  const path = up.map((a) => nameOf(a) || LEVEL_OF[a.type].label).join(" › ");
+  const key = up.map((a) => a.key).join("/");
+  useEffect(() => { setSkip(0); setAll(false); }, [key]);
+  // Fold one more each pass until it fits (or only the nearest is left).
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (el && !all && el.scrollWidth > el.clientWidth + 1 && skip < up.length - 1) setSkip(skip + 1);
+  }, [skip, all, up.length, key]);
+  // A new width: start again from the whole path.
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver !== "function") return undefined;
+    let w = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth !== w) { w = el.clientWidth; setSkip(0); }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const shown = all ? up : up.slice(skip);
+  return (
+    <nav ref={box} className={"rw-crumbs" + (all ? " all" : "")} aria-label="Inside" title={path}>
+      {!all && skip > 0 && (
+        <button type="button" className="link rw-crumb-more" aria-label={`Show the whole way up: ${path}`} onClick={() => setAll(true)}>…</button>
+      )}
+      {shown.map((a) => (
+        <button key={a.key} type="button" className="link" onClick={() => onSelect(a.key)} title={nameOf(a) || undefined}>
+          {nameOf(a) || `(${LEVEL_OF[a.type].label.toLowerCase()})`}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -587,6 +622,7 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
   // once; typing, or coming back to the field, can send it again.
   const sent = useRef(null);
   useEffect(() => { setDraft(String(value ?? "")); setError(null); sent.current = null; }, [value]);
+  const grow = useAutoGrow(area ? draft : null);
   if (readOnly) {
     return (
       <div className="rw-field">
@@ -620,7 +656,7 @@ function Field({ label, help, value, area, readOnly, type, suffix, onCommit, aut
         {count && <span className={"char-count" + (count.tone ? ` ${count.tone}` : "")} aria-hidden="true">{count.text}</span>}
       </span>
       <span className="rw-fin">
-        <Tag value={draft} rows={area ? 2 : undefined} type={area ? undefined : type} autoFocus={autoFocus} placeholder={placeholder || undefined}
+        <Tag ref={area ? grow : undefined} value={draft} rows={area ? 1 : undefined} type={area ? undefined : type} autoFocus={autoFocus} placeholder={placeholder || undefined}
              maxLength={limit ? limit.max : undefined}
              aria-description={count ? `${count.n} of ${count.max} characters.${limit.nudge ? ` ${limit.nudge}` : ""}` : undefined}
              inputMode={type === "number" ? "decimal" : undefined} min={type === "number" ? "0" : undefined}

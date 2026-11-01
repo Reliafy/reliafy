@@ -194,7 +194,7 @@
   align-items: stretch;
   border-bottom: 1px solid var(--line2);
   background: var(--surf);
-  font-size: 13.5px;
+  font-size: var(--fs-14);
   cursor: pointer;
   outline: none;
 }
@@ -290,14 +290,14 @@
   height: calc(100% - 6px);
   min-height: 22px;
   padding: 0 6px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   border: 1px solid var(--acc);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   box-shadow: var(--focus);
 }
 .rw-unit { color: var(--muted); font-size: var(--fs-12); flex: none; }
 /* A function's text being typed in its cell: the counter at its end. */
-.rw-count { font-size: 11px; margin-left: 0; }
+.rw-count { font-size: var(--fs-12); margin-left: 0; }
 .rw-flabel-count { display: flex; align-items: baseline; gap: 8px; }
 .rw-flabel-count .char-count { font-weight: 500; }
 .rw-flabel-count .char-count.near, .rw-flabel-count .char-count.over { font-weight: 600; }
@@ -318,7 +318,8 @@
 .rw.compact .rw-row { font-size: 13px; }
 .rw.compact .rw-c .chip { line-height: 16px; }
 
-/* The details panel. */
+/* The details panel: 14 px text throughout (link-buttons inherit it), 13 px
+   muted labels, 12 px help and errors. */
 .rw-panel {
   flex: none;
   width: 340px;
@@ -327,19 +328,32 @@
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   background: var(--surf);
-  padding: 12px 14px 16px;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-3);
+  font-size: var(--fs-14);
 }
 .rw-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.rw-panel-kind { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-12); color: var(--muted); font-weight: 600; }
-.rw button.rw-x { min-height: 28px; padding: 0 10px; font-size: var(--fs-13); }
-.rw-crumbs { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: var(--fs-12); }
-/* A long name is cut short with an ellipsis (the whole of it in its tooltip),
-   never clipped: a block, as the bare button's inline-flex can't ellipsise. */
-.rw-crumbs button { display: block; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.rw-crumbs button + button::before { content: "›"; color: var(--faint); margin-right: 8px; }
+.rw-panel-kind { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-13); color: var(--muted); font-weight: 600; }
+/* Expand / Back to table and Close: icon buttons, the word in the label and tooltip. */
+.rw button.rw-x { width: 30px; height: 30px; min-height: 0; padding: 0; justify-content: center; color: var(--muted); }
+.rw button.rw-x:hover:not(:disabled) { color: var(--ink); }
+.rw button.rw-x:focus-visible { outline: none; box-shadow: var(--focus); }
+.rw button.rw-x svg { width: 16px; height: 16px; }
+/* The way up: one muted line, the nearest kept and those above folded into
+   "…" when they don't fit (Crumbs); each cut short with an ellipsis if need be. */
+.rw-crumbs { flex: none; display: flex; flex-wrap: nowrap; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; font-size: var(--fs-13); color: var(--muted); }
+.rw-crumbs.all { flex-wrap: wrap; }
+.rw-crumbs button.link {
+  display: block; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+  color: var(--muted); font-weight: 400; text-decoration: none;
+}
+.rw-crumbs button.link:last-child { flex: 0 1 auto; min-width: min(100%, 8em); }
+.rw-crumbs.all button.link { flex: 0 1 auto; min-width: 0; }
+.rw-crumbs button.link:hover:not(:disabled) { color: var(--acc); text-decoration: underline; }
+.rw-crumbs button.link:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.rw-crumbs button + button::before { content: "›"; color: var(--subtle); margin-right: 6px; }
 /* A long description: two lines at most (the whole of it is in the tooltip,
    and in the Description field below). */
 .rw-panel-title {
@@ -348,36 +362,62 @@
   flex: none; /* clipped, it would otherwise shrink to nothing in the panel's column */
 }
 .rw-inside { margin: 0; font-size: var(--fs-13); color: var(--muted); }
-.rw-fields { display: flex; flex-direction: column; gap: 10px; }
-.rw-field { display: flex; flex-direction: column; gap: 3px; }
-.rw-flabel { font-size: var(--fs-12); font-weight: 600; color: var(--muted); }
-.rw-fin { display: flex; align-items: center; gap: 6px; }
+.rw-fields { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rw-field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+/* One label style (as the model and RBD dialogs): 13 px, 500, muted;
+   "optional" quieter beside it, not in brackets. */
+.rw-flabel { font-size: var(--fs-13); font-weight: 500; color: var(--muted); }
+.rw-opt { font-weight: 400; color: var(--subtle); margin-left: 4px; }
+.rw-fin { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .rw-fin input, .rw-fin textarea { flex: 1; min-width: 0; width: 100%; }
-.rw-fin input, .rw-fin textarea {
+/* One control style for every input, textarea and select in the panel (and
+   its add and edit forms): white, a 1 px line, 34 px tall, 14 px text. */
+/* :where keeps it at no weight, so a control with a class of its own (the
+   working's editor) keeps its own size. */
+:where(.rw-panel) :where(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  padding: 7px 10px;
+  padding: 6px 10px;
   font-family: inherit;
   font-size: var(--fs-14);
   line-height: 1.4;
   color: var(--ink);
-  background: var(--bg);
+  background: var(--surf);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.rw-fin input:focus, .rw-fin textarea:focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
-.rw-fin [aria-invalid="true"] { border-color: var(--danger); }
-.rw-fin textarea { resize: vertical; min-height: 56px; }
+.rw-panel select { box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 34px; font-size: var(--fs-14); padding: 6px 30px 6px 10px; line-height: 1.4; }
+.rw-panel :is(input, textarea)::placeholder { color: var(--subtle); }
+:where(.rw-panel) :where(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea):hover:not(:focus, [readonly]) { border-color: var(--faint); }
+.rw-panel :is(input, textarea, select):focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
+.rw-panel :is(input, textarea, select)[aria-invalid="true"] { border-color: var(--danger); background-color: var(--danger-bg); }
+/* Textareas start at one line and grow with their text (useAutoGrow where
+   the browser can't size them itself); no resize handle. */
+:where(.rw-panel) :where(textarea) { resize: none; field-sizing: content; overflow: hidden; display: block; width: 100%; }
 .rw-field select { max-width: 100%; }
 .rw-fval { font-size: var(--fs-14); overflow-wrap: anywhere; }
 .rw-fhelp { font-size: var(--fs-12); color: var(--muted); }
-.rw-ferr { font-size: var(--fs-12); color: var(--danger); font-weight: 600; }
-.rw-decision { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
-.rw-decision h3 { margin: 0; font-size: var(--fs-14); }
+/* One error style: 12 px, 500, red, a round "!" before it (so it isn't told
+   by colour alone). */
+.rw-ferr, .rw-panel .tm-err {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: var(--fs-12); color: var(--danger); font-weight: 500; line-height: 1.4; margin: 0;
+}
+.rw-ferr::before, .rw-panel .tm-err::before {
+  content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
+  border-radius: 50%; background: var(--danger); color: var(--on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+}
+.rw-decision { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rw-decision h3 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
 .rw-dline { margin: 0; font-size: var(--fs-14); }
 .rw-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: var(--fs-13); }
 .rw-evidence p { margin: 0; flex-basis: 100%; color: var(--muted); }
 p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-decision > button { align-self: flex-start; }
-.rw-panel-acts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.rw-panel-acts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
 
 /* The panel's head: its kind, then Expand (or Back to table) and Close. */
 .rw-panel-btns { display: flex; gap: 6px; flex: none; }
@@ -398,45 +438,53 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   gap: 16px 28px;
   align-items: start;
 }
-.rw-panel.is-expanded .rw-panel-title { font-size: var(--fs-18, 18px); -webkit-line-clamp: 3; line-clamp: 3; }
+.rw-panel.is-expanded .rw-panel-title { font-size: var(--fs-20); -webkit-line-clamp: 3; line-clamp: 3; }
 .rw-pcol:empty { display: none; }
-.rw-status { margin: 0; font-size: var(--fs-14); }
+.rw-fstatus { margin: 0; font-size: var(--fs-13); color: var(--muted); }
 /* A performance standard's structured limit, when it applies and its source. */
 .rw-limit { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .rw-limit legend { padding: 0; margin-bottom: 2px; }
+/* "Limit" heads its own group of fields: a small section heading, not a label. */
+.rw-legend-h { font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
 .rw-limit-row { display: flex; flex-wrap: wrap; gap: 8px 12px; }
 .rw-limit-row > .rw-field { flex: 1 1 120px; min-width: 0; }
 .rw-limit-row select { width: 100%; }
 /* What's inside the row, each a link that shows it in the panel. */
-.rw-kids { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.rw-kids { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
 .rw-kids h3 { margin: 0; font-size: var(--fs-14); }
 .rw-klist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .rw-klist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
 .rw-kgo { display: inline-flex; align-items: center; gap: 4px; text-align: left; overflow-wrap: anywhere; min-width: 0; }
 .rw-kgo .rw-ic { flex: none; }
-.rw-panel.sheet .rw-fin input, .rw-panel.sheet .rw-fin textarea, .rw-panel.sheet select { font-size: 16px; } /* no zoom on focus */
+.rw-panel.sheet :is(input, textarea, select) { font-size: var(--fs-16); } /* no zoom on focus */
+.rw-panel.sheet button.rw-x { width: 40px; height: 40px; }
 
 /* A failure mode's tasks (RcmModeTasks.jsx): the list, and the add, edit and
    link forms under it. */
-.rim-tasks { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.rim-tasks { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
 .rim-tasks h3 { margin: 0; font-size: var(--fs-14); }
 .rim-tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .rim-tlist li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .rim-tmain { display: flex; align-items: flex-start; gap: 6px; min-width: 0; font-size: var(--fs-14); }
 .rim-tmain .rw-ic { flex: none; margin-top: 3px; }
 .rim-tbody { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
-.rim-tinst { font-size: var(--fs-12); color: var(--muted); white-space: pre-wrap; }
+.rim-tinst { font-size: var(--fs-13); color: var(--muted); white-space: pre-wrap; }
+/* Two lines, "Show all" for the rest. */
+.rim-tinst.clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.rim-tmore { align-self: flex-start; font-size: var(--fs-13); }
 .rim-tacts { display: flex; gap: 10px; flex: none; }
 .rim-tacts .link { font-size: var(--fs-13); min-height: 28px; }
 .rim-tadd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.rim-tform { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
-.rim-tform h4 { margin: 0; font-size: var(--fs-13); }
+.rim-tform { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-sm); min-width: 0; }
+.rim-tform h4 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
 .rim-tform .rw-fhelp { margin: 0; }
 .rim-thint { color: var(--warn); }
-.rim-trow { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.rim-trow { display: flex; flex-wrap: wrap; gap: var(--sp-3); min-width: 0; }
+.rim-trow > .rw-field { flex: 1 1 140px; }
 .rim-trow .rw-fin { display: flex; gap: 6px; }
-.rim-trow input[type="number"] { width: 6.5rem; }
-.rim-tform-acts { display: flex; gap: 8px; justify-content: flex-end; }
+.rim-trow input[type="number"] { width: 6.5rem; flex: 1 1 5rem; }
+.rim-trow .rw-fin select { flex: 1 1 auto; }
+.rim-tform-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 @media (max-width: 600px) {
   .rim-tlist li { flex-wrap: wrap; }
   .rim-tacts .link { min-height: 36px; }
@@ -485,7 +533,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   width: auto;
   max-height: 78dvh;
   z-index: 90;
-  border-radius: 14px 14px 0 0;
+  border-radius: var(--r) var(--r) 0 0;
   box-shadow: var(--shadow-overlay);
   padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
@@ -506,7 +554,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-c .rw-info:only-child { margin-left: 0; }
 .tt-tree .rw-info { margin-left: 6px; }
 
-.rw-basis { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; min-width: 0; }
+.rw-basis { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); min-width: 0; }
 .rw-basis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .rw-basis-head h3 { margin: 0; font-size: var(--fs-14); }
 .rw-basis p { margin: 0; }
@@ -518,7 +566,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-basis-more { align-self: flex-start; }
 .rw-basis-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-13); }
 .rw-basis-edit { display: flex; flex-direction: column; gap: 6px; }
-.rw-basis-area { min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-13); resize: vertical; }
+.rw-basis-area { min-height: 220px; field-sizing: fixed; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-13); resize: vertical; }
 .rw-basis-count { font-size: var(--fs-12); text-align: right; }
 .rw-basis-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rw-basis-spacer { flex: 1 1 auto; }
@@ -531,7 +579,7 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 
 .rw-pdfs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .rw-pdf { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; font-size: var(--fs-13); }
-.rw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: #fff; background: #c0392b; border-radius: 3px; padding: 2px 4px; }
+.rw-pdf-mark { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--on-fill); background: var(--danger); border-radius: 3px; padding: 2px 4px; }
 .rw-pdf-title { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; flex: 0 1 auto; }
 .rw-pdf-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rw-pdf .ovm { margin-left: auto; }
@@ -559,17 +607,17 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 
 /* A function's performance standards as a list (RcmFunctionStandards.jsx), in
    the function's Details. */
-.rfs { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.rfs { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
 .rfs h3 { margin: 0; font-size: var(--fs-14); }
-.rfs-list { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-14); }
+.rfs-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-14); }
 .rfs-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .rfs-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .rfs-acts { display: flex; gap: 8px; flex: none; }
 .rfs-acts .link { font-size: var(--fs-13); min-height: 28px; }
 .rfs-hint { margin: 0; }
 .rfs-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.rfs-form { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
-.rfs-form h4 { margin: 0; font-size: var(--fs-13); }
+.rfs-form { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-sm); min-width: 0; }
+.rfs-form h4 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
 .rfs-form .rw-fhelp { margin: 0; }
 .rfs-fold { align-self: flex-start; font-size: var(--fs-13); }
 .rfs-limit { display: flex; flex-direction: column; gap: 8px; }
@@ -578,8 +626,8 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rfs-split li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rfs-split li input { flex: 1 1 200px; min-width: 0; }
 .rfs-split li.dropped input { text-decoration: line-through; color: var(--muted); }
-.rfs .rim-tform-acts { display: flex; gap: 8px; justify-content: flex-end; }
-.rfs .rim-trow { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.rfs .rim-tform-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.rfs .rim-trow { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 @media (max-width: 600px) {
   .rfs-list li { flex-wrap: wrap; }
   .rfs-acts .link { min-height: 36px; }

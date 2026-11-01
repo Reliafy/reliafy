@@ -7590,9 +7590,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .evidence-meta { font-size: var(--fs-12); color: var(--muted); }
 
 .rcm-form { display: flex; flex-direction: column; gap: 14px; }
-.login-field textarea,
-.decision-step input,
-.decision-step textarea {
+.login-field textarea {
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 8px 12px;
@@ -7601,11 +7599,25 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   color: var(--ink);
   background: var(--bg);
 }
+.decision-step input,
+.decision-step textarea {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  min-height: 34px;
+  font-size: var(--fs-14);
+  line-height: 1.4;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--surf);
+}
 .decision-step select {
   border-radius: var(--r-sm);
-  padding: 8px 32px 8px 12px;
+  padding: 6px 30px 6px 10px;
+  min-height: 34px;
   font-size: var(--fs-14);
-  background-color: var(--bg);
+  line-height: 1.4;
+  background-color: var(--surf);
 }
 .login-field textarea:focus,
 .decision-step input:focus,

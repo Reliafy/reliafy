@@ -6,6 +6,7 @@ import { INTERVAL_UNITS, startUnit } from "../decisionCheck.js";
 import { OUTCOME_LABEL, intervalText, tasksOf } from "../rcmWorksheet.js";
 import { secondTaskHint } from "../explorerRcm.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
+import useAutoGrow from "./ui/useAutoGrow.js";
 
 // A failure mode's tasks, in its details (the Explorer's RCM tab): the decision's own
 // task first, then any more (a combination: an inspection that catches the
@@ -89,7 +90,7 @@ export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
                     {[every(t), OUTCOME_LABEL[t.outcome] || null, i === 0 && tasks.length > 1 ? "the decision's own" : null,
                       t.shared_with ? `shared with ${plural(t.shared_with, "other failure mode")}` : null].filter(Boolean).join(" · ")}
                   </span>
-                  {t.instructions && <span className="rim-tinst">{t.instructions}</span>}
+                  {t.instructions && <Instructions text={t.instructions} />}
                 </span>
               </span>
               <span className="rim-tacts">
@@ -114,7 +115,7 @@ export default function RcmModeTasks({ r, ops, start = null, onSaid }) {
                   onSubmit={(taskId) => run(() => ops.linkTask(r, taskId), "Linked the task.")} />
       ) : (
         <div className="rim-tadd">
-          <button type="button" className="secondary" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "add" }); } }}>
+          <button type="button" className="secondary sm" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "add" }); } }}>
             {tasks.length ? "Add another task…" : "Add a task…"}
           </button>
           <button type="button" className="link" disabled={busy} onClick={(e) => { if (e.detail < 2) { setFailed(null); setForm({ mode: "link" }); } }}>
@@ -140,7 +141,13 @@ function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
   const [instructions, setInstructions] = useState(task?.instructions || "");
   const [meas, setMeas] = useState({ body: null, error: null });
   const nameBox = useRef(null);
-  useEffect(() => { nameBox.current?.focus(); }, []);
+  const grow = useAutoGrow(instructions);
+  useEffect(() => {
+    // Focused, its start in view (a long name isn't shown scrolled to its end).
+    const el = nameBox.current;
+    el?.focus();
+    if (el) el.scrollLeft = 0;
+  }, []);
   const n = Number(interval);
   const can = !!name.trim() && interval.trim() !== "" && Number.isFinite(n) && n > 0 && !busy && !meas.error;
   const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
@@ -182,15 +189,15 @@ function TaskForm({ r, task, hint, busy, failed, onCancel, onSubmit }) {
       {task?.id && (
         <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
       )}
-      {meas.error && <p className="rw-fhelp">{meas.error}</p>}
+      {meas.error && <p className="rw-ferr" role="alert">{meas.error}</p>}
       <label className="rw-field">
-        <span className="rw-flabel">Instructions (optional)</span>
-        <textarea rows={2} value={instructions} readOnly={busy} onChange={(e) => setInstructions(e.target.value)} />
+        <span className="rw-flabel">Instructions <span className="rw-opt">optional</span></span>
+        <textarea ref={grow} rows={1} value={instructions} readOnly={busy} onChange={(e) => setInstructions(e.target.value)} />
       </label>
       {failed && <p className="rw-ferr" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
-        <button type="button" className="secondary" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="submit" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : task ? "Save task" : "Add task"}</button>
+        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="submit" className="sm" disabled={!can} aria-busy={busy || undefined}>{busy ? "Saving…" : task ? "Save task" : "Add task"}</button>
       </div>
     </form>
   );
@@ -230,9 +237,30 @@ function LinkForm({ r, ops, busy, failed, onCancel, onFailed, onSubmit }) {
       )}
       {failed && <p className="rw-ferr" role="alert">{failed}</p>}
       <div className="rim-tform-acts">
-        <button type="button" className="secondary" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="submit" disabled={!picked || busy} aria-busy={busy || undefined}>{busy ? "Linking…" : "Link task"}</button>
+        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="submit" className="sm" disabled={!picked || busy} aria-busy={busy || undefined}>{busy ? "Linking…" : "Link task"}</button>
       </div>
     </form>
+  );
+}
+
+// A task's instructions: two lines, with "Show all" when there's more.
+function Instructions({ text }) {
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    const el = box.current;
+    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
+  }, [text, open]);
+  return (
+    <>
+      <span ref={box} className={"rim-tinst" + (open ? "" : " clamped")}>{text}</span>
+      {(long || open) && (
+        <button type="button" className="link rim-tmore" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {open ? "Show less" : "Show all"}
+        </button>
+      )}
+    </>
   );
 }

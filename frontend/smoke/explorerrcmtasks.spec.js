@@ -71,7 +71,7 @@ test("a failure mode's details list its tasks; add another, link an existing one
   await tasks.getByRole("spinbutton", { name: "Interval" }).fill("24");
   await tasks.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
   await tasks.getByRole("combobox", { name: "Kind of task" }).selectOption("fixed_interval");
-  await tasks.getByRole("textbox", { name: "Instructions (optional)" }).fill("Swap the pump head.");
+  await tasks.getByRole("textbox", { name: "Instructions optional" }).fill("Swap the pump head.");
   let writes = 0;
   page.on("request", (r) => { if (r.method() === "POST" && r.url().includes(`/failure-modes/${p.acid.id}/tasks`)) writes += 1; });
   await tasks.getByRole("button", { name: "Add task" }).dblclick();
