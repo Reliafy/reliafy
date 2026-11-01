@@ -474,6 +474,9 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 }
 .rw.phone .rw-chev, .rw.phone .rw-chev-sp { width: 30px; height: 30px; }
 .rw.phone .rw-main { gap: 0; }
+/* The phone sheet sits over the page and the menu drawer (70) but under every
+   dialog (.overlay, 100) and dropdown (200): the dialogs it opens (Decide…,
+   Link a cause…, confirms) must come up on top of it, not greyed out behind. */
 .rw-panel.sheet {
   position: fixed;
   left: 0;
@@ -481,12 +484,12 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
   bottom: 0;
   width: auto;
   max-height: 78dvh;
-  z-index: 210;
+  z-index: 90;
   border-radius: 14px 14px 0 0;
   box-shadow: var(--shadow-overlay);
   padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
-.rw-scrim { position: fixed; inset: 0; z-index: 209; background: var(--scrim); }
+.rw-scrim { position: fixed; inset: 0; z-index: 89; background: var(--scrim); }
 
 /* ---- the working behind a performance standard ------------------------------------- */
 

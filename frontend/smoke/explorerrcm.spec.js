@@ -426,6 +426,48 @@ test("at 400 px nothing scrolls sideways, on either tab; a mode opens as a sheet
   await expectHealthy(page, problems, { label: "rcm at 400 px", root: ".tx" });
 });
 
+// The dialog's top and middle (on screen) are the dialog itself, not the
+// details sheet over it.
+const onTop = (dialog) => dialog.evaluate((el) => {
+  const b = el.getBoundingClientRect();
+  const x = b.x + b.width / 2;
+  const bottom = Math.min(b.bottom, innerHeight);
+  return [b.y + 20, (Math.max(b.y, 0) + bottom) / 2, bottom - 20].every((y) => el.contains(document.elementFromPoint(x, y)));
+});
+
+test("at 400 px the dialogs a sheet opens come up on top of it", async ({ page, request, problems }) => {
+  const tag = `z${Date.now()}`;
+  const p = await plant(request, tag);
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
+  const sheet = page.getByRole("complementary", { name: "Details" });
+  const closeSheet = async () => {
+    await sheet.getByRole("button", { name: "Close the details" }).click();
+    await expect(sheet).toHaveCount(0);
+  };
+  const check = async (button, label) => {
+    await sheet.getByRole("button", { name: button }).click();
+    const dialog = page.getByRole("dialog").or(page.getByRole("alertdialog")).last();
+    await expect(dialog).toBeVisible();
+    expect(await onTop(dialog), `${label}: on top of the sheet`).toBe(true);
+    await shot(page, `sheet-dialog-${label}-400`);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  };
+  // A mode with no decision: Decide… (the dialog Link evidence… opens too), then its Delete confirm.
+  await pickRow(page, `Failure mode: Bearing seizes No flow Pump water ${tag}`);
+  await expect(sheet).toBeVisible();
+  await check("Decide…", "decide");
+  await check(/^Delete this failure mode/, "delete");
+  // A functional failure: Link to a cause… (the link picker, a sheet itself on a phone).
+  await closeSheet();
+  await pickRow(page, `Functional failure: No flow Pump water ${tag}`);
+  await expect(sheet).toBeVisible();
+  await check("Link to a cause…", "link-cause");
+  expect((await overflow(page)).side).toBe(0);
+  await expectHealthy(page, problems, { label: "sheet dialogs at 400 px", root: ".tx" });
+});
+
 test("one search, and Show only in the tree's ⋯ menu: the RCM's text, Needs a decision, Not analysed", async ({ page, request, problems }) => {
   const tag = `c${Date.now()}`;
   const p = await plant(request, tag);
