@@ -1649,9 +1649,6 @@ def _mcp_fit_error(exc: FitError, c_invert: bool) -> FitError:
     elif "not interval censored but has interval window" in text:
         text = ("A row's two times differ (an interval) but its censoring flag isn't 2. Flag interval rows 2; "
                 "failed, right- and left-censored rows repeat their time as the upper bound.")
-    elif "interval censored but only has one failure time" in text:
-        text = ("A row is flagged 2 (interval-censored) but its upper bound equals its lower bound — an "
-                "interval row needs data_right (or time_right_column) above data (or time_column).")
     elif "only works with Turnbull heuristic" in text:
         text = "MPP can't fit left- or interval-censored data; use MLE (the default) or MSE."
     return FitError(text)
@@ -1683,8 +1680,22 @@ def _censor_counts(df: pd.DataFrame, mapping: dict, invert: bool) -> Optional[di
         n = pd.to_numeric(df[mapping["n"]], errors="coerce") if "n" in mapping else pd.Series(1, index=df.index)
         if invert:
             c = c.map({0: 1, 1: 0}).fillna(c)
+        zero = pd.Series(False, index=df.index)
+        if "xl" in mapping and "xr" in mapping:
+            # SurPyval (0.26) fits a row flagged 2 whose bounds are equal as a
+            # failure at that time, as fit_from_df always did: count it so.
+            xl = pd.to_numeric(df[mapping["xl"]], errors="coerce")
+            xr = pd.to_numeric(df[mapping["xr"]], errors="coerce")
+            zero = (c == 2) & (xl == xr)
+            c = c.where(~zero, 0)
         out = {"n_failed": int(n[c == 0].sum()), "n_right_censored": int(n[c == 1].sum()),
                "n_left_censored": int(n[c == -1].sum())}
+        if zero.any():
+            k = int(n[zero].sum())
+            out["note"] = (f"{k} row{'s' if k != 1 else ''} flagged 2 (interval-censored) had equal lower and "
+                           "upper bounds, so the fit took them as failures at that time (counted in n_failed). "
+                           "If they failed between two times, give the upper bound in data_right / "
+                           "time_right_column.")
         if (c == 2).any():
             out["n_interval_censored"] = int(n[c == 2].sum())
         return out
