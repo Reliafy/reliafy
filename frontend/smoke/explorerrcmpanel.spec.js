@@ -80,7 +80,11 @@ test("a click shows the details beside the table; a double-click on the name spr
   expect((await panel(page).boundingBox()).width).toBeGreaterThan(700);
   expect(await overflow(page)).toBe(0);
   const fnPanel = panel(page);
+  // The title is the description: a click edits it in place.
+  await fnPanel.locator(".rw-title-btn").click();
   await expect(fnPanel.getByRole("textbox", { name: /^Description/ })).toHaveValue(`Pump water ${tag}`);
+  await page.keyboard.press("Escape");
+  await expect(fnPanel.getByRole("heading", { name: `Pump water ${tag}` })).toBeFocused();
   const list = fnPanel.getByRole("region", { name: "Performance standards" });
   await expect(list).toContainText(`At least 10 L/s ${tag}`);
   await expect(list).toContainText(`At 3 bar ${tag}`);
@@ -117,6 +121,7 @@ test("a click shows the details beside the table; a double-click on the name spr
   // A failure mode: kept as you go; a refused value stays with its reason and nothing is sent.
   let writes = 0;
   page.on("request", (r) => { if (r.method() !== "GET" && r.url().includes(`/failure-modes/${p.mode.id}`)) writes += 1; });
+  await panel(page).locator(".rw-title-btn").click();
   const desc = panel(page).getByRole("textbox", { name: /^Description/ });
   await desc.fill("   ");
   await desc.blur();
@@ -126,7 +131,11 @@ test("a click shows the details beside the table; a double-click on the name spr
   await desc.blur();
   await panel(page).getByRole("textbox", { name: /^Failure effects/ }).fill("Pump stops; no flow to the tank");
   await panel(page).getByRole("textbox", { name: /^Failure effects/ }).blur();
-  await panel(page).getByRole("combobox", { name: "Consequence" }).selectOption("hidden");
+  // Consequence: one tap on a chip, the chosen one ticked; "✓ Saved" by its label.
+  const consequence = panel(page).getByRole("radiogroup", { name: "Consequence" });
+  await consequence.getByRole("radio", { name: "Hidden" }).click();
+  await expect(consequence.getByRole("radio", { name: "Hidden" })).toHaveAttribute("aria-checked", "true");
+  await expect(panel(page).getByRole("status").filter({ hasText: "✓ Saved" }).first()).toBeVisible();
   await expect.poll(async () => {
     const m = (await rcmOf(request, p)).functions[0].failures[0].modes.find((x) => x.id === p.mode.id);
     return [m.text, m.effects, m.consequence];
@@ -229,7 +238,8 @@ test("at 400 px Open… shows the details sheet, which fits; no Expand", async (
   expect(await overflow(page)).toBe(0);
   // A performance standard is a list item with its own save.
   const standards = sheet.getByRole("region", { name: "Performance standards" });
-  await standards.getByRole("button", { name: `Edit At 3 bar ${tag}` }).click();
+  await standards.getByRole("button", { name: `Actions for At 3 bar ${tag}` }).click();
+  await page.getByRole("menu", { name: `Actions for At 3 bar ${tag}` }).getByRole("menuitem", { name: "Edit…" }).click();
   await standards.getByRole("textbox", { name: "Performance standard" }).fill(`At 3.5 bar ${tag}`);
   await standards.getByRole("button", { name: "Save performance standard" }).click();
   await expect(standards).toContainText(`At 3.5 bar ${tag}`);
@@ -269,4 +279,88 @@ test("screenshots of the panel side by side and expanded (SMOKE_SHOTS_DIR)", asy
     await settled(page);
     await page.screenshot({ path: `${SHOTS}/rcm-panel-mode-${w}.png` });
   }
+});
+
+// The shared form pieces (components/ui): a field says "✓ Saved" by its label
+// and keeps a refused value with the reason under it (wired to the box); the
+// consequence chips work from the keyboard; ⋯ opens from the keyboard; a
+// limit reads back in words; a refused table cell keeps its text with the
+// whole reason in a bubble under it, not a toast.
+test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside it", async ({ page, request, problems }) => {
+  const tag = `u${Date.now()}`;
+  const p = await plant(request, tag);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, url(p));
+  await trow(page, `^Failure mode: Seal leaks ${tag}`).locator(".tp-nm").click();
+  const effects = panel(page).getByRole("textbox", { name: /^Failure effects/ });
+  // Its field (the label, the box, the line under it).
+  const effectsField = panel(page).locator(".field").filter({ has: page.getByRole("textbox", { name: /^Failure effects/ }) });
+  await effects.fill("Water on the floor");
+  await effects.blur();
+  await expect(effectsField.getByRole("status")).toHaveText("✓ Saved");
+
+  // Refused by the server: the text stays, the reason under it, the box marked and described by it.
+  await page.route(/\/api\/maintenance\/failure-modes\/[^/]+$/, (route) => (route.request().method() === "PATCH"
+    ? route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "Refused in this test: nothing was changed." }) })
+    : route.continue()));
+  await effects.fill("Water everywhere");
+  await effects.blur();
+  const why = effectsField.getByRole("alert");
+  await expect(why).toContainText("Refused in this test");
+  await expect(effects).toHaveValue("Water everywhere");
+  await expect(effects).toHaveAttribute("aria-invalid", "true");
+  expect(await effects.getAttribute("aria-describedby")).toBe(await why.getAttribute("id"));
+
+  // A refused cell: its text kept, the whole reason under it, no error toast.
+  const cell = trow(page, `^Failure mode: Seal leaks ${tag}`).locator(".rw-c").first();
+  await cell.dblclick();
+  const box = table(page).getByRole("textbox", { name: /^Failure effects of/ });
+  await box.fill("Puddles");
+  await box.press("Enter");
+  await expect(page.locator(".rw-pop-under").getByRole("alert")).toContainText("Refused in this test: nothing was changed.");
+  await expect(box).toHaveValue("Puddles");
+  await expect(box).toHaveAttribute("aria-invalid", "true");
+  await box.press("Escape");
+  await expect(page.locator(".rw-pop-under")).toHaveCount(0);
+  await page.unroute(/\/api\/maintenance\/failure-modes\/[^/]+$/);
+
+  // Consequence chips by keyboard: Tab lands on the chosen one, → chooses the next.
+  const chips = panel(page).getByRole("radiogroup", { name: "Consequence" });
+  await chips.getByRole("radio", { name: "Operational", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(chips.getByRole("radio", { name: "Non-operational" })).toHaveAttribute("aria-checked", "true");
+  await expect(chips.getByRole("radio", { name: "Non-operational" })).toBeFocused();
+  await expect.poll(async () => (await rcmOf(request, p)).functions[0].failures[0].modes.find((m) => m.id === p.seal.id).consequence)
+    .toBe("non_operational");
+
+  // A task's ⋯ by keyboard: Enter opens it on its first item, Escape closes it back to the button.
+  const more = panel(page).getByRole("region", { name: "Tasks" }).getByRole("button", { name: `Actions for Replace the seal ${tag}` });
+  await more.focus();
+  await page.keyboard.press("Enter");
+  const menu = page.getByRole("menu", { name: `Actions for Replace the seal ${tag}` });
+  await expect(menu.getByRole("menuitem", { name: "Edit…" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(more).toBeFocused();
+
+  // A standard's limit: comparator, value and unit as one group, read back in words.
+  await trow(page, `^Performance standard: At 3 bar ${tag}`).locator(".tp-nm").click();
+  await expect(panel(page).getByRole("group", { name: "Limit" }).getByRole("combobox", { name: "Comparator" })).toHaveValue(">=");
+  await expect(panel(page).locator(".reads-as")).toHaveText("Reads as: Pressure at least 3 bar");
+  // A consequence cell: one tap on a chip under it; Escape drops it.
+  const conseq = trow(page, `^Failure mode: Seal leaks ${tag}`).locator(".rw-c").filter({ hasText: "Non-operational" }).first();
+  await conseq.dblclick();
+  const pop = page.locator(".rw-pop-under").getByRole("radiogroup");
+  await expect(pop.getByRole("radio", { name: "Non-operational" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(pop).toHaveCount(0);
+  await conseq.dblclick();
+  await pop.getByRole("radio", { name: "Safety" }).click();
+  await expect(pop).toHaveCount(0);
+  await expect.poll(async () => (await rcmOf(request, p)).functions[0].failures[0].modes.find((m) => m.id === p.seal.id).consequence)
+    .toBe("safety");
+  expect(await overflow(page)).toBe(0);
+  // The refusals above were this test's own 422s (the browser logs each one).
+  problems.splice(0, problems.length, ...problems.filter((x) => !/status of 422/.test(x)));
+  await expectHealthy(page, problems, { label: "rcm shared fields", root: ".tx" });
 });

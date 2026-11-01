@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canSplit, limitWords, proposeSplit, splitLines, standardsShown, unbreachedWords } from "./rcmStandards.js";
+import { canSplit, limitReads, limitWords, proposeSplit, splitLines, standardsShown, unbreachedWords } from "./rcmStandards.js";
 import { COLUMN, rowText } from "./rcmWorksheet.js";
 import { EXPORT_HEADER, positionRcmRows } from "./rcmImport.js";
 
@@ -55,4 +55,14 @@ test("the CSV writes a function's standards as rows, and each failure's breach",
   ]);
   assert.equal(rows[1][3], "## Sums"); // the working on the function's first row only
   assert.equal(rows[3][3], "");
+});
+
+test("limitReads says a limit in words: a range, a single limit, a condition", () => {
+  assert.equal(limitReads({ parameter: "total alkalinity", comparator: "between", value: "80-120", unit: "ppm" }), "total alkalinity between 80 and 120 ppm");
+  assert.equal(limitReads({ parameter: "pH", comparator: ">=", value: 7.2 }), "pH at least 7.2");
+  assert.equal(limitReads({ parameter: "Pressure", comparator: "<", value: "3", unit: "bar", when: "while the pump runs" }), "Pressure below 3 bar while the pump runs");
+  assert.equal(limitReads({ parameter: "Flow", comparator: ">", value: "50", unit: "L/s", when: "in use" }), "Flow above 50 L/s in use");
+  assert.equal(limitReads({ parameter: "Noise", comparator: "<=", value: "80", when: "running" }), "Noise at most 80 when running");
+  assert.equal(limitReads({ comparator: "between" }), "it between …");
+  assert.equal(limitReads({ parameter: "pH" }), "");
 });

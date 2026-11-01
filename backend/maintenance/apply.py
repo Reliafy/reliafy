@@ -100,7 +100,9 @@ RESTORES = {
 RETIRES = {restore: retire for retire, restore in RESTORES.items()}
 
 #: Links and the unlink that undoes each (and back): the same arguments.
-LINKS = {"tasks.link": "tasks.unlink", "tasks.unlink": "tasks.link"}
+LINKS = {"tasks.link": "tasks.unlink", "tasks.unlink": "tasks.link",
+         "failure_modes.link_cause": "failure_modes.unlink_cause",
+         "failure_modes.unlink_cause": "failure_modes.link_cause"}
 
 
 def _without_none(**kw) -> dict:
@@ -381,6 +383,8 @@ def _undo_for(op: dict, result) -> dict | None:
         name = result.get("name") or result.get("text") or result.get("title") if isinstance(result, dict) else None
         return {"do": retire, "args": {arg: target}, **({"confirm": name} if name else {})}
     if do in LINKS:
+        if isinstance(result, dict) and result.get("changed") is False:
+            return None  # it was linked (or unlinked) already: nothing to put back
         return {"do": LINKS[do], "args": dict(op["args"])}
     if do in MOVES and isinstance(result, dict):
         return MOVES[do](op["args"], result)
@@ -493,13 +497,14 @@ def summarise(ops: list[dict], passed: dict, dry: bool, events: int) -> dict:
         else:
             irreversible.append(r["index"])
     cut = len(ops) > SHOW_FULL_RESULTS_UP_TO
+    failed = passed["failed"]
     shown = []
     for r in results:
-        row = {k: v for k, v in r.items() if k != "undo"}
+        # A move's needs-a-choice is shown once, under failed.
+        row = {k: v for k, v in r.items() if k != "undo" and not (k == "needs_choice" and failed)}
         if cut and "result" in row:
             row["result"] = _brief(row["result"])
         shown.append(row)
-    failed = passed["failed"]
     return {
         "dry_run": dry, "ok": failed is None,
         "applied": sum(1 for r in results if r["status"] == "ok"),

@@ -244,7 +244,7 @@ def test_link_a_cause_over_the_routes(api):
     assert sheet["positions"][1]["functions"][0]["failures"][0]["effects"][0]["id"] == top["id"]
     # The other way round is refused, saying what to do.
     r = api.post(f"{M}/functional-failures/{low['id']}/causes", json={"cause_id": top["id"]})
-    assert r.status_code == 422 and "inside Chlorinator cell" in r.json()["detail"]
+    assert r.status_code == 422 and "above Chlorinator cell" in r.json()["detail"] and "Swap" in r.json()["detail"]
     assert api.post(f"{M}/functional-failures/{top['id']}/causes", json={}).status_code == 422
     assert api.post(f"{M}/functional-failures/nope/causes", json={"cause_id": low["id"]}).status_code == 404
 
@@ -279,7 +279,7 @@ def test_link_a_cause_over_mcp(env):  # noqa: F811
         assert sheet["positions"][1]["functions"][0]["failures"][0]["effects"][0]["id"] == top["id"]
         refused = await _do(client, "maintenance_failure_modes", "link_cause", functional_failure_id=low["id"],
                             cause_id=top["id"])
-        assert refused.is_error and "inside Salt chlorinator" in refused.content[0].text
+        assert refused.is_error and "Swap them" in refused.content[0].text
         missing = await _do(client, "maintenance_failure_modes", "link_cause", functional_failure_id=top["id"])
         assert missing.is_error and "needs cause_id" in missing.content[0].text
         gone = _ok(await _do(client, "maintenance_failure_modes", "unlink_cause", functional_failure_id=top["id"],

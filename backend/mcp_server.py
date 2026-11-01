@@ -7524,7 +7524,10 @@ def _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row) -> dic
     return out
 
 
-def _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, position_id) -> dict:
+_RCM_OPTION_KEYS = ("mapping", "consequence_map", "outcome_map", "extra_columns")
+
+
+def _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, position_id, dry_run=False) -> dict:
     """An FMEA / RCM worksheet added to a maintenance position's RCM (only adds;
     backend/maintenance/rcm_sheet.py)."""
     from backend.maintenance import rcm_sheet
@@ -7536,41 +7539,57 @@ def _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, positio
     if not allowed(user):
         raise ToolError("position_id: positions aren't available on your account.")
     table = rcm_sheet.read_table(data, doc["filename"], sheet, header_row)
-    if mapping and isinstance(mapping.get("mapping"), dict):
+    if mapping and any(k in mapping for k in _RCM_OPTION_KEYS):
+        # The options shape; the maps alone keep the column mapping guessed from the header.
         options = dict(mapping)
+        if not isinstance(options.get("mapping"), dict):
+            options["mapping"] = rcm_sheet.default_options(table)["mapping"]
     elif mapping:
         options = {"mapping": dict(mapping)}
     else:
         options = rcm_sheet.default_options(table)
-        if "mode" not in options["mapping"]:
-            raise ToolError(
-                f"Couldn't tell which column of “{table.sheet}” holds the failure modes. Give mapping: "
-                f"{{field: column}} with fields {', '.join(rcm_import.FIELD_IDS)} (mode is required). Its "
-                "columns: " + ", ".join(table.header) + ".")
+    if "mode" not in options["mapping"]:
+        raise ToolError(
+            f"Couldn't tell which column of “{table.sheet}” holds the failure modes. Give mapping: "
+            f"{{field: column}} with fields {', '.join(rcm_import.FIELD_IDS)} (mode is required). Its "
+            "columns: " + ", ".join(table.header) + ".")
     options.setdefault("extra_columns", rcm_import.default_extra_columns(table.header, options["mapping"]))
     m = Maintenance(get_store(), user["uid"], user["uid"], time_zone=time_zones.of_owner(db, user["uid"]))
     try:
-        result = rcm_sheet.run(m, position_id, table, options, dry_run=False)
+        result = rcm_sheet.run(m, position_id, table, options, dry_run=bool(dry_run))
     except NotFound:
-        raise ToolError("Position not found in your maintenance workspace.") from None
+        raise ToolError("Position not found in your maintenance workspace (maintenance_overview has the tree)."
+                        ) from None
     except (Invalid, excel.ExcelError) as err:
         raise ToolError(str(err)) from None
-    if result["ok"]:
+    if result["ok"] and not dry_run:
         uploads_service.delete(db, doc["_id"])
-    unmapped = {k: [v for v in vals if v.get("guess") is None][:_RCM_VALUES]
-                for k, vals in (result.get("values") or {}).items()}
+    given = {"consequence": options.get("consequence_map") or {}, "outcome": options.get("outcome_map") or {}}
+    unmapped = {k: [v for v in vals if v.get("guess") is None and str(v.get("value")) not in given.get(k, {})]
+                [:_RCM_VALUES] for k, vals in (result.get("values") or {}).items()}
     out = {"target": "rcm", "position_id": position_id, "written": not result["dry_run"],
            **{k: result[k] for k in ("ok", "sheet", "header_row", "counts", "errors")},
            "mapping": options["mapping"], "extra_columns": options.get("extra_columns") or [],
            "warnings": result["warnings"][:_IMPORT_NOTES],
            "url": _url(f"/asset-register/explorer?arrange=positions&tab=rcm&sel={position_id}")}
-    if not result["ok"]:
+    if dry_run:
+        out["functions"] = result.get("functions") or []
+        out["note"] = ("A preview: nothing was written and the upload is kept. Show it to the user, then import "
+                       "again with dry_run false (the same mapping).")
+    elif not result["ok"]:
         out["note"] = "Nothing was added: fix the rows in errors and import again (the upload is kept)."
     if any(unmapped.values()):
         out["unmapped_values"] = {k: v for k, v in unmapped.items() if v}
-        out["unmapped_note"] = ("These consequence / decision values weren't recognised and were left unset. To "
-                                "set them, import again with mapping {mapping: {...}, consequence_map: {value: "
-                                "category}, outcome_map: {value: decision}}.")
+        maps = (f"mapping {{consequence_map: {{value: one of {', '.join(rcm_import.CONSEQUENCE_CHOICES)}}}, "
+                f"outcome_map: {{value: one of {', '.join(rcm_import.OUTCOME_CHOICES)}}}}} (the column mapping is "
+                "kept unless you give mapping.mapping)")
+        out["unmapped_note"] = (
+            "These consequence / decision values weren't recognised and would be left unset: preview again with "
+            f"{maps}."
+            if dry_run or not result["ok"] else
+            "These consequence / decision values weren't recognised and were left unset. The modes are added now, "
+            "so importing again won't change them: decide each with maintenance_failure_modes decide (its ids: "
+            f"maintenance_get kind rcm). Next time, preview first (dry_run true) with {maps}.")
     if result["notes"]:
         out["notes"] = result["notes"]
     return out
@@ -7625,6 +7644,9 @@ def import_excel(
         "rcm only, required: add the worksheet (or a CSV) to this position's RCM. Only adds: importing it again "
         "adds nothing."
     ))] = None,
+    dry_run: Annotated[Optional[bool], Field(description=(
+        "rcm only: true previews what it would add (nothing written, the upload kept). Preview first."
+    ))] = None,
     header_row: Annotated[Optional[int], Field(ge=0, description=(
         "The sheet row holding the column names (1-based; 0 = no header row). Default: guessed."))] = None,
 ) -> dict[str, Any]:
@@ -7632,6 +7654,8 @@ def import_excel(
     RCM (position_id), or Reliafy's RBD template as a diagram
     (rbd_id: a new copy of it; replace=true: over it). Look first with get kind upload. Formulas are
     read as last saved, never evaluated."""
+    if dry_run is not None and target != "rcm":
+        raise ToolError("dry_run applies to target rcm (an RBD template previews with uploads import_rbd save false).")
     user, db = _caller(ctx), _db()
     doc, data = uploads_service.read(db, upload_id, user["uid"])
     if not uploads_service.is_excel(doc) and not (target == "rcm" and position_id):  # a position takes CSV too
@@ -7645,12 +7669,12 @@ def import_excel(
         raise ToolError("position_id applies to target rcm.")
     if target == "rcm" and not position_id:
         raise ToolError("target rcm needs position_id: the maintenance position whose RCM the worksheet is added to "
-                        "(maintenance_positions lists them).")
+                        "(maintenance_overview has the tree).")
     with _untrusted_file(user["uid"]):
         if target == "dataset":
             return _excel_dataset(db, user, doc, data, sheet, mapping, name, header_row)
         if target == "rcm" and position_id:
-            return _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, position_id)
+            return _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, position_id, dry_run)
         return _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id, replace)
 
 

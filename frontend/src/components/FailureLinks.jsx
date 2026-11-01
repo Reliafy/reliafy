@@ -1,5 +1,6 @@
 import { useId, useMemo, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
+import { PlusIcon } from "./icons.jsx";
 import { saveErrorText } from "../confirm.js";
 import { filterChoices, linkChoices } from "../explorerRcm.js";
 import { FUNCTION_MAX } from "../rcmWorksheet.js";
@@ -28,7 +29,7 @@ export function CausedBySection({ r, where, readOnly, links, onSelect }) {
   ].filter(Boolean).join(" · ");
   return (
     <section className="fl-sec" aria-label="Caused by, on positions below">
-      <h3>Caused by, on positions below</h3>
+      <div className="psec-head"><h3 className="psec-title">Caused by, on positions below</h3><span className="psec-count">{causes.length}</span></div>
       {causes.length > 0 && <p className="fl-sum">{summary}</p>}
       {r.ref.explained_below && !own && (
         <p className="fl-note">
@@ -53,7 +54,7 @@ export function CausedBySection({ r, where, readOnly, links, onSelect }) {
         ))}
       </ul>
       {!readOnly && (
-        <button type="button" className="secondary fl-add" onClick={(e) => { if (e.detail < 2) links.onLink(r, "cause"); }}>Link to a cause…</button>
+        <button type="button" className="add-row fl-add" onClick={(e) => { if (e.detail < 2) links.onLink(r, "cause"); }}><PlusIcon />Link to a cause…</button>
       )}
     </section>
   );
@@ -65,7 +66,7 @@ export function CausesSection({ r, where, readOnly, links, onSelect }) {
   const canUp = !!r.ref.has_above;
   return (
     <section className="fl-sec" aria-label="Causes, on positions above">
-      <h3>Causes, on positions above</h3>
+      <div className="psec-head"><h3 className="psec-title">Causes, on positions above</h3><span className="psec-count">{effects.length}</span></div>
       {effects.length === 0 && (
         <p className="fl-sum">{canUp ? `Not linked to a failure above ${where || "it"} yet.` : "Nothing above: this failure is the top of its chain."}</p>
       )}
@@ -83,7 +84,7 @@ export function CausesSection({ r, where, readOnly, links, onSelect }) {
         ))}
       </ul>
       {!readOnly && canUp && (
-        <button type="button" className="secondary fl-add" onClick={(e) => { if (e.detail < 2) links.onLink(r, "effect"); }}>Link to an effect…</button>
+        <button type="button" className="add-row fl-add" onClick={(e) => { if (e.detail < 2) links.onLink(r, "effect"); }}><PlusIcon />Link to an effect…</button>
       )}
     </section>
   );
@@ -207,7 +208,7 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
             ? `Functional failures on positions above ${where}. Tick the ones it causes.`
             : `Functional failures on positions inside ${where}. Tick the ones that cause it.`}
         </p>
-        <input ref={filterBox} type="search" className="lp-filter" value={query} onChange={(e) => setQuery(e.target.value)}
+        <input ref={filterBox} type="search" className="ctl lp-filter" value={query} onChange={(e) => setQuery(e.target.value)}
                placeholder="Filter: position, function or failure" aria-label="Filter the list" autoFocus />
         <div className="lp-list" ref={list} role="group" aria-label={`Functional failures ${place}`}>
           {shown.map((g) => (
@@ -257,14 +258,14 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
                }}>
             <h4>New functional failure on a position {place}</h4>
             <label className="fl-f"><span>Position</span>
-              <select value={form.position_id} disabled={busy}
+              <select className="ctl" value={form.position_id} disabled={busy}
                       onChange={(e) => setForm({ ...form, position_id: e.target.value,
                         function_id: groups.find((g) => g.id === e.target.value)?.functions[0]?.id || "" })}>
                 {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </label>
             <label className="fl-f"><span>Function</span>
-              <select value={newFunction ? "" : form.function_id} disabled={busy}
+              <select className="ctl" value={newFunction ? "" : form.function_id} disabled={busy}
                       onChange={(e) => setForm({ ...form, function_id: e.target.value })}>
                 {formGroup?.functions.map((f) => <option key={f.id} value={f.id}>{shorter(f.text, 60)}</option>)}
                 <option value="">New function…</option>
@@ -272,12 +273,12 @@ export default function LinkFailurePicker({ direction, row, whole, onLink, onClo
             </label>
             {newFunction && (
               <label className="fl-f"><span>What must it do?</span>
-                <input type="text" value={form.function_text} maxLength={FUNCTION_MAX} disabled={busy}
+                <input type="text" className="ctl" value={form.function_text} maxLength={FUNCTION_MAX} disabled={busy}
                        onChange={(e) => setForm({ ...form, function_text: e.target.value })} autoFocus />
               </label>
             )}
             <label className="fl-f"><span>How does it fail to do it?</span>
-              <input type="text" value={form.text} disabled={busy} onChange={(e) => setForm({ ...form, text: e.target.value })}
+              <input type="text" className="ctl" value={form.text} disabled={busy} onChange={(e) => setForm({ ...form, text: e.target.value })}
                      autoFocus={!newFunction} />
             </label>
             <div className="fl-new-acts">

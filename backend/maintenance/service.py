@@ -2953,7 +2953,7 @@ class Maintenance:
         if fm.get("merged_into"):
             raise Invalid("That failure mode was merged into another.")
         if fm.get("retired"):
-            raise Invalid("That failure mode was deleted.")
+            raise Invalid("That failure mode was deleted (restore brings it back).")
         return fm, self.s.inn(self.org, mode_id, "CAN_FAIL_AS")[0]
 
     def update_failure_mode(self, mode_id: str, text=None, function=None, failure=None, consequence=None,
@@ -3341,11 +3341,16 @@ class Maintenance:
             proposed = []
             for i, item in enumerate(standards):
                 if not isinstance(item, dict):
-                    raise Invalid(f"standards[{i}] is an object {{text, when?, source?}}.")
+                    raise Invalid(f"standards[{i}] is an object {{text, parameter?, comparator?, value?, unit?, "
+                                  "when?, source?}.")
+                stray = sorted(set(item) - {"text", *_STANDARD_FIELDS})
+                if stray:
+                    raise Invalid(f"standards[{i}] takes text, {', '.join(_STANDARD_FIELDS)}; not "
+                                  f"{', '.join(stray)}.")
                 row = {"text": _text(item.get("text"), "performance standard", required=True, max_len=LONG_TEXT)}
-                for key in ("when", "source"):
-                    if item.get(key):
-                        row[key] = _text(item.get(key), key, max_len=SHORT_TEXT)
+                # Each line's structured limit too, as add_standard takes it.
+                fields = self._standard_fields(*(item.get(k) for k in _STANDARD_FIELDS))
+                row |= {k: v for k, v in fields.items() if v not in (None, "")}
                 proposed.append(row)
         if len(proposed) > MAX_STANDARDS:
             raise Invalid(f"A function has at most {MAX_STANDARDS} performance standards.")
@@ -3362,7 +3367,7 @@ class Maintenance:
         for n, row in enumerate(proposed, start=1):
             self._emit("standard.added", {"id": new_id(), "function_id": function_id, "text": row["text"],
                                           "order": n, "on": self.today()}
-                       | {k: row[k] for k in ("when", "source") if row.get(k)})
+                       | {k: row[k] for k in _STANDARD_FIELDS if row.get(k) not in (None, "")})
         return {"dry_run": False, **self._function_view(self._get(function_id, "Function"))}
 
     def _drop_ff(self, ff: dict) -> tuple[int, int]:
@@ -3442,11 +3447,16 @@ class Maintenance:
             raise Invalid(f"Both are on {here['name']}: link a functional failure on a position inside it, "
                           "or add the cause here as a failure mode.")
         if here["id"] not in self._ancestor_ids(there["id"]):
+            if there["id"] in self._ancestor_ids(here["id"]):
+                # The other way round: the higher one is the effect.
+                raise Invalid(f"{there['name']} is above {here['name']}, so the link goes the other way: "
+                              "functional_failure_id is the higher one (the effect), cause_id the lower one. "
+                              "Swap them.")
             raise Invalid(f"Pick a functional failure on a position inside {here['name']}: "
                           f"{there['name']} isn't inside it.")
         linked = {c["id"] for c in self.s.out(self.org, effect["id"], "RESULTS_FROM")}
         if cause["id"] in linked:
-            return self.functional_failure(effect["id"])
+            return self.functional_failure(effect["id"]) | {"changed": False}
         seen, stack = set(), [cause["id"]]
         while stack:
             at = stack.pop()
@@ -3459,7 +3469,7 @@ class Maintenance:
         if len(linked) >= MAX_CAUSES:
             raise Invalid(f"A functional failure can have at most {MAX_CAUSES} causes below it: unlink one first.")
         self._link_event("functional_failure.linked", effect["id"], cause["id"])
-        return self.functional_failure(effect["id"])
+        return self.functional_failure(effect["id"]) | {"changed": True}
 
     def unlink_cause(self, ff_id: str, cause_id) -> dict:
         """Take a cause off a functional failure. Unlinking what isn't linked
@@ -3468,11 +3478,13 @@ class Maintenance:
             raise Invalid("Say which cause to unlink (cause_id).")
         effect = self._get(ff_id, "FunctionalFailure")
         cause = self._get(str(cause_id), "FunctionalFailure")
-        if self.s.edge(self.org, "RESULTS_FROM", effect["id"], cause["id"]) is not None:
+        changed = self.s.edge(self.org, "RESULTS_FROM", effect["id"], cause["id"]) is not None
+        if changed:
             self._link_event("functional_failure.unlinked", effect["id"], cause["id"])
+        # changed: whether there was a link to take off (a batch undoes only a real change).
         if effect.get("removed"):
-            return self._ff_view(effect)
-        return self.functional_failure(effect["id"])
+            return self._ff_view(effect) | {"changed": changed}
+        return self.functional_failure(effect["id"]) | {"changed": changed}
 
     def functional_failure(self, ff_id: str) -> dict:
         """A functional failure with its function, position and failure modes, the
@@ -3653,7 +3665,8 @@ class Maintenance:
         if consequence is not ...:
             consequence = consequence or None
             if consequence is not None and consequence not in rcm_decisions.CONSEQUENCES:
-                raise Invalid(f"Unknown consequence '{consequence}'.")
+                raise Invalid(f"Unknown consequence '{consequence}': it's one of "
+                              f"{', '.join(rcm_decisions.CONSEQUENCES)}.")
             changes["consequence"] = consequence
         tasks = self._mode_tasks(mode_id, fm)
         task = tasks[0] if tasks else None
@@ -4455,6 +4468,22 @@ class Maintenance:
             # functions were on the positions): a hint for where it belongs.
             "was_under": " › ".join(x for x in (fm.get("function"), fm.get("failure")) if x) or None,
         }
+
+    def failure_mode_rcm(self, mode_id: str) -> dict:
+        """One failure mode's RCM in full, for a reader that has only its id (an
+        agent): its words, consequence, decision and tasks (rcm_mode), where it
+        sits (position, functional failure and function, or none) and the tasks on
+        its position or above that could serve it too (available)."""
+        fm, position = self._live_mode(mode_id)
+        tasks = self.mode_tasks(mode_id)
+        ffs = [ff for ff in self.s.inn(self.org, mode_id, "CAUSED_BY") if not ff.get("removed")]
+        ff = fn = None
+        if ffs:
+            ff = self._ff_view(ffs[0])
+            fns = self.s.inn(self.org, ffs[0]["id"], "FAILS_AS")
+            fn = {"id": fns[0]["id"], "text": fns[0]["text"]} if fns else None
+        return {**self.rcm_mode(mode_id), "position": tasks["position"], "functional_failure": ff,
+                "function": fn, "available": tasks["available"]}
 
     def rcm_mode(self, mode_id: str) -> dict:
         fm = self._get(mode_id, "FailureMode")

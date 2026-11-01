@@ -614,12 +614,26 @@ and every row has the RCM's columns. Adding a function, failure or mode there
 adds a row to the tree. A position that isn't analysed (above) is marked "not
 analysed" in the tree.
 
+### Reading the RCM as an agent
+
+Besides `maintenance_get kind rcm` (a position, or its branch), two reads
+answer an agent's questions in one call: `maintenance_get kind failure_mode`
+(one mode by its id: decision with its evidence check, tasks, where it sits,
+and the tasks on its position or above it that could serve it too, as
+`GET /api/maintenance/failure-modes/{id}/tasks` lists them) and
+`maintenance_list kind rcm_gaps` (`rcm_graph.gaps`: modes undecided, with no
+task, hidden without a failure-finding task, or with evidence to check;
+functions, performance standards and functional failures with nothing under
+them; the whole workspace or one branch with `target_id`). The RCM reads over
+MCP list a mode's tasks once, on the mode, not again under its decision.
+
 ### Importing an FMEA / RCM worksheet onto a position
 
 `backend/maintenance/rcm_sheet.py` adds a worksheet (Excel or CSV, one row per
 failure mode) to one position's RCM: `POST
 /api/maintenance/positions/{id}/rcm/import/preview` (nothing written) and
-`…/rcm/import`, MCP `uploads import_excel target=rcm position_id`, and the
+`…/rcm/import`, MCP `uploads import_excel target=rcm position_id` (`dry_run`
+true: the preview), and the
 RCM tab's "Import worksheet…". The sheet is read and mapped by the worksheet
 parser (`services/rcm_import.build_tree`), and written through the
 service's methods (`add_function`, `add_functional_failure`,

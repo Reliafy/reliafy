@@ -200,12 +200,15 @@ test("a function's text is kept to 200 characters where it's typed; one saved lo
   await longRow.locator(".tt-tree").click();
   const panel = page.locator("aside.rw-panel");
   await expect(panel).toBeVisible();
-  await expect(panel.locator(".rw-flabel .char-count")).toHaveClass(/over/);
-  await expect(panel).toContainText("Keep it short. Put the performance standard in its own field.");
   // The heading: two lines at most, the whole text in its tooltip.
   const title = panel.locator(".rw-panel-title");
   await expect(title).toHaveAttribute("title", long);
   expect(await title.evaluate((h) => h.getBoundingClientRect().height)).toBeLessThan(50);
+  // The title is the description: editing it shows the same counter, red, and the nudge.
+  await panel.locator(".rw-title-btn").click();
+  await expect(panel.locator(".field-aside .char-count")).toHaveClass(/over/);
+  await expect(panel).toContainText("Keep it short. Put the performance standard in its own field.");
+  await page.keyboard.press("Escape");
   const after = await (await request.get(`${M}/rcm`)).json();
   const stored = after.positions.find((x) => x.id === p.pump.id).functions.find((f) => f.id === longFn.id);
   expect(stored.text).toBe(long);
@@ -232,13 +235,13 @@ test("offline, a save says so in plain words and keeps what was typed: the dialo
   await shot(page, "offline-1-add-function");
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
-  // A cell edited in place: it doesn't revert; the text stays, with the reason in the heading.
+  // A cell edited in place: it doesn't revert; the text stays, with the reason under the cell.
   const effects = basket.getByRole("gridcell").first();
   await effects.dblclick();
   const editor = basket.getByRole("textbox");
   await editor.fill(`Pump runs dry ${tag}`);
   await editor.press("Enter");
-  await expect(page.locator(".tt-msg.error")).toHaveText("Couldn't save. Check your connection and try again.");
+  await expect(page.locator(".rw-pop-under").getByRole("alert")).toHaveText("Couldn't save. Check your connection and try again.");
   await expect(editor).toHaveValue(`Pump runs dry ${tag}`);
   await expect(editor).toBeFocused();
   await shot(page, "offline-2-cell-edit");

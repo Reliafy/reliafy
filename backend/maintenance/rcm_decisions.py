@@ -93,6 +93,18 @@ RTF_BASIS_OPTIONS = [
 ]
 
 
+def advice(consequence, outcome) -> str | None:
+    """A word when a decision's outcome isn't one the classic RCM logic
+    suggests for its consequence (a hidden failure run to failure, a safety
+    one accepted): never a refusal, the analyst may have reasons."""
+    option = next((c for c in CONSEQUENCE_OPTIONS if c["id"] == consequence), None)
+    if option is None or not outcome or outcome in option["suggested_outcomes"]:
+        return None
+    usual = ", ".join(option["suggested_outcomes"])
+    return (f"{option['label']} consequences usually take {usual}. {option['hint']} If this decision stands, say why "
+            "in its notes.")
+
+
 def options() -> dict:
     """The decision vocabulary with its hints, for the decision dialog."""
     return {"consequences": CONSEQUENCE_OPTIONS, "outcomes": OUTCOME_OPTIONS, "rtf_bases": RTF_BASIS_OPTIONS}
@@ -152,8 +164,14 @@ def _clean_decision(decision) -> dict | None:
     if decision is None:
         return None
     outcome = decision.get("outcome")
+    if not outcome:
+        # A decision is replaced whole, so a change to one field still sends the rest.
+        raise RcmValidationError(
+            f"A decision needs its outcome: {', '.join(OUTCOMES)}. It replaces the whole decision, so send the "
+            "current one (outcome, task, interval) with your change."
+        )
     if outcome not in OUTCOMES:
-        raise RcmValidationError(f"Unknown outcome '{outcome}'.")
+        raise RcmValidationError(f"Unknown outcome '{outcome}': it's one of {', '.join(OUTCOMES)}.")
     cleaned = {"outcome": outcome}
 
     if outcome == "rtf":
@@ -237,7 +255,8 @@ def clean_tree(functions) -> list[dict]:
             for mode in failure.get("modes") or []:
                 consequence = mode.get("consequence") or None
                 if consequence is not None and consequence not in CONSEQUENCES:
-                    raise RcmValidationError(f"Unknown consequence '{consequence}'.")
+                    raise RcmValidationError(
+                        f"Unknown consequence '{consequence}': it's one of {', '.join(CONSEQUENCES)}.")
                 cleaned_mode = {
                     "id": _node_id(mode),
                     "text": _require_text(mode, "failure mode"),
