@@ -1,5 +1,5 @@
 """Several tasks per failure mode over MCP, the app's routes and the batch:
-maintenance_failure_modes add_task and decide with task_id, maintenance_tasks
+maintenance failure_modes.add_task and decide with task_id, maintenance tasks.…
 link / unlink and create with failure_mode_ids, their routes, and the batch's
 undo for each."""
 
@@ -15,30 +15,30 @@ M = "/api/maintenance"
 
 def test_over_mcp_a_mode_gets_several_tasks_and_a_task_several_modes(env):
     async def flow(client):
-        pool = _ok(await _do(client, "maintenance_positions", "create", name="Pool"))
-        cell = _ok(await _do(client, "maintenance_positions", "create", name="Chlorinator cell", parent_id=pool["id"]))
-        acid = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=pool["id"], text="Acid under-dosed"))
-        cya = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=pool["id"], text="Stabiliser low"))
-        salt = _ok(await _do(client, "maintenance_failure_modes", "add", position_id=cell["id"], text="Salinity low"))
-        decided = _ok(await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=acid["id"],
+        pool = _ok(await _do(client, "maintenance", "positions.create", name="Pool"))
+        cell = _ok(await _do(client, "maintenance", "positions.create", name="Chlorinator cell", parent_id=pool["id"]))
+        acid = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=pool["id"], text="Acid under-dosed"))
+        cya = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=pool["id"], text="Stabiliser low"))
+        salt = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=cell["id"], text="Salinity low"))
+        decided = _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=acid["id"],
                                 consequence="operational", decision={"outcome": "on_condition", "task": "Weekly pH check",
                                                                      "interval": 1, "interval_unit": "weeks"}))
-        second = _ok(await _do(client, "maintenance_failure_modes", "add_task", failure_mode_id=acid["id"],
+        second = _ok(await _do(client, "maintenance", "failure_modes.add_task", failure_mode_id=acid["id"],
                                name="Replace the acid pump", interval=24, unit="months", outcome="fixed_interval"))
-        linked = _ok(await _do(client, "maintenance_tasks", "link", task_id=decided["decision"]["task_id"],
+        linked = _ok(await _do(client, "maintenance", "tasks.link", task_id=decided["decision"]["task_id"],
                                failure_mode_id=salt["id"]))
-        adopted = _ok(await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=cya["id"],
+        adopted = _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=cya["id"],
                                 consequence="operational", decision={"outcome": "on_condition"},
                                 task_id=decided["decision"]["task_id"]))
-        refused = await _do(client, "maintenance_failure_modes", "decide", failure_mode_id=cya["id"],
+        refused = await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=cya["id"],
                             decision={"outcome": "on_condition", "task": "Weekly pH check", "interval": 2,
                                       "interval_unit": "weeks"})
-        made = _ok(await _do(client, "maintenance_tasks", "create", position_id=pool["id"], name="Shop water test",
+        made = _ok(await _do(client, "maintenance", "tasks.create", position_id=pool["id"], name="Shop water test",
                              interval=1, unit="months", failure_mode_ids=[cya["id"], salt["id"]]))
-        unlinked = _ok(await _do(client, "maintenance_tasks", "unlink", task_id=decided["decision"]["task_id"],
+        unlinked = _ok(await _do(client, "maintenance", "tasks.unlink", task_id=decided["decision"]["task_id"],
                                  failure_mode_id=salt["id"]))
         rcm = _ok(await _get(client, "rcm", pool["id"], scope="below"))
-        retired = _ok(await _do(client, "maintenance_failure_modes", "retire", failure_mode_id=acid["id"]))
+        retired = _ok(await _do(client, "maintenance", "failure_modes.retire", failure_mode_id=acid["id"]))
         return decided, second, linked, adopted, refused, made, unlinked, rcm, retired
 
     decided, second, linked, adopted, refused, made, unlinked, rcm, retired = _session(env["token"], flow)
@@ -59,7 +59,7 @@ def test_over_mcp_a_mode_gets_several_tasks_and_a_task_several_modes(env):
 
 def test_the_batch_undoes_a_link_with_an_unlink_and_an_added_task_with_a_retire(env):
     async def flow(client):
-        out = _ok(await client.call_tool("maintenance_apply", {"operations": [
+        out = _ok(await client.call_tool("maintenance", {"action": "apply", "operations": [
             {"ref": "p", "do": "positions.create", "args": {"name": "Pool"}},
             {"ref": "a", "do": "failure_modes.add", "args": {"position_id": "@p", "text": "Acid under-dosed"}},
             {"ref": "b", "do": "failure_modes.add", "args": {"position_id": "@p", "text": "Stabiliser low"}},

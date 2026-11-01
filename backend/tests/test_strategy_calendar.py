@@ -334,7 +334,7 @@ def test_routes(session, monkeypatch):
     assert client.post("/api/strategy/calendar-replacement", json=_inputs()).status_code == 401
 
 
-# ---- MCP: strategy calendar_replacement / next_replacement -----------------------------------------
+# ---- MCP: analyse calendar_replacement / next_replacement -----------------------------------------
 
 from backend.tests.test_mcp_plans import FREE, PRO, _call, env  # noqa: E402,F401
 from backend.tests.test_mcp import _ok  # noqa: E402
@@ -346,20 +346,20 @@ MCP_SHUTS = [{"name": "shut", "cost": 100, "every": 180, "every_unit": "days", "
 def test_mcp_calendar_replacement_and_next_replacement(env):
     args = {"action": "calendar_replacement", "distribution_id": "weibull", "params": BEARING, "unit": "days",
             "shuts": MCP_SHUTS, "failure_cost": 400, "anytime_cost": 150, "today": TODAY}
-    out = _ok(_call(env.oauth[PRO], "strategy", args))
+    out = _ok(_call(env.oauth[PRO], "analyse", args))
     assert out["cost_rate"] == pytest.approx(0.9903, abs=1e-4) and out["method"] == "dp"
     assert out["schedule"] and all(r["chance"] >= 1e-3 for r in out["schedule"]) and "schedule_note" in out
     assert "shut" in out["rule"][0]["text"]
     # Free gets the exact answer; sampling is Pro, so a Free call is answered exactly, with a note.
-    free = _ok(_call(env.oauth[FREE], "strategy", {**args, "method": "sampling"}))
+    free = _ok(_call(env.oauth[FREE], "analyse", {**args, "method": "sampling"}))
     assert free["method"] == "dp" and "part of Pro" in free["pro_note"]
-    nxt = _ok(_call(env.oauth[PRO], "strategy", {**{k: v for k, v in args.items() if k != "action"},
+    nxt = _ok(_call(env.oauth[PRO], "analyse", {**{k: v for k, v in args.items() if k != "action"},
                                                   "action": "next_replacement", "age": 200}))
     assert nxt["best"]["kind"] == "outage" and nxt["replace_from_age"] == pytest.approx(263.9, abs=0.1)
     # A saved model brings its unit.
-    saved = _ok(_call(env.oauth[PRO], "models", {"action": "save", "name": "Bearing", "distribution": "weibull",
+    saved = _ok(_call(env.oauth[PRO], "change", {"action": "model_save", "name": "Bearing", "distribution": "weibull",
                                                   "params": BEARING, "unit": "days"}))
-    by_id = _ok(_call(env.oauth[PRO], "strategy", {"action": "calendar_replacement", "model_id": saved["model_id"],
+    by_id = _ok(_call(env.oauth[PRO], "analyse", {"action": "calendar_replacement", "model_id": saved["model_id"],
                                                    "shuts": MCP_SHUTS, "failure_cost": 400, "anytime_cost": 150,
                                                    "today": TODAY}))
     assert by_id["cost_rate"] == pytest.approx(out["cost_rate"], rel=1e-12) and by_id["unit"] == "Days"

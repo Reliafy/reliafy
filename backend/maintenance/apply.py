@@ -1,4 +1,4 @@
-"""``maintenance_apply``: many changes to the maintenance tree in one call.
+"""``maintenance apply``: many changes to the maintenance tree in one call.
 
 A batch is a list of the write actions the typed ``maintenance_<area>`` tools
 already have (``{"do": "failure_modes.add", "args": {...}}``), run in order.
@@ -223,7 +223,7 @@ def parse(operations, tables: dict) -> list[dict]:
         if not isinstance(args, dict):
             raise BatchRefused(f"{at} ({do}): args is an object of the action's arguments.")
         if do == "attachments.add_document" and args.get("upload_id"):
-            raise BatchRefused(f"{at} ({do}): a PDF (upload_id) goes through maintenance_attachments add_document "
+            raise BatchRefused(f"{at} ({do}): a PDF (upload_id) goes through maintenance attachments.add_document "
                                "on its own; in a batch, add a link (url).")
         ref = op.get("ref")
         if ref is not None:
@@ -512,7 +512,7 @@ def summarise(ops: list[dict], passed: dict, dry: bool, events: int) -> dict:
         "failed": {k: failed[k] for k in ("index", "do", "error", "needs_choice") if k in failed} if failed else None,
         "skipped": sum(1 for r in results if r["status"] == "skipped"),
         "counts": counts, "events": events, "results": shown,
-        # The reverse of what ran, newest first: send it back through maintenance_apply to undo.
+        # The reverse of what ran, newest first: send it back through maintenance apply to undo.
         "undo": list(reversed(undo)), "irreversible": irreversible,
         **({"results_cut": "Over 50 operations: each result is cut to its id and name; read records back with "
                            "maintenance_get."} if cut else {}),

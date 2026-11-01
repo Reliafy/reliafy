@@ -205,13 +205,13 @@ a generic estimate, so a block never presents it as the user's own data.
 A combination that can't convert (a rate as a per-demand probability, a
 calendar rate as running hours without the hours a year, a handbook rate
 without an environment or in one the handbook gives no factor for) raises
-`ConversionError`, saying what to give or use instead. `library get` (and
+`ConversionError`, saying what to give or use instead. `get kind library_record` (and
 `GET /api/library/records/{id}`) takes `environment` too; without it, a
 handbook record's `environments` lists the rate in each.
 
 ## Plans
 
-Library lookups (`library search`, `get` and `sources`) are never counted
+Library lookups (`list kind library`, `get` and `sources`) are never counted
 against the Free plan's monthly tool calls, or any other plan's allowance:
 they're published reference data, readable without an account at
 `/api/library`, not calculations.

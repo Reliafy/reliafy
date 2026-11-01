@@ -11,7 +11,6 @@ import pytest
 
 from backend.tests.test_maintenance_mcp import _do, _get, _list, _ok, _session, env  # noqa: F401
 
-FM = "maintenance_failure_modes"
 
 
 def _err(result) -> str:
@@ -20,7 +19,7 @@ def _err(result) -> str:
 
 
 async def _apply(client, operations, **more):
-    return await client.call_tool("maintenance_apply", {"operations": operations, **more})
+    return await client.call_tool("maintenance", {"action": "apply", "operations": operations, **more})
 
 
 async def _pump_rcm(client) -> dict:
@@ -28,67 +27,67 @@ async def _pump_rcm(client) -> dict:
     pump with a run-hours counter, and Pump A's RCM built one call at a time, as
     an agent would, each id taken from the answer before."""
     ids = {}
-    ids["sys"] = _ok(await _do(client, "maintenance_positions", "create", name="Cooling water system"))["id"]
+    ids["sys"] = _ok(await _do(client, "maintenance", "positions.create", name="Cooling water system"))["id"]
     for key, name in (("a", "Pump A"), ("b", "Pump B")):
-        ids[key] = _ok(await _do(client, "maintenance_positions", "create", name=name, parent_id=ids["sys"],
+        ids[key] = _ok(await _do(client, "maintenance", "positions.create", name=name, parent_id=ids["sys"],
                                  position_class="CW pump"))["id"]
-        point = _ok(await _do(client, "maintenance_measurements", "add_point", position_id=ids[key],
+        point = _ok(await _do(client, "maintenance", "measurements.add_point", position_id=ids[key],
                               name="Run hours", kind="counter", unit="hours"))
         ids[f"hours_{key}"] = point["id"]
-        _ok(await _do(client, "maintenance_measurements", "record", point_id=point["id"], value=12000,
+        _ok(await _do(client, "maintenance", "measurements.record", point_id=point["id"], value=12000,
                       on="2026-10-01"))
-    fn = _ok(await _do(client, FM, "add_function", position_id=ids["a"],
+    fn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=ids["a"],
                        text="Pump cooling water to the heat exchangers"))
     ids["fn"] = fn["id"]
-    flow = _ok(await _do(client, FM, "add_standard", function_id=fn["id"], text="At least 40 L/s", parameter="flow",
+    flow = _ok(await _do(client, "maintenance", "failure_modes.add_standard", function_id=fn["id"], text="At least 40 L/s", parameter="flow",
                          comparator=">=", value=40, unit="L/s", when="while the plant runs"))
-    pressure = _ok(await _do(client, FM, "add_standard", function_id=fn["id"], text="Discharge 5.5 to 6.5 bar",
+    pressure = _ok(await _do(client, "maintenance", "failure_modes.add_standard", function_id=fn["id"], text="Discharge 5.5 to 6.5 bar",
                              parameter="discharge pressure", comparator="between", value="5.5-6.5", unit="bar",
                              source="Design basis DB-12"))
     ids["flow"], ids["pressure"] = flow["id"], pressure["id"]
-    ids["low_flow"] = _ok(await _do(client, FM, "add_functional_failure", function_id=fn["id"],
+    ids["low_flow"] = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=fn["id"],
                                     text="Flow below 40 L/s", standard_id=flow["id"]))["id"]
-    ids["bad_pressure"] = _ok(await _do(client, FM, "add_functional_failure", function_id=fn["id"],
+    ids["bad_pressure"] = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=fn["id"],
                                         text="Pressure outside 5.5-6.5 bar", standard_id=pressure["id"]))["id"]
-    ids["no_flow"] = _ok(await _do(client, FM, "add_functional_failure", function_id=fn["id"],
+    ids["no_flow"] = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=fn["id"],
                                    text="No flow at all"))["id"]
-    impeller = _ok(await _do(client, FM, "add", position_id=ids["a"], functional_failure_id=ids["low_flow"],
+    impeller = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=ids["a"], functional_failure_id=ids["low_flow"],
                              text="Impeller worn"))
     ids["impeller"] = impeller["id"]
-    _ok(await _do(client, FM, "update", failure_mode_id=impeller["id"],
+    _ok(await _do(client, "maintenance", "failure_modes.update", failure_mode_id=impeller["id"],
                   effects="Flow falls slowly; the exchanger outlet runs hot."))
-    _ok(await _do(client, FM, "decide", failure_mode_id=impeller["id"], consequence="operational",
+    _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=impeller["id"], consequence="operational",
                   decision={"outcome": "on_condition", "task": "Check flow against the pump curve", "interval": 3,
                             "interval_unit": "months"}))
-    bearing = _ok(await _do(client, FM, "add", position_id=ids["a"], functional_failure_id=ids["no_flow"],
+    bearing = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=ids["a"], functional_failure_id=ids["no_flow"],
                             text="Bearing seized"))
     ids["bearing"] = bearing["id"]
-    decided = _ok(await _do(client, FM, "decide", failure_mode_id=bearing["id"], consequence="operational",
+    decided = _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=bearing["id"], consequence="operational",
                             decision={"outcome": "fixed_interval", "task": "Replace bearings", "interval": 20000,
                                       "interval_unit": "hours"}))
     ids["replace"] = decided["decision"]["task_id"]
-    ids["vibration"] = _ok(await _do(client, FM, "add_task", failure_mode_id=bearing["id"], name="Vibration check",
+    ids["vibration"] = _ok(await _do(client, "maintenance", "failure_modes.add_task", failure_mode_id=bearing["id"], name="Vibration check",
                                      interval=1, unit="months", outcome="on_condition"))["id"]
-    relief = _ok(await _do(client, FM, "add", position_id=ids["a"], functional_failure_id=ids["bad_pressure"],
+    relief = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=ids["a"], functional_failure_id=ids["bad_pressure"],
                            text="Relief valve stuck shut"))
     ids["relief"] = relief["id"]
-    ids["relief_decided"] = _ok(await _do(client, FM, "decide", failure_mode_id=relief["id"], consequence="hidden",
+    ids["relief_decided"] = _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=relief["id"], consequence="hidden",
                                           decision={"outcome": "rtf", "rtf_basis": "random"}))
-    ids["seal"] = _ok(await _do(client, FM, "add", position_id=ids["a"], text="Seal leaks"))["id"]
+    ids["seal"] = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=ids["a"], text="Seal leaks"))["id"]
     # The motor inside the pump, and the system above it, linked by cause.
-    ids["motor"] = _ok(await _do(client, "maintenance_positions", "create", name="Motor A", parent_id=ids["a"]))["id"]
-    mfn = _ok(await _do(client, FM, "add_function", position_id=ids["motor"], text="Drive the pump at 1480 rpm"))
-    ids["motor_stops"] = _ok(await _do(client, FM, "add_functional_failure", function_id=mfn["id"],
+    ids["motor"] = _ok(await _do(client, "maintenance", "positions.create", name="Motor A", parent_id=ids["a"]))["id"]
+    mfn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=ids["motor"], text="Drive the pump at 1480 rpm"))
+    ids["motor_stops"] = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=mfn["id"],
                                        text="Motor doesn't turn"))["id"]
-    winding = _ok(await _do(client, FM, "add", position_id=ids["motor"], functional_failure_id=ids["motor_stops"],
+    winding = _ok(await _do(client, "maintenance", "failure_modes.add", position_id=ids["motor"], functional_failure_id=ids["motor_stops"],
                             text="Winding insulation fails"))
-    _ok(await _do(client, FM, "decide", failure_mode_id=winding["id"], consequence="operational",
+    _ok(await _do(client, "maintenance", "failure_modes.decide", failure_mode_id=winding["id"], consequence="operational",
                   decision={"outcome": "on_condition", "task": "Insulation resistance test", "interval": 12,
                             "interval_unit": "months"}))
-    sfn = _ok(await _do(client, FM, "add_function", position_id=ids["sys"], text="Supply cooling water to the plant",
+    sfn = _ok(await _do(client, "maintenance", "failure_modes.add_function", position_id=ids["sys"], text="Supply cooling water to the plant",
                         standard="Supply below 30 °C; at least 80 L/s\nNo leaks to the drain"))
     ids["sfn"] = sfn["id"]
-    ids["no_water"] = _ok(await _do(client, FM, "add_functional_failure", function_id=sfn["id"],
+    ids["no_water"] = _ok(await _do(client, "maintenance", "failure_modes.add_functional_failure", function_id=sfn["id"],
                                     text="No cooling water"))["id"]
     return ids
 
@@ -96,11 +95,11 @@ async def _pump_rcm(client) -> dict:
 def test_an_agent_builds_reads_and_questions_a_pumps_rcm(env):
     async def flow(client):
         ids = await _pump_rcm(client)
-        wrong_way = await _do(client, FM, "link_cause", functional_failure_id=ids["motor_stops"],
+        wrong_way = await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=ids["motor_stops"],
                               cause_id=ids["no_flow"])
-        linked = _ok(await _do(client, FM, "link_cause", functional_failure_id=ids["no_flow"],
+        linked = _ok(await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=ids["no_flow"],
                                cause_id=ids["motor_stops"]))
-        up = _ok(await _do(client, FM, "link_cause", functional_failure_id=ids["no_water"], cause_id=ids["no_flow"]))
+        up = _ok(await _do(client, "maintenance", "failure_modes.link_cause", functional_failure_id=ids["no_water"], cause_id=ids["no_flow"]))
         rcm = _ok(await _get(client, "rcm", ids["a"], scope="this"))
         mode = _ok(await _get(client, "failure_mode", ids["bearing"]))
         impeller = _ok(await _get(client, "failure_mode", ids["impeller"]))
@@ -152,7 +151,7 @@ def test_an_agent_builds_reads_and_questions_a_pumps_rcm(env):
 def test_an_agent_moves_a_mode_whose_task_counts_hours_and_undoes_it(env):
     async def flow(client):
         ids = await _pump_rcm(client)
-        asked = await _do(client, FM, "move", failure_mode_id=ids["bearing"], position_id=ids["b"])
+        asked = await _do(client, "maintenance", "failure_modes.move", failure_mode_id=ids["bearing"], position_id=ids["b"])
         batch = _ok(await _apply(client, [{"do": "failure_modes.move", "args": {
             "failure_mode_id": ids["bearing"], "position_id": ids["b"]}}]))
         moved = _ok(await _apply(client, [{"do": "failure_modes.move", "args": {
@@ -161,12 +160,12 @@ def test_an_agent_moves_a_mode_whose_task_counts_hours_and_undoes_it(env):
         there = _ok(await _get(client, "task_measurement", ids["replace"]))
         back = _ok(await _apply(client, moved["undo"]))
         home = _ok(await _get(client, "task_measurement", ids["replace"]))
-        kept = _ok(await _do(client, FM, "move", failure_mode_id=ids["bearing"], position_id=ids["b"],
+        kept = _ok(await _do(client, "maintenance", "failure_modes.move", failure_mode_id=ids["bearing"], position_id=ids["b"],
                              measurement={"choice": "keep"}))
         kept_counts = _ok(await _get(client, "task_measurement", ids["replace"]))
-        _ok(await _do(client, FM, "move", failure_mode_id=ids["bearing"], position_id=ids["a"],
+        _ok(await _do(client, "maintenance", "failure_modes.move", failure_mode_id=ids["bearing"], position_id=ids["a"],
                       functional_failure_id=ids["no_flow"]))
-        _ok(await _do(client, FM, "move", failure_mode_id=ids["bearing"], position_id=ids["b"],
+        _ok(await _do(client, "maintenance", "failure_modes.move", failure_mode_id=ids["bearing"], position_id=ids["b"],
                       measurement={"choice": "calendar", "interval": 24, "unit": "months"}))
         by_calendar = _ok(await _get(client, "task_measurement", ids["replace"]))
         return ids, asked, batch, moved, there, back, home, kept, kept_counts, by_calendar
@@ -190,13 +189,13 @@ def test_an_agent_moves_a_mode_whose_task_counts_hours_and_undoes_it(env):
 def test_an_agent_rearranges_performance_standards(env):
     async def flow(client):
         ids = await _pump_rcm(client)
-        proposal = _ok(await _do(client, FM, "split_standard", function_id=ids["sfn"]))
-        stray = await _do(client, FM, "split_standard", function_id=ids["sfn"], dry_run=False,
+        proposal = _ok(await _do(client, "maintenance", "failure_modes.split_standard", function_id=ids["sfn"]))
+        stray = await _do(client, "maintenance", "failure_modes.split_standard", function_id=ids["sfn"], dry_run=False,
                           standards=[{"text": "Supply below 30 °C", "limit": 30}])
-        split = _ok(await _do(client, FM, "split_standard", function_id=ids["sfn"], dry_run=False, standards=[
+        split = _ok(await _do(client, "maintenance", "failure_modes.split_standard", function_id=ids["sfn"], dry_run=False, standards=[
             {"text": "Supply below 30 °C", "parameter": "supply temperature", "comparator": "<", "value": 30,
              "unit": "°C"}, {"text": "At least 80 L/s"}, {"text": "No leaks to the drain"}]))
-        order = _ok(await _do(client, FM, "reorder_standards", function_id=ids["fn"],
+        order = _ok(await _do(client, "maintenance", "failure_modes.reorder_standards", function_id=ids["fn"],
                               standard_ids=[ids["pressure"], ids["flow"]]))
         # What dragging a performance standard does: it and the functional failure breaching it, in one batch.
         carried = _ok(await _apply(client, [
@@ -234,7 +233,7 @@ def test_an_agent_retires_restores_and_undoes(env):
         unconfirmed = await _apply(client, [{"do": "failure_modes.retire", "args": {"failure_mode_id": ids["bearing"]}}])
         retired = _ok(await _apply(client, [{"do": "failure_modes.retire", "args": {
             "failure_mode_id": ids["bearing"]}, "confirm": "Bearing seized"}], dry_run=False))
-        gone = await _do(client, FM, "update", failure_mode_id=ids["bearing"], notes="x")
+        gone = await _do(client, "maintenance", "failure_modes.update", failure_mode_id=ids["bearing"], notes="x")
         restored = _ok(await _apply(client, retired["undo"]))
         mode = _ok(await _get(client, "failure_mode", ids["bearing"]))
         linked = _ok(await _apply(client, [{"do": "failure_modes.link_cause", "args": {
@@ -261,18 +260,18 @@ def test_refusals_say_what_to_do_next(env):
     async def flow(client):
         ids = await _pump_rcm(client)
         return ids, [await call for call in (
-            _do(client, FM, "add_standard", function_id=ids["low_flow"], text="x"),
-            _do(client, FM, "add_functional_failure", function_id="no-such-id", text="x"),
+            _do(client, "maintenance", "failure_modes.add_standard", function_id=ids["low_flow"], text="x"),
+            _do(client, "maintenance", "failure_modes.add_functional_failure", function_id="no-such-id", text="x"),
             _get(client, "rcm", ids["fn"]),
-            _do(client, FM, "decide", failure_mode_id=ids["impeller"], decision={"evidence": {
+            _do(client, "maintenance", "failure_modes.decide", failure_mode_id=ids["impeller"], decision={"evidence": {
                 "type": "model", "id": "m1"}}),
-            _do(client, FM, "decide", failure_mode_id=ids["impeller"], consequence="economic"),
+            _do(client, "maintenance", "failure_modes.decide", failure_mode_id=ids["impeller"], consequence="economic"),
         )]
 
     ids, (as_ff, nothing, fn_as_position, no_outcome, bad_consequence) = _session(env["token"], flow)
     assert _err(as_ff).endswith(f"Not found: no function with id {ids['low_flow']} in your maintenance workspace. "
                                 f"{ids['low_flow']} is a functional failure (functional_failure_id).")
-    assert "RCM ids are in maintenance_get kind rcm" in _err(nothing)
+    assert "RCM ids are in maintenance get.rcm" in _err(nothing)
     assert f"{ids['fn']} is a function (function_id)" in _err(fn_as_position)
     assert "needs its outcome: on_condition, fixed_interval" in _err(no_outcome)
     assert "send the current one" in _err(no_outcome)
@@ -282,7 +281,7 @@ def test_refusals_say_what_to_do_next(env):
 @pytest.mark.parametrize("topic", ["plan"])
 def test_the_guide_walks_an_agent_through_the_rcm(env, topic):
     async def flow(client):
-        return _ok(await client.call_tool("maintenance_guide", {"topic": topic}))
+        return _ok(await client.call_tool("maintenance", {"action": "guide", "topic": topic}))
 
     page = _session(env["token"], flow)["guide"]
     for words in ("RCM, step by step", "add_standard for each performance standard", "rcm_gaps",
@@ -296,7 +295,7 @@ def test_rcm_gaps_say_why_evidence_needs_a_look(env):
     samples.seed_samples(env["db"])  # the sample truck's decisions link sample models
 
     async def flow(client):
-        _ok(await _do(client, "maintenance_positions", "add_sample_truck"))
+        _ok(await _do(client, "maintenance", "positions.add_sample_truck"))
         return _ok(await _list(client, "rcm_gaps"))
 
     gaps = _session(env["token"], flow)

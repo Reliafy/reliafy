@@ -185,5 +185,5 @@ parallel are a weaker pair than two new ones, and the diagram now shows it. See
   quadratic path).
 - **Download as Python**, in the page's **⋯** menu, gives a script that refits the model with
   [SurPyval](https://github.com/derrynknife/SurPyval) from the same data.
-- **Over the API**, `datasets add_measurements` puts the readings on a dataset
-  and `models fit_joint` takes its `dataset_id`; see [the API](/api-docs).
+- **Over the API**, `change dataset_add_measurements` puts the readings on a dataset
+  and `change model_fit_joint` takes its `dataset_id`; see [the API](/api-docs).

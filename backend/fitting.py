@@ -3022,7 +3022,7 @@ def _raw_covariates(model, covariates: Optional[list]) -> list:
 
 
 REGRESSION_METRICS_NOTE = (
-    "Regression model: life metrics depend on the covariates; use life_data_analysis reliability_at with "
+    "Regression model: life metrics depend on the covariates; use analyse reliability_at with "
     "covariates, or the model's covariate means.")
 
 

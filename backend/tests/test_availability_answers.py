@@ -1,4 +1,4 @@
-"""The repairable rbd_analysis analyze answer an agent reads (#184, #185, #186).
+"""The repairable analyse rbd answer an agent reads (#184, #185, #186).
 
 The CW pump train of the agent test drive: an MCC, a strainer with block PM,
 a 1+1 cold standby pair on a Weibull life and a check valve, with one repair
@@ -53,14 +53,14 @@ def _sif(beta=0.05):
 
 
 def _saved(env, graph):
-    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Diagram", "repairable": True,
+    rid = _ok(_call(env.token[A], "change", {"action": "rbd_create", "name": "Diagram", "repairable": True,
                                                  "stages": REPAIRABLE_STAGES}))["id"]
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
     return rid
 
 
 def _analyze(env, rid, **kw):
-    return _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, **kw}))
+    return _ok(_call(env.token[A], "analyse", {"action": "rbd", "rbd_id": rid, **kw}))
 
 
 # ---- #184: simulate=false on a simulation-only diagram says so --------------------------
@@ -77,10 +77,9 @@ def test_simulation_only_diagram_without_the_simulation_is_not_available(env):
 def test_analyze_rbd_description_documents_the_needs_simulation_answer(env):
     """The tool description tells an agent what the #184 answer looks like
     and what to do with it."""
-    from backend.tests.test_mcp import _run
+    from backend.mcp_server import action_schema
 
-    tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    text = " ".join(tools["rbd_analysis"].description.split())
+    text = action_schema("analyse.rbd")["does"]
     assert "simulate=false" in text and "available=false" in text
     assert "needs_simulation=true, code 'needs_simulation'" in text
     assert "call again with simulate=true" in text and "export_python" in text

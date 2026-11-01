@@ -8,6 +8,7 @@ optional arguments, what it does). "Required" means not null; anything else a
 call gives must be one of the optional ones. Every other argument of such a
 tool defaults to null, so a call carries only what its action takes."""
 
+import re
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
@@ -31,17 +32,29 @@ def check(selector: str, value: str, table: Table, args: dict[str, Any]) -> dict
     return given
 
 
-def describe(intro: str, selector: str, table: Table, defaults: dict[str, dict[str, str]] | None = None) -> str:
+_SENTENCE = re.compile(r"^(.+?(?<!\be\.g)(?<!\bi\.e)(?<!\bvs)[.?!])(?:\s|$)")
+
+
+def first_sentence(text: str) -> str:
+    """An action's line, cut to its first sentence (the rest is in
+    guide(action=…) and the REST spec)."""
+    text = " ".join(text.split())
+    m = _SENTENCE.match(text)
+    return m.group(1) if m else text
+
+
+def describe(intro: str, selector: str, table: Table, defaults: dict[str, dict[str, str]] | None = None,
+             brief: bool = False) -> str:
     """A tool's description: what it's for, then every action with what it
     takes (``defaults``: an optional argument's default, by action, shown as
-    ``name?=default``)."""
+    ``name?=default``). ``brief``: each action's first sentence only."""
     lines = [" ".join(intro.split()), "",
              f"{selector} values, each with its arguments (? = optional) and when to use it:"]
     for value, (required, optional, text) in table.items():
         shown = (defaults or {}).get(value) or {}
         args = ", ".join([*required.split(),
                           *(o + "?" + (f"={shown[o]}" if o in shown else "") for o in optional.split())])
-        lines.append(f"- {value}({args}): {' '.join(text.split())}")
+        lines.append(f"- {value}({args}): {first_sentence(text) if brief else ' '.join(text.split())}")
     return "\n".join(lines)
 
 

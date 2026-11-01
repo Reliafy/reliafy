@@ -440,10 +440,10 @@ def test_mcp_fleet_alert_tools(env):
     fid = _mcp_fleet(env)
     a, b = env.token["user-a"], env.token["user-b"]
 
-    created = _ok(_call(a, "fleet", {"action": "create_alert", "fleet_id": fid, "kind": "within", "x": 0.5,
+    created = _ok(_call(a, "change", {"action": "fleet_create_alert", "fleet_id": fid, "kind": "within", "x": 0.5,
                                      "y_periods": 3}))
     assert created["alert"]["kind"] == "within" and created["url"].endswith(f"/forecasts/{fid}#alerts")
-    bad = _call(a, "fleet", {"action": "create_alert", "fleet_id": fid, "kind": "within", "x": 0.5, "y_periods": 7})
+    bad = _call(a, "change", {"action": "fleet_create_alert", "fleet_id": fid, "kind": "within", "x": 0.5, "y_periods": 7})
     assert bad.is_error and "horizon" in bad.content[0].text
 
     listed = _ok(_call(a, "list", {"kind": "fleet_alerts", "fleet_id": fid}))
@@ -452,7 +452,7 @@ def test_mcp_fleet_alert_tools(env):
 
     # Another user: the fleet doesn't exist for them.
     assert _call(b, "list", {"kind": "fleet_alerts", "fleet_id": fid}).is_error
-    assert _call(b, "fleet", {"action": "create_alert", "fleet_id": fid, "kind": "above", "threshold": 1}).is_error
+    assert _call(b, "change", {"action": "fleet_create_alert", "fleet_id": fid, "kind": "above", "threshold": 1}).is_error
     assert env.db.fleet_alerts.count_documents({}) == 1
 
 

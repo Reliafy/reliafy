@@ -4,7 +4,7 @@
 
     rf = Client(token="rlf_...")                       # or RELIAFY_TOKEN / reliafy login
     rf.call("list", "models")                          # any tool action: POST /api/v1/list/models
-    rf.call("life_data_analysis", "fit", data=[120, 340, 510], censored=[0, 0, 1])
+    rf.call("analyse", "fit", data=[120, 340, 510], censored=[0, 0, 1])
     rf.call("guide", topic="life_data")                # a tool without actions
 
 Every Reliafy MCP tool action is callable with :meth:`Client.call`, with the
@@ -201,16 +201,17 @@ class Client:
             save_as: str | None = None, **args) -> dict:
         """Fit a life distribution to inline ``data`` (with ``censored`` flags:
         0 failed, 1 still running) or a saved ``dataset_id``. ``save_as``
-        names and saves the model (``models fit``); without it nothing is saved."""
+        names and saves the model (``change model_fit``); without it nothing
+        is saved."""
         if save_as:
-            return self.call("models", "fit", name=save_as, data=data, distribution=distribution,
+            return self.call("change", "model_fit", name=save_as, data=data, distribution=distribution,
                              censored=censored, dataset_id=dataset_id, **args)
-        return self.call("life_data_analysis", "fit", data=data, distribution=distribution,
+        return self.call("analyse", "fit", data=data, distribution=distribution,
                          censored=censored, dataset_id=dataset_id, **args)
 
     def reliability(self, model_id: str, times, **args) -> dict:
         """Reliability (and more) of a saved model at times."""
-        return self.call("life_data_analysis", "reliability_at", model_id=model_id,
+        return self.call("analyse", "reliability_at", model_id=model_id,
                          times=list(times) if isinstance(times, (list, tuple)) else [times], **args)
 
     def guide(self, topic: str | None = None) -> dict:
@@ -218,23 +219,23 @@ class Client:
 
     def apply(self, operations: list, *, dry_run: bool | None = None, on_error: str | None = None,
               idempotency_key: str | None = None) -> dict:
-        """Many Reliafy Maintenance changes in one call (``maintenance_apply``):
+        """Many Reliafy Maintenance changes in one call (``maintenance apply``):
         a list of ``{"do": "<area>.<action>", "args": {...}, "ref"?: "p",
         "confirm"?: "name"}`` run in order, checked first; ``"@p"`` in a later
         argument is op p's id. ``dry_run`` reports what would happen (the
         default when the batch deletes or has over 25 operations)."""
-        return self.call("maintenance_apply", operations=list(operations), dry_run=dry_run, on_error=on_error,
+        return self.call("maintenance", "apply", operations=list(operations), dry_run=dry_run, on_error=on_error,
                          idempotency_key=idempotency_key)
 
     # ---- files (REST only: MCP can't carry bytes) -----------------------------
 
     def upload_file(self, path: str, purpose: str) -> dict:
-        """Send a file to Reliafy without reading it into memory: ``uploads
-        create``, then the file streamed to the single-use link. Returns the
+        """Send a file to Reliafy without reading it into memory: ``change
+        upload_create``, then the file streamed to the single-use link. Returns the
         upload (``upload_id``…), ready to import. ``purpose``: dataset,
         excel, rbd_import, outage_log or document (a PDF)."""
         size = os.path.getsize(path)
-        link = self.call("uploads", "create", purpose=purpose, filename=os.path.basename(path), size_bytes=size)
+        link = self.call("change", "upload_create", purpose=purpose, filename=os.path.basename(path), size_bytes=size)
         last: ReliafyError | None = None
         urls = [u for u in (link["url"], link.get("url_fallback")) if u]
         # The links are only used when one of them is on this server (its fast
@@ -261,29 +262,29 @@ class Client:
     def upload_dataset(self, path: str, name: str | None = None, sheet: str | None = None, **args) -> dict:
         """Upload a CSV or .xlsx file as a dataset."""
         up = self.upload_file(path, "dataset")
-        return self.call("datasets", "upload", upload_id=up["upload_id"],
+        return self.call("change", "dataset_upload", upload_id=up["upload_id"],
                          name=name or os.path.splitext(os.path.basename(path))[0], sheet=sheet, **args)
 
     def add_measurements(self, dataset_id: str, path: str, sheet: str | None = None, **args) -> dict:
         """Add a CSV or .xlsx file of readings (unit id, age since new, value)
-        to a dataset as its measurements, or replace them (``datasets
-        add_measurements``)."""
+        to a dataset as its measurements, or replace them (``change
+        dataset_add_measurements``)."""
         up = self.upload_file(path, "dataset")
-        return self.call("datasets", "add_measurements", dataset_id=dataset_id, upload_id=up["upload_id"],
+        return self.call("change", "dataset_add_measurements", dataset_id=dataset_id, upload_id=up["upload_id"],
                          sheet=sheet, **args)
 
     def import_rbd(self, path: str, **args) -> dict:
         """Import a diagram file (BlockSim .rsgz/.rsr, Open-PSA .xml, Galileo
         .dft, RePyability .json) as RBDs."""
         up = self.upload_file(path, "rbd_import")
-        return self.call("uploads", "import_rbd", upload_id=up["upload_id"], **args)
+        return self.call("change", "import_rbd", upload_id=up["upload_id"], **args)
 
     def import_excel(self, path: str, **args) -> dict:
         """Import an .xlsx workbook (a data sheet, an RCM/FMEA worksheet or
         Reliafy's RBD template): see the uploads guide for the arguments. An
         RCM worksheet needs ``target="rcm", position_id=…``."""
         up = self.upload_file(path, "excel")
-        return self.call("uploads", "import_excel", upload_id=up["upload_id"], **args)
+        return self.call("change", "import_excel", upload_id=up["upload_id"], **args)
 
     def add_photo(self, path: str, target_id: str, caption: str | None = None) -> dict:
         """Add a photo (JPEG, PNG, HEIC, …) to a maintenance position, item,
@@ -305,13 +306,13 @@ class Client:
         manual, datasheet, invoice, drawing, certificate or other. Reliafy
         Maintenance only."""
         up = self.upload_file(path, "document")
-        return self.call("maintenance_attachments", "add_document", upload_id=up["upload_id"], target_id=target_id,
+        return self.call("maintenance", "attachments.add_document", upload_id=up["upload_id"], target_id=target_id,
                          position_class=position_class, title=title, kind=kind)
 
     def download_document(self, document_id: str, path: str | None = None) -> str:
         """Save a PDF kept in Reliafy Maintenance to ``path`` (default: its own
         file name, in the current folder). Returns the path written."""
-        doc = self.call("maintenance_get", "document", id=document_id)
+        doc = self.call("maintenance", "get.document", id=document_id)
         url = doc.get("download_url")
         if not url:
             raise ReliafyError("That document is a link, not a stored PDF: open its url instead.")
