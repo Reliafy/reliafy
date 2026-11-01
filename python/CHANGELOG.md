@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- RCM for agents. `maintenance_get kind failure_mode` reads one failure mode by
+  its id: its decision with the evidence check, its tasks, where it sits
+  (position, function, functional failure) and `available`, the tasks on its
+  position or above it it could share. `maintenance_list kind rcm_gaps` says
+  what an RCM still lacks (modes with no decision or no task, hidden failures
+  with no failure-finding task, evidence to check, and functions, performance
+  standards and functional failures with nothing under them), for the whole
+  workspace or a branch (`target_id`). `uploads import_excel target=rcm` takes
+  `dry_run` true for a preview; a `mapping` of only `consequence_map` /
+  `outcome_map` keeps the guessed column mapping. `split_standard` keeps each
+  line's structured limit (`parameter`, `comparator`, `value`, `unit`).
+  `maintenance_apply` undoes `link_cause` / `unlink_cause`; their results say
+  `changed`. `decide` answers with `advice` when the outcome is unusual for the
+  consequence. Over MCP, an RCM read lists a mode's tasks once, on the mode
+  (not again under `decision.tasks`). Refusals name what wasn't found and what
+  the id is instead.
+
 - A task by use keeps counting the same measurement when it moves
   (`maintenance_tasks move`, and the `maintenance_failure_modes` moves that
   take tasks with them), as long as that measurement is on the new position, a

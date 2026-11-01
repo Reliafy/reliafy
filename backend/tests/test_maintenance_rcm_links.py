@@ -128,8 +128,8 @@ def test_every_refusal_says_what_to_do(m):
         m.link_cause(pool_ff, same["id"])
     with pytest.raises(Invalid, match="inside Circulation and treatment: Heating isn't inside it"):
         m.link_cause(circ_ff, heat_ff)
-    with pytest.raises(Invalid, match="inside Salt chlorinator: Swimming Pool isn't inside it"):
-        m.link_cause(salt_ff, pool_ff)  # a cause above, not below
+    with pytest.raises(Invalid, match="Swimming Pool is above Salt chlorinator, so the link goes the other way.*Swap"):
+        m.link_cause(salt_ff, pool_ff)  # a cause above, not below: say to swap them
     with pytest.raises(NotFound):
         m.link_cause(pool_ff, "no-such-id")
     # Removed failures and functions.

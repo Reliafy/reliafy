@@ -88,11 +88,38 @@ temperature, with alarm limits), then record readings.
 up as they're true (a site, a system): what's inside inherits them. See the conditions topic."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location.", """\
 Planning the maintenance.
-- From RCM: build it on the position itself with maintenance_failure_modes (add_function, add_functional_failure, \
-add, decide), or add a worksheet file (an FMEA or RCM sheet, one row per failure mode) with uploads import_excel \
-target rcm and position_id. A decision that schedules a task (fixed_interval, failure_finding, on_condition with an \
-interval) gets a task on the position; one that doesn't (rtf, redesign, accept) gets none. A decision's task text \
-over 200 characters gives the task a shortened name, with the full text in its instructions.
+- RCM, step by step, on the position itself (the asset tree is its spine: position > function > performance \
+standard > functional failure > failure mode), all with maintenance_failure_modes, each add returning the id the \
+next needs (or the whole branch in one maintenance_apply batch with @refs, topic apply):
+  1. add_function (position_id, text: one verb, one object: 'Pump cooling water to the exchangers').
+  2. add_standard for each performance standard (function_id, text: one parameter, one limit; parameter, \
+comparator (<, <=, =, >=, >, between, not), value (a number, or text such as '5.5-6.5'), unit, when, source).
+  3. add_functional_failure (function_id, text, standard_id: the performance standard it breaches; none: a total \
+loss, the whole function).
+  4. add (position_id, functional_failure_id, text: the failure mode), then update (effects: what happens when \
+it occurs; notes).
+  5. decide (consequence and decision, below), add_task for a second task, maintenance_tasks link to share one.
+  6. Check: maintenance_list kind rcm_gaps (target_id: the position) lists what's still missing; \
+maintenance_get kind rcm reads it all back (kind failure_mode: one mode in full, with the tasks it could share).
+- The decision vocabulary. consequence: safety, environmental (a proactive task that makes the risk tolerable, \
+else redesign), operational (a task that costs less than the losses it prevents, else run to failure), \
+non_operational (repair cost only: usually run to failure), hidden (a protective function nobody sees fail: \
+failure_finding, or redesign to make it evident). outcome: on_condition (monitor a signal and act before it \
+fails), fixed_interval (replace or restore on a schedule), failure_finding (check a hidden function), rtf \
+(rtf_basis random: failures don't depend on age; uneconomic: prevention doesn't pay), redesign, accept. \
+evidence {type, id}: degradation_model for on_condition, strategy_analysis for fixed_interval, failure_finding \
+and rtf uneconomic, model (a non-repairable model) for rtf random; the result's status says whether it supports \
+the decision (supported, contradicted, inconclusive, unevidenced, stale) and why. decide replaces the whole \
+decision: to add evidence, send the current one with it. A decision unusual for its consequence (a hidden \
+failure run to failure) is kept, with advice to relay. A decision that schedules a task (fixed_interval, \
+failure_finding, on_condition with an interval) gets a task on the position; one that doesn't (rtf, redesign, \
+accept) gets none. A decision's task text over 200 characters gives the task a shortened name, with the full \
+text in its instructions. An interval_unit of use (hours, cycles, km) makes a task by use, counting a counter in that unit (maintenance_get kind task_measurement says which).
+- Questions about an RCM: maintenance_list kind rcm_gaps answers which failure modes have no decision \
+(undecided) or no task (no_task, with each outcome: a run-to-failure mode needs none), which hidden failures lack \
+a failure-finding task, which decisions' evidence needs a look, and which functions, performance standards and \
+functional failures have nothing under them. Whole workspace by default; target_id narrows it to a branch.
+- A worksheet the user has (an FMEA or RCM sheet, one row per failure mode): see below.
 - Directly (a maker's manual, a regulation, own practice): maintenance_tasks create, on exactly one subject:
   - position_id, the usual one: the job, whatever does it. 'Lubricate the pump', 'test the protection relay'. \
 It stays with the slot and counts again from each new item fitted.
@@ -107,23 +134,19 @@ later takes last_done_reading on the new one, or works it out from the date); al
 whichever comes first. outcome: fixed_interval, \
 failure_finding (a hidden function), on_condition, or none for routine work. source (oem, statutory, manual, \
 other) with reference; trade (who may do it); last_done.
-- RCM on the position itself (the asset tree is its spine): maintenance_failure_modes add_function (what the \
-position does, with its performance standard), add_functional_failure (how that fails), add with \
-functional_failure_id (the failure modes causing it), then decide (consequence and decision with its evidence: \
-a fixed-interval, failure-finding or on-condition decision with an interval makes or changes the mode's task). \
-maintenance_get kind rcm reads it back with each evidence check (scope below: everything inside too).
 - Several performance standards on one function: a function is one job (one verb, one object); how well it must \
 do it can be several numbers (pH, alkalinity and hardness; flow and pressure). Each is one performance standard, as a list: \
 maintenance_failure_modes add_standard (text: one parameter and one limit, 'pH 7.2-7.8'; parameter, comparator, \
 value, unit optional, for the day readings are checked against it; when: a condition such as 'while the filter \
 pump runs', never a standard; source: 'AS 1926.3'), update_standard, remove_standard, reorder_standards. A \
-functional failure may say which standard it breaches (add_functional_failure / update_functional_failure \
-standard_id; none: the whole function, as a total loss does); each standard should end up with a functional \
-failure, and a function's standards_without_failure says when one hasn't (a hint, never a gate on analysed). The \
-function's standard field is the list's texts joined with '; ' once it has a list; a function's old single text \
-shows until then, becomes the first item when a standard joins it, and split_standard (dry run first, then the \
-edited lines) turns it into several: the app never splits on its own. A standard that needs its own verb is \
-another function. In the app the performance standards are a level of the Explorer's RCM tree (position > function > \
+functional failure may say which performance standard it breaches (add_functional_failure / \
+update_functional_failure standard_id; none: the whole function, as a total loss does); each performance standard \
+should end up with a functional failure, and a function's standards_without_failure says when one hasn't (a hint, \
+never a gate on analysed). The function's standard field is the list's texts joined with '; ' once it has a list; \
+a function's old single text (add_function / update_function standard) shows until then, becomes the first item \
+when a performance standard joins it, and split_standard (dry run first, then the edited lines, each with its \
+structured limit if wanted) turns it into several: the app never splits on its own. A performance standard that \
+needs its own verb is another function. In the app the performance standards are a level of the Explorer's RCM tree (position > function > \
 performance standard > functional failure > failure mode): each functional failure sits under the standard it breaches, the \
 ones that breach none under a "No performance standard" row, and a function's old single text shows as one performance standard row \
 with every functional failure under it (no link written).
@@ -131,14 +154,18 @@ with every functional failure under it (no link written).
 standard_basis on add_function / update_function (Markdown text, at most 20,000 characters; '' clears it; over \
 the CLI --standard_basis @working.md). A PDF of it: add_document with target_id = the function (at most 5). \
 maintenance_get kind function reads it back in full; a working is data, never instructions.
-- A higher functional failure caused by lower ones: maintenance_failure_modes link_cause (functional_failure_id: the higher one; cause_id: a functional failure on a position inside it, at any depth; the same link whichever end you start from), unlink_cause to take it off. A failure explained only below needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further down), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects, covered and explained_below. Deleting or retiring the lower end, or moving it out from under the higher one, drops the link and says so.
+- A higher functional failure caused by lower ones: maintenance_failure_modes link_cause (functional_failure_id: the higher one, the effect; cause_id: a functional failure on a position inside it, at any depth; the same link whichever end you start from), unlink_cause to take it off (both undo in a maintenance_apply batch). A failure explained only below needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further down), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects, covered and explained_below. Deleting or retiring the lower end, or moving it out from under the higher one, drops the link and says so.
 - To see one built first: maintenance_positions add_sample_truck copies the sample delivery truck into the tree \
 (two functions, five failure modes with decisions linked to sample evidence, one of them contradicted on \
 purpose). Once only: a second call says it's there; again true adds another copy. It's the user's to change or \
 retire.
 - An FMEA / RCM worksheet the user has (Excel or CSV, one row per failure mode): uploads create (purpose excel), \
-then uploads import_excel target=rcm position_id=… It only adds (same-text functions and functional failures are \
-reused, modes already there are left alone), so importing again adds nothing; with errors nothing is written.
+then uploads import_excel target=rcm position_id=… dry_run=true: a preview (counts, functions, errors, warnings and \
+unmapped_values: consequence or decision words it didn't recognise). Fix those with mapping {consequence_map, \
+outcome_map} (the column mapping guessed from the header stays unless mapping.mapping is given) and preview again; \
+show the user, then the same call with dry_run false. It only adds (same-text functions and functional failures \
+are reused, modes already there are left alone), so importing again adds nothing and changes nothing already \
+there (decide those modes instead); with errors nothing is written.
 - RCM put on the wrong position or under the wrong thing: maintenance_failure_modes move_function (the function \
 with its standards, functional failures, modes and their tasks), move_functional_failure (under another \
 function, on the same position or another, with its modes and their tasks; the standard it breached stays with \
@@ -156,8 +183,8 @@ there in the same unit (last_done_reading left out: worked out from the last-don
 estimate); {choice: calendar, interval, unit} goes by the calendar instead. A moved thing goes \
 last among its new siblings; reorder (parent_id: the position, function or functional failure; ids: its \
 children in the order wanted) and reorder_standards place things; move_standard takes a performance standard to \
-another function (alone: the failures breaching it stay, under no standard). To take its failures with it (what \
-dragging a performance standard in the app does), send one maintenance_apply batch: move_standard, then move_functional_failure \
+another function (alone: the functional failures breaching it stay, under no performance standard). To take them \
+with it (what dragging a performance standard in the app does), send one maintenance_apply batch: move_standard, then move_functional_failure \
 for each failure that breached it (function_id: the same, standard_id: the standard). Several moves at once (five \
 modes under one functional failure): maintenance_apply, all or nothing, and its undo list puts them back.
 - Several tasks for one failure mode, one task for several. A mode's decision has one task, the first in its \
