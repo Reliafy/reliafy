@@ -385,7 +385,7 @@ def test_the_library_tool_over_mcp_and_rest(env):
     assert "doesn't take" in _err(_call(token, "list", {"kind": "library_sources", "query": "pump"}))
 
     api = TestClient(__import__("backend.main", fromlist=["app"]).app)
-    r = api.post("/api/v1/library/search", json={"query": "check valve", "kind": "rate", "page_size": 2},
+    r = api.post("/api/v1/list/library", json={"query": "check valve", "record_kind": "rate", "page_size": 2},
                  headers={"Authorization": f"Bearer {env.api[PRO]}"})
     assert r.status_code == 200
     body = r.json()
@@ -644,6 +644,6 @@ def test_the_library_environment_over_mcp_and_rest(env):
                                                                           "id": f"{MIL}:17-1-crimp",
                                                                           "environment": "XX"}))
     api = TestClient(__import__("backend.main", fromlist=["app"]).app)
-    r = api.post("/api/v1/library/get", json={"id": f"{MIL}:9-1-rc-11", "environment": "GF"},
+    r = api.post("/api/v1/get/library_record", json={"id": f"{MIL}:9-1-rc-11", "environment": "GF"},
                  headers={"Authorization": f"Bearer {env.api[PRO]}"})
     assert r.status_code == 200 and r.json()["block_model"]["environment"]["factor"] == 4.0

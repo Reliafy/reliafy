@@ -1209,8 +1209,7 @@ function McpDocs({ tokenNote }) {
         <p className="muted-line">
           Six tools: an agent picks the tool, then the action (or, for <code>get</code> and{" "}
           <code>list</code>, the kind). Each tool’s description lists its actions and what each takes;{" "}
-          <code>guide</code> gives the agent how-tos by topic and any action’s full argument schema. The
-          tool names before November 2026 still work for a while, so connected agents keep running.
+          <code>guide</code> gives the agent how-tos by topic and any action’s full argument schema.
         </p>
         <div className="api-tools">
           {MCP_TOOLS.map(({ name, desc, actions }) => (actions ? (

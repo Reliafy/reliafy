@@ -73,7 +73,7 @@ def _tables() -> dict[str, tuple[str, dict]]:
     """Each tool with actions: (its choosing argument, its action table)."""
     from backend import mcp_server
 
-    out = {**mcp_server.LEGACY_TABLES, **mcp_server.TABLES}
+    out = dict(mcp_server.TABLES)
     if config.MAINTENANCE_ENABLED:
         from backend.maintenance import mcp_tools as maintenance_tools
 
@@ -273,24 +273,8 @@ async def _body(request: Request) -> dict:
     return body
 
 
-def _legacy_tool(name: str):
-    """An earlier tool name (unlisted, still answering for a release): the tool
-    as tools/list would have carried it, for an older client's calls."""
-    from mcp.types import Tool as MCPTool
-
-    from backend import mcp_server
-
-    info = mcp_server.mcp._tool_manager.get_tool(name)
-    return MCPTool(name=info.name, title=info.title, description=info.description, input_schema=info.parameters,
-                   annotations=info.annotations)
-
-
 async def _tool_for(user: dict, name: str):
-    from backend import mcp_server
-
     tool = next((t for t in await visible_tools(user) if t.name == name), None)
-    if tool is None and name in mcp_server.LEGACY_TOOLS:
-        tool = _legacy_tool(name)
     if tool is None:
         raise HTTPException(status_code=404, detail=f"No tool '{name}'. GET /api/v1/tools lists them.")
     return tool

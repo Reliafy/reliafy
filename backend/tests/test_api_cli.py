@@ -93,9 +93,10 @@ def test_client_calls_any_tool(server):
     fit = rf.fit([120, 340, 510, 700, 980], censored=[0, 0, 1, 0, 0], distribution="weibull")
     assert fit["distribution_id"] == "weibull" and not fit["saved"]
     assert {t["name"] for t in rf.tools()["tools"]} >= {"analyse", "change", "maintenance_positions"}
-    # An older client's names still answer (for a release), unlisted.
-    old = rf.call("models", "save", name="Old name", distribution="weibull", params=WEIBULL)
-    assert old["saved"] and "models" not in {t["name"] for t in rf.tools()["tools"]}
+    # The earlier tool names are gone (Nov 2026): a plain "no such tool".
+    with pytest.raises(Exception) as gone:
+        rf.call("models", "save", name="Old name", distribution="weibull", params=WEIBULL)
+    assert gone.value.status == 404
     assert "/api/v1/list/models" in rf.spec()["paths"]
     with pytest.raises(Exception) as err:
         rf.call("get", "model", id="nope")
@@ -133,9 +134,8 @@ def test_cli_login_tools_and_generic_commands(server, capsys, monkeypatch):
     code, out, _ = run(capsys, "analyse", "fit", "--data", "120,340,510,700,980",
                        "--censored", "0,0,1,0,0")
     assert code == 0 and "distribution: " in out
-    # The earlier command still runs, saying the new one.
-    code, out, err = run(capsys, "life_data_analysis", "fit", "--data", "120,340,510,700,980")
-    assert code == 0 and "distribution: " in out and "'life_data_analysis fit' is now 'analyse fit'" in err
+    code, _, err = run(capsys, "life_data_analysis", "fit", "--data", "120,340,510,700,980")
+    assert code == 2 and "reliafy tools" in err  # the earlier names are gone
     code, out, _ = run(capsys, "guide", "--topic", "units")
     assert code == 0 and "unit" in out
     code, out, _ = run(capsys, "models", "list")
@@ -149,15 +149,6 @@ def test_cli_login_tools_and_generic_commands(server, capsys, monkeypatch):
     assert code == 2 and "reliafy tools" in err
     code, out, _ = run(capsys, "logout")
     assert code == 0 and not os.path.exists(os.path.join(os.environ["RELIAFY_CONFIG_DIR"], "config.json"))
-
-
-def test_the_cli_knows_every_earlier_command():
-    """reliafy-client's own table of the earlier names is the server's."""
-    from backend import mcp_server
-
-    server_side = {(old, a or None): (t, na) for old, (_, table) in mcp_server.LEGACY.items()
-                   if old in mcp_server.LEGACY_TOOLS for a, (t, na) in table.items()}
-    assert {k: v[:2] for k, v in cli.LEGACY_COMMANDS.items()} == server_side
 
 
 def test_cli_and_client_search_the_library(server, capsys):
@@ -176,9 +167,7 @@ def test_cli_and_client_search_the_library(server, capsys):
     assert code == 1 and "not found" in err
     found = Client().call("list", "library", query="check valve", record_kind="rate", page_size=2)
     assert found["total"] == 5 and len(found["results"]) == 2
-    # The earlier names, as an older client sends them.
-    assert Client().call("library", "search", query="check valve", kind="rate", page_size=2)["total"] == 5
-    code, out, _ = run(capsys, "library", "search", "--query", "check valve", "--kind", "rate")
+    code, out, _ = run(capsys, "list", "library", "--query", "check valve", "--record-kind", "rate")
     assert code == 0 and "total: 5" in out
 
 

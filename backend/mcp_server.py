@@ -9,8 +9,8 @@ Tools: six, each choosing its work by ``action`` (or ``kind``; see "The
 tools" near the end): ``get`` / ``list`` read any saved item by kind,
 ``analyse`` runs every calculation (saving nothing), ``change`` makes every
 write, ``report_problem`` files feedback and ``guide`` gives how-tos by topic
-and any action's full argument schema. The earlier tool names (to 1 Nov 2026)
-still answer, unlisted (:data:`LEGACY`).
+and any action's full argument schema. The tool names before Nov 2026 are
+gone: python/CHANGELOG.md (0.5.0) maps them.
 
 Transport: stateless Streamable HTTP with plain JSON responses (no SSE). Every
 POST is self-contained, so the server scales across Cloud Run instances and
@@ -369,14 +369,12 @@ and tell the user you did; report_problem status says later whether it's fixed.
 
 class _Server(MCPServer):
     """The SDK's server, listing each core tool with its compact input schema
-    (:func:`compact_schema`) and leaving out the earlier tool names
-    (:data:`LEGACY_TOOLS`), which still answer when called."""
+    (:func:`compact_schema`)."""
 
     async def list_tools(self):
         tools = await super().list_tools()
         return [t.model_copy(update={"input_schema": compact_schema(t.name, t.input_schema)})
-                if t.name in _COMPACT_TOOLS else t
-                for t in tools if t.name not in LEGACY_TOOLS]
+                if t.name in _COMPACT_TOOLS else t for t in tools]
 
 
 mcp = _Server(
@@ -804,8 +802,6 @@ def _act(fn: Callable, **renames: str) -> _Action:
 TABLES: dict[str, tuple[str, Table]] = {}
 #: Each tool's actions: the functions they call.
 ACTIONS: dict[str, dict[str, _Action]] = {}
-#: The earlier tool names' tables (hidden aliases, see :data:`LEGACY`).
-LEGACY_TABLES: dict[str, tuple[str, Table]] = {}
 _VALIDATE = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -861,13 +857,10 @@ def _validation_message(selector: str, value: str, exc: ValidationError, names: 
 
 
 def _action_tool(name: str, annotations: ToolAnnotations, title: str, selector: str, intro: str,
-                 actions: dict[str, _Action], docs: Optional[dict[str, str]] = None,
-                 call_key: Optional[Callable[[dict], str]] = None, legacy: bool = False):
+                 actions: dict[str, _Action], docs: Optional[dict[str, str]] = None):
     """Register a tool with actions: its arguments (the union of its actions'),
     its description (``intro``, then each action's arguments and docstring)
-    and a body that runs the chosen action. ``call_key``: the call's key
-    (default ``tool.action``); ``legacy``: an earlier tool name, kept out of
-    :data:`TABLES` (see :data:`LEGACY`)."""
+    and a body that runs the chosen action."""
     docs = docs or {}
     table: Table = {}
     defaults: dict[str, dict[str, str]] = {}
@@ -931,11 +924,9 @@ def _action_tool(name: str, annotations: ToolAnnotations, title: str, selector: 
     run.__doc__ = describe_actions(intro, selector, table, defaults, brief=True)
     run.__signature__ = signature
     run.__annotations__ = {p.name: p.annotation for p in params} | {"return": dict[str, Any]}
-    (LEGACY_TABLES if legacy else TABLES)[name] = (selector, table)
-    if not legacy:
-        ACTIONS[name] = dict(actions)
-    return _tool(name, annotations, title,
-                 call_key=call_key or (lambda kwargs: f"{name}.{kwargs[selector]}"))(run)
+    TABLES[name] = (selector, table)
+    ACTIONS[name] = dict(actions)
+    return _tool(name, annotations, title, call_key=lambda kwargs: f"{name}.{kwargs[selector]}")(run)
 
 
 def _db():
@@ -8268,46 +8259,6 @@ _A = {  # new tool -> {action: the function it runs}
     },
 }
 
-#: Every earlier tool name (to 1 Nov 2026) and where each of its actions went:
-#: old tool -> (its choosing argument, {old action: (new tool, new action)});
-#: the one earlier tool without actions (upgrade_link) maps from "". The old
-#: names still answer for a release, hidden from tools/list, the REST spec and
-#: GET /api/v1/tools (:data:`LEGACY_TOOLS`), so a connected agent or an older
-#: reliafy-client keeps working. backend/tests/test_mcp_tools.py holds this table
-#: to every capability.
-LEGACY: dict[str, tuple[str, dict[str, tuple[str, str]]]] = {
-    "get": ("kind", {k: ("get", k) for k in ("model", "dataset", "rbd", "rbd_run", "job", "upload", "account")}),
-    "list": ("kind", {k: ("list", k) for k in ("models", "datasets", "rbds", "rbd_runs", "fleets", "fleet_alerts",
-                                               "share_links", "workspace_changes")}),
-    "life_data_analysis": ("action", {k: ("analyse", k) for k in (
-        "fit", "fit_per_demand", "reliability_at", "check_life_requirement", "compare_groups", "alt_use_level",
-        "plan_demonstration_test", "plan_sequential_test", "plan_life_test", "plan_accelerated_test",
-        "plan_comparison", "fit_joint", "predict_joint")}),
-    "repairable_analysis": ("action", {k: ("analyse", k) for k in ("next_failure", "growth_projection")}),
-    "strategy": ("action", {k: ("analyse", k) for k in (
-        "optimal_replacement", "failure_finding_interval", "optimal_overhaul", "fleet_forecast",
-        "calendar_replacement", "next_replacement")}),
-    "rbd_analysis": ("action", {"analyze": ("analyse", "rbd"), **{k: ("analyse", f"rbd_{k}") for k in (
-        "quote_simulation", "sensitivity", "optimise_intervals", "cheapest_design", "compare", "fault_tree",
-        "allocate_targets", "system_history", "export_python", "export_json")}}),
-    "models": ("action", {k: ("change", f"model_{k}") for k in (
-        "fit", "save", "fit_alt", "fit_recurrent", "fit_joint", "update", "delete")}),
-    "datasets": ("action", {k: ("change", f"dataset_{k}") for k in (
-        "upload", "add_measurements", "remove_measurements", "split", "update", "delete")}),
-    "rbd": ("action", {k: ("change", f"rbd_{k}") for k in ("create", "clone", "edit", "delete", "upload_outage_log")}),
-    "uploads": ("action", {"create": ("change", "upload_create"), "send_part": ("change", "upload_send_part"),
-                           "import_rbd": ("change", "import_rbd"), "import_excel": ("change", "import_excel")}),
-    "sharing": ("action", {"create_link": ("change", "share_link"), "create_report": ("change", "share_report"),
-                           "revoke_link": ("change", "share_revoke")}),
-    "fleet": ("action", {"create_alert": ("change", "fleet_create_alert")}),
-    "library": ("action", {"search": ("list", "library"), "get": ("get", "library_record"),
-                           "sources": ("list", "library_sources")}),
-    "report_problem": ("action", {k: ("report_problem", k) for k in ("report", "status", "triage", "update")}),
-    "upgrade_link": ("", {"": ("get", "upgrade_link")}),
-}
-#: Earlier names that are no longer tools of their own (registered, never listed).
-LEGACY_TOOLS = frozenset(set(LEGACY) - set(_A) - {"guide"})
-
 _action_tool("get", _READ, "Read one saved item", "kind",
              "One saved item in full by kind and id (ids come from list and from change); also the account "
              "(plan, what's left) and the upgrade link.", _A["get"],
@@ -8349,36 +8300,6 @@ _action_tool("change", _WRITE, "Save and change items", "action",
 _action_tool("report_problem", _REPORT, "Report a problem with these tools", "action",
              "Tell Reliafy's developers when a tool got in your way, and check later whether it's fixed.",
              _A["report_problem"])
-
-
-#: An earlier action whose arguments were named differently: (old tool, old action) -> how it ran.
-#: library search's kind (rate, per_demand, life) is list kind library's record_kind.
-_LEGACY_ACTS = {("library", "search"): _act(library_search)}
-
-
-def _legacy_key(old: str, kwargs: dict) -> str:
-    """The call key (new tool.action) of a call to an earlier tool name."""
-    selector, table = LEGACY[old]
-    tool, action = table[kwargs[selector] if selector else ""]
-    return f"{tool}.{action}"
-
-
-def _register_legacy() -> None:
-    """The earlier tool names, each the same actions as before, running the
-    new tools' functions, gated, slotted and logged as the new tool.action
-    (hidden from every listing: :data:`LEGACY_TOOLS`)."""
-    old_annotations = {"models": _WRITE, "datasets": _WRITE, "rbd": _WRITE, "uploads": _WRITE, "sharing": _WRITE,
-                       "fleet": _WRITE, "upgrade_link": _LINK}
-    for old in sorted(LEGACY_TOOLS):
-        selector, table = LEGACY[old]
-        if not selector:  # upgrade_link
-            _tool(old, old_annotations[old], "Get a link to upgrade",
-                  call_key=lambda kw, _o=old: _legacy_key(_o, kw))(upgrade_link)
-            continue
-        acts = {a: _LEGACY_ACTS.get((old, a)) or ACTIONS[tool][action] for a, (tool, action) in table.items()}
-        _action_tool(old, old_annotations.get(old, _READ), old, selector,
-                     "Earlier name of " + ", ".join(sorted({t for t, _ in table.values()})) + ".",
-                     acts, call_key=lambda kw, _o=old: _legacy_key(_o, kw), legacy=True)
 
 
 # ---- Compact listed schemas, full ones for REST and guide(action=…) -----------------------
@@ -8457,15 +8378,9 @@ def _refs(node, out: set) -> None:
 
 
 def action_schema(spec: str) -> dict[str, Any]:
-    """One action's arguments in full ("analyse.fit"; an earlier name such as
-    "life_data_analysis.fit" is read as its new one): the JSON schema of what
+    """One action's arguments in full ("analyse.fit"): the JSON schema of what
     it takes, what's required, and its line."""
     tool, _, action = spec.replace(" ", ".").partition(".")
-    note = None
-    if tool in LEGACY and tool not in TABLES and action in LEGACY[tool][1]:
-        new_tool, new_action = LEGACY[tool][1][action]
-        note = f"{tool} {action} is now {new_tool} {new_action}."
-        tool, action = new_tool, new_action
     if tool not in TABLES or action not in TABLES[tool][1]:
         known = ", ".join(f"{t}.<{s}>" for t, (s, _) in TABLES.items())
         raise ToolError(f"No action '{spec}'. Give '<tool>.<action>', e.g. 'analyse.fit' ({known}).")
@@ -8485,11 +8400,8 @@ def action_schema(spec: str) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "object", "properties": props, "required": required.split()}
     if seen:
         schema["$defs"] = {n: defs[n] for n in sorted(seen) if n in defs}
-    out = {"tool": tool, selector: action, "does": " ".join(doc.split()), "arguments": schema,
-           "call": f"{tool}({selector}='{action}', ...)"}
-    if note:
-        out["note"] = note
-    return out
+    return {"tool": tool, selector: action, "does": " ".join(doc.split()), "arguments": schema,
+            "call": f"{tool}({selector}='{action}', ...)"}
 
 
 _GuideTopic = Literal[tuple(mcp_guide.TOPICS)]  # type: ignore[valid-type]
@@ -8514,7 +8426,6 @@ def guide(ctx: Context, topic: Annotated[Optional[_GuideTopic], Field(descriptio
 guide.__doc__ = ("How-tos for Reliafy by topic (conventions, which actions to use), and any action's full "
                  "argument schema (action='analyse.fit'). Read the topic before a task you haven't done here yet.")
 _tool("guide", _READ, "How to use Reliafy")(guide)
-_register_legacy()
 
 
 # ---------------------------------------------------------------------------

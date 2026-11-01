@@ -78,10 +78,10 @@ def test_auth_is_the_mcp_model(env):
     assert r.status_code == 403 and "ingest" in r.json()["detail"]
     assert env.post("/api/v1/list/models").status_code == 200
     # A read-only token reads and calculates but can't write.
-    assert env.post("/api/v1/strategy/optimal_replacement", {
+    assert env.post("/api/v1/analyse/optimal_replacement", {
         "distribution_id": "weibull", "params": WEIBULL, "planned_cost": 100, "unplanned_cost": 1000},
         token=env.read_only).status_code == 200
-    r = env.post("/api/v1/models/save", {"name": "x", "distribution": "weibull", "params": WEIBULL},
+    r = env.post("/api/v1/change/model_save", {"name": "x", "distribution": "weibull", "params": WEIBULL},
                  token=env.read_only)
     assert r.status_code == 403 and "write" in r.json()["detail"]
 
@@ -134,9 +134,8 @@ GRAPH = {"nodes": [{"id": "input", "type": "input"},
 def test_results_are_the_mcp_results(env):
     mid = env.post("/api/v1/change/model_save", {"name": "Handbook", "distribution": "weibull",
                                                  "params": WEIBULL}).json()["model_id"]
-    # An earlier tool name (unlisted, answering for a release), as an older client calls it.
-    rid = env.post("/api/v1/rbd/create", {"name": "Two pumps", **GRAPH}).json()["id"]
-    assert "/api/v1/rbd/create" not in env.client.get("/api/v1/openapi.json").json()["paths"]
+    rid = env.post("/api/v1/change/rbd_create", {"name": "Two pumps", **GRAPH}).json()["id"]
+    assert env.post("/api/v1/rbd/create", {"name": "x", **GRAPH}).status_code == 404  # earlier names are gone
     calls = [
         ("guide", None, {"topic": "units"}),
         ("list", "models", {}),
@@ -166,24 +165,24 @@ def test_results_are_the_mcp_results(env):
 
 
 def test_a_sample_of_every_tool(env):
-    ds = env.post("/api/v1/datasets/upload", {"name": "Bearings", "csv": "hours,c\n120,0\n340,0\n510,1\n700,0"})
+    ds = env.post("/api/v1/change/dataset_upload", {"name": "Bearings", "csv": "hours,c\n120,0\n340,0\n510,1\n700,0"})
     assert ds.status_code == 200, ds.text
-    saved = env.post("/api/v1/models/save", {"name": "Handbook", "distribution": "weibull", "params": WEIBULL})
+    saved = env.post("/api/v1/change/model_save", {"name": "Handbook", "distribution": "weibull", "params": WEIBULL})
     assert saved.status_code == 200 and saved.json()["model_id"]
     mid = saved.json()["model_id"]
     assert env.post("/api/v1/analyse/reliability_at", {"model_id": mid, "times": [500]}).status_code == 200
-    r = env.post("/api/v1/repairable_analysis/next_failure", {"model_id": "nope", "age": 10})
+    r = env.post("/api/v1/analyse/next_failure", {"model_id": "nope", "age": 10})
     assert r.status_code == 404 and "not found" in r.json()["detail"]
-    rbd = env.post("/api/v1/rbd/create", {"name": "Two pumps", **GRAPH})
+    rbd = env.post("/api/v1/change/rbd_create", {"name": "Two pumps", **GRAPH})
     assert rbd.status_code == 200, rbd.text
-    up = env.post("/api/v1/uploads/create", {"purpose": "dataset", "filename": "x.csv"})
+    up = env.post("/api/v1/change/upload_create", {"purpose": "dataset", "filename": "x.csv"})
     assert up.status_code == 200 and up.json()["upload_id"]
-    link = env.post("/api/v1/sharing/create_link", {"kind": "model", "id": mid})
+    link = env.post("/api/v1/change/share_link", {"kind": "model", "id": mid})
     assert link.status_code == 200, link.text
-    r = env.post("/api/v1/fleet/create_alert", {"fleet_id": "nope", "kind": "above", "threshold": 2})
+    r = env.post("/api/v1/change/fleet_create_alert", {"fleet_id": "nope", "kind": "above", "threshold": 2})
     assert r.status_code in (404, 422) and "fleet" in r.json()["detail"].lower(), r.text  # a one-action tool
-    assert env.post("/api/v1/upgrade_link").status_code in (200, 422)
-    assert env.post("/api/v1/models/delete", {"model_id": mid}).status_code == 200
+    assert env.post("/api/v1/get/upgrade_link").status_code in (200, 422)
+    assert env.post("/api/v1/change/model_delete", {"model_id": mid}).status_code == 200
     # Scoped like MCP: B can't see A's dataset.
     assert env.post("/api/v1/get/dataset", {"id": ds.json()["id"]}, uid=B).status_code == 404
 
@@ -195,7 +194,7 @@ def test_errors(env):
     assert r.status_code == 404 and "model" in r.json()["detail"]
     r = env.post("/api/v1/analyse/fit", {"data": "x"})
     assert r.status_code == 422 and r.json()["detail"].startswith("data:")
-    r = env.post("/api/v1/strategy/optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL})
+    r = env.post("/api/v1/analyse/optimal_replacement", {"distribution_id": "weibull", "params": WEIBULL})
     assert r.status_code == 422 and "needs planned_cost" in r.json()["detail"]
     r = env.post("/api/v1/get/model", {"kind": "rbd", "id": "x"})
     assert r.status_code == 422 and "path" in r.json()["detail"]
@@ -247,7 +246,7 @@ def test_the_old_routes_are_unchanged(env):
     r = env.client.post("/api/v1/datasets", headers=_auth(env.token[A]), json={
         "name": "D", "csv": "hours,failed\n120,1\n340,1\n510,0\n700,1"})
     assert r.status_code == 200 and r.json()["n_rows"] == 4
-    mid = env.post("/api/v1/models/save", {"name": "H", "distribution": "weibull", "params": WEIBULL}).json()["model_id"]
+    mid = env.post("/api/v1/change/model_save", {"name": "H", "distribution": "weibull", "params": WEIBULL}).json()["model_id"]
     r = env.client.get(f"/api/v1/models/{mid}", headers=_auth(env.token[A]))
     assert r.status_code == 200 and r.json()["id"] == mid
 

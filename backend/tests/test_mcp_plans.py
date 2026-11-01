@@ -830,7 +830,6 @@ def test_upgrade_link_offers_only_pro_and_works_past_the_free_allowance(stripe_c
     tools = _run(s.oauth[FREE], lambda c: c.list_tools()).tools
     schema = next(t for t in tools if t.name == "get").input_schema["properties"]["plan"]
     assert schema["enum"] == ["pro"]
-    assert "upgrade_link" not in {t.name for t in tools}  # an earlier name: still answers, unlisted
 
     _ok(_call(s.oauth[FREE], "list", {"kind": "models"}))
     assert "this month's 1 free" in _err(_call(s.oauth[FREE], "list", {"kind": "models"}))  # allowance used...
@@ -844,7 +843,6 @@ def test_upgrade_link_offers_only_pro_and_works_past_the_free_allowance(stripe_c
 
     # Asking for the retired plan isn't possible.
     assert _call(s.oauth[FREE], "get", {"kind": "upgrade_link", "plan": "agent"}).is_error
-    assert _ok(_call(s.oauth[FREE], "upgrade_link"))["plan"] == "pro"  # the earlier name, never counted
     assert not any(kw.get("metadata", {}).get("kind") == "agent" for _, kw in
                    [c for c in s.fake.calls if c[0] == "checkout"])
     assert _calls_used(s.db, FREE) == 1  # upgrade_link isn't counted

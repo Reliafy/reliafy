@@ -13,10 +13,22 @@
   `list library` (its `kind` argument is `record_kind`), `upgrade_link` is
   `get upgrade_link`. `guide --action analyse.fit` prints one action's full
   argument schema. Client helpers (`fit`, `reliability`, `upload_dataset`,
-  `import_rbd`, …) call the new names; their signatures are unchanged. The
-  earlier names still answer on the server for a release, and the CLI
-  accepts the earlier commands with a note naming the new one. Needs a
-  server from the November 2026 release.
+  `import_rbd`, …) call the new names; their signatures are unchanged.
+  **The earlier tool names are removed** (over MCP, REST and the CLI), and
+  this client needs a server from the November 2026 release. Every earlier
+  tool and action, and where it went:
+
+  | Earlier | Now |
+  |---|---|
+  | `life_data_analysis X`, `repairable_analysis X`, `strategy X` | `analyse X` |
+  | `rbd_analysis analyze`, `rbd_analysis X` | `analyse rbd`, `analyse rbd_X` |
+  | `models X`, `datasets X`, `rbd X` | `change model_X`, `change dataset_X`, `change rbd_X` |
+  | `uploads create`, `send_part`, `import_rbd`, `import_excel` | `change upload_create`, `upload_send_part`, `import_rbd`, `import_excel` |
+  | `sharing create_link`, `create_report`, `revoke_link` | `change share_link`, `share_report`, `share_revoke` |
+  | `fleet create_alert` | `change fleet_create_alert` |
+  | `library search` (`kind`), `get`, `sources` | `list library` (`record_kind`), `get library_record`, `list library_sources` |
+  | `upgrade_link` | `get upgrade_link` |
+  | `get`, `list`, `guide`, `report_problem` | unchanged |
 
 - A task by use keeps counting the same measurement when it moves
   (`maintenance_tasks move`, and the `maintenance_failure_modes` moves that

@@ -7,8 +7,7 @@ tool with actions defaults to null, each call is held to its action's own
 arguments and validated against that action's signature. Plan gating, the
 heavy slots, the data notice and the usage log go by ``tool.action``; an API
 token's scope follows the tool's read / write annotation. The earlier names
-still answer, unlisted, for a release (``LEGACY``): this file holds that table
-to every capability."""
+are gone; ``LEGACY`` below maps every one of their actions to its new home."""
 
 import json
 
@@ -23,6 +22,41 @@ WRITES = {"change"}
 REPORTS = {"report_problem"}  # writes Reliafy's own feedback, never the workspace
 
 pytestmark = pytest.mark.usefixtures("mcp_on")
+
+# Every tool name before Nov 2026 and where each of its actions went: old tool ->
+# (its choosing argument, {old action: (new tool, new action)}); upgrade_link,
+# which had no actions, maps from "". The old names no longer answer; this table
+# (also in python/CHANGELOG.md, 0.5.0) proves nothing was lost.
+LEGACY: dict = {
+    "get": ("kind", {k: ("get", k) for k in ("model", "dataset", "rbd", "rbd_run", "job", "upload", "account")}),
+    "list": ("kind", {k: ("list", k) for k in ("models", "datasets", "rbds", "rbd_runs", "fleets", "fleet_alerts",
+                                               "share_links", "workspace_changes")}),
+    "life_data_analysis": ("action", {k: ("analyse", k) for k in (
+        "fit", "fit_per_demand", "reliability_at", "check_life_requirement", "compare_groups", "alt_use_level",
+        "plan_demonstration_test", "plan_sequential_test", "plan_life_test", "plan_accelerated_test",
+        "plan_comparison", "fit_joint", "predict_joint")}),
+    "repairable_analysis": ("action", {k: ("analyse", k) for k in ("next_failure", "growth_projection")}),
+    "strategy": ("action", {k: ("analyse", k) for k in (
+        "optimal_replacement", "failure_finding_interval", "optimal_overhaul", "fleet_forecast",
+        "calendar_replacement", "next_replacement")}),
+    "rbd_analysis": ("action", {"analyze": ("analyse", "rbd"), **{k: ("analyse", f"rbd_{k}") for k in (
+        "quote_simulation", "sensitivity", "optimise_intervals", "cheapest_design", "compare", "fault_tree",
+        "allocate_targets", "system_history", "export_python", "export_json")}}),
+    "models": ("action", {k: ("change", f"model_{k}") for k in (
+        "fit", "save", "fit_alt", "fit_recurrent", "fit_joint", "update", "delete")}),
+    "datasets": ("action", {k: ("change", f"dataset_{k}") for k in (
+        "upload", "add_measurements", "remove_measurements", "split", "update", "delete")}),
+    "rbd": ("action", {k: ("change", f"rbd_{k}") for k in ("create", "clone", "edit", "delete", "upload_outage_log")}),
+    "uploads": ("action", {"create": ("change", "upload_create"), "send_part": ("change", "upload_send_part"),
+                           "import_rbd": ("change", "import_rbd"), "import_excel": ("change", "import_excel")}),
+    "sharing": ("action", {"create_link": ("change", "share_link"), "create_report": ("change", "share_report"),
+                           "revoke_link": ("change", "share_revoke")}),
+    "fleet": ("action", {"create_alert": ("change", "fleet_create_alert")}),
+    "library": ("action", {"search": ("list", "library"), "get": ("get", "library_record"),
+                           "sources": ("list", "library_sources")}),
+    "report_problem": ("action", {k: ("report_problem", k) for k in ("report", "status", "triage", "update")}),
+    "upgrade_link": ("", {"": ("get", "upgrade_link")}),
+}
 
 # The earlier tools' sets (to 1 Nov 2026), by their old keys: the new sets must be these, renamed.
 OLD_PRO_ONLY = {"life_data_analysis.fit", "models.fit", "models.fit_alt", "models.fit_recurrent", "list.fleets",
@@ -69,31 +103,24 @@ def _tools(token):
 
 
 def _new_key(old: str) -> str:
-    from backend import mcp_server
-
     tool, _, action = old.partition(".")
     if tool == "guide":
         return "guide"
-    new_tool, new_action = mcp_server.LEGACY[tool][1][action]
+    new_tool, new_action = LEGACY[tool][1][action]
     return f"{new_tool}.{new_action}"
 
 
 def test_every_earlier_tool_and_action_has_its_new_home():
     """The mapping table, old tool/action -> new tool/action: every earlier
-    capability is reachable, runs the same function, and every new action is
-    some earlier one's (plus nothing lost, nothing invented)."""
+    capability is reachable, and every new action is some earlier one's."""
     from backend import mcp_server
 
-    legacy = {old: set(table) for old, (_, table) in mcp_server.LEGACY.items()}
-    assert legacy == OLD_TOOLS
+    assert {old: set(table) for old, (_, table) in LEGACY.items()} == OLD_TOOLS
     targets = set()
-    for old, (selector, table) in mcp_server.LEGACY.items():
+    for old, (selector, table) in LEGACY.items():
         for action, (tool, new_action) in table.items():
             assert new_action in mcp_server.TABLES[tool][1], (old, action)
             targets.add((tool, new_action))
-            if old in mcp_server.LEGACY_TABLES and (old, action) != ("library", "search"):
-                # The hidden alias takes the same arguments and runs the same function.
-                assert mcp_server.LEGACY_TABLES[old][1][action] == mcp_server.TABLES[tool][1][new_action]
     every_new = {(t, a) for t, (_, table) in mcp_server.TABLES.items() for a in table}
     assert targets == every_new
     assert sum(len(t) for t in OLD_TOOLS.values()) == len(every_new) == 81  # 80 actions + upgrade_link
@@ -112,27 +139,14 @@ def test_gating_and_slots_are_the_earlier_ones_renamed():
     assert mcp_server._FIT_TOOLS == {_new_key(k) for k in OLD_PRO_ONLY if "fleet" not in k}
 
 
-def test_earlier_names_still_answer_but_are_never_listed(env, monkeypatch):
-    """A connected agent (or an older reliafy-client) using the earlier names
-    keeps working for a release; the calls are gated, counted and logged as the
-    new tool.action, and the names cost nothing in tools/list."""
-    from backend import config, mcp_server
+def test_earlier_names_are_gone(env):
+    from backend import mcp_server
 
-    monkeypatch.setattr(config, "USAGE_LOGGING", True)
     listed = set(_tools(env.oauth[PRO]))
-    assert listed == READS | WRITES | REPORTS and not listed & mcp_server.LEGACY_TOOLS
-    assert {t.name for t in anyio.run(mcp_server.mcp.list_tools)} == listed
-    token = env.oauth[FREE]
-    saved = _ok(_call(token, "change", {"action": "model_save", "name": "B", "distribution": "weibull", "params": WEIBULL}))
-    assert _ok(_call(token, "analyse", {"action": "reliability_at", "model_id": saved["model_id"],
-                                                   "times": [100]}))
-    assert "part of Reliafy Pro" in _err(_call(token, "analyse", {"action": "fit", "data": [1, 2, 3]}))
-    assert _calls_used(env.db, FREE) == 2
-    _ok(_call(token, "list", {"kind": "library_sources"}))  # uncounted, as before
-    assert _calls_used(env.db, FREE) == 2
-    got = [e["feature"] for e in env.db.usage_events.find({"channel": "mcp"})
-           if e["feature"] not in ("initialize", "tools/list")]
-    assert got == ["change.model_save", "analyse.reliability_at", "analyse.fit", "list.library_sources"]
+    assert listed == READS | WRITES | REPORTS
+    for old in set(LEGACY) - listed:
+        assert old not in {t.name for t in anyio.run(mcp_server.mcp.list_tools)}
+        assert _call(env.oauth[PRO], old, {}).is_error, old
 
 
 def test_six_tools_reads_apart_from_writes(env):
@@ -195,8 +209,6 @@ def test_the_guide_gives_any_actions_full_schema(env):
     assert edit["required"] == ["rbd_id", "ops"] and edit["$defs"]  # the ops' nested types come along
     for ref in set(__import__("re").findall(r'"#/\$defs/([^"]+)"', json.dumps(edit))):
         assert ref in edit["$defs"], ref
-    old = _ok(_call(token, "guide", {"action": "life_data_analysis.fit"}))["action"]
-    assert old["tool"] == "analyse" and "now analyse fit" in old["note"]
     both = _ok(_call(token, "guide", {"action": "analyse.rbd", "topic": "rbd_analysis"}))
     assert both["topic"] == "rbd_analysis" and both["action"]["action"] == "rbd" and "topics" not in both
     assert "e.g. 'analyse.fit'" in _err(_call(token, "guide", {"action": "nope.fit"}))
@@ -329,8 +341,6 @@ def test_a_read_only_token_reads_and_calculates_but_never_writes(env):
                  {"action": "upload_create", "purpose": "dataset", "filename": "a.csv"},
                  {"action": "share_revoke", "token": "x"}]:
         assert "write" in _err(_call(read, "change", args)), args
-    # The earlier names keep their scope too.
-    assert "write" in _err(_call(read, "models", {"action": "delete", "model_id": "x"}))
     assert env.db.models.count_documents({}) == 0
 
 

@@ -139,9 +139,9 @@ always be rebuilt. See [docs/maintenance-graph.md](docs/maintenance-graph.md).
   (descriptions, limits, nested types) is the REST spec's and
   `guide(action='<tool>.<action>')`'s. Nested shapes an agent needs go in the
   argument's `Field(description=…)`, which reaches both.
-- The earlier tool names (to 1 Nov 2026) still answer, unlisted, through
-  `LEGACY`; `test_mcp_tools.py` holds that table to every action. Don't add
-  to it; remove it once the usage log shows no calls on the old names.
+- The tool names before Nov 2026 are gone (no aliases); `LEGACY` in
+  `test_mcp_tools.py` maps every old action to its new home, and
+  `python/CHANGELOG.md` (0.5.0) lists them.
 - How-to text goes in guide topics (`backend/mcp_guide.py`,
   `backend/maintenance/mcp_guide.py`), not in tool descriptions. Why: every
   tool definition loads into every agent's context on each connection; a guide

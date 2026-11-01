@@ -201,8 +201,8 @@ def _saved(env, graph):
 @pytest.mark.parametrize("make, gap", [(_empty, NO_BLOCKS), (_half, NOT_CONNECTED)])
 def test_mcp_tools_answer_in_plain_words(env, make, gap):
     rid = _saved(env, make())
-    for action in ("analyze", "fault_tree"):
-        assert GAP_MESSAGES[gap] in _err(_call(env.token[A], "rbd_analysis", {"action": action, "rbd_id": rid})), action
+    for action in ("rbd", "rbd_fault_tree"):
+        assert GAP_MESSAGES[gap] in _err(_call(env.token[A], "analyse", {"action": action, "rbd_id": rid})), action
     rid = _saved(env, make(repairable=True))
-    for action in ("analyze", "fault_tree", "sensitivity", "optimise_intervals"):
-        assert GAP_MESSAGES[gap] in _err(_call(env.token[A], "rbd_analysis", {"action": action, "rbd_id": rid})), action
+    for action in ("rbd", "rbd_fault_tree", "rbd_sensitivity", "rbd_optimise_intervals"):
+        assert GAP_MESSAGES[gap] in _err(_call(env.token[A], "analyse", {"action": action, "rbd_id": rid})), action

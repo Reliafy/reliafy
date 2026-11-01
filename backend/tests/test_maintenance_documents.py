@@ -212,7 +212,7 @@ def test_upload_open_download_and_remove_in_the_app(app, monkeypatch):
 def test_agents_upload_attach_read_and_remove(app):
     maint, client, _ = app
     pid = maint.post("/api/v1/maintenance_positions/create", {"name": "Pump A"}).json()["id"]
-    link = maint.post("/api/v1/uploads/create", {"purpose": "document", "filename": "manual.pdf"}).json()
+    link = maint.post("/api/v1/change/upload_create", {"purpose": "document", "filename": "manual.pdf"}).json()
     assert link["max_bytes"] == 20 * 1024 * 1024
     put = client.put(link["url"].split("testserver", 1)[-1], content=pdf())
     assert put.status_code == 200 and put.json()["detected_format"] == "pdf"
@@ -254,9 +254,9 @@ def test_agents_upload_attach_read_and_remove(app):
 
 
 def test_document_uploads_are_only_for_maintenance_users(maint):
-    r = maint.post("/api/v1/uploads/create", {"purpose": "document", "filename": "a.pdf"}, uid=B)
+    r = maint.post("/api/v1/change/upload_create", {"purpose": "document", "filename": "a.pdf"}, uid=B)
     assert r.status_code == 404 and "isn't available" in r.json()["detail"]
-    big = maint.post("/api/v1/uploads/create", {"purpose": "document", "filename": "a.pdf",
+    big = maint.post("/api/v1/change/upload_create", {"purpose": "document", "filename": "a.pdf",
                                                 "size_bytes": 25 * 1024 * 1024})
     assert big.status_code == 422 and "limited to 20 MB" in big.json()["detail"]
 
