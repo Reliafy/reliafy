@@ -269,3 +269,15 @@ test("the phone drawer, and no sideways scroll at 400 px", async ({ page, reques
   }
   await expectHealthy(page, problems, { label: "phone" });
 });
+
+test("Skip to content is the first Tab stop and moves focus to the page", async ({ page }) => {
+  await open(page, "/home");
+  await page.locator("body").focus();
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", { name: "Skip to content" });
+  await expect(skip).toBeFocused();
+  await expect(skip).toBeInViewport();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
+  await expect(page).toHaveURL(/\/home$/);
+});
