@@ -150,6 +150,17 @@ def test_saved_analyses_roundtrip_and_isolation(monkeypatch):
     assert "Check every" in strategy_store.headline(ffi)
 
 
+def test_failure_finding_without_an_interval_is_headed_as_the_menu_names_it():
+    """A saved failure-finding analysis with no interval reads "Failure
+    finding", the menu's word, not "Failure-finding interval"."""
+    from types import SimpleNamespace
+
+    from backend.services import strategy_store
+
+    doc = SimpleNamespace(kind="failure_finding", results={"interval": None, "unit": "hours"})
+    assert strategy_store.headline(doc) == "Failure finding"
+
+
 def test_compute_and_saved_analyses_keep_the_models_extras():
     """The calculators' extras (offset, LFP fraction, zero inflation) are
     used when computing and saving, so a saved analysis matches what the
