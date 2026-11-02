@@ -24,7 +24,7 @@ import Tabs from "../components/ui/Tabs.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import useTreeRcm from "../components/useTreeRcm.js";
 import {
-  NARROW_TABLE, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, positionOf, rowActions, standardChoices,
+  NARROW_TABLE, cellRow, graftRcm, hasLinkedEvidence, isRcmRow, newStandardRows, openFor, opensItem, positionOf, rowActions,
   standardKeys, tableCols, unlinkEmptiesFailure, usualCols,
   withTableCols,
 } from "../explorerRcm.js";
@@ -48,7 +48,6 @@ import { EXPLORER_LABEL } from "../navigation.js";
 import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, isolateOpen } from "../treeIsolate.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
-import { ChangeStandardModal } from "../components/RcmFunctionStandards.jsx";
 import usePhone from "../usePhone.js";
 import { SAMPLE_TRUCK_LABEL, addSampleTruck } from "../sampleTruck.js";
 import "./Maintenance.css";
@@ -100,8 +99,10 @@ import "./AssetExplorer.css";
 // it stay open, and it opens 1, 2 or 3 levels below it, or all of them. Then
 // it's picked and brought into view. Nothing is hidden and the address stays.
 //
-// The RCM tab's row menus: the moves a drag does (Move to…, Move up / down,
-// Move a task…, a standard's Move up / down) are offered only where there's
+// The RCM tab's row menus: Move to… (and a failure mode's Move a task…) on
+// every row that moves, with the mouse too: one picker for every kind
+// (RcmMoveModal), the way to move without dragging and the easy way to move a
+// long way. Move up / down (and a standard's) are offered only where there's
 // no dragging: on a phone, and in a menu opened from the keyboard (Shift+F10
 // or the Menu key), so the keyboard can still make every move a drag can.
 //
@@ -227,7 +228,6 @@ export default function AssetExplorer() {
   useEffect(() => { if (!panel && expanded) setExpanded(false); }, [panel, expanded]);
   const [addStart, setAddStart] = useState(null); // {key, list, at}: a row's list in its details opened on its add row (a row menu's Add …)
   const [linking, setLinking] = useState(null); // {row, direction}: the picker that links functional failures
-  const [changingStd, setChangingStd] = useState(null); // a functional failure picking which standard it breaches
   const [options, setOptions] = useState(null);
   const [rprefs, setRprefs] = useState(() => loadPrefs());
   const [message, setMessage] = useState(null);
@@ -769,7 +769,8 @@ export default function AssetExplorer() {
       if (!rcmOn) return withPin(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), [...isolateItem(r), ...pinItem(r)]);
       if (!rcm) return [...isolateItem(r), ...pinItem(r)];
       const moves = phone || keyboard;
-      const own = withPin(rowActions(r, { canRename: !phone, moves }), moves ? moveItems(whole, whole.rows.get(r.key) || r, { picked }) : []);
+      // Move to… always (the picker: no dragging needed, and a long way); Move up / down only where there's no dragging.
+      const own = withPin(rowActions(r, { canRename: !phone, moves }), moveItems(whole, whole.rows.get(r.key) || r, { picked, steps: moves }));
       return [...withPin(own, isolateItem(r)), ...pinItem(r)];
     },
     onAction: (r, id) => {
@@ -790,8 +791,7 @@ export default function AssetExplorer() {
       else if (id === "move-up" || id === "move-down") {
         setRcmFocus(r.key);
         ops.moveStandard(r, id === "move-up" ? -1 : 1).then((did) => did && say("Moved."), (e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error"));
-      } else if (id === "change-std") { setRcmFocus(r.key); setChangingStd(r); }
-      else if (id === "rename" && r.type === "fn") {
+      } else if (id === "rename" && r.type === "fn") {
         // A function's description: in a dialog with its counter.
         setRcmFocus(r.key);
         ops.editFunction(r).then((ok) => ok && say("Saved."));
@@ -1254,6 +1254,7 @@ export default function AssetExplorer() {
                onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
                expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                addStart={addStart} onSaid={say}
+               onMove={(r, { task = false } = {}) => (task ? setMoving({ taskFrom: r.key }) : setMoving({ src: dragSource(whole, r.key) }))}
                onClose={closeDetails}
                onSelect={(k, o) => (o?.basis ? openBasis(k) : reveal(k))} />
     </div>
@@ -1441,12 +1442,6 @@ export default function AssetExplorer() {
                      })} />
       )}
       {sheetFor && <RcmImportModal position={sheetFor} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
-      {changingStd && whole.rows.has(changingStd.key) && (
-        <ChangeStandardModal row={whole.rows.get(changingStd.key)} standards={standardChoices(whole, whole.rows.get(changingStd.key))}
-                             onClose={() => setChangingStd(null)}
-                             onDone={(to) => { setChangingStd(null); say(to ? `It now breaches “${to}”.` : "It now breaches the whole function."); }}
-                             onChange={(id) => ops.setBreach(whole.rows.get(changingStd.key), id)} />
-      )}
       {linking && (
         <LinkFailurePicker direction={linking.direction} row={linking.row} whole={whole} onLink={ops.linkMany}
                            onClose={(n) => {

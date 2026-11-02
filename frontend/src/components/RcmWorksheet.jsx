@@ -17,14 +17,14 @@ import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
-  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, functionOf, checkCounts, decisionText, insideWords,
+  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, checkCounts, decisionText, insideWords,
   intervalText, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
-import RcmFunctionStandards, { BreachesField } from "./RcmFunctionStandards.jsx";
+import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { plainFirstLine } from "../basisMarkdown.js";
-import { COMPARATORS, COMPARATOR_LABEL, limitReads } from "../rcmStandards.js";
+import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks from "./RcmModeTasks.jsx";
 import { saveErrorText } from "../confirm.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
@@ -352,9 +352,10 @@ const toneOf = (text) => (/to decide|not analysed|no functional failure|no failu
 //   addStart   {key, list, at}: open one of this row's lists on its add row (a row menu's Add …):
 //              list "std" (a function's performance standards), "inside" (what's inside it), "task" (a mode's tasks)
 //   onSaid     (text) a few words in the page's status line once something saved
+//   onMove     (r, {task}) opens Move to… for the row (or a failure mode's task); none: no Move in the ⋯
 export function Details({
   r, display, whole = display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops, links,
-  expanded = false, onExpand = null, onCollapse = null, addStart = null, onSaid = null,
+  expanded = false, onExpand = null, onCollapse = null, addStart = null, onSaid = null, onMove = null,
 }) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
@@ -423,6 +424,9 @@ export function Details({
   const deleteLabel = r.type === "std" ? "Remove this performance standard" : `Delete this ${kindWord}`;
   const headItems = readOnly ? [] : [
     ...(level.child ? [{ id: "add", label: `${addLabel}…`, onSelect: () => (insideList ? setOwnStart({ list: "inside", at: Date.now() }) : onAdd(r)) }] : []),
+    // Move to… (the one picker every kind uses), and a failure mode's Move a task….
+    ...(onMove && EDITABLE.has(r.type) && !(r.type === "std" && r.ref.legacy) ? [{ id: "move-to", label: "Move to…", onSelect: () => onMove(r) }] : []),
+    ...(onMove && r.type === "mode" && tasks.some((t) => t.id) ? [{ id: "move-task", label: "Move a task…", onSelect: () => onMove(r, { task: true }) }] : []),
     ...(EDITABLE.has(r.type) ? [{ id: "delete", label: `${deleteLabel}…`, danger: true, onSelect: () => onDelete(r) }] : []),
   ];
   // The status chips under the title.
@@ -435,6 +439,11 @@ export function Details({
     ].filter(Boolean)
     : (insideWords(r) || "").split(" · ").filter(Boolean).map((t) => ({ text: t, tone: toneOf(t) }));
   const limitNow = r.type === "std" ? limitReads(r.ref) : "";
+  // A standard of the list keeps its limit as data (parameter, comparator, value, unit, when, source): folded.
+  const checkable = r.type === "std" && !r.ref.legacy && !!ops?.saveItem;
+  const limitSet = checkable && ["parameter", "comparator", "value", "unit", "when", "source"].some((k) => String(r.ref[k] ?? "").trim());
+  const [limitOpen, setLimitOpen] = useState(false);
+  useEffect(() => setLimitOpen(false), [r.key]);
   const inside = (
     <InsideList key={`${r.key}:inside`} r={r} kids={kids} ops={ops} readOnly={readOnly} addLabel={addLabel} addStart={startOf("inside")}
                 onSelect={onSelect} onSaid={said} />
@@ -494,26 +503,6 @@ export function Details({
                 function and use <b>Add a performance standard</b> at the end of its list, or <b>Split into performance standards…</b> when the text is several joined by “;”.
               </p>
             )}
-            {r.type === "std" && !r.ref.legacy && ops?.saveItem && (
-              <Section title="Limit" label="Limit" className="rw-limit">
-                <p className="rw-fhelp rw-sec-note">Optional: lets checks read it.</p>
-                {stdField({ col: "parameter", label: "Parameter" })}
-                <LimitGroup r={r} readOnly={readOnly} saved={saved.limit} failed={stdFailed}
-                            onComparator={(c) => {
-                              setStdFailed(null);
-                              ops.saveItem(r, { comparator: c }).then(() => { said("Saved."); markSaved("limit"); },
-                                (err) => setStdFailed(saveErrorText(err, { offline: navigator.onLine === false })));
-                            }}
-                            onField={(col, raw) => {
-                              const out = saveStd(col, raw);
-                              if (out && typeof out.then === "function") out.then((v) => { if (v === true) markSaved("limit"); });
-                              return out;
-                            }} />
-                <ReadsAs>{limitNow}</ReadsAs>
-                {stdField({ col: "when", label: "When it applies", placeholder: "Always", optional: true })}
-                {stdField({ col: "source", label: "Source", placeholder: "A standard, manual or study", optional: true })}
-              </Section>
-            )}
             {r.type === "std" && r.ref.function_has_basis && ops?.basis && (
               <p className="rw-fhelp">
                 The working behind it is the function's:{" "}
@@ -521,9 +510,10 @@ export function Details({
               </p>
             )}
             {r.type === "mode" && field("Failure effects", "effects", { area: true })}
-            {r.type === "fail" && ops?.setBreach && (
-              <BreachesField r={r} readOnly={readOnly} standards={functionOf(display, r)?.ref.standards || []} saved={saved.breach}
-                             onChange={(id) => ops.setBreach(r, id).then(() => { said("Saved."); markSaved("breach"); }, () => {})} />
+            {/* Which standard it breaches is where it sits in the tree (moved by drag or Move to…); said
+                here only when the way up doesn't show it (a pinned branch, say). */}
+            {r.type === "fail" && r.ref.standard?.id && !up.some((a) => a.key === r.ref.standard.id) && (
+              <p className="rw-fhelp">Under the performance standard “{r.ref.standard.text}”.</p>
             )}
             {r.type === "fail" && ops && <p className="rw-fstatus">{failureStatusWords(r)}</p>}
             {r.type === "mode" && (
@@ -636,6 +626,41 @@ export function Details({
           {/* What's inside it, each one a link that shows it here; the list ends in its add row.
               (A performance standard's comes first instead: see the top of the body.) */}
           {insideList && r.type !== "std" && inside}
+          {checkable && limitOpen && (
+              <Section title="Checkable limit" label="Checkable limit" className="rw-limit"
+                       action={{ label: "Hide", ariaLabel: "Hide the checkable limit", onClick: () => setLimitOpen(false) }}>
+                <p className="rw-fhelp rw-sec-note">Write the limit as data so readings can be checked against it later.</p>
+                {stdField({ col: "parameter", label: "Parameter" })}
+                <LimitGroup r={r} readOnly={readOnly} saved={saved.limit} failed={stdFailed}
+                            onComparator={(c) => {
+                              setStdFailed(null);
+                              ops.saveItem(r, { comparator: c }).then(() => { said("Saved."); markSaved("limit"); },
+                                (err) => setStdFailed(saveErrorText(err, { offline: navigator.onLine === false })));
+                            }}
+                            onField={(col, raw) => {
+                              const out = saveStd(col, raw);
+                              if (out && typeof out.then === "function") out.then((v) => { if (v === true) markSaved("limit"); });
+                              return out;
+                            }} />
+                <ReadsAs>{limitNow}</ReadsAs>
+                {stdField({ col: "when", label: "When it applies", placeholder: "Always", optional: true })}
+                {stdField({ col: "source", label: "Source", placeholder: "A standard, manual or study", optional: true })}
+              </Section>
+            )}
+          {/* A standard's limit as data: folded away until it's wanted (nothing reads it yet).
+              Set already: one line saying what it reads as, with Edit…. */}
+          {checkable && !limitOpen && (
+            <p className="rw-checkable">
+              {limitSet ? (
+                <>
+                  <span>Checkable: {limitNow || limitWords(r.ref)}</span>
+                  {!readOnly && <> · <button type="button" className="link" onClick={() => setLimitOpen(true)} aria-label="Edit the checkable limit">Edit…</button></>}
+                </>
+              ) : !readOnly && (
+                <button type="button" className="link" onClick={() => setLimitOpen(true)}>Make this checkable…</button>
+              )}
+            </p>
+          )}
         </div>
       </div>
 

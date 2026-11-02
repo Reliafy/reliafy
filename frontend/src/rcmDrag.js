@@ -1,6 +1,6 @@
 // Rearranging the RCM tab's tree: what a drag can drop where, and the one
 // batch each drop sends (POST /api/maintenance/rcm/apply). The row menus'
-// "Move to…" pickers and Move up / down use the same plans, so the keyboard
+// "Move to…" picker and Move up / down use the same plans, so the keyboard
 // and a phone can do every move a drag can.
 //
 // What can be dragged (a wide screen):
@@ -373,59 +373,196 @@ export function refusalText(err) {
   return raw.replace(/^Nothing was changed:\s*/, "").replace(/^op \d+ \([\w.]+\):\s*/, "").trim();
 }
 
-// ---- Move to… (the row menus: the keyboard's and a phone's way to do every move) ----
-// The places a row's "Move to…" offers, grouped by position, in tree order:
-// [{id, name, depth, items: [{key, label}]}]. Each is a drop "into" that row
-// (planDrop with zone "into"), offered only where it would do something.
-export function moveChoices(whole, src) {
-  if (!src) return [];
-  const groups = [];
+// ---- Move to… (the row menus and the panel's ⋯: the keyboard's, a phone's and a long way's move) ----
+// One picker for every kind: the asset tree with the RCM in it (the same rows,
+// names and icons as the Explorer's tree), where the places that kind can go
+// are picked and the rest are greyed, each with a short reason. Picking one is
+// a drop "into" that row (planDrop with zone "into"), so it's the same move,
+// the same checks and the same Undo.
+//
+// The places each kind goes:
+// - a function: a position;
+// - a performance standard: a function;
+// - a functional failure: a performance standard, a function's "No
+//   performance standard" (offered on every function with a list, even
+//   before one is there), or a function with no list;
+// - failure modes: a functional failure, or a position's "Not under a
+//   functional failure" (offered on every position);
+// - a task: a failure mode, or a position (the task moves there).
+
+const MOVE_REASON = {
+  std: { pos: "A performance standard goes under a function." },
+  fail: {
+    pos: "A functional failure goes under a performance standard, or a function's “No performance standard”.",
+    fn: "Pick one of its performance standards, or its “No performance standard”.",
+  },
+  modes: { any: "A failure mode goes under a functional failure, or a position's “Not under a functional failure”." },
+  modesMany: { any: "Failure modes go under a functional failure, or a position's “Not under a functional failure”." },
+  task: { any: "A task goes on a failure mode, or on a position." },
+};
+const HERE = "It's here now.";
+
+// The rows a kind's picker shows (the rest are left out): a function's, only
+// positions; a standard's, down to functions; and so on.
+const SHOWS = {
+  fn: new Set(["pos"]),
+  std: new Set(["pos", "fn"]),
+  fail: new Set(["pos", "fn", "std", "nostd"]),
+  modes: new Set(["pos", "fn", "std", "nostd", "fail", "unassigned"]),
+  task: new Set(["pos", "fn", "std", "nostd", "fail", "unassigned", "mode"]),
+};
+
+// The whole tree plus the empty groups a picker offers ("No performance
+// standard" on a function with a list, "Not under a functional failure" on a
+// position) where the tree has none yet: rows of their own (keys N:… and
+// U:…), so planDrop treats them as it treats the real ones.
+export function withMoveGroups(whole) {
+  const rows = new Map(whole.rows);
+  for (const r of whole.rows.values()) {
+    if (r.type === "pos" && !rows.has(`U:${r.key}`)) {
+      rows.set(`U:${r.key}`, { key: `U:${r.key}`, type: "unassigned", parent: r.key, kids: [], depth: r.depth + 1, synthetic: true,
+        ref: { id: `U:${r.key}`, text: "Not under a functional failure", position_id: r.key } });
+    }
+    if (r.type === "fn" && (r.ref.standards || []).length && !rows.has(`N:${r.key}`)) {
+      rows.set(`N:${r.key}`, { key: `N:${r.key}`, type: "nostd", parent: r.key, kids: [], depth: r.depth + 1, synthetic: true,
+        ref: { id: `N:${r.key}`, text: "No performance standard", position_id: r.ref.position_id, function_id: r.key, function_text: r.ref.text || "" } });
+    }
+  }
+  return { ...whole, rows };
+}
+
+// Where what's moved is now (the row it would be dropped "into" to stay put).
+function hereOf(whole, src) {
+  const r = whole.rows.get(src.keys[0]);
+  if (!r) return null;
+  if (src.kind === "task") return r.key;
+  if (src.kind === "fn") return r.ref.position_id;
+  if (src.kind === "std") return r.ref.function_id;
+  if (src.kind === "fail") {
+    const up = whole.rows.get(r.parent);
+    return up?.type === "std" && up.ref.legacy ? up.ref.function_id : r.parent;
+  }
+  if (src.kind === "modes") {
+    if (src.keys.length > 1) return null;
+    return r.ref.functional_failure_id || `U:${r.ref.position_id}`;
+  }
+  return null;
+}
+
+// The picker's tree for what's moved (`src`, rcmDrag.dragSource):
+// {nodes: Map key → {key, type, name, depth, parent, kids, ok, reason, here, fitted}, roots, here}.
+// ok: it can go there (picking it moves it); else `reason` says why not, in
+// a few words. here: where it is now. Branches with nowhere to go and not
+// where it is are left out.
+export function moveTree(whole, src) {
+  const nodes = new Map();
+  const roots = [];
+  if (!src || !SHOWS[src.kind]) return { nodes, roots, here: null };
+  const w = withMoveGroups(whole);
+  const shows = SHOWS[src.kind];
+  const here = hereOf(w, src);
+  const words = MOVE_REASON[src.kind === "modes" && src.keys.length > 1 ? "modesMany" : src.kind] || {};
+  const judge = (r) => {
+    if (r.key === here) return { ok: false, reason: HERE };
+    const sel = selectable(w, src, r);
+    if (!sel) return { ok: false, reason: words[r.type] || words.any || "It can't go there." };
+    const p = planDrop(w, src, r.key, "into");
+    if (p.ops) return { ok: true, reason: null };
+    if (p.none || /already/i.test(p.refuse || "")) return { ok: false, reason: HERE };
+    return { ok: false, reason: p.refuse || "It can't go there." };
+  };
+  // The RCM rows under a row, the empty groups where the tree would put them.
+  const kidsOf = (r) => {
+    const ks = [...(r.kids || [])];
+    if (r.type === "fn" && w.rows.get(`N:${r.key}`)?.synthetic) ks.push(`N:${r.key}`);
+    if (r.type === "pos" && w.rows.get(`U:${r.key}`)?.synthetic) {
+      const at = ks.findIndex((k) => w.rows.get(k)?.type === "pos");
+      ks.splice(at < 0 ? ks.length : at, 0, `U:${r.key}`);
+    }
+    return ks;
+  };
   const seen = new Set();
-  const walk = (keys, depth) => {
+  // Returns the node keys kept under `keys`.
+  const walk = (keys, depth, parent) => {
+    const out = [];
     for (const k of keys) {
-      const p = whole.rows.get(k);
-      if (!p || seen.has(k)) continue;
+      const r = w.rows.get(k);
+      if (!r || seen.has(k)) continue;
       seen.add(k);
-      if (p.type !== "pos") {
-        // The pane's own headings ("No home yet") and items carrying positions: what's inside them.
-        if (p.type === "group" || p.type === "item" || p.type === "loc") walk(p.kids, depth);
+      // The pane's own headings and items carrying positions: what's inside them, at this depth.
+      if (r.type === "group" || r.type === "item" || r.type === "loc") {
+        out.push(...walk(r.kids, depth, parent));
         continue;
       }
-      const items = [];
-      const offer = (key, label) => {
-        if (planDrop(whole, src, key, "into").ops) items.push({ key, label });
-      };
-      if (src.kind === "fn" || src.kind === "task") offer(p.key, src.kind === "task" ? "The position itself" : p.ref.name || "(no name)");
-      for (const fk of p.kids) {
-        const fn = whole.rows.get(fk);
-        if (!fn || fn.type !== "fn") continue;
-        if (src.kind === "std" || src.kind === "fail") offer(fn.key, textOf(fn));
-        for (const sk of fn.kids) {
-          const c = whole.rows.get(sk);
-          if (!c) continue;
-          if (c.type === "std" && src.kind === "fail" && !c.ref.legacy) offer(c.key, `${textOf(fn)} › performance standard ${textOf(c)}`);
-          if (c.type === "nostd" && src.kind === "fail") offer(c.key, `${textOf(fn)} › No performance standard`);
-          const fails = c.type === "fail" ? [c]
-            : (c.type === "std" || c.type === "nostd") ? c.kids.map((x) => whole.rows.get(x)).filter((x) => x?.type === "fail") : [];
-          for (const ff of fails) {
-            if (src.kind === "modes") offer(ff.key, `${textOf(fn)} › ${textOf(ff)}`);
-            if (src.kind === "task") {
-              for (const mk of ff.kids) if (whole.rows.get(mk)?.type === "mode") offer(mk, `${textOf(ff)} › ${textOf(whole.rows.get(mk))}`);
-            }
-          }
-        }
-      }
-      // Its "Not under a functional failure" row (on the mode's own position, that's the one), else the position.
-      if (src.kind === "modes") offer(whole.rows.has(`U:${p.key}`) ? `U:${p.key}` : p.key, "Not under a functional failure");
-      if (src.kind === "task") {
-        for (const mk of whole.rows.get(`U:${p.key}`)?.kids || []) offer(mk, `Not under a functional failure › ${textOf(whole.rows.get(mk))}`);
-      }
-      if (items.length) groups.push({ id: p.key, name: p.ref.name || "(no name)", depth, items });
-      walk(p.kids, depth + 1);
+      if (!shows.has(r.type)) continue;
+      // A functional failure under a function's one text: the function is the place (the text's row isn't shown).
+      if (src.kind === "fail" && r.type === "std" && r.ref.legacy) continue;
+      // What's moved, and what's inside it: never shown as a place.
+      if (src.kind !== "task" && src.keys.includes(k)) continue;
+      const node = { key: k, type: r.type, name: (r.type === "pos" ? r.ref.name : r.ref.text) || "(no name)", depth, parent,
+        kids: [], fitted: r.type === "pos" ? !!r.ref.item : false, ...judge(r) };
+      node.here = k === here;
+      nodes.set(k, node);
+      node.kids = walk(kidsOf(r), depth + 1, k);
+      if (node.ok || node.here || node.kids.length) out.push(k);
+      else nodes.delete(k);
+    }
+    return out;
+  };
+  roots.push(...walk(w.roots || [], 0, null));
+  return { nodes, roots, here: nodes.has(here) ? here : null };
+}
+
+// Is a row of a kind that what's moved goes into (before the server's and the
+// tree's own checks)?
+function selectable(whole, src, r) {
+  switch (src.kind) {
+    case "fn": return r.type === "pos";
+    case "std": return r.type === "fn";
+    case "fail": return r.type === "std" || r.type === "nostd" || (r.type === "fn" && !(r.ref.standards || []).length);
+    case "modes": return r.type === "fail" || r.type === "unassigned";
+    case "task": return r.type === "mode" || r.type === "pos";
+    default: return false;
+  }
+}
+
+// The drop a picked place makes: planDrop on the tree with its empty groups.
+export const planMoveTo = (whole, src, key) => planDrop(whole.rows.has(key) ? whole : withMoveGroups(whole), src, key, "into");
+
+// What the picker lists: with words typed, the places whose name has them and
+// the rows above them (all open); else every row whose rows above are open.
+// [{...node, open, match}] in tree order.
+export function visibleNodes(tree, { query = "", open = new Set() } = {}) {
+  const out = [];
+  const t = query.trim().toLowerCase();
+  let keep = null;
+  if (t) {
+    keep = new Set();
+    for (const n of tree.nodes.values()) {
+      if (!n.name.toLowerCase().includes(t)) continue;
+      for (let k = n.key; k != null && !keep.has(k); k = tree.nodes.get(k)?.parent) keep.add(k);
+    }
+  }
+  const walk = (keys) => {
+    for (const k of keys) {
+      const n = tree.nodes.get(k);
+      if (!n || (keep && !keep.has(k))) continue;
+      const isOpen = keep ? n.kids.some((c) => keep.has(c)) : open.has(k);
+      out.push({ ...n, open: isOpen, match: !!t && n.name.toLowerCase().includes(t) });
+      if (isOpen) walk(n.kids);
     }
   };
-  walk(whole.roots || [], 0);
-  return groups;
+  walk(tree.roots);
+  return out;
+}
+
+// What's open when the picker opens: the way down to where it is now (else
+// the first level).
+export function moveOpenAtStart(tree) {
+  const open = new Set();
+  if (tree.here) for (let k = tree.nodes.get(tree.here)?.parent; k != null; k = tree.nodes.get(k)?.parent) open.add(k);
+  if (!open.size) for (const k of tree.roots) open.add(k);
+  return open;
 }
 
 // Move up / Move down in a row's menu (functions, functional failures,
@@ -446,19 +583,16 @@ export function stepTarget(whole, key, by) {
 }
 
 // The moves a row's menu adds (before its Delete): Move to… for what can be
-// dragged, Move up / down among siblings (a standard has its own), and on a
-// failure mode with a task, Move a task…. With failure modes picked, Move to…
-// takes them all. [{id, label, disabled?}]
-export function moveItems(whole, r, { picked = null } = {}) {
+// dragged (always: it's the way to move without dragging, and a long way),
+// Move up / down among siblings (`steps`: only where there's no dragging; a
+// standard has its own), and on a failure mode with a task, Move a task….
+// With failure modes picked, Move to… takes them all. [{id, label, disabled?}]
+export function moveItems(whole, r, { picked = null, steps = true } = {}) {
   const s = r ? dragSource(whole, r.key, { picked }) : null;
   if (!s) return [];
   const n = s.kind === "modes" ? s.keys.length : 1;
-  const label = {
-    fn: "Move to another position…", std: "Move to another function…", fail: "Move to…",
-    modes: n > 1 ? `Move ${n} failure modes to…` : "Move to…",
-  }[s.kind];
-  const out = [{ id: "move-to", label }];
-  if (s.kind !== "std" && !(r.type === "mode" && !r.ref.functional_failure_id)) {
+  const out = [{ id: "move-to", label: n > 1 ? `Move ${n} failure modes to…` : "Move to…" }];
+  if (steps && s.kind !== "std" && !(r.type === "mode" && !r.ref.functional_failure_id)) {
     out.push({ id: "step-up", label: "Move up", disabled: !stepTarget(whole, r.key, -1) });
     out.push({ id: "step-down", label: "Move down", disabled: !stepTarget(whole, r.key, 1) });
   }

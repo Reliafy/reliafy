@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  NARROW_TABLE, TASK_WITH_INTERVAL, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardChoices, standardKeys, tableCols,
+  NARROW_TABLE, TASK_WITH_INTERVAL, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -512,9 +512,6 @@ test("standards are a level: a list's rows with their failures, a 'No standard' 
   assert.deepEqual(failureRows(d, row("f2")).map((x) => x.key), ["x3"]);
   assert.deepEqual(failureRows(d, row("f3")).map((x) => x.key), ["x4"]);
   assert.deepEqual(failuresOn(d, "pump").map((f) => [f.id, f.function]), [["x2", "Pump water"], ["x1", "Pump water"], ["x3", "Contain the water"], ["x4", "Stop on the lanyard"]]);
-  assert.deepEqual(standardChoices(d, row("x1")), [{ id: "s1", text: "At least 50 L/s" }, { id: "s2", text: "At 4 bar" }]);
-  assert.deepEqual(standardChoices(d, row("x3")), []);
-  assert.deepEqual(standardChoices(d, row("s1")), []);
   // Opening the tab on the pump opens the standards too, so the failures and modes show.
   const open = openFor(d, "pump");
   assert.ok(open.has("s1") && open.has("s2") && open.has(noStdKey("f1")) && open.has(legacyKey("f2")) && open.has("x2") && open.has("x3"));
@@ -560,9 +557,8 @@ test("row menus for the standards level: add, edit, move, remove; a failure chan
   assert.deepEqual(items(legacyKey("f2"), { canRename: false }).map((a) => a.id), ["open", "add-fail", "delete"]);
   assert.deepEqual(labels(noStdKey("f1")), ["Add a functional failure…"]); // the "No standard" heading: its details, on the add row
   // A failure under a function with a list offers Change standard…; one without doesn't.
-  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Change performance standard…", "Edit description", "Delete functional failure"]);
-  assert.ok(!labels("x3").includes("Change performance standard…"));
-  assert.ok(!labels("x4").includes("Change performance standard…"));
+  // Which standard it breaches is where it sits: moved (Move to…, a drag), not picked here.
+  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure"]);
   assert.deepEqual(labels("f1").slice(0, 3), ["Open…", "Add a performance standard…", "Add functional failure"]);
 });
 

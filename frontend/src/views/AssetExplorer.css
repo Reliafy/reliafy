@@ -1477,6 +1477,29 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
 .rcm-toast > span { flex: 1 1 auto; min-width: 0; }
 .rcm-toast button { flex: none; }
 .rcm-toast-x { background: none; border: 0; color: inherit; padding: 4px 8px; min-height: 32px; cursor: pointer; }
-.rcm-move-list { width: 100%; }
 .rcm-move-say { margin: 4px 0 0; color: var(--muted, #6b7280); }
 .rcm-move-say.no { color: var(--danger); }
+/* The Move to… picker: the tree with the RCM in it, the places it can't go greyed. */
+.rcm-move-tree {
+  position: relative; list-style: none; margin: 0; padding: 4px 0; max-height: min(52vh, 420px); overflow: auto;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surf);
+}
+.rcm-mt-row {
+  display: flex; align-items: center; gap: 6px; min-height: 36px; padding-right: 8px; cursor: pointer;
+  border-radius: 6px; margin: 0 4px; color: var(--ink); min-width: 0;
+}
+.rcm-mt-row:hover { background: var(--acc-hover); }
+.rcm-mt-row:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.rcm-mt-row.picked { background: var(--acc-t); box-shadow: inset 3px 0 0 var(--acc); font-weight: 600; }
+.rcm-mt-row.no { color: var(--faint); cursor: default; }
+.rcm-mt-row.no:hover { background: none; }
+.rcm-mt-row .tp-ic { flex: none; }
+.rcm-mt-name { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.3; padding: 6px 0; }
+.rcm-mt-here { flex: none; font-size: var(--fs-12); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
+button.rcm-mt-arrow, span.rcm-mt-arrow {
+  flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; color: var(--muted); border-radius: 6px;
+}
+button.rcm-mt-arrow svg { transition: transform 0.12s; }
+button.rcm-mt-arrow.open svg { transform: rotate(90deg); }
+button.rcm-mt-arrow:hover:not(:disabled) { background: var(--surf-2); }

@@ -172,14 +172,6 @@ export function failureRows(display, fnRow) {
   return out;
 }
 
-// The standards a functional failure may breach: its function's list (none
-// while the function has its one text, or no standard).
-export function standardChoices(display, failRow) {
-  if (!failRow || failRow.type !== "fail") return [];
-  const fn = display.rows.get(failRow.ref.function_id);
-  return (fn?.ref.standards || []).map((st) => ({ id: st.id, text: st.text || "" }));
-}
-
 // A reference row's counts: the failure modes in the chain it stands for (the
 // `chain` the server read with the link), counted as a failure mode's own are;
 // the server's own totals when it didn't list them.
@@ -264,8 +256,6 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
       { id: "add-mode", label: "Add failure mode" },
       { id: "link-cause", label: "Link to a cause…" },
       ...(r.ref.has_above ? [{ id: "link-effect", label: "Link to an effect…" }] : []),
-      // Which of its function's standards it breaches (only with a list).
-      ...(r.ref.has_standards ? [{ id: "change-std", label: "Change performance standard…" }] : []),
       ...rename,
       { id: "delete", label: "Delete functional failure", danger: true },
     ];
