@@ -148,26 +148,27 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   await expect(fnRow).toBeVisible();
   const frame = { tree: await box(page.locator(".tp-scroll")), head: await box(page.locator(".tt-head")) };
 
-  // The function's menu with the mouse: no Move to… / Move up / Move down.
+  // The function's menu with the mouse: Move to… (the picker), but no Move up / Move down (drag for those).
   await fnRow.locator(".tt-tree").click({ button: "right" });
   const fmenu = rowMenu(page, `Function: Pump water ${tag}`);
-  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
+  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Isolate", "Delete function"]);
   await shot(page, "v2-3-rcm-function-menu-no-moves-1280");
   await page.keyboard.press("Escape");
   // Its ⋯: the same.
   await fnRow.hover();
   await fnRow.getByRole("button", { name: "Actions", exact: true }).click();
-  await expect(fmenu.getByRole("menuitem", { name: /^Move/ })).toHaveCount(0);
+  await expect(fmenu.getByRole("menuitem", { name: /^Move/ })).toHaveText(["Move to…"]);
   await page.keyboard.press("Escape");
-  // A failure mode with the mouse: no Move to… nor Move a task…; a plain Isolate (nothing inside it).
+  // A failure mode with the mouse: Move to…, no Move up / down; a plain Isolate (nothing inside it).
   await trow(`Failure mode: Seal leaks ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await expect(page.getByRole("menu").getByRole("menuitem", { name: /^Move/ })).toHaveCount(0);
+  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move to…" })).toBeVisible();
+  await expect(page.getByRole("menu").getByRole("menuitem", { name: /^Move (up|down)$/ })).toHaveCount(0);
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Isolate", exact: true })).not.toHaveAttribute("aria-haspopup", "menu");
   await page.keyboard.press("Escape");
   // From the keyboard: the moves are there.
   await fnRow.locator(".tt-tree").click();
   await fnRow.press("Shift+F10");
-  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to another position…", "Move up", "Move down", "Isolate", "Delete function"]);
+  await expect(fmenu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Move up", "Move down", "Isolate", "Delete function"]);
   await page.keyboard.press("Escape");
 
   // Isolate the function, 1 level: its failure shows, closed; line B closed, still on show; the pin stays.
@@ -224,7 +225,7 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   const fnRow = page.getByRole("row", { name: new RegExp(`^Function: Pump water ${tag}`) });
   await expect(fnRow).toBeVisible(); // its pump was opened 2 levels below the line
   await fnRow.getByRole("button", { name: "Actions", exact: true }).click();
-  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move to another position…" })).toBeVisible();
+  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move to…" })).toBeVisible();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move up" })).toBeVisible();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Isolate" })).toBeVisible();
   await shot(page, "v2-7-phone-400px-rcm-menu-moves");

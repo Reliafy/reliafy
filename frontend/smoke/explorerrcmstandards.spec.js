@@ -11,6 +11,7 @@
 // With SMOKE_SHOTS_DIR set, it also saves screenshots of the function's
 // details with its standards list at 1280 and 400 px (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { pickPlace } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -107,15 +108,25 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  // The functional failure: which standard it breaches.
+  // The functional failure: which standard it breaches is where it sits. Its panel has no
+  // Breaches picker; the panel's ⋯ Move to… puts it under a standard.
   const ffRow = trow(page, `^Functional failure: pH above 7.8 ${tag}`);
   await ffRow.locator(".tp-nm").dblclick();
   const fdlg = panel(page);
   await expect(fdlg).toBeVisible();
-  const breaches = fdlg.getByRole("combobox", { name: "Breaches" });
-  await expect(breaches).toHaveValue("");
-  await breaches.selectOption({ label: "pH 7.4-7.6" });
-  await expect(breaches).not.toHaveValue("");
+  await expect(fdlg.getByRole("combobox", { name: "Breaches" })).toHaveCount(0);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/fail-panel-no-breaches-1280.png` });
+  await fdlg.getByRole("button", { name: "More for this functional failure" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Move to…" }).click();
+  const moveDlg = page.getByRole("dialog", { name: `Move “pH above 7.8 ${tag}”` });
+  const newStd = (await (await request.get(`${M}/functions/${p.fn.id}`)).json()).standards.find((st) => st.text === "pH 7.4-7.6");
+  await pickPlace(moveDlg, newStd.id, "pH 7.4-7.6");
+  await expect(moveDlg.getByRole("status")).not.toContainText("checking");
+  await moveDlg.getByRole("button", { name: "Move", exact: true }).click();
+  await expect(moveDlg).toHaveCount(0);
+  await expect(page.locator(".rcm-toast")).toContainText(`“pH above 7.8 ${tag}” now breaches “pH 7.4-7.6”.`);
+  // Picked in its new place: the panel shows it, under the standard.
+  await expect(panel(page).getByRole("navigation", { name: "Inside" })).toContainText("pH 7.4-7.6");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   fn = await (await request.get(`${M}/functions/${p.fn.id}`)).json();

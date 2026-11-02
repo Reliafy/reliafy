@@ -152,3 +152,12 @@ export function flashes(frames, { tol = 1 } = {}) {
   if (frames.some((f) => f.blank)) out.push("a frame with no rows drawn");
   return out;
 }
+
+// Move to… (the RCM tab's one picker for every kind): find a place by its
+// name (the search opens the way to it) and pick it by its key.
+export async function pickPlace(dlg, key, name) {
+  if (name) await dlg.getByRole("searchbox", { name: "Find a place" }).fill(name);
+  const item = dlg.getByRole("tree", { name: "Where it goes" }).locator(`[role="treeitem"][data-key="${key}"]`);
+  await item.click();
+  return item;
+}

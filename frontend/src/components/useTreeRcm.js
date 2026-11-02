@@ -294,10 +294,6 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       if (dryRun) return applyRcm(operations, { dryRun: true });
       return after(applyRcm(operations));
     },
-    // The standard a functional failure breaches (null: the whole function).
-    setBreach(r, standardId) {
-      return after(updateFunctionalFailure(r.ref.id, { standard_id: standardId || null }));
-    },
   }), [after, askText, make]);
 
   return { rcm, error, setError, load, ops };

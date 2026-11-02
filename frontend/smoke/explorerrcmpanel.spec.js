@@ -95,7 +95,9 @@ test("a click shows the details beside the table; a double-click on the name spr
   await stdRow.locator(".tp-nm").click();
   await expect(panel(page).getByRole("heading", { name: `At 3 bar ${tag}` })).toBeVisible();
   expect(await isExpanded(page)).toBe(true);
-  // A standard's limit fields, each kept as you leave it.
+  // A standard's limit fields (folded: Edit… on its one line opens them), each kept as you leave it.
+  await expect(panel(page).locator(".rw-checkable")).toContainText("Checkable: Pressure at least 3 bar");
+  await panel(page).getByRole("button", { name: "Edit the checkable limit" }).click();
   await expect(panel(page).getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("Pressure");
   await expect(panel(page).getByRole("combobox", { name: "Comparator" })).toHaveValue(">=");
   await panel(page).getByRole("textbox", { name: "When it applies", exact: true }).fill("while the pump runs");
@@ -346,6 +348,7 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
 
   // A standard's limit: comparator, value and unit as one group, read back in words.
   await trow(page, `^Performance standard: At 3 bar ${tag}`).locator(".tp-nm").click();
+  await panel(page).getByRole("button", { name: "Edit the checkable limit" }).click();
   await expect(panel(page).getByRole("group", { name: "Limit" }).getByRole("combobox", { name: "Comparator" })).toHaveValue(">=");
   await expect(panel(page).locator(".reads-as")).toHaveText("Reads as: Pressure at least 3 bar");
   // A consequence cell: one tap on a chip under it; Escape drops it.

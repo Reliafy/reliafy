@@ -22,7 +22,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it saves screenshots at 1280 and 400 px.
 import { test, expect, open, postOk } from "./health.js";
-import { frameOf } from "./explorer.js";
+import { frameOf, pickPlace } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -239,10 +239,10 @@ test("at 400 px a standard's Move to… carries its failures too, with Undo", as
   await openPlant(page, p, 400);
   const row = trow(page, `^Performance standard: At 4 bar ${tag}`);
   await row.getByRole("button", { name: "Actions", exact: true }).click();
-  await page.getByRole("menu").getByRole("menuitem", { name: "Move to another function…" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Move to…" }).click();
   const dlg = page.getByRole("dialog", { name: `Move the performance standard “At 4 bar ${tag}” and its functional failure` });
   await expect(dlg).toBeVisible();
-  await dlg.getByRole("listbox", { name: "Where it goes" }).selectOption(p.more.id);
+  await pickPlace(dlg, p.more.id, `Pump more water ${tag}`);
   await expect(dlg.getByRole("status")).toContainText(`to “Pump more water ${tag}”, with its failure modes and tasks.`);
   await expect(dlg.getByRole("status")).not.toContainText("checking");
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
@@ -258,9 +258,9 @@ test("at 400 px a standard's Move to… carries its failures too, with Undo", as
     .toEqual([[`No flow ${tag}`, `At least 50 L/s ${tag}`], [`Low pressure ${tag}`, `At 4 bar ${tag}`]]);
   // The other way too: the refused one says why before Move.
   await trow(page, `^Performance standard: At least 50 L/s ${tag}`).getByRole("button", { name: "Actions", exact: true }).click();
-  await page.getByRole("menu").getByRole("menuitem", { name: "Move to another function…" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Move to…" }).click();
   const dlg2 = page.getByRole("dialog", { name: /Move the performance standard “At least 50 L\/s/ });
-  await dlg2.getByRole("listbox", { name: "Where it goes" }).selectOption(p.more.id);
+  await pickPlace(dlg2, p.more.id, `Pump more water ${tag}`);
   await expect(dlg2.getByRole("status")).toContainText("It can't go there:");
   await expect(dlg2.getByRole("button", { name: "Move", exact: true })).toBeDisabled();
 });
@@ -317,10 +317,10 @@ test("at 400 px there's no dragging: the row menu's Move to… moves it, with Un
   await row.getByRole("button", { name: "Actions", exact: true }).click();
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: "Move up" })).toBeVisible();
-  await menu.getByRole("menuitem", { name: "Move to another position…" }).click();
+  await menu.getByRole("menuitem", { name: "Move to…" }).click();
   const dlg = page.getByRole("dialog", { name: `Move “Contain the water ${tag}”` });
   await expect(dlg).toBeVisible();
-  await dlg.getByRole("listbox", { name: "Where it goes" }).selectOption(p.b.id);
+  await pickPlace(dlg, p.b.id, `Pump B ${tag}`);
   await expect(dlg.getByRole("status")).toContainText(`to “Pump B ${tag}”`);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/move-to-400.png` });
   await dlg.getByRole("button", { name: "Move", exact: true }).click();
@@ -331,4 +331,111 @@ test("at 400 px there's no dragging: the row menu's Move to… moves it, with Un
   await expect.poll(async () => (await rcmOf(request, p.b.id)).functions.map((f) => f.text)).toContain(`Contain the water ${tag}`);
   await toast(page).getByRole("button", { name: "Undo" }).click();
   await expect.poll(async () => (await rcmOf(request, p.a.id)).functions.map((f) => f.text)).toEqual([`Pump water ${tag}`, `Contain the water ${tag}`]);
+});
+
+// Move to…: one picker for every kind, from the row's ⋯ with the mouse too.
+// Only the places that kind can go can be picked; the rest are greyed with a
+// reason. Each move lands where it was put, and the moved row is picked there.
+async function moveVia(page, rowName, { item = "Move to…", width = 1280 } = {}) {
+  const row = typeof rowName === "string" ? trow(page, rowName) : rowName;
+  if (width > 600) await row.hover();
+  await row.getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: item }).click();
+  const dlg = page.getByRole("dialog", { name: /^Move / });
+  await expect(dlg).toBeVisible();
+  return dlg;
+}
+const place = (dlg, key) => dlg.getByRole("tree", { name: "Where it goes" }).locator(`[role="treeitem"][data-key="${key}"]`);
+async function moveAndCheck(page, dlg, key, name) {
+  await pickPlace(dlg, key, name);
+  await expect(dlg.getByRole("status")).not.toContainText("checking");
+  await dlg.getByRole("button", { name: "Move", exact: true }).click();
+  await expect(dlg).toHaveCount(0);
+  await expect(toast(page).getByRole("button", { name: "Undo" })).toBeVisible();
+}
+
+test("Move to… moves every kind from its ⋯ menu, and the moved row is picked in its new place", async ({ page, request }) => {
+  const tag = `m${Date.now()}`;
+  const p = await plant(request, tag);
+  await openPlant(page, p);
+
+  // A performance standard → another function (its functional failure goes with it). Positions are greyed.
+  let dlg = await moveVia(page, `^Performance standard: At 4 bar ${tag}`);
+  await expect(place(dlg, p.b.id)).toHaveAttribute("aria-disabled", "true");
+  await expect(place(dlg, p.b.id)).toHaveAttribute("title", "A performance standard goes under a function.");
+  await expect(place(dlg, p.water.id)).toHaveAttribute("title", "It's here now.");
+  await moveAndCheck(page, dlg, p.more.id, `Pump more water ${tag}`);
+  await expect.poll(async () => (await rcmOf(request, p.b.id)).functions[0].failures.map((f) => [f.text, f.standard?.text]))
+    .toEqual([[`No flow at B ${tag}`, `At least 20 L/s ${tag}`], [`Low pressure ${tag}`, `At 4 bar ${tag}`]]);
+  await expect(trow(page, `^Performance standard: At 4 bar ${tag}`)).toHaveAttribute("aria-selected", "true");
+
+  // A function → another position.
+  dlg = await moveVia(page, `^Function: Contain the water ${tag}`);
+  await moveAndCheck(page, dlg, p.b.id, `Pump B ${tag}`);
+  await expect.poll(async () => (await rcmOf(request, p.b.id)).functions.map((f) => f.text)).toContain(`Contain the water ${tag}`);
+  await expect(trow(page, `^Function: Contain the water ${tag}`)).toHaveAttribute("aria-selected", "true");
+
+  // A failure mode → its position's "Not under a functional failure" (offered though there's none yet).
+  const sealRow = table(page).locator(`[id="tp-${p.seal.id}"]`);
+  dlg = await moveVia(page, sealRow);
+  await expect(place(dlg, p.noFlow.id)).toHaveAttribute("title", "It's here now.");
+  await expect(place(dlg, p.a.id)).toHaveAttribute("title", /^A failure mode goes under a functional failure/);
+  await place(dlg, p.a.id).click({ force: true }); // a greyed place (aria-disabled): says why, picks nothing
+  await expect(dlg.getByRole("status")).toContainText("It can't go there.");
+  await expect(dlg.getByRole("button", { name: "Move", exact: true })).toBeDisabled();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/move-to-failure-mode-1280.png` });
+  await moveAndCheck(page, dlg, `U:${p.a.id}`, "Not under a functional failure");
+  await expect.poll(async () => (await rcmOf(request, p.a.id)).unassigned.map((m) => m.text)).toEqual([`Seal leaks ${tag}`]);
+  await expect(sealRow).toHaveAttribute("aria-selected", "true");
+
+  // A task → another failure mode (Move a task…).
+  dlg = await moveVia(page, `^Failure mode: Bearing seizes ${tag}`, { item: "Move a task…" });
+  await moveAndCheck(page, dlg, p.seal.id, `Seal leaks ${tag}`);
+  await expect.poll(async () => (await rcmOf(request, p.a.id)).unassigned[0].tasks.map((t) => t.name)).toEqual([`Grease bearings ${tag}`]);
+
+  // A functional failure → its function's "No performance standard" (offered though there's none yet).
+  dlg = await moveVia(page, `^Functional failure: No flow ${tag}`);
+  await expect(place(dlg, p.flow.id)).toHaveAttribute("title", "It's here now.");
+  await expect(place(dlg, p.water.id)).toHaveAttribute("aria-disabled", "true");
+  await expect(place(dlg, p.a.id)).toHaveAttribute("aria-disabled", "true");
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/move-to-functional-failure-1280.png` });
+  await moveAndCheck(page, dlg, `N:${p.water.id}`, "No performance standard");
+  await expect.poll(async () => (await rcmOf(request, p.a.id)).functions[0].failures.find((f) => f.text === `No flow ${tag}`).standard).toBeNull();
+  await expect(trow(page, `^Functional failure: No flow ${tag}`)).toHaveAttribute("aria-selected", "true");
+  // Undo puts it back under its standard.
+  await toast(page).getByRole("button", { name: "Undo" }).click();
+  await expect.poll(async () => (await rcmOf(request, p.a.id)).functions[0].failures.find((f) => f.text === `No flow ${tag}`).standard?.text)
+    .toBe(`At least 50 L/s ${tag}`);
+});
+
+test("at 400 px Move to… for a failure mode and a functional failure fits, searches and moves", async ({ page, request }) => {
+  const tag = `q${Date.now()}`;
+  const p = await plant(request, tag);
+  await openPlant(page, p, 400);
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+  // A failure mode: search narrows the tree to the matches and the way to them.
+  let dlg = await moveVia(page, `^Failure mode: Impeller worn ${tag}`, { width: 400 });
+  await dlg.getByRole("searchbox", { name: "Find a place" }).fill(`No flow at B ${tag}`);
+  await expect(dlg.getByRole("tree", { name: "Where it goes" }).getByRole("treeitem")).toHaveText([
+    `Drag plant ${tag}`, `Pump B ${tag}`, `Pump more water ${tag}`, `At least 20 L/s ${tag}`, `No flow at B ${tag}`]);
+  await dlg.getByRole("searchbox", { name: "Find a place" }).fill("");
+  expect(await overflow()).toBeLessThanOrEqual(0);
+  const box = await dlg.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(400.5);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/move-to-failure-mode-400.png` });
+  // Picked from the keyboard too: Enter on a place picks it.
+  await dlg.getByRole("searchbox", { name: "Find a place" }).fill(`No flow at B ${tag}`);
+  await place(dlg, p.noFlowB.id).focus();
+  await page.keyboard.press("Enter");
+  await expect(place(dlg, p.noFlowB.id)).toHaveAttribute("aria-selected", "true");
+  await moveAndCheck(page, dlg, p.noFlowB.id, `No flow at B ${tag}`);
+  await expect.poll(async () => (await rcmOf(request, p.b.id)).functions[0].failures[0].modes.map((m) => m.text)).toContain(`Impeller worn ${tag}`);
+  // A functional failure: a performance standard on another position.
+  dlg = await moveVia(page, `^Functional failure: Low pressure ${tag}`, { width: 400 });
+  expect(await overflow()).toBeLessThanOrEqual(0);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/move-to-functional-failure-400.png` });
+  await moveAndCheck(page, dlg, p.twenty.id, `At least 20 L/s ${tag}`);
+  await expect.poll(async () => (await rcmOf(request, p.b.id)).functions[0].failures.map((f) => f.text)).toContain(`Low pressure ${tag}`);
+  expect(await overflow()).toBeLessThanOrEqual(0);
 });

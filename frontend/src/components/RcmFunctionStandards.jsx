@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { saveErrorText } from "../confirm.js";
-import { Field, FormModal } from "./MaintenanceParts.jsx";
 import UiField from "./ui/Field.jsx";
 import InputGroup, { ReadsAs } from "./ui/InputGroup.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
@@ -260,52 +259,5 @@ function SplitForm({ text, busy, failed, onCancel, onSubmit }) {
         </button>
       </div>
     </form>
-  );
-}
-
-// The standard a functional failure breaches: one of its function's, or the
-// whole function (a total loss). Saved at once.
-export function BreachesField({ r, standards, readOnly = false, onChange, saved = 0 }) {
-  const current = r.ref.standard?.id || "";
-  if (!standards.length) return null;
-  return (
-    <UiField label="Breaches" saved={saved} help="Which performance standard this failure is a breach of, as a hint for the reader.">
-      {readOnly ? <span className="rw-fval">{r.ref.standard?.text || "The whole function"}</span> : (
-        <Select value={current} onChange={(e) => onChange(e.target.value || null)}>
-          <option value="">The whole function</option>
-          {standards.map((st) => <option key={st.id} value={st.id}>{st.text}</option>)}
-        </Select>
-      )}
-    </UiField>
-  );
-}
-
-// Which of its function's standards a functional failure breaches, from its
-// row menu (Change standard…): the whole function, or one of the list. Saved
-// once from the dialog (FormModal: the button saying "Saving…" until the
-// server answers; a refusal keeps it open with the reason).
-//   row       the functional failure's row
-//   standards [{id, text}] its function's list
-//   onChange  (standardId | null) → a promise
-//   onDone    (text | null) once saved: the standard's text, or null for the whole function
-export function ChangeStandardModal({ row, standards, onClose, onChange, onDone }) {
-  const before = row.ref.standard?.id || "";
-  const [to, setTo] = useState(before);
-  const name = `“${String(row.ref.text || "").slice(0, 80)}”`;
-  return (
-    <FormModal title="Which performance standard does it breach?" submitLabel="Save" pendingLabel="Saving…" onClose={onClose}
-               canSubmit={to !== before}
-               onSubmit={async () => {
-                 await onChange(to || null);
-                 onDone(to ? standards.find((st) => st.id === to)?.text || null : null);
-               }}>
-      <p className="lib-date">{name} moves under the performance standard it breaches in the tree. A total loss breaches the whole function.</p>
-      <Field label="Breaches">
-        <select value={to} onChange={(e) => setTo(e.target.value)} autoFocus aria-label="Breaches">
-          <option value="">The whole function</option>
-          {standards.map((st) => <option key={st.id} value={st.id}>{st.text}</option>)}
-        </select>
-      </Field>
-    </FormModal>
   );
 }

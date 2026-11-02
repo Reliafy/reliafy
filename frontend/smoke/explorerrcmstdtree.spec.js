@@ -126,7 +126,7 @@ test("standards are a level of the tree: a list's rows, the 'No standard' row, t
   expect(await level(trow(page, `^Functional failure: No flow ${tag}`))).toBe(fnLevel + 1);
   // The limit in words is in the standard's details (no column for it).
   await ca.locator(".tp-nm").click();
-  await expect(page.getByRole("complementary", { name: "Details" }).getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("Calcium hardness");
+  await expect(page.getByRole("complementary", { name: "Details" }).locator(".rw-checkable")).toHaveText("Checkable: Calcium hardness between 200 and 400 ppm · Edit…");
   await page.getByRole("button", { name: "Close the details" }).click();
   // The level control and the filter reach the standards.
   await page.getByRole("button", { name: /^Tree options/ }).click();
@@ -177,8 +177,8 @@ test("row menus: add a standard, a failure under it, change a failure's standard
 
   // A function's menu: Add a performance standard… (the first standard; its loose failure stays on show, under "No standard").
   let menu = await menuOf(page, circulate);
-  // With the mouse there are no moves (a drag does them); Isolate › before Delete.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Isolate", "Delete function"]);
+  // With the mouse: Move to…, but no Move up / down (a drag does them); Isolate › before Delete.
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Isolate", "Delete function"]);
   await menu.getByRole("menuitem", { name: "Add a performance standard…" }).click();
   // The function's details, on the standards' add row: typed in place, Enter writes it.
   const details = page.getByRole("complementary", { name: "Details" });
@@ -198,11 +198,11 @@ test("row menus: add a standard, a failure under it, change a failure's standard
 
   // A standard's menu: Add a functional failure… (it breaches this standard).
   menu = await menuOf(page, fifty);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Isolate", "Remove performance standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move to…", "Isolate", "Remove performance standard"]);
   await page.keyboard.press("Escape");
-  // From the keyboard: the moves too.
+  // From the keyboard: Move up / down too.
   menu = await menuOf(page, fifty, { keyboard: true });
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Isolate", "Remove performance standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Move to…", "Isolate", "Remove performance standard"]);
   await expect(menu.getByRole("menuitem", { name: "Move up" })).toHaveAttribute("aria-disabled", "true"); // the only one
   await menu.getByRole("menuitem", { name: "Add a functional failure…" }).click();
   // The standard's details, on their functional failures' add row (one that breaches it).
@@ -219,13 +219,18 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   let fn = await readFn(request, p.circulate.id);
   expect(fn.failures.map((f) => [f.text, f.standard?.text || null])).toEqual([[`No flow ${tag}`, null], [`Low flow ${tag}`, `At least 50 L/s ${tag}`]]);
 
-  // A failure's menu: Change standard… (it moves under the standard; the "No standard" row goes).
+  // A failure's menu: Move to… a standard (it moves under it; the "No standard" row goes). No Change standard… any more.
   menu = await menuOf(page, flow);
-  await menu.getByRole("menuitem", { name: "Change performance standard…" }).click();
-  const pick = page.getByRole("dialog", { name: "Which performance standard does it breach?" });
-  await expect(pick.getByRole("combobox", { name: "Breaches" })).toHaveValue("");
-  await pick.getByRole("combobox", { name: "Breaches" }).selectOption({ label: `At least 50 L/s ${tag}` });
-  await pick.getByRole("button", { name: "Save" }).click();
+  await expect(menu.getByRole("menuitem", { name: "Change performance standard…" })).toHaveCount(0);
+  await menu.getByRole("menuitem", { name: "Move to…" }).click();
+  const pick = page.getByRole("dialog", { name: `Move “No flow ${tag}”` });
+  const placeTree = pick.getByRole("tree", { name: "Where it goes" });
+  // Where it is now: greyed, and says so.
+  await expect(placeTree.locator(`[role="treeitem"][aria-disabled="true"]`).filter({ hasText: "here now" })).toHaveCount(1);
+  const fiftyId = (await readFn(request, p.circulate.id)).standards[0].id;
+  await pick.getByRole("tree", { name: "Where it goes" }).locator(`[data-key="${fiftyId}"]`).click();
+  await expect(pick.getByRole("status")).not.toContainText("checking");
+  await pick.getByRole("button", { name: "Move", exact: true }).click();
   await expect(pick).toHaveCount(0);
   await expect(flow).toBeVisible();
   expect(await level(flow)).toBe((await level(fifty)) + 1);
@@ -300,6 +305,13 @@ test("double-click a standard's name: its details across the table, text, limit 
   await dlg.locator(".rw-title-btn").click();
   await expect(dlg.getByRole("textbox", { name: /^Performance standard/ })).toHaveValue(`Calcium hardness 200-400 ppm ${tag}`);
   await page.keyboard.press("Escape");
+  // Its limit as data is folded: one line saying what it reads as; Edit… opens the fields.
+  await expect(dlg.locator(".rw-checkable")).toHaveText("Checkable: Calcium hardness between 200 and 400 ppm · Edit…");
+  await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveCount(0);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/checkable-set-1280.png` });
+  await dlg.getByRole("button", { name: "Edit the checkable limit" }).click();
+  await expect(dlg.getByRole("region", { name: "Checkable limit" })).toContainText("Write the limit as data so readings can be checked against it later.");
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/checkable-open-1280.png` });
   await expect(dlg.locator(".reads-as")).toHaveText("Reads as: Calcium hardness between 200 and 400 ppm");
   await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("Calcium hardness");
   await expect(dlg.getByRole("combobox", { name: "Comparator" })).toHaveValue("between");
@@ -325,7 +337,9 @@ test("double-click a standard's name: its details across the table, text, limit 
   await expect(dlg.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `pH above 7.8 ${tag}` })).toBeVisible();
   await dlg.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: `pH below 7.2 ${tag}` }).click();
   await expect(dlg.getByRole("heading", { name: `pH below 7.2 ${tag}` })).toBeVisible();
-  await expect(dlg.getByRole("combobox", { name: "Breaches" })).toHaveValue(p.standards.ph.id);
+  // Which standard it breaches is where it sits: the way up says it; there's no Breaches picker.
+  await expect(dlg.getByRole("navigation", { name: "Inside" })).toContainText(`pH 7.2-7.8 ${tag}`);
+  await expect(dlg.getByRole("combobox", { name: "Breaches" })).toHaveCount(0);
   // The function's details still list every functional failure, through the standards.
   await trow(page, `^Function: Keep the water balanced ${tag}`).locator(".tp-nm").click();
   await expect(dlg.getByRole("region", { name: "Functional failures" }).getByRole("button", { name: new RegExp(tag) })).toHaveCount(3);
@@ -340,6 +354,17 @@ test("double-click a standard's name: its details across the table, text, limit 
   const fn = await readFn(request, p.sanitise.id);
   expect([fn.standard, fn.standards]).toEqual([`FC 1-3 ppm; CC under 0.4 ppm ${tag}`, []]);
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  // A standard with no limit as data: only "Make this checkable…" at the foot; it opens the fields, empty.
+  await trow(page, `^Performance standard: Total alkalinity 80-120 ppm ${tag}`).locator(".tp-nm").click();
+  await expect(dlg.locator(".rw-checkable")).toHaveText("Make this checkable…");
+  await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveCount(0);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/checkable-none-1280.png` });
+  await dlg.getByRole("button", { name: "Make this checkable…" }).click();
+  await expect(dlg.getByText("Write the limit as data so readings can be checked against it later.")).toBeVisible();
+  await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("");
+  // Hide folds it again (nothing was set: the link again).
+  await dlg.getByRole("button", { name: "Hide the checkable limit" }).click();
+  await expect(dlg.locator(".rw-checkable")).toHaveText("Make this checkable…");
   await expectHealthy(page, problems, { label: "rcm standard details" });
 });
 
@@ -357,17 +382,34 @@ test("at 400 px the standard rows, their menus and the details sheet fit", async
   // The menu: no in-place edit on a phone (the details edit the text); Open… shows them.
   await ca.getByRole("button", { name: "Actions", exact: true }).click();
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to another function…", "Isolate", "Remove performance standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to…", "Isolate", "Remove performance standard"]);
   await menu.getByRole("menuitem", { name: "Open…" }).click();
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
+  await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveCount(0);
+  await dlg.locator(".rw-checkable").scrollIntoViewIfNeeded();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/checkable-set-400.png` });
+  await dlg.getByRole("button", { name: "Edit the checkable limit" }).click();
   await expect(dlg.getByRole("textbox", { name: "Parameter", exact: true })).toBeVisible();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/checkable-open-400.png` });
   expect(await overflow(page)).toBe(0);
   const box = await dlg.boundingBox();
   expect(box.x + box.width).toBeLessThanOrEqual(400.5);
   await dlg.getByRole("button", { name: "Close the details" }).click();
   await expect(panel(page)).toHaveCount(0);
   expect(await overflow(page)).toBe(0);
+  // A standard with no limit as data: only the quiet "Make this checkable…" link.
+  const ta = trow(page, `^Performance standard: Total alkalinity 80-120 ppm ${tag}`);
+  await ta.getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Open…" }).click();
+  const tdlg = panel(page);
+  await expect(tdlg.locator(".rw-checkable")).toHaveText("Make this checkable…");
+  await tdlg.locator(".rw-checkable").scrollIntoViewIfNeeded();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/checkable-none-400.png` });
+  await tdlg.getByRole("button", { name: "Make this checkable…" }).click();
+  await expect(tdlg.getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("");
+  expect(await overflow(page)).toBe(0);
+  await tdlg.getByRole("button", { name: "Close the details" }).click();
   await expectHealthy(page, problems, { label: "rcm standards tree phone" });
 });
 

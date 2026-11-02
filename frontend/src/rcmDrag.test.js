@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
 import { graftRcm } from "./explorerRcm.js";
 import {
-  answerNotes, dragBlock, dragSource, dropZones, moveChoices, moveItems, place, planDrop, positionWithin, refusalText,
-  sourceWords, stepTarget, undoBatch, zoneAt,
+  answerNotes, dragBlock, dragSource, dropZones, moveItems, moveOpenAtStart, moveTree, place, planDrop, planMoveTo, positionWithin,
+  refusalText, sourceWords, stepTarget, undoBatch, visibleNodes, withMoveGroups, zoneAt,
 } from "./rcmDrag.js";
 
 const DATA = {
@@ -238,18 +238,100 @@ test("a task moves from its failure mode to another (moved to that position when
   assert.ok(positionWithin(d, "motor", "plant") && !positionWithin(d, "plant", "motor"));
 });
 
-test("Move to…: the places each kind can go, by position, never where it is", () => {
+// The picker: the keys that can be picked, and why the others can't.
+const okKeys = (t) => [...t.nodes.values()].filter((n) => n.ok).map((n) => n.key);
+const why = (t, key) => t.nodes.get(key)?.reason;
+
+test("Move to…: a function goes to a position, never where it is", () => {
   const d = whole();
-  const keys = (s) => moveChoices(d, s).flatMap((g) => g.items.map((i) => i.key));
-  assert.deepEqual(keys(src(d, "f1")), ["plant", "motor", "pumpb"]);
-  assert.deepEqual(keys(src(d, "s1")), ["f2", "g1"]);
-  assert.ok(keys(src(d, "x1")).includes("s2") && keys(src(d, "x1")).includes("N:f1") && !keys(src(d, "x1")).includes("s1"));
-  assert.deepEqual(keys(src(d, "m1")), ["plant", "x2", "x3", "x4", "U:pump", "U:motor", "y1", "pumpb"]);
-  assert.ok(!keys(src(d, "m1")).includes("x1") && keys(src(d, "m1")).includes("y1") && keys(src(d, "m1")).includes("U:motor"));
-  const task = keys(src(d, "m1", { task: { id: "t1", name: "Grease", position_id: "pump" } }));
-  assert.ok(task.includes("m3") && task.includes("n1") && task.includes("pumpb") && !task.includes("m1") && !task.includes("pump"));
-  const g = moveChoices(d, src(d, "f1"));
-  assert.deepEqual(g.map((x) => [x.name, x.depth]), [["Plant", 0], ["Motor", 2], ["Pump B", 1]]);
+  const t = moveTree(d, src(d, "f1"));
+
+  assert.deepEqual(new Set(okKeys(t)), new Set(["plant", "motor", "pumpb"]));
+  assert.equal(t.here, "pump");
+  assert.equal(why(t, "pump"), "It's here now.");
+  // Only positions: no RCM rows in a function's picker.
+  assert.ok([...t.nodes.values()].every((n) => n.type === "pos"));
+  assert.deepEqual([...t.nodes.values()].map((n) => [n.key, n.depth]), [["plant", 0], ["pump", 1], ["motor", 2], ["pumpb", 1]]);
+});
+
+test("Move to…: a performance standard goes to a function; positions are greyed with the reason", () => {
+  const d = whole();
+  const t = moveTree(d, src(d, "s1"));
+  assert.deepEqual(new Set(okKeys(t)), new Set(["f2", "g1"]));
+  assert.equal(why(t, "f1"), "It's here now.");
+  assert.equal(why(t, "pump"), "A performance standard goes under a function.");
+  // The motor has no function: left out (nothing to pick there).
+  assert.ok(!t.nodes.has("motor"));
+});
+
+test("Move to…: a functional failure goes to a standard, a function's No performance standard, or a function with no list", () => {
+  const d = whole();
+  const t = moveTree(d, src(d, "x1"));
+  // N:f1 is there (x3 breaches none); N:g1 is offered though the tree has none yet; f2 has one text (no list).
+  assert.deepEqual(new Set(okKeys(t)), new Set(["s2", "N:f1", "f2", "s9", "N:g1"]));
+  assert.equal(why(t, "s1"), "It's here now.");
+  assert.match(why(t, "f1"), /Pick one of its performance standards/);
+  assert.match(why(t, "pump"), /goes under a performance standard/);
+  assert.ok(!t.nodes.has("S:f2")); // the one text's row: the function is the place
+  // Picking the empty group: the same move as a drop on a "No performance standard" row.
+  const plan = planMoveTo(d, src(d, "x1"), "N:g1");
+  assert.deepEqual(plan.ops, [{ do: "failure_modes.move_functional_failure", args: { functional_failure_id: "x1", function_id: "g1" } }]);
+  // On its own function with no "No performance standard" row yet: it stops breaching its standard.
+  const d2 = graftRcm(buildDisplay(DATA, "positions"), { positions: [{ id: "pump", unassigned: [], functions: [
+    { id: "f1", text: "Pump", standards: [{ id: "s1", text: "50" }], failures: [{ id: "x1", text: "No flow", standard: { id: "s1" }, modes: [] }] }] }] });
+  assert.ok(!d2.rows.has("N:f1") && withMoveGroups(d2).rows.has("N:f1"));
+  assert.deepEqual(planMoveTo(d2, src(d2, "x1"), "N:f1").ops,
+    [{ do: "failure_modes.update_functional_failure", args: { functional_failure_id: "x1", standard_id: "none" } }]);
+});
+
+test("Move to…: failure modes go to a functional failure or a position's Not under a functional failure", () => {
+  const d = whole();
+  const t = moveTree(d, src(d, "m1"));
+  assert.deepEqual(new Set(okKeys(t)), new Set(["x2", "x3", "x4", "U:pump", "U:plant", "U:motor", "y1", "U:pumpb"]));
+  assert.equal(t.here, "x1");
+  assert.equal(why(t, "x1"), "It's here now.");
+  assert.equal(why(t, "pump"), "A failure mode goes under a functional failure, or a position's “Not under a functional failure”.");
+  assert.equal(why(t, "s2"), why(t, "pump"));
+  // Its own position's empty group, even though the tree has a real one: the real one.
+  assert.equal(t.nodes.get("U:pump").type, "unassigned");
+  // The motor's group (real) comes before the positions inside it; the plant's (made up) too.
+  assert.deepEqual(t.nodes.get("plant").kids[0], "U:plant");
+  assert.deepEqual(planMoveTo(d, src(d, "m1"), "U:plant").ops,
+    [{ do: "failure_modes.move", args: { failure_mode_id: "m1", position_id: "plant" } }]);
+  // Several picked: the plural reason, and no "here".
+  const many = moveTree(d, src(d, "m1", { picked: new Set(["m1", "m3"]) }));
+  assert.equal(many.here, null);
+  assert.match(why(many, "pump"), /^Failure modes go under/);
+  assert.ok(!many.nodes.has("m3") || !many.nodes.get("m3").ok);
+});
+
+test("Move to…: a task goes on a failure mode or a position", () => {
+  const d = whole();
+  const t = moveTree(d, src(d, "m1", { task: { id: "t1", name: "Grease", position_id: "pump" } }));
+  const ok = new Set(okKeys(t));
+  assert.ok(ok.has("m3") && ok.has("n1") && ok.has("k1") && ok.has("pumpb") && ok.has("plant"));
+  assert.ok(!ok.has("m1") && !ok.has("pump") && !ok.has("x1"));
+  assert.equal(why(t, "m1"), "It's here now.");
+  assert.equal(why(t, "x1"), "A task goes on a failure mode, or on a position.");
+});
+
+test("the picker's list: open rows, and search shows the matches and the way to them", () => {
+  const d = whole();
+  const t = moveTree(d, src(d, "m1"));
+  const open = moveOpenAtStart(t);
+  // The way down to where it is now.
+  assert.deepEqual([...open].sort(), ["f1", "plant", "pump", "s1"]);
+  const keys = (o) => visibleNodes(t, o).map((n) => n.key);
+  assert.deepEqual(keys({ open: new Set() }), ["plant"]);
+  assert.ok(keys({ open }).includes("x1") && keys({ open }).includes("s2") && !keys({ open }).includes("x2") && !keys({ open }).includes("y1"));
+  // "no flow": both No flow failures and the rows above them, open; the rest hidden.
+  const found = visibleNodes(t, { query: "no flow" });
+  assert.deepEqual(found.map((n) => n.key), ["plant", "pump", "f1", "s1", "x1", "pumpb", "g1", "s9", "y1"]);
+  assert.deepEqual(found.filter((n) => n.match).map((n) => n.key), ["x1", "y1"]);
+  assert.ok(found.find((n) => n.key === "pump").open);
+  // A disabled match keeps its reason.
+  assert.equal(found.find((n) => n.key === "x1").reason, "It's here now.");
+  assert.deepEqual(visibleNodes(t, { query: "zzz" }), []);
 });
 
 test("the row menus' moves: Move to…, and Move up / down among siblings", () => {
@@ -260,6 +342,9 @@ test("the row menus' moves: Move to…, and Move up / down among siblings", () =
   assert.deepEqual(ids("x1"), [["move-to", false], ["step-up", true], ["step-down", true]]); // alone under its standard
   assert.deepEqual(ids("m1"), [["move-to", false], ["step-up", true], ["step-down", false], ["move-task", false]]);
   assert.deepEqual(ids("m4"), [["move-to", false]]); // under none: no order to change, no task
+  // Where it's dragged instead (a wide screen's pointer menu): Move to… still, no Move up / down.
+  assert.deepEqual(moveItems(d, d.rows.get("m1"), { steps: false }).map((i) => i.id), ["move-to", "move-task"]);
+  assert.deepEqual(moveItems(d, d.rows.get("f1"), { steps: false }).map((i) => i.label), ["Move to…"]);
   assert.equal(moveItems(d, d.rows.get("m1"), { picked: new Set(["m1", "m2"]) })[0].label, "Move 2 failure modes to…");
   assert.deepEqual(moveItems(d, d.rows.get("S:f2")), []);
   assert.deepEqual(stepTarget(d, "f1", 1), { key: "f2", zone: "after" });
