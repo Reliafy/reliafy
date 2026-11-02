@@ -4,7 +4,7 @@ import Chip from "./ui/Chip.jsx";
 import { getJointUnit, predictJointUnit } from "../api.js";
 import { formatNumber } from "../format.js";
 import { bandPair, dataPoints, fitLine, referenceShape } from "../plotTheme.js";
-import { medianText, paramGroups, parseReadings, readingsText, riskText, riskTone } from "../joint.js";
+import { medianText, paramGroups, parseReadings, readingsText, riskText, riskTone, sortRiskRows } from "../joint.js";
 import { ModelTabs } from "./model/ModelFrame.jsx";
 import { PlotCard, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 import { JointEffects } from "./model/Effects.jsx";
@@ -125,9 +125,13 @@ function RiskCells({ row, n = 3 }) {
   ));
 }
 
+// The column the risk table is sorted by: the middle horizon where there is
+// one, else the first.
+const sortColumn = (labels) => ((labels || []).length > 1 ? 1 : 0);
+
 function RiskTable({ results, selected, onPick, live = true }) {
-  const rows = results.risk || [];
   const labels = results.horizons?.labels || [];
+  const rows = sortRiskRows(results.risk, sortColumn(labels));
   const unit = results.unit || "";
   if (!rows.length) return <p className="mf-note">No units are still running in the data.</p>;
   return (
@@ -204,7 +208,8 @@ function RiskNow({ modelId, results, name, unitId, onUnitId, onEnter }) {
     <TablePanel
       className="mf-l5-joint"
       main={
-        <ScrollCard title="Running units' risk" sub="highest first">
+        <ScrollCard title="Running units' risk"
+                    sub={`highest chance of failing in the next ${(results.horizons?.labels || [])[sortColumn(results.horizons?.labels)] || "stretch"} first`}>
           <RiskTable results={results} selected={unitId} onPick={onUnitId} live={!!modelId} />
         </ScrollCard>
       }
@@ -213,6 +218,7 @@ function RiskNow({ modelId, results, name, unitId, onUnitId, onEnter }) {
           <p className="hint" style={{ margin: 0 }}>
             Each unit's chance of failing over the next stretch, given its own readings so far. Each new reading
             moves the curve: a unit whose {results.marker || "reading"} climbs faster than the fleet's carries more risk.
+            {" "}“&gt; 99.9%” means very likely, not certain.
           </p>
           {!modelId && <p className="muted-line" style={{ margin: 0 }}>{SIGN_IN}</p>}
           {error && <div className="card error" role="alert">{error}</div>}
@@ -346,7 +352,7 @@ export default function JointResultView({ results, modelId, name, tab: wanted = 
   const [own, setOwn] = useState(() => resolveTab(tabs, wanted));
   const tab = resolveTab(tabs, wanted !== undefined && onTab ? wanted : own);
   const setTab = (id) => { setOwn(id); onTab?.(id); };
-  const [unitId, setUnitId] = useState(() => r.risk?.[0]?.id || "");
+  const [unitId, setUnitId] = useState(() => sortRiskRows(r.risk, sortColumn(r.horizons?.labels))[0]?.id || "");
   const covNames = useMemo(() => r.covariates || [], [r.covariates]);
   const [entered, setEntered] = useState(() => ({
     age: "", readings: "", covariates: Object.fromEntries(covNames.map((c) => [c, String(r.typical_covariates?.[c] ?? "")])),

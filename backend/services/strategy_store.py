@@ -148,7 +148,7 @@ def headline(doc: StrategyAnalysis) -> str:
     if doc.kind == "failure_finding":
         unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
         i = r.get("interval")
-        return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure-finding interval"
+        return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure finding"
     if doc.kind == "demonstration_test":
         return demonstration_headline(r)
     return doc.kind

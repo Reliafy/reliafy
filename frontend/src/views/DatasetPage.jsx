@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import { getDataset, deleteDataset, removeMeasurements, renameDataset, splitDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
 import CompareGroups from "../components/CompareGroups.jsx";
@@ -200,7 +201,8 @@ export default function DatasetPage() {
         )}
       </PageHeader>
 
-      {error && <div className="card error" role="alert">{error}</div>}
+      {error && (ds ? <div className="card error" role="alert">{error}</div>
+        : <LoadFailed error={error} to="/data" label="See all your data" />)}
 
       {ds && (
         <>

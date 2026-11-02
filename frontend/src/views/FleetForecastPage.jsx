@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import Plot from "../components/Plot.jsx";
 import { ACCENT, INK, sentence } from "../plotTheme.js";
 import Select from "../components/Select.jsx";
@@ -109,7 +110,7 @@ export default function FleetForecastPage() {
   };
   useEffect(load, [id]);
 
-  if (error && !fleet) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !fleet) return <div className="app"><LoadFailed error={error} to="/forecasts" label="See all forecasts" /></div>;
   if (!fleet || !settings) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const readOnly = fleet.read_only;

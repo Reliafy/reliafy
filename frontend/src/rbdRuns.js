@@ -1,6 +1,6 @@
 // Simulation run history (#112) and runtime quotes (#286): the words the runs
 // views use, kept here so they can be tested without a browser.
-import { pctAt, pctDigits } from "./components/availabilityPrecision.js";
+import { availabilityPct, downPct, HIGH_AVAILABILITY } from "./components/availabilityPrecision.js";
 
 // "0.4 s", "12 s", "3 min 20 s": how long a run took.
 export function runtimeText(s) {
@@ -41,20 +41,18 @@ export function statusChip(status) {
   }
 }
 
-// Decimals that show an availability to its interval's precision.
-export function availabilityDigits(a) {
-  if (!a) return 3;
-  const half = a.lower != null && a.upper != null ? (a.upper - a.lower) / 2 : null;
-  return half ? Math.max(3, pctDigits(half)) : 3;
-}
-
-// "99.968%" and "99.951–99.982%": a run's window availability and its interval.
-export function availabilityText(a, digits = null) {
+// "95.12%" and "94.80–95.44%": a run's window availability and its interval,
+// to about four significant figures. Above 99.9% the downtime carries the
+// detail: "99.97%" and "down 0.0314% (0.0311–0.0323%)".
+export function availabilityText(a) {
   if (!a || a.value == null) return { value: "—", interval: null };
-  const d = digits ?? availabilityDigits(a);
-  const interval =
-    a.lower != null && a.upper != null ? `${pctAt(a.lower, d).replace("%", "")}–${pctAt(a.upper, d)}` : null;
-  return { value: pctAt(a.value, d), interval };
+  const both = a.lower != null && a.upper != null;
+  if (a.value > HIGH_AVAILABILITY) {
+    const range = both ? ` (${downPct(a.upper).replace("%", "")}–${downPct(a.lower)})` : "";
+    return { value: availabilityPct(a.value), interval: `down ${downPct(a.value)}${range}` };
+  }
+  const interval = both ? `${availabilityPct(a.lower).replace("%", "")}–${availabilityPct(a.upper)}` : null;
+  return { value: availabilityPct(a.value), interval };
 }
 
 // "12 s · quoted about 15 s, up to 40 s" (the quote only once the run is done).
@@ -74,11 +72,14 @@ export function compareSummary(runs) {
   const lows = rows.map((r) => r.availability.lower).filter((v) => v != null);
   const highs = rows.map((r) => r.availability.upper).filter((v) => v != null);
   const withBands = lows.length === rows.length && highs.length === rows.length;
-  const digits = Math.max(...rows.map((r) => availabilityDigits(r.availability)));
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  // Near 100% compare the downtimes, which differ where the availabilities don't.
+  const high = lo > HIGH_AVAILABILITY;
   return {
     count: rows.length,
-    low: pctAt(Math.min(...values), digits),
-    high: pctAt(Math.max(...values), digits),
+    low: high ? `${availabilityPct(lo)} (down ${downPct(lo)})` : availabilityPct(lo),
+    high: high ? `${availabilityPct(hi)} (down ${downPct(hi)})` : availabilityPct(hi),
     overlap: withBands ? Math.max(...lows) <= Math.min(...highs) : null,
   };
 }

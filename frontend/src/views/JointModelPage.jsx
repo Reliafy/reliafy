@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import ErrorBoundary from "../components/ErrorBoundary.jsx";
+import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import JointResultView from "../components/JointResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { deleteJointModel, downloadJointPython, getJointModel, updateJointModel } from "../api.js";
@@ -20,11 +22,14 @@ export default function JointModelPage() {
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  // Not on this list (404): ModelNotFound looks in the others.
+  const [missing, setMissing] = useState(false);
   const [tab, setTab] = useTabParam();
 
   useEffect(() => {
     setModel(null);
-    getJointModel(id).then(setModel).catch((e) => setError(e.message));
+    setMissing(false);
+    getJointModel(id).then(setModel).catch((e) => (e.status === 404 ? setMissing(true) : setError(e.message)));
   }, [id]);
 
   const confirm = useConfirm();
@@ -74,9 +79,13 @@ export default function JointModelPage() {
       notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
     >
       {model ? (
-        <JointResultView results={model.results} modelId={model.id} name={model.name}
-                         tab={tab} onTab={(t) => setTab(t, "risk")} />
-      ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        // A model this page can't draw shows a card here, not the whole-app error page.
+        <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
+          <JointResultView results={model.results} modelId={model.id} name={model.name}
+                           tab={tab} onTab={(t) => setTab(t, "risk")} />
+        </ErrorBoundary>
+      ) : missing ? <ModelNotFound id={id} kind="joint" />
+        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );

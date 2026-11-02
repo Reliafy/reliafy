@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import {
   addPartUsed, addWorkCost, cancelWorkOrder, checkWorkItem, closeWorkOrder, getWorkOrder, listMaintenanceLocations,
   listMaintenanceParts, logLabour, removeWorkEntry,
@@ -40,7 +41,7 @@ export default function MaintenanceWorkOrder() {
   }, [id]);
   useEffect(() => refresh(), [refresh]);
 
-  if (error && !wo) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !wo) return <div className="app"><LoadFailed error={error} to="/maintenance" label="Back to Maintenance" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (

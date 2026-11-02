@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { cheapestRbdDesign } from "../api.js";
+import { availabilityPct, downPct, HIGH_AVAILABILITY } from "./availabilityPrecision.js";
 import { graphSignature } from "./RbdValidation.jsx";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
 import { copiesText, horizonWords } from "../rbdOwnership.js";
@@ -23,7 +24,9 @@ import { readPercents } from "../percentForms.js";
 // search weighs whole copies of it, each another path into the node the train
 // feeds (a vote there gains a branch: 2-out-of-3 becomes 2-out-of-4).
 const fmtT = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(5)).toLocaleString());
-const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(4)}%`);
+// About four significant figures; above 99.9% with the downtime beside it.
+const pct = (v) =>
+  v == null || !Number.isFinite(v) ? "—" : v > HIGH_AVAILABILITY ? `${availabilityPct(v)} (down ${downPct(v)})` : availabilityPct(v);
 
 export default function RbdCheapestDesign({ graph, onApply, onView }) {
   const priced = (graph.nodes || []).filter((n) => n.type === "component" && Number(n.data?.costs?.acquisition) > 0);
