@@ -435,6 +435,10 @@ export function Details({
     ].filter(Boolean)
     : (insideWords(r) || "").split(" · ").filter(Boolean).map((t) => ({ text: t, tone: toneOf(t) }));
   const limitNow = r.type === "std" ? limitReads(r.ref) : "";
+  const inside = (
+    <InsideList key={`${r.key}:inside`} r={r} kids={kids} ops={ops} readOnly={readOnly} addLabel={addLabel} addStart={startOf("inside")}
+                onSelect={onSelect} onSaid={said} />
+  );
   return (
     <aside className={"rw-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
            onKeyDown={(e) => {
@@ -480,6 +484,8 @@ export function Details({
       </div>
 
       <div className="rw-pbody">
+        {/* A performance standard: the functional failures that breach it come first. */}
+        {insideList && r.type === "std" && inside}
         <div className="rw-pcol">
           <div className="rw-fields">
             {r.type === "std" && r.ref.legacy && (
@@ -627,11 +633,9 @@ export function Details({
             <CausesSection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
           )}
 
-          {/* What's inside it, each one a link that shows it here; the list ends in its add row. */}
-          {insideList && (
-            <InsideList key={`${r.key}:inside`} r={r} kids={kids} ops={ops} readOnly={readOnly} addLabel={addLabel} addStart={startOf("inside")}
-                        onSelect={onSelect} onSaid={said} />
-          )}
+          {/* What's inside it, each one a link that shows it here; the list ends in its add row.
+              (A performance standard's comes first instead: see the top of the body.) */}
+          {insideList && r.type !== "std" && inside}
         </div>
       </div>
 
