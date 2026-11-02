@@ -6,6 +6,7 @@ import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { failureFinding } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
 import PercentField from "./PercentField.jsx";
+import StrategyUnit from "./StrategyUnit.jsx";
 import { readPercents } from "../percentForms.js";
 import { percentApiMessage } from "../percent.js";
 
@@ -42,7 +43,7 @@ export default function FailureFinding() {
         distribution_id: model.distribution_id,
         params: model.params,
         target_availability: pcts.fractions.availability,
-        unit: unit || model.unit || null,
+        unit: model.unit || unit.trim() || null,
         extras: model.extras || null,
       };
       const res = await failureFinding(
@@ -70,11 +71,7 @@ export default function FailureFinding() {
         <div className="strategy-costs">
           <PercentField label="Target availability" value={availability} onChange={setAvailability}
             check={pcts.checks.availability} />
-          <label className="calc-t">
-            <span>Unit (optional)</span>
-            <input type="text" placeholder="e.g. Hours" value={unit}
-              onChange={(e) => setUnit(e.target.value)} />
-          </label>
+          <StrategyUnit model={model} unit={unit} onUnit={setUnit} />
           <button onClick={run} disabled={!canRun || loading}>
             {loading ? "Computing…" : "Compute"}
           </button>

@@ -5,6 +5,7 @@ import ReplacementResult from "./ReplacementResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { optimalReplacement } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
+import StrategyUnit from "./StrategyUnit.jsx";
 import { useCurrency } from "../WorkspaceProvider.jsx";
 import { costLabel } from "../money.js";
 
@@ -47,7 +48,7 @@ export default function OptimalReplacement() {
         params: model.params,
         planned_cost: Number(cp),
         unplanned_cost: Number(cu),
-        unit: unit || model.unit || null,
+        unit: model.unit || unit.trim() || null,
         extras: model.extras || null,
       };
       const res = await optimalReplacement(
@@ -87,11 +88,7 @@ export default function OptimalReplacement() {
             <input type="number" inputMode="decimal" min="0" step="any" value={cu}
               onChange={(e) => setCu(e.target.value)} />
           </label>
-          <label className="calc-t">
-            <span>Unit (optional)</span>
-            <input type="text" placeholder="e.g. Hours" value={unit}
-              onChange={(e) => setUnit(e.target.value)} />
-          </label>
+          <StrategyUnit model={model} unit={unit} onUnit={setUnit} />
           <button data-wt="repl-run" onClick={run} disabled={!canRun || loading}>
             {loading ? "Computing…" : "Compute"}
           </button>
