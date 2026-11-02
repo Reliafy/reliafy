@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
+import { SavedOfKind } from "../components/StrategyTool.jsx";
+import { STRATEGY_TOOLS } from "../strategyTools.js";
 import Card from "../components/ui/Card.jsx";
 import Tabs from "../components/ui/Tabs.jsx";
 import DemonstrationTest from "../components/DemonstrationTest.jsx";
@@ -32,12 +34,14 @@ export default function StrategyTestPlanning() {
   const initial = useMemo(() => parseDemoPrefill(search), [search]);
   const altModel = useMemo(() => new URLSearchParams(search).get("model"), [search]);
 
+  const tool = STRATEGY_TOOLS[tab === "accelerated" ? "accelerated" : "testPlanning"];
   return (
     <div className="app">
-      <PageHeader
-        crumbs={[{ label: "Strategy", to: "/strategy" }]}
+      <SectionHeader
+        section="strategy"
         title="Test planning"
-        meta={INTRO[tab]}
+        help={tool.help}
+        purpose={INTRO[tab]}
       />
       <Tabs
         label="Kind of test"
@@ -52,6 +56,7 @@ export default function StrategyTestPlanning() {
         {tab === "accelerated" && <AcceleratedTestPlan key={altModel || ""} modelId={altModel} />}
         {tab === "comparison" && <ComparisonPlan />}
       </Card>
+      {tab === "demonstration" && <SavedOfKind kind={tool.kind} noun={tool.noun} />}
     </div>
   );
 }

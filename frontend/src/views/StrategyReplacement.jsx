@@ -1,5 +1,7 @@
 import { useSearchParams } from "react-router-dom";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
+import { SavedOfKind } from "../components/StrategyTool.jsx";
+import { STRATEGY_TOOLS } from "../strategyTools.js";
 import Card from "../components/ui/Card.jsx";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import OptimalReplacement from "../components/OptimalReplacement.jsx";
@@ -16,12 +18,14 @@ export default function StrategyReplacement() {
     else next.delete("mode");
     setParams(next, { replace: true });
   };
+  const tool = STRATEGY_TOOLS[mode === "calendar" ? "calendar" : "replacement"];
   return (
     <div className="app">
-      <PageHeader
-        crumbs={[{ label: "Strategy", to: "/strategy" }]}
+      <SectionHeader
+        section="strategy"
         title="Optimal replacement"
-        meta={mode === "calendar"
+        help={tool.help}
+        purpose={mode === "calendar"
           ? "The best replacement rule when replacing at a shutdown costs less than between shuts, against running to failure and plain age replacement."
           : "The age-based preventive-replacement interval that minimises the long-run cost rate, versus running to failure."}
       />
@@ -38,6 +42,7 @@ export default function StrategyReplacement() {
       <Card>
         {mode === "calendar" ? <CalendarReplacement /> : <OptimalReplacement />}
       </Card>
+      <SavedOfKind kind={tool.kind} noun={tool.noun} />
     </div>
   );
 }

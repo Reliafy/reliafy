@@ -3,6 +3,8 @@ import { useLocation, useSearchParams } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import ReplacementResult from "./ReplacementResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
+import { ComputeReason } from "./StrategyTool.jsx";
+import { replacementMissing } from "../strategyTools.js";
 import { optimalReplacement } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
 
@@ -32,8 +34,9 @@ export default function OptimalReplacement() {
   };
 
   const isRegression = model?.kind === "regression";
-  const canRun =
-    model && model.distribution_id && !isRegression && cp !== "" && cu !== "";
+  // Why Compute is greyed out, said beside it (null when ready).
+  const missing = replacementMissing({ model, planned: cp, unplanned: cu });
+  const canRun = !missing;
 
   const run = async () => {
     setLoading(true);
@@ -89,9 +92,11 @@ export default function OptimalReplacement() {
             <input type="text" placeholder="e.g. Hours" value={unit}
               onChange={(e) => setUnit(e.target.value)} />
           </label>
-          <button data-wt="repl-run" onClick={run} disabled={!canRun || loading}>
+          <button data-wt="repl-run" onClick={run} disabled={!canRun || loading}
+                  aria-describedby={missing ? "repl-why" : undefined}>
             {loading ? "Computing…" : "Compute"}
           </button>
+          <ComputeReason id="repl-why" reason={missing} />
         </div>
       </div>
 
