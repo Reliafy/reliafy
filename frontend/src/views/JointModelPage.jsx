@@ -11,6 +11,7 @@ import { answerParts } from "../modelFrame.js";
 import { itemName } from "../components/LibRows.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // A saved condition and life model in the model frame: the answer line, the
 // result's tabs, Share, and the ⋯ menu (Download as Python, rename, delete).
@@ -76,6 +77,7 @@ export default function JointModelPage() {
         <JointResultView results={model.results} modelId={model.id} name={model.name}
                          tab={tab} onTab={(t) => setTab(t, "risk")} />
       ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+      <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );
 }

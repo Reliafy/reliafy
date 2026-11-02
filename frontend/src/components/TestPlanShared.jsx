@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { getRbdJob, simulateTestPlan, testPlan } from "../api.js";
 import { percentApiMessage } from "../percent.js";
+import ProTag from "./ProTag.jsx";
 
 export function Field({ label, value, onChange, type = "number", ...props }) {
   return (
@@ -63,9 +64,10 @@ export function usePlan(kind) {
   return { result, inputs, error, loading, run };
 }
 
-export function ComputeButton({ loading, onClick }) {
+// ``disabled``: a field still needs fixing (its message says how).
+export function ComputeButton({ loading, onClick, disabled = false }) {
   return (
-    <button type="button" onClick={onClick} disabled={loading}>
+    <button type="button" onClick={onClick} disabled={loading || disabled}>
       {loading ? "Computing…" : "Compute"}
     </button>
   );
@@ -175,7 +177,7 @@ export function SimulationCheck({ kind, inputs }) {
         simulate it hundreds of times, fit each result, and look at how far the estimates spread.
       </p>
       <button type="button" className="secondary" onClick={start} disabled={busy}>
-        {busy ? "Simulating…" : "Simulate this test (Pro)"}
+        {busy ? "Simulating…" : "Simulate this test"}<ProTag />
       </button>
       {busy && job && <p className="hint" role="status" aria-live="polite">{jobText(job)}</p>}
       {needsPro && (

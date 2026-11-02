@@ -11,6 +11,7 @@ import { formatNumber } from "../format.js";
 import { byText, jobStatusLine, runsPath, runtimeVsQuote, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
 import { RBDS_PATH } from "../navigation.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const when = (iso) =>
   iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -104,6 +105,7 @@ export default function RbdRunsDetail() {
 
   return (
     <div className="app rbd-runs">
+      <PageTitle name={run?.rbd_name} />
       <PageHeader
         crumbs={[{ label: "Systems", to: RBDS_PATH }, { label: "Simulation runs", to: runsPath(run.rbd_id) }]}
         title={run.rbd_name || "Simulation run"}

@@ -51,6 +51,7 @@ import { TasksCard } from "../components/MaintenanceTasks.jsx";
 import { ConditionsCard, ConnectionConditions } from "../components/MaintenanceConditions.jsx";
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -77,6 +78,7 @@ export default function MaintenancePosition() {
 
   return (
     <div className="app">
+      <PageTitle name={p?.name} />
       <PageHeader
         crumbs={[{ label: "Assets", to: "/asset-register" }, ...p.path.map((a) => ({
           label: a.name, to: a.kind === "Item" ? `/asset-register/items/${a.id}` : `/asset-register/positions/${a.id}` }))]}

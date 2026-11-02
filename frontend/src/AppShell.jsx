@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { applyPageTitle } from "./components/usePageTitle.js";
 import NavBar from "./components/NavBar.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -129,6 +130,11 @@ export default function AppShell() {
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname, phone]);
+  // Each page's own tab title ("RBDs · Reliafy"); a detail page adds its
+  // record's name with usePageTitle.
+  useEffect(() => {
+    applyPageTitle(pathname);
+  }, [pathname]);
   // Backdrop tap, Escape or the close button: focus returns to the menu button.
   const closeMenu = useCallback(() => {
     setMenuOpen(false);

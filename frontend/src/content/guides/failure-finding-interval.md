@@ -33,10 +33,12 @@ Choose **Parameters**, set the **Distribution** to **Exponential**, and enter
 the **Failure rate λ**. For a trip that fails, on average, once a year (8,760
 hours), that's 1 ÷ 8,760 = 0.000114 per hour.
 
-Then set the **Target availability (%)**: the fraction of time the device must
-be able to work when demanded. 99% is a common starting point; your safety
-study may set a stricter one. Add the **Unit** (hours here) so the answer reads
-in it, and press **Compute**.
+Then set the **Target availability**, as a percentage: the share of time the
+device must be able to work when demanded. 99 is a common starting point; your
+safety study may set a stricter one. Type 99, not 0.99: a value of 1 or less
+asks "Did you mean 99%?" before anything is computed. A saved model brings its
+time unit; with parameters typed in, add the **Unit** (hours here) so the
+answer reads in it. Press **Compute**.
 
 ![The failure-finding interval: test every 175 hours for 99% availability](/guides/img/ff-01-result.png)
 

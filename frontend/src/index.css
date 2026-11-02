@@ -855,6 +855,38 @@ h6 {
   margin-top: 1rem;
 }
 
+/* Why Compute is greyed out: on the button's line, wrapping under it on a phone. */
+.strategy-costs .compute-why {
+  margin: 0;
+  align-self: center;
+  flex-basis: 100%;
+}
+@media (min-width: 720px) {
+  .strategy-costs .compute-why { flex-basis: auto; }
+}
+
+/* Under a Strategy tool: its saved analyses (a filtered view of the list). */
+.strategy-saved { margin-top: var(--sp-5); }
+.strategy-saved-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.strategy-saved-head h2 { font-size: var(--fs-16); margin: 0 0 var(--sp-2); }
+.strategy-saved-list { list-style: none; margin: 0; padding: 0; }
+.strategy-saved-list li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.6rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--line);
+}
+.strategy-saved-list li > a { font-weight: 500; overflow-wrap: anywhere; }
+.strategy-saved-result { color: var(--muted); flex: 1 1 12rem; min-width: 0; }
+
 .strategy-costs input[type="text"] {
   background: var(--surf);
   border: 1px solid var(--line);
@@ -9728,3 +9760,12 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 .lib-link:hover { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
 .lib-link:focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-sm); }
 .lib-acts a.act:focus-visible { outline: none; box-shadow: var(--focus); }
+
+.ds-unit-pick { display: flex; flex-direction: column; gap: 6px; }
+.ds-unitless { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); color: var(--muted); min-height: 32px; }
+/* A Pro-only action, marked for users without Pro (ProTag.jsx). */
+.pro-tag {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  font-size: var(--fs-12); font-weight: 600; line-height: 18px; vertical-align: middle;
+  color: var(--cat-violet); background: var(--cat-violet-t); border: 1px solid var(--cat-violet-line);
+}

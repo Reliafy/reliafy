@@ -3,6 +3,8 @@ import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent, formatWithUnit } from "../format.js";
 import { fitLine, optimumMarker, referenceLine } from "../plotTheme.js";
 import { unitInText } from "./unitText.js";
+import { useCurrency } from "../WorkspaceProvider.jsx";
+import { formatCostRate } from "../money.js";
 
 // Presentational renderer for an optimal-replacement result — used by the live
 // tool and by saved analyses (which render the stored payload without refetch).
@@ -12,6 +14,8 @@ import { unitInText } from "./unitText.js";
 export default function ReplacementResult({ result, name = null, actions = null, wt }) {
   const unit = result?.unit || "";
   const u = unit ? ` (${unit})` : "";
+  const currency = useCurrency();
+  const per = unit ? unitInText(unit).replace(/s$/, "") : "unit time";
   const c = result.curve;
   const traces = [fitLine({ x: c.t, y: c.cost_rate, name: "Cost rate", connectgaps: false })];
   if (result.run_to_failure_cost_rate != null) {
@@ -37,7 +41,7 @@ export default function ReplacementResult({ result, name = null, actions = null,
     showlegend: true,
     xaxis: { title: { text: `Replacement age${u}` } },
     yaxis: {
-      title: { text: "Long-run cost per unit time" },
+      title: { text: `Long-run cost (${currency}) per ${per}` },
       rangemode: "tozero",
       range: yMax ? [0, yMax] : undefined,
     },
@@ -73,12 +77,12 @@ export default function ReplacementResult({ result, name = null, actions = null,
 
       <ResultDetails
         rows={[
-          pays && { label: "Cost rate at the optimum", value: formatNumber(result.optimal_cost_rate, { sig: 4 }) },
-          { label: "Run-to-failure cost rate", value: formatNumber(result.run_to_failure_cost_rate, { sig: 4 }) },
+          pays && { label: "Cost rate at the optimum", value: formatCostRate(result.optimal_cost_rate, currency, unit, { sig: 4 }) },
+          { label: "Run-to-failure cost rate", value: formatCostRate(result.run_to_failure_cost_rate, currency, unit, { sig: 4 }) },
           { label: `MTTF${u}`, value: formatNumber(result.mttf, { sig: 4 }) },
         ]}
       >
-        <p className="rs-note">Cost rates are long-run costs per unit time.</p>
+        <p className="rs-note">Cost rates are long-run costs per {per}.</p>
       </ResultDetails>
     </>
   );

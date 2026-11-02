@@ -9,6 +9,7 @@ import { getStrategyAnalysis } from "../api.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -39,6 +40,7 @@ export default function StrategyAnalysisPage() {
 
   return (
     <div className="app">
+      <PageTitle name={doc && itemName(doc)} />
       <PageHeader
         crumbs={[{ label: "Strategy", to: "/strategy" }]}
         title={itemName(doc)}

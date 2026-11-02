@@ -1,6 +1,7 @@
 import { unitInText } from "./unitText.js";
 import { horizonWords } from "../rbdOwnership.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { prefixCurrency } from "../money.js";
 
 // Cost of ownership (#99) and the failures/maintenance downtime split (#100)
 // in a repairable diagram's availability results. Shown only when the diagram
@@ -18,12 +19,13 @@ const CATEGORY_LABELS = {
   system_downtime: "Lost production",
 };
 
+// A cost with the workspace's currency symbol (Settings › Currency).
 export const fmtMoney = (v) =>
   v == null || !Number.isFinite(v)
     ? "—"
-    : Math.abs(v) >= 1000
+    : prefixCurrency(Math.abs(v) >= 1000
       ? Math.round(v).toLocaleString()
-      : Number(v.toPrecision(3)).toLocaleString();
+      : Number(v.toPrecision(3)).toLocaleString());
 const fmtPct = (v, d = 1) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(d)}%`);
 const fmtT = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(5)).toLocaleString());
 const per = (unit) => (unit ? ` /${unitInText(unit).replace(/s$/, "")}` : " per unit time");

@@ -108,11 +108,13 @@ export function SectionEmpty({ title, body, action, help }) {
 //   className extra class on the table's wrapper (e.g. "ds-lib")
 //   tagsOf    optional (row) => its tags: chips that filter the list (a row must
 //             have every chip that's on)
+//   initialType a type to filter by on arrival (a link's ?kind=)
 export function SectionList({
   rows, noun, fields, types, typeOf, tagsOf, head, render, empty, help, placeholder, className = "",
+  initialType = "",
 }) {
   const [query, setQuery] = useState("");
-  const [type, setType] = useState("");
+  const [type, setType] = useState(initialType || "");
   const [on, setOn] = useState([]);
   if (rows === null || rows === undefined) return <div className="card empty">Loading…</div>;
   if (!rows.length) return <SectionEmpty {...empty} help={help} />;
@@ -145,13 +147,14 @@ export function SectionList({
           </div>
         )}
         <span className="grow" />
-        {present.length > 1 && (
+        {(present.length > 1 || type) && (
           <Select
             className="section-type-filter"
             ariaLabel="Type"
             value={type}
             onChange={setType}
-            options={[{ value: "", label: "All types" }, ...present]}
+            options={[{ value: "", label: "All types" }, ...(type && !present.some((t) => t.value === type)
+              ? [...present, ...types.filter((t) => t.value === type)] : present)]}
           />
         )}
         <ListSearch value={query} onChange={setQuery} placeholder={placeholder || `Search ${many}…`} />

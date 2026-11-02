@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { listStrategyAnalyses, deleteStrategyAnalysis } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
@@ -34,6 +34,9 @@ const TOOLS = [
 // make them are its children in the menu, and under "New analysis".
 export default function StrategyAnalyses() {
   const navigate = useNavigate();
+  // A tool's "See all" opens the list filtered to its kind (?kind=).
+  const [params] = useSearchParams();
+  const kind = KIND_LABEL[params.get("kind")] ? params.get("kind") : "";
   const [analyses, setAnalyses] = useState(null);
   const [error, setError] = useState(null);
 
@@ -79,12 +82,14 @@ export default function StrategyAnalyses() {
       {error && <div className="card error">{error}</div>}
 
       <SectionList
+        key={kind}
         rows={analyses}
         noun={["saved analysis", "saved analyses"]}
         placeholder="Search analyses…"
         fields={(a) => [a.name, a.kind, KIND_LABEL[a.kind], a.headline]}
         types={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
         typeOf={(a) => a.kind}
+        initialType={kind}
         help={HELP}
         empty={{
           title: "No saved analyses yet",

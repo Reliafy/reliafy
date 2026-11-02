@@ -2,6 +2,7 @@ import { useState } from "react";
 import { unitInText } from "./unitText.js";
 import { unitAbbr } from "./rbdModelText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import { costLabel, workspaceCurrency } from "../money.js";
 
 // A repairable block's costs and maintenance (#99, #100, #156, #157), edited in
 // the block dialog's Maintenance (or Proof test) and Costs sections (#314).
@@ -296,14 +297,14 @@ export function CostFields({ ctl, unit = "" }) {
   const setCost = (key, v) => update({ costs: { ...s.costs, [key]: v } });
   return (
     <>
-      <p className="hint">In your currency, all optional. A per-failure cost can be a range.</p>
+      <p className="hint">In {workspaceCurrency()} (Settings › Currency), all optional. A per-failure cost can be a range.</p>
       <div className="param-fields">
         {COSTS.map((c) =>
           c.ranged ? (
-            <CostField key={c.key} label={c.label} hint={c.per} title={c.help}
+            <CostField key={c.key} label={costLabel(c.label, workspaceCurrency())} hint={c.per} title={c.help}
                        cost={s.costs[c.key]} onChange={(v) => setCost(c.key, v)} />
           ) : (
-            <Field key={c.key} label={c.label} hint={c.per.replace("{u}", u)} title={c.help}
+            <Field key={c.key} label={costLabel(c.label, workspaceCurrency())} hint={c.per.replace("{u}", u)} title={c.help}
                    value={s.costs[c.key].value} onChange={(v) => setCost(c.key, { ...s.costs[c.key], value: v })} />
           )
         )}
@@ -375,7 +376,7 @@ export function MaintenanceFields({ ctl, unit = "", groups = [] }) {
           <CostField label={`Cost per ${condition ? "replacement" : what}`} hint="optional" cost={s.cost}
                      onChange={(v) => update({ cost: v })} />
           {condition && (
-            <CostField label="Cost per inspection" hint="optional" cost={s.inspectionCost}
+            <CostField label={costLabel("Cost per inspection", workspaceCurrency())} hint="optional" cost={s.inspectionCost}
                        onChange={(v) => update({ inspectionCost: v })} />
           )}
         </div>
