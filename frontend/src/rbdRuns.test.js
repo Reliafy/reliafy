@@ -30,10 +30,16 @@ test("status colour carries meaning only", () => {
 });
 
 test("a window availability with its interval, to its precision", () => {
-  const a = { value: 0.99968, lower: 0.99951, upper: 0.99982 };
-  assert.deepEqual(availabilityText(a), { value: "99.968%", interval: "99.951–99.982%" });
+  const a = { value: 0.9512, lower: 0.9480, upper: 0.9544 };
+  assert.deepEqual(availabilityText(a), { value: "95.12%", interval: "94.80–95.44%" });
   assert.deepEqual(availabilityText(null), { value: "—", interval: null });
-  assert.deepEqual(availabilityText({ value: 0.95 }), { value: "95.000%", interval: null });
+  assert.deepEqual(availabilityText({ value: 0.95 }), { value: "95.00%", interval: null });
+});
+
+test("above 99.9% a run's availability is quoted with its downtime, not seven figures", () => {
+  // The review's "99.96858% 99.96768–99.96894%".
+  const a = { value: 0.9996858, lower: 0.9996768, upper: 0.9996894 };
+  assert.deepEqual(availabilityText(a), { value: "99.97%", interval: "down 0.0314% (0.0311–0.0323%)" });
 });
 
 test("runtime beside its quote", () => {
@@ -48,8 +54,11 @@ test("compare: the spread, and whether the intervals overlap", () => {
   const overlapping = compareSummary([run(0.9990, 0.9985, 0.9995), run(0.9992, 0.9988, 0.9996)]);
   assert.equal(overlapping.count, 2);
   assert.equal(overlapping.overlap, true);
-  assert.equal(overlapping.low, "99.900%");
-  assert.equal(overlapping.high, "99.920%");
+  assert.equal(overlapping.low, "99.90%");
+  assert.equal(overlapping.high, "99.92%");
+  const high = compareSummary([run(0.99968, 0.9996, 0.9998), run(0.99972, 0.9996, 0.9998)]);
+  assert.equal(high.low, "99.97% (down 0.032%)");
+  assert.equal(high.high, "99.97% (down 0.028%)");
   assert.equal(compareSummary([run(0.99, 0.989, 0.991), run(0.995, 0.994, 0.996)]).overlap, false);
   assert.equal(compareSummary([run(0.99, null, null), run(0.995, 0.994, 0.996)]).overlap, null);
   assert.equal(compareSummary([run(0.99, 0.98, 1)]), null);

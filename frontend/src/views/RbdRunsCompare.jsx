@@ -10,6 +10,7 @@ import { rollingMean } from "../components/RbdCalculator.jsx";
 import { unitInText } from "../components/unitText.js";
 import { formatNumber } from "../format.js";
 import { availabilityText, compareSummary, runsPath, runtimeText } from "../rbdRuns.js";
+import { availabilityPct } from "../components/availabilityPrecision.js";
 import "../components/RbdRuns.css";
 import { RBDS_PATH } from "../navigation.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
@@ -148,7 +149,7 @@ export default function RbdRunsCompare() {
                         {a.value}
                         {a.interval && <span className="rbd-runs-ci"> {a.interval}</span>}
                       </td>
-                      <td className="lib-opt lib-n">{ss != null ? `${(ss * 100).toFixed(3)}%` : "—"}</td>
+                      <td className="lib-opt lib-n">{ss != null ? availabilityPct(ss) : "—"}</td>
                       <td className="lib-opt lib-n">{r.window != null ? `${formatNumber(r.window)}${u}` : "—"}</td>
                       <td className="lib-opt lib-n">{r.replications != null ? r.replications.toLocaleString() : "—"}</td>
                       <td className="lib-opt lib-n">{runtimeText(r.runtime_s)}</td>

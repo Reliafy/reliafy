@@ -16,7 +16,7 @@ import AvailabilityCosts, { DowntimeSplit } from "./AvailabilityCosts.jsx";
 import AvailabilityPolicies, { SafetyNotes } from "./AvailabilityPolicies.jsx";
 import RbdSafetyShares from "./RbdSafetyShares.jsx";
 import RbdPfdChart from "./RbdPfdChart.jsx";
-import { pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
+import { availabilityPct, downPct, HIGH_AVAILABILITY, pctAt, pctDigits, precisionNote } from "./availabilityPrecision.js";
 import MethodTag from "./MethodTag.jsx";
 import RbdNextFailure, { meanResidualLife } from "./RbdNextFailure.jsx";
 import RbdProduction from "./RbdProduction.jsx";
@@ -461,10 +461,14 @@ function availabilityRange(...curves) {
   return [Math.max(0, lo - pad), Math.min(1, hi) + pad];
 }
 
-// "99.968%": an availability to three decimals, or more when `spread` (a
+// "95.12%", "99.97% (down 0.0314%)": an availability to about four significant
+// figures, with the downtime above 99.9%; more decimals only when `spread` (a
 // difference to show) needs them.
-const pctOf = (v, spread = null) =>
-  v == null || !Number.isFinite(v) ? "—" : pctAt(v, spread == null ? 3 : Math.max(3, pctDigits(spread)));
+const pctOf = (v, spread = null) => {
+  if (v == null || !Number.isFinite(v)) return "—";
+  if (spread != null) return pctAt(v, Math.max(3, pctDigits(spread)));
+  return v > HIGH_AVAILABILITY ? `${availabilityPct(v)} (down ${downPct(v)})` : availabilityPct(v);
+};
 
 // "2.8 h", "17 min": downtime in hours, small values in minutes.
 function hoursText(h) {
