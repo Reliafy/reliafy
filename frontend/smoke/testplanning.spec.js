@@ -1,7 +1,7 @@
 // Strategy › Test planning: every tab computes a plan and draws it, and the
 // old Demonstration test address lands on the Demonstration tab with its
 // query string. (The pages themselves are opened by pages.spec.js.)
-import { test, expect, open, expectHealthy } from "./health.js";
+import { test, expect, open, expectHealthy, DEPLOYED } from "./health.js";
 
 test("the old demonstration-test address opens the Demonstration tab, keeping its requirement", async ({ page, problems }) => {
   await open(page, "/strategy/demonstration-test?b=10&life=1000&conf=90&unit=hours");
@@ -49,7 +49,8 @@ test("Life test: the simulation check runs (billing is off locally)", async ({ p
 
 // Percentage fields (the 18 Oct UX review): typed as a percentage, checked in
 // percent before anything is computed, and a value of 1 or less questioned
-// ("Did you mean 99%?") instead of taken as a tiny percentage.
+// ("Did you mean 99%?") instead of taken as a tiny percentage. Plus the
+// workspace's currency symbol on the Strategy tools' costs.
 test("Test planning: 150% gets a message in percent and Compute waits", async ({ page, problems }) => {
   await open(page, "/strategy/test-planning");
   await page.getByLabel("Target reliability").fill("150");
@@ -78,4 +79,21 @@ test("Failure finding: 0.99 asks 'Did you mean 99%?' and computes only once answ
   await expect(field).toHaveValue("0.99%");
   await expect(page.getByRole("button", { name: "Compute" })).toBeEnabled();
   await expectHealthy(page, problems, { label: "failure finding percent check" });
+});
+
+test("Settings: the currency symbol labels replacement costs", async ({ page, problems }) => {
+  test.skip(DEPLOYED, "writes a setting");
+  await open(page, "/settings");
+  // The Currency card's own form (Settings has other Save buttons).
+  const form = page.locator("form").filter({ has: page.getByLabel("Currency symbol") });
+  await form.getByLabel("Currency symbol").fill("€");
+  await form.getByRole("button", { name: "Save" }).click();
+  await expect(form.getByText("Saved.")).toBeVisible();
+  await open(page, "/strategy/replacement");
+  await expect(page.getByText("Planned replacement cost (€)")).toBeVisible();
+  await open(page, "/settings");
+  await form.getByLabel("Currency symbol").fill("$");
+  await form.getByRole("button", { name: "Save" }).click();
+  await expect(form.getByText("Saved.")).toBeVisible();
+  await expectHealthy(page, problems, { label: "currency symbol" });
 });

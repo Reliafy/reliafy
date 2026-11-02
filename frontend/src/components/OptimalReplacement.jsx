@@ -5,6 +5,8 @@ import ReplacementResult from "./ReplacementResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
 import { optimalReplacement } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
+import { useCurrency } from "../WorkspaceProvider.jsx";
+import { costLabel } from "../money.js";
 
 // Optimal preventive-replacement tool: the age that minimises the long-run
 // cost rate given planned vs. unplanned costs.
@@ -23,6 +25,7 @@ export default function OptimalReplacement() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [ranWith, setRanWith] = useState(null); // the model the result is for
+  const currency = useCurrency();
   // Opened from a model's "Use this model" (#294): that model, chosen.
   const wanted = modelFromSearch(useLocation().search);
   // A saved model brings its unit.
@@ -75,12 +78,12 @@ export default function OptimalReplacement() {
         )}
         <div className="strategy-costs" data-wt="repl-costs">
           <label className="calc-t">
-            <span>Planned replacement cost</span>
+            <span>{costLabel("Planned replacement cost", currency)}</span>
             <input type="number" inputMode="decimal" min="0" step="any" value={cp}
               onChange={(e) => setCp(e.target.value)} />
           </label>
           <label className="calc-t">
-            <span>Unplanned (failure) cost</span>
+            <span>{costLabel("Unplanned (failure) cost", currency)}</span>
             <input type="number" inputMode="decimal" min="0" step="any" value={cu}
               onChange={(e) => setCu(e.target.value)} />
           </label>

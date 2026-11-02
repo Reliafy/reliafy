@@ -9,6 +9,7 @@ from backend.auth import current_user_doc
 from backend.db import get_session
 from backend.services import access as access_service
 from backend.services import billing as billing_service
+from backend.services import currency
 from backend.services import roles as roles_service
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
@@ -46,10 +47,11 @@ def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> 
     billing_service.ensure_starter_grant(session, user["uid"])
     shares_service.claim_pending(session, user)
     acct = billing_service.account(session, user["uid"])
-    profile = session.users.find_one({"_id": user["uid"]}, {"time_zone": 1}) or {}
+    profile = session.users.find_one({"_id": user["uid"]}, {"time_zone": 1, "currency_symbol": 1}) or {}
     return {
         **user,
         "time_zone": time_zones.zone_name(profile.get("time_zone")),
+        "currency_symbol": currency.symbol(profile.get("currency_symbol")),
         "plan": acct["active_plan"],
         "admin": billing_service.is_admin_user(user),
         "credit_cents": acct["credit_cents"],
@@ -111,3 +113,21 @@ def put_roles(roles: list | None = Body(default=None, embed=True),
 def dismiss_roles_offer(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
     """"Not now" to the one-time question: it isn't asked again."""
     return roles_service.dismiss_offer(session, user["uid"])
+
+
+@router.get("/me/currency")
+def get_currency(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
+    """The personal workspace's currency symbol (shown in front of costs)."""
+    doc = session.users.find_one({"_id": user["uid"]}, {"currency_symbol": 1}) or {}
+    return {"currency_symbol": currency.symbol(doc.get("currency_symbol"))}
+
+
+@router.put("/me/currency")
+def put_currency(currency_symbol: str | None = Body(default=None, embed=True),
+                 user: dict = Depends(current_user_doc), session=Depends(get_session)):
+    """Set the personal workspace's currency symbol ("€"); null or "" sets it
+    back to "$". It labels costs only: nothing is converted."""
+    try:
+        return {"currency_symbol": currency.set_personal(session, user["uid"], currency_symbol)}
+    except currency.BadCurrency as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
