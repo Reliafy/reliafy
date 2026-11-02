@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { COLORWAY, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
-import { analyzeRbd, getActiveRbdJob, getRbdJob } from "../api.js";
+import { analyzeRbd, cancelRbdJob, getActiveRbdJob, getRbdJob } from "../api.js";
+import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import ValidationPanel from "./RbdValidation.jsx";
 import { graphSignature, resultIsStale } from "../rbdSignature.js";
 import RbdEmptyState from "./RbdEmptyState.jsx";
@@ -741,7 +742,7 @@ const quickSeconds = (offer) => (offer ? Number(Number(offer.seconds).toPrecisio
 // ``primary``: the simulation is this view's next step (no exact figures).
 function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick = null, capMessage = null,
                              onQuick = null, job = null, primary = false, tMax = null, currentState = null,
-                             rbdId = null }) {
+                             rbdId = null, onCancel = null }) {
   const [upgrade, setUpgrade] = useState(false);
   if (!onSimulate) return null;
   const canQuick = !canSimulate && !!onQuick && quick && quick.remaining_today > 0 && !capMessage;
@@ -755,7 +756,14 @@ function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick =
         </p>
       )}
       {job ? (
-        <p className="rbd-job-status" role="status" aria-live="polite">{jobStatusText(job)}</p>
+        <div className="rbd-upgrade-actions">
+          <p className="rbd-job-status" role="status" aria-live="polite">{jobStatusText(job)}</p>
+          {onCancel && (
+            <button type="button" className="secondary" onClick={onCancel}>
+              Cancel
+            </button>
+          )}
+        </div>
       ) : (
         <div className="rbd-upgrade-actions">
           {canQuick && (
@@ -816,7 +824,7 @@ function windowWords(window, unit, label = null) {
 export function AvailabilityView({ result, unit, graph = null, onSimulate = null, onCompute = null, busy = null,
                                   onQuick = null, capMessage = null, job = null, windowLabel = null, top = null,
                                   improve = null, more = null, production = null, tMax = null, currentState = null,
-                                  rbdId = null }) {
+                                  rbdId = null, onCancel = null }) {
   const u = unit ? ` ${unitInText(unit)}` : "";
   const hpu = hoursPerUnit(unit);
   // A result saved before #154 is a simulation result (no has_simulation flag).
@@ -853,6 +861,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
     capMessage,
     onQuick,
     job,
+    onCancel,
     // The quote beside "Run simulation" and the run history (#286, #112).
     tMax,
     currentState,
@@ -1326,6 +1335,10 @@ export default function RbdCalculator({
   const [capMessage, setCapMessage] = useState(null); // 429: today's free runs used
   const [retryable, setRetryable] = useState(null); // 503: the calculation service couldn't take it
   const [job, setJob] = useState(null); // {job_id, status, queue_position} while queued/running
+  // The simulation in flight, so Cancel can stop it (jobCancel.js).
+  const runGuard = useRef(null);
+  if (!runGuard.current) runGuard.current = createRunGuard();
+  const [cancelNote, setCancelNote] = useState(null);
   const [tMax, setTMax] = useState(""); // x-axis 'to' limit (blank = auto)
   const [evalT, setEvalT] = useState(""); // time at which R(t)/F(t) is read off
   // Whether "To" / "Evaluate at" hold the values a calculation filled in
@@ -1484,7 +1497,12 @@ export default function RbdCalculator({
     setNeedsPro(false);
     setCapMessage(null);
     setJob(null);
+    setCancelNote(null);
     const sentSig = graphSig;
+    // A simulation can take a while: a token lets Cancel stop it even while
+    // it computes in the request itself.
+    const token = graph.repairable && (simulate || force || quick) ? runGuard.current.start() : null;
+    const superseded = () => token != null && !runGuard.current.isCurrent(token);
     try {
       const cov = covPayload();
       // As of now replaces the whole-system "given survived to" age.
@@ -1510,10 +1528,13 @@ export default function RbdCalculator({
                 currentState: now,
                 // Keep large diagrams' exact figures once asked for.
                 exact: exact || result?.exact?.status === "ok",
+                runToken: token,
               }
             : { currentState: now, targetReliability: target }),
         }
       );
+      if (superseded()) return; // cancelled while it ran
+      runGuard.current.finish(token);
       setResult(res);
       setResultSig(sentSig);
       if (res.free_sims) setQuickOffer(res.free_sims);
@@ -1542,6 +1563,8 @@ export default function RbdCalculator({
         setBusy(null);
       }
     } catch (err) {
+      if (superseded()) return;
+      runGuard.current.finish(token);
       setBusy(null);
       if (err.status === 402 && err.code === "pro_required") {
         // A simulation-only diagram (no exact figures): the paywall — with
@@ -1592,6 +1615,18 @@ export default function RbdCalculator({
     runCalculation(force, opts);
   };
 
+  // Cancel the simulation: stop waiting now, and tell the server (the job,
+  // or the run computing in the request) so its result is thrown away.
+  const cancelSimulation = () => {
+    const id = job?.job_id || runGuard.current.cancel();
+    runGuard.current.cancel();
+    setJob(null);
+    setBusy(null);
+    setPhase("idle");
+    setCancelNote(CANCELLED_TEXT);
+    if (id) cancelRbdJob(id).catch(() => {}); // the page has stopped either way
+  };
+
   // Poll the in-flight job until it finishes. Survives transient network
   // errors (keeps trying, more slowly); gives up after a run of failures.
   const jobId = job?.job_id;
@@ -1623,6 +1658,13 @@ export default function RbdCalculator({
           finish();
           setError(view.error || "The calculation failed.");
           setPhase("error");
+          return;
+        }
+        if (view.status === "cancelled") {
+          // Cancelled elsewhere (another tab, the run history).
+          finish();
+          setCancelNote(CANCELLED_TEXT);
+          setPhase("idle");
           return;
         }
         setJob((prev) => (prev && prev.job_id === jobId ? { ...prev, ...view } : prev));
@@ -1696,6 +1738,11 @@ export default function RbdCalculator({
           ? "Recalculate"
           : "Calculate"}
       </button>
+      {phase === "calculating" && busy === "simulate" && !job && (
+        <button type="button" className="secondary" onClick={cancelSimulation}>
+          Cancel
+        </button>
+      )}
       {dirty && (
         <span className="hint">Recalculate to apply your changes.</span>
       )}
@@ -1883,6 +1930,10 @@ export default function RbdCalculator({
         <p className="hint">The diagram has changed since these results: recalculate to update them.</p>
       )}
 
+      {cancelNote && phase !== "calculating" && (
+        <p className="hint" role="status">{cancelNote}</p>
+      )}
+
       {error && (
         <div className="card error">
           {error}
@@ -1940,6 +1991,7 @@ export default function RbdCalculator({
           onQuick={() => runCalculation(false, { quick: true })}
           capMessage={capMessage}
           job={job}
+          onCancel={cancelSimulation}
           windowLabel={sentWindowLabel}
           top={top}
           improve={<WhatToImprove graph={graph} rbdId={rbdId} result={result} onTop={setTop} />}

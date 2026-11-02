@@ -11,7 +11,7 @@ A job record::
     {_id, uid, kind: "availability", rbd_id, cache_key, quick, store,
      request: {graph, options},       # self-contained (compute_core)
      context: {exact, current_state}, # what the finished payload is shown with
-     status: queued | running | done | failed,
+     status: queued | running | done | failed | cancelled,
      created_at, started_at, finished_at, expires_at,
      result | error, timings, computed_at, free_sim_day}
 
@@ -22,7 +22,12 @@ state when the run starts from one (such a run is never stored). ``context``
 holds the free part of the answer computed on the web (the exact figures,
 #154), so a finished job's view is the whole availability payload, as an
 in-process run returns it (:func:`availability_out`). ``expires_at``
-drives a TTL index: finished jobs are kept ``RBD_JOB_TTL_DAYS``. A job still
+drives a TTL index: finished jobs are kept ``RBD_JOB_TTL_DAYS``. The owner
+can cancel a job still queued or running (:func:`cancel`): a task that hasn't
+started yet stops when its "running" report is refused (the compute service
+then skips the calculation), and a run already computing finishes on the
+compute service but its result is discarded (:func:`finish` only moves an
+active job). A job still
 queued or running after ``RBD_JOB_STALE_S`` was dropped by the queue (its
 retries were spent) and is reported failed. The names follow #111 (``rbd_jobs``
 / ``get kind job``), of which this is the first piece.
@@ -69,7 +74,9 @@ KIND_JOINT_FIT = "joint_fit"
 _PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS, KIND_MEASURES, KIND_TEST_PRECISION,
                        KIND_CALENDAR)
 ACTIVE = ("queued", "running")
-FINISHED = ("done", "failed")
+CANCELLED = "cancelled"
+FINISHED = ("done", "failed", CANCELLED)
+CANCELLED_NOTE = "Cancelled."
 
 QUEUE_UNAVAILABLE = "Couldn't start the calculation — try again in a moment."
 STALE_ERROR = "The calculation didn't finish. Please run it again."
@@ -235,6 +242,64 @@ def finish(db, job_id: str, status: str, *, result: Optional[dict] = None, error
     return True
 
 
+def cancel(db, job_id: str, uid: str) -> Optional[dict]:
+    """Cancel the caller's job (owner only: None when it isn't theirs or
+    doesn't exist). A job still queued or running is marked cancelled at once
+    and never shows a result: a later callback can't move it (see
+    :func:`finish`). A task not yet started stops when its "running" report
+    is refused (see the callback route), and a free quick run is given
+    back. A finished job is returned
+    as it is. Returns the job as it now stands."""
+    job = db.rbd_jobs.find_one({"_id": job_id})
+    if job is None or job.get("uid") != uid:
+        return None
+    if job.get("status") not in ACTIVE:
+        return job
+    now = _now()
+    res = db.rbd_jobs.update_one(
+        {"_id": job_id, "status": {"$in": list(ACTIVE)}},
+        {"$set": {"status": CANCELLED, "finished_at": now, "cancelled_at": now, "error": CANCELLED_NOTE,
+                  "expires_at": now + timedelta(days=int(config.RBD_JOB_TTL_DAYS))}},
+    )
+    if getattr(res, "modified_count", 0):
+        if job.get("quick"):
+            free_sims.refund(db, job.get("uid"), job.get("free_sim_day"))
+    return db.rbd_jobs.find_one({"_id": job_id})
+
+
+def is_cancelled(db, job_id: str) -> bool:
+    job = db.rbd_jobs.find_one({"_id": job_id}, {"status": 1})
+    return bool(job) and job.get("status") == CANCELLED
+
+
+# ---- Runs in the web app's own process ------------------------------------------------
+# A run with no queue (self-hosted, dev, or a diagram that needs saved models
+# re-fitted) answers in the request itself, so there is no job to cancel while
+# it computes. The app sends a ``run_token`` with such a request; cancelling
+# that token (:func:`cancel_token`) makes the finished run record itself
+# cancelled, keep nothing on the diagram or as a saved model, and the app
+# ignores the answer.
+
+_TOKEN_MAX = 64  # the app's tokens are 32 hex characters
+
+
+def cancel_token(db, uid: str, token: str) -> None:
+    if not token or len(token) > _TOKEN_MAX:
+        return
+    now = _now()
+    db.rbd_job_cancels.update_one(
+        {"_id": f"{uid}:{token}"},
+        {"$set": {"uid": uid, "token": token, "created_at": now, "expires_at": now + timedelta(days=1)}},
+        upsert=True,
+    )
+
+
+def token_cancelled(db, uid: str, token: Optional[str]) -> bool:
+    if not token or not isinstance(token, str) or len(token) > _TOKEN_MAX:
+        return False
+    return db.rbd_job_cancels.find_one({"_id": f"{uid}:{token}"}) is not None
+
+
 def apply_callback(db, payload: dict) -> bool:
     """Apply one callback from the compute service. Idempotent: a repeated or
     late callback for a finished job is ignored (and still acknowledged)."""
@@ -339,6 +404,8 @@ def view(db, job: dict, entitled: bool) -> dict:
             out["result"] = job_payload(job, entitled)
     elif job.get("status") == "failed":
         out["error"] = job.get("error") or FAILED_ERROR
+    elif job.get("status") == CANCELLED:
+        out["error"] = CANCELLED_NOTE
     return out
 
 
@@ -421,15 +488,22 @@ def run_availability(
             free_sims.refund(db, uid, free_day)
             raise
         computed_at = None
-        if store and rbd_id:
+        cancelled = token_cancelled(db, uid, (run_info or {}).get("run_token"))
+        if cancelled:
+            # Cancelled while it computed: nothing kept, the free run given back.
+            free_sims.refund(db, uid, free_day)
+        elif store and rbd_id:
             computed_at = rbds_service.save_availability_result(db, rbd_id, cache_key, result, uid,
                                                                 resolve_owners)
-        # Recorded as a finished run, for the history (#112).
+        # Recorded as a finished (or cancelled) run, for the history (#112).
         rbd_runs.record_in_process(
             db, uid=uid, graph=graph, options={"t_simulation": t_max, **options}, cache_key=cache_key,
             rbd_id=rbd_id, quick=quick, store=store, result=result, runtime_s=seconds,
-            computed_at=computed_at, context=context, owners=resolve_owners, info=run_info)
+            computed_at=computed_at, context=context, owners=resolve_owners, info=run_info,
+            cancelled=cancelled)
         payload = _result_payload(result, computed_at, entitled)
+        if cancelled:
+            payload["cancelled"] = True
         if quick:
             payload["free_sims"] = free_sims.summary(db, uid)
         return 200, payload

@@ -8,8 +8,9 @@ import { DatasetPartModal } from "../components/DatasetPartInput.jsx";
 import Units from "../components/Units.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import {
-  checkJointData, fitJointModel, getDataset, getJointOptions, getRbdJob, listDatasets,
+  cancelRbdJob, checkJointData, fitJointModel, getDataset, getJointOptions, getRbdJob, listDatasets,
 } from "../api.js";
+import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { columnFacts } from "../lifeData.js";
 import { covariateParts, guessLifetimeColumns, guessReadingColumns } from "../joint.js";
 import ProTag from "../components/ProTag.jsx";
@@ -175,9 +176,15 @@ export default function JointNewPage() {
     finally { setBusy(null); }
   };
 
-  const poll = async (jobId) => {
-    while (alive.current) {
+  // The fit in flight, so Cancel can stop it (jobCancel.js).
+  const runGuard = useRef(null);
+  if (!runGuard.current) runGuard.current = createRunGuard();
+  const [cancelNote, setCancelNote] = useState(null);
+
+  const poll = async (jobId, token) => {
+    while (alive.current && runGuard.current.isCurrent(token)) {
       const j = await getRbdJob(jobId);
+      if (!runGuard.current.isCurrent(token)) return;
       setJob(j);
       if (j.status === "done") {
         const id = j.result?.model_id;
@@ -186,27 +193,48 @@ export default function JointNewPage() {
         return;
       }
       if (j.status === "failed") throw new Error(j.error || "The fit failed.");
+      if (j.status === "cancelled") { setCancelNote(CANCELLED_TEXT); return; }
       await new Promise((r) => setTimeout(r, POLL_MS));
     }
   };
 
   const onFit = async () => {
-    setBusy("fit"); setError(null); setNeedsPro(null); setJob(null);
+    setBusy("fit"); setError(null); setNeedsPro(null); setJob(null); setCancelNote(null);
+    // The token lets Cancel stop a fit that runs in the request itself (no
+    // queue): the server then saves nothing.
+    const token = runGuard.current.start();
     try {
       const out = await fitJointModel({
         ...body, name: name.trim(), path_model: path, unit, marker: marker.trim(), marker_unit: markerUnit.trim(),
+        run_token: token,
       });
+      if (!runGuard.current.isCurrent(token)) return; // cancelled while it ran
       if (out.model_id) navigate(`/models/joint/${out.model_id}`);
       else if (out.job?.job_id) {
         setJob(out.job);
-        await poll(out.job.job_id);
+        await poll(out.job.job_id, token);
       }
     } catch (err) {
+      if (!runGuard.current.isCurrent(token)) return;
       if (err.status === 402) setNeedsPro(err.message);
       else setError(err.message);
     } finally {
-      if (alive.current) setBusy(null);
+      // Only this fit's own state: a cancelled one leaves a newer fit alone.
+      const mine = runGuard.current.isCurrent(token);
+      runGuard.current.finish(token);
+      if (alive.current && mine) setBusy(null);
     }
+  };
+
+  // Stop waiting, and cancel the fit on the server (its job, or the fit
+  // running in the request): nothing is saved.
+  const cancelFit = () => {
+    const token = runGuard.current.cancel();
+    const id = job?.job_id || token;
+    if (id) cancelRbdJob(id).catch(() => {});
+    setJob(null);
+    setBusy(null);
+    setCancelNote(CANCELLED_TEXT);
   };
 
   const lifeCols = dataset?.life?.columns || [];
@@ -368,7 +396,13 @@ export default function JointNewPage() {
             <button type="button" disabled={!mapped || !name.trim() || !!busy} onClick={onFit}>
               {busy === "fit" ? "Fitting…" : <>Fit model<ProTag /></>}
             </button>
+            {busy === "fit" && (
+              <button type="button" className="secondary" onClick={cancelFit}>
+                Cancel
+              </button>
+            )}
           </div>
+          {cancelNote && !busy && <p className="hint" role="status">{cancelNote}</p>}
 
           {check && (
             <div className="card note joint-check-out" role="status">

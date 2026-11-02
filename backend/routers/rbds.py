@@ -367,7 +367,7 @@ def _has_figures(payload: dict) -> bool:
 def availability_payload(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
     *, simulate: bool | None = None, current_state=None, exact: bool = False,
-    quick: bool = False, surface: str = "app", auto: bool = False,
+    quick: bool = False, surface: str = "app", auto: bool = False, run_token: str | None = None,
 ) -> tuple[int, dict]:
     """A repairable (availability) analysis as ``(status, payload)``.
 
@@ -411,6 +411,8 @@ def availability_payload(
     gets them without one (a matching saved one is still served), and
     ``simulation_status.on_request`` says one can be asked for; otherwise it
     runs as asked for (``quick`` included). The app never passes it.
+    ``run_token`` (the app's) lets the user cancel a run that computes in
+    this process (see :func:`rbd_jobs.cancel_token`).
     Raises :class:`AnalysisError` for an invalid current state.
     """
     from backend.services import rbd_analysis
@@ -457,8 +459,9 @@ def availability_payload(
             context={"exact": free.get("exact")},
             # Who ran it, from the app or which connector (#112).
             # How long it's kept, from their plan now (#282).
-            run_info=rbd_runs_service.run_info(ctx, surface, db=session,
-                                               rbd_owner=rbd.owner_id if rbd is not None else ctx.write_owner),
+            run_info={**rbd_runs_service.run_info(ctx, surface, db=session,
+                                                  rbd_owner=rbd.owner_id if rbd is not None else ctx.write_owner),
+                      **({"run_token": run_token} if run_token else {})},
         )
         if code == 200:
             sim = res
@@ -504,12 +507,14 @@ def availability_payload(
 def _availability(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
     simulate: bool | None = None, current_state=None, exact: bool = False, quick: bool = False,
+    run_token: str | None = None,
 ) -> JSONResponse:
     # The exact figures (free) unless the simulation runs or meets the paywall.
     usage_service.set_feature("availability_exact")
     status, payload = availability_payload(
         session, ctx, graph, t_max, rbd, force, resolve_owners,
-        simulate=simulate, current_state=current_state, exact=exact, quick=quick, surface="app")
+        simulate=simulate, current_state=current_state, exact=exact, quick=quick, surface="app",
+        run_token=run_token)
     sim_state = (payload.get("simulation_status") or {}).get("state")
     if status in (202, 402) or sim_state == "done":
         usage_service.set_feature("availability_sim")
@@ -530,6 +535,7 @@ def analyze_graph(
     exact: bool = Body(default=False),
     target_reliability: float | None = Body(default=None),
     quick: bool = Body(default=False),
+    run_token: str | None = Body(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -550,7 +556,8 @@ def analyze_graph(
     for it; ``current_state`` (``{node_id: {"down": true, "since": …} |
     {"age": …}}``) starts the figures from now, over ``t_max``; ``exact``
     computes the figures over time of a diagram above the automatic size cap;
-    ``quick`` runs a free, time-capped simulation (users without Pro, #147).
+    ``quick`` runs a free, time-capped simulation (users without Pro, #147);
+    ``run_token`` lets the app cancel a run computing in this process.
 
     Non-repairable graphs (#173): ``current_state`` (``{node_id: {"failed":
     true} | {"age": …}}``) analyses the diagram as of now — the curves, MTTF
@@ -565,7 +572,7 @@ def analyze_graph(
                 rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
             return _availability(session, ctx, graph, t_max, rbd, force, ctx.read_owners,
                                  simulate=simulate, current_state=current_state, exact=exact,
-                                 quick=quick)
+                                 quick=quick, run_token=run_token)
         return JSONResponse(
             content=rbds_service.analyze_graph(
                 session,
@@ -596,6 +603,7 @@ def analyze_rbd(
     simulate: bool | None = None,
     exact: bool = False,
     quick: bool = False,
+    run_token: str | None = None,
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -609,7 +617,7 @@ def analyze_rbd(
     try:
         if graph.get("repairable"):
             return _availability(session, ctx, graph, t_max, rbd, force, owners,
-                                 simulate=simulate, exact=exact, quick=quick)
+                                 simulate=simulate, exact=exact, quick=quick, run_token=run_token)
         return JSONResponse(
             content=rbds_service.analyze_graph(session, graph, owners, t_max=t_max)
         )

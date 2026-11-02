@@ -166,6 +166,8 @@ def init_db() -> None:
     db.rbd_jobs.create_index([("uid", 1), ("rbd_id", 1), ("created_at", -1)])
     db.rbd_jobs.create_index([("uid", 1), ("cache_key", 1), ("created_at", -1)])
     db.rbd_jobs.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Cancels of runs computing in the web process (rbd_jobs.cancel_token).
+    db.rbd_job_cancels.create_index([("expires_at", 1)], expireAfterSeconds=0)
     # Run history (#112) by diagram, and the runtime quote's calibration log (#286).
     from backend.services import rbd_runs
 

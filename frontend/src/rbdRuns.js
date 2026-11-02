@@ -34,6 +34,8 @@ export function statusChip(status) {
       return { tone: "accent", label: "Running" };
     case "queued":
       return { tone: "accent", label: "Queued" };
+    case "cancelled":
+      return { tone: "neutral", label: "Cancelled" };
     default:
       return { tone: "neutral", label: status || "—" };
   }

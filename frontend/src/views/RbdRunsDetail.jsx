@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { downloadRbdRun, getRbdRun, rerunRbdRun } from "../api.js";
+import { cancelRbdJob, downloadRbdRun, getRbdRun, rerunRbdRun } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
@@ -55,6 +55,21 @@ export default function RbdRunsDetail() {
       clearTimeout(timer);
     };
   }, [runId]);
+
+  // The runner can cancel a run still queued or running (its result, if it
+  // still finishes, is thrown away).
+  const cancel = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await cancelRbdJob(run.run_id);
+      setRun((r) => ({ ...r, status: "cancelled", error: "Cancelled." }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const rerun = async () => {
     setBusy(true);
@@ -143,7 +158,17 @@ export default function RbdRunsDetail() {
       {error && <div className="card error">{error}</div>}
 
       {(run.status === "queued" || run.status === "running") && (
-        <div className="card rbd-runs-pending" role="status" aria-live="polite">{jobStatusLine(run)}</div>
+        <div className="card rbd-runs-pending" role="status" aria-live="polite">
+          {jobStatusLine(run)}
+          {run.by?.you && (
+            <div className="rbd-upgrade-actions">
+              <button type="button" className="secondary" onClick={cancel} disabled={busy}>Cancel this run</button>
+            </div>
+          )}
+        </div>
+      )}
+      {run.status === "cancelled" && (
+        <div className="card note" role="status">This run was cancelled before it finished, so it has no results.</div>
       )}
       {run.status === "failed" && <div className="card error">{run.error || "The calculation failed."}</div>}
 
