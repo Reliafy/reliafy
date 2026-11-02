@@ -888,7 +888,7 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 export function analyzeRbd(
   graph, tMax, covariates, conditionalAge,
   { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false,
-    targetReliability = null, quick = false } = {}
+    targetReliability = null, quick = false, runToken = null } = {}
 ) {
   return request("/api/rbds/analyze", {
     method: "POST",
@@ -906,6 +906,7 @@ export function analyzeRbd(
       ...(exact ? { exact: true } : {}),
       ...(targetReliability != null ? { target_reliability: targetReliability } : {}),
       ...(quick ? { quick: true } : {}),
+      ...(runToken ? { run_token: runToken } : {}),
     }),
   });
 }
@@ -926,6 +927,13 @@ export function previewRbdSchedule({ modelId, schedules, constants, tMax = null 
 // queue_position, result (done), error (failed)}.
 export function getRbdJob(jobId) {
   return request(`/api/rbd-jobs/${encodeURIComponent(jobId)}`);
+}
+
+// Cancel a job (its id), or a run computing in the request (the run token
+// sent with it): the server marks it cancelled and discards its result.
+// Only the user who started it can cancel it.
+export function cancelRbdJob(id) {
+  return request(`/api/rbd-jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
 }
 
 // The newest in-flight job for a diagram ({job: null} when none), so a

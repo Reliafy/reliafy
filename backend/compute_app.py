@@ -140,6 +140,16 @@ def post_callback(url: str, payload: dict, timeout: float = 30.0) -> bool:
     return True
 
 
+def _report_running(url: str, job_id: str, started: str) -> Optional[int]:
+    """Report a job started; the callback's HTTP status (None if it
+    couldn't be delivered)."""
+    try:
+        return _post(url, {"job_id": job_id, "status": "running", "started_at": started}, 10.0)
+    except Exception as exc:  # noqa: BLE001 - best effort
+        logger.warning("Running callback for job %s failed: %s", job_id, exc)
+        return None
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -157,8 +167,11 @@ def run_job(job_id: str, kind: str, request: dict, callback_url: str) -> bool:
     """Run one job and report it. Returns whether the final callback landed."""
     started = _now()
     # Best effort: lets the app show "Running…". A lost one doesn't matter.
-    post_callback(callback_url, {"job_id": job_id, "status": "running", "started_at": started},
-                  timeout=10.0)
+    # The web app answers 409 when the user cancelled the job while it was
+    # queued: then nothing is calculated (and the task is done, not retried).
+    if _report_running(callback_url, job_id, started) == 409:
+        logger.info("Job %s was cancelled before it started; skipped", job_id)
+        return True
     t0 = time.perf_counter()
     status, result, error = "done", None, None
     try:

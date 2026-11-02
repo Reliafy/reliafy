@@ -218,19 +218,30 @@ def on_finished(db, job: dict, result: dict, timings: Optional[dict], engines: O
 
 def record_in_process(db, *, uid: str, graph: dict, options: dict, cache_key: str, rbd_id: Optional[str],
                       quick: bool, store: bool, result: dict, runtime_s: float, computed_at,
-                      context: Optional[dict], owners, info: Optional[dict]) -> Optional[str]:
+                      context: Optional[dict], owners, info: Optional[dict],
+                      cancelled: bool = False) -> Optional[str]:
     """Record a run made in the web app's own process as a finished job, so
-    it is in the history too, and log its time. Returns its id (None if it
-    couldn't be recorded; the run's answer stands either way)."""
+    it is in the history too, and log its time. ``cancelled``: the user
+    cancelled it while it computed — recorded as cancelled, with no result.
+    Returns its id (None if it couldn't be recorded; the run's answer stands
+    either way)."""
     from backend.services import compute_core, rbd_jobs
 
     try:
         request = {"graph": compute_core.inline_graph(graph),
                    "options": compute_core.availability_options(**options)}
+        extra = new_fields(db, request, info, in_process=True)
+        extra.pop("run_token", None)
         job = rbd_jobs.create(db, uid=uid, kind=KIND, request=request, cache_key=cache_key, rbd_id=rbd_id,
-                              quick=quick, store=store, context=context, owners=owners,
-                              extra=new_fields(db, request, info, in_process=True))
+                              quick=quick, store=store, context=context, owners=owners, extra=extra)
         now = _now()
+        if cancelled:
+            db.rbd_jobs.update_one({"_id": job["_id"]}, {"$set": {
+                "status": rbd_jobs.CANCELLED, "started_at": job["created_at"], "finished_at": now,
+                "cancelled_at": now, "error": rbd_jobs.CANCELLED_NOTE, "in_process": True,
+                "timings": {"compute_s": round(float(runtime_s), 3)},
+            }})
+            return job["_id"]
         db.rbd_jobs.update_one({"_id": job["_id"]}, {"$set": {
             "status": "done", "started_at": job["created_at"], "finished_at": now,
             "result": json.loads(json.dumps(result or {}, default=float)), "computed_at": computed_at,
@@ -393,7 +404,7 @@ def summary(job: dict, ctx_uid: str, names: Optional[dict] = None) -> dict:
         "availability": _headline(result) if job.get("status") == "done" else None,
         "quote": {k: quote.get(k) for k in ("median_s", "p90_s", "text")} if quote else None,
     }
-    if job.get("status") == "failed":
+    if job.get("status") in ("failed", "cancelled"):
         out["error"] = job.get("error")
     return out
 
