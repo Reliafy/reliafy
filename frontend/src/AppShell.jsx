@@ -159,6 +159,12 @@ export default function AppShell() {
   return (
     <RolesProvider>
     <WalkthroughProvider>
+      {/* The first Tab stop: past the bar and the menu to the page. Focused
+          by hand so the address keeps no #hash. */}
+      <a className="skip-link" href="#main-content"
+         onClick={(e) => { e.preventDefault(); document.getElementById("main-content")?.focus(); }}>
+        Skip to content
+      </a>
       <NavBar
         menuOpen={phone && menuOpen}
         onMenu={() => setMenuOpen((o) => !o)}
@@ -173,7 +179,7 @@ export default function AppShell() {
           open={phone && menuOpen}
           onClose={closeMenu}
         />
-        <main className="content" key={workspace}>
+        <main className="content" id="main-content" tabIndex={-1} key={workspace}>
           <ErrorBoundary>
           <Suspense fallback={<div className="card empty view-loading">Loading…</div>}>
           <Routes>
