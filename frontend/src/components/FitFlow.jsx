@@ -31,7 +31,7 @@ import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts } from "../tvcData.j
 import { guessUnit, isNumeric } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
-  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, unitProblem,
+  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 
@@ -298,7 +298,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
   const facts = useMemo(() => (csv ? columnFacts(csv) : {}), [csv]);
   const problems = useMemo(
     () => (!csv ? [] : tvc ? tvcProblems(mapping, facts, tvc, hasCovariates ? 1 : 0)
-      : dataStepProblems(mapping, facts, csv.n_rows)).concat(unitProblem(unit) || []),
+      : dataStepProblems(mapping, facts, csv.n_rows)),
     [csv, mapping, facts, tvc, hasCovariates, unit]
   );
   // Covariates over time on or off, or the rows' layout changed (#60).
