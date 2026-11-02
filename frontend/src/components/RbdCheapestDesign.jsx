@@ -6,6 +6,7 @@ import { fmtMoney } from "./AvailabilityCosts.jsx";
 import { copiesText, horizonWords } from "../rbdOwnership.js";
 import { unitInText } from "./unitText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import ProTag from "./ProTag.jsx";
 
 // The Design tab for a repairable diagram (#99): how many copies of each block
 // with a purchase price own the system at the lowest total cost over a
@@ -171,7 +172,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
           </div>
           <div className="rbd-calc-actions">
             <button type="button" onClick={find} disabled={phase === "working" || horizon === ""}>
-              {phase === "working" ? "Finding…" : "Find the cheapest design"}
+              {phase === "working" ? "Finding…" : <>Find the cheapest design<ProTag /></>}
             </button>
             <span className="hint">
               Copies are active and repaired independently; {priced.length} priced block{priced.length === 1 ? "" : "s"}

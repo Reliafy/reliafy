@@ -9,6 +9,7 @@ import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
 import "./RbdMeasures.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import ProTag from "./ProTag.jsx";
 
 // What to improve's other measures (#225, #325), one tab each beside the
 // ranked steps: RePyability's importance over time, shares of a change, joint
@@ -178,7 +179,7 @@ function UncertaintyControls({ method, setMethod, timesText, setTimesText, sentT
       <SegmentedControl label="Method" showLabel size="sm" value={method} onChange={setMethod}
         options={[
           { value: "delta", label: "Quick", title: "The delta method: each input's share from the slopes (free)" },
-          { value: "sobol", label: "Sobol (Pro)", title: "Sobol indices from draws, counting interactions (Pro)" },
+          { value: "sobol", label: <>Sobol<ProTag /></>, title: "Sobol indices from draws, counting interactions (Pro)" },
         ]} />
       <details className="rbd-measure-adv">
         <summary>Advanced</summary>
@@ -186,7 +187,7 @@ function UncertaintyControls({ method, setMethod, timesText, setTimesText, sentT
           <label className="param-field rbd-cost-field">
             <span>Also at times</span>
             <input type="text" value={timesText} placeholder="e.g. 730, 8760" onChange={(e) => setTimesText(e.target.value)} />
-            <small>{unit || "time"} · up to 6 · Pro</small>
+            <small>{unit || "time"} · up to 6<ProTag /></small>
           </label>
           <button type="button" className="secondary" disabled={busy || (!valid && !sentTimes)}
                   onClick={() => setSentTimes(valid ? parsed : null)}>

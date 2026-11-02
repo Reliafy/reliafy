@@ -11,6 +11,7 @@ import {
   EVERY_UNITS, METHODS, TIME_UNITS, buildRequest, formatDate, localToday, newShut, timeUnit,
 } from "../calendarReplacement.js";
 import "./CalendarReplacement.css";
+import { useProTags } from "./ProTag.jsx";
 
 const POLL_FIRST_MS = 1500;
 const POLL_MAX_MS = 6000;
@@ -36,6 +37,7 @@ export default function CalendarReplacement() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [needsPro, setNeedsPro] = useState(false);
+  const proTags = useProTags();
   const [job, setJob] = useState(null);
 
   const pickModel = (m) => {
@@ -189,7 +191,7 @@ export default function CalendarReplacement() {
             <label className="calc-t">
               <span>Method</span>
               <Select value={method} onChange={setMethod} ariaLabel="Method"
-                      options={METHODS.map((m) => ({ value: m.value, label: m.label, hint: m.hint }))} />
+                      options={METHODS.map((m) => ({ value: m.value, label: m.pro && proTags ? `${m.label} · Pro` : m.label, hint: m.hint }))} />
             </label>
             <label className="calc-t">
               <span>Oldest age to consider{u ? ` (${u})` : ""}</span>

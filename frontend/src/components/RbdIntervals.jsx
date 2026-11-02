@@ -7,6 +7,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import "./RbdIntervals.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import ProTag from "./ProTag.jsx";
 
 // Maintenance and proof-test intervals chosen together (#172, #228), on the
 // Design tab of a repairable diagram: RePyability's
@@ -537,7 +538,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
               ) : (
                 <div className="rbd-upgrade-actions">
                   <button type="button" disabled={crewSim?.state === "running" || stale} onClick={() => simulateCrews(false)}>
-                    {crewSim?.state === "running" ? "Simulating…" : `Simulate with your ${crews.crews} crew${crews.crews === 1 ? "" : "s"}`}
+                    {crewSim?.state === "running" ? "Simulating…" : <>{`Simulate with your ${crews.crews} crew${crews.crews === 1 ? "" : "s"}`}<ProTag /></>}
                   </button>
                 </div>
               )}
