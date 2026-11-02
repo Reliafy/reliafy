@@ -4,6 +4,7 @@
 // forecast's own distribution.
 import { formatNumber } from "../format.js";
 import { money } from "../maintenanceForecast.js";
+import { costLabel, prefixCurrency, workspaceCurrency } from "../money.js";
 import { CardHeader } from "./ui/Card.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import SparesWhatIf from "./SparesWhatIf.jsx";
@@ -47,7 +48,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
         {field("review", `Review every (${label})`, { placeholder: "0" })}
         {field("per_failure", "Parts per failure", { placeholder: "1" })}
         {field("stock", "In stock now")}
-        {field("unit_cost", "Cost each")}
+        {field("unit_cost", costLabel("Cost each", workspaceCurrency()))}
       </div>
       <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
@@ -69,7 +70,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
             tone={answer.below_reorder ? "caveat" : "neutral"}
             stats={[
               { label: answer.repairable ? "Pool" : "Hold", value: formatNumber(answer.hold),
-                hint: answer.hold_cost != null ? money(answer.hold_cost) : undefined },
+                hint: answer.hold_cost != null ? prefixCurrency(money(answer.hold_cost)) : undefined },
               { label: "Reorder at",
                 value: answer.reorder_at == null ? "repair each"
                   : !answer.review && answer.hold > 0 && answer.reorder_at >= answer.hold ? "one for one"

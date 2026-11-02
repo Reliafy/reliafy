@@ -142,7 +142,7 @@ judging a change. Choose the kind of comparison:
 
 **Before and after a change (one fleet).** The same fleet's failure rate before
 the change against after it. Enter **Failures before the change**, **Operating
-time before**, and the **Drop in failure rate to detect (%)**. Then choose what
+time before**, and the **Drop in failure rate to detect** (a percentage). Then choose what
 to solve for:
 
 - **Operating time needed**: how long to run after the change. With 40 failures
@@ -156,7 +156,7 @@ Operating time is the fleet's total: ten units for 100 hours is 1,000 hours.
 
 **Old and new side by side (two groups).** Old and new units running over the
 same period, judged by the log-rank test. Enter the **Drop in failure rate to
-detect (%)** and the **Share of units failing during the study (%)**. To see a
+detect** and the **Share of units failing during the study**, both as percentages. To see a
 failure rate 40% lower with 80% power at 95% confidence, you need about **121
 failures**: 121 new and 121 old units if half of them fail during the study.
 

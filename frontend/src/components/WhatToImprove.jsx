@@ -4,6 +4,7 @@ import { getRbdJob, rbdSensitivity } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import RbdMeasure, { TABS } from "./RbdMeasures.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { prefixCurrency, workspaceCurrency } from "../money.js";
 
 // "What to improve" on a repairable diagram's availability results (#225):
 // every lever RePyability exposes (a block's mean life and repair time, its
@@ -27,7 +28,7 @@ const num = (v) => {
   return Math.abs(r) >= 1000 ? Math.round(r).toLocaleString() : r.toString();
 };
 const signed = (v, f) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${f(Math.abs(v))}`);
-const money = (v) => (Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toLocaleString());
+const money = (v) => prefixCurrency(Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Number(v.toPrecision(3)).toLocaleString());
 const per = (unit) => (unit ? `/${unit.toLowerCase().replace(/s$/, "")}` : "/unit time");
 
 const BASIS_TEXT = {
@@ -349,10 +350,10 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
                     <span className="rbd-improve-narrow">Cost</span>
                   </th>
                 )}
-                {editCosts && <th title="What making this change would cost you (any currency)">Cost to change</th>}
+                {editCosts && <th title="What making this change would cost you">Cost to change ({workspaceCurrency()})</th>}
                 {withCosts && (
                   <th title={rankBy === "cost" ? "Running cost saved per unit time, for every 1,000 spent" : "Availability points gained for every 1,000 spent"}>
-                    Per 1,000 spent
+                    Per {prefixCurrency("1,000")} spent
                   </th>
                 )}
               </tr>

@@ -9,7 +9,9 @@ import { Assumptions, Choice, ComputeButton, Field, PlanAnswer, SimulationCheck,
 import { getAltModel } from "../api.js";
 import { formatNumber, formatPercent, formatWithUnit } from "../format.js";
 import { ACCENT, COLORWAY } from "../plotTheme.js";
-import { PLAN_DISTRIBUTIONS, PLAN_LIFE_MODELS, altPrefill, frac, num } from "../testPlanning.js";
+import { PLAN_DISTRIBUTIONS, PLAN_LIFE_MODELS, altPrefill, num } from "../testPlanning.js";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 import { unitInText } from "./unitText.js";
 
 const MODEL_OPTIONS = Object.fromEntries(Object.entries(PLAN_LIFE_MODELS).map(([k, v]) => [k, v.label]));
@@ -100,6 +102,7 @@ export default function AcceleratedTestPlan({ modelId = null }) {
   }, [modelId]);
 
   const names = PLAN_LIFE_MODELS[lifeModel].params;
+  const pcts = readPercents("acceleratedTest", { confidence, bLife });
   const compute = () => {
     const body = {
       mode,
@@ -110,7 +113,7 @@ export default function AcceleratedTestPlan({ modelId = null }) {
       use_stress: num(useStress),
       censor_time: num(censorTime),
       b_life: num(bLife),
-      confidence: frac(confidence),
+      confidence: pcts.fractions.confidence,
       unit: unit.trim() || null,
       stress_unit: stressUnit.trim() || null,
     };
@@ -184,9 +187,9 @@ export default function AcceleratedTestPlan({ modelId = null }) {
           <Field label="Test length" value={censorTime} onChange={setCensorTime} min="0" />
           <Field label="Stress unit" type="text" value={stressUnit} onChange={setStressUnit} placeholder="e.g. K" />
           <Field label="Time unit" type="text" value={unit} onChange={setUnit} placeholder="e.g. hours" />
-          <Field label="B-life (% failed)" value={bLife} onChange={setBLife} min="0.1" max="99" />
-          <Field label="Confidence (%)" value={confidence} onChange={setConfidence} min="1" max="99.999" />
-          <ComputeButton loading={loading} onClick={compute} />
+          <PercentField label="B-life (% failed)" value={bLife} onChange={setBLife} check={pcts.checks.bLife} />
+          <PercentField label="Confidence" value={confidence} onChange={setConfidence} check={pcts.checks.confidence} />
+          <ComputeButton loading={loading} onClick={compute} disabled={!pcts.ready} />
         </div>
       </div>
 

@@ -30,6 +30,8 @@ import { formatNumber, formatPercent } from "../format.js";
 import { hoursPerUnit } from "./rbdModelText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import ProTag from "./ProTag.jsx";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -1430,11 +1432,9 @@ export default function RbdCalculator({
   };
 
   // The design life's target reliability (0–1), or null when blank or invalid.
-  const target = (() => {
-    if (graph.repairable || targetPct === "") return null;
-    const v = Number(targetPct);
-    return v > 0 && v < 100 ? v / 100 : null;
-  })();
+  // Typed as 90 (percent.js): 0.9 is asked about, not taken as 0.9%.
+  const targetCheck = readPercents("rbdDesignLife", { reliability: targetPct }).checks.reliability;
+  const target = graph.repairable ? null : targetCheck.state === "ok" ? targetCheck.fraction : null;
 
   // Signature of the calculation inputs, so we can tell when the shown result
   // is out of date with the current "To" / covariate / conditional selections.
@@ -1782,18 +1782,8 @@ export default function RbdCalculator({
               />
             </label>
           )}
-          <label className="calc-t" title="The design life: how long system reliability stays at or above this">
-            <span>Design life at R (%)</span>
-            <input
-              type="number" inputMode="decimal"
-              min="1"
-              max="99.9"
-              step="any"
-              placeholder="90"
-              value={targetPct}
-              onChange={(e) => setTargetPct(e.target.value)}
-            />
-          </label>
+          <PercentField label="Design life at R" title="The design life: how long system reliability stays at or above this"
+            value={targetPct} onChange={setTargetPct} check={targetCheck} placeholder="90" />
           <BandControls value={band} onChange={setBand} />
           <label className="rbd-asof-toggle">
             <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />

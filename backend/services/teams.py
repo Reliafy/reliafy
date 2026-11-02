@@ -17,7 +17,7 @@ from backend.services import access
 from backend.services import email as email_service
 from backend.services import email_trust
 from backend.services import rate_limit
-from backend.services import time_zones
+from backend.services import currency, time_zones
 
 # Every collection whose documents a team's workspace owns (``owner_id``),
 # Maintenance aside: deleting the team deletes them.
@@ -287,6 +287,8 @@ def summary(db, team: dict, user: dict, billing_service) -> dict:
         "member_count": len(team.get("members", [])),
         # The workspace's time zone (an IANA name), or None: UTC.
         "time_zone": time_zones.zone_name(team.get("time_zone")),
+        # The symbol shown in front of costs ("$" unless set).
+        "currency_symbol": currency.symbol(team.get("currency_symbol")),
         "pending_invites": len(team.get("invites", [])),
     }
 
