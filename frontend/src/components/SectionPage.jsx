@@ -63,13 +63,16 @@ export function SectionHeader({ section, title, purpose, help, primary, actions,
 
 // The one starter banner a section may show: an icon, a title, a line, and a
 // link (or a button) to start.
-export function SectionStarter({ icon, title, body, to, state, onClick, cta = "Start" }) {
+// ``terms``: an optional quieter line after the plain description (a
+// standard's vocabulary, for the people who search for it).
+export function SectionStarter({ icon, title, body, terms, to, state, onClick, cta = "Start" }) {
   return (
     <div className="sif-card section-starter">
       {icon && <span className="sif-card-ic">{icon}</span>}
       <div className="sif-card-body">
         <b>{title}</b>
         <span>{body}</span>
+        {terms && <small className="sif-card-terms">{terms}</small>}
       </div>
       {to ? (
         <Link className="sif-card-cta" to={to} state={state} onClick={onClick}>{cta} →</Link>

@@ -20,8 +20,8 @@ between redundant channels and their common cause.
 
 ## Start from the starter
 
-On the Models, RBDs or Strategy page, choose **Verify a safety function
-(SIL / PFDavg) → Open the starter**. It opens a diagram, unsaved, of the usual
+On the RBDs or Strategy page, choose **Verify a safety function →
+Open the starter**. It opens a diagram, unsaved, of the usual
 shape:
 
 - two pressure transmitters voting **1oo2** (either one can trip), in a

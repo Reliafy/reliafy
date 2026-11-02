@@ -9599,6 +9599,7 @@ input.rbd-rename {
 .sif-card-body b { font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
 .sif-card-body span { font-size: var(--fs-13); color: var(--muted); }
 .sif-card-body button.link { font-size: var(--fs-13); }
+.sif-card-body .sif-card-terms { font-size: var(--fs-12); color: var(--subtle); }
 .sif-card-cta { font-size: var(--fs-13); font-weight: 600; color: var(--acc); white-space: nowrap; text-decoration: none; }
 .sif-card-cta:hover { text-decoration: underline; }
 @media (max-width: 640px) {
