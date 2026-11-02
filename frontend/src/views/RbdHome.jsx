@@ -8,7 +8,7 @@ import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { RBDS_TITLE } from "../navigation.js";
@@ -112,7 +112,7 @@ export default function RbdHome() {
     }
   };
 
-  const open = (id) => navigate(`/systems/b/${id}`);
+  const pathOf = (id) => `/systems/b/${id}`;
   const newDiagram = <button onClick={() => navigate("/systems/b")}><PlusIcon /> New diagram</button>;
 
   return (
@@ -208,17 +208,17 @@ export default function RbdHome() {
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
         render={(r) => (
-          <tr key={r.id} className="lib-row" onClick={() => open(r.id)}>
+          <tr key={r.id} className="lib-row" onClick={rowOpen(navigate, pathOf(r.id))}>
             <td>
               <div className="lib-name">
-                {itemName(r)}
+                <RowLink to={pathOf(r.id)}>{itemName(r)}</RowLink>
                 {r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}
               </div>
             </td>
             <td className="lib-n lib-opt">{(r.n_nodes ?? 0).toLocaleString()}</td>
             <td className="lib-n lib-opt">{(r.n_edges ?? 0).toLocaleString()}</td>
             <td className="lib-date lib-opt">{relativeTime(r.updated_at || r.created_at)}</td>
-            <RowActions item={r} onOpen={() => open(r.id)} onDelete={() => onDelete(r)}>
+            <RowActions item={r} to={pathOf(r.id)} onDelete={() => onDelete(r)}>
               <button className="act" title="Duplicate" aria-label="Duplicate" disabled={duplicating === r.id}
                       onClick={(e) => { e.stopPropagation(); onDuplicate(r); }}>
                 <CopyIcon />

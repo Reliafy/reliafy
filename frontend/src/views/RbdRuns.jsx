@@ -7,6 +7,7 @@ import { relativeTime } from "../instrument.js";
 import { availabilityText, byText, keptLine, runtimeText, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
 import { RBDS_PATH } from "../navigation.js";
+import { RowLink, rowOpen } from "../components/LibRows.jsx";
 
 const MAX_COMPARE = 6;
 
@@ -111,7 +112,7 @@ export default function RbdRuns() {
                 const a = availabilityText(r.availability);
                 const chip = statusChip(r.status);
                 return (
-                  <tr key={r.run_id} className="lib-row" onClick={() => navigate(`/systems/runs/${r.run_id}`)}>
+                  <tr key={r.run_id} className="lib-row" onClick={rowOpen(navigate, `/systems/runs/${r.run_id}`)}>
                     <td className="rbd-runs-pick" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
@@ -122,7 +123,7 @@ export default function RbdRuns() {
                       />
                     </td>
                     <td className="lib-date" title={r.created_at ? new Date(r.created_at).toLocaleString() : ""}>
-                      {relativeTime(r.created_at)}
+                      <RowLink to={`/systems/runs/${r.run_id}`} aria-label={`Open the run from ${relativeTime(r.created_at)}`}>{relativeTime(r.created_at)}</RowLink>
                     </td>
                     {!rbdId && <td className="rbd-runs-name">{r.rbd_name || "Unsaved diagram"}</td>}
                     <td className="lib-n">

@@ -4,7 +4,7 @@ import { listDatasets, deleteDataset, renameDataset } from "../api.js";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import { PlusIcon, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, itemName, rowOpen } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { datasetPath } from "../navigation.js";
 import { fitOptions } from "../datasetFit.js";
@@ -114,8 +114,6 @@ export default function DatasetsHome() {
       setError(err.message);
     }
   };
-
-  const open = (id) => navigate(datasetPath(id));
   const newDataset = <button onClick={() => setNewOpen(true)}><PlusIcon /> New dataset</button>;
 
   return (
@@ -150,12 +148,12 @@ export default function DatasetsHome() {
           <th key="a" style={{ width: 48 }}><span className="sr-only">Actions</span></th>,
         ]}
         render={(d) => (
-          <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>
+          <tr key={d.id} className="lib-row" onClick={rowOpen(navigate, datasetPath(d.id))}>
             <td>
               <div className="ds-name">
                 <span className="ds-ic"><FileIcon /></span>
                 {/* A real link, so the row opens from the keyboard too. */}
-                <Link className="lib-name ds-row-link" to={datasetPath(d.id)} onClick={(e) => e.stopPropagation()}>
+                <Link className="lib-name ds-row-link lib-link" to={datasetPath(d.id)} onClick={(e) => e.stopPropagation()}>
                   {itemName(d)}
                 </Link>
                 {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}
