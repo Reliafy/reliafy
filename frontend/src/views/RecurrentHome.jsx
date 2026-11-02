@@ -45,7 +45,7 @@ export default function RecurrentHome() {
 
       <RecurrentLibrary
         models={models}
-        onOpen={(id) => navigate(`/models/recurrent/${id}`)}
+        hrefFor={(id) => `/models/recurrent/${id}`}
         onDelete={onDelete}
         help={HELP}
         empty={{

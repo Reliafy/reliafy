@@ -9753,6 +9753,14 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 
 /* A dialog takes focus as it opens (so the keyboard is in it): no ring on the box itself. */
 .modal:focus { outline: none; }
+
+/* A list row's name: a real link (RowLink), styled as the row's title. */
+.lib-link { color: inherit; text-decoration: none; }
+/* Hover matches a.lib-name: the accent colour and an underline. */
+.lib-link:hover { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
+.lib-link:focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-sm); }
+.lib-acts a.act:focus-visible { outline: none; box-shadow: var(--focus); }
+
 .ds-unit-pick { display: flex; flex-direction: column; gap: 6px; }
 .ds-unitless { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); color: var(--muted); min-height: 32px; }
 /* A Pro-only action, marked for users without Pro (ProTag.jsx). */

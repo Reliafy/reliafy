@@ -34,7 +34,7 @@ import {
   updatePositionPart,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { PlusIcon } from "../components/LibRows.jsx";
+import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
   DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, OUTCOME_LABELS,
   PositionPicker,
@@ -186,9 +186,9 @@ export default function MaintenancePosition() {
             <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Trade</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
             <tbody>
               {p.work_orders.map((w) => (
-                <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
+                <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
                   <td>{w.number}</td>
-                  <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
+                  <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink>{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                   <td>{w.type}</td><td className="lib-date">{w.trade || "—"}</td><td>{w.status}</td>
                   <td className="lib-date">{fmtDate(w.opened)}</td><td className="lib-date">{fmtDate(w.closed)}</td>
                 </tr>

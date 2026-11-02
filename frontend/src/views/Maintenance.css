@@ -502,3 +502,17 @@ button.maint-toggle {
   gap: 0.5rem;
   margin: 0 0 0.75rem;
 }
+
+/* A photo thumbnail is a button (keyboard-reachable), drawn as just the image. */
+.maint-photo-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.maint-photo-btn:focus-visible { outline: none; box-shadow: var(--focus); }
+.maint-photo-btn:hover:not(:disabled) { background: none; opacity: 0.9; }

@@ -45,7 +45,7 @@ export default function ModellingHome() {
 
       <ModelLibrary
         models={loading ? null : models}
-        onOpen={(id) => navigate(`/models/m/${id}`)}
+        hrefFor={(id) => `/models/m/${id}`}
         onDelete={onDelete}
         help={HELP}
         empty={{

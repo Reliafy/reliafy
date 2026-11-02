@@ -4,7 +4,7 @@ import { listJointModels, deleteJointModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import { CATEGORY } from "../plotTheme.js";
 import Chip from "../components/ui/Chip.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
@@ -33,7 +33,7 @@ export default function JointHome() {
     }
   };
 
-  const open = (id) => navigate(`/models/joint/${id}`);
+  const pathOf = (id) => `/models/joint/${id}`;
   const newModel = <button onClick={() => navigate("/models/joint/new")}><PlusIcon /> New model</button>;
 
   return (
@@ -65,10 +65,10 @@ export default function JointHome() {
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
         render={(m) => (
-          <tr key={m.id} className="lib-row" onClick={() => open(m.id)}>
+          <tr key={m.id} className="lib-row" onClick={rowOpen(navigate, pathOf(m.id))}>
             <td>
               <div className="lib-name">
-                {itemName(m)}
+                <RowLink to={pathOf(m.id)}>{itemName(m)}</RowLink>
                 {m.shared_by && <Chip title={`Shared by ${m.shared_by}`}>Shared</Chip>}
               </div>
             </td>
@@ -78,7 +78,7 @@ export default function JointHome() {
             <td className="lib-n lib-opt">{(m.n_items ?? 0).toLocaleString()}</td>
             <td className="lib-n lib-opt">{(m.n_running ?? 0).toLocaleString()}</td>
             <td className="lib-date lib-opt">{relativeTime(m.created_at)}</td>
-            <RowActions item={m} onOpen={() => open(m.id)} onDelete={() => onDelete(m)} />
+            <RowActions item={m} to={pathOf(m.id)} onDelete={() => onDelete(m)} />
           </tr>
         )}
       />

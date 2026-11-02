@@ -47,7 +47,7 @@ export default function AltHome() {
 
       <AltLibrary
         models={models}
-        onOpen={(id) => navigate(`/models/alt/${id}`)}
+        hrefFor={(id) => `/models/alt/${id}`}
         onDelete={onDelete}
         help={HELP}
         empty={{

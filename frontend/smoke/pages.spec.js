@@ -82,3 +82,38 @@ test("earlier addresses keep their query and #hash", async ({ page, problems }) 
     });
   }
 });
+
+// Every list row's name is a real link to its page, so it opens in a new tab,
+// middle-clicks and copies (not only a row click handler).
+const LIST_LINKS = [
+  ["/models", /^\/models\/(m|recurrent|alt|degradation|joint)\/[^/]+$/],
+  ["/data", /^\/data\/[^/]+$/],
+  ["/models/life", /^\/models\/m\/[^/]+$/],
+  ["/models/recurrent", /^\/models\/recurrent\/[^/]+$/],
+  ["/models/alt", /^\/models\/alt\/[^/]+$/],
+  ["/models/degradation", /^\/models\/degradation\/[^/]+$/],
+  ["/models/joint", /^\/models\/joint\/[^/]+$/],
+  ["/systems/rbds", /^\/systems\/b\/[^/]+$/],
+  ["/systems/runs", /^\/systems\/runs\/[^/]+$/],
+  ["/strategy", /^\/strategy\/analyses\/[^/]+$/],
+  // Forecasts also lists the position classes (Reliafy Maintenance on).
+  ["/forecasts", /^\/forecasts\/[^/]+$|^\/asset-register\/classes\/[^/]+$/],
+  ["/risk", /^\/risk\/[^/]+$/],
+  ["/asset-register/classes", /^\/asset-register\/classes\/[^/]+$/],
+];
+
+test("list rows link to their pages", async ({ page }) => {
+  for (const [path, pattern] of LIST_LINKS) {
+    await test.step(path, async () => {
+      if (path.startsWith("/asset-register") && !appConfig.maintenance) return;
+      await open(page, path);
+      const rows = page.locator("tr.lib-row");
+      const n = await rows.count();
+      for (let i = 0; i < n; i++) {
+        const href = await rows.nth(i).locator("a.lib-link").first().getAttribute("href");
+        expect(href, `${path}: row ${i + 1} has no link`).toBeTruthy();
+        expect(href, `${path}: row ${i + 1} links to ${href}`).toMatch(pattern);
+      }
+    });
+  }
+});
