@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
-import { getRbdJob, simulateTestPlan, testPlan } from "../api.js";
+import { cancelRbdJob, getRbdJob, simulateTestPlan, testPlan } from "../api.js";
+import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { percentApiMessage } from "../percent.js";
 import ProTag from "./ProTag.jsx";
 
@@ -118,23 +119,39 @@ export function SimulationCheck({ kind, inputs }) {
   const [out, setOut] = useState(null);
   const [error, setError] = useState(null);
   const [needsPro, setNeedsPro] = useState(false);
+  const [cancelNote, setCancelNote] = useState(null);
+  const runGuard = useRef(null);
+  if (!runGuard.current) runGuard.current = createRunGuard();
   const key = JSON.stringify(inputs);
 
   useEffect(() => {
-    setOut(null); setJob(null); setError(null); setNeedsPro(false); setBusy(false);
+    runGuard.current.cancel();
+    setOut(null); setJob(null); setError(null); setNeedsPro(false); setBusy(false); setCancelNote(null);
   }, [key]);
 
   const start = async () => {
-    setBusy(true); setError(null); setOut(null); setNeedsPro(false);
+    setBusy(true); setError(null); setOut(null); setNeedsPro(false); setCancelNote(null);
+    const token = runGuard.current.start();
     try {
       const res = await simulateTestPlan(kind, inputs);
+      if (!runGuard.current.isCurrent(token)) return; // cancelled while it ran
+      runGuard.current.finish(token);
       if (res.job) { setJob(res.job); return; }
       setOut(res); setBusy(false);
     } catch (e) {
+      if (!runGuard.current.isCurrent(token)) return;
+      runGuard.current.finish(token);
       setBusy(false);
       if (e.status === 402 && e.code === "pro_required") setNeedsPro(true);
       else setError(percentApiMessage(e.message));
     }
+  };
+
+  // Stop waiting; a queued or running job is cancelled on the server too.
+  const cancel = () => {
+    runGuard.current.cancel();
+    if (job?.job_id) cancelRbdJob(job.job_id).catch(() => {});
+    setJob(null); setBusy(false); setCancelNote(CANCELLED_TEXT);
   };
 
   const jobId = job?.job_id;
@@ -153,6 +170,7 @@ export function SimulationCheck({ kind, inputs }) {
         if (view.status === "failed") {
           setJob(null); setBusy(false); setError(view.error || "The simulation failed."); return;
         }
+        if (view.status === "cancelled") { setJob(null); setBusy(false); setCancelNote(CANCELLED_TEXT); return; }
         setJob((prev) => (prev && prev.job_id === jobId ? { ...prev, ...view } : prev));
       } catch (err) {
         if (cancelled) return;
@@ -179,7 +197,13 @@ export function SimulationCheck({ kind, inputs }) {
       <button type="button" className="secondary" onClick={start} disabled={busy}>
         {busy ? "Simulating…" : "Simulate this test"}<ProTag />
       </button>
+      {busy && (
+        <button type="button" className="secondary" onClick={cancel} style={{ marginLeft: 8 }}>
+          Cancel
+        </button>
+      )}
       {busy && job && <p className="hint" role="status" aria-live="polite">{jobText(job)}</p>}
+      {cancelNote && !busy && <p className="hint" role="status">{cancelNote}</p>}
       {needsPro && (
         <div className="card note" role="status">
           <p style={{ margin: 0 }}>

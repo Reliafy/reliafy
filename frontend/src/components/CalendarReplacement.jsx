@@ -3,7 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import Select from "./Select.jsx";
 import CalendarReplacementResult from "./CalendarReplacementResult.jsx";
-import { calendarNext, calendarReplacement, getRbdJob } from "../api.js";
+import { calendarNext, calendarReplacement, cancelRbdJob, getRbdJob } from "../api.js";
+import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { modelFromSearch } from "../modelNext.js";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
@@ -42,6 +43,9 @@ export default function CalendarReplacement() {
   const [needsPro, setNeedsPro] = useState(false);
   const proTags = useProTags();
   const [job, setJob] = useState(null);
+  const [cancelNote, setCancelNote] = useState(null);
+  const runGuard = useRef(null);
+  if (!runGuard.current) runGuard.current = createRunGuard();
 
   const pickModel = (m) => {
     setModel(m);
@@ -54,21 +58,36 @@ export default function CalendarReplacement() {
     const built = buildRequest({ model, unit, today, shuts, failureCost, anytimeCost, maxAge, method });
     setNeedsPro(false);
     setJob(null);
+    setCancelNote(null);
     if (built.error) { setError(built.error); return; }
     setLoading(true);
     setError(null);
+    const token = runGuard.current.start();
     try {
       const out = await calendarReplacement(built.body);
+      if (!runGuard.current.isCurrent(token)) return; // cancelled while it ran
+      runGuard.current.finish(token);
       if (out.job) { setJob(out.job); setBody(built.body); return; }
       setResult(out);
       setBody(built.body);
       setLoading(false);
     } catch (err) {
+      if (!runGuard.current.isCurrent(token)) return;
+      runGuard.current.finish(token);
       setLoading(false);
       setResult(null);
       if (err.status === 402 && err.code === "pro_required") setNeedsPro(true);
       else setError(err.message);
     }
+  };
+
+  // Stop waiting; a queued or running job is cancelled on the server too.
+  const cancel = () => {
+    runGuard.current.cancel();
+    if (job?.job_id) cancelRbdJob(job.job_id).catch(() => {});
+    setJob(null);
+    setLoading(false);
+    setCancelNote(CANCELLED_TEXT);
   };
 
   // Poll a queued (sampled) run until it's done.
@@ -89,6 +108,7 @@ export default function CalendarReplacement() {
           setJob(null); setLoading(false); setError(view.error || "The calculation failed.");
           return;
         }
+        if (view.status === "cancelled") { setJob(null); setLoading(false); setCancelNote(CANCELLED_TEXT); return; }
         setJob((prev) => (prev && prev.job_id === jobId ? { ...prev, ...view } : prev));
       } catch (err) {
         if (cancelled) return;
@@ -209,9 +229,11 @@ export default function CalendarReplacement() {
         </p>
         <div className="strategy-costs">
           <button onClick={run} disabled={loading}>{loading ? "Computing…" : "Compute"}</button>
+          {loading && <button type="button" className="secondary" onClick={cancel}>Cancel</button>}
         </div>
       </div>
 
+      {cancelNote && !loading && <p className="hint" role="status">{cancelNote}</p>}
       {loading && job && (
         <p className="hint" role="status" aria-live="polite">
           {job.status === "running" ? "Sampling the calendar…"
