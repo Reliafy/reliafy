@@ -19,6 +19,7 @@ import { unitInText } from "../components/unitText.js";
 import { itemsWithoutUsage, usageInputValue } from "../fleetUsage.js";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
 import FleetSparesCard from "../components/FleetSparesCard.jsx";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -271,6 +272,7 @@ export default function FleetForecastPage() {
 
   return (
     <div className="app">
+      <PageTitle name={fleet && itemName(fleet)} />
       <PageHeader
         crumbs={[{ label: "Forecasts", to: "/forecasts" }]}
         title={itemName(fleet)}

@@ -15,6 +15,7 @@ import { datasetMeta, datasetParts, splitText } from "../datasetFit.js";
 import "../components/Datasets.css";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // Where each kind of model fitted to a dataset opens.
 const MODEL_PATH = {
@@ -141,6 +142,7 @@ export default function DatasetPage() {
 
   return (
     <div className="app">
+      <PageTitle name={ds && itemName(ds)} />
       <PageHeader
         crumbs={[{ label: "Data", to: "/data" }]}
         title={ds ? itemName(ds) : "Dataset"}

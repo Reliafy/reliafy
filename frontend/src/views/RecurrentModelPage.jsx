@@ -11,6 +11,7 @@ import { itemName } from "../components/LibRows.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
 import { recurrentAnswer, recurrentTabs } from "../recurrentResults.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // A saved repairable (recurrent-event) model in the model frame: the answer
 // line, Share, the ⋯ menu (delete) and the result's tabs, the open one in
@@ -62,6 +63,7 @@ export default function RecurrentModelPage() {
         <RecurrentResultView results={r} name={model.name} modelId={model.id} paramsOnly={paramsOnly}
                              datasetId={model.dataset_id || null} tab={tab} onTab={(t) => setTab(t, first)} />
       ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+      <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );
 }

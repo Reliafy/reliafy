@@ -7,6 +7,7 @@ import {
 } from "../components/MaintenanceStructure.jsx";
 import { positionsPlanSummary, qtyNumber } from "../maintenanceStructure.js";
 import "./Maintenance.css";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // One catalogue part (#435): its details and indenture level, its structure (the
 // parts it's made of, expand and collapse), the quantities rolled up, and where it's
@@ -37,6 +38,7 @@ export default function MaintenancePart() {
   };
   return (
     <div className="app">
+      <PageTitle name={part && `${part.part_number} ${part.name}`} />
       <PageHeader
         crumbs={[{ label: "Assets", to: "/asset-register" }, { label: "Parts and stock", to: "/asset-register/parts" }]}
         title={`${part.part_number} ${part.name}`}

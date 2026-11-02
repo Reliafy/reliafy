@@ -5,6 +5,7 @@ import { test, expect, open, expectHealthy } from "./health.js";
 import {
   appRoutes, hasParam, fill, idSource, landing, MAX_IDS, REDIRECTS_WITH_QUERY, expectsChart,
 } from "./routes.js";
+import { RBDS_LABEL, RBDS_PATH } from "../src/navigation.js";
 
 let appConfig;
 test.beforeAll(async ({ request }) => {
@@ -45,10 +46,24 @@ for (const route of appRoutes()) {
           root: route.root,
           chart: !route.redirect && expectsChart(route.path, record),
         });
+        // Its own tab title ("RBDs · Reliafy"), not the app's generic one.
+        if (!route.root && !route.redirect) {
+          await expect.poll(() => page.title(), { message: `${path} tab title` }).toMatch(/\S · Reliafy$/);
+        }
       });
     }
   });
 }
+
+test("tab titles: a record's page leads with its name", async ({ page, request }) => {
+  const { rbds } = await (await request.get("/api/rbds")).json();
+  const rbd = rbds.find((r) => r.name) || rbds[0];
+  await open(page, RBDS_PATH);
+  await expect.poll(() => page.title()).toBe(`${RBDS_LABEL} · Reliafy`);
+  await open(page, `/systems/b/${encodeURIComponent(rbd.id)}`);
+  const name = rbd.name.replace(/\s*\(sample\)\s*$/i, "");
+  await expect.poll(() => page.title()).toBe(`${name} · ${RBDS_LABEL} · Reliafy`);
+});
 
 test("earlier addresses keep their query and #hash", async ({ page, problems }) => {
   for (const [from, to] of REDIRECTS_WITH_QUERY) {

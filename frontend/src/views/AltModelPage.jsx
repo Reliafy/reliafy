@@ -12,6 +12,7 @@ import { itemName } from "../components/LibRows.jsx";
 import { altPlanLink, altPrefill } from "../testPlanning.js";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // A saved accelerated life model in the model frame: the answer line, the
 // result's tabs (Life-stress, Probability plot, Calculator, Diagnostics,
@@ -78,6 +79,7 @@ export default function AltModelPage() {
         <AltResultView results={model.results} modelId={model.id} name={model.name} datasetId={model.dataset_id}
                        tab={tab} onTab={(t) => setTab(t, "life")} />
       ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+      <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );
 }
