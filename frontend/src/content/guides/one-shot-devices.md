@@ -31,7 +31,7 @@ To read the counts from a file instead, choose **From a dataset** and pick a
 dataset with one row per batch, then its **Demands column**, **Failures
 column** and an optional **Batch name**.
 
-Set the **Confidence (%)** for the bounds. The line under the form previews the
+Set the **Confidence** for the bounds, as a percentage (90, not 0.9). The line under the form previews the
 answer as you type.
 
 ![The per-demand form: three batches of demands and failures, at 90% confidence](/guides/img/demand-01-new.png)

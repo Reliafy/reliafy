@@ -147,7 +147,8 @@ def read_table(text: str) -> pd.DataFrame:
         df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False,
                          skipinitialspace=True, engine="python")
     except Exception as exc:  # noqa: BLE001 - pandas raises many kinds
-        raise OutageLogError(f"Couldn't read the outage log: {exc}") from exc
+        from backend.fitting import csv_error_message
+        raise OutageLogError(csv_error_message(exc, text, what="the outage log")) from exc
     df.columns = [str(c).strip() for c in df.columns]
     df = df[[c for c in df.columns if c and not c.startswith("Unnamed:")]]
     if df.empty:

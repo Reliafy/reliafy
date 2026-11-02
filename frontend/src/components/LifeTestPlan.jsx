@@ -6,7 +6,9 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Assumptions, Choice, ComputeButton, Field, PlanAnswer, SimulationCheck, usePlan } from "./TestPlanShared.jsx";
 import { formatNumber, formatWithUnit } from "../format.js";
 import { optimumMarker, fitLine } from "../plotTheme.js";
-import { PLAN_DISTRIBUTIONS, frac, num } from "../testPlanning.js";
+import { PLAN_DISTRIBUTIONS, num } from "../testPlanning.js";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 import { unitInText } from "./unitText.js";
 
 const PARAMS = { weibull: ["alpha", "beta"], lognormal: ["mu", "sigma"] };
@@ -59,6 +61,10 @@ export default function LifeTestPlan() {
   const [unit, setUnit] = useState("hours");
   const { result, inputs, error, loading, run } = usePlan("life");
 
+  const pcts = readPercents("lifeTest", { confidence, bLife, share }, [
+    "confidence", ...(quantity === "b_life" ? ["bLife"] : []),
+    ...(solveFor !== "length" && testEnd === "failures" ? ["share"] : []),
+  ]);
   const compute = () => {
     const names = PARAMS[distribution];
     const body = {
@@ -67,14 +73,14 @@ export default function LifeTestPlan() {
       params: names.map((name) => ({ name, value: num(values[name]) })),
       quantity,
       b_life: quantity === "b_life" ? num(bLife) : null,
-      confidence: frac(confidence),
+      confidence: pcts.fractions.confidence,
       test_end: solveFor === "length" && testEnd === "all" ? "time" : testEnd,
       unit: unit.trim() || null,
     };
     if (solveFor !== "units") body.units = num(units);
     if (solveFor !== "precision") body.precision = num(precision);
     if (solveFor !== "length" && testEnd === "time") body.censor_time = num(censorTime);
-    if (solveFor !== "length" && testEnd === "failures") body.failure_fraction = frac(share);
+    if (solveFor !== "length" && testEnd === "failures") body.failure_fraction = pcts.fractions.share;
     run(body);
   };
 
@@ -132,8 +138,8 @@ export default function LifeTestPlan() {
               onChange={(v) => setValues((prev) => ({ ...prev, [name]: v }))}
             />
           ))}
-          {quantity === "b_life" && <Field label="B-life (% failed)" value={bLife} onChange={setBLife} min="0.1" max="99" />}
-          <Field label="Confidence (%)" value={confidence} onChange={setConfidence} min="1" max="99.999" />
+          {quantity === "b_life" && <PercentField label="B-life (% failed)" value={bLife} onChange={setBLife} check={pcts.checks.bLife} />}
+          <PercentField label="Confidence" value={confidence} onChange={setConfidence} check={pcts.checks.confidence} />
           <Field label="Unit" type="text" value={unit} onChange={setUnit} placeholder="e.g. hours" />
         </div>
         <div className="strategy-costs">
@@ -153,9 +159,9 @@ export default function LifeTestPlan() {
             <Field label="Test length" value={censorTime} onChange={setCensorTime} min="0" />
           )}
           {solveFor !== "length" && testEnd === "failures" && (
-            <Field label="Share failed at the stop (%)" value={share} onChange={setShare} min="1" max="100" />
+            <PercentField label="Share failed at the stop" value={share} onChange={setShare} check={pcts.checks.share} />
           )}
-          <ComputeButton loading={loading} onClick={compute} />
+          <ComputeButton loading={loading} onClick={compute} disabled={!pcts.ready} />
         </div>
         <p className="hint">
           Precision here means the width of the confidence interval: ±30% means the interval runs from about the

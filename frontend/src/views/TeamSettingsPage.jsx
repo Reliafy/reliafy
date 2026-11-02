@@ -5,6 +5,7 @@ import { useWorkspace } from "../WorkspaceProvider.jsx";
 import {
   getTeam,
   renameTeam,
+  setTeamCurrency,
   setTeamTimeZone,
   deleteTeam,
   inviteTeamMember,
@@ -15,6 +16,7 @@ import {
 import Modal from "../components/Modal.jsx";
 import TeamInvites from "../components/TeamInvites.jsx";
 import TimeZonePicker from "../components/TimeZonePicker.jsx";
+import CurrencyPicker from "../components/CurrencyPicker.jsx";
 import { CreateTeamModal } from "../components/NavBar.jsx";
 import Button from "../components/ui/Button.jsx";
 import Chip from "../components/ui/Chip.jsx";
@@ -282,6 +284,18 @@ export default function TeamSettingsPage() {
           value={team.time_zone}
           readOnly={!isOwner}
           onSave={(zone) => setTeamTimeZone(team.id, zone).then(() => { refresh(); refreshTeams(); })}
+        />
+      </div>
+
+      <div className="card" style={{ marginTop: "1rem" }}>
+        <CardHeader
+          title="Currency"
+          subtitle="The symbol in front of costs in the team's workspace. It's only a label: nothing is converted."
+        />
+        <CurrencyPicker
+          value={team.currency_symbol}
+          readOnly={!isOwner}
+          onSave={(sym) => setTeamCurrency(team.id, sym).then(() => { refresh(); refreshTeams(); })}
         />
       </div>
 

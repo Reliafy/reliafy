@@ -609,7 +609,8 @@ def _inspect_text(data: bytes) -> dict:
         df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False,
                          skipinitialspace=True, engine="python")
     except Exception as exc:  # noqa: BLE001
-        return {"note": f"Couldn't read the table: {exc}"}
+        from backend.fitting import csv_error_message
+        return {"note": csv_error_message(exc, text)}
     return {
         "delimiter": {"\t": "tab", ",": "comma", ";": "semicolon", "|": "pipe"}[delim],
         "columns": [str(c) for c in df.columns],

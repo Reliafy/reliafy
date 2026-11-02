@@ -8,7 +8,9 @@ import { failureFindingMissing } from "../strategyTools.js";
 import { failureFinding } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
 import PercentField from "./PercentField.jsx";
-import { checkPercent, percentApiMessage } from "../percent.js";
+import StrategyUnit from "./StrategyUnit.jsx";
+import { readPercents } from "../percentForms.js";
+import { percentApiMessage } from "../percent.js";
 
 // Failure-finding interval tool: how often to check a HIDDEN function (e.g. a
 // protective device) so its availability stays above the target.
@@ -30,12 +32,13 @@ export default function FailureFinding() {
   };
 
   const isRegression = model?.kind === "regression";
-  // Typed as a percentage (99), sent as a fraction (0.99). A value of 1 or
-  // less is asked about ("Did you mean 99%?"), never taken as 0.99%.
-  const availCheck = checkPercent(availability);
+  // Typed as a percentage (99), sent as a fraction (0.99); 0.99 is asked
+  // about ("Did you mean 99%?"), never taken as 0.99%.
+  const pcts = readPercents("failureFinding", { availability });
+  const availCheck = pcts.checks.availability;
   // Why Compute is greyed out, said beside it (null when ready).
   const missing = failureFindingMissing({ model, availability, availCheck });
-  const canRun = !missing;
+  const canRun = !missing && !isRegression && pcts.ready;
 
   const run = async () => {
     setLoading(true);
@@ -44,8 +47,8 @@ export default function FailureFinding() {
       const body = {
         distribution_id: model.distribution_id,
         params: model.params,
-        target_availability: availCheck.fraction,
-        unit: unit || model.unit || null,
+        target_availability: pcts.fractions.availability,
+        unit: model.unit || unit.trim() || null,
         extras: model.extras || null,
       };
       const res = await failureFinding(
@@ -73,11 +76,7 @@ export default function FailureFinding() {
         <div className="strategy-costs">
           <PercentField label="Target availability" value={availability} onChange={setAvailability}
             check={availCheck} />
-          <label className="calc-t">
-            <span>Unit (optional)</span>
-            <input type="text" placeholder="e.g. Hours" value={unit}
-              onChange={(e) => setUnit(e.target.value)} />
-          </label>
+          <StrategyUnit model={model} unit={unit} onUnit={setUnit} />
           <button onClick={run} disabled={!canRun || loading}
                   aria-describedby={missing ? "ffi-why" : undefined}>
             {loading ? "Computing…" : "Compute"}

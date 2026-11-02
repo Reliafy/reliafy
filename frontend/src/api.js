@@ -150,6 +150,19 @@ export function dismissRolesOffer() {
   return request("/api/me/roles/dismiss", { method: "POST" });
 }
 
+// The personal workspace's currency symbol: { currency_symbol } ("$" unless set).
+export function getMyCurrency() {
+  return request("/api/me/currency");
+}
+
+export function setMyCurrency(symbol) {
+  return request("/api/me/currency", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currency_symbol: symbol || null }),
+  });
+}
+
 // Deployment capabilities (public, no auth): { auth, ai, billing }.
 export function getAppConfig() {
   return request("/api/config");
@@ -1601,6 +1614,15 @@ export function setTeamTimeZone(id, timeZone) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ time_zone: timeZone || null }),
+  });
+}
+
+// A team workspace's currency symbol (owner only); null or "" is "$".
+export function setTeamCurrency(id, symbol) {
+  return request(`/api/teams/${id}/currency`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currency_symbol: symbol || null }),
   });
 }
 

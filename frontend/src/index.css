@@ -9753,3 +9753,11 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 
 /* A dialog takes focus as it opens (so the keyboard is in it): no ring on the box itself. */
 .modal:focus { outline: none; }
+.ds-unit-pick { display: flex; flex-direction: column; gap: 6px; }
+.ds-unitless { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); color: var(--muted); min-height: 32px; }
+/* A Pro-only action, marked for users without Pro (ProTag.jsx). */
+.pro-tag {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  font-size: var(--fs-12); font-weight: 600; line-height: 18px; vertical-align: middle;
+  color: var(--cat-violet); background: var(--cat-violet-t); border: 1px solid var(--cat-violet-line);
+}

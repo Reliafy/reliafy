@@ -7,6 +7,8 @@ import Plot from "./Plot.jsx";
 import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
 import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
 import { formatNumber, formatPercent } from "../format.js";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 import { boundWords, timeAtValue } from "../lifeResults.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
@@ -265,8 +267,11 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // parametric regression model at each covariate combination (#54); Cox PH
   // has none (``bands_note`` says why). Computed by SurPyval's cb() on demand.
   const confidencePath = functions.confidence_path;
-  const ciLevel = Number(ci.level);
-  const ciValid = confidencePath && ciLevel > 0 && ciLevel < 100;
+  // Percentages typed as 90 (percent.js): 0.9 is asked about, not taken as 0.9%.
+  const pcts = readPercents("calculator", { reliability: String(rTarget ?? ""), level: String(ci.level ?? "") });
+  const ciOk = pcts.checks.level.state === "ok";
+  const ciLevel = ciOk ? pcts.checks.level.percent : Number(ci.level);
+  const ciValid = confidencePath && ciOk;
   const ciAlpha = 1 - ciLevel / 100;
   const bands = ci.bands || {};
   const banded = hasCov ? series : series.slice(0, 1);
@@ -297,15 +302,15 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // from the life path; without one (regression, or parameters only), read
   // off the curve, with no bound.
   const lifePath = functions.life_path;
-  const rNum = Number(rTarget);
-  const rValid = rTarget !== "" && rNum > 0 && rNum < 100;
+  const rValid = pcts.checks.reliability.state === "ok";
+  const rNum = rValid ? pcts.checks.reliability.percent : Number(rTarget);
   const tarBound = ci.bound === "none" ? "lower" : ci.bound;
   // A regression model's time is the first combination's (#54).
   const tarCovariates = hasCov ? series[0]?.values : null;
   const tarKey = `${rNum}|${ciLevel}|${tarBound}|${tarCovariates ? JSON.stringify(tarCovariates) : ""}`;
   const tar = state.tar || {};
   useEffect(() => {
-    if (!timeMode || !lifePath || !rValid || !(ciLevel > 0 && ciLevel < 100)) return undefined;
+    if (!timeMode || !lifePath || !rValid || !ciOk) return undefined;
     if (tar.key === tarKey && (tar.data || tar.error)) return undefined;
     const id = setTimeout(() => {
       lifeAt(lifePath, {
@@ -640,17 +645,8 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 />
                 {timeMode ? (
                   <>
-                  <label className="calc-t">
-                    <span>Reliability %</span>
-                    <input
-                      type="number" inputMode="decimal"
-                      value={rTarget}
-                      min={0.01}
-                      max={99.99}
-                      step="any"
-                      onChange={(e) => setRTarget(e.target.value)}
-                    />
-                  </label>
+                  <PercentField label="Reliability" value={String(rTarget ?? "")} onChange={setRTarget}
+                    check={pcts.checks.reliability} />
                   <div className="chip-row calc-blives" role="group" aria-label="B-lives">
                     {B_LIVES.map(([r, b]) => (
                       <Chip key={b} tone={rNum === r ? "accent" : "neutral"} onClick={() => setRTarget(r)}
@@ -712,17 +708,8 @@ export default function Calculator({ functions, unit, params, state, setState, n
                       />
                     </label>
                     {ci.bound !== "none" && (
-                      <label className="calc-t">
-                        <span>Confidence level %</span>
-                        <input
-                          type="number" inputMode="decimal"
-                          value={ci.level}
-                          min={1}
-                          max={99.9}
-                          step="any"
-                          onChange={(e) => setCi({ level: e.target.value })}
-                        />
-                      </label>
+                      <PercentField label="Confidence level" value={String(ci.level ?? "")}
+                        onChange={(v) => setCi({ level: v })} check={pcts.checks.level} />
                     )}
                   </>
                 )}

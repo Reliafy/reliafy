@@ -7,7 +7,9 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Assumptions, ComputeButton, Field, PlanAnswer, usePlan } from "./TestPlanShared.jsx";
 import { formatNumber, formatWithUnit } from "../format.js";
 import { REFERENCE, fitLine, optimumMarker } from "../plotTheme.js";
-import { frac, num } from "../testPlanning.js";
+import { num } from "../testPlanning.js";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 import { unitInText } from "./unitText.js";
 
 const pct = (p) => (p == null ? "—" : `${Math.round(p * 100)}%`);
@@ -64,16 +66,21 @@ export default function ComparisonPlan() {
   const rate = kind === "rate_ratio";
   const solve = rate ? rrSolve : lrSolve;
 
+  const pcts = readPercents("comparison", { power, confidence, drop: rate ? drop : hrDrop, eventPct }, [
+    "confidence", ...(solve !== "power" ? ["power"] : []),
+    ...(rate ? (solve !== "detectable" ? ["drop"] : []) : ["drop", "eventPct"]),
+  ]);
+  const f = pcts.fractions;
   const compute = () => {
-    const body = { kind, solve_for: solve, power: frac(power), confidence: frac(confidence), one_sided: oneSided };
+    const body = { kind, solve_for: solve, power: solve !== "power" ? f.power : null, confidence: f.confidence, one_sided: oneSided };
     if (rate) {
       Object.assign(body, { failures_before: num(failuresBefore), exposure_before: num(exposureBefore),
         unit: unit.trim() || null });
       if (solve !== "exposure") body.exposure_after = num(exposureAfter);
-      if (solve !== "detectable") body.rate_ratio = drop === "" ? null : 1 - Number(drop) / 100;
+      if (solve !== "detectable") body.rate_ratio = f.drop == null ? null : 1 - f.drop;
     } else {
-      Object.assign(body, { hazard_ratio: hrDrop === "" ? null : 1 - Number(hrDrop) / 100,
-        event_probability: frac(eventPct) });
+      Object.assign(body, { hazard_ratio: f.drop == null ? null : 1 - f.drop,
+        event_probability: f.eventPct });
       if (solve === "power") body.units_per_group = num(perGroup);
     }
     run(body);
@@ -158,26 +165,26 @@ export default function ComparisonPlan() {
                 <Field label="Operating time after" value={exposureAfter} onChange={setExposureAfter} min="0" />
               )}
               {solve !== "detectable" && (
-                <Field label="Drop in failure rate to detect (%)" value={drop} onChange={setDrop} min="1" max="99" />
+                <PercentField label="Drop in failure rate to detect" value={drop} onChange={setDrop} check={pcts.checks.drop} />
               )}
               <Field label="Unit" type="text" value={unit} onChange={setUnit} placeholder="e.g. hours" />
             </>
           ) : (
             <>
-              <Field label="Drop in failure rate to detect (%)" value={hrDrop} onChange={setHrDrop} min="1" max="99" />
-              <Field label="Share of units failing during the study (%)" value={eventPct} onChange={setEventPct} min="1" max="100" />
+              <PercentField label="Drop in failure rate to detect" value={hrDrop} onChange={setHrDrop} check={pcts.checks.drop} />
+              <PercentField label="Share of units failing during the study" value={eventPct} onChange={setEventPct} check={pcts.checks.eventPct} />
               {solve === "power" && (
                 <Field label="Units in each group" value={perGroup} onChange={setPerGroup} min="2" step="1" />
               )}
             </>
           )}
-          {solve !== "power" && <Field label="Power (%)" value={power} onChange={setPower} min="1" max="99.9" />}
-          <Field label="Confidence (%)" value={confidence} onChange={setConfidence} min="50" max="99.999" />
+          {solve !== "power" && <PercentField label="Power" value={power} onChange={setPower} check={pcts.checks.power} />}
+          <PercentField label="Confidence" value={confidence} onChange={setConfidence} check={pcts.checks.confidence} />
           <label className="calc-t tp-check">
             <span>Only looking for an improvement</span>
             <input type="checkbox" checked={oneSided} onChange={(e) => setOneSided(e.target.checked)} />
           </label>
-          <ComputeButton loading={loading} onClick={compute} />
+          <ComputeButton loading={loading} onClick={compute} disabled={!pcts.ready} />
         </div>
         <p className="hint">
           Power is the chance the test detects the change if it is real; 80% is usual. Operating time is the

@@ -108,8 +108,8 @@ estimate unless you have a lot of failures — or a test designed to show it.
 ## B-lives of a system
 
 A reliability block diagram has B-lives too. In the RBD **Calculator**, the
-tiles show the system's **B10 life** and **B50 life**, and **Design life at R
-(%)** gives the time the system keeps a reliability you choose: for the sample
+tiles show the system's **B10 life** and **B50 life**, and **Design life at
+R** gives the time the system keeps a reliability you choose: for the sample
 pump station, R ≥ 90% until 318 hours, the system's B10. Turn on the
 **Confidence band** to carry the uncertainty of the blocks' fitted models (saved
 models, not typed-in parameters) through to the system's curve, MTTF and

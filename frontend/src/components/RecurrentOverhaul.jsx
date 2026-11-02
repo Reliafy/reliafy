@@ -6,6 +6,7 @@ import { unitInText } from "./unitText.js";
 import { PlotCard, PlotPanel } from "./model/ModelLayouts.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatWithUnit } from "../format.js";
+import { costLabel, formatCost, workspaceCurrency } from "../money.js";
 
 // Optimal overhaul interval for a saved recurrent model: minimal repair between
 // overhauls, an overhaul renews the system. Minimises the long-run cost rate
@@ -48,7 +49,7 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
     ];
     const layout = {
       xaxis: { title: { text: `Overhaul interval${u}` } },
-      yaxis: { title: { text: "Long-run cost per unit time" }, rangemode: "tozero", range: [0, opt.cost_rate * 2.5] },
+      yaxis: { title: { text: `Long-run cost (${workspaceCurrency()}) per unit time` }, rangemode: "tozero", range: [0, opt.cost_rate * 2.5] },
       shapes: [referenceShape({ x: opt.interval, line: { dash: "dot" } })],
     };
     plot = <Plot fill data={traces} layout={layout} download={`${name || "Recurrent model"} — overhaul cost rate`} />;
@@ -76,11 +77,11 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
             <p className="mf-note">Minimal repair between overhauls; an overhaul makes the system as good as new.</p>
             <div className="rec-oh-inputs">
               <label className="calc-t">
-                <span>Repair cost (per failure)</span>
+                <span>{costLabel("Repair cost per failure", workspaceCurrency())}</span>
                 <input type="number" inputMode="decimal" min="0" step="any" value={cr} onChange={(e) => setCr(e.target.value)} />
               </label>
               <label className="calc-t">
-                <span>Overhaul cost</span>
+                <span>{costLabel("Overhaul cost", workspaceCurrency())}</span>
                 <input type="number" inputMode="decimal" min="0" step="any" value={co} onChange={(e) => setCo(e.target.value)} />
               </label>
               <p className="rs-note">Same currency for both.</p>
@@ -111,14 +112,14 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
               />
               <ResultDetails
                 rows={[
-                  { label: "Cost rate at the optimum", value: formatNumber(opt.cost_rate, { sig: 4 }) },
+                  { label: "Cost rate at the optimum", value: formatCost(opt.cost_rate, workspaceCurrency(), { sig: 4 }) },
                   {
                     label: `Repairs only (to ${formatWithUnit(none?.horizon, ut)})`,
-                    value: formatNumber(none?.cost_rate, { sig: 4 }),
+                    value: formatCost(none?.cost_rate, workspaceCurrency(), { sig: 4 }),
                   },
                 ]}
               >
-                <p className="rs-note">Cost rates are long-run costs per unit time, in the currency of the costs.</p>
+                <p className="rs-note">Cost rates are long-run costs per unit time.</p>
               </ResultDetails>
             </>
           )}

@@ -8,6 +8,7 @@ import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { PlotCard } from "./model/ModelLayouts.jsx";
 import { parseUse } from "../altFrame.js";
+import ProTag from "./ProTag.jsx";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -313,7 +314,9 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
               className="alt-method-seg"
               value={st.method}
               onChange={pickMethod}
-              options={METHODS.filter((x) => methods.includes(x.id)).map((x) => ({ value: x.id, label: x.label, title: x.hint }))}
+              options={METHODS.filter((x) => methods.includes(x.id)).map((x) => ({
+                value: x.id, title: x.hint, label: x.id === "bootstrap" ? <>{x.label}<ProTag /></> : x.label,
+              }))}
             />
             <span className="muted alt-method-hint">
               {METHODS.find((x) => x.id === st.method)?.hint}
