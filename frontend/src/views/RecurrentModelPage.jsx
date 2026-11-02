@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import ErrorBoundary from "../components/ErrorBoundary.jsx";
+import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getRecurrentModel, deleteRecurrentModel } from "../api.js";
@@ -21,12 +23,15 @@ export default function RecurrentModelPage() {
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  // Not on this list (404): ModelNotFound looks in the others.
+  const [missing, setMissing] = useState(false);
   const [tab, setTab] = useTabParam();
 
   useEffect(() => {
     setModel(null);
     setError(null);
-    getRecurrentModel(id).then(setModel).catch((e) => setError(e.message));
+    setMissing(false);
+    getRecurrentModel(id).then(setModel).catch((e) => (e.status === 404 ? setMissing(true) : setError(e.message)));
   }, [id]);
 
   const confirm = useConfirm();
@@ -60,9 +65,13 @@ export default function RecurrentModelPage() {
       notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
     >
       {model ? (
-        <RecurrentResultView results={r} name={model.name} modelId={model.id} paramsOnly={paramsOnly}
-                             datasetId={model.dataset_id || null} tab={tab} onTab={(t) => setTab(t, first)} />
-      ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        // A model this page can't draw shows a card here, not the whole-app error page.
+        <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
+          <RecurrentResultView results={r} name={model.name} modelId={model.id} paramsOnly={paramsOnly}
+                               datasetId={model.dataset_id || null} tab={tab} onTab={(t) => setTab(t, first)} />
+        </ErrorBoundary>
+      ) : missing ? <ModelNotFound id={id} kind="recurrent" />
+        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );

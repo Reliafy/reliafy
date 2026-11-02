@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import {
   addFailureMode,
   addPastFitment,
@@ -73,7 +74,7 @@ export default function MaintenancePosition() {
     setModal("child");
   };
 
-  if (error && !p) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !p) return <div className="app"><LoadFailed error={error} to="/asset-register" label="See all assets" /></div>;
   if (!p) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (

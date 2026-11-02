@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import {
   createMaintenancePosition,
   getMaintenanceItem,
@@ -50,7 +51,7 @@ export default function MaintenanceItem() {
   }, [id]);
   useEffect(() => refresh(), [refresh]);
 
-  if (error && !item) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !item) return <div className="app"><LoadFailed error={error} to={explorerPath("items")} label={`Open the ${EXPLORER_LABEL}`} /></div>;
   if (!item) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const plate = Object.entries(item.nameplate || {});

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import { cancelRbdJob, downloadRbdRun, getRbdRun, rerunRbdRun } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import Chip from "../components/ui/Chip.jsx";
@@ -89,7 +90,7 @@ export default function RbdRunsDetail() {
     return (
       <div className="app rbd-runs">
         <PageHeader crumbs={[{ label: "Systems", to: RBDS_PATH }, { label: "Simulation runs", to: runsPath() }]} title="Simulation run" />
-        {error ? <div className="card error">{error}</div> : <div className="card empty">Loading…</div>}
+        {error ? <LoadFailed error={error} to={runsPath()} label="See all simulation runs" /> : <div className="card empty">Loading…</div>}
       </div>
     );
   }
