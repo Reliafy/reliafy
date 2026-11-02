@@ -1,13 +1,19 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { updateMaintenancePosition } from "../api.js";
 import { CONTEXT_LIMIT, CONTEXT_PROMPT, charsLeft, checkContext, contextChanged } from "../operatingContext.js";
+import Section, { AddRow } from "./ui/Section.jsx";
+import Field from "./ui/Field.jsx";
+import { TextArea } from "./ui/Controls.jsx";
+import ClampLines from "./ui/ClampLines.jsx";
 import "./OperatingContextCard.css";
 
 // A position's operating context on the Explorer's Summary tab: how it's used
 // (the load, the environment, the hours it runs), kept apart from the short
-// description under its name. The text keeps its line breaks and is clamped to
-// about six lines (More / Less); Edit changes it in place (the same request as
-// any other change to the position; the server says if you may only view).
+// description under its name. A section of the panel (#UI): the text keeps
+// its line breaks and is clamped to about six lines ("Show all"); Edit (or
+// the "+ Add the operating context" row) changes it in place, with "✓ Saved"
+// by the heading after, and a refusal shown on the field. The same request as
+// any other change to the position; the server says if you may only view.
 // `state` is the Summary tab's position fetch ({ data, error }); `onSaved`
 // hears the text saved (so the panel's copy of the position keeps it).
 export default function OperatingContextCard({ positionId, state, onSaved }) {
@@ -19,10 +25,7 @@ export default function OperatingContextCard({ positionId, state, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
-  const [open, setOpen] = useState(false);
-  const [long, setLong] = useState(false);
-  const box = useRef(null);
-  const editBtn = useRef(null);
+  const startBtn = useRef(null);
   const area = useRef(null);
 
   useEffect(() => {
@@ -30,7 +33,6 @@ export default function OperatingContextCard({ positionId, state, onSaved }) {
     setEditing(false);
     setError(null);
     setNote(null);
-    setOpen(false);
   }, [positionId]);
   useEffect(() => setSaved(null), [loaded]);
   useEffect(() => {
@@ -40,16 +42,6 @@ export default function OperatingContextCard({ positionId, state, onSaved }) {
   }, [note]);
 
   const text = saved ?? loaded;
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el || open) return undefined;
-    const check = () => setLong(el.scrollHeight > el.clientHeight + 1);
-    check();
-    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
-    ro?.observe(el);
-    return () => ro?.disconnect();
-  }, [text, editing, open]);
-
   const start = () => {
     setDraft(text || "");
     setError(null);
@@ -60,7 +52,7 @@ export default function OperatingContextCard({ positionId, state, onSaved }) {
   const stop = () => {
     setEditing(false);
     setError(null);
-    setTimeout(() => editBtn.current?.focus(), 0);
+    setTimeout(() => startBtn.current?.focus(), 0);
   };
   const save = async () => {
     const res = checkContext(draft);
@@ -72,8 +64,7 @@ export default function OperatingContextCard({ positionId, state, onSaved }) {
       const p = await updateMaintenancePosition(positionId, { operating_context: res.value });
       setSaved(p?.operating_context ?? res.value);
       onSaved?.(p?.operating_context ?? res.value);
-      setOpen(false);
-      setNote(res.value ? "Saved." : "Cleared.");
+      setNote(res.value ? "✓ Saved" : "✓ Cleared");
       stop();
     } catch (e) {
       setError(e.message);
@@ -92,55 +83,39 @@ export default function OperatingContextCard({ positionId, state, onSaved }) {
   };
 
   let body;
-  if (state.error && text == null) body = <p className="lib-date">Couldn't load it: {state.error} Try again in a moment.</p>;
-  else if (text == null) body = <p className="lib-date">Loading…</p>;
+  if (state.error && text == null) body = <p className="field-error" role="alert">Couldn't load it: {state.error} Try again in a moment.</p>;
+  else if (text == null) body = <p className="td-quiet">Loading…</p>;
   else if (editing) {
-    const left = charsLeft(draft);
     body = (
       <div className="td-ctx-edit">
-        <textarea ref={area} id={`td-ctx-${positionId}`} rows={6} value={draft} maxLength={CONTEXT_LIMIT}
-                  aria-label="Operating context" placeholder={CONTEXT_PROMPT} disabled={busy}
-                  onChange={(e) => setDraft(e.target.value)} onKeyDown={keys} />
+        <Field label="Operating context" labelHidden error={error} help={error ? null : "Ctrl+Enter saves, Esc cancels."}
+               count={charsLeft(draft) || null}>
+          <TextArea ref={area} rows={4} value={draft} maxLength={CONTEXT_LIMIT}
+                    placeholder={CONTEXT_PROMPT} readOnly={busy} aria-busy={busy || undefined}
+                    onChange={(e) => setDraft(e.target.value)} onKeyDown={keys} />
+        </Field>
         <div className="td-ctx-actions">
-          <button type="button" className="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</button>
           <button type="button" className="secondary sm" onClick={stop} disabled={busy}>Cancel</button>
-          {left && <span className="lib-date" aria-live="polite">{left}</span>}
+          <button type="button" className="sm" onClick={save} disabled={busy} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </div>
     );
   } else if (!text) {
     body = (
-      <div className="td-ctx-empty">
-        <p className="lib-date">{CONTEXT_PROMPT}</p>
-        <button type="button" className="secondary sm" onClick={start} ref={editBtn}>Add</button>
-      </div>
-    );
-  } else {
-    body = (
       <>
-        <p ref={box} className={"td-ctx-text" + (open ? " open" : "")}>{text}</p>
-        {(long || open) && (
-          <button type="button" className="link sm td-ctx-more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-            {open ? "Less" : "More"}<span className="sr-only"> of the operating context</span>
-          </button>
-        )}
+        <p className="td-quiet">{CONTEXT_PROMPT}</p>
+        <AddRow ref={startBtn} onClick={start}>Add the operating context</AddRow>
       </>
     );
+  } else {
+    body = <ClampLines text={text} lines={6} what="the operating context" textClassName="td-ctx-text" />;
   }
 
   return (
-    <section className="card td-card td-ctx" id="operating-context" aria-label="Operating context">
-      <div className="td-ctx-head">
-        <h3>Operating context</h3>
-        {note && <span className="tt-msg ok" role="status">{note}</span>}
-        {text && !editing && (
-          <button type="button" className="secondary sm td-ctx-edit-btn" onClick={start} ref={editBtn}>
-            Edit<span className="sr-only"> the operating context</span>
-          </button>
-        )}
-      </div>
-      {error && <p className="td-ctx-error" role="alert">{error}</p>}
+    <Section id="operating-context" title="Operating context" className="td-ctx"
+             aside={note && <span className="field-saved td-ctx-note" role="status">{note}</span>}
+             action={text && !editing ? { label: "Edit", ariaLabel: "Edit the operating context", onClick: start, ref: startBtn } : null}>
       {body}
-    </section>
+    </Section>
   );
 }

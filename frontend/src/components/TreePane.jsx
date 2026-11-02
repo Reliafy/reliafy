@@ -89,7 +89,7 @@ const ICON = {
   item: <path d="M8 1.8 14 5v6L8 14.2 2 11V5z M2 5l6 3.2L14 5M8 8.2v6" strokeWidth="1.4" strokeLinejoin="round" />,
 };
 
-function RowIcon({ r }) {
+export function RowIcon({ r }) {
   // The "Not under a functional failure" and "No standard" headings take the
   // icon of what's under them.
   if (isRcmRow(r)) return <LevelIcon type={r.type === "unassigned" ? "fail" : r.type === "nostd" ? "std" : r.type} className="tp-ic" />;

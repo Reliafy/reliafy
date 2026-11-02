@@ -1287,6 +1287,10 @@ export default function AssetExplorer() {
   // The Summary tab's page about the row picked: beside the tree in the pane
   // (a wide screen, its heading and tabs over it in the slim rows), or its own
   // screen on a phone.
+  // The row's own changes (the tree's row menu, less Pin and Isolate), for
+  // the Summary's add row and footer.
+  const summaryActionsOf = (r) => (r ? summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 })
+    .map((a) => ({ ...a, onSelect: () => rowMenu.onAction(r, a.id) })) : []);
   const summary = !rcmOn && (
     <section className="tx-detail" aria-label="Details"
              onKeyDown={(e) => {
@@ -1297,7 +1301,7 @@ export default function AssetExplorer() {
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     pin={data && !nothing ? pinFor(row) : null}
                     back={back} version={version} empty={emptyDetail} headless={!phone}
-                    tab={tab} onTab={setTab} fullScreenButton={fullButton} />
+                    tab={tab} onTab={setTab} fullScreenButton={fullButton} actions={summaryActionsOf(data && !nothing ? row : null)} />
       )}
     </section>
   );
