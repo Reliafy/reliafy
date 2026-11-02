@@ -63,9 +63,10 @@ export function usePlan(kind) {
   return { result, inputs, error, loading, run };
 }
 
-export function ComputeButton({ loading, onClick }) {
+// ``disabled``: a field still needs fixing (its message says how).
+export function ComputeButton({ loading, onClick, disabled = false }) {
   return (
-    <button type="button" onClick={onClick} disabled={loading}>
+    <button type="button" onClick={onClick} disabled={loading || disabled}>
       {loading ? "Computing…" : "Compute"}
     </button>
   );

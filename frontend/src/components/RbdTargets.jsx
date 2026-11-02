@@ -9,6 +9,9 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { graphSignature } from "./RbdValidation.jsx";
 import { modelMean, unitAbbr } from "./rbdModelText.js";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
+import { percentApiMessage } from "../percent.js";
 import "./RbdTargets.css";
 import "./RbdDesignPanel.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
@@ -193,13 +196,16 @@ export default function RbdTargets({ graph, onBuild }) {
     return out;
   };
 
+  const targetCheck = readPercents("rbdTargets", { target: targetValue });
   const allocate = async (goal = targetValue) => {
+    const goalPct = readPercents("rbdTargets", { target: goal });
+    if (!goalPct.ready) return;
     setPhase("working");
     setError(null);
     try {
       const result = await allocateRbd({
         graph,
-        target: num(goal) / 100,
+        target: goalPct.fractions.target,
         method: chosen,
         t: repairable ? null : num(tValue),
         options: options(),
@@ -207,7 +213,7 @@ export default function RbdTargets({ graph, onBuild }) {
       setRun({ result, sig });
     } catch (e) {
       setRun(null);
-      setError({ message: e.message, reachable: e.data?.reachable || null });
+      setError({ message: percentApiMessage(e.message), reachable: e.data?.reachable || null });
     } finally {
       setPhase("idle");
     }
@@ -230,10 +236,8 @@ export default function RbdTargets({ graph, onBuild }) {
       </p>
 
       <div className="calc-controls rbd-targets-controls">
-        <label className="calc-t">
-          <span>Target {repairable ? "availability" : "reliability"} (%)</span>
-          <input type="number" inputMode="decimal" min="0" max="100" step="any" value={targetValue} onChange={(e) => setTarget(e.target.value)} />
-        </label>
+        <PercentField label={`Target ${repairable ? "availability" : "reliability"}`} value={targetValue}
+          onChange={setTarget} check={targetCheck.checks.target} />
         {!repairable && (
           <label className="calc-t">
             <span>Mission time{unit ? ` (${unit.toLowerCase()})` : ""}</span>
@@ -265,7 +269,7 @@ export default function RbdTargets({ graph, onBuild }) {
             />
           </div>
         )}
-        <button type="button" onClick={() => allocate()} disabled={phase === "working" || !blocks.length}>
+        <button type="button" onClick={() => allocate()} disabled={phase === "working" || !blocks.length || !targetCheck.ready}>
           {phase === "working" ? "Allocating…" : "Allocate"}
         </button>
       </div>

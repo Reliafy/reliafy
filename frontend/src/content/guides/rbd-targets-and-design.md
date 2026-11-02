@@ -26,7 +26,7 @@ heat exchanger, in series.
 ## Give each block a target (Targets tab)
 
 Open the diagram from **Systems → RBDs** and choose the **Targets** tab. Enter the
-**Target reliability (%)** and the **Mission time**, pick a **Method** and
+**Target reliability** (a percentage, e.g. 99) and the **Mission time**, pick a **Method** and
 press **Allocate**.
 
 ![The Targets tab: a 99% target at 500 hours, and what each block needs](/guides/img/targets-01-allocate.png)

@@ -6,6 +6,8 @@ import { fmtMoney } from "./AvailabilityCosts.jsx";
 import { copiesText, horizonWords } from "../rbdOwnership.js";
 import { unitInText } from "./unitText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 
 // The Design tab for a repairable diagram (#99): how many copies of each block
 // with a purchase price own the system at the lowest total cost over a
@@ -41,6 +43,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
   };
   const [horizon, setHorizon] = useState(graph.costs?.horizon != null ? String(graph.costs.horizon) : "");
   const [floor, setFloor] = useState("");
+  const floorPct = readPercents("rbdCheapest", { floor });
   const [discount, setDiscount] = useState(graph.costs?.discount_rate != null ? String(graph.costs.discount_rate) : "");
   const [phase, setPhase] = useState("idle");
   const [run, setRun] = useState(null); // {result, sig}
@@ -58,7 +61,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
       const result = await cheapestRbdDesign({
         graph,
         horizon: horizon === "" ? null : Number(horizon),
-        minAvailability: floor === "" ? null : Number(floor) / 100,
+        minAvailability: floorPct.fractions.floor,
         discountRate: discount === "" ? 0 : Number(discount),
         trains: usedTrains.length ? usedTrains.map((t) => ({ name: t.name, blocks: t.blocks })) : null,
         blocks: usedTrains.length && !singles ? [] : null,
@@ -111,12 +114,9 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
                      onChange={(e) => setHorizon(e.target.value)} />
               <small>{graph.unit || "time"}</small>
             </label>
-            <label className="param-field rbd-cost-field" title="Only designs at least this available (long run). Blank: no floor.">
-              <span>Minimum availability</span>
-              <input type="number" inputMode="decimal" step="any" min="0" max="100" value={floor} placeholder="optional"
-                     onChange={(e) => setFloor(e.target.value)} />
-              <small>% (e.g. 99.95)</small>
-            </label>
+            <PercentField className="param-field rbd-cost-field" title="Only designs at least this available (long run). Blank: no floor."
+              label="Minimum availability" value={floor} onChange={setFloor} placeholder="optional"
+              check={floorPct.checks.floor} hint="e.g. 99.95" />
             <label className="param-field rbd-cost-field" title="Makes the totals present values: copies bought now, running costs and the downtime they save discounted over the horizon. Blank or 0: undiscounted.">
               <span>Discount rate</span>
               <input type="number" inputMode="decimal" step="any" min="0" max="100" value={discount} placeholder="optional"
@@ -170,7 +170,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
             </div>
           </div>
           <div className="rbd-calc-actions">
-            <button type="button" onClick={find} disabled={phase === "working" || horizon === ""}>
+            <button type="button" onClick={find} disabled={phase === "working" || horizon === "" || !floorPct.ready}>
               {phase === "working" ? "Finding…" : "Find the cheapest design"}
             </button>
             <span className="hint">

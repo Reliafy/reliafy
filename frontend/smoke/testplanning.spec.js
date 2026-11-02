@@ -46,3 +46,36 @@ test("Life test: the simulation check runs (billing is off locally)", async ({ p
   await expect(page.locator(".tp-sim-out")).toContainText(/simulated tests/, { timeout: 60_000 });
   await expectHealthy(page, problems, { label: "life test simulation", chart: true });
 });
+
+// Percentage fields (the 18 Oct UX review): typed as a percentage, checked in
+// percent before anything is computed, and a value of 1 or less questioned
+// ("Did you mean 99%?") instead of taken as a tiny percentage.
+test("Test planning: 150% gets a message in percent and Compute waits", async ({ page, problems }) => {
+  await open(page, "/strategy/test-planning");
+  await page.getByLabel("Target reliability").fill("150");
+  await expect(page.getByText("Enter a percentage between 0 and 100, e.g. 95.")).toBeVisible();
+  await expect(page.getByText(/between 0 and 1\b/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Compute" })).toBeDisabled();
+  await page.getByLabel("Target reliability").fill("95");
+  await expect(page.getByRole("button", { name: "Compute" })).toBeEnabled();
+  await expectHealthy(page, problems, { label: "test planning percent check" });
+});
+
+test("Failure finding: 0.99 asks 'Did you mean 99%?' and computes only once answered", async ({ page, problems }) => {
+  await open(page, "/strategy/failure-finding");
+  const field = page.getByLabel("Target availability");
+  await field.fill("0.99");
+  await expect(page.getByText("Did you mean 99%?")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Compute" })).toBeDisabled();
+  await page.getByRole("button", { name: "Use 99%" }).click();
+  await expect(field).toHaveValue("99");
+  await expect(page.getByRole("button", { name: "Compute" })).toBeEnabled({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Compute" }).click();
+  await expect(page.locator(".rs-sentence")).toContainText("99%", { timeout: 20_000 });
+  // Keeping the small value is a choice, said with the % sign.
+  await field.fill("0.99");
+  await page.getByRole("button", { name: "Keep 0.99%" }).click();
+  await expect(field).toHaveValue("0.99%");
+  await expect(page.getByRole("button", { name: "Compute" })).toBeEnabled();
+  await expectHealthy(page, problems, { label: "failure finding percent check" });
+});
