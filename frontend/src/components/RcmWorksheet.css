@@ -422,9 +422,15 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 /* The panel's head: its kind, then Expand (or Back to table) and Close. */
 .rw-panel-btns { display: flex; gap: 6px; flex: none; }
 /* Its body: one column, at every width (expanded, it only gets a readable
-   width): fields and the decision first, then the lists, each list ending in
-   its own "+ Add". */
-.rw-pbody, .rw-pcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+   width), in one order at every level: what's inside it (each list ending in
+   its own "+ Add"), then this level's own fields, then the quieter things at
+   the foot, smaller and muted. Each block opens on a hairline. */
+.rw-pbody { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rw-own, .rw-foot { border-top: 1px solid var(--line2); padding-top: var(--sp-3); }
+.rw-foot { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rw-foot-note { margin: 0; }
+.rw-foot .rw-checkable { margin: 0; padding-top: 0; border-top: 0; }
+.rw-foot > .rw-limit { border-top: 0; padding-top: 0; }
 .rw-panel.is-expanded { padding: 16px 20px 20px; gap: 12px; }
 .rw-panel.is-expanded > .rw-panel-head,
 .rw-panel.is-expanded > .rw-crumbs,
@@ -434,7 +440,6 @@ p.rw-evidence.rw-unlinked { margin: 0; display: block; color: var(--muted); }
 .rw-panel.is-expanded > .rw-panel-acts { width: 100%; max-width: 760px; box-sizing: border-box; }
 .rw-panel.is-expanded > .rw-pbody { gap: 16px; }
 .rw-panel.is-expanded .rw-panel-title { font-size: var(--fs-20); -webkit-line-clamp: 3; line-clamp: 3; }
-.rw-pcol:empty { display: none; }
 .rw-fstatus { margin: 0; font-size: var(--fs-13); color: var(--muted); }
 /* A performance standard's structured limit, when it applies and its source. */
 .rw-limit { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
