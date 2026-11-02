@@ -72,6 +72,7 @@ import FullScreenButton from "../components/FullScreenButton.jsx";
 import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
 import { rbdSaveSnapshot, rbdSaveStatus } from "../rbdSaveState.js";
 import { RBDS_LABEL, RBDS_PATH } from "../navigation.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -2218,6 +2219,7 @@ export default function RbdBuilder() {
   }
   return (
     <div className={"app rbd-app" + (tab === "builder" ? "" : " rbd-app-scroll")}>
+      <PageTitle name={(meta.name || "").replace(SAMPLE_SUFFIX, "")} />
       <PageHeader
         crumbs={[{ label: RBDS_LABEL, to: RBDS_PATH }]}
         title={(meta.name || "").replace(SAMPLE_SUFFIX, "") || (id ? "" : "Untitled RBD")}

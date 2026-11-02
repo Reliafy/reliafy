@@ -52,6 +52,7 @@ import {
 } from "../maintenanceForecast.js";
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
@@ -140,6 +141,7 @@ export function MaintenanceLocation() {
   // (positions, items there now and the place itself), not only the positions'.
   return (
     <div className="app">
+      <PageTitle name={loc?.name} />
       <PageHeader
         crumbs={[...crumbs, ...loc.path.map((a) => ({ label: a.name, to: `/asset-register/locations/${a.id}` }))]}
         title={loc.name} id={loc.id}
@@ -303,6 +305,7 @@ export function MaintenanceClasses() {
   }, [open]);
   return (
     <div className="app">
+      <PageTitle name={open} />
       <SectionHeader section="assets" title="Classes"
                   purpose="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to." />
       {error && <div className="card error">{error}</div>}

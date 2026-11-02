@@ -3,6 +3,8 @@ import { useLocation } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import FfiResult from "./FfiResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
+import { ComputeReason } from "./StrategyTool.jsx";
+import { failureFindingMissing } from "../strategyTools.js";
 import { failureFinding } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
 import PercentField from "./PercentField.jsx";
@@ -33,7 +35,10 @@ export default function FailureFinding() {
   // Typed as a percentage (99), sent as a fraction (0.99); 0.99 is asked
   // about ("Did you mean 99%?"), never taken as 0.99%.
   const pcts = readPercents("failureFinding", { availability });
-  const canRun = model && model.distribution_id && !isRegression && pcts.ready;
+  const availCheck = pcts.checks.availability;
+  // Why Compute is greyed out, said beside it (null when ready).
+  const missing = failureFindingMissing({ model, availability, availCheck });
+  const canRun = !missing && !isRegression && pcts.ready;
 
   const run = async () => {
     setLoading(true);
@@ -70,11 +75,13 @@ export default function FailureFinding() {
         )}
         <div className="strategy-costs">
           <PercentField label="Target availability" value={availability} onChange={setAvailability}
-            check={pcts.checks.availability} />
+            check={availCheck} />
           <StrategyUnit model={model} unit={unit} onUnit={setUnit} />
-          <button onClick={run} disabled={!canRun || loading}>
+          <button onClick={run} disabled={!canRun || loading}
+                  aria-describedby={missing ? "ffi-why" : undefined}>
             {loading ? "Computing…" : "Compute"}
           </button>
+          <ComputeReason id="ffi-why" reason={missing} />
         </div>
       </div>
 

@@ -14,6 +14,7 @@ import { rememberModel } from "../modelNext.js";
 import { answerParts, modelTabs } from "../modelFrame.js";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const CRUMBS = [{ label: "Model", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
 
@@ -100,6 +101,7 @@ export default function ModelPage() {
         />
       ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
       {editModal}
+      <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );
 }

@@ -26,6 +26,7 @@ import { ConditionsCard } from "../components/MaintenanceConditions.jsx";
 import { ItemPartStructureCard } from "../components/MaintenanceStructure.jsx";
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const ITEM_DATES = [
   { key: "purchase_date", label: "Bought" },
@@ -56,6 +57,7 @@ export default function MaintenanceItem() {
   const where = itemWhere(item, fmtDate);
   return (
     <div className="app">
+      <PageTitle name={item?.name} />
       <PageHeader
         crumbs={[{ label: "Assets", to: "/asset-register" }, { label: EXPLORER_LABEL, to: explorerPath("items", { sel: item.id }) }]}
         title={item.name}

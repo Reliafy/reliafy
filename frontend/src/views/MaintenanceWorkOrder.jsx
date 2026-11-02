@@ -13,6 +13,7 @@ import { partChoices, stockText } from "../maintenanceSpares.js";
 import { actionKinds, itemAtText, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -44,6 +45,7 @@ export default function MaintenanceWorkOrder() {
 
   return (
     <div className="app">
+      <PageTitle name={wo && `#${wo.number} ${wo.title}`} />
       <PageHeader
         crumbs={[{ label: "Maintenance", to: "/maintenance" },
           ...(wo.subject ? [{ label: wo.subject.name, to: subjectPath(wo.subject) }] : [])]}
