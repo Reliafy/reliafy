@@ -13,13 +13,13 @@
      --faint (2.6:1) is for borders and disabled states only, never text. */
   --ink: #14171c;
   --muted: #5f6670;
-  --subtle: #6c727c;
+  --subtle: #666c76; /* 4.5:1+ as hint text on every surface */
   --faint: #9aa0a8;
   /* Text and icons on a solid fill (accent, ink, semantic). */
   --on-fill: #ffffff;
 
   /* Accent: primary action, links, selection */
-  --acc: #2f6df6;
+  --acc: #245fe0; /* 4.5:1+ as text on every surface, incl. its own tint */
   --acc-d: #2257d6;
   --acc-t: rgba(47, 109, 246, 0.09);
   --acc-hover: rgba(47, 109, 246, 0.05); /* row and control hover */
