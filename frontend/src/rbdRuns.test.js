@@ -26,6 +26,7 @@ test("status colour carries meaning only", () => {
   assert.deepEqual(statusChip("done"), { tone: "neutral", label: "Done" });
   assert.deepEqual(statusChip("failed"), { tone: "danger", label: "Failed" });
   assert.equal(statusChip("queued").tone, "accent");
+  assert.deepEqual(statusChip("cancelled"), { tone: "neutral", label: "Cancelled" });
 });
 
 test("a window availability with its interval, to its precision", () => {
