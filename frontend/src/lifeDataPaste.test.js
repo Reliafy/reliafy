@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  parsePastedValues, addMissingFlags, lineRanges, unitProblem, isUnitless, UNITLESS,
+  parsePastedValues, addMissingFlags, lineRanges, isUnitless, UNITLESS,
 } from "./lifeData.js";
 
 const MIXED = "100\n200\n300\n400\n500\n600\n700\n1200 1\n1300 1\n1400 1";
@@ -60,11 +60,7 @@ test("lineRanges reads like a sentence", () => {
   assert.equal(lineRanges([1, 3, 5, 7, 9]), "lines 1, 3, 5 and 2 more");
 });
 
-test("the fit flow needs a unit, or an explicit No unit", () => {
-  assert.match(unitProblem(""), /Choose the unit of these times/);
-  assert.match(unitProblem("   "), /No unit/);
-  assert.equal(unitProblem("Hours"), null);
-  assert.equal(unitProblem(UNITLESS), null);
+test("No unit is an explicit choice; a blank unit is just not chosen", () => {
   assert.equal(isUnitless(UNITLESS), true);
   assert.equal(isUnitless(""), false); // not chosen yet is not "no unit"
   assert.equal(isUnitless("Hours"), false);

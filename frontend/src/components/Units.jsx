@@ -35,8 +35,9 @@ export default function Units({ value, onChange }) {
   );
 }
 
-// A unit the fit flow requires: pick or type one, or tick "No unit" on
-// purpose (stored as "units", so results still say "257 units").
+// The fit flow's unit: optional. Pick or type one so results say what the
+// numbers mean; tick "No unit" to say there is none (stored as "units", so
+// results still say "257 units"). Left blank it just fits without one.
 export function RequiredUnit({ value, onChange, label = "Unit", listId = "x-units", autoFocus = false }) {
   const none = isUnitless(value);
   return (
@@ -49,7 +50,6 @@ export function RequiredUnit({ value, onChange, label = "Unit", listId = "x-unit
           list={listId}
           value={none ? "" : value || ""}
           disabled={none}
-          aria-required="true"
           autoFocus={autoFocus}
           placeholder={none ? "No unit" : "e.g. Hours"}
           onChange={(e) => onChange(e.target.value)}
@@ -60,6 +60,9 @@ export function RequiredUnit({ value, onChange, label = "Unit", listId = "x-unit
           <option value={u} key={u} />
         ))}
       </datalist>
+      {!none && !String(value ?? "").trim() && (
+        <span className="ds-hint">Add a unit (Hours, Days, Cycles…) so results say what the numbers mean.</span>
+      )}
       <label className="ds-unitless">
         <input type="checkbox" checked={none} onChange={(e) => onChange(e.target.checked ? UNITLESS : "")} />
         No unit (just numbers)

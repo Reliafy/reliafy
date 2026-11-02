@@ -441,9 +441,3 @@ export const UNITLESS = "units";
 export function isUnitless(unit) {
   return ["units", "unitless", "no unit"].includes(String(unit ?? "").trim().toLowerCase());
 }
-
-// Why the Data step can't go on without a unit, or null.
-export function unitProblem(unit) {
-  return String(unit ?? "").trim() ? null
-    : "Choose the unit of these times (Hours, Days, Cycles, …), or tick “No unit” if they are just numbers.";
-}
