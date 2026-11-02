@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import math
 import re
 import warnings
@@ -322,15 +323,109 @@ def _head_text(file_bytes: bytes, limit: int = 1024 * 1024) -> str:
     return bytes(file_bytes[:limit]).decode("utf-8", errors="replace")
 
 
+logger = logging.getLogger(__name__)
+
+# The start of files people upload by mistake, and what to call them.
+_NOT_CSV_MAGIC = (
+    (b"\x89PNG", "a PNG image"),
+    (b"\xff\xd8\xff", "a JPEG image"),
+    (b"GIF8", "a GIF image"),
+    (b"%PDF", "a PDF"),
+    (b"PK\x03\x04", "an Excel workbook or a zip file"),
+    (b"\xd0\xcf\x11\xe0", "a legacy Office file (.xls or .doc)"),
+)
+_SAVE_AS_CSV = "Save it as CSV UTF-8 (comma delimited) and upload it again."
+
+
+def not_csv_text(data: bytes) -> Optional[str]:
+    """Plain words for bytes that can't be CSV text (an image, a PDF, a
+    workbook, UTF-16 text), or None when they could be."""
+    head = bytes(data[:8])
+    if head.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return f"This file is saved as UTF-16 (\"Unicode text\"). {_SAVE_AS_CSV}"
+    for magic, what in _NOT_CSV_MAGIC:
+        if head.startswith(magic):
+            if magic == b"PK\x03\x04":
+                return ("This looks like an Excel workbook (or a zip file), not a CSV file. Upload it as an "
+                        "Excel workbook (.xlsx), or save the sheet as CSV UTF-8 and upload that.")
+            return f"This looks like {what}, not a CSV file. {_SAVE_AS_CSV}"
+    if b"\x00" in bytes(data[:4096]):
+        return f"This file isn't text, so it can't be read as a CSV. {_SAVE_AS_CSV}"
+    return None
+
+
+def _unclosed_quote_line(text: str) -> Optional[int]:
+    """The 1-based line where a quote mark opens and never closes, or None."""
+    in_quote, opened, line = False, 0, 1
+    for ch in text:
+        if ch == "\n":
+            line += 1
+        elif ch == '"':
+            in_quote = not in_quote
+            if in_quote:
+                opened = line
+    return opened if in_quote else None
+
+
+def csv_error_message(exc: BaseException, data: bytes | str | None = None, *, what: str = "the file") -> str:
+    """A parser error in plain words that say what to do; the raw error is
+    logged, never shown. ``what`` names the thing read ("the file", "the
+    pasted data")."""
+    logger.warning("CSV parse failed (%s): %r", what, exc)
+    raw = data.encode("utf-8", "replace") if isinstance(data, str) else (bytes(data) if data else b"")
+    if raw:
+        sniffed = not_csv_text(raw)
+        if sniffed:
+            return sniffed
+    msg = str(exc)
+    if isinstance(exc, UnicodeDecodeError):
+        return f"Reliafy couldn't read the text in {what}: it isn't saved as UTF-8. {_SAVE_AS_CSV}"
+    if isinstance(exc, pd.errors.EmptyDataError) or "No columns to parse" in msg or not raw.strip():
+        return (f"{what[0].upper()}{what[1:]} is empty. Add a header row (the column names) "
+                "and at least one row of data.")
+    text = raw.decode("utf-8", "replace") if raw else ""
+    quote_line = _unclosed_quote_line(text) if text else None
+    if quote_line is not None and ("EOF inside string" in msg or "unexpected end of data" in msg
+                                   or "expected after" in msg or not msg):
+        return (f"Line {quote_line} has a quote mark (\") that is never closed. Close it, or remove it, "
+                "and upload it again.")
+    m = re.search(r"Expected (\d+) fields in line (\d+), saw (\d+)", msg)
+    if m:
+        want, line, saw = m.groups()
+        return (f"Line {line} has {saw} values but the header has {want} columns. Check that line for an "
+                "extra comma, or put quote marks around a value that contains a comma.")
+    if quote_line is not None:
+        return (f"Line {quote_line} has a quote mark (\") that is never closed. Close it, or remove it, "
+                "and upload it again.")
+    return (f"Reliafy couldn't read {what} as a table. Check it is comma- or tab-separated text with a "
+            f"header row. {_SAVE_AS_CSV}")
+
+
+def read_csv_bytes(file_bytes: bytes, *, what: str = "the file", **kwargs) -> pd.DataFrame:
+    """``read_csv_capped`` on uploaded bytes: refuses what can't be CSV text,
+    reads UTF-8 and falls back to Latin-1 (Excel's "CSV" on Windows), and turns
+    parser errors into FitErrors in plain words."""
+    sniffed = not_csv_text(file_bytes)
+    if sniffed:
+        logger.warning("Upload refused as not CSV text (%s)", what)
+        raise FitError(sniffed)
+    width_text = _head_text(file_bytes)
+    try:
+        try:
+            return read_csv_capped(io.BytesIO(file_bytes), width_text=width_text, **kwargs)
+        except UnicodeDecodeError:
+            return read_csv_capped(io.BytesIO(file_bytes), width_text=width_text,
+                                   encoding="latin-1", **kwargs)
+    except FitError:
+        raise
+    except Exception as exc:  # pandas raises many types
+        raise FitError(csv_error_message(exc, file_bytes, what=what)) from exc
+
+
 def read_dataframe(file_bytes: bytes) -> pd.DataFrame:
     """Parse uploaded bytes as a CSV into a DataFrame, within the
     ``MAX_CSV_COLS`` / ``MAX_CSV_ROWS`` limits."""
-    try:
-        df = read_csv_capped(io.BytesIO(file_bytes), width_text=_head_text(file_bytes))
-    except FitError:
-        raise
-    except Exception as exc:  # pragma: no cover - pandas raises many types
-        raise FitError(f"Could not parse the file as CSV: {exc}") from exc
+    df = read_csv_bytes(file_bytes)
 
     if df.empty or df.shape[1] == 0:
         raise FitError("The uploaded CSV is empty.")
@@ -381,12 +476,7 @@ HEADER_PREVIEW_HINT = ("The first row is all numbers, so it looks like data, not
 def with_generic_header(file_bytes: bytes) -> bytes:
     """A CSV with no header row, re-serialised with columns ``col 1``,
     ``col 2``, … so its first row is kept as data."""
-    try:
-        df = read_csv_capped(io.BytesIO(file_bytes), header=None, width_text=_head_text(file_bytes))
-    except FitError:
-        raise
-    except Exception as exc:  # pragma: no cover - pandas raises many types
-        raise FitError(f"Could not parse the file as CSV: {exc}") from exc
+    df = read_csv_bytes(file_bytes, header=None)
     if df.empty or df.shape[1] == 0:
         raise FitError("The uploaded CSV is empty.")
     df.columns = [f"col {i + 1}" for i in range(df.shape[1])]

@@ -96,7 +96,8 @@ def check_csv(data: bytes) -> None:
                 if rows > MAX_ROWS:
                     raise Invalid(f"At most {MAX_ROWS} rows at a time.")
     except csv.Error as err:
-        raise Invalid(f"That file couldn't be read as CSV: {err}.") from None
+        from backend.fitting import csv_error_message
+        raise Invalid(csv_error_message(err, text)) from None
 
 
 def check_rows(rows: list[dict]) -> None:
