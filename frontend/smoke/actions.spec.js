@@ -93,6 +93,10 @@ async function uploadAndFit(page) {
   await expect(page.getByRole("option", { name: "Ignore this column" })).toBeVisible();
   await page.keyboard.press("Escape");
 
+  // No unit can be guessed from "col 1": Next waits for one, or an explicit "No unit".
+  await expect(page.getByText(/Choose the unit of these times/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next" })).toBeDisabled();
+  await page.getByLabel("No unit (just numbers)").check();
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Fit Weibull" }).click();
   await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });

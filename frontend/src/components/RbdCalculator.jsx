@@ -29,6 +29,7 @@ import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent } from "../format.js";
 import { hoursPerUnit } from "./rbdModelText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import ProTag from "./ProTag.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
 
@@ -768,7 +769,7 @@ function SimulationActions({ canSimulate, onSimulate, simulating, graph, quick =
             disabled={simulating}
             onClick={() => (canSimulate ? onSimulate() : setUpgrade(true))}
           >
-            {simulating && canSimulate ? "Simulating…" : canSimulate ? "Run simulation" : "Run full simulation (Pro)"}
+            {simulating && canSimulate ? "Simulating…" : canSimulate ? "Run simulation" : <>Run full simulation<ProTag always /></>}
           </button>
           {canSimulate && !simulating && (
             <RbdRunsQuote graph={graph} tMax={tMax} currentState={currentState} rbdId={rbdId} />

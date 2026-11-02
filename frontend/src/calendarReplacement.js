@@ -8,7 +8,7 @@ export const EVERY_UNITS = ["days", "weeks", "months", "years"];
 export const METHODS = [
   { value: "dp", label: "Exact, on a fine time grid", hint: "Free. Works for any calendar." },
   { value: "integration", label: "Exact, in continuous time", hint: "Free. Only with no replacement between shuts." },
-  { value: "sampling", label: "Sampled (Pro)", hint: "For calendars whose pattern takes very long to repeat." },
+  { value: "sampling", label: "Sampled", pro: true, hint: "For calendars whose pattern takes very long to repeat." },
 ];
 
 const ALIASES = {

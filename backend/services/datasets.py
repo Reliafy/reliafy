@@ -20,7 +20,7 @@ from backend.services import access
 from backend.db import from_doc, to_doc
 from backend.fitting import FitError
 from backend.fitting import preview as _preview
-from backend.fitting import header_guess, read_csv_capped, read_dataframe, with_generic_header
+from backend.fitting import csv_error_message, header_guess, read_csv_capped, read_dataframe, with_generic_header
 from backend.schema import Dataset, DatasetPart, Model
 
 
@@ -80,7 +80,7 @@ def normalize_pasted(content: str, no_header: bool = False) -> bytes:
     except FitError:
         raise
     except Exception as exc:
-        raise FitError(f"Couldn't read the pasted data: {exc}") from exc
+        raise FitError(csv_error_message(exc, text, what="the pasted data")) from exc
     if df.empty or df.shape[1] == 0:
         raise FitError("Couldn't find any rows — data needs a header row and at least one data row.")
     if df.shape[1] == 1:

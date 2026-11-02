@@ -94,7 +94,9 @@ words. You only need the ones your data has:
 
 Set the **Unit** here too. It's guessed from the column name where it can be,
 and it flows through to every chart and result afterwards, so it stops you
-comparing a model in hours against one in cycles later on.
+comparing a model in hours against one in cycles later on. **Next** waits until
+there is a unit: pick or type one, or tick **No unit (just numbers)** if the
+times really have none.
 
 ## Choosing a distribution
 

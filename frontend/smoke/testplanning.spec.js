@@ -42,7 +42,7 @@ for (const [tab, path, answer] of TABS) {
 test("Life test: the simulation check runs (billing is off locally)", async ({ page, problems }) => {
   await open(page, "/strategy/test-planning/life");
   await page.getByRole("button", { name: "Compute" }).click();
-  await page.getByRole("button", { name: "Simulate this test (Pro)" }).click();
+  await page.getByRole("button", { name: /^Simulate this test/ }).click();
   await expect(page.locator(".tp-sim-out")).toContainText(/simulated tests/, { timeout: 60_000 });
   await expectHealthy(page, problems, { label: "life test simulation", chart: true });
 });

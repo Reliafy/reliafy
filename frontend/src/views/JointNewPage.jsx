@@ -12,6 +12,7 @@ import {
 } from "../api.js";
 import { columnFacts } from "../lifeData.js";
 import { covariateParts, guessLifetimeColumns, guessReadingColumns } from "../joint.js";
+import ProTag from "../components/ProTag.jsx";
 
 const NONE = { value: "", label: "— none —" };
 const POLL_MS = 2000;
@@ -365,7 +366,7 @@ export default function JointNewPage() {
               {busy === "check" ? "Checking…" : "Check data"}
             </button>
             <button type="button" disabled={!mapped || !name.trim() || !!busy} onClick={onFit}>
-              {busy === "fit" ? "Fitting…" : "Fit model"}
+              {busy === "fit" ? "Fitting…" : <>Fit model<ProTag /></>}
             </button>
           </div>
 
