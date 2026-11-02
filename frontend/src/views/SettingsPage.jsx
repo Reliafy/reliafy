@@ -8,6 +8,7 @@ import McpOnRequest from "../components/McpOnRequest.jsx";
 import TeamInvites from "../components/TeamInvites.jsx";
 import TimeZonePicker from "../components/TimeZonePicker.jsx";
 import { RolesCard } from "../components/RolePicker.jsx";
+import CurrencyPicker from "../components/CurrencyPicker.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import { initials } from "../components/Sidebar.jsx";
 import Button from "../components/ui/Button.jsx";
@@ -157,7 +158,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { billing } = useAppConfig();
-  const { personalTimeZone, savePersonalTimeZone } = useWorkspace();
+  const { personalTimeZone, savePersonalTimeZone, personalCurrency, savePersonalCurrency } = useWorkspace();
 
   const initial = new URLSearchParams(location.search).get("tab");
   const [tab, setTab] = useState(TABS.some((t) => t.id === initial) ? initial : "general");
@@ -217,6 +218,14 @@ export default function SettingsPage() {
               subtitle="Where your personal workspace is. Today, due dates and overdue follow its calendar; not set, they follow UTC. A team's is on its Team page."
             />
             <TimeZonePicker value={personalTimeZone} onSave={savePersonalTimeZone} />
+          </Card>
+
+          <Card style={{ marginTop: "1rem" }}>
+            <CardHeader
+              title="Currency"
+              subtitle="The symbol in front of costs in your personal workspace (replacement costs, the shutdown calendar, RBD costs, spares). It's only a label: nothing is converted. A team's is on its Team page."
+            />
+            <CurrencyPicker value={personalCurrency} onSave={savePersonalCurrency} />
           </Card>
 
           <TeamInvites style={{ marginTop: "1rem" }} />

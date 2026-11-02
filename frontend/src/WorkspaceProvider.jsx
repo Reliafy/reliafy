@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthProvider.jsx";
 import {
-  getMyTimeZone, getWorkspace, setWorkspace as persistWorkspace, listTeams, listTeamInvites, setMyTimeZone,
+  getMyCurrency, getMyTimeZone, getWorkspace, setWorkspace as persistWorkspace, listTeams, listTeamInvites,
+  setMyCurrency, setMyTimeZone,
 } from "./api.js";
 import { setWorkspaceTimeZone } from "./workspaceDate.js";
+import { setWorkspaceCurrency } from "./money.js";
 
 const WorkspaceContext = createContext({
   workspace: "personal",
@@ -17,6 +19,9 @@ const WorkspaceContext = createContext({
   timeZoneLoaded: false,
   personalTimeZone: null,
   savePersonalTimeZone: () => Promise.resolve(),
+  currency: "$",
+  personalCurrency: "$",
+  savePersonalCurrency: () => Promise.resolve(),
 });
 
 // Active workspace (Personal or a team) + the user's team list. The chosen
@@ -69,6 +74,20 @@ export function WorkspaceProvider({ children }) {
     [],
   );
 
+  // The personal workspace's currency symbol (a team's comes with the team
+  // list): the label in front of costs, "$" unless set.
+  const [personalCurrency, setPersonalCurrency] = useState("$");
+  useEffect(() => {
+    if (!user) return;
+    getMyCurrency()
+      .then((d) => setPersonalCurrency(d.currency_symbol || "$"))
+      .catch(() => {});
+  }, [user]);
+  const savePersonalCurrency = useCallback(
+    (symbol) => setMyCurrency(symbol).then((d) => setPersonalCurrency(d.currency_symbol || "$")),
+    [],
+  );
+
   // Drop a stored workspace the user no longer belongs to.
   useEffect(() => {
     if (!user || teams === null || workspace === "personal") return;
@@ -89,6 +108,8 @@ export function WorkspaceProvider({ children }) {
     // Forms that pre-fill today read it (workspaceDate.js): set before the
     // pages below render with it.
     setWorkspaceTimeZone(timeZone);
+    const currency = (workspace === "personal" ? personalCurrency : activeTeam?.currency_symbol) || "$";
+    setWorkspaceCurrency(currency);
     return {
       workspace,
       setWorkspaceId,
@@ -101,13 +122,21 @@ export function WorkspaceProvider({ children }) {
       timeZoneLoaded: workspace === "personal" ? personalTimeZone !== undefined : teams !== null,
       personalTimeZone: personalTimeZone || null,
       savePersonalTimeZone,
+      currency,
+      personalCurrency,
+      savePersonalCurrency,
     };
   }, [workspace, setWorkspaceId, teams, refreshTeams, invites, refreshInvites, personalTimeZone,
-    savePersonalTimeZone]);
+    savePersonalTimeZone, personalCurrency, savePersonalCurrency]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }
 
 export function useWorkspace() {
   return useContext(WorkspaceContext);
+}
+
+// The active workspace's currency symbol, for labelling costs (money.js).
+export function useCurrency() {
+  return useContext(WorkspaceContext).currency || "$";
 }

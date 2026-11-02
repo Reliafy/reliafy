@@ -6,6 +6,8 @@ import { formatNumber, formatPercent } from "../format.js";
 import { ACCENT, REFERENCE } from "../plotTheme.js";
 import { unitInText } from "./unitText.js";
 import { dearer, formatDate, visibleSchedule } from "../calendarReplacement.js";
+import { useCurrency } from "../WorkspaceProvider.jsx";
+import { formatCost, formatCostRate, labelCostsInText } from "../money.js";
 import "./CalendarReplacement.css";
 
 // The answer of replacement over a shutdown calendar: the rule in plain words
@@ -14,7 +16,9 @@ import "./CalendarReplacement.css";
 export default function CalendarReplacementResult({ result, wt }) {
   const [showAll, setShowAll] = useState(false);
   const unit = unitInText(result.unit);
-  const year = (v) => formatNumber(v, { sig: 3 });
+  const currency = useCurrency();
+  const year = (v) => formatCost(v, currency, { sig: 3 });
+  const price = (v) => formatCost(v, currency, { sig: 3 });
   const se = result.cost_per_year_se;
   const rtf = result.savings_vs_run_to_failure;
   const age = result.savings_vs_age_rule;
@@ -30,12 +34,12 @@ export default function CalendarReplacementResult({ result, wt }) {
       type: "bar", orientation: "h",
       y: rules.map((r) => r.label), x: rules.map((r) => r.cost),
       marker: { color: rules.map((r) => (r.best ? ACCENT : REFERENCE)) },
-      hovertemplate: "%{y}: %{x:,.4g} a year<extra></extra>",
+      hovertemplate: `%{y}: ${currency}%{x:,.4g} a year<extra></extra>`,
     }],
     layout: {
       height: 90 + 34 * rules.length,
       margin: { l: 10, r: 20, t: 10, b: 40 },
-      xaxis: { title: { text: "Long-run cost a year" }, rangemode: "tozero" },
+      xaxis: { title: { text: `Long-run cost a year (${currency})` }, rangemode: "tozero" },
       yaxis: { automargin: true, autorange: "reversed" },
       showlegend: false,
     },
@@ -48,7 +52,7 @@ export default function CalendarReplacementResult({ result, wt }) {
       <ResultSummary
         tone={tone}
         wt={wt}
-        sentence={result.recommendation}
+        sentence={labelCostsInText(result.recommendation, currency)}
         stats={[
           { label: "Cost a year", value: se ? `${year(result.cost_per_year)} ± ${year(se)}` : year(result.cost_per_year),
             hint: "long-run average" },
@@ -97,7 +101,7 @@ export default function CalendarReplacementResult({ result, wt }) {
               {(result.by_kind || []).map((k) => (
                 <tr key={k.kind}>
                   <td>{k.kind === "failure" || k.kind === "anytime" ? k.label : `At the ${k.label}`}</td>
-                  <td>{formatNumber(k.price)}</td>
+                  <td>{price(k.price)}</td>
                   <td>{formatNumber(k.replacements_per_year, { sig: 3 })}</td>
                   <td>{year(k.cost_per_year)}</td>
                   <td>{k.share == null ? "—" : formatPercent(k.share)}</td>
@@ -123,7 +127,7 @@ export default function CalendarReplacementResult({ result, wt }) {
                   <tr key={`${r.date}-${r.kind}`}>
                     <td>{formatDate(r.date)}</td>
                     <td>{r.kind}</td>
-                    <td>{formatNumber(r.price)}</td>
+                    <td>{price(r.price)}</td>
                     <td>{r.threshold == null ? "never" : `${formatNumber(r.threshold)} ${unit}`}</td>
                     <td>{r.chance == null ? "—" : formatPercent(r.chance)}</td>
                   </tr>
@@ -146,7 +150,7 @@ export default function CalendarReplacementResult({ result, wt }) {
         rows={[
           { label: "Today (time 0)", value: formatDate(result.today) },
           { label: "Model time unit", value: result.unit },
-          { label: "Long-run cost per unit time", value: formatNumber(result.cost_rate, { sig: 4 }) },
+          { label: "Long-run cost per unit time", value: formatCostRate(result.cost_rate, currency, result.unit, { sig: 4 }) },
           result.step != null && { label: `Grid step (${unit})`, value: formatNumber(result.step, { sig: 4 }) },
           result.period != null && { label: `Pattern repeats every (${unit})`, value: formatNumber(result.period, { sig: 6 }) },
           result.determined_until_date && { label: "Shown dates hold until", value: formatDate(result.determined_until_date) },

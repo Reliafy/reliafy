@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
 import { unitInText } from "./unitText.js";
+import { costLabel, workspaceCurrency } from "../money.js";
 
 // Diagram-level costs of a repairable RBD (#99): what an hour (unit) of system
 // downtime costs — lost production — and how long the system is owned, for the
@@ -47,12 +48,12 @@ export default function RbdCostsModal({ initial, unit, onClose, onSubmit }) {
     <Modal title="Diagram costs" onClose={onClose} footer={footer}>
       <p className="muted-line" style={{ marginTop: 0 }}>
         Price the system's downtime to weigh repairs, maintenance and spare units against the
-        production they save. Costs are in whatever currency you use; with a discount rate the total
+        production they save. Costs are in {workspaceCurrency()} (set under Settings › Currency); with a discount rate the total
         cost of ownership is a present value.
       </p>
       <div className="param-fields">
         <label className="param-field rbd-cost-field" title="Charged for every unit of time the whole system is down (lost production).">
-          <span>System downtime cost</span>
+          <span>{costLabel("System downtime cost", workspaceCurrency())}</span>
           <input type="number" inputMode="decimal" step="any" min="0" value={rate} placeholder="—" onChange={(e) => setRate(e.target.value)} />
           <small>per {u} the system is down</small>
         </label>
