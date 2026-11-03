@@ -15,6 +15,7 @@
     reliafy document get DOCUMENT_ID -o manual.pdf
     reliafy ingest usage fleet.csv --fleet FLEET_ID
     reliafy ingest readings readings.csv
+    reliafy ingest snapshot burst.json
     reliafy apply ops.json                          # maintenance changes in one call (a dry run)
     reliafy apply ops.json --run                    # ... for real
 
@@ -521,6 +522,8 @@ def cmd_ingest(client: Client, ns) -> int:
         result = client.push_usage(ns.fleet, file=ns.file)
     elif ns.what == "readings":
         result = client.push_readings(file=ns.file)
+    elif ns.what == "snapshot":
+        result = client.push_snapshot(file=ns.file)
     elif ns.what == "measurements":
         if not ns.fleet:
             raise ReliafyError("ingest measurements needs --fleet FLEET_ID.")
@@ -636,8 +639,8 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--title", help="add: the title (one file; default: the file name).")
     sp.add_argument("--kind", choices=["manual", "datasheet", "invoice", "drawing", "certificate", "other"])
     sp.add_argument("-o", "--output", help="get: where to save it (default: its own file name).")
-    sp = add("ingest", cmd_ingest, "Push usage, readings, measurements or life data from a CSV file.")
-    sp.add_argument("what", choices=["usage", "readings", "measurements", "lives"])
+    sp = add("ingest", cmd_ingest, "Push usage, readings, measurements or life data from a CSV file, or a signal snapshot from a JSON file.")
+    sp.add_argument("what", choices=["usage", "readings", "snapshot", "measurements", "lives"])
     sp.add_argument("file")
     sp.add_argument("--fleet")
     sp.add_argument("--dataset")

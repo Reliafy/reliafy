@@ -2,6 +2,9 @@
 
 ## Unreleased (0.5.0)
 
+- **Signal channels** (Reliafy Maintenance): `push_snapshot` and `reliafy ingest snapshot FILE.json` send a
+  vibration burst, a device spectrum or a scalar value to a channel; the new `maintenance signals.*` and
+  `signal_data.*` actions are listed by `reliafy tools`.
 - **Six tools instead of sixteen.** The server's core tools are now `get`,
   `list`, `analyse` (every calculation: fits, evaluations, test plans,
   repairable systems, strategy, fleet forecasts and RBD analyses, saving

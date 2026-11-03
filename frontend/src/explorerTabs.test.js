@@ -6,9 +6,9 @@ const pos = { type: "pos" };
 const item = { type: "item" };
 const loc = { type: "loc" };
 
-test("a position has Summary and RCM; items and locations only Summary", () => {
-  assert.deepEqual(tabsFor(pos).map((t) => t.id), ["summary", "rcm"]);
-  assert.deepEqual(tabsFor(item).map((t) => t.id), ["summary"]);
+test("a position has Summary, Signals and RCM; an item Summary and Signals; locations only Summary", () => {
+  assert.deepEqual(tabsFor(pos).map((t) => t.id), ["summary", "signals", "rcm"]);
+  assert.deepEqual(tabsFor(item).map((t) => t.id), ["summary", "signals"]);
   assert.deepEqual(tabsFor(loc).map((t) => t.id), ["summary"]);
   assert.deepEqual(tabsFor(null), []);
   assert.equal(DEFAULT_TAB, "summary");
@@ -18,12 +18,15 @@ test("a position has Summary and RCM; items and locations only Summary", () => {
 test("the tab picked stays while walking the tree, Summary where a row hasn't it", () => {
   assert.equal(shownTab("rcm", pos), "rcm");
   assert.equal(shownTab("rcm", item), "summary");
+  assert.equal(shownTab("signals", item), "signals");
+  assert.equal(shownTab("signals", loc), "summary");
   assert.equal(shownTab("rcm", loc), "summary");
   assert.equal(shownTab("nope", pos), "summary");
 });
 
 test("the address names the tab", () => {
   assert.equal(tabParam("rcm"), "rcm");
+  assert.equal(tabParam("signals"), "signals");
   assert.equal(tabParam("work"), "summary");
   assert.equal(tabParam(null), "summary");
 });

@@ -702,6 +702,27 @@ anywhere refuses the batch before the live log is touched; then the same
 operations run on the live store in order. The log records each operation's
 events as it always would; a batch isn't one event.
 
+## Signal channels and derived points
+
+A `SignalChannel` node sits on a position or an item (an `ON` edge) and holds a
+sensor's settings (unit, axes, sample rate, running speed, tag). Its events are
+`signal_channel.added`, `.updated`, `.retired` and `.restored`. The snapshots a
+channel receives are *not* in the event log or the graph: they live in the
+snapshot store (`maintenance_snapshots` in Mongo; a table beside the graph
+locally), keyed by channel and time, because a burst of raw samples is far too big
+for an event. Re-sending a snapshot (same channel, same millisecond) is a no-op.
+
+A watch band or an overall level is a **derived point** (`derived_point.added`): a
+`MeasurementPoint` (condition, read from the time-series store like a feed's) with a
+`derived` property `{from, rule}` and a `DERIVED_FROM` edge to its source. Every new
+snapshot adds one value to each live derived point of its channel (`derived.py`),
+and a new one is backfilled from the snapshots already stored. A new kind of derived
+point (a formula over other points, say) is a new rule registered with
+`derived.register`. Its values are appended to the series store, which can't take a
+value back, so a rule is fixed when the point is made: to change a band, retire it
+and add another. Everything is kept; `signals.apply_retention` is the place a
+thinning policy would go.
+
 ## Work packages: tasks done on one visit
 
 A work package bundles tasks done together on one visit (the weekly check of

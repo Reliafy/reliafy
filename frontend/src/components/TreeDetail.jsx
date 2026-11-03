@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
+import SignalsPanel from "./SignalsPanel.jsx";
 import ClampText from "./ClampText.jsx";
 import { DueChip, fmtDate, fmtDated } from "./MaintenanceParts.jsx";
 import { PinIcon } from "./OutlineBits.jsx";
@@ -369,6 +370,7 @@ const TreeDetail = forwardRef(function TreeDetail({
 }, headingRef) {
   if (!row) return <div className="td">{back}{empty}</div>;
   const tabs = tabsFor(row);
+  const shown = shownTab(tab, row);
   return (
     <div className="td">
       {back}
@@ -381,8 +383,10 @@ const TreeDetail = forwardRef(function TreeDetail({
         </div>
       )}
       <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
-           aria-labelledby={tabs.length > 1 ? "td-tab-summary" : undefined}>
-        <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />
+           aria-labelledby={tabs.length > 1 ? `td-tab-${shown}` : undefined}>
+        {shown === "signals"
+          ? <SignalsPanel row={row} />
+          : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />}
       </div>
     </div>
   );

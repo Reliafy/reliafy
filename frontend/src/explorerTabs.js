@@ -1,6 +1,6 @@
 // The tabs of the Explorer's detail panel (Operate › Assets › Explorer): what
 // the panel beside the tree can show for the row picked. Summary for every kind
-// of row; RCM for a position (its functions, how they fail, the failure modes
+// of row; Signals for a position or an item (sensor snapshots and their spectra); RCM for a position (its functions, how they fail, the failure modes
 // and their decisions, read from the asset tree itself). A tab a kind doesn't
 // have isn't shown (never greyed out).
 //
@@ -11,6 +11,7 @@
 
 export const TABS = [
   { id: "summary", label: "Summary", title: "What it is, where it is, its work and what's inside it", kinds: ["pos", "loc", "item", "group"] },
+  { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"] },
   { id: "rcm", label: "RCM", title: "What this position does, how it can fail, and the decision for each failure mode", kinds: ["pos"] },
 ];
 const BY_ID = new Map(TABS.map((t) => [t.id, t]));
