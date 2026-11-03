@@ -58,7 +58,28 @@ scope (Settings → API access):
 From the command line: `reliafy ingest snapshot burst.json`. The format is
 written out in full in `docs/signal-snapshots.md` in the app's repository.
 
+### Or add one from a file
+
+No device yet? On the Signals tab press **Add a snapshot from a file** and choose a
+file from your logger:
+
+- **JSON** in the format above (one snapshot, or a list of up to 20);
+- **CSV or text** with one column of numbers per axis (a first row of names, and a
+  `time` column in seconds, are read if present);
+- a **WAV** recording (each channel becomes an axis, and the sample rate comes from the
+  file).
+
+![Adding a snapshot from a CSV file: a preview of the waveform, then the time taken, sample rate and axis names](/guides/img/signals-02-add.png)
+
+You see the number of samples and a preview of the waveform, then fill in what the
+file doesn't say: **when it was taken** (in your browser's time zone; Reliafy never
+guesses), the **sample rate**, and the **axis names**. If the file has too many numbers
+for one snapshot (500,000 in all), the page says how many it has and offers to use
+only the first part. Nothing is sent until you press **Add the snapshot**.
+
 ## 3. Read the spectrum
+
+![The Signals tab: the spectrum of the latest snapshot against a baseline, and a watched band's level over time](/guides/img/signals-01-spectrum.png)
 
 The **Spectrum** chart shows the amplitude at each frequency, in the sensor's
 unit, as the peak of a sine wave of that frequency. A steady 0.5 g shake at 50 Hz
@@ -69,6 +90,15 @@ shows as a 0.5 g peak at 50 Hz.
 - **Hover a snapshot's name** above the chart and the others fade, so you can
   tell which line is which.
 - Switch axis if the channel has several.
+- **Hz or Orders.** If the channel has a running speed, switch the horizontal axis to
+  **Orders** (multiples of running speed: 1 is one turn of the shaft). Each snapshot
+  uses the speed it was taken at, so a peak that follows the speed stays in place.
+- **Linear or Log.** Log makes small peaks next to large ones visible.
+- **Zoom** with the chart's drag-to-zoom. The first view is thinned to keep the page
+  quick (the highest point of each stretch is always kept); once you zoom in, Reliafy
+  fetches every spectrum line in view.
+- **Running only.** If snapshots say whether the machine was running, tick
+  **Running only** to leave out the stopped ones. Snapshots that don't say are kept.
 
 ## 4. Watch a band
 
@@ -82,6 +112,21 @@ that range from every snapshot, old and new, and draws it in **Level over time**
   alarm limits there and a snapshot past the limit opens an inspection.
 - **Stop watching** ends a band. What it recorded stays.
 
+### Change a band, and set levels
+
+Press **Edit** beside a band to change its name, its range, or its levels.
+
+![Editing a band: its range and its warning and alarm levels](/guides/img/signals-03-edit-band.png)
+
+- **Warn** levels draw a dotted line on the band's chart. **Alarm** levels draw a dashed
+  line and also open an inspection when the level passes them, as for any measurement
+  point. Both are labelled on the chart. Leave a level empty for none.
+- A **new range** doesn't rewrite the past. The band keeps what it recorded with the old
+  range, carries on with the new range from the next snapshot, and the chart marks
+  where it changed. If you want the new range worked out over all the earlier
+  snapshots, add it as a new band instead (which is worked out from everything stored).
+- Changing only the name or the levels takes effect at once and keeps one line.
+
 ## 5. Play the history
 
 Under **Level over time**, **Play** steps through the snapshots. The whole
@@ -90,9 +135,20 @@ proportion, as it was until the next one. A long gap shows as a long pause. The
 date shows beside the slider and a marker moves along the level chart.
 
 Nothing is drawn between two snapshots; the chart holds one spectrum until the
-next is due. Play runs once and stops on the latest snapshot. Tick **Loop** to
+next is due. If you prefer, tick **Smooth transition (display only)**: one real
+spectrum fades into the next just before the change. It is a display effect and
+invents no data. Play runs once and stops on the latest snapshot. Tick **Loop** to
 repeat it: the latest snapshot rests a moment, and a note shows when it goes
 back to the start.
+
+## Running speed from another sensor
+
+A machine whose speed varies can have a **speed channel**: a second channel in rpm that
+sends single values. Open **Running speed** on the Signals tab and choose it under
+*Or take the speed from*. Each new snapshot then uses that channel's reading nearest
+in time (within an hour), and falls back to the fixed rpm if there is none. Send the
+speed reading before the burst or together with it: a speed that arrives later is not
+applied to a snapshot already stored.
 
 ## A pressure sensor
 
@@ -107,8 +163,9 @@ not a snapshot.
 ## What to keep in mind
 
 - Everything is kept for now, raw readings and spectra. A three-axis burst of
-  8,300 points is about 100 kB of raw readings plus its spectrum; the channel shows
-  how much it holds.
+  8,300 points is about 100 kB of raw readings plus its spectrum. The tab shows how
+  many snapshots the workspace holds and how much room they take. **Warn me at a
+  size** sets a level at which the tab reminds you; it deletes nothing.
 - Reliafy doesn't diagnose a fault. It shows the spectrum, keeps the history, and
   tells you when a band you chose changes.
 - A microphone records sound, which can include speech. Don't point one at people.

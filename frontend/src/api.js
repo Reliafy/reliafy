@@ -2772,9 +2772,11 @@ export function getSignalChannel(id, snapshots = 500) {
   return request(`/api/maintenance/signals/channels/${id}?snapshots=${snapshots}`);
 }
 // Several snapshots' spectra for one axis, thinned to `maxPoints` keeping the peaks.
-export function getSignalSpectra(channelId, ids, { axis, maxPoints = 700 } = {}) {
+export function getSignalSpectra(channelId, ids, { axis, maxPoints = 700, fMin, fMax } = {}) {
   const q = new URLSearchParams({ ids: ids.join(","), max_points: String(maxPoints) });
   if (axis) q.set("axis", axis);
+  if (fMin !== undefined && fMin !== null) q.set("f_min", String(fMin));
+  if (fMax !== undefined && fMax !== null) q.set("f_max", String(fMax));
   return request(`/api/maintenance/signals/channels/${channelId}/spectra?${q}`);
 }
 // What a band would have read at every stored snapshot (nothing is saved).
@@ -2788,6 +2790,24 @@ export function addSignalBand(channelId, body) {
 }
 export function removeSignalBand(pointId) {
   return postJson(`/api/maintenance/signals/bands/${pointId}/remove`, {});
+}
+// Change a band: name and limits in place; a new range starts a new version from now.
+export function updateSignalBand(pointId, body) {
+  return patchJson(`/api/maintenance/signals/bands/${pointId}`, body);
+}
+// Add one snapshot from the app (a device uses the ingest route).
+export function addSignalSnapshot(body) {
+  return postJson("/api/maintenance/signals/snapshots", body);
+}
+export function updateSignalChannel(channelId, body) {
+  return patchJson(`/api/maintenance/signals/channels/${channelId}`, body);
+}
+// What the workspace's snapshots use, and the soft warning level (nothing is deleted).
+export function getSignalStorage() {
+  return request("/api/maintenance/signals/storage");
+}
+export function setSignalStorageCap(capMb) {
+  return putJson("/api/maintenance/signals/storage-cap", { cap_mb: capMb });
 }
 
 // ---- item classes and the manufacturer register (Reliafy Maintenance; optional) ----

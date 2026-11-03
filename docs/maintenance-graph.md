@@ -719,8 +719,16 @@ snapshot adds one value to each live derived point of its channel (`derived.py`)
 and a new one is backfilled from the snapshots already stored. A new kind of derived
 point (a formula over other points, say) is a new rule registered with
 `derived.register`. Its values are appended to the series store, which can't take a
-value back, so a rule is fixed when the point is made: to change a band, retire it
-and add another. Everything is kept; `signals.apply_retention` is the place a
+value back, so a rule is fixed when the point is made. Editing a band's range
+therefore makes a new *version*: `derived_point.added` carries `supersedes` (the old
+point) and `applies_after` (the time of the latest stored snapshot), the new point is
+not backfilled, and the old one is retired with its values untouched. Replay gives the
+same chain; the channel view joins a chain into one band with its change points. Name
+and limits change in place (`point.updated`); warning levels are `signal_band.limits`
+(drawn, no work opened). `signal_settings.set` holds the workspace's optional storage
+warning level. A channel may name a speed channel (`speed_channel_id`); each snapshot
+takes its rpm from that channel's nearest reading within an hour and keeps where it
+came from (`speed_from`). Everything is kept; `signals.apply_retention` is the place a
 thinning policy would go.
 
 ## Work packages: tasks done on one visit

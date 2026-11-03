@@ -51,6 +51,11 @@ def _derived_added(s, org: str, p: dict) -> None:
     _point_added(s, org, {**p, "kind": "condition", "source": "automated", "tag": ""})
     s.patch_node(org, p["id"], {"derived": {"from": p["source_id"], "rule": p["rule"]}})
     s.put_edge(org, "DERIVED_FROM", p["id"], p["source_id"])
+    # A later version of a point (an edited band): the older one points forward, this one back,
+    # and ``applies_after`` says where the older version's values end.
+    if p.get("supersedes"):
+        s.patch_node(org, p["id"], {"supersedes": p["supersedes"], "applies_after": p.get("applies_after")})
+        s.patch_node(org, p["supersedes"], {"superseded_by": p["id"]})
 
 
 PROJECTORS = {"derived_point.added": _derived_added}
@@ -62,10 +67,13 @@ def points_of(m, source_id: str, live_only: bool = True) -> list[dict]:
             if p["label"] == "MeasurementPoint" and not (live_only and p.get("retired"))]
 
 
-def add(m, source: dict, name: str, rule_spec: dict, subject: dict, alarm_above=None, alarm_below=None) -> dict:
+def add(m, source: dict, name: str, rule_spec: dict, subject: dict, alarm_above=None, alarm_below=None,
+        supersedes: str | None = None, applies_after: str | None = None) -> dict:
     """Make a derived point on ``subject`` (the ``position_id`` / ``subject`` payload of
     the source's ON edge) and give it the history the source already has. Returns
-    ``{"point_id", "written", "work_order"}``."""
+    ``{"point_id", "written", "work_order"}``. With ``supersedes`` (the id of the point this
+    one replaces) it is a new *version*: it starts empty and takes only data that arrives
+    from now, so the older version's recorded values are never reinterpreted."""
     from backend.maintenance.service import new_id
 
     Invalid = _invalid()
@@ -80,7 +88,10 @@ def add(m, source: dict, name: str, rule_spec: dict, subject: dict, alarm_above=
     pid = new_id()
     m._emit("derived_point.added", {
         "id": pid, **subject, "source_id": source["id"], "rule": spec, "unit": rule.unit(source, spec),
-        "name": name, "alarm_above": above, "alarm_below": below, "on": m.today()})
+        "name": name, "alarm_above": above, "alarm_below": below, "on": m.today(),
+        **({"supersedes": supersedes, "applies_after": applies_after} if supersedes else {})})
+    if supersedes:
+        return {"point_id": pid, "written": 0, "work_order": None}
     point = m.s.node(m.org, pid)
     written, work_order = backfill(m, point, source)
     return {"point_id": pid, "written": written, "work_order": work_order}
