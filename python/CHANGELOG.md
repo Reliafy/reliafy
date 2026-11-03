@@ -41,6 +41,24 @@
   Over MCP each tool now takes its action and an `args` object; REST bodies
   and CLI flags are as before.
 
+- Work packages (Reliafy Maintenance). Tasks done together on one visit raise
+  one work order per visit: `maintenance packages.propose` (drafts, saves
+  nothing), `create`, `update`, `add_task`, `remove_task`, `pause`, `resume`,
+  `retire` and `restore`; reads `maintenance get.package` and
+  `list.packages`. A package visits on fixed dates (every Saturday, the first
+  Saturday of the month) or counted from the last visit, with a tolerance in
+  days; layers add lines on some visits. `maintenance work_orders.close` takes
+  `not_done` ([{task_id, reason}]) and an action's `position_id` on a
+  package's work order; `work_orders.generate` answers with `packages`,
+  `lines_added` and `packages_skipped` once a workspace has packages.
+  `maintenance work_orders.mark` saves a line's state during the visit
+  (done, not_done with a reason, problem with a finding, or todo); close
+  counts the saved marks. `packages.pause` takes a reason and a return date
+  (`until`; back by itself then) and `full_visit`; `season` on create and
+  update keeps a package to part of the year; `positions.out_of_service` /
+  `items.out_of_service` and `back_in_service` hold the tasks on them. On the
+  command line: `reliafy maintenance packages.create --name …`.
+
 - RCM for agents. `maintenance_get kind failure_mode` reads one failure mode by
   its id: its decision with the evidence check, its tasks, where it sits
   (position, function, functional failure) and `available`, the tasks on its

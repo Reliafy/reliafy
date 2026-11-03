@@ -46,6 +46,17 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/tree"], // the asset tree pane
   ["GET", "/api/maintenance/places"], // Assets: the top-level places
   ["GET", "/api/maintenance/work-orders"],
+  ["GET", "/api/maintenance/packages"], // work packages: tasks done on one visit
+  ["GET", "/api/maintenance/packages/propose"],
+  ["GET", "/api/maintenance/packages/smoke"],
+  ["POST", "/api/maintenance/packages"],
+  ["PATCH", "/api/maintenance/packages/smoke"],
+  ["POST", "/api/maintenance/packages/smoke/tasks"],
+  ["DELETE", "/api/maintenance/packages/smoke/tasks/smoke"],
+  ["POST", "/api/maintenance/packages/smoke/pause"],
+  ["POST", "/api/maintenance/positions/smoke/out-of-service"], // tasks not due while it's out of service
+  ["POST", "/api/maintenance/items/smoke/back-in-service"],
+  ["PUT", "/api/maintenance/work-orders/smoke/lines/smoke"], // a package line's mark, saved during the visit
   ["GET", "/api/rbd-runs"],
   ["POST", "/api/rbds/import"],
   ["GET", "/api/rbds"],
