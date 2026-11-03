@@ -50,7 +50,10 @@
   days; layers add lines on some visits. `maintenance work_orders.close` takes
   `not_done` ([{task_id, reason}]) and an action's `position_id` on a
   package's work order; `work_orders.generate` answers with `packages`,
-  `lines_added` and `packages_skipped` once a workspace has packages. On the
+  `lines_added` and `packages_skipped` once a workspace has packages.
+  `maintenance work_orders.mark` saves a line's state during the visit
+  (done, not_done with a reason, problem with a finding, or todo); close
+  counts the saved marks. On the
   command line: `reliafy maintenance packages.create --name …`.
 
 - RCM for agents. `maintenance_get kind failure_mode` reads one failure mode by

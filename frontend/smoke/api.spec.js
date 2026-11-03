@@ -54,6 +54,7 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/packages/smoke/tasks"],
   ["DELETE", "/api/maintenance/packages/smoke/tasks/smoke"],
   ["POST", "/api/maintenance/packages/smoke/pause"],
+  ["PUT", "/api/maintenance/work-orders/smoke/lines/smoke"], // a package line's mark, saved during the visit
   ["GET", "/api/rbd-runs"],
   ["POST", "/api/rbds/import"],
   ["GET", "/api/rbds"],

@@ -378,3 +378,65 @@ def test_propose_groups_by_cadence_area_and_trade_and_saves_nothing(m):
     assert made["task_count"] == 18
     again = m.propose_packages(position_id=plant["lagoon"])
     assert "weekly" not in {d["cadence"] for d in again["drafts"]} and again["already_in_packages"] == 18
+
+
+def test_lines_marked_during_the_visit_are_saved_and_used_at_close(m, today):
+    plant = _plant(m)
+    pump = plant["pids"]["Circulation pump"]
+    m.fit(pump, new_item={"name": "Pump", "serial": "P1"}, on="2026-01-01")
+    _packages(m, plant)
+    [wo] = _package_wos(m.generate(14))
+    today.set("2026-11-14")
+    lines = {line["task_id"]: line for line in wo["lines"]}
+    skipped, problem = plant["weekly"][0], next(t for t, line in lines.items() if line.get("position_id") == pump)
+    marks = len(_events(m, "work_order.line_marked"))
+    out = m.mark_line(wo["id"], skipped, "not_done", reason="gate locked")
+    assert out["marked"]["state"] == "not_done" and out["previous"] == {"state": "todo"}
+    _same_after_rebuild(m)
+    m.mark_line(wo["id"], skipped, "not_done", reason="gate locked")  # the same mark again: nothing new
+    assert len(_events(m, "work_order.line_marked")) == marks + 1
+    m.mark_line(wo["id"], skipped, "not_done", reason="gate locked, no key")  # overwrites
+    finding = {"kind": "replace", "failure_mode_text": "Seal leak", "new_item": {"name": "Pump", "serial": "P2"}}
+    m.mark_line(wo["id"], problem, "problem", finding=finding)
+    with pytest.raises(Invalid, match="finding"):
+        m.mark_line(wo["id"], problem, "problem")
+    with pytest.raises(Invalid, match="reason"):
+        m.mark_line(wo["id"], skipped, "not_done")
+    other = plant["weekly"][6]
+    m.mark_line(wo["id"], other, "done")
+    m.mark_line(wo["id"], other, "todo")  # cleared
+    detail = m.work_order(wo["id"])
+    states = {line["task_id"]: line for line in detail["lines"]}
+    assert states[skipped]["state"] == "not_done" and states[skipped]["reason"] == "gate locked, no key"
+    assert states[problem]["state"] == "problem" and states[problem]["done"]
+    assert states[other]["state"] == "todo" and not states[other]["done"]
+    _same_after_rebuild(m)
+
+    # Another device (or the same one after a refresh) closes it: the saved marks count.
+    phone = Maintenance(m.s, m.org, "field")
+    for line in phone.work_order(wo["id"])["lines"]:
+        if line["state"] == "todo" and line["task_id"] != skipped:
+            phone.check_item(wo["id"], line["index"])
+    closed = phone.close_work_order(wo["id"])
+    assert [r["task_id"] for r in closed["released"]] == [skipped]
+    assert closed["released"][0]["reason"] == "gate locked, no key"
+    assert [a["kind"] for a in closed["actions"]] == ["replace"]
+    rows = phone.life_data(pump)
+    assert [r["c"] for r in rows] == [0, 1] and rows[0]["failure_mode"] == "Seal leak"
+    assert phone.s.node(m.org, problem)["last_done"] == "2026-11-14"
+    assert phone.s.node(m.org, skipped)["last_done"] is None
+    _same_after_rebuild(m)
+
+
+def test_a_saved_mark_still_needs_the_other_lines_answered(m, today):
+    plant = _plant(m)
+    _packages(m, plant)
+    [wo] = _package_wos(m.generate(14))
+    m.mark_line(wo["id"], plant["weekly"][0], "not_done", reason="rain")
+    with pytest.raises(Invalid, match="Say whether each line"):
+        m.close_work_order(wo["id"])
+    m.mark_line(wo["id"], plant["weekly"][0], "todo")
+    assert m.work_order(wo["id"])["lines"][0]["state"] == "todo"
+    with pytest.raises(Invalid, match="work package"):
+        plain = m.open_work_order(plant["lagoon"], "Leak")
+        m.mark_line(plain["id"], plant["weekly"][0], "done")

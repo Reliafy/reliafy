@@ -1825,6 +1825,23 @@ def _work_order_task_released(s: GraphStore, org: str, p: dict) -> None:
         s.patch_node(org, p["task_id"], {"owed_from": p["visit_on"]})
 
 
+def _work_order_line_marked(s: GraphStore, org: str, p: dict) -> None:
+    """A package work order's line marked during the visit, saved at once: done, not_done
+    (with a reason), problem (done, with a finding to record at close) or todo (cleared).
+    The mark replaces any earlier one; the line's tick follows it."""
+    wo = s.node(org, p["id"])
+    checklist = [dict(c) for c in wo.get("checklist") or []]
+    for c in checklist:
+        if c.get("task_id") == p["task_id"] and not c.get("step"):
+            c["done"] = p["state"] in ("done", "problem")
+            c.pop("mark", None)
+            if p["state"] in ("not_done", "problem"):
+                c["mark"] = {"state": p["state"], "on": p.get("on"),
+                             **({"reason": p["reason"]} if p.get("reason") else {}),
+                             **({"finding": p["finding"]} if p.get("finding") else {})}
+    s.patch_node(org, p["id"], {"checklist": checklist})
+
+
 def _photo_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Photo", {
         "caption": p.get("caption", ""), "taken_on": p.get("taken_on"), "uploaded_on": p["on"],
@@ -2337,6 +2354,7 @@ PROJECTORS = {
     "work_order.package_opened": _work_order_package_opened,
     "work_order.package_lines_added": _work_order_package_lines_added,
     "work_order.task_released": _work_order_task_released,
+    "work_order.line_marked": _work_order_line_marked,
 }
 
 
@@ -6357,6 +6375,12 @@ class Maintenance:
         position_id = self._work_position(subject)
         actions, readings = _dicts(actions, "actions"), _dicts(readings, "readings")
         released = self._not_done(wo, not_done)
+        # Problems marked during the visit are recorded now, after the actions given, each at
+        # its line's position, through the same action recording.
+        actions += [{**c["mark"]["finding"], **({"position_id": c["position_id"]} if c.get("position_id") else {})}
+                    for c in wo.get("checklist") or []
+                    if c.get("task_id") and not c.get("step") and self._line_state(c) == "problem"
+                    and (c.get("mark") or {}).get("finding")]
         line_positions = {line["position_id"] for line in wo.get("lines") or [] if line.get("position_id")}
         # Check everything before writing anything.
         plans, issues, per_jobs = [], {}, {}
@@ -6468,6 +6492,74 @@ class Maintenance:
                                          "task_readings": task_readings})
         return self.work_order(work_order_id)
 
+    LINE_STATES = ("todo", "done", "not_done", "problem")
+
+    @staticmethod
+    def _line_state(line: dict) -> str:
+        """A package work order's task line as marked: the tick decides done or not, the
+        saved mark says which kind (a mark the tick no longer matches is ignored)."""
+        mark = (line.get("mark") or {}).get("state")
+        if line.get("done"):
+            return "problem" if mark == "problem" else "done"
+        return "not_done" if mark == "not_done" else "todo"
+
+    def _finding_arg(self, finding, line: dict) -> dict:
+        """A problem found on a line, checked as close will check it: an action
+        ({kind, failure_mode_id or failure_mode_text, finding, new_item / item_id,
+        part_id, quantity, from_location_id, notes}) at the line's position."""
+        if not isinstance(finding, dict) or not finding:
+            raise Invalid("A line marked problem needs its finding: {kind: replace|repair|inspect|other, "
+                          "failure_mode_id or failure_mode_text?, finding?: ok|degraded|found_failed, new_item?, "
+                          "notes?} (wear: inspect with finding degraded).")
+        finding = {k: v for k, v in finding.items() if k != "position_id"}
+        kind = finding.get("kind")
+        if kind not in ACTION_KINDS:
+            raise Invalid(f"A finding's kind is one of {', '.join(ACTION_KINDS)}.")
+        if kind == "inspect" and finding.get("finding") not in FINDINGS:
+            raise Invalid("An inspection's finding is ok, degraded or found_failed.")
+        at = line.get("position_id")
+        if at is None and (kind == "replace" or finding.get("failure_mode_id") or finding.get("failure_mode_text")):
+            raise Invalid("This line is on a location, not a position: a replacement or a failure mode is recorded "
+                          "at a position. Record it as repair, inspect or other, or open a work order on the position.")
+        if at:
+            self._mode_ref(at, finding.get("failure_mode_id") or None, finding.get("failure_mode_text"))
+        if finding.get("part_id"):
+            self._get(finding["part_id"], "Part")
+        if finding.get("notes") is not None:
+            finding["notes"] = _text(finding["notes"], "notes")
+        return finding
+
+    def mark_line(self, work_order_id: str, task_id: str, state: str, reason=None, finding=None) -> dict:
+        """Mark a line of a work package's work order during the visit, saved at once (a
+        lost signal or a refresh keeps it): done, not_done (reason), problem (done, with a
+        finding recorded at that line's position when the work order closes) or todo
+        (cleared). Marking again replaces the mark."""
+        wo = self._open_wo(work_order_id)
+        if not self.s.out(self.org, work_order_id, "RAISED_FROM"):
+            raise Invalid("Lines are marked on a work package's work order. Tick this one's checklist with "
+                          "maintenance work_orders.check.")
+        if state not in self.LINE_STATES:
+            raise Invalid(f"state is one of {', '.join(self.LINE_STATES)}.")
+        line = next((c for c in wo.get("checklist") or [] if c.get("task_id") == task_id and not c.get("step")), None)
+        if line is None or task_id not in {t["id"] for t in self.s.out(self.org, work_order_id, "FOR")}:
+            raise Invalid(f"Task {task_id} isn't a line on this work order (maintenance get.work_order lists them).")
+        payload = {"id": work_order_id, "task_id": task_id, "state": state, "on": self.today()}
+        if state == "not_done":
+            payload["reason"] = _text(reason, "reason", required=True)
+        elif reason not in (None, ""):
+            raise Invalid("A reason goes with not_done (why it wasn't done); a problem's detail goes in its "
+                          "finding's notes.")
+        if state == "problem":
+            payload["finding"] = self._finding_arg(finding, line)
+        elif finding not in (None, {}, ""):
+            raise Invalid("A finding goes with state problem.")
+        before = {"state": self._line_state(line), **{k: v for k, v in (line.get("mark") or {}).items()
+                                                     if k in ("reason", "finding")}}
+        now = {"state": state, **{k: payload[k] for k in ("reason", "finding") if k in payload}}
+        if before != now:
+            self._emit("work_order.line_marked", payload)
+        return {**self.work_order(work_order_id), "marked": {"task_id": task_id, **now}, "previous": before}
+
     def _not_done(self, wo: dict, not_done) -> dict[str, str]:
         """At close, a package work order's lines not done: {task_id: reason}, checked.
         Every task line not ticked must be answered: ticked if done, or listed here."""
@@ -6481,6 +6573,9 @@ class Maintenance:
         on = {t["id"]: t for t in self.s.out(self.org, wo["id"], "FOR")}
         lines = [c for c in wo.get("checklist") or [] if c.get("task_id") and not c.get("step")]
         ticked = {c["task_id"] for c in lines if c.get("done")}
+        # Lines already marked not done during the visit (their saved reason), unless given again here.
+        saved = {c["task_id"]: c["mark"]["reason"] for c in lines
+                 if c["task_id"] in on and self._line_state(c) == "not_done" and (c["mark"].get("reason"))}
         out: dict[str, str] = {}
         for x in items:
             task_id, reason = (x, None) if isinstance(x, str) else (
@@ -6495,6 +6590,8 @@ class Maintenance:
                 raise Invalid(f"{on[task_id]['name']} is ticked as done: untick it (maintenance work_orders.check, "
                               "done false) or leave it out of not_done.")
             out[task_id] = _text(reason, "reason", required=True)
+        for task_id, reason in saved.items():
+            out.setdefault(task_id, reason)
         unanswered = sorted({on[c["task_id"]]["name"] for c in lines
                              if c["task_id"] in on and c["task_id"] not in ticked and c["task_id"] not in out})
         if unanswered:
@@ -10568,7 +10665,12 @@ class Maintenance:
             index = next((i for i, c in enumerate(checklist) if c.get("task_id") == tid and not c.get("step")), None)
             where = self.s.node(self.org, record.get("position_id") or record.get("location_id") or "")
             pkg = self.s.node(self.org, record.get("package_id") or "")
-            lines.append({**record, "index": index, "done": bool(index is not None and checklist[index].get("done")),
+            entry = checklist[index] if index is not None else {}
+            mark = entry.get("mark") or {}
+            state = self._line_state(entry) if index is not None else "todo"
+            lines.append({**record, "index": index, "done": bool(entry.get("done")), "state": state,
+                          **({"reason": mark.get("reason")} if state == "not_done" else {}),
+                          **({"finding": mark.get("finding")} if state == "problem" else {}),
                           "steps": [i for i, c in enumerate(checklist) if c.get("task_id") == tid and c.get("step")],
                           "subject": self._subject_brief(where),
                           "package": pkg and {"id": pkg["id"], "name": pkg["name"]}})

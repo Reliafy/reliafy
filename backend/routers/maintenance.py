@@ -1681,6 +1681,14 @@ def close_work_order(work_order_id: str, body: dict = Body(...),
                 body.get("readings") or [], body.get("not_done") or [])
 
 
+@router.put("/work-orders/{work_order_id}/lines/{task_id}")
+def mark_line(work_order_id: str, task_id: str, body: dict = Body(...),
+              m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A work package's line marked during the visit, saved at once: state todo, done, not_done
+    (reason) or problem (finding: an action recorded at the line's position when it closes)."""
+    return _run(m.mark_line, work_order_id, task_id, body.get("state"), body.get("reason"), body.get("finding"))
+
+
 # ---- work packages: tasks done on one visit, one work order per visit ---------------------
 
 @router.get("/packages")

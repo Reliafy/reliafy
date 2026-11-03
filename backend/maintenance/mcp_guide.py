@@ -257,6 +257,12 @@ task line ticked is done; each line not ticked must be listed in not_done [{task
 stays due and goes on the next work order). A line ticked that found a problem: an action with position_id \
 (one of line_positions on maintenance get.work_order) records the replacement or failure at that position, so \
 the life data stays right. The result's packages, lines_added and packages_skipped say what happened.
+- During a visit, save each line as it's done: work_orders.mark (work_order_id, task_id, state done, not_done \
+with a reason, problem with a finding, or todo to clear it) is kept at once, so a lost signal or a refresh loses \
+nothing; marking again replaces it. A problem's finding is a close action without position_id (replace with \
+failure_mode_id or failure_mode_text and new_item; repair; inspect with finding degraded for wear): it's recorded \
+at the line's position when the work order closes, and its task renews. At close, lines marked not_done needn't \
+be listed again; every other line not ticked still must be.
 - Along the way: status (planned, in_progress, waiting), update (assignee, planned_for, due, trade), \
 append_note for a finding, check to tick a checklist line.
 - What it took: labour (hours, who, rate), part_used (pick part_id from maintenance get.work_order's \

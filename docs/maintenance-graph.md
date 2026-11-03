@@ -772,6 +772,15 @@ When things are due, worked out on read (nothing about visits is projected):
   line's `position_id`, so a replacement or a failure found there is recorded
   at that position with the usual `action.recorded`, `item.removed` and
   `item.fitted` events.
+- Lines can be marked during the visit, saved at once so a lost signal or a
+  refresh loses nothing (`work_order.line_marked`): done, not_done with a
+  reason, problem with a finding (an action, at the line's position), or todo
+  to clear it. The tick follows the mark; a line's state is read from both
+  (a mark the tick no longer matches is ignored). At close, a line marked
+  not_done needs no repeating, and a problem's finding is recorded then,
+  after any actions given, through the same action events: so all of a
+  close's checks still run before anything is written, and a replacement is
+  dated the day the work order closes.
 
 Events (all new; no existing event changed meaning or shape, and
 `PROJECTION_VERSION` stays):
@@ -786,6 +795,7 @@ Events (all new; no existing event changed meaning or shape, and
 | `work_order.package_opened` | id, number, title, type, package_id, position_id or subject, due, visit_on, visit_number, notes, on, trade?, lines | the work order, `ON`, `RAISED_FROM`, a `FOR` per line |
 | `work_order.package_lines_added` | id, lines, through, on | lines appended, more `FOR`, `covers_to` |
 | `work_order.task_released` | id, task_id, reason, on, visit_on | `FOR` removed, `released`, the task's `owed_from` |
+| `work_order.line_marked` | id, task_id, state (todo, done, not_done, problem), reason?, finding?, on | the task line's `done` and `mark` {state, reason?, finding?, on} (replaced each time; todo and done clear it) |
 
 Projectors write only through `put_node`, `patch_node`, `put_edge` and
 `delete_edge`, so both stores stay in step; no store method was added.

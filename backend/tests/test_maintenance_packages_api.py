@@ -37,15 +37,21 @@ def test_over_mcp_propose_create_generate_and_close(env):
         for line in wo["lines"][:1]:
             _ok(await _do(client, "maintenance", "work_orders.check", work_order_id=wo_id, index=line["index"]))
         refused = await _do(client, "maintenance", "work_orders.close", work_order_id=wo_id)
+        marked = _ok(await client.call_tool("maintenance", {"action": "apply", "operations": [
+            {"do": "work_orders.mark", "args": {"work_order_id": wo_id, "task_id": wo["lines"][1]["task_id"],
+                                                "state": "not_done", "reason": "rain"}},
+            {"do": "work_orders.mark", "args": {"work_order_id": wo_id, "task_id": wo["lines"][0]["task_id"],
+                                                "state": "problem", "finding": {"kind": "inspect",
+                                                                                "finding": "degraded"}}}]}))
         closed = _ok(await _do(client, "maintenance", "work_orders.close", work_order_id=wo_id,
-                               not_done=[{"task_id": line["task_id"], "reason": "rain"} for line in wo["lines"][1:]],
+                               not_done=[{"task_id": line["task_id"], "reason": "rain"} for line in wo["lines"][2:]],
                                actions=[{"kind": "inspect", "finding": "ok", "position_id": pump["id"]}]))
         package = _ok(await _get(client, "package", package_id))
         listed = _ok(await client.call_tool("maintenance", {"action": "list.packages"}))
         guide = _ok(await client.call_tool("maintenance", {"action": "guide", "topic": "plan"}))
-        return draft, dry, listed_dry, real, made, wo, refused, closed, package, listed, guide, tasks
+        return draft, dry, listed_dry, real, made, wo, refused, closed, package, listed, guide, marked
 
-    draft, dry, listed_dry, real, made, wo, refused, closed, package, listed, guide, tasks = _session(env["token"], flow)
+    draft, dry, listed_dry, real, made, wo, refused, closed, package, listed, guide, marked = _session(env["token"], flow)
     assert draft["cadence"] == "weekly" and len(draft["tasks"]) == 3
     assert dry["dry_run"] and listed_dry["packages"] == []
     undo = [u["do"] for u in real["undo"]]
@@ -54,7 +60,9 @@ def test_over_mcp_propose_create_generate_and_close(env):
     assert len(wo["lines"]) == 3 and wo["package"]["name"] == draft["name"]
     assert refused.is_error and "Say whether each line" in refused.content[0].text
     assert closed["status"] == "closed" and len(closed["released"]) == 2
-    assert closed["actions"][0]["kind"] == "inspect"
+    assert [a["finding"] for a in closed["actions"]] == ["ok", "degraded"]
+    assert [u["do"] for u in marked["undo"]] == ["work_orders.mark", "work_orders.mark"]
+    assert marked["undo"][0]["args"]["state"] == "done"  # line 0 was ticked before
     assert package["tasks"][-1]["visit_rule"] == "nth" and package["status"] == "active"
     assert listed["packages"][0]["id"] == package["id"] and listed["late"] == 0
     assert "Work packages" in guide["guide"]
@@ -82,6 +90,13 @@ def test_app_routes(api):
     assert [p["name"] for p in listed["packages"]] == ["Reservoir walk"]
     assert api.get(f"{M}/packages/{pid}").json()["tasks"][0]["task_id"] == task["id"]
     assert api.post(f"{M}/packages", json={"name": "Nowhere"}).status_code == 422
+    wo = api.post(f"{M}/work-orders/generate", json={"horizon_days": 30}).json()["work_orders"][0]
+    marked = api.put(f"{M}/work-orders/{wo['id']}/lines/{task['id']}", json={"state": "not_done", "reason": "rain"})
+    assert marked.status_code == 200, marked.text
+    assert marked.json()["lines"][0]["state"] == "not_done"
+    assert api.put(f"{M}/work-orders/{wo['id']}/lines/{task['id']}", json={"state": "nope"}).status_code == 422
+    closed = api.post(f"{M}/work-orders/{wo['id']}/close", json={})
+    assert closed.status_code == 200 and closed.json()["released"][0]["reason"] == "rain"
     assert api.post(f"{M}/packages/{pid}/retire").json()["retired"] == pid
     assert api.get(f"{M}/packages", params={"status": "retired"}).json()["packages"][0]["status"] == "retired"
     assert api.post(f"{M}/packages/{pid}/restore").json()["status"] == "active"

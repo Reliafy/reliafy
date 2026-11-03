@@ -152,6 +152,10 @@ MOVES = {
         visit_rule=(r.get("removed") or {}).get("visit_rule"), every_nth=(r.get("removed") or {}).get("every_nth"),
         suppresses=(r.get("removed") or {}).get("suppresses"))},
     "packages.pause": lambda a, r: {"do": "packages.resume", "args": {"package_id": a.get("package_id")}},
+    # A line's mark back to what it was.
+    "work_orders.mark": lambda a, r: {"do": "work_orders.mark", "args": _without_none(
+        work_order_id=a.get("work_order_id"), task_id=a.get("task_id"), **(r.get("previous") or {}))}
+    if r.get("previous") else None,
     "packages.resume": lambda a, r: {"do": "packages.pause", "args": {"package_id": a.get("package_id")}},
 }
 

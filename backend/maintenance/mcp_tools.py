@@ -400,6 +400,8 @@ WORK_ORDERS: Table = {
     "cost": ("work_order_id description amount", "", "Any other cost (a contractor, hire, call-out)."),
     "remove_entry": ("entry_id", "", "Remove a labour, part or cost entry made by mistake (ids on the work order)."),
     "check": ("work_order_id index", "done", "Tick (done true, default) or untick a checklist line, numbered from 0."),
+    "mark": ("work_order_id task_id state", "reason finding", """A work package's line, saved at once: done,
+        not_done (reason), problem (finding, recorded at close) or todo."""),
 }
 
 PACKAGES: Table = {
@@ -1411,7 +1413,13 @@ def register() -> None:
             quantity: float | None = None, unit_cost: float | None = None, part_number: str | None = None,
             part_id: str | None = None, from_location_id: str | None = None, description: str | None = None,
             amount: float | None = None, entry_id: str | None = None,
-            index: int | None = None, done: bool | None = None) -> dict[str, Any]:
+            index: int | None = None, done: bool | None = None,
+            state: Annotated[Literal["todo", "done", "not_done", "problem"] | None, Field(description=(
+                "mark: the line's state."))] = None,
+            finding: Annotated[dict[str, Any] | None, Field(description=(
+                "mark, state problem: what was found, as a close action at the line's position: {kind: "
+                "replace|repair|inspect|other, failure_mode_id? or failure_mode_text?, finding?: ok|degraded|"
+                "found_failed, new_item? or item_id?, part_id?, notes?}."))] = None) -> dict[str, Any]:
         """Work orders: the work itself, on a position, an item or a location, from open to closed with
         its labour, parts and costs. Closing one with a replace is what builds the life data. The whole
         flow is in maintenance guide topic run. Example, a pump that failed and was replaced:
@@ -1442,6 +1450,8 @@ def register() -> None:
             return run(m.add_cost, work_order_id, description, amount)
         if action == "remove_entry":
             return run(m.remove_entry, entry_id)
+        if action == "mark":
+            return run(m.mark_line, work_order_id, task_id, state, reason, finding)
         return run(m.check_item, work_order_id, index, _d(done, True))
 
     PackageTasks = Annotated[list[dict[str, Any] | str] | None, Field(description=(
