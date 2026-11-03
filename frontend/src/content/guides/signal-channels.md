@@ -94,6 +94,44 @@ next is due. Play runs once and stops on the latest snapshot. Tick **Loop** to
 repeat it: the latest snapshot rests a moment, and a note shows when it goes
 back to the start.
 
+## Time to the limit
+
+Under the watch bands, **Time to the limit** answers "when will this band reach its
+alarm limit?" for this one machine. It uses only the band's own readings: no
+failure history is needed.
+
+In words: the level drifts up (or down) at some average rate and wobbles around
+that drift, so the time to reach the limit is a spread of dates, not one date. You
+get the most likely date, a range (by default the 10% to 90% dates), and a table of
+the chance of reaching the limit within a week, a month, three months and so on.
+
+- **Two ranges.** The rate is worked out from your readings, so it is itself
+  uncertain. The headline range allows for that, and with few readings its late end
+  may be open ("cannot be bounded"): Reliafy says so instead of inventing a date.
+  The spread of the process alone (rate known exactly) is shown below it.
+- **Model.** *Random walk with drift* is the usual choice and copes with a noisy
+  band. *Rises only* suits wear that never goes down and refuses a band that falls
+  anywhere.
+- **Limit.** It uses the band's alarm limit (high limit for a rising band, low
+  limit for a falling one). Type a limit in the box to ask about another level.
+- **Readings from.** If the part was renewed or the load changed, pick the date to
+  start from, so old readings don't pull the trend.
+- **Too little data.** With fewer than 6 readings, a band that is flat or heading
+  away from the limit, or readings that fall exactly on a straight line, you get a
+  plain message and no dates. With fewer than 12 readings the answer carries a
+  "rough guide" note.
+
+This is the time to the limit you chose, not to failure. It assumes the rate stays
+as it has been, so a change in load, speed or maintenance makes it wrong.
+
+Two buttons send the trend on. **Use in a degradation model** puts a copy of the
+readings in Data (one row per reading: unit, age in days, value) and opens
+[Degradation models](/models/degradation) on it, where you pick the threshold.
+**Watch in Risk** adds a copy as an item of a tracked fleet in
+[Condition monitoring](/risk). Both are copies as of today: they don't update when
+new snapshots arrive, and the band's own series stays where it is. Age is counted
+from the first reading used, not from when the part was fitted.
+
 ## A pressure sensor
 
 A slow pressure (a reading a minute, say) has no spectrum. Add a channel in kPa, send

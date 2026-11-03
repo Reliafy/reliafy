@@ -2933,3 +2933,20 @@ export function predictJointUnit(id, body) {
 export function downloadJointPython(id) {
   return downloadFile(`/api/joint/models/${encodeURIComponent(id)}/export.py`, "condition-based-risk.py");
 }
+
+// ---- time to the limit (a watched band's trend, fitted with a degradation process) ----
+
+export function getTimeToLimit(pointId, { process = "wiener", limit, since, confidence } = {}) {
+  const q = new URLSearchParams({ process });
+  if (limit !== undefined && limit !== null && limit !== "") q.set("limit", String(limit));
+  if (since) q.set("since", since);
+  if (confidence) q.set("confidence", String(confidence));
+  return request(`/api/maintenance/signals/bands/${pointId}/time-to-limit?${q}`);
+}
+// The band's readings as rows of unit, age_days, value (and the same as CSV): a copy, never a link.
+export function getBandDegradationSeries(pointId, { since, unitName } = {}) {
+  const q = new URLSearchParams();
+  if (since) q.set("since", since);
+  if (unitName) q.set("unit_name", unitName);
+  return request(`/api/maintenance/signals/bands/${pointId}/degradation-series?${q}`);
+}

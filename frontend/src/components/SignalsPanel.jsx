@@ -10,6 +10,7 @@ import { ACCENT, COLORWAY, DANGER, REFERENCE } from "../plotTheme.js";
 import {
   DEFAULT_LOOP_MS, SPEEDS, bandLabel, defaultPicks, elapsedFor, fmt, fmtBytes, fmtWhen, frameAt, toOrders,
 } from "../signals.js";
+import TimeToLimit from "./TimeToLimit.jsx";
 import "./SignalsPanel.css";
 
 // The Signals tab of the Explorer's panel (Operate › Assets › Explorer): the
@@ -476,6 +477,7 @@ function ChannelView({ summary, onChanged }) {
           <p className="sg-hint">Each band is also a measurement point (see Summary › Measurements), so its alarm limits, trend and projected alarm date work as for any other.</p>
         </section>
       )}
+      {bands.length > 0 && <TimeToLimit bands={bands} channelName={ch.name} selectedId={bandSel === "preview" ? null : bandSel} />}
       {more && <p className="sg-hint">Showing the latest {ch.snapshots.shown} of {ch.snapshots.count.toLocaleString("en-GB")} snapshots.</p>}
     </>
   );

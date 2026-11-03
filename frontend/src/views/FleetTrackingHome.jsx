@@ -11,6 +11,7 @@ import { unitInText } from "../components/unitText.js";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
 import { useRoles } from "../RolesProvider.jsx";
+import WatchedBandsNote from "../components/WatchedBandsNote.jsx";
 
 
 const fmt = (v) =>
@@ -116,6 +117,7 @@ export default function FleetTrackingHome() {
       />
 
       {error && <div className="card error">{error}</div>}
+      <WatchedBandsNote />
 
       <SectionList
         rows={fleets}
