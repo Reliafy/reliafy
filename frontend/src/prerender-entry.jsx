@@ -136,6 +136,7 @@ export function routes() {
     title: `${u.title} — What's new in Reliafy`,
     description: u.summary || "",
     lastmod: u.date || null,
+    image: u.image || null,
   }));
   const guidePages = guides.map((g) => ({
     path: `/guides/${g.slug}`,

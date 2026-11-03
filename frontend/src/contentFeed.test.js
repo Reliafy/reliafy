@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter, slugFromPath } from "./frontmatter.js";
@@ -71,7 +71,7 @@ const POSTS = [
   { slug: "old-post", title: "Old", summary: "Already announced.", date: "2026-09-22", linkedin: "" },
 ];
 const UPDATES = [
-  { slug: "november-2026", title: "What's new: November", summary: "Lots.", date: "2026-11-02", linkedin: "" },
+  { slug: "november-2026", title: "What's new: November", summary: "Lots.", date: "2026-11-02", image: "/blog/nov-card.png", linkedin: "" },
   { slug: "october-2026", title: "What's new: October", summary: "Old.", date: "2026-10-01", linkedin: "" },
 ];
 
@@ -113,6 +113,8 @@ test("linkedinFeed merges short posts and announcements with unique guids", () =
   assert.equal(fallback.image, "https://reliafy.com/blog/card.png");
   const update = byGuid["https://reliafy.com/whats-new/november-2026#linkedin"];
   assert.equal(update.link, "https://reliafy.com/whats-new/november-2026");
+  // An update's card goes out as the enclosure, like a blog post's.
+  assert.equal(update.image, "https://reliafy.com/blog/nov-card.png");
 
   // A short post linking to a post that isn't out yet is held until it is.
   const early = byGuid["https://reliafy.com/social/2026-10-14-import-tip"];
@@ -152,6 +154,11 @@ test("every committed short post, blog post and update is feed-ready", () => {
     });
   const posts = load("blog");
   const updates = load("updates");
+  // A card named in a post's `image:` must exist under public/, or the
+  // LinkedIn enclosure and og:image point at nothing.
+  for (const p of [...posts, ...updates]) {
+    if (p.image) assert.ok(existsSync(join(CONTENT, "..", "..", "public", p.image)), `${p.slug}: no image at public${p.image}`);
+  }
   const feed = linkedinFeed({ posts, updates, social });
   for (const item of feed.items) assert.ok(item.summary.trim(), `${item.guid} has no text`);
   // One LinkedIn post a weekday (calendar cadence.posts_per_weekday): never
