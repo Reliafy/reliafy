@@ -577,7 +577,8 @@ def test_equipment_out_of_service_holds_its_tasks(m, today):
     assert m._task_view(m.s.node(m.org, own))["next_due"] == "2026-11-25"
     today.set("2026-11-20")
     assert not m._task_view(m.s.node(m.org, own))["overdue"]
-    assert m.tree()[0]["inside"]["overdue"] == 0
+    # The open 14 Nov work order's 15 lines are late; the pump's tasks (and its own) aren't counted.
+    assert m.tree()[0]["inside"]["overdue"] == 15
     m.return_to_service(pump)
     assert m.position(pump)["out_of_service"] is None
     assert m._task_view(m.s.node(m.org, own))["overdue"]  # due again: it was due 16 Nov
