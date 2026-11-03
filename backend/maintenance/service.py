@@ -56,7 +56,7 @@ from backend.maintenance.store import GraphStore, new_id
 from backend.services import time_zones
 from backend.maintenance import rcm_decisions
 from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
-from backend.maintenance.schedule import Cadence
+from backend.maintenance.schedule import Cadence, Season
 
 logger = logging.getLogger(__name__)
 
@@ -1735,7 +1735,7 @@ def _package_created(s: GraphStore, org: str, p: dict) -> None:
         "pattern": p.get("pattern"), "anchor": p["anchor"], "tolerance": p.get("tolerance"),
         "trade": p.get("trade", ""), "notes": p.get("notes", ""), "created": p["on"],
         "members": [dict(t) for t in p.get("tasks") or []], "paused": False, "retired": False,
-    })
+    } | ({"season": p["season"]} if p.get("season") else {}))
     if p.get("parent_id"):
         s.put_edge(org, "LAYERED_ON", p["id"], p["parent_id"])
     elif p.get("position_id"):
@@ -1760,8 +1760,46 @@ def _package_task_removed(s: GraphStore, org: str, p: dict) -> None:
     s.delete_edge(org, "BUNDLES", p["id"], p["task_id"])
 
 
+def _package_paused(s: GraphStore, org: str, p: dict) -> None:
+    """A package paused: why, by whom and until when (no until: open-ended). It comes back
+    by itself on that date, worked out on read; each pause is kept in pauses."""
+    pkg = s.node(org, p["id"])
+    entry = {"on": p.get("on"), "until": p.get("until"), "reason": p.get("reason", ""),
+             "full_visit": p.get("full_visit", True), "by": p.get("by")}
+    s.patch_node(org, p["id"], {"paused": True, "paused_on": p.get("on"), "paused_reason": p.get("reason", ""),
+                                "paused_until": p.get("until"), "paused_by": p.get("by"),
+                                "pauses": list(pkg.get("pauses") or []) + [entry]})
+
+
 def _package_resumed(s: GraphStore, org: str, p: dict) -> None:
-    s.patch_node(org, p["id"], {"paused": False, "paused_on": None, "paused_reason": "", "resumed_on": p.get("on")})
+    """Resumed by hand (or a pause past its date acknowledged): the last pause ends then,
+    and full_visit, when given, changes what its first visit back carries."""
+    pkg = s.node(org, p["id"])
+    pauses = [dict(x) for x in pkg.get("pauses") or []]
+    if pauses and not pauses[-1].get("ended"):
+        pauses[-1]["ended"] = p.get("on")
+        if "full_visit" in p:
+            pauses[-1]["full_visit"] = p["full_visit"]
+    s.patch_node(org, p["id"], {"paused": False, "paused_on": None, "paused_reason": "", "paused_until": None,
+                                "paused_by": None, "resumed_on": p.get("on"), "pauses": pauses})
+
+
+def _out_of_service(s: GraphStore, org: str, p: dict) -> None:
+    """A position or an item out of service from a date, until one (or open-ended), and why:
+    its tasks aren't due or raised meanwhile. The history is kept in service_history."""
+    node = s.node(org, p["id"])
+    entry = {"from": p["from"], "until": p.get("until"), "reason": p.get("reason", ""), "on": p.get("on"),
+             "by": p.get("by")}
+    s.patch_node(org, p["id"], {"out_of_service": entry,
+                                "service_history": list(node.get("service_history") or []) + [entry]})
+
+
+def _back_in_service(s: GraphStore, org: str, p: dict) -> None:
+    node = s.node(org, p["id"])
+    history = [dict(x) for x in node.get("service_history") or []]
+    if history and not history[-1].get("ended"):
+        history[-1]["ended"] = p.get("on")
+    s.patch_node(org, p["id"], {"out_of_service": None, "service_history": history})
 
 
 def _package_lines(lines: list[dict]) -> list[dict]:
@@ -2347,7 +2385,7 @@ PROJECTORS = {
     "package.updated": _patch,
     "package.task_added": _package_task_added,
     "package.task_removed": _package_task_removed,
-    "package.paused": _flag("paused"),
+    "package.paused": _package_paused,
     "package.resumed": _package_resumed,
     "package.retired": _flag("retired"),
     "package.restored": _unflag("retired"),
@@ -2355,6 +2393,9 @@ PROJECTORS = {
     "work_order.package_lines_added": _work_order_package_lines_added,
     "work_order.task_released": _work_order_task_released,
     "work_order.line_marked": _work_order_line_marked,
+    # A position or an item out of service until a date (Nov 2026).
+    "service.stopped": _out_of_service,
+    "service.resumed": _back_in_service,
 }
 
 
@@ -4976,6 +5017,13 @@ class Maintenance:
         entry = self._package_index().get(task["id"]) if not task.get("retired") else None
         if entry:
             out |= self._package_due(task, entry)
+        # On something out of service: not due (nor late) until it's back.
+        held = subject and not task.get("retired") and self._out_of_service_on(subject["id"], self.today())
+        if held:
+            out["out_of_service"] = {k: held.get(k) for k in ("id", "name", "from", "until", "reason")}
+            out["overdue"] = False
+            if out["next_due"] and (not held.get("until") or out["next_due"] < held["until"]):
+                out["next_due"] = held.get("until")
         return out
 
     # ---- parts and stock ----------------------------------------------------------
@@ -6315,7 +6363,8 @@ class Maintenance:
             until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
             raised = self._generate_packages(until)
             made += raised["work_orders"]
-            members = {tid for tid, entry in self._package_index().items() if entry["active"]}
+            # Every task in an active package goes on its work orders; a paused one's are held.
+            members = {tid for tid, entry in self._package_index().items() if entry["active"] or entry["held"]}
         for task in self.due_tasks(horizon_days):
             if task["id"] in members or task["open_work_order"] or not task.get("subject"):
                 continue
@@ -7049,7 +7098,7 @@ class Maintenance:
         out, queue, seen = [], [root], set()
         while queue:
             pkg = queue.pop(0)
-            if pkg["id"] in seen or (active_only and pkg.get("paused")):
+            if pkg["id"] in seen or (active_only and self._pause_now(pkg)):
                 continue
             seen.add(pkg["id"])
             out.append(pkg)
@@ -7062,12 +7111,72 @@ class Maintenance:
         found = self.s.out(self.org, root["id"], "PLANNED_FOR") or self.s.out(self.org, root["id"], "PLANNED_AT")
         return found[0] if found else None
 
-    @staticmethod
-    def _package_status(chain: list[dict]) -> str:
-        """active, paused (it or a package it's layered on) or retired."""
+    def _package_status(self, chain: list[dict]) -> str:
+        """active, paused (it or a package it's layered on, now) or retired."""
         if chain[0].get("retired"):
             return "retired"
-        return "paused" if any(x.get("paused") or x.get("retired") for x in chain) else "active"
+        return "paused" if any(self._pause_now(x) or x.get("retired") for x in chain) else "active"
+
+    def _pause_now(self, pkg: dict, day: str | None = None) -> dict | None:
+        """The package's pause on ``day`` (today): None once its return date has come,
+        when it's back by itself."""
+        if not pkg.get("paused"):
+            return None
+        day = day or self.today()
+        if pkg.get("paused_until") and day >= pkg["paused_until"]:
+            return None
+        return {"on": pkg.get("paused_on"), "until": pkg.get("paused_until"), "reason": pkg.get("paused_reason", ""),
+                "by": pkg.get("paused_by")}
+
+    @staticmethod
+    def _pause_spans(pkg: dict) -> list[tuple[str, str | None, bool]]:
+        """Each pause: (first day, the day it ended (its return date or the resume,
+        whichever came first; None while open-ended), whether its first visit back is full)."""
+        out = []
+        for x in pkg.get("pauses") or []:
+            ends = [e for e in (x.get("until"), x.get("ended")) if e]
+            out.append((x["on"], min(ends) if ends else None, x.get("full_visit", True)))
+        return out
+
+    @staticmethod
+    def _season(pkg: dict) -> Season | None:
+        season = pkg.get("season")
+        if not season:
+            return None
+        return Season(months=season.get("months"), start=season.get("start"), end=season.get("end"))
+
+    def _in_season(self, pkg: dict, day: str) -> bool:
+        season = self._season(pkg)
+        return season is None or season.includes(day)
+
+    def _season_arg(self, value) -> dict | None:
+        """A season from a request: {months: [4, ..., 10]} or {start: 'MM-DD', end: 'MM-DD'};
+        {} or null: all year."""
+        if value in (None, "", {}):
+            return None
+        if not isinstance(value, dict):
+            raise Invalid("season is {months: [month numbers]} or {start: 'MM-DD', end: 'MM-DD'}.")
+        try:
+            season = Season(months=value.get("months"), start=value.get("start"), end=value.get("end"))
+        except (TypeError, ValueError) as err:
+            raise Invalid(str(err)) from None
+        return {"months": list(season.months)} if season.months else {"start": season.start, "end": season.end}
+
+    def _out_of_service_on(self, node_id: str | None, day: str) -> dict | None:
+        """The out-of-service entry that holds a position or an item (or the position or
+        item it's inside) on ``day``: from its first day to the day before its return."""
+        seen: set = set()
+        while node_id and node_id not in seen:
+            seen.add(node_id)
+            node = self.s.node(self.org, node_id)
+            if node is None:
+                return None
+            entry = node.get("out_of_service")
+            if entry and entry["from"] <= day and not (entry.get("until") and day >= entry["until"]):
+                return {**entry, "id": node["id"], "name": node.get("name", "")}
+            parent = self._parent(node_id) if node["label"] in ("Position", "Item") else None
+            node_id = parent and parent["id"]
+        return None
 
     @staticmethod
     def _cadence(pkg: dict) -> Cadence:
@@ -7093,9 +7202,10 @@ class Maintenance:
             if pkg.get("retired"):
                 continue
             chain = self._package_chain(pkg)
-            active = self._package_status(chain) == "active"
+            status = self._package_status(chain)
             for member in pkg.get("members") or []:
-                out[member["task_id"]] = {"package": pkg, "root": chain[-1], "member": member, "active": active}
+                out[member["task_id"]] = {"package": pkg, "root": chain[-1], "member": member,
+                                          "active": status == "active", "held": status == "paused"}
         self._memo["package_index"] = out
         return out
 
@@ -7108,10 +7218,24 @@ class Maintenance:
     def _next_root_visit(self, root: dict, after: str) -> str | None:
         """The top package's visit after ``after``: the next fixed date, or (counted from
         the last visit) ``after`` plus the interval."""
-        if root["timing"] == "fixed":
-            found = self._cadence(root).after(after)
-            return found and found.isoformat()
-        return add_interval(after, root["every"], root["unit"])
+        day: str | None = after
+        for _ in range(1000):
+            if root["timing"] == "fixed":
+                found = self._cadence(root).after(day)
+                day = found and found.isoformat()
+            else:
+                day = add_interval(day, root["every"], root["unit"])
+            if day is None or self._in_season(root, day):
+                return day
+        return None
+
+    def _into_season(self, pkg: dict, day: str | None) -> str | None:
+        """``day``, or the first day on or after it in the package's season."""
+        for _ in range(367):
+            if day is None or self._in_season(pkg, day):
+                return day
+            day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+        return None
 
     def _visit_number(self, root: dict, visit_on: str, raised: int) -> int:
         """A visit's number, the first being 1: by the calendar (fixed dates), or the
@@ -7133,14 +7257,14 @@ class Maintenance:
                 on_visit, n = True, number
             else:
                 cad = self._cadence(pkg)
-                on_visit = cad.includes(visit_on)
+                on_visit = cad.includes(visit_on) and self._in_season(pkg, visit_on)
                 n = cad.number(visit_on) if on_visit else 0
             for member in pkg.get("members") or []:
                 task = self.s.node(self.org, member["task_id"], "Task")
                 if task is None or task.get("retired") or task["id"] in skip:
                     continue
                 subject = _subject(self.s, self.org, task)
-                if not subject or subject.get("retired"):
+                if not subject or subject.get("retired") or self._out_of_service_on(subject["id"], visit_on):
                     continue
                 by_rule = on_visit and (member.get("visit_rule", "every") != "nth"
                                         or (n - 1) % int(member.get("every_nth") or 1) == 0)
@@ -7181,7 +7305,8 @@ class Maintenance:
         for it isn't made up."""
         start = max(root["anchor"], root.get("created") or root["anchor"])
         if root["timing"] == "from_last_visit":
-            return start if last is None else add_interval(last["closed"], root["every"], root["unit"])
+            return self._into_season(root, start if last is None else
+                                     add_interval(last["closed"], root["every"], root["unit"]))
         cad = self._cadence(root)
         if last is not None:
             found = cad.after(max(last["closed"], last.get("visit_on") or last["closed"]))
@@ -7190,22 +7315,43 @@ class Maintenance:
         floor = (date.fromisoformat(today) - timedelta(days=tol)).isoformat()
         if found is not None and found.isoformat() < floor:
             found = cad.on_or_after(floor)
-        return found and found.isoformat()
+        day = found and found.isoformat()
+        if day and not self._in_season(root, day):
+            day = self._next_root_visit(root, day)
+        return day
 
     def _lateness(self, root: dict, visit_on: str, tol: int, today: str) -> dict:
         """How late an open work order is: late once today is past its visit's date plus
-        the tolerance; visits_missed counts the visits (its own included) whose on-time
-        days have passed while it's been open."""
+        the tolerance, counting only days its package was neither paused nor out of season
+        (the clock stops then, and carries on from the day it's back). While paused, or out
+        of season today, it isn't late at all. visits_missed counts the visits (its own
+        included), not in a pause, whose on-time days have passed while it's been open."""
+        spans = self._pause_spans(root)
+        season = self._season(root)
+
+        def stopped(day: str) -> bool:
+            return any(a <= day and (b is None or day < b) for a, b, _ in spans) or (
+                season is not None and not season.includes(day))
+
         on_time_until = (date.fromisoformat(visit_on) + timedelta(days=tol)).isoformat()
-        late = today > on_time_until
-        missed, day = 0, visit_on
-        while late and day and missed < 1000:
-            if (date.fromisoformat(day) + timedelta(days=tol)).isoformat() >= today:
+        paused = bool(self._pause_now(root, today))
+        out_of_season = season is not None and not season.includes(today)
+        days, day = 0, date.fromisoformat(on_time_until) + timedelta(days=1)
+        end = date.fromisoformat(today)
+        if (end - day).days > 3660:
+            day = end - timedelta(days=3660)
+        while day <= end:
+            days += not stopped(day.isoformat())
+            day += timedelta(days=1)
+        late = days > 0 and not paused and not out_of_season
+        missed, visit = 0, visit_on
+        while late and visit and missed < 1000:
+            if (date.fromisoformat(visit) + timedelta(days=tol)).isoformat() >= today:
                 break
-            missed += 1
-            day = self._next_root_visit(root, day)
-        return {"late": late, "on_time_until": on_time_until, "visits_missed": missed,
-                "days_late": (date.fromisoformat(today) - date.fromisoformat(on_time_until)).days if late else 0}
+            missed += not stopped(visit)
+            visit = self._next_root_visit(root, visit)
+        return {"late": late, "on_time_until": on_time_until, "visits_missed": missed if late else 0,
+                "days_late": days if late else 0, "paused": paused, "out_of_season": out_of_season}
 
     def _package_upcoming(self, root: dict) -> list[tuple[str, set]]:
         """The top package's coming visits (after its open work order's, else from the
@@ -7257,10 +7403,22 @@ class Maintenance:
         pkg, root = entry["package"], entry["root"]
         brief = {"id": pkg["id"], "name": pkg["name"], "active": entry["active"]}
         if not entry["active"]:
-            return {"package": brief}
+            # Paused: held, not raised on its own, and not overdue. Due again on the first
+            # visit on or after the return date (none while open-ended).
+            pauses = [x for x in (self._pause_now(p) for p in self._package_chain(pkg)) if x]
+            if not pauses:
+                return {"package": brief}
+            until = None if any(not x["until"] for x in pauses) else max(x["until"] for x in pauses)
+            nxt = None
+            if until:
+                before = (date.fromisoformat(until) - timedelta(days=1)).isoformat()
+                nxt = self._next_root_visit(root, before)
+            return {"package": {**brief, "paused_until": until}, "next_due": nxt, "overdue": False,
+                    "due_by": "package", "held": True}
         state = self._package_state(root)
         if task["id"] in state["on_open"]:
             nxt = state["open"]["visit_on"]
+            return {"package": brief, "next_due": nxt, "overdue": bool(state.get("late")), "due_by": "package"}
         else:
             upcoming = self._package_upcoming(root)
             nxt = next((d for d, ids in upcoming if task["id"] in ids), None)
@@ -7403,7 +7561,7 @@ class Maintenance:
 
     def create_package(self, name, position_id=None, location_id=None, parent_id=None, timing="fixed", every=1,
                        unit="weeks", weekday=None, nth=None, day=None, anchor=None, tolerance=None,
-                       tolerance_unit=None, trade="", notes="", tasks=None) -> dict:
+                       tolerance_unit=None, trade="", notes="", tasks=None, season=None) -> dict:
         """A work package: tasks done together on one visit, raising one work order per
         visit. On exactly one of a position (its tasks on it or on positions inside it)
         or a location (tasks at it); a layer (parent_id) is on its parent's. Timing fixed
@@ -7452,14 +7610,16 @@ class Maintenance:
         self._quota("WorkPackage", self.MAX_PACKAGES, what="work packages")
         pid = new_id()
         tol = self._tolerance_arg(tolerance, tolerance_unit)
+        months = self._season_arg(season)
         self._emit("package.created", {
             "id": pid, "name": name, **ref, **fields, "trade": _text(trade, "trade"), "notes": _text(notes, "notes"),
-            "tasks": members, "on": self.today()} | ({"tolerance": tol} if tol else {}))
+            "tasks": members, "on": self.today()} | ({"tolerance": tol} if tol else {})
+            | ({"season": months} if months else {}))
         return self.package(pid)
 
     def update_package(self, package_id: str, name=None, timing=None, every=None, unit=None, weekday=None, nth=None,
                        day=None, clear_pattern=False, anchor=None, tolerance=None, tolerance_unit=None, trade=None,
-                       notes=None, tasks=None) -> dict:
+                       notes=None, tasks=None, season=...) -> dict:
         """Change a package: its name, timing and cadence (a weekday, nth or day replaces
         the pattern; clear_pattern removes it), anchor, tolerance (0 removes it), trade,
         notes, or members' visit rules (tasks: [{task_id, visit_rule, every_nth,
@@ -7499,6 +7659,8 @@ class Maintenance:
                 raise Invalid("A layer's tasks go on its top package's work orders: set the tolerance there.")
             tol = self._tolerance_arg(tolerance, tolerance_unit)
             changes["tolerance"] = tol if tol and tol["amount"] else None
+        if season is not ...:
+            changes["season"] = self._season_arg(season)
         if tasks not in (None, ""):
             members = {m["task_id"]: dict(m) for m in pkg.get("members") or []}
             for value in _list(tasks, "tasks", self.MAX_PACKAGE_TASKS):
@@ -7542,21 +7704,96 @@ class Maintenance:
         self._emit("package.task_removed", {"id": pkg["id"], "task_id": task_id, "on": self.today()})
         return {**self.package(pkg["id"]), "removed": member}
 
-    def pause_package(self, package_id: str, reason="") -> dict:
-        """Stop a package (and its layers) raising work: its tasks go back to being raised
-        one by one, by their own intervals, until it's resumed."""
+    def pause_package(self, package_id: str, reason="", until=None, full_visit=True) -> dict:
+        """Pause a package (and its layers): it raises nothing and its tasks are held (not
+        raised on their own, not overdue) until ``until``, when it comes back by itself; no
+        until is open-ended (allowed, and flagged). An open work order from it is frozen:
+        it stays open and isn't late while paused. full_visit (default true): its first
+        visit back carries every task that fell due while it was paused; false: it carries
+        on from its next visit. Missed visits aren't made up either way."""
         pkg = self._live_package(package_id)
-        if pkg.get("paused"):
-            raise Invalid(f"{pkg['name']} is paused already.")
-        self._emit("package.paused", {"id": pkg["id"], "on": self.today(), "reason": _text(reason, "reason")})
+        if self._pause_now(pkg):
+            raise Invalid(f"{pkg['name']} is paused already" + (f" until {pkg['paused_until']}" if
+                                                                pkg.get("paused_until") else "") +
+                          ": resume it first, or change nothing.")
+        reason = _text(reason, "reason", required=True)
+        payload = {"id": pkg["id"], "on": self.today(), "reason": reason,
+                   "full_visit": _flag_value(True if full_visit is None else full_visit, "full_visit")}
+        if until not in (None, ""):
+            payload["until"] = _day(until, "return date")
+            if payload["until"] <= self.today():
+                raise Invalid("The return date (until) is after today.")
+        if self.actor:
+            payload["by"] = self.actor
+        self._emit("package.paused", payload)
         return self.package(pkg["id"])
 
-    def resume_package(self, package_id: str) -> dict:
+    def resume_package(self, package_id: str, full_visit=None) -> dict:
+        """Resume a paused package now (before its return date, or an open-ended pause), or
+        acknowledge one that came back by itself. full_visit, when given, changes what its
+        first visit back carries."""
         pkg = self._live_package(package_id)
         if not pkg.get("paused"):
             raise Invalid(f"{pkg['name']} isn't paused.")
-        self._emit("package.resumed", {"id": pkg["id"], "on": self.today()})
-        return self.package(pkg["id"])
+        payload = {"id": pkg["id"], "on": self.today()}
+        if full_visit is not None:
+            payload["full_visit"] = _flag_value(full_visit, "full_visit")
+        if self.actor:
+            payload["by"] = self.actor
+        previous = {"reason": pkg.get("paused_reason", ""), "until": pkg.get("paused_until")}
+        self._emit("package.resumed", payload)
+        return {**self.package(pkg["id"]), "previous": previous}
+
+    def take_out_of_service(self, target_id: str, reason="", until=None, start=None) -> dict:
+        """A position or an item out of service (a pump being rebuilt, a pool drained): from
+        ``start`` (today) until ``until`` (or open-ended), with why. Tasks on it, or on a
+        position inside it, aren't due, raised or late meanwhile, and a work package leaves
+        their lines off its visits; they come back on the return date."""
+        node = self.s.node(self.org, str(target_id or ""))
+        if node is None or node["label"] not in ("Position", "Item"):
+            raise Invalid("Out of service is for a position or an item: give its id.")
+        self._not_retired_now(node)
+        start = _day(start, "start date", self.today())
+        payload = {"id": node["id"], "from": start, "reason": _text(reason, "reason", required=True),
+                   "on": self.today()}
+        if until not in (None, ""):
+            payload["until"] = _day(until, "return date")
+            if payload["until"] <= start:
+                raise Invalid("The return date (until) is after the day it goes out of service.")
+        if self.actor:
+            payload["by"] = self.actor
+        previous = node.get("out_of_service")
+        self._emit("service.stopped", payload)
+        return {"id": node["id"], "name": node["name"], "out_of_service": self._service_view(node["id"]),
+                "previous": previous}
+
+    def return_to_service(self, target_id: str) -> dict:
+        """Back in service now (its tasks are due again from today)."""
+        node = self.s.node(self.org, str(target_id or ""))
+        if node is None or node["label"] not in ("Position", "Item"):
+            raise Invalid("Out of service is for a position or an item: give its id.")
+        if not node.get("out_of_service"):
+            raise Invalid(f"{node['name']} isn't marked out of service.")
+        previous = node["out_of_service"]
+        self._emit("service.resumed", {"id": node["id"], "on": self.today()} | ({"by": self.actor} if self.actor else {}))
+        return {"id": node["id"], "name": node["name"], "out_of_service": None, "previous": previous}
+
+    def _service_view(self, node_id: str) -> dict | None:
+        """A position's or item's out-of-service mark, if any: whether it holds today, until
+        when, and a flag when it's open-ended or past its date."""
+        node = self.s.node(self.org, node_id) or {}
+        entry = node.get("out_of_service")
+        if not entry:
+            return None
+        today = self.today()
+        now = entry["from"] <= today and not (entry.get("until") and today >= entry["until"])
+        flag = "no_return_date" if not entry.get("until") else (
+            "past_return_date" if today >= entry["until"] else None)
+        return {**entry, "now": now, "flag": flag}
+
+    def _not_retired_now(self, node: dict) -> None:
+        if node.get("retired"):
+            raise Invalid(f"{node.get('name', 'It')} has been retired.")
 
     def retire_package(self, package_id: str, reason="") -> dict:
         """Retire a package, with its layers: its tasks are raised on their own again and
@@ -7637,10 +7874,13 @@ class Maintenance:
             index = {m["task_id"]: m for p in tree for m in p.get("members") or []}
             covered = [index[t] for t in on_wo if t in index]
             lines, through = [], None
+            spans = self._pause_spans(root)
             day = self._next_root_visit(root, wo.get("covers_to") or wo["visit_on"])
             while day and day <= today:
-                found = self._visit_tasks(root, tree, day, self._visit_number(root, day, 0), skip=on_wo | own_open,
-                                          covered_by=covered)
+                # A visit while it was paused counts only when its first visit back is a full one.
+                held = any(a <= day and (b is None or day < b) and not full for a, b, full in spans)
+                found = [] if held else self._visit_tasks(root, tree, day, self._visit_number(root, day, 0),
+                                                          skip=on_wo | own_open, covered_by=covered)
                 for task, pkg, member in found:
                     lines.append(self._package_line(task, pkg))
                     on_wo.add(task["id"])
@@ -7657,6 +7897,8 @@ class Maintenance:
         while day and day <= until:
             number = self._visit_number(root, day, state["raised"])
             found = self._visit_tasks(root, tree, day, number, skip=own_open)
+            have = {t["id"] for t, _, _ in found}
+            found += [x for x in self._catch_up(root, tree, day, own_open) if x[0]["id"] not in have]
             if found:
                 wid = new_id()
                 ref = {"position_id": subject["id"]} if subject["label"] == "Position" else \
@@ -7671,12 +7913,39 @@ class Maintenance:
                 return
             day = self._next_root_visit(root, day)
 
+    def _catch_up(self, root: dict, tree: list[dict], day: str, skip) -> list[tuple[dict, dict, dict]]:
+        """A full visit first after a pause: the tasks due on any visit while it was paused
+        (a layer's and an every-Nth task's turn included), for the first work order raised
+        since it ended. Fixed dates only; none when that pause's first visit back isn't full,
+        or a work order since has covered it."""
+        if root["timing"] != "fixed":
+            return []
+        wos = [w for w in self.s.inn(self.org, root["id"], "RAISED_FROM")
+               if w["label"] == "WorkOrder" and w.get("status") != "cancelled"]
+        cad = self._cadence(root)
+        out, seen = [], set()
+        for start, end, full in self._pause_spans(root):
+            if not full or end is None or end > day:
+                continue
+            if any((w.get("covers_to") or w.get("visit_on") or "") >= start for w in wos):
+                continue
+            visit = cad.on_or_after(start)
+            while visit is not None and visit.isoformat() < end:
+                v = visit.isoformat()
+                if self._in_season(root, v):
+                    for x in self._visit_tasks(root, tree, v, cad.number(v), skip=skip):
+                        if x[0]["id"] not in seen:
+                            seen.add(x[0]["id"])
+                            out.append(x)
+                visit = cad.after(v)
+        return out
+
     def packages_due(self, horizon_days: int) -> int:
         """How many active top packages would get a work order within the horizon (their
         next visit inside it, none open): for a dry run's count."""
         until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
         return sum(1 for p in self.s.nodes(self.org, "WorkPackage")
-                   if not p.get("retired") and not p.get("paused") and not self._package_parent(p["id"])
+                   if not p.get("retired") and not self._pause_now(p) and not self._package_parent(p["id"])
                    and (self._package_state(p)["next_visit"] or "9999") <= until)
 
     def _generate_packages(self, until: str) -> dict:
@@ -7685,7 +7954,7 @@ class Maintenance:
         out: dict = {"work_orders": [], "visits": [], "lines_added": [], "skipped": []}
         today = self.today()
         roots = sorted((p for p in self.s.nodes(self.org, "WorkPackage")
-                        if not p.get("retired") and not p.get("paused") and not self._package_parent(p["id"])),
+                        if not p.get("retired") and not self._pause_now(p) and not self._package_parent(p["id"])),
                        key=lambda p: (p["name"].lower(), p["id"]))
         for root in roots:
             try:
@@ -7739,15 +8008,30 @@ class Maintenance:
                "trade": pkg.get("trade", ""), "subject": self._subject_brief(subject),
                "parent": {"id": chain[1]["id"], "name": chain[1]["name"]} if len(chain) > 1 else None,
                "layers": [{"id": x["id"], "name": x["name"]} for x in self._package_layers(pkg["id"])],
-               "task_count": len(live), "next_visit": None, "open_work_order": None}
+               "task_count": len(live), "next_visit": None, "open_work_order": None,
+               "season": pkg.get("season") and {**pkg["season"], "text": self._season_text(pkg["season"])},
+               "in_season": self._in_season(pkg, self.today()), "pause": None, "flags": []}
         if status == "retired":
             return out
+        pause = self._pause_now(pkg)
+        if pause:
+            out["pause"] = {**pause, "text": f"paused until {date_text(pause['until'], 'exact')}"
+                            if pause["until"] else "paused, with no return date"}
+            if not pause["until"]:
+                out["flags"].append("no_return_date")
+        elif pkg.get("paused") and pkg.get("paused_until"):
+            # Back by itself on its return date; flagged until someone resumes it (acknowledges).
+            out["flags"].append("past_return_date")
+            out["pause"] = {"on": pkg.get("paused_on"), "until": pkg["paused_until"], "ended": True,
+                            "reason": pkg.get("paused_reason", ""),
+                            "text": f"back since {date_text(pkg['paused_until'], 'exact')}"}
         state = self._package_state(root)
         if state["open"]:
             w = state["open"]
             out["open_work_order"] = {"id": w["id"], "number": w["number"], "status": w["status"],
                                       "visit_on": w["visit_on"], **{k: state[k] for k in (
-                                          "late", "days_late", "visits_missed", "on_time_until")}}
+                                          "late", "days_late", "visits_missed", "on_time_until", "paused",
+                                          "out_of_season")}}
         if status != "active":
             return out
         if root["id"] == pkg["id"]:
@@ -7760,6 +8044,14 @@ class Maintenance:
                 found = cad.on_or_after(state["next_visit"] or self.today())
             out["next_visit"] = found and found.isoformat()
         return out
+
+    @staticmethod
+    def _season_text(season: dict) -> str:
+        if season.get("months"):
+            return "in " + ", ".join(_MONTHS[mo - 1] for mo in season["months"])
+        def words(md):
+            return f"{int(md[3:])} {_MONTHS[int(md[:2]) - 1]}"
+        return f"from {words(season['start'])} to {words(season['end'])}"
 
     def packages(self, status=None) -> dict:
         """Every work package (status: active, paused, retired or all; default: all but
@@ -9369,6 +9661,7 @@ class Maintenance:
         return {
             **{k: item.get(k, "") for k in self.ITEM_FIELDS}, "id": id, "nameplate": item.get("nameplate") or {},
             "note_history": item.get("note_history") or [], "retired": bool(item.get("retired")),
+            "out_of_service": self._service_view(id),
             "created": item.get("created"), "coordinates": item.get("coordinates"),
             **{k: _dated_view(item.get(k)) for k in ("purchase_date", "in_service_date", "manufacture_date")},
             "replacement_cost": item.get("replacement_cost"),
@@ -10342,13 +10635,30 @@ class Maintenance:
         def on_node(node_id: str) -> dict:
             return status.setdefault(node_id, _blank_status())
 
+        def out_of_service(node_id) -> bool:
+            """Whether a position or item, or one it's inside, is out of service today (from
+            the nodes read in bulk above)."""
+            seen: set = set()
+            while node_id and node_id not in seen:
+                seen.add(node_id)
+                node = every.get(node_id) or items.get(node_id)
+                if node is None:
+                    return False
+                entry = node.get("out_of_service")
+                if entry and entry["from"] <= today and not (entry.get("until") and today >= entry["until"]):
+                    return True
+                node_id = part_of.get(node_id)
+            return False
+
         for t in s.nodes(org, "Task"):
             subject = on.get(t["id"])
             if t.get("retired") or not subject:
                 continue
             tasks[subject] = tasks.get(subject, 0) + 1
             packaged = self._package_index().get(t["id"])
-            if packaged and packaged["active"]:
+            if out_of_service(subject):
+                due, overdue = None, False  # not due while what it's on is out of service
+            elif packaged and (packaged["active"] or packaged["held"]):
                 # Due on its work package's visits, overdue once the visit is late.
                 by_package = self._package_due(t, packaged)
                 due, overdue = by_package["next_due"], by_package["overdue"]
@@ -10546,6 +10856,8 @@ class Maintenance:
             "position_class": p.get("position_class", ""), "description": p.get("description", ""),
             "operating_context": p.get("operating_context", ""),
             "path": path, "retired": bool(p.get("retired")),
+            # Out of service until a date, if marked (its tasks aren't due meanwhile).
+            "out_of_service": self._service_view(id),
             # Where it is: set on it, or inherited (inherited_from says from what); None if unset.
             "location": self._location_view(id),
             "children": [{"id": c["id"], "name": c["name"]} for c in kids if not c.get("retired")],

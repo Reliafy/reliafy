@@ -231,8 +231,20 @@ used again if it leaves the package or the package is paused): visit_rule every 
 (the first visit and every Nth after). suppresses: tasks this one covers (the quarterly service covers the \
 monthly clean): on a visit with both, the covered one is left off, not done, and not overdue for it.
   - add_task / remove_task (a removed task is raised on its own again), update (cadence, tolerance, members' visit \
-rules with tasks: [{task_id, visit_rule, every_nth, suppresses}]), pause / resume (paused: its tasks go back to \
-their own intervals), retire (with its layers; not while its work order is open) / restore. Reads: maintenance \
+rules with tasks: [{task_id, visit_rule, every_nth, suppresses}]), retire (with its layers; not while its work \
+order is open) / restore.
+  - Seasonal work isn't a pause: season {months: [10, 11, 12, 1, 2, 3]} or {start: 'MM-DD', end: 'MM-DD'} (across \
+the new year is fine) on create or update makes it visit only then; outside it raises nothing and nothing is \
+late. A layer can have its own season.
+  - pause (reason; until: the return date) stops it and its layers: nothing is raised, its tasks are held (not \
+raised on their own, not overdue) and an open work order from it is frozen (still open, not late; the late clock \
+carries on from the return). It's back by itself on until; with none it's open-ended and flagged \
+(no_return_date; past_return_date once back by itself, until resume acknowledges it). Missed visits aren't made \
+up; full_visit (default true) makes the first visit back carry every task that fell due while paused, an \
+every-Nth task's turn and a layer's included; false carries on from the next visit. resume ends it early.
+  - Equipment out of service isn't a pause either: maintenance positions.out_of_service or items.out_of_service \
+(reason, until, start) holds the tasks on it and on positions inside it (not due, raised or late; a package leaves \
+their lines off its visits and raises the rest); back_in_service ends it early, and it ends by itself on until. Reads: maintenance \
 get.package (tasks with next due, next visits, open work order) and list.packages (next visit, open work orders, \
 late).
 - A whole RCM in one call (every function, functional failure, mode and decision for a position, or a new \
@@ -257,6 +269,8 @@ task line ticked is done; each line not ticked must be listed in not_done [{task
 stays due and goes on the next work order). A line ticked that found a problem: an action with position_id \
 (one of line_positions on maintenance get.work_order) records the replacement or failure at that position, so \
 the life data stays right. The result's packages, lines_added and packages_skipped say what happened.
+- A paused package's open work order shows paused and isn't late (list.packages counts it out); out of season \
+the same. A task on equipment out of service shows out_of_service and isn't overdue.
 - During a visit, save each line as it's done: work_orders.mark (work_order_id, task_id, state done, not_done \
 with a reason, problem with a finding, or todo to clear it) is kept at once, so a lost signal or a refresh loses \
 nothing; marking again replaces it. A problem's finding is a close action without position_id (replace with \

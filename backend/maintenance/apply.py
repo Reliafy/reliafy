@@ -112,6 +112,16 @@ def _without_none(**kw) -> dict:
     return {k: v for k, v in kw.items() if v is not None}
 
 
+def _service_undo(area: str, arg: str, a: dict, r: dict) -> dict:
+    """The reverse of an out-of-service change: back to the mark it replaced, or none."""
+    previous = r.get("previous")
+    if not previous:
+        return {"do": f"{area}.back_in_service", "args": {arg: a.get(arg)}}
+    return {"do": f"{area}.out_of_service", "args": _without_none(**{arg: a.get(arg)}, reason=previous.get("reason"),
+                                                                    until=previous.get("until"),
+                                                                    start=previous.get("from"))}
+
+
 #: Moves and reorders in the RCM tree, and the operation that puts each back:
 #: the result names where the thing came from (from_position_id,
 #: from_functional_failure_id, from_function_id, from_standard_id,
@@ -156,7 +166,14 @@ MOVES = {
     "work_orders.mark": lambda a, r: {"do": "work_orders.mark", "args": _without_none(
         work_order_id=a.get("work_order_id"), task_id=a.get("task_id"), **(r.get("previous") or {}))}
     if r.get("previous") else None,
-    "packages.resume": lambda a, r: {"do": "packages.pause", "args": {"package_id": a.get("package_id")}},
+    "packages.resume": lambda a, r: {"do": "packages.pause", "args": _without_none(
+        package_id=a.get("package_id"), reason=(r.get("previous") or {}).get("reason") or "resumed by mistake",
+        until=(r.get("previous") or {}).get("until"))},
+    # Out of service and back: each put back by the other, with the mark it replaced.
+    "positions.out_of_service": lambda a, r: _service_undo("positions", "position_id", a, r),
+    "items.out_of_service": lambda a, r: _service_undo("items", "item_id", a, r),
+    "positions.back_in_service": lambda a, r: _service_undo("positions", "position_id", a, r),
+    "items.back_in_service": lambda a, r: _service_undo("items", "item_id", a, r),
 }
 
 #: The arranging actions the app's RCM tab sends as one batch per drop (``POST

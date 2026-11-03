@@ -326,12 +326,13 @@ def test_package_events_project_and_replay(m, today):
     _same_after_rebuild(m)
     paused = m.pause_package(pkg["id"], "fence contractor on site")
     assert paused["status"] == "paused"
-    # Paused: its tasks go back to their own intervals and are raised one by one.
+    assert paused["flags"] == ["no_return_date"]
+    # Paused: its tasks are held, neither raised on their own nor overdue.
     made = m.generate(14)["work_orders"]
-    assert {w["task"]["id"] for w in made if w.get("task")} >= set(plant["weekly"][12:14])
+    assert not {w["task"]["id"] for w in made if w.get("task")} & set(plant["weekly"][12:14])
+    held = m._task_view(m.s.node(m.org, plant["weekly"][12]))
+    assert held["held"] and not held["overdue"] and held["next_due"] is None
     _same_after_rebuild(m)
-    for w in made:
-        m.cancel_work_order(w["id"])
     assert m.resume_package(pkg["id"])["status"] == "active"
     _same_after_rebuild(m)
     m.retire_package(pkg["id"])
@@ -440,3 +441,148 @@ def test_a_saved_mark_still_needs_the_other_lines_answered(m, today):
     with pytest.raises(Invalid, match="work package"):
         plain = m.open_work_order(plant["lagoon"], "Leak")
         m.mark_line(plain["id"], plant["weekly"][0], "done")
+
+
+# ---- pausing, seasons and equipment out of service -------------------------------------------
+
+def test_a_pause_freezes_the_open_work_order_and_ends_by_itself(m, today):
+    plant = _plant(m)
+    weekly, _, _ = _packages(m, plant)
+    [wo] = _package_wos(m.generate(14))  # Sat 14 Nov
+    today.set("2026-11-16")
+    assert m.work_orders("open")[0]["late"] and m.work_orders("open")[0]["days_late"] == 1
+    with pytest.raises(Invalid, match="reason"):
+        m.pause_package(weekly["id"], "", until="2026-11-30")
+    paused = m.pause_package(weekly["id"], "lagoon drained for repairs", until="2026-11-30")
+    assert paused["status"] == "paused" and paused["pause"]["text"] == "paused until 30 Nov 2026"
+    assert paused["flags"] == [] and paused["open_work_order"]["paused"]
+    frozen = m.work_orders("open")[0]
+    assert frozen["paused"] and not frozen["late"] and frozen["days_late"] == 0 and frozen["visits_missed"] == 0
+    assert m.packages()["late"] == 0
+    assert not m._task_view(m.s.node(m.org, plant["weekly"][0]))["overdue"]
+    _same_after_rebuild(m)
+    today.set("2026-11-25")
+    assert m.generate(14)["work_orders"] == [] and m.generate(14)["lines_added"] == []
+    assert m.tree()[0]["inside"]["overdue"] == 0
+
+    # Back by itself on the return date; the late clock carries on from then.
+    today.set("2026-11-30")
+    back = m.package(weekly["id"])
+    assert back["status"] == "active" and back["flags"] == ["past_return_date"]
+    wo_now = m.work_orders("open")[0]
+    assert wo_now["late"] and not wo_now["paused"]
+    assert wo_now["days_late"] == 1 and wo_now["visits_missed"] == 1  # the paused days and visits don't count
+    assert m.resume_package(weekly["id"])["flags"] == []  # acknowledged
+    _same_after_rebuild(m)
+
+
+def test_an_open_ended_pause_is_flagged_and_holds_its_tasks(m, today):
+    plant = _plant(m)
+    weekly, _, _ = _packages(m, plant)
+    paused = m.pause_package(weekly["id"], "contractor on site")
+    assert paused["flags"] == ["no_return_date"] and paused["pause"]["text"] == "paused, with no return date"
+    today.set("2027-03-01")
+    assert m.generate(14)["work_orders"] == []
+    held = m._task_view(m.s.node(m.org, plant["monthly"][0]))
+    assert held["held"] and held["next_due"] is None and not held["overdue"]
+    with pytest.raises(Invalid, match="paused already"):
+        m.pause_package(weekly["id"], "again")
+    _same_after_rebuild(m)
+
+
+def _paused_through_december(m, today, full_visit):
+    plant = _plant(m)
+    weekly, _, _ = _packages(m, plant)
+    nth = m.create_task(plant["pids"]["Gate"], "Oil gate hinges", 1, "months")["id"]
+    m.add_package_task(weekly["id"], nth, visit_rule="nth", every_nth=4)  # visits 1, 5, 9: 7 Nov, 5 Dec, 2 Jan
+    [wo] = _package_wos(m.generate(14))
+    today.set("2026-11-14")
+    _tick_all(m, wo["id"])
+    m.close_work_order(wo["id"])
+    today.set("2026-11-15")
+    m.pause_package(weekly["id"], "algae bloom", until="2026-12-14", full_visit=full_visit)
+    assert m.generate(14)["work_orders"] == []
+    today.set("2026-12-14")
+    [back] = _package_wos(m.generate(14))
+    return plant, nth, back
+
+
+def test_the_first_visit_back_is_a_full_one(m, today):
+    plant, nth, back = _paused_through_december(m, today, full_visit=True)
+    assert back["visit_on"] == "2026-12-19"  # the paused visits aren't made up
+    on = {line["task_id"] for line in back["lines"]}
+    # The 5 Dec first-Saturday lines (monthly, quarterly; the covered cell clean left off) and the
+    # every-4th task whose turn fell in the pause.
+    assert set(plant["monthly"]) - on == {plant["cell"]} and set(plant["quarterly"]) <= on and nth in on
+    assert len(on) == 18 + 9 + 3 + 1
+    _same_after_rebuild(m)
+    today.set("2026-12-19")
+    _tick_all(m, back["id"])
+    m.close_work_order(back["id"])
+    [nxt] = _package_wos(m.generate(14))
+    assert len(nxt["lines"]) == 18  # only the first visit back is full
+
+
+def test_without_a_full_visit_it_carries_on(m, today):
+    plant, nth, back = _paused_through_december(m, today, full_visit=False)
+    assert back["visit_on"] == "2026-12-19" and len(back["lines"]) == 18
+    _same_after_rebuild(m)
+
+
+def test_a_season_raises_only_in_season_and_is_never_late_outside_it(m, today):
+    plant = _plant(m)
+    with pytest.raises(Invalid):
+        m.create_package("Bad", position_id=plant["lagoon"], season={"months": [13]})
+    summer = m.create_package("Lagoon summer check", position_id=plant["lagoon"], unit="weeks",
+                              weekday="Saturday", tolerance=1, tasks=plant["weekly"],
+                              season={"start": "12-01", "end": "02-28"})
+    assert summer["season"]["text"] == "from 1 Dec to 28 Feb" and not summer["in_season"]
+    assert summer["next_visit"] == "2026-12-05"
+    assert m.generate(14)["work_orders"] == []
+    view = m._task_view(m.s.node(m.org, plant["weekly"][0]))
+    assert view["next_due"] == "2026-12-05" and not view["overdue"]
+    _same_after_rebuild(m)
+    today.set("2027-02-22")
+    [wo] = _package_wos(m.generate(14))
+    assert wo["visit_on"] == "2027-02-27"
+    today.set("2027-03-10")
+    [late] = [w for w in m.work_orders("open") if w.get("package")]
+    assert late["out_of_season"] and not late["late"] and late["days_late"] == 0
+    _tick_all(m, wo["id"])
+    m.close_work_order(wo["id"])
+    assert m.package(summer["id"])["next_visit"] == "2027-12-04"
+    m.update_package(summer["id"], season={})
+    assert m.package(summer["id"])["season"] is None
+    _same_after_rebuild(m)
+
+
+def test_equipment_out_of_service_holds_its_tasks(m, today):
+    plant = _plant(m)
+    pump = plant["pids"]["Circulation pump"]
+    own = m.create_task(pump, "Check seal", 1, "weeks")["id"]  # outside any package
+    _packages(m, plant)
+    with pytest.raises(Invalid, match="reason"):
+        m.take_out_of_service(pump, "", until="2026-11-25")
+    out = m.take_out_of_service(pump, "pump away for a rebuild", until="2026-11-25")
+    assert out["out_of_service"]["now"] and m.position(pump)["out_of_service"]["until"] == "2026-11-25"
+    _same_after_rebuild(m)
+    result = m.generate(14)
+    [wo] = _package_wos(result)
+    pump_tasks = set(plant["weekly"][3:6])
+    assert len(wo["lines"]) == 15 and not pump_tasks & {line["task_id"] for line in wo["lines"]}
+    assert own not in {w["task"]["id"] for w in result["work_orders"] if w.get("task")}
+    held = m._task_view(m.s.node(m.org, plant["weekly"][3]))
+    assert held["out_of_service"]["reason"] == "pump away for a rebuild" and not held["overdue"]
+    assert held["next_due"] >= "2026-11-25"
+    assert m._task_view(m.s.node(m.org, own))["next_due"] == "2026-11-25"
+    today.set("2026-11-20")
+    assert not m._task_view(m.s.node(m.org, own))["overdue"]
+    assert m.tree()[0]["inside"]["overdue"] == 0
+    m.return_to_service(pump)
+    assert m.position(pump)["out_of_service"] is None
+    assert m._task_view(m.s.node(m.org, own))["overdue"]  # due again: it was due 16 Nov
+    _same_after_rebuild(m)
+    item = m.create_item("Spare pump", serial="S1")["id"]
+    m.take_out_of_service(item, "awaiting parts")
+    assert m.item(item)["out_of_service"]["flag"] == "no_return_date"
+    _same_after_rebuild(m)

@@ -1099,3 +1099,62 @@ class Cadence:
         while self._step(k) <= day:
             k += 1
         return k
+
+
+@dataclass(frozen=True, init=False)
+class Season:
+    """The part of each year something operates in, like a ``Window`` for
+    days of the week but over the year: some months (April to October), or
+    from one day of the year to another (1 September to 30 April, across the
+    new year). A day outside it isn't a working day for it.
+
+    >>> from backend.maintenance.schedule import Season
+    >>> summer = Season(months=(10, 11, 12, 1, 2, 3))
+    >>> summer.includes("2027-01-15"), summer.includes("2027-06-01")
+    (True, False)
+    >>> Season(start="12-01", end="02-28").includes("2027-02-28")
+    True
+    """
+
+    months: Optional[Tuple[int, ...]]
+    start: Optional[str]
+    end: Optional[str]
+
+    def __init__(self, *, months=None, start=None, end=None) -> None:
+        if (months is None) == (start is None and end is None):
+            raise ValueError("A season is some months (months=[4, 5, 6]) or a start and end day of the year "
+                             "(start='09-01', end='04-30'), one of them.")
+        if months is not None:
+            if isinstance(months, (str, bytes)) or not hasattr(months, "__iter__"):
+                raise TypeError(f"months must be a list of month numbers, 1 to 12; got {months!r}.")
+            nums = tuple(sorted({_whole_number(mo, "month") for mo in months}))
+            if not nums or nums[-1] > 12:
+                raise ValueError(f"months must be month numbers, 1 to 12; got {months!r}.")
+            if len(nums) == 12:
+                raise ValueError("A season of all twelve months is the whole year: leave the season out.")
+            object.__setattr__(self, "months", nums)
+            object.__setattr__(self, "start", None)
+            object.__setattr__(self, "end", None)
+            return
+        for name, value in (("start", start), ("end", end)):
+            if not isinstance(value, str) or len(value) != 5 or value[2] != "-":
+                raise ValueError(f"{name} is a day of the year as MM-DD, such as '09-01'; got {value!r}.")
+            try:
+                date.fromisoformat(f"2028-{value}")  # a leap year: 02-29 is a day
+            except ValueError:
+                raise ValueError(f"{name} is a day of the year as MM-DD, such as '09-01'; got {value!r}.") from None
+        if start == end:
+            raise ValueError("A season's start and end are different days.")
+        object.__setattr__(self, "months", None)
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "end", end)
+
+    def includes(self, day) -> bool:
+        """Whether ``day`` is in the season (both ends included)."""
+        day = _date(day, "day")
+        if self.months is not None:
+            return day.month in self.months
+        md = day.isoformat()[5:]
+        if self.start <= self.end:
+            return self.start <= md <= self.end
+        return md >= self.start or md <= self.end  # across the new year

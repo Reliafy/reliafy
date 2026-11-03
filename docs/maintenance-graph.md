@@ -787,18 +787,48 @@ Events (all new; no existing event changed meaning or shape, and
 
 | Event | Payload | Projects |
 |---|---|---|
-| `package.created` | id, name, timing, every, unit, pattern, anchor, tolerance?, trade, notes, tasks, on; position_id, subject {kind: location, id} or parent_id | the node, its `PLANNED_FOR` / `PLANNED_AT` or `LAYERED_ON` edge, a `BUNDLES` per task |
+| `package.created` | id, name, timing, every, unit, pattern, anchor, tolerance?, season?, trade, notes, tasks, on; position_id, subject {kind: location, id} or parent_id | the node, its `PLANNED_FOR` / `PLANNED_AT` or `LAYERED_ON` edge, a `BUNDLES` per task |
 | `package.updated` | id, changes, on | a plain patch (members' visit rules as the whole `members` list) |
 | `package.task_added` / `package.task_removed` | id, task_id, visit_rule?, every_nth?, suppresses?, on | `BUNDLES` and `members` |
-| `package.paused` / `package.resumed` | id, on, reason? | `paused` |
+| `package.paused` | id, on, reason, until?, full_visit, by? | `paused`, `paused_until`, a `pauses` entry |
+| `package.resumed` | id, on, full_visit?, by? | `paused` false, the last pause's `ended` |
 | `package.retired` / `package.restored` | id, on, reason? | `retired` (retiring a top package retires its layers) |
 | `work_order.package_opened` | id, number, title, type, package_id, position_id or subject, due, visit_on, visit_number, notes, on, trade?, lines | the work order, `ON`, `RAISED_FROM`, a `FOR` per line |
 | `work_order.package_lines_added` | id, lines, through, on | lines appended, more `FOR`, `covers_to` |
 | `work_order.task_released` | id, task_id, reason, on, visit_on | `FOR` removed, `released`, the task's `owed_from` |
+| `service.stopped` | id (a position or an item), from, until?, reason, on, by? | `out_of_service`, a `service_history` entry |
+| `service.resumed` | id, on, by? | `out_of_service` cleared, the entry's `ended` |
 | `work_order.line_marked` | id, task_id, state (todo, done, not_done, problem), reason?, finding?, on | the task line's `done` and `mark` {state, reason?, finding?, on} (replaced each time; todo and done clear it) |
 
 Projectors write only through `put_node`, `patch_node`, `put_edge` and
 `delete_edge`, so both stores stay in step; no store method was added.
+
+Pauses, seasons and equipment out of service (nothing about them runs on a
+clock: each is worked out on read from its dates and the workspace's today):
+
+- **A pause** says why, by whom and until when. It's over by itself on its
+  return date; open-ended is allowed and flagged (`no_return_date`), and one
+  back by itself is flagged `past_return_date` until a resume acknowledges it.
+  While paused, the package and its layers raise nothing and their tasks are
+  held: not raised on their own and not overdue. An open work order from it is
+  frozen: still open, shown `paused`, and not late. Its late clock counts only
+  days outside pauses (and seasons), so it carries on from the return.
+  Missed visits aren't made up. With `full_visit` (the default), the first work
+  order raised after the pause also carries every task due on a visit during
+  it (a layer's day and an every-Nth task's turn included); without it the
+  package carries on from its next visit.
+- **A season** (`season`: {months} or {start, end} as MM-DD, across the new
+  year allowed; `schedule.Season`) limits a package or layer to part of the
+  year. Its visits outside it don't exist, nothing is raised, and an open work
+  order isn't late while out of season. It isn't a pause: nothing needs
+  pausing or resuming.
+- **Out of service** is kept on the position or item node itself
+  (`out_of_service` {from, until?, reason}, with `service_history`): the
+  smallest model, since the node is what's out and every read already has it.
+  A task on it, or on a position inside it, isn't due, raised or late while it
+  holds (its next due is the return date), and a package leaves those lines
+  off its visits and raises the rest. An item's mark covers the item's own
+  tasks and positions inside the item, not the position it's fitted to.
 
 Generating: `generate` first gives every active top package its turn (one work
 order for the next visit inside the horizon, with a line per task due that day,

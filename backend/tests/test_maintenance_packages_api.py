@@ -100,3 +100,39 @@ def test_app_routes(api):
     assert api.post(f"{M}/packages/{pid}/retire").json()["retired"] == pid
     assert api.get(f"{M}/packages", params={"status": "retired"}).json()["packages"][0]["status"] == "retired"
     assert api.post(f"{M}/packages/{pid}/restore").json()["status"] == "active"
+
+
+def test_pause_season_and_out_of_service_over_mcp(env):
+    async def flow(client):
+        site = _ok(await _do(client, "maintenance", "positions.create", name="Spa"))
+        task = _ok(await _do(client, "maintenance", "tasks.create", position_id=site["id"], name="Test water",
+                             interval=1, unit="weeks"))
+        made = _ok(await client.call_tool("maintenance", {"action": "apply", "operations": [
+            {"ref": "p", "do": "packages.create", "args": {
+                "name": "Spa check", "position_id": site["id"], "weekday": "saturday", "tasks": [task["id"]],
+                "season": {"months": [10, 11, 12, 1, 2, 3]}}},
+            {"do": "packages.pause", "args": {"package_id": "@p", "reason": "heater broken", "until": "2099-01-01"}},
+            {"do": "positions.out_of_service", "args": {"position_id": site["id"], "reason": "resurfacing",
+                                                        "until": "2099-02-01"}}]}))
+        dry = _ok(await client.call_tool("maintenance", {"action": "apply", "dry_run": True, "operations": [
+            {"do": "positions.back_in_service", "args": {"position_id": site["id"]}}]}))
+        package = _ok(await _get(client, "package", made["results"][0]["result"]["id"]))
+        position = _ok(await _get(client, "position", site["id"]))
+        return made, dry, package, position
+
+    made, dry, package, position = _session(env["token"], flow)
+    assert [u["do"] for u in made["undo"]] == ["positions.back_in_service", "packages.resume", "packages.retire"]
+    assert dry["dry_run"] and dry["ok"]
+    assert package["status"] == "paused" and package["pause"]["until"] == "2099-01-01"
+    assert package["season"]["months"] == [1, 2, 3, 10, 11, 12]
+    assert position["out_of_service"]["reason"] == "resurfacing"
+
+
+def test_out_of_service_routes(api):
+    pos = api.post(f"{M}/positions", json={"name": "Pump"}).json()
+    out = api.post(f"{M}/positions/{pos['id']}/out-of-service", json={"reason": "rebuild", "until": "2099-01-01"})
+    assert out.status_code == 200, out.text
+    assert out.json()["out_of_service"]["now"]
+    assert api.post(f"{M}/positions/{pos['id']}/back-in-service").json()["out_of_service"] is None
+    assert api.post(f"{M}/positions/{pos['id']}/back-in-service").status_code == 422
+    assert api.post(f"{M}/widgets/{pos['id']}/out-of-service", json={}).status_code == 404

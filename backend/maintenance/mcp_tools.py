@@ -222,6 +222,8 @@ POSITIONS: Table = {
     "retire": ("position_id", "reason cascade", """Take it out of the plant (kept in the history). Nothing fitted,
         no work order open; cascade true retires the live positions inside it too (all or nothing)."""),
     "restore": ("position_id", "", "Bring a retired position back (its parent must be in use)."),
+    "out_of_service": ("position_id reason", "until start", "Out of service (being rebuilt, drained) from start (today) until a date, or open-ended: its tasks aren't due or late meanwhile."),
+    "back_in_service": ("position_id", "", "Back in service now."),
     "add_sample_truck": ("", "again", """Copy the sample delivery truck, with its RCM, into the tree; once
         only unless again is true."""),
     "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
@@ -263,6 +265,8 @@ ITEMS: Table = {
     "retire": ("item_id", "reason", """Dispose of it (scrapped, sold): kept in the history and every fitment it
         had. Not while fitted or with open work orders; its own tasks are retired with it."""),
     "restore": ("item_id", "", "Bring a retired item back (with the tasks retired with it)."),
+    "out_of_service": ("item_id reason", "until start", "Out of service (being rebuilt, drained) from start (today) until a date, or open-ended: its tasks aren't due or late meanwhile."),
+    "back_in_service": ("item_id", "", "Back in service now."),
     "update": ("item_id", "name serial part_number manufacturer model notes append_note nameplate purchase_date "
                "in_service_date manufacture_date replacement_cost warranty clear", """Change an item's details.
         After reading a nameplate: make in manufacturer, the model, the serial, everything else on the plate in
@@ -408,14 +412,15 @@ PACKAGES: Table = {
     "propose": ("", "position_id location_id", """Drafts grouping the tasks in no package by cadence, area and
         trade, each with a ready create and warnings. Saves nothing: show the user."""),
     "create": ("name", "position_id location_id parent_id timing every unit weekday nth day anchor tolerance "
-               "tolerance_unit trade notes tasks", """A package on exactly one of position_id or location_id, or
+               "tolerance_unit trade notes tasks season", """A package on exactly one of position_id or location_id, or
         a layer on parent_id. Timing, cadence and visit rules: maintenance guide topic plan."""),
     "update": ("package_id", "name timing every unit weekday nth day clear_pattern anchor tolerance tolerance_unit "
-               "trade notes tasks", "Change it; tasks: members' visit rules."),
+               "trade notes tasks season", "Change it; tasks: members' visit rules; season {} clears it."),
     "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each)."),
     "remove_task": ("package_id task_id", "", "Take a task out: it's raised on its own again."),
-    "pause": ("package_id", "reason", "Stop it raising work (its tasks go back to their own)."),
-    "resume": ("package_id", "", "Start it again."),
+    "pause": ("package_id reason", "until full_visit", """Pause it until a date (back by itself then; none:
+        open-ended, flagged). Its tasks are held and its open work order frozen."""),
+    "resume": ("package_id", "full_visit", "Resume it now, or acknowledge one back by itself."),
     "retire": ("package_id", "reason", "Retire it, with its layers. Not while its work order is open."),
     "restore": ("package_id", "", "Bring a retired one back."),
 }
@@ -1084,7 +1089,11 @@ def register() -> None:
                               location_id: str | None = None, move_to_top_level: bool | None = None,
                               clear_location: bool | None = None,
                               reason: str | None = None, cascade: bool | None = None,
-                              dry_run: bool | None = None, again: bool | None = None) -> dict[str, Any]:
+                              dry_run: bool | None = None, again: bool | None = None,
+                              until: Annotated[str | None, Field(description=(
+                                  "out_of_service: the return date (none: open-ended)."))] = None,
+                              start: Annotated[str | None, Field(description=(
+                                  "out_of_service: the first day out (default today)."))] = None) -> dict[str, Any]:
         """Positions: the functional tree (functional locations, SAP's FLOC): the slot, by what it does.
         Items are fitted to them; tasks, failure modes, parts lists and life data belong to them."""
         m = m_for(ctx)
@@ -1107,6 +1116,10 @@ def register() -> None:
             return run(m.retire_position, position_id, reason or "", bool(cascade))
         if action == "restore":
             return run(m.restore_position, position_id)
+        if action == "out_of_service":
+            return run(m.take_out_of_service, position_id, reason, until, start)
+        if action == "back_in_service":
+            return run(m.return_to_service, position_id)
         if action == "add_sample_truck":
             from backend.maintenance import templates
 
@@ -1177,7 +1190,11 @@ def register() -> None:
                               "{attribute name: value}, e.g. {'Flow': 45, 'Head': '32 m', 'Shaft seal': "
                               "'mechanical seal'}. Numbers in the attribute's unit (convert first); '' or "
                               "null clears one."))] = None,
-                          reason: str | None = None) -> dict[str, Any]:
+                          reason: str | None = None,
+                          until: Annotated[str | None, Field(description=(
+                              "out_of_service: the return date (none: open-ended)."))] = None,
+                          start: Annotated[str | None, Field(description=(
+                              "out_of_service: the first day out (default today)."))] = None) -> dict[str, Any]:
         """Items: the physical, serial-numbered things. Their details, nameplate, dates, warranty and
         attributes, which catalogue part (make and model) they are, and where an unfitted one is. To
         fit, remove or move one: maintenance fitments.… The nameplate flow is in maintenance guide topic
@@ -1199,6 +1216,10 @@ def register() -> None:
             return run(m.retire_item, item_id, reason or "")
         if action == "restore":
             return run(m.restore_item, item_id)
+        if action == "out_of_service":
+            return run(m.take_out_of_service, item_id, reason, until, start)
+        if action == "back_in_service":
+            return run(m.return_to_service, item_id)
         if action == "update":
             details = {k: v for k, v in (("purchase_date", purchase_date), ("in_service_date", in_service_date),
                                          ("manufacture_date", manufacture_date),
@@ -1487,7 +1508,15 @@ def register() -> None:
             every_nth: Annotated[int | None, Field(ge=2, le=100)] = None,
             suppresses: Annotated[list[str] | None, Field(description=(
                 "Tasks this one covers: left off a visit it's on (not done, not overdue for it)."))] = None,
-            reason: str | None = None) -> dict[str, Any]:
+            reason: str | None = None,
+            until: Annotated[str | None, Field(description=(
+                "pause: the return date; it's back by itself then (none: open-ended, flagged)."))] = None,
+            full_visit: Annotated[bool | None, Field(description=(
+                "pause / resume: the first visit back carries every task due while paused (default true)."))]
+            = None,
+            season: Annotated[dict[str, Any] | None, Field(description=(
+                "Active only part of the year: {months: [10, 11, 12, 1, 2, 3]} or {start: 'MM-DD', end: 'MM-DD'}; "
+                "update: {} for all year."))] = None) -> dict[str, Any]:
         """Work packages: tasks done together on one visit (the weekly check), raising one work order per
         visit, with layers adding lines on some visits (the first Saturday of the month). How-to: maintenance
         guide topic plan (making them) and run (their work orders)."""
@@ -1497,18 +1526,19 @@ def register() -> None:
         if action == "create":
             return run(m.create_package, name, position_id, location_id, parent_id, _d(timing, "fixed"),
                        _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance, tolerance_unit,
-                       trade or "", notes or "", tasks)
+                       trade or "", notes or "", tasks, season)
         if action == "update":
             return run(m.update_package, package_id, name, timing, every, unit, weekday, nth, day,
-                       bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks)
+                       bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
+                       ... if season is None else season)
         if action == "add_task":
             return run(m.add_package_task, package_id, task_id, visit_rule, every_nth, suppresses)
         if action == "remove_task":
             return run(m.remove_package_task, package_id, task_id)
         if action == "pause":
-            return run(m.pause_package, package_id, reason or "")
+            return run(m.pause_package, package_id, reason or "", until, full_visit)
         if action == "resume":
-            return run(m.resume_package, package_id)
+            return run(m.resume_package, package_id, full_visit)
         if action == "retire":
             return run(m.retire_package, package_id, reason or "")
         return run(m.restore_package, package_id)

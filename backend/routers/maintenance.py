@@ -1722,7 +1722,7 @@ def create_package(body: dict = Body(...), m: Maintenance = Depends(maintenance_
                 body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
                 body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
                 body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"), body.get("trade", ""),
-                body.get("notes", ""), body.get("tasks"))
+                body.get("notes", ""), body.get("tasks"), body.get("season"))
 
 
 @router.patch("/packages/{package_id}")
@@ -1730,7 +1730,24 @@ def update_package(package_id: str, body: dict = Body(...), m: Maintenance = Dep
     """Change its name, cadence, tolerance, trade, notes, or members' visit rules (tasks);
     clear_pattern true removes its pattern."""
     return _run(m.update_package, package_id, clear_pattern=bool(body.get("clear_pattern")),
-                **{k: body.get(k) for k in _PACKAGE_FIELDS})
+                season=body["season"] if "season" in body else ..., **{k: body.get(k) for k in _PACKAGE_FIELDS})
+
+
+@router.post("/{kind}/{target_id}/out-of-service")
+def out_of_service(kind: str, target_id: str, body: dict = Body(...),
+                   m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A position or an item (kind positions or items) out of service until a date (or
+    open-ended), with a reason: its tasks aren't due or late meanwhile."""
+    if kind not in ("positions", "items"):
+        raise HTTPException(status_code=404, detail="Not found.")
+    return _run(m.take_out_of_service, target_id, body.get("reason"), body.get("until"), body.get("start"))
+
+
+@router.post("/{kind}/{target_id}/back-in-service")
+def back_in_service(kind: str, target_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    if kind not in ("positions", "items"):
+        raise HTTPException(status_code=404, detail="Not found.")
+    return _run(m.return_to_service, target_id)
 
 
 @router.post("/packages/{package_id}/tasks")
@@ -1749,11 +1766,13 @@ def change_package(package_id: str, change: str, body: dict = Body(default={}),
                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """pause, resume, retire or restore."""
     if change == "pause":
-        return _run(m.pause_package, package_id, body.get("reason", ""))
+        return _run(m.pause_package, package_id, body.get("reason", ""), body.get("until"), body.get("full_visit"))
     if change == "retire":
         return _run(m.retire_package, package_id, body.get("reason", ""))
-    if change in ("resume", "restore"):
-        return _run(getattr(m, f"{change}_package"), package_id)
+    if change == "resume":
+        return _run(m.resume_package, package_id, body.get("full_visit"))
+    if change == "restore":
+        return _run(m.restore_package, package_id)
     raise HTTPException(status_code=404, detail="Not found.")
 
 

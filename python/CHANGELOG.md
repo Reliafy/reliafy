@@ -53,7 +53,10 @@
   `lines_added` and `packages_skipped` once a workspace has packages.
   `maintenance work_orders.mark` saves a line's state during the visit
   (done, not_done with a reason, problem with a finding, or todo); close
-  counts the saved marks. On the
+  counts the saved marks. `packages.pause` takes a reason and a return date
+  (`until`; back by itself then) and `full_visit`; `season` on create and
+  update keeps a package to part of the year; `positions.out_of_service` /
+  `items.out_of_service` and `back_in_service` hold the tasks on them. On the
   command line: `reliafy maintenance packages.create --name …`.
 
 - RCM for agents. `maintenance_get kind failure_mode` reads one failure mode by
