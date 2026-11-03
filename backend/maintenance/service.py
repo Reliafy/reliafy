@@ -56,6 +56,7 @@ from backend.maintenance.store import GraphStore, new_id
 from backend.services import time_zones
 from backend.maintenance import rcm_decisions
 from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
+from backend.maintenance.schedule import Cadence
 
 logger = logging.getLogger(__name__)
 
@@ -1715,6 +1716,115 @@ def _work_order_closed(s: GraphStore, org: str, p: dict) -> None:
         _renew_task(s, org, task, p["on"], (p.get("task_readings") or {}).get(task["id"]))
 
 
+# ---- work packages: tasks done on one visit, on one work order (since Nov 2026) --------
+# A work package bundles tasks done together on one visit ("Lagoon weekly check",
+# every Saturday), on a position or a location: WorkPackage PLANNED_FOR Position,
+# PLANNED_AT Location, BUNDLES each Task. A layer is a package on another
+# (WorkPackage LAYERED_ON WorkPackage): it visits on some of its parent's visits
+# (the first Saturday of the month) and its tasks go on the same work order. The
+# work order a package raises is RAISED_FROM it (its top package) and FOR each
+# task on it, so closing it renews them with the unchanged work_order.closed. Its
+# checklist stays one flat list (work_order.check by index): a line per task (with
+# task_id, and position_id when it's on a position), each followed by the task's
+# own steps (step: true). Nothing about visits is projected: the next visit and
+# lateness are worked out on read.
+
+def _package_created(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "WorkPackage", {
+        "name": p["name"], "timing": p["timing"], "every": p["every"], "unit": p["unit"],
+        "pattern": p.get("pattern"), "anchor": p["anchor"], "tolerance": p.get("tolerance"),
+        "trade": p.get("trade", ""), "notes": p.get("notes", ""), "created": p["on"],
+        "members": [dict(t) for t in p.get("tasks") or []], "paused": False, "retired": False,
+    })
+    if p.get("parent_id"):
+        s.put_edge(org, "LAYERED_ON", p["id"], p["parent_id"])
+    elif p.get("position_id"):
+        s.put_edge(org, "PLANNED_FOR", p["id"], p["position_id"])
+    else:
+        s.put_edge(org, "PLANNED_AT", p["id"], p["subject"]["id"])
+    for t in p.get("tasks") or []:
+        s.put_edge(org, "BUNDLES", p["id"], t["task_id"])
+
+
+def _package_task_added(s: GraphStore, org: str, p: dict) -> None:
+    pkg = s.node(org, p["id"])
+    member = {k: p[k] for k in ("task_id", "visit_rule", "every_nth", "suppresses") if k in p}
+    members = [m for m in pkg.get("members") or [] if m["task_id"] != p["task_id"]] + [member]
+    s.patch_node(org, p["id"], {"members": members})
+    s.put_edge(org, "BUNDLES", p["id"], p["task_id"])
+
+
+def _package_task_removed(s: GraphStore, org: str, p: dict) -> None:
+    pkg = s.node(org, p["id"])
+    s.patch_node(org, p["id"], {"members": [m for m in pkg.get("members") or [] if m["task_id"] != p["task_id"]]})
+    s.delete_edge(org, "BUNDLES", p["id"], p["task_id"])
+
+
+def _package_resumed(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"paused": False, "paused_on": None, "paused_reason": "", "resumed_on": p.get("on")})
+
+
+def _package_lines(lines: list[dict]) -> list[dict]:
+    """A package work order's checklist lines for ``lines`` (one per task): the
+    task's line, then its own steps."""
+    out = []
+    for line in lines:
+        out.append({"text": line["name"], "done": False, "task_id": line["task_id"]}
+                   | ({"position_id": line["position_id"]} if line.get("position_id") else {}))
+        out += [{"text": t, "done": False, "task_id": line["task_id"], "step": True}
+                for t in line.get("checklist") or []]
+    return out
+
+
+def _line_record(line: dict) -> dict:
+    """What a work order keeps of a line (its checklist is in the checklist)."""
+    return {k: v for k, v in line.items() if k != "checklist"}
+
+
+def _work_order_package_opened(s: GraphStore, org: str, p: dict) -> None:
+    lines = p.get("lines") or []
+    s.put_node(org, p["id"], "WorkOrder", {
+        "number": p["number"], "title": p["title"], "type": p["type"], "status": "open",
+        "opened": p["on"], "due": p.get("due"), "closed": None, "notes": p.get("notes", ""),
+        "note_history": _note_entry([], p["on"], "set", p.get("notes", "")),
+        "instructions": "", "checklist": _package_lines(lines),
+        "status_history": [{"status": "open", "on": p["on"]}],
+        "visit_on": p["visit_on"], "visit_number": p.get("visit_number"), "covers_to": p["visit_on"],
+        "lines": [_line_record(line) for line in lines], "released": [],
+    })
+    if p.get("trade"):
+        s.patch_node(org, p["id"], {"trade": p["trade"]})
+    s.put_edge(org, "ON", p["id"], _subject_id(p))
+    s.put_edge(org, "RAISED_FROM", p["id"], p["package_id"])
+    for line in lines:
+        s.put_edge(org, "FOR", p["id"], line["task_id"])
+
+
+def _work_order_package_lines_added(s: GraphStore, org: str, p: dict) -> None:
+    """Tasks that came due on later visits while the package's work order was still
+    open, added to it as lines (not a second work order)."""
+    wo = s.node(org, p["id"])
+    lines = p.get("lines") or []
+    s.patch_node(org, p["id"], {
+        "checklist": [dict(c) for c in wo.get("checklist") or []] + _package_lines(lines),
+        "lines": list(wo.get("lines") or []) + [_line_record(line) for line in lines],
+        "covers_to": max(wo.get("covers_to") or "", p["through"]),
+    })
+    for line in lines:
+        s.put_edge(org, "FOR", p["id"], line["task_id"])
+
+
+def _work_order_task_released(s: GraphStore, org: str, p: dict) -> None:
+    """A task on a package's work order that wasn't done, taken off it at close: it
+    isn't renewed, and it's owed from that visit until it's done."""
+    wo = s.node(org, p["id"])
+    s.delete_edge(org, "FOR", p["id"], p["task_id"])
+    s.patch_node(org, p["id"], {"released": list(wo.get("released") or []) + [
+        {"task_id": p["task_id"], "reason": p.get("reason", ""), "on": p["on"]}]})
+    if s.node(org, p["task_id"]) is not None:
+        s.patch_node(org, p["task_id"], {"owed_from": p["visit_on"]})
+
+
 def _photo_added(s: GraphStore, org: str, p: dict) -> None:
     s.put_node(org, p["id"], "Photo", {
         "caption": p.get("caption", ""), "taken_on": p.get("taken_on"), "uploaded_on": p["on"],
@@ -2215,6 +2325,18 @@ PROJECTORS = {
     "coordinates.cleared": _coordinates_cleared,
     "part.supersession_cleared": _part_supersession_cleared,
     "parts.not_interchangeable": _parts_not_interchangeable,
+    # Work packages (Nov 2026): tasks done on one visit, raising one work order.
+    "package.created": _package_created,
+    "package.updated": _patch,
+    "package.task_added": _package_task_added,
+    "package.task_removed": _package_task_removed,
+    "package.paused": _flag("paused"),
+    "package.resumed": _package_resumed,
+    "package.retired": _flag("retired"),
+    "package.restored": _unflag("retired"),
+    "work_order.package_opened": _work_order_package_opened,
+    "work_order.package_lines_added": _work_order_package_lines_added,
+    "work_order.task_released": _work_order_task_released,
 }
 
 
@@ -4831,6 +4953,11 @@ class Maintenance:
             out["while_stored"] = task.get("while_stored") or "run"
         if subject and subject["label"] == "Location":
             out["include_positions"] = bool(task.get("include_positions"))
+        # In a work package: due on the package's visits (its own interval aside) while
+        # the package is active; a paused one's are raised on their own as before.
+        entry = self._package_index().get(task["id"]) if not task.get("retired") else None
+        if entry:
+            out |= self._package_due(task, entry)
         return out
 
     # ---- parts and stock ----------------------------------------------------------
@@ -6155,10 +6282,24 @@ class Maintenance:
         Each task stands alone: one that can't have its work order is skipped, and the
         others still get theirs. Returns {work_orders, skipped: [{task: {id, name}, why}]}.
         A request that can't be done as asked (Invalid) is the workspace's to fix and is
-        only reported; anything else is also logged as an error, for us to look at."""
+        only reported; anything else is also logged as an error, for us to look at.
+
+        Work packages first (a workspace with any): each active top package whose next
+        visit is within the horizon and has no work order open gets one, with a line per
+        task due on that visit; one still open gets the tasks due on the visits since as
+        lines instead. Their work orders are in work_orders too; the result adds packages
+        (the visits raised), lines_added and packages_skipped. Every task in an active
+        package is then left to it."""
         made, skipped = [], []
+        packaged = bool(self.s.nodes(self.org, "WorkPackage"))
+        members: set = set()
+        if packaged:
+            until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
+            raised = self._generate_packages(until)
+            made += raised["work_orders"]
+            members = {tid for tid, entry in self._package_index().items() if entry["active"]}
         for task in self.due_tasks(horizon_days):
-            if task["open_work_order"] or not task.get("subject"):
+            if task["id"] in members or task["open_work_order"] or not task.get("subject"):
                 continue
             try:
                 made.append(self.open_work_order(None, None, type="preventive", task_id=task["id"],
@@ -6171,7 +6312,11 @@ class Maintenance:
                 skipped.append({"task": {"id": task["id"], "name": shortened(task["name"])[0]},
                                 "why": "Something went wrong opening its work order. We've been told; "
                                        "the other tasks went ahead."})
-        return {"work_orders": made, "skipped": skipped}
+        out = {"work_orders": made, "skipped": skipped}
+        if packaged:
+            out |= {"packages": raised["visits"], "lines_added": raised["lines_added"],
+                    "packages_skipped": raised["skipped"]}
+        return out
 
     def generate_work_orders(self, horizon_days: int = 30) -> list[dict]:
         """The work orders generate() opened (its skipped tasks aside)."""
@@ -6187,7 +6332,8 @@ class Maintenance:
             return fitment and self.s.out(self.org, fitment["id"], "AT")[0]["id"]
         return None
 
-    def close_work_order(self, work_order_id: str, actions=(), on=None, notes="", readings=()) -> dict:
+    def close_work_order(self, work_order_id: str, actions=(), on=None, notes="", readings=(),
+                         not_done=()) -> dict:
         """Close a work order with what was done. Replacements end the fitted
         item's fitment and start the new one's. An action may name a catalogue
         part used doing it (part_id, quantity, from_location_id: issued from stock
@@ -6196,7 +6342,13 @@ class Maintenance:
 
         On an item's work order, a replacement and a failure mode are at the
         position the item is fitted to now (refused when it isn't fitted); on a
-        location's (a round), there's no position, so only repair, inspect and other."""
+        location's (a round), there's no position, so only repair, inspect and other.
+
+        A work package's work order: each task line ticked is done (renewed); each
+        line not ticked must be in not_done ([{task_id, reason}]): it's taken off the
+        work order (work_order.task_released), isn't renewed, and goes on the next. An
+        action may name position_id, one of its lines' positions: a replacement or a
+        failure found there is recorded at that position."""
         wo = self._get(work_order_id, "WorkOrder")
         if wo["status"] not in OPEN_STATUSES:
             raise Invalid("This work order is already closed.")
@@ -6204,18 +6356,34 @@ class Maintenance:
         subject = self.s.out(self.org, work_order_id, "ON")[0]
         position_id = self._work_position(subject)
         actions, readings = _dicts(actions, "actions"), _dicts(readings, "readings")
+        released = self._not_done(wo, not_done)
+        line_positions = {line["position_id"] for line in wo.get("lines") or [] if line.get("position_id")}
         # Check everything before writing anything.
-        plans, issues = [], {}
-        per_job = {self.s.out(self.org, x["id"], "LISTS")[0]["id"]: x["quantity"]
-                   for x in (self._listings_at(position_id) if position_id else [])}
+        plans, issues, per_jobs = [], {}, {}
+
+        def per_job_at(pid):
+            if pid not in per_jobs:
+                per_jobs[pid] = {self.s.out(self.org, x["id"], "LISTS")[0]["id"]: x["quantity"]
+                                 for x in (self._listings_at(pid) if pid else [])}
+            return per_jobs[pid]
+
         for a in actions:
             kind = a.get("kind")
             if kind not in ACTION_KINDS:
                 raise Invalid(f"An action is one of {', '.join(ACTION_KINDS)}.")
-            if position_id is None and (kind == "replace" or a.get("failure_mode_id") or a.get("failure_mode_text")):
-                raise Invalid(self._no_position_why(subject, kind))
-            fm = position_id and self._mode_ref(position_id, a.get("failure_mode_id") or None,
-                                                a.get("failure_mode_text"))
+            at = position_id
+            if a.get("position_id") not in (None, ""):
+                at = str(a["position_id"])
+                if at != position_id and at not in line_positions:
+                    raise Invalid("An action's position_id is one of the positions on this work order's lines "
+                                  "(maintenance get.work_order: line_positions)." if line_positions else
+                                  "An action's position_id goes with a work package's work order, at one of its "
+                                  "lines' positions; this one's work is at its own position.")
+            per_job = per_job_at(at)
+            if at is None and (kind == "replace" or a.get("failure_mode_id") or a.get("failure_mode_text")):
+                raise Invalid(self._no_position_why(subject, kind) + (
+                    " On a work package's work order, name the line's position_id." if line_positions else ""))
+            fm = at and self._mode_ref(at, a.get("failure_mode_id") or None, a.get("failure_mode_text"))
             finding = a.get("finding") or None
             if kind == "inspect" and finding not in FINDINGS:
                 raise Invalid("An inspection's finding is ok, degraded or found_failed.")
@@ -6242,23 +6410,24 @@ class Maintenance:
             elif a.get("from_location_id"):
                 raise Invalid("Stock is issued from the catalogue: give the part_id.")
             if kind == "replace" and not (a.get("item_id") or (a.get("new_item") or {}).get("name")) \
-                    and not self.current_fitment(position_id):
+                    and not self.current_fitment(at):
                 raise Invalid("A replacement needs the item that went in.")
-            plans.append((kind, fm, finding, a, used))
-        current = position_id and self.current_fitment(position_id)
-        if current and day < current["from"]:
-            raise Invalid("The work can't be done before the fitted item went in.")
+            plans.append((kind, fm, finding, a, used, at))
+        for at in {position_id, *(p[5] for p in plans)}:
+            current = at and self.current_fitment(at)
+            if current and day < current["from"]:
+                raise Invalid("The work can't be done before the fitted item went in.")
         # Meter readings taken during the work go in first, so a task by use
         # records the reading it was done at.
         for r in readings or []:
             self.record_reading(r.get("point_id") or r.get("meter_id"), r.get("value"), day, "read at the work order")
 
-        for kind, ref, finding, a, used in plans:
+        for kind, ref, finding, a, used, at in plans:
             # A mode named in words is found, or added, as the action is recorded.
-            fm = position_id and self._mode_id(position_id, ref)
+            fm = at and self._mode_id(at, ref)
             ends = starts = on_fitment = None
             if kind == "replace":
-                current = self.current_fitment(position_id)
+                current = self.current_fitment(at)
                 if current:
                     self._emit("item.removed", {"fitment_id": current["id"], "on": day,
                                                 "reason": "failure" if fm else "planned",
@@ -6268,10 +6437,10 @@ class Maintenance:
                     iid = self._item_from(a.get("item_id"), a.get("new_item"))
                     starts = new_id()
                     self._emit("item.fitted", {"fitment_id": starts, "item_id": iid,
-                                               "position_id": position_id, "on": day,
-                                               "task_readings": self._renewal_readings(position_id, day)})
-            elif position_id:
-                fitted = self.current_fitment(position_id)
+                                               "position_id": at, "on": day,
+                                               "task_readings": self._renewal_readings(at, day)})
+            elif at:
+                fitted = self.current_fitment(at)
                 on_fitment = fitted and fitted["id"]
             self._emit("action.recorded", {
                 "id": new_id(), "work_order_id": work_order_id, "kind": kind, "finding": finding,
@@ -6290,9 +6459,50 @@ class Maintenance:
                 value = self._task_reading(task, day)
                 if value is not None:
                     task_readings[task["id"]] = value
+        # Lines not done come off first, so the close renews only the tasks done.
+        for task_id, reason in released.items():
+            self._emit("work_order.task_released", {"id": work_order_id, "task_id": task_id, "reason": reason,
+                                                    "on": day, "visit_on": wo.get("visit_on") or day})
+            task_readings.pop(task_id, None)
         self._emit("work_order.closed", {"id": work_order_id, "on": day, "notes": _text(notes, "notes"),
                                          "task_readings": task_readings})
         return self.work_order(work_order_id)
+
+    def _not_done(self, wo: dict, not_done) -> dict[str, str]:
+        """At close, a package work order's lines not done: {task_id: reason}, checked.
+        Every task line not ticked must be answered: ticked if done, or listed here."""
+        items = _list(not_done, "not_done tasks", self.MAX_PACKAGE_TASKS * 4)
+        package_wo = bool(self.s.out(self.org, wo["id"], "RAISED_FROM"))
+        if not package_wo:
+            if items:
+                raise Invalid("not_done is for a work package's work order, whose lines are tasks. This one's "
+                              "checklist is steps: close it, or cancel it if the work won't be done.")
+            return {}
+        on = {t["id"]: t for t in self.s.out(self.org, wo["id"], "FOR")}
+        lines = [c for c in wo.get("checklist") or [] if c.get("task_id") and not c.get("step")]
+        ticked = {c["task_id"] for c in lines if c.get("done")}
+        out: dict[str, str] = {}
+        for x in items:
+            task_id, reason = (x, None) if isinstance(x, str) else (
+                (x.get("task_id"), x.get("reason")) if isinstance(x, dict) else (None, None))
+            if not task_id:
+                raise Invalid("Each of not_done is {task_id, reason}: a task on this work order, and why it "
+                              "wasn't done.")
+            task_id = str(task_id)
+            if task_id not in on:
+                raise Invalid(f"Task {task_id} isn't on this work order (maintenance get.work_order lists its lines).")
+            if task_id in ticked:
+                raise Invalid(f"{on[task_id]['name']} is ticked as done: untick it (maintenance work_orders.check, "
+                              "done false) or leave it out of not_done.")
+            out[task_id] = _text(reason, "reason", required=True)
+        unanswered = sorted({on[c["task_id"]]["name"] for c in lines
+                             if c["task_id"] in on and c["task_id"] not in ticked and c["task_id"] not in out})
+        if unanswered:
+            raise Invalid(f"Say whether each line not ticked was done: {'; '.join(unanswered[:10])}"
+                          f"{' and more' if len(unanswered) > 10 else ''}. Tick it if it was (maintenance "
+                          "work_orders.check), or list it in not_done with a reason (it stays due and goes on the "
+                          "next work order).")
+        return out
 
     @staticmethod
     def _no_position_why(subject: dict, kind: str) -> str:
@@ -6686,6 +6896,943 @@ class Maintenance:
                                             "reason": _text(reason, "reason")})
         return self.work_order(work_order_id)
 
+    # ---- work packages ----------------------------------------------------------------
+    # A work package bundles tasks done together on one visit, on a position or a
+    # location, and raises one work order per visit. Its visits are on fixed dates
+    # (its cadence from its anchor: every Saturday, the first Saturday of the month; a
+    # missed visit isn't made up) or counted from the last visit (the close date plus
+    # the interval). A member task is due on the package's visits by its visit rule
+    # (every visit, or the first and every Nth after), not on its own interval: that
+    # stays for tasks outside a package. A layer (a package on another) visits on some
+    # of its parent's visits and its tasks join the same work order. A task on a visit
+    # may cover others (suppresses): they're left off that visit, not done, and not
+    # overdue because of it. A task not done at close is owed from that visit: it goes
+    # on the next work order. Only one work order is open per package: tasks coming due
+    # on later visits while it's open are added to it as lines. Tolerance: a visit is on
+    # time until its date plus the tolerance in days (hours are kept, not yet enforced).
+
+    PACKAGE_TIMINGS = ("fixed", "from_last_visit")
+    VISIT_RULES = ("every", "nth")
+    TOLERANCE_UNITS = ("days", "hours")
+    MAX_PACKAGES = 5_000
+    MAX_PACKAGE_TASKS = 200  # in one package (its layers have their own)
+    MAX_LAYER_DEPTH = 3  # layers on layers below a top package
+    _LOOKAHEAD_VISITS = 60  # visits read ahead for members' next due dates
+    _LOOKAHEAD_DAYS = 400
+    _CHECK_LAYER_DATES = 24  # a layer's next dates checked against its parent's
+
+    def _live_package(self, package_id) -> dict:
+        pkg = self._get(str(package_id or ""), "WorkPackage")
+        if pkg.get("retired"):
+            raise Invalid(f"{pkg['name']} has been retired: restore it first (maintenance packages.restore).")
+        return pkg
+
+    def _package_parent(self, package_id: str) -> dict | None:
+        found = self.s.out(self.org, package_id, "LAYERED_ON")
+        return found[0] if found else None
+
+    def _package_chain(self, pkg: dict) -> list[dict]:
+        """The package and those it's layered on: itself first, its top package last."""
+        chain, seen = [pkg], {pkg["id"]}
+        parent = self._package_parent(pkg["id"])
+        while parent and parent["id"] not in seen:
+            seen.add(parent["id"])
+            chain.append(parent)
+            parent = self._package_parent(parent["id"])
+        return chain
+
+    def _package_layers(self, package_id: str) -> list[dict]:
+        return sorted((x for x in self.s.inn(self.org, package_id, "LAYERED_ON")
+                       if x["label"] == "WorkPackage" and not x.get("retired")),
+                      key=lambda x: (x["name"].lower(), x["id"]))
+
+    def _package_tree(self, root: dict, active_only: bool = False) -> list[dict]:
+        """A top package and its live layers (and theirs), top first; active_only: not
+        the paused ones (nor what's layered on them)."""
+        out, queue, seen = [], [root], set()
+        while queue:
+            pkg = queue.pop(0)
+            if pkg["id"] in seen or (active_only and pkg.get("paused")):
+                continue
+            seen.add(pkg["id"])
+            out.append(pkg)
+            queue += self._package_layers(pkg["id"])
+        return out
+
+    def _package_subject(self, pkg: dict) -> dict | None:
+        """What a package is on: its top package's position or location."""
+        root = self._package_chain(pkg)[-1]
+        found = self.s.out(self.org, root["id"], "PLANNED_FOR") or self.s.out(self.org, root["id"], "PLANNED_AT")
+        return found[0] if found else None
+
+    @staticmethod
+    def _package_status(chain: list[dict]) -> str:
+        """active, paused (it or a package it's layered on) or retired."""
+        if chain[0].get("retired"):
+            return "retired"
+        return "paused" if any(x.get("paused") or x.get("retired") for x in chain) else "active"
+
+    @staticmethod
+    def _cadence(pkg: dict) -> Cadence:
+        pattern = pkg.get("pattern") or {}
+        return Cadence(pkg["every"], pkg["unit"], pkg["anchor"], weekday=pattern.get("weekday"),
+                       nth=pattern.get("nth"), day=pattern.get("day"))
+
+    @staticmethod
+    def _tolerance_days(pkg: dict) -> int:
+        """The days after a visit's date it's still on time (a tolerance in hours isn't
+        enforced yet: none)."""
+        tol = pkg.get("tolerance") or {}
+        return int(tol.get("amount") or 0) if tol.get("unit", "days") == "days" else 0
+
+    def _package_index(self) -> dict:
+        """Each task in a package that isn't retired: {task_id: {package, root, member,
+        active}}; active when neither it nor a package it's layered on is paused."""
+        memo = self._memo.get("package_index")
+        if memo is not None:
+            return memo
+        out = {}
+        for pkg in self.s.nodes(self.org, "WorkPackage"):
+            if pkg.get("retired"):
+                continue
+            chain = self._package_chain(pkg)
+            active = self._package_status(chain) == "active"
+            for member in pkg.get("members") or []:
+                out[member["task_id"]] = {"package": pkg, "root": chain[-1], "member": member, "active": active}
+        self._memo["package_index"] = out
+        return out
+
+    @staticmethod
+    def _owed(task: dict) -> bool:
+        """Not done on a visit it was on (released at close), and not done since."""
+        owed = task.get("owed_from")
+        return bool(owed) and not (task.get("last_done") and task["last_done"] >= owed)
+
+    def _next_root_visit(self, root: dict, after: str) -> str | None:
+        """The top package's visit after ``after``: the next fixed date, or (counted from
+        the last visit) ``after`` plus the interval."""
+        if root["timing"] == "fixed":
+            found = self._cadence(root).after(after)
+            return found and found.isoformat()
+        return add_interval(after, root["every"], root["unit"])
+
+    def _visit_number(self, root: dict, visit_on: str, raised: int) -> int:
+        """A visit's number, the first being 1: by the calendar (fixed dates), or the
+        work orders raised before it (counted from the last visit)."""
+        if root["timing"] == "fixed":
+            return self._cadence(root).number(visit_on)
+        return raised + 1
+
+    def _visit_tasks(self, root: dict, tree: list[dict], visit_on: str, number: int, skip=frozenset(),
+                     covered_by=()) -> list[tuple[dict, dict, dict]]:
+        """The tasks due on one visit of a top package, in order, as (task, package,
+        member): the top package's by their visit rule, each layer's on its own visits,
+        and any owed task. skip: tasks left off (on the work order already, or with a
+        work order of their own). A task covered by another on the visit (or by
+        ``covered_by``: members already on its work order) is left off."""
+        due = []
+        for pkg in tree:
+            if pkg["id"] == root["id"]:
+                on_visit, n = True, number
+            else:
+                cad = self._cadence(pkg)
+                on_visit = cad.includes(visit_on)
+                n = cad.number(visit_on) if on_visit else 0
+            for member in pkg.get("members") or []:
+                task = self.s.node(self.org, member["task_id"], "Task")
+                if task is None or task.get("retired") or task["id"] in skip:
+                    continue
+                subject = _subject(self.s, self.org, task)
+                if not subject or subject.get("retired"):
+                    continue
+                by_rule = on_visit and (member.get("visit_rule", "every") != "nth"
+                                        or (n - 1) % int(member.get("every_nth") or 1) == 0)
+                if by_rule or self._owed(task):
+                    due.append((task, pkg, member))
+        covering = {sid for member in [*(m for _, _, m in due), *covered_by] for sid in member.get("suppresses") or []}
+        return [x for x in due if x[0]["id"] not in covering]
+
+    def _package_state(self, root: dict) -> dict:
+        """A top package's work orders and visits now: open (its open work order, with
+        on_open: the tasks on it, and lateness), last (the last closed), raised (how many,
+        cancelled aside), next_visit (when none is open), tolerance_days."""
+        today = self.today()
+        memo = self._memo.setdefault("package_state", {})
+        if (root["id"], today) in memo:
+            return memo[(root["id"], today)]
+        tol = self._tolerance_days(root)
+        wos = sorted((w for w in self.s.inn(self.org, root["id"], "RAISED_FROM")
+                      if w["label"] == "WorkOrder" and w.get("status") != "cancelled"),
+                     key=lambda w: (w.get("visit_on") or "", w["number"]))
+        open_wo = next((w for w in wos if w["status"] in OPEN_STATUSES), None)
+        last = max((w for w in wos if w["status"] == "closed"), key=lambda w: (w.get("closed") or "", w["number"]),
+                   default=None)
+        state = {"open": open_wo, "last": last, "raised": len(wos), "tolerance_days": tol, "next_visit": None,
+                 "on_open": set()}
+        if open_wo:
+            state["on_open"] = {t["id"] for t in self.s.out(self.org, open_wo["id"], "FOR")}
+            state |= self._lateness(root, open_wo["visit_on"], tol, today)
+        else:
+            state["next_visit"] = self._first_visit(root, last, tol, today)
+        memo[(root["id"], today)] = state
+        return state
+
+    def _first_visit(self, root: dict, last: dict | None, tol: int, today: str) -> str | None:
+        """The next visit when no work order is open: after the last one closed (the next
+        fixed date after it, or its close date plus the interval), else the first from
+        the anchor. A fixed visit already past its tolerance before anything was raised
+        for it isn't made up."""
+        start = max(root["anchor"], root.get("created") or root["anchor"])
+        if root["timing"] == "from_last_visit":
+            return start if last is None else add_interval(last["closed"], root["every"], root["unit"])
+        cad = self._cadence(root)
+        if last is not None:
+            found = cad.after(max(last["closed"], last.get("visit_on") or last["closed"]))
+        else:
+            found = cad.on_or_after(start)
+        floor = (date.fromisoformat(today) - timedelta(days=tol)).isoformat()
+        if found is not None and found.isoformat() < floor:
+            found = cad.on_or_after(floor)
+        return found and found.isoformat()
+
+    def _lateness(self, root: dict, visit_on: str, tol: int, today: str) -> dict:
+        """How late an open work order is: late once today is past its visit's date plus
+        the tolerance; visits_missed counts the visits (its own included) whose on-time
+        days have passed while it's been open."""
+        on_time_until = (date.fromisoformat(visit_on) + timedelta(days=tol)).isoformat()
+        late = today > on_time_until
+        missed, day = 0, visit_on
+        while late and day and missed < 1000:
+            if (date.fromisoformat(day) + timedelta(days=tol)).isoformat() >= today:
+                break
+            missed += 1
+            day = self._next_root_visit(root, day)
+        return {"late": late, "on_time_until": on_time_until, "visits_missed": missed,
+                "days_late": (date.fromisoformat(today) - date.fromisoformat(on_time_until)).days if late else 0}
+
+    def _package_upcoming(self, root: dict) -> list[tuple[str, set]]:
+        """The top package's coming visits (after its open work order's, else from the
+        next) with the tasks due on each, until every member has one (at most
+        _LOOKAHEAD_VISITS visits, _LOOKAHEAD_DAYS days)."""
+        memo = self._memo.setdefault("package_upcoming", {})
+        key = (root["id"], self.today())
+        if key in memo:
+            return memo[key]
+        state = self._package_state(root)
+        tree = self._package_tree(root, active_only=True)
+        wanted = {m["task_id"] for pkg in tree for m in pkg.get("members") or []} - state["on_open"]
+        if state["open"]:
+            day = self._next_root_visit(root, state["open"].get("covers_to") or state["open"]["visit_on"])
+        else:
+            day = state["next_visit"]
+        until = (date.fromisoformat(self.today()) + timedelta(days=self._LOOKAHEAD_DAYS)).isoformat()
+        out: list[tuple[str, set]] = []
+        while day and day <= until and len(out) < self._LOOKAHEAD_VISITS and wanted:
+            number = self._visit_number(root, day, state["raised"] + len(out))
+            ids = {t["id"] for t, _, _ in self._visit_tasks(root, tree, day, number, skip=state["on_open"])}
+            out.append((day, ids))
+            wanted -= ids
+            day = self._next_root_visit(root, day)
+        memo[key] = out
+        return out
+
+    def _later_visit(self, root: dict, pkg: dict, member: dict, after: str) -> str | None:
+        """A member's next visit past the look-ahead: its own package's next date by its
+        visit rule (covering by other tasks aside)."""
+        nth = int(member.get("every_nth") or 1) if member.get("visit_rule") == "nth" else 1
+        cad = self._cadence(pkg) if pkg["id"] != root["id"] or root["timing"] == "fixed" else None
+        day: str | None = after
+        for _ in range(200):
+            if cad is not None:
+                found = cad.after(day)
+                day = found and found.isoformat()
+            else:
+                day = add_interval(day, root["every"], root["unit"])
+            if day is None:
+                return None
+            if cad is None or (cad.number(day) - 1) % nth == 0:
+                return day
+        return None
+
+    def _package_due(self, task: dict, entry: dict) -> dict:
+        """A member task's due date from its package: the visit of the open work order
+        it's on, else the next visit it's due on. Overdue once that visit is late."""
+        pkg, root = entry["package"], entry["root"]
+        brief = {"id": pkg["id"], "name": pkg["name"], "active": entry["active"]}
+        if not entry["active"]:
+            return {"package": brief}
+        state = self._package_state(root)
+        if task["id"] in state["on_open"]:
+            nxt = state["open"]["visit_on"]
+        else:
+            upcoming = self._package_upcoming(root)
+            nxt = next((d for d, ids in upcoming if task["id"] in ids), None)
+            if nxt is None and upcoming:
+                nxt = self._later_visit(root, pkg, entry["member"], upcoming[-1][0])
+        overdue = bool(nxt) and (date.fromisoformat(nxt) + timedelta(days=state["tolerance_days"])).isoformat() \
+            < self.today()
+        return {"package": brief, "next_due": nxt, "overdue": overdue, "due_by": "package"}
+
+    # -- making and changing packages --
+
+    def _in_area(self, area: dict, subject: dict) -> bool:
+        """Whether a task's subject is inside a package's area: its position or a position
+        inside it; or at its location (a position there, set or inherited, or the
+        location or one inside it)."""
+        if area["label"] == "Position":
+            return subject["label"] == "Position" and (
+                subject["id"] == area["id"] or area["id"] in self._ancestor_ids(subject["id"]))
+        inside = set(self._location_ids_in(area["id"]))
+        if subject["label"] == "Location":
+            return subject["id"] in inside
+        if subject["label"] != "Position":
+            return False
+        loc = self._located(subject["id"])[0]
+        return bool(loc) and loc["id"] in inside
+
+    def _package_task(self, task_id, area: dict, joining: str | None = None) -> dict:
+        """A live task that can join a package on ``area`` (``joining``: the package it's
+        joining, which may hold it already)."""
+        task = self.s.node(self.org, str(task_id or ""), "Task")
+        if task is None:
+            raise Invalid(f"There's no task with id {task_id} in this workspace.")
+        if task.get("retired"):
+            raise Invalid(f"{task['name']} has been retired: restore it first.")
+        subject = _subject(self.s, self.org, task)
+        if subject is None or subject.get("retired"):
+            raise Invalid(f"What {task['name']} is on has been retired.")
+        if subject["label"] == "Item":
+            raise Invalid(f"{task['name']} is an item's task: it follows the serial number, so it stays on its own.")
+        if not _is_calendar(task["unit"]) or (task.get("also_unit") and not _is_calendar(task["also_unit"])):
+            raise Invalid(f"{task['name']} goes by use: a package goes by the calendar, so it stays on its own.")
+        if task.get("include_positions"):
+            raise Invalid(f"{task['name']} is a round (a line for each position at its location): it stays on its own.")
+        if not self._in_area(area, subject):
+            raise Invalid(f"{task['name']} is on {subject['name']}, which isn't {area['name']} or inside it: a "
+                          "package's tasks are on its position or a position inside it, or at its location.")
+        home = self._package_index().get(task["id"])
+        if home and home["package"]["id"] != joining:
+            raise Invalid(f"{task['name']} is already in {home['package']['name']}: a task has one home package. "
+                          "Remove it from there first, or add a second task for the other schedule.")
+        return task
+
+    def _member_arg(self, value) -> dict:
+        """A member's settings from a request: a task id, or {task_id, visit_rule?,
+        every_nth?, suppresses?}."""
+        if isinstance(value, str):
+            value = {"task_id": value}
+        if not isinstance(value, dict) or not value.get("task_id"):
+            raise Invalid("Each task is a task id, or {task_id, visit_rule?, every_nth?, suppresses?}.")
+        rule = value.get("visit_rule") or "every"
+        if rule not in self.VISIT_RULES:
+            raise Invalid("visit_rule is every (on every visit) or nth (on the first visit and every Nth after: "
+                          "every_nth).")
+        out = {"task_id": str(value["task_id"]), "visit_rule": rule}
+        if rule == "nth":
+            n = _number(value.get("every_nth"), "every_nth (every how many visits)", 2, 100)
+            if not float(n).is_integer():
+                raise Invalid("every_nth is a whole number of visits, 2 or more.")
+            out["every_nth"] = int(n)
+        elif value.get("every_nth") not in (None, ""):
+            raise Invalid("every_nth goes with visit_rule nth.")
+        suppresses = [str(x) for x in _list(value.get("suppresses"), "tasks it covers")]
+        if out["task_id"] in suppresses:
+            raise Invalid("A task can't cover itself.")
+        if suppresses:
+            out["suppresses"] = list(dict.fromkeys(suppresses))
+        return out
+
+    def _check_suppresses(self, members: list[dict], tree_ids: set) -> None:
+        """Each task a member covers is in the same package or its layers."""
+        for member in members:
+            for sid in member.get("suppresses") or []:
+                if sid not in tree_ids:
+                    raise Invalid(f"A task can cover only tasks in the same package or its layers; {sid} isn't "
+                                  "one of them.")
+
+    def _tree_task_ids(self, pkg: dict | None) -> set:
+        if pkg is None:
+            return set()
+        root = self._package_chain(pkg)[-1]
+        return {m["task_id"] for p in self._package_tree(root) for m in p.get("members") or []}
+
+    def _tolerance_arg(self, amount, unit) -> dict | None:
+        if amount in (None, ""):
+            return None
+        unit = unit or "days"
+        if unit not in self.TOLERANCE_UNITS:
+            raise Invalid("tolerance_unit is days or hours.")
+        if unit == "hours":
+            return {"amount": _number(amount, "tolerance", 0, MAX_USE_INTERVAL), "unit": "hours"}
+        days = _number(amount, "tolerance", 0, 366)
+        if not float(days).is_integer():
+            raise Invalid("A tolerance in days is a whole number (on Saturdays with Sunday still on time: 1).")
+        return {"amount": int(days), "unit": "days"}
+
+    def _cadence_fields(self, timing, every, unit, weekday, nth, day, anchor) -> dict:
+        """A package's timing and cadence, checked: the payload's fields."""
+        if timing not in self.PACKAGE_TIMINGS:
+            raise Invalid("timing is fixed (on set dates: every Saturday) or from_last_visit (the interval after "
+                          "the last visit closed).")
+        unit = _norm_unit(unit) or "weeks"
+        if unit not in CALENDAR_UNITS:
+            raise Invalid("A package's unit is days, weeks, months or years (packages by use aren't built yet).")
+        n = _interval(every, unit, "package's interval (every)")
+        if not float(n).is_integer():
+            raise Invalid("every is a whole number of days, weeks, months or years.")
+        pattern = {k: v for k, v in (("weekday", weekday), ("nth", nth), ("day", day)) if v not in (None, "")}
+        if pattern and timing != "fixed":
+            raise Invalid("A pattern (weekday, nth, day) goes with fixed timing: counted from the last visit, the "
+                          "next is the close date plus the interval.")
+        anchor = _day(anchor, "anchor date", self.today())
+        try:
+            cad = Cadence(int(n), unit, anchor, weekday=pattern.get("weekday"), nth=pattern.get("nth"),
+                          day=pattern.get("day"))
+        except (TypeError, ValueError) as err:
+            raise Invalid(str(err)) from None
+        pattern = {k: v for k, v in (("weekday", cad.weekday), ("nth", cad.nth), ("day", cad.day)) if v is not None}
+        return {"timing": timing, "every": int(n), "unit": unit, "pattern": pattern or None, "anchor": anchor}
+
+    def _check_layer_dates(self, fields: dict, parent: dict, name: str) -> None:
+        """A layer visits on its parent's visits: each of its next dates must be one."""
+        cad = self._cadence(fields)
+        parent_cad = self._cadence(parent)
+        start = max(fields["anchor"], self.today())
+        for d in cad.dates(start, LATEST_DAY, limit=self._CHECK_LAYER_DATES):
+            if not parent_cad.includes(d):
+                raise Invalid(f"A layer visits on its parent's visits, and {d.isoformat()} isn't one of "
+                              f"{parent['name']}'s: give {name} dates that fall on them (on a package every "
+                              "Saturday: the first Saturday of the month, every 3 months on it for a quarterly).")
+
+    def create_package(self, name, position_id=None, location_id=None, parent_id=None, timing="fixed", every=1,
+                       unit="weeks", weekday=None, nth=None, day=None, anchor=None, tolerance=None,
+                       tolerance_unit=None, trade="", notes="", tasks=None) -> dict:
+        """A work package: tasks done together on one visit, raising one work order per
+        visit. On exactly one of a position (its tasks on it or on positions inside it)
+        or a location (tasks at it); a layer (parent_id) is on its parent's. Timing fixed
+        (every ``every`` ``unit`` from ``anchor``, on a pattern if given: weekday every so
+        many weeks; weekday with nth, or day, every so many months) or from_last_visit.
+        tasks: task ids, or {task_id, visit_rule, every_nth, suppresses}."""
+        name = _text(name, "package's name", required=True)
+        given = [(k, v) for k, v in (("Position", position_id), ("Location", location_id)) if v not in (None, "")]
+        parent = None
+        if parent_id not in (None, ""):
+            if given:
+                raise Invalid("A layer is on its parent's position or location: leave position_id and location_id "
+                              "out.")
+            parent = self._live_package(parent_id)
+            chain = self._package_chain(parent)
+            if len(chain) > self.MAX_LAYER_DEPTH:
+                raise Invalid(f"Layers go at most {self.MAX_LAYER_DEPTH} deep.")
+            if chain[-1]["timing"] != "fixed" or timing != "fixed":
+                raise Invalid("Layers go on packages with fixed dates, and have fixed dates themselves: they visit "
+                              "on some of their parent's visits.")
+            if tolerance not in (None, ""):
+                raise Invalid("A layer's tasks go on its top package's work orders: set the tolerance there.")
+            area = self._package_subject(parent)
+            ref = {"parent_id": parent["id"]}
+        else:
+            if len(given) != 1:
+                raise Invalid("Say what the package is on: exactly one of position_id or location_id (an item's "
+                              "tasks stay on their own).")
+            kind, rid = given[0]
+            area = self._get(str(rid), kind)
+            if area.get("retired"):
+                raise Invalid(f"{area['name']} has been retired: restore it first.")
+            ref = {"position_id": area["id"]} if kind == "Position" else {"subject": {"kind": "location",
+                                                                                         "id": area["id"]}}
+        fields = self._cadence_fields(timing or "fixed", 1 if every in (None, "") else every, unit, weekday, nth,
+                                      day, anchor)
+        if parent is not None:
+            self._check_layer_dates(fields, parent, name)
+        members = [self._member_arg(t) for t in _list(tasks, "tasks", self.MAX_PACKAGE_TASKS)]
+        ids = [mm["task_id"] for mm in members]
+        if len(set(ids)) != len(ids):
+            raise Invalid("A task is listed twice.")
+        for mm in members:
+            self._package_task(mm["task_id"], area)
+        self._check_suppresses(members, self._tree_task_ids(parent) | set(ids))
+        self._quota("WorkPackage", self.MAX_PACKAGES, what="work packages")
+        pid = new_id()
+        tol = self._tolerance_arg(tolerance, tolerance_unit)
+        self._emit("package.created", {
+            "id": pid, "name": name, **ref, **fields, "trade": _text(trade, "trade"), "notes": _text(notes, "notes"),
+            "tasks": members, "on": self.today()} | ({"tolerance": tol} if tol else {}))
+        return self.package(pid)
+
+    def update_package(self, package_id: str, name=None, timing=None, every=None, unit=None, weekday=None, nth=None,
+                       day=None, clear_pattern=False, anchor=None, tolerance=None, tolerance_unit=None, trade=None,
+                       notes=None, tasks=None) -> dict:
+        """Change a package: its name, timing and cadence (a weekday, nth or day replaces
+        the pattern; clear_pattern removes it), anchor, tolerance (0 removes it), trade,
+        notes, or members' visit rules (tasks: [{task_id, visit_rule, every_nth,
+        suppresses}] for tasks in it already). Its work orders already raised stay as
+        they are."""
+        pkg = self._live_package(package_id)
+        chain = self._package_chain(pkg)
+        parent = chain[1] if len(chain) > 1 else None
+        changes: dict = {}
+        if name is not None:
+            changes["name"] = _text(name, "package's name", required=True)
+        if trade is not None:
+            changes["trade"] = _text(trade, "trade")
+        if notes is not None:
+            changes["notes"] = _text(notes, "notes")
+        timing_given = any(v not in (None, "") for v in (timing, every, unit, weekday, nth, day, anchor)) or clear_pattern
+        if timing_given:
+            pattern = dict(pkg.get("pattern") or {})
+            if clear_pattern or any(v not in (None, "") for v in (weekday, nth, day)):
+                pattern = {k: v for k, v in (("weekday", weekday), ("nth", nth), ("day", day)) if v not in (None, "")}
+            fields = self._cadence_fields(timing or pkg["timing"], pkg["every"] if every in (None, "") else every,
+                                          unit or pkg["unit"], pattern.get("weekday"), pattern.get("nth"),
+                                          pattern.get("day"), anchor or pkg["anchor"])
+            layers = self._package_layers(pkg["id"])
+            if parent is not None:
+                if fields["timing"] != "fixed":
+                    raise Invalid("A layer has fixed dates: it visits on some of its parent's visits.")
+                self._check_layer_dates(fields, parent, pkg["name"])
+            if layers and fields["timing"] != "fixed":
+                raise Invalid(f"{pkg['name']} has layers, which visit on its fixed dates: keep it fixed, or retire "
+                              "them first.")
+            for layer in layers:
+                self._check_layer_dates(layer, {**pkg, **fields}, layer["name"])
+            changes |= {k: v for k, v in fields.items() if v != pkg.get(k)}
+        if tolerance not in (None, ""):
+            if parent is not None:
+                raise Invalid("A layer's tasks go on its top package's work orders: set the tolerance there.")
+            tol = self._tolerance_arg(tolerance, tolerance_unit)
+            changes["tolerance"] = tol if tol and tol["amount"] else None
+        if tasks not in (None, ""):
+            members = {m["task_id"]: dict(m) for m in pkg.get("members") or []}
+            for value in _list(tasks, "tasks", self.MAX_PACKAGE_TASKS):
+                setting = self._member_arg(value)
+                if setting["task_id"] not in members:
+                    raise Invalid(f"Task {setting['task_id']} isn't in {pkg['name']}: add it with "
+                                  "maintenance packages.add_task.")
+                members[setting["task_id"]] = setting
+            new = [members[m["task_id"]] for m in pkg.get("members") or []]
+            self._check_suppresses(new, self._tree_task_ids(pkg))
+            if new != (pkg.get("members") or []):
+                changes["members"] = new
+        changes = {k: v for k, v in changes.items() if v != pkg.get(k) or k == "members"}
+        if changes:
+            self._emit("package.updated", {"id": pkg["id"], "changes": changes, "on": self.today()})
+        return self.package(pkg["id"])
+
+    def add_package_task(self, package_id: str, task_id: str, visit_rule=None, every_nth=None, suppresses=None) -> dict:
+        """A task into a package, on its visits by visit_rule (every, or nth with
+        every_nth); suppresses: tasks in the package (or its layers) it covers on a visit."""
+        pkg = self._live_package(package_id)
+        if sum(1 for m in pkg.get("members") or []) >= self.MAX_PACKAGE_TASKS:
+            raise Invalid(f"A package holds at most {self.MAX_PACKAGE_TASKS} tasks: add a layer, or another package.")
+        member = self._member_arg({"task_id": task_id, "visit_rule": visit_rule, "every_nth": every_nth,
+                                   "suppresses": suppresses})
+        task = self._package_task(member["task_id"], self._package_subject(pkg), joining=pkg["id"])
+        if any(m["task_id"] == task["id"] for m in pkg.get("members") or []):
+            raise Invalid(f"{task['name']} is in {pkg['name']} already: change its visit rule with "
+                          "maintenance packages.update (tasks).")
+        self._check_suppresses([member], self._tree_task_ids(pkg) | {task["id"]})
+        self._emit("package.task_added", {"id": pkg["id"], **member, "on": self.today()})
+        return self.package(pkg["id"])
+
+    def remove_package_task(self, package_id: str, task_id: str) -> dict:
+        """Take a task out of a package: it's raised on its own again, by its own
+        interval (a line already on an open work order stays there)."""
+        pkg = self._live_package(package_id)
+        member = next((m for m in pkg.get("members") or [] if m["task_id"] == task_id), None)
+        if member is None:
+            raise Invalid(f"That task isn't in {pkg['name']}.")
+        self._emit("package.task_removed", {"id": pkg["id"], "task_id": task_id, "on": self.today()})
+        return {**self.package(pkg["id"]), "removed": member}
+
+    def pause_package(self, package_id: str, reason="") -> dict:
+        """Stop a package (and its layers) raising work: its tasks go back to being raised
+        one by one, by their own intervals, until it's resumed."""
+        pkg = self._live_package(package_id)
+        if pkg.get("paused"):
+            raise Invalid(f"{pkg['name']} is paused already.")
+        self._emit("package.paused", {"id": pkg["id"], "on": self.today(), "reason": _text(reason, "reason")})
+        return self.package(pkg["id"])
+
+    def resume_package(self, package_id: str) -> dict:
+        pkg = self._live_package(package_id)
+        if not pkg.get("paused"):
+            raise Invalid(f"{pkg['name']} isn't paused.")
+        self._emit("package.resumed", {"id": pkg["id"], "on": self.today()})
+        return self.package(pkg["id"])
+
+    def retire_package(self, package_id: str, reason="") -> dict:
+        """Retire a package, with its layers: its tasks are raised on their own again and
+        may join another package. Not while its work order is open."""
+        pkg = self._live_package(package_id)
+        if not self._package_parent(pkg["id"]):
+            open_wo = self._package_state(pkg)["open"]
+            if open_wo:
+                raise Invalid(f"Work order #{open_wo['number']} from {pkg['name']} is still open: close or cancel "
+                              "it first.")
+        reason = _text(reason, "reason")
+        for layer in reversed(self._package_tree(pkg)[1:]):
+            self._emit("package.retired", {"id": layer["id"], "on": self.today(),
+                                           "reason": reason or f"retired with {pkg['name']}"})
+        self._emit("package.retired", {"id": pkg["id"], "on": self.today(), "reason": reason})
+        return {"retired": pkg["id"], "name": pkg["name"]}
+
+    def restore_package(self, package_id: str) -> dict:
+        """Bring a retired package back (not its layers: restore each). Refused when one
+        of its tasks has joined another package since, or its parent is retired."""
+        pkg = self._get(str(package_id or ""), "WorkPackage")
+        self._not_retired(pkg)
+        parent = self._package_parent(pkg["id"])
+        if parent is not None and parent.get("retired"):
+            raise Invalid(f"It's layered on {parent['name']}, which is retired: restore that first.")
+        subject = self._package_subject(pkg)
+        if subject is None or subject.get("retired"):
+            raise Invalid("What the package is on has been retired: restore that first.")
+        index = self._package_index()
+        for member in pkg.get("members") or []:
+            home = index.get(member["task_id"])
+            if home and home["package"]["id"] != pkg["id"]:
+                raise Invalid(f"{(self.s.node(self.org, member['task_id']) or {}).get('name', 'A task')} has joined "
+                              f"{home['package']['name']} since: remove it from there first.")
+        self._emit("package.restored", {"id": pkg["id"], "on": self.today()})
+        return self.package(pkg["id"])
+
+    # -- raising the work --
+
+    def _own_open(self, root_id: str, task_ids) -> set:
+        """The tasks with an open work order that isn't this package's (left off its
+        lines until that one closes or is cancelled)."""
+        out = set()
+        for tid in task_ids:
+            for w in self.s.inn(self.org, tid, "FOR"):
+                if w["label"] == "WorkOrder" and w.get("status") in OPEN_STATUSES and \
+                        not any(x["id"] == root_id for x in self.s.out(self.org, w["id"], "RAISED_FROM")):
+                    out.add(tid)
+        return out
+
+    def _package_line(self, task: dict, pkg: dict) -> dict:
+        """A task's line on a package's work order: its instructions, steps, counter and
+        trade travel with it."""
+        subject = _subject(self.s, self.org, task)
+        line = {"task_id": task["id"], "name": task["name"], "package_id": pkg["id"],
+                "instructions": task.get("instructions", ""), "checklist": list(task.get("checklist") or [])}
+        line["position_id" if subject["label"] == "Position" else "location_id"] = subject["id"]
+        for k in ("trade", "point_id"):
+            if task.get(k):
+                line[k] = task[k]
+        return line
+
+    def _generate_package(self, root: dict, until: str, today: str, out: dict) -> None:
+        """One top package's turn in generate: its next visit's work order, or lines added
+        to the one still open for the visits that have come since."""
+        subject = self._package_subject(root)
+        if subject is None or subject.get("retired"):
+            raise Invalid(f"What {root['name']} is on has been retired: retire the package, or restore it.")
+        state = self._package_state(root)
+        tree = self._package_tree(root, active_only=True)
+        own_open = self._own_open(root["id"], {m["task_id"] for p in tree for m in p.get("members") or []})
+        brief = {"id": root["id"], "name": root["name"]}
+        wo = state["open"]
+        if wo is not None:
+            if root["timing"] != "fixed":
+                return
+            on_wo = set(state["on_open"])
+            index = {m["task_id"]: m for p in tree for m in p.get("members") or []}
+            covered = [index[t] for t in on_wo if t in index]
+            lines, through = [], None
+            day = self._next_root_visit(root, wo.get("covers_to") or wo["visit_on"])
+            while day and day <= today:
+                found = self._visit_tasks(root, tree, day, self._visit_number(root, day, 0), skip=on_wo | own_open,
+                                          covered_by=covered)
+                for task, pkg, member in found:
+                    lines.append(self._package_line(task, pkg))
+                    on_wo.add(task["id"])
+                    covered.append(member)
+                through = day
+                day = self._next_root_visit(root, day)
+            if lines:
+                self._emit("work_order.package_lines_added", {"id": wo["id"], "lines": lines, "through": through,
+                                                              "on": today})
+                out["lines_added"].append({"package": brief, "work_order": {"id": wo["id"], "number": wo["number"]},
+                                           "lines": len(lines), "through": through})
+            return
+        day = state["next_visit"]
+        while day and day <= until:
+            number = self._visit_number(root, day, state["raised"])
+            found = self._visit_tasks(root, tree, day, number, skip=own_open)
+            if found:
+                wid = new_id()
+                ref = {"position_id": subject["id"]} if subject["label"] == "Position" else \
+                    {"subject": {"kind": "location", "id": subject["id"]}}
+                self._emit("work_order.package_opened", {
+                    "id": wid, "number": self._next_number(), "title": shortened(root["name"])[0], "type": "preventive",
+                    "package_id": root["id"], **ref, "due": day, "visit_on": day, "visit_number": number,
+                    "notes": "", "on": today, "lines": [self._package_line(t, p) for t, p, _ in found],
+                } | ({"trade": root["trade"]} if root.get("trade") else {}))
+                out["work_orders"].append(self.work_order(wid))
+                out["visits"].append({"package": brief, "work_order_id": wid, "visit_on": day, "lines": len(found)})
+                return
+            day = self._next_root_visit(root, day)
+
+    def packages_due(self, horizon_days: int) -> int:
+        """How many active top packages would get a work order within the horizon (their
+        next visit inside it, none open): for a dry run's count."""
+        until = (date.fromisoformat(self.today()) + timedelta(days=horizon_days)).isoformat()
+        return sum(1 for p in self.s.nodes(self.org, "WorkPackage")
+                   if not p.get("retired") and not p.get("paused") and not self._package_parent(p["id"])
+                   and (self._package_state(p)["next_visit"] or "9999") <= until)
+
+    def _generate_packages(self, until: str) -> dict:
+        """Every active top package's turn in generate. Each stands alone: one that can't
+        is listed in skipped, and the others go ahead."""
+        out: dict = {"work_orders": [], "visits": [], "lines_added": [], "skipped": []}
+        today = self.today()
+        roots = sorted((p for p in self.s.nodes(self.org, "WorkPackage")
+                        if not p.get("retired") and not p.get("paused") and not self._package_parent(p["id"])),
+                       key=lambda p: (p["name"].lower(), p["id"]))
+        for root in roots:
+            try:
+                self._generate_package(root, until, today, out)
+            except Invalid as err:
+                logger.warning("maintenance: no work order for package %s in %s: %s", root["id"], self.org, err)
+                out["skipped"].append({"package": {"id": root["id"], "name": root["name"]}, "why": str(err)})
+            except Exception:  # noqa: BLE001 - one package's trouble mustn't stop the others
+                logger.exception("maintenance: work order for package %s in %s failed", root["id"], self.org)
+                out["skipped"].append({"package": {"id": root["id"], "name": root["name"]},
+                                       "why": "Something went wrong raising its work order. We've been told; "
+                                              "the rest went ahead."})
+        return out
+
+    # -- reading them --
+
+    @staticmethod
+    def _cadence_text(pkg: dict) -> str:
+        """A package's cadence in words: "every Saturday", "the first Saturday of every
+        3 months", "every 2 weeks after the last visit"."""
+        n, unit, pattern = pkg["every"], pkg["unit"], pkg.get("pattern") or {}
+        every = f"every {unit[:-1]}" if n == 1 else f"every {n} {unit}"
+        months = "every month" if n == 1 else f"every {n} months"
+        if pkg["timing"] == "from_last_visit":
+            return f"{every} after the last visit"
+        if pattern.get("weekday") and pattern.get("nth"):
+            words = {1: "first", 2: "second", 3: "third", 4: "fourth", -1: "last", -2: "second last",
+                     -3: "third last", -4: "fourth last"}
+            return f"the {words[pattern['nth']]} {pattern['weekday']} of {months}"
+        if pattern.get("weekday"):
+            return f"every {pattern['weekday']}" if n == 1 else f"every {n} weeks on {pattern['weekday']}"
+        if pattern.get("day"):
+            d = pattern["day"]
+            suffix = "th" if 10 <= d % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+            return f"the {d}{suffix} of {months}"
+        return every
+
+    def _package_brief(self, pkg: dict) -> dict:
+        """A package in a list: what it's on, when, its status, how many tasks, and (a top
+        package) its next visit or open work order with how late it is."""
+        chain = self._package_chain(pkg)
+        root, status = chain[-1], self._package_status(chain)
+        subject = self._package_subject(pkg)
+        live = [m for m in pkg.get("members") or []
+                if not (self.s.node(self.org, m["task_id"]) or {"retired": True}).get("retired")]
+        out = {"id": pkg["id"], "name": pkg["name"], "status": status, "timing": pkg["timing"],
+               "cadence": {"every": pkg["every"], "unit": pkg["unit"], **(pkg.get("pattern") or {}),
+                           "anchor": pkg["anchor"], "text": self._cadence_text(pkg)},
+               "tolerance": (root.get("tolerance") and {**root["tolerance"],
+                                                        "enforced": root["tolerance"]["unit"] == "days"}),
+               "trade": pkg.get("trade", ""), "subject": self._subject_brief(subject),
+               "parent": {"id": chain[1]["id"], "name": chain[1]["name"]} if len(chain) > 1 else None,
+               "layers": [{"id": x["id"], "name": x["name"]} for x in self._package_layers(pkg["id"])],
+               "task_count": len(live), "next_visit": None, "open_work_order": None}
+        if status == "retired":
+            return out
+        state = self._package_state(root)
+        if state["open"]:
+            w = state["open"]
+            out["open_work_order"] = {"id": w["id"], "number": w["number"], "status": w["status"],
+                                      "visit_on": w["visit_on"], **{k: state[k] for k in (
+                                          "late", "days_late", "visits_missed", "on_time_until")}}
+        if status != "active":
+            return out
+        if root["id"] == pkg["id"]:
+            out["next_visit"] = state["next_visit"] or (self._package_upcoming(root) or [(None, None)])[0][0]
+        else:
+            cad = self._cadence(pkg)
+            if state["open"]:
+                found = cad.after(state["open"].get("covers_to") or state["open"]["visit_on"])
+            else:
+                found = cad.on_or_after(state["next_visit"] or self.today())
+            out["next_visit"] = found and found.isoformat()
+        return out
+
+    def packages(self, status=None) -> dict:
+        """Every work package (status: active, paused, retired or all; default: all but
+        retired), top packages first with their layers after them, and how many work
+        orders from them are open and late."""
+        if status not in (None, "", "all", "active", "paused", "retired"):
+            raise Invalid("status is active, paused, retired or all.")
+        rows = [self._package_brief(p) for p in self.s.nodes(self.org, "WorkPackage")]
+        rows = [r for r in rows if (status in ("all", r["status"])) or (not status and r["status"] != "retired")]
+        rows.sort(key=lambda r: ((r["parent"] or {}).get("name", r["name"]).lower(), r["parent"] is not None,
+                                 r["name"].lower(), r["id"]))
+        opened = [r["open_work_order"] for r in rows if r["open_work_order"] and r["parent"] is None]
+        return {"packages": rows, "open_work_orders": len(opened), "late": sum(1 for w in opened if w["late"])}
+
+    def package(self, package_id: str) -> dict:
+        """A package in full: its cadence, tolerance, layers, its tasks (each with its visit
+        rule, what it covers, last done and next due), its next visits (a top package's,
+        with how many tasks each) and its recent work orders."""
+        pkg = self._get(str(package_id or ""), "WorkPackage")
+        out = {**self._package_brief(pkg), "notes": pkg.get("notes", ""), "created": pkg.get("created"),
+               "paused_reason": pkg.get("paused_reason", "") if pkg.get("paused") else "",
+               "retired_reason": pkg.get("retired_reason", "") if pkg.get("retired") else ""}
+        names = {}
+        rows = []
+        for member in pkg.get("members") or []:
+            task = self.s.node(self.org, member["task_id"], "Task")
+            if task is None:
+                continue
+            names[task["id"]] = task["name"]
+            view = self._task_view(task)
+            rows.append({"task_id": task["id"], "name": task["name"], "subject": view["subject"],
+                         "interval": task["interval"], "unit": task["unit"], "trade": task.get("trade", ""),
+                         "visit_rule": member.get("visit_rule", "every"), "every_nth": member.get("every_nth"),
+                         "suppresses": list(member.get("suppresses") or []), "retired": bool(task.get("retired")),
+                         "last_done": task.get("last_done"), "next_due": view["next_due"],
+                         "overdue": view["overdue"], "owed": self._owed(task),
+                         "open_work_order": view["open_work_order"]})
+        for row in rows:
+            row["suppresses"] = [{"id": sid, "name": names.get(sid) or (self.s.node(self.org, sid) or {}).get("name")}
+                                 for sid in row["suppresses"]]
+        out["tasks"] = rows
+        root = self._package_chain(pkg)[-1]
+        out["work_orders"] = [self._wo_brief(w) for w in sorted(
+            (w for w in self.s.inn(self.org, root["id"], "RAISED_FROM") if w["label"] == "WorkOrder"),
+            key=lambda w: w["number"], reverse=True)[:10]]
+        out["next_visits"] = []
+        if out["status"] == "active" and root["id"] == pkg["id"]:
+            out["next_visits"] = [{"on": d, "tasks": len(ids)} for d, ids in self._package_upcoming(root)[:5]]
+        return out
+
+    # -- proposing packages from the decided tasks --
+
+    _BUCKETS = (("weekly", 7.0, 1, "weeks"), ("fortnightly", 14.0, 2, "weeks"), ("monthly", 30.4375, 1, "months"),
+                ("quarterly", 91.3125, 3, "months"), ("6-monthly", 182.625, 6, "months"),
+                ("yearly", 365.25, 1, "years"))
+
+    def _bucket(self, task: dict) -> tuple[str, int, str]:
+        """A calendar task's cadence bucket, within ±10%: (name, every, unit)."""
+        unit = _norm_unit(task["unit"])
+        days = task["interval"] * _DAYS_PER[unit]
+        for name, length, every, bucket_unit in self._BUCKETS:
+            if abs(days - length) <= 0.1 * length:
+                return name, every, bucket_unit
+        years = days / 365.25
+        if years > 1.5 and abs(years - round(years)) <= 0.1 * round(years):
+            return f"{round(years)}-yearly", round(years), "years"
+        if float(task["interval"]).is_integer():
+            return f"every {task['interval']:g} {unit}", int(task["interval"]), unit
+        return f"every {task['interval']:g} {unit}", max(1, round(days)), "days"
+
+    def _area_of(self, subject: dict) -> dict:
+        """Where a task is, for grouping: its location (set or inherited), else the top of
+        its position tree."""
+        if subject["label"] == "Location":
+            return subject
+        loc = self._located(subject["id"])[0]
+        if loc:
+            return loc
+        top = subject
+        for aid in self._ancestor_ids(subject["id"]):
+            node = self.s.node(self.org, aid)
+            if node and node["label"] == "Position":
+                top = node
+        return top
+
+    def _common_position(self, position_ids: list[str]) -> str:
+        """The lowest position every one of these is (or is inside)."""
+        chains = [[pid, *self._ancestor_ids(pid)] for pid in position_ids]
+        shared = set(chains[0]).intersection(*map(set, chains[1:]))
+        return next((pid for pid in chains[0] if pid in shared
+                     and (self.s.node(self.org, pid) or {}).get("label") == "Position"), position_ids[0])
+
+    def propose_packages(self, position_id=None, location_id=None) -> dict:
+        """Drafts of work packages from the live tasks on positions and locations that are
+        in no package (an item's task follows its item, and a task by use goes by its
+        counter: both are left out): grouped by cadence (within ±10%: weekly,
+        fortnightly, monthly, quarterly, 6-monthly, yearly, multi-year), area (the
+        location, else the top of the position tree) and trade, each named, with a
+        ready create and warnings. position_id / location_id: only that branch or area.
+        Saves nothing."""
+        scope = None
+        if position_id not in (None, "") and location_id not in (None, ""):
+            raise Invalid("Give position_id or location_id, not both.")
+        if position_id not in (None, ""):
+            scope = self._get(str(position_id), "Position")
+        elif location_id not in (None, ""):
+            scope = self._get(str(location_id), "Location")
+        index = self._package_index()
+        today = self.today()
+        groups: dict = {}
+        left_out, packaged = [], 0
+        for task in sorted(self.s.nodes(self.org, "Task"), key=lambda t: (t["name"].lower(), t["id"])):
+            subject = _subject(self.s, self.org, task)
+            if task.get("retired") or subject is None or subject.get("retired"):
+                continue
+            if scope is not None and not self._in_area(scope, subject):
+                continue
+            if task["id"] in index:
+                packaged += 1
+                continue
+            brief = {"id": task["id"], "name": task["name"], "subject": self._subject_brief(subject)}
+            if subject["label"] == "Item":
+                left_out.append({**brief, "why": "an item's task: it follows the serial number"})
+                continue
+            if not _is_calendar(task["unit"]) or (task.get("also_unit") and not _is_calendar(task["also_unit"])):
+                left_out.append({**brief, "why": "by use: it goes by its counter, on its own"})
+                continue
+            if task.get("include_positions"):
+                left_out.append({**brief, "why": "a round: it stays on its own"})
+                continue
+            bucket, every, unit = self._bucket(task)
+            area = self._area_of(subject)
+            key = (bucket, area["id"], task.get("trade", ""))
+            group = groups.setdefault(key, {"bucket": bucket, "every": every, "unit": unit, "area": area,
+                                            "trade": task.get("trade", ""), "tasks": []})
+            view = self._task_view(task)
+            group["tasks"].append({**brief, "interval": task["interval"], "unit": task["unit"],
+                                   "next_due": view["next_due"], "open_work_order": view["open_work_order"],
+                                   "why": f"every {task['interval']:g} {task['unit']}: {bucket}"})
+        order = {name: i for i, (name, *_rest) in enumerate(self._BUCKETS)}
+        drafts = []
+        for key in sorted(groups, key=lambda k: (groups[k]["area"]["name"].lower(), order.get(k[0], 99), k[0], k[2])):
+            g = groups[key]
+            area = g["area"]
+            shapes = sorted({f"{t['interval']:g} {t['unit']}" for t in g["tasks"]})
+            warnings = []
+            if len(shapes) > 1:
+                warnings.append(f"Mixes {', '.join(shapes)}: they drift apart (a month is 28 to 31 days), so on one "
+                                "visit some would be early or late by their own interval. Consider giving them the "
+                                "same interval.")
+            for t in g["tasks"]:
+                if t["open_work_order"]:
+                    warnings.append(f"{t['name']} has its own open work order #{t['open_work_order']['number']}: it "
+                                    "joins the package's visits once that closes or is cancelled.")
+            dues = sorted(t["next_due"] for t in g["tasks"] if t["next_due"])
+            anchor = max(dues[0], today) if dues else today
+            name = shortened(f"{area['name']} {g['bucket']} check" + (f" ({g['trade']})" if g["trade"] else ""))[0]
+            where = {"location_id": area["id"]} if area["label"] == "Location" else {
+                "position_id": self._common_position([t["subject"]["id"] for t in g["tasks"]])}
+            drafts.append({"name": name, "cadence": g["bucket"], "trade": g["trade"],
+                           "area": {"kind": area["label"].lower(), "id": area["id"], "name": area["name"]},
+                           "tasks": g["tasks"], "warnings": warnings,
+                           "create": {"name": name, **where, "timing": "fixed", "every": g["every"],
+                                      "unit": g["unit"], "anchor": anchor,
+                                      "tasks": [t["id"] for t in g["tasks"]],
+                                      **({"trade": g["trade"]} if g["trade"] else {})}})
+        return {"drafts": drafts, "left_out": left_out, "already_in_packages": packaged, "saved": False,
+                "note": "Nothing was saved. Show the drafts to the user; each create is ready for maintenance "
+                        "packages.create once they've agreed it (several at once: maintenance apply)."}
+
     def _also_limit(self, also_interval, also_unit, current_unit=None) -> dict:
         """A task's second limit, whichever comes first: {} with none given, both
         None to remove it (0 or less)."""
@@ -6957,6 +8104,8 @@ class Maintenance:
             why.append(f"{who}{'s' if named else 'S'}omething is still fitted. Remove or move it first.")
         if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES for w in self.s.inn(self.org, position_id, "ON")):
             why.append(f"{who}{'i' if named else 'I'}t has open work orders. Close or cancel them first.")
+        why += [f"{who}{pkg['name']} (a work package) is on it: retire the package first."
+                for pkg in self.s.inn(self.org, position_id, "PLANNED_FOR") if not pkg.get("retired")]
         return why
 
     def retire_position(self, position_id: str, reason="", cascade: bool = False) -> dict:
@@ -7056,6 +8205,8 @@ class Maintenance:
         if any(w["label"] == "WorkOrder" and w["status"] in OPEN_STATUSES
                for w in self.s.inn(self.org, location_id, "ON")):
             why.append(f"{loc['name']} has open work orders. Close or cancel them first.")
+        why += [f"{pkg['name']} (a work package) is at {loc['name']}: retire the package first."
+                for pkg in self.s.inn(self.org, location_id, "PLANNED_AT") if not pkg.get("retired")]
         return why
 
     def retire_location(self, location_id: str, reason="", cascade: bool = False) -> dict:
@@ -9099,11 +10250,18 @@ class Maintenance:
             if t.get("retired") or not subject:
                 continue
             tasks[subject] = tasks.get(subject, 0) + 1
-            due = self._tree_task_due(t, "Item" if subject in items else "")
+            packaged = self._package_index().get(t["id"])
+            if packaged and packaged["active"]:
+                # Due on its work package's visits, overdue once the visit is late.
+                by_package = self._package_due(t, packaged)
+                due, overdue = by_package["next_due"], by_package["overdue"]
+            else:
+                due = self._tree_task_due(t, "Item" if subject in items else "")
+                overdue = bool(due) and due < today
             if due:
                 st = on_node(subject)
                 st["next_due"] = min(st["next_due"] or due, due)
-                st["overdue"] += due < today
+                st["overdue"] += overdue
         for w in s.nodes(org, "WorkOrder"):
             if w["status"] in OPEN_STATUSES and on.get(w["id"]):
                 on_node(on[w["id"]])["open_work"] += 1
@@ -9390,7 +10548,38 @@ class Maintenance:
         }
         if kind == "Item":
             out["item_at"] = self._item_at(subject["id"])
+        raised = self.s.out(self.org, w["id"], "RAISED_FROM")
+        if raised:
+            # A work package's: its visit, and how late it is while open.
+            out["package"] = {"id": raised[0]["id"], "name": raised[0]["name"]}
+            out["visit_on"] = w.get("visit_on")
+            if w["status"] in OPEN_STATUSES:
+                out |= self._lateness(raised[0], w["visit_on"], self._tolerance_days(raised[0]), self.today())
         return out
+
+    def _package_wo_view(self, w: dict) -> dict:
+        """A work package's work order's lines, as the page groups them: each task's line
+        (its checklist index and whether it's ticked), its steps' indices, where it is,
+        the package or layer it came from, and its instructions, counter and trade."""
+        checklist = w.get("checklist") or []
+        lines = []
+        for record in w.get("lines") or []:
+            tid = record["task_id"]
+            index = next((i for i, c in enumerate(checklist) if c.get("task_id") == tid and not c.get("step")), None)
+            where = self.s.node(self.org, record.get("position_id") or record.get("location_id") or "")
+            pkg = self.s.node(self.org, record.get("package_id") or "")
+            lines.append({**record, "index": index, "done": bool(index is not None and checklist[index].get("done")),
+                          "steps": [i for i, c in enumerate(checklist) if c.get("task_id") == tid and c.get("step")],
+                          "subject": self._subject_brief(where),
+                          "package": pkg and {"id": pkg["id"], "name": pkg["name"]}})
+        positions = []
+        for line in lines:
+            subject = line["subject"]
+            if subject and subject["kind"] == "position" and subject not in positions:
+                positions.append(subject)
+        released = [{**r, "name": (self.s.node(self.org, r["task_id"]) or {}).get("name")} for r in w.get("released") or []]
+        return {"lines": lines, "line_positions": positions, "released": released,
+                "visit_number": w.get("visit_number"), "covers_to": w.get("covers_to")}
 
     def work_orders(self, status: str | None = None, location_id: str | None = None) -> list[dict]:
         """Work orders, newest first. status 'open' means every not-yet-done status.
@@ -9467,6 +10656,12 @@ class Maintenance:
         }
         if subject["label"] == "Item":
             out["item"] = {**self._item_brief(subject), **self.whereabouts(subject["id"])}
+        if out.get("package"):
+            # One work order for many tasks: tasks (every one it's for), not task.
+            out |= self._package_wo_view(w)
+            out["task"] = None
+            out["tasks"] = [{"id": t["id"], "name": t["name"]} for t in task]
+            out["can_replace"] = bool(position_id or out["line_positions"])
         return out
 
     def items(self, item_class_id=None, manufacturer_id=None) -> list[dict]:

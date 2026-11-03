@@ -79,9 +79,11 @@ def _run_org(db, store, org: str, result: dict, dry_run: bool, email_service) ->
     """The daily run for one organisation: its work orders, refits and digest."""
     m = Maintenance(store, org, "scheduler", limited=False, time_zone=time_zones.of_owner(db, org))
     if dry_run:
-        due = [t for t in m.due_tasks(HORIZON_DAYS) if not t["open_work_order"]]
+        # A task in an active work package goes on its package's work order, not its own.
+        due = [t for t in m.due_tasks(HORIZON_DAYS)
+               if not t["open_work_order"] and not (t.get("package") or {}).get("active")]
         result["orgs"] += 1
-        result["work_orders"] += len(due)
+        result["work_orders"] += len(due) + m.packages_due(HORIZON_DAYS)
         return
     # Each task stands alone: one that can't have its work order is reported in
     # the result and the digest, and the rest still get theirs.
