@@ -136,6 +136,8 @@ GET_KINDS: Table = {
         behind them."""),
     "task_measurement": ("id", "position_id", "What a task by use counts and could count (position_id: if "
                          "moved there)."),
+    "package": ("id", "", """A work package: cadence, tolerance, layers, its tasks (visit rule, what each
+        covers, last done, next due), next visits, open work order with lateness, recent work orders."""),
     "class_life_data": ("id", "", """id = a position class's name. Every fitment at every position of the
         class, pooled: x = days in service, c = 0 failed or 1 censored; rough dates add xl / xr (a failure is
         then c = 2, interval censored)."""),
@@ -197,6 +199,8 @@ LIST_KINDS: Table = {
     "rcm_gaps": ("", "target_id", """What the RCM lacks: modes undecided, with no task, hidden without a
         failure-finding task, evidence to check; empty functions, standards, functional failures. target_id: a
         branch (default: all)."""),
+    "packages": ("", "status", """Work packages with next visit and open work order (late, days_late,
+        visits_missed); counts open and late. status active, paused, retired or all (default: not retired)."""),
     "events": ("", "limit since type", """What changed, newest first: each event's seq, type, at, actor and
         payload (the ids it touched: what to restore or undo). limit up to 500 (default 100); since: a seq to
         read forward from; type: one event type."""),
@@ -376,16 +380,18 @@ WORK_ORDERS: Table = {
         one's title, due ('' clears), notes (replaces the whole note), type, assignee, planned_for or trade
         ('' clears). append_note adds a dated line, also on closed and cancelled ones."""),
     "status": ("work_order_id status", "note", "Move an open one along: planned, in_progress, waiting, or open."),
-    "close": ("work_order_id", "actions on notes readings", """Close it with what was done (actions, in order).
+    "close": ("work_order_id", "actions on notes readings not_done", """Close it with what was done (actions, in order).
         A replace ends the fitted item's time at the position (a failure if a failure mode is named, else
         planned) and fits the new one: that builds the life data. Get the failure-mode ids from maintenance get.work_order
          first; if none fits, use failure_mode_text, never a failure as planned. An item's work
         order acts at the position it's fitted to now; a location's (a round) takes repair, inspect and other
-        only. Nothing is saved if any action is invalid."""),
+        only. A work package's: not_done for lines not ticked; an action's position_id picks a line's position.
+        Nothing is saved if any action is invalid."""),
     "cancel": ("work_order_id", "reason", """Cancel one that won't be done (a duplicate, raised by mistake);
         reason kept as cancel_reason. Work that was done: close."""),
     "generate": ("", "horizon_days", """Open a preventive work order for every task due within horizon_days
-        (default 30, at most 366) that has none open, on the task's subject; skipped: any it couldn't, and why."""),
+        (default 30, at most 366) that has none open, on the task's subject; one per work package visit (lines
+        added to its open one instead); skipped: any it couldn't, and why."""),
     "labour": ("work_order_id hours", "who rate on note", "Hours worked, by whom, at an hourly rate if known."),
     "part_used": ("work_order_id", "part quantity unit_cost part_number note part_id from_location_id", """A part
         or consumable used: free text (part) or a catalogue part (part_id, from the work order's
@@ -394,6 +400,22 @@ WORK_ORDERS: Table = {
     "cost": ("work_order_id description amount", "", "Any other cost (a contractor, hire, call-out)."),
     "remove_entry": ("entry_id", "", "Remove a labour, part or cost entry made by mistake (ids on the work order)."),
     "check": ("work_order_id index", "done", "Tick (done true, default) or untick a checklist line, numbered from 0."),
+}
+
+PACKAGES: Table = {
+    "propose": ("", "position_id location_id", """Drafts grouping the tasks in no package by cadence, area and
+        trade, each with a ready create and warnings. Saves nothing: show the user."""),
+    "create": ("name", "position_id location_id parent_id timing every unit weekday nth day anchor tolerance "
+               "tolerance_unit trade notes tasks", """A package on exactly one of position_id or location_id, or
+        a layer on parent_id. Timing, cadence and visit rules: maintenance guide topic plan."""),
+    "update": ("package_id", "name timing every unit weekday nth day clear_pattern anchor tolerance tolerance_unit "
+               "trade notes tasks", "Change it; tasks: members' visit rules."),
+    "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each)."),
+    "remove_task": ("package_id task_id", "", "Take a task out: it's raised on its own again."),
+    "pause": ("package_id", "reason", "Stop it raising work (its tasks go back to their own)."),
+    "resume": ("package_id", "", "Start it again."),
+    "retire": ("package_id", "reason", "Retire it, with its layers. Not while its work order is open."),
+    "restore": ("package_id", "", "Bring a retired one back."),
 }
 
 MEASUREMENTS: Table = {
@@ -605,6 +627,7 @@ _LABELS = {
     "ItemClass": ("item class", "item_class_id"), "Manufacturer": ("manufacturer", "manufacturer_id"),
     "Condition": ("condition", "condition_id"), "Document": ("document", "document_id"),
     "Photo": ("photo", "photo_id"), "Interface": ("connection", "interface_id"),
+    "WorkPackage": ("work package", "package_id"),
     "RedundancyGroup": ("redundancy group", "group_id"),
 }
 
@@ -677,7 +700,8 @@ TABLES: dict[str, tuple[str, Table]] = {
     "maintenance_positions": ("action", POSITIONS), "maintenance_fitments": ("action", FITMENTS),
     "maintenance_items": ("action", ITEMS), "maintenance_failure_modes": ("action", FAILURE_MODES),
     "maintenance_tasks": ("action", TASKS), "maintenance_proposals": ("action", PROPOSALS),
-    "maintenance_work_orders": ("action", WORK_ORDERS), "maintenance_measurements": ("action", MEASUREMENTS),
+    "maintenance_work_orders": ("action", WORK_ORDERS), "maintenance_packages": ("action", PACKAGES),
+    "maintenance_measurements": ("action", MEASUREMENTS),
     "maintenance_locations": ("action", LOCATIONS), "maintenance_parts": ("action", PARTS),
     "maintenance_reliability": ("action", RELIABILITY), "maintenance_topology": ("action", TOPOLOGY),
     "maintenance_item_classes": ("action", ITEM_CLASSES), "maintenance_manufacturers": ("action", MANUFACTURERS),
@@ -906,17 +930,19 @@ def register() -> None:
                 "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
                 "impact": m.impact, "conditions": m.conditions_of, "part_structure": m.part_structure,
-                "where_used": m.where_used, "function": m.function}[kind]
+                "where_used": m.where_used, "function": m.function, "package": m.package}[kind]
         return run(read, rid)
 
     @tool("maintenance_list", _READ, "List maintenance records", LIST_KINDS, "kind")
     def maintenance_list(kind: _choice(LIST_KINDS), ctx: Context,
                          status: Annotated[Literal["open", "planned", "in_progress", "waiting", "closed", "cancelled",
-                                                   "pending", "accepted", "rejected", "superseded", "all"] | None,
+                                                   "pending", "accepted", "rejected", "superseded", "all", "active",
+                                                   "paused", "retired"] | None,
                                            Field(description=(
                                                "work_orders: open (every one not done), planned, in_progress, "
                                                "waiting, closed or cancelled. proposals: pending (default), "
-                                               "accepted, rejected, superseded or all."))] = None,
+                                               "accepted, rejected, superseded or all. packages: active, paused, "
+                                               "retired or all."))] = None,
                          location_id: str | None = None,
                          item_class_id: Annotated[str | None, Field(description=(
                              "Only this item class or one inside it; 'none' for those with no class."))] = None,
@@ -931,7 +957,8 @@ def register() -> None:
         """Lists and reports across the maintenance workspace, by kind."""
         m = m_for(ctx)
         statuses = {"work_orders": ("open", "planned", "in_progress", "waiting", "closed", "cancelled"),
-                    "proposals": ("pending", "accepted", "rejected", "superseded", "all")}
+                    "proposals": ("pending", "accepted", "rejected", "superseded", "all"),
+                    "packages": ("active", "paused", "retired", "all")}
         if status is not None and status not in statuses[kind]:
             raise ToolError(f"kind '{kind}' takes status {', '.join(statuses[kind])}.")
         if kind == "events":
@@ -943,6 +970,8 @@ def register() -> None:
             return rcm_graph.gaps(rcm_graph.resolve(_db(), sheet, _reader(_caller(ctx)).read_owners))
         if kind == "work_orders":
             return {"work_orders": run(m.work_orders, status, location_id)}
+        if kind == "packages":
+            return run(m.packages, status)
         if kind == "items":
             return {"items": run(m.items, item_class_id, manufacturer_id)}
         if kind == "parts":
@@ -1368,10 +1397,15 @@ def register() -> None:
                 "(replace: what went in), part_id?: a catalogue part used doing it (from "
                 "the work order's suggested_parts; for a replace with no new_item / item_id, the new "
                 "item is made from it), quantity? (default: the parts list's quantity per job, "
-                "else 1), from_location_id? (issue it from stock there), notes?}"))] = None,
+                "else 1), from_location_id? (issue it from stock there), position_id? (a work package's work "
+                "order: one of its line_positions, where the action is), notes?}"))] = None,
             on: DateText = None,
             readings: Annotated[list[dict] | None, Field(description=(
                 "close: manual readings taken during the work: [{point_id, value}]."))] = None,
+            not_done: Annotated[list[dict] | None, Field(description=(
+                "close, a work package's work order: each line not ticked that wasn't done, [{task_id, reason}]: "
+                "it stays due and goes on the next work order. A line not ticked must be ticked or listed."))]
+            = None,
             reason: str | None = None, horizon_days: int | None = None, hours: float | None = None,
             who: str | None = None, rate: float | None = None, part: str | None = None,
             quantity: float | None = None, unit_cost: float | None = None, part_number: str | None = None,
@@ -1393,7 +1427,8 @@ def register() -> None:
         if action == "status":
             return run(m.set_work_status, work_order_id, status, note or "")
         if action == "close":
-            return run(m.close_work_order, work_order_id, actions or [], on, notes or "", readings or [])
+            return run(m.close_work_order, work_order_id, actions or [], on, notes or "", readings or [],
+                       not_done or [])
         if action == "cancel":
             return run(m.cancel_work_order, work_order_id, reason or "")
         if action == "generate":
@@ -1408,6 +1443,65 @@ def register() -> None:
         if action == "remove_entry":
             return run(m.remove_entry, entry_id)
         return run(m.check_item, work_order_id, index, _d(done, True))
+
+    PackageTasks = Annotated[list[dict[str, Any] | str] | None, Field(description=(
+        "Task ids, or [{task_id, visit_rule?: every|nth, every_nth?: N (nth: the first visit and every Nth after), "
+        "suppresses?: [task ids it covers on a visit]}]. update: visit rules of tasks in it already."))]
+
+    @tool("maintenance_packages", _WRITE, "Work packages: tasks done on one visit", PACKAGES)
+    def maintenance_packages(
+            action: _choice(PACKAGES), ctx: Context, package_id: str | None = None, name: str | None = None,
+            position_id: str | None = None, location_id: str | None = None,
+            parent_id: Annotated[str | None, Field(description=(
+                "A layer: the package it sits on (its visits fall on the parent's)."))] = None,
+            timing: Annotated[Literal["fixed", "from_last_visit"] | None, Field(description=(
+                "fixed (default): set dates from anchor; from_last_visit: the close date plus the interval."))] = None,
+            every: Annotated[int | None, Field(ge=1, description="Every how many units (default 1).")] = None,
+            unit: Literal["days", "weeks", "months", "years"] | None = None,
+            weekday: Annotated[Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+                                       "sunday"] | None, Field(description=(
+                "With weeks: on that day; with months and nth: that day of the month (the first Saturday)."))]
+            = None,
+            nth: Annotated[Literal[1, 2, 3, 4, -1, -2, -3, -4] | None, Field(description=(
+                "With weekday and months: which one (1 first, -1 last)."))] = None,
+            day: Annotated[int | None, Field(ge=1, le=31, description="With months: the day of the month.")] = None,
+            clear_pattern: bool | None = None,
+            anchor: Annotated[str | None, Field(description=(
+                "The date the cadence counts from (default today)."))] = None,
+            tolerance: Annotated[float | None, Field(ge=0, description=(
+                "How long after a visit's date it's still on time (Saturday, Sunday still fine: 1 day)."))] = None,
+            tolerance_unit: Annotated[Literal["days", "hours"] | None, Field(description=(
+                "days (default; enforced) or hours (kept, not yet enforced)."))] = None,
+            trade: str | None = None, notes: str | None = None, tasks: PackageTasks = None,
+            task_id: str | None = None, visit_rule: Literal["every", "nth"] | None = None,
+            every_nth: Annotated[int | None, Field(ge=2, le=100)] = None,
+            suppresses: Annotated[list[str] | None, Field(description=(
+                "Tasks this one covers: left off a visit it's on (not done, not overdue for it)."))] = None,
+            reason: str | None = None) -> dict[str, Any]:
+        """Work packages: tasks done together on one visit (the weekly check), raising one work order per
+        visit, with layers adding lines on some visits (the first Saturday of the month). How-to: maintenance
+        guide topic plan (making them) and run (their work orders)."""
+        m = m_for(ctx)
+        if action == "propose":
+            return run(m.propose_packages, position_id, location_id)
+        if action == "create":
+            return run(m.create_package, name, position_id, location_id, parent_id, _d(timing, "fixed"),
+                       _d(every, 1), _d(unit, "weeks"), weekday, nth, day, anchor, tolerance, tolerance_unit,
+                       trade or "", notes or "", tasks)
+        if action == "update":
+            return run(m.update_package, package_id, name, timing, every, unit, weekday, nth, day,
+                       bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks)
+        if action == "add_task":
+            return run(m.add_package_task, package_id, task_id, visit_rule, every_nth, suppresses)
+        if action == "remove_task":
+            return run(m.remove_package_task, package_id, task_id)
+        if action == "pause":
+            return run(m.pause_package, package_id, reason or "")
+        if action == "resume":
+            return run(m.resume_package, package_id)
+        if action == "retire":
+            return run(m.retire_package, package_id, reason or "")
+        return run(m.restore_package, package_id)
 
     @tool("maintenance_measurements", _WRITE, "Measurement points and readings", MEASUREMENTS)
     def maintenance_measurements(action: _choice(MEASUREMENTS), ctx: Context, point_id: str | None = None,
@@ -1870,7 +1964,7 @@ def register() -> None:
         functions, functional failures, failure modes, decisions, tasks, parts list, connections), or
         edit and delete many things at once. Each operation is one of the maintenance_<area> tools'
         actions (area = the tool name without maintenance_: positions, fitments, items, failure_modes,
-        tasks, proposals, work_orders, measurements, locations, parts, topology, item_classes,
+        tasks, proposals, work_orders, packages, measurements, locations, parts, topology, item_classes,
         manufacturers, attachments) with its own arguments and error texts. Every operation is first
         checked on a throwaway copy of the workspace: with any failure nothing is written. A delete-type
         operation (retire, remove, void, cancel, merge, disconnect, unlink, clear) needs confirm: the

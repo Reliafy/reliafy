@@ -67,6 +67,7 @@ DELETES = {
     "manufacturers.retire": "manufacturer_id", "manufacturers.merge": "manufacturer_id",
     "attachments.remove_photo": "photo_id", "attachments.unlink_photo": "photo_id",
     "attachments.remove_document": "document_id", "attachments.clear_coordinates": "target_id",
+    "packages.retire": "package_id",
 }
 
 #: Creates, and the delete that undoes each: (action, the argument it takes).
@@ -86,6 +87,7 @@ CREATES = {
     "item_classes.create_condition": ("item_classes.retire_condition", "condition_id"),
     "manufacturers.create": ("manufacturers.retire", "manufacturer_id"),
     "attachments.add_document": ("attachments.remove_document", "document_id"),
+    "packages.create": ("packages.retire", "package_id"),
 }
 
 #: Retires and the restore that undoes each (and back).
@@ -96,6 +98,7 @@ RESTORES = {
     "item_classes.retire_condition": "item_classes.restore_condition", "manufacturers.retire": "manufacturers.restore",
     "topology.disconnect": "topology.reconnect", "topology.retire_group": "topology.restore_group",
     "attachments.remove_document": "attachments.restore_document",
+    "packages.retire": "packages.restore",
 }
 RETIRES = {restore: retire for retire, restore in RESTORES.items()}
 
@@ -141,6 +144,15 @@ MOVES = {
         "ids": r.get("unlinked_functional_failure_ids") or []}},
     "tasks.move": lambda a, r: {"do": "tasks.move", "args": _without_none(
         task_id=a.get("task_id"), position_id=r.get("from_position_id"), measurement=r.get("undo_measurement"))},
+    # A work package's members and pausing: each put back by its reverse.
+    "packages.add_task": lambda a, r: {"do": "packages.remove_task", "args": {
+        "package_id": a.get("package_id"), "task_id": a.get("task_id")}},
+    "packages.remove_task": lambda a, r: {"do": "packages.add_task", "args": _without_none(
+        package_id=a.get("package_id"), task_id=a.get("task_id"),
+        visit_rule=(r.get("removed") or {}).get("visit_rule"), every_nth=(r.get("removed") or {}).get("every_nth"),
+        suppresses=(r.get("removed") or {}).get("suppresses"))},
+    "packages.pause": lambda a, r: {"do": "packages.resume", "args": {"package_id": a.get("package_id")}},
+    "packages.resume": lambda a, r: {"do": "packages.pause", "args": {"package_id": a.get("package_id")}},
 }
 
 #: The arranging actions the app's RCM tab sends as one batch per drop (``POST

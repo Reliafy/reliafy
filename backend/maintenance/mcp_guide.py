@@ -90,7 +90,7 @@ generate_rbd and impact rely on it.
 temperature, with alarm limits), then record readings.
 8. Conditions (optional): what places and equipment are exposed to (Outdoor, Seawater, Zone 1). Apply them as high \
 up as they're true (a site, a system): what's inside inherits them. See the conditions topic."""),
-    "plan": ("RCM or tasks directly; tasks on a position, an item or a location.", """\
+    "plan": ("RCM or tasks directly; tasks on a position, an item or a location; work packages.", """\
 Planning the maintenance.
 - RCM, step by step, on the position itself (the asset tree is its spine: position > function > performance \
 standard > functional failure > failure mode), all with maintenance failure_modes.…, each add returning the id the \
@@ -208,10 +208,37 @@ task; a task named on several rows (or on the position already) is one task, lin
 failure_mode_id (or several with failure_mode_ids).
 - Tasks done before they were tracked here: maintenance tasks.set_last_done, so the next due date counts from \
 then.
+- Work packages: tasks done together on one visit (the weekly check of one area) raise one work order per visit \
+instead of one each. Once the tasks are decided, maintenance packages.propose drafts packages from the live tasks \
+on positions and locations that are in no package, grouped by cadence (weekly, fortnightly, monthly, quarterly, \
+6-monthly, yearly, multi-year, within 10%), area (the location, else the top of the position tree) and trade, each \
+with a ready create and warnings (4 weeks mixed with 1 month, a task with its own open work order); an item's \
+task (it follows the serial number) and a task by use are left out and stay on their own. It saves nothing: show \
+the user, then packages.create (several at once: maintenance apply).
+  - create: name; exactly one of position_id (its tasks on it or positions inside it) or location_id (tasks at \
+it); tasks (task ids). A task has one home package: a job needed on two schedules is two tasks.
+  - When: timing fixed (default: set dates) or from_last_visit (the close date plus the interval). every + unit \
+(days, weeks, months, years) from anchor (default today), with a pattern for fixed dates: weekday with weeks \
+(every Saturday: every 1, unit weeks, weekday saturday), weekday with nth and months (the first Saturday: unit \
+months, weekday saturday, nth 1), or day with months (the 15th). tolerance: days after the visit's date it's \
+still on time (Saturday with Sunday fine: 1); tolerance_unit hours is kept but not yet enforced.
+  - Layers: a package on another (parent_id, no position or location of its own) visits on some of its parent's \
+visits, and its tasks join the parent's work order that day. The monthly check is a layer on the weekly (unit \
+months, weekday saturday, nth 1); a quarterly one sits on the monthly (every 3, the same pattern, anchor in the \
+first month). A layer's dates must fall on its parent's, and it takes the top package's tolerance.
+  - Visit rules: a task in a package is due on the package's visits, not on its own interval (that's kept, and \
+used again if it leaves the package or the package is paused): visit_rule every (default) or nth with every_nth \
+(the first visit and every Nth after). suppresses: tasks this one covers (the quarterly service covers the \
+monthly clean): on a visit with both, the covered one is left off, not done, and not overdue for it.
+  - add_task / remove_task (a removed task is raised on its own again), update (cadence, tolerance, members' visit \
+rules with tasks: [{task_id, visit_rule, every_nth, suppresses}]), pause / resume (paused: its tasks go back to \
+their own intervals), retire (with its layers; not while its work order is open) / restore. Reads: maintenance \
+get.package (tasks with next due, next visits, open work order) and list.packages (next visit, open work orders, \
+late).
 - A whole RCM in one call (every function, functional failure, mode and decision for a position, or a new \
 branch with its positions): maintenance apply, with @refs from each add to the next (topic apply has the \
 worked example). Deleted by mistake: maintenance failure_modes.restore, maintenance tasks.restore."""),
-    "run": ("Generate and close work orders: failure modes, parts, labour, corrections.", """\
+    "run": ("Generate and close work orders (a work package's too): failure modes, parts, labour, corrections.", """\
 Running the work.
 - maintenance work_orders.generate opens a preventive work order for every task due within horizon_days \
 (default 30) that has none open; a task that can't have one is listed in skipped, with why, and the rest go \
@@ -219,6 +246,17 @@ ahead. Names and titles are at most 200 characters: put detail in instructions, 
 work order from a task with no title gets the task's name (shortened if long; the full name heads the notes). \
 open raises one by hand on exactly one of position_id, item_id, location_id \
 (corrective when something's wrong).
+- Work packages (topic plan): generate opens one work order per package visit due within the horizon, with a \
+line per task due that day (its layers' too), and leaves every task in an active package to it. Only one is open \
+per package: while it's open, the tasks due on visits since (the first Saturday's monthly lines) are added to it \
+as lines (lines_added), never a second work order. It's late once today is past its visit's date plus the \
+tolerance (late, days_late, visits_missed on the work order and list.packages). After it closes, the next visit \
+is the next fixed date after the close (missed visits aren't made up), or the close date plus the interval. \
+Its checklist is one flat list: each task's line (lines[].index) then its steps (check by index). Closing: each \
+task line ticked is done; each line not ticked must be listed in not_done [{task_id, reason}] (it isn't renewed, \
+stays due and goes on the next work order). A line ticked that found a problem: an action with position_id \
+(one of line_positions on maintenance get.work_order) records the replacement or failure at that position, so \
+the life data stays right. The result's packages, lines_added and packages_skipped say what happened.
 - Along the way: status (planned, in_progress, waiting), update (assignee, planned_for, due, trade), \
 append_note for a finding, check to tick a checklist line.
 - What it took: labour (hours, who, rate), part_used (pick part_id from maintenance get.work_order's \

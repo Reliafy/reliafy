@@ -1678,7 +1678,75 @@ def get_work_order(work_order_id: str, m: Maintenance = Depends(maintenance)) ->
 def close_work_order(work_order_id: str, body: dict = Body(...),
                      m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.close_work_order, work_order_id, body.get("actions") or [], body.get("on"), body.get("notes", ""),
-                body.get("readings") or [])
+                body.get("readings") or [], body.get("not_done") or [])
+
+
+# ---- work packages: tasks done on one visit, one work order per visit ---------------------
+
+@router.get("/packages")
+def list_packages(status: str | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every work package (status active, paused, retired or all; default: not retired), with
+    its next visit and open work order (late, days_late, visits_missed)."""
+    return _run(m.packages, status)
+
+
+@router.get("/packages/propose")
+def propose_packages(position_id: str | None = None, location_id: str | None = None,
+                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Drafts of packages from the tasks in none, by cadence, area and trade. Saves nothing."""
+    return _run(m.propose_packages, position_id, location_id)
+
+
+@router.get("/packages/{package_id}")
+def get_package(package_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.package, package_id)
+
+
+_PACKAGE_FIELDS = ("name", "timing", "every", "unit", "weekday", "nth", "day", "anchor", "tolerance", "tolerance_unit",
+                   "trade", "notes", "tasks")
+
+
+@router.post("/packages")
+def create_package(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """On exactly one of position_id or location_id, or a layer on parent_id; tasks: task ids or
+    {task_id, visit_rule, every_nth, suppresses}."""
+    return _run(m.create_package, body.get("name"), body.get("position_id"), body.get("location_id"),
+                body.get("parent_id"), body.get("timing") or "fixed", body.get("every", 1),
+                body.get("unit") or "weeks", body.get("weekday"), body.get("nth"), body.get("day"),
+                body.get("anchor"), body.get("tolerance"), body.get("tolerance_unit"), body.get("trade", ""),
+                body.get("notes", ""), body.get("tasks"))
+
+
+@router.patch("/packages/{package_id}")
+def update_package(package_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Change its name, cadence, tolerance, trade, notes, or members' visit rules (tasks);
+    clear_pattern true removes its pattern."""
+    return _run(m.update_package, package_id, clear_pattern=bool(body.get("clear_pattern")),
+                **{k: body.get(k) for k in _PACKAGE_FIELDS})
+
+
+@router.post("/packages/{package_id}/tasks")
+def add_package_task(package_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_package_task, package_id, body.get("task_id"), body.get("visit_rule"), body.get("every_nth"),
+                body.get("suppresses"))
+
+
+@router.delete("/packages/{package_id}/tasks/{task_id}")
+def remove_package_task(package_id: str, task_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.remove_package_task, package_id, task_id)
+
+
+@router.post("/packages/{package_id}/{change}")
+def change_package(package_id: str, change: str, body: dict = Body(default={}),
+                   m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """pause, resume, retire or restore."""
+    if change == "pause":
+        return _run(m.pause_package, package_id, body.get("reason", ""))
+    if change == "retire":
+        return _run(m.retire_package, package_id, body.get("reason", ""))
+    if change in ("resume", "restore"):
+        return _run(getattr(m, f"{change}_package"), package_id)
+    raise HTTPException(status_code=404, detail="Not found.")
 
 
 # ---- photos and coordinates ----------------------------------------------------------------
