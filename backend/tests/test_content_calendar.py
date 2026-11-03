@@ -12,7 +12,7 @@ EXPECTED = [
     ("2026-10-19", "commentary", "Spreadsheets: where reliability analysis quietly goes wrong"),
     ("2026-10-26", "tutorial", "Verify a safety function's PFDavg and SIL"),
     ("2026-11-02", "whatsnew", "What's new in Reliafy: November 2026"),
-    ("2026-11-09", "technical", "to be chosen"),
+    ("2026-11-09", "technical", "Replace it at the shut, or let it run?"),
     ("2026-11-16", "commentary", "AI agents will read your failure data next: what to check"),
     ("2026-11-23", "tutorial", "Design to a target: reliability allocation"),
     ("2026-11-30", "tutorial", "30,000 GPUs, 5,000 failures and a temperature nobody recorded"),
