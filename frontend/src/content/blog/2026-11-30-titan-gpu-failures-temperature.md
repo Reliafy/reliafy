@@ -3,11 +3,11 @@ title: "30,000 GPUs, 5,000 failures and a temperature nobody recorded"
 date: 2026-11-30
 author: The Reliafy Team
 image: /blog/titan-gpu-failures-card.png
-summary: Oak Ridge published the failure record of every GPU in the Titan supercomputer. We worked through it. A rework fixed most of the problem; only 41% of the original GPUs were ever going to fail; and where a GPU sat in its cabinet decided both how likely it was to fail and how soon. There's no temperature column in the data, but the pattern points to heat.
+summary: Oak Ridge published the failure record of every GPU in the Titan supercomputer. We worked through it. A rework fixed most of the problem; the model says only about 41% of the original GPUs were ever going to fail; and where a GPU sat in its cabinet decided both how likely it was to fail and how soon. There's no temperature column in the data, but the pattern points to heat.
 linkedin: |
   Oak Ridge published the failure record of every GPU in the Titan supercomputer: about 30,000 GPUs and 100,000 GPU-years of running time.
 
-  We worked through it. Only 41% of the original GPUs were ever going to fail. In the bottom cage of each cabinet that was 33%; in the top cage, 73%. The data has no temperature column, but the pattern points to heat.
+  We worked through it. On the best-fitting model, only about 41% of the original GPUs were ever going to fail. In the bottom cage of each cabinet that was 33%; in the top cage, 73%. The data has no temperature column, but the pattern points to heat.
 
   The full analysis, with every model reproduced in Reliafy.
 
@@ -63,8 +63,8 @@ Over their whole service the originals failed at 27 times the reworked batch's
 rate. Part of that is age: the reworked GPUs were removed with Titan before they
 reached the age when the originals started failing in numbers. Compared at the
 same age the gap is smaller but still large. By 2.5 years of operation, 4.8% of
-the originals had failed against 0.6% of the reworked GPUs, about eight times
-fewer.
+the originals had failed against 0.6% of the reworked GPUs: the originals were
+failing about eight times as often.
 
 Either way, pooling the two batches would describe a machine that never existed.
 The reworked batch has too few failures to support much of a model; it is
@@ -94,7 +94,7 @@ Those add to more than 5,027 because 267 GPUs logged both before they were pulle
 DBE is the dominant mode, about two and a half times as common. The two modes
 struck at similar ages: the median failure age was 3.4 years for DBE-only
 failures and 3.0 years for OTB-only ones. By five years, roughly a quarter of the
-original GPUs had failed with a DBE and a tenth with an OTB. Any cause-specific
+original GPUs had failed with a DBE and nearly a tenth with an OTB. Any cause-specific
 plan, such as a memory-error early warning, should be sized against the DBE
 mode first.
 
@@ -135,9 +135,10 @@ stark:
 
 ![Survival by cage, model versus data. Three cages, bottom to top, each with the Weibull limited-failure-population model (thick line) over the Kaplan–Meier estimate from the data (thin line). They track closely; the top cage's curve flattens onto its plateau near 27%.](/blog/titan-cage-survival.png)
 
-The thick lines are the models and the thin lines are the raw data. They track
-closely in every cage, with the top cage's model running a little ahead of the
-data between three and five years.
+The thick lines are the models and the thin lines are the raw data. In the
+bottom and middle cages they agree to within about two percentage points. In
+the top cage the model sits a few points below the data between about three and
+a half and five years: it predicts slightly more failures there than were seen.
 
 There is no temperature column in the data, so this is inference. But air moves
 up through Titan's cabinets, the top cage is the warmest, and the pattern is what
@@ -166,7 +167,7 @@ The question a maintenance planner asks is about the fleet, not one part. Point
 the model at a set of in-service GPUs, each with its own running time, and it
 becomes a forecast. For 150 original-batch GPUs at about three years, Reliafy
 expects about 1.5 failures in the next month and about 21 over the next year, with
-a P10 to P90 range of 0 to 3.1 for the month. That is the number that sizes a
+a P10 to P90 range of 0 to about 3 for the month. That is the number that sizes a
 spares order or a maintenance window.
 
 ![Reliafy fleet forecast: 150 in-service GPUs, one-month horizon. Expected failures 1.5, with a P10–P90 range of 0 to 3.1, and a per-item table of each GPU's age and its probability of failing in the window.](/blog/titan-fleet.png)
