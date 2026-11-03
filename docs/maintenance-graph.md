@@ -702,6 +702,112 @@ anywhere refuses the batch before the live log is touched; then the same
 operations run on the live store in order. The log records each operation's
 events as it always would; a batch isn't one event.
 
+## Work packages: tasks done on one visit
+
+A work package bundles tasks done together on one visit (the weekly check of
+one area) so each visit raises **one** work order, not one per task. Tasks keep
+everything they have (interval, instructions, checklist, failure-mode links);
+a package changes how their work orders are raised, never what a task is.
+
+Nodes and edges:
+
+- `WorkPackage` {name, timing (`fixed` or `from_last_visit`), every, unit,
+  pattern ({weekday}, {weekday, nth} or {day}; or none), anchor, tolerance
+  ({amount, unit}: days, or hours kept but not yet enforced), trade, notes,
+  created, members ([{task_id, visit_rule, every_nth?, suppresses?}]),
+  paused, retired}.
+- `WorkPackage PLANNED_FOR Position` or `WorkPackage PLANNED_AT Location`: what
+  a top package is on. Its tasks are on that position or positions inside it,
+  or at that location (positions located there, or the location itself).
+- `WorkPackage BUNDLES Task`, one per member. A task has at most one home
+  package that isn't retired. Items' tasks (they follow the serial number),
+  tasks by use and rounds (`include_positions`) stay on their own.
+- `WorkPackage LAYERED_ON WorkPackage`: a layer. It has no position or
+  location of its own and visits on some of its parent's visits (the first
+  Saturday of the month on a package every Saturday); its tasks go on the top
+  package's work order that day. Layers have fixed dates, and each of a
+  layer's next dates is checked to be one of its parent's when it's made or
+  changed.
+- `WorkOrder RAISED_FROM WorkPackage` (the top package), `FOR` each task on it.
+  The work order carries `visit_on`, `visit_number`, `covers_to` (the latest
+  visit whose lines it holds), `lines` ([{task_id, name, package_id,
+  position_id or location_id, instructions, trade?, point_id?}]) and `released`
+  ([{task_id, reason, on}]). Its `checklist` stays one flat list, so
+  `work_order.check` by index works as before: each task's line ({text, done,
+  task_id, position_id?}) followed by its own steps ({..., step: true}).
+
+Why layers are packages of their own: a monthly check is the weekly visit plus
+extra lines on the first Saturday, and a quarterly one adds to the monthly.
+Modelled as a package on another, each layer keeps its own name, cadence,
+trade and member list (so it can be paused, listed and proposed like any
+package), while the work order, the tolerance and the next-visit rules stay
+the top package's alone: there is never more than one work order per visit.
+A rule per member ("every 4th visit") alone couldn't say "the first Saturday",
+since some months have five.
+
+When things are due, worked out on read (nothing about visits is projected):
+
+- A fixed package visits on its cadence (`schedule.Cadence`: every N days,
+  weeks, months or years from the anchor; a weekday every N weeks; the nth
+  weekday or a day of every N months). After its work order closes, the next
+  visit is the next date after the close; missed visits aren't made up, and a
+  visit already past its tolerance before anything was raised for it is
+  skipped. A `from_last_visit` package's next visit is the close date plus the
+  interval.
+- A member task is due on its package's visits by its visit rule (`every`, or
+  `nth`: the first visit and every Nth after), not on its own interval, which
+  stays for tasks outside a package and for a paused package's tasks. A task
+  on a visit may cover others (`suppresses`): they're left off that visit, are
+  not marked done, and aren't overdue because of it. The task view gains
+  `package` and `due_by: "package"`; its `next_due` is the visit it's due on.
+- A work order is late once today is past its `visit_on` plus the tolerance
+  (`late`, `days_late`, `visits_missed`). Only one is open per package: while
+  it's open, tasks due on later visits whose dates have come are added to it
+  as lines (`work_order.package_lines_added`).
+- At close, each ticked task line is done. Each line not ticked must be listed
+  as not done: `work_order.task_released` takes the task off the work order
+  (the `FOR` edge) and sets `owed_from` on the task, so it goes on the next
+  visit whatever its visit rule, until it's done. The unchanged
+  `work_order.closed` then renews the tasks still on it. An action may name a
+  line's `position_id`, so a replacement or a failure found there is recorded
+  at that position with the usual `action.recorded`, `item.removed` and
+  `item.fitted` events.
+
+Events (all new; no existing event changed meaning or shape, and
+`PROJECTION_VERSION` stays):
+
+| Event | Payload | Projects |
+|---|---|---|
+| `package.created` | id, name, timing, every, unit, pattern, anchor, tolerance?, trade, notes, tasks, on; position_id, subject {kind: location, id} or parent_id | the node, its `PLANNED_FOR` / `PLANNED_AT` or `LAYERED_ON` edge, a `BUNDLES` per task |
+| `package.updated` | id, changes, on | a plain patch (members' visit rules as the whole `members` list) |
+| `package.task_added` / `package.task_removed` | id, task_id, visit_rule?, every_nth?, suppresses?, on | `BUNDLES` and `members` |
+| `package.paused` / `package.resumed` | id, on, reason? | `paused` |
+| `package.retired` / `package.restored` | id, on, reason? | `retired` (retiring a top package retires its layers) |
+| `work_order.package_opened` | id, number, title, type, package_id, position_id or subject, due, visit_on, visit_number, notes, on, trade?, lines | the work order, `ON`, `RAISED_FROM`, a `FOR` per line |
+| `work_order.package_lines_added` | id, lines, through, on | lines appended, more `FOR`, `covers_to` |
+| `work_order.task_released` | id, task_id, reason, on, visit_on | `FOR` removed, `released`, the task's `owed_from` |
+
+Projectors write only through `put_node`, `patch_node`, `put_edge` and
+`delete_edge`, so both stores stay in step; no store method was added.
+
+Generating: `generate` first gives every active top package its turn (one work
+order for the next visit inside the horizon, with a line per task due that day,
+or lines added to the open one), then raises the other tasks one by one as
+before, skipping every task in an active package. A workspace with no packages
+generates exactly as before, with the same result. With packages, the result
+also has `packages`, `lines_added` and `packages_skipped`.
+
+`packages.propose` (a read) drafts packages from the live tasks on positions and
+locations in no package, grouped by cadence bucket (within 10%: weekly,
+fortnightly, monthly, quarterly, 6-monthly, yearly, multi-year), area (the
+location, else the top of the position tree) and trade, each with a ready
+`create` and warnings (intervals mixed in one bucket, a task with its own open
+work order).
+
+Not built yet: tolerance in hours, packages by use, shutdown packages, review
+flags when a member changes after packaging, planned hours, and turning rounds
+into packages.
+
 ## Making Neo4j the primary store later
 
 Worth it when Neo4j is close to Cloud Run (AuraDB Professional in
