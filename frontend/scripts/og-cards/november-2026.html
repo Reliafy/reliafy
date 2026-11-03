@@ -1,0 +1,95 @@
+<!doctype html><meta charset="utf-8">
+<!--
+  The What's new November 2026 card (public/blog/november-2026-card.png): the
+  Shutdown calendar's cost curve from the guide's worked example
+  (/guides/optimal-replacement-interval). POINTS below is the long-run cost a
+  year of the rule "at each shut, replace the part if it is older than a
+  days" for a = 0, 3, ..., 600, from RePyability (the app's own method,
+  backend/services/strategy_calendar.py): a Weibull life (alpha 365 days,
+  beta 2), a shut every 180 days costing 100, a failure 400, a change between
+  shuts 150; NonRepairable(model).calendar_policy_cost(calendar, {"Shutdown": a}).
+  The optimum is a = 138 (361.7 a year); run to failure 451.7, age replacement
+  at 298 days 408.0, every shut 385.5 (the curve at a = 0).
+-->
+<style>
+  *{margin:0;box-sizing:border-box;font-family:-apple-system,"Segoe UI",Inter,Roboto,Arial,sans-serif}
+  body{width:1200px;height:630px;background:#fbfbf9;display:flex;flex-direction:column}
+  .main{flex:1;display:flex;padding:54px 70px 20px;gap:44px}
+  .left{flex:1.02;display:flex;flex-direction:column}
+  .brand{display:flex;align-items:center;gap:13px;margin-bottom:34px}
+  .mark{width:50px;height:50px;border-radius:14px;background:#2f6df6;display:grid;place-items:center}
+  .mark svg{width:31px;height:31px}
+  .bn{font-size:29px;font-weight:800;color:#16181d}
+  .eyebrow{color:#2f6df6;font-weight:700;letter-spacing:.11em;font-size:18px;margin-bottom:16px}
+  h1{font-size:47px;line-height:1.1;font-weight:800;color:#16181d;letter-spacing:-.015em}
+  .sub{margin-top:20px;font-size:22px;line-height:1.4;color:#5b616b;max-width:470px}
+  .panel{flex:1;align-self:center;background:#fff;border:1px solid #e7e5de;border-radius:16px;
+         box-shadow:0 10px 30px rgba(15,23,42,.07);padding:22px 26px 20px}
+  .pt{font-size:12px;letter-spacing:.13em;color:#9aa0aa;font-weight:700;margin-bottom:6px}
+  .chart svg{display:block;width:100%;height:auto}
+  .rule{margin-top:10px;font-size:18px;font-weight:700;color:#16181d;line-height:1.3}
+  .cap{margin-top:8px;font-size:14px;color:#8a93a0;line-height:1.35}
+  .foot{display:flex;justify-content:space-between;align-items:center;padding:18px 70px 24px;border-top:1px solid #ecebe6}
+  .url{color:#2f6df6;font-weight:700;font-size:21px}.tag{color:#9aa0aa;font-size:20px}
+  /* The chart's text: ink tokens, never the series colour. */
+  .t-muted{fill:#9aa0aa;font-size:12px;font-variant-numeric:tabular-nums}
+  .t-ref{fill:#5b616b;font-size:13px}
+  .t-big{fill:#16181d;font-size:18px;font-weight:800}
+  .t-sub{fill:#5b616b;font-size:14px}
+</style>
+<body>
+  <div class="main">
+    <div class="left">
+      <div class="brand">
+        <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M3 14c2.5 0 2.5-8 5-8s2.5 12 5 12 2.5-6 5-6h3"/></svg></div>
+        <div class="bn">Reliafy</div>
+      </div>
+      <div class="eyebrow">WHAT'S NEW · NOVEMBER 2026</div>
+      <h1>Plan replacement around your shutdowns.</h1>
+      <div class="sub">Reliafy now plans replacement around the shuts you already have, each with its own cost, and gives you the rule in one line.</div>
+    </div>
+    <div class="panel">
+      <div class="pt">COST A YEAR, BY THE AGE RULE AT THE SHUT</div>
+      <div class="chart" id="chart"></div>
+      <div class="rule">At each shut, replace the part<br>if it's older than 138 days.</div>
+      <div class="cap">20% less than running to failure, 11% less than a fixed age. Weibull α 365 days, β 2; a shut every 180 days; a failure costs 4× a shut change.</div>
+    </div>
+  </div>
+  <div class="foot"><div class="url">reliafy.com</div><div class="tag">Exact answers · free on every plan</div></div>
+  <script>
+    const POINTS = [[0,385.5],[3,384.1],[6,382.8],[9,381.6],[12,380.3],[15,379.1],[18,378.1],[21,377.0],[24,375.9],[27,375.0],[30,374.1],[33,373.1],[36,372.3],[39,371.5],[42,370.8],[45,370.0],[48,369.4],[51,368.7],[54,368.1],[57,367.5],[60,367.0],[63,366.5],[66,366.0],[69,365.6],[72,365.2],[75,364.8],[78,364.4],[81,364.1],[84,363.8],[87,363.6],[90,363.3],[93,363.1],[96,362.9],[99,362.7],[102,362.5],[105,362.4],[108,362.2],[111,362.1],[114,362.0],[117,361.9],[120,361.9],[123,361.8],[126,361.8],[129,361.8],[132,361.7],[135,361.7],[138,361.7],[141,361.7],[144,361.7],[147,361.7],[150,361.8],[153,361.8],[156,361.8],[159,361.9],[162,361.9],[165,361.9],[168,362.0],[171,362.0],[174,362.0],[177,362.1],[180,362.1],[183,377.2],[186,377.4],[189,377.6],[192,377.8],[195,378.1],[198,378.3],[201,378.6],[204,378.9],[207,379.2],[210,379.5],[213,379.9],[216,380.2],[219,380.6],[222,380.9],[225,381.4],[228,381.7],[231,382.1],[234,382.6],[237,383.0],[240,383.4],[243,383.8],[246,384.3],[249,384.8],[252,385.2],[255,385.7],[258,386.2],[261,386.6],[264,387.1],[267,387.6],[270,388.1],[273,388.6],[276,389.1],[279,389.6],[282,390.1],[285,390.6],[288,391.1],[291,391.6],[294,392.1],[297,392.7],[300,393.2],[303,393.7],[306,394.2],[309,394.7],[312,395.2],[315,395.7],[318,396.3],[321,396.8],[324,397.2],[327,397.7],[330,398.3],[333,398.8],[336,399.3],[339,399.8],[342,400.3],[345,400.8],[348,401.2],[351,401.8],[354,402.2],[357,402.7],[360,403.2],[363,414.3],[366,414.8],[369,415.3],[372,415.9],[375,416.4],[378,416.9],[381,417.5],[384,418.0],[387,418.5],[390,419.0],[393,419.6],[396,420.1],[399,420.6],[402,421.1],[405,421.6],[408,422.1],[411,422.6],[414,423.1],[417,423.6],[420,424.1],[423,424.6],[426,425.1],[429,425.5],[432,426.0],[435,426.5],[438,426.9],[441,427.3],[444,427.8],[447,428.2],[450,428.7],[453,429.1],[456,429.5],[459,429.9],[462,430.4],[465,430.8],[468,431.2],[471,431.6],[474,431.9],[477,432.4],[480,432.7],[483,433.1],[486,433.5],[489,433.9],[492,434.2],[495,434.6],[498,434.9],[501,435.3],[504,435.6],[507,435.9],[510,436.3],[513,436.6],[516,436.9],[519,437.2],[522,437.5],[525,437.8],[528,438.1],[531,438.4],[534,438.7],[537,439.0],[540,439.3],[543,440.6],[546,440.9],[549,441.1],[552,441.4],[555,441.6],[558,441.9],[561,442.1],[564,442.4],[567,442.6],[570,442.9],[573,443.1],[576,443.3],[579,443.5],[582,443.7],[585,443.9],[588,444.1],[591,444.4],[594,444.6],[597,444.7],[600,444.9]];
+    const RUN_TO_FAILURE = 451.7, FIXED_AGE = 408.0, BEST = [138, 361.7];
+
+    // Plot a = 0..360 (two shuts): the U, the step at the 180-day shut, the climb.
+    const W = 440, H = 268, L = 10, R = 12, T = 24, B = 36;
+    const X0 = 0, X1 = 360, Y0 = 350, Y1 = 460;
+    const x = (a) => L + ((a - X0) / (X1 - X0)) * (W - L - R);
+    const y = (c) => T + ((Y1 - c) / (Y1 - Y0)) * (H - T - B);
+    const f = (n) => n.toFixed(1);
+    const pts = POINTS.filter(([a]) => a <= X1);
+    const path = pts.map(([a, c], i) => `${i ? "L" : "M"}${f(x(a))} ${f(y(c))}`).join(" ");
+    const ref = (c, label) =>
+      `<line x1="${L}" x2="${W - R}" y1="${f(y(c))}" y2="${f(y(c))}" stroke="#d6d9df" stroke-width="1"/>` +
+      `<text class="t-ref" x="${L}" y="${f(y(c) - 6)}">${label}</text>`;
+    // A part fitted at a shut is 180 days old at the next one, 360 at the one after.
+    const ticks = [0, 90, 180, 270, 360].map((a) =>
+      `<line x1="${f(x(a))}" x2="${f(x(a))}" y1="${H - B}" y2="${H - B + 4}" stroke="#d6d9df"/>` +
+      `<text class="t-muted" x="${f(x(a))}" y="${H - B + 17}" text-anchor="${a === X0 ? "start" : a === X1 ? "end" : "middle"}">${a % 180 === 0 && a ? `${a} · a shut` : a}</text>`).join("");
+    const [ba, bc] = BEST;
+    document.getElementById("chart").innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Cost a year against the age at which a part is replaced at a shut: lowest at 138 days">
+        ${ref(RUN_TO_FAILURE, "Run to failure · 452 a year")}
+        ${ref(FIXED_AGE, "Replace at a fixed age · 408")}
+        <line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="#d6d9df" stroke-width="1"/>
+        ${ticks}
+        <text class="t-muted" x="${f((L + W - R) / 2)}" y="${H - 4}" text-anchor="middle">Replace at a shut if the part is older than … days</text>
+        <path d="${path}" fill="none" stroke="#2f6df6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        <text class="t-ref" x="${f(x(0) + 10)}" y="${f(y(pts[0][1]) - 9)}">Every shut · 386</text>
+        <circle cx="${f(x(ba))}" cy="${f(y(bc))}" r="7.5" fill="#fff"/>
+        <circle cx="${f(x(ba))}" cy="${f(y(bc))}" r="5.5" fill="#2f6df6"/>
+        <text class="t-big" x="${f(x(ba))}" y="${f(y(bc) - 34)}" text-anchor="middle">138 days</text>
+        <text class="t-sub" x="${f(x(ba))}" y="${f(y(bc) - 16)}" text-anchor="middle">362 a year</text>
+      </svg>`;
+  </script>
+</body>

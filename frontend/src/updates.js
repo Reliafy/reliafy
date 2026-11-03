@@ -29,6 +29,9 @@ export const allUpdates = Object.entries(files)
       emailSubject: meta.email_subject || "",
       // `send: auto` = the scheduled job emails it on its date (#367).
       send: meta.send || "",
+      // Optional social card (og:image and the LinkedIn feed's enclosure),
+      // e.g. /blog/november-2026-card.png under public/; see blog.js.
+      image: meta.image || "",
       // Optional LinkedIn announcement text; see blog.js.
       linkedin: meta.linkedin || "",
       body,
