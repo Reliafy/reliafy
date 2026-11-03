@@ -116,9 +116,20 @@ reason shows under it with your words still there. Open a new row from its
 link in the list.
 
 In a row's **Details**, its title is its description: click it to
-change it. A function's Details also list its **Performance standards**; a
-failure mode's hold its **Failure effects**, **Consequence** (one tap on a
-choice) and **Notes**. **Edit description**
+change it. Under it, every level starts with what's inside it, then its own
+fields, then the quieter things at the foot:
+
+- a function: its **Performance standards**, its **Functional failures**,
+  then the working behind its performance standards;
+- a performance standard: its **Functional failures**, then its checkable
+  limit;
+- a functional failure: its **Failure modes** (with its state in words at
+  the top), then what it is **Caused by** below and what it **Causes** above;
+- a failure mode: its **Tasks**, then its **Failure effects**,
+  **Consequence** (one tap on a choice) and **Decision**, then where it sits
+  (**Under**) and its **Notes**.
+
+**Edit description**
 (on a performance standard, **Edit text**) in a row's menu changes the text in the table
 itself. **Delete this function** (or functional failure, or failure mode), at the
 foot of the Details or in their **⋯**, removes a row and everything inside it, after asking; **Remove
@@ -407,8 +418,8 @@ too).
 
 Some performance standards come from sums, not a book: how much chlorine a pool needs from
 its volume, its sunlight and its swimmers, or how many tonnes an hour a belt
-must move to keep a silo filling. Open a function's Details and look under
-**Performance standard** for **Working behind the performance standard**. It is optional.
+must move to keep a silo filling. Open a function's Details: **Working behind the performance standard** is
+at the foot, after its functional failures. It is optional.
 
 - **Add a working…** (or **Edit**) opens a box where you write in Markdown:
   headings, lists, tables, bold, code and links. **Preview** shows what readers

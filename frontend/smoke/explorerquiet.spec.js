@@ -108,8 +108,10 @@ test("no evidence linked: no warnings, no Evidence check column; the column come
   await modeRow.press("Enter");
   const panel = page.locator("aside.rw-panel");
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("No evidence linked");
-  // Quiet: its status chips say so in neutral grey, never a warning.
+  // Said once, in the decision ("None linked"), not again as a chip by the title.
+  await expect(panel.getByRole("region", { name: "Decision" })).toContainText("None linked");
+  await expect(panel.locator(".rw-chips-row")).not.toContainText("No evidence linked");
+  // Quiet: never a warning.
   await expect(panel.locator(".chip-warning, .chip-danger")).toHaveCount(0);
   await panel.getByRole("button", { name: "Link evidence…" }).scrollIntoViewIfNeeded();
   await shot(page, "quiet-2-mode-panel-link-evidence");

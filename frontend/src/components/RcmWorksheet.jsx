@@ -435,7 +435,6 @@ export function Details({
       r.ref.consequence ? { text: CONSEQUENCE_LABEL[r.ref.consequence], tone: "neutral" } : null,
       d ? { text: [decisionText(d), d.interval ? `every ${intervalText(d)}` : null].filter(Boolean).join(" · "), tone: "accent" }
         : { text: "No decision yet", tone: "warning" },
-      d && d.status === "unevidenced" ? { text: "No evidence linked", tone: "neutral" } : null,
     ].filter(Boolean)
     : (insideWords(r) || "").split(" · ").filter(Boolean).map((t) => ({ text: t, tone: toneOf(t) }));
   const limitNow = r.type === "std" ? limitReads(r.ref) : "";
@@ -446,7 +445,7 @@ export function Details({
   useEffect(() => setLimitOpen(false), [r.key]);
   const inside = (
     <InsideList key={`${r.key}:inside`} r={r} kids={kids} ops={ops} readOnly={readOnly} addLabel={addLabel} addStart={startOf("inside")}
-                onSelect={onSelect} onSaid={said} />
+                status={r.type === "fail" ? failureStatusWords(r) : null} onSelect={onSelect} onSaid={said} />
   );
   return (
     <aside className={"rw-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
@@ -492,41 +491,105 @@ export function Details({
         )}
       </div>
 
+      {/* One order at every level: what's inside it first (the next level down, as in the
+          tree), then what belongs to this level, then the quieter things (the working, the
+          checkable limit, where it sits, notes) last. */}
       <div className="rw-pbody">
-        {/* A performance standard: the functional failures that breach it come first. */}
-        {insideList && r.type === "std" && inside}
-        <div className="rw-pcol">
-          <div className="rw-fields">
-            {r.type === "std" && r.ref.legacy && (
-              <p className="rw-fhelp">
-                This is the function's one performance standard, as written. To make it a list (one row each, with a limit on each), pick the
-                function and use <b>Add a performance standard</b> at the end of its list, or <b>Split into performance standards…</b> when the text is several joined by “;”.
-              </p>
-            )}
-            {r.type === "std" && r.ref.function_has_basis && ops?.basis && (
-              <p className="rw-fhelp">
-                The working behind it is the function's:{" "}
-                <button type="button" className="link" onClick={() => onSelect(r.ref.function_id, { basis: true })}>open the working</button>.
-              </p>
-            )}
-            {r.type === "mode" && field("Failure effects", "effects", { area: true })}
-            {/* Which standard it breaches is where it sits in the tree (moved by drag or Move to…); said
-                here only when the way up doesn't show it (a pinned branch, say). */}
-            {r.type === "fail" && r.ref.standard?.id && !up.some((a) => a.key === r.ref.standard.id) && (
-              <p className="rw-fhelp">Under the performance standard “{r.ref.standard.text}”.</p>
-            )}
-            {r.type === "fail" && ops && <p className="rw-fstatus">{failureStatusWords(r)}</p>}
-            {r.type === "mode" && (
-              <Field label="Consequence" saved={saved.consequence}>
-                {readOnly ? <span className="rw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
-                  <ChoiceChips label="Consequence" clearable value={r.ref.consequence || ""}
-                               options={Object.entries(CONSEQUENCE_LABEL).map(([value, label]) => ({ value, label }))}
-                               onChange={(v) => keep("consequence", onCommit(r, "consequence", v))} />
+        {/* 1. What's inside it. A function: its performance standards, then the functional
+            failures under them. A standard (and "No performance standard"): its functional
+            failures. A functional failure (and "Not under a functional failure"): its failure
+            modes. A failure mode: its tasks. */}
+        {r.type === "fn" && ops?.standards && (
+          <RcmFunctionStandards key={`${r.key}:std`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("std")} onSaid={said} />
+        )}
+        {insideList && inside}
+        {taskList && !readOnly && (
+          <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} addStart={startOf("task")} onSaid={said} />
+        )}
+        {r.type === "mode" && (!taskList || readOnly) && tasks.length > 0 && (
+          <Section title="Tasks" count={tasks.length} className="rw-kids">
+            <ul className="rw-tasks">
+              {tasks.map((t, i) => (
+                <li key={t.id || i}>
+                  <LevelIcon type="task" className="rw-ic rw-ic-task" />
+                  <span>{taskLine(t)}</span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* 2. This level's own. A functional failure: its links to failures on other
+            positions. A failure mode: the worksheet's columns in their order (effects,
+            consequence, then the decision). */}
+        {r.type === "fail" && ops && links && (
+          <CausedBySection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
+        )}
+        {r.type === "fail" && ops && links && (
+          <CausesSection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
+        )}
+        {r.type === "mode" && (
+          <div className="rw-fields rw-own">
+            {field("Failure effects", "effects", { area: true })}
+            <Field label="Consequence" saved={saved.consequence}>
+              {readOnly ? <span className="rw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
+                <ChoiceChips label="Consequence" clearable value={r.ref.consequence || ""}
+                             options={Object.entries(CONSEQUENCE_LABEL).map(([value, label]) => ({ value, label }))}
+                             onChange={(v) => keep("consequence", onCommit(r, "consequence", v))} />
+              )}
+            </Field>
+          </div>
+        )}
+
+        {r.type === "mode" && (
+          <Section title="Decision" label="Decision" className="rw-decision"
+                   action={readOnly ? null : { label: d ? "Change…" : "Decide…", ariaLabel: d ? "Change the decision…" : "Decide…", onClick: () => onDecision(r) }}>
+            {d ? (
+              <>
+                <dl className="rw-card rw-dcard">
+                  <div><dt>Decision</dt><dd><b>{decisionText(d)}</b></dd></div>
+                  {d.interval ? <div><dt>Interval</dt><dd>every {intervalText(d)}</dd></div> : null}
+                  <div>
+                    <dt>Evidence</dt>
+                    <dd className="rw-evidence">
+                      {d.status === "unevidenced" ? (
+                        <>
+                          None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
+                                                               title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button></>}
+                        </>
+                      ) : (
+                        <>
+                          {d.status && <RcmStatusBadge status={d.status} />}
+                          {d.artifact_name && (d.artifact_link_path
+                            ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
+                          {!d.status && !d.artifact_name && "—"}
+                        </>
+                      )}
+                    </dd>
+                  </div>
+                  {d.status !== "unevidenced" && (d.summary || d.reason) ? <p className="rw-dwhy">{d.summary || d.reason}</p> : null}
+                </dl>
+                {ownFields && COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
+                {ownFields && COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
+                {ownFields && sharedOwn > 0 && (
+                  <p className="rw-fhelp">
+                    Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
+                  </p>
                 )}
-              </Field>
-            )}
-            {r.type === "mode" && field("Notes", "notes", { area: true, optional: true })}
-            {r.type === "mode" && ops && (
+                {field("Decision notes", "dnotes", { area: true, optional: true })}
+              </>
+            ) : <p className="rw-dline">No decision yet.</p>}
+          </Section>
+        )}
+
+        {/* 3. The quieter things, last. */}
+        {r.type === "fn" && ops?.basis && (
+          <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
+                    openToken={ops.basisView?.token(r)} />
+        )}
+        {r.type === "mode" && (
+          <div className="rw-fields rw-foot">
+            {ops && (
               <Field label="Under" saved={saved.under}
                      help={r.ref.was_under && !r.ref.functional_failure_id ? `It was noted as under: ${r.ref.was_under}` : null}>
                 {readOnly ? <span className="rw-fval">{display.rows.get(r.parent)?.ref.text}</span> : (
@@ -543,90 +606,25 @@ export function Details({
                 )}
               </Field>
             )}
+            {field("Notes", "notes", { area: true, optional: true })}
           </div>
-
-          {r.type === "mode" && (
-            <Section title="Decision" label="Decision" className="rw-decision"
-                     action={readOnly ? null : { label: d ? "Change…" : "Decide…", ariaLabel: d ? "Change the decision…" : "Decide…", onClick: () => onDecision(r) }}>
-              {d ? (
-                <>
-                  <dl className="rw-card rw-dcard">
-                    <div><dt>Decision</dt><dd><b>{decisionText(d)}</b></dd></div>
-                    {d.interval ? <div><dt>Interval</dt><dd>every {intervalText(d)}</dd></div> : null}
-                    <div>
-                      <dt>Evidence</dt>
-                      <dd className="rw-evidence">
-                        {d.status === "unevidenced" ? (
-                          <>
-                            None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
-                                                                 title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button></>}
-                          </>
-                        ) : (
-                          <>
-                            {d.status && <RcmStatusBadge status={d.status} />}
-                            {d.artifact_name && (d.artifact_link_path
-                              ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
-                            {!d.status && !d.artifact_name && "—"}
-                          </>
-                        )}
-                      </dd>
-                    </div>
-                    {d.status !== "unevidenced" && (d.summary || d.reason) ? <p className="rw-dwhy">{d.summary || d.reason}</p> : null}
-                  </dl>
-                  {ownFields && COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
-                  {ownFields && COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
-                  {ownFields && sharedOwn > 0 && (
-                    <p className="rw-fhelp">
-                      Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
-                    </p>
-                  )}
-                  {!taskList && tasks.length > 0 && (
-                    <div className="rw-field">
-                      <span className="rw-flabel">{tasks.length === 1 ? "Task" : `Tasks (${tasks.length})`}</span>
-                      <ul className="rw-tasks">
-                        {tasks.map((t, i) => (
-                          <li key={t.id || i}>
-                            <LevelIcon type="task" className="rw-ic rw-ic-task" />
-                            <span>{taskLine(t)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {field("Decision notes", "dnotes", { area: true, optional: true })}
-                </>
-              ) : <p className="rw-dline">No decision yet.</p>}
-            </Section>
-          )}
-        </div>
-
-        <div className="rw-pcol">
-          {/* A function: its performance standards, then the working behind them. */}
-          {r.type === "fn" && ops?.standards && (
-            <RcmFunctionStandards key={`${r.key}:std`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("std")} onSaid={said} />
-          )}
-          {r.type === "fn" && ops?.basis && (
-            <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
-                      openToken={ops.basisView?.token(r)} />
-          )}
-
-          {/* A failure mode's tasks: several under one mode, each with its own interval, kind and measurement. */}
-          {taskList && !readOnly && (
-            <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} addStart={startOf("task")} onSaid={said} />
-          )}
-
-          {/* A functional failure: Caused by below, then Causes above. */}
-          {r.type === "fail" && ops && links && (
-            <CausedBySection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
-          )}
-          {r.type === "fail" && ops && links && (
-            <CausesSection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
-          )}
-
-          {/* What's inside it, each one a link that shows it here; the list ends in its add row.
-              (A performance standard's comes first instead: see the top of the body.) */}
-          {insideList && r.type !== "std" && inside}
-          {checkable && limitOpen && (
+        )}
+        {/* Which standard a failure breaches is where it sits in the tree (moved by drag or Move
+            to…); said here only when the way up doesn't show it (a pinned branch, say). */}
+        {r.type === "fail" && r.ref.standard?.id && !up.some((a) => a.key === r.ref.standard.id) && (
+          <div className="rw-foot">
+            <p className="rw-fhelp rw-foot-note">Under the performance standard “{r.ref.standard.text}”.</p>
+          </div>
+        )}
+        {r.type === "std" && (r.ref.legacy || checkable || (r.ref.function_has_basis && ops?.basis)) && (
+          <div className="rw-foot">
+            {r.ref.legacy && (
+              <p className="rw-fhelp rw-foot-note">
+                This is the function's one performance standard, as written. To make it a list (one row each, with a limit on each), pick the
+                function and use <b>Add a performance standard</b> at the end of its list, or <b>Split into performance standards…</b> when the text is several joined by “;”.
+              </p>
+            )}
+            {checkable && limitOpen && (
               <Section title="Checkable limit" label="Checkable limit" className="rw-limit"
                        action={{ label: "Hide", ariaLabel: "Hide the checkable limit", onClick: () => setLimitOpen(false) }}>
                 <p className="rw-fhelp rw-sec-note">Write the limit as data so readings can be checked against it later.</p>
@@ -647,21 +645,28 @@ export function Details({
                 {stdField({ col: "source", label: "Source", placeholder: "A standard, manual or study", optional: true })}
               </Section>
             )}
-          {/* A standard's limit as data: folded away until it's wanted (nothing reads it yet).
-              Set already: one line saying what it reads as, with Edit…. */}
-          {checkable && !limitOpen && (
-            <p className="rw-checkable">
-              {limitSet ? (
-                <>
-                  <span>Checkable: {limitNow || limitWords(r.ref)}</span>
-                  {!readOnly && <> · <button type="button" className="link" onClick={() => setLimitOpen(true)} aria-label="Edit the checkable limit">Edit…</button></>}
-                </>
-              ) : !readOnly && (
-                <button type="button" className="link" onClick={() => setLimitOpen(true)}>Make this checkable…</button>
-              )}
-            </p>
-          )}
-        </div>
+            {/* A standard's limit as data: folded away until it's wanted (nothing reads it yet).
+                Set already: one line saying what it reads as, with Edit…. */}
+            {checkable && !limitOpen && (
+              <p className="rw-checkable">
+                {limitSet ? (
+                  <>
+                    <span>Checkable: {limitNow || limitWords(r.ref)}</span>
+                    {!readOnly && <> · <button type="button" className="link" onClick={() => setLimitOpen(true)} aria-label="Edit the checkable limit">Edit…</button></>}
+                  </>
+                ) : !readOnly && (
+                  <button type="button" className="link" onClick={() => setLimitOpen(true)}>Make this checkable…</button>
+                )}
+              </p>
+            )}
+            {r.ref.function_has_basis && ops?.basis && (
+              <p className="rw-fhelp rw-foot-note">
+                The working behind it is the function's:{" "}
+                <button type="button" className="link" onClick={() => onSelect(r.ref.function_id, { basis: true })}>open the working</button>.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Each button acts on its first click only: a double-click opens one dialog. */}
@@ -688,7 +693,10 @@ export function Details({
 // its add row, which becomes a new row of the list: Enter or leaving it
 // writes it (no dialog) and the add row is back for the next; the new one is
 // opened from its link, like any other.
-function InsideList({ r, kids, ops, readOnly, addLabel, addStart, onSelect, onSaid }) {
+//
+// `status`: a functional failure's state in words, said once at the head of
+// its failure modes (it is about them, and the links below).
+function InsideList({ r, kids, ops, readOnly, addLabel, addStart, status = null, onSelect, onSaid }) {
   const failures = addLabel === "Add a functional failure";
   const where = {
     positionId: r.ref.position_id,
@@ -706,7 +714,8 @@ function InsideList({ r, kids, ops, readOnly, addLabel, addStart, onSelect, onSa
   const kind = failures ? "fail" : "mode";
   return (
     <Section title={failures ? "Functional failures" : "Failure modes"} count={kids.length} className="rw-kids">
-      {kids.length === 0 && !add.open && (
+      {status && <p className="rw-fstatus">{status}</p>}
+      {kids.length === 0 && !add.open && !status && (
         <p className="rw-fhelp">
           {r.type === "std" && !r.ref.legacy ? "None yet. A breach of this limit, e.g. “Alkalinity below 80 ppm”."
             : r.type === "fail" ? "No failure modes of its own yet." : "None yet."}
