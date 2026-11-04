@@ -441,6 +441,30 @@ async function seedSampleTruck(config) {
   const made = await api("/maintenance/sample-truck", {});
   return made.position.id;
 }
+// Failure reports guide: a report filed on the sample truck's top position and
+// taken part way round the loop (investigated, one corrective action), so the
+// list and the report have something to show. Reports are never deleted
+// (rejected at most); retiring the truck in the cleanup takes it out of the
+// tree. null without a truck.
+async function seedTruckReport(truckId) {
+  if (!truckId) return null;
+  const report = await api("/maintenance/failure-reports", {
+    position_id: truckId, title: "Brake pedal went soft on the delivery run",
+    description: "Pedal travel increased over the morning; the driver pulled over at the depot. No fluid on the ground.",
+    found_by: "Sam (driver)", consequence: "safety", failure_mode_text: "Brake fluid leak at the rear caliper",
+  });
+  await api(`/maintenance/failure-reports/${report.id}/status`, { status: "investigating" });
+  await api(`/maintenance/failure-reports/${report.id}/investigation`, {
+    notes: "Rear nearside caliper weeping at the bleed nipple; nipple seat scored.",
+    root_cause_category: "maintenance", root_cause: "Bleed nipple over-torqued at the last brake service",
+    whys: ["The pedal went soft", "Fluid was lost at the rear caliper", "The bleed nipple seat was scored", "It was over-torqued at the last service"],
+  }, "PUT");
+  await api(`/maintenance/failure-reports/${report.id}/actions`, {
+    what: "Replace the rear nearside caliper and bleed the system", owner: "Workshop", work_order_ref: "WO-2041",
+  });
+  await api(`/maintenance/failure-reports/${report.id}/status`, { status: "corrective_action" });
+  return { id: report.id };
+}
 async function seedTeam() {
   const team = await api("/teams", { name: "Reliability team" });
   await api(`/teams/${team.id}/members`, { email: "colleague@example.com" });
@@ -803,6 +827,25 @@ async function main() {
         await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Change the decision…" }).click();
         await page.getByRole("dialog", { name: /^Decision/ }).waitFor({ timeout: 20000 }); await wait(800);
       } },
+    // --- Failure reports on the asset tree: the Explorer's Failure reports tab
+    // on the sample truck (a report filed on it in the fixture step, part way
+    // round the loop), then the report itself: its stage, facts, investigation
+    // and corrective action. Skipped, like the RCM shots, without Maintenance.
+    { file: "reports-01-list.png", url: `/asset-register/explorer?arrange=positions&tab=reports&sel=${fx.truckId}`, settle: 2500,
+      skip: () => (fx.truckId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
+      async act(page) {
+        await page.getByRole("list", { name: "Failure reports" }).getByRole("button", { name: /Brake pedal went soft/ }).waitFor({ timeout: 20000 });
+        await wait(600);
+      } },
+    { file: "reports-02-report.png", url: `/asset-register/explorer?arrange=positions&tab=reports&sel=${fx.truckId}&report=${fx.report?.id}`, settle: 2500,
+      skip: () => (fx.truckId ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=reports on a server that has it."),
+      async act(page) {
+        await page.getByRole("heading", { name: /Brake pedal went soft/ }).waitFor({ timeout: 20000 });
+        // The investigation beside the open corrective action: both cards open.
+        const fold = page.getByRole("button", { name: /^Investigation$/ });
+        if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+        await wait(600);
+      } },
     // --- Teams: the workspace menu, then the team's settings (members, a pending invite) ---
     { file: "team-01-switcher.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) { await page.locator(".nav-workspace-select").first().click(); await wait(500); } },
@@ -1045,6 +1088,7 @@ async function main() {
       truckId: await seedSampleTruck(config),
       teamId: await seedTeam(),
     };
+    fx.report = await seedTruckReport(fx.truckId);
     try {
       await shoot(pick(fixtureShots(fx)));
     } finally {
