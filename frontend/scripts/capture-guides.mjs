@@ -844,6 +844,8 @@ async function main() {
         // The investigation beside the open corrective action: both cards open.
         const fold = page.getByRole("button", { name: /^Investigation$/ });
         if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+        await fold.evaluate((el) => el.blur());
+        await page.mouse.move(0, 0);
         await wait(600);
       } },
     // --- Teams: the workspace menu, then the team's settings (members, a pending invite) ---

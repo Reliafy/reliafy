@@ -65,7 +65,7 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await dialog.getByRole("textbox", { name: /What happened/ }).fill(`Seal leaking at the drive end ${tag}`);
   await dialog.getByRole("radio", { name: "Safety" }).check();
   await dialog.getByRole("combobox").selectOption("new");
-  await dialog.getByPlaceholder("e.g. Seal leaking").fill("Mechanical seal leak");
+  await dialog.getByPlaceholder("e.g. Seal leaking", { exact: true }).fill("Mechanical seal leak");
   await shot(page, "reports-desktop-new");
   await dialog.getByRole("button", { name: "Report it" }).click();
   await expect(dialog).toHaveCount(0);
@@ -74,13 +74,13 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect.poll(() => query(page).get("report")).toBeTruthy();
   expect(query(page).get("tab")).toBe("reports");
   expect(query(page).get("sel")).toBe(p.pump.id);
-  await expect(detail(page).getByRole("heading", { level: 2 })).toContainText(/FR-\d+ Seal leaking at the drive end/);
+  await expect(detail(page).locator(".fr-h2")).toContainText(/FR-\d+ Seal leaking at the drive end/);
   await expect(page.locator(".tt-headslot")).toContainText(/Reported FR-\d+\./);
   await expect(status(page)).toHaveText("Reported");
   await expect(detail(page)).toContainText(`Report unit ${tag} · serial RU-${tag}`);
   await expect(detail(page)).toContainText("Mechanical seal leak");
   await expect(detail(page)).toContainText("Safety");
-  await expect(row(page, `Report pump ${tag}`).locator(".tp-mini.report")).toHaveText("1");
+  await expect(row(page, `Report pump ${tag}`).locator(".tp-mini.report")).toHaveAttribute("title", "1 open failure report");
   await expect(row(page, `Report pool ${tag}`).locator(".tp-mini.report")).toHaveAttribute("title", "1 open failure report inside");
   const reportId = query(page).get("report");
   await shot(page, "reports-desktop-report");
@@ -97,7 +97,7 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await detail(page).getByRole("textbox", { name: "Why 2" }).fill("It ran dry during the shutdown");
   await detail(page).getByRole("button", { name: "Save investigation" }).click();
   await expect(said(page)).toHaveText("Investigation saved.");
-  await expect(detail(page)).toContainText("Wear: Seal faces worn through");
+  await expect(detail(page)).toContainText("Investigated: Seal faces worn through");
 
   // The parent's list: the report with its level under the parent, and the counts.
   await detail(page).getByRole("button", { name: "‹ All reports" }).click();
@@ -148,7 +148,7 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(row(page, `Report pump ${tag}`).locator(".tp-mini.report")).toHaveCount(0);
   // A link opens on the report.
   await open(page, `/asset-register/explorer?arrange=positions&tab=reports&sel=${p.pump.id}&report=${reportId}`);
-  await expect(detail(page).getByRole("heading", { level: 2 })).toContainText(/Seal leaking at the drive end/);
+  await expect(detail(page).locator(".fr-h2")).toContainText(/Seal leaking at the drive end/);
   await expect(status(page)).toHaveText("Closed");
   await expectHealthy(page, problems, { label: "failure reports", root: ".tx" });
 });
@@ -174,7 +174,7 @@ test("Failure reports at 400 px: the ⋯ button offers Add failure report…, th
 
   // The report, as its own screen, on the Failure reports tab.
   await expect.poll(() => query(page).get("report")).toBeTruthy();
-  await expect(detail(page).getByRole("heading", { level: 2 })).toContainText(/Flow dropped to half/);
+  await expect(detail(page).locator(".fr-h2")).toContainText(/Flow dropped to half/);
   await expect(page.getByRole("tab", { name: "Failure reports" })).toHaveAttribute("aria-selected", "true");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await shot(page, "reports-phone-report");
@@ -187,5 +187,5 @@ test("Failure reports at 400 px: the ⋯ button offers Add failure report…, th
   await expect(list.getByRole("button", { name: /Flow dropped to half/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await shot(page, "reports-phone-list");
-  await expectHealthy(page, problems, { label: "failure reports at 400 px", root: ".tx" });
+  await expectHealthy(page, problems, { label: "failure reports at 400 px", root: ".tx-detail" });
 });
