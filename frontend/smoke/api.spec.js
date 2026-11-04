@@ -40,6 +40,8 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/conditions"], // #428
   ["GET", "/api/maintenance/rcm"], // the RCM in the Explorer's tree
   ["GET", "/api/maintenance/positions/smoke/rcm"], // a position's RCM
+  ["GET", "/api/maintenance/failure-reports"], // the Explorer's Failure reports tab
+  ["POST", "/api/maintenance/failure-reports"],
   ["PUT", "/api/maintenance/failure-modes/smoke/decision"],
   ["GET", "/api/maintenance/tasks/smoke/measurement"], // what a task by use counts (its dialog, a move's question)
   ["GET", "/api/maintenance/overview"],

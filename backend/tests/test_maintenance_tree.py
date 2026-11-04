@@ -87,7 +87,7 @@ def test_status_on_each_row_and_rolled_up_inside(m):
     # The alarm raised a work order on its own, so open work counts it too.
     assert pump["status"]["open_work"] == pump["open_work_orders"] >= 1
     assert pump["inside"] == {"positions": 1, "empty": 1, "overdue": 1, "open_work": 0, "alarms": 0,
-                              "next_due": seal["status"]["next_due"]}
+                              "open_reports": 0, "next_due": seal["status"]["next_due"]}
     assert station["inside"]["overdue"] == 1 and station["inside"]["positions"] == 2
     assert station["inside"]["open_work"] == pump["status"]["open_work"]
     assert station["inside"]["alarms"] == pump["status"]["alarms"]

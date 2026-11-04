@@ -163,6 +163,10 @@ GET_KINDS: Table = {
         by name or alias, case, accents, punctuation and company form (AG, Ltd) aside. match is null when none
         is certain; candidates are near misses to ask the user about. Use before maintenance manufacturers.create
         ."""),
+    "failure_report": ("id", "", """A failure report in full: what happened, when, who found it, consequence,
+        position (with path), the item as it was (a snapshot: name, serial, part, item class), failure mode,
+        investigation, corrective actions, verification, repeat_check (failures at the position since the fix),
+        closure or rejection, history (who, when, what), photos, open_actions and can.close (with reasons)."""),
 }
 
 LIST_KINDS: Table = {
@@ -204,6 +208,14 @@ LIST_KINDS: Table = {
     "events": ("", "limit since type", """What changed, newest first: each event's seq, type, at, actor and
         payload (the ids it touched: what to restore or undo). limit up to 500 (default 100); since: a seq to
         read forward from; type: one event type."""),
+    "failure_reports": ("", "position_id below location_id item_id status consequence failure_mode_id part_id since "
+                        "until q sort limit offset", """Failure reports in a scope: position_id (below true, the
+        default: every position inside it too; each row's level names the way down), location_id (the positions
+        there), item_id (reports involving it) or none (the whole workspace). status open (the four open stages),
+        one status, or all (default); consequence, failure_mode_id and part_id (the item's part number) filter;
+        since / until bound when it occurred; q searches title, description, finder, failure mode and position.
+        sort newest (default), oldest, status, consequence or position; limit up to 500 and offset page it.
+        counts is by status over the scope and the other filters."""),
 }
 
 POSITIONS: Table = {
@@ -337,6 +349,29 @@ FAILURE_MODES: Table = {
                 "functions, a function's functional failures or a functional failure's modes."),
     "merge": ("failure_mode_id into_failure_mode_id", "", """Fold a mode into another on the same position (a
         duplicate, an ad-hoc one): its failures, findings and tasks move across. Returns the position."""),
+}
+
+FAILURE_REPORTS: Table = {
+    "file": ("position_id title", "description occurred_on found_by consequence failure_mode_id failure_mode_text "
+             "item_id by", """A failure report at a position (FR-n): title = what happened, occurred_on (default
+        today), found_by, consequence (safety, environmental, operational, non_operational, hidden; none = not
+        sure), the failure mode by id or in words (a new ad-hoc mode when the position has none of that name),
+        item_id (default: the item fitted there that day; kept as a snapshot). by: who files it (default: you)."""),
+    "update": ("report_id", "title description occurred_on found_by consequence failure_mode_id failure_mode_text "
+               "item_id", "Change a report's own fields while it's open ('' clears the failure mode or item)."),
+    "set_status": ("report_id status", "note duplicate_of", """Move it along: reported, investigating,
+        corrective_action, verifying (any direction), closed (needs a verification that worked or was unclear;
+        note = the sign-off) or rejected (note = the reason; duplicate_of = the other report's id). From closed
+        or rejected the only move is back to an open status."""),
+    "investigate": ("report_id", "notes root_cause_category root_cause whys", """The investigation, saved whole (a
+        field left out keeps its value): notes, root_cause_category (design, material, installation, operation,
+        maintenance, wear, environment, unknown, other), root_cause in words, whys (up to 7 lines)."""),
+    "add_action": ("report_id what", "owner due work_order_id work_order_ref", """A corrective action: what, owner,
+        due. work_order_id links a work order here; work_order_ref is a number or link kept elsewhere."""),
+    "update_action": ("report_id action_id", "what owner due status done_on work_order_id work_order_ref",
+                      "Change one: status open, done (done_on, default today) or dropped."),
+    "verify": ("report_id result", "notes verified_on", """Did it work? result worked, not_worked or unclear, with
+        notes and the date checked. The answer's repeat_check counts failures at the position since the fix."""),
 }
 
 TASKS: Table = {
@@ -636,6 +671,7 @@ _LABELS = {
     "Photo": ("photo", "photo_id"), "Interface": ("connection", "interface_id"),
     "WorkPackage": ("work package", "package_id"),
     "RedundancyGroup": ("redundancy group", "group_id"),
+    "FailureReport": ("failure report", "report_id"), "CorrectiveAction": ("corrective action", "action_id"),
 }
 
 
@@ -708,6 +744,7 @@ TABLES: dict[str, tuple[str, Table]] = {
     "maintenance_items": ("action", ITEMS), "maintenance_failure_modes": ("action", FAILURE_MODES),
     "maintenance_tasks": ("action", TASKS), "maintenance_proposals": ("action", PROPOSALS),
     "maintenance_work_orders": ("action", WORK_ORDERS), "maintenance_packages": ("action", PACKAGES),
+    "maintenance_failure_reports": ("action", FAILURE_REPORTS),
     "maintenance_measurements": ("action", MEASUREMENTS),
     "maintenance_locations": ("action", LOCATIONS), "maintenance_parts": ("action", PARTS),
     "maintenance_reliability": ("action", RELIABILITY), "maintenance_topology": ("action", TOPOLOGY),
@@ -862,9 +899,9 @@ def register() -> None:
         class model, proposals the user accepts), decide (plan economics, generated RBDs, impact, spares
         cover), data (rough dates, placement, time zone, notes, dry runs, retire and restore, clearing),
         classes (position classes vs item classes, taxonomies, manufacturers), conditions (what things are
-        exposed to, inherited), structure (parts made of parts: BOMs, indenture levels, where used), apply
-        (many changes in one call: build a branch, bulk edit, delete with confirm, undo).
-        Read the one you need before a task you haven't done here yet."""
+        exposed to, inherited), structure (parts made of parts: BOMs, indenture levels, where used), failures
+        (failure reports: from a report to its closure), apply (many changes in one call: build a branch, bulk
+        edit, delete with confirm, undo). Read the one you need before a task you haven't done here yet."""
         m_for(ctx)  # Maintenance is on for this account
         pages = dict(mcp_guide.TOPICS)
         if graph_query_allowed(_caller(ctx)):
@@ -937,19 +974,22 @@ def register() -> None:
                 "part": m.part, "measurement_point": m.point, "item_class": m.item_class,
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
                 "impact": m.impact, "conditions": m.conditions_of, "part_structure": m.part_structure,
-                "where_used": m.where_used, "function": m.function, "package": m.package}[kind]
+                "where_used": m.where_used, "function": m.function, "package": m.package,
+                "failure_report": m.failure_report}[kind]
         return run(read, rid)
 
     @tool("maintenance_list", _READ, "List maintenance records", LIST_KINDS, "kind")
     def maintenance_list(kind: _choice(LIST_KINDS), ctx: Context,
                          status: Annotated[Literal["open", "planned", "in_progress", "waiting", "closed", "cancelled",
                                                    "pending", "accepted", "rejected", "superseded", "all", "active",
-                                                   "paused", "retired"] | None,
+                                                   "paused", "retired", "reported", "investigating",
+                                                   "corrective_action", "verifying"] | None,
                                            Field(description=(
                                                "work_orders: open (every one not done), planned, in_progress, "
                                                "waiting, closed or cancelled. proposals: pending (default), "
                                                "accepted, rejected, superseded or all. packages: active, paused, "
-                                               "retired or all."))] = None,
+                                               "retired or all. failure_reports: open, one status, or all "
+                                               "(default)."))] = None,
                          location_id: str | None = None,
                          item_class_id: Annotated[str | None, Field(description=(
                              "Only this item class or one inside it; 'none' for those with no class."))] = None,
@@ -958,18 +998,39 @@ def register() -> None:
                          target_id: str | None = None, include_unlisted: bool | None = None,
                          format: Literal["tree", "json", "csv"] | None = None,
                          limit: Annotated[int | None, Field(ge=1, le=500)] = None,
-                         since: Annotated[int | None, Field(ge=0, description="events: a seq to read on from.")] = None,
-                         type: Annotated[str | None, Field(description="events: one event type.")] = None
-                         ) -> dict[str, Any]:
+                         since: Annotated[int | str | None, Field(description=(
+                             "events: a seq to read on from. failure_reports: a date, reports that occurred on or "
+                             "after it."))] = None,
+                         type: Annotated[str | None, Field(description="events: one event type.")] = None,
+                         position_id: Annotated[str | None, Field(description=(
+                             "failure_reports: the position (with below, everything inside it)."))] = None,
+                         below: Annotated[bool | None, Field(description=(
+                             "failure_reports: include the positions inside position_id (default true)."))] = None,
+                         item_id: str | None = None, consequence: str | None = None, failure_mode_id: str | None = None,
+                         part_id: str | None = None,
+                         until: Annotated[str | None, Field(description=(
+                             "failure_reports: a date, reports that occurred on or before it."))] = None,
+                         q: Annotated[str | None, Field(description="failure_reports: words to search for.")] = None,
+                         sort: Literal["newest", "oldest", "status", "consequence", "position"] | None = None,
+                         offset: Annotated[int | None, Field(ge=0)] = None) -> dict[str, Any]:
         """Lists and reports across the maintenance workspace, by kind."""
         m = m_for(ctx)
         statuses = {"work_orders": ("open", "planned", "in_progress", "waiting", "closed", "cancelled"),
                     "proposals": ("pending", "accepted", "rejected", "superseded", "all"),
-                    "packages": ("active", "paused", "retired", "all")}
+                    "packages": ("active", "paused", "retired", "all"),
+                    "failure_reports": ("open", "reported", "investigating", "corrective_action", "verifying",
+                                        "closed", "rejected", "all")}
         if status is not None and status not in statuses[kind]:
             raise ToolError(f"kind '{kind}' takes status {', '.join(statuses[kind])}.")
         if kind == "events":
-            return {"events": run(m.s.events, m.org, _d(limit, 100), since, type or None)}
+            try:
+                seq = None if since is None else int(since)
+            except ValueError:
+                raise ToolError("events: since is a seq (a whole number).") from None
+            return {"events": run(m.s.events, m.org, _d(limit, 100), seq, type or None)}
+        if kind == "failure_reports":
+            return run(m.failure_reports, position_id, _d(below, True), location_id, item_id, status, consequence,
+                       failure_mode_id, part_id, since, until, q, _d(sort, "newest"), _d(limit, 100), _d(offset, 0))
         if kind == "rcm_gaps":
             from backend.maintenance import rcm_graph
 
@@ -1474,6 +1535,60 @@ def register() -> None:
         if action == "mark":
             return run(m.mark_line, work_order_id, task_id, state, reason, finding)
         return run(m.check_item, work_order_id, index, _d(done, True))
+
+    @tool("maintenance_failure_reports", _WRITE, "Failure reports: from a failure to its closure", FAILURE_REPORTS)
+    def maintenance_failure_reports(
+            action: _choice(FAILURE_REPORTS), ctx: Context, report_id: str | None = None,
+            position_id: str | None = None, title: str | None = None, description: str | None = None,
+            occurred_on: DateText = None, found_by: str | None = None,
+            consequence: Annotated[Literal["safety", "environmental", "operational", "non_operational", "hidden"]
+                                   | str | None, Field(description="The RCM vocabulary; '' = not sure.")] = None,
+            failure_mode_id: str | None = None, failure_mode_text: str | None = None, item_id: str | None = None,
+            by: Annotated[str | None, Field(description="Who did it (default: the signed-in user).")] = None,
+            status: Annotated[Literal["reported", "investigating", "corrective_action", "verifying", "closed",
+                                      "rejected", "open", "done", "dropped"] | None, Field(description=(
+                "set_status: the report's (reported, investigating, corrective_action, verifying, closed, "
+                "rejected). update_action: the action's (open, done, dropped)."))] = None,
+            note: str | None = None, duplicate_of: str | None = None, notes: str | None = None,
+            root_cause_category: Literal["design", "material", "installation", "operation", "maintenance", "wear",
+                                         "environment", "unknown", "other"] | str | None = None,
+            root_cause: str | None = None, whys: list[str] | None = None, what: str | None = None,
+            owner: str | None = None, due: DateText = None, work_order_id: str | None = None,
+            work_order_ref: str | None = None, action_id: str | None = None, done_on: DateText = None,
+            result: Literal["worked", "not_worked", "unclear"] | None = None,
+            verified_on: DateText = None) -> dict[str, Any]:
+        """Failure reports (the FRACAS loop): file one at a position, investigate it with a root cause,
+        add corrective actions, verify (did it work?) and close; or reject it with a reason. Read one
+        with maintenance get.failure_report; list them with list.failure_reports (a position and
+        everything inside it, a location, an item or a part). How-to: maintenance guide topic failures."""
+        m = m_for(ctx)
+        user = _caller(ctx)
+        who = by or user.get("name") or user.get("email") or ""
+        # The edits an update carries: only the fields given (null = leave it as it is).
+        edits = {k: v for k, v in {
+            "title": title, "description": description, "occurred_on": occurred_on, "found_by": found_by,
+            "consequence": consequence, "failure_mode_id": failure_mode_id, "failure_mode_text": failure_mode_text,
+            "item_id": item_id, "what": what, "owner": owner, "due": due, "status": status, "done_on": done_on,
+            "work_order_id": work_order_id, "work_order_ref": work_order_ref}.items() if v is not None}
+        if action == "file":
+            return run(m.file_failure_report, position_id, title, description or "", occurred_on, found_by or "",
+                       consequence, failure_mode_id, failure_mode_text, item_id, by=who)
+        if action == "update":
+            keep = ("title", "description", "occurred_on", "found_by", "consequence", "failure_mode_id",
+                    "failure_mode_text", "item_id")
+            return run(m.update_failure_report, report_id, by=who, **{k: v for k, v in edits.items() if k in keep})
+        if action == "set_status":
+            return run(m.set_failure_report_status, report_id, status, note or "", duplicate_of, by=who)
+        if action == "investigate":
+            return run(m.investigate_failure_report, report_id, notes, root_cause_category, root_cause, whys, by=who)
+        if action == "add_action":
+            return run(m.add_corrective_action, report_id, what, owner or "", due, work_order_id, work_order_ref or "",
+                       by=who)
+        if action == "update_action":
+            keep = ("what", "owner", "due", "status", "done_on", "work_order_id", "work_order_ref")
+            return run(m.update_corrective_action, report_id, action_id, by=who,
+                       **{k: v for k, v in edits.items() if k in keep})
+        return run(m.verify_failure_report, report_id, result, notes or "", verified_on, by=who)
 
     PackageTasks = Annotated[list[dict[str, Any] | str] | None, Field(description=(
         "Task ids, or [{task_id, visit_rule?: every|nth, every_nth?: N (nth: the first visit and every Nth after), "
@@ -2004,8 +2119,8 @@ def register() -> None:
         functions, functional failures, failure modes, decisions, tasks, parts list, connections), or
         edit and delete many things at once. Each operation is one of the maintenance_<area> tools'
         actions (area = the tool name without maintenance_: positions, fitments, items, failure_modes,
-        tasks, proposals, work_orders, packages, measurements, locations, parts, topology, item_classes,
-        manufacturers, attachments) with its own arguments and error texts. Every operation is first
+        tasks, proposals, work_orders, packages, failure_reports, measurements, locations, parts, topology,
+        item_classes, manufacturers, attachments) with its own arguments and error texts. Every operation is first
         checked on a throwaway copy of the workspace: with any failure nothing is written. A delete-type
         operation (retire, remove, void, cancel, merge, disconnect, unlink, clear) needs confirm: the
         thing's name as it is now. Answers with each operation's result, counts, the events written and
@@ -2122,9 +2237,9 @@ def register() -> None:
 
     READ_KEYS.update(reads)
     graph_actions = frozenset(GRAPH_TOOL_NAMES)
-    intro = ("Reliafy Maintenance (the CMMS): positions, locations, classes, items, RCM, tasks, work orders, parts "
-             "and reliability. Start with overview; guide (args {topic}) has the how-tos; apply runs many changes "
-             "in one checked call.")
+    intro = ("Reliafy Maintenance (the CMMS): positions, locations, classes, items, RCM, tasks, work orders, failure "
+             "reports, parts. Start with overview; guide (args {topic}) has the how-tos; apply runs many changes in "
+             "one checked call.")
     TOOL_NAMES.append("maintenance")
     args_tool("maintenance", _WRITE, "Reliafy Maintenance", "action", intro, table, run_action,
               call_key=lambda kwargs: keys.get(kwargs.get("action"), "maintenance"),
