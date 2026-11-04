@@ -21,9 +21,12 @@ test("the FMEA preset: the worksheet's columns in order, the criticality and RCM
   assert.ok(COLUMN.consequence.rcm && COLUMN.decision.rcm && COLUMN.task.rcm);
   assert.equal(COLUMN.failure.edit, undefined); // read-only: from the RCM tab
   assert.ok(COLUMN.failure.title.includes("RCM tab"));
-  // A narrow window drops the two middle effects and the owner.
-  assert.ok(!usualCols({ narrow: true }).includes("effect_local") && usualCols({ narrow: true }).includes("action"));
-  assert.deepEqual(usualCols(), DEFAULT_COLUMNS);
+  // The usual set follows the width: a wide window the whole preset; a medium
+  // one without the two middle effects and the owner; a laptop keeps the
+  // cause, end effect, scores, RPN, AP and the action.
+  assert.deepEqual(usualCols({ wide: true }), DEFAULT_COLUMNS);
+  assert.deepEqual(usualCols(), DEFAULT_COLUMNS.filter((id) => !["effect_local", "effect_next", "action_owner"].includes(id)));
+  assert.deepEqual(usualCols({ narrow: true }), ["failure", "cause", "effects", "severity", "occurrence", "detection", "rpn", "ap", "action"]);
 });
 
 test("the cells, as text: scores, RPN, AP, the action's status, criticality to three figures; a parent row's roll-ups", () => {
@@ -130,7 +133,8 @@ test("remembered on this device under its own key, columns and widths; unknown c
   assert.deepEqual(loadPrefs(broken).cols, DEFAULT_COLUMNS);
   assert.doesNotThrow(() => savePrefs(p, broken));
   // The table's columns: the usual ones until chosen; then in the preset's order.
-  assert.deepEqual(tableCols({ cols: DEFAULT_COLUMNS }), DEFAULT_COLUMNS);
+  assert.deepEqual(tableCols({ cols: DEFAULT_COLUMNS }, { wide: true }), DEFAULT_COLUMNS);
+  assert.deepEqual(tableCols({ cols: DEFAULT_COLUMNS }), usualCols());
   const chosen = withTableCols({ cols: DEFAULT_COLUMNS }, ["cm", "severity", "cause"]);
   assert.deepEqual(chosen.cols, ["cause", "severity", "cm"]);
   assert.deepEqual(tableCols(chosen), ["cause", "severity", "cm"]);

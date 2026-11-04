@@ -36,7 +36,7 @@ import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs, tasksOf } from "../
 // graft (a function's failure modes right under it), chips, prefs and checks.
 import { failuresOn as fmeaFailuresOn, graftFmea, positionSummary, rowActions as fmeaRowActions } from "../explorerFmea.js";
 import {
-  CHIP_IDS as FMEA_CHIP_IDS, COLUMN as FMEA_COLUMN, COLUMNS as FMEA_COLUMNS, TREE_HEAD as FMEA_TREE_HEAD, checkValue as checkFmeaValue,
+  CHIP_IDS as FMEA_CHIP_IDS, COLUMN as FMEA_COLUMN, COLUMNS as FMEA_COLUMNS, TREE_HEAD as FMEA_TREE_HEAD, WIDE_TABLE, checkValue as checkFmeaValue,
   loadPrefs as loadFmeaPrefs, nextSort, phoneLine as fmeaPhoneLine, savePrefs as saveFmeaPrefs, siblingOrder as fmeaOrder,
   tableCols as fmeaTableCols, usualCols as fmeaUsualCols, withTableCols as withFmeaCols,
 } from "../fmeaWorksheet.js";
@@ -152,6 +152,7 @@ export default function AssetExplorer() {
   const { workspace, activeTeam } = useWorkspace();
   const phone = usePhone();
   const narrow = useNarrowTable();
+  const wide = useWideTable();
   const saved = useMemo(() => loadTreeState(workspace), [workspace]);
   const tab = tabParam(params.get("tab"));
   // The tree-table: the RCM tab, or the FME(C)A tab (the same table with the
@@ -909,7 +910,10 @@ export default function AssetExplorer() {
   const commit = (r, col, raw) => {
     // A refusal shows where the value was typed (under the cell, or the
     // field), the value kept: not as a toast that cuts the reason short.
-    const res = (fmeaOn ? checkFmeaValue : checkValue)(col, cellRow(r), raw);
+    // The FME(C)A's columns are checked by its rules (on either tab: the
+    // details panel edits them on the RCM tab too); the RCM's by the RCM's.
+    const check = FMEA_COLUMN[col] && !FMEA_COLUMN[col].rcm ? checkFmeaValue : checkValue;
+    const res = check(col, cellRow(r), raw);
     if (res.error) return res.error;
     return ops.set(r, col, res.value).then(() => {
       setEditing((e) => (e && e.key === r.key && e.col === col ? null : e));
@@ -1234,7 +1238,7 @@ export default function AssetExplorer() {
   // (no Interval, folded into the Task cell, nor Evidence check), so the table
   // fits beside the tree; its columns narrow to fit too (TreePane).
   // The FME(C)A tab: the worksheet's columns (fmeaWorksheet.js), remembered apart from the RCM's.
-  const shownCols = fmeaOn ? fmeaTableCols(fprefs, { narrow }) : tableCols(rprefs, linkedEvidence, { narrow });
+  const shownCols = fmeaOn ? fmeaTableCols(fprefs, { narrow, wide }) : tableCols(rprefs, linkedEvidence, { narrow });
   const colMap = fmeaOn ? FMEA_COLUMN : COLUMN;
   const prefsW = fmeaOn ? fprefs.widths : rprefs.widths;
   // The details expanded (a wide screen, the details shown): only the tree column beside them.
@@ -1292,7 +1296,7 @@ export default function AssetExplorer() {
                             // A double-click asks once (its second click is the dialog's, which ignores it).
                             onClick={(e) => { if (e.detail < 2) runAdd({ ref: { add: "fn", position_id: posRow.key } }); }}>Add function</button>
                     {fmeaOn ? (
-                      <ColumnChooser cols={shownCols} usual={fmeaUsualCols({ narrow })} columns={FMEA_COLUMNS}
+                      <ColumnChooser cols={shownCols} usual={fmeaUsualCols({ narrow, wide })} columns={FMEA_COLUMNS}
                                      onCols={(next, o) => setFprefs((p) => withFmeaCols(p, next, o))} />
                     ) : (
                       <ColumnChooser cols={shownCols} usual={usualCols({ narrow })}
@@ -1634,4 +1638,18 @@ function useNarrowTable() {
     return () => mq.removeEventListener("change", onChange);
   }, []);
   return narrow;
+}
+
+// Is the window at least WIDE_TABLE (the FME(C)A's whole preset of usual
+// columns fits beside the tree)? Follows the window as it changes.
+const WIDE_QUERY = `(min-width: ${WIDE_TABLE}px)`;
+function useWideTable() {
+  const [wide, setWide] = useState(() => window.matchMedia(WIDE_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY);
+    const onChange = () => setWide(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return wide;
 }

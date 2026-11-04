@@ -564,11 +564,16 @@ export function Details({
           tree), then what belongs to this level, then the quieter things (the working, the
           checkable limit, where it sits, notes) last. */}
       <div className="rw-pbody">
+        {/* The FME(C)A tab: a failure mode's two groups first (the end effect and the
+            consequence are in the first), its tasks and decision after. */}
+        {r.type === "mode" && fmea?.on && fmeaGroups}
         {/* 1. What's inside it. A function: its performance standards, then the functional
             failures under them. A standard (and "No performance standard"): its functional
             failures. A functional failure (and "Not under a functional failure"): its failure
             modes. A failure mode: its tasks. */}
-        {r.type === "fn" && ops?.standards && (
+        {/* On the FME(C)A tab a function's details are about its failure modes: the
+            performance standards and the working stay on the RCM tab. */}
+        {r.type === "fn" && ops?.standards && !fmea?.on && (
           <RcmFunctionStandards key={`${r.key}:std`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("std")} onSaid={said} />
         )}
         {insideList && inside}
@@ -603,9 +608,6 @@ export function Details({
             {consequenceField}
           </div>
         )}
-        {/* The FME(C)A tab: its two groups first (the end effect and the consequence are in the first). */}
-        {r.type === "mode" && fmea?.on && fmeaGroups}
-
         {r.type === "mode" && (
           <Section title="Decision" label="Decision" className="rw-decision"
                    action={readOnly ? null : { label: d ? "Change…" : "Decide…", ariaLabel: d ? "Change the decision…" : "Decide…", onClick: () => onDecision(r) }}>
@@ -650,7 +652,7 @@ export function Details({
         {r.type === "mode" && fmea && !fmea.on && fmeaGroups}
 
         {/* 3. The quieter things, last. */}
-        {r.type === "fn" && ops?.basis && (
+        {r.type === "fn" && ops?.basis && !fmea?.on && (
           <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
                     openToken={ops.basisView?.token(r)} />
         )}

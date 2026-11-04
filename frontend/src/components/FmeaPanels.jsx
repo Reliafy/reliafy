@@ -7,7 +7,7 @@ import { CloseIcon } from "./icons.jsx";
 import { PanelField } from "./PanelField.jsx";
 import { Field as FormField, FormModal } from "./MaintenanceParts.jsx";
 import {
-  AP_LABEL, AP_TONE, CLASS_LABEL, SCORES, SCORE_ENDS, SCORE_LETTER, SOURCE_LABEL, STATUS_LABEL, apOf, bandOf, bandWords, cmOf, cmWords, fmt3, rpnOf,
+  AP_LABEL, AP_TONE, CLASS_LABEL, SCORES, SCORE_ENDS, SOURCE_LABEL, STATUS_LABEL, apOf, bandOf, bandWords, cmOf, cmWords, fmt3, rpnOf,
 } from "../fmea.js";
 import "./FmeaPanels.css";
 

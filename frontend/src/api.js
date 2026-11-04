@@ -2515,13 +2515,14 @@ export function assignFailureMode(id, functionalFailureId, functionId = null) {
 }
 // A position's FME(C)A worksheet as an Excel file (it and everything inside
 // it). The route is the server's to offer: `hasFmeaExcel` says whether it
-// does (asked once; a 404 hides the button).
+// does (asked once per session, with the one position's small sheet: a HEAD
+// would answer 405, which the browser logs as an error; a 404 hides the button).
 export const fmeaExcelUrl = (positionId) => `/api/maintenance/positions/${positionId}/fmea.xlsx`;
 let fmeaExcel = null;
 export async function hasFmeaExcel(positionId) {
   if (fmeaExcel != null) return fmeaExcel;
   try {
-    const res = await authedFetch(fmeaExcelUrl(positionId), { method: "HEAD" });
+    const res = await authedFetch(`${fmeaExcelUrl(positionId)}?scope=this`);
     fmeaExcel = res.status !== 404;
   } catch {
     fmeaExcel = false;

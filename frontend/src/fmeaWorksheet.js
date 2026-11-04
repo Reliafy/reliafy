@@ -16,7 +16,7 @@
 import {
   AP_LABEL, CLASS_LABEL, SOURCE_LABEL, STATUS_LABEL, cmOf, fmt3, rpnOf, score,
 } from "./fmea.js";
-import { COLUMN as RCM_COLUMN, checkValue as rcmCheckValue, modeCounts } from "./rcmWorksheet.js";
+import { COLUMN as RCM_COLUMN, blank as rcmBlank, checkValue as rcmCheckValue, modeCounts } from "./rcmWorksheet.js";
 
 const isMode = (r) => r.type === "mode";
 const n = (count, one, many = `${one}s`) => `${count.toLocaleString("en-AU")} ${count === 1 ? one : many}`;
@@ -46,7 +46,7 @@ export function fmeaCounts(m) {
 
 // A mode's counts for the tree: the RCM's and the FMEA's together.
 export const modeSums = (m) => ({ ...modeCounts(m), ...fmeaCounts(m) });
-export const blankSums = () => ({ modes: 0, undecided: 0, tasks: 0, hidden: 0, safety: 0, supported: 0, contradicted: 0, unsure: 0, stale: 0, unlinked: 0, ...fmeaBlank() });
+export const blankSums = () => ({ ...rcmBlank(), ...fmeaBlank() });
 
 // `into` gains `add`: every count summed, but max_rpn is the greatest.
 export function addSums(into, add) {
@@ -175,16 +175,24 @@ export const FIELDS = new Set(["severity", "occurrence", "detection", "cause", "
   "action", "action_owner", "action_due", "action_status", "failure_rate", "time_unit", "rate_source", "mode_ratio", "loss_probability",
   "operating_time", "severity_class"]);
 
-// A window narrower than this (a 1280 px laptop) gets fewer usual columns, so
-// the worksheet fits beside the tree: no Local effect, Next higher effect or Owner.
+// The usual columns follow the window's width, so the scores and the action
+// priority stay in view beside the tree without scrolling sideways: a wide
+// window (1700 px and up) shows the whole preset; a laptop (under 1400 px)
+// keeps the cause, the end effect, S, O, D, RPN, AP and the action; between
+// the two, the local and next higher effects and the owner wait in the
+// Columns menu. A set chosen there is kept whatever the width.
 export const NARROW_TABLE = 1400;
-export function usualCols({ narrow = false } = {}) {
-  return DEFAULT_COLUMNS.filter((id) => !(narrow && ["effect_local", "effect_next", "action_owner"].includes(id)));
+export const WIDE_TABLE = 1700;
+const MEDIUM_OFF = ["effect_local", "effect_next", "action_owner"];
+const NARROW_OFF = [...MEDIUM_OFF, "detection_method", "action_due", "action_status"];
+export function usualCols({ narrow = false, wide = false } = {}) {
+  const off = wide ? [] : narrow ? NARROW_OFF : MEDIUM_OFF;
+  return DEFAULT_COLUMNS.filter((id) => !off.includes(id));
 }
 const inOrder = (ids) => COLUMNS.map((c) => c.id).filter((id) => ids.includes(id));
 // The columns shown: the ones chosen in the Columns menu, else the usual ones for the width.
-export function tableCols(prefs, { narrow = false } = {}) {
-  return inOrder(prefs.colsChosen ? prefs.cols || DEFAULT_COLUMNS : usualCols({ narrow }));
+export function tableCols(prefs, { narrow = false, wide = false } = {}) {
+  return inOrder(prefs.colsChosen ? prefs.cols || DEFAULT_COLUMNS : usualCols({ narrow, wide }));
 }
 export function withTableCols(prefs, next, { reset = false } = {}) {
   if (reset) {

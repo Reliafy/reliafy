@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { getPositionRcm } from "../api.js";
 import usePageTitle from "../components/usePageTitle.js";
 import { EXPORT_HEADER, FMEA_HEADER, positionRcmRows } from "../rcmImport.js";
@@ -21,6 +21,7 @@ const ROUNDED = new Set(["Failure rate", "Mode ratio", "Loss probability", "Oper
 
 export default function FmeaPrint() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [sheet, setSheet] = useState(null);
   const [error, setError] = useState(null);
   useEffect(() => {
@@ -45,7 +46,7 @@ export default function FmeaPrint() {
           <p className="muted">FME(C)A worksheet{top ? `: ${top.name} and everything inside it` : ""} · {sheet?.today || ""}</p>
         </div>
         <div className="fm-print-acts">
-          <Link className="button secondary" to={explorerPath("positions", { tab: "fmea", sel: id })}>Back to the Explorer</Link>
+          <button type="button" className="secondary" onClick={() => navigate(explorerPath("positions", { tab: "fmea", sel: id }))}>Back to the Explorer</button>
           <button type="button" onClick={() => window.print()}>Print</button>
         </div>
       </div>
