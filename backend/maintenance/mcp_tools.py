@@ -35,6 +35,7 @@ from pydantic import Field
 
 from backend.maintenance import apply as apply_mod
 from backend.maintenance import mcp_guide
+from backend.maintenance.progression import PROGRESSION
 from backend.mcp_actions import Table, check, describe
 from backend.mcp_actions import choice as _choice
 
@@ -482,6 +483,43 @@ MEASUREMENTS: Table = {
         Returns the point."""),
 }
 
+SIGNALS: Table = {
+    "add_channel": ("name unit", "position_id item_id quantity sample_rate axes rpm tag mount", """A signal channel on
+        a position (position_id) or an item (item_id): a sensor that sends snapshots (a burst of samples per axis,
+        a spectrum the device made, or a single value). unit: what it measures in (g, mm/s, kPa); axes: names, e.g.
+        [X, Y, Z]; rpm: running speed, for bands in multiples of it; tag: how a device addresses it (POST
+        /api/ingest/maintenance/snapshots)."""),
+    "update_channel": ("channel_id", "name rpm clear_rpm tag mount sample_rate speed_channel_id", """Rename a channel
+        or change its running speed (new snapshots take it), tag, mount text or sample rate. speed_channel_id: a
+        channel of rpm values to take speed from (nearest reading in time; '' clears)."""),
+    "retire_channel": ("channel_id", "reason", "Stop a channel taking snapshots (what it holds stays)."),
+    "add_snapshot": ("time", "channel_id tag axes samples sample_rate unit spectrum value values running rpm note",
+                     """Store one snapshot: time (ISO 8601 with a time zone) and samples (axes {name: [numbers]},
+        sample_rate in Hz, or samples for one axis), or a device spectrum, or a value (values {axis: number}). The
+        server works out the spectrum and overall levels, and adds a value to each of the channel's bands and levels.
+        Sending the same channel and time again changes nothing. At most 5 MB."""),
+    "add_band": ("channel_id name low high", "axis unit alarm_above alarm_below warn_above warn_below", """A watch band: the RMS level
+        in low..high (Hz, or unit orders for multiples of the running speed) of each snapshot, as a measurement
+        point (history worked out from the snapshots already stored). axis is needed when there are several.
+        Alarm limits open an inspection like any condition point's; warn limits only draw lines."""),
+    "update_band": ("point_id", "name low high axis unit alarm_above alarm_below warn_above warn_below clear_limits",
+                    """Change a band: name and limits in place; a new range starts a new version from now (the old
+        values stay as measured, the trend shows the change). clear_limits: list of limit names to remove."""),
+    "set_storage_cap": ("", "cap_mb", "Warn on the Signals tab above cap_mb of snapshots (none clears; deletes nothing)."),
+    "add_level": ("channel_id name stat", "axis alarm_above alarm_below warn_above warn_below", """An overall level of each snapshot as a
+        measurement point: stat rms, peak, crest, kurtosis, mean or value (a scalar channel, e.g. pressure)."""),
+    "remove_band": ("point_id", "reason", """Stop a band or level adding values (its recorded values stay)."""),
+}
+
+SIGNAL_DATA: Table = {
+    "channels": ("", "position_id item_id", "Signal channels (of one position or item, or all), each with its snapshot count and size."),
+    "channel": ("channel_id", "snapshots", """One channel: settings, bands and levels with their series, size, and
+        its latest snapshot headings (snapshots: how many, default 100)."""),
+    "storage": ("", "", "MB and number of snapshots stored, per channel, and the warning level if set."),
+    "snapshot": ("snapshot_id", "axis f_min f_max max_points raw", """One snapshot: levels and spectrum (peaks kept
+        when thinned to max_points; f_min / f_max give full detail in a range). raw true adds the samples."""),
+}
+
 LOCATIONS: Table = {
     "create": ("name", "parent_id description", """A physical place (site, area, building, room, substation,
         store), optionally inside another. Don't mirror the positions here: make the places, then give positions
@@ -745,11 +783,13 @@ TABLES: dict[str, tuple[str, Table]] = {
     "maintenance_tasks": ("action", TASKS), "maintenance_proposals": ("action", PROPOSALS),
     "maintenance_work_orders": ("action", WORK_ORDERS), "maintenance_packages": ("action", PACKAGES),
     "maintenance_failure_reports": ("action", FAILURE_REPORTS),
-    "maintenance_measurements": ("action", MEASUREMENTS),
+    "maintenance_measurements": ("action", MEASUREMENTS), "maintenance_signals": ("action", SIGNALS),
+    "maintenance_signal_data": ("action", SIGNAL_DATA),
     "maintenance_locations": ("action", LOCATIONS), "maintenance_parts": ("action", PARTS),
     "maintenance_reliability": ("action", RELIABILITY), "maintenance_topology": ("action", TOPOLOGY),
     "maintenance_item_classes": ("action", ITEM_CLASSES), "maintenance_manufacturers": ("action", MANUFACTURERS),
     "maintenance_attachments": ("action", ATTACHMENTS), "maintenance_workspace": ("action", WORKSPACE),
+    "maintenance_progression": ("action", PROGRESSION),
 }
 
 
@@ -1707,6 +1747,88 @@ def register() -> None:
             return run(m.void_reading, reading_id, reason)
         return run(m.correct_reading, reading_id, value, on, reason, at, precision, note)
 
+    @tool("maintenance_signals", _WRITE, "Signal channels: snapshots, bands and levels", SIGNALS)
+    def maintenance_signals(action: _choice(SIGNALS), ctx: Context, channel_id: str | None = None,
+                            position_id: str | None = None, item_id: str | None = None, name: str | None = None,
+                            unit: str | None = None, quantity: str | None = None,
+                            sample_rate: Annotated[float | None, Field(description="Hz.")] = None,
+                            axes: Annotated[dict[str, list[float]] | list[str] | None, Field(description=(
+                                "add_channel: axis names [X, Y, Z]. add_snapshot: {axis name: [samples]}."))] = None,
+                            rpm: float | None = None, clear_rpm: bool | None = None, tag: str | None = None,
+                            mount: str | None = None, reason: str | None = None,
+                            time: Annotated[str | None, Field(description=(
+                                "ISO 8601 with a time zone: 2026-11-03T10:00:00+10:00 or ...Z. No default."))] = None,
+                            samples: list[float] | None = None,
+                            spectrum: Annotated[dict[str, Any] | None, Field(description=(
+                                "A device's spectrum: {df (Hz per line) or freqs: [...], amplitudes: {axis: [...]} "
+                                "(or one list), window?: hann, amplitude?: peak|rms}."))] = None,
+                            value: float | None = None,
+                            values: Annotated[dict[str, float] | None, Field(description="{axis: number}.")] = None,
+                            running: bool | None = None, note: str | None = None, low: float | None = None,
+                            high: float | None = None, axis: str | None = None,
+                            alarm_above: float | None = None, alarm_below: float | None = None,
+                            warn_above: float | None = None, warn_below: float | None = None,
+                            stat: Literal["rms", "peak", "crest", "kurtosis", "mean", "value"] | None = None,
+                            point_id: str | None = None, speed_channel_id: str | None = None,
+                            cap_mb: float | None = None,
+                            clear_limits: list[Literal["alarm_above", "alarm_below", "warn_above", "warn_below"]]
+                            | None = None) -> dict[str, Any]:
+        """Signal channels: sensors that send snapshots (vibration bursts, spectra, pressures). A watch band
+        or level makes an ordinary measurement point, so alarms and trends work on it. Read with
+        maintenance signal_data.…; the data format is in the guide (topic signals)."""
+        m = m_for(ctx)
+        if action == "add_channel":
+            names = axes if isinstance(axes, list) else None
+            if axes is not None and names is None:
+                raise ToolError("axes is a list of axis names, like [X, Y, Z].")
+            return run(m.add_signal_channel, position_id, item_id, name or "", unit or "", quantity or "",
+                       sample_rate, names, rpm, tag or "", mount or "")
+        if action == "update_channel":
+            return run(m.update_signal_channel, channel_id, name, None if clear_rpm else (... if rpm is None else rpm),
+                       tag, mount, ... if sample_rate is None else sample_rate,
+                       ... if speed_channel_id is None else speed_channel_id)
+        if action == "retire_channel":
+            return run(m.retire_signal_channel, channel_id, reason or "")
+        if action == "add_snapshot":
+            wave = axes if isinstance(axes, dict) else None
+            if axes is not None and wave is None:
+                raise ToolError("axes is {axis name: [samples]}.")
+            return run(m.add_signal_snapshot, time, channel_id, tag, wave, samples, sample_rate, unit, spectrum,
+                       value, values, running, rpm, note or "")
+        if action == "add_band":
+            return run(m.add_signal_band, channel_id, name or "", low, high, axis, unit or "Hz", alarm_above,
+                       alarm_below, warn_above, warn_below)
+        if action == "add_level":
+            return run(m.add_signal_level, channel_id, name or "", stat, axis, alarm_above, alarm_below, warn_above,
+                       warn_below)
+        if action == "update_band":
+            cleared = set(clear_limits or [])
+            given = {"alarm_above": alarm_above, "alarm_below": alarm_below, "warn_above": warn_above,
+                     "warn_below": warn_below}
+            limits = {k: None if k in cleared else v for k, v in given.items() if k in cleared or v is not None}
+            return run(m.update_signal_band, point_id, name, low, high, axis, unit, **limits)
+        if action == "set_storage_cap":
+            return run(m.set_signal_storage_cap, cap_mb)
+        return run(m.remove_signal_band, point_id, reason or "")
+
+    @tool("maintenance_signal_data", _READ, "Read signal channels, snapshots and spectra", SIGNAL_DATA)
+    def maintenance_signal_data(action: _choice(SIGNAL_DATA), ctx: Context, channel_id: str | None = None,
+                                snapshot_id: str | None = None, position_id: str | None = None,
+                                item_id: str | None = None, snapshots: int | None = None, axis: str | None = None,
+                                f_min: float | None = None, f_max: float | None = None,
+                                max_points: Annotated[int | None, Field(ge=10, le=20000)] = None,
+                                raw: bool | None = None) -> dict[str, Any]:
+        """Signal channels and what they hold (see maintenance signals.…): channels, one channel with its
+        bands and recent snapshot headings, and one snapshot's spectrum."""
+        m = m_for(ctx)
+        if action == "channels":
+            return run(m.signal_channels, position_id, item_id)
+        if action == "channel":
+            return run(m.signal_channel, channel_id, _d(snapshots, 100))
+        if action == "storage":
+            return run(m.signal_storage)
+        return run(m.signal_snapshot, snapshot_id, axis, f_min, f_max, _d(max_points, 1500), bool(raw))
+
     @tool("maintenance_locations", _WRITE, "Create and change locations", LOCATIONS)
     def maintenance_locations(action: _choice(LOCATIONS), ctx: Context, location_id: str | None = None,
                               name: str | None = None, parent_id: str | None = None,
@@ -2073,6 +2195,20 @@ def register() -> None:
             uploads_service.delete(db, upload["_id"])
             return saved
         return run(remove_document_bytes, m, document_id)
+
+    @tool("maintenance_progression", _READ, "Time to the limit for a watched level", PROGRESSION)
+    def maintenance_progression(action: _choice(PROGRESSION), ctx: Context, point_id: str | None = None,
+                                process: Literal["wiener", "gamma"] | None = None, limit: float | None = None,
+                                since: Annotated[str | None, Field(description=(
+                                    "ISO 8601 date or time: use only readings from then (e.g. after a renewal)."))] = None,
+                                confidence: Annotated[float | None, Field(ge=0.5, le=0.99)] = None,
+                                unit_name: str | None = None) -> dict[str, Any]:
+        """When a watched band (or any automated condition point) is expected to reach its alarm limit, with the
+        uncertainty, and the same readings as a degradation series (see maintenance signals.…)."""
+        m = m_for(ctx)
+        if action == "time_to_limit":
+            return run(m.time_to_limit, point_id, process or "wiener", limit, since, 0.8 if confidence is None else confidence)
+        return run(m.progression_series, point_id, since, unit_name)
 
     @tool("maintenance_workspace", _WRITE, "Workspace settings and history import", WORKSPACE)
     def maintenance_workspace(action: _choice(WORKSPACE), ctx: Context,

@@ -208,6 +208,19 @@ def test_cli_fit_upload_import_push_ingest(server, capsys):
     code, _, err = run(capsys, "ingest", "usage", str(readings))
     assert code == 1 and "--fleet" in err
 
+    # A signal channel's snapshot, from a JSON file (Maintenance: tool call, then the ingest push).
+    code, out, _ = run(capsys, "maintenance", "positions.create", "--name", "Pump", "--json")
+    assert code == 0
+    code, out, _ = run(capsys, "maintenance", "signals.add_channel", "--position-id", json.loads(out)["id"],
+                       "--name", "Discharge", "--unit", "kPa", "--tag", "pump.p", "--json")
+    assert code == 0 and json.loads(out)["tag"] == "pump.p"
+    snap = tmp / "snap.json"
+    snap.write_text(json.dumps({"tag": "pump.p", "time": "2026-11-03T10:00:00Z", "value": 190}))
+    code, out, _ = run(capsys, "ingest", "snapshot", str(snap), "--json")
+    assert code == 0 and json.loads(out)["stored"] == 1
+    code, out, _ = run(capsys, "ingest", "snapshot", str(snap), "--json")
+    assert code == 0 and json.loads(out)["duplicates"] == 1
+
 
 def _jpeg() -> bytes:
     img = Image.new("RGB", (64, 48), (200, 30, 30))

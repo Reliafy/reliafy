@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
 import FailureReportsPanel from "./FailureReportsPanel.jsx";
+import SignalsPanel from "./SignalsPanel.jsx";
 import ClampText from "./ClampText.jsx";
 import { DueChip, fmtDate, fmtDated } from "./MaintenanceParts.jsx";
 import { PinIcon } from "./OutlineBits.jsx";
@@ -390,6 +391,8 @@ const TreeDetail = forwardRef(function TreeDetail({
            aria-labelledby={tabs.length > 1 ? `td-tab-${shown}` : undefined}>
         {shown === "reports" && reports
           ? <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} />
+          : shown === "signals"
+          ? <SignalsPanel row={row} />
           : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />}
       </div>
     </div>

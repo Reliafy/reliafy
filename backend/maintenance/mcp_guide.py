@@ -20,7 +20,7 @@ or part is. Connections: what feeds what, for redundancy, impact and generated R
 things) are fitted to positions; every fitment is history and a row of life data.
 Start with maintenance overview (the position tree, what's due, open work, short spares, the time zone and \
 today). Read maintenance guide (args {topic}) for how-tos: model, register, plan, run, learn, decide, data, classes, \
-conditions, structure, failures, apply. \
+conditions, structure, signals, failures, apply. \
 Reads are maintenance get.<kind> / list.<kind>; changes are maintenance <area>.<action>, and guide(action='maintenance.<action>') gives \
 what each takes. Many changes at once (a branch with its RCM, a bulk \
 edit): maintenance apply runs a list of those actions in one checked call (topic apply). Retired things restore.
@@ -34,6 +34,39 @@ record it with maintenance topology.create_group as you build, not later. For a 
 maintenance topology.generate_rbd builds the RBD from the positions (then analyse rbd); don't hand-build \
 one with change rbd_create. A non-repairable model for a maintenance class comes from maintenance reliability.fit_class_model \
 (it reads the fitment history itself and proposes intervals), not from analyse fit.
+"""),
+    "signals": ("Signal channels: vibration, pressure and other sensors that send snapshots.", """\
+A signal channel is a sensor on a position or an item that sends snapshots: a burst of samples per axis \
+(vibration), a spectrum the device already made, or one value (a slow pressure). maintenance signals.add_channel \
+(name, unit, position_id or item_id; axes like [X, Y, Z], sample_rate, rpm, tag).
+Send data with maintenance signals.add_snapshot, or a device posts JSON to POST /api/ingest/maintenance/snapshots \
+with an ingest-scope token. A snapshot: time (ISO 8601 WITH a time zone, no default), then axes {name: [samples]} \
+and sample_rate in Hz, or spectrum {df or freqs, amplitudes, window?, amplitude? peak|rms}, or value / values \
+{axis: number}; optional running (true when the machine was running), rpm (else the channel's), note. Same channel \
+and time again: reported as a duplicate, nothing changes. At most 5 MB (about 500,000 numbers); the unit must be \
+the channel's (Reliafy doesn't convert).
+Samples: the server computes the spectrum once (mean removed, Hann window, peak amplitude in the unit, single-sided) \
+and the overall levels per axis (rms, peak, crest, kurtosis; the mean is ignored). Everything is kept: raw and \
+spectrum. A device spectrum is kept as sent (say its window; unknown is treated as no window correction).
+Watch band: maintenance signals.add_band (channel_id, name, low, high, axis; unit Hz, or orders for multiples of \
+the running speed). It reads the RMS in the band at every snapshot, backfills the stored ones, and appears as an \
+ordinary condition measurement point (alarm limits open an inspection; trends and projected alarm dates work). \
+signals.add_level does the same for an overall level (rms, peak, crest, kurtosis, mean, or value for a scalar \
+channel). signals.update_band changes a band: name and warn_above / warn_below / alarm_above / alarm_below in \
+place (warn levels only draw lines; alarms open inspections); a new range (low, high, axis, unit) starts a new \
+version from the next snapshot, the old values stay as measured and the trend shows one line with the change \
+marked (add a new band to see a range over earlier snapshots). update_channel speed_channel_id names an rpm channel \
+(single values) whose nearest reading in time, within an hour, is each snapshot's running speed. \
+signal_data.storage gives MB and snapshots stored; signals.set_storage_cap sets a soft warning (deletes nothing).
+Read with maintenance signal_data.channels / channel (bands, their series, recent snapshot headings) / snapshot \
+(snapshot_id = channel id:milliseconds; spectrum thinned keeping peaks, f_min / f_max for detail, raw true for samples).
+Time to the limit: maintenance progression.time_to_limit (point_id of a band or level) fits its own readings with a \
+SurPyval degradation process (wiener, or gamma for rising-only wear) and gives the most likely time to reach the alarm \
+limit, a range, and the chance by 7 / 30 / 90 / 180 / 365 days. The range allowing for the fit is separate from the \
+spread of the process; its late end can be null (not bounded) and then you say so. With under 6 readings, a series \
+not heading for the limit or one with no scatter you get status and message and no dates: relay them, never invent \
+a date. It is the time to the limit, not to failure. since starts after a renewal. progression.series gives the \
+readings as unit, age_days, value rows and CSV, to create a dataset for a degradation model.
 """),
     "model": ("The four structures and the item moving through them.", """\
 Four structures, and the items that move through them.

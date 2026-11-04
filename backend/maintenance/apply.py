@@ -49,7 +49,8 @@ EXCLUDED = {
     "workspace.import_history", "parts.import_bom", "parts.positions_from_structure", "item_classes.import",
     "item_classes.load_starter", "item_classes.import_conditions", "manufacturers.link_by_name",
     "positions.adopt_placements", "positions.add_sample_truck", "attachments.photo_link",
-    "failure_modes.split_standard",
+    "failure_modes.split_standard", "signals.add_snapshot", "signals.add_band", "signals.add_level", "signals.update_band",
+    "signals.set_storage_cap",
 }
 
 #: Delete-type actions: the argument naming what goes, for the confirm check.
@@ -67,7 +68,7 @@ DELETES = {
     "manufacturers.retire": "manufacturer_id", "manufacturers.merge": "manufacturer_id",
     "attachments.remove_photo": "photo_id", "attachments.unlink_photo": "photo_id",
     "attachments.remove_document": "document_id", "attachments.clear_coordinates": "target_id",
-    "packages.retire": "package_id",
+    "packages.retire": "package_id", "signals.retire_channel": "channel_id", "signals.remove_band": "point_id",
 }
 
 #: Creates, and the delete that undoes each: (action, the argument it takes).

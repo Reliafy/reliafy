@@ -57,6 +57,9 @@ from backend.services import time_zones
 from backend.maintenance import rcm_decisions
 from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
 from backend.maintenance.schedule import Cadence, Season
+from backend.maintenance.signals import PROJECTORS as _SIGNAL_PROJECTORS
+from backend.maintenance.progression import ProgressionOps
+from backend.maintenance.signals import SignalOps
 
 logger = logging.getLogger(__name__)
 
@@ -2543,7 +2546,7 @@ PROJECTORS = {
 
 # ---- the domain ------------------------------------------------------------------
 
-class Maintenance:
+class Maintenance(SignalOps, ProgressionOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -6084,6 +6087,9 @@ class Maintenance:
         limit opens an inspection (one at a time per point). ``at`` gives its time of
         day (or a coarser time), ``precision`` how well it's known (#264)."""
         point = self._live_point(point_id)
+        if point.get("derived"):
+            raise Invalid(f"{point['name']} is worked out from a signal channel's snapshots; its readings come "
+                          "from them.")
         if point.get("source") == "automated":
             raise Invalid(f"{point['name']} is fed automatically (tag {point.get('tag')}); its readings come in "
                           "through the feed.")
@@ -6294,6 +6300,8 @@ class Maintenance:
                "alarm_below": below, "reading": current and current["value"], "read_at": current and current["at"],
                "read_when": current and current.get("when"), "read_precision": current and current.get("precision"),
                "status": status, "readings": recent, "retired": bool(mp.get("retired"))}
+        if mp.get("derived"):
+            out["derived"] = {"from": mp["derived"]["from"], "rule": mp["derived"]["rule"]}
         on = self.s.out(self.org, point_id, "ON")
         # What it measures: a position (position), or an item (item: it travels with it).
         out["position"] = on and on[0]["label"] == "Position" and {"id": on[0]["id"], "name": on[0]["name"]} or None
@@ -6424,7 +6432,7 @@ class Maintenance:
         given = [(k, v) for k, v in (("position", position_id), ("item", item_id), ("location", location_id))
                  if v not in (None, "")]
         if len(given) != 1:
-            names = "position_id or item_id" if what == "measurement point" else "position_id, item_id or location_id"
+            names = "position_id or item_id" if what in ("measurement point", "signal channel") else "position_id, item_id or location_id"
             raise Invalid(f"Say what the {what} is on: exactly one of {names}.")
         kind, ref = given[0]
         node = self._get(str(ref), kind.capitalize())
@@ -11851,4 +11859,6 @@ def summary(m: Maintenance) -> dict:
 # 5: the fields the earlier RCM studies left on functions, functional failures, failure
 #    modes and tasks (study_id, rcm_*_id) are no longer projected; old events still
 #    carry them and are read as before
+PROJECTORS.update(_SIGNAL_PROJECTORS)
+
 PROJECTION_VERSION = 5

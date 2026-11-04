@@ -1870,9 +1870,11 @@ export function getOAuthRequest(handle) {
   return request(`/oauth/authorize/request?request=${encodeURIComponent(handle)}`);
 }
 
-// Approve or deny it as the signed-in user; resolves to { redirect_to }.
+// Approve or deny it as the signed-in user; resolves to { redirect_to }. The
+// handle goes in the query as well as the body: the MCP switch reads it there
+// to let the Reliafy app's own sign-in through while connectors are off.
 export function decideOAuthRequest(handle, approve) {
-  return request("/oauth/authorize/decision", {
+  return request(`/oauth/authorize/decision?request=${encodeURIComponent(handle)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ request: handle, approve }),
@@ -2806,6 +2808,59 @@ export function correctMeasurementReading(readingId, { value, on, at, reason }) 
   return postJson(`/api/maintenance/readings/${readingId}/correct`, at ? { value, at, reason } : { value, on, reason });
 }
 
+// ---- signal channels (Reliafy Maintenance): vibration and other sensors that send snapshots ----
+
+export function listSignalChannels({ positionId, itemId } = {}) {
+  const q = new URLSearchParams();
+  if (positionId) q.set("position_id", positionId);
+  if (itemId) q.set("item_id", itemId);
+  return request(`/api/maintenance/signals/channels?${q}`);
+}
+export function createSignalChannel(body) {
+  return postJson("/api/maintenance/signals/channels", body);
+}
+export function getSignalChannel(id, snapshots = 500) {
+  return request(`/api/maintenance/signals/channels/${id}?snapshots=${snapshots}`);
+}
+// Several snapshots' spectra for one axis, thinned to `maxPoints` keeping the peaks.
+export function getSignalSpectra(channelId, ids, { axis, maxPoints = 700, fMin, fMax } = {}) {
+  const q = new URLSearchParams({ ids: ids.join(","), max_points: String(maxPoints) });
+  if (axis) q.set("axis", axis);
+  if (fMin !== undefined && fMin !== null) q.set("f_min", String(fMin));
+  if (fMax !== undefined && fMax !== null) q.set("f_max", String(fMax));
+  return request(`/api/maintenance/signals/channels/${channelId}/spectra?${q}`);
+}
+// What a band would have read at every stored snapshot (nothing is saved).
+export function previewSignalBand(channelId, { low, high, axis, unit = "Hz" }) {
+  const q = new URLSearchParams({ low: String(low), high: String(high), unit });
+  if (axis) q.set("axis", axis);
+  return request(`/api/maintenance/signals/channels/${channelId}/band-preview?${q}`);
+}
+export function addSignalBand(channelId, body) {
+  return postJson(`/api/maintenance/signals/channels/${channelId}/bands`, body);
+}
+export function removeSignalBand(pointId) {
+  return postJson(`/api/maintenance/signals/bands/${pointId}/remove`, {});
+}
+// Change a band: name and limits in place; a new range starts a new version from now.
+export function updateSignalBand(pointId, body) {
+  return patchJson(`/api/maintenance/signals/bands/${pointId}`, body);
+}
+// Add one snapshot from the app (a device uses the ingest route).
+export function addSignalSnapshot(body) {
+  return postJson("/api/maintenance/signals/snapshots", body);
+}
+export function updateSignalChannel(channelId, body) {
+  return patchJson(`/api/maintenance/signals/channels/${channelId}`, body);
+}
+// What the workspace's snapshots use, and the soft warning level (nothing is deleted).
+export function getSignalStorage() {
+  return request("/api/maintenance/signals/storage");
+}
+export function setSignalStorageCap(capMb) {
+  return putJson("/api/maintenance/signals/storage-cap", { cap_mb: capMb });
+}
+
 // ---- item classes and the manufacturer register (Reliafy Maintenance; optional) ----
 
 function putJson(url, body) {
@@ -2948,4 +3003,21 @@ export function predictJointUnit(id, body) {
 // fit_from_df from the data it was fitted to. Free for every viewer.
 export function downloadJointPython(id) {
   return downloadFile(`/api/joint/models/${encodeURIComponent(id)}/export.py`, "condition-based-risk.py");
+}
+
+// ---- time to the limit (a watched band's trend, fitted with a degradation process) ----
+
+export function getTimeToLimit(pointId, { process = "wiener", limit, since, confidence } = {}) {
+  const q = new URLSearchParams({ process });
+  if (limit !== undefined && limit !== null && limit !== "") q.set("limit", String(limit));
+  if (since) q.set("since", since);
+  if (confidence) q.set("confidence", String(confidence));
+  return request(`/api/maintenance/signals/bands/${pointId}/time-to-limit?${q}`);
+}
+// The band's readings as rows of unit, age_days, value (and the same as CSV): a copy, never a link.
+export function getBandDegradationSeries(pointId, { since, unitName } = {}) {
+  const q = new URLSearchParams();
+  if (since) q.set("since", since);
+  if (unitName) q.set("unit_name", unitName);
+  return request(`/api/maintenance/signals/bands/${pointId}/degradation-series?${q}`);
 }

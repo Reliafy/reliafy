@@ -66,6 +66,50 @@ REFRESH_PREFIX = "rlfr_"
 HOSTED_CLAUDE_REDIRECT = "https://claude.ai/api/mcp/auth_callback"
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
 
+# ---- The Reliafy app (first-party native client) -----------------------------
+# The field app signs in through this same server, so a phone holds the same
+# account as the web (Google or email) and the same one-hour access and 60-day
+# rotating refresh tokens as any connector. It is a public client with PKCE (a
+# phone can't keep a secret), built in rather than registered, and its redirect
+# goes back into the app by URL scheme (RFC 8252 §7.1): ``reliafy://`` in a
+# real build, Expo Go's ``exp://<the Mac running Metro>/--/…`` while developing.
+# Another app on the same phone could claim the scheme; PKCE makes the code
+# useless without the verifier only the real app holds.
+NATIVE_CLIENT_ID = "reliafy-app"
+NATIVE_CLIENT_NAME = "Reliafy app"
+NATIVE_CLIENT = {
+    "client_id": NATIVE_CLIENT_ID,
+    "client_name": NATIVE_CLIENT_NAME,
+    "kind": "native",
+    "redirect_uris": ["reliafy://auth/callback"],
+    "grant_types": ["authorization_code", "refresh_token"],
+    "token_endpoint_auth_method": "none",
+}
+# Consent handles of the app's requests carry this prefix so the MCP switch
+# (which refuses the connector-only endpoints) can let the app's own sign-in
+# through without reading a body.
+NATIVE_HANDLE_PREFIX = "app_"
+
+
+def native_redirect_ok(uri: str) -> bool:
+    """The app's redirect: ``reliafy://auth/callback``, or Expo Go's
+    ``exp://<host>[:port]/--/auth/callback`` (any host: it's the developer's
+    own Mac). No query, no fragment."""
+    if not isinstance(uri, str) or len(uri) > 300:
+        return False
+    try:
+        p = urlsplit(uri)
+        p.port  # noqa: B018 - raises on a malformed port
+    except ValueError:
+        return False
+    if p.query or p.fragment:
+        return False
+    if p.scheme == "reliafy":
+        return p.netloc == "auth" and p.path == "/callback"
+    if p.scheme == "exp":
+        return bool(p.hostname) and p.path == "/--/auth/callback"
+    return False
+
 
 class OAuthError(Exception):
     """An RFC 6749 error: ``error`` code, human description, HTTP status."""
@@ -494,6 +538,8 @@ def get_client(db, client_id: str) -> dict:
     """A known client (CIMD or registered), or OAuthError(invalid_client)."""
     if not client_id or not isinstance(client_id, str):
         raise OAuthError("invalid_client", "Missing client_id.")
+    if client_id == NATIVE_CLIENT_ID:
+        return dict(NATIVE_CLIENT)
     if is_cimd_client_id(client_id):
         return fetch_client_metadata(client_id)
     doc = db.oauth_clients.find_one({"_id": client_id})
@@ -538,8 +584,12 @@ def start_authorization(db, params: dict) -> tuple[str | None, str | None]:
     client = get_client(db, client_id)
     if not redirect_uri:
         raise OAuthError("invalid_request", "redirect_uri is required.")
-    if not valid_redirect_uri(redirect_uri) or not any(
-            redirect_matches(r, redirect_uri) for r in client["redirect_uris"]):
+    if client["kind"] == "native":
+        registered = native_redirect_ok(redirect_uri)
+    else:
+        registered = valid_redirect_uri(redirect_uri) and any(
+            redirect_matches(r, redirect_uri) for r in client["redirect_uris"])
+    if not registered:
         raise OAuthError("invalid_request", "redirect_uri isn't registered for this client.")
 
     state = params.get("state")
@@ -564,6 +614,8 @@ def start_authorization(db, params: dict) -> tuple[str | None, str | None]:
         return fail(exc.error, exc.description)
 
     handle = secrets.token_urlsafe(32)
+    if client["kind"] == "native":
+        handle = NATIVE_HANDLE_PREFIX + handle
     db.oauth_requests.insert_one({
         "_id": _hash(handle),
         "client_id": client["client_id"],
@@ -604,6 +656,8 @@ def describe_request(db, handle: str) -> dict | None:
         "redirect_host": host,
         "loopback": loopback,
         "hosted_claude": doc["redirect_uri"] == HOSTED_CLAUDE_REDIRECT,
+        # Reliafy's own app: the consent page says so instead of a host.
+        "first_party": doc["client_kind"] == "native",
         "scopes": doc["scopes"],
     }
 

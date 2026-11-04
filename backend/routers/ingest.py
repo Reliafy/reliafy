@@ -224,6 +224,68 @@ async def ingest_maintenance_readings(
     return await _handle(request, user, op)
 
 
+@router.post("/ingest/maintenance/snapshots")
+async def ingest_maintenance_snapshots(
+    request: Request,
+    session=Depends(get_session),
+    user: dict = Depends(ingest_scope),
+) -> JSONResponse:
+    """Snapshots for Reliafy Maintenance's signal channels (a vibration burst, a device's
+    spectrum, a scalar). JSON: one snapshot ``{tag (or channel_id), time, axes, sample_rate,
+    ...}`` or ``{snapshots: [...]}``. Each is at most 5 MB; the same channel and time again
+    is reported as a duplicate. See docs/signal-snapshots.md."""
+    from backend.maintenance import signals
+    from backend.maintenance.access import allowed
+    from backend.maintenance.service import Invalid, LimitReached, Maintenance
+    from backend.routers.maintenance import get_store
+    from backend.services import time_zones
+
+    if not allowed(user):
+        raise HTTPException(status_code=404, detail="Not found.")
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > signals.MAX_SNAPSHOT_BYTES * 4:
+        raise HTTPException(status_code=413, detail=_snapshot_too_big())
+
+    def op(content_type, body):
+        import json as _json
+
+        if len(body) > signals.MAX_SNAPSHOT_BYTES * 4:
+            raise ingest_service.IngestError(_snapshot_too_big(), 413)
+        try:
+            payload = _json.loads(body or b"{}")
+        except _json.JSONDecodeError:
+            raise ingest_service.IngestError("Body must be JSON.") from None
+        items = payload.get("snapshots") if isinstance(payload, dict) and "snapshots" in payload else payload
+        items = items if isinstance(items, list) else [items]
+        if not items or not all(isinstance(i, dict) for i in items) or len(items) > 20:
+            raise ingest_service.IngestError("Send one snapshot object, or {snapshots: [up to 20 objects]}.")
+        results = []
+        m = Maintenance(get_store(), user["uid"], user["uid"], time_zone=time_zones.of_owner(session, user["uid"]))
+        for i, item in enumerate(items):
+            if len(_json.dumps(item)) > signals.MAX_SNAPSHOT_BYTES:
+                results.append({"index": i, "stored": False, "error": _snapshot_too_big()})
+                continue
+            try:
+                known = ("channel_id", "tag", "axes", "samples", "sample_rate", "unit", "spectrum", "value",
+                         "values", "running", "rpm", "note")
+                results.append({"index": i, **m.add_signal_snapshot(
+                    item.get("time"), **{k: item[k] for k in known if k in item})})
+            except LimitReached as err:
+                raise HTTPException(status_code=err.status, detail=str(err)) from None
+            except Invalid as err:
+                results.append({"index": i, "stored": False, "error": str(err)})
+        return {"stored": sum(1 for r in results if r.get("stored")),
+                "duplicates": sum(1 for r in results if r.get("duplicate")),
+                "errors": sum(1 for r in results if r.get("error")), "results": results}
+
+    return await _handle(request, user, op)
+
+
+def _snapshot_too_big() -> str:
+    return ("A snapshot can be at most 5 MB (about 500,000 numbers). Send long recordings in shorter bursts, "
+            "one snapshot each.")
+
+
 @router.post("/import/models")
 async def import_model(
     request: Request,

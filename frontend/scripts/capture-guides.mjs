@@ -465,6 +465,26 @@ async function seedTruckReport(truckId) {
   await api(`/maintenance/failure-reports/${report.id}/status`, { status: "corrective_action" });
   return { id: report.id };
 }
+// Signals guide: a pump with a vibration channel, six snapshots over 40 days with
+// a 50 Hz tone growing (null when Reliafy Maintenance is off on this server).
+async function seedSignals(config) {
+  if (!config.maintenance) return null;
+  const pump = await api("/maintenance/positions", { name: "Cooling water pump (guide fixture)" });
+  const channel = await api("/maintenance/signals/channels", {
+    position_id: pump.id, name: "Drive-end bearing", unit: "g", sample_rate: 3200, axes: ["X"], rpm: 2980, tag: "guide.pump.vib",
+  });
+  const day = 24 * 3600 * 1000;
+  const gaps = [40, 33, 25, 14, 6, 1];
+  for (let i = 0; i < gaps.length; i += 1) {
+    const amp = 0.08 + 0.1 * i;
+    const x = Array.from({ length: 4096 }, (_, k) => +(amp * Math.sin((2 * Math.PI * 49.7 * k) / 3200)
+      + 0.05 * Math.sin((2 * Math.PI * 99.4 * k) / 3200) + 0.02 * Math.sin(k * 1.7)).toFixed(5));
+    await api("/maintenance/signals/snapshots", {
+      channel_id: channel.id, time: new Date(Date.now() - gaps[i] * day).toISOString(), running: true, axes: { X: x },
+    });
+  }
+  return { positionId: pump.id, channelId: channel.id };
+}
 async function seedTeam() {
   const team = await api("/teams", { name: "Reliability team" });
   await api(`/teams/${team.id}/members`, { email: "colleague@example.com" });
@@ -848,6 +868,38 @@ async function main() {
         await page.mouse.move(0, 0);
         await wait(600);
       } },
+    // --- Signal channels (Explorer › Signals): the spectrum, adding a snapshot from a file, editing a band.
+    { file: "signals-01-spectrum.png", url: `/asset-register/explorer?arrange=positions&sel=${fx.signals?.positionId}&tab=signals`, settle: 2500,
+      skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
+      async act(page) {
+        const spectrum = page.getByRole("region", { name: "Spectrum" });
+        await spectrum.locator(".js-plotly-plot").waitFor({ timeout: 20000 });
+        await spectrum.getByLabel("From (Hz)").fill("45"); await spectrum.getByLabel("To (Hz)").fill("55");
+        await spectrum.getByRole("button", { name: "Watch this range" }).click();
+        await page.getByRole("region", { name: "Level over time" }).locator(".js-plotly-plot").waitFor({ timeout: 20000 }); await wait(1500);
+        await spectrum.evaluate((el) => el.scrollIntoView({ block: "start" })); await wait(600);
+      } },
+    { file: "signals-02-add.png", url: `/asset-register/explorer?arrange=positions&sel=${fx.signals?.positionId}&tab=signals`, settle: 2500,
+      skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
+      async act(page) {
+        await page.getByRole("button", { name: "Add a snapshot from a file" }).click();
+        const rows = Array.from({ length: 2048 }, (_, k) => (0.4 * Math.sin((2 * Math.PI * 50 * k) / 3200)).toFixed(5)).join("\n");
+        await page.locator('input[type="file"]').setInputFiles({ name: "pump-burst.csv", mimeType: "text/csv", buffer: Buffer.from(rows) });
+        const form = page.getByRole("form", { name: "Add a snapshot" });
+        await form.getByText(/2,048 samples each/).waitFor({ timeout: 20000 });
+        await form.getByLabel(/^Axis names/).fill("X");
+        await form.getByLabel(/^Time taken/).fill("2026-10-30T10:00"); await wait(800);
+      } },
+    { file: "signals-03-edit-band.png", url: `/asset-register/explorer?arrange=positions&sel=${fx.signals?.positionId}&tab=signals`, settle: 2500,
+      skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
+      async act(page) {
+        const bands = page.getByRole("region", { name: "Watch bands" });
+        await bands.getByRole("button", { name: "Edit" }).first().click();
+        const editor = bands.getByRole("form", { name: /Edit/ });
+        await editor.getByLabel(/^Warn above/).fill("0.3"); await editor.getByLabel(/^Alarm above/).fill("0.5");
+        await editor.getByLabel(/^To/).fill("60"); await wait(600);
+        await editor.scrollIntoViewIfNeeded(); await wait(500);
+      } },
     // --- Teams: the workspace menu, then the team's settings (members, a pending invite) ---
     { file: "team-01-switcher.png", url: "/strategy/failure-finding", settle: 1200,
       async act(page) { await page.locator(".nav-workspace-select").first().click(); await wait(500); } },
@@ -1088,6 +1140,7 @@ async function main() {
       networkId: await seedNetworkRbd(),
       design: await seedDesignRbds(),
       truckId: await seedSampleTruck(config),
+      signals: await seedSignals(config),
       teamId: await seedTeam(),
     };
     fx.report = await seedTruckReport(fx.truckId);
@@ -1106,6 +1159,14 @@ async function main() {
       await fetch(`${BASE}/api/joint/models/${fx.joint.modelId}`, { method: "DELETE" }).catch(() => {});
       if (fx.truckId) {
         await fetch(`${BASE}/api/maintenance/positions/${fx.truckId}/retire`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "guide capture" }),
+        }).catch(() => {});
+      }
+      if (fx.signals) {
+        await fetch(`${BASE}/api/maintenance/signals/channels/${fx.signals.channelId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag: "" }),
+        }).catch(() => {});
+        await fetch(`${BASE}/api/maintenance/positions/${fx.signals.positionId}/retire`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "guide capture" }),
         }).catch(() => {});
       }

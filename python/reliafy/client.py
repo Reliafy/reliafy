@@ -358,6 +358,21 @@ class Client:
         ``{tag, value, time?}``, CSV text or a CSV file."""
         return self._ingest("/api/ingest/maintenance/readings", rows, csv, file, "readings")
 
+    def push_snapshot(self, snapshot: dict | None = None, *, file: str | None = None,
+                      snapshots: Iterable[dict] | None = None) -> dict:
+        """Snapshots for a signal channel (Reliafy Maintenance): one snapshot ``{tag, time, axes,
+        sample_rate, ...}`` (a dict, or a JSON file), or ``snapshots=[...]`` (up to 20). The same
+        channel and time again is reported as a duplicate. The format: docs/signal-snapshots.md."""
+        path = "/api/ingest/maintenance/snapshots"
+        if file is not None:
+            size = os.path.getsize(file)
+            with open(file, "rb") as fh:
+                return self.request("POST", path, data=fh, headers={
+                    "Content-Type": "application/json", "Content-Length": str(size)})
+        if snapshots is not None:
+            return self.request("POST", path, {"snapshots": list(snapshots)})
+        return self.request("POST", path, dict(snapshot or {}))
+
     def push_measurements(self, fleet_id: str, rows: Iterable[dict] | None = None, *, csv: str | None = None,
                           file: str | None = None) -> dict:
         """Degradation readings ``{item, time, value}`` for a tracked fleet."""

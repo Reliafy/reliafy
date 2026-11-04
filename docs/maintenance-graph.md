@@ -725,6 +725,35 @@ the node with who and when (`history`), the way a work order keeps its notes.
   `Maintenance._report_scope`, which the list reads and the tree roll-up
   (`open_reports` on each row and inside it) follows.
 
+## Signal channels and derived points
+
+A `SignalChannel` node sits on a position or an item (an `ON` edge) and holds a
+sensor's settings (unit, axes, sample rate, running speed, tag). Its events are
+`signal_channel.added`, `.updated`, `.retired` and `.restored`. The snapshots a
+channel receives are *not* in the event log or the graph: they live in the
+snapshot store (`maintenance_snapshots` in Mongo; a table beside the graph
+locally), keyed by channel and time, because a burst of raw samples is far too big
+for an event. Re-sending a snapshot (same channel, same millisecond) is a no-op.
+
+A watch band or an overall level is a **derived point** (`derived_point.added`): a
+`MeasurementPoint` (condition, read from the time-series store like a feed's) with a
+`derived` property `{from, rule}` and a `DERIVED_FROM` edge to its source. Every new
+snapshot adds one value to each live derived point of its channel (`derived.py`),
+and a new one is backfilled from the snapshots already stored. A new kind of derived
+point (a formula over other points, say) is a new rule registered with
+`derived.register`. Its values are appended to the series store, which can't take a
+value back, so a rule is fixed when the point is made. Editing a band's range
+therefore makes a new *version*: `derived_point.added` carries `supersedes` (the old
+point) and `applies_after` (the time of the latest stored snapshot), the new point is
+not backfilled, and the old one is retired with its values untouched. Replay gives the
+same chain; the channel view joins a chain into one band with its change points. Name
+and limits change in place (`point.updated`); warning levels are `signal_band.limits`
+(drawn, no work opened). `signal_settings.set` holds the workspace's optional storage
+warning level. A channel may name a speed channel (`speed_channel_id`); each snapshot
+takes its rpm from that channel's nearest reading within an hour and keeps where it
+came from (`speed_from`). Everything is kept; `signals.apply_retention` is the place a
+thinning policy would go.
+
 ## Work packages: tasks done on one visit
 
 A work package bundles tasks done together on one visit (the weekly check of

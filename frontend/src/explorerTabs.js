@@ -3,7 +3,8 @@
 // of row; RCM for a position (its functions, how they fail, the failure modes
 // and their decisions, read from the asset tree itself); Failure reports for
 // a position, a location or an item (what has failed there and below, and
-// what was done about it). A tab a kind doesn't have isn't shown (never
+// what was done about it); Signals for a position or an item (sensor
+// snapshots and their spectra). A tab a kind doesn't have isn't shown (never
 // greyed out).
 //
 // Adding a tab is one entry here (id, label, the kinds of row that have it) and
@@ -15,6 +16,7 @@ export const TABS = [
   { id: "summary", label: "Summary", title: "What it is, where it is, its work and what's inside it", kinds: ["pos", "loc", "item", "group"] },
   { id: "rcm", label: "RCM", title: "What this position does, how it can fail, and the decision for each failure mode", kinds: ["pos"] },
   { id: "reports", label: "Failure reports", title: "What has failed here and below, and what was done about it", kinds: ["pos", "loc", "item"] },
+  { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"] },
 ];
 const BY_ID = new Map(TABS.map((t) => [t.id, t]));
 export const DEFAULT_TAB = "summary";

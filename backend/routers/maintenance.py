@@ -205,6 +205,7 @@ def _make_store():
     itself when MAINTENANCE_GRAPH=neo4j."""
     from backend.maintenance.series import MongoSeries
     from backend.maintenance.service import PROJECTION_VERSION
+    from backend.maintenance.signals import MongoSnapshots
 
     if config.MAINTENANCE_GRAPH == "neo4j":
         from backend.maintenance.neo4j_store import Neo4jGraphStore, connect
@@ -212,15 +213,18 @@ def _make_store():
 
         if _use_mongo():
             log, series = MongoEventLog(get_db()), MongoSeries(get_db())
+            snapshots = MongoSnapshots(get_db())
         else:
             log, series = SqliteEventLog(open_sqlite(config.MAINTENANCE_DB_PATH)), None
+            snapshots = None
         # A namespace per projection version: a new version builds its graph beside
         # the old one, which the processes still running the old version keep using.
-        return Neo4jGraphStore(connect(), PROJECTORS, log, series=series, version=PROJECTION_VERSION,
+        return Neo4jGraphStore(connect(), PROJECTORS, log, series=series, snapshots=snapshots,
+                               version=PROJECTION_VERSION,
                                namespace=f"{config.MAINTENANCE_GRAPH_NAMESPACE}graph-v{PROJECTION_VERSION}")
     if _use_mongo():
         store = GraphStore(":memory:", PROJECTORS, MongoEventLog(get_db()), series=MongoSeries(get_db()),
-                           version=PROJECTION_VERSION)
+                           snapshots=MongoSnapshots(get_db()), version=PROJECTION_VERSION)
     else:
         store = GraphStore(config.MAINTENANCE_DB_PATH, PROJECTORS, version=PROJECTION_VERSION)
     from backend.maintenance.mirror import attach_from_config
@@ -1073,6 +1077,98 @@ def add_item_point(item_id: str, body: dict = Body(...), m: Maintenance = Depend
     return _run(m.add_point, None, body.get("name", ""), body.get("kind") or "condition", body.get("unit", ""),
                 body.get("source") or "manual", body.get("tag", ""), body.get("alarm_above"), body.get("alarm_below"),
                 item_id=item_id)
+
+
+# ---- signal channels (the Explorer's Signals tab) --------------------------------------
+# The same operations as the maintenance tool's signals.* / signal_data.* actions.
+
+@router.get("/signals/channels")
+def signal_channels(position_id: str | None = None, item_id: str | None = None,
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.signal_channels, position_id, item_id)
+
+
+@router.post("/signals/channels")
+def add_signal_channel(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_signal_channel, body.get("position_id"), body.get("item_id"), body.get("name", ""),
+                body.get("unit", ""), body.get("quantity", ""), body.get("sample_rate"), body.get("axes"),
+                body.get("rpm"), body.get("tag", ""), body.get("mount", ""))
+
+
+@router.get("/signals/channels/{channel_id}")
+def signal_channel(channel_id: str, snapshots: int = 300, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.signal_channel, channel_id, snapshots)
+
+
+@router.patch("/signals/channels/{channel_id}")
+def update_signal_channel(channel_id: str, body: dict = Body(...),
+                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    kwargs = {k: body[k] for k in ("name", "rpm", "tag", "mount", "sample_rate", "speed_channel_id") if k in body}
+    return _run(m.update_signal_channel, channel_id, **kwargs)
+
+
+@router.post("/signals/snapshots")
+def add_signal_snapshot(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """One snapshot, from a signed-in session (a device uses POST /api/ingest/maintenance/snapshots)."""
+    known = ("channel_id", "tag", "axes", "samples", "sample_rate", "unit", "spectrum", "value", "values", "running",
+             "rpm", "note")
+    return _run(m.add_signal_snapshot, body.get("time"), **{k: body[k] for k in known if k in body})
+
+
+@router.get("/signals/channels/{channel_id}/spectra")
+def signal_spectra(channel_id: str, ids: str, axis: str | None = None, f_min: float | None = None,
+                   f_max: float | None = None, max_points: int = 600,
+                   m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Several snapshots' spectra for one axis (ids: snapshot ids, comma separated)."""
+    return _run(m.signal_spectra, [i for i in ids.split(",") if i], axis, f_min, f_max, max_points)
+
+
+@router.get("/signals/snapshots/{snapshot_id}")
+def signal_snapshot(snapshot_id: str, axis: str | None = None, f_min: float | None = None,
+                    f_max: float | None = None, max_points: int = 1500, raw: bool = False,
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.signal_snapshot, snapshot_id, axis, f_min, f_max, max_points, raw)
+
+
+@router.get("/signals/channels/{channel_id}/band-preview")
+def preview_signal_band(channel_id: str, low: float, high: float, axis: str | None = None, unit: str = "Hz",
+                        m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.preview_signal_band, channel_id, low, high, axis, unit)
+
+
+@router.post("/signals/channels/{channel_id}/bands")
+def add_signal_band(channel_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_signal_band, channel_id, body.get("name", ""), body.get("low"), body.get("high"),
+                body.get("axis"), body.get("unit") or "Hz", body.get("alarm_above"), body.get("alarm_below"),
+                body.get("warn_above"), body.get("warn_below"))
+
+
+@router.post("/signals/channels/{channel_id}/levels")
+def add_signal_level(channel_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.add_signal_level, channel_id, body.get("name", ""), body.get("stat"), body.get("axis"),
+                body.get("alarm_above"), body.get("alarm_below"), body.get("warn_above"), body.get("warn_below"))
+
+
+@router.patch("/signals/bands/{point_id}")
+def update_signal_band(point_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Change a band's name, limits or range (a new range starts a new version from now)."""
+    keys = ("name", "low", "high", "axis", "unit", "alarm_above", "alarm_below", "warn_above", "warn_below")
+    return _run(m.update_signal_band, point_id, **{k: body[k] for k in keys if k in body})
+
+
+@router.get("/signals/storage")
+def signal_storage(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.signal_storage)
+
+
+@router.put("/signals/storage-cap")
+def set_signal_storage_cap(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.set_signal_storage_cap, body.get("cap_mb"))
+
+
+@router.post("/signals/bands/{point_id}/remove")
+def remove_signal_band(point_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.remove_signal_band, point_id)
 
 
 @router.get("/points/{point_id}")
@@ -2226,3 +2322,6 @@ def answer_location(link_id: str, t: str = "", body: dict = Body(...)) -> JSONRe
         except (Invalid, NotFound) as err:
             return JSONResponse(status_code=422, content={"detail": str(err)})
     return JSONResponse(content={"saved": save})
+
+
+from backend.routers import maintenance_progression  # noqa: E402,F401  (adds its routes to the router)
