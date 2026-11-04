@@ -6,9 +6,11 @@ function and functional failure carried down, consequence and decision-type
 cells mapped onto Reliafy's categories), then added to the position through
 the service's own methods, so every change is an ordinary event:
 ``add_function`` › ``add_functional_failure`` › ``add_failure_mode`` (under
-its functional failure), ``update_failure_mode`` (effects, notes) and
-``decide_failure_mode`` (consequence and decision; a scheduled decision with
-an interval gets its task, as when it's decided by hand).
+its functional failure, or directly under the function when the sheet names
+no functional failure for it), ``update_failure_mode`` (effects, notes),
+``score_failure_mode`` (the FME(C)A columns) and ``decide_failure_mode``
+(consequence and decision; a scheduled decision with an interval gets its
+task, as when it's decided by hand).
 
 Only ever adds. Every function and functional failure in the sheet is on the
 position afterwards: one already there with the same text (case and spacing
@@ -38,6 +40,7 @@ from __future__ import annotations
 
 import re
 
+from backend.maintenance import fmea
 from backend.maintenance.service import (
     BASIS_TEXT, LONG_TEXT, MAX_CAUSES, MAX_EVENTS, MAX_TASKS, SCHEDULED_OUTCOMES, SHORT_TEXT, Invalid, LimitReached,
     Maintenance, _basis_text, _interval, _norm_unit, _same_text, shortened,
@@ -64,8 +67,9 @@ def read_table(data: bytes, filename: str = "", sheet: str | None = None, header
 
 
 def default_options(table) -> dict:
-    """The column mapping guessed from the header, with the FMEA scoring columns
-    kept in each mode's notes (what the import modal starts from)."""
+    """The column mapping guessed from the header (the FMEA scoring columns map
+    to the mode's scores), with the item and risk-rating columns kept in each
+    mode's notes (what the import modal starts from)."""
     guess = excel.guess_mapping(table.header, rcm_import.FIELDS)
     return {"mapping": guess, "extra_columns": rcm_import.default_extra_columns(table.header, guess)}
 
@@ -174,7 +178,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     except rcm_import.RcmImportError as err:
         raise Invalid(str(err)) from None
 
-    errors: list[str] = []
+    errors: list[str] = list(built.get("errors") or [])  # a score out of range: a row error
     warnings: list[str] = list(built["warnings"])
     here = {" ".join(fm["text"].lower().split()): fm for fm in m._modes_on(position_id)}
     existing_fns = m._functions_of(position_id)
@@ -191,9 +195,65 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
     standards_kept: list[str] = []
     workings_kept: list[str] = []
     functions: list[dict] = []
-    counts = {"functions": 0, "failures": 0, "modes": 0, "decisions": 0, "tasks": 0, "tasks_linked": 0, "standards": 0,
-              "functions_existing": 0, "failures_existing": 0, "modes_existing": 0, "links": 0, "links_existing": 0}
+    counts = {"functions": 0, "failures": 0, "modes": 0, "decisions": 0, "scored": 0, "tasks": 0, "tasks_linked": 0,
+              "standards": 0, "functions_existing": 0, "failures_existing": 0, "modes_existing": 0, "links": 0,
+              "links_existing": 0, "modes_direct": 0}
     places = _Places(m, position_id)
+
+    def plan_mode(mode: dict) -> dict | None:
+        """One sheet row's failure mode as the import adds it, or None when it's
+        on the position already, or repeats an earlier row (whose task, if any,
+        went onto that row's mode)."""
+        row, text = mode["row"], mode["text"]
+        full = ""
+        if len(text) > SHORT_TEXT:
+            text, _ = shortened(text, SHORT_TEXT)
+            full = mode["text"]
+            shortened_rows.append(row)
+        key = " ".join(text.lower().split())
+        if key in here:
+            already.append(row)
+            return None
+        decision = mode.get("decision")
+        if key in seen:
+            # The same failure mode again: another task for it (the export
+            # writes one row per task), or a repeat to pass over.
+            extra = _extra_task(decision, seen[key], live_tasks, sheet_tasks, row, errors)
+            if extra is None:
+                repeated.append(row)
+            else:
+                seen[key]["extra_tasks"].append(extra)
+                counts["tasks_linked" if extra["shared"] else "tasks"] += 1
+            return None
+        notes = mode.get("notes") or ""
+        if full:
+            notes = f"Failure mode in full: {full}" + (f"\n{notes}" if notes else "")
+        notes, cut = shortened(notes, LONG_TEXT) if len(notes) > LONG_TEXT else (notes, False)
+        task = False
+        shared = False  # a task on the position already (or an earlier row's), linked instead of made
+        if decision and decision["outcome"] in SCHEDULED_OUTCOMES and decision.get("interval"):
+            unit = _norm_unit(decision.get("interval_unit")) or "days"
+            if not decision.get("interval_unit"):
+                no_unit.append(row)
+            try:
+                _interval(decision["interval"], unit, "interval")
+            except Invalid as err:
+                errors.append(f"Row {row}: {err} Change it in the sheet and try again.")
+            task = True
+            shared = _shared_task(decision, live_tasks, sheet_tasks, row, errors)
+        # Its FME(C)A fields (checked by the parser), written after the mode.
+        scores = {k: mode[k] for k in fmea.FIELDS if mode.get(k) is not None}
+        planned = {
+            "row": row, "text": text, "effects": mode.get("effects") or "", "notes": notes,
+            "consequence": mode.get("consequence"), "decision": decision, "task": task,
+            "shared": shared, "extra_tasks": [], "scores": scores,
+        }
+        seen[key] = planned
+        counts["modes"] += 1
+        counts["decisions"] += bool(decision)
+        counts["scored"] += bool(scores)
+        counts["tasks" if not shared else "tasks_linked"] += task
+        return planned
 
     for fn in built["functions"]:
         match = next((f for f in existing_fns if _same_text(f["text"], fn["text"])), None)
@@ -224,7 +284,14 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
         fn_plan = {"text": fn["text"], "standard": fn.get("standard") or "", "standard_basis": basis,
                    "id": match and match["id"], "failures": [], "standards": new_standards,
                    # Every standard the sheet lists (to name the one a failure breaches).
-                   "standards_listed": listed}
+                   "standards_listed": listed,
+                   # Modes with no functional failure in the sheet: directly under the function.
+                   "modes": []}
+        for mode in fn.get("modes") or []:
+            planned = plan_mode(mode)
+            if planned is not None:
+                fn_plan["modes"].append(planned)
+                counts["modes_direct"] += 1
         existing_ffs = m._failures_of(match["id"]) if match else []
         for ff in fn["failures"]:
             ff_match = next((f for f in existing_ffs if _same_text(f["text"], ff["text"])), None)
@@ -238,58 +305,14 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
                 if have + counts_new(ff_plan["links"]) > MAX_CAUSES:
                     errors.append(f"“{shortened(ff['text'], 80)[0]}” would have more than {MAX_CAUSES} causes below it.")
             for mode in ff["modes"]:
-                row, text = mode["row"], mode["text"]
-                full = ""
-                if len(text) > SHORT_TEXT:
-                    text, _ = shortened(text, SHORT_TEXT)
-                    full = mode["text"]
-                    shortened_rows.append(row)
-                key = " ".join(text.lower().split())
-                if key in here:
-                    already.append(row)
-                    continue
-                decision = mode.get("decision")
-                if key in seen:
-                    # The same failure mode again: another task for it (the export
-                    # writes one row per task), or a repeat to pass over.
-                    extra = _extra_task(decision, seen[key], live_tasks, sheet_tasks, row, errors)
-                    if extra is None:
-                        repeated.append(row)
-                    else:
-                        seen[key]["extra_tasks"].append(extra)
-                        counts["tasks_linked" if extra["shared"] else "tasks"] += 1
-                    continue
-                notes = mode.get("notes") or ""
-                if full:
-                    notes = f"Failure mode in full: {full}" + (f"\n{notes}" if notes else "")
-                notes, cut = shortened(notes, LONG_TEXT) if len(notes) > LONG_TEXT else (notes, False)
-                task = False
-                shared = False  # a task on the position already (or an earlier row's), linked instead of made
-                if decision and decision["outcome"] in SCHEDULED_OUTCOMES and decision.get("interval"):
-                    unit = _norm_unit(decision.get("interval_unit")) or "days"
-                    if not decision.get("interval_unit"):
-                        no_unit.append(row)
-                    try:
-                        _interval(decision["interval"], unit, "interval")
-                    except Invalid as err:
-                        errors.append(f"Row {row}: {err} Change it in the sheet and try again.")
-                    task = True
-                    shared = _shared_task(decision, live_tasks, sheet_tasks, row, errors)
-                planned = {
-                    "row": row, "text": text, "effects": mode.get("effects") or "", "notes": notes,
-                    "consequence": mode.get("consequence"), "decision": decision, "task": task,
-                    "shared": shared, "extra_tasks": [],
-                }
-                seen[key] = planned
-                ff_plan["modes"].append(planned)
-                counts["modes"] += 1
-                counts["decisions"] += bool(decision)
-                counts["tasks" if not shared else "tasks_linked"] += task
+                planned = plan_mode(mode)
+                if planned is not None:
+                    ff_plan["modes"].append(planned)
             if not ff_match and not ff_plan["modes"] and not ff_plan["links"] and ff["text"] == rcm_import.IMPORTED:
                 continue  # a stand-in name for modes with none above them, and they're all here already
             counts["failures_existing" if ff_match else "failures"] += 1
             fn_plan["failures"].append(ff_plan)
-        if not match and not fn_plan["failures"] and fn["text"] == rcm_import.IMPORTED:
+        if not match and not fn_plan["failures"] and not fn_plan["modes"] and fn["text"] == rcm_import.IMPORTED:
             continue
         counts["functions_existing" if match else "functions"] += 1
         functions.append(fn_plan)
@@ -326,7 +349,7 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
 
     if m.limited:
         events = counts["functions"] + counts["failures"] + 4 * counts["modes"] + counts["tasks"] + counts["links"] \
-            + counts["standards"]
+            + counts["standards"] + counts["scored"]
         if m.s.event_count(m.org) + events > MAX_EVENTS:
             raise LimitReached(f"This maintenance workspace can't take {events:,} more recorded changes "
                                f"(its limit is {MAX_EVENTS:,}).")
@@ -389,6 +412,26 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
         key = _norm(name)
         return next((t["id"] for t in m._tasks_on(position_id) if _norm(t["name"]) == key), None) if key else None
 
+    def write_mode(mode: dict, mode_id: str) -> None:
+        """What a planned mode carries beyond its text: effects and notes, its
+        FME(C)A scores, its decision (with its task) and any further tasks."""
+        if mode["effects"] or mode["notes"]:
+            m.update_failure_mode(mode_id, effects=mode["effects"] or None, notes=mode["notes"] or None)
+        if mode.get("scores"):
+            m.score_failure_mode(mode_id, mode["scores"])
+        if mode["consequence"] or mode["decision"]:
+            decision = mode["decision"]
+            # A task the position has (or an earlier row made) is the decision's, linked.
+            shared = task_named(decision.get("task")) if mode.get("shared") and decision else None
+            m.decide_failure_mode(mode_id, mode["consequence"] or None, decision if decision else ...,
+                                  task_id=shared)
+        for extra in mode.get("extra_tasks") or []:
+            have = task_named(extra["name"])
+            if have:
+                m.link_task(have, mode_id)
+            else:
+                m.add_mode_task(mode_id, extra["name"], extra["interval"], extra["unit"], extra["outcome"])
+
     for fn in functions:
         # A new function with one standard keeps the one text; with several, the list.
         one = fn["standard"] if len(fn.get("standards_listed") or []) <= 1 else ""
@@ -397,6 +440,8 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
             if fn["id"] or len(fn.get("standards_listed") or []) > 1:
                 m.add_standard(fn_id, text)
         by_text = {_norm(st["text"]): st["id"] for st in m._standards_of(fn_id)}
+        for mode in fn.get("modes") or []:  # directly under the function: no functional failure in the sheet
+            write_mode(mode, m.add_failure_mode(position_id, mode["text"], function_id=fn_id)["id"])
         for ff in fn["failures"]:
             breach = by_text.get(_norm(ff.get("breaches")))
             if ff["id"]:
@@ -406,21 +451,7 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
             else:
                 ff_id = m.add_functional_failure(fn_id, ff["text"], standard_id=breach)["id"]
             for mode in ff["modes"]:
-                mode_id = m.add_failure_mode(position_id, mode["text"], functional_failure_id=ff_id)["id"]
-                if mode["effects"] or mode["notes"]:
-                    m.update_failure_mode(mode_id, effects=mode["effects"] or None, notes=mode["notes"] or None)
-                if mode["consequence"] or mode["decision"]:
-                    decision = mode["decision"]
-                    # A task the position has (or an earlier row made) is the decision's, linked.
-                    shared = task_named(decision.get("task")) if mode.get("shared") and decision else None
-                    m.decide_failure_mode(mode_id, mode["consequence"] or None, decision if decision else ...,
-                                          task_id=shared)
-                for extra in mode.get("extra_tasks") or []:
-                    have = task_named(extra["name"])
-                    if have:
-                        m.link_task(have, mode_id)
-                    else:
-                        m.add_mode_task(mode_id, extra["name"], extra["interval"], extra["unit"], extra["outcome"])
+                write_mode(mode, m.add_failure_mode(position_id, mode["text"], functional_failure_id=ff_id)["id"])
             for link in ff["links"]:
                 if not link["existing"]:
                     m.link_cause(ff_id, link["cause_id"])
@@ -439,7 +470,7 @@ def run(m: Maintenance, position_id: str, table, options: dict | None, dry_run: 
     counts = {**p["counts"], "rows": len(table.rows), "skipped_rows": built["counts"]["skipped_rows"],
               "errors": len(p["errors"])}
     preview = [{
-        "text": fn["text"], "new": not fn["id"],
+        "text": fn["text"], "new": not fn["id"], "modes": len(fn.get("modes") or []),
         "failures": [{"text": ff["text"], "new": not ff["id"], "modes": len(ff["modes"])} for ff in fn["failures"]],
     } for fn in p["functions"][:SHOWN]]
     out = {

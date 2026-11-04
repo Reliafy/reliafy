@@ -154,8 +154,23 @@ accept) gets none. A decision's task text over 200 characters gives the task a s
 text in its instructions. An interval_unit of use (hours, cycles, km) makes a task by use, counting a counter in that unit (maintenance get.task_measurement says which).
 - Questions about an RCM: maintenance list.rcm_gaps answers which failure modes have no decision \
 (undecided) or no task (no_task, with each outcome: a run-to-failure mode needs none), which hidden failures lack \
-a failure-finding task, which decisions' evidence needs a look, and which functions, performance standards and \
+a failure-finding task, which decisions' evidence needs a look, which modes sit directly under a function with no \
+functional failure yet (no_functional_failure), and which functions, performance standards and \
 functional failures have nothing under them. Whole workspace by default; target_id narrows it to a branch.
+- Scoring the same modes as an FME(C)A (the Explorer's FME(C)A tab; the RCM tab shows the same records): \
+maintenance failure_modes.score (failure_mode_id; severity, occurrence, detection, whole numbers 1-10; cause, \
+effect_local, effect_next, effects (the end effect: the RCM's effects, one field), detection_method; \
+recommended_action with action_owner, action_due (YYYY-MM-DD) and action_status open / in_progress / done; clear: \
+fields to unset). Every read gives rpn (S × O × D) and ap (action priority H / M / L from an AIAG-VDA-style table), \
+worked out, never stored: sort by ap, not by an RPN threshold.
+- Criticality (MIL-STD-1629A style), on the same call: failure_rate λ per time_unit (rate_source entered, model or \
+data), mode_ratio α (this mode's share of the item's failures, 0-1), loss_probability β (0-1), operating_time t and \
+severity_class I-IV give cm = β × α × λ × t. A position's fmea in maintenance get.rcm has cr (the sum of its modes' \
+cm, and by class), the H / M / L counts and max_rpn.
+- An FMEA row before its RCM: add (or assign, move) with function_id and no functional_failure_id puts a mode \
+directly under the function; the position isn't analysed until the functional failure is written and the mode \
+assigned to it (same id, scores kept). maintenance positions.add_sample_uav copies a fully scored sample tree \
+(three such modes on purpose).
 - A worksheet the user has (an FMEA or RCM sheet, one row per failure mode): see below.
 - Directly (a maker's manual, a regulation, own practice): maintenance tasks.create, on exactly one subject:
   - position_id, the usual one: the job, whatever does it. 'Lubricate the pump', 'test the protection relay'. \

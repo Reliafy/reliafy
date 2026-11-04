@@ -178,7 +178,7 @@ def test_the_preview_writes_nothing_and_says_what_the_import_does(m):
     assert preview["dry_run"] and m.s.event_count(ORG) == events and _rcm(m, pid)["functions"] == []
     done = rcm_sheet.run(m, pid, _table(), OPTIONS, dry_run=False)
     assert {k: v for k, v in preview.items() if k != "dry_run"} == {k: v for k, v in done.items() if k != "dry_run"}
-    assert preview["functions"][0] == {"text": "Move grain from the pit to the silo", "new": True, "failures": [
+    assert preview["functions"][0] == {"text": "Move grain from the pit to the silo", "new": True, "modes": 0, "failures": [
         {"text": "Moves no grain", "new": True, "modes": 2}, {"text": "Moves less than 40 t/h", "new": True, "modes": 1}]}
     assert preview["values"]["consequence"][0] == {"value": "Operational", "count": 1, "guess": "operational"}
 
@@ -242,12 +242,18 @@ def test_only_a_live_position_in_this_workspace(m):
 
 
 def test_the_guessed_mapping_imports_a_typical_sheet(m):
+    """The guess maps the Severity column to the FMEA score (nothing is left for
+    the notes); the explicit OPTIONS above leave it unmapped and tick it as an
+    extra column, so it goes to the notes as "Severity 7" instead."""
     pid = m.create_position("Conveyor C-2")["id"]
     table = _table()
     opts = rcm_sheet.default_options(table)
-    assert opts["mapping"]["mode"] == "Failure mode" and opts["extra_columns"] == ["Severity"]
+    assert opts["mapping"]["mode"] == "Failure mode" and opts["mapping"]["severity"] == "Severity"
+    assert opts["extra_columns"] == []
     out = rcm_sheet.run(m, pid, table, opts, dry_run=False)
-    assert out["ok"] and out["counts"]["modes"] == 4
+    assert out["ok"] and out["counts"]["modes"] == 4 and out["counts"]["scored"] == 4
+    torn = _rcm(m, pid)["functions"][0]["failures"][0]["modes"][0]
+    assert torn["severity"] == 7 and torn["notes"] == "" and torn["rpn"] is None  # no occurrence or detection yet
 
 
 # ---- REST ---------------------------------------------------------------------------------------
@@ -360,7 +366,12 @@ def test_the_column_mapper_reads_csv_too(api):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["columns"] == HEADER and body["guess"]["mode"] == "Failure mode"
-    assert body["extra_columns"] == ["Severity"] and body["n_rows"] == 5
+    assert body["guess"]["severity"] == "Severity" and body["extra_columns"] == [] and body["n_rows"] == 5
+    # The mapper's field list carries the FME(C)A columns with their labels and help.
+    fields = {f["id"]: f for f in body["fields"]}
+    assert fields["severity"]["label"] == "Severity" and "1" in fields["severity"]["help"]
+    assert {"cause", "effect_local", "effect_next", "detection_method", "occurrence", "detection", "rpn", "action",
+            "action_owner", "action_due", "severity_class"} <= set(fields)
 
 
 def test_the_routes_take_a_workbooks_size():
@@ -407,7 +418,8 @@ def test_mcp_adds_a_worksheet_to_a_position_once(mcp):
                                                      "target": "rcm", "position_id": pid, "header_row": 2}))
     assert out["ok"] and out["written"] and out["position_id"] == pid
     assert out["counts"]["modes"] == 4 and out["counts"]["tasks"] == 3
-    assert out["mapping"]["mode"] == "Failure mode" and out["extra_columns"] == ["Severity"]
+    assert out["mapping"]["mode"] == "Failure mode" and out["mapping"]["severity"] == "Severity"
+    assert out["extra_columns"] == []
     assert out["url"].endswith(f"/asset-register/explorer?arrange=positions&tab=rcm&sel={pid}")
     assert up._no_uploads_left(mcp.db)
     assert len(m.rcm_worksheet(pid, "this")["positions"][0]["functions"]) == 2
