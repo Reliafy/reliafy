@@ -44,7 +44,9 @@ def test_the_copy_has_the_whole_rcm_with_new_ids(store):
     assert out["added"] and out["position"]["name"] == "Delivery truck (sample)"
     assert {k: out[k] for k in ("functions", "functional_failures", "failure_modes", "decisions", "tasks")} == {
         "functions": 2, "functional_failures": 2, "failure_modes": 5, "decisions": 5, "tasks": 1}
-    assert "2 functions, 5 failure modes, each with its decision, and 1 scheduled task" in out["message"]
+    assert "2 functions, 5 failure modes, each with its decision and FME(C)A scores, and 1 scheduled task" in \
+        out["message"]
+    assert out["scored"] == 5
     pid = out["position"]["id"]
     assert [p["id"] for p in store.nodes(ORG, "Position")] == [pid]
 
