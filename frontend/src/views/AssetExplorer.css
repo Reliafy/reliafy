@@ -1351,6 +1351,8 @@ a.rw-cklink:focus-visible {
   gap: 0.5rem 0.75rem;
 }
 .ae-sample p { margin: 0; }
+/* The two samples' buttons side by side (one under the other on a phone). */
+.ae-sample-btns { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* A functional failure caused by lower ones: its reference rows and the ↑ n marker. */
 .tp-row.tt.tt-cause .tp-nm { font-weight: 400; }

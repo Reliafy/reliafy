@@ -42,6 +42,11 @@ export const LEVEL_OF = Object.fromEntries(LEVELS.map((l, i) => [l.type, { ...l,
 LEVEL_OF.pos = { type: "pos", label: "Position", plural: "Positions", child: "functions", depth: 0 };
 LEVEL_OF.nostd = { type: "nostd", label: "No performance standard", plural: "No performance standard", child: "failures", depth: 0 };
 LEVEL_OF.unassigned = { type: "unassigned", label: "Not under a functional failure", plural: "Unassigned", child: "modes", depth: 0 };
+// A function's failure modes placed directly under it (written on the FME(C)A
+// tab, where a worksheet goes straight from a function to its modes), shown
+// on the RCM tab under one group row until a functional failure is written.
+LEVEL_OF.nofail = { type: "nofail", label: "No functional failure yet", plural: "No functional failure yet", child: "modes", depth: 0 };
+export const NOFAIL_HINT = "Add a performance standard and a functional failure to finish the RCM.";
 // A reference row under a functional failure: a lower functional failure that
 // causes it (a view of a row that lives on a position below, never edited here).
 LEVEL_OF.cause = { type: "cause", label: "Caused by", plural: "Causes below", child: null, depth: 0 };
@@ -474,10 +479,13 @@ export function chipCounts(display) {
 }
 
 // What the filter's text is searched by: the description, the standard (and
-// the first words of the working behind it), the effects, the task and the notes.
+// the first words of the working behind it), the effects, the task and the
+// notes; and the FMEA's words on a mode (its cause, local and next effects,
+// detection method, action and owner).
 export function rowText(r) {
   const p = r.ref;
   return [p.text, p.standard, p.basis_preview, p.effects, p.notes, p.decision?.task, p.decision?.notes,
+    p.cause, p.effect_local, p.effect_next, p.detection_method, p.action, p.action_owner,
     ...tasksOf(p).map((t) => t.name), ...(p.standards || []).map((st) => [st.parameter, st.when, st.source].filter(Boolean).join(" ")),
     // A standard's own row: its structured limit, condition and source too.
     p.parameter, p.when, p.source]

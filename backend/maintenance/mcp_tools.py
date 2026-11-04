@@ -239,6 +239,8 @@ POSITIONS: Table = {
     "back_in_service": ("position_id", "", "Back in service now."),
     "add_sample_truck": ("", "again", """Copy the sample delivery truck, with its RCM, into the tree; once
         only unless again is true."""),
+    "add_sample_uav": ("", "again", """Copy the sample quadcopter UAV, a tree with every failure mode scored
+        as an FME(C)A, into the tree; once only unless again is true."""),
     "adopt_placements": ("", "dry_run", """One-off tidy-up for a workspace that placed fitted items at
         locations: each such placement becomes its position's location where it has none. dry_run (default
         true) lists the changes: show them, then run with dry_run false."""),
@@ -295,19 +297,27 @@ ITEMS: Table = {
 }
 
 FAILURE_MODES: Table = {
-    "add": ("position_id text", "functional_failure_id function failure consequence", """A failure mode on a
-        position: how it fails ('Bearing worn'); functional_failure_id puts it under one of the position's
-        functional failures. Failures and tasks then name it by id."""),
+    "add": ("position_id text", "functional_failure_id function_id function failure consequence", """A failure
+        mode on a position: how it fails ('Bearing worn'); functional_failure_id puts it under one of the
+        position's functional failures, function_id directly under a function (no functional failure yet).
+        Failures and tasks then name it by id."""),
     "update": ("failure_mode_id", "text effects notes function failure consequence", """Edit one (editing an
         ad-hoc mode confirms it). effects and notes are its RCM analysis."""),
+    "score": ("failure_mode_id", "severity occurrence detection cause effect_local effect_next effects "
+              "detection_method recommended_action action_owner action_due action_status failure_rate time_unit "
+              "rate_source mode_ratio loss_probability operating_time severity_class clear", """Its FME(C)A:
+        S/O/D 1-10 (rpn and action priority are worked out), cause, effects, detection method, the recommended
+        action (owner, due, status open/in_progress/done), and criticality (failure_rate λ per time_unit,
+        rate_source entered/model/data, mode_ratio α, loss_probability β, operating_time t, severity_class
+        I-IV: cm = βαλt). clear: fields to unset. Guide topic plan."""),
     "decide": ("failure_mode_id", "consequence decision task_id", """consequence and the whole decision
         {outcome, rtf_basis, task, interval, interval_unit, notes, evidence: {type, id}} ({} clears it; values:
         guide topic plan); adds, changes or retires its task (task_id: an existing one is the decision's).
         Returns it with the evidence check and any advice to relay."""),
     "add_task": ("failure_mode_id name interval", "unit outcome instructions", """Another task for the mode
         (an inspection plus a hard-time replacement); its decision's stays first."""),
-    "assign": ("failure_mode_id", "functional_failure_id", "Put it under one of its position's functional "
-               "failures (left out: under none)."),
+    "assign": ("failure_mode_id", "functional_failure_id function_id", "Put it under one of its position's "
+               "functional failures, or (function_id) directly under a function (both left out: under none)."),
     "retire": ("failure_mode_id", "", "Delete it, with its tasks (a shared one is unlinked; recorded failures "
                "keep it)."),
     "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
@@ -339,8 +349,8 @@ FAILURE_MODES: Table = {
     "link_cause": ("functional_failure_id cause_id", "", "functional_failure_id (the effect) results from "
                    "cause_id, a functional failure on a position inside its own."),
     "unlink_cause": ("functional_failure_id cause_id", "", "Take that cause off it."),
-    "move": ("failure_mode_id position_id", "functional_failure_id measurement", "To another position, with its "
-             "decision and tasks; functional_failure_id: one there (or none)."),
+    "move": ("failure_mode_id position_id", "functional_failure_id function_id measurement", "To another position, "
+             "with its decision and tasks; functional_failure_id (or function_id): one there (or none)."),
     "move_function": ("function_id position_id", "measurement", "To another position, with its functional "
                       "failures, modes and tasks."),
     "move_functional_failure": ("functional_failure_id function_id", "standard_id measurement", "Under another function "
@@ -1225,6 +1235,10 @@ def register() -> None:
             from backend.maintenance import templates
 
             return run(templates.add_sample_truck, m, bool(again))
+        if action == "add_sample_uav":
+            from backend.maintenance import templates
+
+            return run(templates.add_sample_uav, m, bool(again))
         return run(m.adopt_placements, _d(dry_run, True))
 
     @tool("maintenance_fitments", _WRITE, "Fit, remove and correct items in positions", FITMENTS)
@@ -1356,7 +1370,24 @@ def register() -> None:
                                   standards: list[dict[str, Any]] | None = None,
                                   dry_run: bool | None = None, parent_id: str | None = None,
                                   ids: list[str] | None = None,
-                                  measurement: Measurement = None) -> dict[str, Any]:
+                                  measurement: Measurement = None,
+                                  severity: int | None = None, occurrence: int | None = None,
+                                  detection: int | None = None, cause: str | None = None,
+                                  effect_local: str | None = None, effect_next: str | None = None,
+                                  detection_method: str | None = None,
+                                  recommended_action: Annotated[str | None, Field(description=(
+                                      "score: the recommended action (the record's 'action' field)."))] = None,
+                                  action_owner: str | None = None,
+                                  action_due: Annotated[str | None, Field(description="score: a date, YYYY-MM-DD.")] = None,
+                                  action_status: Literal["open", "in_progress", "done"] | None = None,
+                                  failure_rate: float | None = None, time_unit: str | None = None,
+                                  rate_source: Literal["entered", "model", "data"] | None = None,
+                                  mode_ratio: float | None = None, loss_probability: float | None = None,
+                                  operating_time: float | None = None,
+                                  severity_class: Literal["I", "II", "III", "IV"] | None = None,
+                                  clear: Annotated[list[str] | None, Field(description=(
+                                      "score: FME(C)A fields to unset (severity, cause, action...)."))] = None
+                                  ) -> dict[str, Any]:
         """Failure modes and a position's RCM: functions › performance standards › functional failures (each
         breaching one standard, or the whole function) › failure modes, each with its decision. Read it with
         maintenance get.rcm (one mode: kind failure_mode; what's missing: maintenance list.rcm_gaps);
@@ -1364,9 +1395,37 @@ def register() -> None:
         m = m_for(ctx)
         if action == "add":
             return run(m.add_failure_mode, position_id, text, function or "", failure or "", consequence or "",
-                       functional_failure_id)
+                       functional_failure_id, function_id)
         if action == "update":
             return run(m.update_failure_mode, failure_mode_id, text, function, failure, consequence, effects, notes)
+        if action == "score":
+            from backend.maintenance import fmea
+
+            given = {"severity": severity, "occurrence": occurrence, "detection": detection, "cause": cause,
+                     "effect_local": effect_local, "effect_next": effect_next, "detection_method": detection_method,
+                     "action": recommended_action, "action_owner": action_owner, "action_due": action_due,
+                     "action_status": action_status, "failure_rate": failure_rate, "time_unit": time_unit,
+                     "rate_source": rate_source, "mode_ratio": mode_ratio, "loss_probability": loss_probability,
+                     "operating_time": operating_time, "severity_class": severity_class}
+            changes = {k: v for k, v in given.items() if v is not None}
+            # The end effect is the RCM's effects: the same field, so one edit shows on both tabs.
+            if effects is not None:
+                changes["effects"] = effects
+            for name in clear or []:
+                key = {"recommended_action": "action"}.get(name, name)
+                if key == "effects":
+                    changes["effects"] = ""
+                elif key not in fmea.FIELDS:
+                    raise ToolError(f"clear names FME(C)A fields to unset; '{name}' isn't one "
+                                    f"({', '.join(fmea.FIELDS)}).")
+                else:
+                    changes[key] = None
+
+            def go():
+                if "effects" in changes:
+                    m.update_failure_mode(failure_mode_id, effects=changes.pop("effects"))
+                return m.score_failure_mode(failure_mode_id, changes)
+            return run(go)
         if action == "decide":
             user = _caller(ctx)
             reader = _reader(user)
@@ -1393,7 +1452,7 @@ def register() -> None:
             return run(m.add_mode_task, failure_mode_id, name, interval, _d(unit, "months"), outcome,
                        instructions or "")
         if action == "assign":
-            return run(m.assign_failure_mode, failure_mode_id, functional_failure_id)
+            return run(m.assign_failure_mode, failure_mode_id, functional_failure_id, function_id)
         if action == "retire":
             return run(m.retire_failure_mode, failure_mode_id)
         if action == "restore":
@@ -1428,7 +1487,8 @@ def register() -> None:
         if action == "unlink_cause":
             return run(m.unlink_cause, functional_failure_id, cause_id)
         if action == "move":
-            return run(m.move_failure_mode, failure_mode_id, position_id, functional_failure_id, measurement)
+            return run(m.move_failure_mode, failure_mode_id, position_id, functional_failure_id, function_id,
+                       measurement)
         if action == "move_function":
             return run(m.move_function, function_id, position_id, measurement)
         if action == "move_functional_failure":

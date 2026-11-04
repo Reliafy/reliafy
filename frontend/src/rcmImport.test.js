@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EXPORT_HEADER, causedBy, exportFilename, importSummary, isCsvFile, positionRcmCsv, positionRcmRows } from "./rcmImport.js";
+import { EXPORT_HEADER, FMEA_HEADER, causedBy, exportFilename, importSummary, isCsvFile, positionRcmCsv, positionRcmRows } from "./rcmImport.js";
+
+const F = FMEA_HEADER.length;
 
 test("the preview's counts in words: what it adds, and what's there already", () => {
   assert.deepEqual(importSummary({ functions: 2, failures: 3, modes: 4, tasks: 1, functions_existing: 0 }), {
@@ -60,9 +62,12 @@ test("a position's RCM as rows named as the import reads them", () => {
   assert.deepEqual(rows[0], EXPORT_HEADER);
   assert.equal(rows.length, 6);
   assert.deepEqual(rows[1].slice(0, 7), ["Plant › Conveyor C-2", "", "", "", "", "", "Motor hums"]);
-  assert.deepEqual(rows[2], ["Plant › Conveyor C-2", "Move grain", "40 t/h", "## Rate\n\n40 t/h = 10 t over 15 min", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
-    "Operational", "On-condition", "", "Walk the belt", 1, "weeks", "", "Severity 7"]);
-  assert.deepEqual(rows[3].slice(8, 15), ["Non-operational", "Run-to-failure", "random", "Replace when it fails", "", "",
+  // The FME(C)A's columns sit between Consequence and Decision (blank here).
+  assert.deepEqual(rows[2].slice(0, 9), ["Plant › Conveyor C-2", "Move grain", "40 t/h", "## Rate\n\n40 t/h = 10 t over 15 min", "Moves no grain", "Conveyor drive › No torque", "Belt torn", "Line stops",
+    "Operational"]);
+  assert.deepEqual(rows[2].slice(9 + F), ["On-condition", "", "Walk the belt", 1, "weeks", "", "Severity 7"]);
+  assert.deepEqual(rows[2].slice(9, 9 + F), FMEA_HEADER.map(() => ""));
+  assert.deepEqual([rows[3][8], ...rows[3].slice(9 + F, 9 + F + 6)], ["Non-operational", "Run-to-failure", "random", "Replace when it fails", "", "",
     "Contradicted"]);
   assert.deepEqual(rows[4].slice(1, 7), ["Move grain", "40 t/h", "", "Moves too little", "", ""]); // a failure with no modes
   assert.deepEqual(rows[5].slice(1, 7), ["Stop on the lanyard", "", "", "", "", ""]); // a function with no failures
@@ -120,7 +125,29 @@ test("a failure mode with several tasks is one row per task, the first carrying 
     ] },
   ] }] });
   assert.equal(rows.length, 3);
-  assert.deepEqual(rows[1].slice(6, 14), ["Acid under-dosed", "pH climbs", "Operational", "On-condition", "", "Weekly pH check", 1, "weeks"]);
-  assert.deepEqual(rows[2], ["Pool", "Keep the water balanced", "pH 7.2-7.8", "", "pH above 7.8", "", "Acid under-dosed", "",
+  assert.deepEqual([...rows[1].slice(6, 9), ...rows[1].slice(9 + F, 9 + F + 5)], ["Acid under-dosed", "pH climbs", "Operational", "On-condition", "", "Weekly pH check", 1, "weeks"]);
+  assert.deepEqual([...rows[2].slice(0, 9), ...rows[2].slice(9 + F)], ["Pool", "Keep the water balanced", "pH 7.2-7.8", "", "pH above 7.8", "", "Acid under-dosed", "",
     "", "Fixed-interval", "", "Replace the acid pump", 24, "months", "", ""]);
+});
+
+test("the FME(C)A's columns: scores, effects, the action, the criticality figures; a mode directly under a function has no functional failure", () => {
+  const m = { id: "m", text: "Bearing seizes", effects: "Motor stops", consequence: "operational", cause: "Dust", effect_local: "Shaft locks",
+    effect_next: "Thrust lost", detection_method: "Vibration", severity: 9, occurrence: 4, detection: 6, rpn: 216, ap: "H",
+    action: "Seal the bearing", action_owner: "Design", action_due: "2026-12-01", action_status: "in_progress",
+    failure_rate: 8e-5, time_unit: "hours", rate_source: "data", mode_ratio: 0.5, loss_probability: 1, operating_time: 100, cm: 0.004, severity_class: "I" };
+  const rows = positionRcmRows({ positions: [{ id: "p", name: "UAV", depth: 0, unassigned: [], functions: [
+    { id: "f", text: "Provide thrust", modes: [m], failures: [{ id: "x", text: "No thrust", modes: [{ ...m, id: "m2", text: "Prop breaks", rpn: null, ap: null, cm: null, severity: null, mode_ratio: null }] }] },
+  ] }] });
+  assert.equal(rows.length, 3);
+  const at = (row, h) => row[EXPORT_HEADER.indexOf(h)];
+  assert.equal(EXPORT_HEADER.indexOf("Cause"), EXPORT_HEADER.indexOf("Consequence") + 1);
+  assert.equal(EXPORT_HEADER.indexOf("Decision"), EXPORT_HEADER.indexOf("Severity class") + 1);
+  // The direct mode first, its Functional failure cell blank; the other under its failure.
+  assert.deepEqual([at(rows[1], "Function"), at(rows[1], "Functional failure"), at(rows[1], "Failure mode")], ["Provide thrust", "", "Bearing seizes"]);
+  assert.deepEqual([at(rows[2], "Functional failure"), at(rows[2], "Failure mode")], ["No thrust", "Prop breaks"]);
+  assert.deepEqual(FMEA_HEADER.map((h) => at(rows[1], h)), ["Dust", "Shaft locks", "Thrust lost", "Vibration", 9, 4, 6, 216, "High", "Seal the bearing", "Design",
+    "2026-12-01", "In progress", 8e-5, "hours", "From own data", 0.5, 1, 100, 0.004, "I"]);
+  // Not scored: RPN, AP and Cm blank, never 0 or NaN.
+  assert.deepEqual(["Severity", "RPN", "Action priority", "Mode criticality"].map((h) => at(rows[2], h)), ["", "", "", ""]);
+  assert.equal(exportFilename("UAV", { what: "FMECA", ext: "xlsx" }), "UAV FMECA.xlsx");
 });

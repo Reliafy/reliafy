@@ -83,6 +83,8 @@ export const DETAIL_IDS = {
   "/risk/:fleetId": ["/api/fleet/tracked", list("fleets")],
   "/forecasts/:id": ["/api/fleet/fleets", list("fleets")],
   "/asset-register/positions/:id": ["/api/maintenance/overview", list("tree")],
+  // The FME(C)A print view: the same positions.
+  "/asset-register/positions/:id/fmea": ["/api/maintenance/overview", list("tree")],
   "/maintenance/work-orders/:id": ["/api/maintenance/work-orders", list("work_orders")],
   "/asset-register/items/:id": ["/api/maintenance/items", list("items")],
   "/asset-register/locations/:id": ["/api/maintenance/locations", list("locations")],

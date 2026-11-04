@@ -9,6 +9,7 @@ import {
 } from "../api.js";
 import { COLUMN, FUNCTION_MAX, FUNCTION_NUDGE, decisionBody, tasksOf } from "../rcmWorksheet.js";
 import { itemWrites } from "../explorerRcm.js";
+import { FIELDS as FMEA_FIELDS } from "../fmeaWorksheet.js";
 
 // The RCM in the Explorer's tree (the RCM tab): every position's functions,
 // functional failures and failure modes, read once when the tab opens and
@@ -69,7 +70,13 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
     if (kind === "fn") made = await addPositionFunction(positionId, { text });
     else if (kind === "std") made = await addFunctionStandard(functionId, { text });
     else if (kind === "fail") made = await addFunctionalFailure(functionId, { text, ...(standardId ? { standard_id: standardId } : {}) });
-    else made = await addFailureMode(positionId, { text, functional_failure_id: failureId });
+    else {
+      // Under a functional failure; or, with a function and no failure (the
+      // FME(C)A tab), directly under that function; else under none.
+      made = await addFailureMode(positionId, {
+        text, ...(failureId ? { functional_failure_id: failureId } : functionId ? { function_id: functionId } : { functional_failure_id: null }),
+      });
+    }
     await after(Promise.resolve());
     return made.id;
   }, [after]);
@@ -89,7 +96,9 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
         return after(updateFailureMode(id, { text: value }));
       }
       if (col === "standard") return after(updatePositionFunction(id, { standard: value }));
-      if (col === "effects" || col === "notes") return after(updateFailureMode(id, { [col]: value }));
+      // The FME(C)A's fields (scores, effects, action, criticality) and the
+      // mode's notes: one PATCH each, null clearing the field.
+      if (col === "notes" || FMEA_FIELDS.has(col)) return after(updateFailureMode(id, { [col]: value }));
       if (col === "consequence") return after(decideFailureMode(id, { consequence: value || null }));
       return after(decideFailureMode(id, { decision: decisionBody(r.ref.decision, { [COLUMN[col].field]: value }) }));
     },
@@ -209,9 +218,20 @@ export default function useTreeRcm({ on, prefetch = false, onTreeChanged, askTex
       attach: (functionId, file, title = "") => after(uploadMaintenanceDocument({ target_id: functionId }, file, { title, kind: "other" })),
       detach: (documentId) => after(removeMaintenanceDocument(documentId)),
     },
-    // A refusal goes to the caller (it says so beside the panel).
-    assign(r, ffId) {
-      return after(assignFailureMode(r.ref.id, ffId));
+    // A refusal goes to the caller (it says so beside the panel). With a
+    // function and no functional failure: directly under that function.
+    assign(r, ffId, fnId = null) {
+      return after(assignFailureMode(r.ref.id, ffId, fnId));
+    },
+    // Several failure modes (a "No functional failure yet" row's) under one
+    // functional failure, written in order, the RCM read again once at the
+    // end (even when one is refused, so what moved shows).
+    async assignMany(ids, ffId) {
+      try {
+        for (const id of ids) await assignFailureMode(id, ffId);
+      } finally {
+        await after(Promise.resolve());
+      }
     },
     // A functional failure results from a lower one (the same link from either
     // end), or no longer does. The tree and the RCM are read again after.

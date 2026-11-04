@@ -15,6 +15,8 @@
 import { EXPLORER_PATH } from "./navigation.js";
 import { filterRows } from "./outlineTree.js";
 import { RCM_CHIPS, isRcmRow, rcmRowText } from "./explorerRcm.js";
+import { CHIPS as FMEA_CHIPS } from "./fmeaWorksheet.js";
+import { NOFAIL_HINT } from "./rcmWorksheet.js";
 
 // The outline's own model (open to a level, flatten, pinned rows, the drawn
 // window, type-ahead), shared with the RCM worksheet.
@@ -292,8 +294,10 @@ export const CHIPS = [
   { id: "reports", label: "Open reports", title: "Positions with an open failure report", positionsOnly: true, test: (r) => r.own.open_reports > 0 },
   { id: "empty", label: "Empty", title: "Positions with a class and nothing fitted", positionsOnly: true, test: (r) => r.type === "pos" && !!r.ref.position_class && !r.ref.item },
   { id: "unanalysed", label: "Not analysed", title: ANALYSED_RULE, positionsOnly: true, test: (r) => r.own.not_analysed > 0 },
-  // The RCM tab's own, about its failure modes (shown on that tab only).
+  // The RCM tab's own, about its failure modes (shown on that tab only), and
+  // the FME(C)A tab's (on that tab only).
   ...RCM_CHIPS,
+  ...FMEA_CHIPS,
 ];
 
 // The filter: the rows that match the text and every chip that's on (and the
@@ -324,6 +328,11 @@ export function markersOf(r, { rcm = false } = {}) {
     // "analysed" doesn't rest on it).
     return r.ref.no_failure
       ? [{ kind: "nofail", text: "no failure yet", label: "No functional failure written yet for this performance standard" }] : [];
+  }
+  if (r.type === "nofail") {
+    // On the RCM tab: failure modes directly under a function (written on the
+    // FME(C)A tab). Quiet, in words: how to finish the RCM there.
+    return [{ kind: "nofail", text: "finish the RCM", label: NOFAIL_HINT }];
   }
   if (r.type === "fail" && isRcmRow(r)) {
     // On the RCM tab: a functional failure that causes ones above it. Quiet

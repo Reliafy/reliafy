@@ -15,6 +15,7 @@
 export const TABS = [
   { id: "summary", label: "Summary", title: "What it is, where it is, its work and what's inside it", kinds: ["pos", "loc", "item", "group"] },
   { id: "rcm", label: "RCM", title: "What this position does, how it can fail, and the decision for each failure mode", kinds: ["pos"] },
+  { id: "fmea", label: "FME(C)A", title: "The failure modes of this position as an FMEA worksheet: cause, effects, scores, action priority and criticality", kinds: ["pos"] },
   { id: "reports", label: "Failure reports", title: "What has failed here and below, and what was done about it", kinds: ["pos", "loc", "item"] },
   { id: "signals", label: "Signals", title: "Vibration and other sensors that send snapshots: spectra, watch bands and how they change", kinds: ["pos", "item"] },
 ];
