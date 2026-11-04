@@ -1,0 +1,103 @@
+/* The FME(C)A's parts of the Explorer's details panel (FmeaPanels.jsx), the
+   AP chip in the table (RcmWorksheet.jsx Cell) and the sortable column
+   headers (TreePane.jsx). Tones follow the app's tokens: never the only
+   signal (the word is always beside it). */
+
+/* S, O and D side by side (they're read together); one under another on a phone. */
+.fm-scores { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+@media (max-width: 480px) { .fm-scores { grid-template-columns: 1fr; } }
+.fm-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: var(--fs-13);
+}
+.fm-preview .chip { margin-left: 4px; }
+
+/* The action priority chip in a cell: fits the row. */
+.rw-c .rw-ap, .tt-st .rw-ap { line-height: 18px; padding: 0 7px; }
+
+/* A sortable column header: a button in the header's own type. */
+.tt-h .tt-sortbtn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tt-h .tt-sortbtn:hover { background: var(--surf-3, var(--surf)); color: var(--text); }
+.tt-h .tt-sortbtn:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.tt-h.is-sorted .tt-sortbtn { color: var(--text); }
+.tt-sortarrow { font-size: 10px; }
+
+/* The criticality matrix: a small grid, the cells toned by the worst action
+   priority inside them (the count and its tooltip say it too). */
+.fm-matrix {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.fm-matrix th {
+  font-weight: 600;
+  color: var(--muted);
+  padding: 2px 4px;
+  text-align: center;
+  white-space: nowrap;
+}
+.fm-matrix th[scope="row"] { text-align: right; }
+.fm-matrix .fm-corner { position: relative; min-width: 36px; text-align: left; }
+.fm-matrix .fm-axis-o, .fm-matrix .fm-axis-s { display: block; font-size: 10px; line-height: 1.1; }
+.fm-matrix .fm-axis-s { text-align: right; }
+.fm-matrix td.fm-cell {
+  width: 30px;
+  height: 26px;
+  min-width: 30px;
+  text-align: center;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  background: var(--surf-2);
+  color: var(--muted);
+}
+.fm-matrix td.fm-cell.has { color: var(--text); font-weight: 600; }
+.fm-matrix td.ap-H, .fm-swatch.ap-H { background: var(--danger-bg, rgba(220, 60, 60, 0.18)); border-color: var(--danger, #c0392b); }
+.fm-matrix td.ap-M, .fm-swatch.ap-M { background: var(--warn-bg); border-color: var(--warn-line); }
+.fm-matrix td.ap-L, .fm-swatch.ap-L { background: var(--surf); border-color: var(--line); }
+.fm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 6px 0 0; }
+.fm-swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--line); border-radius: 3px; vertical-align: middle; }
+.fm-legend .fm-swatch + * { margin-right: 6px; }
+
+/* The modes ranked by Cm. */
+.fm-rank { width: 100%; border-collapse: collapse; font-size: var(--fs-12); margin-top: var(--sp-2); }
+.fm-rank th, .fm-rank td { padding: 3px 6px; border-bottom: 1px solid var(--line2); text-align: left; vertical-align: top; }
+.fm-rank th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.fm-rank .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fm-rank td .link { text-align: left; }
+
+/* The print view (FmeaPrint.jsx): one plain full-width worksheet. */
+.fm-print { max-width: none; }
+.fm-print .fm-sheet { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
+.fm-print .fm-sheet th, .fm-print .fm-sheet td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+.fm-print .fm-sheet th { background: var(--surf-2); font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
+.fm-print .fm-sheet td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fm-print .fm-sheet tr.fm-fn td { background: var(--surf-2); font-weight: 600; }
+.fm-print-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: var(--sp-3); }
+.fm-print-head h1 { margin: 0; font-size: var(--fs-20, 1.25rem); }
+.fm-print-head .fm-print-acts { display: flex; gap: 8px; }
+@media print {
+  .fm-print-acts, .nav, .sidebar, header, nav, .nav-help-btn { display: none !important; }
+  .fm-print { padding: 0; }
+  .fm-print .fm-sheet { font-size: 9pt; }
+  .fm-print .fm-sheet th { position: static; }
+  @page { size: landscape; margin: 12mm; }
+}

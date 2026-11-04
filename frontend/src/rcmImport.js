@@ -6,6 +6,7 @@
 
 import { toCsv } from "./csv.js";
 import { CONSEQUENCE_LABEL, OUTCOME_LABEL, STATUS_LABEL } from "./rcmWorksheet.js";
+import { AP_LABEL, CLASS_LABEL, SOURCE_LABEL, STATUS_LABEL as ACTION_STATUS_LABEL, cmOf, rpnOf } from "./fmea.js";
 
 // The files the import takes: an Excel workbook or a CSV file.
 export const WORKSHEET_ACCEPT = ".xlsx,.xlsm,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv";
@@ -37,10 +38,35 @@ export function importSummary(counts) {
   return { adds, there, nothing: !c.functions && !c.failures && !c.modes && !c.links };
 }
 
+// The FME(C)A's columns come after Consequence, named as the import reads
+// them (Owner and Due date are its synonyms for the action's owner and due
+// date); RPN, Action priority and Mode criticality are worked out, never
+// read back.
+export const FMEA_HEADER = [
+  "Cause", "Local effect", "Next higher effect", "Detection method", "Severity", "Occurrence", "Detection", "RPN", "Action priority",
+  "Recommended action", "Owner", "Due date", "Action status", "Failure rate", "Time unit", "Rate source", "Mode ratio", "Loss probability",
+  "Operating time", "Mode criticality", "Severity class",
+];
 export const EXPORT_HEADER = [
   "Position", "Function", "Performance standard", "Standard working", "Functional failure", "Caused by (below)", "Failure mode", "Effects", "Consequence",
+  ...FMEA_HEADER,
   "Decision", "Run-to-failure basis", "Task", "Interval", "Interval unit", "Evidence check", "Notes",
 ];
+const BLANK_FMEA = FMEA_HEADER.map(() => "");
+
+// A failure mode's FME(C)A cells, in FMEA_HEADER's order (blank for none).
+export function fmeaCells(m) {
+  if (!m) return BLANK_FMEA;
+  const v = (x) => (x == null ? "" : x);
+  const rpn = m.rpn ?? rpnOf(m.severity, m.occurrence, m.detection);
+  const cm = m.cm ?? cmOf(m);
+  return [
+    v(m.cause), v(m.effect_local), v(m.effect_next), v(m.detection_method), v(m.severity), v(m.occurrence), v(m.detection),
+    rpn ?? "", AP_LABEL[m.ap] || "", v(m.action), v(m.action_owner), v(m.action_due), ACTION_STATUS_LABEL[m.action_status] || "",
+    v(m.failure_rate), m.failure_rate != null ? m.time_unit || "hours" : v(m.time_unit), SOURCE_LABEL[m.rate_source] || "",
+    v(m.mode_ratio), v(m.loss_probability), v(m.operating_time), cm ?? "", CLASS_LABEL[m.severity_class] ? m.severity_class : "",
+  ];
+}
 
 // The "Caused by (below)" cell: the lower failures that cause it (the links that
 // count), each as "Position › failure", separated by "; ", in tree order.
@@ -87,7 +113,7 @@ export function positionRcmRows(worksheet) {
       const d = m?.decision || {};
       return [
         where, fn?.text || "", standardCell(fn, fail), (first && fn.standard_basis) || "", fail?.text || "", causedBy(fail), m?.text || "", m?.effects || "",
-        CONSEQUENCE_LABEL[m?.consequence] || "", OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
+        CONSEQUENCE_LABEL[m?.consequence] || "", ...fmeaCells(m), OUTCOME_LABEL[d.outcome] || "", d.rtf_basis || "", d.task || "",
         d.interval ?? "", d.interval ? d.interval_unit || "" : "",
         d.status && d.status !== "unevidenced" ? STATUS_LABEL[d.status] || d.status : "", m?.notes || "",
       ];
@@ -96,12 +122,12 @@ export function positionRcmRows(worksheet) {
       if (!listed(fn)) return;
       const first = firstRow(fn);
       for (const [i, st] of fn.standards.entries()) {
-        rows.push([where, fn.text || "", st.text || "", (first && i === 0 && fn.standard_basis) || "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+        rows.push([where, fn.text || "", st.text || "", (first && i === 0 && fn.standard_basis) || "", "", "", "", "", "", ...BLANK_FMEA, "", "", "", "", "", "", ""]);
       }
     };
     const taskRow = (fn, fail, m, t) => [
       where, fn?.text || "", standardCell(fn, fail), "", fail?.text || "", causedBy(fail), m.text || "", "",
-      "", OUTCOME_LABEL[t.outcome] || OUTCOME_LABEL[m.decision?.outcome] || "", "", t.text || t.name || "",
+      "", ...BLANK_FMEA, OUTCOME_LABEL[t.outcome] || OUTCOME_LABEL[m.decision?.outcome] || "", "", t.text || t.name || "",
       t.interval ?? "", t.interval ? t.unit || "" : "", "", "",
     ];
     const modeRows = (fn, fail, m) => {
@@ -111,7 +137,12 @@ export function positionRcmRows(worksheet) {
     for (const m of p.unassigned || []) modeRows(null, null, m);
     for (const fn of p.functions || []) {
       standardRows(fn);
-      if (!(fn.failures || []).length && !listed(fn)) rows.push(modeRow(fn, null, null));
+      // A function's failure modes placed directly under it (the FME(C)A
+      // tab): rows with the functional failure cell blank, before its
+      // functional failures' rows (the import reads them back the same way).
+      const direct = fn.modes || [];
+      if (!(fn.failures || []).length && !listed(fn) && !direct.length) rows.push(modeRow(fn, null, null));
+      for (const m of direct) modeRows(fn, null, m);
       for (const fail of fn.failures || []) {
         if (!(fail.modes || []).length) rows.push(modeRow(fn, fail, null));
         for (const m of fail.modes || []) modeRows(fn, fail, m);
@@ -125,8 +156,9 @@ export function positionRcmCsv(worksheet) {
   return toCsv(positionRcmRows(worksheet));
 }
 
-// "Conveyor C-2 RCM.csv": the position's name, without characters a file name can't have.
-export function exportFilename(name) {
+// "Conveyor C-2 RCM.csv": the position's name, without characters a file name
+// can't have; the FME(C)A tab's file is "… FMECA.csv" (or .xlsx).
+export function exportFilename(name, { what = "RCM", ext = "csv" } = {}) {
   const safe = String(name || "Position").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim();
-  return `${safe.slice(0, 80) || "Position"} RCM.csv`;
+  return `${safe.slice(0, 80) || "Position"} ${what}.${ext}`;
 }

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { addSampleTruck as postSampleTruck, getMaintenanceTree, getPositionRcm, getRcmOptions, listMaintenanceItems } from "../api.js";
+import {
+  addSampleTruck as postSampleTruck, addSampleUav as postSampleUav, getFmeaExcelBlob, getMaintenanceTree, getPositionRcm, getRcmOptions,
+  hasFmeaExcel, listMaintenanceItems,
+} from "../api.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
 import TreeDetail, { HeaderTabs, KIND, SlimHeader, forgetPositions, prefetchPosition } from "../components/TreeDetail.jsx";
@@ -29,12 +32,24 @@ import {
   withTableCols,
 } from "../explorerRcm.js";
 import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs, tasksOf } from "../rcmWorksheet.js";
+// The FME(C)A tab: the same tree-table with the worksheet's columns, its own
+// graft (a function's failure modes right under it), chips, prefs and checks.
+import { failuresOn as fmeaFailuresOn, graftFmea, positionSummary, rowActions as fmeaRowActions } from "../explorerFmea.js";
+import {
+  CHIP_IDS as FMEA_CHIP_IDS, COLUMN as FMEA_COLUMN, COLUMNS as FMEA_COLUMNS, TREE_HEAD as FMEA_TREE_HEAD, checkValue as checkFmeaValue,
+  loadPrefs as loadFmeaPrefs, nextSort, phoneLine as fmeaPhoneLine, savePrefs as saveFmeaPrefs, siblingOrder as fmeaOrder,
+  tableCols as fmeaTableCols, usualCols as fmeaUsualCols, withTableCols as withFmeaCols,
+} from "../fmeaWorksheet.js";
+import { readFmeaOptions } from "../fmea.js";
+import { AssignFailureModal, FmeaPositionPanel } from "../components/FmeaPanels.jsx";
+import { saveBlob } from "../sparesPlan.js";
 import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
 import { shownTab, tabParam, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
+import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
 import { NewItemModal, NewLocationModal } from "./MaintenanceLists.jsx";
 import { ImportModal, NewPositionModal } from "./MaintenanceHome.jsx";
@@ -50,7 +65,7 @@ import { canIsolate, depthWords, isolateOpen } from "../treeIsolate.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
-import { SAMPLE_TRUCK_LABEL, addSampleTruck } from "../sampleTruck.js";
+import { SAMPLES, SAMPLE_TRUCK_LABEL, SAMPLE_UAV_LABEL, addSample as addSampleOf } from "../sampleTruck.js";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
@@ -113,6 +128,7 @@ import "./AssetExplorer.css";
 // and the row picked kept, and the focus left on the tab picked.
 
 const HELP = { guide: "rcm-on-your-asset-tree" };
+const HELP_FMEA = { guide: "fmea-on-your-asset-tree" };
 
 // Every position depth first, for the "Inside" pickers.
 function pickerList(data) {
@@ -138,8 +154,11 @@ export default function AssetExplorer() {
   const narrow = useNarrowTable();
   const saved = useMemo(() => loadTreeState(workspace), [workspace]);
   const tab = tabParam(params.get("tab"));
-  const rcmOn = tab === "rcm";
-  // RCM is by position: on its tab the tree is arranged by positions.
+  // The tree-table: the RCM tab, or the FME(C)A tab (the same table with the
+  // worksheet's columns and its own graft; `fmeaOn` says which).
+  const fmeaOn = tab === "fmea";
+  const rcmOn = tab === "rcm" || fmeaOn;
+  // RCM (and the FME(C)A) is by position: on its tab the tree is arranged by positions.
   const mode = rcmOn ? "positions" : arrangementOf(params.get("arrange"), saved.mode);
   const notPlaced = (mode === "positions" || mode === "flat") && params.get("place") === "none";
   const title = EXPLORER_LABEL;
@@ -242,6 +261,18 @@ export default function AssetExplorer() {
     const t = setTimeout(() => savePrefs(rprefs), 200);
     return () => clearTimeout(t);
   }, [rprefs]);
+  // The FME(C)A tab's own: its columns (remembered apart from the RCM's), the
+  // action priority table from the options, the column sorted by, and
+  // whether the server offers the Excel export (asked once per position picked).
+  const [fprefs, setFprefs] = useState(() => loadFmeaPrefs());
+  useEffect(() => {
+    const t = setTimeout(() => saveFmeaPrefs(fprefs), 200);
+    return () => clearTimeout(t);
+  }, [fprefs]);
+  const fopts = useMemo(() => readFmeaOptions(options?.fmea), [options]);
+  const [fsort, setFsort] = useState(null); // {col, dir}
+  const [excel, setExcel] = useState(null); // null: not asked yet
+  const [assigning, setAssigning] = useState(null); // a "No functional failure yet" row: Assign to a functional failure…
   const say = (text, tone = "ok", { fade = false } = {}) => setMessage({ text, tone, at: Date.now(), fade });
   // A message about a change made from the Summary tab's row menu goes after a while.
   useEffect(() => {
@@ -276,7 +307,7 @@ export default function AssetExplorer() {
   }, [wantItems, version]);
 
   const base = useMemo(() => buildDisplay(data, mode, mode === "items" ? itemList : null), [data, mode, itemList]);
-  const whole = useMemo(() => (rcmOn && rcm ? graftRcm(base, rcm) : base), [base, rcmOn, rcm]);
+  const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm)) : base), [base, rcmOn, fmeaOn, rcm]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -309,7 +340,10 @@ export default function AssetExplorer() {
   const defaultOpen = useMemo(() => levelSet(whole, 2), [whole]);
   const baseOpen = openBy[mode] || defaultOpen;
   const open = filter ? fopen || filterOpen(filter) : baseOpen;
-  const { list, index } = useMemo(() => flatten(display, open, filter), [display, open, filter]);
+  // The FME(C)A tab's sort (a column header clicked): the failure modes under
+  // each function in that order; the tree itself stays as it is.
+  const order = useMemo(() => (fmeaOn && fsort ? fmeaOrder(display, fsort) : null), [fmeaOn, fsort, display]);
+  const { list, index } = useMemo(() => flatten(display, open, filter, order), [display, open, filter, order]);
   const focus = rcmOn && rcmFocus && display.rows.has(rcmFocus) ? rcmFocus
     : display.rows.has(selected[mode]) ? selected[mode] : list[0]?.key ?? null;
   const focusRow = focus != null ? display.rows.get(focus) : null;
@@ -385,21 +419,28 @@ export default function AssetExplorer() {
   const setTab = (t) => {
     if (t === tab) return;
     setEditing(null);
-    if (t !== "rcm") {
+    const toTable = t === "rcm" || t === "fmea";
+    if (!toTable) {
       // Back to Summary: the rows below positions go; the selection is the position they were on.
       setRcmFocus(null);
       setPanel(false);
-      setChips((c) => c.filter((x) => !["undecided", "hidden", "check"].includes(x)));
     }
+    // Each tab's own chips go with it (the FME(C)A's and the RCM's are about
+    // different columns); between the two tables the row picked stays (the
+    // same keys), a row the other table hasn't falling back to its position.
+    if (t !== "rcm") setChips((c) => c.filter((x) => !["undecided", "hidden", "check"].includes(x)));
+    if (t !== "fmea") setChips((c) => c.filter((x) => !FMEA_CHIP_IDS.includes(x)));
+    if (t !== "fmea") setFsort(null);
+    if (toTable && tab !== "summary" && focusRow?.type === "pos") setPanel(false);
     let keep = null;
-    if (t === "rcm" && mode !== "positions") {
+    if (toTable && mode !== "positions") {
       keep = carryOver(focusRow, "positions");
       if (keep) setSelected((s) => ({ ...s, positions: keep }));
     }
     setQuery_((q) => {
       if (t === "summary") q.delete("tab");
       else q.set("tab", t);
-      if (t === "rcm") q.set("arrange", "positions");
+      if (toTable) q.set("arrange", "positions");
       // The report open in the Failure reports tab goes with the tab.
       if (t !== "reports") q.delete("report");
     });
@@ -512,6 +553,8 @@ export default function AssetExplorer() {
     }
     setRcmFocus(null);
     setSelected((s) => ({ ...s, [mode]: key }));
+    // On the FME(C)A tab a position's own details (its criticality matrix) are beside the table.
+    if (fmeaOn && r?.type === "pos" && opts.go) setPanel(true);
     if (phone && opts.go && !rcmOn) navigate(location.pathname + location.search, { state: { treeDetail: key } });
   };
 
@@ -757,8 +800,9 @@ export default function AssetExplorer() {
     });
     return null;
   };
+  // Drag and drop is the RCM tab's (its tree has the levels a drop lands on).
   const { drag, begin: beginDrag } = useRcmDrag({
-    whole, picked, enabled: rcmOn && !phone && !!rcm, check: checkMove, drop: dropMove, say: announce,
+    whole, picked, enabled: rcmOn && !fmeaOn && !phone && !!rcm, check: checkMove, drop: dropMove, say: announce,
   });
   // A row menu's Move up / Move down: the drop before the one above, or after the one below.
   const stepMove = (r, by) => {
@@ -775,6 +819,8 @@ export default function AssetExplorer() {
     actions: (r, { keyboard = false } = {}) => {
       if (!rcmOn) return withPin(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), [...isolateItem(r), ...pinItem(r)]);
       if (!rcm) return [...isolateItem(r), ...pinItem(r)];
+      // The FME(C)A tab: its own rows' actions (no moving: that's the RCM tab's).
+      if (fmeaOn) return [...withPin(fmeaRowActions(r, { canRename: !phone }), isolateItem(r)), ...pinItem(r)];
       const moves = phone || keyboard;
       // Move to… always (the picker: no dragging needed, and a long way); Move up / down only where there's no dragging.
       const own = withPin(rowActions(r, { canRename: !phone, moves }), moveItems(whole, whole.rows.get(r.key) || r, { picked, steps: moves }));
@@ -792,7 +838,13 @@ export default function AssetExplorer() {
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       // Adding inside a row: its details open on that list's add row (a new row typed in place).
       else if (id === "add-std") openItem(r.key, { add: "std" });
+      // A "No functional failure yet" row: the functional failure goes on its function.
+      else if (id === "add-fail" && r.type === "nofail") openItem(r.ref.function_id, { add: "inside" });
+      else if (id === "assign-fail") setAssigning(r);
       else if (id === "add-fail" || id === "add-mode") openItem(r.key, { add: "inside" });
+      else if (id === "score") openItem(r.key);
+      else if (id === "print") navigate(`/asset-register/positions/${r.key}/fmea`);
+      else if (id === "export-excel") exportExcel(r);
       else if (id === "move-to") setMoving({ src: dragSource(whole, r.key, { picked }) });
       else if (id === "move-task") setMoving({ taskFrom: r.key });
       else if (id === "step-up" || id === "step-down") stepMove(r, id === "step-up" ? -1 : 1);
@@ -819,12 +871,26 @@ export default function AssetExplorer() {
   // A position's RCM (it and everything inside it) as a CSV file, its columns
   // named as the import reads them.
   const exportRcm = (r) => {
+    const name = fmeaOn ? "FMECA" : "RCM";
     getPositionRcm(r.key, "below")
       .then((ws) => {
-        saveText(positionRcmCsv(ws), exportFilename(r.ref.name));
-        say("Downloaded the RCM as CSV.", "ok", { fade: true });
+        saveText(positionRcmCsv(ws), exportFilename(r.ref.name, { what: name }));
+        say(`Downloaded the ${what} as CSV.`, "ok", { fade: true });
       }, (e) => say(e.message, "error"));
   };
+  // The FME(C)A as an Excel file, from the server (the button shows only when
+  // the server offers the route: asked once, for the position picked).
+  const exportExcel = (r) => {
+    getFmeaExcelBlob(r.key)
+      .then((blob) => {
+        saveBlob(blob, exportFilename(r.ref.name, { what: "FMECA", ext: "xlsx" }));
+        say("Downloaded the FME(C)A as Excel.", "ok", { fade: true });
+      }, (e) => say(e.message, "error"));
+  };
+  useEffect(() => {
+    if (!fmeaOn || excel != null || selPos == null) return;
+    hasFmeaExcel(selPos).then(setExcel);
+  }, [fmeaOn, excel, selPos]);
   // After an import: the RCM and the tree read again, the position opened down
   // to its failure modes, and a few words on what was added.
   const sheetImported = (result) => {
@@ -843,7 +909,7 @@ export default function AssetExplorer() {
   const commit = (r, col, raw) => {
     // A refusal shows where the value was typed (under the cell, or the
     // field), the value kept: not as a toast that cuts the reason short.
-    const res = checkValue(col, cellRow(r), raw);
+    const res = (fmeaOn ? checkFmeaValue : checkValue)(col, cellRow(r), raw);
     if (res.error) return res.error;
     return ops.set(r, col, res.value).then(() => {
       setEditing((e) => (e && e.key === r.key && e.col === col ? null : e));
@@ -1016,24 +1082,26 @@ export default function AssetExplorer() {
     setModal(null);
     setNewParent(null);
   };
-  // "Add the sample truck": copied into this workspace's tree, then shown
-  // picked on the RCM tab. With a copy there already, the person is asked
-  // whether to add another; keeping theirs picks it instead.
-  const [addingSample, setAddingSample] = useState(false);
-  const addSample = () => {
+  // "Add the sample truck" (shown picked on the RCM tab) and "Add the sample
+  // UAV" (on the FME(C)A tab): copied into this workspace's tree. With a copy
+  // there already, the person is asked whether to add another; keeping theirs
+  // picks it instead.
+  const [addingSample, setAddingSample] = useState(null); // "truck" | "uav" while one is being added
+  const addSample = (kind = "truck") => {
     if (addingSample) return;
-    setAddingSample(true);
-    addSampleTruck(postSampleTruck, confirm)
+    setAddingSample(kind);
+    const s = SAMPLES[kind];
+    addSampleOf(kind === "uav" ? postSampleUav : postSampleTruck, confirm, kind)
       .then((r) => {
         created(r.position.id);
         if (r.added) {
           loadRcm();
-          setTab("rcm");
+          setTab(s.tab);
           // Short: it shows in the heading's slim row (the server's message is longer).
-          say("Added the sample truck.");
+          say(s.added);
         }
-      }, (e) => say(`The sample truck wasn't added: ${e.message}`, "error"))
-      .finally(() => setAddingSample(false));
+      }, (e) => say(`The ${s.what} wasn't added: ${e.message}`, "error"))
+      .finally(() => setAddingSample(null));
   };
   // After a rename, move or retire from the row menu: the tree read again,
   // the row kept picked (moved: shown in its new place; retired: the row it
@@ -1105,13 +1173,22 @@ export default function AssetExplorer() {
       </div>
       {mode !== "locations" && mode !== "items" && (
         <div className="ae-sample">
-          <p><strong>New here?</strong> Add the sample truck to see an RCM built on the tree.</p>
-          <button type="button" className="secondary" onClick={addSample} disabled={addingSample}>
-            {addingSample ? "Adding…" : SAMPLE_TRUCK_LABEL}
-          </button>
+          <p><strong>New here?</strong> Add the sample truck to see an RCM built on the tree, or the sample UAV for an FME(C)A.</p>
+          <div className="ae-sample-btns">
+            <button type="button" className="secondary" onClick={() => addSample("truck")} disabled={!!addingSample}>
+              {addingSample === "truck" ? "Adding…" : SAMPLE_TRUCK_LABEL}
+            </button>
+            <button type="button" className="secondary" onClick={() => addSample("uav")} disabled={!!addingSample}>
+              {addingSample === "uav" ? "Adding…" : SAMPLE_UAV_LABEL}
+            </button>
+          </div>
         </div>
       )}
-      <p className="section-empty-more"><ShowMe help={HELP}>How to build RCM on your asset tree</ShowMe></p>
+      <p className="section-empty-more">
+        <ShowMe help={HELP}>How to build RCM on your asset tree</ShowMe>
+        {" · "}
+        <ShowMe help={HELP_FMEA}>How to score an FME(C)A on your asset tree</ShowMe>
+      </p>
     </div>
   ) : (
     <div className="card empty">Pick a row in the tree to see it here.</div>
@@ -1128,9 +1205,10 @@ export default function AssetExplorer() {
   // Pinned: the branch's own counts.
   const notAnalysed = !data ? 0 : pinKey ? display.notAnalysed : data.positions.filter((p) => p.not_analysed).length;
   const locationCount = !data ? 0 : pinKey ? display.locations : data.locations.length;
+  const what = fmeaOn ? "FME(C)A" : "RCM";
   const statusText = !data ? "" : rcmOn && !filter
-    ? (rcmError ? `The RCM didn't load: ${rcmError}` : !rcm ? `${n(placedCount, "position")} · loading the RCM…`
-      : `${n(placedCount, "position")} · ${notAnalysed.toLocaleString("en-AU")} not analysed · RCM is by position`)
+    ? (rcmError ? `The ${what} didn't load: ${rcmError}` : !rcm ? `${n(placedCount, "position")} · loading the ${what}…`
+      : `${n(placedCount, "position")} · ${notAnalysed.toLocaleString("en-AU")} not analysed · ${what} is by position`)
     : filter
     ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
     : mode === "locations"
@@ -1155,16 +1233,24 @@ export default function AssetExplorer() {
   // chosen in the Columns menu). A window under 1400 px: fewer usual columns
   // (no Interval, folded into the Task cell, nor Evidence check), so the table
   // fits beside the tree; its columns narrow to fit too (TreePane).
-  const shownCols = tableCols(rprefs, linkedEvidence, { narrow });
+  // The FME(C)A tab: the worksheet's columns (fmeaWorksheet.js), remembered apart from the RCM's.
+  const shownCols = fmeaOn ? fmeaTableCols(fprefs, { narrow }) : tableCols(rprefs, linkedEvidence, { narrow });
+  const colMap = fmeaOn ? FMEA_COLUMN : COLUMN;
+  const prefsW = fmeaOn ? fprefs.widths : rprefs.widths;
   // The details expanded (a wide screen, the details shown): only the tree column beside them.
   const wideDetails = wideOn;
-  const cols = wideDetails ? [] : shownCols.map((id) => COLUMN[id]).filter(Boolean);
+  const cols = wideDetails ? [] : shownCols.map((id) => colMap[id]).filter(Boolean);
   const widths = {};
-  for (const c of cols) widths[c.id] = rprefs.widths[c.id] ?? c.width;
+  for (const c of cols) widths[c.id] = prefsW[c.id] ?? c.width;
   const table = rcmOn ? {
     cols, widths, treeW: width, total: width + cols.reduce((t, c) => t + widths[c.id], 0), expanded: wideDetails,
-    foldInterval: !shownCols.includes("interval"),
+    foldInterval: !fmeaOn && !shownCols.includes("interval"),
     intervalW: rprefs.widths.interval ?? COLUMN.interval.width,
+    // Which tab's table this is: its chips, its tree column's heading, its
+    // name for screen readers, the phone's second line, and the column sorted by.
+    tab, fmea: fmeaOn, what, treeHead: fmeaOn ? FMEA_TREE_HEAD : null,
+    phoneLine: fmeaOn ? fmeaPhoneLine : null,
+    sort: fmeaOn ? fsort : null, onSort: fmeaOn ? (col) => setFsort((s) => nextSort(s, col)) : null,
     editing, readOnly: false,
     canEditName: (r) => EDITABLE.has(r.type),
     onEdit: (key, col) => { setRcmFocus(key); setEditing({ key, col }); },
@@ -1180,7 +1266,7 @@ export default function AssetExplorer() {
     hint: !wideDetails && rcm?.positions && posRow?.type === "pos" && !posRow.rcmKids ? posRow.key : null,
     // Drag and drop (a wide screen): which rows move, the mark on the row
     // under the pointer, the failure modes picked to move together.
-    drag: rcm && !phone ? {
+    drag: rcm && !phone && !fmeaOn ? {
       begin: beginDrag,
       canDrag: (r) => !!dragSource(whole, r.key),
       block: (r) => dragBlock(r),
@@ -1205,13 +1291,21 @@ export default function AssetExplorer() {
                     <button type="button" className="sm"
                             // A double-click asks once (its second click is the dialog's, which ignores it).
                             onClick={(e) => { if (e.detail < 2) runAdd({ ref: { add: "fn", position_id: posRow.key } }); }}>Add function</button>
-                    <ColumnChooser cols={shownCols} usual={usualCols({ narrow })}
-                                   onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
+                    {fmeaOn ? (
+                      <ColumnChooser cols={shownCols} usual={fmeaUsualCols({ narrow })} columns={FMEA_COLUMNS}
+                                     onCols={(next, o) => setFprefs((p) => withFmeaCols(p, next, o))} />
+                    ) : (
+                      <ColumnChooser cols={shownCols} usual={usualCols({ narrow })}
+                                     onCols={(next, o) => setRprefs((p) => withTableCols(p, next, shownCols, o))} />
+                    )}
                     <OverflowMenu>
                       <button type="button" className="ovm-item" onClick={() => setSheetFor({ id: posRow.key, name: posRow.ref.name })}>
                         Import worksheet…
                       </button>
                       <button type="button" className="ovm-item" onClick={() => exportRcm(posRow)}>Export CSV</button>
+                      {fmeaOn && excel && <button type="button" className="ovm-item" onClick={() => exportExcel(posRow)}>Export Excel</button>}
+                      {fmeaOn && <button type="button" className="ovm-item" onClick={() => navigate(`/asset-register/positions/${posRow.key}/fmea`)}>Print view</button>}
+                      {fmeaOn && <button type="button" className="ovm-item" onClick={() => openGuide(HELP_FMEA.guide)}>Show me how</button>}
                     </OverflowMenu>
                   </>
                 )} />
@@ -1223,7 +1317,10 @@ export default function AssetExplorer() {
   );
   const tabsRow = rcmOn ? (posRow?.type === "pos" ? posRow : null) : summaryRow;
   const headTabs = !phone && tabsRow && <HeaderTabs row={tabsRow} tab={tab} onTab={setTab} />;
-  const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "cause" ? cellRow(focusRow) : null;
+  const detailsRow = rcmOn && panel && isRcmRow(focusRow) && focusRow.type !== "cause" && focusRow.type !== "nofail" ? cellRow(focusRow) : null;
+  // The FME(C)A tab with a position picked: its criticality matrix beside the table.
+  const fmeaPosRow = fmeaOn && panel && !detailsRow && focusRow?.type === "pos" ? focusRow : null;
+  const fmeaPos = useMemo(() => (fmeaPosRow ? positionSummary(whole, fmeaPosRow.key, fopts) : null), [fmeaPosRow, whole, fopts]);
   // A failure mode moved under another functional failure from the panel: a
   // refusal is said in the heading, in plain words.
   // The function panel's working: where the operating context is (the
@@ -1265,8 +1362,12 @@ export default function AssetExplorer() {
     ...ops,
     create: (kind, where, text) => ops.create(kind, where, text).then((id) => { openNew.current = id; setNewTick((t) => t + 1); return id; }),
     basisView: { context: contextOf, token: (r) => (basisAt?.key === r.key ? basisAt.at : null) },
-    assign: (r, ffId) => ops.assign(r, ffId).catch((e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error")),
+    assign: (r, ffId, fnId = null) => ops.assign(r, ffId, fnId).catch((e) => say(saveErrorText(e, { offline: navigator.onLine === false }), "error")),
   };
+  // The FME(C)A's groups in a failure mode's details (both tabs; first on
+  // the FME(C)A tab), with the action priority table and the RCM read for the
+  // "Under" choice.
+  const fmeaPanel = rcm ? { on: fmeaOn, opts: fopts, rcm } : null;
   const closeDetails = () => {
     setPanel(false);
     document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true });
@@ -1279,9 +1380,17 @@ export default function AssetExplorer() {
                onCommit={commit} onAdd={addInside} onDelete={remove} onDecision={(r) => setDeciding(r)}
                expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                addStart={addStart} onSaid={say}
-               onMove={(r, { task = false } = {}) => (task ? setMoving({ taskFrom: r.key }) : setMoving({ src: dragSource(whole, r.key) }))}
-               onClose={closeDetails}
+               onMove={fmeaOn ? null : (r, { task = false } = {}) => (task ? setMoving({ taskFrom: r.key }) : setMoving({ src: dragSource(whole, r.key) }))}
+               onClose={closeDetails} fmea={fmeaPanel}
                onSelect={(k, o) => (o?.basis ? openBasis(k) : reveal(k))} />
+    </div>
+  ) : fmeaPosRow && fmeaPos ? (
+    // The FME(C)A tab with a position picked: its criticality matrix, Cr and
+    // the modes ranked by Cm (a sheet on a phone).
+    <div className="rw tt-side">
+      {phone && <div className="rw-scrim" onClick={() => setPanel(false)} aria-hidden="true" />}
+      <FmeaPositionPanel row={fmeaPosRow} summary={fmeaPos} phone={phone} headingRef={detailsHeading} onClose={closeDetails}
+                         onSelect={(k) => { reveal(k); setPanel(true); }} />
     </div>
   ) : wideDetails && (
     // Expanded with a position picked: the room says what to pick (the tree beside it).
@@ -1294,7 +1403,7 @@ export default function AssetExplorer() {
             <button type="button" className="ghost sm rw-x" onClick={collapseDetails} aria-label="Back to table" title="Back to table (Esc)"><ShrinkIcon /></button>
           </div>
         </div>
-        <p className="rw-inside">Pick a function, performance standard, functional failure or failure mode in the tree to see it here.</p>
+        <p className="rw-inside">{fmeaOn ? "Pick a function or failure mode in the tree to see it here." : "Pick a function, performance standard, functional failure or failure mode in the tree to see it here."}</p>
       </aside>
     </div>
   );
@@ -1376,7 +1485,8 @@ export default function AssetExplorer() {
         onReset={resetView}
         menuActions={data && mode !== "locations" && mode !== "items" ? [
           { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
-          { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: addSample },
+          { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: () => addSample("truck") },
+          { id: "sample-uav", label: SAMPLE_UAV_LABEL, onSelect: () => addSample("uav") },
         ] : []}
         notice={notice}
         statusText={statusText}
@@ -1406,7 +1516,7 @@ export default function AssetExplorer() {
           key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
         } : null}
         branchNote={pinNote}
-        arrangeLocked={rcmOn ? "RCM is by position, so the RCM tab shows the positions tree" : null}
+        arrangeLocked={rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
       />
       {phone && summary}
       <div className="sr-only" role="status" aria-live="polite">{spoken}</div>
@@ -1481,6 +1591,18 @@ export default function AssetExplorer() {
                                onClose={() => setReportFor(null)} onDone={reportFiled} />
       )}
       {sheetFor && <RcmImportModal position={sheetFor} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
+      {assigning && (
+        // A "No functional failure yet" row's modes, under one of the function's functional failures.
+        <AssignFailureModal row={assigning} failures={fmeaFailuresOn(rcm, assigning.ref.position_id).filter((f) => f.function_id === assigning.ref.function_id)}
+                            onClose={() => setAssigning(null)}
+                            onAssign={async (ffId) => {
+                              const ids = assigning.ref.mode_ids || [];
+                              await ops.assignMany(ids, ffId);
+                              setAssigning(null);
+                              setRcmFocus(ffId);
+                              say(`Assigned ${ids.length === 1 ? "the failure mode" : `${ids.length} failure modes`} to the functional failure.`);
+                            }} />
+      )}
       {linking && (
         <LinkFailurePicker direction={linking.direction} row={linking.row} whole={whole} onLink={ops.linkMany}
                            onClose={(n) => {

@@ -594,3 +594,55 @@ test("standard rows that arrive under an open function open at once, so the fail
   assert.deepEqual(newStandardRows(after, seen, new Set(["pump", "f1"])), []);
   assert.deepEqual(newStandardRows(after, standardKeys(after), new Set(["pump", "f1", "f2"])), []);
 });
+
+// ---- failure modes directly under a function (written on the FME(C)A tab) --------------
+import { RCM_CHIPS, noFailKey } from "./explorerRcm.js";
+import { NOFAIL_HINT } from "./rcmWorksheet.js";
+
+const RCM_DIRECT = {
+  positions: [{
+    id: "pump",
+    functions: [
+      { id: "f1", text: "Pump water", modes: [mode("d1", "Bearing seizes"), mode("d2", "Seal leaks")], failures: [
+        { id: "x1", text: "No flow", modes: [mode("m1", "Impeller worn")] },
+      ] },
+    ],
+    unassigned: [],
+  }],
+};
+
+test("a function's direct failure modes sit under one \"No functional failure yet\" row after its failures; counts roll up to the function", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), RCM_DIRECT);
+  assert.equal(noFailKey("f1"), "F:f1");
+  assert.deepEqual(d.rows.get("f1").kids, ["x1", "F:f1"]);
+  const g = d.rows.get("F:f1");
+  assert.equal(g.type, "nofail");
+  assert.equal(g.ref.text, "No functional failure yet");
+  assert.equal(g.ref.function_id, "f1");
+  assert.deepEqual(g.ref.mode_ids, ["d1", "d2"]);
+  assert.deepEqual(g.kids, ["d1", "d2"]);
+  assert.equal(g.depth, d.rows.get("x1").depth); // beside the functional failures
+  assert.equal(d.rows.get("d1").depth, d.rows.get("m1").depth);
+  assert.equal(d.rows.get("d1").ref.functional_failure_id, null);
+  assert.equal(d.rows.get("d1").ref.function_id, "f1");
+  assert.equal(g.rsum.modes, 2);
+  assert.equal(d.rows.get("f1").rsum.modes, 3);
+  assert.equal(d.rows.get("pump").rsum.undecided, 3);
+  assert.ok(isRcmRow(g) && positionOf(g) === "pump");
+  // Its menu: write the functional failure, or put them under one; openFor opens it.
+  assert.deepEqual(rowActions(g).map((a) => a.id), ["add-fail", "assign-fail"]);
+  assert.ok(openFor(d, "pump").has("F:f1"));
+  // The quiet hint, in words (never a gate).
+  assert.deepEqual(markersOf(g), [{ kind: "nofail", text: "finish the RCM", label: NOFAIL_HINT }]);
+  // The chips are the RCM tab's own.
+  assert.ok(RCM_CHIPS.every((c) => c.tab === "rcm"));
+});
+
+test("a failure mode's details save the FME(C)A's fields in the same write as its words", () => {
+  const r = { type: "mode", ref: { id: "m1" } };
+  assert.deepEqual(itemWrites(r, { name: "Seal leaks", severity: 9, cause: "Dust", action_due: null, consequence: "safety" }), [
+    { api: "mode", body: { text: "Seal leaks", severity: 9, cause: "Dust", action_due: null } },
+    { api: "decide", body: { consequence: "safety" } },
+  ]);
+  assert.deepEqual(itemWrites(r, { mode_ratio: 0.5, severity_class: "I" }), [{ api: "mode", body: { mode_ratio: 0.5, severity_class: "I" } }]);
+});

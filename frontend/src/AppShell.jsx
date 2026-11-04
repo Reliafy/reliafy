@@ -47,6 +47,7 @@ const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx
 const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
 const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
+const FmeaPrint = lazy(() => import("./views/FmeaPrint.jsx"));
 const MaintenanceWorkOrder = lazy(() => import("./views/MaintenanceWorkOrder.jsx"));
 const MaintenanceItem = lazy(() => import("./views/MaintenanceItem.jsx"));
 const AssetExplorer = lazy(() => import("./views/AssetExplorer.jsx"));
@@ -201,6 +202,7 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceAssets />} />}
             {maintenanceEnabled && <Route path="/asset-register/explorer" element={<AssetExplorer />} />}
             {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}
+            {maintenanceEnabled && <Route path="/asset-register/positions/:id/fmea" element={<FmeaPrint />} />}
             {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}
             {maintenanceEnabled && <Route path="/asset-register/locations/:id" element={<MaintenanceLocation />} />}
             {maintenanceEnabled && <Route path="/asset-register/classes" element={<MaintenanceClasses />} />}

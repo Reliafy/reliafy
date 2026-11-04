@@ -2205,6 +2205,11 @@ export function removeMaintenanceItem(positionId, body) {
 export function addSampleTruck(again = false) {
   return postJson("/api/maintenance/sample-truck", { again: !!again });
 }
+// The sample quadcopter UAV, with its FME(C)A (scored failure modes, some
+// directly under a function), copied into the tree the same way.
+export function addSampleUav(again = false) {
+  return postJson("/api/maintenance/sample-uav", { again: !!again });
+}
 
 // Items, optionally only an item class's (with the classes inside it) or a
 // manufacturer's ("none": those with none).
@@ -2502,8 +2507,31 @@ export function unlinkFunctionalFailureCause(id, causeId) {
 export function applyRcm(operations, { dryRun = false } = {}) {
   return postJson("/api/maintenance/rcm/apply", { operations, ...(dryRun ? { dry_run: true } : {}) });
 }
-export function assignFailureMode(id, functionalFailureId) {
-  return postJson(`/api/maintenance/failure-modes/${id}/assign`, { functional_failure_id: functionalFailureId || null });
+// Under a functional failure, or (functionId, no functional failure) directly
+// under a function with no functional failure yet; neither: under none.
+export function assignFailureMode(id, functionalFailureId, functionId = null) {
+  return postJson(`/api/maintenance/failure-modes/${id}/assign`,
+    functionalFailureId ? { functional_failure_id: functionalFailureId } : { functional_failure_id: null, ...(functionId ? { function_id: functionId } : {}) });
+}
+// A position's FME(C)A worksheet as an Excel file (it and everything inside
+// it). The route is the server's to offer: `hasFmeaExcel` says whether it
+// does (asked once; a 404 hides the button).
+export const fmeaExcelUrl = (positionId) => `/api/maintenance/positions/${positionId}/fmea.xlsx`;
+let fmeaExcel = null;
+export async function hasFmeaExcel(positionId) {
+  if (fmeaExcel != null) return fmeaExcel;
+  try {
+    const res = await authedFetch(fmeaExcelUrl(positionId), { method: "HEAD" });
+    fmeaExcel = res.status !== 404;
+  } catch {
+    fmeaExcel = false;
+  }
+  return fmeaExcel;
+}
+export async function getFmeaExcelBlob(positionId) {
+  const res = await authedFetch(fmeaExcelUrl(positionId));
+  if (!res.ok) throw new Error(res.status === 404 ? "Excel export isn't available on this server." : `The export failed (${res.status}). Try again.`);
+  return res.blob();
 }
 // {consequence?, decision?}: a key left out is left as it is; decision null clears it.
 export function decideFailureMode(id, body) {
