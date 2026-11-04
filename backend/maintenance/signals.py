@@ -52,9 +52,12 @@ MAX_BANDS_PER_CHANNEL = 40
 MAX_SNAPSHOTS_PER_DAY = 5000  # per workspace, counted at the server's day
 MIN_SAMPLES = 16
 UNIT_MAX = 20
+SPEED_UNITS = ("rpm", "r/min", "1/min")
 
 #: Equivalent noise bandwidth of a window, in bins.
 ENBW = {"hann": 1.5, "hamming": 1.3628, "blackman": 1.7268, "rectangular": 1.0, "flattop": 3.7702}
+SETTINGS_ID = "signal-settings"
+SPEED_WINDOW_MS = 3_600_000  # a speed reading counts if it is within an hour of the snapshot
 STATS = ("rms", "peak", "crest", "kurtosis", "mean", "value")
 
 
@@ -297,7 +300,19 @@ def _channel_restored(s, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"retired": False, "retired_on": None, "retired_reason": "", "restored_on": p.get("on")})
 
 
+def _band_limits(s, org: str, p: dict) -> None:
+    """signal_band.limits: the warning levels of a band or level (shown as lines; they
+    open no work: the alarm limits are the point's own)."""
+    s.patch_node(org, p["id"], {"warn_above": p.get("warn_above"), "warn_below": p.get("warn_below")})
+
+
+def _settings_set(s, org: str, p: dict) -> None:
+    """signal_settings.set: workspace-wide choices for signal storage (one node, replaced each time)."""
+    s.put_node(org, SETTINGS_ID, "SignalSettings", {"storage_cap_mb": p.get("storage_cap_mb")})
+
+
 PROJECTORS = {
+    "signal_band.limits": _band_limits, "signal_settings.set": _settings_set,
     "signal_channel.added": _channel_added, "signal_channel.updated": _channel_updated,
     "signal_channel.retired": _channel_retired, "signal_channel.restored": _channel_restored,
     **derived.PROJECTORS,
@@ -453,12 +468,24 @@ class SignalOps:
             "mount": sv._text(mount, "mount")[:sv.SHORT_TEXT], "on": self.today()})
         return self.signal_channel(cid)
 
-    def update_signal_channel(self, channel_id, name=None, rpm=..., tag=None, mount=None, sample_rate=...) -> dict:
+    def update_signal_channel(self, channel_id, name=None, rpm=..., tag=None, mount=None, sample_rate=...,
+                              speed_channel_id=...) -> dict:
         """Rename a channel, change its running speed (new snapshots take it; stored ones keep theirs),
-        tag, mount text or nominal sample rate."""
+        tag, mount text or nominal sample rate. ``speed_channel_id`` names a channel of single rpm
+        readings to take the running speed from (the nearest reading in time); '' clears it."""
         sv = _sv()
         ch = self._live_channel(channel_id)
         changes: dict = {}
+        if speed_channel_id is not ...:
+            if speed_channel_id in (None, ""):
+                changes["speed_channel_id"] = None
+            else:
+                src = self._live_channel(speed_channel_id)
+                if src["id"] == ch["id"]:
+                    raise sv.Invalid("A channel can't take its own speed from itself.")
+                if str(src.get("unit", "")).strip().lower() not in SPEED_UNITS:
+                    raise sv.Invalid(f"{src['name']} is in {src.get('unit') or 'no unit'}; a speed channel must be in rpm.")
+                changes["speed_channel_id"] = src["id"]
         if name is not None:
             changes["name"] = sv._text(name, "channel's name", required=True)
         if rpm is not ...:
@@ -521,7 +548,8 @@ class SignalOps:
             "low" if below is not None and value <= below else "ok"
         return {"point_id": point["id"], "name": point["name"], "rule": rule,
                 "describe": derived.RULES[rule["type"]].describe(rule), "unit": point.get("unit", ""),
-                "alarm_above": above, "alarm_below": below, "latest": latest and {"t": latest["t"], "value": value},
+                "alarm_above": above, "alarm_below": below, "warn_above": point.get("warn_above"),
+                "warn_below": point.get("warn_below"), "latest": latest and {"t": latest["t"], "value": value},
                 "status": status, "retired": bool(point.get("retired"))}
 
     def signal_channels(self, position_id=None, item_id=None, include_retired=False) -> dict:
@@ -549,6 +577,7 @@ class SignalOps:
         return {"id": ch["id"], "name": ch["name"], "quantity": ch.get("quantity", ""), "unit": ch.get("unit", ""),
                 "sample_rate": ch.get("sample_rate"), "axes": ch.get("axes") or [], "rpm": ch.get("rpm"),
                 "tag": ch.get("tag", ""), "mount": ch.get("mount", ""), "retired": bool(ch.get("retired")),
+                "speed_channel_id": ch.get("speed_channel_id") or None,
                 "position": target and target["label"] == "Position" and {"id": target["id"], "name": target["name"]} or None,
                 "item": target and target["label"] == "Item" and {"id": target["id"], "name": target["name"]} or None}
 
@@ -560,9 +589,20 @@ class SignalOps:
         stats = self.s.snapshots.stats(self.org, ch["id"])
         bands = []
         for p in derived.points_of(self, ch["id"], live_only=False):
+            if p.get("superseded_by"):
+                continue  # an older version: shown as part of the band that replaced it
             band = self._channel_band(p, ch["id"])
-            rows = list(reversed(self.s.series.recent(self.org, p["id"], series)))
+            chain = self._versions(p)
+            rows = []
+            for v in chain:
+                rows += list(reversed(self.s.series.recent(self.org, v["id"], series)))
             band["series"] = [{"t": r["t"], "value": r["value"]} for r in rows]
+            if len(chain) > 1:
+                band["versions"] = [{"point_id": v["id"], "describe": derived.RULES[v["derived"]["rule"]["type"]]
+                                     .describe(v["derived"]["rule"]), "rule": v["derived"]["rule"],
+                                     "name": v["name"], "from": v.get("applies_after")} for v in chain]
+                band["changes"] = [{"t": v.get("applies_after"), "to": derived.RULES[v["derived"]["rule"]["type"]]
+                                    .describe(v["derived"]["rule"])} for v in chain[1:]]
             bands.append(band)
         heads = self.s.snapshots.heads(self.org, ch["id"], limit=max(1, min(int(snapshots), 2000)))
         return self._channel_head(ch, on) | {
@@ -571,7 +611,7 @@ class SignalOps:
 
     def _head_view(self, h: dict) -> dict:
         return {"id": snapshot_id(h["channel_id"], h["t_ms"]), "t": _iso(h["t_ms"]), "running": h.get("running"),
-                "rpm": h.get("rpm"), "source": h.get("source"), "has_raw": bool(h.get("has_raw")),
+                "rpm": h.get("rpm"), "speed_from": h.get("speed_from"), "source": h.get("source"), "has_raw": bool(h.get("has_raw")),
                 "bytes": h.get("size", 0),
                 "levels": {a: {k: (None if v is None else float(f"{v:.5g}")) for k, v in lv.items()}
                            for a, lv in (h.get("levels") or {}).items()}}
@@ -720,9 +760,20 @@ class SignalOps:
             raise sv.Invalid(f"The snapshot is in {u} but the channel is in {ch['unit']}; Reliafy doesn't convert. "
                              "Send it in the channel's unit.")
         u = u or ch.get("unit", "")
-        speed = ch.get("rpm") if rpm in (None, "") else sv._number(rpm, "rpm", 0.001, 1e6)
+        speed, speed_from = ch.get("rpm"), None
+        if rpm not in (None, ""):
+            speed = sv._number(rpm, "rpm", 0.001, 1e6)
+        elif ch.get("speed_channel_id"):
+            near = self._nearest_speed(ch["speed_channel_id"], t_ms)
+            if near:
+                speed, speed_from = near["rpm"], {"channel_id": ch["speed_channel_id"], "t": near["t"],
+                                                  "gap_s": near["gap_s"]}
+            else:
+                notes.append("No speed reading within an hour of this snapshot: the channel's own rpm was used.")
         doc: dict = {"channel_id": ch["id"], "t_ms": t_ms, "running": None if running is None else bool(running),
                      "rpm": speed, "note": sv._text(note, "note")[:500], "unit": u}
+        if speed_from:
+            doc["speed_from"] = speed_from
         total = 0
         if axes:
             arrays = self._arrays(axes, ch)
@@ -765,6 +816,23 @@ class SignalOps:
                              "Send it in shorter bursts.")
         doc["size"] = _size(doc)
         return doc, notes
+
+    def _nearest_speed(self, speed_id: str, t_ms: int) -> dict | None:
+        """The speed channel's reading nearest in time to ``t_ms`` (within an hour), or None."""
+        try:
+            src = self._get(speed_id, "SignalChannel")
+        except Exception:  # noqa: BLE001 - the speed channel is gone
+            return None
+        best = None
+        for h in self.s.snapshots.heads(self.org, src["id"], t_ms - SPEED_WINDOW_MS, t_ms + SPEED_WINDOW_MS):
+            levels = next(iter((h.get("levels") or {}).values()), None) or {}
+            value = levels.get("value")
+            if value is None or value <= 0:
+                continue
+            gap = abs(h["t_ms"] - t_ms)
+            if best is None or gap < best[0]:
+                best = (gap, h["t_ms"], float(value))
+        return best and {"rpm": best[2], "t": _iso(best[1]), "gap_s": round(best[0] / 1000, 1)}
 
     def _check_axis_names(self, names, ch):
         sv = _sv()
@@ -851,30 +919,50 @@ class SignalOps:
             raise sv.Invalid(f"A channel can have at most {MAX_BANDS_PER_CHANNEL} bands and levels.")
 
     def add_signal_band(self, channel_id, name, low, high, axis=None, unit="Hz", alarm_above=None,
-                        alarm_below=None) -> dict:
+                        alarm_below=None, warn_above=None, warn_below=None) -> dict:
         """A watch band: a frequency range (Hz, or multiples of the running speed with unit
         'orders') whose RMS level each snapshot adds to a measurement point. Backfilled from the
-        snapshots already stored. Its alarm limits work like any condition point's."""
+        snapshots already stored. Its alarm limits work like any condition point's; warning
+        levels (warn_above / warn_below) are drawn as lines and open no work."""
         sv = _sv()
         ch = self._live_channel(channel_id)
         self._check_band_limit(ch)
         name = sv._text(name, "band's name", required=True)
         return self._add_derived(ch, name, {"type": "band", "axis": axis, "low": low, "high": high, "in": unit},
-                                 alarm_above, alarm_below)
+                                 alarm_above, alarm_below, warn_above, warn_below)
 
-    def add_signal_level(self, channel_id, name, stat, axis=None, alarm_above=None, alarm_below=None) -> dict:
+    def add_signal_level(self, channel_id, name, stat, axis=None, alarm_above=None, alarm_below=None,
+                         warn_above=None, warn_below=None) -> dict:
         """An overall level (rms, peak, crest, kurtosis, mean, or a scalar value) of each snapshot,
         as a measurement point. A channel with only scalar readings (a pressure) uses 'value'."""
         sv = _sv()
         ch = self._live_channel(channel_id)
         self._check_band_limit(ch)
         name = sv._text(name, "level's name", required=True)
-        return self._add_derived(ch, name, {"type": "level", "axis": axis, "stat": stat}, alarm_above, alarm_below)
+        return self._add_derived(ch, name, {"type": "level", "axis": axis, "stat": stat}, alarm_above, alarm_below,
+                                 warn_above, warn_below)
 
-    def _add_derived(self, ch, name, rule, alarm_above, alarm_below) -> dict:
+    def _warn_pair(self, warn_above, warn_below, alarm_above, alarm_below):
+        """Check and clean warning levels: the warning comes before the alarm."""
+        sv = _sv()
+        above, below = self._amount_or_none(warn_above), self._amount_or_none(warn_below)
+        if above is not None and below is not None and below >= above:
+            raise sv.Invalid("The low warning must be below the high warning.")
+        if above is not None and alarm_above is not None and above >= alarm_above:
+            raise sv.Invalid("The high warning must be below the high alarm.")
+        if below is not None and alarm_below is not None and below <= alarm_below:
+            raise sv.Invalid("The low warning must be above the low alarm.")
+        return above, below
+
+    def _add_derived(self, ch, name, rule, alarm_above, alarm_below, warn_above=None, warn_below=None,
+                     supersedes=None, applies_after=None) -> dict:
         on = self.s.out(self.org, ch["id"], "ON")[0]
         subject = {"position_id": on["id"]} if on["label"] == "Position" else {"subject": {"kind": "item", "id": on["id"]}}
-        made = derived.add(self, ch, name, rule, subject, alarm_above, alarm_below)
+        warn = self._warn_pair(warn_above, warn_below, self._amount_or_none(alarm_above),
+                               self._amount_or_none(alarm_below))
+        made = derived.add(self, ch, name, rule, subject, alarm_above, alarm_below, supersedes, applies_after)
+        if warn != (None, None):
+            self._emit("signal_band.limits", {"id": made["point_id"], "warn_above": warn[0], "warn_below": warn[1]})
         band = next(b for b in self.signal_channel(ch["id"], 1, 50)["bands"] if b["point_id"] == made["point_id"])
         return {"point_id": made["point_id"], "history_written": made["written"], "band": band}
 
@@ -885,6 +973,109 @@ class SignalOps:
         if not point.get("derived"):
             raise sv.Invalid("That point isn't a band or level of a channel.")
         return self.retire_point(point_id, reason)
+
+    def _versions(self, head: dict) -> list[dict]:
+        """A band's versions, oldest first, ending with ``head``."""
+        chain = [head]
+        while chain[0].get("supersedes"):
+            older = self.s.node(self.org, chain[0]["supersedes"])
+            if not older:
+                break
+            chain.insert(0, older)
+        return chain
+
+    def update_signal_band(self, point_id, name=None, low=None, high=None, axis=None, unit=None,
+                           alarm_above=..., alarm_below=..., warn_above=..., warn_below=...) -> dict:
+        """Change a band's name, range or limits without losing its history.
+
+        Name and limits change in place. A new range (``low``, ``high``, ``axis`` or ``unit``) makes a
+        new *version* of the band: the old version stops (its recorded values stay, exactly as they
+        were measured) and the new one takes snapshots that arrive from now, so the trend shows one
+        line with the change marked. Earlier snapshots are not re-read with the new range: to see
+        them that way, add a new band (which is worked out from everything stored)."""
+        sv = _sv()
+        point = self._live_point(point_id)
+        if not point.get("derived"):
+            raise sv.Invalid("That point isn't a band or level of a channel.")
+        ch = self._get(point["derived"]["from"], "SignalChannel")
+        old = point["derived"]["rule"]
+        rule = derived.RULES[old["type"]]
+        new_range = any(v is not None for v in (low, high, axis, unit))
+        if new_range and old["type"] != "band":
+            raise sv.Invalid("Only a band has a range to change.")
+        above = point.get("alarm_above") if alarm_above is ... else self._amount_or_none(alarm_above)
+        below = point.get("alarm_below") if alarm_below is ... else self._amount_or_none(alarm_below)
+        w_above = point.get("warn_above") if warn_above is ... else warn_above
+        w_below = point.get("warn_below") if warn_below is ... else warn_below
+        if above is not None and below is not None and below >= above:
+            raise sv.Invalid("The low alarm must be below the high alarm.")
+        warn = self._warn_pair(w_above, w_below, above, below)
+        new_name = point["name"] if name is None else sv._text(name, "band's name", required=True)
+        spec = None
+        if new_range:
+            spec = rule.validate(self, ch, {"axis": old["axis"] if axis in (None, "") else axis,
+                                            "low": old["low"] if low is None else low,
+                                            "high": old["high"] if high is None else high,
+                                            "in": old["in"] if unit in (None, "") else unit})
+            if all(spec[k] == old[k] for k in ("axis", "low", "high", "in")):
+                spec = None
+        if spec is None:
+            changes: dict = {}
+            if new_name != point["name"]:
+                changes["name"] = new_name
+            if above != point.get("alarm_above"):
+                changes["alarm_above"] = above
+            if below != point.get("alarm_below"):
+                changes["alarm_below"] = below
+            if changes:
+                self.update_point(point_id, **changes)
+            if warn != (point.get("warn_above"), point.get("warn_below")):
+                self._emit("signal_band.limits", {"id": point_id, "warn_above": warn[0], "warn_below": warn[1]})
+            made = point_id
+        else:
+            # Check that the old version can stop before the new one starts.
+            if any(t for t in self.s.nodes(self.org, "Task")
+                   if not t.get("retired") and (t.get("point_id") or t.get("meter_id")) == point_id):
+                raise sv.Invalid(f"A task goes by {point['name']}: point it at another counter first (maintenance "
+                                 "tasks.update point_id), then change the range.")
+            if any(w["label"] == "WorkOrder" and w["status"] in sv.OPEN_STATUSES
+                   for w in self.s.inn(self.org, point_id, "ALARM_FOR")):
+                raise sv.Invalid("It has an open alarm work order. Close or cancel it first.")
+            last = self.s.snapshots.heads(self.org, ch["id"], limit=1)
+            after = _iso(last[0]["t_ms"]) if last else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            made = self._add_derived(ch, new_name, spec, above, below, warn[0], warn[1], supersedes=point_id,
+                                     applies_after=after)["point_id"]
+            self.retire_point(point_id, "Range changed: replaced by a new version of this band.")
+        band = next(b for b in self.signal_channel(ch["id"], 1, 1000)["bands"] if b["point_id"] == made)
+        return {"point_id": made, "new_version": spec is not None, "band": band}
+
+    # -- storage
+
+    def signal_storage(self) -> dict:
+        """What the workspace's snapshots use: megabytes (as stored, raw plus spectrum, compressed),
+        the number of snapshots, per channel, and the soft cap if one is set. Nothing is deleted."""
+        per = []
+        for ch in self.s.nodes(self.org, "SignalChannel"):
+            st = self.s.snapshots.stats(self.org, ch["id"])
+            per.append({"channel_id": ch["id"], "name": ch["name"], "count": st["count"], "bytes": st["bytes"],
+                        "retired": bool(ch.get("retired"))})
+        total = sum(c["bytes"] for c in per)
+        cfg = self.s.node(self.org, SETTINGS_ID) or {}
+        cap = cfg.get("storage_cap_mb")
+        out = {"snapshots": sum(c["count"] for c in per), "bytes": total, "mb": round(total / 1e6, 2),
+               "cap_mb": cap, "over_cap": bool(cap and total > cap * 1e6),
+               "channels": sorted(per, key=lambda c: -c["bytes"])}
+        if out["over_cap"]:
+            out["warning"] = (f"Snapshots use {out['mb']} MB, over the {cap:g} MB warning level you set. Nothing is "
+                              "deleted: this is a reminder to decide what to keep.")
+        return out
+
+    def set_signal_storage_cap(self, cap_mb=None) -> dict:
+        """Set (or, with no value, clear) the size in MB at which the Signals tab warns. Default: off."""
+        sv = _sv()
+        cap = None if cap_mb in (None, "", 0) else sv._number(cap_mb, "cap (MB)", 1, 1e6)
+        self._emit("signal_settings.set", {"storage_cap_mb": cap})
+        return self.signal_storage()
 
     def preview_signal_band(self, channel_id, low, high, axis=None, unit="Hz", max_points=400) -> dict:
         """What a band would have read at every stored snapshot (nothing is saved)."""

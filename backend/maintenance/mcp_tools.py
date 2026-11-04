@@ -454,19 +454,24 @@ SIGNALS: Table = {
         a spectrum the device made, or a single value). unit: what it measures in (g, mm/s, kPa); axes: names, e.g.
         [X, Y, Z]; rpm: running speed, for bands in multiples of it; tag: how a device addresses it (POST
         /api/ingest/maintenance/snapshots)."""),
-    "update_channel": ("channel_id", "name rpm clear_rpm tag mount sample_rate", """Rename a channel or change its
-        running speed (new snapshots take it), tag, mount text or nominal sample rate."""),
+    "update_channel": ("channel_id", "name rpm clear_rpm tag mount sample_rate speed_channel_id", """Rename a channel
+        or change its running speed (new snapshots take it), tag, mount text or sample rate. speed_channel_id: a
+        channel of rpm values to take speed from (nearest reading in time; '' clears)."""),
     "retire_channel": ("channel_id", "reason", "Stop a channel taking snapshots (what it holds stays)."),
     "add_snapshot": ("time", "channel_id tag axes samples sample_rate unit spectrum value values running rpm note",
                      """Store one snapshot: time (ISO 8601 with a time zone) and samples (axes {name: [numbers]},
         sample_rate in Hz, or samples for one axis), or a device spectrum, or a value (values {axis: number}). The
         server works out the spectrum and overall levels, and adds a value to each of the channel's bands and levels.
         Sending the same channel and time again changes nothing. At most 5 MB."""),
-    "add_band": ("channel_id name low high", "axis unit alarm_above alarm_below", """A watch band: the RMS level
+    "add_band": ("channel_id name low high", "axis unit alarm_above alarm_below warn_above warn_below", """A watch band: the RMS level
         in low..high (Hz, or unit orders for multiples of the running speed) of each snapshot, as a measurement
         point (history worked out from the snapshots already stored). axis is needed when there are several.
-        Alarm limits open an inspection like any condition point's."""),
-    "add_level": ("channel_id name stat", "axis alarm_above alarm_below", """An overall level of each snapshot as a
+        Alarm limits open an inspection like any condition point's; warn limits only draw lines."""),
+    "update_band": ("point_id", "name low high axis unit alarm_above alarm_below warn_above warn_below clear_limits",
+                    """Change a band: name and limits in place; a new range starts a new version from now (the old
+        values stay as measured, the trend shows the change). clear_limits: list of limit names to remove."""),
+    "set_storage_cap": ("", "cap_mb", "Warn on the Signals tab above cap_mb of snapshots (none clears; deletes nothing)."),
+    "add_level": ("channel_id name stat", "axis alarm_above alarm_below warn_above warn_below", """An overall level of each snapshot as a
         measurement point: stat rms, peak, crest, kurtosis, mean or value (a scalar channel, e.g. pressure)."""),
     "remove_band": ("point_id", "reason", """Stop a band or level adding values (its recorded values stay)."""),
 }
@@ -475,6 +480,7 @@ SIGNAL_DATA: Table = {
     "channels": ("", "position_id item_id", "Signal channels (of one position or item, or all), each with its snapshot count and size."),
     "channel": ("channel_id", "snapshots", """One channel: settings, bands and levels with their series, size, and
         its latest snapshot headings (snapshots: how many, default 100)."""),
+    "storage": ("", "", "MB and number of snapshots stored, per channel, and the warning level if set."),
     "snapshot": ("snapshot_id", "axis f_min f_max max_points raw", """One snapshot: levels and spectrum (peaks kept
         when thinned to max_points; f_min / f_max give full detail in a range). raw true adds the samples."""),
 }
@@ -1646,8 +1652,12 @@ def register() -> None:
                             running: bool | None = None, note: str | None = None, low: float | None = None,
                             high: float | None = None, axis: str | None = None,
                             alarm_above: float | None = None, alarm_below: float | None = None,
+                            warn_above: float | None = None, warn_below: float | None = None,
                             stat: Literal["rms", "peak", "crest", "kurtosis", "mean", "value"] | None = None,
-                            point_id: str | None = None) -> dict[str, Any]:
+                            point_id: str | None = None, speed_channel_id: str | None = None,
+                            cap_mb: float | None = None,
+                            clear_limits: list[Literal["alarm_above", "alarm_below", "warn_above", "warn_below"]]
+                            | None = None) -> dict[str, Any]:
         """Signal channels: sensors that send snapshots (vibration bursts, spectra, pressures). A watch band
         or level makes an ordinary measurement point, so alarms and trends work on it. Read with
         maintenance signal_data.…; the data format is in the guide (topic signals)."""
@@ -1660,7 +1670,8 @@ def register() -> None:
                        sample_rate, names, rpm, tag or "", mount or "")
         if action == "update_channel":
             return run(m.update_signal_channel, channel_id, name, None if clear_rpm else (... if rpm is None else rpm),
-                       tag, mount, ... if sample_rate is None else sample_rate)
+                       tag, mount, ... if sample_rate is None else sample_rate,
+                       ... if speed_channel_id is None else speed_channel_id)
         if action == "retire_channel":
             return run(m.retire_signal_channel, channel_id, reason or "")
         if action == "add_snapshot":
@@ -1671,9 +1682,18 @@ def register() -> None:
                        value, values, running, rpm, note or "")
         if action == "add_band":
             return run(m.add_signal_band, channel_id, name or "", low, high, axis, unit or "Hz", alarm_above,
-                       alarm_below)
+                       alarm_below, warn_above, warn_below)
         if action == "add_level":
-            return run(m.add_signal_level, channel_id, name or "", stat, axis, alarm_above, alarm_below)
+            return run(m.add_signal_level, channel_id, name or "", stat, axis, alarm_above, alarm_below, warn_above,
+                       warn_below)
+        if action == "update_band":
+            cleared = set(clear_limits or [])
+            given = {"alarm_above": alarm_above, "alarm_below": alarm_below, "warn_above": warn_above,
+                     "warn_below": warn_below}
+            limits = {k: None if k in cleared else v for k, v in given.items() if k in cleared or v is not None}
+            return run(m.update_signal_band, point_id, name, low, high, axis, unit, **limits)
+        if action == "set_storage_cap":
+            return run(m.set_signal_storage_cap, cap_mb)
         return run(m.remove_signal_band, point_id, reason or "")
 
     @tool("maintenance_signal_data", _READ, "Read signal channels, snapshots and spectra", SIGNAL_DATA)
@@ -1690,6 +1710,8 @@ def register() -> None:
             return run(m.signal_channels, position_id, item_id)
         if action == "channel":
             return run(m.signal_channel, channel_id, _d(snapshots, 100))
+        if action == "storage":
+            return run(m.signal_storage)
         return run(m.signal_snapshot, snapshot_id, axis, f_min, f_max, _d(max_points, 1500), bool(raw))
 
     @tool("maintenance_locations", _WRITE, "Create and change locations", LOCATIONS)

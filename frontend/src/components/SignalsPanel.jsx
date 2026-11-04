@@ -4,14 +4,30 @@ import Plot from "./Plot.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import {
   addSignalBand, createSignalChannel, getSignalChannel, getSignalSpectra, listSignalChannels, previewSignalBand,
-  removeSignalBand,
+  removeSignalBand, updateSignalChannel,
 } from "../api.js";
-import { ACCENT, COLORWAY, DANGER, REFERENCE } from "../plotTheme.js";
+import { ACCENT, COLORWAY, DANGER, REFERENCE, WARNING } from "../plotTheme.js";
 import {
-  DEFAULT_LOOP_MS, SPEEDS, bandLabel, defaultPicks, elapsedFor, fmt, fmtBytes, fmtWhen, frameAt, toOrders,
+  DEFAULT_LOOP_MS, SPEEDS, bandLabel, convertRange, defaultPicks, dropStopped, elapsedFor, fadeWeights, fmt, fmtBytes,
+  fmtWhen, frameAt, hzRange, limitLines, runningOnly, xFor,
 } from "../signals.js";
 import TimeToLimit from "./TimeToLimit.jsx";
+import SignalSnapshotForm from "./SignalSnapshotForm.jsx";
+import SignalBandEditor from "./SignalBandEditor.jsx";
+import SignalStorage from "./SignalStorage.jsx";
 import "./SignalsPanel.css";
+
+const flag = (key, fallback = false) => {
+  try {
+    const v = window.localStorage.getItem(key);
+    return v === null ? fallback : v === "1";
+  } catch {
+    return fallback;
+  }
+};
+const saveFlag = (key, on) => {
+  try { window.localStorage.setItem(key, on ? "1" : "0"); } catch { /* private window: it just won't be remembered */ }
+};
 
 // The Signals tab of the Explorer's panel (Operate › Assets › Explorer): the
 // sensors on a position or an item that send snapshots (vibration bursts,
@@ -30,6 +46,7 @@ export default function SignalsPanel({ row }) {
   const [error, setError] = useState(null);
   const [picked, setPicked] = useState(null); // channel id
   const [adding, setAdding] = useState(false);
+  const [storageTick, setStorageTick] = useState(0);
 
   const load = useCallback(() => {
     setError(null);
@@ -82,7 +99,11 @@ export default function SignalsPanel({ row }) {
           <Link className="sg-help" to={GUIDE}>Guide</Link>
         </div>
       )}
-      {channel && !adding && <ChannelView key={channel.id} summary={channel} onChanged={load} />}
+      <SignalStorage refresh={storageTick} />
+      {channel && !adding && (
+        <ChannelView key={channel.id} summary={channel} all={list}
+                     onChanged={() => { setStorageTick((t) => t + 1); return load(); }} />
+      )}
     </div>
   );
 }
@@ -129,7 +150,7 @@ function NewChannel({ target, onDone, onCancel }) {
   );
 }
 
-function ChannelView({ summary, onChanged }) {
+function ChannelView({ summary, all, onChanged }) {
   const confirm = useConfirm();
   const [ch, setCh] = useState(null);
   const [error, setError] = useState(null);
@@ -143,6 +164,15 @@ function ChannelView({ summary, onChanged }) {
   const [bandSel, setBandSel] = useState("preview");
   const [preview, setPreview] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [xUnit, setXUnit] = useState("Hz"); // the chart's x axis: Hz or orders (multiples of running speed)
+  const [logY, setLogY] = useState(false);
+  const [runOnly, setRunOnly] = useState(() => flag(`signals.runningOnly.${summary.id}`));
+  const [fade, setFade] = useState(false);
+  const [blend, setBlend] = useState(0); // progress through the current hold, for the fade
+  const [view, setView] = useState(null); // the zoomed x range [a, b] in the chart's unit
+  const [detail, setDetail] = useState(null); // { key, data: Map id -> { freqs, amps }, full }
+  const [addingSnap, setAddingSnap] = useState(false);
+  const [editing, setEditing] = useState(null); // point id of the band being edited
 
   const reload = useCallback(() => getSignalChannel(summary.id).then((d) => {
     setCh(d);
@@ -155,14 +185,16 @@ function ChannelView({ summary, onChanged }) {
       if (!live) return;
       const a = d.axes?.[0] || d.snapshots.index[0] && Object.keys(d.snapshots.index[0].levels || {})[0] || "value";
       setAxis(a);
-      const p = defaultPicks(d.snapshots.index);
+      const p = defaultPicks(runningOnly(d.snapshots.index, flag(`signals.runningOnly.${summary.id}`)));
       setPicked(p.picked);
       setBaseline(p.baseline);
     }).catch((e) => live && setError(e.message));
     return () => { live = false; };
   }, [reload]);
 
-  const index = ch?.snapshots.index || [];
+  const allIndex = ch?.snapshots.index || [];
+  const index = useMemo(() => runningOnly(allIndex, runOnly), [allIndex, runOnly]);
+  const hasFlags = allIndex.some((s) => s.running === false);
   const axes = useMemo(() => {
     if (!ch) return [];
     if (ch.axes?.length) return ch.axes;
@@ -222,6 +254,7 @@ function ChannelView({ summary, onChanged }) {
       const { start, from } = clock.current;
       const f = frameAt(times, from + (now - start) * speed, { loopMs: DEFAULT_LOOP_MS, loop });
       setHead(f.index);
+      setBlend(f.progress || 0);
       setCue(f.wrapped);
       if (f.done) {
         setPlaying(false);
@@ -239,8 +272,28 @@ function ChannelView({ summary, onChanged }) {
   const scrub = (i) => {
     setPlaying(false);
     setCue(false);
+    setBlend(0);
     setHead(i);
     need([withSpectrum[i].id]);
+  };
+
+  const toggleRunOnly = (on) => {
+    setRunOnly(on);
+    saveFlag(`signals.runningOnly.${summary.id}`, on);
+    setPlaying(false);
+    setHead(null);
+    const p = defaultPicks(runningOnly(allIndex, on));
+    setPicked(p.picked);
+    setBaseline(p.baseline);
+  };
+
+  // The x axis unit: a picked range follows it (in orders it needs a running speed).
+  const changeUnit = (u) => {
+    if (u === xUnit) return;
+    setRange((r) => convertRange(r, xUnit, u, ch?.rpm));
+    setView(null);
+    setDetail(null);
+    setXUnit(u);
   };
 
   // Spectra for what's picked, when the axis or picks change.
@@ -249,17 +302,46 @@ function ChannelView({ summary, onChanged }) {
     need([...picked, ...(baseline ? [baseline] : [])]);
   }, [axis, ch, picked, baseline, need]);
 
+  // Zoomed in: ask the server for every line in the visible range (the first view is thinned).
+  const speedOf = useCallback((id) => byId.get(id)?.rpm || ch?.rpm || null, [byId, ch]);
+  const viewKey = view ? `${view[0]}|${view[1]}|${xUnit}|${axis}` : null;
+  useEffect(() => {
+    if (!view || !axis || !ch) { setDetail(null); return undefined; }
+    const ids = [...new Set([...picked, ...(baseline ? [baseline] : []), ...(head != null && withSpectrum[head] ? [withSpectrum[head].id] : [])])]
+      .filter((id) => byId.get(id) && byId.get(id).source !== "value");
+    let live = true;
+    const t = setTimeout(async () => {
+      const data = new Map();
+      let full = true;
+      await Promise.all(ids.map(async (id) => {
+        const r = hzRange(view[0], view[1], speedOf(id), xUnit);
+        if (!r) return;
+        try {
+          const got = await getSignalSpectra(summary.id, [id], { axis, maxPoints: 4000, fMin: r.f_min, fMax: r.f_max });
+          const sp = got.spectra[0]?.spectrum;
+          if (sp) {
+            data.set(id, { freqs: sp.freqs, amps: sp.amplitudes[axis] || Object.values(sp.amplitudes)[0] });
+            if (sp.decimated) full = false;
+          }
+        } catch { full = false; }
+      }));
+      if (live) setDetail({ key: viewKey, data, full });
+    }, 350);
+    return () => { live = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewKey, picked, baseline, axis]);
+
   // Preview the dragged range's level over time.
   useEffect(() => {
     if (!range || !axis || !hasSpectra || range.high <= range.low) { setPreview(null); return undefined; }
     let live = true;
     const t = setTimeout(() => {
-      previewSignalBand(summary.id, { low: range.low, high: range.high, axis })
+      previewSignalBand(summary.id, { low: range.low, high: range.high, axis, unit: xUnit === "orders" ? "orders" : "Hz" })
         .then((d) => live && setPreview(d.series))
         .catch(() => live && setPreview(null));
     }, 300);
     return () => { live = false; clearTimeout(t); };
-  }, [range, axis, hasSpectra, summary.id]);
+  }, [range, axis, hasSpectra, summary.id, xUnit]);
 
   if (error) return <p className="sg-note sg-bad" role="alert">Couldn't load this channel: {error}</p>;
   if (!ch || !axis) return <p className="sg-note">Loading…</p>;
@@ -267,9 +349,13 @@ function ChannelView({ summary, onChanged }) {
   const unit = ch.unit;
   const last = index[index.length - 1];
   const sel = (id) => {
+    if (detail && detail.key === viewKey && detail.data.has(id)) return detail.data.get(id);
     const c = cache.current.get(`${axis}|${id}`);
     return c && c !== "loading" ? c : null;
   };
+  const inOrders = xUnit === "orders";
+  const canOrders = !!ch.rpm || allIndex.some((s) => s.rpm);
+  let noSpeed = 0; // snapshots left out of the orders view for lack of a speed
 
   // ---- the spectrum chart
   const traces = [];
@@ -279,45 +365,73 @@ function ChannelView({ summary, onChanged }) {
   const headId = head != null ? withSpectrum[head]?.id : null;
   const labelOf = (id) => fmtWhen(byId.get(id)?.t);
   const dim = (id) => (hot && hot !== id ? 0.15 : 1);
+  const xUnitName = inOrders ? "×" : " Hz";
+  const line = (id, s, extra) => {
+    const x = xFor(s.freqs, speedOf(id), xUnit);
+    if (!x) { noSpeed += 1; return null; }
+    return {
+      type: "scatter", mode: "lines", x, y: s.amps, name: labelOf(id), ...extra,
+      hovertemplate: `%{x:.4g}${xUnitName}<br>%{y:.3g} ${unit}<extra>${labelOf(id)}</extra>`,
+    };
+  };
   for (const e of entries) {
     const s = sel(e.id);
     if (!s) continue;
-    traces.push({
-      type: "scatter", mode: "lines", x: s.freqs, y: s.amps, name: labelOf(e.id), opacity: dim(e.id),
-      line: { color: e.color, width: hot === e.id ? 2.6 : 1.3, dash: e.kind === "baseline" ? "dot" : "solid" },
-      hovertemplate: `%{x:.4g} Hz<br>%{y:.3g} ${unit}<extra>${labelOf(e.id)}</extra>`,
-    });
+    const t = line(e.id, s, { opacity: dim(e.id), line: { color: e.color, width: hot === e.id ? 2.6 : 1.3, dash: e.kind === "baseline" ? "dot" : "solid" } });
+    if (t) traces.push(t);
   }
+  // The head: with the optional fade, the current snapshot gives way to the next in the last part of its hold.
+  const weights = fade && playing ? fadeWeights(blend) : { current: 1, next: 0 };
   const hs = headId ? sel(headId) : null;
   if (hs) {
-    traces.push({
-      type: "scatter", mode: "lines", x: hs.freqs, y: hs.amps, name: labelOf(headId),
-      line: { color: ACCENT, width: 2.2 },
-      hovertemplate: `%{x:.4g} Hz<br>%{y:.3g} ${unit}<extra>${labelOf(headId)}</extra>`,
-    });
+    const t = line(headId, hs, { opacity: weights.current, line: { color: ACCENT, width: 2.2 } });
+    if (t) traces.push(t);
+  }
+  const nextId = weights.next > 0 && head != null ? withSpectrum[head + 1]?.id : null;
+  const ns = nextId ? sel(nextId) : null;
+  if (ns) {
+    const t = line(nextId, ns, { opacity: weights.next, line: { color: ACCENT, width: 2.2 } });
+    if (t) traces.push(t);
   }
   const shapes = range && range.high > range.low
     ? [{ type: "rect", xref: "x", yref: "paper", x0: range.low, x1: range.high, y0: 0, y1: 1,
          fillcolor: "rgba(47,109,246,0.12)", line: { width: 0 }, layer: "below" }] : [];
-  for (const b of ch.bands.filter((x) => !x.retired && x.rule.type === "band" && x.rule.axis === axis && x.rule.in === "Hz")) {
-    shapes.push({ type: "rect", xref: "x", yref: "paper", x0: b.rule.low, x1: b.rule.high, y0: 0, y1: 0.04,
-                  fillcolor: "rgba(20,23,28,0.35)", line: { width: 0 } });
+  for (const b of ch.bands.filter((x) => !x.retired && x.rule.type === "band" && x.rule.axis === axis)) {
+    // A band shows on the strip in the chart's unit: a Hz band in Hz view, an orders band in orders view.
+    // (A band in the other unit is shown at the chart's current speed.)
+    const k = ch.rpm ? ch.rpm / 60 : null;
+    let x0 = b.rule.low;
+    let x1 = b.rule.high;
+    if (b.rule.in !== (inOrders ? "orders" : "Hz")) {
+      if (!k) continue;
+      [x0, x1] = inOrders ? [x0 / k, x1 / k] : [x0 * k, x1 * k];
+    }
+    shapes.push({ type: "rect", xref: "x", yref: "paper", x0, x1, y0: 0, y1: 0.04, fillcolor: "rgba(20,23,28,0.35)", line: { width: 0 } });
   }
   const spectrumLayout = {
     height: 320, dragmode: "select", selectdirection: "h", hovermode: "closest", showlegend: false,
-    xaxis: { title: { text: "Frequency (Hz)" }, rangemode: "tozero" },
-    yaxis: { title: { text: `Amplitude (${unit}, peak)` }, rangemode: "tozero" },
+    uirevision: `${xUnit}|${axis}|${runOnly}`,
+    xaxis: { title: { text: inOrders ? "Order (multiples of running speed)" : "Frequency (Hz)" }, rangemode: "tozero" },
+    yaxis: { title: { text: `Amplitude (${unit}, peak)${logY ? ", log scale" : ""}` }, ...(logY ? { type: "log" } : { rangemode: "tozero" }) },
     shapes, margin: { t: 8 },
   };
   const onSelected = (ev) => {
     const x = ev?.range?.x;
     if (x && x[1] > x[0]) setRange({ low: Math.max(0, Number(fmt(x[0], 4))), high: Number(fmt(x[1], 4)) });
   };
+  // Zooming (the toolbar's, or double-click to reset): remember the visible range so the full detail can be fetched.
+  const onRelayout = (ev) => {
+    if (!ev) return;
+    if (ev["xaxis.autorange"]) { setView(null); return; }
+    const a = ev["xaxis.range[0]"] ?? ev["xaxis.range"]?.[0];
+    const b = ev["xaxis.range[1]"] ?? ev["xaxis.range"]?.[1];
+    if (Number.isFinite(a) && Number.isFinite(b) && b > a) setView([Math.max(0, a), b]);
+  };
 
   // ---- the band chart
   const bands = ch.bands.filter((b) => !b.retired);
   const chosen = bands.find((b) => b.point_id === bandSel) || null;
-  const bandSeries = chosen ? chosen.series : preview;
+  const bandSeries = dropStopped(chosen ? chosen.series : preview, allIndex, runOnly);
   const bandUnit = chosen ? chosen.unit : unit;
   const headTime = headId ? byId.get(headId)?.t : last?.t;
   const markerAt = (series) => {
@@ -334,16 +448,28 @@ function ChannelView({ summary, onChanged }) {
     ...(marker ? [{ type: "scatter", mode: "markers", x: [marker.t], y: [marker.value], name: "Now showing",
                     marker: { size: 12, color: ACCENT, line: { color: "#fff", width: 2 } }, hoverinfo: "skip" }] : []),
   ] : [];
-  const limitShapes = chosen ? [chosen.alarm_above, chosen.alarm_below].filter((v) => v !== null && v !== undefined)
-    .map((v) => ({ type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: v, y1: v, line: { color: DANGER, width: 1, dash: "dash" } })) : [];
+  // Warning (dotted, amber) and alarm (dashed, red) levels, each labelled; the band's changes of range as a marker.
+  const lines = limitLines(chosen);
+  const limitShapes = lines.map((l) => ({
+    type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: l.value, y1: l.value,
+    line: { color: l.kind === "alarm" ? DANGER : WARNING, width: 1.2, dash: l.kind === "alarm" ? "dash" : "dot" },
+  }));
+  const limitNotes = lines.map((l) => ({
+    xref: "paper", x: 1, xanchor: "right", yref: "y", y: l.value, yanchor: "bottom", showarrow: false, text: l.label,
+    font: { size: 11, color: l.kind === "alarm" ? DANGER : WARNING },
+  }));
+  const changes = (chosen?.changes || []).filter((c) => c.t);
+  const changeShapes = changes.map((c) => ({ type: "line", xref: "x", x0: c.t, x1: c.t, yref: "paper", y0: 0, y1: 1, line: { color: REFERENCE, width: 1.2, dash: "dashdot" } }));
+  const changeNotes = changes.map((c) => ({ xref: "x", x: c.t, yref: "paper", y: 1, yanchor: "top", xanchor: "left", showarrow: false, text: `Range changed: ${c.to}`, font: { size: 11, color: REFERENCE } }));
 
   const saveBand = async (form) => {
-    const rpm = ch.rpm;
-    const orders = form.unit === "orders";
+    // The picked range is in the chart's unit. In Hz view it can follow the speed instead (converted here).
+    const k = ch.rpm ? ch.rpm / 60 : null;
+    const toSpeed = !inOrders && form.unit === "orders";
     const body = {
-      name: form.name.trim(), axis, unit: form.unit,
-      low: orders ? Number(fmt(toOrders(range.low, rpm), 4)) : range.low,
-      high: orders ? Number(fmt(toOrders(range.high, rpm), 4)) : range.high,
+      name: form.name.trim(), axis, unit: inOrders || toSpeed ? "orders" : "Hz",
+      low: toSpeed ? Number(fmt(range.low / k, 4)) : range.low,
+      high: toSpeed ? Number(fmt(range.high / k, 4)) : range.high,
     };
     const made = await addSignalBand(summary.id, body);
     await reload();
@@ -366,6 +492,25 @@ function ChannelView({ summary, onChanged }) {
   const more = ch.snapshots.count > ch.snapshots.shown;
   return (
     <>
+      <div className="sg-bar">
+        <button type="button" className="secondary sm" onClick={() => setAddingSnap(true)} disabled={addingSnap}>Add a snapshot from a file</button>
+        {hasFlags && (
+          <label className="sg-check">
+            <input type="checkbox" checked={runOnly} onChange={(e) => toggleRunOnly(e.target.checked)} /> Running only
+          </label>
+        )}
+      </div>
+      {addingSnap && (
+        <SignalSnapshotForm ch={ch} onCancel={() => setAddingSnap(false)}
+                            onDone={async () => {
+                              const d = await reload();
+                              const p = defaultPicks(runningOnly(d.snapshots.index, runOnly));
+                              setPicked(p.picked);
+                              setBaseline(p.baseline);
+                              setHead(null);
+                              onChanged?.();
+                            }} />
+      )}
       <p className="sg-meta">
         {ch.snapshots.count === 0 ? "No snapshots yet." : (
           <>Last snapshot {fmtWhen(last?.t)} · {ch.snapshots.count.toLocaleString("en-GB")} snapshot{ch.snapshots.count === 1 ? "" : "s"}
@@ -383,6 +528,8 @@ function ChannelView({ summary, onChanged }) {
         </div>
       )}
       {notice && <p className="sg-note" role="status">{notice} <button type="button" className="link" onClick={() => setNotice(null)}>Dismiss</button></p>}
+
+      <ChannelSettings ch={ch} all={all} onSaved={async () => { await reload(); onChanged?.(); }} />
 
       {ch.snapshots.count > 0 && !hasSpectra && <ScalarSeries ch={ch} axis={axis} axes={axes} setAxis={setAxis} />}
 
@@ -408,6 +555,18 @@ function ChannelView({ summary, onChanged }) {
               </select>
             </label>
           </div>
+          <div className="sg-toggles">
+            {canOrders && (
+              <div className="sg-seg" role="group" aria-label="Frequency axis">
+                <button type="button" aria-pressed={!inOrders} onClick={() => changeUnit("Hz")}>Hz</button>
+                <button type="button" aria-pressed={inOrders} onClick={() => changeUnit("orders")}>Orders</button>
+              </div>
+            )}
+            <div className="sg-seg" role="group" aria-label="Amplitude axis">
+              <button type="button" aria-pressed={!logY} onClick={() => setLogY(false)}>Linear</button>
+              <button type="button" aria-pressed={logY} onClick={() => setLogY(true)}>Log</button>
+            </div>
+          </div>
           <ul className="sg-legend" aria-label="Snapshots on the chart" onMouseLeave={() => setHot(null)}>
             {entries.map((e) => (
               <li key={e.id}>
@@ -421,11 +580,15 @@ function ChannelView({ summary, onChanged }) {
             ))}
             {headId && <li><span className="sg-chip sg-chip-now"><span className="sg-swatch" style={{ background: ACCENT }} aria-hidden="true" />Showing {labelOf(headId)}</span></li>}
           </ul>
-          <Plot data={traces} layout={spectrumLayout} onSelected={onSelected} download={`${ch.name} spectrum`} />
+          <Plot data={traces} layout={spectrumLayout} onSelected={onSelected} onRelayout={onRelayout} download={`${ch.name} spectrum`} />
           {!traces.length && <p className="sg-note">Loading spectra…</p>}
-          <p className="sg-hint">Drag across the chart to pick a frequency range, or type it below.</p>
+          {inOrders && noSpeed > 0 && <p className="sg-hint">{noSpeed} snapshot{noSpeed === 1 ? " has" : "s have"} no running speed, so {noSpeed === 1 ? "it isn't" : "they aren't"} drawn in orders. Give the channel an rpm or a speed source below.</p>}
+          {view && detail && detail.key === viewKey && (
+            <p className="sg-hint">{detail.full ? "Zoomed: every spectrum line in view is drawn." : "Zoomed: the view is still thinned (keeping the peaks); zoom in further for every line."}</p>
+          )}
+          <p className="sg-hint">Drag across the chart to pick a {inOrders ? "range of orders" : "frequency range"}, or type it below. Use the chart's zoom to see every line in a range.</p>
 
-          <BandForm range={range} setRange={setRange} rpm={ch.rpm} axis={axis}
+          <BandForm range={range} setRange={setRange} rpm={ch.rpm} axis={axis} xUnit={xUnit}
                     onSave={saveBand} />
         </section>
       )}
@@ -443,7 +606,8 @@ function ChannelView({ summary, onChanged }) {
           </div>
           {bandSeries && bandSeries.length > 0 ? (
             <Plot data={bandTraces}
-                  layout={{ height: 200, showlegend: false, hovermode: "closest", margin: { t: 8 }, shapes: limitShapes,
+                  layout={{ height: 200, showlegend: false, hovermode: "closest", margin: { t: 8 }, shapes: [...limitShapes, ...changeShapes],
+                            annotations: [...limitNotes, ...changeNotes],
                             xaxis: { type: "date" }, yaxis: { title: { text: `RMS level (${bandUnit || "units"})` }, rangemode: "tozero" } }}
                   download={`${ch.name} band level`} />
           ) : (
@@ -451,7 +615,7 @@ function ChannelView({ summary, onChanged }) {
           )}
           <Player
             times={times} withSpectrum={withSpectrum} head={head} playing={playing} loop={loop} setLoop={setLoop}
-            speed={speed} setSpeed={setSpeed} cue={cue} loading={loadingAll} onPlay={play}
+            speed={speed} setSpeed={setSpeed} fade={fade} setFade={setFade} cue={cue} loading={loadingAll} onPlay={play}
             onPause={() => setPlaying(false)} onScrub={scrub} />
         </section>
       )}
@@ -461,19 +625,36 @@ function ChannelView({ summary, onChanged }) {
           <h3 className="sg-h">Watch bands and levels</h3>
           <div className="maint-scroll">
             <table className="sg-table">
-              <thead><tr><th>Name</th><th>What it reads</th><th>Latest</th><th /></tr></thead>
+              <thead><tr><th>Name</th><th>What it reads</th><th>Latest</th><th>Levels</th><th /></tr></thead>
               <tbody>
                 {bands.map((b) => (
                   <tr key={b.point_id}>
                     <td>{b.name}</td>
-                    <td>{bandLabel(b.rule)}</td>
+                    <td>{bandLabel(b.rule)}{b.versions ? <span className="sg-hint"> (range changed {b.versions.length - 1} time{b.versions.length === 2 ? "" : "s"}; the trend marks when)</span> : null}</td>
                     <td>{b.latest ? <>{fmt(b.latest.value)} {b.unit}{b.status !== "ok" ? <strong className="sg-bad"> ({b.status})</strong> : null}</> : "–"}</td>
-                    <td><button type="button" className="ghost sm" onClick={() => removeBand(b)}>Stop watching</button></td>
+                    <td>{limitLines(b).length ? limitLines(b).map((l) => l.label).join("; ") : "none"}</td>
+                    <td className="sg-rowact">
+                      <button type="button" className="ghost sm" onClick={() => setEditing(editing === b.point_id ? null : b.point_id)}>Edit</button>
+                      <button type="button" className="ghost sm" onClick={() => removeBand(b)}>Stop watching</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {editing && bands.find((b) => b.point_id === editing) && (
+            <SignalBandEditor band={bands.find((b) => b.point_id === editing)} rpm={ch.rpm}
+                              onCancel={() => setEditing(null)}
+                              onSaved={async (out) => {
+                                await reload();
+                                setEditing(null);
+                                setBandSel(out.point_id);
+                                setNotice(out.new_version
+                                  ? "Saved. The band carries on with its new range from the next snapshot; what it recorded before is unchanged, and the trend marks the change."
+                                  : "Saved.");
+                                onChanged?.();
+                              }} />
+          )}
           <p className="sg-hint">Each band is also a measurement point (see Summary › Measurements), so its alarm limits, trend and projected alarm date work as for any other.</p>
         </section>
       )}
@@ -483,7 +664,8 @@ function ChannelView({ summary, onChanged }) {
   );
 }
 
-function BandForm({ range, setRange, rpm, onSave, axis }) {
+function BandForm({ range, setRange, rpm, onSave, axis, xUnit }) {
+  const orders = xUnit === "orders";
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("Hz");
   const [busy, setBusy] = useState(false);
@@ -496,7 +678,8 @@ function BandForm({ range, setRange, rpm, onSave, axis }) {
     setRange((r) => ({ low: r?.low ?? 0, high: r?.high ?? 0, [k]: v }));
   };
   const suggested = valid
-    ? unit === "orders" ? `${fmt(toOrders(range.low, rpm), 3)}–${fmt(toOrders(range.high, rpm), 3)}× speed` : `${fmt(range.low, 4)}–${fmt(range.high, 4)} Hz`
+    ? orders ? `${fmt(range.low, 4)}–${fmt(range.high, 4)}× speed`
+      : unit === "orders" && rpm ? `${fmt(range.low / (rpm / 60), 3)}–${fmt(range.high / (rpm / 60), 3)}× speed` : `${fmt(range.low, 4)}–${fmt(range.high, 4)} Hz`
     : "";
   const submit = async (e) => {
     e.preventDefault();
@@ -513,10 +696,10 @@ function BandForm({ range, setRange, rpm, onSave, axis }) {
   };
   return (
     <form className="sg-band" onSubmit={submit}>
-      <label className="sg-field">From (Hz)<input type="number" inputMode="decimal" min="0" step="any" value={low} onChange={set("low")} /></label>
-      <label className="sg-field">To (Hz)<input type="number" inputMode="decimal" min="0" step="any" value={high} onChange={set("high")} /></label>
+      <label className="sg-field">From ({orders ? "× speed" : "Hz"})<input type="number" inputMode="decimal" min="0" step="any" value={low} onChange={set("low")} /></label>
+      <label className="sg-field">To ({orders ? "× speed" : "Hz"})<input type="number" inputMode="decimal" min="0" step="any" value={high} onChange={set("high")} /></label>
       <label className="sg-field">Name<input value={name} onChange={(e) => setName(e.target.value)} placeholder={suggested || "Band name"} maxLength={200} /></label>
-      {rpm ? (
+      {rpm && !orders ? (
         <label className="sg-field">Follow
           <select value={unit} onChange={(e) => setUnit(e.target.value)}>
             <option value="Hz">These Hz</option>
@@ -527,12 +710,12 @@ function BandForm({ range, setRange, rpm, onSave, axis }) {
       <button type="submit" disabled={!valid || busy}>{busy ? "Saving…" : "Watch this range"}</button>
       {range && <button type="button" className="ghost" onClick={() => setRange(null)}>Clear</button>}
       {err && <p className="sg-note sg-bad" role="alert">{err}</p>}
-      {valid && <p className="sg-hint sg-full">Watches the RMS level of axis {axis} in this range at every snapshot{unit === "orders" ? ", moving with the speed each snapshot was taken at" : ""}.</p>}
+      {valid && <p className="sg-hint sg-full">Watches the RMS level of axis {axis} in this range at every snapshot{orders || unit === "orders" ? ", moving with the speed each snapshot was taken at" : ""}.</p>}
     </form>
   );
 }
 
-function Player({ times, withSpectrum, head, playing, loop, setLoop, speed, setSpeed, cue, loading, onPlay, onPause, onScrub }) {
+function Player({ times, withSpectrum, head, playing, loop, setLoop, speed, setSpeed, fade, setFade, cue, loading, onPlay, onPause, onScrub }) {
   const n = withSpectrum.length;
   if (n < 2) return <p className="sg-hint">The player needs at least two snapshots.</p>;
   const shown = head ?? n - 1;
@@ -551,10 +734,11 @@ function Player({ times, withSpectrum, head, playing, loop, setLoop, speed, setS
         </select>
       </label>
       <label className="sg-check"><input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} /> Loop</label>
+      <label className="sg-check"><input type="checkbox" checked={fade} onChange={(e) => setFade(e.target.checked)} /> Smooth transition (display only)</label>
       {cue && <span className="sg-cue" role="status">↺ Back to the first snapshot</span>}
       <p className="sg-hint sg-full">
         The whole history plays in about {DEFAULT_LOOP_MS / 1000} seconds. Each snapshot is held for as long, in proportion,
-        as it was until the next, so a long gap shows as a long pause. Nothing is drawn in between.
+        as it was until the next, so a long gap shows as a long pause. Nothing is drawn in between{fade ? ", except that the smooth transition fades one real spectrum into the next. It is a display effect, not a measurement" : ""}.
       </p>
     </div>
   );
@@ -582,5 +766,51 @@ function ScalarSeries({ ch, axis, axes, setAxis }) {
         stat <code>value</code>): it becomes a measurement point. See the <Link to={GUIDE}>guide</Link>.
       </p>
     </section>
+  );
+}
+
+// A channel's running speed and where it comes from: fixed (rpm) or the nearest reading of another channel.
+function ChannelSettings({ ch, all, onSaved }) {
+  const [rpm, setRpm] = useState(ch.rpm ? String(ch.rpm) : "");
+  const [src, setSrc] = useState(ch.speed_channel_id || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const speedChannels = all.filter((c) => c.id !== ch.id && /^(rpm|r\/min|1\/min)$/i.test((c.unit || "").trim()));
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    try {
+      await updateSignalChannel(ch.id, { rpm: rpm === "" ? null : Number(rpm), speed_channel_id: src });
+      await onSaved();
+    } catch (x) {
+      setErr(x.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <details className="sg-settings">
+      <summary>Running speed{ch.rpm ? `: ${fmt(ch.rpm, 4)} rpm` : ""}{ch.speed_channel_id ? " (from a speed channel)" : ""}</summary>
+      <form className="sg-band" onSubmit={save}>
+        <label className="sg-field">Fixed speed, rpm
+          <input type="number" inputMode="decimal" min="0" step="any" value={rpm} onChange={(e) => setRpm(e.target.value)} />
+        </label>
+        <label className="sg-field">Or take the speed from
+          <select value={src} onChange={(e) => setSrc(e.target.value)}>
+            <option value="">No speed channel</option>
+            {speedChannels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+        <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+        {err && <p className="sg-note sg-bad" role="alert">{err}</p>}
+        <p className="sg-hint sg-full">
+          With a speed channel (a channel in rpm that sends single values), each new snapshot uses that channel's reading nearest
+          in time, if there is one within an hour; otherwise the fixed speed. A speed reading that arrives after the snapshot is
+          not applied to it, so send the speed first or together. Bands in multiples of speed and the Orders view use it.
+          {speedChannels.length === 0 ? " There is no channel in rpm on this workspace yet: add one with the unit rpm." : ""}
+        </p>
+      </form>
+    </details>
   );
 }

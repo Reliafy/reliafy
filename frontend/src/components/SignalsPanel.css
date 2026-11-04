@@ -238,3 +238,93 @@
   .sg-play { min-height: 44px; }
   .sg-x { padding: 6px; }
 }
+
+/* ---- slice 2 ---- */
+.sg-inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 8px;
+}
+
+.sg-storage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.sg-over {
+  border-color: var(--warn, #b45309);
+  color: var(--ink);
+}
+
+.sg-results {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--fs-13);
+}
+
+.sg-edit {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.sg-edit h4 {
+  margin: 0 0 8px;
+  font-size: var(--fs-13);
+}
+
+.sg-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 4px 0 6px;
+}
+
+.sg-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.sg-seg button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 4px 10px;
+  min-height: 30px;
+  font-size: var(--fs-13);
+}
+
+.sg-seg button[aria-pressed="true"] {
+  background: var(--acc);
+  color: #fff;
+}
+
+.sg-settings {
+  margin-top: 8px;
+  font-size: var(--fs-13);
+}
+
+.sg-settings summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .sg-seg button { min-height: 40px; padding: 6px 12px; }
+}
+
+.sg-rowact {
+  white-space: nowrap;
+}

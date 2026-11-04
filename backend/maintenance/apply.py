@@ -49,7 +49,8 @@ EXCLUDED = {
     "workspace.import_history", "parts.import_bom", "parts.positions_from_structure", "item_classes.import",
     "item_classes.load_starter", "item_classes.import_conditions", "manufacturers.link_by_name",
     "positions.adopt_placements", "positions.add_sample_truck", "attachments.photo_link",
-    "failure_modes.split_standard", "signals.add_snapshot", "signals.add_band", "signals.add_level",
+    "failure_modes.split_standard", "signals.add_snapshot", "signals.add_band", "signals.add_level", "signals.update_band",
+    "signals.set_storage_cap",
 }
 
 #: Delete-type actions: the argument naming what goes, for the confirm check.

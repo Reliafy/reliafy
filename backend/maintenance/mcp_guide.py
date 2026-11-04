@@ -52,7 +52,12 @@ Watch band: maintenance signals.add_band (channel_id, name, low, high, axis; uni
 the running speed). It reads the RMS in the band at every snapshot, backfills the stored ones, and appears as an \
 ordinary condition measurement point (alarm limits open an inspection; trends and projected alarm dates work). \
 signals.add_level does the same for an overall level (rms, peak, crest, kurtosis, mean, or value for a scalar \
-channel). A band's range can't be edited: remove_band (its values stay) and add another.
+channel). signals.update_band changes a band: name and warn_above / warn_below / alarm_above / alarm_below in \
+place (warn levels only draw lines; alarms open inspections); a new range (low, high, axis, unit) starts a new \
+version from the next snapshot, the old values stay as measured and the trend shows one line with the change \
+marked (add a new band to see a range over earlier snapshots). update_channel speed_channel_id names an rpm channel \
+(single values) whose nearest reading in time, within an hour, is each snapshot's running speed. \
+signal_data.storage gives MB and snapshots stored; signals.set_storage_cap sets a soft warning (deletes nothing).
 Read with maintenance signal_data.channels / channel (bands, their series, recent snapshot headings) / snapshot \
 (snapshot_id = channel id:milliseconds; spectrum thinned keeping peaks, f_min / f_max for detail, raw true for samples).
 Time to the limit: maintenance progression.time_to_limit (point_id of a band or level) fits its own readings with a \
