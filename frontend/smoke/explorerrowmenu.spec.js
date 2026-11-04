@@ -60,7 +60,7 @@ test("Summary row menu: new inside, rename, move to…, retire, pin; the server'
 
   // The menu: the changes, then Isolate and Pin this branch, then Retire (greyed: positions are inside it).
   let menu = await menuOf(page, `Menu circulation ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Rename…", "Move to…", "Isolate", "Pin this branch", /^Retire…/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Rename…", "Move to…", "Isolate", "Pin this branch", /^Retire…/]);
   await expect(menu.getByRole("menuitem", { name: "New position inside" })).toBeFocused();
   const retire = menu.getByRole("menuitem", { name: "Retire…" });
   await expect(retire).toHaveAttribute("aria-disabled", "true");

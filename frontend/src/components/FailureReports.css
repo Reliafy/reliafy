@@ -55,6 +55,8 @@
 .fr-open-actions { white-space: nowrap; }
 .fr-more { margin: 6px 0 0; }
 .fr-empty p:first-child { margin: 8px 0; }
+.fr-empty .section-empty-more { margin: 0; font-size: var(--fs-13); color: var(--muted); }
+.fr-empty .section-empty-more button.link { font-size: var(--fs-13); }
 
 /* Status and consequence pills (the list and the report). */
 .td-pill.st-reported { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }

@@ -154,7 +154,8 @@ function Actions({ report, editable, today, onAdd, onUpdate, busy }) {
   const [ref, setRef] = useState("");
   const actions = report.actions || [];
   const add = async () => {
-    await onAdd({ what: what.trim(), owner: owner.trim(), due: due || null, work_order_ref: ref.trim() });
+    const ok = await onAdd({ what: what.trim(), owner: owner.trim(), due: due || null, work_order_ref: ref.trim() });
+    if (!ok) return; // the reason is said; what was typed stays to try again
     setWhat(""); setOwner(""); setDue(""); setRef("");
   };
   return (
@@ -415,7 +416,9 @@ export default function FailureReportDetail({ id, today, viewOnly, onBack, onSta
   const verSummary = report.verification ? `${resultLabel(report.verification.result)} · ${fmtDate(report.verification.verified_on)}` : "Not yet";
   const closeSummary = report.closed ? signOffText("Closed", report.closed, fmtDate) : closeBlock(report) ? "Not yet" : "Ready to close";
   const p = report.position || {};
-  const path = [...(p.path || []).map((x) => x.name), p.name].filter(Boolean).join(" › ");
+  // The way down to the position (its path may or may not end with itself).
+  const above = (p.path || []).filter((x) => x.id !== p.id).map((x) => x.name);
+  const path = [...above, p.name].filter(Boolean).join(" › ");
 
   return (
     <div className="fr-detail" aria-busy={busy || undefined}>
@@ -481,7 +484,11 @@ export default function FailureReportDetail({ id, today, viewOnly, onBack, onSta
         </Fold>
       )}
 
-      <MaintenancePhotos targetId={report.id} targetName={report.label} targetKind="FailureReport" photos={report.photos || []} onChanged={load} />
+      <MaintenancePhotos targetId={report.id} targetName={report.label} targetKind="FailureReport" photos={report.photos || []} onChanged={load}
+                         related={[
+                           p.id ? { id: p.id, kind: "Position", name: p.name } : null,
+                           report.item?.id && report.item.exists !== false ? { id: report.item.id, kind: "Item", name: report.item.name } : null,
+                         ].filter(Boolean)} />
 
       <section className="card td-card fr-card">
         <h3>History</h3>

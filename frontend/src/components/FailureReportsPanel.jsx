@@ -78,11 +78,13 @@ export default function FailureReportsPanel({ row, display, today, version, repo
     const t = setTimeout(() => setFilters((f) => (f.q === q ? f : { ...f, q })), 250);
     return () => clearTimeout(t);
   }, [q]);
-  // Another row: back to the usual filters.
+  // Another row: back to the usual filters, its list read afresh (the last
+  // row's isn't shown meanwhile).
   useEffect(() => {
-    setFilters(DEFAULT_FILTERS);
+    setFilters((f) => (f === DEFAULT_FILTERS ? f : DEFAULT_FILTERS));
     setQ("");
     setModes(new Map());
+    setData(null);
   }, [scopeKey]);
 
   const fetchList = useCallback((offset = 0) => {

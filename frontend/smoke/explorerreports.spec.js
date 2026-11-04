@@ -37,7 +37,7 @@ const stepper = (page) => page.getByRole("list", { name: "Stage" });
 const status = (page) => page.locator(".fr-h2 .td-pill");
 const said = (page) => page.locator(".fr-msg");
 
-test("file a report from the row menu, see it under the parent, and take it round the loop", async ({ page, request, problems }) => {
+test("Failure reports: file one from the row menu, see it under the parent, and take it round the loop", async ({ page, request, problems }) => {
   const tag = `r${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -153,7 +153,7 @@ test("file a report from the row menu, see it under the parent, and take it roun
   await expectHealthy(page, problems, { label: "failure reports", root: ".tx" });
 });
 
-test("at 400 px the ⋯ button offers Add failure report…, the report is its own screen and nothing scrolls sideways", async ({ page, request, problems }) => {
+test("Failure reports at 400 px: the ⋯ button offers Add failure report…, the report is its own screen and nothing scrolls sideways", async ({ page, request, problems }) => {
   const tag = `q${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
