@@ -145,6 +145,15 @@ points, tasks, failure modes, classes, conditions, groups, connections and
 document links): nothing is erased, and `maintenance list.events`
 shows what changed, with the ids to restore.
 
+Failure reports (the `failure_reports` area: `file`, `update`, `set_status`,
+`investigate`, `add_action`, `update_action`, `verify`; reads `get
+failure_report` and `list failure_reports`) record what failed at a position
+and what was done about it, from the report through investigation, corrective
+actions and verification to closure. A list is scoped to a position (and, by
+default, every position inside it), a location, an item or a part number, or
+the whole workspace, with filters by status, consequence, failure mode and
+date; `maintenance guide` topic `failures` has the loop.
+
 ### Things only the API can do
 
 MCP tool calls carry JSON, not files. These have no MCP twin, on purpose:
