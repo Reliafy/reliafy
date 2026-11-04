@@ -407,16 +407,29 @@ def create_location_task(location_id: str, body: dict = Body(...),
 
 @router.post("/positions/{position_id}/failure-modes")
 def add_failure_mode(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """A failure mode; functional_failure_id puts it under one of the position's functional failures."""
+    """A failure mode; functional_failure_id puts it under one of the position's functional failures,
+    function_id (and no functional failure) directly under one of its functions."""
     return _run(m.add_failure_mode, position_id, body.get("text"), body.get("function", ""), body.get("failure", ""),
-                body.get("consequence", ""), body.get("functional_failure_id"))
+                body.get("consequence", ""), body.get("functional_failure_id"), body.get("function_id"))
 
 
 @router.patch("/failure-modes/{mode_id}")
 def update_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.update_failure_mode, mode_id, **{k: body[k] for k in ("text", "function", "failure", "consequence",
-                                                                         "effects", "notes")
-                                                   if k in body})
+    """The mode's words and RCM analysis (text, function, failure, consequence, effects, notes) and its
+    FME(C)A fields (fmea.FIELDS: severity, occurrence, detection, cause, the effects, the recommended
+    action, the criticality figures; null clears one). With any FME(C)A field the answer carries rpn, ap
+    and cm."""
+    from backend.maintenance import fmea
+
+    def go():
+        words = {k: body[k] for k in ("text", "function", "failure", "consequence", "effects", "notes") if k in body}
+        scores = {k: body[k] for k in fmea.FIELDS if k in body}
+        out = m.update_failure_mode(mode_id, **words) if words or not scores else None
+        if scores:
+            scored = m.score_failure_mode(mode_id, scores)
+            return {**(out or m._mode_view(m._get(mode_id, "FailureMode"))), **scored}
+        return out
+    return _run(go)
 
 
 # ---- failure reports: what failed, and what was done about it ---------------------------
@@ -542,6 +555,30 @@ def position_rcm(position_id: str, scope: str = "below", session=Depends(get_ses
     return _rcm_read(session, ctx, m.rcm_worksheet, position_id, scope)
 
 
+@router.get("/positions/{position_id}/fmea.xlsx")
+def position_fmea_xlsx(position_id: str, scope: str = "below", session=Depends(get_session),
+                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> Response:
+    """The position's FME(C)A as an Excel workbook (scope below: it and everything inside it; this:
+    it alone): one row per failure mode with its scores, action priority and criticality, the
+    columns named as the worksheet import reads them, so the file imports again."""
+    from urllib.parse import quote
+
+    from backend.maintenance import fmea_sheet, rcm_graph
+
+    try:
+        sheet = rcm_graph.resolve(session, m.rcm_worksheet(position_id, scope), ctx.read_owners, ctx.hidden)
+    except NotFound:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+    except Invalid as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+    name = fmea_sheet.filename(sheet["position"]["name"])
+    ascii_name = name.encode("ascii", "ignore").decode() or "FMECA.xlsx"
+    return Response(content=fmea_sheet.workbook(sheet), media_type=fmea_sheet.XLSX, headers={
+        "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}",
+        "Cache-Control": "no-store",
+    })
+
+
 @router.post("/positions/{position_id}/functions")
 def add_function(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """A function with its performance standard and, optionally, the working behind it
@@ -654,8 +691,9 @@ def unlink_functional_failure_cause(ff_id: str, cause_id: str,
 @router.post("/failure-modes/{mode_id}/assign")
 def assign_failure_mode(mode_id: str, body: dict = Body(...),
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Under one of its position's functional failures (functional_failure_id), or none (null)."""
-    return _run(m.assign_failure_mode, mode_id, body.get("functional_failure_id"))
+    """Under one of its position's functional failures (functional_failure_id), directly under one of its
+    functions (function_id, no functional failure between), or none (both null)."""
+    return _run(m.assign_failure_mode, mode_id, body.get("functional_failure_id"), body.get("function_id"))
 
 
 @router.put("/failure-modes/{mode_id}/decision")
@@ -718,10 +756,11 @@ def retire_failure_mode(mode_id: str, m: Maintenance = Depends(maintenance_write
 def move_failure_mode(mode_id: str, body: dict = Body(...),
                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """To another position (position_id), with its decision and tasks, under one of that
-    position's functional failures (functional_failure_id) or none. measurement: what its
-    tasks by use count there when what they count now doesn't fit (409 needs_choice asks)."""
+    position's functional failures (functional_failure_id), directly under one of its functions
+    (function_id) or none. measurement: what its tasks by use count there when what they count
+    now doesn't fit (409 needs_choice asks)."""
     return _run(m.move_failure_mode, mode_id, body.get("position_id"), body.get("functional_failure_id"),
-                body.get("measurement"))
+                body.get("function_id"), body.get("measurement"))
 
 
 @router.post("/functions/{function_id}/move")
@@ -850,10 +889,12 @@ def import_rcm_sheet(position_id: str, file: UploadFile = File(...), sheet: str 
 @router.get("/rcm/options")
 def rcm_options(user: dict = Depends(get_current_user)) -> dict:
     """The RCM decision vocabulary with its hints (consequences, outcomes and
-    run-to-failure bases), for the decision dialog."""
-    from backend.maintenance import rcm_decisions
+    run-to-failure bases), for the decision dialog, and the FME(C)A vocabulary
+    (fmea: the action priority table and bands, the choice lists, the scale
+    hints) for the FME(C)A tab."""
+    from backend.maintenance import fmea, rcm_decisions
 
-    return rcm_decisions.options()
+    return {**rcm_decisions.options(), "fmea": fmea.options()}
 
 
 @router.post("/sample-truck")
@@ -863,6 +904,16 @@ def add_sample_truck(body: dict | None = Body(None), m: Maintenance = Depends(ma
     from backend.maintenance import templates
 
     return _run(templates.add_sample_truck, m, bool((body or {}).get("again")))
+
+
+@router.post("/sample-uav")
+def add_sample_uav(body: dict | None = Body(None), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Copy the sample quadcopter UAV (a tree with every failure mode scored as an FME(C)A) into
+    this workspace's tree. When a copy is there already nothing is added (added false) unless
+    again is true."""
+    from backend.maintenance import templates
+
+    return _run(templates.add_sample_uav, m, bool((body or {}).get("again")))
 
 
 @router.patch("/tasks/{task_id}")

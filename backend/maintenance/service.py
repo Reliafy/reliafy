@@ -54,7 +54,7 @@ from dateutil.relativedelta import relativedelta
 from backend import config
 from backend.maintenance.store import GraphStore, new_id
 from backend.services import time_zones
-from backend.maintenance import rcm_decisions
+from backend.maintenance import fmea, rcm_decisions
 from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
 from backend.maintenance.schedule import Cadence, Season
 from backend.maintenance.signals import PROJECTORS as _SIGNAL_PROJECTORS
@@ -980,6 +980,17 @@ def _failure_mode_assigned(s: GraphStore, org: str, p: dict) -> None:
         s.delete_edge(org, "CAUSED_BY", ff["id"], p["id"])
     if p.get("functional_failure_id"):
         s.put_edge(org, "CAUSED_BY", p["functional_failure_id"], p["id"])
+        s.patch_node(org, p["id"], {"order": p.get("order", 0)})
+
+
+def _failure_mode_placed(s: GraphStore, org: str, p: dict) -> None:
+    """failure_mode.placed: a failure mode directly under a function, with no
+    functional failure between (FAILS_DIRECTLY_AS, the way an FMEA worksheet
+    reads: function › failure mode), or under none (function_id null)."""
+    for fn in s.inn(org, p["id"], "FAILS_DIRECTLY_AS"):
+        s.delete_edge(org, "FAILS_DIRECTLY_AS", fn["id"], p["id"])
+    if p.get("function_id"):
+        s.put_edge(org, "FAILS_DIRECTLY_AS", p["function_id"], p["id"])
         s.patch_node(org, p["id"], {"order": p.get("order", 0)})
 
 
@@ -2481,6 +2492,10 @@ PROJECTORS = {
     "standard.moved": _standard_moved,
     "failure_mode.assigned": _failure_mode_assigned,
     "failure_mode.analysed": _patch,
+    # FME(C)A: a mode's scores and criticality figures (fmea.FIELDS; None clears one).
+    "failure_mode.scored": _patch,
+    # A mode directly under a function, no functional failure between (or under none).
+    "failure_mode.placed": _failure_mode_placed,
     "failure_mode.retired": _flag("retired"),
     # A functional failure caused by one on a position inside its own (or no longer).
     "functional_failure.linked": _functional_failure_linked,
@@ -2771,6 +2786,9 @@ class Maintenance(SignalOps, ProgressionOps):
                 analysis = {k: fm[k] for k in _ANALYSIS if fm.get(k)}
                 if analysis:
                     self._emit("failure_mode.analysed", {"id": mode_ids[fm["id"]], "changes": analysis})
+                scores = {k: fm[k] for k in fmea.FIELDS if fm.get(k) is not None}
+                if scores:
+                    self._emit("failure_mode.scored", {"id": mode_ids[fm["id"]], "changes": scores})
             # Its RCM: the functions, how each fails, and the modes under each.
             for fn in self._functions_of(src["id"]):
                 fn_id = new_id()
@@ -2796,6 +2814,11 @@ class Maintenance(SignalOps, ProgressionOps):
                         if fm["id"] in mode_ids:
                             self._emit("failure_mode.assigned", {"id": mode_ids[fm["id"]], "functional_failure_id": ff_id,
                                                                  "order": fm.get("order") or 0})
+                # The modes directly under the function (no functional failure yet) go the same way.
+                for fm in self._fn_direct_modes(fn["id"]):
+                    if fm["id"] in mode_ids:
+                        self._emit("failure_mode.placed", {"id": mode_ids[fm["id"]], "function_id": fn_id,
+                                                           "order": fm.get("order") or 0})
             for task in tasks:
                 # Every failure mode it prevents that was copied (a mode on another
                 # position inside the branch is copied with that position, so its
@@ -3250,16 +3273,22 @@ class Maintenance(SignalOps, ProgressionOps):
         return sorted(found.values(), key=str.lower)[:MAX_LIST]
 
     def add_failure_mode(self, position_id: str, text, function="", failure="", consequence="",
-                         functional_failure_id=None) -> dict:
+                         functional_failure_id=None, function_id=None) -> dict:
         """A failure mode on a position (how it fails: 'Bearing worn', 'Seal
         leaking'). Failures and tasks can then name it. With
         functional_failure_id (one of the position's), it goes under that
-        functional failure in the position's RCM."""
+        functional failure in the position's RCM; with function_id (one of the
+        position's functions) and no functional failure, directly under that
+        function, as an FMEA worksheet reads (the RCM shows it as "no
+        functional failure yet")."""
         position = self._get(position_id, "Position")
         if position.get("retired"):
             raise Invalid("That position has been retired.")
         text = _text(text, "failure mode", required=True)
+        if functional_failure_id and function_id:
+            raise Invalid("Give a functional failure or a function, not both.")
         ff = self._ff_on(functional_failure_id, position_id) if functional_failure_id else None
+        fn = self._fn_on(function_id, position_id) if function_id else None
         same = next((fm for fm in self._modes_on(position_id) if _same_text(fm["text"], text)), None)
         if same:
             raise Invalid(f"{same['text']} is already a failure mode here (id {same['id']}).")
@@ -3272,7 +3301,28 @@ class Maintenance(SignalOps, ProgressionOps):
         if ff:
             self._emit("failure_mode.assigned", {"id": fid, "functional_failure_id": ff["id"],
                                                  "order": self._next_order(self._ff_modes(ff["id"]))})
+        elif fn:
+            self._emit("failure_mode.placed", {"id": fid, "function_id": fn["id"],
+                                               "order": self._next_order(self._fn_direct_modes(fn["id"]))})
         return self._mode_view(self._get(fid, "FailureMode"))
+
+    def score_failure_mode(self, mode_id: str, changes) -> dict:
+        """A failure mode's FME(C)A: its cause, local and next higher effects,
+        detection method, severity / occurrence / detection (1 to 10), the
+        recommended action (owner, due date, status) and the criticality figures
+        (failure rate and its time unit and source, mode ratio α, loss probability
+        β, operating time t, severity class). ``changes`` names the fields to set
+        (fmea.FIELDS); None or "" clears one. The end effect is the RCM's effects
+        (update_failure_mode). Returns the mode with rpn, ap and cm worked out."""
+        fm, _ = self._live_mode(mode_id)
+        try:
+            cleaned = fmea.validate_changes(changes)
+        except fmea.FmeaError as err:
+            raise Invalid(str(err)) from None
+        changed = {k: v for k, v in cleaned.items() if fm.get(k) != v}
+        if changed:
+            self._emit("failure_mode.scored", {"id": mode_id, "changes": changed})
+        return self.rcm_mode(mode_id)
 
     def _live_mode(self, mode_id: str) -> tuple[dict, dict]:
         fm = self._get(mode_id, "FailureMode")
@@ -3377,6 +3427,27 @@ class Maintenance(SignalOps, ProgressionOps):
         """Whether a failure mode is under one of its position's functional failures."""
         return any(not ff.get("removed") for ff in self.s.inn(self.org, mode_id, "CAUSED_BY"))
 
+    def _fn_direct_modes(self, function_id: str) -> list[dict]:
+        """The live failure modes directly under a function (no functional
+        failure between), in order."""
+        found = [m for m in self.s.out(self.org, function_id, "FAILS_DIRECTLY_AS")
+                 if not m.get("merged_into") and not m.get("retired")]
+        return sorted(found, key=lambda m: (m.get("order") or 0, m["text"].lower()))
+
+    def _fn_on(self, function_id, position_id: str) -> dict:
+        """A live function on that position."""
+        if self.s.node(self.org, str(function_id), "Function") is None:
+            raise Invalid("There's no function with that id in this workspace: pick one from the RCM tree.")
+        fn, position = self._live_function(str(function_id))
+        if position["id"] != position_id:
+            raise Invalid("That function is on another position.")
+        return fn
+
+    def _direct_under(self, mode_id: str) -> str | None:
+        """The live function a failure mode sits directly under, if any."""
+        fns = [fn for fn in self.s.inn(self.org, mode_id, "FAILS_DIRECTLY_AS") if not fn.get("removed")]
+        return fns[0]["id"] if fns else None
+
     def add_function(self, position_id: str, text, standard="", standard_basis="") -> dict:
         """A function the position performs ('Pump 50 L/s of water at 4 bar'), with
         its performance standard if any, and the working behind that standard
@@ -3422,6 +3493,10 @@ class Maintenance(SignalOps, ProgressionOps):
         for ff in self._failures_of(function_id):
             m, n = self._drop_ff(ff)
             moved, links = moved + m, links + n
+        # Its modes with no functional failure between go to unassigned too.
+        for mode in self._fn_direct_modes(function_id):
+            self._emit("failure_mode.placed", {"id": mode["id"], "function_id": None})
+            moved += 1
         docs = self.documents_of(function_id)
         for d in docs:
             self._emit("document.removed", {"id": d["id"], "on": self.today()})
@@ -3714,19 +3789,33 @@ class Maintenance(SignalOps, ProgressionOps):
         return {"removed": ff_id, "position_id": position["id"], "failure_modes_unassigned": moved,
                 "links_removed": links}
 
-    def assign_failure_mode(self, mode_id: str, functional_failure_id) -> dict:
-        """Put a failure mode under one of its position's functional failures (None:
-        under none, unassigned)."""
+    def assign_failure_mode(self, mode_id: str, functional_failure_id, function_id=None) -> dict:
+        """Put a failure mode under one of its position's functional failures, or
+        (function_id, with no functional failure) directly under one of its
+        functions, or under none (both None: unassigned). The same record
+        wherever it goes: its scores, decision and tasks are untouched."""
         fm, position = self._live_mode(mode_id)
+        if functional_failure_id and function_id:
+            raise Invalid("Give a functional failure or a function, not both.")
         target = self._ff_on(functional_failure_id, position["id"]) if functional_failure_id else None
+        fn = self._fn_on(function_id, position["id"]) if function_id else None
         now = [ff["id"] for ff in self.s.inn(self.org, mode_id, "CAUSED_BY") if not ff.get("removed")]
+        direct = self._direct_under(mode_id)
         # Where it was (None: under none), so a batch can undo the change.
-        was = {"from_functional_failure_id": now[0] if now else None}
-        if (target and now == [target["id"]]) or (not target and not now):
+        was = {"from_functional_failure_id": now[0] if now else None, "from_function_id": direct}
+        if (target and now == [target["id"]]) or (fn and direct == fn["id"]) or (not target and not fn
+                                                                              and not now and not direct):
             return self._mode_view(fm) | was
-        self._emit("failure_mode.assigned", {
-            "id": mode_id, "functional_failure_id": target and target["id"],
-        } | ({"order": self._next_order(self._ff_modes(target["id"]))} if target else {}))
+        if direct and not fn:
+            self._emit("failure_mode.placed", {"id": mode_id, "function_id": None})
+        if now and not target:
+            self._emit("failure_mode.assigned", {"id": mode_id, "functional_failure_id": None})
+        if target:
+            self._emit("failure_mode.assigned", {"id": mode_id, "functional_failure_id": target["id"],
+                                                 "order": self._next_order(self._ff_modes(target["id"]))})
+        elif fn:
+            self._emit("failure_mode.placed", {"id": mode_id, "function_id": fn["id"],
+                                               "order": self._next_order(self._fn_direct_modes(fn["id"]))})
         return self._mode_view(self._get(mode_id, "FailureMode")) | was
 
     # ---- a functional failure caused by lower ones -------------------------------------
@@ -4106,6 +4195,8 @@ class Maintenance(SignalOps, ProgressionOps):
         self._emit("failure_mode.restored", {"id": mode_id, "on": self.today()})
         if any(ff.get("removed") for ff in self.s.inn(self.org, mode_id, "CAUSED_BY")):
             self._emit("failure_mode.assigned", {"id": mode_id, "functional_failure_id": None})
+        if any(fn.get("removed") for fn in self.s.inn(self.org, mode_id, "FAILS_DIRECTLY_AS")):
+            self._emit("failure_mode.placed", {"id": mode_id, "function_id": None})
         restored = []
         for t in self.s.inn(self.org, mode_id, "MITIGATES"):
             if t["label"] == "Task" and t.get("retired") and t.get("retired_reason") == "Its failure mode was deleted.":
@@ -4512,6 +4603,7 @@ class Maintenance(SignalOps, ProgressionOps):
         fn, source = self._live_function(function_id)
         target = self._move_target(position_id, source["id"])
         modes = [m for ff in self._failures_of(function_id) for m in self._ff_modes(ff["id"])]
+        modes += self._fn_direct_modes(function_id)
         moving = {m["id"] for m in modes}
         tasks: dict[str, dict] = {}
         for fm in modes:
@@ -4537,6 +4629,12 @@ class Maintenance(SignalOps, ProgressionOps):
         unlinked = self._links_after_move(modes, set(tasks), target)
         for task, fm in unlinked:
             self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": fm["id"], "on": self.today()})
+        # A deleted or merged mode directly under the function stays on the old
+        # position (it's history there), taken from under the function first, so
+        # no edge crosses positions (as the move does for those under its failures).
+        for stale in self.s.out(self.org, function_id, "FAILS_DIRECTLY_AS"):
+            if stale["id"] not in moving:
+                self._emit("failure_mode.placed", {"id": stale["id"], "function_id": None})
         self._emit("function.moved", {
             "id": function_id, "position_id": target["id"], "from_position_id": source["id"],
             "order": self._next_order(self.s.out(self.org, target["id"], "PERFORMS")),
@@ -4552,22 +4650,34 @@ class Maintenance(SignalOps, ProgressionOps):
                 **self._measurement_result(counts, undo_counts),
                 **({"note": " ".join(notes)} if notes else {})}
 
-    def move_failure_mode(self, mode_id: str, position_id, functional_failure_id=None, measurement=None) -> dict:
+    def move_failure_mode(self, mode_id: str, position_id, functional_failure_id=None, function_id=None,
+                          measurement=None) -> dict:
         """Move a failure mode to another position, with its decision and tasks, under
-        one of that position's functional failures (or under none). measurement:
-        what its tasks by use count there (see _measurement_moves)."""
+        one of that position's functional failures, or (function_id) directly under
+        one of its functions, or under none. measurement: what its tasks by use
+        count there (see _measurement_moves)."""
         fm, source = self._live_mode(mode_id)
         target = self._move_target(position_id, source["id"])
-        ff = None
+        if functional_failure_id and function_id:
+            raise Invalid("Give a functional failure or a function, not both.")
+        ff = fn = None
         if functional_failure_id:
             ff, _, on = self._live_ff(functional_failure_id)
             if on["id"] != target["id"]:
                 raise Invalid(f"That functional failure is on {on['name']}, not {target['name']}: pick one of "
                               f"{target['name']}'s, or leave it out to move the mode unassigned.")
+        if function_id:
+            if self.s.node(self.org, str(function_id), "Function") is None:
+                raise Invalid("There's no function with that id in this workspace: pick one from the RCM tree.")
+            fn, on = self._live_function(str(function_id))
+            if on["id"] != target["id"]:
+                raise Invalid(f"That function is on {on['name']}, not {target['name']}: pick one of "
+                              f"{target['name']}'s, or leave it out to move the mode unassigned.")
         tasks = self._check_mode_move(fm, source, target, {mode_id})
         counts, undo_counts = self._measurement_moves(tasks, target, measurement)
         unlinked = self._links_after_move([fm], {t["id"] for t in tasks}, target)
         was = [x["id"] for x in self.s.inn(self.org, mode_id, "CAUSED_BY") if not x.get("removed")]
+        was_fn = self._direct_under(mode_id)
         for task, _ in unlinked:
             self._emit("task.unlinked", {"id": task["id"], "failure_mode_id": mode_id, "on": self.today()})
         self._emit("failure_mode.moved", {
@@ -4575,9 +4685,16 @@ class Maintenance(SignalOps, ProgressionOps):
             "functional_failure_id": ff and ff["id"], "task_ids": sorted(t["id"] for t in tasks), "on": self.today(),
         } | ({"order": self._next_order(self._ff_modes(ff["id"]))} if ff else {})
           | ({"task_changes": counts} if counts else {}))
+        # Its direct placement: under the new position's function, or none (the
+        # old one is on the old position, so the edge mustn't stay).
+        if fn:
+            self._emit("failure_mode.placed", {"id": mode_id, "function_id": fn["id"],
+                                               "order": self._next_order(self._fn_direct_modes(fn["id"]))})
+        elif was_fn:
+            self._emit("failure_mode.placed", {"id": mode_id, "function_id": None})
         return {**self.rcm_mode(mode_id), "position_id": target["id"], "from_position_id": source["id"],
-                # The functional failure it was under (None: none), so a batch can undo the move.
-                "from_functional_failure_id": was[0] if was else None,
+                # The functional failure or function it was under (None: none), so a batch can undo the move.
+                "from_functional_failure_id": was[0] if was else None, "from_function_id": was_fn,
                 "tasks_moved": len(tasks), "tasks_unlinked": [t["id"] for t, _ in unlinked],
                 **self._measurement_result(counts, undo_counts),
                 **({"note": _tasks_unlinked_note(unlinked)} if unlinked else {})}
@@ -4679,15 +4796,17 @@ class Maintenance(SignalOps, ProgressionOps):
 
     def reorder_rcm(self, parent_id, ids) -> dict:
         """Siblings in the RCM tree in the order given: a position's functions, a
-        function's functional failures or a functional failure's failure modes
-        (parent_id says which), every live one named once. Returns the order
-        before too (previous_ids), so a batch can undo it."""
+        function's functional failures (or, named instead, the failure modes
+        directly under it) or a functional failure's failure modes (parent_id
+        says which), every live one named once. Returns the order before too
+        (previous_ids), so a batch can undo it."""
         if not parent_id:
             raise Invalid("Say whose children to reorder (parent_id: a position, a function or a functional failure).")
         node = self.s.node(self.org, str(parent_id))
         if node is None or node["label"] not in ("Position", "Function", "FunctionalFailure"):
             raise Invalid("parent_id is a position (its functions), a function (its functional failures) or a "
                           "functional failure (its failure modes).")
+        wanted = [str(x) for x in (ids or [])]
         if node["label"] == "Position":
             if node.get("retired"):
                 raise Invalid(f"{node['name']} has been retired.")
@@ -4695,10 +4814,16 @@ class Maintenance(SignalOps, ProgressionOps):
         elif node["label"] == "Function":
             self._live_function(node["id"])
             have, what, event = self._failures_of(node["id"]), "functional failures", "functional_failure.updated"
+            # The ids may be its direct failure modes instead: then those are reordered.
+            direct = self._fn_direct_modes(node["id"])
+            if direct and sorted(wanted) == sorted(m["id"] for m in direct):
+                have, what, event = direct, "failure modes", "failure_mode.updated"
+            elif direct and sorted(wanted) != sorted(n["id"] for n in have):
+                raise Invalid("Name each of its functional failures once (ids), in the order wanted; or each of "
+                              "the failure modes directly under it, to order those.")
         else:
             self._live_ff(node["id"])
             have, what, event = self._ff_modes(node["id"]), "failure modes", "failure_mode.updated"
-        wanted = [str(x) for x in (ids or [])]
         if sorted(wanted) != sorted(n["id"] for n in have):
             raise Invalid(f"Name each of its {what} once (ids), in the order wanted.")
         by_id = {n["id"]: n for n in have}
@@ -4793,13 +4918,17 @@ class Maintenance(SignalOps, ProgressionOps):
             # Words an earlier failure mode kept for its function and failure (before
             # functions were on the positions): a hint for where it belongs.
             "was_under": " › ".join(x for x in (fm.get("function"), fm.get("failure")) if x) or None,
+            # Its FME(C)A: the scored fields (null when not set) with rpn, ap and cm
+            # worked out on the read, never stored.
+            **fmea.mode_fields(fm),
         }
 
     def failure_mode_rcm(self, mode_id: str) -> dict:
         """One failure mode's RCM in full, for a reader that has only its id (an
         agent): its words, consequence, decision and tasks (rcm_mode), where it
-        sits (position, functional failure and function, or none) and the tasks on
-        its position or above that could serve it too (available)."""
+        sits (position, functional failure and function; a mode directly under a
+        function has the function and no functional failure; or none) and the
+        tasks on its position or above that could serve it too (available)."""
         fm, position = self._live_mode(mode_id)
         tasks = self.mode_tasks(mode_id)
         ffs = [ff for ff in self.s.inn(self.org, mode_id, "CAUSED_BY") if not ff.get("removed")]
@@ -4808,6 +4937,11 @@ class Maintenance(SignalOps, ProgressionOps):
             ff = self._ff_view(ffs[0])
             fns = self.s.inn(self.org, ffs[0]["id"], "FAILS_AS")
             fn = {"id": fns[0]["id"], "text": fns[0]["text"]} if fns else None
+        else:
+            direct = self._direct_under(mode_id)
+            if direct:
+                node = self._get(direct, "Function")
+                fn = {"id": node["id"], "text": node["text"]}
         return {**self.rcm_mode(mode_id), "position": tasks["position"], "functional_failure": ff,
                 "function": fn, "available": tasks["available"]}
 
@@ -4846,6 +4980,14 @@ class Maintenance(SignalOps, ProgressionOps):
             if src in ffs and dst in modes:
                 ff_of[dst] = src
                 own.setdefault(src, []).append(modes[dst])
+        # Modes directly under a function (no functional failure between): the
+        # FMEA worksheet's rows, the RCM's "no functional failure yet".
+        direct_of: dict[str, str] = {}
+        direct: dict[str, list] = {}
+        for src, dst in s.pairs(org, "FAILS_DIRECTLY_AS"):
+            if src in fns and dst in modes and dst not in ff_of:
+                direct_of[dst] = src
+                direct.setdefault(src, []).append(modes[dst])
         # The links between functional failures, and where each failure is.
         ff_pos = {ff: fn_pos[fn] for ff, fn in ff_fn.items() if fn in fn_pos}
         causes_of: dict[str, list] = {}
@@ -4895,14 +5037,14 @@ class Maintenance(SignalOps, ProgressionOps):
                 if src in docs and dst in fns:
                     docs_of.setdefault(dst, []).append(docs[src])
         order = lambda x: (x.get("order") or 0, x["text"].lower())  # noqa: E731
-        for d in (fns_of, ffs_of, modes_of, own):
+        for d in (fns_of, ffs_of, modes_of, own, direct):
             for v in d.values():
                 v.sort(key=order)
         for v in docs_of.values():
             v.sort(key=lambda d: (d["title"].lower(), d["id"]))
         return {"functions": fns_of, "failures": ffs_of, "modes": modes_of, "ff_of": ff_of, "tasks_of": tasks_of,
                 "serves": serves, "documents": docs_of, "standards_of": standards_of, "breach_of": breach_of,
-                "breached": breached,
+                "breached": breached, "direct_of": direct_of, "direct": direct,
                 "own": own, "mode": modes, "ff": ffs, "fn": fns, "ff_fn": ff_fn, "ff_pos": ff_pos,
                 "causes_of": causes_of, "effects_of": effects_of, "parent": parent,
                 "positions": {p["id"]: p for p in s.nodes(org, "Position")}, "memo": {}}
@@ -4915,7 +5057,10 @@ class Maintenance(SignalOps, ProgressionOps):
         covered in turn, at least one of either: _rcm_covered), and every failure
         mode on the position (under a functional failure or not) has a decision.
         A position with no functions (a parent that only groups others, too) is
-        not analysed."""
+        not analysed; nor is one with a function that has failure modes directly
+        under it and no functional failure yet (an FMEA row the RCM hasn't
+        finished: the function has no functional failure, so it fails the check
+        above whatever else is there)."""
         fns = index["functions"].get(position_id)
         if not fns:
             return False
@@ -4929,13 +5074,18 @@ class Maintenance(SignalOps, ProgressionOps):
         return True
 
     def _position_rcm(self, index: dict, pid: str, full: bool = True) -> dict:
-        ff_of, tasks_of = index["ff_of"], index["tasks_of"]
+        ff_of, direct_of, tasks_of = index["ff_of"], index["direct_of"], index["tasks_of"]
         by_ff: dict[str, list] = {}
+        by_fn: dict[str, list] = {}
         unassigned = []
+        views = []
         for fm in index["modes"].get(pid, []):
             view = self._rcm_mode_view(fm, tasks_of.get(fm["id"], []), _shares(index, fm["id"]))
+            views.append(view)
             if fm["id"] in ff_of:
                 by_ff.setdefault(ff_of[fm["id"]], []).append(view)
+            elif fm["id"] in direct_of:
+                by_fn.setdefault(direct_of[fm["id"]], []).append(view)
             else:
                 unassigned.append(view)
         functions = []
@@ -4946,10 +5096,13 @@ class Maintenance(SignalOps, ProgressionOps):
             docs = index["documents"].get(fn["id"], [])
             functions.append({**self._function_view(fn, full, index["standards_of"].get(fn["id"], []), index["breached"]),
                               "failures": failures,
+                              # The modes directly under it (no functional failure yet), in order.
+                              "modes": by_fn.get(fn["id"], []),
                               "documents": [self._document_view(d, self._DOCUMENT_FIELDS) if full else
                                             {"id": d["id"], "title": d["title"], "size": d.get("size")}
                                             for d in docs]})
-        return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid)}
+        return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid),
+                "fmea": fmea.position_summary(views)}
 
     def rcm_all(self) -> dict:
         """The RCM of every live position that has any (functions or failure
