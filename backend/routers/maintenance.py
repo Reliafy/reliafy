@@ -2229,3 +2229,6 @@ def answer_location(link_id: str, t: str = "", body: dict = Body(...)) -> JSONRe
         except (Invalid, NotFound) as err:
             return JSONResponse(status_code=422, content={"detail": str(err)})
     return JSONResponse(content={"saved": save})
+
+
+from backend.routers import maintenance_progression  # noqa: E402,F401  (adds its routes to the router)

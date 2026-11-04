@@ -2,6 +2,8 @@
 
 ## Unreleased (0.5.0)
 
+- **Time to the limit**: `maintenance progression.time_to_limit` and `progression.series` for a watched
+  band's trend (listed by `reliafy tools`).
 - **Signal channels** (Reliafy Maintenance): `push_snapshot` and `reliafy ingest snapshot FILE.json` send a
   vibration burst, a device spectrum or a scalar value to a channel; the new `maintenance signals.*` and
   `signal_data.*` actions are listed by `reliafy tools`, including `signals.update_band` (change a band

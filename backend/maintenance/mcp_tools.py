@@ -35,6 +35,7 @@ from pydantic import Field
 
 from backend.maintenance import apply as apply_mod
 from backend.maintenance import mcp_guide
+from backend.maintenance.progression import PROGRESSION
 from backend.mcp_actions import Table, check, describe
 from backend.mcp_actions import choice as _choice
 
@@ -751,6 +752,7 @@ TABLES: dict[str, tuple[str, Table]] = {
     "maintenance_reliability": ("action", RELIABILITY), "maintenance_topology": ("action", TOPOLOGY),
     "maintenance_item_classes": ("action", ITEM_CLASSES), "maintenance_manufacturers": ("action", MANUFACTURERS),
     "maintenance_attachments": ("action", ATTACHMENTS), "maintenance_workspace": ("action", WORKSPACE),
+    "maintenance_progression": ("action", PROGRESSION),
 }
 
 
@@ -2078,6 +2080,20 @@ def register() -> None:
             uploads_service.delete(db, upload["_id"])
             return saved
         return run(remove_document_bytes, m, document_id)
+
+    @tool("maintenance_progression", _READ, "Time to the limit for a watched level", PROGRESSION)
+    def maintenance_progression(action: _choice(PROGRESSION), ctx: Context, point_id: str | None = None,
+                                process: Literal["wiener", "gamma"] | None = None, limit: float | None = None,
+                                since: Annotated[str | None, Field(description=(
+                                    "ISO 8601 date or time: use only readings from then (e.g. after a renewal)."))] = None,
+                                confidence: Annotated[float | None, Field(ge=0.5, le=0.99)] = None,
+                                unit_name: str | None = None) -> dict[str, Any]:
+        """When a watched band (or any automated condition point) is expected to reach its alarm limit, with the
+        uncertainty, and the same readings as a degradation series (see maintenance signals.…)."""
+        m = m_for(ctx)
+        if action == "time_to_limit":
+            return run(m.time_to_limit, point_id, process or "wiener", limit, since, 0.8 if confidence is None else confidence)
+        return run(m.progression_series, point_id, since, unit_name)
 
     @tool("maintenance_workspace", _WRITE, "Workspace settings and history import", WORKSPACE)
     def maintenance_workspace(action: _choice(WORKSPACE), ctx: Context,

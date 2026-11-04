@@ -243,6 +243,8 @@ reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
 reliafy ingest snapshot burst.json     # a signal channel's snapshot (Maintenance): see signal-snapshots.md
+reliafy maintenance progression.time_to_limit --point-id BAND_POINT_ID   # when a watched band reaches its limit, with the uncertainty
+reliafy maintenance progression.series --point-id BAND_POINT_ID --json   # the band as unit, age_days, value rows (and CSV)
 ```
 
 Add `--json` to any command for JSON instead of the readable summary. See

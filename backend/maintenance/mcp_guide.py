@@ -60,6 +60,13 @@ marked (add a new band to see a range over earlier snapshots). update_channel sp
 signal_data.storage gives MB and snapshots stored; signals.set_storage_cap sets a soft warning (deletes nothing).
 Read with maintenance signal_data.channels / channel (bands, their series, recent snapshot headings) / snapshot \
 (snapshot_id = channel id:milliseconds; spectrum thinned keeping peaks, f_min / f_max for detail, raw true for samples).
+Time to the limit: maintenance progression.time_to_limit (point_id of a band or level) fits its own readings with a \
+SurPyval degradation process (wiener, or gamma for rising-only wear) and gives the most likely time to reach the alarm \
+limit, a range, and the chance by 7 / 30 / 90 / 180 / 365 days. The range allowing for the fit is separate from the \
+spread of the process; its late end can be null (not bounded) and then you say so. With under 6 readings, a series \
+not heading for the limit or one with no scatter you get status and message and no dates: relay them, never invent \
+a date. It is the time to the limit, not to failure. since starts after a renewal. progression.series gives the \
+readings as unit, age_days, value rows and CSV, to create a dataset for a degradation model.
 """),
     "model": ("The four structures and the item moving through them.", """\
 Four structures, and the items that move through them.

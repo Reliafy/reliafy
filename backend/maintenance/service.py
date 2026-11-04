@@ -58,6 +58,7 @@ from backend.maintenance import rcm_decisions
 from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
 from backend.maintenance.schedule import Cadence, Season
 from backend.maintenance.signals import PROJECTORS as _SIGNAL_PROJECTORS
+from backend.maintenance.progression import ProgressionOps
 from backend.maintenance.signals import SignalOps
 
 logger = logging.getLogger(__name__)
@@ -2403,7 +2404,7 @@ PROJECTORS = {
 
 # ---- the domain ------------------------------------------------------------------
 
-class Maintenance(SignalOps):
+class Maintenance(SignalOps, ProgressionOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,

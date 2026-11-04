@@ -11,6 +11,7 @@ import {
   DEFAULT_LOOP_MS, SPEEDS, bandLabel, convertRange, defaultPicks, dropStopped, elapsedFor, fadeWeights, fmt, fmtBytes,
   fmtWhen, frameAt, hzRange, limitLines, runningOnly, xFor,
 } from "../signals.js";
+import TimeToLimit from "./TimeToLimit.jsx";
 import SignalSnapshotForm from "./SignalSnapshotForm.jsx";
 import SignalBandEditor from "./SignalBandEditor.jsx";
 import SignalStorage from "./SignalStorage.jsx";
@@ -657,6 +658,7 @@ function ChannelView({ summary, all, onChanged }) {
           <p className="sg-hint">Each band is also a measurement point (see Summary › Measurements), so its alarm limits, trend and projected alarm date work as for any other.</p>
         </section>
       )}
+      {bands.length > 0 && <TimeToLimit bands={bands} channelName={ch.name} selectedId={bandSel === "preview" ? null : bandSel} />}
       {more && <p className="sg-hint">Showing the latest {ch.snapshots.shown} of {ch.snapshots.count.toLocaleString("en-GB")} snapshots.</p>}
     </>
   );
