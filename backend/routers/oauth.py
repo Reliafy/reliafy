@@ -18,7 +18,9 @@ Settings:
 
 While the MCP connector is switched off (:mod:`backend.services.mcp_switch`)
 registration, authorization, consent and token requests are refused at once
-(:class:`McpSwitchMiddleware`); discovery and revocation keep working.
+(:class:`McpSwitchMiddleware`); discovery and revocation keep working. The
+Reliafy app's own sign-in (the built-in native client) is not a connector, so
+its requests pass whatever the switch says.
 
 The protocol logic lives in :mod:`backend.services.oauth`.
 """
@@ -29,7 +31,7 @@ import base64
 import html
 import logging
 from pathlib import Path
-from urllib.parse import unquote_plus
+from urllib.parse import parse_qs, unquote_plus
 
 from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -324,17 +326,43 @@ def _switched_off_response(path: str):
     return JSONResponse({"detail": msg}, status_code=403, headers=_NO_STORE)
 
 
+def _native_app_request(scope) -> bool:
+    """Whether a switched path is being used by the Reliafy app's own sign-in,
+    which the switch never refuses: it isn't a connector. Decided from what the
+    ASGI scope carries without reading a body: the client_id in the authorize
+    query, the handle prefix in the consent calls' query (the consent page
+    repeats the handle there), and HTTP Basic client authentication on the
+    token endpoint (the app sends ``reliafy-app:`` with an empty secret)."""
+    path = scope["path"]
+    query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+    first = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+    if path == "/oauth/authorize":
+        return first("client_id") == oauth_service.NATIVE_CLIENT_ID
+    if path in ("/oauth/authorize/request", "/oauth/authorize/decision"):
+        return first("request").startswith(oauth_service.NATIVE_HANDLE_PREFIX)
+    if path == "/oauth/token":
+        for name, value in scope.get("headers") or []:
+            if name == b"authorization" and value[:6].lower() == b"basic ":
+                try:
+                    decoded = base64.b64decode(value[6:].strip()).decode()
+                except (ValueError, UnicodeDecodeError):
+                    return False
+                return unquote_plus(decoded.partition(":")[0]) == oauth_service.NATIVE_CLIENT_ID
+    return False
+
+
 class McpSwitchMiddleware:
     """While the MCP connector is switched off, refuse the connector-only
     OAuth endpoints before routing — no body read, no authentication — so a
-    client stops at once instead of retrying a half-finished sign-in."""
+    client stops at once instead of retrying a half-finished sign-in. The
+    Reliafy app's own sign-in passes (:func:`_native_app_request`)."""
 
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
         if (scope["type"] != "http" or scope["path"] not in _SWITCHED_PATHS
-                or scope["method"] == "OPTIONS" or await mcp_switch.is_on()):
+                or scope["method"] == "OPTIONS" or _native_app_request(scope) or await mcp_switch.is_on()):
             await self.app(scope, receive, send)
             return
         mcp_switch.log_refusal(scope["method"], scope["path"])

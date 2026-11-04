@@ -1870,9 +1870,11 @@ export function getOAuthRequest(handle) {
   return request(`/oauth/authorize/request?request=${encodeURIComponent(handle)}`);
 }
 
-// Approve or deny it as the signed-in user; resolves to { redirect_to }.
+// Approve or deny it as the signed-in user; resolves to { redirect_to }. The
+// handle goes in the query as well as the body: the MCP switch reads it there
+// to let the Reliafy app's own sign-in through while connectors are off.
 export function decideOAuthRequest(handle, approve) {
-  return request("/oauth/authorize/decision", {
+  return request(`/oauth/authorize/decision?request=${encodeURIComponent(handle)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ request: handle, approve }),

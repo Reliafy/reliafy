@@ -8088,6 +8088,8 @@ def get_account(ctx: Context) -> dict[str, Any]:
         "plan_name": _PLAN_NAMES[plan],
         "grandfathered": plan == "agent",
         "operator": admin,
+        # Whose account this is: a phone signed in through OAuth has no other way to ask.
+        "who": {"email": user.get("email"), "name": user.get("name")},
         "tool_calls": calls,
         "storage": storage,
         "simulation_available": billing_service.premium_compute_allowed(db, user),
