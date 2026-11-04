@@ -242,6 +242,7 @@ reliafy document add manual.pdf --to ITEM_ID --kind manual
 reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
+reliafy ingest snapshot burst.json     # a signal channel's snapshot (Maintenance): see signal-snapshots.md
 ```
 
 Add `--json` to any command for JSON instead of the readable summary. See

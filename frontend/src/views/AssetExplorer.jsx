@@ -1273,7 +1273,7 @@ export default function AssetExplorer() {
       </aside>
     </div>
   );
-  const phoneTabs = phone && posRow && posRow.type === "pos" && (
+  const phoneTabs = phone && posRow && tabsFor(posRow).length > 1 && (
     <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label="What to show" className="tp-tabs" />
   );
   // A row picked in the panel (a crumb, a row in "Directly inside").

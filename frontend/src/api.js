@@ -2757,6 +2757,39 @@ export function correctMeasurementReading(readingId, { value, on, at, reason }) 
   return postJson(`/api/maintenance/readings/${readingId}/correct`, at ? { value, at, reason } : { value, on, reason });
 }
 
+// ---- signal channels (Reliafy Maintenance): vibration and other sensors that send snapshots ----
+
+export function listSignalChannels({ positionId, itemId } = {}) {
+  const q = new URLSearchParams();
+  if (positionId) q.set("position_id", positionId);
+  if (itemId) q.set("item_id", itemId);
+  return request(`/api/maintenance/signals/channels?${q}`);
+}
+export function createSignalChannel(body) {
+  return postJson("/api/maintenance/signals/channels", body);
+}
+export function getSignalChannel(id, snapshots = 500) {
+  return request(`/api/maintenance/signals/channels/${id}?snapshots=${snapshots}`);
+}
+// Several snapshots' spectra for one axis, thinned to `maxPoints` keeping the peaks.
+export function getSignalSpectra(channelId, ids, { axis, maxPoints = 700 } = {}) {
+  const q = new URLSearchParams({ ids: ids.join(","), max_points: String(maxPoints) });
+  if (axis) q.set("axis", axis);
+  return request(`/api/maintenance/signals/channels/${channelId}/spectra?${q}`);
+}
+// What a band would have read at every stored snapshot (nothing is saved).
+export function previewSignalBand(channelId, { low, high, axis, unit = "Hz" }) {
+  const q = new URLSearchParams({ low: String(low), high: String(high), unit });
+  if (axis) q.set("axis", axis);
+  return request(`/api/maintenance/signals/channels/${channelId}/band-preview?${q}`);
+}
+export function addSignalBand(channelId, body) {
+  return postJson(`/api/maintenance/signals/channels/${channelId}/bands`, body);
+}
+export function removeSignalBand(pointId) {
+  return postJson(`/api/maintenance/signals/bands/${pointId}/remove`, {});
+}
+
 // ---- item classes and the manufacturer register (Reliafy Maintenance; optional) ----
 
 function putJson(url, body) {

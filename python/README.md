@@ -156,6 +156,7 @@ reliafy document add manual.pdf --to ITEM_ID --kind manual
 reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
+reliafy ingest snapshot burst.json               # a signal channel's snapshot (JSON; docs/signal-snapshots.md)
 reliafy apply ops.json --run                     # maintenance changes in one call (dry run without --run)
 reliafy list kind library --query "check valve" --kind rate   # published failure data
 reliafy get kind library_record --id nrc-inl-2020:ckv-fto

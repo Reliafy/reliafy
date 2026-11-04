@@ -110,7 +110,7 @@ def test_one_tool_with_every_areas_actions(env):
     assert t.input_schema["properties"]["action"]["enum"] == [a for a in table if not a.startswith("graph_")]
     assert set(t.input_schema["properties"]) == {"action", "args"}
     assert "work_orders.close(work_order_id)" in t.description
-    assert len(t.description) < 7_000 and len(json.dumps(t.input_schema)) < 5_000
+    assert len(t.description) < 7_000 and len(json.dumps(t.input_schema)) < 5_500
     for action, (required, optional, _) in table.items():
         own = mcp_server.ACTION_SCHEMAS[("maintenance", action)]
         assert set((required + " " + optional).split()) == set(own["properties"]), action
@@ -286,7 +286,7 @@ def test_the_guide_by_topic(env):
 
     index, pages, bad = _session(env["token"], flow)
     assert set(index["topics"]) == {"start", "model", "register", "plan", "run", "learn", "decide", "data",
-                                    "classes", "conditions", "structure", "apply"}
+                                    "classes", "conditions", "structure", "signals", "apply"}
     apply = pages["apply"]["guide"]
     assert "maintenance apply" in apply and "@p" in apply and "confirm" in apply and "dry_run" in apply
     structure = pages["structure"]["guide"]
