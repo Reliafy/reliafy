@@ -107,6 +107,37 @@ test("the tree pane: open, close, levels, filter, and the panel for the row pick
   await expect(details(page).getByRole("heading", { name: `Tree motor ${tag}` })).toBeVisible();
 });
 
+test("the Summary: facts, work as rows, what's inside sorted, and the row's own changes", async ({ page, request, problems }) => {
+  const tag = `s${Date.now()}`;
+  const p = await plant(request, tag);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`);
+  const panel = details(page);
+  await expect(panel.getByRole("heading", { name: `Tree line ${tag}` })).toBeVisible();
+
+  // Facts: a label/value card; the item fitted links to its page.
+  const facts = panel.getByRole("region", { name: "Facts" });
+  await expect(facts.getByRole("link", { name: `Tree unit ${tag}` })).toHaveAttribute("href", `/asset-register/items/${p.fitted.id}`);
+  await expect(facts).toContainText(`Serial TU-${tag}`);
+
+  // Directly inside: rows with their counts as chips; a row picks it in the tree.
+  const inside = panel.getByRole("region", { name: "Directly inside" });
+  await expect(inside.getByRole("button", { name: `Tree motor ${tag}` })).toBeVisible();
+  await expect(inside.getByText("1 overdue")).toBeVisible();
+  await expect(inside.getByRole("button", { name: "New position inside" })).toBeVisible();
+
+  // The row's own changes at the foot.
+  await expect(panel.getByRole("button", { name: "Rename…" })).toBeVisible();
+
+  // The motor: its task as a row with an Overdue chip; Retire greyed with the reason.
+  await inside.getByRole("button", { name: `Tree motor ${tag}` }).click();
+  await expect(panel.getByRole("heading", { name: `Tree motor ${tag}` })).toBeVisible();
+  const work = panel.getByRole("region", { name: "Work" });
+  await expect(work.getByText("Grease")).toBeVisible();
+  await expect(work.getByText("Overdue", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: /^Retire…/ })).toBeDisabled();
+  await expectHealthy(page, problems, { label: "the Summary tab" });
+});
+
 test("arranged by locations, by items and flat, and the menu follows", async ({ page, request, problems }) => {
   const tag = `b${Date.now()}`;
   const p = await plant(request, tag);
@@ -267,13 +298,13 @@ test("add, edit, cancel and clear a position's operating context", async ({ page
   await expect(card.getByText(CTX_PROMPT)).toBeVisible();
   await expect(card).not.toContainText(/duty/i);
 
-  // Add: in place, Save, "Saved.", kept with its line breaks.
-  await card.getByRole("button", { name: "Add", exact: true }).click();
+  // Add: in place (the add row ending the section), Save, "✓ Saved", kept with its line breaks.
+  await card.getByRole("button", { name: "Add the operating context", exact: true }).click();
   const box = card.getByRole("textbox", { name: "Operating context" });
   await expect(box).toBeFocused();
   await box.fill("Runs 20 hours a day.\nSalt air; summers to 35 °C.");
   await card.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await expect(card.getByRole("status")).toHaveText("✓ Saved");
   await expect(card.locator(".td-ctx-text")).toHaveText("Runs 20 hours a day.\nSalt air; summers to 35 °C.");
   await expect.poll(() => contextOf(request, p.pump.id)).toBe("Runs 20 hours a day.\nSalt air; summers to 35 °C.");
   await expect(panel.locator(".td-desc")).toHaveText("Centrifugal pump, 50 L/s");
@@ -294,28 +325,28 @@ test("add, edit, cancel and clear a position's operating context", async ({ page
   await card.getByRole("button", { name: /^Edit/ }).click();
   await box.fill("Standby pump; started weekly for an hour.");
   await card.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await expect(card.getByRole("status")).toHaveText("✓ Saved");
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
   await expect(card.locator(".td-ctx-text")).toHaveText("Standby pump; started weekly for an hour.");
 
-  // Long text: clamped, More shows it all, Less folds it again.
+  // Long text: clamped, Show all shows it all, Show less folds it again.
   await card.getByRole("button", { name: /^Edit/ }).click();
   await box.fill(Array.from({ length: 12 }, (_, i) => `Line ${i + 1} about the load and the site.`).join("\n"));
   await card.getByRole("button", { name: "Save", exact: true }).click();
-  const more = card.getByRole("button", { name: /^More/ });
+  const more = card.getByRole("button", { name: /^Show all/ });
   await expect(more).toBeVisible();
   const clamped = (await card.locator(".td-ctx-text").boundingBox()).height;
   await more.click();
-  await expect(card.getByRole("button", { name: /^Less/ })).toHaveAttribute("aria-expanded", "true");
+  await expect(card.getByRole("button", { name: /^Show less/ })).toHaveAttribute("aria-expanded", "true");
   expect((await card.locator(".td-ctx-text").boundingBox()).height).toBeGreaterThan(clamped * 1.5);
-  await card.getByRole("button", { name: /^Less/ }).click();
+  await card.getByRole("button", { name: /^Show less/ }).click();
   await expect(more).toBeVisible();
 
   // Clear: back to the empty state.
   await card.getByRole("button", { name: /^Edit/ }).click();
   await box.fill("");
   await card.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(card.getByRole("status")).toHaveText("Cleared.");
+  await expect(card.getByRole("status")).toHaveText("✓ Cleared");
   await expect(card.getByText(CTX_PROMPT)).toBeVisible();
   await expect.poll(() => contextOf(request, p.pump.id)).toBe("");
   await expectHealthy(page, problems, { label: "the operating context card" });
@@ -346,13 +377,13 @@ test("on a phone: the card fits and edits in place", async ({ page, request, pro
   await open(page, `/asset-register/explorer?arrange=positions`);
   await page.getByRole("treeitem", { name: new RegExp(`^Ctx pump ${tag}`) }).locator(".tp-nm").click();
   const card = page.getByRole("region", { name: "Details" }).getByRole("region", { name: "Operating context" });
-  await card.getByRole("button", { name: "Add", exact: true }).click();
+  await card.getByRole("button", { name: "Add the operating context", exact: true }).click();
   await card.getByRole("textbox", { name: "Operating context" }).fill("Outdoors, wet season flooding; 12 hours a day.");
   const save = card.getByRole("button", { name: "Save", exact: true });
   expect((await save.boundingBox()).height).toBeGreaterThanOrEqual(36);
   expect(await page.evaluate(() => document.documentElement.scrollWidth), "the page scrolls sideways").toBeLessThanOrEqual(400);
   await save.click();
-  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await expect(card.getByRole("status")).toHaveText("✓ Saved");
   await expect(card.locator(".td-ctx-text")).toHaveText("Outdoors, wet season flooding; 12 hours a day.");
   expect(await page.evaluate(() => document.documentElement.scrollWidth), "the page scrolls sideways").toBeLessThanOrEqual(400);
   await page.goBack();

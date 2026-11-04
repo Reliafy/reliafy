@@ -118,11 +118,10 @@ test("RCM: the tree and the RCM are one table; Summary: the tree and the page; t
   await expect(page.getByText(`Pump water ${tag}`)).toHaveCount(0);
   await expect(treeitem(page, `Rcm pump ${tag}`)).toHaveAttribute("aria-selected", "true");
   expect(await placeOf(page, treeitem(page, `Rcm pump ${tag}`))).toBe(before);
-  // The plant's long description: two lines, and More opens the whole of it.
+  // The plant's long description: two lines, and Show all opens the whole of it in place.
   await treeitem(page, `Rcm plant ${tag}`).click();
-  await details(page).getByRole("button", { name: /More/ }).click();
-  await expect(page.getByRole("dialog", { name: "Description" })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await details(page).getByRole("button", { name: /^Show all/ }).click();
+  await expect(details(page).getByRole("button", { name: /^Show less/ })).toHaveAttribute("aria-expanded", "true");
   await expectHealthy(page, problems, { label: "explorer one table" });
 });
 
