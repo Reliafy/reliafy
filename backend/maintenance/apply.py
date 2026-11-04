@@ -48,7 +48,7 @@ EXCLUDED = {
     "reliability.fit_class_model", "topology.generate_rbd", "workspace.set_time_zone",
     "workspace.import_history", "parts.import_bom", "parts.positions_from_structure", "item_classes.import",
     "item_classes.load_starter", "item_classes.import_conditions", "manufacturers.link_by_name",
-    "positions.adopt_placements", "positions.add_sample_truck", "attachments.photo_link",
+    "positions.adopt_placements", "positions.add_sample_truck", "positions.add_sample_uav", "attachments.photo_link",
     "failure_modes.split_standard", "signals.add_snapshot", "signals.add_band", "signals.add_level", "signals.update_band",
     "signals.set_storage_cap",
 }
@@ -130,10 +130,12 @@ def _service_undo(area: str, arg: str, a: dict, r: dict) -> dict:
 #: reorder in the same undo batch places it exactly.
 MOVES = {
     "failure_modes.assign": lambda a, r: {"do": "failure_modes.assign", "args": _without_none(
-        failure_mode_id=a.get("failure_mode_id"), functional_failure_id=r.get("from_functional_failure_id"))},
+        failure_mode_id=a.get("failure_mode_id"), functional_failure_id=r.get("from_functional_failure_id"),
+        function_id=r.get("from_function_id"))},
     "failure_modes.move": lambda a, r: {"do": "failure_modes.move", "args": _without_none(
         failure_mode_id=a.get("failure_mode_id"), position_id=r.get("from_position_id"),
-        functional_failure_id=r.get("from_functional_failure_id"), measurement=r.get("undo_measurement"))},
+        functional_failure_id=r.get("from_functional_failure_id"), function_id=r.get("from_function_id"),
+        measurement=r.get("undo_measurement"))},
     "failure_modes.move_function": lambda a, r: {"do": "failure_modes.move_function", "args": _without_none(
         function_id=a.get("function_id"), position_id=r.get("from_position_id"),
         measurement=r.get("undo_measurement"))},
@@ -182,8 +184,9 @@ MOVES = {
 #: that method's positional arguments, by the names the action takes. Nothing
 #: here deletes, so no confirm is needed.
 ARRANGE = {
-    "failure_modes.assign": ("assign_failure_mode", "failure_mode_id functional_failure_id"),
-    "failure_modes.move": ("move_failure_mode", "failure_mode_id position_id functional_failure_id measurement"),
+    "failure_modes.assign": ("assign_failure_mode", "failure_mode_id functional_failure_id function_id"),
+    "failure_modes.move": ("move_failure_mode",
+                           "failure_mode_id position_id functional_failure_id function_id measurement"),
     "failure_modes.move_function": ("move_function", "function_id position_id measurement"),
     "failure_modes.move_functional_failure": ("move_functional_failure",
                                               "functional_failure_id function_id standard_id measurement"),

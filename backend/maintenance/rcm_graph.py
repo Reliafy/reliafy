@@ -32,8 +32,10 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset()) -> dict:
                 rollup[status] += 1
             return {**mode, "decision": {**decision, **resolved}}
 
+        # A function's own modes (directly under it, no functional failure yet) count too.
         functions = [{**fn, "failures": [{**ff, "modes": [mode_out(m) for m in ff["modes"]]}
-                                         for ff in fn["failures"]]} for fn in p["functions"]]
+                                         for ff in fn["failures"]],
+                      "modes": [mode_out(m) for m in fn.get("modes") or []]} for fn in p["functions"]]
         unassigned = [mode_out(m) for m in p["unassigned"]]
         for k, v in rollup.items():
             total[k] += v
@@ -68,19 +70,23 @@ def gaps(sheet: dict, limit: int = GAPS_LIMIT) -> dict:
     with no decision (undecided), with no task (no_task: every live mode with
     none, with its outcome, so a run-to-failure one shows as such), hidden
     ones with no failure-finding task, decisions whose evidence needs a look
-    (contradicted, inconclusive or gone); functions with no functional
-    failure, performance standards no functional failure breaches, and
-    functional failures with no failure modes and nothing linked below. At
-    most ``limit`` rows a list (counts are always whole)."""
+    (contradicted, inconclusive or gone); failure modes directly under a
+    function with no functional failure yet (no_functional_failure: an FMEA
+    row the RCM hasn't finished); functions with no functional failure,
+    performance standards no functional failure breaches, and functional
+    failures with no failure modes and nothing linked below. At most
+    ``limit`` rows a list (counts are always whole)."""
     lists: dict[str, list] = {k: [] for k in (
-        "undecided", "no_task", "hidden_without_failure_finding", "evidence_to_check", "functions_without_failure",
-        "standards_without_failure", "functional_failures_empty")}
+        "undecided", "no_task", "hidden_without_failure_finding", "evidence_to_check", "no_functional_failure",
+        "functions_without_failure", "standards_without_failure", "functional_failures_empty")}
 
-    def mode_row(mode, pos, ff):
+    def mode_row(mode, pos, ff, fn=None):
         d = mode.get("decision") or {}
         row = {"id": mode["id"], "text": mode["text"], "position": pos,
                "functional_failure": {"id": ff["id"], "text": ff["text"]} if ff else None,
                "consequence": mode.get("consequence"), "outcome": d.get("outcome")}
+        if fn is not None:
+            lists["no_functional_failure"].append(row | {"function": fn})
         if not d:
             lists["undecided"].append(row)
         tasks = mode.get("tasks") or []
@@ -98,6 +104,8 @@ def gaps(sheet: dict, limit: int = GAPS_LIMIT) -> dict:
             fn_ref = {"id": fn["id"], "text": fn["text"]}
             if not fn.get("failures"):
                 lists["functions_without_failure"].append({**fn_ref, "position": pos})
+            for mode in fn.get("modes") or []:  # directly under the function, no functional failure between
+                mode_row(mode, pos, None, fn_ref)
             for st in fn.get("standards") or []:
                 if not st.get("failures"):
                     lists["standards_without_failure"].append(
