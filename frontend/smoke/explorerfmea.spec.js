@@ -74,11 +74,16 @@ test("FME(C)A: the worksheet on the tree; a score edited in place changes the RP
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=fmea`);
   await expect(table(page)).toBeVisible();
   await expect(page).toHaveURL(/tab=fmea/);
-  // The worksheet's columns, in order; the function's modes right under it (no functional failure level).
+  // The worksheet's columns, in order (at 1440 px the usual set leaves the local and next
+  // higher effects and the owner to the Columns menu); the function's modes right under it
+  // (no functional failure level).
   const heads = (await table(page).getByRole("columnheader").allInnerTexts()).map((t) => t.trim());
-  expect(heads.slice(0, 11)).toEqual(["Function or failure mode", "Functional failure", "Cause", "Local effect", "Next higher effect", "End effect", "Detection method", "S", "O", "D", "RPN"]);
-  expect(heads).toContain("AP");
-  expect(heads).toContain("Recommended action");
+  expect(heads.slice(0, 13)).toEqual(["Function or failure mode", "Functional failure", "Cause", "End effect", "Detection method", "S", "O", "D", "RPN", "AP",
+    "Recommended action", "Due", "Status"]);
+  await page.getByRole("button", { name: "Columns" }).click();
+  await expect(page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Local effect" })).not.toBeChecked();
+  await expect(page.getByRole("group", { name: "Columns to show" }).getByRole("checkbox", { name: "Mode criticality (Cm)" })).not.toBeChecked();
+  await page.keyboard.press("Escape");
   const fn = trow(page, `^Function: Pump water ${tag}`);
   await expect(fn).toBeVisible();
   const mode = trow(page, `^Failure mode: Bearing seizes ${tag}`);
