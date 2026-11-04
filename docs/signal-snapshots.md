@@ -84,6 +84,21 @@ A **watch band** is a frequency range (Hz, or multiples of the running speed). A
 each snapshot it adds the RMS inside the range to an ordinary measurement point, so
 alarm limits, trends and projected alarm dates work unchanged.
 
+## Changing a band, levels, speed and storage
+
+* A band's name and its levels change in place. **Warn** levels draw a line on the
+  band's chart; **alarm** levels also open an inspection (the point's own alarm limits).
+* A **new range** makes a new version of the band: the old values stay as measured,
+  the new range applies from the next snapshot, and the trend shows the change. The
+  stored snapshots are not re-read; add a new band to see another range over them.
+* A channel may name a **speed channel**, a channel in rpm that sends single values.
+  A snapshot without its own `rpm` takes the nearest reading of that channel within an
+  hour, else the channel's fixed rpm. A speed reading that arrives later is not applied
+  to a snapshot already stored.
+* `GET /api/maintenance/signals/storage` (or `signal_data.storage`) gives the MB and
+  number of snapshots stored; `signals.set_storage_cap` sets a level at which the
+  Signals tab warns. Nothing is deleted.
+
 ## Limits
 
 * One snapshot is at most 5 MB of JSON (about 500,000 numbers across all axes). A

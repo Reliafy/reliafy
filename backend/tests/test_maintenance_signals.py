@@ -224,3 +224,128 @@ def test_replay_rebuilds_the_same_graph(pump):
     m.retire_signal_channel(ch["id"], "moved")
     with pytest.raises(Invalid):
         m.add_signal_snapshot(_when(1), ch["id"], axes={"X": [0.1] * 100})
+
+
+# ---- slice 2: editable bands, warning levels, storage, speed tag ---------------------------------
+
+
+def _shot(m, ch, hours_ago, freq=50, amp=0.5, **kw):
+    return m.add_signal_snapshot(_when(hours_ago), ch["id"], axes={"X": _wave(freq, amp).tolist()}, **kw)
+
+
+def test_a_new_range_makes_a_new_version_and_keeps_history(m):
+    pos = m.create_position("Fan")
+    ch = m.add_signal_channel(pos["id"], None, "Casing", "g", sample_rate=FS, axes=["X"], rpm=3000)
+    _shot(m, ch, 3, 50)
+    _shot(m, ch, 2, 50)
+    band = m.add_signal_band(ch["id"], "1x", 45, 55, axis="X")
+    old_id = band["point_id"]
+    assert band["history_written"] == 2
+    out = m.update_signal_band(old_id, low=90, high=110)
+    assert out["new_version"] and out["point_id"] != old_id
+    # the old version is retired and its recorded values untouched
+    assert m.s.node(ORG, old_id)["retired"] and m.s.series.latest(ORG, old_id)["value"] > 0.3
+    _shot(m, ch, 1, 100, 0.2)
+    view = m.signal_channel(ch["id"])
+    assert len(view["bands"]) == 1  # one band, not two
+    b = view["bands"][0]
+    assert b["point_id"] == out["point_id"] and len(b["series"]) == 3
+    assert b["series"][0]["value"] == pytest.approx(0.5 / np.sqrt(2), rel=0.02)  # as measured then
+    assert b["series"][2]["value"] == pytest.approx(0.2 / np.sqrt(2), rel=0.02)
+    assert len(b["versions"]) == 2 and len(b["changes"]) == 1 and b["changes"][0]["t"]
+    # a second edit chains on
+    m.update_signal_band(out["point_id"], name="2x", high=120)
+    again = m.signal_channel(ch["id"])["bands"][0]
+    assert again["name"] == "2x" and len(again["versions"]) == 3 and len(again["series"]) == 3
+    # replay gives the same graph and the same view
+    before, shown = m.s.snapshot(ORG), m.signal_channel(ch["id"])["bands"]
+    m.s.rebuild()
+    assert m.s.snapshot(ORG) == before and m.signal_channel(ch["id"])["bands"] == shown
+
+
+def test_name_and_limits_change_in_place(pump):
+    m, _, ch = pump
+    band = m.add_signal_band(ch["id"], "1x", 45, 55, axis="X")
+    out = m.update_signal_band(band["point_id"], name="Running speed", alarm_above=0.4, warn_above=0.3)
+    assert not out["new_version"] and out["point_id"] == band["point_id"]
+    b = out["band"]
+    assert (b["name"], b["alarm_above"], b["warn_above"]) == ("Running speed", 0.4, 0.3)
+    cleared = m.update_signal_band(band["point_id"], warn_above=None)["band"]
+    assert cleared["warn_above"] is None and cleared["alarm_above"] == 0.4
+    with pytest.raises(Invalid, match="warning must be below"):
+        m.update_signal_band(band["point_id"], warn_above=0.5)
+    typed = m.add_point(m.create_position("x")["id"], "Hours")
+    with pytest.raises(Invalid, match="isn't a band"):
+        m.update_signal_band(typed.get("id") or typed["point_id"])
+    before = m.s.snapshot(ORG)
+    m.s.rebuild()
+    assert m.s.snapshot(ORG) == before
+
+
+def test_an_unchanged_range_makes_no_version_and_a_busy_band_is_refused(pump):
+    m, _, ch = pump
+    band = m.add_signal_band(ch["id"], "1x", 45, 55, axis="X", alarm_above=0.2)
+    assert not m.update_signal_band(band["point_id"], low=45, high=55)["new_version"]
+    m.add_signal_snapshot(_when(1), ch["id"], axes={"X": _wave(50, 0.5).tolist()})  # opens an alarm work order
+    with pytest.raises(Invalid, match="open alarm work order"):
+        m.update_signal_band(band["point_id"], low=40)
+    assert len(m.signal_channel(ch["id"])["bands"]) == 1  # nothing half-made
+
+
+def test_warning_levels_on_new_bands_and_levels(pump):
+    m, _, ch = pump
+    b = m.add_signal_band(ch["id"], "1x", 45, 55, axis="X", alarm_above=0.4, warn_above=0.25)["band"]
+    assert b["warn_above"] == 0.25
+    lv = m.add_signal_level(ch["id"], "RMS", "rms", axis="X", warn_above=0.1)["band"]
+    assert lv["warn_above"] == 0.1 and lv["alarm_above"] is None
+    with pytest.raises(Invalid):
+        m.add_signal_band(ch["id"], "bad", 1, 2, axis="X", alarm_above=0.4, warn_above=0.5)
+
+
+def test_storage_counts_and_warns_softly_and_deletes_nothing(pump):
+    m, _, ch = pump
+    assert m.signal_storage()["snapshots"] == 0 and m.signal_storage()["cap_mb"] is None
+    _shot(m, ch, 2)
+    _shot(m, ch, 1)
+    st = m.signal_storage()
+    assert st["snapshots"] == 2 and st["bytes"] > 0 and not st["over_cap"] and "warning" not in st
+    capped = m.set_signal_storage_cap(1)
+    assert capped["cap_mb"] == 1 and not capped["over_cap"]
+    for h in range(3, 40):  # noise does not compress: about 60 kB each
+        m.add_signal_snapshot(_when(h + 0.5), ch["id"], axes={"X": _wave(50, 0.5, noise=1.0, seed=h).tolist()})
+    over = m.signal_storage()
+    assert over["over_cap"] and "Nothing is deleted" in over["warning"] and over["snapshots"] == 39
+    assert m.s.snapshots.stats(ORG, ch["id"])["count"] == 39
+    assert m.set_signal_storage_cap(None)["cap_mb"] is None
+    before = m.s.snapshot(ORG)
+    m.s.rebuild()
+    assert m.s.snapshot(ORG) == before
+
+
+def test_speed_comes_from_a_tagged_speed_channel(m):
+    pos = m.create_position("Motor")
+    vib = m.add_signal_channel(pos["id"], None, "Vib", "g", sample_rate=FS, axes=["X"], rpm=1500)
+    spd = m.add_signal_channel(pos["id"], None, "Speed", "rpm")
+    bad = m.add_signal_channel(pos["id"], None, "Temp", "C")
+    with pytest.raises(Invalid, match="rpm"):
+        m.update_signal_channel(vib["id"], speed_channel_id=bad["id"])
+    with pytest.raises(Invalid, match="itself"):
+        m.update_signal_channel(vib["id"], speed_channel_id=vib["id"])
+    assert m.update_signal_channel(vib["id"], speed_channel_id=spd["id"])["speed_channel_id"] == spd["id"]
+    for hours, rpm in ((2.0, 1470.0), (1.0, 1490.0)):
+        m.add_signal_snapshot(_when(hours), spd["id"], value=rpm)
+    band = m.add_signal_band(vib["id"], "1x", 0.9, 1.1, axis="X", unit="orders")
+    out = _shot(m, vib, 1.1, 24.8, 0.5)  # 1490 rpm = 24.83 Hz; nearest reading is the 1 h one (6 min away)
+    snap = m.signal_snapshot(out["snapshot_id"])
+    assert snap["rpm"] == 1490.0 and snap["speed_from"]["channel_id"] == spd["id"]
+    assert out["derived"][0]["value"] == pytest.approx(0.5 / np.sqrt(2), rel=0.03)
+    # an explicit rpm wins; no reading nearby falls back to the channel's rpm with a note
+    assert m.signal_snapshot(_shot(m, vib, 1.2, rpm=1000)["snapshot_id"])["rpm"] == 1000
+    far = _shot(m, vib, 30)
+    assert m.signal_snapshot(far["snapshot_id"])["rpm"] == 1500 and any("speed" in n for n in far["notes"])
+    assert band["point_id"]
+    m.update_signal_channel(vib["id"], speed_channel_id="")
+    assert m.signal_channel(vib["id"])["speed_channel_id"] is None
+    before = m.s.snapshot(ORG)
+    m.s.rebuild()
+    assert m.s.snapshot(ORG) == before

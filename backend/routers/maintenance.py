@@ -1010,7 +1010,7 @@ def signal_channel(channel_id: str, snapshots: int = 300, m: Maintenance = Depen
 @router.patch("/signals/channels/{channel_id}")
 def update_signal_channel(channel_id: str, body: dict = Body(...),
                           m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    kwargs = {k: body[k] for k in ("name", "rpm", "tag", "mount", "sample_rate") if k in body}
+    kwargs = {k: body[k] for k in ("name", "rpm", "tag", "mount", "sample_rate", "speed_channel_id") if k in body}
     return _run(m.update_signal_channel, channel_id, **kwargs)
 
 
@@ -1046,13 +1046,31 @@ def preview_signal_band(channel_id: str, low: float, high: float, axis: str | No
 @router.post("/signals/channels/{channel_id}/bands")
 def add_signal_band(channel_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.add_signal_band, channel_id, body.get("name", ""), body.get("low"), body.get("high"),
-                body.get("axis"), body.get("unit") or "Hz", body.get("alarm_above"), body.get("alarm_below"))
+                body.get("axis"), body.get("unit") or "Hz", body.get("alarm_above"), body.get("alarm_below"),
+                body.get("warn_above"), body.get("warn_below"))
 
 
 @router.post("/signals/channels/{channel_id}/levels")
 def add_signal_level(channel_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.add_signal_level, channel_id, body.get("name", ""), body.get("stat"), body.get("axis"),
-                body.get("alarm_above"), body.get("alarm_below"))
+                body.get("alarm_above"), body.get("alarm_below"), body.get("warn_above"), body.get("warn_below"))
+
+
+@router.patch("/signals/bands/{point_id}")
+def update_signal_band(point_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Change a band's name, limits or range (a new range starts a new version from now)."""
+    keys = ("name", "low", "high", "axis", "unit", "alarm_above", "alarm_below", "warn_above", "warn_below")
+    return _run(m.update_signal_band, point_id, **{k: body[k] for k in keys if k in body})
+
+
+@router.get("/signals/storage")
+def signal_storage(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.signal_storage)
+
+
+@router.put("/signals/storage-cap")
+def set_signal_storage_cap(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    return _run(m.set_signal_storage_cap, body.get("cap_mb"))
 
 
 @router.post("/signals/bands/{point_id}/remove")
