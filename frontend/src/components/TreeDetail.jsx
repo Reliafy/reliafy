@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
+import FailureReportsPanel from "./FailureReportsPanel.jsx";
 import ClampText from "./ClampText.jsx";
 import { DueChip, fmtDate, fmtDated } from "./MaintenanceParts.jsx";
 import { PinIcon } from "./OutlineBits.jsx";
@@ -17,8 +18,11 @@ import { createRecent } from "../recentCache.js";
 // fitted to, or the place it's kept). "Open the full page" goes to the row's
 // own page, where it's edited (an item's history and fitments are there).
 //
-// The panel has tabs (explorerTabs.js): Summary (the above) for every row, and
-// RCM for a position. On a wide screen the heading and the tabs (SlimHeader and
+// The panel has tabs (explorerTabs.js): Summary (the above) for every row,
+// RCM for a position, and Failure reports (FailureReportsPanel: what has
+// failed at the row and below it, and what was done about it; `reports` is
+// the page's: the report open, how to open one, file one, and the tree read
+// again). On a wide screen the heading and the tabs (SlimHeader and
 // HeaderTabs) sit in the two slim rows over the tree on both tabs, so they stay
 // put when the tab changes; the panel itself is then `headless`. On the RCM tab
 // the tree and the RCM are one table (TreePane with its columns).
@@ -366,9 +370,11 @@ export function HeaderTabs({ row, tab, onTab }) {
 
 const TreeDetail = forwardRef(function TreeDetail({
   display, row, today, onSelect, onCrumb, above, pin, back, version, empty, tab, onTab, fullScreenButton, headless = false,
+  reports = null,
 }, headingRef) {
   if (!row) return <div className="td">{back}{empty}</div>;
   const tabs = tabsFor(row);
+  const shown = shownTab(tab, row);
   return (
     <div className="td">
       {back}
@@ -381,8 +387,10 @@ const TreeDetail = forwardRef(function TreeDetail({
         </div>
       )}
       <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
-           aria-labelledby={tabs.length > 1 ? "td-tab-summary" : undefined}>
-        <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />
+           aria-labelledby={tabs.length > 1 ? `td-tab-${shown}` : undefined}>
+        {shown === "reports" && reports
+          ? <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} />
+          : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} />}
       </div>
     </div>
   );
