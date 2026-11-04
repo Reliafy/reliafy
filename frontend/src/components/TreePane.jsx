@@ -92,7 +92,7 @@ const ICON = {
 export function RowIcon({ r }) {
   // The "Not under a functional failure" and "No standard" headings take the
   // icon of what's under them.
-  if (isRcmRow(r)) return <LevelIcon type={r.type === "unassigned" ? "fail" : r.type === "nostd" ? "std" : r.type} className="tp-ic" />;
+  if (isRcmRow(r)) return <LevelIcon type={r.type === "unassigned" || r.type === "nofail" ? "fail" : r.type === "nostd" ? "std" : r.type} className="tp-ic" />;
   let kind = r.type;
   // A position is a position: the icon only says whether an item is fitted.
   // The lines icon is for the pane's own headings ("No home yet" and so on).
@@ -276,12 +276,15 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
     return <div {...common}><TreeBit r={r} v={v} open={open} phone={phone} query={query} rcm={rcm} pinRoot={pinRoot} />{unpin}{more}</div>;
   }
   if (phone) {
-    const line = r.type === "pos" ? posLine(r, table.hint === r.key) : phoneLine(cellRow(r));
+    // The second line: the page's own words for the tab (the FME(C)A's
+    // scores), else the RCM's main columns, or a position's own modes.
+    const line = table.phoneLine ? (r.type === "pos" && table.hint === r.key ? NO_FUNCTIONS_PHONE : table.phoneLine(cellRow(r)))
+      : r.type === "pos" ? posLine(r, table.hint === r.key) : phoneLine(cellRow(r));
     return (
       <div {...common}>
         <div className="tt-l1">
           <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pinRoot={pinRoot} onGoto={table.onGoto} />
-          {isRcmRow(r) && <span className="tt-st"><PhoneStatus r={cellRow(r)} /></span>}
+          {(isRcmRow(r) || (table.fmea && r.type === "pos")) && <span className="tt-st"><PhoneStatus r={cellRow(r)} fmea={!!table.fmea} /></span>}
           {unpin}{more}
         </div>
         {line && <div className="tt-l2" style={{ paddingLeft: Math.min(v.depth, 8) * 14 + 40 }}>{line}</div>}
@@ -538,7 +541,8 @@ export default function TreePane({
   );
   const dim = (key) => filter && !filter.match.has(key);
   const levelsOn = mode !== "flat" && mode !== "items";
-  const chipList = CHIPS.filter((c) => (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || table));
+  // A tab's own chips (the RCM's, the FME(C)A's) show on that tab only.
+  const chipList = CHIPS.filter((c) => (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || (table && (!c.tab || c.tab === (table.tab || "rcm")))));
   const status = <p className="tp-status" role="status" title={statusText || undefined}>{statusText}</p>;
   const titleRow = (
     <div className="tp-title-row">
@@ -622,13 +626,27 @@ export default function TreePane({
     <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable || pinHead ? undefined : "true"}
          style={{ width: wideTable ? table.total : width, height: HEAD_H }}>
       <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}
-           aria-label={wideTable && pinHead ? TREE_HEAD : undefined}>
-        {pinHead || (wideTable ? TREE_HEAD : treeLabel || title)}
+           aria-label={wideTable && pinHead ? table.treeHead || TREE_HEAD : undefined}>
+        {pinHead || (wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
       </div>
-      {wideTable && table.cols.map((c) => (
-        <div key={c.id} role="columnheader" className={"tt-h" + (c.align === "num" ? " num" : "")} style={{ width: table.widths[c.id] }}
-             title={c.title ? `${c.label}: ${c.title}` : c.label}>{c.label}</div>
-      ))}
+      {wideTable && table.cols.map((c) => {
+        // With `onSort` (the FME(C)A tab) a header with something to sort by
+        // is a button: highest first, then lowest, then the worksheet's own order.
+        const sortable = !!table.onSort && !!c.sort;
+        const sorted = sortable && table.sort?.col === c.id ? table.sort.dir : 0;
+        return (
+          <div key={c.id} role="columnheader" className={"tt-h" + (c.align === "num" ? " num" : "") + (sorted ? " is-sorted" : "")} style={{ width: table.widths[c.id] }}
+               aria-sort={sorted ? (sorted === -1 ? "descending" : "ascending") : sortable ? "none" : undefined}
+               title={c.title ? `${c.label}: ${c.title}` : c.label}>
+            {sortable ? (
+              <button type="button" className="tt-sortbtn" onClick={() => table.onSort(c.id)}
+                      aria-label={`${c.label}: sort${sorted === -1 ? " lowest first" : sorted === 1 ? ": back to the worksheet's order" : " highest first"}`}>
+                {c.label}{sorted ? <span className="tt-sortarrow" aria-hidden="true">{sorted === -1 ? "▼" : "▲"}</span> : null}
+              </button>
+            ) : c.label}
+          </div>
+        );
+      })}
       {wideTable && <div className="tt-h rw-fill" aria-hidden="true">{table.headTools}</div>}
     </div>
   );
@@ -639,7 +657,7 @@ export default function TreePane({
       <div className={"tt-main" + (expanded ? " tt-expanded" : "")}>
         {railed ? <div className="tp-railcol" style={{ width: PANE.rail }} /> : (
         <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); if (wideTable) paintShade(); }} onKeyDown={keys}
-             role={table ? "treegrid" : "tree"} aria-label={table ? `${treeLabel || title} and their RCM` : treeLabel || title}
+             role={table ? "treegrid" : "tree"} aria-label={table ? `${treeLabel || title} and their ${table.what || "RCM"}` : treeLabel || title}
              aria-multiselectable={table?.drag?.picked?.size ? "true" : "false"}
              style={wide && !table ? { width: width + gutter } : expanded ? { width: table.treeW + SCROLLBAR_W } : undefined}>
           {columnHeads}

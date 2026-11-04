@@ -6,8 +6,12 @@ const pos = { type: "pos" };
 const item = { type: "item" };
 const loc = { type: "loc" };
 
-test("a position has Summary, RCM, Failure reports and Signals; an item Summary, Failure reports and Signals; a location Summary and Failure reports; headings only Summary", () => {
-  assert.deepEqual(tabsFor(pos).map((t) => t.id), ["summary", "rcm", "reports", "signals"]);
+test("a position has Summary, RCM, FME(C)A, Failure reports and Signals; an item Summary, Failure reports and Signals; a location Summary and Failure reports; headings only Summary", () => {
+  assert.deepEqual(tabsFor(pos).map((t) => t.id), ["summary", "rcm", "fmea", "reports", "signals"]);
+  assert.equal(TABS.find((t) => t.id === "fmea").label, "FME(C)A");
+  assert.equal(shownTab("fmea", pos), "fmea");
+  assert.equal(shownTab("fmea", item), "summary");
+  assert.equal(tabParam("fmea"), "fmea");
   assert.deepEqual(tabsFor(item).map((t) => t.id), ["summary", "reports", "signals"]);
   assert.deepEqual(tabsFor(loc).map((t) => t.id), ["summary", "reports"]);
   assert.deepEqual(tabsFor({ type: "group" }).map((t) => t.id), ["summary"]);

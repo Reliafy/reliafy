@@ -326,7 +326,8 @@ test("one order at every level: what's inside it first, then its own, the quiete
     await expect(panel(page).getByRole("region", { name: "Failure modes" })).toContainText("1 of its 2 failure modes still needs a decision.");
     await show(`^Failure mode: Seal leaks ${tag}`);
     await expect(panel(page).getByRole("heading", { level: 2, name: `Seal leaks ${tag}` })).toBeVisible();
-    expect(await blocks(page)).toEqual(["Tasks", "own", "Decision", "foot"]);
+    // The FME(C)A's two groups (scores, criticality) come after the decision on this tab.
+    expect(await blocks(page)).toEqual(["Tasks", "own", "Decision", "FME(C)A", "Criticality", "foot"]);
     // The worksheet's order inside: effects, consequence, then the decision; where it sits and notes last.
     const labels = await panel(page).locator(".rw-pbody .field-label").allInnerTexts();
     const at = (t) => labels.findIndex((x) => x.startsWith(t));

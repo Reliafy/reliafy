@@ -144,8 +144,9 @@ the RCM tab the same mode shows under that function in a grey **No functional
 failure yet** row, with the quiet reminder that the RCM isn't finished there:
 a function with modes but no functional failure counts as not analysed. When
 you are ready, add the performance standard and the functional failure on the
-RCM tab and choose the functional failure in the mode's **Under** field (or
-drag it there). It is the same record throughout: the scores, effects,
+RCM tab, then choose the functional failure in the mode's **Under** field, or
+pick **Assign to a functional failure…** in the grey row's menu to move every
+mode under it at once. It is the same record throughout: the scores, effects,
 criticality and any decision stay with it.
 
 Modes written on the RCM tab under a functional failure show on the FME(C)A

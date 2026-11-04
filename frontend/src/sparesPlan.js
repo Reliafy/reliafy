@@ -94,7 +94,11 @@ export function fleetSparesCsv(sp, { fleet = "", periodLabel = "periods" } = {})
 
 // Save text as a file (CSV exports).
 export function saveText(text, filename, type = "text/csv;charset=utf-8") {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  saveBlob(new Blob([text], { type }), filename);
+}
+// Save a blob the server sent as a file (an Excel export).
+export function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;

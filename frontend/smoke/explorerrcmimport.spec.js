@@ -85,10 +85,14 @@ test("import a worksheet onto a position from the RCM tab, then again: nothing m
   ]);
   expect(download.suggestedFilename()).toBe(`${name} RCM.csv`);
   const text = readFileSync(await download.path(), "utf8");
+  // The FME(C)A's 21 columns sit between Consequence and Decision (blank for an unscored mode).
+  const fmea = "Cause,Local effect,Next higher effect,Detection method,Severity,Occurrence,Detection,RPN,Action priority,Recommended action,Owner,Due date,"
+    + "Action status,Failure rate,Time unit,Rate source,Mode ratio,Loss probability,Operating time,Mode criticality,Severity class";
   expect(text.split("\n")[0]).toBe("Position,Function,Performance standard,Standard working,Functional failure,Caused by (below),Failure mode,Effects,"
-    + "Consequence,Decision,Run-to-failure basis,Task,Interval,Interval unit,Evidence check,Notes");
+    + `Consequence,${fmea},Decision,Run-to-failure basis,Task,Interval,Interval unit,Evidence check,Notes`);
+  // The sheet's Severity column is read as the score now (7), not kept as a note.
   expect(text).toContain(`${name},Move grain from the pit to the silo,At least 40 t/h,,Moves no grain,,Belt torn,Line stops,`
-    + "Operational,On-condition,,Walk the belt and look for damage,1,weeks,,Severity 7");
+    + `Operational,,,,,7${",".repeat(17)}On-condition,,Walk the belt and look for damage,1,weeks,,`);
 
   await expectHealthy(page, problems, { label: "rcm worksheet import", root: ".tx" });
 });
