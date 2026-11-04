@@ -73,7 +73,9 @@ export default function OAuthConsent() {
     </div>
   );
 
-  if (state === "off" || !mcpOn) {
+  // The Reliafy app's own sign-in isn't a connector: it works with MCP off.
+  const firstParty = !!(info && info.first_party);
+  if (state === "off" || (!mcpOn && !firstParty && state !== "loading")) {
     return (
       <div className="login-wrap">
         <div className="login-card">
@@ -111,20 +113,26 @@ export default function OAuthConsent() {
   }
 
   const name = info.client_name;
-  const hostLabel = info.hosted_claude ? "claude.ai" : info.redirect_host;
+  const hostLabel = firstParty ? "the Reliafy app on this phone" : info.hosted_claude ? "claude.ai" : info.redirect_host;
 
   return (
     <div className="login-wrap">
       <div className="login-card consent-card">
         {brand}
         <h1 className="login-h1">
-          {name} wants to access your Reliafy account
+          {firstParty ? "Sign in to the Reliafy app" : `${name} wants to access your Reliafy account`}
         </h1>
 
         {/* Where the browser goes next is the one thing Reliafy can vouch
             for, so it comes first — before the app's self-chosen name. */}
         <div className={"consent-redirect consent-redirect-top" + (info.loopback ? " warn" : "")}>
-          {info.loopback ? (
+          {firstParty ? (
+            <>
+              <div className="consent-redirect-label">After you approve, you'll be sent back to</div>
+              <div className="consent-redirect-host">the Reliafy app on this phone</div>
+              <p>Only approve if you just pressed Sign in in the Reliafy app.</p>
+            </>
+          ) : info.loopback ? (
             <>
               <div className="consent-redirect-label">You'll be sent back to an app on this computer</div>
               <div className="consent-redirect-host">{info.redirect_host}</div>
@@ -146,7 +154,9 @@ export default function OAuthConsent() {
         </div>
 
         <p className="login-sub">
-          {info.client_kind === "cimd" && info.client_host ? (
+          {firstParty ? (
+            <>This is Reliafy's own app. It uses your account the way the web app does.</>
+          ) : info.client_kind === "cimd" && info.client_host ? (
             <>App identity published by <b>{info.client_host}</b>.</>
           ) : (
             <>“{name}” is the name this app gave itself — Reliafy can't verify it.
