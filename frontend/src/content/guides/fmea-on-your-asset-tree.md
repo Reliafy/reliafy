@@ -4,6 +4,9 @@ task: "How do I score severity, occurrence and detection for each failure mode, 
 category: "Maintenance strategy"
 prerequisites: "A position in your asset tree with failure modes, or the sample UAV or sample truck."
 order: 26
+# Reliafy Maintenance is operators-only for now: this guide is linked from the
+# FME(C)A tab itself and stays out of the index until Maintenance opens.
+hidden: true
 ---
 
 A failure mode effects analysis (FMEA) asks three questions about every
