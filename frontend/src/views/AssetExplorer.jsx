@@ -48,6 +48,7 @@ import { EXPLORER_LABEL } from "../navigation.js";
 import { isolateItems, liveKids, moveTargets, summaryActions, viewOnlyReason, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, isolateOpen } from "../treeIsolate.js";
 import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals.jsx";
+import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
 import { SAMPLE_TRUCK_LABEL, addSampleTruck } from "../sampleTruck.js";
 import "./Maintenance.css";
@@ -188,6 +189,9 @@ export default function AssetExplorer() {
   // inside, and the row being renamed, moved or retired ({kind, row}).
   const [newParent, setNewParent] = useState(null);
   const [rowModal, setRowModal] = useState(null);
+  // A failure report being filed ({id, name}: the position; select: the row
+  // to show it under on the Failure reports tab once filed).
+  const [reportFor, setReportFor] = useState(null);
   const headingRef = useRef(null);
   const detailsHeading = useRef(null);
   const frame = useRef(null);
@@ -317,7 +321,8 @@ export default function AssetExplorer() {
   useEffect(() => {
     if (!data || selPos == null || pending.current || tab === "summary") return;
     if (params.get("sel") === selPos) return;
-    setQuery_((q) => q.set("sel", selPos));
+    // Another row: a report open in the Failure reports tab was the last row's.
+    setQuery_((q) => { q.set("sel", selPos); q.delete("report"); });
   }, [data, selPos, params, setQuery_, tab]);
 
   // Opening the RCM tab opens the position picked down to its failure modes
@@ -395,6 +400,8 @@ export default function AssetExplorer() {
       if (t === "summary") q.delete("tab");
       else q.set("tab", t);
       if (t === "rcm") q.set("arrange", "positions");
+      // The report open in the Failure reports tab goes with the tab.
+      if (t !== "reports") q.delete("report");
     });
   };
 
@@ -778,6 +785,7 @@ export default function AssetExplorer() {
         setNewParent(r.key);
         setModal(r.type === "loc" ? "location" : "position");
       } else if (id === "tree-rename" || id === "tree-move" || id === "tree-retire") setRowModal({ kind: id.slice(5), row: r });
+      else if (id === "report-new") setReportFor({ id: r.key, name: r.ref.name, select: r.key });
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
       else if (id === "unpin") unpin();
@@ -1037,6 +1045,23 @@ export default function AssetExplorer() {
     say(text, "ok", { fade: true });
     if (select != null) setTimeout(() => document.getElementById(`tp-${select}`)?.focus({ preventScroll: true }), 300);
   };
+  // After a failure report is filed (the row menu's Add failure report…, or
+  // the Failure reports tab's button): the tree read again (its roll-up), the
+  // report open in the Failure reports tab under the row it was filed from
+  // (?tab=reports&sel=&report=), and a few words to say so. On a phone the
+  // panel is its own screen, opened on that row.
+  const reportFiled = (view) => {
+    const select = reportFor?.select || view.position?.id;
+    setReportFor(null);
+    if (select != null) pending.current = select;
+    load();
+    const q = new URLSearchParams(params);
+    q.set("tab", "reports");
+    if (select != null) q.set("sel", select);
+    q.set("report", view.id);
+    navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: phone ? { treeDetail: select } : location.state });
+    say(`Reported ${view.label}.`, "ok", { fade: true });
+  };
   // Where a row can move to: its kind's tree, without it and what's inside it.
   const targetsFor = (row) => moveTargets(row.type === "loc" ? data?.locations : data?.positions, row.key);
 
@@ -1285,6 +1310,16 @@ export default function AssetExplorer() {
   const back = phone && (
     <button type="button" className="secondary td-back" onClick={() => navigate(-1)}>‹ {title}</button>
   );
+  // The Failure reports tab (in the same panel): the report open (?report=),
+  // opening one, filing one at a position (from the tab's button: shown under
+  // the row picked once filed), and the tree read again when one opens or closes.
+  const reportsApi = {
+    id: params.get("report"),
+    open: (id) => setQuery_((q) => (id ? q.set("report", id) : q.delete("report"))),
+    onNew: (id, name) => setReportFor({ id, name, select: row?.key ?? id }),
+    onChanged: load,
+    viewOnly,
+  };
   // The Summary tab's page about the row picked: beside the tree in the pane
   // (a wide screen, its heading and tabs over it in the slim rows), or its own
   // screen on a phone.
@@ -1298,7 +1333,7 @@ export default function AssetExplorer() {
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     pin={data && !nothing ? pinFor(row) : null}
                     back={back} version={version} empty={emptyDetail} headless={!phone}
-                    tab={tab} onTab={setTab} fullScreenButton={fullButton} />
+                    tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} />
       )}
     </section>
   );
@@ -1440,6 +1475,10 @@ export default function AssetExplorer() {
                        select: rowModal.row.ref.parent_id && display.rows.has(rowModal.row.ref.parent_id) ? rowModal.row.ref.parent_id : null,
                        text: `Retired “${rowModal.row.ref.name}”.`,
                      })} />
+      )}
+      {reportFor && (
+        <NewFailureReportModal positionId={reportFor.id} positionName={reportFor.name} today={data?.today || ""}
+                               onClose={() => setReportFor(null)} onDone={reportFiled} />
       )}
       {sheetFor && <RcmImportModal position={sheetFor} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
       {linking && (

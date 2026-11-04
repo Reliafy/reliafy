@@ -20,7 +20,7 @@ or part is. Connections: what feeds what, for redundancy, impact and generated R
 things) are fitted to positions; every fitment is history and a row of life data.
 Start with maintenance overview (the position tree, what's due, open work, short spares, the time zone and \
 today). Read maintenance guide (args {topic}) for how-tos: model, register, plan, run, learn, decide, data, classes, \
-conditions, structure, signals, apply. \
+conditions, structure, signals, failures, apply. \
 Reads are maintenance get.<kind> / list.<kind>; changes are maintenance <area>.<action>, and guide(action='maintenance.<action>') gives \
 what each takes. Many changes at once (a branch with its RCM, a bulk \
 edit): maintenance apply runs a list of those actions in one checked call (topic apply). Retired things restore.
@@ -514,6 +514,34 @@ its part as the replacement part. levels: which indenture levels become position
 inside them comes in under the position above); left out, every part. Positions already there by name are reused, \
 so it can run again. Dry run first and show the user the paths.
 - Not yet: configuration baselines and effectivity (which serial numbers a structure applies to)."""),
+    "failures": ("Failure reports: from a report to its closure, and the repeat check.", """\
+Failure reports: the loop from a failure to its closure (so the same failure doesn't come back).
+- File one at the position where it happened: maintenance failure_reports.file (position_id, title = what \
+happened; description, occurred_on (default today), found_by, consequence, failure_mode_id or \
+failure_mode_text, item_id). It's numbered FR-n and starts as reported. The item fitted there that day is kept \
+as a snapshot (name, serial, part, item class), so the report still says what was there after a replacement.
+- consequence uses the RCM vocabulary, so a report compares with its failure mode's decision: safety, \
+environmental, operational, non_operational, hidden, or none when not sure.
+- The failure mode: one of the position's by id (maintenance get.position lists them), or in words \
+(failure_mode_text: the position's mode of that name, else a new ad-hoc one). Always name it when you can.
+- Statuses: reported → investigating → corrective_action → verifying → closed, or rejected (not a failure, \
+or a duplicate: note = the reason, duplicate_of = the other report). Move among the open four freely \
+(set_status); the investigation, actions and verification can be edited in any open status. From closed or \
+rejected the only move is back to an open status (a reopen).
+- Investigate: failure_reports.investigate (notes, root_cause_category: design, material, installation, \
+operation, maintenance, wear, environment, unknown, other; root_cause in words; whys, up to 7 lines).
+- Corrective actions: add_action (what, owner, due; work_order_id links a work order here, work_order_ref is a \
+number or link kept elsewhere: text only, no integration); update_action marks one done (done_on) or dropped.
+- Verify: failure_reports.verify (result worked, not_worked or unclear, notes, verified_on). The report's \
+repeat_check then says how many failures at the same position occurred after the fix (since the latest action \
+done, else the verification, else the report), and how many of the same failure mode.
+- Close: set_status closed, note = the sign-off. Refused without a verification, or after one that didn't \
+work: add another action and verify again, or reject the report.
+- Reading: maintenance get.failure_report (everything, with history: who, when, what); list.failure_reports by \
+position_id (below true: everything inside it; each row's level names the way down), by location_id, by \
+item_id or by part_id, with status (open by default in the app; all here), consequence, failure_mode_id, \
+since / until, q and sort. counts gives how many each status has.
+- Photos go on a report like on a work order (maintenance attachments, target_id = the report's id)."""),
 }
 
 # Graph queries in Cypher (#423): only for the people allowed them

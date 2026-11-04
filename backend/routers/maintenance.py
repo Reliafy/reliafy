@@ -419,6 +419,99 @@ def update_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = D
                                                    if k in body})
 
 
+# ---- failure reports: what failed, and what was done about it ---------------------------
+
+def _who(ctx: AccessCtx, body: dict | None = None) -> str:
+    """Who makes a change on a failure report: as the body says, else the signed-in
+    user's name or email."""
+    given = (body or {}).get("by")
+    user = ctx.user or {}
+    return str(given) if given else (user.get("name") or user.get("email") or "")
+
+
+@router.get("/failure-reports")
+def list_failure_reports(position_id: str | None = None, below: str = "1", location_id: str | None = None,
+                         item_id: str | None = None, status: str | None = None, consequence: str | None = None,
+                         failure_mode_id: str | None = None, part_id: str | None = None, since: str | None = None,
+                         until: str | None = None, q: str | None = None, sort: str = "newest", limit: int = 100,
+                         offset: int = 0, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The failure reports in a scope: a position (below=1: every position inside it too), a
+    location, an item, or the whole workspace; filtered, sorted and paged, with counts by status."""
+    return _run(m.failure_reports, position_id=position_id or None, below=below not in ("0", "false", "no", ""),
+                location_id=location_id or None, item_id=item_id or None, status=status or None,
+                consequence=consequence or None, failure_mode_id=failure_mode_id or None, part_id=part_id or None,
+                since=since or None, until=until or None, q=q or None, sort=sort or "newest", limit=limit,
+                offset=offset)
+
+
+@router.post("/failure-reports")
+def file_failure_report(body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A failure report at a position: title (what happened), description, occurred_on (default today),
+    found_by, consequence, failure_mode_id or failure_mode_text, item_id (default: the item fitted there that day)."""
+    return _run(m.file_failure_report, body.get("position_id"), body.get("title"), body.get("description", ""),
+                body.get("occurred_on"), body.get("found_by", ""), body.get("consequence"),
+                body.get("failure_mode_id"), body.get("failure_mode_text"), body.get("item_id"), by=_who(ctx, body))
+
+
+@router.get("/failure-reports/{report_id}")
+def get_failure_report(report_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """One report in full: facts, item snapshot, investigation, corrective actions, verification,
+    repeat_check, history, photos and can.close."""
+    return _run(m.failure_report, report_id)
+
+
+@router.patch("/failure-reports/{report_id}")
+def update_failure_report(report_id: str, body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
+                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Change a report's own fields (title, description, occurred_on, found_by, consequence,
+    failure_mode_id / failure_mode_text, item_id) while it's open."""
+    return _run(m.update_failure_report, report_id, by=_who(ctx, body),
+                **{k: v for k, v in body.items() if k != "by"})
+
+
+@router.post("/failure-reports/{report_id}/status")
+def set_failure_report_status(report_id: str, body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
+                              m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Move it along: {status, note?, duplicate_of?}. closed needs a verification; rejected needs a note."""
+    return _run(m.set_failure_report_status, report_id, body.get("status"), body.get("note", ""),
+                body.get("duplicate_of"), by=_who(ctx, body))
+
+
+@router.put("/failure-reports/{report_id}/investigation")
+def investigate_failure_report(report_id: str, body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
+                               m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The investigation: {notes?, root_cause_category?, root_cause?, whys?} (a field left out keeps its value)."""
+    return _run(m.investigate_failure_report, report_id, body.get("notes"), body.get("root_cause_category"),
+                body.get("root_cause"), body.get("whys"), by=_who(ctx, body))
+
+
+@router.post("/failure-reports/{report_id}/actions")
+def add_corrective_action(report_id: str, body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
+                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A corrective action: {what, owner?, due?, work_order_id?, work_order_ref?}."""
+    return _run(m.add_corrective_action, report_id, body.get("what"), body.get("owner", ""), body.get("due"),
+                body.get("work_order_id"), body.get("work_order_ref", ""), by=_who(ctx, body))
+
+
+@router.patch("/failure-reports/{report_id}/actions/{action_id}")
+def update_corrective_action(report_id: str, action_id: str, body: dict = Body(...),
+                             ctx: AccessCtx = Depends(get_access),
+                             m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Change one corrective action: what, owner, due, status (open / done / dropped), done_on,
+    work_order_id, work_order_ref."""
+    return _run(m.update_corrective_action, report_id, action_id, by=_who(ctx, body),
+                **{k: v for k, v in body.items() if k != "by"})
+
+
+@router.put("/failure-reports/{report_id}/verification")
+def verify_failure_report(report_id: str, body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
+                          m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Did it work? {result: worked | not_worked | unclear, notes?, verified_on?}."""
+    return _run(m.verify_failure_report, report_id, body.get("result"), body.get("notes", ""),
+                body.get("verified_on"), by=_who(ctx, body))
+
+
 # ---- a position's RCM: functions, functional failures, decisions ------------------------
 
 def _rcm_read(session, ctx: AccessCtx, fn, *args) -> JSONResponse:

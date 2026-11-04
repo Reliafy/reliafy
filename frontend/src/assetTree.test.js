@@ -46,7 +46,7 @@ test("arranged by positions: natural order, carried positions under their item's
 test("roll-ups: a row's own status plus everything inside it", () => {
   const d = buildDisplay(DATA, "positions");
   const house = d.rows.get("house");
-  assert.deepEqual({ ...house.sum }, { overdue: 3, open_work: 1, alarms: 1, next_due: "2026-01-01", positions: 4, empty: 1, not_analysed: 0 });
+  assert.deepEqual({ ...house.sum }, { overdue: 3, open_work: 1, alarms: 1, open_reports: 0, next_due: "2026-01-01", positions: 4, empty: 1, not_analysed: 0 });
   assert.equal(house.own.overdue, 0);
   assert.equal(insideWords(house), "4 positions · 1 empty");
   assert.deepEqual(markersOf(house).map((m) => [m.kind, m.text, m.label]), [
@@ -57,6 +57,30 @@ test("roll-ups: a row's own status plus everything inside it", () => {
   assert.deepEqual(markersOf(d.rows.get("zone2")).map((m) => m.label), ["2 overdue tasks"]);
   assert.deepEqual(statusWords(d.rows.get("pool")).map((w) => w.text),
     ["1 open work order", "1 reading past an alarm limit", "1 overdue inside"]);
+});
+
+test("open failure reports roll up like open work: a marker with the count, the status in words, the chip", () => {
+  const data = {
+    ...DATA,
+    positions: DATA.positions.map((p) => (p.id === "seal" ? { ...p, status: { ...p.status, open_reports: 2 } }
+      : p.id === "pool" ? { ...p, status: { ...p.status, open_reports: 1 } } : p)),
+  };
+  const d = buildDisplay(data, "positions");
+  const house = d.rows.get("house");
+  assert.equal(house.sum.open_reports, 3);
+  assert.equal(house.own.open_reports, 0);
+  assert.deepEqual(markersOf(house).find((m) => m.kind === "report"), { kind: "report", text: "3", label: "3 open failure reports inside", inside: true });
+  assert.deepEqual(markersOf(d.rows.get("seal")).map((m) => [m.kind, m.text, m.label]),
+    [["overdue", "1", "1 overdue task"], ["report", "2", "2 open failure reports"]]);
+  assert.deepEqual(statusWords(d.rows.get("pool")).map((w) => [w.kind, w.text]), [
+    ["open", "1 open work order"], ["alarm", "1 reading past an alarm limit"], ["report", "1 open failure report"],
+    ["overdue", "1 overdue inside"], ["report", "2 open failure reports inside"],
+  ]);
+  const chip = CHIPS.find((c) => c.id === "reports");
+  assert.equal(chip.label, "Open reports");
+  assert.ok(chip.test(d.rows.get("pool")) && !chip.test(house));
+  // Nothing to mark: no marker (the "at most three" that show are the ones present).
+  assert.ok(!markersOf(d.rows.get("zone10")).some((m) => m.kind === "report"));
 });
 
 test("arranged by locations: placed positions, spares, then the places inside; no home last", () => {

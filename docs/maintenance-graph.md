@@ -702,6 +702,29 @@ anywhere refuses the batch before the live log is touched; then the same
 operations run on the live store in order. The log records each operation's
 events as it always would; a batch isn't one event.
 
+## Failure reports: from a failure to its closure
+
+A failure report (FRACAS: failure reporting, analysis and corrective action)
+is an event-sourced record like everything else: seven `failure_report.*`
+event types, one `FailureReport` node per report, and every change kept on
+the node with who and when (`history`), the way a work order keeps its notes.
+
+- `FailureReport` {number (shown as FR-n), position_id, title, description,
+  occurred_on, found_by, consequence (the RCM vocabulary, or null), status
+  (reported, investigating, corrective_action, verifying, closed, rejected),
+  filed_on, failure_mode_id, the item as it was when filed (item_id,
+  item_name, item_serial, part_id, part_number, part_name, item_class_id,
+  item_class_name: a snapshot, so the report still says what was there after
+  a replacement), investigation, actions ([{id, what, owner, due, status,
+  done_on, work_order_id, work_order_ref, added}]), verification, closed,
+  rejected, history}.
+- `FailureReport REPORTED_AT Position` (the key: every read goes by the
+  position), `INVOLVES Item` while the item exists, `FOUND FailureMode`.
+- The repeat check (reports at the same position since the fix) is worked
+  out on read, never stored. "This level and below" is one function,
+  `Maintenance._report_scope`, which the list reads and the tree roll-up
+  (`open_reports` on each row and inside it) follows.
+
 ## Signal channels and derived points
 
 A `SignalChannel` node sits on a position or an item (an `ON` edge) and holds a
