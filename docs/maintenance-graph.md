@@ -286,6 +286,7 @@ failure is caused by some of the position's failure modes:
 (:Function)-[:FAILS_AS]->(:FunctionalFailure {text})
 (:FunctionalFailure)-[:BREACHES]->(:Standard)       # optional: none means the whole function
 (:FunctionalFailure)-[:CAUSED_BY]->(:FailureMode)
+(:Function)-[:FAILS_DIRECTLY_AS]->(:FailureMode)    # an FMEA row: no functional failure written yet
 (:FunctionalFailure)-[:RESULTS_FROM]->(:FunctionalFailure)   # effect -> cause, on a position inside
 (:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
 (:Task)-[:MITIGATES]->(:FailureMode)                # many-to-many: see below
@@ -299,9 +300,30 @@ id}`). The interval and unit of a scheduled decision are its task's. A
 failure mode under no functional failure still belongs to its position (the
 app lists it as unassigned).
 
+A failure mode may also sit directly under a function, with no performance
+standard or functional failure between (`FAILS_DIRECTLY_AS`): that is how an
+FMEA worksheet reads, function › failure mode. `failure_mode.placed {id,
+function_id}` makes the edge (`function_id` null drops it); assigning the mode
+to a functional failure drops it too. The RCM reads list these in the
+function's `modes`; the Explorer's RCM tab shows them under **No functional
+failure yet**, and a function with such modes and no functional failure is not
+analysed. The mode is one record either way: the scores, effects and decision
+stay with it when it is assigned.
+
+The FMEA and FMECA fields are properties on the mode too, written by
+`failure_mode.scored {id, changes}` (a field set to null is cleared):
+`severity`, `occurrence`, `detection` (1–10), `cause`, `effect_local`,
+`effect_next` (`effects` is the end effect), `detection_method`, `action`,
+`action_owner`, `action_due`, `action_status`, and for criticality
+`failure_rate`, `time_unit`, `rate_source`, `mode_ratio`, `loss_probability`,
+`operating_time`, `severity_class`. The risk priority number, the action
+priority and the mode criticality are computed on every read
+(`backend/maintenance/fmea.py`), never stored.
+
 Events: `function.added` / `updated` / `removed`, `functional_failure.added`
 / `updated` / `removed`, `failure_mode.assigned` (under a functional failure,
-or none), `failure_mode.analysed` and `failure_mode.retired`. Deleting a
+or none), `failure_mode.placed` (directly under a function, or not),
+`failure_mode.analysed`, `failure_mode.scored` and `failure_mode.retired`. Deleting a
 function or a functional failure leaves its failure modes on the position,
 unassigned; deleting a failure mode retires the tasks that serve it alone and
 unlinks the ones that serve other modes too.

@@ -150,6 +150,17 @@
   holding both) in place of `lifetimes_dataset_id` and `readings_dataset_id`.
   Saved models keep working; `reliafy datasets add_measurements --dataset-id
   LIVES --from-dataset-id READINGS` brings an old pair onto one dataset.
+- FMEA and FMECA on the asset tree (Reliafy Maintenance). `maintenance
+  failure_modes.score` keeps a failure mode's severity, occurrence and
+  detection (1–10), cause, local and next-higher effects, detection method,
+  recommended action (owner, due date, status) and criticality figures
+  (failure rate, mode ratio, loss probability, operating time, severity
+  class); `clear` names fields to blank. Reads (`get.rcm`, `get.failure_mode`)
+  answer with `rpn`, the action priority `ap` (H, M or L) and the mode
+  criticality `cm`, and each position's `fmea` summary. `failure_modes.add`,
+  `assign` and `move` take `function_id` for a mode directly under a function
+  (no functional failure yet); `positions.add_sample_uav` copies a scored
+  sample quadcopter into the tree.
 
 ## 0.4.0
 

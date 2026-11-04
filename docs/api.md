@@ -139,6 +139,22 @@ The Python client has `Client.apply(...)`, the command line
 `reliafy apply ops.json [--run]`, and `maintenance guide` topic `apply` the
 worked examples.
 
+A failure mode's FMEA and FMECA fields live on the same record as its RCM:
+`maintenance failure_modes.score` (`failure_mode_id` plus any of `severity`,
+`occurrence`, `detection` (whole numbers 1–10), `cause`, `effect_local`,
+`effect_next`, `effects` (the end effect, the RCM's failure effects),
+`detection_method`, `action`, `action_owner`, `action_due` (YYYY-MM-DD),
+`action_status` (open, in_progress, done), `failure_rate`, `time_unit`,
+`rate_source` (entered, model, data), `mode_ratio` and `loss_probability`
+(0–1), `operating_time`, `severity_class` (I–IV); `clear` lists fields to
+blank). Reads answer with the computed `rpn` (S × O × D), `ap` (the action
+priority, H, M or L) and `cm` (β × α × λ × t), never stored, and each position
+in `get.rcm` carries an `fmea` summary (scored, high, medium, low, max_rpn,
+cr). A mode may sit directly under a function with no functional failure yet
+(`function_id` on `failure_modes.add`, `assign` and `move`); the RCM reads list
+it in the function's `modes`. `positions.add_sample_uav` copies a fully
+scored sample quadcopter into the tree.
+
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
 points, tasks, failure modes, classes, conditions, groups, connections and
