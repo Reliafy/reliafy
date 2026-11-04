@@ -79,6 +79,21 @@ END_REASONS = ("failure", "planned", "other")
 TASK_SOURCES = ("manual", "oem", "statutory", "other")
 # How well a historical date is known (passed through on past fitments).
 DATE_PRECISIONS = ("exact", "month", "year", "estimated")
+# Failure reports (Nov 2026): a report moves reported → investigating →
+# corrective_action → verifying → closed, or is rejected (not a failure, or a
+# duplicate). The first four are open. Its consequence uses the RCM vocabulary,
+# so a report compares with its failure mode's decision.
+REPORT_STATUSES = ("reported", "investigating", "corrective_action", "verifying", "closed", "rejected")
+OPEN_REPORT_STATUSES = REPORT_STATUSES[:4]
+REPORT_STATUS_WORDS = {"reported": "Reported", "investigating": "Investigating",
+                       "corrective_action": "Corrective action", "verifying": "Verifying", "closed": "Closed",
+                       "rejected": "Rejected"}
+REPORT_CONSEQUENCES = rcm_decisions.CONSEQUENCES
+ROOT_CAUSE_CATEGORIES = ("design", "material", "installation", "operation", "maintenance", "wear", "environment",
+                         "unknown", "other")
+VERIFICATION_RESULTS = ("worked", "not_worked", "unclear")
+ACTION_STATUSES = ("open", "done", "dropped")
+REPORT_SORTS = ("newest", "oldest", "status", "consequence", "position")
 
 
 class NotFound(KeyError):
@@ -147,6 +162,10 @@ MAX_ALIASES = 50  # on one manufacturer
 MAX_CONDITIONS = 2_000
 MAX_CONDITION_DEPTH = 6  # levels in the condition register
 MAX_CONDITIONS_EACH = 100  # applied to or excluded on one location, position, item or connection
+MAX_REPORTS = 20_000  # failure reports
+MAX_ACTIONS_PER_REPORT = 50  # corrective actions on one failure report
+MAX_WHYS = 7  # lines in a failure report's "five whys"
+MAX_REPORT_LIST = 500  # failure reports in one list read
 
 MAX_AMOUNT = 1e12  # readings, costs, quantities
 MAX_CALENDAR_DAYS = 100 * 365.25  # a task interval of at most 100 years
@@ -159,6 +178,12 @@ EARLIEST_DAY, LATEST_DAY = "1900-01-01", "2199-12-31"
 
 def _server_today() -> str:
     return time_zones.today().isoformat()
+
+
+def _utc_now() -> str:
+    """The moment a change is made, for a payload that records who did what when
+    (never a calendar day: those are the workspace's, from Maintenance.today())."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _day(value, what: str = "date", today: str | None = None) -> str:
@@ -179,6 +204,7 @@ def _day(value, what: str = "date", today: str | None = None) -> str:
 _SHORTEN = {
     "task's name": "Shorten it and put the detail in the task's instructions.",
     "title": "Shorten it and put the detail in the notes.",
+    "report's title": "Shorten it and put the detail in the description.",
     "position's name": "Shorten it and put the detail in the description.",
     "copy's name": "Shorten it and put the detail in the description.",
     "location's name": "Shorten it and put the detail in the description.",
@@ -2232,6 +2258,114 @@ def structure_heights(ids, children) -> dict[str, int]:
     return memo
 
 
+# ---- failure reports (Nov 2026): the loop from a failure to its closure ---------------
+# A FailureReport is raised at a position (REPORTED_AT, with position_id on the node:
+# the key every read goes by), keeps the item that was there as a snapshot (INVOLVES
+# the item while it exists; the item_* fields stay however its fitments change later)
+# and names the failure mode found (FOUND). Its investigation, corrective actions,
+# verification and history live on the node, as a work order keeps its notes.
+
+_REPORT_ITEM_FIELDS = ("item_id", "item_name", "item_serial", "part_id", "part_number", "part_name",
+                       "item_class_id", "item_class_name")
+_REPORT_FIELDS = ("title", "description", "occurred_on", "found_by", "consequence", "failure_mode_id")
+_ACTION_FIELDS = ("what", "owner", "due", "status", "done_on", "work_order_id", "work_order_ref")
+
+
+def _report_history(report: dict, p: dict, change: str) -> list:
+    return list(report.get("history") or []) + [{"at": p["at"], "by": p["by"], "change": change}]
+
+
+def _report_line(label: str, text) -> str:
+    """A history line: the change, with what it was about when there's text."""
+    return f"{label}: {shortened(text, 80)[0]}" if text else label
+
+
+def _repoint(s: GraphStore, org: str, edge: str, src: str, old, new) -> None:
+    """Move an edge from one end to another (either may be none)."""
+    if old and old != new:
+        s.delete_edge(org, edge, src, old)
+    if new and new != old:
+        s.put_edge(org, edge, src, new)
+
+
+def _failure_report_filed(s: GraphStore, org: str, p: dict) -> None:
+    s.put_node(org, p["id"], "FailureReport", {
+        "number": p["number"], "position_id": p["position_id"],
+        **{k: p.get(k) for k in _REPORT_ITEM_FIELDS}, **{k: p.get(k) for k in _REPORT_FIELDS},
+        "status": "reported", "filed_on": p["on"], "actions": [], "investigation": None, "verification": None,
+        "closed": None, "rejected": None, "history": [{"at": p["at"], "by": p["by"], "change": "Reported"}],
+    })
+    s.put_edge(org, "REPORTED_AT", p["id"], p["position_id"])
+    _repoint(s, org, "INVOLVES", p["id"], None, p.get("item_id"))
+    _repoint(s, org, "FOUND", p["id"], None, p.get("failure_mode_id"))
+
+
+def _failure_report_updated(s: GraphStore, org: str, p: dict) -> None:
+    r = s.node(org, p["id"])
+    changes = dict(p["changes"])
+    if "item_id" in changes:
+        _repoint(s, org, "INVOLVES", p["id"], r.get("item_id"), changes["item_id"])
+    if "failure_mode_id" in changes:
+        _repoint(s, org, "FOUND", p["id"], r.get("failure_mode_id"), changes["failure_mode_id"])
+    s.patch_node(org, p["id"], changes | {"history": _report_history(r, p, p["change"])})
+
+
+def _failure_report_status(s: GraphStore, org: str, p: dict) -> None:
+    r = s.node(org, p["id"])
+    status, note = p["status"], p.get("note", "")
+    word = REPORT_STATUS_WORDS.get(status, status)
+    if r.get("status") in ("closed", "rejected") and status in OPEN_REPORT_STATUSES:
+        word = f"Reopened as {word.lower()}"
+    changes = {"status": status, "closed": None, "rejected": None}
+    if status == "closed":
+        changes["closed"] = {"on": p["on"], "by": p["by"], "note": note}
+    elif status == "rejected":
+        changes["rejected"] = {"on": p["on"], "by": p["by"], "note": note, "duplicate_of": p.get("duplicate_of")}
+    s.patch_node(org, p["id"], changes | {"history": _report_history(r, p, _report_line(word, note))})
+
+
+def _failure_report_investigated(s: GraphStore, org: str, p: dict) -> None:
+    r = s.node(org, p["id"])
+    investigation = {k: p.get(k) for k in ("notes", "root_cause_category", "root_cause", "whys")}
+    investigation |= {"on": p["on"], "by": p["by"]}
+    about = p.get("root_cause") or p.get("root_cause_category") or ""
+    s.patch_node(org, p["id"], {"investigation": investigation,
+                                "history": _report_history(r, p, _report_line("Investigated", about))})
+
+
+def _failure_report_action_added(s: GraphStore, org: str, p: dict) -> None:
+    r = s.node(org, p["id"])
+    action = {"id": p["action_id"], "what": p["what"], "owner": p.get("owner", ""), "due": p.get("due"),
+              "status": "open", "done_on": None, "work_order_id": p.get("work_order_id"),
+              "work_order_ref": p.get("work_order_ref", ""), "added": {"on": p["on"], "by": p["by"]}}
+    s.patch_node(org, p["id"], {"actions": list(r.get("actions") or []) + [action],
+                                "history": _report_history(r, p, _report_line("Action added", p["what"]))})
+
+
+def _failure_report_action_updated(s: GraphStore, org: str, p: dict) -> None:
+    r = s.node(org, p["id"])
+    changes = {k: v for k, v in p["changes"].items() if k in _ACTION_FIELDS}
+    actions, what = [], ""
+    for a in r.get("actions") or []:
+        a = dict(a)
+        if a["id"] == p["action_id"]:
+            a.update(changes)
+            what = a.get("what", "")
+        actions.append(a)
+    label = {"done": "Action done", "dropped": "Action dropped", "open": "Action reopened"}.get(
+        changes.get("status"), "Action changed")
+    s.patch_node(org, p["id"], {"actions": actions, "history": _report_history(r, p, _report_line(label, what))})
+
+
+def _failure_report_verified(s: GraphStore, org: str, p: dict) -> None:
+    r = s.node(org, p["id"])
+    verification = {"result": p["result"], "notes": p.get("notes", ""), "verified_on": p["verified_on"],
+                    "on": p["on"], "by": p["by"]}
+    word = {"worked": "it worked", "not_worked": "it didn't work", "unclear": "unclear"}.get(p["result"], p["result"])
+    s.patch_node(org, p["id"], {"verification": verification,
+                                "history": _report_history(r, p, f"Verified: {word}")})
+
+
 PROJECTORS = {
     "position.created": _position_created,
     "position.updated": _position_updated,
@@ -2396,6 +2530,14 @@ PROJECTORS = {
     # A position or an item out of service until a date (Nov 2026).
     "service.stopped": _out_of_service,
     "service.resumed": _back_in_service,
+    # Failure reports (Nov 2026): the loop from a failure to its closure, on the report node.
+    "failure_report.filed": _failure_report_filed,
+    "failure_report.updated": _failure_report_updated,
+    "failure_report.status": _failure_report_status,
+    "failure_report.investigated": _failure_report_investigated,
+    "failure_report.action_added": _failure_report_action_added,
+    "failure_report.action_updated": _failure_report_action_updated,
+    "failure_report.verified": _failure_report_verified,
 }
 
 
@@ -10369,9 +10511,9 @@ class Maintenance:
     # ---- photos and coordinates ------------------------------------------------------
 
     def photo_target(self, node_id: str) -> dict:
-        """A node photos can show: a position, location, item or work order."""
+        """A node photos can show: a position, location, item, work order or failure report."""
         node = self.s.node(self.org, node_id)
-        if node is None or node["label"] not in ("Position", "Location", "Item", "WorkOrder"):
+        if node is None or node["label"] not in self.PHOTO_KINDS:
             raise NotFound(node_id)
         return node
 
@@ -10394,11 +10536,11 @@ class Maintenance:
                 raise LimitReached(f"This maintenance workspace can hold at most {MAX_PHOTOS:,} photos. "
                                    "Remove some first.")
 
-    PHOTO_KINDS = ("Position", "Location", "Item", "WorkOrder")
+    PHOTO_KINDS = ("Position", "Location", "Item", "WorkOrder", "FailureReport")
 
     def photo_targets(self, photo_id: str) -> list[dict]:
-        """Every place a photo shows: positions, then locations, items and work
-        orders, each by name."""
+        """Every place a photo shows: positions, then locations, items, work orders
+        and failure reports, each by name (a report's: its title)."""
         found = [{"id": n["id"], "kind": n["label"], "name": n.get("name") or n.get("title")}
                  for n in self.s.out(self.org, photo_id, "OF") if n["label"] in self.PHOTO_KINDS]
         found.sort(key=lambda t: (self.PHOTO_KINDS.index(t["kind"]), (t["name"] or "").lower(), t["id"]))
@@ -10672,6 +10814,9 @@ class Maintenance:
         for w in s.nodes(org, "WorkOrder"):
             if w["status"] in OPEN_STATUSES and on.get(w["id"]):
                 on_node(on[w["id"]])["open_work"] += 1
+        for r in s.nodes(org, "FailureReport"):
+            if r["status"] in OPEN_REPORT_STATUSES and r.get("position_id") in live:
+                on_node(r["position_id"])["open_reports"] += 1
         for mp in s.nodes(org, "MeasurementPoint"):
             above, below = mp.get("alarm_above"), mp.get("alarm_below")
             if not on.get(mp["id"]) or (above is None and below is None):
@@ -10869,6 +11014,8 @@ class Maintenance:
             # The fitted item's own tasks: they fall due on their own (and leave with it).
             "item_tasks": self._task_views_on(fitted["item"]["id"]) if fitted and fitted["item"] else [],
             "work_orders": [self._wo_brief(w) for w in wos],
+            # The failure reports raised here (not inside): open, total, latest_on.
+            "failure_reports": self._position_reports(id),
             "life_data": self.life_data(id),
             "coordinates": p.get("coordinates"),
             "measurements": self._points_on(id),
@@ -11078,6 +11225,517 @@ class Maintenance:
             out["can_replace"] = bool(position_id or out["line_positions"])
         return out
 
+    # ---- failure reports: what failed, and what was done about it (Nov 2026) -----------
+    # The loop (FRACAS): a report at a position, its investigation and root cause, the
+    # corrective actions, a verification (did it work?) and the sign-off. Every change
+    # is an event with who and when; the report node keeps the lot (see the projectors).
+
+    _REPORT_EDITS = ("title", "description", "occurred_on", "found_by", "consequence", "failure_mode_id",
+                     "failure_mode_text", "item_id")
+    _REPORT_WORDS = {"title": "what happened", "description": "the details", "occurred_on": "when",
+                     "found_by": "who found it", "consequence": "the consequence", "failure_mode_id": "the failure mode",
+                     **{k: "the item" for k in _REPORT_ITEM_FIELDS}}
+
+    def _report_who(self, by) -> str:
+        """Who made a change, as the caller gives it (the router and the tool pass the
+        signed-in user's name or email); the acting uid when nobody is named."""
+        return _text(by, "name of who did it") or str(self.actor or "")
+
+    def _report_stamp(self, by) -> dict:
+        return {"at": _utc_now(), "on": self.today(), "by": self._report_who(by)}
+
+    @staticmethod
+    def _report_label(r: dict) -> str:
+        return f"FR-{r['number']}"
+
+    def _open_report(self, report_id: str) -> dict:
+        """A report that can still be changed: one in an open status."""
+        r = self._get(report_id, "FailureReport")
+        if r["status"] not in OPEN_REPORT_STATUSES:
+            raise Invalid(f"{self._report_label(r)} is {REPORT_STATUS_WORDS[r['status']].lower()}. Reopen it first "
+                          "(set its status to reported, investigating, corrective_action or verifying), then "
+                          "change it.")
+        return r
+
+    def _not_future(self, value, what: str) -> str:
+        today = self.today()
+        day = _day(value, what, today=today)
+        if day > today:
+            raise Invalid(f"The {what} can't be in the future.")
+        return day
+
+    @staticmethod
+    def _report_consequence(value):
+        if value in (None, ""):
+            return None
+        if value not in REPORT_CONSEQUENCES:
+            raise Invalid(f"The consequence is one of {', '.join(REPORT_CONSEQUENCES)}, or left out when not sure.")
+        return value
+
+    def _item_fitted_on(self, position_id: str, day: str) -> str | None:
+        """The item fitted at a position on a day (the fitment covering it), if any."""
+        covering = [f for f in self._fitments_at(position_id)
+                    if f["from"] <= day and (f.get("to") is None or f["to"] >= day)]
+        if not covering:
+            return None
+        item = self.s.inn(self.org, max(covering, key=lambda f: f["from"])["id"], "IN")
+        return item[0]["id"] if item else None
+
+    def _report_item_snapshot(self, item_id) -> dict:
+        """The item on a report as plain fields, taken when it's filed (and when its
+        item is changed): its name and serial, its catalogue part and its item class
+        (its own, else its part's). The history keeps what was there whatever happens
+        to the item or its fitments later."""
+        snapshot: dict = {k: None for k in _REPORT_ITEM_FIELDS}
+        if not item_id:
+            return snapshot
+        item = self._get(item_id, "Item")
+        snapshot |= {"item_id": item["id"], "item_name": item.get("name") or "", "item_serial": item.get("serial") or ""}
+        part = self._item_part(item["id"])
+        if part:
+            snapshot |= {"part_id": part["id"], "part_number": part.get("part_number") or "",
+                         "part_name": part.get("name") or ""}
+        cls, _ = self._effective_class(item)
+        if cls:
+            snapshot |= {"item_class_id": cls["id"], "item_class_name": cls.get("name") or ""}
+        return snapshot
+
+    def _next_report_number(self) -> int:
+        return 1 + max((r.get("number", 0) for r in self.s.nodes(self.org, "FailureReport")), default=0)
+
+    def file_failure_report(self, position_id: str, title, description="", occurred_on=None, found_by="",
+                            consequence=None, failure_mode_id=None, failure_mode_text=None, item_id=None,
+                            by=None) -> dict:
+        """A failure report at a position: what happened (title), when (occurred_on,
+        default today, never in the future), who found it, the consequence (the RCM
+        vocabulary, or none when not sure), the failure mode by id or in words (the
+        position's mode of that name, else a new ad-hoc one), and the item involved
+        (item_id; by default the item fitted there that day), kept as a snapshot.
+        Numbered FR-1, FR-2, ... in the order filed."""
+        position = self._get(position_id, "Position")
+        if position.get("retired"):
+            raise Invalid("That position has been retired. Restore it, or report the failure at a position in use.")
+        title = _text(title, "report's title", required=True)
+        description = _text(description, "description")
+        found_by = _text(found_by, "name of who found it")
+        day = self._not_future(occurred_on, "date it occurred")
+        consequence = self._report_consequence(consequence)
+        ref = self._mode_ref(position_id, failure_mode_id or None, failure_mode_text)
+        snapshot = self._report_item_snapshot(str(item_id) if item_id else self._item_fitted_on(position_id, day))
+        self._quota("FailureReport", MAX_REPORTS, what="failure reports")
+        rid = new_id()
+        self._emit("failure_report.filed", {
+            "id": rid, "number": self._next_report_number(), "position_id": position_id, **snapshot,
+            "title": title, "description": description, "occurred_on": day, "found_by": found_by,
+            "consequence": consequence, "failure_mode_id": self._mode_id(position_id, ref), **self._report_stamp(by),
+        })
+        return self.failure_report(rid)
+
+    def update_failure_report(self, report_id: str, by=None, **changes) -> dict:
+        """Change a report's own fields while it's open: title, description, occurred_on,
+        found_by, consequence, failure_mode_id or failure_mode_text (none clears the
+        mode), item_id (none clears the item; the snapshot is taken again)."""
+        r = self._open_report(report_id)
+        unknown = [k for k in changes if k not in self._REPORT_EDITS]
+        if unknown:
+            raise Invalid(f"A report's own fields are {', '.join(self._REPORT_EDITS)}, not {', '.join(unknown)}. "
+                          "Its investigation, corrective actions and verification have their own calls.")
+        out: dict = {}
+        if "title" in changes:
+            out["title"] = _text(changes["title"], "report's title", required=True)
+        if "description" in changes:
+            out["description"] = _text(changes["description"], "description")
+        if "found_by" in changes:
+            out["found_by"] = _text(changes["found_by"], "name of who found it")
+        if "occurred_on" in changes:
+            out["occurred_on"] = self._not_future(changes["occurred_on"], "date it occurred")
+        if "consequence" in changes:
+            out["consequence"] = self._report_consequence(changes["consequence"])
+        if "item_id" in changes:
+            out |= self._report_item_snapshot(changes["item_id"] or None)
+        naming_mode = "failure_mode_id" in changes or "failure_mode_text" in changes
+        ref = naming_mode and self._mode_ref(r["position_id"], changes.get("failure_mode_id") or None,
+                                             changes.get("failure_mode_text"))
+        out = {k: v for k, v in out.items() if r.get(k) != v}
+        if naming_mode:
+            mode_id = self._mode_id(r["position_id"], ref or None)  # a mode in new words is added here
+            if mode_id != r.get("failure_mode_id"):
+                out["failure_mode_id"] = mode_id
+        if not out:
+            return self.failure_report(report_id)
+        words = list(dict.fromkeys(self._REPORT_WORDS[k] for k in self._REPORT_WORDS if k in out))
+        self._emit("failure_report.updated", {"id": report_id, "changes": out, "change": "Changed " + ", ".join(words),
+                                              **self._report_stamp(by)})
+        return self.failure_report(report_id)
+
+    def set_failure_report_status(self, report_id: str, status, note="", duplicate_of=None, by=None) -> dict:
+        """Move a report along. Among the open statuses: any direction. closed needs a
+        verification that worked or was unclear (the note is the sign-off). rejected
+        needs a note, the reason; duplicate_of names the other report. From closed or
+        rejected the only move is back to an open status (a reopen)."""
+        r = self._get(report_id, "FailureReport")
+        if status not in REPORT_STATUSES:
+            raise Invalid(f"The status is one of {', '.join(REPORT_STATUSES)}.")
+        note = _text(note, "note")
+        label = self._report_label(r)
+        if status == r["status"]:
+            return self.failure_report(report_id)
+        if r["status"] not in OPEN_REPORT_STATUSES and status not in OPEN_REPORT_STATUSES:
+            raise Invalid(f"{label} is {REPORT_STATUS_WORDS[r['status']].lower()}. The only move from there is to "
+                          "reopen it: set it to reported, investigating, corrective_action or verifying first.")
+        if duplicate_of and status != "rejected":
+            raise Invalid("duplicate_of goes with status rejected: a report rejected as a duplicate of another.")
+        payload = {"id": report_id, "status": status, "note": note, **self._report_stamp(by)}
+        if status == "closed":
+            verification = r.get("verification")
+            if not verification:
+                raise Invalid("Record a verification first (did the corrective action work?), then close the report.")
+            if verification["result"] == "not_worked":
+                raise Invalid("The verification says it didn't work. Add another corrective action and verify "
+                              "again, or reject the report.")
+        elif status == "rejected":
+            if not note:
+                raise Invalid("Say why the report is rejected (not a failure, or a duplicate): the note is the reason.")
+            if duplicate_of:
+                if duplicate_of == report_id:
+                    raise Invalid("A report can't be a duplicate of itself. Name the other report.")
+                if self.s.node(self.org, duplicate_of, "FailureReport") is None:
+                    raise Invalid("duplicate_of must be another failure report in this workspace (its id).")
+                payload["duplicate_of"] = duplicate_of
+        self._emit("failure_report.status", payload)
+        return self.failure_report(report_id)
+
+    def investigate_failure_report(self, report_id: str, notes=None, root_cause_category=None, root_cause=None,
+                                   whys=None, by=None) -> dict:
+        """The investigation, saved whole (a field left out keeps what it had): notes,
+        root_cause_category (design, material, installation, operation, maintenance,
+        wear, environment, unknown, other), root_cause in words, whys (the "five
+        whys", up to seven lines)."""
+        r = self._open_report(report_id)
+        old = r.get("investigation") or {}
+        if root_cause_category is None:
+            root_cause_category = old.get("root_cause_category")
+        elif root_cause_category == "":
+            root_cause_category = None
+        elif root_cause_category not in ROOT_CAUSE_CATEGORIES:
+            raise Invalid(f"The root cause category is one of {', '.join(ROOT_CAUSE_CATEGORIES)}.")
+        if whys is None:
+            whys = old.get("whys") or []
+        else:
+            whys = [w for w in (_text(w, "why", max_len=LONG_TEXT) for w in _list(whys, "whys", MAX_WHYS)) if w]
+        self._emit("failure_report.investigated", {
+            "id": report_id, "notes": _text(old.get("notes", "") if notes is None else notes, "notes"),
+            "root_cause_category": root_cause_category,
+            "root_cause": _text(old.get("root_cause", "") if root_cause is None else root_cause, "root cause",
+                                max_len=LONG_TEXT),
+            "whys": whys, **self._report_stamp(by),
+        })
+        return self.failure_report(report_id)
+
+    def _report_work_order(self, work_order_id) -> str | None:
+        """A work order linked from a corrective action: one in this workspace, or none."""
+        if work_order_id in (None, "", "none"):
+            return None
+        if self.s.node(self.org, work_order_id, "WorkOrder") is None:
+            raise Invalid("work_order_id must be a work order in this workspace (its id); for a number or link "
+                          "kept elsewhere, use work_order_ref.")
+        return work_order_id
+
+    def add_corrective_action(self, report_id: str, what, owner="", due=None, work_order_id=None, work_order_ref="",
+                              by=None) -> dict:
+        """A corrective action on an open report: what to do, who owns it, when it's
+        due. work_order_id links a work order here; work_order_ref is a number or
+        link kept elsewhere (text only: no integration)."""
+        r = self._open_report(report_id)
+        what = _text(what, "corrective action", required=True, max_len=LONG_TEXT)
+        if len(r.get("actions") or []) >= MAX_ACTIONS_PER_REPORT:
+            raise LimitReached(f"A failure report can hold at most {MAX_ACTIONS_PER_REPORT} corrective actions.")
+        self._emit("failure_report.action_added", {
+            "id": report_id, "action_id": new_id(), "what": what, "owner": _text(owner, "owner's name"),
+            "due": _day(due, "due date") if due else None, "work_order_id": self._report_work_order(work_order_id),
+            "work_order_ref": _text(work_order_ref, "work order reference"), **self._report_stamp(by),
+        })
+        return self.failure_report(report_id)
+
+    def update_corrective_action(self, report_id: str, action_id: str, by=None, **changes) -> dict:
+        """Change one corrective action: what, owner, due, status (open, done or
+        dropped), done_on (default today when marked done), work_order_id,
+        work_order_ref."""
+        r = self._open_report(report_id)
+        action = next((a for a in r.get("actions") or [] if a["id"] == action_id), None)
+        if action is None:
+            raise NotFound(f"CorrectiveAction {action_id}")
+        unknown = [k for k in changes if k not in _ACTION_FIELDS]
+        if unknown:
+            raise Invalid(f"A corrective action's fields are {', '.join(_ACTION_FIELDS)}, not {', '.join(unknown)}.")
+        out: dict = {}
+        if "what" in changes:
+            out["what"] = _text(changes["what"], "corrective action", required=True, max_len=LONG_TEXT)
+        if "owner" in changes:
+            out["owner"] = _text(changes["owner"], "owner's name")
+        if "due" in changes:
+            out["due"] = _day(changes["due"], "due date") if changes["due"] else None
+        if "work_order_id" in changes:
+            out["work_order_id"] = self._report_work_order(changes["work_order_id"])
+        if "work_order_ref" in changes:
+            out["work_order_ref"] = _text(changes["work_order_ref"], "work order reference")
+        if "status" in changes:
+            if changes["status"] not in ACTION_STATUSES:
+                raise Invalid(f"An action's status is one of {', '.join(ACTION_STATUSES)}.")
+            out["status"] = changes["status"]
+        if "done_on" in changes:
+            out["done_on"] = self._not_future(changes["done_on"], "date it was done") if changes["done_on"] else None
+        status = out.get("status", action.get("status"))
+        if status == "done" and not out.get("done_on", action.get("done_on")):
+            out["done_on"] = self.today()
+        elif status != "done" and "done_on" not in out and action.get("done_on"):
+            out["done_on"] = None
+        out = {k: v for k, v in out.items() if action.get(k) != v}
+        if not out:
+            return self.failure_report(report_id)
+        self._emit("failure_report.action_updated", {"id": report_id, "action_id": action_id, "changes": out,
+                                                     **self._report_stamp(by)})
+        return self.failure_report(report_id)
+
+    def verify_failure_report(self, report_id: str, result, notes="", verified_on=None, by=None) -> dict:
+        """Did the corrective action work? result worked, not_worked or unclear, with
+        notes and the date checked (default today). Saved whole; read repeat_check on
+        the report for the failures at the position since."""
+        self._open_report(report_id)
+        if result not in VERIFICATION_RESULTS:
+            raise Invalid(f"The result is one of {', '.join(VERIFICATION_RESULTS)}.")
+        self._emit("failure_report.verified", {
+            "id": report_id, "result": result, "notes": _text(notes, "notes"),
+            "verified_on": self._not_future(verified_on, "verification date"), **self._report_stamp(by),
+        })
+        return self.failure_report(report_id)
+
+    # ---- reading them -------------------------------------------------------------------
+
+    def _report_scope(self, position_id: str, below: bool = True) -> list[str]:
+        """The positions whose failure reports show at a position: itself and, with
+        below, every live position inside it as the tree pane nests them (a position
+        carried by the item fitted there is inside too). The one place that says what
+        "this level and below" means for reports: the list reads it, and the tree
+        roll-up sums its rows along the same nesting."""
+        if not below:
+            return [position_id]
+        out, queue, seen = [position_id], [position_id], {position_id}
+        while queue and len(out) < self._MAX_BELOW:
+            nid = queue.pop(0)
+            holders = [nid]
+            fitted = self.current_fitment(nid)
+            item = fitted and self.s.inn(self.org, fitted["id"], "IN")
+            if item:
+                holders.append(item[0]["id"])
+            for holder in holders:
+                for c in self.s.inn(self.org, holder, "PART_OF"):
+                    if c["label"] == "Position" and c["id"] not in seen and not c.get("retired"):
+                        seen.add(c["id"])
+                        out.append(c["id"])
+                        queue.append(c["id"])
+        return out
+
+    def _repeat_check(self, r: dict, reports: list[dict]) -> dict:
+        """Worked out on read, never stored: the reports at the same position (any
+        status but rejected, this one aside) that occurred after the fix: the latest
+        corrective action done, else the verification, else the report itself."""
+        done = [a["done_on"] for a in r.get("actions") or [] if a.get("done_on")]
+        verified = (r.get("verification") or {}).get("verified_on")
+        since = max(done) if done else verified or r["occurred_on"]
+        later = [x for x in reports if x["id"] != r["id"] and x.get("position_id") == r["position_id"]
+                 and x["status"] != "rejected" and x["occurred_on"] > since]
+        same = r.get("failure_mode_id")
+        return {"since": since, "repeats": len(later),
+                "same_mode_repeats": sum(1 for x in later if same and x.get("failure_mode_id") == same),
+                "latest": max((x["occurred_on"] for x in later), default=None)}
+
+    def _report_can(self, r: dict) -> dict:
+        """Whether the report can be closed now, and if not why (for the sign-off card)."""
+        reasons = []
+        if r["status"] not in OPEN_REPORT_STATUSES:
+            reasons.append(f"{self._report_label(r)} is {REPORT_STATUS_WORDS[r['status']].lower()}: reopen it first.")
+        verification = r.get("verification")
+        if not verification:
+            reasons.append("No verification yet: record whether the corrective action worked.")
+        elif verification["result"] == "not_worked":
+            reasons.append("The verification says it didn't work. Add another corrective action and verify again, "
+                           "or reject the report.")
+        return {"close": not reasons} | ({"reasons": reasons} if reasons else {})
+
+    def _report_item_view(self, r: dict) -> dict | None:
+        """The item on a report, from its snapshot (never the live fitment); exists says
+        whether the item is still in the register."""
+        if not r.get("item_id"):
+            return None
+        return {"id": r["item_id"], "name": r.get("item_name") or "", "serial": r.get("item_serial") or "",
+                "part": {"id": r["part_id"], "part_number": r.get("part_number") or "",
+                         "name": r.get("part_name") or ""} if r.get("part_id") else None,
+                "item_class": {"id": r["item_class_id"], "name": r.get("item_class_name") or ""}
+                if r.get("item_class_id") else None,
+                "exists": self.s.node(self.org, r["item_id"], "Item") is not None}
+
+    @staticmethod
+    def _open_actions(r: dict) -> int:
+        return sum(1 for a in r.get("actions") or [] if a.get("status") == "open")
+
+    def failure_report(self, report_id: str) -> dict:
+        """A failure report in full: its facts, position (with path), item snapshot,
+        failure mode, investigation, corrective actions, verification, repeat_check,
+        closure or rejection, history, photos, and can (whether it can close, and why
+        not)."""
+        r = self._get(report_id, "FailureReport")
+        position = self.s.node(self.org, r["position_id"]) or {}
+        fm = r.get("failure_mode_id") and self.s.node(self.org, r["failure_mode_id"], "FailureMode")
+        return {
+            "id": r["id"], "number": r["number"], "label": self._report_label(r),
+            **{k: r.get(k) for k in ("title", "description", "status", "consequence", "occurred_on", "found_by",
+                                     "filed_on")},
+            "position": {"id": r["position_id"], "name": position.get("name"),
+                         "path": [{"id": a["id"], "name": a["name"]} for a in self._position_path(r["position_id"])]},
+            "item": self._report_item_view(r),
+            "failure_mode": {"id": fm["id"], "text": fm["text"], "ad_hoc": bool(fm.get("ad_hoc"))} if fm else None,
+            "investigation": r.get("investigation"), "actions": r.get("actions") or [],
+            "verification": r.get("verification"),
+            "repeat_check": self._repeat_check(r, self.s.nodes(self.org, "FailureReport")),
+            "closed": r.get("closed"), "rejected": r.get("rejected"), "history": r.get("history") or [],
+            "photos": self.photos_of(r["id"]), "open_actions": self._open_actions(r), "can": self._report_can(r),
+        }
+
+    def _report_brief(self, r: dict, root_id: str | None, cache: dict) -> dict:
+        """A report in a list. level: the names from the scope's root down to its
+        position, the root left out ([] at the root itself; the whole path when the
+        scope has no root)."""
+        pid = r["position_id"]
+        if pid not in cache:
+            position = self.s.node(self.org, pid) or {}
+            path = self._position_path(pid) if position else []
+            cache[pid] = (position, [a["id"] for a in path] + [pid], [a["name"] for a in path] + [position.get("name")])
+        position, ids, names = cache[pid]
+        level = names[ids.index(root_id) + 1:] if root_id in ids else names
+        fm = r.get("failure_mode_id")
+        if fm and fm not in cache:
+            cache[fm] = self.s.node(self.org, fm, "FailureMode")
+        mode = fm and cache[fm]
+        history = r.get("history") or []
+        return {
+            "id": r["id"], "number": r["number"], "label": self._report_label(r),
+            **{k: r.get(k) for k in ("title", "status", "consequence", "occurred_on", "found_by")},
+            "position": {"id": pid, "name": position.get("name")}, "level": level,
+            "failure_mode": {"id": mode["id"], "text": mode["text"]} if mode else None,
+            "item": {"id": r["item_id"], "name": r.get("item_name") or "", "serial": r.get("item_serial") or ""}
+            if r.get("item_id") else None,
+            "part": {"id": r["part_id"], "part_number": r.get("part_number") or ""} if r.get("part_id") else None,
+            "open_actions": self._open_actions(r), "last_change": history[-1] if history else None,
+        }
+
+    def failure_reports(self, position_id=None, below=True, location_id=None, item_id=None, status=None,
+                        consequence=None, failure_mode_id=None, part_id=None, since=None, until=None, q=None,
+                        sort="newest", limit=100, offset=0) -> dict:
+        """The reports in a scope: a position (with below, every position inside it
+        too), a location (the positions there, set or inherited, or inside it), an
+        item (the reports that involve it), or the whole workspace. status: open (the
+        four open statuses), one status, or all (default). consequence, failure_mode_id
+        and part_id filter; since / until bound occurred_on; q matches the title,
+        description, who found it, the failure mode and the position's name. sort:
+        newest (default), oldest, status (in flow order), consequence (safety first) or
+        position. counts are by status over the scope and the other filters, so the
+        chips say how many each status has."""
+        given = [k for k, v in (("position_id", position_id), ("location_id", location_id), ("item_id", item_id)) if v]
+        if len(given) > 1:
+            raise Invalid("One scope at a time: position_id (with below), location_id or item_id; none for the "
+                          "whole workspace.")
+        if status not in (None, "all", "open") and status not in REPORT_STATUSES:
+            raise Invalid(f"status is open, all, or one of {', '.join(REPORT_STATUSES)}.")
+        if consequence not in (None, "") and consequence not in REPORT_CONSEQUENCES:
+            raise Invalid(f"consequence is one of {', '.join(REPORT_CONSEQUENCES)}.")
+        if sort not in REPORT_SORTS:
+            raise Invalid(f"sort is one of {', '.join(REPORT_SORTS)}.")
+        since = _day(since, "since date") if since else None
+        until = _day(until, "until date") if until else None
+        if since and until and since > until:
+            raise Invalid("since is after until.")
+        try:
+            limit, offset = int(limit), int(offset)
+        except (TypeError, ValueError):
+            raise Invalid("limit and offset are whole numbers.")
+        if not 1 <= limit <= MAX_REPORT_LIST or offset < 0:
+            raise Invalid(f"limit is 1 to {MAX_REPORT_LIST}; offset is 0 or more.")
+
+        reports = self.s.nodes(self.org, "FailureReport")
+        root_id = None
+        if position_id:
+            position = self._get(position_id, "Position")
+            ids = self._report_scope(position_id, _flag_value(below, "below") if isinstance(below, str) else bool(below))
+            wanted = set(ids)
+            reports = [r for r in reports if r.get("position_id") in wanted]
+            root_id = position_id
+            scope = {"kind": "position", "id": position_id, "name": position["name"], "positions": len(ids)}
+        elif location_id:
+            loc = self._get(location_id, "Location")
+            wanted = {p["id"] for p, _, _ in self._positions_at(self._location_ids_in(location_id))}
+            reports = [r for r in reports if r.get("position_id") in wanted]
+            scope = {"kind": "location", "id": location_id, "name": loc["name"], "positions": len(wanted)}
+        elif item_id:
+            item = self._get(item_id, "Item")
+            reports = [r for r in reports if r.get("item_id") == item_id]
+            scope = {"kind": "item", "id": item_id, "name": item.get("name"),
+                     "positions": len({r["position_id"] for r in reports})}
+        else:
+            scope = {"kind": "workspace", "id": None, "name": None,
+                     "positions": sum(1 for p in self.s.nodes(self.org, "Position") if not p.get("retired"))}
+
+        cache: dict = {}
+        if failure_mode_id:
+            reports = [r for r in reports if r.get("failure_mode_id") == failure_mode_id]
+        if part_id:
+            reports = [r for r in reports if r.get("part_id") == part_id]
+        if consequence:
+            reports = [r for r in reports if r.get("consequence") == consequence]
+        if since:
+            reports = [r for r in reports if r["occurred_on"] >= since]
+        if until:
+            reports = [r for r in reports if r["occurred_on"] <= until]
+        words = " ".join(str(q or "").lower().split())
+        if words:
+            def matches(r):
+                brief = self._report_brief(r, root_id, cache)
+                haystack = [r.get("title"), r.get("description"), r.get("found_by"), brief["position"]["name"],
+                            brief["failure_mode"] and brief["failure_mode"]["text"]]
+                return any(words in str(h).lower() for h in haystack if h)
+            reports = [r for r in reports if matches(r)]
+        counts = {s: 0 for s in REPORT_STATUSES} | {"open": 0}
+        for r in reports:
+            counts[r["status"]] += 1
+            counts["open"] += r["status"] in OPEN_REPORT_STATUSES
+        if status == "open":
+            reports = [r for r in reports if r["status"] in OPEN_REPORT_STATUSES]
+        elif status not in (None, "all"):
+            reports = [r for r in reports if r["status"] == status]
+
+        # Newest first (by when it occurred, then its number); the other sorts keep that
+        # order within each group (sorts are stable).
+        reports.sort(key=lambda r: (r["occurred_on"], r["number"]), reverse=True)
+        if sort == "oldest":
+            reports.reverse()
+        elif sort == "status":
+            reports.sort(key=lambda r: REPORT_STATUSES.index(r["status"]))
+        elif sort == "consequence":
+            reports.sort(key=lambda r: REPORT_CONSEQUENCES.index(r["consequence"])
+                         if r.get("consequence") in REPORT_CONSEQUENCES else len(REPORT_CONSEQUENCES))
+        elif sort == "position":
+            reports.sort(key=lambda r: " › ".join(n for n in self._report_brief(r, root_id, cache)["level"] if n).lower())
+        page = reports[offset:offset + limit]
+        return {"reports": [self._report_brief(r, root_id, cache) for r in page], "total": len(reports),
+                "counts": counts, "scope": scope}
+
+    def _position_reports(self, position_id: str) -> dict:
+        """The reports raised at a position itself (not inside it): how many are open,
+        how many in all, and when the latest occurred."""
+        own = [r for r in self.s.inn(self.org, position_id, "REPORTED_AT") if r["label"] == "FailureReport"]
+        return {"open": sum(1 for r in own if r["status"] in OPEN_REPORT_STATUSES), "total": len(own),
+                "latest_on": max((r["occurred_on"] for r in own), default=None)}
+
     def items(self, item_class_id=None, manufacturer_id=None) -> list[dict]:
         """Every item, by name, with where it is, its item class and its manufacturer in
         the register. item_class_id: only items in that class or a class inside it (by
@@ -11155,16 +11813,17 @@ class Maintenance:
 
 
 def _blank_status() -> dict:
-    return {"overdue": 0, "open_work": 0, "alarms": 0, "next_due": None}
+    return {"overdue": 0, "open_work": 0, "alarms": 0, "open_reports": 0, "next_due": None}
 
 
 def _add_status(into: dict, *more: dict | None) -> dict:
-    """Adds counts (overdue, open work, alarms) into ``into``; keeps the earliest next due."""
+    """Adds counts (overdue, open work, alarms, open failure reports) into ``into``;
+    keeps the earliest next due."""
     for st in more:
         if not st:
             continue
-        for k in ("overdue", "open_work", "alarms"):
-            into[k] += st[k]
+        for k in ("overdue", "open_work", "alarms", "open_reports"):
+            into[k] += st.get(k, 0)
         if st["next_due"] and (into["next_due"] is None or st["next_due"] < into["next_due"]):
             into["next_due"] = st["next_due"]
     return into
