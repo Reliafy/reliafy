@@ -1348,6 +1348,8 @@ def register() -> None:
                      "operating_time": operating_time, "severity_class": severity_class}
             changes = {k: v for k, v in given.items() if v is not None}
             # The end effect is the RCM's effects: the same field, so one edit shows on both tabs.
+            if effects is not None:
+                changes["effects"] = effects
             for name in clear or []:
                 key = {"recommended_action": "action"}.get(name, name)
                 if key == "effects":

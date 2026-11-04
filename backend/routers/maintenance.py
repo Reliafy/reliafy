@@ -462,6 +462,30 @@ def position_rcm(position_id: str, scope: str = "below", session=Depends(get_ses
     return _rcm_read(session, ctx, m.rcm_worksheet, position_id, scope)
 
 
+@router.get("/positions/{position_id}/fmea.xlsx")
+def position_fmea_xlsx(position_id: str, scope: str = "below", session=Depends(get_session),
+                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> Response:
+    """The position's FME(C)A as an Excel workbook (scope below: it and everything inside it; this:
+    it alone): one row per failure mode with its scores, action priority and criticality, the
+    columns named as the worksheet import reads them, so the file imports again."""
+    from urllib.parse import quote
+
+    from backend.maintenance import fmea_sheet, rcm_graph
+
+    try:
+        sheet = rcm_graph.resolve(session, m.rcm_worksheet(position_id, scope), ctx.read_owners, ctx.hidden)
+    except NotFound:
+        return JSONResponse(status_code=404, content={"detail": "Not found."})
+    except Invalid as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+    name = fmea_sheet.filename(sheet["position"]["name"])
+    ascii_name = name.encode("ascii", "ignore").decode() or "FMECA.xlsx"
+    return Response(content=fmea_sheet.workbook(sheet), media_type=fmea_sheet.XLSX, headers={
+        "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}",
+        "Cache-Control": "no-store",
+    })
+
+
 @router.post("/positions/{position_id}/functions")
 def add_function(position_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """A function with its performance standard and, optionally, the working behind it
