@@ -225,3 +225,31 @@ test("full screen on a phone (400 px): no sideways scroll, big enough to tap", a
   await expect(page.getByRole("button", { name: "Full screen", exact: true })).toBeFocused();
   await expectHealthy(page, problems, { label: "full screen at 400 px" });
 });
+
+// A mistyped or old diagram link says so, rather than opening a blank builder
+// that looks like a lost diagram.
+test("an unknown diagram id says it isn't there", async ({ page }) => {
+  await open(page, "/systems/b/no-such-diagram");
+  await expect(page.getByRole("heading", { name: "Diagram not found" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "See your RBDs" })).toBeVisible();
+});
+
+// On a phone a sample diagram fits the canvas on load: no block starts off
+// either edge.
+test("a sample diagram fits a phone's canvas", async ({ page }) => {
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, "/systems/b/sample-rbd-instrument-air-design");
+  const pane = page.locator(".react-flow").first();
+  await expect(page.locator(".react-flow__node").first()).toBeVisible();
+  await page.waitForTimeout(800); // the fit animates (300 ms)
+  const box = await pane.boundingBox();
+  const nodes = await page.locator(".react-flow__node").evaluateAll((els) => els.map((e) => {
+    const r = e.getBoundingClientRect();
+    return [r.left, r.right];
+  }));
+  expect(nodes.length).toBeGreaterThan(3);
+  for (const [l, r] of nodes) {
+    expect(l).toBeGreaterThanOrEqual(box.x - 2);
+    expect(r).toBeLessThanOrEqual(box.x + box.width + 2);
+  }
+});

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import ErrorBoundary from "../components/ErrorBoundary.jsx";
+import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import ResultView from "../components/ResultView.jsx";
 import EditFitModal from "../components/EditFitModal.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
@@ -11,9 +13,11 @@ import useTabParam from "../components/model/useTabParam.js";
 import { itemName } from "../components/LibRows.jsx";
 import ModelNextSteps from "../components/ModelNextSteps.jsx";
 import { rememberModel } from "../modelNext.js";
+import { otherModelPage } from "../modelRoute.js";
 import { answerParts, modelTabs } from "../modelFrame.js";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const CRUMBS = [{ label: "Model", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
 
@@ -25,20 +29,26 @@ export default function ModelPage() {
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  // Not on this list (404): ModelNotFound looks in the others.
+  const [missing, setMissing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useTabParam();
 
   useEffect(() => {
     setModel(null);
     setError(null);
+    setMissing(false);
     getModel(id)
       .then((m) => {
+        // A condition and life model is stored with these: open its own page.
+        const page = otherModelPage(m);
+        if (page) return navigate(page.to, { replace: true });
         setModel(m);
         // The Strategy tools start on the model used last (#294).
         rememberModel(m.id);
       })
-      .catch((err) => setError(err.message));
-  }, [id]);
+      .catch((err) => (err.status === 404 ? setMissing(true) : setError(err.message)));
+  }, [id, navigate]);
 
   const confirm = useConfirm();
   const onDelete = async () => {
@@ -88,18 +98,23 @@ export default function ModelPage() {
       notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
     >
       {model ? (
-        <ResultView
-          result={results}
-          modelId={model.id}
-          name={model.name}
-          split={split}
-          datasetId={model.dataset_id || null}
-          compare={["distribution", "flexible"].includes(model.kind) && model.dataset_id ? () => compareModel(model.id) : null}
-          tab={tab}
-          onTab={(t) => setTab(t, tabs[0]?.id)}
-        />
-      ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        // A model this page can't draw shows a card here, not the whole-app error page.
+        <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
+          <ResultView
+            result={results}
+            modelId={model.id}
+            name={model.name}
+            split={split}
+            datasetId={model.dataset_id || null}
+            compare={["distribution", "flexible"].includes(model.kind) && model.dataset_id ? () => compareModel(model.id) : null}
+            tab={tab}
+            onTab={(t) => setTab(t, tabs[0]?.id)}
+          />
+        </ErrorBoundary>
+      ) : missing ? <ModelNotFound id={id} kind="life" />
+        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
       {editModal}
+      <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );
 }

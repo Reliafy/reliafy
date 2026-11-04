@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay, computeFilter, flatten, levelSet, markersOf } from "./assetTree.js";
 import {
-  NARROW_TABLE, TASK_WITH_INTERVAL, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardChoices, standardKeys, tableCols,
+  NARROW_TABLE, TASK_WITH_INTERVAL, basisMarked, causeKey, cellRow, failureRows, failureStatusWords, itemWrites, legacyKey, newStandardRows, noStdKey, opensItem, filterChoices, fitWidths, graftRcm, linkChoices, unlinkEmptiesFailure, hasLinkedEvidence, isRcmRow, openFor, positionOf, rowActions, secondTaskHint, standardKeys, tableCols,
   taskWithInterval, usualCols, withTableCols,
 } from "./explorerRcm.js";
 import { COLUMN, DEFAULT_COLUMNS, belowDecisionText, checkValue, insideWords, phoneLine, failuresOn, loadPrefs, savePrefs } from "./rcmWorksheet.js";
@@ -512,9 +512,6 @@ test("standards are a level: a list's rows with their failures, a 'No standard' 
   assert.deepEqual(failureRows(d, row("f2")).map((x) => x.key), ["x3"]);
   assert.deepEqual(failureRows(d, row("f3")).map((x) => x.key), ["x4"]);
   assert.deepEqual(failuresOn(d, "pump").map((f) => [f.id, f.function]), [["x2", "Pump water"], ["x1", "Pump water"], ["x3", "Contain the water"], ["x4", "Stop on the lanyard"]]);
-  assert.deepEqual(standardChoices(d, row("x1")), [{ id: "s1", text: "At least 50 L/s" }, { id: "s2", text: "At 4 bar" }]);
-  assert.deepEqual(standardChoices(d, row("x3")), []);
-  assert.deepEqual(standardChoices(d, row("s1")), []);
   // Opening the tab on the pump opens the standards too, so the failures and modes show.
   const open = openFor(d, "pump");
   assert.ok(open.has("s1") && open.has("s2") && open.has(noStdKey("f1")) && open.has(legacyKey("f2")) && open.has("x2") && open.has("x3"));
@@ -560,9 +557,8 @@ test("row menus for the standards level: add, edit, move, remove; a failure chan
   assert.deepEqual(items(legacyKey("f2"), { canRename: false }).map((a) => a.id), ["open", "add-fail", "delete"]);
   assert.deepEqual(labels(noStdKey("f1")), ["Add a functional failure…"]); // the "No standard" heading: its details, on the add row
   // A failure under a function with a list offers Change standard…; one without doesn't.
-  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Change performance standard…", "Edit description", "Delete functional failure"]);
-  assert.ok(!labels("x3").includes("Change performance standard…"));
-  assert.ok(!labels("x4").includes("Change performance standard…"));
+  // Which standard it breaches is where it sits: moved (Move to…, a drag), not picked here.
+  assert.deepEqual(labels("x1"), ["Open…", "Add failure mode", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure"]);
   assert.deepEqual(labels("f1").slice(0, 3), ["Open…", "Add a performance standard…", "Add functional failure"]);
 });
 
@@ -597,4 +593,56 @@ test("standard rows that arrive under an open function open at once, so the fail
   // Under a closed function nothing opens (it wasn't on show).
   assert.deepEqual(newStandardRows(after, seen, new Set(["pump", "f1"])), []);
   assert.deepEqual(newStandardRows(after, standardKeys(after), new Set(["pump", "f1", "f2"])), []);
+});
+
+// ---- failure modes directly under a function (written on the FME(C)A tab) --------------
+import { RCM_CHIPS, noFailKey } from "./explorerRcm.js";
+import { NOFAIL_HINT } from "./rcmWorksheet.js";
+
+const RCM_DIRECT = {
+  positions: [{
+    id: "pump",
+    functions: [
+      { id: "f1", text: "Pump water", modes: [mode("d1", "Bearing seizes"), mode("d2", "Seal leaks")], failures: [
+        { id: "x1", text: "No flow", modes: [mode("m1", "Impeller worn")] },
+      ] },
+    ],
+    unassigned: [],
+  }],
+};
+
+test("a function's direct failure modes sit under one \"No functional failure yet\" row after its failures; counts roll up to the function", () => {
+  const d = graftRcm(buildDisplay(DATA, "positions"), RCM_DIRECT);
+  assert.equal(noFailKey("f1"), "F:f1");
+  assert.deepEqual(d.rows.get("f1").kids, ["x1", "F:f1"]);
+  const g = d.rows.get("F:f1");
+  assert.equal(g.type, "nofail");
+  assert.equal(g.ref.text, "No functional failure yet");
+  assert.equal(g.ref.function_id, "f1");
+  assert.deepEqual(g.ref.mode_ids, ["d1", "d2"]);
+  assert.deepEqual(g.kids, ["d1", "d2"]);
+  assert.equal(g.depth, d.rows.get("x1").depth); // beside the functional failures
+  assert.equal(d.rows.get("d1").depth, d.rows.get("m1").depth);
+  assert.equal(d.rows.get("d1").ref.functional_failure_id, null);
+  assert.equal(d.rows.get("d1").ref.function_id, "f1");
+  assert.equal(g.rsum.modes, 2);
+  assert.equal(d.rows.get("f1").rsum.modes, 3);
+  assert.equal(d.rows.get("pump").rsum.undecided, 3);
+  assert.ok(isRcmRow(g) && positionOf(g) === "pump");
+  // Its menu: write the functional failure, or put them under one; openFor opens it.
+  assert.deepEqual(rowActions(g).map((a) => a.id), ["add-fail", "assign-fail"]);
+  assert.ok(openFor(d, "pump").has("F:f1"));
+  // The quiet hint, in words (never a gate).
+  assert.deepEqual(markersOf(g), [{ kind: "nofail", text: "finish the RCM", label: NOFAIL_HINT }]);
+  // The chips are the RCM tab's own.
+  assert.ok(RCM_CHIPS.every((c) => c.tab === "rcm"));
+});
+
+test("a failure mode's details save the FME(C)A's fields in the same write as its words", () => {
+  const r = { type: "mode", ref: { id: "m1" } };
+  assert.deepEqual(itemWrites(r, { name: "Seal leaks", severity: 9, cause: "Dust", action_due: null, consequence: "safety" }), [
+    { api: "mode", body: { text: "Seal leaks", severity: 9, cause: "Dust", action_due: null } },
+    { api: "decide", body: { consequence: "safety" } },
+  ]);
+  assert.deepEqual(itemWrites(r, { mode_ratio: 0.5, severity_class: "I" }), [{ api: "mode", body: { mode_ratio: 0.5, severity_class: "I" } }]);
 });

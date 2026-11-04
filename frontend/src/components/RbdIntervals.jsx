@@ -5,8 +5,11 @@ import { graphSignature } from "./RbdValidation.jsx";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 import "./RbdIntervals.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import ProTag from "./ProTag.jsx";
 
 // Maintenance and proof-test intervals chosen together (#172, #228), on the
 // Design tab of a repairable diagram: RePyability's
@@ -157,9 +160,11 @@ export default function RbdIntervals({ graph, onApply, onView }) {
     );
   }
 
+  // A minimum availability is a percentage (99.9), sent as a fraction.
+  const availPct = readPercents("rbdIntervals", { availability: value });
   const targetBody = () => {
     const v = value === "" ? null : Number(value);
-    if (target === "availability") return { minAvailability: v == null ? null : v / 100 };
+    if (target === "availability") return { minAvailability: availPct.fractions.availability };
     if (target === "pfd") return { maxPfd: v };
     if (target === "sil") return { targetSil: v };
     if (target === "budget") return { maxCostRate: v };
@@ -330,7 +335,11 @@ export default function RbdIntervals({ graph, onApply, onView }) {
             <option value="budget">Most available within a cost rate</option>
           </select>
         </label>
-        {target !== "cost" && (
+        {target === "availability" && (
+          <PercentField className="param-field rbd-cost-field" label="Minimum availability" value={value}
+            onChange={setValue} check={availPct.checks.availability} hint="e.g. 99.9" />
+        )}
+        {target !== "cost" && target !== "availability" && (
           <label className="param-field rbd-cost-field">
             <span>{{ availability: "Minimum availability", pfd: "Maximum PFDavg", sil: "Target SIL", budget: "Maximum cost rate" }[target]}</span>
             {target === "sil" ? (
@@ -364,7 +373,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
       )}
       <div className="rbd-calc-actions">
         <button type="button" onClick={choose}
-                disabled={phase === "working" || picked.length === 0 || (target !== "cost" && value === "") || (kind === "proof_test" && !cal && !allowedText.trim() && tested > 1)}>
+                disabled={phase === "working" || picked.length === 0 || (target !== "cost" && value === "") || (target === "availability" && !availPct.ready) || (kind === "proof_test" && !cal && !allowedText.trim() && tested > 1)}>
           {phase === "working" ? "Choosing…" : "Choose intervals"}
         </button>
         <span className="hint">
@@ -537,7 +546,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
               ) : (
                 <div className="rbd-upgrade-actions">
                   <button type="button" disabled={crewSim?.state === "running" || stale} onClick={() => simulateCrews(false)}>
-                    {crewSim?.state === "running" ? "Simulating…" : `Simulate with your ${crews.crews} crew${crews.crews === 1 ? "" : "s"}`}
+                    {crewSim?.state === "running" ? "Simulating…" : <>{`Simulate with your ${crews.crews} crew${crews.crews === 1 ? "" : "s"}`}<ProTag /></>}
                   </button>
                 </div>
               )}

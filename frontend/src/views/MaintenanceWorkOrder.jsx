@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import {
   addPartUsed, addWorkCost, cancelWorkOrder, checkWorkItem, closeWorkOrder, getWorkOrder, listMaintenanceLocations,
   listMaintenanceParts, logLabour, removeWorkEntry,
@@ -13,6 +14,7 @@ import { partChoices, stockText } from "../maintenanceSpares.js";
 import { actionKinds, itemAtText, subjectPath } from "../maintenanceSubjects.js";
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -39,11 +41,12 @@ export default function MaintenanceWorkOrder() {
   }, [id]);
   useEffect(() => refresh(), [refresh]);
 
-  if (error && !wo) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !wo) return <div className="app"><LoadFailed error={error} to="/maintenance" label="Back to Maintenance" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (
     <div className="app">
+      <PageTitle name={wo && `#${wo.number} ${wo.title}`} />
       <PageHeader
         crumbs={[{ label: "Maintenance", to: "/maintenance" },
           ...(wo.subject ? [{ label: wo.subject.name, to: subjectPath(wo.subject) }] : [])]}

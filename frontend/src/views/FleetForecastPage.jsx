@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import Plot from "../components/Plot.jsx";
 import { ACCENT, INK, sentence } from "../plotTheme.js";
 import Select from "../components/Select.jsx";
@@ -19,6 +20,7 @@ import { unitInText } from "../components/unitText.js";
 import { itemsWithoutUsage, usageInputValue } from "../fleetUsage.js";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
 import FleetSparesCard from "../components/FleetSparesCard.jsx";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -108,7 +110,7 @@ export default function FleetForecastPage() {
   };
   useEffect(load, [id]);
 
-  if (error && !fleet) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !fleet) return <div className="app"><LoadFailed error={error} to="/forecasts" label="See all forecasts" /></div>;
   if (!fleet || !settings) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const readOnly = fleet.read_only;
@@ -271,6 +273,7 @@ export default function FleetForecastPage() {
 
   return (
     <div className="app">
+      <PageTitle name={fleet && itemName(fleet)} />
       <PageHeader
         crumbs={[{ label: "Forecasts", to: "/forecasts" }]}
         title={itemName(fleet)}

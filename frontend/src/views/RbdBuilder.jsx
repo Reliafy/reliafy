@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useMenuDismiss from "../components/useMenuDismiss.js";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
   Background,
   Controls,
@@ -72,6 +72,7 @@ import FullScreenButton from "../components/FullScreenButton.jsx";
 import { hasOpenLayer, isFullScreenKey } from "../fullScreen.js";
 import { rbdSaveSnapshot, rbdSaveStatus } from "../rbdSaveState.js";
 import { RBDS_LABEL, RBDS_PATH } from "../navigation.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -216,6 +217,12 @@ const EDGE_OPTIONS = {
 // page's size), and never zooms out so far that the text is unreadable: past
 // that a large diagram is a pan away.
 const FIT_OPTIONS = { padding: 0.02, minZoom: 0.45, maxZoom: 0.75, duration: 300 };
+// On a phone the whole diagram fits on load, however small that makes it: a
+// diagram cut off at both edges looks broken, and a pinch zooms in.
+const PHONE_CANVAS = 600;
+function fitOptionsFor(width) {
+  return width && width <= PHONE_CANVAS ? { ...FIT_OPTIONS, minZoom: 0.2 } : FIT_OPTIONS;
+}
 // The sized canvas (see sizeCanvas): its least height, the room kept above
 // and below the diagram for the zoom controls, and the frame below it (the
 // page's bottom padding).
@@ -351,7 +358,7 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
 // Shared samples are stored with a "(sample)" suffix; the header says so with a chip.
 const SAMPLE_SUFFIX = /\s*\(sample\)\s*$/i;
 
-function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab, addModel = null, onModelAdded }) {
+function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab, addModel = null, onModelAdded, onLoadError }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [menu, setMenu] = useState(null); // { kind, x, y, flow?, id? }
@@ -492,7 +499,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       if ((ready && frames > 0) || frames > 60) {
         sizedRef.current = sizeCanvas();
         // Fit once React Flow has seen the canvas's new height.
-        window.requestAnimationFrame(() => window.requestAnimationFrame(() => fitViewRef.current(FIT_OPTIONS)));
+        window.requestAnimationFrame(() => window.requestAnimationFrame(
+          () => fitViewRef.current(fitOptionsFor(wrapper.current?.clientWidth))));
       } else {
         frames += 1;
         window.requestAnimationFrame(attempt);
@@ -1097,7 +1105,9 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   useEffect(() => {
     if (rbdId && loadedRef.current !== rbdId) {
       loadedRef.current = rbdId;
-      openRbd(rbdId, addModel).catch(() => {});
+      // A diagram that isn't there (a mistyped or old link) must not look
+      // like an empty, lost diagram: the page says so instead.
+      openRbd(rbdId, addModel).catch((err) => onLoadError?.(err));
     } else if (!rbdId && imported?.graph && loadedRef.current !== imported) {
       loadedRef.current = imported;
       loadGraph(imported.graph, null, imported.name || "");
@@ -1106,7 +1116,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       loadGraph(graphWithModel(null, addModel).graph, null, "");
       onModelAdded?.(plainName(addModel.name), true);
     }
-  }, [rbdId, imported, openRbd, loadGraph, addModel, onModelAdded]);
+  }, [rbdId, imported, openRbd, loadGraph, addModel, onModelAdded, onLoadError]);
 
   // Assign a non-repairable model (saved or from parameters) to the node the modal targets.
   const setNodeModel = useCallback(
@@ -1667,7 +1677,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         defaultEdgeOptions={EDGE_OPTIONS}
         fitView
-        fitViewOptions={FIT_OPTIONS}
+        fitViewOptions={fitOptionsFor(typeof window !== "undefined" ? window.innerWidth : 0)}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
       >
@@ -2140,7 +2150,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         onView={() => {
           setTab("builder");
           // Once the canvas is shown again (it can't be fitted while hidden).
-          window.setTimeout(() => fitView(FIT_OPTIONS), 60);
+          window.setTimeout(() => fitView(fitOptionsFor(wrapper.current?.clientWidth || window.innerWidth)), 60);
         }}
       />
       )}
@@ -2204,6 +2214,10 @@ export default function RbdBuilder() {
   }, [navigate, location.pathname]);
   const [meta, setMeta] = useState({});
   const [tab, setTab] = useState("builder");
+  const [loadError, setLoadError] = useState(null); // { id, missing, message }
+  const onLoadError = useCallback((err) => setLoadError({
+    id, missing: err?.status === 404 || err?.status === 403, message: err?.message,
+  }), [id]);
   // One Builder per diagram opened: a new route gets a fresh one, but the
   // route catching up with the Builder's own save (a new diagram's first
   // save, or Save as new) keeps it, so the canvas, its view and full screen
@@ -2216,8 +2230,28 @@ export default function RbdBuilder() {
     keys.route = routeKey;
     keys.savedId = null;
   }
+  if (loadError && loadError.id === id) {
+    return (
+      <div className="app">
+        <PageTitle name={loadError.missing ? "Diagram not found" : "Couldn't open this diagram"} />
+        <PageHeader crumbs={[{ label: RBDS_LABEL, to: RBDS_PATH }]}
+                    title={loadError.missing ? "Diagram not found" : "Couldn't open this diagram"} />
+        <div className="card" role="alert">
+          <p style={{ marginTop: 0 }}>
+            {loadError.missing
+              ? "There's no diagram at this address. It may have been deleted, or the link may be mistyped."
+              : `Something stopped the diagram loading: ${loadError.message || "an unknown error"}. Try again in a moment.`}
+          </p>
+          <p style={{ marginBottom: 0 }}>
+            <Link to={RBDS_PATH}>See your RBDs</Link> · <Link to="/systems/b">Start a new diagram</Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={"app rbd-app" + (tab === "builder" ? "" : " rbd-app-scroll")}>
+      <PageTitle name={(meta.name || "").replace(SAMPLE_SUFFIX, "")} />
       <PageHeader
         crumbs={[{ label: RBDS_LABEL, to: RBDS_PATH }]}
         title={(meta.name || "").replace(SAMPLE_SUFFIX, "") || (id ? "" : "Untitled RBD")}
@@ -2283,6 +2317,7 @@ export default function RbdBuilder() {
             onTab={setTab}
             addModel={addModel}
             onModelAdded={onModelAdded}
+            onLoadError={onLoadError}
           />
         </ReactFlowProvider>
       </div>

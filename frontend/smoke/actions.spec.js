@@ -93,6 +93,9 @@ async function uploadAndFit(page) {
   await expect(page.getByRole("option", { name: "Ignore this column" })).toBeVisible();
   await page.keyboard.press("Escape");
 
+  // No unit can be guessed from "col 1": a hint asks for one, but Next is never blocked.
+  await expect(page.getByText(/Add a unit \(Hours, Days, Cycles/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next" })).toBeEnabled();
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Fit Weibull" }).click();
   await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
@@ -186,20 +189,23 @@ test("move a photo from a work order to its position", async ({ page, problems }
   const photoId = (await added.json()).photo.id;
 
   await open(page, `/maintenance/work-orders/${wo.id}`);
-  await page.getByRole("img", { name: "Smoke nameplate" }).click();
+  // The thumbnail is a button: reach it with the keyboard and open it with Enter.
+  const thumb = page.getByRole("button", { name: /^Open photo \d+ of \d+: Smoke nameplate$/ });
+  await thumb.focus();
+  await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Link or move…" }).click();
   const picker = page.locator(".modal").filter({ hasText: "Link or move this photo" });
   await picker.getByLabel(/Move it there/).check();
   await picker.getByLabel("Kind").selectOption("Position");
   await picker.getByLabel("Which position").selectOption(wo.position.id);
   await picker.getByRole("button", { name: "Move", exact: true }).click();
-  await expect(page.getByRole("img", { name: "Smoke nameplate" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Smoke nameplate/ })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "work order after moving a photo" });
 
   const position = await (await page.request.get(`/api/maintenance/positions/${wo.position.id}`)).json();
   expect(position.photos.map((p) => p.id)).toContain(photoId);
   await open(page, `/asset-register/positions/${wo.position.id}`);
-  await expect(page.getByRole("img", { name: "Smoke nameplate" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Open photo \d+ of \d+: Smoke nameplate$/ })).toBeVisible();
   await expectHealthy(page, problems, { label: "position with the moved photo" });
 });
 

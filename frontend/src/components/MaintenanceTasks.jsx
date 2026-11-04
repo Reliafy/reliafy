@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   createSubjectTask, openWorkOrder, retireMaintenanceTask, setTaskLastDone, updateMaintenanceTask,
 } from "../api.js";
-import { PlusIcon } from "./LibRows.jsx";
+import { PlusIcon, RowLink, rowOpen } from "./LibRows.jsx";
 import { DueChip, Field, FormModal, TASK_SOURCES, everyText, fmtDate, today } from "./MaintenanceParts.jsx";
 import { subjectPath, taskUnits, whileStoredText } from "../maintenanceSubjects.js";
 import { TASK_HINT, tooLong } from "../maintenanceText.js";
@@ -291,9 +291,9 @@ export function WorkOrdersCard({ workOrders, emptyText = "None yet." }) {
           <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
           <tbody>
             {workOrders.map((w) => (
-              <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
+              <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
                 <td>{w.number}</td>
-                <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
+                <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink>{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                 <td>{w.type}</td><td>{w.status}</td>
                 <td className="lib-date">{fmtDate(w.opened)}</td><td className="lib-date">{fmtDate(w.closed)}</td>
               </tr>

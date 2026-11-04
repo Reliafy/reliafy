@@ -10,6 +10,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it saves screenshots at 1280 and 400 px.
 import { test, expect, open, postOk } from "./health.js";
+import { pickPlace } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -89,9 +90,9 @@ test("at 400 px, moving RCM whose task counts the old truck's hours asks, and Un
   const p = await fleet(request, tag);
   await openFleet(page, p, 400);
   await trow(page, `^Function: Haul ore ${tag}`).getByRole("button", { name: "Actions", exact: true }).click();
-  await page.getByRole("menu").getByRole("menuitem", { name: "Move to another position…" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Move to…" }).click();
   const move = page.getByRole("dialog", { name: `Move “Haul ore ${tag}”` });
-  await move.getByRole("listbox", { name: "Where it goes" }).selectOption(p.t14.id);
+  await pickPlace(move, p.t14.id, `Truck 14 ${tag}`);
   await expect(move.getByRole("status")).toContainText("It will ask what its tasks count there.");
   await move.getByRole("button", { name: "Move", exact: true }).click();
 
@@ -132,9 +133,9 @@ test("the question can switch the task to calendar time instead", async ({ page,
   const row = trow(page, `^Function: Haul ore ${tag}`);
   await row.locator(".tp-nm").click();
   await row.press("Shift+F10");
-  await page.getByRole("menu").getByRole("menuitem", { name: "Move to another position…" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Move to…" }).click();
   const move = page.getByRole("dialog", { name: `Move “Haul ore ${tag}”` });
-  await move.getByRole("listbox", { name: "Where it goes" }).selectOption(p.t14.id);
+  await pickPlace(move, p.t14.id, `Truck 14 ${tag}`);
   await move.getByRole("button", { name: "Move", exact: true }).click();
   const ask = page.getByRole("dialog", { name: `What should it count on Truck 14 ${tag}?` });
   await ask.getByRole("radio", { name: "Go by calendar time instead" }).check();

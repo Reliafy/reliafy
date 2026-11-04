@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import uuid
 
+from backend.maintenance import fmea
 from backend.services import degradation as degradation_service
 from backend.services import models as models_service
 from backend.services import strategy_store
@@ -232,8 +233,40 @@ def _node_id(node: dict) -> str:
     return nid if isinstance(nid, str) and nid.strip() else uuid.uuid4().hex
 
 
+def _clean_mode(mode: dict) -> dict:
+    consequence = mode.get("consequence") or None
+    if consequence is not None and consequence not in CONSEQUENCES:
+        raise RcmValidationError(
+            f"Unknown consequence '{consequence}': it's one of {', '.join(CONSEQUENCES)}.")
+    cleaned_mode = {
+        "id": _node_id(mode),
+        "text": _require_text(mode, "failure mode"),
+        "consequence": consequence,
+        "decision": _clean_decision(mode.get("decision")),
+    }
+    effects = str(mode.get("effects") or "").strip()
+    if effects:
+        cleaned_mode["effects"] = effects
+    # Free-text notes on the mode itself (columns a spreadsheet import keeps
+    # as text); a decision's notes live on it.
+    notes = str(mode.get("notes") or "").strip()
+    if notes:
+        cleaned_mode["notes"] = notes
+    # Its FME(C)A fields (scores, cause, effects, the action, the criticality
+    # figures), checked as the service checks them.
+    for key in fmea.FIELDS:
+        if mode.get(key) is not None:
+            try:
+                cleaned_mode[key] = fmea.clean_value(key, mode[key])
+            except fmea.FmeaError as err:
+                raise RcmValidationError(str(err)) from None
+    return cleaned_mode
+
+
 def clean_tree(functions) -> list[dict]:
-    """Validate and normalise a worksheet tree (functions › failures › modes)."""
+    """Validate and normalise a worksheet tree (functions › failures › modes;
+    a function's own ``modes`` sit directly under it, with no functional
+    failure yet)."""
     if not isinstance(functions, list):
         raise RcmValidationError("functions must be a list.")
     out = []
@@ -243,6 +276,8 @@ def clean_tree(functions) -> list[dict]:
             "text": _require_text(fn, "function"),
             "failures": [],
         }
+        if fn.get("modes"):
+            cleaned_fn["modes"] = [_clean_mode(mode) for mode in fn["modes"]]
         standard = str(fn.get("standard") or "").strip()
         if standard:
             cleaned_fn["standard"] = standard
@@ -250,28 +285,8 @@ def clean_tree(functions) -> list[dict]:
             cleaned_failure = {
                 "id": _node_id(failure),
                 "text": _require_text(failure, "functional failure"),
-                "modes": [],
+                "modes": [_clean_mode(mode) for mode in failure.get("modes") or []],
             }
-            for mode in failure.get("modes") or []:
-                consequence = mode.get("consequence") or None
-                if consequence is not None and consequence not in CONSEQUENCES:
-                    raise RcmValidationError(
-                        f"Unknown consequence '{consequence}': it's one of {', '.join(CONSEQUENCES)}.")
-                cleaned_mode = {
-                    "id": _node_id(mode),
-                    "text": _require_text(mode, "failure mode"),
-                    "consequence": consequence,
-                    "decision": _clean_decision(mode.get("decision")),
-                }
-                effects = str(mode.get("effects") or "").strip()
-                if effects:
-                    cleaned_mode["effects"] = effects
-                # Free-text notes on the mode itself (e.g. FMEA scores kept
-                # from a spreadsheet import); a decision's notes live on it.
-                notes = str(mode.get("notes") or "").strip()
-                if notes:
-                    cleaned_mode["notes"] = notes
-                cleaned_failure["modes"].append(cleaned_mode)
             cleaned_fn["failures"].append(cleaned_failure)
         out.append(cleaned_fn)
     return out

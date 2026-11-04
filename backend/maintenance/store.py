@@ -241,7 +241,8 @@ class GraphStore:
     copy rebuilt from a shared log, or for tests). With no log given, the log
     lives in the same SQLite file."""
 
-    def __init__(self, path: str, projectors: dict[str, Projector], log=None, series=None, version: int = 1):
+    def __init__(self, path: str, projectors: dict[str, Projector], log=None, series=None, version: int = 1,
+                 snapshots=None):
         self._conn = open_sqlite(path)
         tracked = bool(self._conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'changes'").fetchall())
@@ -262,6 +263,9 @@ class GraphStore:
         from backend.maintenance.series import SqliteSeries
 
         self.series = series if series is not None else SqliteSeries(self._conn, self._lock)
+        from backend.maintenance.signals import SqliteSnapshots
+
+        self.snapshots = snapshots if snapshots is not None else SqliteSnapshots(self._conn, self._lock)
         # When the projectors change what they build, or the tables change
         # shape, a stored graph is rebuilt from the log (the log never changes).
         rows = self._all("SELECT value FROM meta WHERE key = 'version'", ())

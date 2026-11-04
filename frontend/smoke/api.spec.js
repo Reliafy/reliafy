@@ -11,6 +11,8 @@ import { test, expect } from "@playwright/test";
 const SIGNED_IN = [
   // The Explorer's "Add the sample truck" (once: smoke/seed.js added it, so this adds nothing).
   ["POST", "/api/maintenance/sample-truck"],
+  // "Add the sample UAV" (the FME(C)A tab's scored sample quadcopter).
+  ["POST", "/api/maintenance/sample-uav"],
   // A dataset's measurements part (docs/datasets.md): add, paste, remove, split, life data for readings alone.
   ["PUT", "/api/datasets/smoke/measurements"],
   ["PUT", "/api/datasets/smoke/measurements/paste"],
@@ -29,6 +31,7 @@ const SIGNED_IN = [
   ["POST", "/api/test-planning/simulate"],
   ["POST", "/api/strategy/calendar-replacement"], // replacement over a shutdown calendar
   ["POST", "/api/strategy/calendar-next"],
+  ["POST", "/api/rbd-jobs/smoke/cancel"], // cancel a long calculation
   ["POST", "/api/maintenance/photos/smoke/move"], // a photo on several places
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435
@@ -39,12 +42,25 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/conditions"], // #428
   ["GET", "/api/maintenance/rcm"], // the RCM in the Explorer's tree
   ["GET", "/api/maintenance/positions/smoke/rcm"], // a position's RCM
+  ["GET", "/api/maintenance/failure-reports"], // the Explorer's Failure reports tab
+  ["POST", "/api/maintenance/failure-reports"],
   ["PUT", "/api/maintenance/failure-modes/smoke/decision"],
   ["GET", "/api/maintenance/tasks/smoke/measurement"], // what a task by use counts (its dialog, a move's question)
   ["GET", "/api/maintenance/overview"],
   ["GET", "/api/maintenance/tree"], // the asset tree pane
   ["GET", "/api/maintenance/places"], // Assets: the top-level places
   ["GET", "/api/maintenance/work-orders"],
+  ["GET", "/api/maintenance/packages"], // work packages: tasks done on one visit
+  ["GET", "/api/maintenance/packages/propose"],
+  ["GET", "/api/maintenance/packages/smoke"],
+  ["POST", "/api/maintenance/packages"],
+  ["PATCH", "/api/maintenance/packages/smoke"],
+  ["POST", "/api/maintenance/packages/smoke/tasks"],
+  ["DELETE", "/api/maintenance/packages/smoke/tasks/smoke"],
+  ["POST", "/api/maintenance/packages/smoke/pause"],
+  ["POST", "/api/maintenance/positions/smoke/out-of-service"], // tasks not due while it's out of service
+  ["POST", "/api/maintenance/items/smoke/back-in-service"],
+  ["PUT", "/api/maintenance/work-orders/smoke/lines/smoke"], // a package line's mark, saved during the visit
   ["GET", "/api/rbd-runs"],
   ["POST", "/api/rbds/import"],
   ["GET", "/api/rbds"],

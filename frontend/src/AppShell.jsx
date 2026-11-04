@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { applyPageTitle } from "./components/usePageTitle.js";
 import NavBar from "./components/NavBar.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -46,6 +47,7 @@ const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx
 const MaintenanceHome = lazy(() => import("./views/MaintenanceHome.jsx"));
 const MaintenanceAssets = lazy(() => import("./views/MaintenanceAssets.jsx"));
 const MaintenancePosition = lazy(() => import("./views/MaintenancePosition.jsx"));
+const FmeaPrint = lazy(() => import("./views/FmeaPrint.jsx"));
 const MaintenanceWorkOrder = lazy(() => import("./views/MaintenanceWorkOrder.jsx"));
 const MaintenanceItem = lazy(() => import("./views/MaintenanceItem.jsx"));
 const AssetExplorer = lazy(() => import("./views/AssetExplorer.jsx"));
@@ -129,6 +131,11 @@ export default function AppShell() {
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname, phone]);
+  // Each page's own tab title ("RBDs · Reliafy"); a detail page adds its
+  // record's name with usePageTitle.
+  useEffect(() => {
+    applyPageTitle(pathname);
+  }, [pathname]);
   // Backdrop tap, Escape or the close button: focus returns to the menu button.
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
@@ -153,6 +160,12 @@ export default function AppShell() {
   return (
     <RolesProvider>
     <WalkthroughProvider>
+      {/* The first Tab stop: past the bar and the menu to the page. Focused
+          by hand so the address keeps no #hash. */}
+      <a className="skip-link" href="#main-content"
+         onClick={(e) => { e.preventDefault(); document.getElementById("main-content")?.focus(); }}>
+        Skip to content
+      </a>
       <NavBar
         menuOpen={phone && menuOpen}
         onMenu={() => setMenuOpen((o) => !o)}
@@ -167,7 +180,7 @@ export default function AppShell() {
           open={phone && menuOpen}
           onClose={closeMenu}
         />
-        <main className="content" key={workspace}>
+        <main className="content" id="main-content" tabIndex={-1} key={workspace}>
           <ErrorBoundary>
           <Suspense fallback={<div className="card empty view-loading">Loading…</div>}>
           <Routes>
@@ -189,6 +202,7 @@ export default function AppShell() {
             {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceAssets />} />}
             {maintenanceEnabled && <Route path="/asset-register/explorer" element={<AssetExplorer />} />}
             {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}
+            {maintenanceEnabled && <Route path="/asset-register/positions/:id/fmea" element={<FmeaPrint />} />}
             {maintenanceEnabled && <Route path="/asset-register/items/:id" element={<MaintenanceItem />} />}
             {maintenanceEnabled && <Route path="/asset-register/locations/:id" element={<MaintenanceLocation />} />}
             {maintenanceEnabled && <Route path="/asset-register/classes" element={<MaintenanceClasses />} />}

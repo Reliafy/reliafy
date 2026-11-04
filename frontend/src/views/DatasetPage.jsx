@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import { getDataset, deleteDataset, removeMeasurements, renameDataset, splitDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
 import CompareGroups from "../components/CompareGroups.jsx";
@@ -15,6 +16,7 @@ import { datasetMeta, datasetParts, splitText } from "../datasetFit.js";
 import "../components/Datasets.css";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // Where each kind of model fitted to a dataset opens.
 const MODEL_PATH = {
@@ -141,6 +143,7 @@ export default function DatasetPage() {
 
   return (
     <div className="app">
+      <PageTitle name={ds && itemName(ds)} />
       <PageHeader
         crumbs={[{ label: "Data", to: "/data" }]}
         title={ds ? itemName(ds) : "Dataset"}
@@ -198,7 +201,8 @@ export default function DatasetPage() {
         )}
       </PageHeader>
 
-      {error && <div className="card error" role="alert">{error}</div>}
+      {error && (ds ? <div className="card error" role="alert">{error}</div>
+        : <LoadFailed error={error} to="/data" label="See all your data" />)}
 
       {ds && (
         <>

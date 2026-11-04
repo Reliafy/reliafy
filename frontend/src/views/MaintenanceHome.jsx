@@ -11,7 +11,7 @@ import {
   setMaintenanceSettings,
 } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
-import { PlusIcon } from "../components/LibRows.jsx";
+import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
   DueChip, Field, FormModal, LocationPicker, PositionPicker, Proposals, flatten, fmtDate,
 } from "../components/MaintenanceParts.jsx";
@@ -181,9 +181,9 @@ export default function MaintenanceHome() {
                 <thead><tr><th>#</th><th>Title</th><th>On</th><th>Location</th><th>Type</th><th>Trade</th><th>Due</th></tr></thead>
                 <tbody>
                   {openWork.map((w) => (
-                    <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
+                    <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
                       <td>{w.number}</td>
-                      <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
+                      <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink>{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                       <td><SubjectCell subject={w.subject} at={w.item_at} link={false} /></td>
                       <td className="lib-date">{w.location?.name || "—"}</td>
                       <td>{w.type}</td>

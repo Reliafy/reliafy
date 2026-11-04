@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import { getMaintenancePart, getPartStructure, getPartWhereUsed } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import {
@@ -7,6 +8,7 @@ import {
 } from "../components/MaintenanceStructure.jsx";
 import { positionsPlanSummary, qtyNumber } from "../maintenanceStructure.js";
 import "./Maintenance.css";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // One catalogue part (#435): its details and indenture level, its structure (the
 // parts it's made of, expand and collapse), the quantities rolled up, and where it's
@@ -27,7 +29,7 @@ export default function MaintenancePart() {
   }, [id]);
   useEffect(() => { setMade(null); load(); }, [load]);
 
-  if (error && !part) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !part) return <div className="app"><LoadFailed error={error} to="/asset-register/parts" label="See all parts and stock" /></div>;
   if (!part || !structure || !used) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const lines = structure.tree.children || [];
@@ -37,6 +39,7 @@ export default function MaintenancePart() {
   };
   return (
     <div className="app">
+      <PageTitle name={part && `${part.part_number} ${part.name}`} />
       <PageHeader
         crumbs={[{ label: "Assets", to: "/asset-register" }, { label: "Parts and stock", to: "/asset-register/parts" }]}
         title={`${part.part_number} ${part.name}`}

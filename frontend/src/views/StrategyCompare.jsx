@@ -1,19 +1,25 @@
-import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
+import { SavedOfKind } from "../components/StrategyTool.jsx";
+import { STRATEGY_TOOLS } from "../strategyTools.js";
 import Card from "../components/ui/Card.jsx";
 import CompareTwoModels from "../components/CompareTwoModels.jsx";
+
+const TOOL = STRATEGY_TOOLS.compare;
 
 // Strategy › Compare two models: which item is more reliable?
 export default function StrategyCompare() {
   return (
     <div className="app">
-      <PageHeader
-        crumbs={[{ label: "Strategy", to: "/strategy" }]}
+      <SectionHeader
+        section="strategy"
         title="Compare two models"
-        meta="Put two items head-to-head — a fitted distribution or raw (non-parametric) data on each side — to see which is more reliable."
+        help={TOOL.help}
+        purpose="Put two items head-to-head — a fitted distribution or raw (non-parametric) data on each side — to see which is more reliable."
       />
       <Card>
         <CompareTwoModels />
       </Card>
+      <SavedOfKind kind={TOOL.kind} noun={TOOL.noun} />
     </div>
   );
 }

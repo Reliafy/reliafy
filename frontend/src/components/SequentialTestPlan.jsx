@@ -7,7 +7,9 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Assumptions, ComputeButton, Field, PlanAnswer, usePlan } from "./TestPlanShared.jsx";
 import { formatNumber, formatWithUnit } from "../format.js";
 import { DANGER, INK, SUCCESS, SURFACE, fitLine } from "../plotTheme.js";
-import { frac, given, num } from "../testPlanning.js";
+import { given, num } from "../testPlanning.js";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 import { unitInText } from "./unitText.js";
 
 const pct = (p) => (p == null ? "—" : `${(p * 100).toFixed(1).replace(/\.0$/, "")}%`);
@@ -117,10 +119,13 @@ export default function SequentialTestPlan() {
   const { result, error, loading, run } = usePlan("sequential");
   const mtbf = method === "mtbf";
 
+  const pcts = readPercents("sequential", { rTarget, rGood, confidence, producerRisk },
+    ["confidence", "producerRisk", ...(mtbf ? [] : ["rTarget", "rGood"])]);
+  const f = pcts.fractions;
   const compute = () => {
-    const body = { method, confidence: frac(confidence), producer_risk: frac(producerRisk) };
+    const body = { method, confidence: f.confidence, producer_risk: f.producerRisk };
     if (mtbf) Object.assign(body, { mtbf: num(target), good_mtbf: num(good), unit: unit.trim() || null });
-    else Object.assign(body, { reliability: frac(rTarget), good_reliability: frac(rGood) });
+    else Object.assign(body, { reliability: f.rTarget, good_reliability: f.rGood });
     if (given(failuresSeen) || given(seen)) {
       body.failures_seen = num(failuresSeen) ?? 0;
       if (mtbf) body.time_seen = num(seen);
@@ -176,12 +181,12 @@ export default function SequentialTestPlan() {
             </>
           ) : (
             <>
-              <Field label="Reliability to demonstrate (%)" value={rTarget} onChange={setRTarget} min="0.1" max="99.999" />
-              <Field label="A good design's reliability (%)" value={rGood} onChange={setRGood} min="0.1" max="99.999" />
+              <PercentField label="Reliability to demonstrate" value={rTarget} onChange={setRTarget} check={pcts.checks.rTarget} />
+              <PercentField label="A good design's reliability" value={rGood} onChange={setRGood} check={pcts.checks.rGood} />
             </>
           )}
-          <Field label="Confidence (%)" value={confidence} onChange={setConfidence} min="1" max="99.999" />
-          <Field label="Producer's risk (%)" value={producerRisk} onChange={setProducerRisk} min="0.1" max="99.9" />
+          <PercentField label="Confidence" value={confidence} onChange={setConfidence} check={pcts.checks.confidence} />
+          <PercentField label="Producer's risk" value={producerRisk} onChange={setProducerRisk} check={pcts.checks.producerRisk} />
         </div>
         <div className="strategy-costs">
           <Field label="Failures so far (optional)" value={failuresSeen} onChange={setFailuresSeen} min="0" step="1" />
@@ -192,7 +197,7 @@ export default function SequentialTestPlan() {
             min="0"
             placeholder="optional"
           />
-          <ComputeButton loading={loading} onClick={compute} />
+          <ComputeButton loading={loading} onClick={compute} disabled={!pcts.ready} />
         </div>
         <p className="hint">
           The consumer&apos;s risk (one minus the confidence) is the chance a design only as good as the target

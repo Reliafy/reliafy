@@ -25,7 +25,7 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
-import { PlusIcon } from "../components/LibRows.jsx";
+import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
   DocumentsCard, Field, FormModal, LifeTable, Proposals, fmtDate,
 } from "../components/MaintenanceParts.jsx";
@@ -52,6 +52,7 @@ import {
 } from "../maintenanceForecast.js";
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
@@ -140,6 +141,7 @@ export function MaintenanceLocation() {
   // (positions, items there now and the place itself), not only the positions'.
   return (
     <div className="app">
+      <PageTitle name={loc?.name} />
       <PageHeader
         crumbs={[...crumbs, ...loc.path.map((a) => ({ label: a.name, to: `/asset-register/locations/${a.id}` }))]}
         title={loc.name} id={loc.id}
@@ -215,9 +217,9 @@ function OpenWorkHere({ loc }) {
           <thead><tr><th>#</th><th>Title</th><th>On</th><th>Due</th></tr></thead>
           <tbody>
             {open.slice(0, OPEN_HERE).map((w) => (
-              <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
+              <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
                 <td>{w.number}</td>
-                <td>{w.title}</td>
+                <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink></td>
                 <td>{w.subject?.name}{subjectBadge(w.subject) && <> <span className="maint-badge">{subjectBadge(w.subject)}</span></>}
                   {w.location && ![loc.id, w.subject?.id].includes(w.location.id) && <div className="lib-date">{w.location.name}</div>}</td>
                 <td className="lib-date">{fmtDate(w.due)}</td>
@@ -289,7 +291,7 @@ export function MaintenanceClasses() {
   const navigate = useNavigate();
   // A class's own page (/asset-register/classes/Pool%20pump) opens its panel.
   const { name: open = null } = useParams();
-  const setOpen = (name) => navigate(`/asset-register/classes/${encodeURIComponent(name)}`);
+  const classPath = (name) => `/asset-register/classes/${encodeURIComponent(name)}`;
   const [classes, setClasses] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -303,6 +305,7 @@ export function MaintenanceClasses() {
   }, [open]);
   return (
     <div className="app">
+      <PageTitle name={open} />
       <SectionHeader section="assets" title="Classes"
                   purpose="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to." />
       {error && <div className="card error">{error}</div>}
@@ -315,9 +318,9 @@ export function MaintenanceClasses() {
             <thead><tr><th>Class</th><th>Positions</th><th>Fitments</th><th>Failures</th></tr></thead>
             <tbody>
               {classes.map((c) => (
-                <tr key={c.position_class} className="lib-row" onClick={() => setOpen(c.position_class)}
+                <tr key={c.position_class} className="lib-row" onClick={rowOpen(navigate, classPath(c.position_class))}
                     aria-current={c.position_class === open ? "true" : undefined}>
-                  <td>{c.position_class}</td><td>{c.positions}</td><td>{c.fitments}</td><td>{c.failures}</td>
+                  <td><RowLink to={classPath(c.position_class)}>{c.position_class}</RowLink></td><td>{c.positions}</td><td>{c.fitments}</td><td>{c.failures}</td>
                 </tr>
               ))}
             </tbody>

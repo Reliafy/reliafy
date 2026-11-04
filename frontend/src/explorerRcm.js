@@ -14,8 +14,9 @@ import {
   rowText as rcmText, tasksOf,
 } from "./rcmWorksheet.js";
 import { standardsShown } from "./rcmStandards.js";
+import { FIELDS as FMEA_FIELDS } from "./fmeaWorksheet.js";
 
-export const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode", "unassigned", "cause"]);
+export const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode", "unassigned", "cause", "nofail"]);
 export const isRcmRow = (r) => !!r && RCM_TYPES.has(r.type);
 
 const noStatus = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, not_analysed: 0, positions: 0, empty: 0 });
@@ -57,7 +58,10 @@ export function graftRcm(display, rcm) {
   const modeById = new Map();
   for (const p of rcm?.positions || []) {
     for (const m of p.unassigned || []) modeById.set(m.id, m);
-    for (const fn of p.functions || []) for (const ff of fn.failures || []) for (const m of ff.modes || []) modeById.set(m.id, m);
+    for (const fn of p.functions || []) {
+      for (const m of fn.modes || []) modeById.set(m.id, m);
+      for (const ff of fn.failures || []) for (const m of ff.modes || []) modeById.set(m.id, m);
+    }
   }
   const rows = new Map();
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
@@ -142,6 +146,19 @@ export function graftRcm(display, rcm) {
         // The quiet marker: a standard of the list with no functional failure yet.
         if (row) row.ref.no_failure = !st.legacy && !(row.ref.failures_here || 0);
       }
+      // Its failure modes placed directly under it (written on the FME(C)A
+      // tab): one muted "No functional failure yet" row after its failures,
+      // at the standards' depth, with the modes under it; the row's menu adds
+      // the functional failure or assigns them to one. The function isn't
+      // analysed until they sit under a functional failure.
+      if ((fn.modes || []).length) {
+        const g = add(noFailKey(fn.id), "nofail", {
+          id: noFailKey(fn.id), text: "No functional failure yet", position_id: r.key, function_id: fn.id, function_text: fn.text || "",
+          mode_ids: fn.modes.map((m) => m.id),
+        }, fn.id, d + 2);
+        for (const m of fn.modes) modeRow(m, g ? g.key : fn.id, g ? d + 3 : d + 2, null);
+        if (g) for (const k of g.kids) { const mr = rows.get(k); if (mr) mr.ref.function_id = fn.id; }
+      }
     }
     if ((p?.unassigned || []).length) {
       const u = add(`U:${r.key}`, "unassigned", { id: `U:${r.key}`, text: "Not under a functional failure", position_id: r.key }, r.key, d + 1);
@@ -158,6 +175,8 @@ export const causeKey = (effectId, causeId) => `L:${effectId}:${causeId}`;
 // A function's one standard text, shown as a row; and its "No standard" row.
 export const legacyKey = (fnId) => `S:${fnId}`;
 export const noStdKey = (fnId) => `N:${fnId}`;
+// A function's "No functional failure yet" row (its failure modes placed directly under it).
+export const noFailKey = (fnId) => `F:${fnId}`;
 
 // A function row's functional failures, in tree order, through its standard
 // rows (and its "No standard" row).
@@ -170,14 +189,6 @@ export function failureRows(display, fnRow) {
     else if (c.type === "std" || c.type === "nostd") for (const f of c.kids) if (display.rows.get(f)?.type === "fail") out.push(display.rows.get(f));
   }
   return out;
-}
-
-// The standards a functional failure may breach: its function's list (none
-// while the function has its one text, or no standard).
-export function standardChoices(display, failRow) {
-  if (!failRow || failRow.type !== "fail") return [];
-  const fn = display.rows.get(failRow.ref.function_id);
-  return (fn?.ref.standards || []).map((st) => ({ id: st.id, text: st.text || "" }));
 }
 
 // A reference row's counts: the failure modes in the chain it stands for (the
@@ -264,8 +275,6 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
       { id: "add-mode", label: "Add failure mode" },
       { id: "link-cause", label: "Link to a cause…" },
       ...(r.ref.has_above ? [{ id: "link-effect", label: "Link to an effect…" }] : []),
-      // Which of its function's standards it breaches (only with a list).
-      ...(r.ref.has_standards ? [{ id: "change-std", label: "Change performance standard…" }] : []),
       ...rename,
       { id: "delete", label: "Delete functional failure", danger: true },
     ];
@@ -274,6 +283,14 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
   // The group rows: adding inside them (their details open on the add row).
   if (r.type === "nostd") return [{ id: "add-fail", label: "Add a functional failure…" }];
   if (r.type === "unassigned") return [{ id: "add-mode", label: "Add a failure mode…" }];
+  // Failure modes directly under a function: write the functional failure
+  // they belong under (on the function), or put them under one it has.
+  if (r.type === "nofail") {
+    return [
+      { id: "add-fail", label: "Add a functional failure…" },
+      { id: "assign-fail", label: "Assign to a functional failure…" },
+    ];
+  }
   if (r.type === "mode") {
     return [
       ...open,
@@ -289,10 +306,12 @@ export function rowActions(r, { canRename = true, moves = true } = {}) {
 
 // The RCM's own chips (shown on the RCM tab, beside the tree's).
 const isMode = (r) => r.type === "mode";
+// `tab`: shown on that tab of the tree-table only (the FME(C)A tab has its
+// own, fmeaWorksheet.js CHIPS).
 export const RCM_CHIPS = [
-  { id: "undecided", label: "Needs a decision", rcmOnly: true, test: (r) => isMode(r) && !r.ref.decision },
-  { id: "hidden", label: "Hidden failures", rcmOnly: true, test: (r) => isMode(r) && r.ref.consequence === "hidden" },
-  { id: "check", label: "Evidence to look at", rcmOnly: true,
+  { id: "undecided", label: "Needs a decision", rcmOnly: true, tab: "rcm", test: (r) => isMode(r) && !r.ref.decision },
+  { id: "hidden", label: "Hidden failures", rcmOnly: true, tab: "rcm", test: (r) => isMode(r) && r.ref.consequence === "hidden" },
+  { id: "check", label: "Evidence to look at", rcmOnly: true, tab: "rcm",
     title: "Linked evidence that contradicts the decision, doesn't settle it, or has gone (a stale link)",
     test: (r) => isMode(r) && ["contradicted", "inconclusive", "stale"].includes(r.ref.decision?.status) },
 ];
@@ -447,7 +466,7 @@ export function openFor(display, positionKey) {
       out.add(k);
       for (const f of c.kids) {
         const x = display.rows.get(f);
-        if (x.type === "fail") out.add(f);
+        if (x.type === "fail" || x.type === "nofail") out.add(f);
         else if (x.type === "std" || x.type === "nostd") {
           out.add(f);
           for (const g of x.kids) if (display.rows.get(g).type === "fail") out.add(g);
@@ -584,7 +603,9 @@ export function itemWrites(r, values) {
   } else if (r.type === "fail") {
     if ("name" in values) out.push({ api: "failure", body: { text: values.name } });
   } else if (r.type === "mode") {
-    const body = pick(["name", "effects", "notes"], { name: "text" });
+    // Its words, and the FME(C)A's fields (fmeaWorksheet.js FIELDS: the same
+    // PATCH takes them), in one write.
+    const body = pick(["name", "effects", "notes", ...FMEA_FIELDS], { name: "text" });
     if (Object.keys(body).length) out.push({ api: "mode", body });
     if ("consequence" in values) out.push({ api: "decide", body: { consequence: values.consequence || null } });
   }

@@ -7,7 +7,9 @@
 // minutes, prerequisites (optional), related_href/related_label (optional
 // deep link to the feature), order, hidden (optional: "true" keeps a guide
 // out of the index, the drawer and the prerendered pages, e.g. while its
-// feature is switched off). Screenshots live in /guides/img/ and are
+// feature is switched off), unlisted (optional: "true" keeps a guide off the
+// index, the drawer, the prerendered pages and the sitemap but still opens at
+// its address, for a feature only some accounts see). Screenshots live in /guides/img/ and are
 // referenced from the markdown; they're produced by the capture harness
 // (scripts/capture-guides.mjs) so they stay in sync with the UI.
 // Markdown rendering (sanitized in the browser) is shared: markdown.js.
@@ -40,7 +42,10 @@ function readingTime(body) {
   return Math.max(1, Math.round(words / 200));
 }
 
-export const guides = Object.entries(files)
+// Every guide, hidden ones included: a hidden guide stays out of the index,
+// the drawer's list and the prerendered pages, but a link from its own feature
+// (a "How … work" link on an operators-only tab) still opens it.
+const allGuides = Object.entries(files)
   .map(([path, raw]) => {
     const { meta, body } = parseFrontmatter(raw);
     const name = path.split("/").pop().replace(/\.md$/, "");
@@ -56,11 +61,13 @@ export const guides = Object.entries(files)
         : null,
       order: Number(meta.order) || 50,
       hidden: meta.hidden === "true",
+      unlisted: meta.unlisted === "true",
       body,
     };
   })
-  .filter((g) => !g.hidden)
   .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
+
+export const guides = allGuides.filter((g) => !g.hidden && !g.unlisted);
 
 // Guides grouped by category, preserving order.
 export function guidesByCategory() {
@@ -76,8 +83,9 @@ export function guidesByCategory() {
   return groups;
 }
 
+// By slug, a hidden guide included (a link from its feature opens it).
 export function getGuide(slug) {
-  return guides.find((g) => g.slug === slug) || null;
+  return allGuides.find((g) => g.slug === slug) || null;
 }
 
 export { renderMarkdown };

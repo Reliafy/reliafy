@@ -150,6 +150,19 @@ export function dismissRolesOffer() {
   return request("/api/me/roles/dismiss", { method: "POST" });
 }
 
+// The personal workspace's currency symbol: { currency_symbol } ("$" unless set).
+export function getMyCurrency() {
+  return request("/api/me/currency");
+}
+
+export function setMyCurrency(symbol) {
+  return request("/api/me/currency", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currency_symbol: symbol || null }),
+  });
+}
+
 // Deployment capabilities (public, no auth): { auth, ai, billing }.
 export function getAppConfig() {
   return request("/api/config");
@@ -875,7 +888,7 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 export function analyzeRbd(
   graph, tMax, covariates, conditionalAge,
   { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false,
-    targetReliability = null, quick = false } = {}
+    targetReliability = null, quick = false, runToken = null } = {}
 ) {
   return request("/api/rbds/analyze", {
     method: "POST",
@@ -893,6 +906,7 @@ export function analyzeRbd(
       ...(exact ? { exact: true } : {}),
       ...(targetReliability != null ? { target_reliability: targetReliability } : {}),
       ...(quick ? { quick: true } : {}),
+      ...(runToken ? { run_token: runToken } : {}),
     }),
   });
 }
@@ -913,6 +927,13 @@ export function previewRbdSchedule({ modelId, schedules, constants, tMax = null 
 // queue_position, result (done), error (failed)}.
 export function getRbdJob(jobId) {
   return request(`/api/rbd-jobs/${encodeURIComponent(jobId)}`);
+}
+
+// Cancel a job (its id), or a run computing in the request (the run token
+// sent with it): the server marks it cancelled and discards its result.
+// Only the user who started it can cancel it.
+export function cancelRbdJob(id) {
+  return request(`/api/rbd-jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
 }
 
 // The newest in-flight job for a diagram ({job: null} when none), so a
@@ -1604,6 +1625,15 @@ export function setTeamTimeZone(id, timeZone) {
   });
 }
 
+// A team workspace's currency symbol (owner only); null or "" is "$".
+export function setTeamCurrency(id, symbol) {
+  return request(`/api/teams/${id}/currency`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currency_symbol: symbol || null }),
+  });
+}
+
 export function deleteTeam(id) {
   return request(`/api/teams/${id}`, { method: "DELETE" });
 }
@@ -1840,9 +1870,11 @@ export function getOAuthRequest(handle) {
   return request(`/oauth/authorize/request?request=${encodeURIComponent(handle)}`);
 }
 
-// Approve or deny it as the signed-in user; resolves to { redirect_to }.
+// Approve or deny it as the signed-in user; resolves to { redirect_to }. The
+// handle goes in the query as well as the body: the MCP switch reads it there
+// to let the Reliafy app's own sign-in through while connectors are off.
 export function decideOAuthRequest(handle, approve) {
-  return request("/oauth/authorize/decision", {
+  return request(`/oauth/authorize/decision?request=${encodeURIComponent(handle)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ request: handle, approve }),
@@ -2173,6 +2205,11 @@ export function removeMaintenanceItem(positionId, body) {
 export function addSampleTruck(again = false) {
   return postJson("/api/maintenance/sample-truck", { again: !!again });
 }
+// The sample quadcopter UAV, with its FME(C)A (scored failure modes, some
+// directly under a function), copied into the tree the same way.
+export function addSampleUav(again = false) {
+  return postJson("/api/maintenance/sample-uav", { again: !!again });
+}
 
 // Items, optionally only an item class's (with the classes inside it) or a
 // manufacturer's ("none": those with none).
@@ -2228,6 +2265,55 @@ export function setTaskLastDone(taskId, lastDone) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ last_done: lastDone }),
   });
+}
+
+// Failure reports (the Explorer's Failure reports tab): a report of a failure
+// at a position, its investigation, corrective actions, verification and
+// closure. The list takes a scope (position_id with below=1|0, location_id or
+// item_id; none for the whole workspace), status ("open", one status, "all"),
+// consequence, failure_mode_id, since/until (occurred_on), q, sort, limit and
+// offset; it answers {reports, total, counts, scope}.
+function jsonMethod(method, url, body) {
+  return request(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+}
+
+export function listFailureReports(params = {}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  const qs = q.toString();
+  return request(`/api/maintenance/failure-reports${qs ? `?${qs}` : ""}`);
+}
+
+export function getFailureReport(id) {
+  return request(`/api/maintenance/failure-reports/${id}`);
+}
+
+export function createFailureReport(body) {
+  return postJson("/api/maintenance/failure-reports", body);
+}
+
+export function updateFailureReport(id, body) {
+  return jsonMethod("PATCH", `/api/maintenance/failure-reports/${id}`, body);
+}
+
+export function setFailureReportStatus(id, body) {
+  return postJson(`/api/maintenance/failure-reports/${id}/status`, body);
+}
+
+export function saveFailureReportInvestigation(id, body) {
+  return jsonMethod("PUT", `/api/maintenance/failure-reports/${id}/investigation`, body);
+}
+
+export function addCorrectiveAction(id, body) {
+  return postJson(`/api/maintenance/failure-reports/${id}/actions`, body);
+}
+
+export function updateCorrectiveAction(id, aid, body) {
+  return jsonMethod("PATCH", `/api/maintenance/failure-reports/${id}/actions/${aid}`, body);
+}
+
+export function verifyFailureReport(id, body) {
+  return jsonMethod("PUT", `/api/maintenance/failure-reports/${id}/verification`, body);
 }
 
 // Whether the signed-in user may use Reliafy Maintenance (in development):
@@ -2421,8 +2507,32 @@ export function unlinkFunctionalFailureCause(id, causeId) {
 export function applyRcm(operations, { dryRun = false } = {}) {
   return postJson("/api/maintenance/rcm/apply", { operations, ...(dryRun ? { dry_run: true } : {}) });
 }
-export function assignFailureMode(id, functionalFailureId) {
-  return postJson(`/api/maintenance/failure-modes/${id}/assign`, { functional_failure_id: functionalFailureId || null });
+// Under a functional failure, or (functionId, no functional failure) directly
+// under a function with no functional failure yet; neither: under none.
+export function assignFailureMode(id, functionalFailureId, functionId = null) {
+  return postJson(`/api/maintenance/failure-modes/${id}/assign`,
+    functionalFailureId ? { functional_failure_id: functionalFailureId } : { functional_failure_id: null, ...(functionId ? { function_id: functionId } : {}) });
+}
+// A position's FME(C)A worksheet as an Excel file (it and everything inside
+// it). The route is the server's to offer: `hasFmeaExcel` says whether it
+// does (asked once per session, with the one position's small sheet: a HEAD
+// would answer 405, which the browser logs as an error; a 404 hides the button).
+export const fmeaExcelUrl = (positionId) => `/api/maintenance/positions/${positionId}/fmea.xlsx`;
+let fmeaExcel = null;
+export async function hasFmeaExcel(positionId) {
+  if (fmeaExcel != null) return fmeaExcel;
+  try {
+    const res = await authedFetch(`${fmeaExcelUrl(positionId)}?scope=this`);
+    fmeaExcel = res.status !== 404;
+  } catch {
+    fmeaExcel = false;
+  }
+  return fmeaExcel;
+}
+export async function getFmeaExcelBlob(positionId) {
+  const res = await authedFetch(fmeaExcelUrl(positionId));
+  if (!res.ok) throw new Error(res.status === 404 ? "Excel export isn't available on this server." : `The export failed (${res.status}). Try again.`);
+  return res.blob();
 }
 // {consequence?, decision?}: a key left out is left as it is; decision null clears it.
 export function decideFailureMode(id, body) {
@@ -2727,6 +2837,59 @@ export function correctMeasurementReading(readingId, { value, on, at, reason }) 
   return postJson(`/api/maintenance/readings/${readingId}/correct`, at ? { value, at, reason } : { value, on, reason });
 }
 
+// ---- signal channels (Reliafy Maintenance): vibration and other sensors that send snapshots ----
+
+export function listSignalChannels({ positionId, itemId } = {}) {
+  const q = new URLSearchParams();
+  if (positionId) q.set("position_id", positionId);
+  if (itemId) q.set("item_id", itemId);
+  return request(`/api/maintenance/signals/channels?${q}`);
+}
+export function createSignalChannel(body) {
+  return postJson("/api/maintenance/signals/channels", body);
+}
+export function getSignalChannel(id, snapshots = 500) {
+  return request(`/api/maintenance/signals/channels/${id}?snapshots=${snapshots}`);
+}
+// Several snapshots' spectra for one axis, thinned to `maxPoints` keeping the peaks.
+export function getSignalSpectra(channelId, ids, { axis, maxPoints = 700, fMin, fMax } = {}) {
+  const q = new URLSearchParams({ ids: ids.join(","), max_points: String(maxPoints) });
+  if (axis) q.set("axis", axis);
+  if (fMin !== undefined && fMin !== null) q.set("f_min", String(fMin));
+  if (fMax !== undefined && fMax !== null) q.set("f_max", String(fMax));
+  return request(`/api/maintenance/signals/channels/${channelId}/spectra?${q}`);
+}
+// What a band would have read at every stored snapshot (nothing is saved).
+export function previewSignalBand(channelId, { low, high, axis, unit = "Hz" }) {
+  const q = new URLSearchParams({ low: String(low), high: String(high), unit });
+  if (axis) q.set("axis", axis);
+  return request(`/api/maintenance/signals/channels/${channelId}/band-preview?${q}`);
+}
+export function addSignalBand(channelId, body) {
+  return postJson(`/api/maintenance/signals/channels/${channelId}/bands`, body);
+}
+export function removeSignalBand(pointId) {
+  return postJson(`/api/maintenance/signals/bands/${pointId}/remove`, {});
+}
+// Change a band: name and limits in place; a new range starts a new version from now.
+export function updateSignalBand(pointId, body) {
+  return patchJson(`/api/maintenance/signals/bands/${pointId}`, body);
+}
+// Add one snapshot from the app (a device uses the ingest route).
+export function addSignalSnapshot(body) {
+  return postJson("/api/maintenance/signals/snapshots", body);
+}
+export function updateSignalChannel(channelId, body) {
+  return patchJson(`/api/maintenance/signals/channels/${channelId}`, body);
+}
+// What the workspace's snapshots use, and the soft warning level (nothing is deleted).
+export function getSignalStorage() {
+  return request("/api/maintenance/signals/storage");
+}
+export function setSignalStorageCap(capMb) {
+  return putJson("/api/maintenance/signals/storage-cap", { cap_mb: capMb });
+}
+
 // ---- item classes and the manufacturer register (Reliafy Maintenance; optional) ----
 
 function putJson(url, body) {
@@ -2869,4 +3032,21 @@ export function predictJointUnit(id, body) {
 // fit_from_df from the data it was fitted to. Free for every viewer.
 export function downloadJointPython(id) {
   return downloadFile(`/api/joint/models/${encodeURIComponent(id)}/export.py`, "condition-based-risk.py");
+}
+
+// ---- time to the limit (a watched band's trend, fitted with a degradation process) ----
+
+export function getTimeToLimit(pointId, { process = "wiener", limit, since, confidence } = {}) {
+  const q = new URLSearchParams({ process });
+  if (limit !== undefined && limit !== null && limit !== "") q.set("limit", String(limit));
+  if (since) q.set("since", since);
+  if (confidence) q.set("confidence", String(confidence));
+  return request(`/api/maintenance/signals/bands/${pointId}/time-to-limit?${q}`);
+}
+// The band's readings as rows of unit, age_days, value (and the same as CSV): a copy, never a link.
+export function getBandDegradationSeries(pointId, { since, unitName } = {}) {
+  const q = new URLSearchParams();
+  if (since) q.set("since", since);
+  if (unitName) q.set("unit_name", unitName);
+  return request(`/api/maintenance/signals/bands/${pointId}/degradation-series?${q}`);
 }

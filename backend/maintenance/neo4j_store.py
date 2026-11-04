@@ -345,7 +345,7 @@ class Neo4jGraphStore:
     (and the time series) live in an in-memory SQLite database (for tests)."""
 
     def __init__(self, conn: Neo4jConnection, projectors: dict[str, Projector], log=None, series=None,
-                 version: int = 1, namespace: str = ""):
+                 version: int = 1, namespace: str = "", snapshots=None):
         self.conn = conn
         self.ns = namespace
         self.version = version
@@ -359,12 +359,15 @@ class Neo4jGraphStore:
         self.series_days: dict = {}
         self.listeners: list = []
         self.mirror = None
-        if log is None or series is None:
+        if log is None or series is None or snapshots is None:
             local = open_sqlite(":memory:")
         self.log = log if log is not None else SqliteEventLog(local, self._lock)
         from backend.maintenance.series import SqliteSeries
 
         self.series = series if series is not None else SqliteSeries(local, self._lock)
+        from backend.maintenance.signals import SqliteSnapshots
+
+        self.snapshots = snapshots if snapshots is not None else SqliteSnapshots(local, self._lock)
         rows = conn.run("MERGE (m:MaintenanceGraph {ns: $ns}) "
                         "ON CREATE SET m.applied = 0, m.version = $version, m.skipped = [] "
                         "RETURN m.applied AS applied, m.version AS version", {"ns": namespace, "version": version},

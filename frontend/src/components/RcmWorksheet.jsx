@@ -8,7 +8,7 @@ import { CloseIcon, ExpandIcon, PlusIcon, ShrinkIcon } from "./icons.jsx";
 import Chip from "./ui/Chip.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field, { SavedMark } from "./ui/Field.jsx";
-import InputGroup, { Addon, ReadsAs } from "./ui/InputGroup.jsx";
+import InputGroup, { ReadsAs } from "./ui/InputGroup.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import Section from "./ui/Section.jsx";
 import { InlineAddButton, InlineAddRow, useInlineAdd } from "./ui/InlineAdd.jsx";
@@ -17,18 +17,23 @@ import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
   COLUMN, COLUMNS, CONSEQUENCE_LABEL, DEFAULT_COLUMNS, FUNCTION_MAX, FUNCTION_NUDGE, LEVEL_OF, NAME_COLUMN, functionCount,
-  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, functionOf, checkCounts, decisionText, insideWords,
+  belowDecisionText, belowOf, belowPending, phoneLine, consequenceWords, failuresOn, checkCounts, decisionText, insideWords,
   intervalText, moreTasks, nameOf, shownStatus, taskLine, tasksOf, tasksTip, checkValue,
 } from "../rcmWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import RcmBasis from "./RcmBasis.jsx";
-import RcmFunctionStandards, { BreachesField } from "./RcmFunctionStandards.jsx";
+import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { plainFirstLine } from "../basisMarkdown.js";
-import { COMPARATORS, COMPARATOR_LABEL, limitReads } from "../rcmStandards.js";
+import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks from "./RcmModeTasks.jsx";
 import { saveErrorText } from "../confirm.js";
 import { CausedBySection, CausesSection } from "./FailureLinks.jsx";
 import { basisMarked, failureRows, failureStatusWords, failureSummary } from "../explorerRcm.js";
+import { AP_LABEL, AP_TONE } from "../fmea.js";
+import { apWords } from "../fmeaWorksheet.js";
+import { failuresOn as failuresFromRcm, functionsOn } from "../explorerFmea.js";
+import { CriticalityGroup, FmeaGroup } from "./FmeaPanels.jsx";
+import { PanelField } from "./PanelField.jsx";
 import "./RcmWorksheet.css";
 
 // The RCM worksheet's pieces, drawn by the Explorer's RCM tab (the asset tree
@@ -182,10 +187,20 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
         )
         : <span className="rw-sum">{text}</span>;
     }
+    case "ap": {
+      // The action priority: its word in a chip (the tone says it too, never alone).
+      if (mode) {
+        const ap = r.ref.ap;
+        return ap ? <Chip tone={AP_TONE[ap]} className="rw-ap" title={`Action priority: ${AP_LABEL[ap]}`}>{AP_LABEL[ap]}</Chip> : null;
+      }
+      const text = col.text(r);
+      return text ? <span className="rw-sum" title={apWords(r.sum)}>{text}</span> : null;
+    }
     default: {
       const text = col.text(r);
       if (!text) return null;
-      const sum = !mode && (col.id === "consequence" || col.id === "evident");
+      // A parent row's cell is a roll-up of what's inside it, in quieter type.
+      const sum = !mode;
       const title = sum && col.id === "consequence" ? consequenceWords(r) : text;
       return <span className={sum ? "rw-sum" : "rw-txt"} title={title}>
         {col.edit === "text" ? <Highlight text={text} query={query} /> : text}
@@ -202,10 +217,12 @@ export function Cell({ col, r, query, onDecision, readOnly, linkChecks }) {
 // with that text, to try again or Escape.
 export function CellEditor({ col, r, onCommit, onCancel }) {
   const d = r.ref.decision || {};
+  // The column itself says which field it edits (the RCM's and the FME(C)A's
+  // columns alike): a decision's field, or the mode's own.
   const start = col.id === "name" ? r.ref.text || ""
     : col.id === "consequence" ? r.ref.consequence || ""
     : col.id === "interval" ? d.interval ?? ""
-    : COLUMN[col.id]?.onDecision ? d[COLUMN[col.id].field] || "" : r.ref[COLUMN[col.id].field] || "";
+    : col.onDecision ? d[col.field] ?? "" : r.ref[col.field] ?? "";
   const [value, setValue] = useState(String(start));
   const [busy, setBusy] = useState(false);
   // Why the value wasn't kept: shown in a bubble under the cell (the whole
@@ -237,9 +254,13 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
     if (e.key === "Escape") { e.preventDefault(); done.current = true; onCancel(); }
   };
   const label = `${col.label} of ${nameOf(r) || LEVEL_OF[r.type].label.toLowerCase()}`;
-  if (col.id === "consequence") {
-    // One tap: the consequences as chips under the cell (the Decide dialog's
-    // tiles); ← → move, Enter or a click chooses, Escape or leaving them drops it.
+  if (col.edit === "choice") {
+    // One tap: the choices as chips under the cell (the Decide dialog's
+    // tiles); ← → move, Enter or a click chooses, Escape or leaving them drops
+    // it. The Consequence column's choices, or the column's own `options`
+    // (the FME(C)A's status, rate source and severity class).
+    const labels = col.labels || CONSEQUENCE_LABEL;
+    const options = col.options || Object.entries(CONSEQUENCE_LABEL).map(([v, l]) => ({ value: v, label: l }));
     return (
       <span className="rw-edit-wrap rw-edit-chips" ref={field} tabIndex={-1}
             onBlur={(e) => {
@@ -248,10 +269,10 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
               done.current = true;
               onCancel();
             }}>
-        <span className="rw-txt">{CONSEQUENCE_LABEL[value] || "Not set"}</span>
+        <span className="rw-txt">{labels[value] || "Not set"}</span>
         <Popover>
           <ChoiceChips label={label} value={value} moveOnly autoFocus disabled={busy}
-                       options={[...Object.entries(CONSEQUENCE_LABEL).map(([v, l]) => ({ value: v, label: l })), { value: "", label: "Not set" }]}
+                       options={[...options, { value: "", label: "Not set" }]}
                        onKeyDown={keys}
                        onChange={(v) => { setValue(v); setRefused(null); commit(v); }} />
           {refused && <span className="rw-cell-why" role="alert">{refused}</span>}
@@ -261,14 +282,19 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
   }
   // A function's text: kept to 200 characters, with a counter at its end.
   const count = col.id === "name" && r.type === "fn" ? functionCount(value, r.ref.text || "") : null;
+  // A number cell: the task interval (positive), or a column with its own
+  // `range` (a score 1–10, a share 0–1, a rate ≥ 0); a date cell as a date.
+  const num = col.edit === "number";
+  const range = col.range || (col.id === "interval" ? { min: 0 } : null);
   return (
     <span className="rw-edit-wrap">
       <input className="rw-edit" autoFocus ref={field} aria-label={label} value={value} onKeyDown={keys} readOnly={busy} aria-busy={busy || undefined}
-             maxLength={count ? FUNCTION_MAX : undefined} title={count ? FUNCTION_NUDGE : undefined}
+             maxLength={count ? FUNCTION_MAX : undefined} title={count ? FUNCTION_NUDGE : col.title || undefined}
              aria-description={count ? `${count.n} of ${count.max} characters. ${FUNCTION_NUDGE}` : refused || undefined}
              aria-invalid={count?.over || refused ? "true" : undefined}
-             type={col.id === "interval" ? "number" : "text"} inputMode={col.id === "interval" ? "decimal" : undefined}
-             min={col.id === "interval" ? "0" : undefined} step={col.id === "interval" ? "any" : undefined}
+             type={num ? "number" : col.edit === "date" ? "date" : "text"} inputMode={num ? (range?.integer ? "numeric" : "decimal") : undefined}
+             min={num && range?.min != null ? String(range.min) : undefined} max={num && range?.max != null ? String(range.max) : undefined}
+             step={num ? (range?.integer ? "1" : "any") : undefined}
              onChange={(e) => { setValue(e.target.value); setRefused(null); }} onBlur={() => commit()} />
       {col.id === "interval" && <span className="rw-unit">{d.interval_unit || "hours"}</span>}
       {count && <span className={"char-count rw-count" + (count.tone ? ` ${count.tone}` : "")} aria-hidden="true">{count.text}</span>}
@@ -310,12 +336,18 @@ function Popover({ children }) {
   );
 }
 
-// A row's status on a phone: a mode's evidence check, a parent's count to look at.
-export function PhoneStatus({ r }) {
+// A row's status on a phone: a mode's evidence check (on the FME(C)A tab, its
+// action priority), a parent's count to look at.
+export function PhoneStatus({ r, fmea = false }) {
   if (r.type === "mode") {
+    if (fmea) {
+      const ap = r.ref.ap;
+      return ap ? <Chip tone={AP_TONE[ap]} className="rw-ap">{AP_LABEL[ap]}</Chip> : null;
+    }
     const s = shownStatus(r.ref.decision?.status);
     return s ? <RcmStatusBadge status={s} /> : null;
   }
+  if (fmea) return r.sum.high ? <Chip tone="danger" className="rw-ap">{r.sum.high} high</Chip> : null;
   if (r.sum.contradicted) return <span className="rw-ck contradicted">✗{r.sum.contradicted}<span className="sr-only"> contradicted</span></span>;
   if (r.sum.undecided) return <span className="rw-sum rw-todo">{r.sum.undecided} to decide</span>;
   return null;
@@ -352,9 +384,14 @@ const toneOf = (text) => (/to decide|not analysed|no functional failure|no failu
 //   addStart   {key, list, at}: open one of this row's lists on its add row (a row menu's Add …):
 //              list "std" (a function's performance standards), "inside" (what's inside it), "task" (a mode's tasks)
 //   onSaid     (text) a few words in the page's status line once something saved
+//   onMove     (r, {task}) opens Move to… for the row (or a failure mode's task); none: no Move in the ⋯
+//   fmea       {on, opts, rcm}: the FME(C)A's fields on a failure mode (FmeaPanels.jsx), `on` when
+//              that tab is open (then first, and a function lists its failure modes, added directly
+//              under it); `opts` the action priority table (fmea.js readFmeaOptions); `rcm` the read,
+//              for the "Under" choice's functions and functional failures
 export function Details({
   r, display, whole = display, readOnly, onCommit, onAdd, onDelete, onDecision, onClose, onSelect, phone, headingRef, ops, links,
-  expanded = false, onExpand = null, onCollapse = null, addStart = null, onSaid = null,
+  expanded = false, onExpand = null, onCollapse = null, addStart = null, onSaid = null, onMove = null, fmea = null,
 }) {
   const level = LEVEL_OF[r.type];
   const d = r.ref.decision;
@@ -400,14 +437,18 @@ export function Details({
   // What's inside: a function's functional failures (through its standard
   // rows), a standard's functional failures, a failure's failure modes.
   const inTree = whole.rows.get(r.key) || r;
-  const kids = r.type === "fn" ? failureRows(whole, inTree)
+  // On the FME(C)A tab a function's list is its failure modes (added directly
+  // under it, with no functional failure yet).
+  const fmeaFn = !!fmea?.on && r.type === "fn";
+  const kids = fmeaFn ? (inTree.kids || []).map((k) => whole.rows.get(k)).filter((k) => k?.type === "mode")
+    : r.type === "fn" ? failureRows(whole, inTree)
     : (inTree.kids || []).map((k) => whole.rows.get(k)).filter((k) => k && (k.type === "fail" || k.type === "mode"));
   const where = display.rows.get(r.ref.position_id)?.ref.name || whole.rows.get(r.ref.position_id)?.ref.name;
   const said = (text) => onSaid?.(text);
   const canExpand = !phone && onExpand && onCollapse;
   const name = nameOf(r);
   const kindWord = level.label.toLowerCase();
-  const addLabel = r.type === "fn" || r.type === "std" || r.type === "nostd" ? "Add a functional failure" : "Add a failure mode";
+  const addLabel = (r.type === "fn" && !fmeaFn) || r.type === "std" || r.type === "nostd" ? "Add a functional failure" : "Add a failure mode";
   // What's inside it is listed (and added to, in place) here: a function's,
   // a standard's and the "No performance standard" row's functional failures;
   // a functional failure's and the "Not under a functional failure" row's failure modes.
@@ -423,6 +464,9 @@ export function Details({
   const deleteLabel = r.type === "std" ? "Remove this performance standard" : `Delete this ${kindWord}`;
   const headItems = readOnly ? [] : [
     ...(level.child ? [{ id: "add", label: `${addLabel}…`, onSelect: () => (insideList ? setOwnStart({ list: "inside", at: Date.now() }) : onAdd(r)) }] : []),
+    // Move to… (the one picker every kind uses), and a failure mode's Move a task….
+    ...(onMove && EDITABLE.has(r.type) && !(r.type === "std" && r.ref.legacy) ? [{ id: "move-to", label: "Move to…", onSelect: () => onMove(r) }] : []),
+    ...(onMove && r.type === "mode" && tasks.some((t) => t.id) ? [{ id: "move-task", label: "Move a task…", onSelect: () => onMove(r, { task: true }) }] : []),
     ...(EDITABLE.has(r.type) ? [{ id: "delete", label: `${deleteLabel}…`, danger: true, onSelect: () => onDelete(r) }] : []),
   ];
   // The status chips under the title.
@@ -431,10 +475,47 @@ export function Details({
       r.ref.consequence ? { text: CONSEQUENCE_LABEL[r.ref.consequence], tone: "neutral" } : null,
       d ? { text: [decisionText(d), d.interval ? `every ${intervalText(d)}` : null].filter(Boolean).join(" · "), tone: "accent" }
         : { text: "No decision yet", tone: "warning" },
-      d && d.status === "unevidenced" ? { text: "No evidence linked", tone: "neutral" } : null,
     ].filter(Boolean)
     : (insideWords(r) || "").split(" · ").filter(Boolean).map((t) => ({ text: t, tone: toneOf(t) }));
   const limitNow = r.type === "std" ? limitReads(r.ref) : "";
+  // A standard of the list keeps its limit as data (parameter, comparator, value, unit, when, source): folded.
+  const checkable = r.type === "std" && !r.ref.legacy && !!ops?.saveItem;
+  const limitSet = checkable && ["parameter", "comparator", "value", "unit", "when", "source"].some((k) => String(r.ref[k] ?? "").trim());
+  const [limitOpen, setLimitOpen] = useState(false);
+  useEffect(() => setLimitOpen(false), [r.key]);
+  const inside = (
+    <InsideList key={`${r.key}:inside`} r={r} kids={kids} ops={ops} readOnly={readOnly} addLabel={addLabel} addStart={startOf("inside")}
+                status={r.type === "fail" ? failureStatusWords(r) : null} onSelect={onSelect} onSaid={said} />
+  );
+  const consequenceField = r.type === "mode" && (
+    <Field label="Consequence" saved={saved.consequence}>
+      {readOnly ? <span className="rw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
+        <ChoiceChips label="Consequence" clearable value={r.ref.consequence || ""}
+                     options={Object.entries(CONSEQUENCE_LABEL).map(([value, label]) => ({ value, label }))}
+                     onChange={(v) => keep("consequence", onCommit(r, "consequence", v))} />
+      )}
+    </Field>
+  );
+  // The FME(C)A's two groups on a failure mode (FmeaPanels.jsx): each field
+  // kept as you go, as the others are; the RPN and action priority previewed
+  // from the scores as they're typed.
+  const fmeaGroups = r.type === "mode" && fmea && (
+    <>
+      <FmeaGroup key={`${r.key}:fmea`} r={r} opts={fmea.opts} readOnly={readOnly} saved={saved}
+                 onCommit={(col, raw) => keep(col, onCommit(r, col, raw))} consequence={fmea.on ? consequenceField : null} />
+      <CriticalityGroup key={`${r.key}:crit`} r={r} opts={fmea.opts} readOnly={readOnly} saved={saved}
+                        onCommit={(col, raw) => keep(col, onCommit(r, col, raw))} />
+    </>
+  );
+  // A mode's "Under" choice: the position's functional failures, or directly
+  // under one of its functions (no functional failure yet), or none. From the
+  // RCM read when the page passes it (the FME(C)A tab's tree has no
+  // functional failure rows), else from the tree.
+  const underFailures = fmea?.rcm ? failuresFromRcm(fmea.rcm, r.ref.position_id) : failuresOn(whole, r.ref.position_id);
+  const underFunctions = fmea?.rcm ? functionsOn(fmea.rcm, r.ref.position_id)
+    : [...whole.rows.values()].filter((x) => x.type === "fn" && x.ref.position_id === r.ref.position_id).map((x) => ({ id: x.key, text: x.ref.text || "" }));
+  const direct = r.type === "mode" && !r.ref.functional_failure_id && !!r.ref.function_id && r.ref.direct !== false;
+  const underValue = r.ref.functional_failure_id || (direct ? `fn:${r.ref.function_id}` : "");
   return (
     <aside className={"rw-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
            onKeyDown={(e) => {
@@ -479,18 +560,154 @@ export function Details({
         )}
       </div>
 
+      {/* One order at every level: what's inside it first (the next level down, as in the
+          tree), then what belongs to this level, then the quieter things (the working, the
+          checkable limit, where it sits, notes) last. */}
       <div className="rw-pbody">
-        <div className="rw-pcol">
-          <div className="rw-fields">
-            {r.type === "std" && r.ref.legacy && (
-              <p className="rw-fhelp">
+        {/* The FME(C)A tab: a failure mode's two groups first (the end effect and the
+            consequence are in the first), its tasks and decision after. */}
+        {r.type === "mode" && fmea?.on && fmeaGroups}
+        {/* 1. What's inside it. A function: its performance standards, then the functional
+            failures under them. A standard (and "No performance standard"): its functional
+            failures. A functional failure (and "Not under a functional failure"): its failure
+            modes. A failure mode: its tasks. */}
+        {/* On the FME(C)A tab a function's details are about its failure modes: the
+            performance standards and the working stay on the RCM tab. */}
+        {r.type === "fn" && ops?.standards && !fmea?.on && (
+          <RcmFunctionStandards key={`${r.key}:std`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("std")} onSaid={said} />
+        )}
+        {insideList && inside}
+        {taskList && !readOnly && (
+          <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} addStart={startOf("task")} onSaid={said} />
+        )}
+        {r.type === "mode" && (!taskList || readOnly) && tasks.length > 0 && (
+          <Section title="Tasks" count={tasks.length} className="rw-kids">
+            <ul className="rw-tasks">
+              {tasks.map((t, i) => (
+                <li key={t.id || i}>
+                  <LevelIcon type="task" className="rw-ic rw-ic-task" />
+                  <span>{taskLine(t)}</span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* 2. This level's own. A functional failure: its links to failures on other
+            positions. A failure mode: the worksheet's columns in their order (effects,
+            consequence, then the decision). */}
+        {r.type === "fail" && ops && links && (
+          <CausedBySection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
+        )}
+        {r.type === "fail" && ops && links && (
+          <CausesSection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
+        )}
+        {r.type === "mode" && !fmea?.on && (
+          <div className="rw-fields rw-own">
+            {field("Failure effects", "effects", { area: true })}
+            {consequenceField}
+          </div>
+        )}
+        {r.type === "mode" && (
+          <Section title="Decision" label="Decision" className="rw-decision"
+                   action={readOnly ? null : { label: d ? "Change…" : "Decide…", ariaLabel: d ? "Change the decision…" : "Decide…", onClick: () => onDecision(r) }}>
+            {d ? (
+              <>
+                <dl className="rw-card rw-dcard">
+                  <div><dt>Decision</dt><dd><b>{decisionText(d)}</b></dd></div>
+                  {d.interval ? <div><dt>Interval</dt><dd>every {intervalText(d)}</dd></div> : null}
+                  <div>
+                    <dt>Evidence</dt>
+                    <dd className="rw-evidence">
+                      {d.status === "unevidenced" ? (
+                        <>
+                          None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
+                                                               title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button></>}
+                        </>
+                      ) : (
+                        <>
+                          {d.status && <RcmStatusBadge status={d.status} />}
+                          {d.artifact_name && (d.artifact_link_path
+                            ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
+                          {!d.status && !d.artifact_name && "—"}
+                        </>
+                      )}
+                    </dd>
+                  </div>
+                  {d.status !== "unevidenced" && (d.summary || d.reason) ? <p className="rw-dwhy">{d.summary || d.reason}</p> : null}
+                </dl>
+                {ownFields && COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
+                {ownFields && COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
+                {ownFields && sharedOwn > 0 && (
+                  <p className="rw-fhelp">
+                    Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
+                  </p>
+                )}
+                {field("Decision notes", "dnotes", { area: true, optional: true })}
+              </>
+            ) : <p className="rw-dline">No decision yet.</p>}
+          </Section>
+        )}
+        {/* The RCM tab: the FME(C)A's groups after the decision. */}
+        {r.type === "mode" && fmea && !fmea.on && fmeaGroups}
+
+        {/* 3. The quieter things, last. */}
+        {r.type === "fn" && ops?.basis && !fmea?.on && (
+          <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
+                    openToken={ops.basisView?.token(r)} />
+        )}
+        {r.type === "mode" && (
+          <div className="rw-fields rw-foot">
+            {ops && (
+              <Field label="Under" saved={saved.under}
+                     help={r.ref.was_under && !r.ref.functional_failure_id ? `It was noted as under: ${r.ref.was_under}` : null}>
+                {readOnly ? <span className="rw-fval">{display.rows.get(r.parent)?.ref.text}</span> : (
+                  <Select value={underValue}
+                          onChange={(e) => {
+                            // A functional failure; or "fn:<id>", directly under that function.
+                            const v = e.target.value;
+                            const out = v.startsWith("fn:") ? ops.assign(r, null, v.slice(3)) : ops.assign(r, v || null);
+                            if (out && typeof out.then === "function") out.then((x) => { if (x !== false) markSaved("under"); });
+                          }}>
+                    <option value="">No functional failure yet</option>
+                    {underFunctions.length > 0 && (
+                      <optgroup label="Directly under a function (no functional failure yet)">
+                        {underFunctions.map((f) => <option key={`fn:${f.id}`} value={`fn:${f.id}`}>{f.text}</option>)}
+                      </optgroup>
+                    )}
+                    {underFailures.length > 0 && (
+                      <optgroup label="Under a functional failure">
+                        {underFailures.map((f) => (
+                          <option key={f.id} value={f.id}>{f.function ? `${f.function} › ` : ""}{f.text}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </Select>
+                )}
+              </Field>
+            )}
+            {field("Notes", "notes", { area: true, optional: true })}
+          </div>
+        )}
+        {/* Which standard a failure breaches is where it sits in the tree (moved by drag or Move
+            to…); said here only when the way up doesn't show it (a pinned branch, say). */}
+        {r.type === "fail" && r.ref.standard?.id && !up.some((a) => a.key === r.ref.standard.id) && (
+          <div className="rw-foot">
+            <p className="rw-fhelp rw-foot-note">Under the performance standard “{r.ref.standard.text}”.</p>
+          </div>
+        )}
+        {r.type === "std" && (r.ref.legacy || checkable || (r.ref.function_has_basis && ops?.basis)) && (
+          <div className="rw-foot">
+            {r.ref.legacy && (
+              <p className="rw-fhelp rw-foot-note">
                 This is the function's one performance standard, as written. To make it a list (one row each, with a limit on each), pick the
                 function and use <b>Add a performance standard</b> at the end of its list, or <b>Split into performance standards…</b> when the text is several joined by “;”.
               </p>
             )}
-            {r.type === "std" && !r.ref.legacy && ops?.saveItem && (
-              <Section title="Limit" label="Limit" className="rw-limit">
-                <p className="rw-fhelp rw-sec-note">Optional: lets checks read it.</p>
+            {checkable && limitOpen && (
+              <Section title="Checkable limit" label="Checkable limit" className="rw-limit"
+                       action={{ label: "Hide", ariaLabel: "Hide the checkable limit", onClick: () => setLimitOpen(false) }}>
+                <p className="rw-fhelp rw-sec-note">Write the limit as data so readings can be checked against it later.</p>
                 {stdField({ col: "parameter", label: "Parameter" })}
                 <LimitGroup r={r} readOnly={readOnly} saved={saved.limit} failed={stdFailed}
                             onComparator={(c) => {
@@ -508,131 +725,28 @@ export function Details({
                 {stdField({ col: "source", label: "Source", placeholder: "A standard, manual or study", optional: true })}
               </Section>
             )}
-            {r.type === "std" && r.ref.function_has_basis && ops?.basis && (
-              <p className="rw-fhelp">
+            {/* A standard's limit as data: folded away until it's wanted (nothing reads it yet).
+                Set already: one line saying what it reads as, with Edit…. */}
+            {checkable && !limitOpen && (
+              <p className="rw-checkable">
+                {limitSet ? (
+                  <>
+                    <span>Checkable: {limitNow || limitWords(r.ref)}</span>
+                    {!readOnly && <> · <button type="button" className="link" onClick={() => setLimitOpen(true)} aria-label="Edit the checkable limit">Edit…</button></>}
+                  </>
+                ) : !readOnly && (
+                  <button type="button" className="link" onClick={() => setLimitOpen(true)}>Make this checkable…</button>
+                )}
+              </p>
+            )}
+            {r.ref.function_has_basis && ops?.basis && (
+              <p className="rw-fhelp rw-foot-note">
                 The working behind it is the function's:{" "}
                 <button type="button" className="link" onClick={() => onSelect(r.ref.function_id, { basis: true })}>open the working</button>.
               </p>
             )}
-            {r.type === "mode" && field("Failure effects", "effects", { area: true })}
-            {r.type === "fail" && ops?.setBreach && (
-              <BreachesField r={r} readOnly={readOnly} standards={functionOf(display, r)?.ref.standards || []} saved={saved.breach}
-                             onChange={(id) => ops.setBreach(r, id).then(() => { said("Saved."); markSaved("breach"); }, () => {})} />
-            )}
-            {r.type === "fail" && ops && <p className="rw-fstatus">{failureStatusWords(r)}</p>}
-            {r.type === "mode" && (
-              <Field label="Consequence" saved={saved.consequence}>
-                {readOnly ? <span className="rw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
-                  <ChoiceChips label="Consequence" clearable value={r.ref.consequence || ""}
-                               options={Object.entries(CONSEQUENCE_LABEL).map(([value, label]) => ({ value, label }))}
-                               onChange={(v) => keep("consequence", onCommit(r, "consequence", v))} />
-                )}
-              </Field>
-            )}
-            {r.type === "mode" && field("Notes", "notes", { area: true, optional: true })}
-            {r.type === "mode" && ops && (
-              <Field label="Under" saved={saved.under}
-                     help={r.ref.was_under && !r.ref.functional_failure_id ? `It was noted as under: ${r.ref.was_under}` : null}>
-                {readOnly ? <span className="rw-fval">{display.rows.get(r.parent)?.ref.text}</span> : (
-                  <Select value={r.ref.functional_failure_id || ""}
-                          onChange={(e) => {
-                            const out = ops.assign(r, e.target.value || null);
-                            if (out && typeof out.then === "function") out.then((v) => { if (v !== false) markSaved("under"); });
-                          }}>
-                    <option value="">No functional failure yet</option>
-                    {failuresOn(whole, r.ref.position_id).map((f) => (
-                      <option key={f.id} value={f.id}>{f.function ? `${f.function} › ` : ""}{f.text}</option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
-            )}
           </div>
-
-          {r.type === "mode" && (
-            <Section title="Decision" label="Decision" className="rw-decision"
-                     action={readOnly ? null : { label: d ? "Change…" : "Decide…", ariaLabel: d ? "Change the decision…" : "Decide…", onClick: () => onDecision(r) }}>
-              {d ? (
-                <>
-                  <dl className="rw-card rw-dcard">
-                    <div><dt>Decision</dt><dd><b>{decisionText(d)}</b></dd></div>
-                    {d.interval ? <div><dt>Interval</dt><dd>every {intervalText(d)}</dd></div> : null}
-                    <div>
-                      <dt>Evidence</dt>
-                      <dd className="rw-evidence">
-                        {d.status === "unevidenced" ? (
-                          <>
-                            None linked{!readOnly && <> · <button type="button" className="link" onClick={() => onDecision(r)}
-                                                                 title="Link the saved model or analysis behind this decision (optional)">Link evidence…</button></>}
-                          </>
-                        ) : (
-                          <>
-                            {d.status && <RcmStatusBadge status={d.status} />}
-                            {d.artifact_name && (d.artifact_link_path
-                              ? <Link to={d.artifact_link_path}>{d.artifact_name}</Link> : <span>{d.artifact_name}</span>)}
-                            {!d.status && !d.artifact_name && "—"}
-                          </>
-                        )}
-                      </dd>
-                    </div>
-                    {d.status !== "unevidenced" && (d.summary || d.reason) ? <p className="rw-dwhy">{d.summary || d.reason}</p> : null}
-                  </dl>
-                  {ownFields && COLUMN.task.can(r) && field("Task", "task", { area: true, locked: sharedOwn > 0 && d.outcome !== "rtf" })}
-                  {ownFields && COLUMN.interval.can(r) && field("Interval", "interval", { locked: sharedOwn > 0 })}
-                  {ownFields && sharedOwn > 0 && (
-                    <p className="rw-fhelp">
-                      Shared with {sharedOwn} other failure mode{sharedOwn === 1 ? "" : "s"}: its name and interval are changed on the task, for all of them.
-                    </p>
-                  )}
-                  {!taskList && tasks.length > 0 && (
-                    <div className="rw-field">
-                      <span className="rw-flabel">{tasks.length === 1 ? "Task" : `Tasks (${tasks.length})`}</span>
-                      <ul className="rw-tasks">
-                        {tasks.map((t, i) => (
-                          <li key={t.id || i}>
-                            <LevelIcon type="task" className="rw-ic rw-ic-task" />
-                            <span>{taskLine(t)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {field("Decision notes", "dnotes", { area: true, optional: true })}
-                </>
-              ) : <p className="rw-dline">No decision yet.</p>}
-            </Section>
-          )}
-        </div>
-
-        <div className="rw-pcol">
-          {/* A function: its performance standards, then the working behind them. */}
-          {r.type === "fn" && ops?.standards && (
-            <RcmFunctionStandards key={`${r.key}:std`} r={r} ops={ops} readOnly={readOnly} addStart={startOf("std")} onSaid={said} />
-          )}
-          {r.type === "fn" && ops?.basis && (
-            <RcmBasis r={r} basis={ops.basis} readOnly={readOnly} context={ops.basisView?.context(r)}
-                      openToken={ops.basisView?.token(r)} />
-          )}
-
-          {/* A failure mode's tasks: several under one mode, each with its own interval, kind and measurement. */}
-          {taskList && !readOnly && (
-            <RcmModeTasks key={`${r.key}:tasks`} r={r} ops={ops} addStart={startOf("task")} onSaid={said} />
-          )}
-
-          {/* A functional failure: Caused by below, then Causes above. */}
-          {r.type === "fail" && ops && links && (
-            <CausedBySection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
-          )}
-          {r.type === "fail" && ops && links && (
-            <CausesSection r={r} where={where} readOnly={readOnly} links={links} onSelect={onSelect} />
-          )}
-
-          {/* What's inside it, each one a link that shows it here; the list ends in its add row. */}
-          {insideList && (
-            <InsideList key={`${r.key}:inside`} r={r} kids={kids} ops={ops} readOnly={readOnly} addLabel={addLabel} addStart={startOf("inside")}
-                        onSelect={onSelect} onSaid={said} />
-          )}
-        </div>
+        )}
       </div>
 
       {/* Each button acts on its first click only: a double-click opens one dialog. */}
@@ -659,7 +773,10 @@ export function Details({
 // its add row, which becomes a new row of the list: Enter or leaving it
 // writes it (no dialog) and the add row is back for the next; the new one is
 // opened from its link, like any other.
-function InsideList({ r, kids, ops, readOnly, addLabel, addStart, onSelect, onSaid }) {
+//
+// `status`: a functional failure's state in words, said once at the head of
+// its failure modes (it is about them, and the links below).
+function InsideList({ r, kids, ops, readOnly, addLabel, addStart, status = null, onSelect, onSaid }) {
   const failures = addLabel === "Add a functional failure";
   const where = {
     positionId: r.ref.position_id,
@@ -677,7 +794,8 @@ function InsideList({ r, kids, ops, readOnly, addLabel, addStart, onSelect, onSa
   const kind = failures ? "fail" : "mode";
   return (
     <Section title={failures ? "Functional failures" : "Failure modes"} count={kids.length} className="rw-kids">
-      {kids.length === 0 && !add.open && (
+      {status && <p className="rw-fstatus">{status}</p>}
+      {kids.length === 0 && !add.open && !status && (
         <p className="rw-fhelp">
           {r.type === "std" && !r.ref.legacy ? "None yet. A breach of this limit, e.g. “Alkalinity below 80 ppm”."
             : r.type === "fail" ? "No failure modes of its own yet." : "None yet."}
@@ -866,59 +984,9 @@ function Crumbs({ up, onSelect }) {
   );
 }
 
-// A field in the panel (the shared Field): kept when you leave it (or press
-// Enter in a one-line field), "✓ Saved" by its label once it is; a value the
-// server would refuse stays as typed with the reason under it, and leaving
-// the field again sends it again. `suffix`: the unit inside the box.
-function PanelField({ label, help, value, area, readOnly, type, suffix, onCommit, placeholder = null, optional = false, saved = 0 }) {
-  const [draft, setDraft] = useState(String(value ?? ""));
-  const [error, setError] = useState(null);
-  // What was last sent: Enter then leaving the field (or Enter twice) sends it
-  // once; typing, or coming back to the field, can send it again.
-  const sent = useRef(null);
-  useEffect(() => { setDraft(String(value ?? "")); setError(null); sent.current = null; }, [value]);
-  if (readOnly) {
-    return (
-      <div className="field">
-        <span className="field-label">{label}</span>
-        <span className="rw-fval">{value === "" || value == null ? "—" : `${value}${suffix ? ` ${suffix}` : ""}`}</span>
-      </div>
-    );
-  }
-  const commit = () => {
-    if (draft === String(value ?? "") || draft === sent.current) return;
-    const err = onCommit(draft);
-    if (typeof err !== "string") sent.current = draft;
-    setError(typeof err === "string" ? err : null);
-    if (err && typeof err.then === "function") {
-      const was = draft;
-      err.then((out) => {
-        if (typeof out !== "string") return;
-        if (sent.current === was) sent.current = null;
-        setError(out);
-      });
-    }
-  };
-  const props = {
-    value: draft, placeholder: placeholder || undefined,
-    onChange: (e) => { setDraft(e.target.value); sent.current = null; },
-    onBlur: commit,
-    onFocus: () => { sent.current = null; },
-  };
-  const control = area
-    ? <TextArea {...props} />
-    : <TextInput {...props} type={type === "number" ? "number" : "text"} inputMode={type === "number" ? "decimal" : undefined}
-                 min={type === "number" ? "0" : undefined} step={type === "number" ? "any" : undefined}
-                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />;
-  return (
-    <Field label={label} help={help} error={error} optional={optional} saved={saved}>
-      {suffix ? <InputGroup>{control}<Addon>{suffix}</Addon></InputGroup> : control}
-    </Field>
-  );
-}
-
-// The column chooser: tick the columns to show; the description is always shown.
-export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS }) {
+// The column chooser: tick the columns to show; the description is always
+// shown. `columns`: the table's columns (the RCM's, or the FME(C)A tab's).
+export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS, columns = COLUMNS }) {
   const [open, setOpen] = useState(false);
   const box = useRef(null);
   useEffect(() => {
@@ -937,10 +1005,10 @@ export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS }) {
       </button>
       {open && (
         <div className="rw-pop" role="group" aria-label="Columns to show">
-          {COLUMNS.map((c) => (
+          {columns.map((c) => (
             <label key={c.id} className="rw-pop-item" title={c.title}>
               <input type="checkbox" checked={cols.includes(c.id)}
-                     onChange={(e) => onCols(e.target.checked ? COLUMNS.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))} />
+                     onChange={(e) => onCols(e.target.checked ? columns.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))} />
               {c.label}{c.sum ? <span className="rw-sig" title="A parent row counts what's inside it"> Σ</span> : null}
             </label>
           ))}

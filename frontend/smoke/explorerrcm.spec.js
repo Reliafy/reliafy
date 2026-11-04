@@ -208,7 +208,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   await page.keyboard.press("Shift+F10");
   const menu = rowMenu(page, fnName);
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to another position…", "Move up", "Move down", "Isolate", "Delete function"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Move up", "Move down", "Isolate", "Delete function"]);
   await expect(menu.getByRole("menuitem", { name: "Open…" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Add a performance standard…" })).toBeFocused();
@@ -322,7 +322,7 @@ test("at 400 px each row shows its ⋯: a tap opens the menu, and adding works",
   await more.click();
   const menu = rowMenu(page, fnName);
   // On a phone the details panel edits the description: no Edit description here.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Move to another position…", "Move up", "Move down", "Isolate", "Delete function"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Move to…", "Move up", "Move down", "Isolate", "Delete function"]);
   const mbox = await menu.boundingBox();
   expect(mbox.x).toBeGreaterThanOrEqual(0);
   expect(mbox.x + mbox.width).toBeLessThanOrEqual(400);

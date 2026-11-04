@@ -71,7 +71,7 @@ export default function ClassForecastList() {
               {classes.map((c) => (
                 <tr key={c.position_class} className="lib-row" onClick={() => navigate(classPath(c.position_class))}>
                   <td>
-                    <Link className="lib-name" to={classPath(c.position_class)} onClick={(e) => e.stopPropagation()}>
+                    <Link className="lib-name lib-link" to={classPath(c.position_class)} onClick={(e) => e.stopPropagation()}>
                       {c.position_class}
                     </Link>
                   </td>

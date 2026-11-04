@@ -20,7 +20,7 @@ or part is. Connections: what feeds what, for redundancy, impact and generated R
 things) are fitted to positions; every fitment is history and a row of life data.
 Start with maintenance overview (the position tree, what's due, open work, short spares, the time zone and \
 today). Read maintenance guide (args {topic}) for how-tos: model, register, plan, run, learn, decide, data, classes, \
-conditions, structure, apply. \
+conditions, structure, signals, failures, apply. \
 Reads are maintenance get.<kind> / list.<kind>; changes are maintenance <area>.<action>, and guide(action='maintenance.<action>') gives \
 what each takes. Many changes at once (a branch with its RCM, a bulk \
 edit): maintenance apply runs a list of those actions in one checked call (topic apply). Retired things restore.
@@ -34,6 +34,39 @@ record it with maintenance topology.create_group as you build, not later. For a 
 maintenance topology.generate_rbd builds the RBD from the positions (then analyse rbd); don't hand-build \
 one with change rbd_create. A non-repairable model for a maintenance class comes from maintenance reliability.fit_class_model \
 (it reads the fitment history itself and proposes intervals), not from analyse fit.
+"""),
+    "signals": ("Signal channels: vibration, pressure and other sensors that send snapshots.", """\
+A signal channel is a sensor on a position or an item that sends snapshots: a burst of samples per axis \
+(vibration), a spectrum the device already made, or one value (a slow pressure). maintenance signals.add_channel \
+(name, unit, position_id or item_id; axes like [X, Y, Z], sample_rate, rpm, tag).
+Send data with maintenance signals.add_snapshot, or a device posts JSON to POST /api/ingest/maintenance/snapshots \
+with an ingest-scope token. A snapshot: time (ISO 8601 WITH a time zone, no default), then axes {name: [samples]} \
+and sample_rate in Hz, or spectrum {df or freqs, amplitudes, window?, amplitude? peak|rms}, or value / values \
+{axis: number}; optional running (true when the machine was running), rpm (else the channel's), note. Same channel \
+and time again: reported as a duplicate, nothing changes. At most 5 MB (about 500,000 numbers); the unit must be \
+the channel's (Reliafy doesn't convert).
+Samples: the server computes the spectrum once (mean removed, Hann window, peak amplitude in the unit, single-sided) \
+and the overall levels per axis (rms, peak, crest, kurtosis; the mean is ignored). Everything is kept: raw and \
+spectrum. A device spectrum is kept as sent (say its window; unknown is treated as no window correction).
+Watch band: maintenance signals.add_band (channel_id, name, low, high, axis; unit Hz, or orders for multiples of \
+the running speed). It reads the RMS in the band at every snapshot, backfills the stored ones, and appears as an \
+ordinary condition measurement point (alarm limits open an inspection; trends and projected alarm dates work). \
+signals.add_level does the same for an overall level (rms, peak, crest, kurtosis, mean, or value for a scalar \
+channel). signals.update_band changes a band: name and warn_above / warn_below / alarm_above / alarm_below in \
+place (warn levels only draw lines; alarms open inspections); a new range (low, high, axis, unit) starts a new \
+version from the next snapshot, the old values stay as measured and the trend shows one line with the change \
+marked (add a new band to see a range over earlier snapshots). update_channel speed_channel_id names an rpm channel \
+(single values) whose nearest reading in time, within an hour, is each snapshot's running speed. \
+signal_data.storage gives MB and snapshots stored; signals.set_storage_cap sets a soft warning (deletes nothing).
+Read with maintenance signal_data.channels / channel (bands, their series, recent snapshot headings) / snapshot \
+(snapshot_id = channel id:milliseconds; spectrum thinned keeping peaks, f_min / f_max for detail, raw true for samples).
+Time to the limit: maintenance progression.time_to_limit (point_id of a band or level) fits its own readings with a \
+SurPyval degradation process (wiener, or gamma for rising-only wear) and gives the most likely time to reach the alarm \
+limit, a range, and the chance by 7 / 30 / 90 / 180 / 365 days. The range allowing for the fit is separate from the \
+spread of the process; its late end can be null (not bounded) and then you say so. With under 6 readings, a series \
+not heading for the limit or one with no scatter you get status and message and no dates: relay them, never invent \
+a date. It is the time to the limit, not to failure. since starts after a renewal. progression.series gives the \
+readings as unit, age_days, value rows and CSV, to create a dataset for a degradation model.
 """),
     "model": ("The four structures and the item moving through them.", """\
 Four structures, and the items that move through them.
@@ -90,7 +123,7 @@ generate_rbd and impact rely on it.
 temperature, with alarm limits), then record readings.
 8. Conditions (optional): what places and equipment are exposed to (Outdoor, Seawater, Zone 1). Apply them as high \
 up as they're true (a site, a system): what's inside inherits them. See the conditions topic."""),
-    "plan": ("RCM or tasks directly; tasks on a position, an item or a location.", """\
+    "plan": ("RCM or tasks directly; tasks on a position, an item or a location; work packages.", """\
 Planning the maintenance.
 - RCM, step by step, on the position itself (the asset tree is its spine: position > function > performance \
 standard > functional failure > failure mode), all with maintenance failure_modes.…, each add returning the id the \
@@ -121,8 +154,23 @@ accept) gets none. A decision's task text over 200 characters gives the task a s
 text in its instructions. An interval_unit of use (hours, cycles, km) makes a task by use, counting a counter in that unit (maintenance get.task_measurement says which).
 - Questions about an RCM: maintenance list.rcm_gaps answers which failure modes have no decision \
 (undecided) or no task (no_task, with each outcome: a run-to-failure mode needs none), which hidden failures lack \
-a failure-finding task, which decisions' evidence needs a look, and which functions, performance standards and \
+a failure-finding task, which decisions' evidence needs a look, which modes sit directly under a function with no \
+functional failure yet (no_functional_failure), and which functions, performance standards and \
 functional failures have nothing under them. Whole workspace by default; target_id narrows it to a branch.
+- Scoring the same modes as an FME(C)A (the Explorer's FME(C)A tab; the RCM tab shows the same records): \
+maintenance failure_modes.score (failure_mode_id; severity, occurrence, detection, whole numbers 1-10; cause, \
+effect_local, effect_next, effects (the end effect: the RCM's effects, one field), detection_method; \
+recommended_action with action_owner, action_due (YYYY-MM-DD) and action_status open / in_progress / done; clear: \
+fields to unset). Every read gives rpn (S × O × D) and ap (action priority H / M / L from an AIAG-VDA-style table), \
+worked out, never stored: sort by ap, not by an RPN threshold.
+- Criticality (MIL-STD-1629A style), on the same call: failure_rate λ per time_unit (rate_source entered, model or \
+data), mode_ratio α (this mode's share of the item's failures, 0-1), loss_probability β (0-1), operating_time t and \
+severity_class I-IV give cm = β × α × λ × t. A position's fmea in maintenance get.rcm has cr (the sum of its modes' \
+cm, and by class), the H / M / L counts and max_rpn.
+- An FMEA row before its RCM: add (or assign, move) with function_id and no functional_failure_id puts a mode \
+directly under the function; the position isn't analysed until the functional failure is written and the mode \
+assigned to it (same id, scores kept). maintenance positions.add_sample_uav copies a fully scored sample tree \
+(three such modes on purpose).
 - A worksheet the user has (an FMEA or RCM sheet, one row per failure mode): see below.
 - Directly (a maker's manual, a regulation, own practice): maintenance tasks.create, on exactly one subject:
   - position_id, the usual one: the job, whatever does it. 'Lubricate the pump', 'test the protection relay'. \
@@ -208,10 +256,49 @@ task; a task named on several rows (or on the position already) is one task, lin
 failure_mode_id (or several with failure_mode_ids).
 - Tasks done before they were tracked here: maintenance tasks.set_last_done, so the next due date counts from \
 then.
+- Work packages: tasks done together on one visit (the weekly check of one area) raise one work order per visit \
+instead of one each. Once the tasks are decided, maintenance packages.propose drafts packages from the live tasks \
+on positions and locations that are in no package, grouped by cadence (weekly, fortnightly, monthly, quarterly, \
+6-monthly, yearly, multi-year, within 10%), area (the location, else the top of the position tree) and trade, each \
+with a ready create and warnings (4 weeks mixed with 1 month, a task with its own open work order); an item's \
+task (it follows the serial number) and a task by use are left out and stay on their own. It saves nothing: show \
+the user, then packages.create (several at once: maintenance apply).
+  - create: name; exactly one of position_id (its tasks on it or positions inside it) or location_id (tasks at \
+it); tasks (task ids). A task has one home package: a job needed on two schedules is two tasks.
+  - When: timing fixed (default: set dates) or from_last_visit (the close date plus the interval). every + unit \
+(days, weeks, months, years) from anchor (default today), with a pattern for fixed dates: weekday with weeks \
+(every Saturday: every 1, unit weeks, weekday saturday), weekday with nth and months (the first Saturday: unit \
+months, weekday saturday, nth 1), or day with months (the 15th). tolerance: days after the visit's date it's \
+still on time (Saturday with Sunday fine: 1); tolerance_unit hours is kept but not yet enforced.
+  - Layers: a package on another (parent_id, no position or location of its own) visits on some of its parent's \
+visits, and its tasks join the parent's work order that day. The monthly check is a layer on the weekly (unit \
+months, weekday saturday, nth 1); a quarterly one sits on the monthly (every 3, the same pattern, anchor in the \
+first month). A layer's dates must fall on its parent's, and it takes the top package's tolerance.
+  - Visit rules: a task in a package is due on the package's visits, not on its own interval (that's kept, and \
+used again if it leaves the package or the package is paused): visit_rule every (default) or nth with every_nth \
+(the first visit and every Nth after). suppresses: tasks this one covers (the quarterly service covers the \
+monthly clean): on a visit with both, the covered one is left off, not done, and not overdue for it.
+  - add_task / remove_task (a removed task is raised on its own again), update (cadence, tolerance, members' visit \
+rules with tasks: [{task_id, visit_rule, every_nth, suppresses}]), retire (with its layers; not while its work \
+order is open) / restore.
+  - Seasonal work isn't a pause: season {months: [10, 11, 12, 1, 2, 3]} or {start: 'MM-DD', end: 'MM-DD'} (across \
+the new year is fine) on create or update makes it visit only then; outside it raises nothing and nothing is \
+late. A layer can have its own season.
+  - pause (reason; until: the return date) stops it and its layers: nothing is raised, its tasks are held (not \
+raised on their own, not overdue) and an open work order from it is frozen (still open, not late; the late clock \
+carries on from the return). It's back by itself on until; with none it's open-ended and flagged \
+(no_return_date; past_return_date once back by itself, until resume acknowledges it). Missed visits aren't made \
+up; full_visit (default true) makes the first visit back carry every task that fell due while paused, an \
+every-Nth task's turn and a layer's included; false carries on from the next visit. resume ends it early.
+  - Equipment out of service isn't a pause either: maintenance positions.out_of_service or items.out_of_service \
+(reason, until, start) holds the tasks on it and on positions inside it (not due, raised or late; a package leaves \
+their lines off its visits and raises the rest); back_in_service ends it early, and it ends by itself on until. Reads: maintenance \
+get.package (tasks with next due, next visits, open work order) and list.packages (next visit, open work orders, \
+late).
 - A whole RCM in one call (every function, functional failure, mode and decision for a position, or a new \
 branch with its positions): maintenance apply, with @refs from each add to the next (topic apply has the \
 worked example). Deleted by mistake: maintenance failure_modes.restore, maintenance tasks.restore."""),
-    "run": ("Generate and close work orders: failure modes, parts, labour, corrections.", """\
+    "run": ("Generate and close work orders (a work package's too): failure modes, parts, labour, corrections.", """\
 Running the work.
 - maintenance work_orders.generate opens a preventive work order for every task due within horizon_days \
 (default 30) that has none open; a task that can't have one is listed in skipped, with why, and the rest go \
@@ -219,6 +306,25 @@ ahead. Names and titles are at most 200 characters: put detail in instructions, 
 work order from a task with no title gets the task's name (shortened if long; the full name heads the notes). \
 open raises one by hand on exactly one of position_id, item_id, location_id \
 (corrective when something's wrong).
+- Work packages (topic plan): generate opens one work order per package visit due within the horizon, with a \
+line per task due that day (its layers' too), and leaves every task in an active package to it. Only one is open \
+per package: while it's open, the tasks due on visits since (the first Saturday's monthly lines) are added to it \
+as lines (lines_added), never a second work order. It's late once today is past its visit's date plus the \
+tolerance (late, days_late, visits_missed on the work order and list.packages). After it closes, the next visit \
+is the next fixed date after the close (missed visits aren't made up), or the close date plus the interval. \
+Its checklist is one flat list: each task's line (lines[].index) then its steps (check by index). Closing: each \
+task line ticked is done; each line not ticked must be listed in not_done [{task_id, reason}] (it isn't renewed, \
+stays due and goes on the next work order). A line ticked that found a problem: an action with position_id \
+(one of line_positions on maintenance get.work_order) records the replacement or failure at that position, so \
+the life data stays right. The result's packages, lines_added and packages_skipped say what happened.
+- A paused package's open work order shows paused and isn't late (list.packages counts it out); out of season \
+the same. A task on equipment out of service shows out_of_service and isn't overdue.
+- During a visit, save each line as it's done: work_orders.mark (work_order_id, task_id, state done, not_done \
+with a reason, problem with a finding, or todo to clear it) is kept at once, so a lost signal or a refresh loses \
+nothing; marking again replaces it. A problem's finding is a close action without position_id (replace with \
+failure_mode_id or failure_mode_text and new_item; repair; inspect with finding degraded for wear): it's recorded \
+at the line's position when the work order closes, and its task renews. At close, lines marked not_done needn't \
+be listed again; every other line not ticked still must be.
 - Along the way: status (planned, in_progress, waiting), update (assignee, planned_for, due, trade), \
 append_note for a finding, check to tick a checklist line.
 - What it took: labour (hours, who, rate), part_used (pick part_id from maintenance get.work_order's \
@@ -423,6 +529,34 @@ its part as the replacement part. levels: which indenture levels become position
 inside them comes in under the position above); left out, every part. Positions already there by name are reused, \
 so it can run again. Dry run first and show the user the paths.
 - Not yet: configuration baselines and effectivity (which serial numbers a structure applies to)."""),
+    "failures": ("Failure reports: from a report to its closure, and the repeat check.", """\
+Failure reports: the loop from a failure to its closure (so the same failure doesn't come back).
+- File one at the position where it happened: maintenance failure_reports.file (position_id, title = what \
+happened; description, occurred_on (default today), found_by, consequence, failure_mode_id or \
+failure_mode_text, item_id). It's numbered FR-n and starts as reported. The item fitted there that day is kept \
+as a snapshot (name, serial, part, item class), so the report still says what was there after a replacement.
+- consequence uses the RCM vocabulary, so a report compares with its failure mode's decision: safety, \
+environmental, operational, non_operational, hidden, or none when not sure.
+- The failure mode: one of the position's by id (maintenance get.position lists them), or in words \
+(failure_mode_text: the position's mode of that name, else a new ad-hoc one). Always name it when you can.
+- Statuses: reported → investigating → corrective_action → verifying → closed, or rejected (not a failure, \
+or a duplicate: note = the reason, duplicate_of = the other report). Move among the open four freely \
+(set_status); the investigation, actions and verification can be edited in any open status. From closed or \
+rejected the only move is back to an open status (a reopen).
+- Investigate: failure_reports.investigate (notes, root_cause_category: design, material, installation, \
+operation, maintenance, wear, environment, unknown, other; root_cause in words; whys, up to 7 lines).
+- Corrective actions: add_action (what, owner, due; work_order_id links a work order here, work_order_ref is a \
+number or link kept elsewhere: text only, no integration); update_action marks one done (done_on) or dropped.
+- Verify: failure_reports.verify (result worked, not_worked or unclear, notes, verified_on). The report's \
+repeat_check then says how many failures at the same position occurred after the fix (since the latest action \
+done, else the verification, else the report), and how many of the same failure mode.
+- Close: set_status closed, note = the sign-off. Refused without a verification, or after one that didn't \
+work: add another action and verify again, or reject the report.
+- Reading: maintenance get.failure_report (everything, with history: who, when, what); list.failure_reports by \
+position_id (below true: everything inside it; each row's level names the way down), by location_id, by \
+item_id or by part_id, with status (open by default in the app; all here), consequence, failure_mode_id, \
+since / until, q and sort. counts gives how many each status has.
+- Photos go on a report like on a work order (maintenance attachments, target_id = the report's id)."""),
 }
 
 # Graph queries in Cypher (#423): only for the people allowed them

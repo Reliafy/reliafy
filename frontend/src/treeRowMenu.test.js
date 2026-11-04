@@ -23,21 +23,21 @@ const DATA = {
 const ids = (items) => items.map((i) => i.id);
 const opts = (mode, extra = {}) => ({ mode, kidsOf: (k) => liveKids(DATA.positions).get(k) || 0, ...extra });
 
-test("a position's menu: new inside, rename, move, retire; Pin goes before Retire", () => {
+test("a position's menu: new inside, add failure report, rename, move, retire; Pin goes before Retire", () => {
   const d = buildDisplay(DATA, "positions");
   const skim = summaryActions(d.rows.get("skim"), opts("positions"));
-  assert.deepEqual(ids(skim), ["tree-new", "tree-rename", "tree-move", "tree-retire"]);
-  assert.deepEqual(skim.map((i) => i.label), ["New position inside", "Rename…", "Move to…", "Retire…"]);
+  assert.deepEqual(ids(skim), ["tree-new", "report-new", "tree-rename", "tree-move", "tree-retire"]);
+  assert.deepEqual(skim.map((i) => i.label), ["New position inside", "Add failure report…", "Rename…", "Move to…", "Retire…"]);
   assert.ok(skim.every((i) => !i.disabled));
   assert.equal(skim.at(-1).danger, true);
   assert.deepEqual(ids(withPin(skim, [{ id: "pin", label: "Pin this branch" }])),
-    ["tree-new", "tree-rename", "tree-move", "pin", "tree-retire"]);
+    ["tree-new", "report-new", "tree-rename", "tree-move", "pin", "tree-retire"]);
   assert.deepEqual(ids(withPin([{ id: "tree-rename" }], [{ id: "pin" }])), ["tree-rename", "pin"]);
   // Flat: the same. Locations: a position's place there is where it is, so no Move.
   assert.deepEqual(ids(summaryActions(buildDisplay(DATA, "flat").rows.get("skim"), opts("flat"))),
-    ["tree-new", "tree-rename", "tree-move", "tree-retire"]);
+    ["tree-new", "report-new", "tree-rename", "tree-move", "tree-retire"]);
   assert.deepEqual(ids(summaryActions({ key: "skim", type: "pos", ref: DATA.positions[4], kids: [] }, opts("locations"))),
-    ["tree-new", "tree-rename", "tree-retire"]);
+    ["tree-new", "report-new", "tree-rename", "tree-retire"]);
 });
 
 test("Retire is greyed with the reason when the tree already shows the server would refuse", () => {
@@ -99,5 +99,18 @@ test("Isolate: a submenu of levels; just Isolate on a row with nothing inside; n
   assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: false }), []);
   // Before Retire, with Pin this branch after it.
   const skim = summaryActions({ key: "a", type: "pos", kids: ["b"], ref: {} }, { mode: "positions" });
-  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "tree-rename", "tree-move", "isolate", "pin", "tree-retire"]);
+  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "tree-rename", "tree-move", "isolate", "pin", "tree-retire"]);
+});
+
+test("Add failure report…: positions only (a report sits at a position), greyed when the team is view only", () => {
+  const d = buildDisplay(DATA, "positions");
+  const add = summaryActions(d.rows.get("pump"), opts("positions")).find((i) => i.id === "report-new");
+  assert.equal(add.label, "Add failure report…");
+  assert.equal(add.disabled, undefined);
+  assert.ok(!summaryActions(buildDisplay(DATA, "locations").rows.get("shed"), opts("locations")).some((i) => i.id === "report-new"));
+  assert.ok(!summaryActions(buildDisplay(DATA, "items").rows.get("u1"), opts("items")).some((i) => i.id === "report-new"));
+  const viewOnly = summaryActions(d.rows.get("pump"), opts("positions", { viewOnly: "View only: the team's Pro plan has lapsed." }))
+    .find((i) => i.id === "report-new");
+  assert.equal(viewOnly.disabled, true);
+  assert.match(viewOnly.reason, /View only/);
 });

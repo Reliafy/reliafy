@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import ReplacementResult from "../components/ReplacementResult.jsx";
 import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
@@ -9,6 +10,7 @@ import { getStrategyAnalysis } from "../api.js";
 import Chip from "../components/ui/Chip.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { itemName } from "../components/LibRows";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -31,7 +33,7 @@ export default function StrategyAnalysisPage() {
     return (
       <div className="app">
         <header><h1>Saved analysis</h1></header>
-        <div className="card error">{error}</div>
+        <LoadFailed error={error} to="/strategy" label="See all saved analyses" />
       </div>
     );
   }
@@ -39,6 +41,7 @@ export default function StrategyAnalysisPage() {
 
   return (
     <div className="app">
+      <PageTitle name={doc && itemName(doc)} />
       <PageHeader
         crumbs={[{ label: "Strategy", to: "/strategy" }]}
         title={itemName(doc)}

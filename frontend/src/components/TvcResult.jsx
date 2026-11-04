@@ -10,6 +10,8 @@ import { boundWords, timeAtValue } from "../lifeResults.js";
 import { initialSchedule, scheduleBody, scheduleXMax, tvcPath } from "../tvcData.js";
 import "./Tvc.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
 
 // A regression model whose covariates change over time (#60): the
 // coefficients with a plain reading each, and a calculator that follows a
@@ -72,8 +74,9 @@ export function useTvcEvaluation(result, state, { on } = {}) {
   const active = on || state.active;
   const hasBounds = !!result.tvc?.bounds;
   const body = useMemo(() => scheduleBody(rows, fields), [rows, fields]);
-  const levelNum = Number(level);
-  const alpha = hasBounds && bound !== "none" && levelNum > 0 && levelNum < 100 ? 1 - levelNum / 100 : null;
+  const levelCheck = readPercents("tvc", { level: String(level ?? "") }).checks.level;
+  const levelNum = levelCheck.state === "ok" ? levelCheck.percent : Number(level);
+  const alpha = hasBounds && bound !== "none" && levelCheck.state === "ok" ? 1 - levelCheck.fraction : null;
   const xMax = scheduleXMax(rows, xEnd);
   const key = JSON.stringify([body.schedule, active, alpha, bound, xMax]);
   const [data, setData] = useState({ key: null, res: null, error: null });
@@ -100,7 +103,8 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
   const set = (patch) => setState((st) => ({ ...st, ...patch }));
   const hasBounds = !!result.tvc?.bounds;
   const { res, body, key, data, path, alpha, xMax, fields, xEnd } = useTvcEvaluation(result, state);
-  const levelNum = Number(level);
+  const levelCheck = readPercents("tvc", { level: String(level ?? "") }).checks.level;
+  const levelNum = levelCheck.state === "ok" ? levelCheck.percent : Number(level);
   const curves = res?.curves;
   const band = alpha != null && res?.bounds ? res.bounds : null;
   const tNum = Number(t);
@@ -252,11 +256,7 @@ export function TvcCalculator({ result, state, setState, name = null, fill = fal
                     ]} />
                   </label>
                   {bound !== "none" && (
-                    <label className="calc-t">
-                      <span>Level %</span>
-                      <input type="number" inputMode="decimal" min={1} max={99.9} step="any" value={level}
-                             onChange={(e) => set({ level: e.target.value })} />
-                    </label>
+                    <PercentField label="Level" value={String(level ?? "")} onChange={(v) => set({ level: v })} check={levelCheck} />
                   )}
                 </div>
               )}

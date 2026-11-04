@@ -18,6 +18,7 @@ import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { itemName } from "../components/LibRows";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteConfirm, renamePrompt } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 const CONFIDENCE_LEVELS = [
   { value: "0.8", label: "80%" },
@@ -145,6 +146,7 @@ export default function StrategyTracking() {
 
   return (
     <div className="app">
+      <PageTitle name={fleet && itemName(fleet)} />
       <PageHeader
         className="trk-header"
         crumbs={[{ label: "Risk", to: "/risk" }]}

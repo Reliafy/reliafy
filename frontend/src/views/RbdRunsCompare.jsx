@@ -10,8 +10,10 @@ import { rollingMean } from "../components/RbdCalculator.jsx";
 import { unitInText } from "../components/unitText.js";
 import { formatNumber } from "../format.js";
 import { availabilityText, compareSummary, runsPath, runtimeText } from "../rbdRuns.js";
+import { availabilityPct } from "../components/availabilityPrecision.js";
 import "../components/RbdRuns.css";
 import { RBDS_PATH } from "../navigation.js";
+import { RowLink, rowOpen } from "../components/LibRows.jsx";
 
 const when = (iso) =>
   iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -138,16 +140,16 @@ export default function RbdRunsCompare() {
                   const a = availabilityText(r.availability);
                   const ss = r.steady_state_availability;
                   return (
-                    <tr key={r.run_id} className="lib-row" onClick={() => navigate(`/systems/runs/${r.run_id}`)}>
+                    <tr key={r.run_id} className="lib-row" onClick={rowOpen(navigate, `/systems/runs/${r.run_id}`)}>
                       <td>
-                        <Chip dot={COLORWAY[i % COLORWAY.length]}>Run {i + 1}</Chip>{" "}
+                        <RowLink to={`/systems/runs/${r.run_id}`}><Chip dot={COLORWAY[i % COLORWAY.length]}>Run {i + 1}</Chip></RowLink>{" "}
                         <span className="lib-date">{when(r.created_at)}</span>
                       </td>
                       <td className="lib-n">
                         {a.value}
                         {a.interval && <span className="rbd-runs-ci"> {a.interval}</span>}
                       </td>
-                      <td className="lib-opt lib-n">{ss != null ? `${(ss * 100).toFixed(3)}%` : "—"}</td>
+                      <td className="lib-opt lib-n">{ss != null ? availabilityPct(ss) : "—"}</td>
                       <td className="lib-opt lib-n">{r.window != null ? `${formatNumber(r.window)}${u}` : "—"}</td>
                       <td className="lib-opt lib-n">{r.replications != null ? r.replications.toLocaleString() : "—"}</td>
                       <td className="lib-opt lib-n">{runtimeText(r.runtime_s)}</td>

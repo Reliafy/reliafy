@@ -5,6 +5,7 @@ import { test, expect, open, expectHealthy } from "./health.js";
 import {
   appRoutes, hasParam, fill, idSource, landing, MAX_IDS, REDIRECTS_WITH_QUERY, expectsChart,
 } from "./routes.js";
+import { RBDS_LABEL, RBDS_PATH } from "../src/navigation.js";
 
 let appConfig;
 test.beforeAll(async ({ request }) => {
@@ -45,10 +46,24 @@ for (const route of appRoutes()) {
           root: route.root,
           chart: !route.redirect && expectsChart(route.path, record),
         });
+        // Its own tab title ("RBDs · Reliafy"), not the app's generic one.
+        if (!route.root && !route.redirect) {
+          await expect.poll(() => page.title(), { message: `${path} tab title` }).toMatch(/\S · Reliafy$/);
+        }
       });
     }
   });
 }
+
+test("tab titles: a record's page leads with its name", async ({ page, request }) => {
+  const { rbds } = await (await request.get("/api/rbds")).json();
+  const rbd = rbds.find((r) => r.name) || rbds[0];
+  await open(page, RBDS_PATH);
+  await expect.poll(() => page.title()).toBe(`${RBDS_LABEL} · Reliafy`);
+  await open(page, `/systems/b/${encodeURIComponent(rbd.id)}`);
+  const name = rbd.name.replace(/\s*\(sample\)\s*$/i, "");
+  await expect.poll(() => page.title()).toBe(`${name} · ${RBDS_LABEL} · Reliafy`);
+});
 
 test("earlier addresses keep their query and #hash", async ({ page, problems }) => {
   for (const [from, to] of REDIRECTS_WITH_QUERY) {
@@ -64,6 +79,41 @@ test("earlier addresses keep their query and #hash", async ({ page, problems }) 
         return u.pathname + u.search + u.hash;
       }).toBe(to);
       await expectHealthy(page, problems, { label: from });
+    });
+  }
+});
+
+// Every list row's name is a real link to its page, so it opens in a new tab,
+// middle-clicks and copies (not only a row click handler).
+const LIST_LINKS = [
+  ["/models", /^\/models\/(m|recurrent|alt|degradation|joint)\/[^/]+$/],
+  ["/data", /^\/data\/[^/]+$/],
+  ["/models/life", /^\/models\/m\/[^/]+$/],
+  ["/models/recurrent", /^\/models\/recurrent\/[^/]+$/],
+  ["/models/alt", /^\/models\/alt\/[^/]+$/],
+  ["/models/degradation", /^\/models\/degradation\/[^/]+$/],
+  ["/models/joint", /^\/models\/joint\/[^/]+$/],
+  ["/systems/rbds", /^\/systems\/b\/[^/]+$/],
+  ["/systems/runs", /^\/systems\/runs\/[^/]+$/],
+  ["/strategy", /^\/strategy\/analyses\/[^/]+$/],
+  // Forecasts also lists the position classes (Reliafy Maintenance on).
+  ["/forecasts", /^\/forecasts\/[^/]+$|^\/asset-register\/classes\/[^/]+$/],
+  ["/risk", /^\/risk\/[^/]+$/],
+  ["/asset-register/classes", /^\/asset-register\/classes\/[^/]+$/],
+];
+
+test("list rows link to their pages", async ({ page }) => {
+  for (const [path, pattern] of LIST_LINKS) {
+    await test.step(path, async () => {
+      if (path.startsWith("/asset-register") && !appConfig.maintenance) return;
+      await open(page, path);
+      const rows = page.locator("tr.lib-row");
+      const n = await rows.count();
+      for (let i = 0; i < n; i++) {
+        const href = await rows.nth(i).locator("a.lib-link").first().getAttribute("href");
+        expect(href, `${path}: row ${i + 1} has no link`).toBeTruthy();
+        expect(href, `${path}: row ${i + 1} links to ${href}`).toMatch(pattern);
+      }
     });
   }
 });

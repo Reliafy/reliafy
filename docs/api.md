@@ -139,11 +139,36 @@ The Python client has `Client.apply(...)`, the command line
 `reliafy apply ops.json [--run]`, and `maintenance guide` topic `apply` the
 worked examples.
 
+A failure mode's FMEA and FMECA fields live on the same record as its RCM:
+`maintenance failure_modes.score` (`failure_mode_id` plus any of `severity`,
+`occurrence`, `detection` (whole numbers 1–10), `cause`, `effect_local`,
+`effect_next`, `effects` (the end effect, the RCM's failure effects),
+`detection_method`, `action`, `action_owner`, `action_due` (YYYY-MM-DD),
+`action_status` (open, in_progress, done), `failure_rate`, `time_unit`,
+`rate_source` (entered, model, data), `mode_ratio` and `loss_probability`
+(0–1), `operating_time`, `severity_class` (I–IV); `clear` lists fields to
+blank). Reads answer with the computed `rpn` (S × O × D), `ap` (the action
+priority, H, M or L) and `cm` (β × α × λ × t), never stored, and each position
+in `get.rcm` carries an `fmea` summary (scored, high, medium, low, max_rpn,
+cr). A mode may sit directly under a function with no functional failure yet
+(`function_id` on `failure_modes.add`, `assign` and `move`); the RCM reads list
+it in the function's `modes`. `positions.add_sample_uav` copies a fully
+scored sample quadcopter into the tree.
+
 Everything in the tree can be taken out of use and brought back (`retire` /
 `restore` on positions, locations, items, parts, manufacturers, measurement
 points, tasks, failure modes, classes, conditions, groups, connections and
 document links): nothing is erased, and `maintenance list.events`
 shows what changed, with the ids to restore.
+
+Failure reports (the `failure_reports` area: `file`, `update`, `set_status`,
+`investigate`, `add_action`, `update_action`, `verify`; reads `get
+failure_report` and `list failure_reports`) record what failed at a position
+and what was done about it, from the report through investigation, corrective
+actions and verification to closure. A list is scoped to a position (and, by
+default, every position inside it), a location, an item or a part number, or
+the whole workspace, with filters by status, consequence, failure mode and
+date; `maintenance guide` topic `failures` has the loop.
 
 ### Things only the API can do
 
@@ -242,6 +267,9 @@ reliafy document add manual.pdf --to ITEM_ID --kind manual
 reliafy document get DOCUMENT_ID -o manual.pdf
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest readings readings.csv
+reliafy ingest snapshot burst.json     # a signal channel's snapshot (Maintenance): see signal-snapshots.md
+reliafy maintenance progression.time_to_limit --point-id BAND_POINT_ID   # when a watched band reaches its limit, with the uncertainty
+reliafy maintenance progression.series --point-id BAND_POINT_ID --json   # the band as unit, age_days, value rows (and CSV)
 ```
 
 Add `--json` to any command for JSON instead of the readable summary. See

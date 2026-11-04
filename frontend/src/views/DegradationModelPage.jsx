@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import ErrorBoundary from "../components/ErrorBoundary.jsx";
+import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import DegradationResultView from "../components/DegradationResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { deleteDegradationModel, getDegradationModel, renameDegradationModel } from "../api.js";
@@ -11,6 +13,7 @@ import { itemName } from "../components/LibRows.jsx";
 import { relativeTime } from "../instrument.js";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // One saved degradation model in the model frame: the answer line, the
 // result's tabs (in the address, ?tab=), "Track items" (the fleet of tracked
@@ -20,11 +23,14 @@ export default function DegradationModelPage() {
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  // Not on this list (404): ModelNotFound looks in the others.
+  const [missing, setMissing] = useState(false);
   const [tab, setTab] = useTabParam();
 
   useEffect(() => {
     setModel(null);
-    getDegradationModel(id).then(setModel).catch((e) => setError(e.message));
+    setMissing(false);
+    getDegradationModel(id).then(setModel).catch((e) => (e.status === 404 ? setMissing(true) : setError(e.message)));
   }, [id]);
 
   const confirm = useConfirm();
@@ -74,9 +80,14 @@ export default function DegradationModelPage() {
       notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
     >
       {model ? (
-        <DegradationResultView results={model.results} modelId={model.id || id} name={model.name}
-                               datasetId={model.dataset_id} tab={tab} onTab={(t) => setTab(t, "paths")} />
-      ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        // A model this page can't draw shows a card here, not the whole-app error page.
+        <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
+          <DegradationResultView results={model.results} modelId={model.id || id} name={model.name}
+                                 datasetId={model.dataset_id} tab={tab} onTab={(t) => setTab(t, "paths")} />
+        </ErrorBoundary>
+      ) : missing ? <ModelNotFound id={id} kind="degradation" />
+        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+      <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );
 }

@@ -116,9 +116,20 @@ reason shows under it with your words still there. Open a new row from its
 link in the list.
 
 In a row's **Details**, its title is its description: click it to
-change it. A function's Details also list its **Performance standards**; a
-failure mode's hold its **Failure effects**, **Consequence** (one tap on a
-choice) and **Notes**. **Edit description**
+change it. Under it, every level starts with what's inside it, then its own
+fields, then the quieter things at the foot:
+
+- a function: its **Performance standards**, its **Functional failures**,
+  then the working behind its performance standards;
+- a performance standard: its **Functional failures**, then its checkable
+  limit;
+- a functional failure: its **Failure modes** (with its state in words at
+  the top), then what it is **Caused by** below and what it **Causes** above;
+- a failure mode: its **Tasks**, then its **Failure effects**,
+  **Consequence** (one tap on a choice) and **Decision**, then where it sits
+  (**Under**) and its **Notes**.
+
+**Edit description**
 (on a performance standard, **Edit text**) in a row's menu changes the text in the table
 itself. **Delete this function** (or functional failure, or failure mode), at the
 foot of the Details or in their **⋯**, removes a row and everything inside it, after asking; **Remove
@@ -293,12 +304,15 @@ the rows:
   **No performance standard**, with their failure modes). Drag a performance standard above or below
   another to change the order (from the keyboard: **Move up** and **Move
   down** in its menu).
-- In a functional failure's row menu, **Change performance standard…** moves it under
-  another of the function's performance standards, or under **No performance standard** (the whole
-  function, as a total loss is).
-- A performance standard's Details have its text, the structured limit
-  (parameter, comparator, value, unit), when it applies, its source, and the
-  functional failures that breach it. Each field is kept as you leave it.
+- Which performance standard a functional failure breaches is where it sits in
+  the tree. To change it, drag it onto another performance standard (or onto
+  **No performance standard**, for the whole function, as a total loss is), or
+  use **Move to…** in its menu.
+- A performance standard's Details have its text and the functional failures
+  that breach it. At the foot, **Make this checkable…** opens the limit as data
+  (parameter, comparator, value, unit), when it applies and its source, so
+  readings can be checked against it later. Once any of it is set, that line
+  says what it reads as, with **Edit…**. Each field is kept as you leave it.
 - A function that still has its one performance standard as a sentence shows it as one
   performance standard row, with every functional failure under it (there is nothing
   else to breach). The row's menu edits or removes that text; to make it a
@@ -322,9 +336,9 @@ Pick a function and look under **Performance standards** in its Details:
   as written. Nothing is split for you: if the old text was a list joined by
   semicolons, **Split into performance standards…** proposes one performance standard per part, lets
   you edit each line or drop it, and writes them when you confirm.
-- Pick a functional failure to say which performance standard it **Breaches**: *pH above
-  7.8* breaches *pH 7.2–7.8*; *No flow* breaches the whole function. It is a
-  hint for the reader, not a rule: in a function's Details each performance
+- Put each functional failure under the performance standard it breaches: *pH above
+  7.8* under *pH 7.2–7.8*; *No flow* under **No performance standard** (the whole
+  function). It is a hint for the reader, not a rule: in a function's Details each performance
   standard with none says *No functional failure yet*, so you can decide
   whether those are performance standards of this function at all.
 - A performance standard that needs its own verb is another function: *produce chlorine*
@@ -382,20 +396,30 @@ between functional failures that a move took away (a cause must sit on a
 position inside its effect's) is named in the note and isn't put back by Undo:
 link them again if you need to.
 
-**From the keyboard, or on a phone:** there's no dragging, so the row's menu
-has the moves instead. Press Shift+F10 (or the Menu key) on a row, or on a
-phone tap its **⋯**, for **Move to…** (a list of the places it can go, with
-the same checks before you press Move) and **Move up** / **Move down**; a
-performance standard's menu has **Move up** / **Move down** to change the order, and a
-failure mode's menu also has **Move a task…**. With a mouse on a wide screen,
-right-click and **⋯** leave them out: drag the row instead.
+**Move to…, without dragging:** every function, performance standard,
+functional failure and failure mode has **Move to…** in its row menu
+(right-click, its **⋯**, or Shift+F10) and in the **⋯** at the top of its
+Details; a failure mode with a task also has **Move a task…**. It opens the
+tree, with a search box: the places it can go can be picked, and the rest are
+greyed, with the reason when you point at one or tap it (*A failure mode goes
+under a functional failure*). A function goes on a position; a performance
+standard under a function; a functional failure under a performance standard
+or a function's **No performance standard**; a failure mode under a functional
+failure or a position's **Not under a functional failure**; a task on a
+failure mode or a position. Pick one and the dialog says what will happen,
+with the same checks a drop has, then press **Move**: it's the same move, with
+the same **Undo**, and the row is picked in its new place.
+
+To change the order from the keyboard or on a phone, where there's no dragging,
+the row's menu also has **Move up** / **Move down** (a performance standard's
+too).
 
 ## Show the working behind a performance standard
 
 Some performance standards come from sums, not a book: how much chlorine a pool needs from
 its volume, its sunlight and its swimmers, or how many tonnes an hour a belt
-must move to keep a silo filling. Open a function's Details and look under
-**Performance standard** for **Working behind the performance standard**. It is optional.
+must move to keep a silo filling. Open a function's Details: **Working behind the performance standard** is
+at the foot, after its functional failures. It is optional.
 
 - **Add a working…** (or **Edit**) opens a box where you write in Markdown:
   headings, lists, tables, bold, code and links. **Preview** shows what readers

@@ -1,0 +1,49 @@
+/* Time to the limit (Signals tab). Shares the .sg-* pieces of SignalsPanel.css. */
+.ttl-answer {
+  margin: 4px 0 8px;
+  font-size: var(--fs-15, 15px);
+  line-height: 1.45;
+  max-width: 70ch;
+}
+
+.ttl-plain {
+  color: var(--muted);
+}
+
+.ttl-warn {
+  color: var(--warning, #b45309);
+}
+
+.ttl-progress {
+  width: min(320px, 100%);
+  margin-bottom: 8px;
+}
+
+.ttl-table td,
+.ttl-table th {
+  white-space: nowrap;
+}
+
+.ttl-assume {
+  margin-top: 8px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.ttl-assume p {
+  margin: 6px 0;
+  max-width: 70ch;
+}
+
+.ttl-actions {
+  margin-top: 12px;
+}
+
+.ttl-fleets {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
 import { ACCENT, DATA_INK, SURFACE, fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { applyRbdDesign, designRbd } from "../api.js";
+import { formatNumber } from "../format.js";
 import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
 import RbdIntervals, { maintainedBlocks } from "./RbdIntervals.jsx";
 import RbdEmptyState, { TabEmptyState } from "./RbdEmptyState.jsx";
@@ -40,7 +41,11 @@ const STRATEGIES = [
   { value: "choose", label: "Best of both" },
 ];
 
-const fmtR = (v) => (v == null || !Number.isFinite(v) ? "—" : v >= 0.9999 ? v.toFixed(6) : v.toFixed(4));
+// A reliability to four significant figures; near 1 the failure probability
+// (1 − R) carries the detail rather than six decimals.
+const fmtR = (v) =>
+  v == null || !Number.isFinite(v) ? "—"
+    : v >= 0.999 && v < 1 ? `${v.toFixed(4)} (1 − R = ${formatNumber(1 - v, { sig: 2 })})` : v.toFixed(4);
 const fmtN = (v) =>
   v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(6)).toLocaleString(undefined, { maximumFractionDigits: 4 });
 const num = (v) => (v === "" || v == null ? null : Number(v));

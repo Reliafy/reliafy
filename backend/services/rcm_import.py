@@ -13,17 +13,24 @@ into the ``functions → failures → modes`` tree that
 :mod:`backend.maintenance.rcm_sheet` then adds to a position:
 
 * ``mode`` is the only required column; ``function`` / ``failure`` carry down
-  from the row above when blank, and when not mapped at all every mode goes
-  under one "Imported" function / functional failure;
+  from the row above when blank; with no function mapped at all every mode
+  goes under one "Imported" function, and a mode with no functional failure
+  above it (the column not mapped, or blank before any failure is named under
+  its function) goes directly under its function, as an FMEA worksheet reads;
 * consequence and decision-type cells are free text mapped onto Reliafy's
   categories — by an explicit per-value map from the user, else by
   :func:`guess_consequence` / :func:`guess_outcome` where the wording is
   unambiguous, else left unset (never guessed at random);
 * a task / interval with no decision type can't be a decision (a decision
   needs its outcome), so it's kept in the mode's notes instead;
-* columns with no home in the worksheet (FMEA severity / occurrence /
-  detection / RPN, item, cause…) can be appended to the mode's notes as
-  "Severity 8 · Occurrence 4 · …" — there's no FMEA scoring module yet.
+* the FME(C)A columns (severity / occurrence / detection, cause, the local
+  and next higher effects, the detection method, the recommended action with
+  its owner and due date, the criticality figures) land on the mode as its
+  scores (:mod:`backend.maintenance.fmea`); a score outside 1 to 10 is a row
+  error; an RPN column is only compared with severity × occurrence ×
+  detection (a mismatch is a warning), never stored;
+* columns with no home in the worksheet (item, tag, risk rating…) can be
+  appended to the mode's notes as "Item 12 · Risk High".
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
+from backend.maintenance import fmea
 from backend.maintenance import rcm_decisions as rcm
 from backend.services.excel import has_words as _has
 from backend.services.excel import norm
@@ -62,10 +70,67 @@ FIELDS = [
      "synonyms": ["caused by (below)", "caused by below", "caused by", "causes below", "lower-level causes", "results from"]},
     {"id": "mode", "label": "Failure mode", "required": True,
      "help": "What causes the functional failure (one row per mode).",
-     "synonyms": ["failure mode", "failure modes", "mode", "potential failure mode", "failure cause", "cause of failure", "cause", "root cause"]},
-    {"id": "effects", "label": "Effects",
-     "help": "What happens when it fails.",
-     "synonyms": ["failure effect", "failure effects", "effect", "effects", "effect of failure", "potential effect", "potential effects of failure", "end effect", "local effect", "consequence description"]},
+     "synonyms": ["failure mode", "failure modes", "mode", "potential failure mode", "cause of failure"]},
+    {"id": "effects", "label": "End effect",
+     "help": "What happens when it fails (the RCM's failure effects; the FMEA's end effect).",
+     "synonyms": ["failure effect", "failure effects", "effect", "effects", "effect of failure", "potential effect", "potential effects of failure", "end effect", "end effects", "consequence description"]},
+    {"id": "cause", "label": "Cause(s)",
+     "help": "FMEA: what brings the failure mode about (the mechanism).",
+     "synonyms": ["cause", "causes", "failure cause", "mechanism", "failure mechanism", "root cause", "potential cause", "potential causes"]},
+    {"id": "effect_local", "label": "Local effect",
+     "help": "FMEA: the effect on the item itself.",
+     "synonyms": ["local effect", "local effects"]},
+    {"id": "effect_next", "label": "Next higher effect",
+     "help": "FMEA: the effect one level up.",
+     "synonyms": ["next higher effect", "next level effect", "next effect", "next higher level effect"]},
+    {"id": "detection_method", "label": "Detection method",
+     "help": "FMEA: how the failure is detected, or the current controls.",
+     "synonyms": ["detection method", "current controls", "controls", "prevention controls", "detection controls", "detection methods"]},
+    {"id": "severity", "label": "Severity",
+     "help": "FMEA score, a whole number 1 (no effect) to 10 (hazardous, no warning).",
+     "synonyms": ["severity", "sev", "s"]},
+    {"id": "occurrence", "label": "Occurrence",
+     "help": "FMEA score, a whole number 1 (almost never) to 10 (almost certain).",
+     "synonyms": ["occurrence", "occ", "o", "probability", "likelihood"]},
+    {"id": "detection", "label": "Detection",
+     "help": "FMEA score, a whole number 1 (almost certain to detect) to 10 (cannot detect).",
+     "synonyms": ["detection", "detectability", "det", "d"]},
+    {"id": "rpn", "label": "RPN (checked, not stored)",
+     "help": "The sheet's risk priority number is compared with severity × occurrence × detection; a mismatch is a warning. Reliafy works it out itself.",
+     "synonyms": ["rpn", "risk priority number"]},
+    {"id": "action", "label": "Recommended action",
+     "help": "FMEA: what to do about it (the RCM task is the Task column).",
+     "synonyms": ["recommended action", "recommended actions"]},
+    {"id": "action_owner", "label": "Action owner",
+     "help": "Who owns the recommended action.",
+     "synonyms": ["action owner", "owner", "responsibility", "responsible", "responsible person"]},
+    {"id": "action_due", "label": "Action due",
+     "help": "When the action is due (a date).",
+     "synonyms": ["action due", "target date", "due date", "target completion date", "due"]},
+    {"id": "action_status", "label": "Action status",
+     "help": "Open, in progress or done.",
+     "synonyms": ["action status", "status"]},
+    {"id": "failure_rate", "label": "Failure rate",
+     "help": "Criticality: λ, failures per unit of the time unit.",
+     "synonyms": ["failure rate", "lambda", "λ", "rate"]},
+    {"id": "time_unit", "label": "Time unit",
+     "help": "The unit the failure rate and operating time are in (hours by default).",
+     "synonyms": ["time unit", "rate unit"]},
+    {"id": "rate_source", "label": "Rate source",
+     "help": "Where the failure rate comes from: entered, model or data.",
+     "synonyms": ["rate source", "source of rate", "failure rate source"]},
+    {"id": "mode_ratio", "label": "Mode ratio",
+     "help": "Criticality: α, the share (0 to 1) of the item's failures that are this mode.",
+     "synonyms": ["mode ratio", "alpha", "α", "failure mode ratio"]},
+    {"id": "loss_probability", "label": "Loss probability",
+     "help": "Criticality: β (0 to 1), the chance the effect is the loss the severity class names.",
+     "synonyms": ["loss probability", "beta", "β", "failure effect probability", "conditional probability"]},
+    {"id": "operating_time", "label": "Operating time",
+     "help": "Criticality: t, in the time unit.",
+     "synonyms": ["operating time", "mission time", "exposure time"]},
+    {"id": "severity_class", "label": "Severity class",
+     "help": "Criticality: I Catastrophic, II Critical, III Marginal or IV Minor.",
+     "synonyms": ["severity class", "severity classification", "severity category", "hazard class"]},
     {"id": "consequence", "label": "Consequence",
      "help": "Safety / environmental / operational / non-operational / hidden — values are mapped below.",
      "synonyms": ["consequence", "consequences", "consequence category", "failure consequence", "consequence type", "consequence class", "category"]},
@@ -73,8 +138,8 @@ FIELDS = [
      "help": "On-condition, fixed-interval, run-to-failure… — values are mapped below.",
      "synonyms": ["task type", "decision", "maintenance strategy", "strategy", "task category", "maintenance type", "policy", "maintenance policy", "action type", "task class", "decision outcome"]},
     {"id": "task", "label": "Task",
-     "help": "The proposed task or recommended action.",
-     "synonyms": ["task", "proposed task", "maintenance task", "recommended action", "recommended actions", "recommended task", "action", "actions", "task description", "pm task", "mitigation"]},
+     "help": "The proposed RCM task (the FMEA's recommended action is its own column).",
+     "synonyms": ["task", "proposed task", "maintenance task", "recommended task", "action", "actions", "task description", "pm task", "mitigation"]},
     {"id": "interval", "label": "Interval",
      "help": "A number (with the unit column), or text like “6 months” / “weekly”.",
      "synonyms": ["interval", "task interval", "initial interval", "frequency", "task frequency", "period"]},
@@ -86,16 +151,19 @@ FIELDS = [
      "synonyms": ["notes", "note", "comments", "comment", "remarks", "remark", "rationale", "justification"]},
 ]
 FIELD_IDS = [f["id"] for f in FIELDS]
+# The FME(C)A columns, landing on the mode as its scores (fmea.FIELDS, all mapped).
+SCORE_FIELDS = [f for f in fmea.FIELDS if f in FIELD_IDS]
+# A score with a text value that's clipped like other text (the rest are numbers, dates, choices).
+_SCORE_TEXT = set(fmea.LONG_FIELDS) | set(fmea.SHORT_FIELDS)
 
 # Unmapped columns ticked by default for "append to the mode's notes".
 EXTRA_SYNONYMS = [
-    "severity", "sev", "s", "occurrence", "occ", "o", "probability", "likelihood",
-    "detection", "detectability", "det", "d", "rpn", "risk priority number", "risk",
-    "criticality", "risk rating", "risk level", "item", "component", "equipment", "part",
-    "asset", "sub system", "subsystem", "assembly", "cause", "failure cause", "causes",
-    "mechanism", "failure mechanism", "current controls", "detection method", "controls",
-    "tag", "item number", "responsibility", "owner",
+    "risk", "criticality", "risk rating", "risk level", "item", "component", "equipment", "part",
+    "asset", "sub system", "subsystem", "assembly", "tag", "item number",
 ]
+# Columns Reliafy works out itself (an export's): never kept as notes.
+COMPUTED_COLUMNS = {"rpn", "risk priority number", "action priority", "ap", "mode criticality", "cm",
+                    "item criticality", "cr"}
 
 CONSEQUENCE_CHOICES = list(rcm.CONSEQUENCES)
 # Decision choices a value can map to: run-to-failure carries its basis.
@@ -319,8 +387,10 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     functions: list[dict] = []
     fn_by_key: dict[str, dict] = {}
     warnings: list[str] = []
+    errors: list[str] = []  # row errors (a score outside its range): the import onto a position writes nothing
     skipped: list[int] = []
     truncated = 0
+    rpn_mismatch: list[int] = []
     cur_fn = cur_standard = cur_fail = cur_basis = ""
     # A function's performance standards as a list: every distinct standard cell
     # under it (one row may list a standard on its own: a function with several).
@@ -392,15 +462,20 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             if cur_basis and not fn.get("standard_basis"):
                 fn["standard_basis"] = cur_basis
 
-        fail_name = clip(cur_fail or (IMPORTED if col["failure"] is None else ""))
-        if not fail_name:
+        # A mode with no functional failure above it goes directly under its
+        # function (an FMEA row); a "Caused by (below)" cell needs a failure to
+        # hang the links on, so a row with one and no failure gets the stand-in.
+        fail_name = clip(cur_fail)
+        if not fail_name and cause_text:
             fail_name = IMPORTED
-            warnings.append(f"Row {rnum}: no functional failure above this failure mode — it went under “{IMPORTED}”.")
-        failure = fn["_by_key"].get(fail_name.lower())
-        if failure is None:
-            failure = {"text": fail_name, "modes": []}
-            fn["_by_key"][fail_name.lower()] = failure
-            fn["failures"].append(failure)
+            warnings.append(f"Row {rnum}: no functional failure above this row's causes — they went under “{IMPORTED}”.")
+        failure = None
+        if fail_name:
+            failure = fn["_by_key"].get(fail_name.lower())
+            if failure is None:
+                failure = {"text": fail_name, "modes": []}
+                fn["_by_key"][fail_name.lower()] = failure
+                fn["failures"].append(failure)
 
         if cause_text:
             failure.setdefault("causes", []).append({"row": rnum, "text": cause_text})
@@ -413,12 +488,36 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             mode["effects"] = clip(effects)
         if col["consequence"] is not None:
             mode["consequence"] = _choice(r[col["consequence"]], consequence_map, guess_consequence)
+        # Its FME(C)A columns, each checked as the service checks it: a value out
+        # of range is a row error. The sheet's RPN is only compared.
+        for f in SCORE_FIELDS:
+            if col[f] is None:
+                continue
+            raw = clip(cell(r, f)) if f in _SCORE_TEXT else r[col[f]]
+            if raw is None or (isinstance(raw, str) and not raw.strip()):
+                continue
+            try:
+                mode[f] = fmea.clean_value(f, raw)
+            except fmea.FmeaError as err:
+                errors.append(f"Row {rnum}: {err}")
+        if col["rpn"] is not None and _text(r[col["rpn"]]):
+            computed = fmea.rpn(mode.get("severity"), mode.get("occurrence"), mode.get("detection"))
+            try:
+                given = float(_text(r[col["rpn"]]))
+            except ValueError:
+                given = None
+            if computed is not None and given is not None and given != computed:
+                rpn_mismatch.append(rnum)
 
         notes: list[str] = []
         if cell(r, "notes"):
             notes.append(cell(r, "notes"))
 
         task = cell(r, "task")
+        # An FMEA sheet with a recommended action and no task column: the action
+        # names the decision's task too (a scheduled decision needs a name), as
+        # well as landing on the mode as its recommended action.
+        fallback = cell(r, "action") if col["task"] is None else ""
         raw_interval = r[col["interval"]] if col["interval"] is not None else None
         interval, text_unit = parse_interval(raw_interval)
         unit = cell(r, "interval_unit") or text_unit or ""
@@ -427,8 +526,8 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             decision: dict = {"outcome": outcome, "evidence": None}
             if outcome.startswith("rtf:"):
                 decision["outcome"], decision["rtf_basis"] = "rtf", outcome.split(":", 1)[1]
-            if task:
-                decision["task"] = clip(task)
+            if task or fallback:
+                decision["task"] = clip(task or fallback)
             if interval is not None:
                 decision["interval"] = interval
                 if unit:
@@ -459,7 +558,7 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             notes.append(" · ".join(scores))
         if notes:
             mode["notes"] = clip("\n".join(notes))
-        failure["modes"].append(mode)
+        (failure["modes"] if failure is not None else fn.setdefault("modes", [])).append(mode)
         n_modes += 1
 
     for fn in functions:
@@ -490,6 +589,12 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             "values to turn them into decisions.")
     if truncated:
         warnings.append(f"{truncated} very long cell{'s were' if truncated != 1 else ' was'} shortened to {MAX_TEXT:,} characters.")
+    if rpn_mismatch:
+        listed = ", ".join(str(n) for n in rpn_mismatch[:8]) + (" …" if len(rpn_mismatch) > 8 else "")
+        warnings.append(
+            f"The RPN column disagrees with severity × occurrence × detection on {len(rpn_mismatch)} "
+            f"row{'s' if len(rpn_mismatch) != 1 else ''} (row{'s' if len(rpn_mismatch) != 1 else ''} {listed}); "
+            "Reliafy works the RPN out from the three scores, so the sheet's isn't kept.")
 
     try:
         cleaned = rcm.clean_tree(functions)
@@ -505,6 +610,8 @@ def build_tree(header: list[str], rows: list[list], options: dict,
         for fn, cfn in zip(functions, cleaned):
             if fn.get("standard_basis"):
                 cfn["standard_basis"] = fn["standard_basis"]
+            for mode, cmode in zip(fn.get("modes") or [], cfn.get("modes") or []):
+                cmode["row"] = mode["_row"]
             for failure, cfailure in zip(fn["failures"], cfn["failures"]):
                 if failure.get("causes"):  # the lower failures named in "Caused by (below)", by row
                     cfailure["causes"] = failure["causes"]
@@ -531,18 +638,22 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             "skipped_rows": len(skipped),
         },
         "warnings": warnings,
+        "errors": errors,
         "values": values,
         "outcome_source": outcome_source,
     }
 
 
 def default_extra_columns(header: list[str], mapping: dict) -> list[str]:
-    """Unmapped columns that look like FMEA scoring / item columns."""
+    """Unmapped columns that look like item / risk-rating columns worth keeping
+    as notes (a mapped column, and one Reliafy works out itself, never)."""
     used = {c for c in (mapping or {}).values() if c}
     wanted = set(EXTRA_SYNONYMS)
 
     def looks_extra(h: str) -> bool:
         n = norm(h)
+        if n in COMPUTED_COLUMNS:
+            return False
         return n in wanted or any(len(w) > 2 and _has(n, w) for w in wanted)
 
     return [h for h in header if h not in used and looks_extra(h)]

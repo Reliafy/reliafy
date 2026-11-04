@@ -7,7 +7,9 @@
 // heading and back to the row. Everything the old dialog had is here, kept as
 // you go: a function's performance standards and working, a standard's limit
 // fields, a failure's status, links and failure modes, a failure mode's
-// decision and its several tasks. At 400 px it is the sheet and nothing
+// decision and its several tasks. At every level what's inside it comes first,
+// then its own fields, then the quieter things (the working, the checkable
+// limit, where it sits, notes). At 400 px it is the sheet and nothing
 // scrolls sideways. Each test makes its own small plant through the API and
 // pins it (?pin=), so its rows start at the top of the tree.
 //
@@ -95,7 +97,9 @@ test("a click shows the details beside the table; a double-click on the name spr
   await stdRow.locator(".tp-nm").click();
   await expect(panel(page).getByRole("heading", { name: `At 3 bar ${tag}` })).toBeVisible();
   expect(await isExpanded(page)).toBe(true);
-  // A standard's limit fields, each kept as you leave it.
+  // A standard's limit fields (folded: Edit… on its one line opens them), each kept as you leave it.
+  await expect(panel(page).locator(".rw-checkable")).toContainText("Checkable: Pressure at least 3 bar");
+  await panel(page).getByRole("button", { name: "Edit the checkable limit" }).click();
   await expect(panel(page).getByRole("textbox", { name: "Parameter", exact: true })).toHaveValue("Pressure");
   await expect(panel(page).getByRole("combobox", { name: "Comparator" })).toHaveValue(">=");
   await panel(page).getByRole("textbox", { name: "When it applies", exact: true }).fill("while the pump runs");
@@ -263,23 +267,76 @@ test("screenshots of the panel side by side and expanded (SMOKE_SHOTS_DIR)", asy
     await sealRow.locator(".tp-nm").click();
     await settled(page);
     await page.screenshot({ path: `${SHOTS}/rcm-panel-side-${w}.png` });
-    if (w > 600) await fnRow.locator(".tp-nm").dblclick();
-    else {
-      await page.getByRole("button", { name: "Close the details" }).click();
-      await fnRow.getByRole("button", { name: "Actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Open…" }).click();
+    // Each level expanded (desktop) or as the sheet (400 px), the whole panel.
+    const levels = [
+      ["function", fnRow],
+      ["standard", trow(page, `^Performance standard: At 3 bar ${tag}`)],
+      ["failure", trow(page, `^Functional failure: No flow ${tag}`)],
+      ["mode", sealRow],
+    ];
+    for (const [name, row] of levels) {
+      if (w > 600) await row.locator(".tp-nm").dblclick();
+      else {
+        await page.getByRole("button", { name: "Close the details" }).click();
+        await row.getByRole("button", { name: "Actions", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Open…" }).click();
+      }
+      await settled(page);
+      await page.screenshot({ path: `${SHOTS}/rcm-panel-${name}-${w}.png` });
+      // The whole panel: a tall window, so nothing is scrolled out of the shot.
+      await page.setViewportSize({ width: w, height: 2400 });
+      await settled(page);
+      await panel(page).screenshot({ path: `${SHOTS}/rcm-panel-${name}-${w}-whole.png` });
+      await page.setViewportSize({ width: w, height: h });
+      if (w > 600) await panel(page).getByRole("button", { name: "Back to table" }).click();
     }
-    await settled(page);
-    await page.screenshot({ path: `${SHOTS}/rcm-panel-function-${w}.png` });
-    if (w > 600) await sealRow.locator(".tp-nm").click();
-    else {
-      await page.getByRole("button", { name: "Close the details" }).click();
-      await sealRow.getByRole("button", { name: "Actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Open…" }).click();
-    }
-    await settled(page);
-    await page.screenshot({ path: `${SHOTS}/rcm-panel-mode-${w}.png` });
   }
+});
+
+// The panel's blocks, top to bottom: a region's name, else "own" (this
+// level's fields) or "foot" (the quieter things last).
+const blocks = (page) => panel(page).locator(".rw-pbody > *").evaluateAll((els) => els.map((el) => (
+  el.getAttribute("aria-label") || (el.classList.contains("rw-own") ? "own" : el.classList.contains("rw-foot") ? "foot" : el.className))));
+
+test("one order at every level: what's inside it first, then its own, the quieter things last", async ({ page, request, problems }) => {
+  const tag = `b${Date.now()}`;
+  const p = await plant(request, tag);
+  for (const w of [1280, 400]) {
+    await page.setViewportSize({ width: w, height: 860 });
+    await open(page, url(p));
+    const show = async (name) => {
+      const row = trow(page, name);
+      if (w > 600) await row.locator(".tp-nm").click();
+      else {
+        if (await panel(page).count()) await panel(page).getByRole("button", { name: "Close the details" }).click();
+        await row.getByRole("button", { name: "Actions", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Open…" }).click();
+      }
+    };
+    await show(`^Function: Pump water ${tag}`);
+    await expect(panel(page).getByRole("heading", { level: 2, name: `Pump water ${tag}` })).toBeVisible();
+    expect(await blocks(page)).toEqual(["Performance standards", "Functional failures", "Working behind the performance standard"]);
+    await show(`^Performance standard: At 3 bar ${tag}`);
+    await expect(panel(page).getByRole("heading", { level: 2, name: `At 3 bar ${tag}` })).toBeVisible();
+    expect(await blocks(page)).toEqual(["Functional failures", "foot"]);
+    await show(`^Functional failure: No flow ${tag}`);
+    await expect(panel(page).getByRole("heading", { level: 2, name: `No flow ${tag}` })).toBeVisible();
+    expect(await blocks(page)).toEqual(["Failure modes", "Caused by, on positions below", "Causes, on positions above"]);
+    // Its state in words heads its failure modes, said once.
+    await expect(panel(page).getByRole("region", { name: "Failure modes" })).toContainText("1 of its 2 failure modes still needs a decision.");
+    await show(`^Failure mode: Seal leaks ${tag}`);
+    await expect(panel(page).getByRole("heading", { level: 2, name: `Seal leaks ${tag}` })).toBeVisible();
+    // The FME(C)A's two groups (scores, criticality) come after the decision on this tab.
+    expect(await blocks(page)).toEqual(["Tasks", "own", "Decision", "FME(C)A", "Criticality", "foot"]);
+    // The worksheet's order inside: effects, consequence, then the decision; where it sits and notes last.
+    const labels = await panel(page).locator(".rw-pbody .field-label").allInnerTexts();
+    const at = (t) => labels.findIndex((x) => x.startsWith(t));
+    expect(at("Failure effects")).toBeLessThan(at("Consequence"));
+    expect(at("Consequence")).toBeLessThan(at("Under"));
+    expect(at("Under")).toBeLessThan(at("Notes"));
+    expect(await overflow(page)).toBe(0);
+  }
+  await expectHealthy(page, problems, { label: "rcm panel order" });
 });
 
 // The shared form pieces (components/ui): a field says "✓ Saved" by its label
@@ -346,6 +403,7 @@ test("fields, chips, ⋯ and refusals: kept where you typed, the reason beside i
 
   // A standard's limit: comparator, value and unit as one group, read back in words.
   await trow(page, `^Performance standard: At 3 bar ${tag}`).locator(".tp-nm").click();
+  await panel(page).getByRole("button", { name: "Edit the checkable limit" }).click();
   await expect(panel(page).getByRole("group", { name: "Limit" }).getByRole("combobox", { name: "Comparator" })).toHaveValue(">=");
   await expect(panel(page).locator(".reads-as")).toHaveText("Reads as: Pressure at least 3 bar");
   // A consequence cell: one tap on a chip under it; Escape drops it.

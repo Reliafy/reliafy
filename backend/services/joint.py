@@ -171,7 +171,9 @@ def start_fit(db, *, uid: str, owners, body: dict, save: bool = True,
     model (``body["name"]``) under ``owner_id``. Returns ``(status,
     payload)``: 200 with ``{"model_id"?, "results"}`` (in-process), 202 with
     a ``job`` to poll (``/api/rbd-jobs/{job_id}``, whose result gives the
-    same), 503 when the queue can't take it. Raises :class:`FitError`."""
+    same), 503 when the queue can't take it. ``body["run_token"]`` (the
+    app's) lets the user cancel an in-process fit before it is saved.
+    Raises :class:`FitError`."""
     spec = spec_from(body)
     name = " ".join(str((body or {}).get("name") or "").split())[:200]
     if save and not name:
@@ -188,6 +190,9 @@ def start_fit(db, *, uid: str, owners, body: dict, save: bool = True,
                 raise FitError(str(exc)) from exc
             raise
         out = compute_core.to_wire(out)
+        if rbd_jobs_service.token_cancelled(db, uid, (body or {}).get("run_token")):
+            # Cancelled while it fitted in this process: nothing is saved.
+            return 200, {"model_id": None, "results": out["results"], "cancelled": True}
         model_id = _save(db, pending, out).id if save else None
         return 200, {"model_id": model_id, "results": out["results"]}
     key = "joint_fit|" + hashlib.sha256(json.dumps(

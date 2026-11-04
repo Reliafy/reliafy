@@ -13,13 +13,13 @@
      --faint (2.6:1) is for borders and disabled states only, never text. */
   --ink: #14171c;
   --muted: #5f6670;
-  --subtle: #6c727c;
+  --subtle: #666c76; /* 4.5:1+ as hint text on every surface */
   --faint: #9aa0a8;
   /* Text and icons on a solid fill (accent, ink, semantic). */
   --on-fill: #ffffff;
 
   /* Accent: primary action, links, selection */
-  --acc: #2f6df6;
+  --acc: #245fe0; /* 4.5:1+ as text on every surface, incl. its own tint */
   --acc-d: #2257d6;
   --acc-t: rgba(47, 109, 246, 0.09);
   --acc-hover: rgba(47, 109, 246, 0.05); /* row and control hover */
@@ -854,6 +854,38 @@ h6 {
   flex-wrap: wrap;
   margin-top: 1rem;
 }
+
+/* Why Compute is greyed out: on the button's line, wrapping under it on a phone. */
+.strategy-costs .compute-why {
+  margin: 0;
+  align-self: center;
+  flex-basis: 100%;
+}
+@media (min-width: 720px) {
+  .strategy-costs .compute-why { flex-basis: auto; }
+}
+
+/* Under a Strategy tool: its saved analyses (a filtered view of the list). */
+.strategy-saved { margin-top: var(--sp-5); }
+.strategy-saved-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.strategy-saved-head h2 { font-size: var(--fs-16); margin: 0 0 var(--sp-2); }
+.strategy-saved-list { list-style: none; margin: 0; padding: 0; }
+.strategy-saved-list li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.6rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--line);
+}
+.strategy-saved-list li > a { font-weight: 500; overflow-wrap: anywhere; }
+.strategy-saved-result { color: var(--muted); flex: 1 1 12rem; min-width: 0; }
 
 .strategy-costs input[type="text"] {
   background: var(--surf);
@@ -7880,7 +7912,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   padding-block: 8px;
 }
 .tablebar .search.live { padding-block: 0; }
-.tablebar .search.live:focus-within { border-color: var(--acc); box-shadow: var(--focus); }
+/* Every list search shows keyboard focus, in a table toolbar or not. */
+.search.live:focus-within { border-color: var(--acc); box-shadow: var(--focus); }
 .search.live input::placeholder { color: var(--subtle); }
 
 /* ---- Landing: quiet nav links ------------------------------------------- */
@@ -9567,6 +9600,7 @@ input.rbd-rename {
 .sif-card-body b { font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
 .sif-card-body span { font-size: var(--fs-13); color: var(--muted); }
 .sif-card-body button.link { font-size: var(--fs-13); }
+.sif-card-body .sif-card-terms { font-size: var(--fs-12); color: var(--subtle); }
 .sif-card-cta { font-size: var(--fs-13); font-weight: 600; color: var(--acc); white-space: nowrap; text-decoration: none; }
 .sif-card-cta:hover { text-decoration: underline; }
 @media (max-width: 640px) {
@@ -9721,3 +9755,42 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 
 /* A dialog takes focus as it opens (so the keyboard is in it): no ring on the box itself. */
 .modal:focus { outline: none; }
+
+/* A list row's name: a real link (RowLink), styled as the row's title. */
+.lib-link { color: inherit; text-decoration: none; }
+/* Hover matches a.lib-name: the accent colour and an underline. */
+.lib-link:hover { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
+.lib-link:focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-sm); }
+.lib-acts a.act:focus-visible { outline: none; box-shadow: var(--focus); }
+
+.ds-unit-pick { display: flex; flex-direction: column; gap: 6px; }
+.ds-unitless { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); color: var(--muted); min-height: 32px; }
+/* A Pro-only action, marked for users without Pro (ProTag.jsx). */
+.pro-tag {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  font-size: var(--fs-12); font-weight: 600; line-height: 18px; vertical-align: middle;
+  color: var(--cat-violet); background: var(--cat-violet-t); border: 1px solid var(--cat-violet-line);
+}
+
+/* Skip link: the first Tab stop, visible only when focused. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 1000;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: var(--surf);
+  color: var(--acc);
+  font-weight: 600;
+  box-shadow: var(--focus);
+}
+.skip-link:focus { top: 8px; }
+main.content:focus { outline: none; }
+
+/* Touch targets on a phone: at least 44 px to press, without moving the
+   layout (inline links grow their hit area, not their box). */
+@media (max-width: 720px) {
+  .side-subitem { min-height: 44px; display: flex; align-items: center; }
+  .crumb-link, button.link { padding-block: 12px; margin-block: -12px; }
+}

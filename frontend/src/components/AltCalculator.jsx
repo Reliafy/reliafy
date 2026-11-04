@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { bandPair, fitLine } from "../plotTheme.js";
-import { altBounds, evaluateAlt, getRbdJob } from "../api.js";
+import { altBounds, cancelRbdJob, evaluateAlt, getRbdJob } from "../api.js";
+import { CANCELLED_TEXT } from "../jobCancel.js";
 import { stressName } from "./stressName.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { PlotCard } from "./model/ModelLayouts.jsx";
 import { parseUse } from "../altFrame.js";
+import ProTag from "./ProTag.jsx";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -119,6 +121,14 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
     if (st.res && st.inputs) loadBounds(m, st.res, st.inputs);
   };
 
+  // Stop computing the bounds: the answer is ignored, and a queued or running
+  // bootstrap job is cancelled on the server too.
+  const cancelBounds = () => {
+    ++ticket.current;
+    if (st.job?.job_id) cancelRbdJob(st.job.job_id).catch(() => {});
+    set({ job: null }); setBoundsBusy(false); setBoundsError(CANCELLED_TEXT);
+  };
+
   // Poll a queued bootstrap job until it's done.
   const jobId = st.job?.job_id;
   useEffect(() => {
@@ -137,8 +147,9 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
           set({ job: null, bounds: view.result }); setBoundsBusy(false);
           return;
         }
-        if (view.status === "failed") {
-          set({ job: null }); setBoundsBusy(false); setBoundsError(view.error || "The calculation failed.");
+        if (view.status === "failed" || view.status === "cancelled") {
+          set({ job: null }); setBoundsBusy(false);
+          setBoundsError(view.status === "cancelled" ? CANCELLED_TEXT : view.error || "The calculation failed.");
           return;
         }
         set((cur) => ({ job: cur.job && cur.job.job_id === jobId ? { ...cur.job, ...view } : cur.job }));
@@ -228,7 +239,8 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
             {res.no_finite_maximum && <div className="calc-warn">{res.no_finite_maximum.message || "This fit has no finite maximum: the extrapolation means nothing."}</div>}
             {boundsBusy && (
               <p className="hint alt-calc-note" role="status" aria-live="polite">
-                {st.job ? jobText(st.job) : `Computing ${METHODS.find((x) => x.id === st.method)?.label.toLowerCase()} bounds…`}
+                {st.job ? jobText(st.job) : `Computing ${METHODS.find((x) => x.id === st.method)?.label.toLowerCase()} bounds…`}{" "}
+                <button type="button" className="link sm" onClick={cancelBounds}>Cancel</button>
               </p>
             )}
             {needsPro && (
@@ -313,7 +325,9 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
               className="alt-method-seg"
               value={st.method}
               onChange={pickMethod}
-              options={METHODS.filter((x) => methods.includes(x.id)).map((x) => ({ value: x.id, label: x.label, title: x.hint }))}
+              options={METHODS.filter((x) => methods.includes(x.id)).map((x) => ({
+                value: x.id, title: x.hint, label: x.id === "bootstrap" ? <>{x.label}<ProTag /></> : x.label,
+              }))}
             />
             <span className="muted alt-method-hint">
               {METHODS.find((x) => x.id === st.method)?.hint}

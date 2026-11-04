@@ -420,10 +420,10 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
         _, table = mcp_tools.TOOL_TABLES["maintenance"]
         expected = {f"{area[len('maintenance_'):]}.{verb}" for area, (_, t) in mcp_tools.TABLES.items() for verb in t}
         expected |= {"overview", "guide", "view_photo", "graph_schema", "graph_query", "apply"}
-        assert set(table) == expected and len(table) == 189
+        assert set(table) == expected and len(table) == 231  # 189 + work packages (Nov 2026): 9 actions, 2 reads, work_orders.mark, out of service ×4; + signals ×9, signal_data ×3; progression ×2; + failure reports (Nov 2026): 7 actions, 2 reads; + FME(C)A: failure_modes.score, positions.add_sample_uav
         # The whole list an operator loads on every connection, guarded (301,819 characters as 40 tools).
         listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in every])
-        assert len(listed) < 20_000
+        assert len(listed) < 22_000  # was 20,000 before the signal channel actions, 21,000 before failure reports
     finally:
         mcp_tools.unregister()
     assert len({t.name for t in anyio.run(mcp_server.mcp.list_tools)}) == 6

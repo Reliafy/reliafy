@@ -286,6 +286,7 @@ failure is caused by some of the position's failure modes:
 (:Function)-[:FAILS_AS]->(:FunctionalFailure {text})
 (:FunctionalFailure)-[:BREACHES]->(:Standard)       # optional: none means the whole function
 (:FunctionalFailure)-[:CAUSED_BY]->(:FailureMode)
+(:Function)-[:FAILS_DIRECTLY_AS]->(:FailureMode)    # an FMEA row: no functional failure written yet
 (:FunctionalFailure)-[:RESULTS_FROM]->(:FunctionalFailure)   # effect -> cause, on a position inside
 (:Position)-[:CAN_FAIL_AS]->(:FailureMode)          # as before
 (:Task)-[:MITIGATES]->(:FailureMode)                # many-to-many: see below
@@ -299,9 +300,30 @@ id}`). The interval and unit of a scheduled decision are its task's. A
 failure mode under no functional failure still belongs to its position (the
 app lists it as unassigned).
 
+A failure mode may also sit directly under a function, with no performance
+standard or functional failure between (`FAILS_DIRECTLY_AS`): that is how an
+FMEA worksheet reads, function › failure mode. `failure_mode.placed {id,
+function_id}` makes the edge (`function_id` null drops it); assigning the mode
+to a functional failure drops it too. The RCM reads list these in the
+function's `modes`; the Explorer's RCM tab shows them under **No functional
+failure yet**, and a function with such modes and no functional failure is not
+analysed. The mode is one record either way: the scores, effects and decision
+stay with it when it is assigned.
+
+The FMEA and FMECA fields are properties on the mode too, written by
+`failure_mode.scored {id, changes}` (a field set to null is cleared):
+`severity`, `occurrence`, `detection` (1–10), `cause`, `effect_local`,
+`effect_next` (`effects` is the end effect), `detection_method`, `action`,
+`action_owner`, `action_due`, `action_status`, and for criticality
+`failure_rate`, `time_unit`, `rate_source`, `mode_ratio`, `loss_probability`,
+`operating_time`, `severity_class`. The risk priority number, the action
+priority and the mode criticality are computed on every read
+(`backend/maintenance/fmea.py`), never stored.
+
 Events: `function.added` / `updated` / `removed`, `functional_failure.added`
 / `updated` / `removed`, `failure_mode.assigned` (under a functional failure,
-or none), `failure_mode.analysed` and `failure_mode.retired`. Deleting a
+or none), `failure_mode.placed` (directly under a function, or not),
+`failure_mode.analysed`, `failure_mode.scored` and `failure_mode.retired`. Deleting a
 function or a functional failure leaves its failure modes on the position,
 unassigned; deleting a failure mode retires the tasks that serve it alone and
 unlinks the ones that serve other modes too.
@@ -701,6 +723,204 @@ filled from `snapshot(org)`, with an empty log of its own), so a failure
 anywhere refuses the batch before the live log is touched; then the same
 operations run on the live store in order. The log records each operation's
 events as it always would; a batch isn't one event.
+
+## Failure reports: from a failure to its closure
+
+A failure report (FRACAS: failure reporting, analysis and corrective action)
+is an event-sourced record like everything else: seven `failure_report.*`
+event types, one `FailureReport` node per report, and every change kept on
+the node with who and when (`history`), the way a work order keeps its notes.
+
+- `FailureReport` {number (shown as FR-n), position_id, title, description,
+  occurred_on, found_by, consequence (the RCM vocabulary, or null), status
+  (reported, investigating, corrective_action, verifying, closed, rejected),
+  filed_on, failure_mode_id, the item as it was when filed (item_id,
+  item_name, item_serial, part_id, part_number, part_name, item_class_id,
+  item_class_name: a snapshot, so the report still says what was there after
+  a replacement), investigation, actions ([{id, what, owner, due, status,
+  done_on, work_order_id, work_order_ref, added}]), verification, closed,
+  rejected, history}.
+- `FailureReport REPORTED_AT Position` (the key: every read goes by the
+  position), `INVOLVES Item` while the item exists, `FOUND FailureMode`.
+- The repeat check (reports at the same position since the fix) is worked
+  out on read, never stored. "This level and below" is one function,
+  `Maintenance._report_scope`, which the list reads and the tree roll-up
+  (`open_reports` on each row and inside it) follows.
+
+## Signal channels and derived points
+
+A `SignalChannel` node sits on a position or an item (an `ON` edge) and holds a
+sensor's settings (unit, axes, sample rate, running speed, tag). Its events are
+`signal_channel.added`, `.updated`, `.retired` and `.restored`. The snapshots a
+channel receives are *not* in the event log or the graph: they live in the
+snapshot store (`maintenance_snapshots` in Mongo; a table beside the graph
+locally), keyed by channel and time, because a burst of raw samples is far too big
+for an event. Re-sending a snapshot (same channel, same millisecond) is a no-op.
+
+A watch band or an overall level is a **derived point** (`derived_point.added`): a
+`MeasurementPoint` (condition, read from the time-series store like a feed's) with a
+`derived` property `{from, rule}` and a `DERIVED_FROM` edge to its source. Every new
+snapshot adds one value to each live derived point of its channel (`derived.py`),
+and a new one is backfilled from the snapshots already stored. A new kind of derived
+point (a formula over other points, say) is a new rule registered with
+`derived.register`. Its values are appended to the series store, which can't take a
+value back, so a rule is fixed when the point is made. Editing a band's range
+therefore makes a new *version*: `derived_point.added` carries `supersedes` (the old
+point) and `applies_after` (the time of the latest stored snapshot), the new point is
+not backfilled, and the old one is retired with its values untouched. Replay gives the
+same chain; the channel view joins a chain into one band with its change points. Name
+and limits change in place (`point.updated`); warning levels are `signal_band.limits`
+(drawn, no work opened). `signal_settings.set` holds the workspace's optional storage
+warning level. A channel may name a speed channel (`speed_channel_id`); each snapshot
+takes its rpm from that channel's nearest reading within an hour and keeps where it
+came from (`speed_from`). Everything is kept; `signals.apply_retention` is the place a
+thinning policy would go.
+
+## Work packages: tasks done on one visit
+
+A work package bundles tasks done together on one visit (the weekly check of
+one area) so each visit raises **one** work order, not one per task. Tasks keep
+everything they have (interval, instructions, checklist, failure-mode links);
+a package changes how their work orders are raised, never what a task is.
+
+Nodes and edges:
+
+- `WorkPackage` {name, timing (`fixed` or `from_last_visit`), every, unit,
+  pattern ({weekday}, {weekday, nth} or {day}; or none), anchor, tolerance
+  ({amount, unit}: days, or hours kept but not yet enforced), trade, notes,
+  created, members ([{task_id, visit_rule, every_nth?, suppresses?}]),
+  paused, retired}.
+- `WorkPackage PLANNED_FOR Position` or `WorkPackage PLANNED_AT Location`: what
+  a top package is on. Its tasks are on that position or positions inside it,
+  or at that location (positions located there, or the location itself).
+- `WorkPackage BUNDLES Task`, one per member. A task has at most one home
+  package that isn't retired. Items' tasks (they follow the serial number),
+  tasks by use and rounds (`include_positions`) stay on their own.
+- `WorkPackage LAYERED_ON WorkPackage`: a layer. It has no position or
+  location of its own and visits on some of its parent's visits (the first
+  Saturday of the month on a package every Saturday); its tasks go on the top
+  package's work order that day. Layers have fixed dates, and each of a
+  layer's next dates is checked to be one of its parent's when it's made or
+  changed.
+- `WorkOrder RAISED_FROM WorkPackage` (the top package), `FOR` each task on it.
+  The work order carries `visit_on`, `visit_number`, `covers_to` (the latest
+  visit whose lines it holds), `lines` ([{task_id, name, package_id,
+  position_id or location_id, instructions, trade?, point_id?}]) and `released`
+  ([{task_id, reason, on}]). Its `checklist` stays one flat list, so
+  `work_order.check` by index works as before: each task's line ({text, done,
+  task_id, position_id?}) followed by its own steps ({..., step: true}).
+
+Why layers are packages of their own: a monthly check is the weekly visit plus
+extra lines on the first Saturday, and a quarterly one adds to the monthly.
+Modelled as a package on another, each layer keeps its own name, cadence,
+trade and member list (so it can be paused, listed and proposed like any
+package), while the work order, the tolerance and the next-visit rules stay
+the top package's alone: there is never more than one work order per visit.
+A rule per member ("every 4th visit") alone couldn't say "the first Saturday",
+since some months have five.
+
+When things are due, worked out on read (nothing about visits is projected):
+
+- A fixed package visits on its cadence (`schedule.Cadence`: every N days,
+  weeks, months or years from the anchor; a weekday every N weeks; the nth
+  weekday or a day of every N months). After its work order closes, the next
+  visit is the next date after the close; missed visits aren't made up, and a
+  visit already past its tolerance before anything was raised for it is
+  skipped. A `from_last_visit` package's next visit is the close date plus the
+  interval.
+- A member task is due on its package's visits by its visit rule (`every`, or
+  `nth`: the first visit and every Nth after), not on its own interval, which
+  stays for tasks outside a package and for a paused package's tasks. A task
+  on a visit may cover others (`suppresses`): they're left off that visit, are
+  not marked done, and aren't overdue because of it. The task view gains
+  `package` and `due_by: "package"`; its `next_due` is the visit it's due on.
+- A work order is late once today is past its `visit_on` plus the tolerance
+  (`late`, `days_late`, `visits_missed`). Only one is open per package: while
+  it's open, tasks due on later visits whose dates have come are added to it
+  as lines (`work_order.package_lines_added`).
+- At close, each ticked task line is done. Each line not ticked must be listed
+  as not done: `work_order.task_released` takes the task off the work order
+  (the `FOR` edge) and sets `owed_from` on the task, so it goes on the next
+  visit whatever its visit rule, until it's done. The unchanged
+  `work_order.closed` then renews the tasks still on it. An action may name a
+  line's `position_id`, so a replacement or a failure found there is recorded
+  at that position with the usual `action.recorded`, `item.removed` and
+  `item.fitted` events.
+- Lines can be marked during the visit, saved at once so a lost signal or a
+  refresh loses nothing (`work_order.line_marked`): done, not_done with a
+  reason, problem with a finding (an action, at the line's position), or todo
+  to clear it. The tick follows the mark; a line's state is read from both
+  (a mark the tick no longer matches is ignored). At close, a line marked
+  not_done needs no repeating, and a problem's finding is recorded then,
+  after any actions given, through the same action events: so all of a
+  close's checks still run before anything is written, and a replacement is
+  dated the day the work order closes.
+
+Events (all new; no existing event changed meaning or shape, and
+`PROJECTION_VERSION` stays):
+
+| Event | Payload | Projects |
+|---|---|---|
+| `package.created` | id, name, timing, every, unit, pattern, anchor, tolerance?, season?, trade, notes, tasks, on; position_id, subject {kind: location, id} or parent_id | the node, its `PLANNED_FOR` / `PLANNED_AT` or `LAYERED_ON` edge, a `BUNDLES` per task |
+| `package.updated` | id, changes, on | a plain patch (members' visit rules as the whole `members` list) |
+| `package.task_added` / `package.task_removed` | id, task_id, visit_rule?, every_nth?, suppresses?, on | `BUNDLES` and `members` |
+| `package.paused` | id, on, reason, until?, full_visit, by? | `paused`, `paused_until`, a `pauses` entry |
+| `package.resumed` | id, on, full_visit?, by? | `paused` false, the last pause's `ended` |
+| `package.retired` / `package.restored` | id, on, reason? | `retired` (retiring a top package retires its layers) |
+| `work_order.package_opened` | id, number, title, type, package_id, position_id or subject, due, visit_on, visit_number, notes, on, trade?, lines | the work order, `ON`, `RAISED_FROM`, a `FOR` per line |
+| `work_order.package_lines_added` | id, lines, through, on | lines appended, more `FOR`, `covers_to` |
+| `work_order.task_released` | id, task_id, reason, on, visit_on | `FOR` removed, `released`, the task's `owed_from` |
+| `service.stopped` | id (a position or an item), from, until?, reason, on, by? | `out_of_service`, a `service_history` entry |
+| `service.resumed` | id, on, by? | `out_of_service` cleared, the entry's `ended` |
+| `work_order.line_marked` | id, task_id, state (todo, done, not_done, problem), reason?, finding?, on | the task line's `done` and `mark` {state, reason?, finding?, on} (replaced each time; todo and done clear it) |
+
+Projectors write only through `put_node`, `patch_node`, `put_edge` and
+`delete_edge`, so both stores stay in step; no store method was added.
+
+Pauses, seasons and equipment out of service (nothing about them runs on a
+clock: each is worked out on read from its dates and the workspace's today):
+
+- **A pause** says why, by whom and until when. It's over by itself on its
+  return date; open-ended is allowed and flagged (`no_return_date`), and one
+  back by itself is flagged `past_return_date` until a resume acknowledges it.
+  While paused, the package and its layers raise nothing and their tasks are
+  held: not raised on their own and not overdue. An open work order from it is
+  frozen: still open, shown `paused`, and not late. Its late clock counts only
+  days outside pauses (and seasons), so it carries on from the return.
+  Missed visits aren't made up. With `full_visit` (the default), the first work
+  order raised after the pause also carries every task due on a visit during
+  it (a layer's day and an every-Nth task's turn included); without it the
+  package carries on from its next visit.
+- **A season** (`season`: {months} or {start, end} as MM-DD, across the new
+  year allowed; `schedule.Season`) limits a package or layer to part of the
+  year. Its visits outside it don't exist, nothing is raised, and an open work
+  order isn't late while out of season. It isn't a pause: nothing needs
+  pausing or resuming.
+- **Out of service** is kept on the position or item node itself
+  (`out_of_service` {from, until?, reason}, with `service_history`): the
+  smallest model, since the node is what's out and every read already has it.
+  A task on it, or on a position inside it, isn't due, raised or late while it
+  holds (its next due is the return date), and a package leaves those lines
+  off its visits and raises the rest. An item's mark covers the item's own
+  tasks and positions inside the item, not the position it's fitted to.
+
+Generating: `generate` first gives every active top package its turn (one work
+order for the next visit inside the horizon, with a line per task due that day,
+or lines added to the open one), then raises the other tasks one by one as
+before, skipping every task in an active package. A workspace with no packages
+generates exactly as before, with the same result. With packages, the result
+also has `packages`, `lines_added` and `packages_skipped`.
+
+`packages.propose` (a read) drafts packages from the live tasks on positions and
+locations in no package, grouped by cadence bucket (within 10%: weekly,
+fortnightly, monthly, quarterly, 6-monthly, yearly, multi-year), area (the
+location, else the top of the position tree) and trade, each with a ready
+`create` and warnings (intervals mixed in one bucket, a task with its own open
+work order).
+
+Not built yet: tolerance in hours, packages by use, shutdown packages, review
+flags when a member changes after packaging, planned hours, and turning rounds
+into packages.
 
 ## Making Neo4j the primary store later
 

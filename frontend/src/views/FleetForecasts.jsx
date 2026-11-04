@@ -6,7 +6,7 @@ import { listFleets, createFleet, deleteFleet, listModels, listAltModels, listRe
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { formatNumber } from "../format.js";
 import { modelFromSearch, plainName } from "../modelNext.js";
 import ClassForecastList from "../components/ClassForecastList.jsx";
@@ -138,7 +138,7 @@ export default function FleetForecasts() {
     }
   };
 
-  const open = (id) => navigate(`/forecasts/${id}`);
+  const pathOf = (id) => `/forecasts/${id}`;
   const newForecast = <button onClick={() => openCreate()}><PlusIcon /> New forecast</button>;
 
   return (
@@ -180,17 +180,17 @@ export default function FleetForecasts() {
           <th key="a"><span className="sr-only">Actions</span></th>,
         ]}
         render={(f) => (
-          <tr key={f.id} className="lib-row" onClick={() => open(f.id)}>
+          <tr key={f.id} className="lib-row" onClick={rowOpen(navigate, pathOf(f.id))}>
             <td>
               <div className="lib-name">
-                {itemName(f)}
+                <RowLink to={pathOf(f.id)}>{itemName(f)}</RowLink>
                 {f.shared_by && <Chip title={`Shared by ${f.shared_by}`}>Shared</Chip>}
               </div>
             </td>
             <td className="lib-n lib-opt">{f.n_items}</td>
             <td className="lib-n">{expectedCell(f)}</td>
             <td className="lib-date lib-opt">{relativeTime(f.updated_at || f.created_at)}</td>
-            <RowActions item={f} onOpen={() => open(f.id)} onDelete={() => onDelete(f)} />
+            <RowActions item={f} to={pathOf(f.id)} onDelete={() => onDelete(f)} />
           </tr>
         )}
       />

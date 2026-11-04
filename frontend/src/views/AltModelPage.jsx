@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import ErrorBoundary from "../components/ErrorBoundary.jsx";
+import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import AltResultView from "../components/AltResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { getAltModel, deleteAltModel, renameAltModel } from "../api.js";
@@ -12,6 +14,7 @@ import { itemName } from "../components/LibRows.jsx";
 import { altPlanLink, altPrefill } from "../testPlanning.js";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { PageTitle } from "../components/usePageTitle.js";
 
 // A saved accelerated life model in the model frame: the answer line, the
 // result's tabs (Life-stress, Probability plot, Calculator, Diagnostics,
@@ -21,11 +24,14 @@ export default function AltModelPage() {
   const navigate = useNavigate();
   const [model, setModel] = useState(null);
   const [error, setError] = useState(null);
+  // Not on this list (404): ModelNotFound looks in the others.
+  const [missing, setMissing] = useState(false);
   const [tab, setTab] = useTabParam();
 
   useEffect(() => {
     setModel(null);
-    getAltModel(id).then(setModel).catch((e) => setError(e.message));
+    setMissing(false);
+    getAltModel(id).then(setModel).catch((e) => (e.status === 404 ? setMissing(true) : setError(e.message)));
   }, [id]);
 
   const confirm = useConfirm();
@@ -75,9 +81,14 @@ export default function AltModelPage() {
       notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
     >
       {model ? (
-        <AltResultView results={model.results} modelId={model.id} name={model.name} datasetId={model.dataset_id}
-                       tab={tab} onTab={(t) => setTab(t, "life")} />
-      ) : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        // A model this page can't draw shows a card here, not the whole-app error page.
+        <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
+          <AltResultView results={model.results} modelId={model.id} name={model.name} datasetId={model.dataset_id}
+                         tab={tab} onTab={(t) => setTab(t, "life")} />
+        </ErrorBoundary>
+      ) : missing ? <ModelNotFound id={id} kind="alt" />
+        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+      <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );
 }

@@ -2,6 +2,12 @@
 
 ## Unreleased (0.5.0)
 
+- **Time to the limit**: `maintenance progression.time_to_limit` and `progression.series` for a watched
+  band's trend (listed by `reliafy tools`).
+- **Signal channels** (Reliafy Maintenance): `push_snapshot` and `reliafy ingest snapshot FILE.json` send a
+  vibration burst, a device spectrum or a scalar value to a channel; the new `maintenance signals.*` and
+  `signal_data.*` actions are listed by `reliafy tools`, including `signals.update_band` (change a band
+  without losing its history), `signals.set_storage_cap` and `signal_data.storage`.
 - **Six tools instead of sixteen.** The server's core tools are now `get`,
   `list`, `analyse` (every calculation: fits, evaluations, test plans,
   repairable systems, strategy, fleet forecasts and RBD analyses, saving
@@ -40,6 +46,24 @@
   `add_document`, `download_document` and `reliafy photo` call the new names.
   Over MCP each tool now takes its action and an `args` object; REST bodies
   and CLI flags are as before.
+
+- Work packages (Reliafy Maintenance). Tasks done together on one visit raise
+  one work order per visit: `maintenance packages.propose` (drafts, saves
+  nothing), `create`, `update`, `add_task`, `remove_task`, `pause`, `resume`,
+  `retire` and `restore`; reads `maintenance get.package` and
+  `list.packages`. A package visits on fixed dates (every Saturday, the first
+  Saturday of the month) or counted from the last visit, with a tolerance in
+  days; layers add lines on some visits. `maintenance work_orders.close` takes
+  `not_done` ([{task_id, reason}]) and an action's `position_id` on a
+  package's work order; `work_orders.generate` answers with `packages`,
+  `lines_added` and `packages_skipped` once a workspace has packages.
+  `maintenance work_orders.mark` saves a line's state during the visit
+  (done, not_done with a reason, problem with a finding, or todo); close
+  counts the saved marks. `packages.pause` takes a reason and a return date
+  (`until`; back by itself then) and `full_visit`; `season` on create and
+  update keeps a package to part of the year; `positions.out_of_service` /
+  `items.out_of_service` and `back_in_service` hold the tasks on them. On the
+  command line: `reliafy maintenance packages.create --name …`.
 
 - RCM for agents. `maintenance_get kind failure_mode` reads one failure mode by
   its id: its decision with the evidence check, its tasks, where it sits
@@ -126,6 +150,17 @@
   holding both) in place of `lifetimes_dataset_id` and `readings_dataset_id`.
   Saved models keep working; `reliafy datasets add_measurements --dataset-id
   LIVES --from-dataset-id READINGS` brings an old pair onto one dataset.
+- FMEA and FMECA on the asset tree (Reliafy Maintenance). `maintenance
+  failure_modes.score` keeps a failure mode's severity, occurrence and
+  detection (1–10), cause, local and next-higher effects, detection method,
+  recommended action (owner, due date, status) and criticality figures
+  (failure rate, mode ratio, loss probability, operating time, severity
+  class); `clear` names fields to blank. Reads (`get.rcm`, `get.failure_mode`)
+  answer with `rpn`, the action priority `ap` (H, M or L) and the mode
+  criticality `cm`, and each position's `fmea` summary. `failure_modes.add`,
+  `assign` and `move` take `function_id` for a mode directly under a function
+  (no functional failure yet); `positions.add_sample_uav` copies a scored
+  sample quadcopter into the tree.
 
 ## 0.4.0
 

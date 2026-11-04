@@ -3,14 +3,18 @@ import { Link, useLocation } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import Select from "./Select.jsx";
 import CalendarReplacementResult from "./CalendarReplacementResult.jsx";
-import { calendarNext, calendarReplacement, getRbdJob } from "../api.js";
+import { calendarNext, calendarReplacement, cancelRbdJob, getRbdJob } from "../api.js";
+import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { modelFromSearch } from "../modelNext.js";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
+import { useCurrency } from "../WorkspaceProvider.jsx";
+import { costLabel, formatCost } from "../money.js";
 import {
   EVERY_UNITS, METHODS, TIME_UNITS, buildRequest, formatDate, localToday, newShut, timeUnit,
 } from "../calendarReplacement.js";
 import "./CalendarReplacement.css";
+import { useProTags } from "./ProTag.jsx";
 
 const POLL_FIRST_MS = 1500;
 const POLL_MAX_MS = 6000;
@@ -21,6 +25,7 @@ const POLL_MAX_MS = 6000;
 // months by date; then one unit in service: now, at the next shut, or later.
 // Today is time 0; the server turns the dates into model time.
 export default function CalendarReplacement() {
+  const currency = useCurrency();
   const today0 = useRef(localToday()).current;
   const wanted = modelFromSearch(useLocation().search);
   const [model, setModel] = useState(null);
@@ -36,7 +41,11 @@ export default function CalendarReplacement() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [needsPro, setNeedsPro] = useState(false);
+  const proTags = useProTags();
   const [job, setJob] = useState(null);
+  const [cancelNote, setCancelNote] = useState(null);
+  const runGuard = useRef(null);
+  if (!runGuard.current) runGuard.current = createRunGuard();
 
   const pickModel = (m) => {
     setModel(m);
@@ -49,21 +58,36 @@ export default function CalendarReplacement() {
     const built = buildRequest({ model, unit, today, shuts, failureCost, anytimeCost, maxAge, method });
     setNeedsPro(false);
     setJob(null);
+    setCancelNote(null);
     if (built.error) { setError(built.error); return; }
     setLoading(true);
     setError(null);
+    const token = runGuard.current.start();
     try {
       const out = await calendarReplacement(built.body);
+      if (!runGuard.current.isCurrent(token)) return; // cancelled while it ran
+      runGuard.current.finish(token);
       if (out.job) { setJob(out.job); setBody(built.body); return; }
       setResult(out);
       setBody(built.body);
       setLoading(false);
     } catch (err) {
+      if (!runGuard.current.isCurrent(token)) return;
+      runGuard.current.finish(token);
       setLoading(false);
       setResult(null);
       if (err.status === 402 && err.code === "pro_required") setNeedsPro(true);
       else setError(err.message);
     }
+  };
+
+  // Stop waiting; a queued or running job is cancelled on the server too.
+  const cancel = () => {
+    runGuard.current.cancel();
+    if (job?.job_id) cancelRbdJob(job.job_id).catch(() => {});
+    setJob(null);
+    setLoading(false);
+    setCancelNote(CANCELLED_TEXT);
   };
 
   // Poll a queued (sampled) run until it's done.
@@ -84,6 +108,7 @@ export default function CalendarReplacement() {
           setJob(null); setLoading(false); setError(view.error || "The calculation failed.");
           return;
         }
+        if (view.status === "cancelled") { setJob(null); setLoading(false); setCancelNote(CANCELLED_TEXT); return; }
         setJob((prev) => (prev && prev.job_id === jobId ? { ...prev, ...view } : prev));
       } catch (err) {
         if (cancelled) return;
@@ -127,7 +152,7 @@ export default function CalendarReplacement() {
                 <input type="text" value={s.name} onChange={(e) => setShut(i, { name: e.target.value })} />
               </label>
               <label className="calc-t">
-                <span>Replacing at it costs</span>
+                <span>{costLabel("Replacing at it costs", currency)}</span>
                 <input type="number" inputMode="decimal" min="0" step="any" value={s.cost}
                        onChange={(e) => setShut(i, { cost: e.target.value })} />
               </label>
@@ -173,12 +198,12 @@ export default function CalendarReplacement() {
 
         <div className="strategy-costs">
           <label className="calc-t">
-            <span>Failure (unplanned) cost</span>
+            <span>{costLabel("Failure (unplanned) cost", currency)}</span>
             <input type="number" inputMode="decimal" min="0" step="any" value={failureCost}
                    onChange={(e) => setFailureCost(e.target.value)} />
           </label>
           <label className="calc-t">
-            <span>Replacing between shuts costs</span>
+            <span>{costLabel("Replacing between shuts costs", currency)}</span>
             <input type="number" inputMode="decimal" min="0" step="any" value={anytimeCost} placeholder="not allowed"
                    onChange={(e) => setAnytimeCost(e.target.value)} />
           </label>
@@ -189,7 +214,7 @@ export default function CalendarReplacement() {
             <label className="calc-t">
               <span>Method</span>
               <Select value={method} onChange={setMethod} ariaLabel="Method"
-                      options={METHODS.map((m) => ({ value: m.value, label: m.label, hint: m.hint }))} />
+                      options={METHODS.map((m) => ({ value: m.value, label: m.pro && proTags ? `${m.label} · Pro` : m.label, hint: m.hint }))} />
             </label>
             <label className="calc-t">
               <span>Oldest age to consider{u ? ` (${u})` : ""}</span>
@@ -204,9 +229,11 @@ export default function CalendarReplacement() {
         </p>
         <div className="strategy-costs">
           <button onClick={run} disabled={loading}>{loading ? "Computing…" : "Compute"}</button>
+          {loading && <button type="button" className="secondary" onClick={cancel}>Cancel</button>}
         </div>
       </div>
 
+      {cancelNote && !loading && <p className="hint" role="status">{cancelNote}</p>}
       {loading && job && (
         <p className="hint" role="status" aria-live="polite">
           {job.status === "running" ? "Sampling the calendar…"
@@ -238,6 +265,7 @@ export default function CalendarReplacement() {
 // One unit in service: its age today → replace now, at the next shut, between
 // shuts, or run it to failure (always the exact method: free).
 function UnitNow({ body, unit }) {
+  const currency = useCurrency();
   const [age, setAge] = useState("");
   const [nowCost, setNowCost] = useState("");
   const [out, setOut] = useState(null);
@@ -265,7 +293,7 @@ function UnitNow({ body, unit }) {
                  onChange={(e) => setAge(e.target.value)} />
         </label>
         <label className="calc-t">
-          <span>Replacing it now costs</span>
+          <span>{costLabel("Replacing it now costs", currency)}</span>
           <input type="number" inputMode="decimal" min="0" step="any" value={nowCost} placeholder="default"
                  onChange={(e) => setNowCost(e.target.value)} />
         </label>
@@ -282,8 +310,8 @@ function UnitNow({ body, unit }) {
                 {out.choices.map((c, i) => (
                   <tr key={i} className={c === out.best || (c.kind === out.best.kind && c.time === out.best.time) ? "cal-best" : ""}>
                     <td>{c.label}</td>
-                    <td>{formatNumber(c.price)}</td>
-                    <td>{formatNumber(c.cost, { sig: 4 })}</td>
+                    <td>{formatCost(c.price, currency)}</td>
+                    <td>{formatCost(c.cost, currency, { sig: 4 })}</td>
                     <td>{c.kind === "now" ? "—" : c.break_even_age == null ? "never" : `${formatNumber(c.break_even_age)} ${u}`}</td>
                   </tr>
                 ))}
@@ -293,7 +321,7 @@ function UnitNow({ body, unit }) {
           {out.policy_next && <p className="muted-line">{out.policy_next.text}</p>}
           <p className="muted-line">
             Each cost is what this unit costs until it's replaced, less the value of the time it serves at the
-            calendar's long-run rate ({formatNumber(out.cost_per_year)} a year). Lower is better; only the
+            calendar's long-run rate ({formatCost(out.cost_per_year, currency)} a year). Lower is better; only the
             differences matter.
           </p>
         </>

@@ -48,8 +48,9 @@ EXCLUDED = {
     "reliability.fit_class_model", "topology.generate_rbd", "workspace.set_time_zone",
     "workspace.import_history", "parts.import_bom", "parts.positions_from_structure", "item_classes.import",
     "item_classes.load_starter", "item_classes.import_conditions", "manufacturers.link_by_name",
-    "positions.adopt_placements", "positions.add_sample_truck", "attachments.photo_link",
-    "failure_modes.split_standard",
+    "positions.adopt_placements", "positions.add_sample_truck", "positions.add_sample_uav", "attachments.photo_link",
+    "failure_modes.split_standard", "signals.add_snapshot", "signals.add_band", "signals.add_level", "signals.update_band",
+    "signals.set_storage_cap",
 }
 
 #: Delete-type actions: the argument naming what goes, for the confirm check.
@@ -67,6 +68,7 @@ DELETES = {
     "manufacturers.retire": "manufacturer_id", "manufacturers.merge": "manufacturer_id",
     "attachments.remove_photo": "photo_id", "attachments.unlink_photo": "photo_id",
     "attachments.remove_document": "document_id", "attachments.clear_coordinates": "target_id",
+    "packages.retire": "package_id", "signals.retire_channel": "channel_id", "signals.remove_band": "point_id",
 }
 
 #: Creates, and the delete that undoes each: (action, the argument it takes).
@@ -86,6 +88,7 @@ CREATES = {
     "item_classes.create_condition": ("item_classes.retire_condition", "condition_id"),
     "manufacturers.create": ("manufacturers.retire", "manufacturer_id"),
     "attachments.add_document": ("attachments.remove_document", "document_id"),
+    "packages.create": ("packages.retire", "package_id"),
 }
 
 #: Retires and the restore that undoes each (and back).
@@ -96,6 +99,7 @@ RESTORES = {
     "item_classes.retire_condition": "item_classes.restore_condition", "manufacturers.retire": "manufacturers.restore",
     "topology.disconnect": "topology.reconnect", "topology.retire_group": "topology.restore_group",
     "attachments.remove_document": "attachments.restore_document",
+    "packages.retire": "packages.restore",
 }
 RETIRES = {restore: retire for retire, restore in RESTORES.items()}
 
@@ -109,6 +113,16 @@ def _without_none(**kw) -> dict:
     return {k: v for k, v in kw.items() if v is not None}
 
 
+def _service_undo(area: str, arg: str, a: dict, r: dict) -> dict:
+    """The reverse of an out-of-service change: back to the mark it replaced, or none."""
+    previous = r.get("previous")
+    if not previous:
+        return {"do": f"{area}.back_in_service", "args": {arg: a.get(arg)}}
+    return {"do": f"{area}.out_of_service", "args": _without_none(**{arg: a.get(arg)}, reason=previous.get("reason"),
+                                                                    until=previous.get("until"),
+                                                                    start=previous.get("from"))}
+
+
 #: Moves and reorders in the RCM tree, and the operation that puts each back:
 #: the result names where the thing came from (from_position_id,
 #: from_functional_failure_id, from_function_id, from_standard_id,
@@ -116,10 +130,12 @@ def _without_none(**kw) -> dict:
 #: reorder in the same undo batch places it exactly.
 MOVES = {
     "failure_modes.assign": lambda a, r: {"do": "failure_modes.assign", "args": _without_none(
-        failure_mode_id=a.get("failure_mode_id"), functional_failure_id=r.get("from_functional_failure_id"))},
+        failure_mode_id=a.get("failure_mode_id"), functional_failure_id=r.get("from_functional_failure_id"),
+        function_id=r.get("from_function_id"))},
     "failure_modes.move": lambda a, r: {"do": "failure_modes.move", "args": _without_none(
         failure_mode_id=a.get("failure_mode_id"), position_id=r.get("from_position_id"),
-        functional_failure_id=r.get("from_functional_failure_id"), measurement=r.get("undo_measurement"))},
+        functional_failure_id=r.get("from_functional_failure_id"), function_id=r.get("from_function_id"),
+        measurement=r.get("undo_measurement"))},
     "failure_modes.move_function": lambda a, r: {"do": "failure_modes.move_function", "args": _without_none(
         function_id=a.get("function_id"), position_id=r.get("from_position_id"),
         measurement=r.get("undo_measurement"))},
@@ -141,6 +157,26 @@ MOVES = {
         "ids": r.get("unlinked_functional_failure_ids") or []}},
     "tasks.move": lambda a, r: {"do": "tasks.move", "args": _without_none(
         task_id=a.get("task_id"), position_id=r.get("from_position_id"), measurement=r.get("undo_measurement"))},
+    # A work package's members and pausing: each put back by its reverse.
+    "packages.add_task": lambda a, r: {"do": "packages.remove_task", "args": {
+        "package_id": a.get("package_id"), "task_id": a.get("task_id")}},
+    "packages.remove_task": lambda a, r: {"do": "packages.add_task", "args": _without_none(
+        package_id=a.get("package_id"), task_id=a.get("task_id"),
+        visit_rule=(r.get("removed") or {}).get("visit_rule"), every_nth=(r.get("removed") or {}).get("every_nth"),
+        suppresses=(r.get("removed") or {}).get("suppresses"))},
+    "packages.pause": lambda a, r: {"do": "packages.resume", "args": {"package_id": a.get("package_id")}},
+    # A line's mark back to what it was.
+    "work_orders.mark": lambda a, r: {"do": "work_orders.mark", "args": _without_none(
+        work_order_id=a.get("work_order_id"), task_id=a.get("task_id"), **(r.get("previous") or {}))}
+    if r.get("previous") else None,
+    "packages.resume": lambda a, r: {"do": "packages.pause", "args": _without_none(
+        package_id=a.get("package_id"), reason=(r.get("previous") or {}).get("reason") or "resumed by mistake",
+        until=(r.get("previous") or {}).get("until"))},
+    # Out of service and back: each put back by the other, with the mark it replaced.
+    "positions.out_of_service": lambda a, r: _service_undo("positions", "position_id", a, r),
+    "items.out_of_service": lambda a, r: _service_undo("items", "item_id", a, r),
+    "positions.back_in_service": lambda a, r: _service_undo("positions", "position_id", a, r),
+    "items.back_in_service": lambda a, r: _service_undo("items", "item_id", a, r),
 }
 
 #: The arranging actions the app's RCM tab sends as one batch per drop (``POST
@@ -148,8 +184,9 @@ MOVES = {
 #: that method's positional arguments, by the names the action takes. Nothing
 #: here deletes, so no confirm is needed.
 ARRANGE = {
-    "failure_modes.assign": ("assign_failure_mode", "failure_mode_id functional_failure_id"),
-    "failure_modes.move": ("move_failure_mode", "failure_mode_id position_id functional_failure_id measurement"),
+    "failure_modes.assign": ("assign_failure_mode", "failure_mode_id functional_failure_id function_id"),
+    "failure_modes.move": ("move_failure_mode",
+                           "failure_mode_id position_id functional_failure_id function_id measurement"),
     "failure_modes.move_function": ("move_function", "function_id position_id measurement"),
     "failure_modes.move_functional_failure": ("move_functional_failure",
                                               "functional_failure_id function_id standard_id measurement"),

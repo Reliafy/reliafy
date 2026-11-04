@@ -119,7 +119,7 @@ function SavedAnalyses() {
               <SampleGroups rows={rows} cols={4} render={(a) => (
                 <tr key={a.id} className="lib-row" onClick={() => open(a.id)}>
                   <td>
-                    <Link className="lib-name" to={`/strategy/analyses/${a.id}`} onClick={(e) => e.stopPropagation()}>
+                    <Link className="lib-name lib-link" to={`/strategy/analyses/${a.id}`} onClick={(e) => e.stopPropagation()}>
                       {itemName(a)}
                     </Link>
                   </td>
