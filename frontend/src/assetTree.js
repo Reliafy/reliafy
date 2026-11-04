@@ -64,7 +64,9 @@ export function carryOver(row, to) {
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 export const byName = (a, b) => collator.compare(a.name || "", b.name || "");
 
-const blank = () => ({ overdue: 0, open_work: 0, alarms: 0, next_due: null, not_analysed: 0 });
+// A row's own status: its overdue tasks, open work orders, readings past an
+// alarm limit, open failure reports (the Failure reports tab), and its next due.
+const blank = () => ({ overdue: 0, open_work: 0, alarms: 0, open_reports: 0, next_due: null, not_analysed: 0 });
 
 // The display tree for one arrangement: rows {key, type (pos | loc | item |
 // group), ref, parent, kids, depth, own, sum} keyed by id, and the tops.
@@ -252,6 +254,7 @@ function rollUp(rows, roots) {
       sum.overdue += s.overdue;
       sum.open_work += s.open_work;
       sum.alarms += s.alarms;
+      sum.open_reports += s.open_reports;
       sum.not_analysed += s.not_analysed;
       sum.positions += s.positions + (c.type === "pos" ? 1 : 0);
       sum.empty += s.empty + (c.type === "pos" && c.ref.position_class && !c.ref.item ? 1 : 0);
@@ -286,6 +289,7 @@ export const CHIPS = [
   { id: "overdue", label: "Overdue", test: (r) => r.own.overdue > 0 },
   { id: "open", label: "Open work", test: (r) => r.own.open_work > 0 },
   { id: "alarm", label: "Alarm", test: (r) => r.own.alarms > 0 },
+  { id: "reports", label: "Open reports", title: "Positions with an open failure report", positionsOnly: true, test: (r) => r.own.open_reports > 0 },
   { id: "empty", label: "Empty", title: "Positions with a class and nothing fitted", positionsOnly: true, test: (r) => r.type === "pos" && !!r.ref.position_class && !r.ref.item },
   { id: "unanalysed", label: "Not analysed", title: ANALYSED_RULE, positionsOnly: true, test: (r) => r.own.not_analysed > 0 },
   // The RCM tab's own, about its failure modes (shown on that tab only).
@@ -306,11 +310,13 @@ export function computeFilter(display, { query = "", chips = [], extra = null } 
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
-// A row's markers, at most three: overdue (a count), open work (a count), and
-// "!" for an alarm. A row with something inside it counts everything inside
-// (and itself); `inside` says so. Each has the words for a screen reader.
-// With `rcm` (the RCM tab open, or the Not analysed chip on), a quiet fourth:
-// a position not analysed yet (a parent: how many, inside it and itself).
+// A row's markers, each only when there's something to mark: overdue (a
+// count), open work (a count), "!" for an alarm, and open failure reports (a
+// count; the Failure reports tab). A row with something inside it counts
+// everything inside (and itself); `inside` says so. Each has the words for a
+// screen reader. With `rcm` (the RCM tab open, or the Not analysed chip on),
+// a quiet one more: a position not analysed yet (a parent: how many, inside
+// it and itself).
 export function markersOf(r, { rcm = false } = {}) {
   if (r.type === "std" && isRcmRow(r)) {
     // On the RCM tab: a standard of the list with no functional failure yet.
@@ -336,6 +342,7 @@ export function markersOf(r, { rcm = false } = {}) {
   if (s.overdue) out.push({ kind: "overdue", text: String(s.overdue), label: `${plural(s.overdue, "overdue task")}${where(r.own.overdue)}` });
   if (s.open_work) out.push({ kind: "open", text: String(s.open_work), label: `${plural(s.open_work, "open work order")}${where(r.own.open_work)}` });
   if (s.alarms) out.push({ kind: "alarm", text: "!", label: `${plural(s.alarms, "reading")} past an alarm limit${where(r.own.alarms)}` });
+  if (s.open_reports) out.push({ kind: "report", text: String(s.open_reports), label: `${plural(s.open_reports, "open failure report")}${where(r.own.open_reports)}` });
   if (rcm && s.not_analysed) {
     out.push({ kind: "rcm", text: parent ? String(s.not_analysed) : "○",
       label: parent ? `${plural(s.not_analysed, "position")} not analysed yet${where(r.own.not_analysed)}` : "Not analysed yet (RCM)" });
@@ -351,13 +358,16 @@ export function statusWords(r) {
   add("overdue", r.own.overdue, "overdue task", undefined, "");
   add("open", r.own.open_work, "open work order", undefined, "");
   add("alarm", r.own.alarms, "reading past an alarm limit", "readings past an alarm limit", "");
+  add("report", r.own.open_reports, "open failure report", undefined, "");
   if (r.kids.length) {
     const inner = {
       overdue: r.sum.overdue - r.own.overdue, open: r.sum.open_work - r.own.open_work, alarm: r.sum.alarms - r.own.alarms,
+      report: r.sum.open_reports - r.own.open_reports,
     };
     add("overdue", inner.overdue, "overdue", "overdue", " inside");
     add("open", inner.open, "open work order", undefined, " inside");
     add("alarm", inner.alarm, "alarm", undefined, " inside");
+    add("report", inner.report, "open failure report", undefined, " inside");
   }
   return out;
 }

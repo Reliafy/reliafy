@@ -2260,6 +2260,55 @@ export function setTaskLastDone(taskId, lastDone) {
   });
 }
 
+// Failure reports (the Explorer's Failure reports tab): a report of a failure
+// at a position, its investigation, corrective actions, verification and
+// closure. The list takes a scope (position_id with below=1|0, location_id or
+// item_id; none for the whole workspace), status ("open", one status, "all"),
+// consequence, failure_mode_id, since/until (occurred_on), q, sort, limit and
+// offset; it answers {reports, total, counts, scope}.
+function jsonMethod(method, url, body) {
+  return request(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+}
+
+export function listFailureReports(params = {}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  const qs = q.toString();
+  return request(`/api/maintenance/failure-reports${qs ? `?${qs}` : ""}`);
+}
+
+export function getFailureReport(id) {
+  return request(`/api/maintenance/failure-reports/${id}`);
+}
+
+export function createFailureReport(body) {
+  return postJson("/api/maintenance/failure-reports", body);
+}
+
+export function updateFailureReport(id, body) {
+  return jsonMethod("PATCH", `/api/maintenance/failure-reports/${id}`, body);
+}
+
+export function setFailureReportStatus(id, body) {
+  return postJson(`/api/maintenance/failure-reports/${id}/status`, body);
+}
+
+export function saveFailureReportInvestigation(id, body) {
+  return jsonMethod("PUT", `/api/maintenance/failure-reports/${id}/investigation`, body);
+}
+
+export function addCorrectiveAction(id, body) {
+  return postJson(`/api/maintenance/failure-reports/${id}/actions`, body);
+}
+
+export function updateCorrectiveAction(id, aid, body) {
+  return jsonMethod("PATCH", `/api/maintenance/failure-reports/${id}/actions/${aid}`, body);
+}
+
+export function verifyFailureReport(id, body) {
+  return jsonMethod("PUT", `/api/maintenance/failure-reports/${id}/verification`, body);
+}
+
 // Whether the signed-in user may use Reliafy Maintenance (in development):
 // asked once per page load.
 let maintenanceAccess = null;

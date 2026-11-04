@@ -1,6 +1,7 @@
 // The Explorer's row menu on the Summary tab (right-click a row, its ⋯
 // button, or Shift+F10): changing the tree itself. New position (or location)
-// inside, Rename, Move to… and Retire, beside Isolate › and Pin this branch. The RCM tab's
+// inside, Add failure report… (a position: a report sits at a position),
+// Rename, Move to… and Retire, beside Isolate › and Pin this branch. The RCM tab's
 // rows keep their own menu (explorerRcm.js rowActions).
 //
 // Each item is offered only where the server allows it: a position can be
@@ -44,6 +45,7 @@ export function summaryActions(r, { mode, viewOnly = null, kidsOf = () => 0 } = 
   const out = [];
   if (r.type === "pos") {
     out.push(write({ id: "tree-new", label: "New position inside" }, viewOnly));
+    out.push(write({ id: "report-new", label: "Add failure report…" }, viewOnly));
     out.push(write({ id: "tree-rename", label: "Rename…" }, viewOnly));
     // Its place in the positions tree (in Locations, a position's place is
     // where it is, set on its own page).

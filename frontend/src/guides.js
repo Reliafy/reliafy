@@ -40,7 +40,10 @@ function readingTime(body) {
   return Math.max(1, Math.round(words / 200));
 }
 
-export const guides = Object.entries(files)
+// Every guide, hidden ones included: a hidden guide stays out of the index,
+// the drawer's list and the prerendered pages, but a link from its own feature
+// (a "How … work" link on an operators-only tab) still opens it.
+const allGuides = Object.entries(files)
   .map(([path, raw]) => {
     const { meta, body } = parseFrontmatter(raw);
     const name = path.split("/").pop().replace(/\.md$/, "");
@@ -59,8 +62,9 @@ export const guides = Object.entries(files)
       body,
     };
   })
-  .filter((g) => !g.hidden)
   .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
+
+export const guides = allGuides.filter((g) => !g.hidden);
 
 // Guides grouped by category, preserving order.
 export function guidesByCategory() {
@@ -76,8 +80,9 @@ export function guidesByCategory() {
   return groups;
 }
 
+// By slug, a hidden guide included (a link from its feature opens it).
 export function getGuide(slug) {
-  return guides.find((g) => g.slug === slug) || null;
+  return allGuides.find((g) => g.slug === slug) || null;
 }
 
 export { renderMarkdown };

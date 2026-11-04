@@ -1,8 +1,10 @@
 // The tabs of the Explorer's detail panel (Operate › Assets › Explorer): what
 // the panel beside the tree can show for the row picked. Summary for every kind
 // of row; RCM for a position (its functions, how they fail, the failure modes
-// and their decisions, read from the asset tree itself). A tab a kind doesn't
-// have isn't shown (never greyed out).
+// and their decisions, read from the asset tree itself); Failure reports for
+// a position, a location or an item (what has failed there and below, and
+// what was done about it). A tab a kind doesn't have isn't shown (never
+// greyed out).
 //
 // Adding a tab is one entry here (id, label, the kinds of row that have it) and
 // its body in TreeDetail. The address names the tab (?tab=rcm, left out for
@@ -12,6 +14,7 @@
 export const TABS = [
   { id: "summary", label: "Summary", title: "What it is, where it is, its work and what's inside it", kinds: ["pos", "loc", "item", "group"] },
   { id: "rcm", label: "RCM", title: "What this position does, how it can fail, and the decision for each failure mode", kinds: ["pos"] },
+  { id: "reports", label: "Failure reports", title: "What has failed here and below, and what was done about it", kinds: ["pos", "loc", "item"] },
 ];
 const BY_ID = new Map(TABS.map((t) => [t.id, t]));
 export const DEFAULT_TAB = "summary";

@@ -5,7 +5,9 @@
 
 export const PLACE_KINDS = ["Position", "Location", "Item", "WorkOrder"];
 
-const WORDS = { Position: "position", Location: "location", Item: "item", WorkOrder: "work order" };
+// A failure report (the Explorer's Failure reports tab) holds photos too, but
+// isn't a place a photo is linked or moved to from the picker.
+const WORDS = { Position: "position", Location: "location", Item: "item", WorkOrder: "work order", FailureReport: "failure report" };
 // Each kind's pages: the register's under Assets, work orders under Maintenance.
 const PATHS = {
   Position: "/asset-register/positions/", Location: "/asset-register/locations/", Item: "/asset-register/items/",
@@ -16,7 +18,7 @@ const PATHS = {
 // subjects use ("position").
 export function placeKindWord(kind) {
   const k = normaliseKind(kind);
-  return WORDS[k] || String(kind || "").toLowerCase();
+  return WORDS[k] || WORDS[kind] || String(kind || "").toLowerCase();
 }
 
 export function normaliseKind(kind) {
