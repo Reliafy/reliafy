@@ -516,3 +516,6 @@ button.maint-toggle {
 }
 .maint-photo-btn:focus-visible { outline: none; box-shadow: var(--focus); }
 .maint-photo-btn:hover:not(:disabled) { background: none; opacity: 0.9; }
+
+/* Assets' landing: links to the register's other pages (they aren't in the menu). */
+.assets-links { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: -4px 0 12px; font-size: var(--fs-14); }
