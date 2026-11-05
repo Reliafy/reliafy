@@ -22,7 +22,10 @@ import { menuMove } from "../treeControls.js";
 //   arrange  {value, options: [{value, label, title}], onChange} or null
 //   note     a line in place of Arrange by (why it isn't offered here), or null
 //   levels   {value (1..4, Infinity, 0, or null), onLevel(n), onCloseAll} or null
-//   chips    [{id, label, title, on}]; onChip(id) turns one on or off
+//   chips    [{id, label, title, on, mark}]; onChip(id) turns one on or off;
+//            mark {kind, text}: the tree's marker the filter matches, drawn
+//            beside it so the menu is the markers' key too
+//   markNote a line under the filters about the markers, or null
 //   changed  [{id, label}]: what isn't as usual; onReset puts it back
 //   actions  [{id, label, onSelect}]: they close the menu first
 
@@ -41,7 +44,7 @@ const Tick = ({ on }) => (
 );
 
 export default function TreeControlsMenu({
-  pinned = null, arrange = null, note = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [],
+  pinned = null, arrange = null, note = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [], markNote = null,
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
@@ -198,8 +201,10 @@ export default function TreeControlsMenu({
             <button key={c.id} type="button" role="menuitemcheckbox" aria-checked={!!c.on} tabIndex={-1} data-id={`chip:${c.id}`}
                     title={c.title} className={"ovm-item tm-item" + (c.on ? " on" : "")} onClick={() => onChip(c.id)}>
               <Tick on={c.on} />{c.label}
+              {c.mark && <span className={`tp-mini tm-mark ${c.mark.kind}`} aria-hidden="true">{c.mark.text}</span>}
             </button>
           ))}
+          {markNote && chips.some((c) => c.mark) && <p className="tm-note">{markNote}</p>}
         </div>
       )}
       {actions.length > 0 && (
