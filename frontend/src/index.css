@@ -6502,12 +6502,31 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   border-color: var(--acc);
 }
 
+/* Home's question on a phone: one line until "Pick your roles" opens it. */
+.roles-offer-compact {
+  display: none;
+  gap: 0.6rem;
+  align-items: center;
+  margin: 0;
+}
+
 @media (max-width: 600px) {
   .home .recent-model-when {
     min-width: 0;
   }
   .role-picker {
     grid-template-columns: 1fr;
+  }
+  .roles-offer:not(.open) .card-sub,
+  .roles-offer:not(.open) .role-picker,
+  .roles-offer:not(.open) .role-actions {
+    display: none;
+  }
+  .roles-offer:not(.open) .roles-offer-compact {
+    display: flex;
+  }
+  .roles-offer:not(.open) .roles-offer-compact > * {
+    min-height: 44px;
   }
 }
 
