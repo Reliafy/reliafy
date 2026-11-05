@@ -489,7 +489,9 @@ a.rw-cklink:focus-visible {
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line2); /* as the RCM tab's rows: the same line, the text at the same height */
 }
-.tp button.tp-fold.is-off { visibility: hidden; }
+/* The RCM and FME(C)A tabs: the fold button stays in its place, greyed (the
+   tree is the table's first column there), so the header reads the same. */
+.tp button.tp-fold.is-off:disabled { opacity: 0.4; cursor: default; }
 .tp-table .tp-scroll { scrollbar-gutter: stable; }
 .tt-top {
   position: relative;
@@ -871,6 +873,18 @@ a.rw-cklink:focus-visible {
 
 /* A phone: the tree is the screen; on the RCM tab each row is two lines. */
 @media (max-width: 720px) {
+  /* The rows pinned at the top cover the rows scrolling under them: a clear
+     edge, so a row half under them reads as under, not cut. */
+  .tx.phone .tp-pins-in .tp-row:last-child {
+    border-bottom-color: var(--line);
+    box-shadow: 0 4px 8px -3px rgba(20, 23, 28, 0.22);
+  }
+  /* The tabs come to rest on a tab's edge too: the first one shown is whole
+     ("RCM", never "ary"), clear of the chevron. */
+  .tx.phone .tt-tabs .tabs,
+  .tx.phone .tp-tabs .tabs { scroll-snap-type: x proximity; scroll-padding-inline: 32px; }
+  .tx.phone .tt-tabs .tab,
+  .tx.phone .tp-tabs .tab { scroll-snap-align: start; }
   /* The same height as the Summary tab's tree (the details open as a sheet over it). */
   .tx.phone .tp-table .tp-scroll {
     overflow-x: hidden;
@@ -893,6 +907,9 @@ a.rw-cklink:focus-visible {
   }
   .tt-l1 .tp-nm { flex: 0 1 auto; }
   .tt-st { margin-left: auto; flex: none; }
+  /* Markers and the status side by side at the row's end (the status's own
+     auto margin would split the room and leave the markers mid-row). */
+  .tt-l1 .tp-mk ~ .tt-st { margin-left: 4px; }
   /* Room for a whole line of 12 px text under the 36 px first line (its
      touch targets' height, the text centred higher), so descenders
      ("analysed yet") aren't cut: it starts 2 px into the first line's box. */
@@ -947,6 +964,17 @@ a.rw-cklink:focus-visible {
   padding: 0 12px;
   color: var(--muted);
   font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The FME(C)A tab: a parent row's "3 of 5 scored" in its first text column,
+   running on over the blank text columns beside it (TreePane sizes it). */
+.tp-row.tt .rw-c.tt-rollup-c { overflow: visible; }
+.tt-rollup-t {
+  flex: none;
+  display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1322,3 +1350,19 @@ button.rcm-mt-arrow, span.rcm-mt-arrow {
 button.rcm-mt-arrow svg { transition: transform 0.12s; }
 button.rcm-mt-arrow.open svg { transform: rotate(90deg); }
 button.rcm-mt-arrow:hover:not(:disabled) { background: var(--surf-2); }
+
+/* The markers' key: each Show only filter in the tree's ⋯ menu with the
+   marker it matches, at its end. */
+.tm-menu .tm-item .tm-mark { margin-left: auto; }
+
+/* A phone: the tabs over the tree name the row they're for. */
+.tp-tabs-wrap { min-width: 0; }
+.tp-tabs-for {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-tabs-for strong { color: var(--ink); font-weight: 600; }
