@@ -29,7 +29,7 @@ const saveFlag = (key, on) => {
   try { window.localStorage.setItem(key, on ? "1" : "0"); } catch { /* private window: it just won't be remembered */ }
 };
 
-// The Signals tab of the Explorer's panel (Operate › Assets › Explorer): the
+// The Signals tab of the Explorer's panel (Assets › Explorer): the
 // sensors on a position or an item that send snapshots (vibration bursts,
 // spectra, pressures). One spectrum chart (overlay chosen snapshots and a
 // baseline; hover a legend entry to find a snapshot; drag a frequency range to

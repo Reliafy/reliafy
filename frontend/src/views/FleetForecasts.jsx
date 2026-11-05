@@ -30,7 +30,7 @@ function expectedCell(f) {
 
 const HELP = { walkthrough: "fleet", guide: "forecast-fleet-failures-and-spares" };
 
-// Analyse › Forecasts: the failure forecasts, one row per fleet with its live
+// Decisions › Forecasts: the failure forecasts, one row per fleet with its live
 // expected-failure headline, then (with Reliafy Maintenance) the position
 // classes' forecasts from their own pooled history.
 export default function FleetForecasts() {
@@ -250,7 +250,7 @@ export default function FleetForecasts() {
             </label>
             <p className="muted-line">
               {modelKind === "recurrent"
-                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Model › Repairable first if you don't have one yet."
+                ? "The forecast counts each item's repeat failures from its age (time since new) under this model — fit one under Modelling › Models › Repairable first if you don't have one yet."
                 : "The forecast evaluates this model at each item's age (and, for a regression or ALT model, at each item's own conditions) — fit one under Models first if you don't have one yet."}
             </p>
           </div>

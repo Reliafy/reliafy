@@ -1,4 +1,4 @@
-// The Explorer's Signals tab (Operate › Assets › Explorer): a vibration channel
+// The Explorer's Signals tab (Assets › Explorer): a vibration channel
 // with a few snapshots made through the API (a 50 Hz tone that grows), then the
 // spectrum chart draws, a typed range becomes a watch band whose level shows
 // over time, and Play steps through to the latest snapshot. At 400 px nothing

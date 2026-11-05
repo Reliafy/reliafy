@@ -54,7 +54,7 @@ Three optional columns add more:
 
 ## Fitting
 
-Go to **Model → Repairable** and press **New model**. Pick your data, map
+Go to **Modelling → Models → Repairable** and press **New model**. Pick your data, map
 the columns, and choose a model. The default kind, **Minimal repair**, offers:
 
 - **Crow-AMSAA (NHPP)** — the standard reliability-growth model, and the right

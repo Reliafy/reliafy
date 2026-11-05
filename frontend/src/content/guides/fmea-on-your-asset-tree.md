@@ -23,7 +23,7 @@ score or an effect edited on one shows on the other at once. Nothing is copied.
 
 ## Start from the sample UAV
 
-Open **Operate → Assets → Explorer** and pick the **FME(C)A** tab. If your tree
+Open **Assets → Explorer** and pick the **FME(C)A** tab. If your tree
 is empty, press **Add the sample UAV** (or **Add the sample truck**; with
 positions already there, both are in the tree's **⋯** menu). *Quadcopter UAV
 (sample)* is a small fictional quadcopter: airframe, propulsion, power, flight

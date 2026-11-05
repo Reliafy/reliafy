@@ -74,7 +74,7 @@ were already in service when your records began can take an **Entry age**.
 
 ## Fit the model
 
-Go to **Model →** [Condition and life](/models/joint) and press **New
+Go to **Modelling → Models →** [Condition and life](/models/joint) and press **New
 model**. Under **1. Your dataset**, choose the dataset, or upload or paste a new
 one with its measurements. Reliafy guesses the columns of each part under **2.
 Columns**; check them.

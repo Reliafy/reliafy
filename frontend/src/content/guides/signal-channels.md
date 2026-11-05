@@ -19,7 +19,7 @@ without the spectrum.
 
 ## 1. Add a channel
 
-Open **Operate → Assets → Explorer**, pick the position or item the sensor is
+Open **Assets → Explorer**, pick the position or item the sensor is
 on, and open the **Signals** tab. Press **Add a channel** and give it:
 
 - a **name** (for example *DE bearing*) and the **unit** the sensor reports (g,

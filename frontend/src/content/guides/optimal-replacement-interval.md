@@ -20,7 +20,7 @@ the two costs, you can find it rather than argue about it.
 
 ## What you need
 
-Go to **Strategy → Optimal replacement**, or, on a saved model's page, press
+Go to **Decisions → Strategy → Optimal replacement**, or, on a saved model's page, press
 **Use this model** and choose **Find the best replacement interval** (a
 wear-out model also offers it when you click its **Failure pattern**). It opens on **Saved
 model** with that model (or the one you used last) chosen and its time unit
@@ -76,7 +76,7 @@ the plant is down anyway costs little; stopping the plant between shuts to do it
 costs more. So the real question becomes: *at each shut, is this part old enough
 to change now, or will it last to the next one?*
 
-That's the **Shutdown calendar** mode. On **Strategy → Optimal replacement**,
+That's the **Shutdown calendar** mode. On **Decisions → Strategy → Optimal replacement**,
 switch the **Replacement mode** from **Age replacement** to
 [Shutdown calendar](/strategy/replacement?mode=calendar), then give it:
 

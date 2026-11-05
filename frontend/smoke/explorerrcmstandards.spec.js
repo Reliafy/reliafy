@@ -1,5 +1,5 @@
 // A function's performance standards as a list, on the Explorer's RCM tab
-// (Operate › Assets › Explorer › RCM): the function's details list them under
+// (Assets › Explorer › RCM): the function's details list them under
 // Performance standards with an add row that becomes a new row of the list
 // (Enter saves it, Esc drops it), Edit…, Remove and the arrows; a
 // function's one text shows as the first item and becomes the list's first

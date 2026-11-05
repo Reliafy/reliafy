@@ -59,7 +59,7 @@ function RowMenu({ d, onRename, onDelete }) {
   );
 }
 
-// Analyse › Data: the datasets, uploaded, pasted or typed in; open, add or
+// Modelling › Data: the datasets, uploaded, pasted or typed in; open, add or
 // delete. Datasets are content-addressed, so re-uploading a file reuses it.
 export default function DatasetsHome() {
   const navigate = useNavigate();

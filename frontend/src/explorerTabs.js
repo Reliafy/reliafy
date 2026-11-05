@@ -1,4 +1,4 @@
-// The tabs of the Explorer's detail panel (Operate › Assets › Explorer): what
+// The tabs of the Explorer's detail panel (Assets › Explorer): what
 // the panel beside the tree can show for the row picked. Summary for every kind
 // of row; RCM for a position (its functions, how they fail, the failure modes
 // and their decisions, read from the asset tree itself); Failure reports for

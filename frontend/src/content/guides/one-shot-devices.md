@@ -18,7 +18,7 @@ them into a failure probability per demand with exact confidence bounds.
 
 ## Enter the counts
 
-Go to **Model → Non-repairable**, press **New model**, choose **Enter
+Go to **Modelling → Models → Non-repairable**, press **New model**, choose **Enter
 parameters** and pick **Per-demand (Binomial)** from the distributions. Give
 the model a name.
 
@@ -84,6 +84,6 @@ come from genuinely different designs or duties, model them separately.
 - A protective device that fails *while idle* and is only found at a proof
   test needs a test interval rather than a per-demand figure: see
   [verify a safety function](/guides/verify-a-safety-function) and
-  **Strategy → Failure finding**.
+  **Decisions → Strategy → Failure finding**.
 - To plan how many demands a test needs to show a reliability, see
   [check a requirement and plan a test](/guides/check-a-requirement-and-plan-a-test).

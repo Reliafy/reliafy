@@ -1,4 +1,4 @@
-// The one details panel on the Explorer's RCM tab (Operate › Assets ›
+// The one details panel on the Explorer's RCM tab (Assets ›
 // Explorer › RCM). A click on a row shows its details beside the table; a
 // double-click on its name (not on a data cell, which edits in place, nor the
 // chevron), Open… first in its row menu, or Expand in the panel spreads them

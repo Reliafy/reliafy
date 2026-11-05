@@ -1,4 +1,4 @@
-// The Explorer's RCM table scrolled sideways (Operate › Assets › Explorer, the
+// The Explorer's RCM table scrolled sideways (Assets › Explorer, the
 // RCM tab): the tree column stays put on the left and the other columns slide
 // under it. Whatever state a row is in (hovered, picked, keyboard focus, a cell
 // being edited, its menu open, the "Not under a functional failure" rows, a

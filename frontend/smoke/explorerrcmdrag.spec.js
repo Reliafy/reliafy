@@ -1,5 +1,5 @@
 // Rearranging the RCM tree by drag and drop, on the Explorer's RCM tab
-// (Operate › Assets › Explorer › RCM). Each drag is one batch, all or
+// (Assets › Explorer › RCM). Each drag is one batch, all or
 // nothing, with a toast that says what moved and offers Undo:
 // - a function onto another position, and back with Undo;
 // - a functional failure onto another function's standard, and before a

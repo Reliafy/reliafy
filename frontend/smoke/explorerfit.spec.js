@@ -1,5 +1,5 @@
 // The Explorer's RCM table on a laptop, and saying so when things go wrong
-// (Operate › Assets › Explorer, the RCM tab): at 1280x720 the usual columns
+// (Assets › Explorer, the RCM tab): at 1280x720 the usual columns
 // fit (none cut off, the interval in the Task cell), with the side panel open
 // the four main columns still show, and a soft shadow says there's more to the
 // side only when there is; a function's text is kept to 200 characters where

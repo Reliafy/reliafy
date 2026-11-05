@@ -21,7 +21,7 @@ marks each decision **Supported**, **Contradicted** or **Inconclusive**.
 
 ## Start from the sample truck
 
-Open **Operate → Assets → Explorer** and pick the **RCM** tab. The tree of
+Open **Assets → Explorer** and pick the **RCM** tab. The tree of
 positions is the first column, and under each position sit its functions,
 their performance standards, functional failures and failure modes, with the
 RCM's columns beside every row.

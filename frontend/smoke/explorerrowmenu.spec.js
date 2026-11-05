@@ -1,4 +1,4 @@
-// The Explorer's row menu on the Summary tab (Operate › Assets › Explorer):
+// The Explorer's row menu on the Summary tab (Assets › Explorer):
 // right-click a row, its ⋯ button, or Shift+F10. New position inside (the +
 // button's dialog, "Inside" set to the row), Rename…, Move to… (a picker of
 // the new parent: never the row itself or anything inside it; the row shown

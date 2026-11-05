@@ -19,7 +19,7 @@ import { useNavCrumbs } from "../RolesProvider.jsx";
 //            one empty state that points at the samples and the guide.
 //
 // A section's own landing page has no label above its title; a child page
-// (Model › Non-repairable) shows its menu entry there, linked.
+// (Models › Non-repairable) shows its menu entry there, linked.
 
 // "Show me how": the section's walkthrough when it has one (it opens a sample
 // and points at each step), else its how-to guide in the Help drawer.
