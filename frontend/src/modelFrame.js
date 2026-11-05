@@ -11,6 +11,7 @@ import { formatNumber, formatPercent } from "./format.js";
 import { hasMeanLife, meanLifeAnswer } from "./meanLife.js";
 import { unitInText } from "./components/unitText.js";
 import { anyAt } from "./competingRisks.js";
+import { riskText } from "./joint.js";
 
 export const TAB_LABELS = {
   plot: "Probability plot",
@@ -194,7 +195,8 @@ export function answerParts(result, { split = null, saved = null } = {}) {
       add(r.n_readings != null && `${Number(r.n_readings).toLocaleString("en-US")} readings of ${r.marker || "the reading"}`);
       const top = (r.risk || [])[0];
       const mid = r.horizons?.labels?.[1];
-      if (top && mid) add(`highest risk: unit ${top.id}, ${formatPercent(top.risk?.[1])} in the next ${mid}`);
+      // The Risk now table's words: "> 99.9%", never "100%".
+      if (top && mid) add(`highest risk: unit ${top.id}, ${riskText(top.risk?.[1])} in the next ${mid}`);
       add(r.fit_ok === false && "fit not verified");
       break;
     }
