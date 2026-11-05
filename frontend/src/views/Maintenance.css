@@ -519,3 +519,4 @@ button.maint-toggle {
 
 /* Assets' landing: links to the register's other pages (they aren't in the menu). */
 .assets-links { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: -4px 0 12px; font-size: var(--fs-14); }
+.assets-links a { color: var(--acc); font-weight: 500; }

@@ -39,6 +39,10 @@ const PAGES = [
   [/^\/asset-register\/parts(\/[^/]+)?$/, "Parts and stock"],
   [/^\/asset-register\/classes(\/[^/]+)?$/, "Classes"],
   [STRUCTURE_PATH, "Product structure"],
+  // Preview-only placeholders with no place in the menu (plannedPages.js).
+  ["/requirements", "Requirements"],
+  ["/failures", "Failures"],
+  ["/asset-register/fleets", "Fleets"],
   ["/systems/runs/compare", "Compare runs"],
   [/^\/systems\/runs\/[^/]+$/, "Run"],
   ...TEST_PLAN_TABS.filter((t) => t.id !== "demonstration").map((t) => [t.path, t.label]),

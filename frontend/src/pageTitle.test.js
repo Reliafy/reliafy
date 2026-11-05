@@ -42,6 +42,8 @@ test("pages outside the menu are named", () => {
   assert.equal(titleFor("/systems/b"), "New diagram · RBDs · Reliafy");
   assert.equal(titleFor("/strategy/test-planning/life"), "Life test · Test planning · Strategy · Reliafy");
   assert.equal(titleFor("/settings"), "Settings · Reliafy");
+  assert.equal(titleFor("/requirements"), "Requirements · Reliafy");
+  assert.equal(titleFor("/asset-register/fleets"), "Fleets · Assets · Reliafy");
   assert.equal(titleFor("/data-model"), "Data model · Reliafy");
   assert.equal(titleFor("/api-docs"), "API docs · Reliafy");
   assert.equal(titleFor("/api-docs/cli"), "Command line · API docs · Reliafy");
