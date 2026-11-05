@@ -5,7 +5,7 @@ import { useAppConfig } from "../ConfigProvider.jsx";
 import Modal from "./Modal.jsx";
 import { publicUrl } from "../firebase.js";
 import { useRoles } from "../RolesProvider.jsx";
-import { childActive, entryActive, groupBySection } from "../navigation.js";
+import { activeTrail, childActive } from "../navigation.js";
 
 const SignOutIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -59,83 +59,76 @@ const icon = (paths) => (
 );
 const ICONS = {
   home: icon(<><path d="M4 11.5 12 5l8 6.5" /><path d="M6 10v9h12v-9" /><path d="M10 19v-5h4v5" /></>),
-  systems: icon(<><rect x="3" y="4" width="6" height="6" rx="1" /><rect x="15" y="4" width="6" height="6" rx="1" /><rect x="9" y="14" width="6" height="6" rx="1" /><path d="M9 7h6M6 10v4M18 10v4" /></>),
-  requirements: icon(<><path d="M9 6h11M9 12h11M9 18h11" /><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17" /></>),
   assets: icon(<><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z" /><path d="M4 7.5 12 12l8-4.5M12 12v9" /></>),
   maintenance: icon(<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />),
-  risk: icon(<><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z" /><path d="M8 12.5h2l1.4-3 2.2 6 1.4-3H16" /></>),
-  failures: icon(<><path d="M12 4 3 20h18z" /><path d="M12 10v4.5M12 17.5h.01" /></>),
-  data: icon(<><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" /></>),
-  models: icon(<path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />),
-  strategy: icon(<><circle cx="12" cy="12" r="8.5" /><path d="M12 12l4-2.5M12 12v4.5" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></>),
-  forecasts: icon(<><path d="M4 19h16" /><path d="M4 15l4-4 3 3 5-6" /><path d="M16 8h3v3" strokeDasharray="2 2" /></>),
+  modelling: icon(<path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />),
+  decisions: icon(<><circle cx="12" cy="12" r="8.5" /><path d="M12 12l4-2.5M12 12v4.5" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></>),
   reports: icon(<><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4M10 12h5M10 16h5" /></>),
   agent: icon(<><rect x="4" y="7" width="16" height="12" rx="2" /><path d="M12 7V4M9 12h.01M15 12h.01M9 16h6" /></>),
 };
 const MoreIcon = () => icon(<><circle cx="6" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="18" cy="12" r="1.2" fill="currentColor" /></>);
 
-// One menu entry, with its children while it's the open section. The entry is
-// highlighted on its section's pages that no child names (a detail page), and
-// always on the collapsed rail, where the children are hidden.
-function MenuEntry({ entry, collapsed, pathname }) {
-  const active = entryActive(entry, pathname);
-  const children = entry.children || [];
-  const childOn = children.some((c) => childActive(c, pathname));
-  const lit = active && (collapsed || !childOn);
+// An entry's children (or a group's entries), each linked and lit when it's
+// where the page is. `trail` is activeTrail's answer for the page.
+function SubList({ items, trail, pathname, level = 2 }) {
+  return (
+    <div className={"side-children" + (level === 3 ? " side-grandchildren" : "")}>
+      {items.map((c) => {
+        const isEntry = !!c.id;
+        const here = isEntry ? trail.entry === c : trail.child === c;
+        // An entry is lit on its pages that no child of it names (its landing
+        // page, a detail page); otherwise the child is.
+        const lit = here && !(isEntry && trail.child);
+        return (
+          <div key={c.id || c.to}>
+            <Link
+              to={c.to}
+              className={"side-subitem" + (lit ? " active" : "")}
+              aria-current={pathname === c.to && (!isEntry || !trail.child || trail.child.to !== c.to) ? "page" : undefined}
+            >
+              {c.label}
+            </Link>
+            {isEntry && here && c.children?.length > 0 && (
+              <SubList items={c.children} trail={trail} pathname={pathname} level={3} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// One top-level entry, with what's under it while it's the current one: a
+// group's entries (and the current entry's children), or an entry's children.
+// The entry is lit when nothing under it is (and always on the collapsed rail,
+// where what's under it is hidden).
+function MenuEntry({ entry, collapsed, pathname, trail }) {
+  const active = trail.top === entry;
+  const below = entry.entries || entry.children || [];
+  const lit = active && (collapsed || (!entry.entries && !trail.child));
   return (
     <div>
       <Link
         to={entry.to}
         className={"side-item" + (lit ? " active" : "")}
-        aria-current={pathname === entry.to ? "page" : undefined}
+        aria-current={pathname === entry.to && !entry.entries && !trail.child ? "page" : undefined}
         title={entry.label}
       >
         <span className="side-icon">{ICONS[entry.id]}</span>
         {!collapsed && <span className="side-label">{entry.label}</span>}
       </Link>
-      {!collapsed && active && children.length > 0 && (
-        <div className="side-children">
-          {children.map((c) => {
-            const on = childActive(c, pathname);
-            return (
-              <Link
-                key={c.to}
-                to={c.to}
-                className={"side-subitem" + (on ? " active" : "")}
-                aria-current={pathname === c.to ? "page" : undefined}
-              >
-                {c.label}
-              </Link>
-            );
-          })}
-        </div>
-      )}
+      {!collapsed && active && below.length > 0 && <SubList items={below} trail={trail} pathname={pathname} />}
     </div>
   );
 }
 
-// Entries under their section headings (Design, Operate, Analyse; Home and
-// Reports/Agent have none). On the collapsed rail a heading is a hairline.
-function MenuGroups({ entries, collapsed, pathname, idPrefix }) {
-  return groupBySection(entries).map((g) => {
-    const headingId = g.section && !collapsed ? `${idPrefix}-${g.section.id}` : undefined;
-    return (
-      <div
-        key={g.key}
-        className={"side-group" + (g.key === "end" ? " side-group-end" : "")}
-        role={g.section ? "group" : undefined}
-        aria-labelledby={headingId}
-        aria-label={g.section && collapsed ? g.section.label : undefined}
-      >
-        {g.section && (
-          collapsed
-            ? <div className="side-rule" aria-hidden="true" />
-            : <div className="side-section" id={headingId}>{g.section.label}</div>
-        )}
-        {g.entries.map((e) => <MenuEntry key={e.id} entry={e} collapsed={collapsed} pathname={pathname} />)}
-      </div>
-    );
-  });
+// The entries, in one flat list (no section headings).
+function MenuGroups({ entries, collapsed, pathname, trail }) {
+  return (
+    <div className="side-group">
+      {entries.map((e) => <MenuEntry key={e.id} entry={e} collapsed={collapsed} pathname={pathname} trail={trail} />)}
+    </div>
+  );
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -154,8 +147,10 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
   const { menu, has } = useRoles();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  // Where the page is in the menu (the longest match over everything shown).
+  const trail = activeTrail([...menu.main, ...menu.more], pathname);
   // "More" opens by itself when the page shown is one of its entries.
-  const moreActive = menu.more.some((e) => entryActive(e, pathname));
+  const moreActive = menu.more.includes(trail.top);
   const [moreOpen, setMoreOpen] = useState(moreActive);
   useEffect(() => {
     if (moreActive) setMoreOpen(true);
@@ -249,7 +244,7 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
         )}
       </div>
       <nav className="sidebar-nav" aria-label="Main">
-        <MenuGroups entries={menu.main} collapsed={collapsed} pathname={pathname} idPrefix="side" />
+        <MenuGroups entries={menu.main} collapsed={collapsed} pathname={pathname} trail={trail} />
         {menu.more.length > 0 && (
           <>
             <button
@@ -267,7 +262,7 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
             </button>
             {moreOpen && (
               <div id="side-more" className="side-more-list">
-                <MenuGroups entries={menu.more} collapsed={collapsed} pathname={pathname} idPrefix="side-more" />
+                <MenuGroups entries={menu.more} collapsed={collapsed} pathname={pathname} trail={trail} />
               </div>
             )}
           </>

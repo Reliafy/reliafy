@@ -2,11 +2,12 @@
 // told apart: the page (or the record's name), then where it sits in the
 // menu, then "Reliafy": "Feed pump train · RBDs · Reliafy".
 //
-// The menu part comes from ENTRIES (navigation.js), so a renamed menu entry
+// The menu part comes from the menu's entries (navigation.js; a group such as
+// Modelling is never named), so a renamed menu entry
 // renames its tabs too; pages outside the menu are named in PAGES below. A
 // detail page adds its record's name with usePageTitle
 // (components/usePageTitle.js).
-import { ENTRIES, childActive, entryActive } from "./navigation.js";
+import { EXPLORER_LABEL, EXPLORER_PATH, MENU_ENTRIES, STRUCTURE_PATH, childActive, entryActive } from "./navigation.js";
 import { TEST_PLAN_TABS } from "./testPlanning.js";
 import { API_DOCS_PAGES } from "./apiDocsPages.js";
 
@@ -31,6 +32,13 @@ const PAGES = [
   ["/models/alt/new", "New model"],
   ["/models/joint/new", "New model"],
   ["/systems/b", "New diagram"],
+  // Assets' pages (one menu entry, no children): the Explorer, and each
+  // position's, location's and item's page under it; Parts and stock, Classes.
+  [EXPLORER_PATH, EXPLORER_LABEL],
+  [/^\/asset-register\/(positions|locations|items)\/[^/]+(\/.*)?$/, EXPLORER_LABEL],
+  [/^\/asset-register\/parts(\/[^/]+)?$/, "Parts and stock"],
+  [/^\/asset-register\/classes(\/[^/]+)?$/, "Classes"],
+  [STRUCTURE_PATH, "Product structure"],
   ["/systems/runs/compare", "Compare runs"],
   [/^\/systems\/runs\/[^/]+$/, "Run"],
   ...TEST_PLAN_TABS.filter((t) => t.id !== "demonstration").map((t) => [t.path, t.label]),
@@ -47,7 +55,7 @@ const PAGES = [
 function entryFor(path) {
   let best = null;
   let bestLen = -1;
-  for (const e of ENTRIES) {
+  for (const e of MENU_ENTRIES) {
     for (const p of e.match || [e.to]) {
       if ((path === p || path.startsWith(p + "/")) && p.length > bestLen && entryActive(e, path)) {
         best = e;
@@ -59,7 +67,7 @@ function entryFor(path) {
 }
 
 // The parts after the record's name for ``pathname``: [page?, child?, entry?].
-// An entry that opens on a child (Systems on RBDs, Risk on Condition
+// An entry that opens on a child (System models on RBDs, Risk on Condition
 // monitoring) is named by that child alone, as its breadcrumbs are.
 export function titleParts(pathname) {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
