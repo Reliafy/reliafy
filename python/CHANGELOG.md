@@ -2,6 +2,15 @@
 
 ## Unreleased (0.5.0)
 
+- **Products** (Reliafy Maintenance): a product is a design tree with its part;
+  items are built from it by serial. `maintenance products.create`,
+  `products.declare`, `products.clear` and `products.build` (a dry run by
+  default); reads `maintenance get.product`, `get.design_rollup` (a design
+  position across every item built: items, what's fitted, pooled life data,
+  failure reports), `list.products`, `list.product_items` and
+  `list.items_overview` (every item with its product, class, position and open
+  reports). On the command line: `reliafy maintenance products.build
+  --product-id … --serial …`.
 - **Time to the limit**: `maintenance progression.time_to_limit` and `progression.series` for a watched
   band's trend (listed by `reliafy tools`).
 - **Signal channels** (Reliafy Maintenance): `push_snapshot` and `reliafy ingest snapshot FILE.json` send a
