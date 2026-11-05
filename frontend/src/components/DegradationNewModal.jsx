@@ -312,7 +312,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
                      onChange={(e) => setMeasurementUnitTyped(e.target.value)} />
             </label>
           </div>
-          <p className="hint" id="deg-threshold-hint" style={{ marginTop: 0 }}>
+          <p className="hint" id="deg-threshold-hint" style={{ marginTop: "0.4rem" }}>
             The reading at which an item counts as worn out, whether readings rise or fall: e.g. 80 for 80% capacity,
             or 8 for 8 mm of wear.
           </p>

@@ -51,7 +51,7 @@ export default function DegradationHome() {
       <SectionHeader
         section="models"
         title="Degradation models"
-        purpose={<>How items wear toward a failure threshold. Track each one under <Link to="/risk">Operate › Risk</Link>.
+        purpose={<>How items wear toward a failure threshold. Track each one in <Link to="/risk">Condition monitoring</Link>.
           Failure times too? Use <Link to="/models/joint">Condition and life</Link>.</>}
         help={HELP}
         primary={newModel}

@@ -51,7 +51,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
         {field("stock", "In stock now")}
         {field("unit_cost", costLabel("Cost each", workspaceCurrency()))}
       </div>
-      {!readOnly && leadHint && <p className="lib-date" data-testid="fleet-spares-lead-hint">Lead time: {leadHint}.</p>}
+      {!readOnly && leadHint && <p className="hint" data-testid="fleet-spares-lead-hint" style={{ margin: "0.4rem 0 0" }}>Lead time: {leadHint}.</p>}
       <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
           <input type="checkbox" checked={!!sp.repairable} disabled={readOnly}
