@@ -295,6 +295,7 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
             <label className="login-field" style={{ flex: 1 }}>
               <span>Failure threshold *</span>
               <input type="number" step="any" value={threshold} placeholder="e.g. 8.0"
+                     aria-describedby="deg-threshold-hint"
                      onChange={(e) => setThreshold(e.target.value)} />
             </label>
             <label className="login-field" style={{ flex: 1 }}>
@@ -311,6 +312,10 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
                      onChange={(e) => setMeasurementUnitTyped(e.target.value)} />
             </label>
           </div>
+          <p className="hint" id="deg-threshold-hint" style={{ marginTop: 0 }}>
+            The reading at which an item counts as worn out, whether readings rise or fall: e.g. 80 for 80% capacity,
+            or 8 for 8 mm of wear.
+          </p>
           {itemCount !== null && itemCount < 2 ? (
             <p className="hint">
               The item id column has {itemCount === 1 ? "only 1 distinct value" : "no values"}: the fit needs at least 2 items.
@@ -325,19 +330,24 @@ export default function DegradationNewModal({ onClose, onSaved, initialDataset =
 
       {step === 3 && (
         <>
-          <p className="muted-line" style={{ marginTop: 0 }}>
-            The path model describes how the measurement evolves with time.
-            "Best" tries all nine and picks the lowest AICc (a few seconds).
-          </p>
-          <div className="row" style={{ gap: "0.8rem" }}>
-            {select("Degradation path", path, setPath, options.paths)}
-            {select("Life distribution", distribution, setDistribution, options.distributions)}
-            {select("Population method", populationMethod, setPopulationMethod, options.population_methods)}
-          </div>
-          <label className="login-field" style={{ marginTop: "0.8rem" }}>
+          <label className="login-field" style={{ marginTop: 0 }}>
             <span>Model name</span>
             <input type="text" value={name} onChange={(e) => setNameTyped(e.target.value)} />
           </label>
+          <details className="deg-advanced" style={{ marginTop: "0.8rem" }}>
+            <summary>Advanced (the defaults are fine)</summary>
+            <div className="row" style={{ gap: "0.8rem" }}>
+              {select("Degradation path", path, setPath, options.paths)}
+              {select("Life distribution", distribution, setDistribution, options.distributions)}
+              {select("Population method", populationMethod, setPopulationMethod, options.population_methods)}
+            </div>
+            <ul className="hint deg-advanced-notes">
+              <li><b>Degradation path</b>: the shape a reading follows over time on each item. "Best" tries every
+                shape and keeps the one that fits closest (a few seconds).</li>
+              <li><b>Life distribution</b>: the shape of the spread in when items reach the threshold.</li>
+              <li><b>Population method</b>: how the items' paths are pooled into one model for the whole population.</li>
+            </ul>
+          </details>
         </>
       )}
 
