@@ -65,7 +65,6 @@ def test_time_unit_from_the_time_column():
     assert tags([[1.0, 0], [2.0, 1]], ["x", "c"])["time_unit"] is None
 
 
-
 def test_outcome_once_per_unit_with_readings_is_life_data_with_measurements():
     rows = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u, None if k < 3 else u % 2] for u in range(4) for k in range(4)]
     out = tags(rows, ["bearing", "hours", "vibration_mm_s", "censored"])
@@ -74,3 +73,27 @@ def test_outcome_once_per_unit_with_readings_is_life_data_with_measurements():
     # Status on every row means the readings are changing covariates instead.
     every = [[f"B-{u}", 1000 * k, 2.0 + 0.1 * k + u, 1 if k < 3 else 0] for u in range(4) for k in range(4)]
     assert "Time-varying covariates" in tags(every, ["bearing", "hours", "vibration_mm_s", "censored"])["tags"]
+
+
+def test_summary_counts_failures_when_the_flag_means_1_failed():
+    """A "failed" column (1 = failed) is counted the way the fit wizard reads
+    it (it inverts such columns by name), not as Reliafy's 0 = failed."""
+    rows = [[f"M-{i}", 100 + 10 * i, 1 if i < 14 else 0] for i in range(20)]
+    assert (
+        tags(rows, ["unit", "flight_hours", "failed"])["summary"]
+        == "20 units · 14 failed"
+    )
+    for name in ("Failure", "event", "status", "is_failed", "dead", "failed_flag"):
+        assert (
+            tags(rows, ["unit", "flight_hours", name])["summary"]
+            == "20 units · 14 failed"
+        ), name
+    # Columns named the Reliafy way round stay 0 = failed.
+    for name in ("censored", "c", "suspended"):
+        assert (
+            tags(rows, ["unit", "flight_hours", name])["summary"]
+            == "20 units · 6 failed"
+        ), name
+    # Left- and interval-censored flags are kept as they are, not counted as failed.
+    rows = [["M-0", 10, 1], ["M-1", 20, 0], ["M-2", 30, -1], ["M-3", 40, 2]]
+    assert tags(rows, ["unit", "hours", "failed"])["summary"] == "4 units · 1 failed"
