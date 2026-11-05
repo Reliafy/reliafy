@@ -30,7 +30,7 @@ import RbdTargets from "../components/RbdTargets.jsx";
 import RbdCostsModal from "../components/RbdCostsModal.jsx";
 import RbdCrewsModal from "../components/RbdCrewsModal.jsx";
 import { applyBlockExtras } from "../components/RbdBlockCosts.jsx";
-import ValidationPanel, { graphSignature } from "../components/RbdValidation.jsx";
+import ValidationPanel, { emptyStatus, graphSignature } from "../components/RbdValidation.jsx";
 import {
   saveRbd, getRbd, validateRbd, downloadRbdPython, PYTHON_EXPORT_TIP, downloadRbdJson, JSON_EXPORT_TIP,
 } from "../api.js";
@@ -223,11 +223,9 @@ const PHONE_CANVAS = 600;
 function fitOptionsFor(width) {
   return width && width <= PHONE_CANVAS ? { ...FIT_OPTIONS, minZoom: 0.2 } : FIT_OPTIONS;
 }
-// The sized canvas (see sizeCanvas): its least height, the room kept above
-// and below the diagram for the zoom controls, and the frame below it (the
-// page's bottom padding).
-const CANVAS_MIN = 300;
-const CANVAS_PAD = 24;
+// The sized canvas (see sizeCanvas): its least height (the unsized canvas's
+// own) and the frame below it (the page's bottom padding).
+const CANVAS_MIN = 440;
 const FRAME_BOTTOM = 20;
 
 // A repairable diagram's crews, groups and safety settings (#156, #157): the
@@ -328,7 +326,7 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
   const warnings = validation.warnings?.length || 0;
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const [tone, icon, text] = validation.empty
-    ? ["todo", "+", "Nothing to check"]
+    ? ["todo", emptyStatus(validation).icon, emptyStatus(validation).text]
     : !validation.valid
     ? ["bad", "✕", `Not valid${errors ? ` · ${plural(errors, "problem")}` : ""}`]
     : warnings
@@ -459,11 +457,11 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
   // is in the flow with a size (a second at most).
   const fitViewRef = useRef(fitView);
   fitViewRef.current = fitView;
-  // The canvas is as tall as the diagram needs at the zoom that fits its
-  // width, so a wide, flat diagram has no band of empty canvas above and
-  // below it; between CANVAS_MIN and the frame. A phone, or a diagram with
-  // next to nothing on it (room to build), keeps the whole frame. Returns
-  // whether the canvas could be measured (not while its tab is hidden).
+  // The canvas runs down to the bottom of the frame (never under CANVAS_MIN),
+  // so a wide, flat diagram doesn't leave the page empty below the card; the
+  // fit then centres it. A phone, or a diagram with next to nothing on it
+  // (room to build), keeps the whole frame. Returns whether the canvas could
+  // be measured (not while its tab is hidden).
   const [canvasH, setCanvasH] = useState(null);
   const sizedRef = useRef(false);
   const sizeCanvas = useCallback(() => {
@@ -475,19 +473,8 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
       setCanvasH(null);
       return true;
     }
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const n of placed) {
-      const p = n.positionAbsolute || n.position;
-      x0 = Math.min(x0, p.x);
-      x1 = Math.max(x1, p.x + n.width);
-      y0 = Math.min(y0, p.y);
-      y1 = Math.max(y1, p.y + n.height);
-    }
-    const k = 1 + FIT_OPTIONS.padding;
-    const zoom = Math.min(FIT_OPTIONS.maxZoom, Math.max(FIT_OPTIONS.minZoom, W / ((x1 - x0) * k)));
-    const want = Math.ceil((y1 - y0) * k * zoom) + 2 * CANVAS_PAD;
     const room = window.innerHeight - el.getBoundingClientRect().top - FRAME_BOTTOM;
-    setCanvasH(Math.round(Math.max(CANVAS_MIN, Math.min(want, room))));
+    setCanvasH(Math.round(Math.max(CANVAS_MIN, room)));
     return true;
   }, [getNodes]);
   const fitWhenMeasured = useCallback((expected) => {
@@ -1554,6 +1541,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
           <option value={u} key={u} />
         ))}
       </datalist>
+      <div className="rbd-tb-flash" role="status" title={connectHint || undefined}>{connectHint}</div>
       <div className="rbd-toolbar-actions">
         {/* Full screen hides the page's title: the diagram's name and whether
             it's saved stay in sight here. */}
@@ -1969,15 +1957,12 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
         </div>
       )}
 
-      {/* One short line until the first connection (#314); the C shortcut's
-          feedback flashes here too. */}
-      {(connectHint || edges.length === 0) && (
+      {/* One short line until the first connection (#314). What an action
+          did flashes in the toolbar, off the canvas, so it never covers the
+          blocks it talks about. */}
+      {edges.length === 0 && (
         <div className="rbd-hint">
-          {connectHint ? (
-            <span className="rbd-hint-flash">{connectHint}</span>
-          ) : (
-            "Add blocks with + Add block or a right-click · select a block or a line first to wire it in · drag to connect · double-click to edit"
-          )}
+          Add blocks with + Add block or a right-click · select a block or a line first to wire it in · drag to connect · double-click to edit
         </div>
       )}
 
@@ -2278,6 +2263,7 @@ export default function RbdBuilder() {
     <div className={"app rbd-app" + (tab === "builder" ? "" : " rbd-app-scroll")}>
       <PageTitle name={(meta.name || "").replace(SAMPLE_SUFFIX, "")} />
       <PageHeader
+        className="rbd-header"
         crumbs={[{ label: RBDS_LABEL, to: RBDS_PATH }]}
         title={(meta.name || "").replace(SAMPLE_SUFFIX, "") || (id ? "" : "Untitled RBD")}
         badges={SAMPLE_SUFFIX.test(meta.name || "") && <Chip>Sample</Chip>}

@@ -29,6 +29,7 @@ import Chip from "./ui/Chip.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent } from "../format.js";
 import { hoursPerUnit } from "./rbdModelText.js";
+import { answerAtTime, formatReliability } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import ProTag from "./ProTag.jsx";
 import PercentField from "./PercentField.jsx";
@@ -51,12 +52,11 @@ function interp(x, y, xq) {
   return null;
 }
 
-const fmt = (v) =>
-  v == null
-    ? "—"
-    : Math.abs(v) >= 1e-4 || v === 0
-    ? v.toPrecision(5)
-    : v.toExponential(3);
+// Times and lives to four significant figures with separators (fmtLife,
+// below); importance measures to three ("∞" where a block's worth is
+// unbounded).
+const fmt = (v) => fmtLife(v);
+const fmtImp = (v) => (v === Infinity ? "∞" : formatNumber(v, { sig: 3 }));
 
 const FUNCS = [
   { id: "sf", label: "Reliability, R(t)" },
@@ -104,6 +104,74 @@ export function DesignLife({ result }) {
         <span>{dl.message}</span>
       )}
     </div>
+  );
+}
+
+// The answer at the time the user asked about (Evaluate at t), first: the
+// system's reliability over that time and its failure probability in words,
+// read off the same curve as the R(t) figure below.
+function AnswerAtTime({ result, t, now, survived }) {
+  if (t == null || t === "") return null;
+  const r = interp(result.time, result.system.sf, Number(t));
+  const a = answerAtTime({ r, t, unit: result.unit, now, survived });
+  if (!a) return null;
+  const band = result.band;
+  const lo = hasBand(band) ? interp(result.time, band.sf_lower, Number(t)) : null;
+  const hi = hasBand(band) ? interp(result.time, band.sf_upper, Number(t)) : null;
+  return (
+    <div className="rbd-answer" role="status">
+      <span className="rbd-answer-name">Reliability over {a.over}</span>
+      <span>
+        <b className="rbd-answer-value">{a.reliability}</b>
+        {lo != null && hi != null && band.level && (
+          <span className="muted"> ({Math.round(band.level * 100)}% CI {formatReliability(lo)}–{formatReliability(hi)})</span>
+        )}
+      </span>
+      <span className="rbd-answer-words">{a.failure}</span>
+    </div>
+  );
+}
+
+// The importance columns in words, under the table: on a phone there is no
+// hover to read the headers' titles.
+function ImportanceHelp({ structural }) {
+  return (
+    <details className="rbd-imp-help">
+      <summary>What these columns mean</summary>
+      <dl>
+        <dt>Birnbaum</dt>
+        <dd>How much the system's reliability moves with this block's. The highest is where an improvement counts most.</dd>
+        <dt>Fussell-Vesely</dt>
+        <dd>The share of the system's failure probability that involves this block failing.</dd>
+        <dt>Risk achievement</dt>
+        <dd>How many times more likely the system is to fail if this block has failed (1 means no change).</dd>
+        <dt>Risk reduction</dt>
+        <dd>How many times less likely the system is to fail if this block never failed.</dd>
+        <dt>Criticality</dt>
+        <dd>The share of system failures this block accounts for.</dd>
+        <dt>Improvement potential</dt>
+        <dd>How much the system's reliability would rise if this block never failed.</dd>
+        {structural && (
+          <>
+            <dt>Structural</dt>
+            <dd>From the wiring alone, how often this block decides whether the system works. Needs no failure data.</dd>
+          </>
+        )}
+      </dl>
+    </details>
+  );
+}
+
+// "As of now", said in words beside the box: tick it to give each block its
+// state today (its age, or that it has failed) and run the results from now
+// rather than from new.
+const AS_OF_HINT = "Start from today: give each block its age now (or mark it failed), and the results run from now instead of from new.";
+function AsOfToggle({ checked, onChange }) {
+  return (
+    <label className="rbd-asof-toggle" title={AS_OF_HINT}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>As of now <small className="rbd-asof-sub">from today's ages</small></span>
+    </label>
   );
 }
 
@@ -216,6 +284,8 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
 
   const importance = result.importance || {};
   const impNodes = Object.keys(importance.birnbaum || {});
+  // The system's reliability at the time the importances are for.
+  const impR = importance.time == null ? null : interp(x, result.system.sf, Number(importance.time));
 
   return (
     <div className="calc">
@@ -235,6 +305,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
       ))}
       {now && <AsOfNote result={result} idToLabel={idToLabel} />}
       <JointAgesNote result={result} />
+      <AnswerAtTime result={result} t={t} now={now} survived={cond ? conditionalAge : 0} />
       <DesignLife result={result} />
       <div className="params">
         <div className="stat">
@@ -265,7 +336,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
           </>
         )}
         <div className="stat">
-          <div className="value">{fmt(sysAtT)}</div>
+          <div className="value">{active === "sf" ? formatReliability(sysAtT) : formatNumber(sysAtT, { sig: 3 })}</div>
           <div className="name">
             {active === "sf" ? "R" : "F"}(t={t ?? "—"}
             {cond ? ` | ${sLabel}` : ""})
@@ -294,8 +365,9 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
       {impNodes.length > 0 && (
         <div className="rbd-importance">
           <div className="rbd-section-head">
-            Importance at t = {fmt(importance.time)}
-            {unit ? ` ${unit}` : ""}
+            Importance at {fmt(importance.time)}
+            {unit ? ` ${unitInText(unit)}` : ""}
+            {impR != null && <span className="muted"> (system reliability {formatReliability(impR)} there)</span>}
           </div>
           {/* Scrolls sideways on a phone rather than widening the page,
               as the availability table already does. */}
@@ -306,12 +378,12 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
                 <th>Component</th>
                 <th title="Birnbaum importance — sensitivity of system reliability to this component">Birnbaum</th>
                 <th title={`Fussell-Vesely — fraction of system unreliability this component contributes to${importance.fussell_vesely_basis ? ` (from ${importance.fussell_vesely_basis}; this diagram has too many cut sets to derive them all)` : ""}`}>
-                  F-V{importance.fussell_vesely_basis ? "*" : ""}
+                  Fussell-Vesely{importance.fussell_vesely_basis ? "*" : ""}
                 </th>
-                <th title="Risk Achievement Worth — how much worse the system gets if this component fails">RAW</th>
-                <th title="Risk Reduction Worth — how much better the system gets if this component were perfect">RRW</th>
-                <th title="Criticality importance (failure-oriented) — the share of system failures this component accounts for">Crit.</th>
-                <th title="Improvement potential — gain available from perfecting this component">Improv.</th>
+                <th title="Risk achievement worth (RAW) — how much worse the system gets if this component fails">Risk achievement</th>
+                <th title="Risk reduction worth (RRW) — how much better the system gets if this component were perfect">Risk reduction</th>
+                <th title="Criticality importance (failure-oriented) — the share of system failures this component accounts for">Criticality</th>
+                <th title="Improvement potential — gain available from perfecting this component">Improvement potential</th>
                 {importance.structural && (
                   <th title="Structural importance — from the diagram's structure alone, the share of the other components' working/failed states in which this one decides whether the system works. Needs no failure data.">Structural</th>
                 )}
@@ -321,18 +393,19 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
               {impNodes.map((id) => (
                 <tr key={id}>
                   <td className="calc-row-label">{idToLabel[id] || id}</td>
-                  <td>{fmt(importance.birnbaum?.[id])}</td>
-                  <td>{fmt(importance.fussell_vesely?.[id])}</td>
-                  <td>{fmt(importance.risk_achievement_worth?.[id])}</td>
-                  <td>{fmt(importance.risk_reduction_worth?.[id])}</td>
-                  <td>{fmt(importance.criticality?.[id])}</td>
-                  <td>{fmt(importance.improvement_potential?.[id])}</td>
-                  {importance.structural && <td>{fmt(importance.structural[id])}</td>}
+                  <td>{fmtImp(importance.birnbaum?.[id])}</td>
+                  <td>{fmtImp(importance.fussell_vesely?.[id])}</td>
+                  <td>{fmtImp(importance.risk_achievement_worth?.[id])}</td>
+                  <td>{fmtImp(importance.risk_reduction_worth?.[id])}</td>
+                  <td>{fmtImp(importance.criticality?.[id])}</td>
+                  <td>{fmtImp(importance.improvement_potential?.[id])}</td>
+                  {importance.structural && <td>{fmtImp(importance.structural[id])}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
           </ScrollCue>
+          <ImportanceHelp structural={!!importance.structural} />
         </div>
       )}
 
@@ -1836,10 +1909,7 @@ export default function RbdCalculator({
           <PercentField label="Design life at R" title="The design life: how long system reliability stays at or above this"
             value={targetPct} onChange={setTargetPct} check={targetCheck} placeholder="90" />
           <BandControls value={band} onChange={setBand} />
-          <label className="rbd-asof-toggle">
-            <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
-            <span>As of now</span>
-          </label>
+          <AsOfToggle checked={asOf} onChange={setAsOf} />
           {!asOf && action}
         </div>
       )}
@@ -1905,10 +1975,7 @@ export default function RbdCalculator({
                 {graph.unit && <span>{unitInText(graph.unit)}</span>}
               </label>
             )}
-            <label className="rbd-asof-toggle">
-              <input type="checkbox" checked={asOf} onChange={(e) => setAsOf(e.target.checked)} />
-              <span>As of now</span>
-            </label>
+            <AsOfToggle checked={asOf} onChange={setAsOf} />
             {!asOf && action}
           </div>
           {asOf && (
