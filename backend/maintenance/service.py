@@ -6783,6 +6783,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
             if at is None and (kind == "replace" or a.get("failure_mode_id") or a.get("failure_mode_text")):
                 raise Invalid(self._no_position_why(subject, kind) + (
                     " On a work package's work order, name the line's position_id." if line_positions else ""))
+            if kind == "replace":
+                self._not_a_design(at)
             fm = at and self._mode_ref(at, a.get("failure_mode_id") or None, a.get("failure_mode_text"))
             finding = a.get("finding") or None
             if kind == "inspect" and finding not in FINDINGS:
@@ -7092,6 +7094,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
         removal there, a fit here): a rotable going round."""
         self._live_item(item_id)
         self._get(to_position_id, "Position")
+        self._not_a_design(to_position_id)
         if self.current_fitment(to_position_id):
             raise Invalid("Something is already fitted there. Move or remove it first.")
         day = _day(on, today=self.today())
