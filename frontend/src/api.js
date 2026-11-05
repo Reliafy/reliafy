@@ -2211,6 +2211,45 @@ export function addSampleUav(again = false) {
   return postJson("/api/maintenance/sample-uav", { again: !!again });
 }
 
+// The sample product: a quadcopter's design with its FME(C)A, its part and bill
+// of materials, three items built from it with two failure reports, and a
+// flight-critical RBD (placeholder failure rates). Once, unless again.
+export function addSampleProduct(again = false) {
+  return postJson("/api/maintenance/sample-product", { again: !!again });
+}
+
+// ---- products (designs) and the items built from them --------------------------
+
+export function listProducts() {
+  return request("/api/maintenance/products");
+}
+export function getProduct(id) {
+  return request(`/api/maintenance/products/${encodeURIComponent(id)}`);
+}
+// {name, part_number?, rev?, description?}: the design's top position and its part, together.
+export function createProduct(body) {
+  return postJson("/api/maintenance/products", body);
+}
+export function listProductItems(id) {
+  return request(`/api/maintenance/products/${encodeURIComponent(id)}/items`);
+}
+// Build an item from a product: {serial, rev?, dry_run} (dry_run true only says what it would make).
+export function buildProductItem(id, body) {
+  return postJson(`/api/maintenance/products/${encodeURIComponent(id)}/build`, body);
+}
+// A design position (or the product itself) across every item built from it.
+export function getDesignRollup(positionId) {
+  return request(`/api/maintenance/positions/${encodeURIComponent(positionId)}/design-rollup`);
+}
+// Every item with its product, type, position path, status and open reports.
+export function listItemsOverview({ productId, itemClassId, q, limit = 500, offset = 0 } = {}) {
+  const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (productId) p.set("product_id", productId);
+  if (itemClassId) p.set("item_class_id", itemClassId);
+  if (q) p.set("q", q);
+  return request(`/api/maintenance/items/overview?${p}`);
+}
+
 // Items, optionally only an item class's (with the classes inside it) or a
 // manufacturer's ("none": those with none).
 export function listMaintenanceItems({ itemClassId, manufacturerId } = {}) {

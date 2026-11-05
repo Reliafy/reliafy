@@ -66,6 +66,8 @@ import { MoveModal, RenameModal, RetireModal } from "../components/TreeRowModals
 import NewFailureReportModal from "../components/NewFailureReportModal.jsx";
 import usePhone from "../usePhone.js";
 import { SAMPLES, SAMPLE_TRUCK_LABEL, SAMPLE_UAV_LABEL, addSample as addSampleOf } from "../sampleTruck.js";
+import { designActions, isDesignScope, scopeTree } from "../products.js";
+import { DesignReports } from "../components/ProductPanels.jsx";
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
@@ -152,33 +154,38 @@ function pickerList(data) {
   return out;
 }
 
-export default function AssetExplorer() {
+// Scoped to one tree (`root`, or ?root=: a product's design from its page, an
+// item's tree from Items) it shows that tree alone, by position; unscoped, it
+// leaves the products' designs and items' trees out (products.js). `tabKey`:
+// the address's name for its tabs (the product page keeps ?tab= for its own).
+export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", title: titleProp = null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
+  const root = rootProp || params.get("root") || null;
   const { workspace, activeTeam } = useWorkspace();
   const phone = usePhone();
   const narrow = useNarrowTable();
   const wide = useWideTable();
   const saved = useMemo(() => loadTreeState(workspace), [workspace]);
-  const tab = tabParam(params.get("tab"));
+  const tab = tabParam(params.get(tabKey));
   // The tree-table: the RCM tab, or the FME(C)A tab (the same table with the
   // worksheet's columns and its own graft; `fmeaOn` says which).
   const fmeaOn = tab === "fmea";
   const rcmOn = tab === "rcm" || fmeaOn;
   // RCM (and the FME(C)A) is by position: on its tab the tree is arranged by positions.
-  const mode = rcmOn ? "positions" : arrangementOf(params.get("arrange"), saved.mode);
+  const mode = rcmOn || root ? "positions" : arrangementOf(params.get("arrange"), saved.mode);
   const notPlaced = (mode === "positions" || mode === "flat") && params.get("place") === "none";
-  const title = EXPLORER_LABEL;
+  const title = titleProp || EXPLORER_LABEL;
   const treeLabel = ARRANGEMENTS.find((a) => a.value === mode).tree;
 
   // The address always says the arrangement, so it can be shared as it is.
   useEffect(() => {
-    if (params.get("arrange") === mode) return;
+    if (rootProp || params.get("arrange") === mode) return; // a product's page keeps its own address
     const q = new URLSearchParams(params);
     q.set("arrange", mode);
     navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: location.state });
-  }, [params, mode, navigate, location]);
+  }, [params, mode, navigate, location, rootProp]);
 
   const setQuery_ = useCallback((change) => {
     const q = new URLSearchParams(params);
@@ -231,11 +238,11 @@ export default function AssetExplorer() {
     getMaintenanceTree()
       .then((d) => {
         forgetPositions();
-        setData(d);
+        setData(scopeTree(d, root));
         setVersion((v) => v + 1);
       })
       .catch((e) => setError({ text: e.message, notAllowed: e.status === 404 || e.status === 403 }));
-  }, []);
+  }, [root]);
   useEffect(() => load(), [load]);
 
   // The RCM tab: the RCM read into the tree, and what's being worked on.
@@ -446,8 +453,8 @@ export default function AssetExplorer() {
       if (keep) setSelected((s) => ({ ...s, positions: keep }));
     }
     setQuery_((q) => {
-      if (t === "summary") q.delete("tab");
-      else q.set("tab", t);
+      if (t === "summary") q.delete(tabKey);
+      else q.set(tabKey, t);
       if (toTable) q.set("arrange", "positions");
       // The report open in the Failure reports tab goes with the tab.
       if (t !== "reports") q.delete("report");
@@ -473,17 +480,19 @@ export default function AssetExplorer() {
   const latest = useRef(null);
   latest.current = { mode, open: openBy, selected, width, collapsed };
   useEffect(() => {
+    if (root) return undefined; // one tree on show: not what the whole Explorer remembers
     const t = setTimeout(() => saveTreeState(workspace, latest.current), 200);
     return () => clearTimeout(t);
-  }, [workspace, mode, openBy, selected, width, collapsed]);
+  }, [workspace, mode, openBy, selected, width, collapsed, root]);
   useEffect(() => {
+    if (root) return undefined;
     const flush = () => saveTreeState(workspace, latest.current);
     window.addEventListener("pagehide", flush);
     return () => {
       window.removeEventListener("pagehide", flush);
       flush();
     };
-  }, [workspace]);
+  }, [workspace, root]);
 
   const setOpenSet = (next) => {
     if (filter) setFopen(next);
@@ -821,11 +830,12 @@ export default function AssetExplorer() {
   };
 
   const viewOnly = viewOnlyReason(activeTeam);
+  const designScope = isDesignScope(data, root);
   const kids = useMemo(() => liveKids(data?.positions), [data]);
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
-      if (!rcmOn) return withPin(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), [...isolateItem(r), ...pinItem(r)]);
+      if (!rcmOn) return withPin(designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope), [...isolateItem(r), ...pinItem(r)]);
       if (!rcm) return [...isolateItem(r), ...pinItem(r)];
       // The FME(C)A tab: its own rows' actions (no moving: that's the RCM tab's).
       if (fmeaOn) return [...withPin(fmeaRowActions(r, { canRename: !phone }), isolateItem(r)), ...pinItem(r)];
@@ -1135,7 +1145,7 @@ export default function AssetExplorer() {
     if (select != null) pending.current = select;
     load();
     const q = new URLSearchParams(params);
-    q.set("tab", "reports");
+    q.set(tabKey, "reports");
     if (select != null) q.set("sel", select);
     q.set("report", view.id);
     navigate(`${location.pathname}?${q}${location.hash}`, { replace: true, state: phone ? { treeDetail: select } : location.state });
@@ -1226,7 +1236,12 @@ export default function AssetExplorer() {
       ? `${n(locationCount, "location")} · ${n(placedCount, "position")}`
       : mode === "items" ? n(display.items, "item") : n(placedCount, "position");
 
-  const notice = notPlaced && (
+  const notice = root && !rootProp ? (
+    <p className="tp-notice">
+      <span className="maint-badge">One tree</span>{" "}
+      <Link to={explorerPath(mode)}>Show every asset</Link>
+    </p>
+  ) : notPlaced && (
     <p className="tp-notice">
       <span className="maint-badge">Not at a location yet</span>{" "}
       <Link to={explorerPath(mode)} replace>Show every position</Link>
@@ -1439,13 +1454,15 @@ export default function AssetExplorer() {
     onNew: (id, name) => setReportFor({ id, name, select: row?.key ?? id }),
     onChanged: load,
     viewOnly,
+    // A product's design: no report is filed there; its tab rolls up the items' reports.
+    rollup: designScope ? (r) => <DesignReports positionId={r.type === "pos" ? r.key : root} /> : null,
   };
   // The Summary tab's page about the row picked: beside the tree in the pane
   // (a wide screen, its heading and tabs over it in the slim rows), or its own
   // screen on a phone.
   // The row's own changes (the tree's row menu, less Pin and Isolate), for
   // the Summary's add row and footer.
-  const summaryActionsOf = (r) => (r ? summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 })
+  const summaryActionsOf = (r) => (r ? designActions(summaryActions(r, { mode, viewOnly, kidsOf: (k) => kids.get(k) || 0 }), designScope)
     .map((a) => ({ ...a, onSelect: () => rowMenu.onAction(r, a.id) })) : []);
   const summary = !rcmOn && (
     <section className="tx-detail" aria-label="Details"
@@ -1499,7 +1516,7 @@ export default function AssetExplorer() {
         level={level}
         changed={changed}
         onReset={resetView}
-        menuActions={[...(data && mode !== "locations" && mode !== "items" ? [
+        menuActions={[...(data && !root && mode !== "locations" && mode !== "items" ? [
           { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
           { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: () => addSample("truck") },
           { id: "sample-uav", label: SAMPLE_UAV_LABEL, onSelect: () => addSample("uav") },
@@ -1532,7 +1549,8 @@ export default function AssetExplorer() {
           key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
         } : null}
         branchNote={pinNote}
-        arrangeLocked={rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
+        arrangeLocked={rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree`
+          : root ? "One tree on show, by position" : null}
       />
       {phone && summary}
       <div className="sr-only" role="status" aria-live="polite">{spoken}</div>
