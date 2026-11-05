@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import DegradationNewModal from "../components/DegradationNewModal.jsx";
 import { listDegradationModels, deleteDegradationModel } from "../api.js";
 import { relativeTime } from "../instrument.js";
@@ -51,7 +51,8 @@ export default function DegradationHome() {
       <SectionHeader
         section="models"
         title="Degradation models"
-        purpose="How assets wear toward a failure threshold. Track individual items under Fleet."
+        purpose={<>How items wear toward a failure threshold. Track each one under <Link to="/risk">Operate › Risk</Link>.
+          Failure times too? Use <Link to="/models/joint">Condition and life</Link>.</>}
         help={HELP}
         primary={newModel}
       />
