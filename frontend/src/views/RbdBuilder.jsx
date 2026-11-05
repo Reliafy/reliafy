@@ -57,7 +57,7 @@ import Chip from "../components/ui/Chip.jsx";
 import Switch from "../components/ui/Switch.jsx";
 import { formatPercent } from "../format.js";
 import {
-  allInstant, chainPairs, inPlaceItems, insertAfter, insertAlongside, insertOnEdge, setInstantRepair, trackSelection,
+  allInstant, chainPairs, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
 } from "../rbdBuilderOps.js";
 import { safetyStarter } from "../rbdSafetyStarter.js";
 // Phased missions and undirected networks (#160).
@@ -1340,6 +1340,31 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
     );
   }, [nodes, edges, repairable, network, newId, setNodes, setEdges, fitWhenMeasured]);
 
+  // "+ Add block > Component": on a new diagram (only Input and Output) the
+  // first block is wired Input → block → Output and selected, so "add after"
+  // and "add alongside" build on a connected diagram; otherwise it lands in
+  // the middle of the canvas, unwired, as before.
+  const addComponentFromMenu = useCallback(() => {
+    const n = idRef.current;
+    const block = {
+      id: `c${n}`,
+      type: "component",
+      data: { label: `Component ${n}`, model: null, ...(repairable && allInstant(nodes) ? { instant_repair: true } : {}) },
+      position: { x: 0, y: 0 },
+      ...HORIZONTAL,
+    };
+    const out = insertFirst({ nodes, edges }, block, EDGE_OPTIONS);
+    if (!out) {
+      addComponent(centrePos());
+      return;
+    }
+    idRef.current += 1;
+    setNodes(out.nodes);
+    setEdges(out.edges);
+    fitWhenMeasured([block]);
+    setConnectHint(`Added ${block.data.label} between Input and Output, in series.`);
+  }, [nodes, edges, repairable, addComponent, centrePos, setNodes, setEdges, fitWhenMeasured]);
+
   // The toolbar's Safety function switch (#298): on, the diagram is a
   // repairable safety function (its results lead with PFDavg and the SIL);
   // off, it isn't, and its target SIL goes with it.
@@ -1439,7 +1464,7 @@ function Builder({ rbdId, imported, onNew, onOpenLibrary, onSaved, onMeta, onTab
             <div className="rbd-menu-sep" role="separator" />
           </>
         )}
-        <button className="ovm-item" onClick={() => addComponent(centrePos())}>Component</button>
+        <button className="ovm-item" onClick={addComponentFromMenu}>Component</button>
         <button className="ovm-item" onClick={() => addKNode(centrePos(), 1, 2)}
                 title="Merge parallel branches back into one — any branch is enough">
           Junction
