@@ -256,8 +256,6 @@ export default function AppShell() {
             <Route path="/asset-register/fleets" element={<PlannedPage id="fleets" />} />
             <Route path="/maintenance/inbox" element={<PlannedPage id="inbox" />} />
             <Route path="/data/library" element={<PlannedPage id="library" />} />
-            <Route path="/systems/fault-trees" element={<PlannedPage id="fault-trees" />} />
-            <Route path="/systems/fmeca" element={<PlannedPage id="fmeca" />} />
 
             <Route path="/reports" element={<ReportsPage />} />
             {agentEnabled && <Route path="/agent" element={<ReliabilityAgent />} />}

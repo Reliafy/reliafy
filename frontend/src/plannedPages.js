@@ -1,7 +1,9 @@
-// Pages that are in the menu so its structure can be tried before they are
-// built. They show only where the deployment turns the menu preview on
-// (MENU_PREVIEW, from /api/config); everywhere else the menu hides them.
-// Each is a blank page that says what it will hold.
+// Blank pages for things not built yet, each saying what it will hold. They
+// show only where the deployment turns the menu preview on (MENU_PREVIEW, from
+// /api/config); everywhere else a visit says the page isn't available. Library
+// (under Data) and Field inbox (under Maintenance) are in the preview menu;
+// Requirements, Failures and Fleets have no place in the menu for now and are
+// opened by address only.
 export const PLANNED = {
   requirements: {
     title: "Requirements",
@@ -49,26 +51,6 @@ export const PLANNED = {
       "Cited failure-rate and Weibull records, each with its source and licence",
       "Search by part or equipment type",
       "Use a record as a block's life model, marked as a generic estimate",
-    ],
-  },
-  "fault-trees": {
-    section: "systems",
-    title: "Fault trees",
-    purpose: "Work back from an unwanted event to the combinations of failures that cause it.",
-    will: [
-      "Build a tree from gates and basic events",
-      "Top-event probability and the cut sets that drive it",
-      "Link basic events to your models",
-    ],
-  },
-  fmeca: {
-    section: "systems",
-    title: "FMECA",
-    purpose: "Failure modes, their effects and how critical each one is, for a design.",
-    will: [
-      "Failure modes per function, with severity, occurrence and detection",
-      "Criticality ranking",
-      "Links to the position's RCM and its tasks",
     ],
   },
 };
