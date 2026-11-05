@@ -95,6 +95,10 @@ test("other kinds answer in their own terms", () => {
     marker: "vibration", risk: [{ id: "P6", risk: [0.1, 0.92] }], horizons: { labels: ["7 days", "30 days"] }, fit_ok: true });
   assert.deepEqual(joint, ["40 units (22 failed, 18 running)", "300 readings of vibration",
     "highest risk: unit P6, 92% in the next 30 days"]);
+  // Near certain reads as the Risk now table says it: "> 99.9%", not "100%".
+  const sure = answerParts({ kind: "joint", risk: [{ id: "P-19", risk: [0.5, 0.9999] }],
+    horizons: { labels: ["30 days", "90 days"] } });
+  assert.deepEqual(sure, ["highest risk: unit P-19, > 99.9% in the next 90 days"]);
   const reg = answerParts({ kind: "regression", distribution: "Weibull PH", ratio_label: "hazard ratio", unit: "Hours",
     coefficients: [{ name: "temp_C", value: 0.138, ci: [0.093, 0.183] }, { name: "load", value: 0.5, ci: [-1, 2] }],
     validation: { available: true, concordance: { value: 0.868 } }, n: 32 });

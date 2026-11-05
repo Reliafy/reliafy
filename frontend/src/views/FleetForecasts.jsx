@@ -146,8 +146,8 @@ export default function FleetForecasts() {
       <SectionHeader
         title="Forecasts"
         purpose={has.maintenance
-          ? "How many failures to expect: fleets from your fitted models, position classes from their own history."
-          : "How many failures a fleet will see over a horizon, from your fitted models."}
+          ? "How many failures (or warranty returns) to expect: fleets from your fitted models, position classes from their own history."
+          : "How many failures (or warranty returns) a fleet will see over a horizon, from your fitted models."}
         help={HELP}
         primary={newForecast}
       />

@@ -53,12 +53,12 @@ EXTRA_MODELS = {
                 "covariates: which site, duty or condition drives the repair rate.",
     },
     "grp_i": {
-        "name": "Generalized renewal (Kijima I)", "short": "GRP Kijima I", "family": "renewal",
+        "name": "Generalised renewal (Kijima I)", "short": "GRP Kijima I", "family": "renewal",
         "desc": "Imperfect repair: each repair takes off part of the age gained since the last repair "
                 "(Weibull time to failure).",
     },
     "grp_ii": {
-        "name": "Generalized renewal (Kijima II)", "short": "GRP Kijima II", "family": "renewal",
+        "name": "Generalised renewal (Kijima II)", "short": "GRP Kijima II", "family": "renewal",
         "desc": "Imperfect repair: each repair takes off part of the system's whole age (Weibull time to failure).",
     },
     "ara": {

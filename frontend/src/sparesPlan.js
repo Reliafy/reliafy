@@ -19,6 +19,40 @@ export function riskText(p) {
   return p < 0.005 ? "under 1%" : formatPercent(p);
 }
 
+// Expected use over the window, as the card shows it: "≈ 1.3", "≈ 0.25", or
+// "< 0.01" for a tiny value (never "2.5e-4"), "0" for none.
+export function useText(v) {
+  if (v == null || v === "" || !Number.isFinite(Number(v))) return "—";
+  const n = Number(v);
+  if (n === 0) return "0";
+  if (n < 0.01) return "< 0.01";
+  return `≈ ${formatNumber(n, { sig: 2 })}`;
+}
+
+// A lead time typed in the forecast's periods, read back in days, weeks or
+// months so "0.1 years" can be checked against a supplier's "5 weeks":
+// "0.1 years ≈ 5.2 weeks". Before anything is typed, an example in the
+// period: "5 weeks would be 0.096 years".
+// Empty for a period that isn't a calendar unit ("shifts").
+const PERIOD_DAYS = { day: 1, week: 7, month: 30.4375, quarter: 91.3125, year: 365.25 };
+
+export function leadTimeHint(value, periodLabel) {
+  const key = String(periodLabel || "").trim().toLowerCase();
+  const per = PERIOD_DAYS[key] ?? (key.endsWith("s") ? PERIOD_DAYS[key.slice(0, -1)] : undefined);
+  if (!per) return "";
+  const plural = key.endsWith("s") ? key : `${key}s`;
+  if (value === "" || value == null) {
+    return per === 7 ? "" : `5 weeks would be ${formatNumber(35 / per, { sig: 2 })} ${plural}`;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const days = n * per;
+  const [size, word] = days < 14 ? [1, "day"] : days < 90 ? [7, "week"] : [PERIOD_DAYS.month, "month"];
+  if (size === per) return "";
+  const shown = formatNumber(days / size, { sig: 2 });
+  return `${formatNumber(n, { sig: 6 })} ${n === 1 ? key.replace(/s$/, "") : plural} ≈ ${shown} ${word}${shown === "1" ? "" : "s"}`;
+}
+
 // The chance a stock runs out, read off a risk curve ([[stock, chance], ...],
 // ascending): the level at or below it. Past the curve's end it's under 0.1%.
 export function riskAt(curve, stock) {

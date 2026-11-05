@@ -8,7 +8,7 @@ import { costLabel, prefixCurrency, workspaceCurrency } from "../money.js";
 import { CardHeader } from "./ui/Card.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import SparesWhatIf from "./SparesWhatIf.jsx";
-import { SERVICE_LEVELS, fleetSparesCsv, levelText, overText, riskText, saveText } from "../sparesPlan.js";
+import { SERVICE_LEVELS, fleetSparesCsv, leadTimeHint, levelText, overText, riskText, saveText, useText } from "../sparesPlan.js";
 
 const blank = (v) => v === null || v === undefined || v === "";
 const fileName = (name) => `${String(name).replace(/[^\w\- ]+/g, "").trim() || "fleet"} — spares plan.csv`;
@@ -29,6 +29,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
       )}
     </label>
   );
+  const leadHint = leadTimeHint(sp.lead_time, label);
   const ok = answer?.status === "ok";
   const over = overText(answer?.repairable, answer?.review);
   return (
@@ -50,6 +51,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
         {field("stock", "In stock now")}
         {field("unit_cost", costLabel("Cost each", workspaceCurrency()))}
       </div>
+      {!readOnly && leadHint && <p className="hint" data-testid="fleet-spares-lead-hint" style={{ margin: "0.4rem 0 0" }}>Lead time: {leadHint}.</p>}
       <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
           <input type="checkbox" checked={!!sp.repairable} disabled={readOnly}
@@ -75,7 +77,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
                 value: answer.reorder_at == null ? "repair each"
                   : !answer.review && answer.hold > 0 && answer.reorder_at >= answer.hold ? "one for one"
                     : formatNumber(answer.reorder_at) },
-              { label: "Expected use", value: `≈ ${formatNumber(answer.expected_demand, { sig: 2 })}`, hint: `over ${over}` },
+              { label: "Expected use", value: useText(answer.expected_demand), hint: `over ${over}` },
               answer.stock != null && {
                 label: `Runs out with ${formatNumber(answer.stock)}`, value: riskText(answer.risk_at_stock),
                 hint: answer.to_order > 0 ? `order ${formatNumber(answer.to_order)}` : undefined,
@@ -89,7 +91,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
               <thead><tr><th>{label[0].toUpperCase() + label.slice(1).replace(/s$/i, "")}</th><th>Expected use over {over}</th><th>Hold</th><th>Reorder at</th></tr></thead>
               <tbody>
                 {answer.per_period.map((p) => (
-                  <tr key={p.period}><td>{p.period}</td><td className="lib-date">≈ {formatNumber(p.expected_demand, { sig: 2 })}</td>
+                  <tr key={p.period}><td>{p.period}</td><td className="lib-date">{useText(p.expected_demand)}</td>
                     <td>{formatNumber(p.hold)}</td><td>{p.reorder_at == null ? "—" : formatNumber(p.reorder_at)}</td></tr>
                 ))}
               </tbody>
