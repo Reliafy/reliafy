@@ -456,9 +456,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         return (
           <span className="step-wrap" key={label}>
             {i > 0 && <span className="sep" />}
-            <span className={`step${step === n ? " active" : ""}`}>
+            <span className={`step${step === n ? " active" : ""}`} aria-current={step === n ? "step" : undefined}>
               <span className="dot">{n}</span>
-              {label}
+              <span className="step-label">{label}</span>
             </span>
           </span>
         );
@@ -836,7 +836,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             notice={(
               <div className="mf-wizard-head">
                 <AnswerLine parts={answerParts(result, { split })} />
-                <ModelNextSteps result={result} onUse={saveForUse} variant="primary" />
+                <ModelNextSteps result={result} onUse={saveForUse} />
               </div>
             )}
           >
