@@ -55,7 +55,8 @@ properly. A dataset that holds life data with its **Measurements** (readings on
 the same units; see [condition and life](/guides/condition-based-risk)) is read
 here by its measurements.
 
-In the next step you choose a **path** — how degradation progresses. The
+In the next step you name the model. Under **Advanced** (the defaults are fine)
+you can choose a **path** — how degradation progresses. The
 default, **Best (auto-select by AICc)**, tries all nine paths and keeps the one
 that fits best. **Linear** is the common case for steady wear; choose another
 when the physics says wear accelerates or plateaus. What the model does is fit a path to each item, extrapolate each to the
@@ -67,8 +68,9 @@ which is how a set of wear curves becomes a reliability model of the population.
 For the sample brake pads (six pads, an 8 mm wear limit, linear paths) the
 crossing times fit a Weibull with a mean life of **5,960 hours**. The line under
 the model's name gives the answer: B10 is **4,710 hours** (the time by which 10%
-of pads reach the limit), and the lower end of its 90% band, **3,210 hours**, is
-the design life to plan with.
+of pads reach the limit), with **≥ 3,210 at 95%** beside it: we're 95% sure at
+least 90% of pads last 3,210 hours. That lower bound (the lower end of the
+two-sided 90% band, so a one-sided 95% bound) is the design life to plan with.
 
 ## Reading the model's page
 

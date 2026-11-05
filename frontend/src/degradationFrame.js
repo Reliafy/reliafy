@@ -118,12 +118,21 @@ export function bLives(curves) {
 const withUnit = (v, unit) => `${formatNumber(v)}${unit ? ` ${unitInText(unit)}` : ""}`;
 const span = (lo, hi) => `${formatNumber(lo)}–${formatNumber(hi)}`;
 
-// "90% band 3,210–3,950" (or "≥ 3,210 at 90%" with only the lower end).
+// "90% band 3,210–3,950" (or "≥ 3,210 at 95%" with only the lower end).
 export function bandWords(life, level) {
   if (!life) return "";
   if (life.lower != null && life.upper != null) return `${formatNumber(level)}% band ${span(life.lower, life.upper)}`;
-  if (life.lower != null) return `≥ ${formatNumber(life.lower)} at ${formatNumber(level)}%`;
-  return "";
+  return lowerBoundWords(life, level);
+}
+
+// The band is two-sided, so its lower end alone is a one-sided bound at a
+// higher confidence: the lower end of a 90% band is a 95% lower bound.
+export const oneSidedLevel = (level) => 100 - (100 - Number(level)) / 2;
+
+// The band's lower end as the other model pages say a bound: "≥ 3,210 at 95%".
+export function lowerBoundWords(life, level) {
+  if (life?.lower == null) return "";
+  return `≥ ${formatNumber(life.lower)} at ${formatNumber(oneSidedLevel(level))}%`;
 }
 
 // The life model's mean in the shape the shared mean-life words take.
@@ -162,8 +171,8 @@ export function degradationAnswer(results, { saved = null } = {}) {
   const curves = curvesOf(r);
   const b10 = timeAtReliability(curves, 0.9);
   if (b10?.value != null) {
-    const band = bandWords(b10, bandLevel(curves));
-    add(`B10 ${withUnit(b10.value, r.unit)}${band ? ` (${band})` : ""}`);
+    const bound = lowerBoundWords(b10, bandLevel(curves));
+    add(`B10 ${withUnit(b10.value, r.unit)}${bound ? ` (${bound})` : ""}`);
   }
   const mean = meanAnswer(r);
   if (mean.kind === "mean") add(`mean ${withUnit(mean.value, r.unit)}`);
