@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { listRbdRunDiagrams, listRbdRuns } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { relativeTime } from "../instrument.js";
 import { availabilityText, byText, keptLine, runtimeText, statusChip, viaText } from "../rbdRuns.js";
@@ -10,6 +11,7 @@ import { RBDS_PATH } from "../navigation.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
 
 const MAX_COMPARE = 6;
+const PURPOSE = "Availability simulations from the app and your connectors.";
 
 // Simulation run history (#112): the user's availability simulations, newest
 // first, from the app or any MCP connector — filter by diagram, open one, or
@@ -49,20 +51,28 @@ export default function RbdRuns() {
   const toggle = (id) =>
     setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-MAX_COMPARE)));
   const compare = () => navigate(`/systems/runs/compare?ids=${picked.join(",")}`);
+  // Secondary: it acts on the ticked rows, so it isn't the page's next step.
+  const compareButton = (
+    <button type="button" className="secondary" disabled={picked.length < 2} onClick={compare}
+            title={picked.length < 2 ? "Tick two or more finished runs" : undefined}>
+      Compare{picked.length >= 2 ? ` ${picked.length} runs` : ""}
+    </button>
+  );
 
   return (
     <div className="app rbd-runs">
-      <PageHeader
-        crumbs={[{ label: "Systems", to: RBDS_PATH }, ...(rbdId ? [{ label: diagram?.name || "Diagram", to: `/systems/b/${rbdId}` }] : [])]}
-        title="Simulation runs"
-        meta="Availability simulations from the app and your connectors."
-        primary={
-          <button type="button" disabled={picked.length < 2} onClick={compare}
-                  title={picked.length < 2 ? "Tick two or more finished runs" : undefined}>
-            Compare{picked.length >= 2 ? ` ${picked.length} runs` : ""}
-          </button>
-        }
-      />
+      {/* A list page: the section header every list uses. Filtered to one
+          diagram, the header keeps its breadcrumb back to that diagram. */}
+      {rbdId ? (
+        <PageHeader
+          crumbs={[{ label: "Systems", to: RBDS_PATH }, { label: diagram?.name || "Diagram", to: `/systems/b/${rbdId}` }]}
+          title="Simulation runs"
+          meta={PURPOSE}
+          actions={compareButton}
+        />
+      ) : (
+        <SectionHeader section="systems" title="Simulation runs" purpose={PURPOSE} actions={compareButton} />
+      )}
 
       {error && <div className="card error">{error}</div>}
 
