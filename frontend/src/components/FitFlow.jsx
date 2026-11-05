@@ -31,7 +31,7 @@ import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts } from "../tvcData.j
 import { guessUnit, isNumeric } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
-  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags,
+  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 
@@ -320,6 +320,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     return () => { live = false; };
   }, [file, mapping]);
   const summary = csv && !tvc ? statusSummary(mapping, facts, csv.n_rows) || fileSplit : null;
+  // Most units still running often means the sheet's flags are 1 = failed:
+  // say so on the Data step, with the same flip the column mapper uses.
+  const swapped = flagsLookSwapped(mapping, summary);
+  const swapFlags = () => setMapping((m) => ({ ...m, c_invert: !m.c_invert }));
 
   // Cox PH's own options travel with a Cox fit only.
   const familyOpts = frailtyFitOptions(options.find((d) => d.id === distribution), fitOpts);
@@ -743,6 +747,21 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               )}
             </p>
           ) : null}
+          {problems.length === 0 && swapped && (
+            <div className="ds-flag-notice" role="status">
+              <span>
+                Most units are marked as still running ({swapped.code}).
+                If {swapped.code} means failed in your sheet, swap the flags.
+              </span>
+              <button type="button" className="secondary" onClick={swapFlags}>Swap the flags</button>
+            </div>
+          )}
+          {problems.length === 0 && !swapped && simple && mapping.c && mapping.c_invert && (
+            <p className="ds-flag-notice" role="status">
+              <span>Flags swapped: 1 = failed, 0 = still running.</span>
+              <button type="button" className="link" onClick={swapFlags}>Swap back</button>
+            </p>
+          )}
           {simple && (
             <button type="button" className="link ds-change" onClick={() => setSimple(false)}>
               Change columns

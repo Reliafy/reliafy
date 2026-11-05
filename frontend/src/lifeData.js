@@ -221,6 +221,18 @@ export function statusSummary(mapping, facts, nRows) {
   return out;
 }
 
+// Flags that may be the other way round: most units still running, from a
+// plain 0/1 status column (no word map, no -1 or 2). Spreadsheets often use
+// 1 = failed, and a fit then reads as far too optimistic with no other sign.
+// Returns { code }: the flag value now read as still running, or null.
+export function flagsLookSwapped(mapping, summary) {
+  if (!mapping.c || mapping.c_map || !summary) return null;
+  if (summary.left || summary.interval) return null;
+  const total = summary.failed + summary.running;
+  if (!total || summary.running * 2 <= total) return null;
+  return { code: mapping.c_invert ? "0" : "1" };
+}
+
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 // "15 failures, 6 still running" — numbers to show bold, as parts.

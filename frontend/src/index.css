@@ -4750,6 +4750,23 @@ h1 .chip,
   line-height: 1.5;
 }
 .fit-step .ds-change { align-self: flex-start; font-size: var(--fs-14); }
+/* Most units still running: the flags may be the other way round. */
+.ds-flag-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.ds-flag-notice > span { flex: 1 1 260px; min-width: 0; }
+.ds-flag-notice .link { font-size: inherit; }
 
 /* Every column and its role (#434), the used / ignored summary as its head. */
 .col-roles { display: flex; flex-direction: column; gap: var(--sp-2); }
