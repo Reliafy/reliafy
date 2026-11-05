@@ -359,6 +359,17 @@ export function markersOf(r, { rcm = false } = {}) {
   return out.map((m) => ({ ...m, inside: parent }));
 }
 
+// The markers' key: each Show only filter in the tree's ⋯ menu shows the
+// marker it matches (markersOf's kinds), so the red and blue counts are
+// explained without hovering over every one.
+export const CHIP_MARK = {
+  overdue: { kind: "overdue", text: "3" },
+  open: { kind: "open", text: "3" },
+  alarm: { kind: "alarm", text: "!" },
+  reports: { kind: "report", text: "3" },
+  unanalysed: { kind: "rcm", text: "○" },
+};
+
 // The status in words, for the detail panel: what's on the row itself, and
 // what's inside it. [{kind, text}].
 export function statusWords(r) {

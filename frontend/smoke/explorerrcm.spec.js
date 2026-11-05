@@ -105,8 +105,8 @@ test("RCM: the tree and the RCM are one table; Summary: the tree and the page; t
   await trow(page, `^Function: Contain the water ${tag}`).locator(".tp-chev").click();
   await expect(trow(page, "Not under a functional failure").first()).toBeVisible();
   await expect(trow(page, `Coupling fails ${tag}`).getByText("Contradicted")).toBeVisible();
-  // RCM is by position: the other arrangements wait for Summary (the counts and the menu say so).
-  await expect(page.locator(".tt-top .tp-status")).toContainText("RCM is by position");
+  // RCM is by position: the other arrangements wait for Summary (the counts' tooltip and the menu say so).
+  await expect(page.locator(".tt-top .tp-status")).toHaveAttribute("title", /RCM is by position$/);
   const menu = await openTreeMenu(page);
   await expect(menu.getByRole("menuitemradio", { name: "Locations" })).toHaveCount(0);
   await expect(menu).toContainText("RCM is by position");

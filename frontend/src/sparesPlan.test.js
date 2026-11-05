@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { daysText, fleetSparesCsv, levelText, overText, riskAt, riskText, stockingCsv, windowText } from "./sparesPlan.js";
+import { daysText, fleetSparesCsv, leadTimeHint, levelText, overText, riskAt, riskText, stockingCsv, useText, windowText } from "./sparesPlan.js";
 
 test("service levels and chances read plainly", () => {
   assert.equal(levelText(0.95), "95%");
@@ -63,4 +63,28 @@ test("a fleet's spares plan exports one row per period", () => {
     + "per_failure,repairable,turnaround_months,unit_cost,hold_cost");
   assert.equal(lines[1], "Trucks,1,5,5,2.4,0.9,2,0,1,no,,100,500");
   assert.equal(fleetSparesCsv({ status: "needs_lead_time" }), "");
+});
+
+test("expected use never shows scientific notation", () => {
+  assert.equal(useText(2.5e-4), "< 0.01");
+  assert.equal(useText(0.0099), "< 0.01");
+  assert.equal(useText(0.01), "≈ 0.01");
+  assert.equal(useText(0.2512), "≈ 0.25");
+  assert.equal(useText(1.34), "≈ 1.3");
+  assert.equal(useText(0), "0");
+  assert.equal(useText(null), "—");
+});
+
+test("a lead time in the forecast's periods reads back in days, weeks or months", () => {
+  assert.equal(leadTimeHint(0.1, "years"), "0.1 years ≈ 5.2 weeks");
+  assert.equal(leadTimeHint("", "years"), "5 weeks would be 0.096 years");
+  assert.equal(leadTimeHint("", "months"), "5 weeks would be 1.1 months");
+  assert.equal(leadTimeHint(2, "months"), "2 months ≈ 8.7 weeks");
+  assert.equal(leadTimeHint(0.25, "years"), "0.25 years ≈ 3 months");
+  assert.equal(leadTimeHint(10, "days"), "");
+  assert.equal(leadTimeHint(1, "weeks"), "1 week ≈ 7 days");
+  assert.equal(leadTimeHint(3, "weeks"), "");
+  assert.equal(leadTimeHint("", "weeks"), "");
+  assert.equal(leadTimeHint(1, "shifts"), "");
+  assert.equal(leadTimeHint("", "shifts"), "");
 });

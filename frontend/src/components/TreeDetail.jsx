@@ -165,7 +165,7 @@ export function SlimHeader({
 export function HeaderTabs({ row, tab, onTab }) {
   const tabs = tabsFor(row);
   if (tabs.length < 2) return null;
-  return <Tabs tabs={tabs} value={shownTab(tab, row)} onChange={onTab} label="What to show for this row" idPrefix="td" className="tt-tabs" />;
+  return <Tabs tabs={tabs} value={shownTab(tab, row)} onChange={onTab} label="What to show for this row" idPrefix="td" className="tt-tabs" wholeTabs />;
 }
 
 const TreeDetail = forwardRef(function TreeDetail({

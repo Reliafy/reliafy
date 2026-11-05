@@ -42,6 +42,9 @@ export function RolesCard({ offer = false, style }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  // Home's question on a phone starts as one line, so Start here stays on the
+  // first screen; a tap opens the picker (wider screens always show it).
+  const [expanded, setExpanded] = useState(false);
   const value = picked ?? roles;
   const changed = picked !== null && !sameList(picked, roles);
 
@@ -61,8 +64,14 @@ export function RolesCard({ offer = false, style }) {
   };
 
   return (
-    <Card className={offer ? "roles-offer" : undefined} style={style}>
+    <Card className={offer ? "roles-offer" + (expanded ? " open" : "") : undefined} style={style}>
       <CardHeader title="What do you do?" subtitle={EXPLAIN} />
+      {offer && !expanded && (
+        <div className="row roles-offer-compact">
+          <Button onClick={() => setExpanded(true)} aria-expanded="false">Pick your roles</Button>
+          <Button variant="secondary" onClick={dismissOffer}>Not now</Button>
+        </div>
+      )}
       <RolePicker value={value} onChange={(v) => { setPicked(v); setSaved(false); }} disabled={!loaded || busy} />
       <div className="row role-actions">
         {offer ? (

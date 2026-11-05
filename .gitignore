@@ -137,7 +137,7 @@ dmypy.json
 tmp/
 
 # Node / frontend build
-frontend/node_modules/
+frontend/node_modules
 frontend/dist/
 # Browser smoke test output (npm run smoke)
 frontend/playwright-report/

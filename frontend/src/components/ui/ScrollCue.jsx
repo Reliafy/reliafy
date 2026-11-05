@@ -9,8 +9,10 @@
 //   arrowLabel     what the arrows scroll, for their accessible names
 //   reveal         a selector for a child kept in view (e.g. ".tab.active"),
 //                  re-checked when `revealKey` changes
+//   wholeItems     a selector for the strip's items (e.g. ".tab"): a reveal
+//                  then starts on a whole one, never on the tail of one
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { scrollEdges, scrollStep, scrollToReveal } from "../../scrollCue.js";
+import { scrollEdges, scrollStep, scrollToReveal, wholeItemLeft } from "../../scrollCue.js";
 
 function Chevron({ dir }) {
   return (
@@ -28,6 +30,7 @@ export default function ScrollCue({
   arrowLabel = "Scroll",
   reveal,
   revealKey,
+  wholeItems,
   children,
   ...rest
 }) {
@@ -67,10 +70,16 @@ export default function ScrollCue({
     if (!target) return;
     const box = target.getBoundingClientRect();
     const at = box.left - el.getBoundingClientRect().left + el.scrollLeft;
-    const left = scrollToReveal(el, { left: at, width: box.width }, 40);
+    let left = scrollToReveal(el, { left: at, width: box.width }, 40);
+    if (left !== null && wholeItems) {
+      const base = el.getBoundingClientRect().left - el.scrollLeft;
+      const starts = [...el.querySelectorAll(wholeItems)].map((x) => x.getBoundingClientRect().left - base);
+      // Clear of the chevron (32 px wide) at the start edge.
+      left = wholeItemLeft(left, starts, { pad: 32, max: el.scrollWidth - el.clientWidth });
+    }
     if (left !== null) el.scrollTo({ left, behavior: first.current ? "auto" : "smooth" });
     first.current = false;
-  }, [reveal, revealKey]);
+  }, [reveal, revealKey, wholeItems]);
 
   const step = (dir) => {
     const el = ref.current;

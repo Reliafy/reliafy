@@ -23,6 +23,8 @@ import "./FailureReports.css";
 // (positionId, name), onChanged (the tree read again), viewOnly}.
 
 const HELP = { guide: "failure-reports-on-your-asset-tree" };
+// A touch screen has no right-click: there, each row's ⋯ button opens its menu.
+const touch = () => typeof window !== "undefined" && !!window.matchMedia?.("(hover: none)").matches;
 const PAGE = 50;
 
 function PickPositionModal({ positions, onClose, onPick }) {
@@ -135,6 +137,9 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   const chipCount = (id) => (id === "all" ? total : id === "open" ? counts.open || 0 : counts[id] || 0);
   const narrowed = filtering(filters);
   const list = data?.reports || [];
+  // Nothing here at all (and nothing narrowing it): the stage chips, search
+  // and filters would only be a row of zeros, so they wait for a first report.
+  const none = !!data && !error && total === 0 && !list.length && !narrowed;
 
   let body;
   if (error) {
@@ -144,7 +149,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   } else if (!list.length && !narrowed) {
     body = (
       <div className="fr-empty">
-        <p>No failure reports here yet. Right-click a position in the tree (or press Add failure report) to add one.</p>
+        <p>No failure reports here yet. Press Add failure report, or {touch() ? "tap ⋯ on a position in the tree" : "right-click a position in the tree"}, to add one.</p>
         <p className="section-empty-more"><ShowMe help={HELP}>How failure reports work</ShowMe></p>
       </div>
     );
@@ -179,6 +184,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
           <PlusIcon /> Add failure report
         </button>
       </div>
+      {!none && (
       <div className="fr-filters">
         <div className="fr-chips" role="group" aria-label="Stage">
           {STATUS_CHIPS.map((c) => {
@@ -208,6 +214,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
           </select>
         </div>
       </div>
+      )}
       {body}
       {picking && (
         <PickPositionModal positions={positions} onClose={() => setPicking(false)}

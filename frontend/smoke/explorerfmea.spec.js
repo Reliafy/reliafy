@@ -94,7 +94,9 @@ test("FME(C)A: the worksheet on the tree; a score edited in place changes the RP
   // The scored mode: S 9, RPN 216, AP High; the function rolls up.
   await expect(await cellOf(page, `^Failure mode: Bearing seizes ${tag}`, "RPN")).toHaveText("216");
   await expect(await cellOf(page, `^Failure mode: Bearing seizes ${tag}`, "AP")).toHaveText("High");
-  await expect(await cellOf(page, `^Function: Pump water ${tag}`, "Cause")).toHaveText("2 of 3 scored");
+  // The roll-up runs across the text columns from the first (not under Cause).
+  await expect(await cellOf(page, `^Function: Pump water ${tag}`, "Functional failure")).toHaveText("2 of 3 scored");
+  await expect(await cellOf(page, `^Function: Pump water ${tag}`, "Cause")).toHaveText("");
   await expect(await cellOf(page, `^Function: Pump water ${tag}`, "AP")).toHaveText("1 high · 1 medium");
   await expect(await cellOf(page, `^Function: Pump water ${tag}`, "RPN")).toHaveText("216");
   await shot(page, "fmea-table-1440");

@@ -37,7 +37,7 @@ import { COLUMN, LEVEL_OF, checkValue, loadPrefs, savePrefs, tasksOf } from "../
 import { failuresOn as fmeaFailuresOn, graftFmea, positionSummary, rowActions as fmeaRowActions } from "../explorerFmea.js";
 import {
   CHIP_IDS as FMEA_CHIP_IDS, COLUMN as FMEA_COLUMN, COLUMNS as FMEA_COLUMNS, TREE_HEAD as FMEA_TREE_HEAD, WIDE_TABLE, checkValue as checkFmeaValue,
-  loadPrefs as loadFmeaPrefs, nextSort, phoneLine as fmeaPhoneLine, savePrefs as saveFmeaPrefs, siblingOrder as fmeaOrder,
+  loadPrefs as loadFmeaPrefs, nextSort, phoneLine as fmeaPhoneLine, savePrefs as saveFmeaPrefs, scoredWords, siblingOrder as fmeaOrder,
   tableCols as fmeaTableCols, usualCols as fmeaUsualCols, withTableCols as withFmeaCols,
 } from "../fmeaWorksheet.js";
 import { readFmeaOptions } from "../fmea.js";
@@ -153,6 +153,10 @@ function pickerList(data) {
   walk(d.roots);
   return out;
 }
+
+// The FME(C)A worksheet's text columns: a parent row's "3 of 5 scored" runs
+// across the first of them it shows (they're blank on a parent row).
+const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_next", "effects", "detection_method"]);
 
 // Scoped to one tree (`root`, or ?root=: a product's design from its page, an
 // item's tree from Items) it shows that tree alone, by position; unscoped, it
@@ -1227,9 +1231,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const notAnalysed = !data ? 0 : pinKey ? display.notAnalysed : data.positions.filter((p) => p.not_analysed).length;
   const locationCount = !data ? 0 : pinKey ? display.locations : data.locations.length;
   const what = fmeaOn ? "FME(C)A" : "RCM";
+  // The counts under the tree's title stay short on every tab, so they fit
+  // beside its buttons: the RCM tab adds how many aren't analysed (its ○
+  // markers); why the tree is by position is in the tooltip and the ⋯ menu.
   const statusText = !data ? "" : rcmOn && !filter
     ? (rcmError ? `The ${what} didn't load: ${rcmError}` : !rcm ? `${n(placedCount, "position")} · loading the ${what}…`
-      : `${n(placedCount, "position")} · ${notAnalysed.toLocaleString("en-AU")} not analysed · ${what} is by position`)
+      : fmeaOn ? n(placedCount, "position") : `${n(placedCount, "position")} · ${notAnalysed.toLocaleString("en-AU")} not analysed`)
     : filter
     ? [`${n(filter.match.size, "match", "matches")}, shown with what they're inside`, showingOnly(chipsOn.map((c) => c.label))].filter(Boolean).join(" · ")
     : mode === "locations"
@@ -1276,6 +1283,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     // name for screen readers, the phone's second line, and the column sorted by.
     tab, fmea: fmeaOn, what, treeHead: fmeaOn ? FMEA_TREE_HEAD : null,
     phoneLine: fmeaOn ? fmeaPhoneLine : null,
+    // The FME(C)A tab: a function's or position's "3 of 5 scored" across its
+    // text columns (a wide screen), not under Cause.
+    rollup: fmeaOn ? { ids: FMEA_ROLLUP_COLS, text: (cr) => scoredWords(cr.sum) } : null,
     sort: fmeaOn ? fsort : null, onSort: fmeaOn ? (col) => setFsort((s) => nextSort(s, col)) : null,
     editing, readOnly: false,
     canEditName: (r) => EDITABLE.has(r.type),
@@ -1433,8 +1443,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       </aside>
     </div>
   );
+  // On a phone the tabs over the tree say which row they're for (the row
+  // picked), so they don't read as tabs for the tree itself.
   const phoneTabs = phone && posRow && tabsFor(posRow).length > 1 && (
-    <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label="What to show" className="tp-tabs" />
+    <div className="tp-tabs-wrap">
+      <p className="tp-tabs-for">For <strong>{posRow.ref.name || "(no name)"}</strong></p>
+      <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} className="tp-tabs" wholeTabs />
+    </div>
   );
   // A row picked in the panel (a crumb, a row in "Directly inside").
   const selectFromPanel = (k) => {
@@ -1523,6 +1538,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         ] : []), ...REGISTER_LINKS(navigate)]}
         notice={notice}
         statusText={statusText}
+        statusTitle={rcmOn && !filter && rcm && !rcmError ? `${statusText} · ${what} is by position` : undefined}
         empty={phone && (error || nothing) ? emptyDetail : paneEmpty}
         scrollTo={scrollTo}
         onEnter={(key) => {
@@ -1533,7 +1549,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           }
           return phone ? pick(key, { go: true }) : headingRef.current?.focus();
         }}
-        rcmMarks={rcmOn || chips.includes("unanalysed")}
+        // The ○ "not analysed" markers are the RCM's: on its tab (or with the
+        // Not analysed chip on), never beside the FME(C)A's scores.
+        rcmMarks={tab === "rcm" || chips.includes("unanalysed")}
         table={table}
         rowMenu={rowMenu}
         fullScreenKey={!phone}
