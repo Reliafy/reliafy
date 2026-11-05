@@ -181,7 +181,7 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   await expect(trow(`Failure mode: Seal leaks ${tag}`)).toBeVisible();
   await expect(trow(`^Works plant ${tag}`)).toHaveCount(0);
   await expect(trow(`^Works line B ${tag}`)).toHaveCount(0);
-  await expect(page.locator(".tt-top .tp-status")).toHaveText(/^3 positions · \d+ not analysed · RCM is by position$/);
+  await expect(page.locator(".tt-top .tp-status")).toHaveText(/^3 positions · \d+ not analysed$/);
   // A position's menu: Add function, the worksheet in and out, then Pin this branch (the pinned row: Show whole tree).
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click({ button: "right" });
   await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Isolate", "Pin this branch"]);

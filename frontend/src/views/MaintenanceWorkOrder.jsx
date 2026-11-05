@@ -41,7 +41,7 @@ export default function MaintenanceWorkOrder() {
   }, [id]);
   useEffect(() => refresh(), [refresh]);
 
-  if (error && !wo) return <div className="app"><LoadFailed error={error} to="/maintenance" label="Back to Maintenance" /></div>;
+  if (error && !wo) return <div className="app"><LoadFailed header error={error} notFound="Work order not found." to="/maintenance" label="Back to Maintenance" /></div>;
   if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (

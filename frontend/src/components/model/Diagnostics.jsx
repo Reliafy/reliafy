@@ -24,6 +24,11 @@ const SMALL = { margin: { t: 6, r: 10, b: 40, l: 50 } };
 
 // ---- The column beside the checks --------------------------------------------
 
+// Which way is better, per criterion: the information criteria fall, the
+// log-likelihood rises.
+const BETTER = { log_likelihood: "higher is better", aic: "lower is better", aic_c: "lower is better",
+  aicc: "lower is better", bic: "lower is better" };
+
 // AIC and the other criteria (today's "Fit statistics"), in the panel's card style.
 export function FitStatsCard({ gof, n, note, extra = [] }) {
   const rows = [...(gof || []), ...extra];
@@ -31,13 +36,12 @@ export function FitStatsCard({ gof, n, note, extra = [] }) {
     <section className="gof-card" aria-labelledby="mf-fit-stats">
       <div className="gofh life-card-head">
         <h3 className="mf-card-title" id="mf-fit-stats">Fit statistics</h3>
-        <span className="gof-sub">lower is better</span>
       </div>
       {rows.length ? rows.map((g) => (
         <div className="gofr" key={g.id}>
           <span className="gk">
             {g.label}
-            {(g.id === "log_likelihood") && <span className="gof-sub"> · higher is better</span>}
+            {BETTER[g.id] && <span className="gof-sub"> · {BETTER[g.id]}</span>}
           </span>
           <span className="gv">{fmt5(g.value)}</span>
         </div>

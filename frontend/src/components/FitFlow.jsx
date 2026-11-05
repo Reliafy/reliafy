@@ -31,7 +31,7 @@ import { guessTvc, tvcMapping, tvcProblems, tvcSummaryParts } from "../tvcData.j
 import { guessUnit, isNumeric } from "../datasetGuess.js";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, isSimplePaste, statusSummary, summaryParts,
-  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags,
+  dataStepProblems, dataSplit, parsePastedValues, addMissingFlags, flagsLookSwapped,
 } from "../lifeData.js";
 import { RequiredUnit } from "./Units.jsx";
 
@@ -320,6 +320,10 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     return () => { live = false; };
   }, [file, mapping]);
   const summary = csv && !tvc ? statusSummary(mapping, facts, csv.n_rows) || fileSplit : null;
+  // Most units still running often means the sheet's flags are 1 = failed:
+  // say so on the Data step, with the same flip the column mapper uses.
+  const swapped = flagsLookSwapped(mapping, summary);
+  const swapFlags = () => setMapping((m) => ({ ...m, c_invert: !m.c_invert }));
 
   // Cox PH's own options travel with a Cox fit only.
   const familyOpts = frailtyFitOptions(options.find((d) => d.id === distribution), fitOpts);
@@ -452,9 +456,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         return (
           <span className="step-wrap" key={label}>
             {i > 0 && <span className="sep" />}
-            <span className={`step${step === n ? " active" : ""}`}>
+            <span className={`step${step === n ? " active" : ""}`} aria-current={step === n ? "step" : undefined}>
               <span className="dot">{n}</span>
-              {label}
+              <span className="step-label">{label}</span>
             </span>
           </span>
         );
@@ -492,25 +496,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       </>
     );
   } else {
-    // The name sits beside Save: it is only needed to save (#311).
-    nav = (
-      <>
-        <button className="secondary" onClick={goBack} disabled={saving}>Back</button>
-        <input
-          className="fit-save-name"
-          type="text"
-          aria-label="Model name"
-          title="Model name"
-          value={name}
-          placeholder="Model name"
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSave()}
-        />
-        <button onClick={onSave} disabled={!name.trim() || saving}>
-          {saving ? "Saving…" : "Save model"}
-        </button>
-      </>
-    );
+    // The name and Save sit in the "isn't saved yet" banner above (#311).
+    nav = <button className="secondary" onClick={goBack} disabled={saving}>Back</button>;
   }
 
   return (
@@ -743,6 +730,21 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               )}
             </p>
           ) : null}
+          {problems.length === 0 && swapped && (
+            <div className="ds-flag-notice" role="status">
+              <span>
+                Most units are marked as still running ({swapped.code}).
+                If {swapped.code} means failed in your sheet, swap the flags.
+              </span>
+              <button type="button" className="secondary" onClick={swapFlags}>Swap the flags</button>
+            </div>
+          )}
+          {problems.length === 0 && !swapped && simple && mapping.c && mapping.c_invert && (
+            <p className="ds-flag-notice" role="status">
+              <span>Flags swapped: 1 = failed, 0 = still running.</span>
+              <button type="button" className="link" onClick={swapFlags}>Swap back</button>
+            </p>
+          )}
           {simple && (
             <button type="button" className="link ds-change" onClick={() => setSimple(false)}>
               Change columns
@@ -809,10 +811,23 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                   : "Save the model to come back to it."}
               </span>
             </div>
-            <button type="button" onClick={onSave} disabled={!name.trim() || saving}
-                    title={name.trim() ? undefined : "Name the model beside Save first"}>
-              {saving ? "Saving…" : file ? "Save this model and its data" : "Save this model"}
-            </button>
+            {/* The one primary action on the Result step: name it, save it. */}
+            <div className="fit-save-cta-actions">
+              <input
+                className="fit-save-name"
+                type="text"
+                aria-label="Model name"
+                title="Model name"
+                value={name}
+                placeholder="Model name"
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && onSave()}
+              />
+              <button type="button" onClick={onSave} disabled={!name.trim() || saving}
+                      title={name.trim() ? undefined : "Name the model beside Save first"}>
+                {saving ? "Saving…" : file ? "Save this model and its data" : "Save this model"}
+              </button>
+            </div>
           </div>
           {/* The model page's frame, inside the wizard: the answer line and
               "Use this model" (which saves the fit first) over the tabs. */}
@@ -821,7 +836,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             notice={(
               <div className="mf-wizard-head">
                 <AnswerLine parts={answerParts(result, { split })} />
-                <ModelNextSteps result={result} onUse={saveForUse} variant="primary" />
+                <ModelNextSteps result={result} onUse={saveForUse} />
               </div>
             )}
           >

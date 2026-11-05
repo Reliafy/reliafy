@@ -24,7 +24,6 @@ from backend.fitting import csv_error_message, header_guess, read_csv_capped, re
 from backend.schema import Dataset, DatasetPart, Model
 
 
-
 def _list_query(owner_id, shared=frozenset()):
     """Owner-scoped filter, optionally unioned with directly-shared ids."""
     query = {"owner_id": {"$in": access.owner_in(owner_id)}}
@@ -607,6 +606,14 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
 # from the columns; the "use for" line says which analyses take it.
 TAGS = ("Non-repairable", "Repairable", "Covariates", "Time-varying covariates", "Measurements")
 _CENSOR_NAME_RE = re.compile(r"(^c$|censor|status|failed|event|^c_)", re.IGNORECASE)
+# Flags that are 1 when the unit FAILED ("failed", "event", "status"), the
+# other way round from Reliafy's 0 = failed. The same rule as the fit
+# wizard's ``censorInverted`` (frontend/src/datasetGuess.js), so the Data
+# list counts failures the way a fit from the dataset reads them.
+_FAILED_NAME_RE = re.compile(
+    r"(is_?)?(fail|failed|failure|failures|event|status|dead|death|broken)(_?flag)?",
+    re.IGNORECASE,
+)
 _TIME_NAME_RE = re.compile(
     r"(^x$|^t$|^xl$|^xr$|^tl$|^tr$|hour|time|age|day|week|month|year|cycle|km|mile|start|stop|end|date|observ)",
     re.IGNORECASE)
@@ -788,7 +795,8 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
     noun = _noun(idc)
     n_units = int(df[unit].nunique(dropna=True)) if unit else len(df)
     units = f"{n_units:,} {_plural(noun, n_units)}"
-    failed = int((df[censor] == 0).sum()) if censor else None
+    failed_flag = 1 if censor and _FAILED_NAME_RE.fullmatch(censor.strip()) else 0
+    failed = int((df[censor] == failed_flag).sum()) if censor else None
     if "Measurements" in tags:
         return f"{units} · {len(df):,} readings"
     if "Repairable" in tags:

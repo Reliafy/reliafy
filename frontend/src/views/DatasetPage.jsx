@@ -147,9 +147,18 @@ export default function DatasetPage() {
       <PageHeader
         crumbs={[{ label: "Data", to: "/data" }]}
         title={ds ? itemName(ds) : "Dataset"}
-        badges={ds?.is_sample && <Chip>Sample</Chip>}
+        badges={ds && (ds.is_sample || ds.tags?.length > 0) && (
+          // The Data list's tags, so the page says what kind of data this is.
+          <>
+            {ds.is_sample && <Chip>Sample</Chip>}
+            {(ds.tags || []).map((t) => <Chip key={t}>{t}</Chip>)}
+          </>
+        )}
         meta={ds && (
           <>
+            {/* The list's count ("20 bearings · 14 failed") and time unit first. */}
+            {ds.summary && <>{ds.summary} · </>}
+            {ds.time_unit && <>{ds.time_unit}s · </>}
             {datasetMeta(ds)}
             {!ds.is_sample && <> · added {relativeTime(ds.created_at)}</>}
           </>

@@ -74,7 +74,8 @@ is enough to cover the time it takes a new part to arrive. The **Spares: how
 many to hold** card under the chart works that out on a forecast of your own:
 
 - **Lead time** — how long a reorder takes to arrive, in the forecast's periods.
-  It's the one field you must fill in.
+  It's the one field you must fill in. The line under the fields reads it back
+  in days, weeks or months, so 0.1 years can be checked against "5 weeks".
 - **Service level** — the chance of getting through the lead time without
   running out. **95%** is the default.
 - **Review every** — leave it at 0 to reorder as each part is used; set it if

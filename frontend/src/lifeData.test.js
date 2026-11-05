@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   EMPTY_MAPPING, columnFacts, guessMapping, statusMeaning, setStatusMeaning, encodeStatus,
   statusSummary, summaryParts, dataStepProblems, isSimplePaste, dataSplit,
-  countProblem, columnRoles, assignRole, roleSummary, roleChoices, roleLabel,
+  countProblem, columnRoles, assignRole, roleSummary, roleChoices, roleLabel, flagsLookSwapped,
 } from "./lifeData.js";
 
 // A CMMS export: id, hours, a text status, a site.
@@ -213,4 +213,17 @@ test("covariates are offered only where the model takes them; Ignore always", ()
   for (const opts of [{}, { covariates: true }, { timeVarying: "timeline" }]) {
     assert.equal(roleChoices(opts).at(-1), "");
   }
+});
+
+test("flagsLookSwapped: most units still running from a 0/1 column says which code to question", () => {
+  const m = { ...EMPTY_MAPPING, x: "time", c: "censored" };
+  assert.deepEqual(flagsLookSwapped(m, { failed: 6, running: 14, left: 0, interval: 0 }), { code: "1" });
+  assert.deepEqual(flagsLookSwapped({ ...m, c_invert: true }, { failed: 6, running: 14, left: 0, interval: 0 }), { code: "0" });
+  // Half or fewer running, no status column, a word map or other codes: nothing to say.
+  assert.equal(flagsLookSwapped(m, { failed: 10, running: 10, left: 0, interval: 0 }), null);
+  assert.equal(flagsLookSwapped(m, { failed: 14, running: 6, left: 0, interval: 0 }), null);
+  assert.equal(flagsLookSwapped({ ...m, c: "" }, { failed: 6, running: 14, left: 0, interval: 0 }), null);
+  assert.equal(flagsLookSwapped({ ...m, c_map: { Running: 1 } }, { failed: 6, running: 14, left: 0, interval: 0 }), null);
+  assert.equal(flagsLookSwapped(m, { failed: 6, running: 14, left: 2, interval: 0 }), null);
+  assert.equal(flagsLookSwapped(m, null), null);
 });

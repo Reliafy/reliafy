@@ -253,3 +253,41 @@ test("a sample diagram fits a phone's canvas", async ({ page }) => {
     expect(r).toBeLessThanOrEqual(box.x + box.width + 2);
   }
 });
+
+// A new diagram built from the Add block menu alone is connected: the first
+// block goes between Input and Output, "add after" keeps Output ahead of the
+// chain, and "add alongside" merges the pair through a junction into Output.
+test("a new diagram built with Add block is connected from Input to Output", async ({ page, problems }) => {
+  await open(page, "/systems/b");
+  const nodes = page.locator(".react-flow__node");
+  const menuItem = async (name) => {
+    await page.getByRole("button", { name: "Add block" }).click();
+    await page.locator(".ovm-item", { hasText: name }).click();
+  };
+  await menuItem(/^Component$/);
+  await expect(nodes.filter({ hasText: "Component 1" })).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  await menuItem("Add after (in series)");
+  await expect(nodes.filter({ hasText: "Component 2" })).toHaveCount(1);
+  await menuItem("Add alongside (in parallel)");
+  await expect(nodes.filter({ hasText: "Component 3" })).toHaveCount(1);
+  await expect(page.locator(".react-flow__node-knode")).toHaveCount(1);
+
+  // Output stays to the right of every block.
+  const right = await nodes.evaluateAll((els) => els.map((e) => ({
+    out: e.classList.contains("react-flow__node-output"), x: e.getBoundingClientRect().left,
+    r: e.getBoundingClientRect().right,
+  })));
+  const out = right.find((n) => n.out);
+  for (const n of right.filter((x) => !x.out)) expect(n.r).toBeLessThanOrEqual(out.x + 1);
+
+  // Validate: the blocks have no models yet, but nothing is left unconnected.
+  await page.getByRole("button", { name: "Validate" }).click();
+  const status = page.locator(".rbd-tb-menu").filter({ hasText: /Valid|Not valid|Nothing to check/ }).first();
+  await expect(status).toContainText(/Valid|Not valid/, { timeout: 15_000 });
+  await expect(status).not.toContainText("Nothing to check");
+  const check = page.locator(".rbd-check").first();
+  await expect(check).toBeVisible();
+  await expect(check).not.toContainText(/Not connected|Nothing feeds into|don't lead anywhere|not on any path/);
+  await expectHealthy(page, problems, { label: "new diagram built with Add block" });
+});

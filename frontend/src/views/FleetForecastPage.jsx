@@ -110,7 +110,7 @@ export default function FleetForecastPage() {
   };
   useEffect(load, [id]);
 
-  if (error && !fleet) return <div className="app"><LoadFailed error={error} to="/forecasts" label="See all forecasts" /></div>;
+  if (error && !fleet) return <div className="app"><LoadFailed header error={error} notFound="Forecast not found." to="/forecasts" label="See all forecasts" /></div>;
   if (!fleet || !settings) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const readOnly = fleet.read_only;
@@ -250,7 +250,7 @@ export default function FleetForecastPage() {
   const hideProb = showAnswer && !dirty && (forecast.per_item || []).length > 0
     && (forecast.per_item || []).every((r) => r.prob_any > 0.95);
 
-  // One line of assumptions under the header; Edit opens the form (#311).
+  // One line of assumptions under the header; "Change settings" opens the form (#311).
   // Missing usage keeps the form open: it's the next step.
   const formOpen = !readOnly && (editing || noUsage > 0);
   const methodText = repairable
@@ -315,7 +315,7 @@ export default function FleetForecastPage() {
           <span><span className="fleet-assume-k">Assumes</span> {assumptions.join(" · ")}</span>
           {!readOnly && noUsage === 0 && (
             <button className="secondary sm" onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
-              {editing ? "Done" : "Edit"}
+              {editing ? "Hide settings" : "Change settings"}
             </button>
           )}
         </div>
@@ -542,7 +542,10 @@ export default function FleetForecastPage() {
               <thead>
                 <tr>
                   <th>Item</th>
-                  <th className="num" style={{ width: 90 }}>Expected failures</th>
+                  <th className="num" style={{ width: 90 }}
+                      title="From the simulation, to 2 significant figures: items with the same inputs can still differ slightly.">
+                    Expected failures
+                  </th>
                   {!hideProb && <th className="num" style={{ width: 100 }}>{repairable ? "P(≥1 failure)" : "P(failure)"}</th>}
                   <th className="num" style={{ width: 130 }}>Current use{unit ? ` (${unit})` : ""}</th>
                   <th className="num" style={{ width: 120 }} title={`Usage per ${settingsWord}; blank uses the fleet's ${asText(settings.default_rate || 0)}`}>
@@ -569,7 +572,7 @@ export default function FleetForecastPage() {
                                  onChange={(e) => setItem(idx, "name", e.target.value)} />
                         )}
                       </td>
-                      <td className="num fleet-expected">{r.expected === undefined || itemFiguresStale ? "—" : formatNumber(r.expected)}</td>
+                      <td className="num fleet-expected">{r.expected === undefined || itemFiguresStale ? "—" : formatNumber(r.expected, { sig: 2 })}</td>
                       {!hideProb && (
                         <td className="num">{r.prob_any === undefined || itemFiguresStale ? "—" : formatPercent(r.prob_any)}</td>
                       )}

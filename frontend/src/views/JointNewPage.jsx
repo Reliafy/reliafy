@@ -258,6 +258,10 @@ export default function JointNewPage() {
           whether it failed, and any covariates) and its <strong>measurements</strong> (one row per reading: the unit's id,
           its age when read, and the value). Ages are since new, in one time unit, in both.
         </p>
+        <p className="hint" data-testid="joint-use-degradation">
+          Only readings, no failures? Use <Link to="/models/degradation">Degradation</Link> instead: it projects each
+          item's readings to a failure threshold.
+        </p>
         <DatasetPicker datasets={datasets} value={dataset} onPick={pick} />
         {dataset && (
           <div className="joint-tables">

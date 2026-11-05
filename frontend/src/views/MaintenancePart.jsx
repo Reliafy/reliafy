@@ -29,7 +29,7 @@ export default function MaintenancePart() {
   }, [id]);
   useEffect(() => { setMade(null); load(); }, [load]);
 
-  if (error && !part) return <div className="app"><LoadFailed error={error} to="/asset-register/parts" label="See all parts and stock" /></div>;
+  if (error && !part) return <div className="app"><LoadFailed header error={error} notFound="Part not found." to="/asset-register/parts" label="See all parts and stock" /></div>;
   if (!part || !structure || !used) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const lines = structure.tree.children || [];
