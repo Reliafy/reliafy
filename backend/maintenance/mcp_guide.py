@@ -583,7 +583,10 @@ each, the life data of everything fitted there pooled (x days, c 0 failed / 1 ce
 class_life_data), and the failure reports there and below with the item's serial); list.items_overview (every \
 item with its product, item class, position path, status and open reports; product_id, item_class_id, q, limit, \
 offset). get.item and get.position say which product an item or position belongs to.
-- products.clear: the tree is a plain tree again; refused while items built from it are in use."""),
+- products.clear: the tree is a plain tree again; refused while items built from it are in use.
+- products.add_sample: a worked example to explore (an invented quadcopter: its design with a scored FME(C)A, its \
+part and BOM, three items built, a replaced motor, two failure reports, and an RBD whose rates are placeholders, \
+said so in its name); once unless again is true."""),
 }
 
 # Graph queries in Cypher (#423): only for the people allowed them

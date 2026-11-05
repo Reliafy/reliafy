@@ -313,6 +313,17 @@ def test_cli_adds_the_sample_truck(server, capsys):
     assert sheet["rollup"]["modes"] == 5
 
 
+def test_cli_adds_the_sample_product(server, capsys):
+    """maintenance products.add_sample from the command line: once, then --again for another copy."""
+    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
+    made = json.loads(out)
+    assert code == 0 and made["added"] and [i["serial"] for i in made["items"]] == ["0007", "0008", "0009"]
+    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--json")
+    assert code == 0 and json.loads(out)["added"] is False
+    code, out, _ = run(capsys, "maintenance", "products.add_sample", "--again", "--json")
+    assert code == 0 and json.loads(out)["product"]["name"] == "Survey quadcopter (sample 2)"
+
+
 def test_cli_and_client_add_a_worksheet_to_a_position(server, capsys):
     """An FMEA / RCM worksheet (CSV here) onto a position: the command, then the
     client's import_excel, which adds nothing the second time."""

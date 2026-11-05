@@ -51,6 +51,9 @@ const FmeaPrint = lazy(() => import("./views/FmeaPrint.jsx"));
 const MaintenanceWorkOrder = lazy(() => import("./views/MaintenanceWorkOrder.jsx"));
 const MaintenanceItem = lazy(() => import("./views/MaintenanceItem.jsx"));
 const AssetExplorer = lazy(() => import("./views/AssetExplorer.jsx"));
+const MaintenanceProducts = lazy(() => import("./views/MaintenanceProducts.jsx"));
+const ProductDetail = lazy(() => import("./views/MaintenanceProducts.jsx").then((m) => ({ default: m.ProductDetail })));
+const MaintenanceItemsList = lazy(() => import("./views/MaintenanceItemsList.jsx"));
 const MaintenanceLocation = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceLocation })));
 const MaintenanceClasses = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceClasses })));
 const MaintenancePartsPage = lazy(() => import("./views/MaintenanceLists.jsx").then((m) => ({ default: m.MaintenanceParts })));
@@ -199,6 +202,10 @@ export default function AppShell() {
             {/* Operate: the assets as maintained (Reliafy Maintenance), and
                 their maintenance. ("/assets" is where the server keeps the
                 build's files, so the register lives at /asset-register.) */}
+            {/* Products (the designs) and Items (every serial-numbered thing). */}
+            {maintenanceEnabled && <Route path="/products" element={<MaintenanceProducts />} />}
+            {maintenanceEnabled && <Route path="/products/:id" element={<ProductDetail />} />}
+            {maintenanceEnabled && <Route path="/items" element={<MaintenanceItemsList />} />}
             {maintenanceEnabled && <Route path="/asset-register" element={<MaintenanceAssets />} />}
             {maintenanceEnabled && <Route path="/asset-register/explorer" element={<AssetExplorer />} />}
             {maintenanceEnabled && <Route path="/asset-register/positions/:id" element={<MaintenancePosition />} />}

@@ -121,6 +121,15 @@ class ProductOps:
                     queue.append(c["id"])
         return out
 
+    def _product_position_ids(self) -> set[str]:
+        """Every position in a product's design or in an item's tree built from one (the
+        Assets list leaves them out: they're under Products and Items)."""
+        out = {p["id"] for p in self.s.nodes(self.org, "Position") if p.get("design_position_id")}
+        for top in self.s.nodes(self.org, "Position"):
+            if top.get("design") and self._parent(top["id"]) is None:
+                out |= {p["id"] for p in self._tree_positions(top["id"])}
+        return out
+
     def _live_design(self, product_id) -> dict:
         node = self._get(str(product_id or ""), "Position")
         if not node.get("design"):

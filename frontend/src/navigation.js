@@ -63,10 +63,14 @@ export const STRUCTURE_PATH = "/systems/structure";
 // more specific one. A child is current on its own page and the pages under
 // it, or under any of its `also` (a non-repairable model's page is under
 // /models/m, not /models/life).
+const ASSETS_PATH = "/asset-register";
+
 export const ENTRIES = [
   { id: "home", label: "Home", to: "/home" },
 
-  // (Products, the designs, goes here: "products" is reserved in ROLES.)
+  // Products: the designs (each a functional structure and its part), with
+  // the items built from each. One entry, no children.
+  { id: "products", label: "Products", to: "/products", needs: "maintenance" },
 
   // Assets: the places you look after (its landing page), the Explorer (one
   // tree pane over the whole register), Parts and stock, Classes, and every
@@ -76,8 +80,11 @@ export const ENTRIES = [
     match: ["/asset-register", STRUCTURE_PATH],
   },
 
-  // (Items, every serial-numbered instance, goes here: "items" is reserved in
-  // ROLES. Its /asset-register/items pages will win by the longest match.)
+  // Items: every serial-numbered thing, and each item's own page
+  // (/asset-register/items/:id wins over Assets by the longest match).
+  // (The bare /asset-register/items is an earlier address that redirects; its
+  // pages below it are each item's own.)
+  { id: "items", label: "Items", to: "/items", needs: "maintenance", match: ["/items", `${ASSETS_PATH}/items`] },
 
   {
     id: "maintenance", label: "Maintenance", to: "/maintenance", landingNeeds: "maintenance",
@@ -142,9 +149,8 @@ export const ENTRIES = [
   { id: "agent", label: "Reliability Agent", to: "/agent", needs: "agent" },
 ];
 
-// Top-level ids a role may name before their entries exist (Products and
-// Items come in a later change).
-export const RESERVED_IDS = ["products", "items"];
+// Top-level ids a role may name before their entries exist (none now).
+export const RESERVED_IDS = [];
 
 // Every entry with a page (no groups), at any level, in menu order.
 export const flatEntries = (entries) => entries.flatMap((e) => (e.entries ? flatEntries(e.entries) : [e]));

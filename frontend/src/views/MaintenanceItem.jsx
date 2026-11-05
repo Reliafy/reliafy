@@ -26,8 +26,10 @@ import { ItemKindCard, useKinds } from "../components/MaintenanceItemClasses.jsx
 import { ConditionsCard } from "../components/MaintenanceConditions.jsx";
 import { ItemPartStructureCard } from "../components/MaintenanceStructure.jsx";
 import "./Maintenance.css";
+import "./MaintenanceProducts.css";
 import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import { ITEMS_PATH, itemTreePath, productPath } from "../products.js";
 
 const ITEM_DATES = [
   { key: "purchase_date", label: "Bought" },
@@ -60,13 +62,17 @@ export default function MaintenanceItem() {
     <div className="app">
       <PageTitle name={item?.name} />
       <PageHeader
-        crumbs={[{ label: "Assets", to: "/asset-register" }, { label: EXPLORER_LABEL, to: explorerPath("items", { sel: item.id }) }]}
+        // An item's page is under Items; one built from a product names it, and its tree.
+        crumbs={[{ label: "Items", to: ITEMS_PATH },
+          item.product ? { label: item.product.name, to: productPath(item.product.id, "items") }
+            : { label: EXPLORER_LABEL, to: explorerPath("items", { sel: item.id }) }]}
         title={item.name}
         meta={[item.manufacturer, item.model, item.serial && `serial ${item.serial}`].filter(Boolean).join(" · ") || "Item"}
         id={item.id}
         actions={
           <>
             {/* A fitted item is where its position is: only an item that isn't fitted is placed. */}
+            {item.product?.top_position_id && <Link className="pp-tree-link" to={itemTreePath(item.product.top_position_id)}>Its tree</Link>}
             {!item.fitted_to && <button className="secondary" onClick={() => setModal("place")}>Place at a location</button>}
             <button className="secondary" onClick={() => setModal("move")}>Move to a position</button>
             <button className="secondary" onClick={() => setModal("more")}>Dates, cost and warranty</button>

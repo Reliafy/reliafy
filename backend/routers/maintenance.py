@@ -916,6 +916,18 @@ def add_sample_uav(body: dict | None = Body(None), m: Maintenance = Depends(main
     return _run(templates.add_sample_uav, m, bool((body or {}).get("again")))
 
 
+@router.post("/sample-product")
+def add_sample_product(body: dict | None = Body(None), session=Depends(get_session),
+                       m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Add the sample product: a quadcopter's design (every failure mode scored as an FME(C)A), its part with
+    a bill of materials, three items built from it with two failure reports, and a flight-critical RBD with
+    placeholder failure rates. When a copy is there already nothing is added (added false) unless again is
+    true."""
+    from backend.maintenance import templates
+
+    return _run(templates.add_sample_product, m, session, bool((body or {}).get("again")))
+
+
 @router.patch("/tasks/{task_id}")
 def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Set when it was last done, and/or change its name, interval or unit."""

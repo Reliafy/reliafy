@@ -406,6 +406,8 @@ PRODUCTS: Table = {
     "build": ("product_id serial", "rev name dry_run", """Build an item from a product: a copy of its design tree
         named by the serial, the item (its part, this serial) fitted at the top, every position linked to its
         design position. dry_run (default true) lists the paths it would make."""),
+    "add_sample": ("", "again", """Add the sample product (a quadcopter: design with a scored FME(C)A, part and
+        BOM, three items built, two failure reports, an RBD with placeholder rates); once unless again is true."""),
 }
 
 TASKS: Table = {
@@ -1735,7 +1737,7 @@ def register() -> None:
                 "A product's id: its design's top position (maintenance list.products)."))] = None,
             serial: str | None = None,
             dry_run: Annotated[bool | None, Field(description="build: only list what it would make (default true).")]
-            = None) -> dict[str, Any]:
+            = None, again: bool | None = None) -> dict[str, Any]:
         """Products (what the user designs and builds): a product is a design tree (its functional
         hierarchy) with its part (the bill of materials); items are built from it by serial. Read with
         maintenance get.product / get.design_rollup and list.products / product_items / items_overview.
@@ -1747,6 +1749,10 @@ def register() -> None:
             return run(m.declare_design, position_id, part_id, rev)
         if action == "clear":
             return run(m.clear_design, product_id)
+        if action == "add_sample":
+            from backend.maintenance import templates
+
+            return run(templates.add_sample_product, m, _db(), bool(again))
         return run(m.build_item, product_id, serial, rev, name, _d(dry_run, True))
 
     PackageTasks = Annotated[list[dict[str, Any] | str] | None, Field(description=(

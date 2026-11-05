@@ -10175,6 +10175,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
         out = {r["id"]: {"id": r["id"], "name": r["name"], "description": r.get("description", ""),
                          "locations": len(self._location_ids_in(r["id"])) - 1, **blank()} for r in roots}
         not_placed = {**blank(), "position_ids": []}
+        # Products' designs and the items built from them are listed under Products and
+        # Items, not as assets: their positions, and the work and tasks on them, are left out.
+        products = self._product_position_ids()
 
         def bucket(loc: dict | None) -> dict:
             if not loc:
@@ -10183,7 +10186,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
             return out.get(path[0]["id"] if path else loc["id"], not_placed)
 
         for p in self.s.nodes(self.org, "Position"):
-            if p.get("retired"):
+            if p.get("retired") or p["id"] in products:
                 continue
             loc = self._located(p["id"])[0]
             b = bucket(loc)
@@ -10198,11 +10201,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
                 bucket(placed[1])["items"] += 1
         for w in self.s.nodes(self.org, "WorkOrder"):
             subject = w["status"] in OPEN_STATUSES and self.s.out(self.org, w["id"], "ON")
-            if subject:
+            if subject and subject[0]["id"] not in products:
                 bucket(self._wo_area(subject[0]))["open_work_orders"] += 1
         for task in self.s.nodes(self.org, "Task"):
             subject = not task.get("retired") and _subject(self.s, self.org, task)
-            if not subject or subject.get("retired"):
+            if not subject or subject.get("retired") or subject["id"] in products:
                 continue
             view = self._task_view(task)
             if view["next_due"] and view["next_due"] <= until:
@@ -11218,6 +11221,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
             "rbd_id": p.get("rbd_id"),
             # A product's design (on its top position), or what a built position implements.
             "design": self._design_view(p), "implements": self._provenance(p),
+            # The product whose design this position is in (none for a plain or built tree).
+            "in_design": (lambda root: root and {"id": root["id"], "name": root["name"]})(self._design_root_of(id)),
             "photos": self.photos_of(id),
             "documents": self.documents_of(id),
             "parts_list": self._parts_list(id),

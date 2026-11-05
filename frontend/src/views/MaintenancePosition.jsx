@@ -53,6 +53,7 @@ import { ConditionsCard, ConnectionConditions } from "../components/MaintenanceC
 import "./Maintenance.css";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import { productPath } from "../products.js";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -106,6 +107,9 @@ export default function MaintenancePosition() {
           <h2>Fitted</h2>
           {p.fitted ? (
             <button className="secondary" onClick={() => setModal("remove")}>Remove</button>
+          ) : p.in_design ? (
+            // A product's design: nothing is fitted here; its items are built from it.
+            <Link to={productPath(p.in_design.id, "items")}>The items built from {p.in_design.name}</Link>
           ) : (
             <button onClick={() => setModal("fit")}>Fit an item</button>
           )}

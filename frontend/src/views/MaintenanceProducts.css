@@ -1,0 +1,67 @@
+/* Products and Items (MaintenanceProducts.jsx, MaintenanceItemsList.jsx). */
+
+/* A product's page: the header and tabs over the tab's body; on Functional
+   structure the Explorer fills the rest, edge to edge as on its own page. */
+.pp-head {
+  padding-bottom: 0;
+}
+.pp-head .pp-tabs {
+  margin-top: 8px;
+}
+.pp-body {
+  padding-top: 16px;
+}
+.pp-said {
+  margin: 4px 0 8px;
+  color: var(--ok, var(--accent));
+  font-weight: 600;
+}
+
+/* The lists: names wrap rather than push the table wide. */
+.pp-table td {
+  vertical-align: top;
+}
+.pp-links {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+}
+.pp-links li + li {
+  margin-top: 4px;
+}
+
+/* Build an item: the positions it will make, in a box that scrolls. */
+.pp-preview {
+  margin-top: 8px;
+}
+.pp-paths {
+  max-height: 220px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px 8px 8px 24px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+/* Items: the filters wrap on a narrow screen. */
+.pp-filters {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pp-filter select {
+  max-width: 220px;
+}
+
+@media (max-width: 720px) {
+  .pp-filter,
+  .pp-filter select {
+    max-width: 100%;
+  }
+}
+
+/* An item's page: the link to its tree among the header's buttons. */
+.pp-tree-link {
+  align-self: center;
+  margin-right: 4px;
+}

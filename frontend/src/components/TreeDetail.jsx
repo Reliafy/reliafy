@@ -189,7 +189,7 @@ const TreeDetail = forwardRef(function TreeDetail({
       <div className="td-body" role={tabs.length > 1 ? "tabpanel" : undefined} id={tabs.length > 1 ? "td-panel" : undefined}
            aria-labelledby={tabs.length > 1 ? `td-tab-${shown}` : undefined}>
         {shown === "reports" && reports
-          ? <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} />
+          ? (reports?.rollup ? reports.rollup(row) : <FailureReportsPanel row={row} display={display} today={today} version={version} reports={reports} />)
           : shown === "signals"
           ? <SignalsPanel row={row} />
           : <Summary row={row} display={display} today={today} onSelect={onSelect} version={version} actions={actions} />}
