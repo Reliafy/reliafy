@@ -50,6 +50,9 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(panel(page)).toContainText("No failure reports here yet");
   await expect(panel(page).getByRole("button", { name: "How failure reports work" })).toBeVisible();
   await expect(panel(page)).toContainText("0 open · 0 in all, at this position");
+  // Nothing to narrow yet: no stage chips or filters, just the way to add one.
+  await expect(panel(page).getByRole("group", { name: "Stage" })).toHaveCount(0);
+  await expect(panel(page).getByRole("searchbox", { name: "Search failure reports" })).toHaveCount(0);
 
   // Right-click the pump: Add failure report… is after New position inside.
   await row(page, `Report pump ${tag}`).locator(".tp-nm").click({ button: "right" });

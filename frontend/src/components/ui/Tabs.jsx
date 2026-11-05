@@ -13,6 +13,8 @@
 //   label     accessible name of the row
 //   className classes for the row's frame (e.g. "rbd-tabs")
 //   idPrefix  ids for the tabs and their panel (optional)
+//   wholeTabs on a row that scrolls, the active tab's reveal starts on a whole
+//            tab (no tail of one cut by the chevron); off unless asked for
 import { useRef } from "react";
 import ScrollCue from "./ScrollCue.jsx";
 import { nextTabIndex } from "../../modelFrame.js";
@@ -20,7 +22,7 @@ import { nextTabIndex } from "../../modelFrame.js";
 export const tabId = (prefix, id) => `${prefix}-tab-${id}`;
 export const panelId = (prefix) => `${prefix}-panel`;
 
-export default function Tabs({ tabs, value, onChange, label, className, idPrefix }) {
+export default function Tabs({ tabs, value, onChange, label, className, idPrefix, wholeTabs = false }) {
   const refs = useRef({});
   // The tab in the Tab order: the active one, or the first when none is.
   const focusable = tabs.some((t) => t.id === value) ? value : tabs[0]?.id;
@@ -42,6 +44,7 @@ export default function Tabs({ tabs, value, onChange, label, className, idPrefix
       arrowLabel="Scroll tabs"
       reveal=".tab.active"
       revealKey={value}
+      wholeItems={wholeTabs ? ".tab" : undefined}
     >
       {tabs.map((t, i) => (
         <button

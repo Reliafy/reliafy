@@ -4,7 +4,7 @@ import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { BasisInfo, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
 import useOutlineNav from "./useOutlineNav.js";
-import { ARRANGEMENTS, CHIPS, PANE, clampWidth, markersOf, nextGutter } from "../assetTree.js";
+import { ARRANGEMENTS, CHIPS, CHIP_MARK, PANE, clampWidth, markersOf, nextGutter } from "../assetTree.js";
 import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensItem } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN } from "../rcmWorksheet.js";
@@ -293,6 +293,17 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
   }
   const editCol = table.editing?.key === r.key ? table.editing.col : null;
   const cr = cellRow(r);
+  // A parent row's roll-up (the FME(C)A's "3 of 5 scored"): in the first of the
+  // leading text columns, running on over the blank ones beside it.
+  const rollup = table.rollup && r.type !== "mode" ? table.rollup.text(cr) : "";
+  let rollRun = 0;
+  if (rollup) {
+    for (const c of table.cols) {
+      if (!table.rollup.ids.has(c.id)) break;
+      rollRun += 1;
+    }
+  }
+  const rollW = rollRun ? table.cols.slice(0, rollRun).reduce((t, c) => t + table.widths[c.id], 0) : 0;
   return (
     <div {...common}>
       <div className="tt-tree" role="rowheader" style={{ width: table.treeW }}
@@ -310,8 +321,15 @@ function Row({ v, r, top, height, open, focused, dim, pinned, phone, query, onTo
              style={{ width: table.cols.reduce((t, c) => t + table.widths[c.id], 0) }}>
           {NO_FUNCTIONS}
         </div>
-      ) : table.cols.map((c) => {
+      ) : table.cols.map((c, ci) => {
         const rcmRow = isRcmRow(r);
+        if (rollRun && ci < rollRun) {
+          return (
+            <div key={c.id} role="gridcell" className={"rw-c" + (ci === 0 ? " tt-rollup-c" : "")} style={{ width: table.widths[c.id] }}>
+              {ci === 0 && <span className="rw-sum tt-rollup-t" style={{ width: rollW - 16 }} title={rollup}>{rollup}</span>}
+            </div>
+          );
+        }
         const can = rcmRow && !table.readOnly && c.edit && c.can(cr);
         // A failure mode's Task cell drags its (first) task to another failure mode or a position.
         const task = drag && !pinned && c.id === "task" && r.type === "mode" && editCol !== c.id ? drag.taskOf(r) : null;
@@ -354,7 +372,7 @@ export default function TreePane({
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
   onNew, newLabel, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
-  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false,
+  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, statusTitle,
 }) {
   const H = phone ? (tableIn ? 54 : 44) : 30;
   const wide = !phone;
@@ -543,7 +561,7 @@ export default function TreePane({
   const levelsOn = mode !== "flat" && mode !== "items";
   // A tab's own chips (the RCM's, the FME(C)A's) show on that tab only.
   const chipList = CHIPS.filter((c) => (!c.positionsOnly || mode !== "items") && (!c.rcmOnly || (table && (!c.tab || c.tab === (table.tab || "rcm")))));
-  const status = <p className="tp-status" role="status" title={statusText || undefined}>{statusText}</p>;
+  const status = <p className="tp-status" role="status" title={statusTitle || statusText || undefined}>{statusText}</p>;
   const titleRow = (
     <div className="tp-title-row">
       {wide ? <div className="tt-title"><h2 className="tp-title">{title}</h2>{status}</div> : <h2 className="tp-title">{title}</h2>}
@@ -557,15 +575,19 @@ export default function TreePane({
         arrange={arrangeLocked ? null : { value: mode, options: ARRANGEMENTS, onChange: onMode }}
         note={arrangeLocked}
         levels={levelsOn ? { value: level, onLevel, onCloseAll } : null}
-        chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id) }))}
+        // Each Show only filter with the marker it matches in the tree: the
+        // markers' key (the "not analysed" one only where it shows).
+        chips={chipList.map((c) => ({ ...c, on: chips.includes(c.id), mark: c.id !== "unanalysed" || rcmMarks ? CHIP_MARK[c.id] : null }))}
+        markNote="A row's markers count what's on it; dashed ones count everything inside it too."
         onChip={(id) => onChips(chips.includes(id) ? chips.filter((x) => x !== id) : [...chips, id])}
         changed={changed} onReset={onReset} actions={menuActions} />
-      {/* Folding is for the Summary tab; on the RCM tab its place is kept, so
-          the + and ⋯ beside it don't move when the tab changes. */}
+      {/* Folding is for the Summary tab; on the RCM and FME(C)A tabs the tree
+          is the table's first column, so the button stays, greyed, and says
+          why: the pane's header looks the same on every tab. */}
       {wide && (
         <button type="button" className={"tp-icon-btn tp-fold" + (table ? " is-off" : "")} onClick={() => onCollapse(true)}
-                disabled={!!table} tabIndex={table ? -1 : undefined} aria-hidden={table ? "true" : undefined}
-                aria-label="Fold the tree away" aria-expanded="true" title="Fold the tree away (Ctrl+\)">«</button>
+                disabled={!!table} aria-label="Fold the tree away" aria-expanded="true"
+                title={table ? `The tree is the first column of the ${table.what || "RCM"} table here, so it stays open` : "Fold the tree away (Ctrl+\\)"}>«</button>
       )}
     </div>
   );
@@ -573,7 +595,7 @@ export default function TreePane({
     <label className="tp-filter">
       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" fill="none" /><path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
       <input type="search" value={query} onChange={(e) => onQuery(e.target.value)}
-             placeholder={table ? "Filter: names, failures, effects, tasks" : mode === "items" ? "Filter: name, serial, make, model" : "Filter: name, tag, item, serial"}
+             placeholder={table ? "Filter: name, tag, failures, tasks" : mode === "items" ? "Filter: name, serial, make, model" : "Filter: name, tag, item, serial"}
              aria-label={table ? "Filter the tree and its RCM" : "Filter the tree"} />
     </label>
   );
