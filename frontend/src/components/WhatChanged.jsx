@@ -19,9 +19,14 @@ export function ChangesSentence({ sentence, as: Tag = "p", className = "wc-sente
 }
 
 // One list of changes, most important first.
+// When every row's kind is a chip (Needs attention), the kind column is as
+// wide as the longest chip, not the text column's 168 px.
 export function ChangeList({ rows }) {
+  const chips = rows.length > 0 && rows.every((r) => r.tone);
+  const widest = chips ? Math.max(...rows.map((r) => String(r.kind).length)) : 0;
   return (
-    <ul className="wc-list">
+    <ul className={"wc-list" + (chips ? " wc-list-chips" : "")}
+        style={chips ? { "--wc-kind-w": `calc(${widest}ch + 20px)` } : undefined}>
       {rows.map((r) => (
         <li key={r.key}>
           <Link className="wc-row" to={r.url}>
