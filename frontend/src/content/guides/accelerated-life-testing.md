@@ -46,7 +46,7 @@ the same.
 
 ## Choosing the model
 
-Go to **Model → Accelerated life → New model**. The flow asks for the
+Go to **Modelling → Models → Accelerated life → New model**. The flow asks for the
 **model before the data**, which is deliberate — the life-stress relationship
 determines how many stress columns you'll be mapping.
 
@@ -134,7 +134,7 @@ how far beyond the tested range your use stress lies.
 A fit also tells you how to run the next test better. On a saved one-stress
 model, **Plan the next test** (in the **⋯** menu, and under Diagnostics' last
 check) opens
-**Strategy → Test planning** on the
+**Decisions → Strategy → Test planning** on the
 [Accelerated test](/strategy/test-planning/accelerated) tab, with the fit's
 life-stress model, its coefficients, its shape and units already filled in, and
 the highest stress you tested as the **Highest test stress**.

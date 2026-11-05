@@ -535,8 +535,7 @@ h6 {
 }
 
 
-/* Menu sections: Design, Operate, Analyse, each under a small heading;
-   a hairline on the collapsed rail. */
+/* The menu's entries; .side-section is a small heading (Account). */
 .side-group {
   display: flex;
   flex-direction: column;
@@ -614,6 +613,7 @@ h6 {
 }
 
 .side-subitem {
+  display: block;
   padding: 0.35rem 0.7rem;
   font-size: var(--fs-13);
   color: var(--muted);
@@ -629,6 +629,17 @@ h6 {
 .side-subitem.active {
   color: var(--acc-d);
   font-weight: 600;
+}
+
+/* The third level: a group's current entry's children (Models › Repairable). */
+.side-grandchildren {
+  margin: 0.05rem 0 0.2rem 0.7rem;
+}
+
+.side-item:focus-visible,
+.side-subitem:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: -2px;
 }
 
 /* Strategy tools */

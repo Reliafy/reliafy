@@ -1,4 +1,4 @@
-// "Isolate ›" in the Explorer's row menus (Operate › Assets › Explorer): a
+// "Isolate ›" in the Explorer's row menus (Assets › Explorer): a
 // one-off change to what's open. Every other branch closes (its rows still on
 // show), the rows above stay open, and the row opens 1, 2 or 3 levels below
 // it, or all of them; it's picked and in view; nothing is hidden, the address

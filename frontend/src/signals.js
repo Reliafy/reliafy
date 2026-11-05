@@ -1,4 +1,4 @@
-// Signal channels (Operate › Assets › Explorer › Signals): the small pieces of
+// Signal channels (Assets › Explorer › Signals): the small pieces of
 // logic behind the spectrum chart and its player, kept apart from the screen so
 // they can be tested.
 

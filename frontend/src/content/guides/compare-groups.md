@@ -119,7 +119,7 @@ would count one unit many times. Fit a
 
 ## Compare two items
 
-**Strategy → Compare two models** puts **Item A** against **Item B**. Each side
+**Decisions → Strategy → Compare two models** puts **Item A** against **Item B**. Each side
 is either a **Model** (a saved non-repairable model, or one you enter) or **Data
 (non-parametric)**, a CSV of times with an optional censor column. Name each
 side, set the **Unit**, and press **Compare**.

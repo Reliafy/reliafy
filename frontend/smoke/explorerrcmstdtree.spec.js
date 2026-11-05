@@ -1,5 +1,5 @@
 // Performance standards as a level of the RCM tree, on the Explorer's RCM tab
-// (Operate › Assets › Explorer › RCM): position › function › standard ›
+// (Assets › Explorer › RCM): position › function › standard ›
 // functional failure › failure mode. Each standard is a row under its
 // function, the functional failures that breach it nested under it; the ones
 // that breach none sit under a muted "No standard" row; a function's one

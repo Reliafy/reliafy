@@ -21,7 +21,7 @@ device's non-repairable model and the availability you need from it.
 
 ## Enter the device's life
 
-Open **Strategy → Failure finding**. Under **Non-repairable model of the hidden
+Open **Decisions → Strategy → Failure finding**. Under **Non-repairable model of the hidden
 function**, choose where the non-repairable model comes from:
 
 - **Saved model** — a fit from your own failure data.

@@ -69,7 +69,14 @@ import { SAMPLES, SAMPLE_TRUCK_LABEL, SAMPLE_UAV_LABEL, addSample as addSampleOf
 import "./Maintenance.css";
 import "./AssetExplorer.css";
 
-// Operate › Assets › Explorer: one page, one tree pane over the whole
+// The register's other pages, from the tree's ⋯ menu (Assets has no
+// children in the menu).
+const REGISTER_LINKS = (navigate) => [
+  { id: "parts", label: "Parts and stock", onSelect: () => navigate("/asset-register/parts") },
+  { id: "classes", label: "Classes", onSelect: () => navigate("/asset-register/classes") },
+];
+
+// Assets › Explorer: one page, one tree pane over the whole
 // register, arranged by positions, locations or items, or as a flat list of
 // positions (Arrange by switches, and the address follows: ?arrange=). The
 // tree is a second-level menu beside the site menu; the panel beside it shows
@@ -1507,11 +1514,11 @@ export default function AssetExplorer() {
         level={level}
         changed={changed}
         onReset={resetView}
-        menuActions={data && mode !== "locations" && mode !== "items" ? [
+        menuActions={[...(data && mode !== "locations" && mode !== "items" ? [
           { id: "import", label: "Import from a spreadsheet", onSelect: () => setModal("import") },
           { id: "sample", label: SAMPLE_TRUCK_LABEL, onSelect: () => addSample("truck") },
           { id: "sample-uav", label: SAMPLE_UAV_LABEL, onSelect: () => addSample("uav") },
-        ] : []}
+        ] : []), ...REGISTER_LINKS(navigate)]}
         notice={notice}
         statusText={statusText}
         statusTitle={rcmOn && !filter && rcm && !rcmError ? `${statusText} · ${what} is by position` : undefined}

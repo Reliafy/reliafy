@@ -1,6 +1,8 @@
 // Earlier addresses of the app's pages, and where each one lives now.
 //
-// The menu moved to Design · Operate · Analyse: Modelling became Models and
+// The menu moved to Design · Operate · Analyse, and then to one flat list
+// (Home · Assets · Maintenance · Modelling · Decisions; no address moved for
+// that): Modelling became Models and
 // Data, RBDs became Systems, Fleet became Forecasts (its degradation tracking
 // moved to Models, then to Operate › Risk as Condition monitoring), the RCM
 // studies became the RCM on the asset tree (Assets › Explorer), and Reliafy
@@ -91,6 +93,10 @@ export const MOVED = [
   { path: "/asset-register/positions", to: "/asset-register/explorer?arrange=positions" },
   { path: "/asset-register/items", to: "/asset-register/explorer?arrange=items" },
   { path: "/asset-register/locations", to: "/asset-register/explorer?arrange=locations" },
+  // The menu's preview-only placeholders for fault trees and FMECA: the
+  // working versions are an RBD's Fault tree tab and the Explorer's FME(C)A tab.
+  { path: "/systems/fault-trees", to: "/systems/rbds" },
+  { path: "/systems/fmeca", to: "/asset-register/explorer?tab=fmea" },
 ];
 
 // Where an old address goes: `pathname` (no query or hash) matched against

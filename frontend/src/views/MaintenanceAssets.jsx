@@ -9,11 +9,14 @@ import { NewLocationModal } from "./MaintenanceLists.jsx";
 import {
   NOT_PLACED_PATH, POSITIONS_PATH, assetPath, assetsSummary, dueText, insideText, openWorkPath, placePath,
 } from "../maintenanceAssets.js";
+import { EXPLORER_LABEL, EXPLORER_PATH } from "../navigation.js";
 import "./Maintenance.css";
 
-// Operate › Assets: the assets themselves, the top-level places (a house, a
+// Assets (the menu entry's landing page): the assets themselves, the top-level places (a house, a
 // site, a plant), each with what it holds anywhere inside it. The positions at
 // no place are one row at the end, opening the Explorer filtered to them.
+// Assets has no children in the menu, so the register's other pages (the
+// Explorer, Parts and stock, Classes) are linked from here.
 export default function MaintenanceAssets() {
   const navigate = useNavigate();
   const [view, setView] = useState(null);
@@ -33,6 +36,11 @@ export default function MaintenanceAssets() {
     <div className="app">
       <SectionHeader title="Assets" purpose="The places you look after, and everything at each one."
                      primary={newAsset} />
+      <nav className="assets-links" aria-label="The asset register">
+        <Link to={EXPLORER_PATH}>{EXPLORER_LABEL}</Link>
+        <Link to="/asset-register/parts">Parts and stock</Link>
+        <Link to="/asset-register/classes">Classes</Link>
+      </nav>
       {error && <div className="card error">{error}</div>}
       {view === null ? (
         !error && <div className="card empty">Loading…</div>

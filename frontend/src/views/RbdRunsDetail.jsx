@@ -11,7 +11,7 @@ import { unitInText } from "../components/unitText.js";
 import { formatNumber } from "../format.js";
 import { byText, jobStatusLine, runsPath, runtimeVsQuote, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
-import { RBDS_PATH } from "../navigation.js";
+import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { PageTitle } from "../components/usePageTitle.js";
 
 const when = (iso) =>
@@ -89,7 +89,7 @@ export default function RbdRunsDetail() {
   if (!run) {
     return (
       <div className="app rbd-runs">
-        <PageHeader crumbs={[{ label: "Systems", to: RBDS_PATH }, { label: "Simulation runs", to: runsPath() }]} title="Simulation run" />
+        <PageHeader crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: "Simulation runs", to: runsPath() }]} title="Simulation run" />
         {error ? <LoadFailed error={error} to={runsPath()} label="See all simulation runs" /> : <div className="card empty">Loading…</div>}
       </div>
     );
@@ -123,7 +123,7 @@ export default function RbdRunsDetail() {
     <div className="app rbd-runs">
       <PageTitle name={run?.rbd_name} />
       <PageHeader
-        crumbs={[{ label: "Systems", to: RBDS_PATH }, { label: "Simulation runs", to: runsPath(run.rbd_id) }]}
+        crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: "Simulation runs", to: runsPath(run.rbd_id) }]}
         title={run.rbd_name || "Simulation run"}
         badges={
           <>

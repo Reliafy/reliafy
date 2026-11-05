@@ -1,4 +1,4 @@
-// Operate › Assets: the assets are the top-level places (a house, a site, a
+// Assets: the assets are the top-level places (a house, a site, a
 // plant), each counting what's anywhere inside it. Positions at no place stay
 // reachable from one row at the end of the list, which opens the Explorer
 // arranged by positions, filtered to them (AssetExplorer's ?place=none).

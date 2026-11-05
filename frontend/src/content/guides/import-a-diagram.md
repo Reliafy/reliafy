@@ -19,7 +19,7 @@ anything you need to set before the numbers mean something.
 
 ## Import the file
 
-Open **Systems → RBDs** in the menu and press **Import** at the top of the page. Pick
+Open **Modelling → System models → RBDs** in the menu and press **Import** at the top of the page. Pick
 the file. Reliafy works out the format from what's inside it, so the file
 extension only has to be roughly right.
 

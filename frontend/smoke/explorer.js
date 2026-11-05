@@ -1,4 +1,4 @@
-// Shared by the Explorer's smoke specs (Operate › Assets › Explorer).
+// Shared by the Explorer's smoke specs (Assets › Explorer).
 
 // The panel about the row picked. On a wide screen its heading (the way up,
 // the name, the actions) and its tabs sit in the slim rows over the tree, the

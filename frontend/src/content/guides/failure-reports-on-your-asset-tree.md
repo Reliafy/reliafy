@@ -29,7 +29,7 @@ Every change is kept with who made it and when, so the history is the record.
 
 ## See what has failed, here and below
 
-Open **Operate → Assets → Explorer**, pick a position in the tree and choose
+Open **Assets → Explorer**, pick a position in the tree and choose
 the **Failure reports** tab. The list shows every report at that position and
 at everything inside it, open ones first, with the level each sits at under
 the row you picked. Pick a higher row to see more of the tree; pick a location

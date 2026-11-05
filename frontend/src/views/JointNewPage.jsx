@@ -246,7 +246,7 @@ export default function JointNewPage() {
   return (
     <div className="app joint-new">
       <PageHeader
-        crumbs={[{ label: "Model", to: "/models" }, { label: "Condition and life", to: "/models/joint" }]}
+        crumbs={[{ label: "Models", to: "/models" }, { label: "Condition and life", to: "/models/joint" }]}
         title="New condition and life model"
         meta="Fits how a reading drifts on each unit and how the risk of failing rises with it, together."
       />

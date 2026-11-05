@@ -198,7 +198,7 @@ def test_create_upload_says_what_to_do_when_the_put_cant_get_through(env):
     assert "change dataset_upload csv" in fallback and "change import_rbd content" in fallback and "200 KB" in fallback
     assert fallback.endswith("(Data: https://reliafy.example/data).")
     rbd = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "rbd_import", "filename": "plant.rsgz"}))
-    assert "Systems › RBDs › Import: https://reliafy.example/systems/rbds" in rbd["fallback"]
+    assert "Modelling › System models › RBDs › Import: https://reliafy.example/systems/rbds" in rbd["fallback"]
 
     from backend.mcp_server import action_schema
 

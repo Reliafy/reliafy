@@ -12,7 +12,7 @@ import { formatNumber } from "../format.js";
 import { availabilityText, compareSummary, runsPath, runtimeText } from "../rbdRuns.js";
 import { availabilityPct } from "../components/availabilityPrecision.js";
 import "../components/RbdRuns.css";
-import { RBDS_PATH } from "../navigation.js";
+import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
 
 const when = (iso) =>
@@ -95,7 +95,7 @@ export default function RbdRunsCompare() {
   return (
     <div className="app rbd-runs">
       <PageHeader
-        crumbs={[{ label: "Systems", to: RBDS_PATH }, { label: "Simulation runs", to: runsPath(rbdId) }]}
+        crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: "Simulation runs", to: runsPath(rbdId) }]}
         title="Compare runs"
         meta={names.length ? names.join(" · ") : null}
       />

@@ -56,7 +56,7 @@ export default function JointModelPage() {
   return (
     <ModelFrame
       className="model-page"
-      crumbs={[{ label: "Model", to: "/models" }, { label: "Condition and life", to: "/models/joint" }]}
+      crumbs={[{ label: "Models", to: "/models" }, { label: "Condition and life", to: "/models/joint" }]}
       title={model ? itemName(model) : "Model"}
       badges={model?.is_sample && <Chip>Sample</Chip>}
       answer={model ? answerParts({ ...r, kind: "joint" }, { saved: `saved ${relativeTime(model.created_at)}` }) : null}

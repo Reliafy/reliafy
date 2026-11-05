@@ -1,4 +1,4 @@
-// The asset tree pane (Operate › Assets › Explorer): open and close, the
+// The asset tree pane (Assets › Explorer): open and close, the
 // levels, the filter that keeps the path to a match, the panel for the row
 // picked, the Locations, Items and Flat arrangements, the old Positions,
 // Items and Locations addresses, and the phone's slide to the panel and back.
@@ -142,11 +142,11 @@ test("arranged by locations, by items and flat, and the menu follows", async ({ 
   const tag = `b${Date.now()}`;
   const p = await plant(request, tag);
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.line.id}`);
-  await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
+  await expect(page.locator(".side-item.active")).toHaveText("Assets");
   await fromTreeMenu(page, "menuitemradio", "Locations");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=locations$/);
   await expect(page.getByRole("tree", { name: "Locations" })).toBeVisible();
-  await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
+  await expect(page.locator(".side-item.active")).toHaveText("Assets");
   // The position picked stays picked, shown inside its location.
   await expect(row(page, `Tree line ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expect(row(page, `Tree site ${tag}`)).toHaveAttribute("aria-expanded", "true");
@@ -162,7 +162,7 @@ test("arranged by locations, by items and flat, and the menu follows", async ({ 
 
   await fromTreeMenu(page, "menuitemradio", "Flat");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?arrange=flat$/);
-  await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
+  await expect(page.locator(".side-item.active")).toHaveText("Assets");
   await expectHealthy(page, problems, { label: "flat" });
 
   // By items: the line picked becomes the unit fitted there.
@@ -183,7 +183,7 @@ test("arranged by locations, by items and flat, and the menu follows", async ({ 
   await expect(full).toHaveAttribute("href", `/asset-register/items/${p.spare.id}`);
   await full.click();
   await expect(page.getByRole("heading", { name: `Tree spare ${tag}` })).toBeVisible();
-  await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
+  await expect(page.locator(".side-item.active")).toHaveText("Assets");
   // Its breadcrumb goes back to the Explorer, by items, with it picked.
   await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Explorer", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/asset-register/explorer\\?arrange=items&sel=${p.spare.id}$`));
@@ -218,7 +218,7 @@ test("a new item from the Explorer, and the old addresses land on it", async ({ 
   ]) {
     await open(page, from);
     await expect.poll(() => { const u = new URL(page.url()); return u.pathname + u.search; }, { message: from }).toBe(want);
-    await expect(page.locator(".side-subitem.active")).toHaveText("Explorer");
+    await expect(page.locator(".side-item.active")).toHaveText("Assets");
   }
   await expect(row(page, `Tree spare ${tag}`)).toBeVisible();
   await expectHealthy(page, problems, { label: "old addresses" });

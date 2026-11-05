@@ -19,7 +19,7 @@ import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
 
-const CRUMBS = [{ label: "Model", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
+const CRUMBS = [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
 
 // Reopen a saved model by id and render its cached results in the model
 // frame: the header (its name, the answer line, Use this model, Share and the

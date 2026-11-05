@@ -7,7 +7,7 @@ import Chip from "../components/ui/Chip.jsx";
 import { relativeTime } from "../instrument.js";
 import { availabilityText, byText, keptLine, runtimeText, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
-import { RBDS_PATH } from "../navigation.js";
+import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
 
 const MAX_COMPARE = 6;
@@ -65,7 +65,7 @@ export default function RbdRuns() {
           diagram, the header keeps its breadcrumb back to that diagram. */}
       {rbdId ? (
         <PageHeader
-          crumbs={[{ label: "Systems", to: RBDS_PATH }, { label: diagram?.name || "Diagram", to: `/systems/b/${rbdId}` }]}
+          crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: diagram?.name || "Diagram", to: `/systems/b/${rbdId}` }]}
           title="Simulation runs"
           meta={PURPOSE}
           actions={compareButton}

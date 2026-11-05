@@ -559,7 +559,7 @@ Keep to the project's rules (`CLAUDE.md`):
 
 - **Status:** built. RePyability 0.15's calendar policy
   (`NonRepairable.optimal_calendar_policy`, its UC-13) answers it in model
-  time; Reliafy lays the shuts on real dates: Strategy › Optimal
+  time; Reliafy lays the shuts on real dates: Decisions › Strategy › Optimal
   replacement › *Shutdown calendar*, `POST /api/strategy/calendar-replacement`
   and `calendar-next`, and the MCP `strategy` actions
   `calendar_replacement` and `next_replacement`

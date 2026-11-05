@@ -37,7 +37,7 @@ function TimeZoneNudge({ zone }) {
   );
 }
 
-// Operate › Maintenance: proposed changes, critical spares short, what's due and
+// Maintenance: proposed changes, critical spares short, what's due and
 // the open work orders. (The positions tree is AssetExplorer.)
 export default function MaintenanceHome() {
   const navigate = useNavigate();

@@ -1,4 +1,5 @@
-// The menu: Design · Operate · Analyse, and roles as a lens over it —
+// The menu: one flat list (Home · Assets · Maintenance · Modelling ·
+// Decisions · Reports), three levels deep, and roles as a lens over it —
 // switching roles in Settings, Home for each role and for a user with no data,
 // the collapsed rail, the phone drawer, the keyboard, and no sideways scroll
 // at phone width. The roles are the single user's, so these run in order and
@@ -7,10 +8,7 @@ import { test, expect, open, expectHealthy } from "./health.js";
 
 test.describe.configure({ mode: "serial" });
 
-// Risk shows because the workspace uses it: smoke/seed.js fits a condition and
-// life model.
-const EVERYTHING = ["Home", "Systems", "Assets", "Maintenance", "Risk", "Data", "Model", "Strategy", "Forecasts",
-  "Reports"];
+const EVERYTHING = ["Home", "Assets", "Maintenance", "Modelling", "Decisions", "Reports"];
 
 const setRoles = async (request, roles) => {
   const res = await request.put("/api/me/roles", { data: { roles } });
@@ -45,38 +43,45 @@ test("a new user is asked once what they do", async ({ page, problems }) => {
   await expect(page.getByRole("heading", { name: "What do you do?" })).toBeVisible();
 });
 
-test("no roles: every entry under Design, Operate and Analyse, nothing under More", async ({ page, request, problems }) => {
+test("no roles: every entry in one flat list, nothing under More", async ({ page, request, problems }) => {
   await setRoles(request, []);
   await open(page, "/home");
   expect(await shown(page)).toEqual(agentOn ? [...EVERYTHING, "Reliability Agent"] : EVERYTHING);
-  for (const heading of ["Design", "Operate", "Analyse"]) {
-    await expect(mainMenu(page).getByRole("group", { name: heading })).toBeVisible();
-  }
+  // No section headings.
+  await expect(mainMenu(page).locator(".side-section")).toHaveCount(0);
   await expect(moreButton(page)).toHaveCount(0);
   // The logo goes Home.
   await open(page, "/data");
   await page.locator("a.brand").click();
   await expect(page).toHaveURL(/\/home$/);
-  // A section shows its pages while it's open; the landing page isn't one of them.
-  await mainMenu(page).getByRole("link", { name: "Model", exact: true }).click();
+  // A group opens on its first entry and shows its entries while it's open.
+  await mainMenu(page).getByRole("link", { name: "Modelling", exact: true }).click();
+  await expect(page).toHaveURL(/\/data$/);
+  await expect(mainMenu(page).locator(":scope > .side-group > div > .side-children > div > .side-subitem"))
+    .toHaveText(["Data", "Models", "System models"]);
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Data");
+  // An entry with a landing page opens on it; its children show beneath it.
+  await mainMenu(page).getByRole("link", { name: "Models", exact: true }).click();
   await expect(page).toHaveURL(/\/models$/);
-  const kids = mainMenu(page).locator(".side-children .side-subitem");
-  await expect(kids).toHaveText(["Non-repairable", "Repairable", "Accelerated life", "Degradation",
-    "Condition and life"]);
-  await expect(mainMenu(page).getByRole("link", { name: "Model", exact: true })).toHaveAttribute("aria-current", "page");
-  // A child page: the child lit, and its entry named above the title.
+  await expect(page.getByRole("heading", { name: "Models", level: 1 })).toBeVisible();
+  await expect(mainMenu(page).locator(".side-grandchildren .side-subitem")).toHaveText(["Non-repairable", "Repairable",
+    "Accelerated life", "Degradation", "Condition and life"]);
+  await expect(mainMenu(page).getByRole("link", { name: "Models", exact: true })).toHaveAttribute("aria-current", "page");
+  // A child page: the child lit, and its entry (never the group) named above the title.
   await mainMenu(page).getByRole("link", { name: "Repairable", exact: true }).click();
   await expect(page).toHaveURL(/\/models\/recurrent$/);
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Repairable");
-  await expect(page.locator(".crumb")).toHaveText("Model");
-  // A detail page lights its child too.
+  await expect(page.locator(".crumb")).toHaveText("Models");
+  // A detail page lights its child too, and names entry and child.
   await open(page, "/models/m/sample-model-bearings-weibull");
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Non-repairable");
-  // Design › Systems opens on its RBDs, the first page under it, named the
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link"))
+    .toHaveText(["Models", "Non-repairable"]);
+  // System models opens on its RBDs, the first page under it, named the
   // same in the menu and on the page; a diagram lights RBDs too.
-  await mainMenu(page).getByRole("link", { name: "Systems", exact: true }).click();
+  await mainMenu(page).getByRole("link", { name: "System models", exact: true }).click();
   await expect(page).toHaveURL(/\/systems\/rbds$/);
-  await expect(mainMenu(page).locator(".side-children .side-subitem").first()).toHaveText("RBDs");
+  await expect(mainMenu(page).locator(".side-grandchildren .side-subitem")).toHaveText(["RBDs", "Simulation runs"]);
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RBDs");
   await expect(page.getByRole("heading", { name: "Reliability block diagrams (RBDs)", level: 1 })).toBeVisible();
   await mainMenu(page).getByRole("link", { name: "Simulation runs", exact: true }).click();
@@ -87,23 +92,45 @@ test("no roles: every entry under Design, Operate and Analyse, nothing under Mor
   await open(page, "/systems/b/sample-rbd-pump-station");
   await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("RBDs");
   await expect(page.locator(".crumb")).toHaveText("RBDs");
-  // The old address of the list still lands on it.
+  // The old addresses land on the list, and on the working fault tree and FME(C)A.
   await open(page, "/systems");
   await expect(page).toHaveURL(/\/systems\/rbds$/);
-  // Operate: an RCM study's old address lands on the Explorer's RCM tab, under Assets.
+  await open(page, "/systems/fault-trees");
+  await expect(page).toHaveURL(/\/systems\/rbds$/);
+  await open(page, "/systems/fmeca");
+  await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=fmea(&|$)/);
+  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
+  // Assets is one entry, lit on every page of the register; its landing page
+  // links the rest. An RCM study's old address lands on the Explorer's RCM tab.
   await open(page, "/maintenance/rcm");
   await expect(page).toHaveURL(/\/asset-register\/explorer\?tab=rcm(&|$)/);  // the Explorer adds its own view state
-  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Explorer");
-  // Operate › Risk opens straight on Condition monitoring (its only page so
-  // far, so no children); a tracked fleet's page lights Risk and names it.
+  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
+  await mainMenu(page).getByRole("link", { name: "Assets", exact: true }).click();
+  await expect(page).toHaveURL(/\/asset-register$/);
+  await expect(mainMenu(page).locator(".side-children")).toHaveCount(0);
+  const register = page.getByRole("navigation", { name: "The asset register" });
+  await register.getByRole("link", { name: "Parts and stock" }).click();
+  await expect(page).toHaveURL(/\/asset-register\/parts$/);
+  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
+  // The Explorer's ⋯ menu opens Classes (and Parts and stock).
+  await open(page, "/asset-register/explorer?arrange=positions");
+  await page.getByRole("button", { name: /^Tree options/ }).click();
+  await page.getByRole("menu", { name: "Tree options" }).getByRole("menuitem", { name: "Classes" }).click();
+  await expect(page).toHaveURL(/\/asset-register\/classes$/);
+  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
+  await open(page, "/systems/structure");
+  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Assets");
+  // Decisions opens on Strategy. Risk opens on, and lists, Condition monitoring;
+  // a tracked fleet's page lights it and names it.
+  await mainMenu(page).getByRole("link", { name: "Decisions", exact: true }).click();
+  await expect(page).toHaveURL(/\/strategy$/);
   await mainMenu(page).getByRole("link", { name: "Risk", exact: true }).click();
   await expect(page).toHaveURL(/\/risk$/);
   await expect(page.getByRole("heading", { name: "Condition monitoring", level: 1 })).toBeVisible();
-  await expect(mainMenu(page).getByRole("link", { name: "Risk", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(mainMenu(page).locator(".side-children")).toHaveCount(0);
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Condition monitoring");
   await open(page, "/risk/sample-tracked-trucks");
-  await expect(mainMenu(page).locator(".side-item.active")).toHaveText("Risk");
-  await expect(page.locator(".crumb")).toHaveText("Risk");
+  await expect(mainMenu(page).locator(".side-subitem.active")).toHaveText("Condition monitoring");
+  await expect(page.locator(".crumb")).toHaveText("Condition monitoring");
   // Degradation tracking's old address lands there.
   await open(page, "/models/tracking/sample-tracked-trucks");
   await expect(page).toHaveURL(/\/risk\/sample-tracked-trucks$/);
@@ -117,20 +144,20 @@ test("switching roles in Settings: technician, then every role, then none", asyn
   await card.getByRole("button", { name: "Save" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
 
-  // Home, Maintenance (work orders) and Assets; the rest one click away.
-  expect(await shown(page)).toEqual(["Home", "Maintenance", "Assets"]);
+  // Home, Assets and Maintenance (work orders); the rest one click away.
+  expect(await shown(page)).toEqual(["Home", "Assets", "Maintenance"]);
   await expect(page.locator("#side-more")).toHaveCount(0);
   await moreButton(page).click();
   const more = page.locator("#side-more");
-  await expect(more.getByRole("link", { name: "Systems" })).toBeVisible();
-  await expect(more.getByRole("link", { name: "Model", exact: true })).toBeVisible();
+  await expect(more.getByRole("link", { name: "Modelling", exact: true })).toBeVisible();
+  await expect(more.getByRole("link", { name: "Decisions", exact: true })).toBeVisible();
   await mainMenu(page).getByRole("link", { name: "Maintenance" }).click();
   await expect(page).toHaveURL(/\/maintenance$/);
   await expect(page.getByRole("heading", { name: "Open work orders" })).toBeVisible();
   // A page under More keeps More open, with that page lit.
   await open(page, "/models");
-  await expect(page.locator("#side-more").getByRole("link", { name: "Model", exact: true })).toBeVisible();
-  await expect(page.locator("#side-more .side-item.active")).toHaveText("Model");
+  await expect(page.locator("#side-more").getByRole("link", { name: "Models", exact: true })).toBeVisible();
+  await expect(page.locator("#side-more .side-subitem.active")).toHaveText("Models");
 
   // Home leads with today's work orders.
   await open(page, "/home");
@@ -202,6 +229,7 @@ test("Home for a user with no data, every role's cards", async ({ page, request,
   }
   await expect(page.getByRole("heading", { name: "Targets and what's waiting" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Start here" })).toBeVisible();
+  await expect(page.locator(".first-run").getByRole("link", { name: "Test planning" })).toHaveAttribute("href", "/strategy/test-planning");
   await expectHealthy(page, problems, { label: "empty home" });
 });
 
@@ -210,14 +238,20 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
   await open(page, "/home");
   await page.getByRole("button", { name: "Collapse menu" }).click();
   await expect(mainMenu(page).locator(".side-label")).toHaveCount(0);
-  // Icons only, each named; headings become hairlines, still named groups.
-  expect(await shown(page)).toEqual(["Home", "Maintenance", "Assets"]);
-  await expect(mainMenu(page).getByRole("group", { name: "Operate" })).toBeVisible();
+  // Icons only, each named; no headings and nothing below an entry.
+  expect(await shown(page)).toEqual(["Home", "Assets", "Maintenance"]);
+  await expect(mainMenu(page).locator(".side-section, .side-children")).toHaveCount(0);
   await moreButton(page).click();
-  await expect(page.locator("#side-more").getByRole("link", { name: "Forecasts" })).toBeVisible();
+  await expect(page.locator("#side-more").getByRole("link", { name: "Decisions" })).toBeVisible();
+  // A group's page lights the group on the rail.
+  await page.locator("#side-more").getByRole("link", { name: "Decisions" }).click();
+  await expect(page).toHaveURL(/\/strategy$/);
+  await expect(page.locator("#side-more .side-item.active")).toHaveAttribute("title", "Decisions");
 
-  // Keyboard: Tab from Home reaches Maintenance; Enter opens it.
+  // Keyboard: Tab from Home reaches Assets, then Maintenance; Enter opens it.
   await mainMenu(page).getByRole("link", { name: "Home" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(mainMenu(page).getByRole("link", { name: "Assets" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(mainMenu(page).getByRole("link", { name: "Maintenance" })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -237,7 +271,7 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
 const PHONE_PAGES = [
   "/home", "/systems/rbds", "/asset-register", "/asset-register/explorer?arrange=positions", "/asset-register/explorer?arrange=locations",
   "/asset-register/explorer?arrange=items", "/asset-register/explorer?tab=rcm", "/asset-register/parts", "/maintenance", "/data",
-  "/models", "/strategy", "/forecasts", "/reports", "/settings",
+  "/models", "/models/recurrent", "/strategy", "/risk", "/forecasts", "/reports", "/settings",
 ];
 
 test("the phone drawer, and no sideways scroll at 400 px", async ({ page, request, problems }) => {
@@ -249,7 +283,7 @@ test("the phone drawer, and no sideways scroll at 400 px", async ({ page, reques
   const drawer = page.getByRole("dialog", { name: "Menu" });
   await expect(drawer).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Close menu" })).toBeFocused();
-  await expect(drawer.getByRole("group", { name: "Operate" })).toBeVisible();
+  await expect(drawer.getByRole("link", { name: "Assets", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);
   await expect(menuButton).toBeFocused();
@@ -258,9 +292,15 @@ test("the phone drawer, and no sideways scroll at 400 px", async ({ page, reques
   await menuButton.click();
   await drawer.getByRole("button", { name: "More" }).click();
   await expect(drawer).toBeVisible();
-  await drawer.locator("#side-more").getByRole("link", { name: "Systems" }).click();
-  await expect(page).toHaveURL(/\/systems\/rbds$/);
+  await drawer.locator("#side-more").getByRole("link", { name: "Modelling" }).click();
+  await expect(page).toHaveURL(/\/data$/);
   await expect(drawer).toHaveCount(0);
+  // Three levels in the drawer: the group's entries, then the current entry's children.
+  await open(page, "/models/recurrent");
+  await menuButton.click();
+  await expect(drawer.locator(".side-subitem.active")).toHaveText("Repairable");
+  await expect(drawer.getByRole("link", { name: "System models", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
 
   for (const path of PHONE_PAGES) {
     await open(page, path);

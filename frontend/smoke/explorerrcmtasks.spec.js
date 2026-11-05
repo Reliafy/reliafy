@@ -1,5 +1,5 @@
 // Several tasks for one failure mode, and one task for several, on the
-// Explorer's RCM tab (Operate › Assets › Explorer › RCM): the failure mode's
+// Explorer's RCM tab (Assets › Explorer › RCM): the failure mode's
 // details list its tasks (the decision's own first) with Add a task (a new
 // card typed in place), Edit…, Remove and Use an existing task…; the row menu's Add a task… opens
 // the details on the add form; the Task cell says "+1 task"

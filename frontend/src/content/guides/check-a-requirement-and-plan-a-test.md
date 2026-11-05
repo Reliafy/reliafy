@@ -117,7 +117,7 @@ reasoning behind the test is on record when someone asks why it's 19 units.
 
 ## Without a model
 
-The planner works without a fitted model too: open **Strategy → Test planning**
+The planner works without a fitted model too: open **Decisions → Strategy → Test planning**
 and type the requirement on the **Demonstration** tab. Choose **Reliability over a mission**
 for a requirement written as a reliability ("R ≥ 95% over 2,000 hours"), or the
 **MTBF (constant rate)** test type for an MTBF requirement. **Solve for** can

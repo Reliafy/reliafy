@@ -38,7 +38,7 @@ const ImportIcon = () => (
   </svg>
 );
 
-// Design › Systems › RBDs: the saved block diagrams; open one or create a new one.
+// Modelling › System models › RBDs: the saved block diagrams; open one or create a new one.
 export default function RbdHome() {
   const navigate = useNavigate();
   const [rbds, setRbds] = useState(null);

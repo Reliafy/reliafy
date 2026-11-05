@@ -24,7 +24,7 @@ landing gear.
 
 ## Set up the phases
 
-Phases belong to a non-repairable diagram. Open it from **Systems → RBDs**, open the
+Phases belong to a non-repairable diagram. Open it from **Modelling → System models → RBDs**, open the
 **⋯** menu at the right of the toolbar and choose **Phased mission…**.
 
 For each phase, give a **Name** and a **Duration** in the diagram's unit.

@@ -328,7 +328,7 @@ Response: `{"fleet": "...", "updated_items": 2, "forecast": {"status": "ok", "ex
 
 Appends `(time, value)` readings to items in a tracked fleet and re-predicts
 each item's remaining life. The id is in the app URL:
-`/risk/<tracked_fleet_id>` (Risk › Condition monitoring).
+`/risk/<tracked_fleet_id>` (Decisions › Risk › Condition monitoring).
 
 CSV columns: `item` (name or `id`), `time`, `value`.
 

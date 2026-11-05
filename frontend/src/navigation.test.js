@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import {
-  ENTRIES, ROLES, ROLE_IDS, SECTIONS, activeEntry, buildMenu, childActive, crumbsFor, datasetPath, entryActive,
-  groupBySection, homeCards, itemPath, liveEntries,
+  ENTRIES, MENU_ENTRIES, RESERVED_IDS, ROLES, ROLE_IDS, activeEntry, activeTrail, buildMenu, childActive, crumbsFor,
+  datasetPath, entryActive, flatEntries, homeCards, itemPath, liveEntries,
 } from "./navigation.js";
 import { MOVED, movedHref, movedTo } from "./redirects.js";
 import { PLANNED } from "./plannedPages.js";
@@ -12,22 +12,32 @@ import { appRoutes, hasParam } from "../smoke/routes.js";
 const ALL = { maintenance: true, agent: true, risk: true };
 const PREVIEW = { ...ALL, preview: true };
 const ids = (entries) => entries.map((e) => e.id);
-const everyLink = (entries) => entries.flatMap((e) => [e.to, ...(e.children || []).map((c) => c.to)]);
+// Every page the menu links to, at every level (a group has no page of its own).
+const everyLink = (entries) => flatEntries(entries).flatMap((e) => [e.to, ...(e.children || []).map((c) => c.to)]);
 const PAGES = new Set(appRoutes().filter((r) => !r.redirect).map((r) => r.path));
+const find = (live, id) => flatEntries(live).find((e) => e.id === id);
+const kids = (live, id) => find(live, id)?.children?.map((c) => c.label) || [];
 
 // Pages that aren't in the menu themselves, and where they're opened from.
 const REACHED_FROM = {
   "/": "redirects to Home",
-  "/models/new": "Model › New model, Home's starts, a dataset's Fit menu",
-  "/models/recurrent/new": "Model › Repairable › New model",
-  "/models/alt/new": "Model › Accelerated life › New model",
-  "/models/joint/new": "Model › Condition and life › New model",
-  "/systems/b": "Systems › New diagram, Home's starts",
-  "/systems/runs/compare": "Systems › Simulation runs › Compare",
+  "/models/new": "Models › New model, Home's starts, a dataset's Fit menu",
+  "/models/recurrent/new": "Models › Repairable › New model",
+  "/models/alt/new": "Models › Accelerated life › New model",
+  "/models/joint/new": "Models › Condition and life › New model",
+  "/systems/b": "RBDs › New diagram, Home's starts",
+  "/systems/runs/compare": "Simulation runs › Compare",
+  "/systems/structure": "Parts and stock's Structure view",
+  "/asset-register/explorer": "Assets' landing page, and every position's, location's and item's breadcrumbs",
+  "/asset-register/parts": "Assets' landing page, the Explorer's ⋯ menu, Home's spares, Maintenance",
+  "/asset-register/classes": "Assets' landing page, the Explorer's ⋯ menu, Forecasts' classes",
   "/strategy/test-planning/sequential": "Test planning's tabs",
   "/strategy/test-planning/life": "Test planning's tabs",
   "/strategy/test-planning/accelerated": "Test planning's tabs",
   "/strategy/test-planning/comparison": "Test planning's tabs",
+  "/requirements": "a preview-only placeholder, by address",
+  "/failures": "a preview-only placeholder, by address",
+  "/asset-register/fleets": "a preview-only placeholder, by address",
   "/settings": "the menu's Account group",
   "/billing": "the menu's Account group",
   "/api-docs": "the menu's Account group",
@@ -52,37 +62,73 @@ test("every menu link is a page of the app", () => {
   }
 });
 
-test("the menu is Home, then Design, Operate and Analyse, then Reports and the Agent", () => {
-  assert.deepEqual(SECTIONS.map((s) => s.label), ["Design", "Operate", "Analyse"]);
-  const groups = groupBySection(buildMenu({ has: ALL }).main);
-  assert.deepEqual(groups.map((g) => g.section?.label || g.key), ["home", "Design", "Operate", "Analyse", "end"]);
-  assert.deepEqual(groups.map((g) => ids(g.entries)), [
-    ["home"], ["systems"], ["assets", "maintenance", "risk"], ["data", "models", "strategy", "forecasts"],
-    ["reports", "agent"],
-  ]);
-  const labels = buildMenu({ has: ALL }).main.map((e) => e.label);
-  assert.deepEqual(labels, ["Home", "Systems", "Assets", "Maintenance", "Risk", "Data", "Model", "Strategy",
-    "Forecasts", "Reports", "Reliability Agent"]);
+test("the menu is one flat list: Home, Assets, Maintenance, Modelling, Decisions, Reports, the Agent", () => {
+  const { main } = buildMenu({ has: ALL });
+  assert.deepEqual(ids(main), ["home", "assets", "maintenance", "modelling", "decisions", "reports", "agent"]);
+  assert.deepEqual(main.map((e) => e.label),
+    ["Home", "Assets", "Maintenance", "Modelling", "Decisions", "Reports", "Reliability Agent"]);
+  // No section headings any more.
+  for (const e of ENTRIES) assert.equal(e.section, undefined, e.id);
 });
 
-test("each entry's children, as agreed", () => {
+test("Modelling and Decisions are groups: their entries, each with its children", () => {
   const live = liveEntries(ALL);
-  const kids = (id) => live.find((e) => e.id === id).children?.map((c) => c.label) || [];
-  assert.deepEqual(kids("systems"), ["RBDs", "Simulation runs", "Product structure"]);
-  assert.deepEqual(kids("assets"), ["Explorer", "Parts and stock", "Classes"]);
-  assert.deepEqual(kids("maintenance"), []);
-  assert.deepEqual(kids("data"), []);
-  assert.deepEqual(kids("models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
+  const group = (id) => live.find((e) => e.id === id).entries.map((e) => e.label);
+  assert.deepEqual(group("modelling"), ["Data", "Models", "System models"]);
+  assert.deepEqual(group("decisions"), ["Strategy", "Forecasts", "Risk"]);
+  assert.deepEqual(kids(live, "data"), []);
+  assert.deepEqual(kids(live, "models"), ["Non-repairable", "Repairable", "Accelerated life", "Degradation",
     "Condition and life"]);
-  assert.deepEqual(kids("risk"), []);
-  assert.deepEqual(kids("strategy"), ["Optimal replacement", "Compare two models", "Failure finding", "Test planning"]);
-  assert.deepEqual(kids("forecasts"), []);
+  assert.deepEqual(kids(live, "systems"), ["RBDs", "Simulation runs"]);
+  assert.deepEqual(kids(live, "strategy"), ["Optimal replacement", "Compare two models", "Failure finding",
+    "Test planning"]);
+  assert.deepEqual(kids(live, "forecasts"), []);
+  assert.deepEqual(kids(live, "risk"), ["Condition monitoring"]);
+  // Assets is one entry with no children; Maintenance has none outside the preview.
+  assert.deepEqual(kids(live, "assets"), []);
+  assert.deepEqual(kids(live, "maintenance"), []);
+  // Three levels at most: a group's entries have children, never entries.
+  for (const e of live) for (const x of e.entries || []) assert.equal(x.entries, undefined, x.id);
+});
+
+test("a group opens on its first live entry; an entry with no landing page opens on its first child", () => {
+  const live = liveEntries(ALL);
+  const to = (id) => find(live, id)?.to || live.find((e) => e.id === id).to;
+  assert.equal(live.find((e) => e.id === "modelling").to, "/data");
+  assert.equal(live.find((e) => e.id === "decisions").to, "/strategy");
+  // Entries with a landing page of their own open on it.
+  assert.equal(to("data"), "/data");
+  assert.equal(to("models"), "/models");
+  assert.equal(to("strategy"), "/strategy");
+  assert.equal(to("forecasts"), "/forecasts");
+  // System models and Risk open on, and list, their first child.
+  assert.equal(to("systems"), "/systems/rbds");
+  assert.equal(find(live, "systems").children[0].to, "/systems/rbds");
+  assert.equal(to("risk"), "/risk");
+  assert.equal(find(live, "risk").children[0].label, "Condition monitoring");
+  assert.equal(to("assets"), "/asset-register");
+  assert.equal(to("maintenance"), "/maintenance");
+});
+
+test("a menu word is the title of the page it opens", () => {
+  // The page titles (SectionHeader's title) of each entry's landing page.
+  const TITLES = {
+    home: "Home", assets: "Assets", maintenance: "Maintenance", data: "Data", models: "Models",
+    strategy: "Strategy", forecasts: "Forecasts", reports: "Reports", agent: "Reliability Agent",
+  };
+  for (const e of MENU_ENTRIES) {
+    if (e.opensOnFirstChild) continue;
+    assert.equal(e.label, TITLES[e.id], e.id);
+  }
+  // Those that open on a child: that child names the page (RBDs; Condition monitoring).
+  const live = liveEntries(ALL);
+  assert.equal(find(live, "risk").children[0].label, "Condition monitoring");
+  assert.equal(find(live, "systems").children[0].label, "RBDs");
 });
 
 test("an entry's landing page is never also one of its children", () => {
-  for (const has of [{}, ALL]) {
-    for (const e of liveEntries(has)) {
-      // Only an entry that opens on its first child (Systems on its RBDs) lists it.
+  for (const has of [{}, ALL, PREVIEW]) {
+    for (const e of flatEntries(liveEntries(has))) {
       (e.children || []).forEach((c, i) => {
         if (e.opensOnFirstChild && i === 0) assert.equal(c.to, e.to, `${e.label} opens on its first child`);
         else assert.notEqual(c.to, e.to, `${e.label} repeats its landing page`);
@@ -91,51 +137,36 @@ test("an entry's landing page is never also one of its children", () => {
   }
 });
 
-test("without Reliafy Maintenance: no Assets and no Maintenance (the RCM is on the asset tree)", () => {
+test("without Reliafy Maintenance: no Assets and no Maintenance", () => {
   const none = liveEntries({});
-  assert.ok(!ids(none).includes("assets"));
-  assert.ok(!ids(none).includes("maintenance"));
-  assert.ok(!ids(none).includes("agent"));
-  // Product structure is Reliafy Maintenance's parts catalogue.
-  assert.ok(!everyLink(none).includes("/systems/structure"));
-  // With it, Maintenance opens on the due tasks and work orders.
+  assert.deepEqual(ids(none), ["home", "modelling", "decisions", "reports"]);
+  assert.ok(!everyLink(none).includes("/asset-register"));
   assert.equal(liveEntries(ALL).find((e) => e.id === "maintenance").to, "/maintenance");
+  // With only the preview, Maintenance opens on its Field inbox.
+  assert.equal(liveEntries({ preview: true }).find((e) => e.id === "maintenance").to, "/maintenance/inbox");
 });
 
-test("Risk shows where the workspace uses it, and opens straight on Condition monitoring", () => {
+test("Risk shows where the workspace uses it", () => {
   // Uses it: tracked items, or a degradation or condition-and-life model (the
   // server's /api/me/roles `uses`), or the menu preview is on.
-  assert.ok(!ids(liveEntries({ maintenance: true, agent: true })).includes("risk"));
-  for (const has of [{ risk: true }, ALL, PREVIEW]) {
-    const risk = liveEntries(has).find((e) => e.id === "risk");
-    assert.equal(risk.label, "Risk");
-    assert.equal(risk.section, "operate");
-    // Its one page so far is its landing: no children, nothing repeated.
-    assert.equal(risk.to, "/risk");
-    assert.equal(risk.children, undefined);
-  }
-  // A Risk landing of its own, when there is one, puts Condition monitoring under it.
-  const later = liveEntries({ risk: true, riskOverview: true }).find((e) => e.id === "risk");
-  assert.deepEqual(later.children.map((c) => c.label), ["Condition monitoring"]);
-  // The analyst, planner and fleet manager use it.
-  for (const role of ["analyst", "planner", "fleet"]) {
-    assert.ok(ROLES.find((r) => r.id === role).entries.includes("risk"), role);
-  }
+  assert.ok(!find(liveEntries({ maintenance: true, agent: true }), "risk"));
+  assert.deepEqual(liveEntries({}).find((e) => e.id === "decisions").entries.map((e) => e.id), ["strategy", "forecasts"]);
+  for (const has of [{ risk: true }, ALL, PREVIEW]) assert.ok(find(liveEntries(has), "risk"));
   // Its pages light it; the old Degradation tracking addresses land on them.
   const live = liveEntries(ALL);
-  assert.equal(activeEntry(live, "/risk").id, "risk");
-  assert.equal(activeEntry(live, "/risk/f1").id, "risk");
+  assert.equal(activeEntry(live, "/risk").id, "decisions");
   assert.deepEqual(crumbsFor(live, "risk", "/risk"), []);
-  assert.deepEqual(crumbsFor(live, "risk", "/risk/f1"), [{ label: "Risk", to: "/risk" }]);
+  assert.deepEqual(crumbsFor(live, "risk", "/risk/f1"), [{ label: "Condition monitoring", to: "/risk" }]);
   assert.equal(movedTo("/models/tracking/f1"), "/risk/f1");
   assert.equal(itemPath("tracked_fleets", "f1"), "/risk/f1");
 });
 
-test("no placeholder entries: Requirements and Failures stay hidden until their pages exist", () => {
-  for (const has of [{}, ALL]) {
-    const live = ids(liveEntries(has));
-    assert.ok(!live.includes("requirements"));
-    assert.ok(!live.includes("failures"));
+test("no placeholder entries: Requirements, Failures, Fleets, Fault trees and FMECA aren't in the menu", () => {
+  for (const has of [{}, ALL, PREVIEW]) {
+    const links = everyLink(liveEntries(has));
+    for (const to of ["/requirements", "/failures", "/asset-register/fleets", "/systems/fault-trees", "/systems/fmeca"]) {
+      assert.ok(!links.includes(to), to);
+    }
   }
 });
 
@@ -145,39 +176,37 @@ test("no roles shows everything the workspace has, nothing under More", () => {
   assert.deepEqual(more, []);
 });
 
-test("a technician sees Home, Maintenance and Assets; the rest is under More", () => {
+test("a technician sees Home, Assets and Maintenance; the rest is under More", () => {
   const { main, more } = buildMenu({ roles: ["technician"], has: ALL });
-  assert.deepEqual(ids(main), ["home", "maintenance", "assets"]);
-  assert.deepEqual(ids(more), ["systems", "risk", "data", "models", "strategy", "forecasts", "reports", "agent"]);
-  assert.equal(main[1].to, "/maintenance");
+  assert.deepEqual(ids(main), ["home", "assets", "maintenance"]);
+  assert.deepEqual(ids(more), ["modelling", "decisions", "reports", "agent"]);
+  assert.equal(main[2].to, "/maintenance");
 });
 
-test("a fleet manager leads with Forecasts, then the assets and their maintenance", () => {
-  const { main } = buildMenu({ roles: ["fleet"], has: ALL });
-  assert.deepEqual(ids(main), ["home", "assets", "risk", "maintenance", "forecasts", "models", "data", "reports"]);
+test("a role keeps the menu's own order", () => {
+  assert.deepEqual(ids(buildMenu({ roles: ["fleet"], has: ALL }).main),
+    ["home", "assets", "maintenance", "modelling", "decisions", "reports"]);
+  assert.deepEqual(ids(buildMenu({ roles: ["planner", "analyst"], has: ALL }).main),
+    ["home", "assets", "maintenance", "modelling", "decisions", "reports", "agent"]);
+  assert.deepEqual(ids(buildMenu({ roles: ["manager"], has: ALL }).main),
+    ["home", "maintenance", "modelling", "decisions", "reports"]);
   assert.deepEqual(homeCards(["fleet"]), ["fleets", "due"]);
 });
 
 test("picking every role shows everything", () => {
   const { main, more } = buildMenu({ roles: ROLE_IDS, has: ALL });
-  assert.deepEqual(new Set(ids(main)), new Set(ids(liveEntries(ALL))));
+  assert.deepEqual(ids(main), ids(liveEntries(ALL)));
   assert.deepEqual(more, []);
-});
-
-test("shown entries keep their sections, in role order within each", () => {
-  const { main } = buildMenu({ roles: ["planner", "analyst"], has: ALL });
-  assert.deepEqual(ids(main), ["home", "systems", "maintenance", "assets", "risk", "forecasts", "strategy", "data",
-    "models", "reports", "agent"]);
-  assert.deepEqual(groupBySection(main).map((g) => g.key), ["home", "design", "operate", "analyse", "end"]);
 });
 
 test("unknown roles are ignored: everything shown", () => {
   assert.deepEqual(buildMenu({ roles: ["astronaut"], has: ALL }).more, []);
 });
 
-test("roles name only entries that exist", () => {
-  const known = new Set(ENTRIES.map((e) => e.id));
+test("roles name only top-level entries (or ones reserved for later)", () => {
+  const known = new Set([...ENTRIES.map((e) => e.id), ...RESERVED_IDS]);
   for (const role of ROLES) for (const id of role.entries) assert.ok(known.has(id), `${role.id}: ${id}`);
+  for (const id of RESERVED_IDS) assert.ok(!ENTRIES.some((e) => e.id === id), `${id} is in the menu: drop it from RESERVED_IDS`);
   assert.equal(new Set(ROLE_IDS).size, ROLES.length);
 });
 
@@ -187,75 +216,81 @@ test("the roles are the server's", () => {
   assert.deepEqual(server, ROLE_IDS);
 });
 
-test("a page lights its entry, and its child, on landing, child and detail pages", () => {
+test("a page lights its place in the menu at every level", () => {
   const live = liveEntries(ALL);
   const at = (path) => {
-    const e = activeEntry(live, path);
-    return [e?.id || null, (e?.children || []).find((c) => childActive(c, path))?.label || null];
+    const t = activeTrail(live, path);
+    return [t.top?.id || null, t.entry && t.entry !== t.top ? t.entry.id : null, t.child?.label || null];
   };
-  assert.deepEqual(at("/home"), ["home", null]);
-  assert.deepEqual(at("/models"), ["models", null]);
-  assert.deepEqual(at("/models/life"), ["models", "Non-repairable"]);
-  assert.deepEqual(at("/models/m/abc"), ["models", "Non-repairable"]);
-  assert.deepEqual(at("/models/new"), ["models", "Non-repairable"]);
-  assert.deepEqual(at("/models/joint/x"), ["models", "Condition and life"]);
-  assert.deepEqual(at("/risk"), ["risk", null]);
-  assert.deepEqual(at("/risk/f1"), ["risk", null]);
-  assert.deepEqual(at("/data"), ["data", null]);
-  assert.deepEqual(at("/data/d1"), ["data", null]);
-  // Systems opens on its RBDs; a diagram's page lights RBDs.
-  assert.deepEqual(at("/systems/rbds"), ["systems", "RBDs"]);
-  assert.deepEqual(at("/systems/b/r1"), ["systems", "RBDs"]);
-  assert.deepEqual(at("/systems/b"), ["systems", "RBDs"]);
-  assert.deepEqual(at("/systems/runs"), ["systems", "Simulation runs"]);
-  assert.deepEqual(at("/systems/runs/x"), ["systems", "Simulation runs"]);
-  assert.deepEqual(at("/strategy/test-planning/life"), ["strategy", "Test planning"]);
-  assert.deepEqual(at("/strategy/analyses/x"), ["strategy", null]);
-  assert.deepEqual(at("/forecasts/f"), ["forecasts", null]);
-  // Assets opens on the top-level places; a position's, location's or item's
-  // page is under the Explorer, as the Explorer itself is.
-  assert.deepEqual(at("/asset-register"), ["assets", null]);
-  assert.deepEqual(at("/asset-register/explorer"), ["assets", "Explorer"]);
-  assert.deepEqual(at("/asset-register/positions/p1"), ["assets", "Explorer"]);
-  assert.deepEqual(at("/asset-register/locations/l1"), ["assets", "Explorer"]);
-  assert.deepEqual(at("/asset-register/items/i1"), ["assets", "Explorer"]);
-  assert.deepEqual(at("/asset-register/parts/x"), ["assets", "Parts and stock"]);
-  assert.deepEqual(at("/maintenance/work-orders/w1"), ["maintenance", null]);
-  assert.deepEqual(at("/reports"), ["reports", null]);
-  assert.deepEqual(at("/settings"), [null, null]);
+  assert.deepEqual(at("/home"), ["home", null, null]);
+  assert.deepEqual(at("/models"), ["modelling", "models", null]);
+  assert.deepEqual(at("/models/life"), ["modelling", "models", "Non-repairable"]);
+  assert.deepEqual(at("/models/m/abc"), ["modelling", "models", "Non-repairable"]);
+  assert.deepEqual(at("/models/new"), ["modelling", "models", "Non-repairable"]);
+  assert.deepEqual(at("/models/recurrent/x"), ["modelling", "models", "Repairable"]);
+  assert.deepEqual(at("/models/joint/x"), ["modelling", "models", "Condition and life"]);
+  assert.deepEqual(at("/data"), ["modelling", "data", null]);
+  assert.deepEqual(at("/data/d1"), ["modelling", "data", null]);
+  assert.deepEqual(at("/systems/rbds"), ["modelling", "systems", "RBDs"]);
+  assert.deepEqual(at("/systems/b/r1"), ["modelling", "systems", "RBDs"]);
+  assert.deepEqual(at("/systems/b"), ["modelling", "systems", "RBDs"]);
+  assert.deepEqual(at("/systems/runs/x"), ["modelling", "systems", "Simulation runs"]);
+  assert.deepEqual(at("/strategy/test-planning/life"), ["decisions", "strategy", "Test planning"]);
+  assert.deepEqual(at("/strategy/analyses/x"), ["decisions", "strategy", null]);
+  assert.deepEqual(at("/forecasts/f"), ["decisions", "forecasts", null]);
+  assert.deepEqual(at("/risk"), ["decisions", "risk", "Condition monitoring"]);
+  assert.deepEqual(at("/risk/f1"), ["decisions", "risk", "Condition monitoring"]);
+  // Assets is current on every page of the register, and on Product structure
+  // (the longest match beats System models' /systems).
+  for (const path of ["/asset-register", "/asset-register/explorer", "/asset-register/positions/p1",
+    "/asset-register/locations/l1", "/asset-register/items/i1", "/asset-register/parts/x", "/asset-register/classes",
+    "/systems/structure"]) {
+    assert.deepEqual(at(path), ["assets", null, null], path);
+  }
+  assert.deepEqual(at("/maintenance/work-orders/w1"), ["maintenance", null, null]);
+  assert.deepEqual(at("/reports"), ["reports", null, null]);
+  assert.deepEqual(at("/settings"), [null, null, null]);
   // A prefix of a word isn't a match.
-  assert.deepEqual(at("/modelsx"), [null, null]);
-  const models = live.find((e) => e.id === "models");
-  assert.ok(entryActive(models, "/models"));
+  assert.deepEqual(at("/modelsx"), [null, null, null]);
+  assert.ok(entryActive(find(live, "models"), "/models"));
+  assert.ok(childActive(find(live, "models").children[1], "/models/recurrent/x"));
   // Without Reliafy Maintenance there is no Maintenance entry to light.
   assert.equal(activeEntry(liveEntries({}), "/maintenance/work-orders/w1"), null);
 });
 
-test("a page's breadcrumbs: its entry, then its child, from the live menu", () => {
+test("a page's breadcrumbs: its entry, then its child, never a group", () => {
   const live = liveEntries(ALL);
   assert.deepEqual(crumbsFor(live, "models", "/models"), []);
-  assert.deepEqual(crumbsFor(live, "models", "/models/life"), [{ label: "Model", to: "/models" }]);
+  assert.deepEqual(crumbsFor(live, "models", "/models/life"), [{ label: "Models", to: "/models" }]);
+  assert.deepEqual(crumbsFor(live, "models", "/models/recurrent/x", "/models/recurrent"),
+    [{ label: "Models", to: "/models" }, { label: "Repairable", to: "/models/recurrent" }]);
   assert.deepEqual(crumbsFor(live, "models", "/models/m/x", "/models/life"),
-    [{ label: "Model", to: "/models" }, { label: "Non-repairable", to: "/models/life" }]);
+    [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }]);
+  assert.deepEqual(crumbsFor(live, "data", "/data/library"), [{ label: "Data", to: "/data" }]);
   assert.deepEqual(crumbsFor(live, "maintenance", "/maintenance/work-orders/w"), [{ label: "Maintenance", to: "/maintenance" }]);
+  // No crumb names a group.
+  assert.deepEqual(crumbsFor(live, "modelling", "/models/life"), []);
+  assert.deepEqual(crumbsFor(live, "decisions", "/strategy/compare"), []);
   // Without Reliafy Maintenance there is no Maintenance entry: no crumb to a page the user doesn't have.
   const none = liveEntries({});
   assert.deepEqual(crumbsFor(none, "maintenance", "/maintenance/work-orders/w"), []);
-  // Systems opens on its RBDs: a diagram's crumb is RBDs alone; a run's starts at Systems.
+  // System models opens on its RBDs: a diagram's crumb is RBDs alone; a run's starts at System models.
   assert.deepEqual(crumbsFor(live, "systems", "/systems/rbds", "/systems/rbds"), []);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/b/x", "/systems/rbds"), [{ label: "RBDs", to: "/systems/rbds" }]);
+  assert.deepEqual(crumbsFor(live, "systems", "/systems/b/x"), [{ label: "RBDs", to: "/systems/rbds" }]);
   assert.deepEqual(crumbsFor(live, "systems", "/systems/runs/x", "/systems/runs"),
-    [{ label: "Systems", to: "/systems/rbds" }, { label: "Simulation runs", to: "/systems/runs" }]);
-  assert.deepEqual(crumbsFor(none, "assets", "/asset-register/explorer"), []);
-  assert.deepEqual(crumbsFor(live, "assets", "/asset-register/explorer"), [{ label: "Assets", to: "/asset-register" }]);
+    [{ label: "System models", to: "/systems/rbds" }, { label: "Simulation runs", to: "/systems/runs" }]);
+  assert.deepEqual(crumbsFor(none, "assets", "/asset-register/classes"), []);
+  assert.deepEqual(crumbsFor(live, "assets", "/asset-register/classes"), [{ label: "Assets", to: "/asset-register" }]);
+  assert.deepEqual(crumbsFor(live, "assets", "/systems/structure"), [{ label: "Assets", to: "/asset-register" }]);
 });
 
-test("RBDs show for everyone who sees Systems, on every plan and in every role's lens", () => {
+test("RBDs show for everyone, on every plan and in every role's lens", () => {
   for (const has of [{}, ALL, PREVIEW]) {
     for (const roles of [[], ...ROLE_IDS.map((r) => [r])]) {
       const { main, more } = buildMenu({ roles, has });
-      const systems = [...main, ...more].find((e) => e.id === "systems");
-      assert.ok(systems, `Systems is in the menu for ${roles}`);
+      const systems = find([...main, ...more], "systems");
+      assert.ok(systems, `System models is in the menu for ${roles}`);
       assert.equal(systems.to, "/systems/rbds");
       assert.equal(systems.children[0].label, "RBDs", `${roles}`);
     }
@@ -345,6 +380,8 @@ const OLD_TO_NEW = [
   ["/asset-register/positions", "/asset-register/explorer?arrange=positions"],
   ["/asset-register/items", "/asset-register/explorer?arrange=items"],
   ["/asset-register/locations", "/asset-register/explorer?arrange=locations"],
+  ["/systems/fault-trees", "/systems/rbds"],
+  ["/systems/fmeca", "/asset-register/explorer?tab=fmea"],
 ];
 
 test("every earlier address redirects to its page's new place, with its id", () => {
@@ -402,24 +439,20 @@ test("no link in the app's own code points at an earlier address", () => {
 });
 
 test("not-yet-built entries show only where the menu preview is on", () => {
-  const unbuilt = ["requirements", "failures"];
   const plain = liveEntries(ALL);
-  for (const id of unbuilt) assert.ok(!plain.some((e) => e.id === id), id);
   const preview = liveEntries(PREVIEW);
-  for (const id of unbuilt) assert.ok(preview.some((e) => e.id === id), id);
-  const kids = (list, id) => list.find((e) => e.id === id).children?.map((c) => c.label) || [];
-  assert.deepEqual(kids(plain, "systems"), ["RBDs", "Simulation runs", "Product structure"]);
-  assert.deepEqual(kids(preview, "systems"), ["RBDs", "Simulation runs", "Product structure", "Fault trees", "FMECA"]);
-  assert.deepEqual(kids(preview, "assets"), ["Explorer", "Parts and stock", "Classes", "Fleets"]);
-  assert.deepEqual(kids(preview, "maintenance"), ["Field inbox"]);
-  assert.deepEqual(kids(preview, "data"), ["Library"]);
   assert.deepEqual(kids(plain, "data"), []);
+  assert.deepEqual(kids(preview, "data"), ["Library"]);
+  assert.deepEqual(kids(plain, "maintenance"), []);
+  assert.deepEqual(kids(preview, "maintenance"), ["Field inbox"]);
+  assert.deepEqual(kids(preview, "systems"), ["RBDs", "Simulation runs"]);
+  assert.deepEqual(kids(preview, "assets"), []);
 });
 
-test("every placeholder page has its text, and its entry in the preview menu", () => {
+test("every placeholder page has its text; Library and Field inbox are in the preview menu", () => {
   const links = new Set(everyLink(liveEntries(PREVIEW)));
-  for (const [id, page] of Object.entries(PLANNED)) {
-    assert.ok(page.title && page.purpose && page.will.length, id);
-    assert.ok([...links].some((to) => to.endsWith("/" + id) || to.endsWith("/" + (id === "inbox" ? "inbox" : id))), id);
-  }
+  for (const [id, page] of Object.entries(PLANNED)) assert.ok(page.title && page.purpose && page.will.length, id);
+  assert.ok(links.has("/data/library"));
+  assert.ok(links.has("/maintenance/inbox"));
+  assert.deepEqual(Object.keys(PLANNED).sort(), ["failures", "fleets", "inbox", "library", "requirements"]);
 });

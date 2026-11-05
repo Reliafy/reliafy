@@ -6392,7 +6392,7 @@ def growth_projection(
     if user.get("mcp_plan", "pro") != "pro":
         raise Refusal(
             f"A growth projection from inline data fits a Crow-AMSAA model in Reliafy, part of Reliafy Pro "
-            f"({PRO_PRICE}). Fit the test data in the Reliafy app (Model › Repairable, mapping the "
+            f"({PRO_PRICE}). Fit the test data in the Reliafy app (Modelling › Models › Repairable, mapping the "
             "failure-mode column) and pass that model's id instead, or upgrade at "
             f"{_billing_url()} (or call get kind upgrade_link).", "pro_only")
     if modes is None or len(modes) != len(x):
@@ -7114,8 +7114,9 @@ _UPLOAD_FALLBACK_URL = (
     "If the PUT to url can't connect, or a proxy refuses its host (e.g. CONNECT tunnel failed, 403), send the "
     "same PUT once to url_fallback (curl_fallback) instead: the same single-use link on {site}, slower for large "
     "files. The link is only used up when a PUT reaches Reliafy, so a refused first attempt doesn't spend it. ")
-_UPLOAD_APP_PAGES = {"rbd_import": ("/systems/rbds", "Systems › RBDs › Import"), "dataset": ("/data", "Data"),
-                     "excel": ("/data", "Data, the Explorer's RCM tab or Systems › RBDs › Import"),
+_UPLOAD_APP_PAGES = {"rbd_import": ("/systems/rbds", "Modelling › System models › RBDs › Import"),
+                     "dataset": ("/data", "Data"),
+                     "excel": ("/data", "Data, the Explorer's RCM tab or Modelling › System models › RBDs › Import"),
                      "outage_log": ("/systems/rbds", "the diagram's Outage history tab"),
                      "document": ("/asset-register/explorer", "the record's Documents card")}
 # Inline content (change import_rbd): small text formats only — anything larger goes

@@ -56,7 +56,7 @@ export default function AltModelPage() {
   return (
     <ModelFrame
       className="model-page"
-      crumbs={[{ label: "Model", to: "/models" }, { label: "Accelerated life", to: "/models/alt" }]}
+      crumbs={[{ label: "Models", to: "/models" }, { label: "Accelerated life", to: "/models/alt" }]}
       title={model ? itemName(model) : "Model"}
       badges={model?.is_sample && <Chip>Sample</Chip>}
       answer={model ? altAnswerParts(r, { saved: `saved ${relativeTime(model.created_at)}` }) : null}
