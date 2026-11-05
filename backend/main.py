@@ -649,7 +649,8 @@ SPA_ROOTS = frozenset({
     "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",
     "reliability-analysis-software",
     # The signed-in app.
-    "home", "systems", "asset-register", "maintenance", "data", "models", "strategy", "forecasts", "reports",
+    "home", "products", "items", "systems", "asset-register", "maintenance", "data", "models", "strategy",
+    "forecasts", "reports",
     "agent", "team", "settings", "tokens", "admin", "billing", "changes", "data-model",
     # Placeholder pages (frontend/src/plannedPages.js).
     "requirements", "failures", "risk",
