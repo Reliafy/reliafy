@@ -83,7 +83,9 @@ words. You only need the ones your data has:
 - **Failed or still running?** — the censoring column. Reliafy lists the values
   it finds, with how many rows have each, and you mark each one **Failed** or
   **Still running**. For the sample *Pump field returns*, `0` is 18 failures and
-  `1` is 7 pumps still running.
+  `1` is 7 pumps still running. If most units come out as still running, the
+  step says so and offers **Swap the flags**: many spreadsheets use `1` for
+  failed.
 - **Count** — if one row represents several identical units.
 - **Failure mode** — when units fail in more than one way: each mode is treated as a competing risk (see [competing risks](/guides/competing-risks)).
 - Under **Advanced: interval and truncated data**, the earliest and latest
@@ -188,7 +190,9 @@ reads them in detail.
 
 ## Where to go next
 
-Press **Save model** and it becomes available everywhere else: as a block in a
+Name the model in the "This fit isn't saved yet" bar above the result and
+press **Save this model** (**Save this model and its data** for a file you
+uploaded). It then becomes available everywhere else: as a block in a
 [reliability block diagram](/guides/build-an-rbd), as the input to an
 [optimal replacement interval](/guides/optimal-replacement-interval), as the
 basis of a [fleet failure forecast](/guides/forecast-fleet-failures-and-spares),

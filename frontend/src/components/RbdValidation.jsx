@@ -4,6 +4,15 @@ import { NO_BLOCKS } from "../rbdReadiness.js";
 // A structural signature of the diagram (ignoring node positions): rbdSignature.js.
 export { graphSignature } from "../rbdSignature.js";
 
+// The words (and icon) for "nothing to check" (#271), shared by the panel and
+// the Builder's Validate button so they never disagree: no blocks yet ("+",
+// add some), or blocks with no path from Input to Output.
+export function emptyStatus(validation) {
+  return validation?.empty === NO_BLOCKS
+    ? { icon: "+", text: "Nothing to check yet" }
+    : { icon: "!", text: "Not connected yet" };
+}
+
 // Renders the outcome of a validate call: a green pass, an amber pass that
 // carries warnings (never green, #305), or a red panel that explains what
 // makes the RBD invalid, and notes which nodes are simulated.
@@ -26,11 +35,12 @@ export default function ValidationPanel({ validation, stale }) {
   // Nothing to check yet (#271): only Input and Output, or no block on a
   // path between them. A next step, not an error.
   if (validation.empty) {
+    const { icon, text } = emptyStatus(validation);
     return (
       <div className="rbd-check rbd-check-todo">
-        <span className="rbd-check-icon">+</span>
+        <span className="rbd-check-icon">{icon}</span>
         <div>
-          <strong>{validation.empty === NO_BLOCKS ? "Nothing to check yet." : "Not connected yet."}</strong>
+          <strong>{text}.</strong>
           <p className="rbd-check-note">{validation.errors?.[0]}</p>
         </div>
       </div>

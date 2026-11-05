@@ -167,7 +167,7 @@ function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false 
   // The block shows its name and its life (and, repairable, its repair) in
   // plain words, each on a line of its own that reads at fit-to-view (#314);
   // the full models are on its tooltip.
-  const life = data.model ? lifeLine(data.model, rbdUnit, { short: repairable }) : "";
+  const life = data.model ? lifeLine(data.model, rbdUnit, { short: repairable, repairable }) : "";
   const rep = !repairable ? "" : data.instant_repair ? "instant repair" : repairLine(data.repair, rbdUnit);
   const detail = [
     data.model ? `Life: ${modelSummary(data.model)}` : null,
@@ -177,7 +177,7 @@ function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false 
   const title = [data.label, repeat ? repeatTitle : null, detail].filter(Boolean).join("\n");
   let body;
   if (missing) body = <div className="rbd-comp-empty warn">The block it repeats was removed</div>;
-  else if (!data.model) body = <div className="rbd-comp-empty">No non-repairable model — double-click to set</div>;
+  else if (!data.model) body = <div className="rbd-comp-empty">No failure data — double-click</div>;
   else if (repairable && !data.repair && !data.instant_repair) {
     body = (
       <>
@@ -292,7 +292,7 @@ export function StructureNode({ id, data: nodeData, type }) {
     body = data.model ? (
       <div className="rbd-block-model">{lifeLine(data.model, rbdUnit)}</div>
     ) : (
-      <div className="rbd-block-sub">No non-repairable model</div>
+      <div className="rbd-block-sub">No failure data — double-click</div>
     );
   } else if (data.kind === "standby") {
     // "cold · 1 spare", then a line each for the unit's life and (repairable,
@@ -304,7 +304,7 @@ export function StructureNode({ id, data: nodeData, type }) {
             ` · ${data.spares ?? 1} spare${(data.spares ?? 1) === 1 ? "" : "s"}`}
           {repairable && data.repair_one_at_a_time ? " · one repairer" : ""}
         </div>
-        {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, rbdUnit, { short: true })}</div>}
+        {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, rbdUnit, { short: true, repairable })}</div>}
         {repairable && data.repair && <div className="rbd-block-model one-line">{repairLine(data.repair, rbdUnit)}</div>}
         {repairable && !data.repair && (
           <div className="rbd-comp-empty warn">No repair time — double-click</div>

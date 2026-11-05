@@ -61,7 +61,10 @@ export function RequiredUnit({ value, onChange, label = "Unit", listId = "x-unit
         ))}
       </datalist>
       {!none && !String(value ?? "").trim() && (
-        <span className="ds-hint">Add a unit (Hours, Days, Cycles…) so results say what the numbers mean.</span>
+        <span className="ds-hint">
+          Add a unit (Hours, Days, Cycles…) so results say what the numbers mean. Without one,
+          results have no unit: times are in whatever unit your data uses.
+        </span>
       )}
       <label className="ds-unitless">
         <input type="checkbox" checked={none} onChange={(e) => onChange(e.target.checked ? UNITLESS : "")} />

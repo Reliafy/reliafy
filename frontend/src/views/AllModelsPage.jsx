@@ -54,7 +54,7 @@ export default function AllModelsPage() {
       <SectionList
         rows={rows}
         noun={["model", "models"]}
-        placeholder="Search by name, type, or ID…"
+        placeholder="Search models…"
         // Searchable on name, detail, type — and the id, so an ID copied from
         // a model page (or an API response) pastes straight in.
         fields={(r) => [r.name, r.detail, TYPE_LABEL[r.type]]}

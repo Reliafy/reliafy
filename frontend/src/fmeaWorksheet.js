@@ -132,7 +132,7 @@ export const COLUMNS = [
     sort: rpnOfRow,
   },
   {
-    id: "ap", label: "AP", width: 76, min: 64, on: true,
+    id: "ap", label: "AP", width: 112, min: 64, on: true,
     title: "Action priority from S, O and D: High (act), Medium (act or say why not), Low (a parent row: how many of each)",
     text: (r) => (isMode(r) ? AP_LABEL[r.ref.ap] || "" : apSummary(r.sum)),
     sort: (r) => (isMode(r) ? AP_RANK[r.ref.ap] ?? null : r.sum.high ? 3 : r.sum.medium ? 2 : r.sum.low ? 1 : null),

@@ -52,7 +52,7 @@ mode)**. No distribution is assumed: the curves come straight from the data.
 ![The Model step with a failure-mode column mapped: competing risks, and an optional column to compare groups](/guides/img/crisk-01-model-step.png)
 
 **Compare groups (optional)** takes a column such as site or supplier. Leave it
-blank for now. Press **Fit by failure mode**, then **Save model**.
+blank for now. Press **Fit by failure mode**, then **Save this model**.
 
 ## Read the result
 

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   nextGutter,
-  ARRANGEMENTS, CHIPS, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
+  ARRANGEMENTS, CHIPS, CHIP_MARK, ancestorsOf, arrangementOf, buildDisplay, carryOver, clampWidth, computeFilter, explorerPath,
   filterOpen, findByPrefix, flatten, insideWords, levelSet, loadTreeState, markersOf, pinnedRows, saveTreeState,
   statusWords, windowOf,
 } from "./assetTree.js";
@@ -270,6 +270,17 @@ test("Not analysed: the chip finds positions with no RCM yet; the quiet marker c
   const chip = CHIPS.find((c) => c.id === "unanalysed");
   assert.match(chip.title, /at least one function, every function has a functional failure, every functional failure has failure modes or is caused by failures on positions inside it/);
   assert.match(chip.title, /no functions of its own is not analysed/);
+});
+
+test("the markers' key: every marker a position can carry has its Show only filter, with the same look", () => {
+  const data = { ...DATA, positions: DATA.positions.map((p) => (p.id === "seal" ? { ...p, not_analysed: true } : p)) };
+  const d = buildDisplay(data, "positions");
+  const kinds = new Set();
+  for (const r of d.rows.values()) for (const m of markersOf(r, { rcm: true })) kinds.add(m.kind);
+  assert.ok(kinds.size >= 3);
+  const keyed = new Set(Object.values(CHIP_MARK).map((m) => m.kind));
+  for (const k of kinds) assert.ok(keyed.has(k), `no key for the ${k} marker`);
+  for (const id of Object.keys(CHIP_MARK)) assert.ok(CHIPS.some((c) => c.id === id), `${id} is a Show only filter`);
 });
 
 test("the scrollbar's gutter only grows, so a measure that flips can't loop", () => {

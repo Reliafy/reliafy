@@ -53,6 +53,10 @@ import {
 import "./Maintenance.css";
 import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import LoadFailed from "../components/LoadFailed.jsx";
+import { isNotFound } from "../components/loadFailed.js";
+import { explorerPath } from "../assetTree.js";
+import { EXPLORER_LABEL } from "../navigation.js";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
@@ -135,7 +139,7 @@ export function MaintenanceLocation() {
   useEffect(() => {
     listMaintenanceLocations().then((d) => setAll(d.locations)).catch(() => {});
   }, []);
-  if (error && !loc) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={explorerPath("locations")} label={`Open the ${EXPLORER_LABEL}`} /></div>;
   if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
   // The header leaves out the open work: it's its own card below, the whole area's
   // (positions, items there now and the place itself), not only the positions'.
@@ -295,20 +299,33 @@ export function MaintenanceClasses() {
   const [classes, setClasses] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [classError, setClassError] = useState(null);
   useEffect(() => {
     getPositionClasses().then((d) => setClasses(d.classes)).catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
+    setClassError(null);
     if (!open) return;
     setData(null);
-    getClassLifeData(open).then(setData).catch((e) => setError(e.message));
+    getClassLifeData(open).then(setData).catch((e) => setClassError(e.message));
   }, [open]);
+  // A class that isn't there (renamed, or a mistyped link): say so, with the
+  // way back to the list, rather than the list under a red banner.
+  if (open && isNotFound(classError)) {
+    return (
+      <div className="app">
+        <PageTitle name={open} />
+        <LoadFailed header error={classError} notFound="Class not found." to="/asset-register/classes" label="See all classes" />
+      </div>
+    );
+  }
+  const shownError = error || classError;
   return (
     <div className="app">
       <PageTitle name={open} />
       <SectionHeader section="assets" title="Classes"
                   purpose="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to." />
-      {error && <div className="card error">{error}</div>}
+      {shownError && <div className="card error">{shownError}</div>}
       <h2 className="maint-section">Position classes</h2>
       {classes === null ? <div className="card empty">Loading…</div> : classes.length === 0 ? (
         <div className="card empty"><p>No classes yet. Give positions a class (e.g. “Pool pump”) when you create or edit them.</p></div>

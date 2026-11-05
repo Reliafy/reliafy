@@ -12,7 +12,7 @@ import { ModelTabs } from "./model/ModelFrame.jsx";
 import { CheckCard, ChecksGrid, NumbersSheet, PlotCard, PlotPanel, ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
 import { InducedLifeCard, InducedLifeCheck, useInducedLife } from "./DegradationInducedLife.jsx";
 import {
-  PATH_FORMULAS, POPULATION_METHODS, bLives, bandLevel, degradationTabs, meanAnswer, pathParams, pathRanking,
+  PATH_FORMULAS, POPULATION_METHODS, bLives, bandLevel, degradationTabs, meanAnswer, oneSidedLevel, pathParams, pathRanking,
   reliabilityAt, resolveDegradationTab, scatterCheck, thresholdText, timeAtReliability,
 } from "../degradationFrame.js";
 import "./DegradationResultView.css";
@@ -189,15 +189,20 @@ function PathsTab({ r, name, design, onDiag, onCalc }) {
   );
 }
 
-// The design life in a line: the band's lower end at the chosen reliability.
+// The design life in a line: the band's lower end at the chosen reliability,
+// said as the one-sided lower bound it is (the life pages' "≥ … at 95%").
 function DesignLife({ design, onCalc }) {
   const { life, relPct, level, unit } = design;
   const u = unit ? ` ${unitInText(unit)}` : "";
+  const os = pct(oneSidedLevel(level));
   return (
     <div className="life-reading">
       <div className="life-reading-title">Design life</div>
       {life?.lower != null ? (
-        <div><b>{formatNumber(life.lower)}{u}</b>: {pct(relPct)}% survive, the lower end of the {pct(level)}% band.</div>
+        <div>
+          <b>{formatNumber(life.lower)}{u}</b>: the B{pct(100 - relPct)} lower bound ({os}%, one-sided). We're {os}% sure
+          at least {pct(relPct)}% survive this long{life.value != null ? <>; the best estimate is {formatNumber(life.value)}{u}</> : null}.
+        </div>
       ) : life?.value != null ? (
         <div>Best estimate <b>{formatNumber(life.value)}{u}</b> for {pct(relPct)}% survival; the band's lower end doesn't reach it on the curve.</div>
       ) : (
@@ -248,7 +253,7 @@ function CalculatorTab({ r, name, curves, band, relPct, setRelPct, time, setTime
           <div className="gof-card" aria-live="polite">
             <div className="gofh">Time to {pct(relPct)}% reliability</div>
             <div className="gofr"><span className="gk">Best estimate</span><span className="gv">{life?.value != null ? `${formatNumber(life.value)}${u}` : "—"}</span></div>
-            <div className="gofr"><span className="gk">Design life</span><span className="gv">{life?.lower != null ? `${formatNumber(life.lower)}${u}` : "—"}</span></div>
+            <div className="gofr"><span className="gk">Design life ({pct(oneSidedLevel(level))}% lower bound)</span><span className="gv">{life?.lower != null ? `${formatNumber(life.lower)}${u}` : "—"}</span></div>
             <div className="gofr"><span className="gk">{pct(level)}% band</span><span className="gv">{spanText(life?.lower, life?.upper, u)}</span></div>
             {at && (
               <>
@@ -268,7 +273,8 @@ function CalculatorTab({ r, name, curves, band, relPct, setRelPct, time, setTime
             )}
           </div>
           <p className="life-method">
-            The design life is where the band's lower edge reaches the reliability: the cautious figure to plan with.
+            The design life is where the band's lower edge reaches the reliability: a one-sided {pct(oneSidedLevel(level))}% lower
+            bound (the lower end of the two-sided {pct(level)}% band), the cautious figure to plan with.
             The band is the uncertainty in the population curve from tracking only {r.n_units ?? (r.units || []).length} items.
           </p>
         </>
@@ -343,7 +349,7 @@ function CharsTab({ r, curves, band, onCalc }) {
             <span className="gk">Design life (B10)</span>
             <span className="gv-col">
               <span className="gv">{formatNumber(b10.lower)}{u}</span>
-              <span className="param-ci">90% survive: the {pct(level)}% band's lower end</span>
+              <span className="param-ci">B10 lower bound ({pct(oneSidedLevel(level))}%, one-sided): the {pct(level)}% band's lower end</span>
             </span>
           </div>
         )}

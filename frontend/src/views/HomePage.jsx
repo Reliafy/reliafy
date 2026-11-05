@@ -215,9 +215,6 @@ export default function HomePage() {
           : "What changed, what needs you, and your recent work, across every section."}
       />
 
-      {/* Asked once, of a new user; Settings keeps the picker. */}
-      {offer && <RolesCard offer />}
-
       {/* A fit left without saving, with its one-click save (#434). */}
       <UnsavedFitReminder />
 
@@ -226,6 +223,10 @@ export default function HomePage() {
       ) : (
         <>
           {nearEmpty && <StartHere info={firstRun} sampleModelId={sampleModelId} />}
+
+          {/* Asked once, of a new user, after the ways to start; Settings
+              keeps the picker. */}
+          {offer && <RolesCard offer />}
 
           {cards.map((card) => (
             <div key={card} className="home-slot">
