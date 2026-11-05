@@ -13,6 +13,7 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/sample-truck"],
   // "Add the sample UAV" (the FME(C)A tab's scored sample quadcopter).
   ["POST", "/api/maintenance/sample-uav"],
+  ["POST", "/api/maintenance/sample-product"],
   // A dataset's measurements part (docs/datasets.md): add, paste, remove, split, life data for readings alone.
   ["PUT", "/api/datasets/smoke/measurements"],
   ["PUT", "/api/datasets/smoke/measurements/paste"],

@@ -50,8 +50,8 @@ async function seedJointModel(post, put) {
 export default async function seed(config) {
   if (process.env.SMOKE_BASE_URL) return;
   const api = await request.newContext({ baseURL: config.projects[0].use.baseURL });
-  const send = (method) => async (path, data) => {
-    const res = await api.fetch(path, { method, data });
+  const send = (method) => async (path, data, timeout = undefined) => {
+    const res = await api.fetch(path, { method, data, timeout });
     if (!res.ok()) throw new Error(`Seeding: ${method} ${path} answered ${res.status()}: ${await res.text()}`);
     return res.json();
   };
@@ -60,6 +60,9 @@ export default async function seed(config) {
   try {
     const m = "/api/maintenance";
     const { position: { id: position_id } } = await post(`${m}/sample-truck`, {});
+    // A product with three items built from it, their reports and its RBD (Products, Items).
+    // About a thousand events (three items' trees copied): give it time on a busy machine.
+    await post(`${m}/sample-product`, {}, 180000);
     const location = await post(`${m}/locations`, { name: "Smoke test depot" });
     const item = await post(`${m}/items`, { name: "Smoke test brake set", serial: "SMOKE-1" });
     await patch(`${m}/positions/${position_id}`, { location_id: location.id });

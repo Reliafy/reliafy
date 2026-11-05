@@ -87,6 +87,8 @@ export const DETAIL_IDS = {
   "/asset-register/positions/:id/fmea": ["/api/maintenance/overview", list("tree")],
   "/maintenance/work-orders/:id": ["/api/maintenance/work-orders", list("work_orders")],
   "/asset-register/items/:id": ["/api/maintenance/items", list("items")],
+  // A product: smoke/seed.js adds the sample UAV product.
+  "/products/:id": ["/api/maintenance/products", list("products")],
   "/asset-register/locations/:id": ["/api/maintenance/locations", list("locations")],
   "/asset-register/classes/:name": ["/api/maintenance/classes", list("classes", "position_class")],
   "/asset-register/parts/:id": ["/api/maintenance/parts", list("parts")],
