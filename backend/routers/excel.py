@@ -111,7 +111,8 @@ def workbook_table(
     target: str | None = Form(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
-    """One sheet's header and first rows (as text) for a column mapper.
+    """One sheet's header and first rows (as text) for a column mapper (or a
+    CSV file's: the import of an RCM worksheet onto a position takes CSV too).
 
     With ``target`` (``rcm``, ``rbd_blocks``, ``rbd_connections``, ``bom``) the
     response adds that importer's ``fields`` and a ``guess`` at the mapping
@@ -119,8 +120,11 @@ def workbook_table(
     notes)."""
     data = read_upload(file)
     try:
-        table = guarded(user["uid"], excel.read_table, data, sheet, header_row_param(header_row),
-                        file.filename or "")
+        if excel.is_excel(data, file.filename or ""):
+            table = guarded(user["uid"], excel.read_table, data, sheet, header_row_param(header_row),
+                            file.filename or "")
+        else:  # CSV text: one table, its header on the first line
+            table = guarded(user["uid"], excel.read_csv, data, file.filename or "")
     except Exception as exc:
         return excel_error(exc, "table", data, file.filename or "")
     extra: dict = {}

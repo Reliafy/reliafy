@@ -2,7 +2,7 @@
 their connections say how the blocks are wired, and redundancy groups say where
 k of n is enough.
 
-* Each child position is a block. Its life model is its class's fitted model
+* Each child position is a block. Its non-repairable model is its class's fitted model
   (in days); with none, a placeholder, named in the notes.
 * A connection from A to B is an edge A -> B.
 * A redundancy group (k of its n members needed) becomes a vote node: each
@@ -97,7 +97,7 @@ def build(m: Maintenance, scope_id: str) -> dict:
         edges |= {(head, b) for b in sources} | {(b, "out") for b in sinks}
 
     if placeholders:
-        notes.append(f"No life model yet for {', '.join(placeholders)}: a placeholder is used. Fit one for "
+        notes.append(f"No non-repairable model yet for {', '.join(placeholders)}: a placeholder is used. Fit one for "
                      "the position's class, or give each block a model in the RBD builder.")
     graph = {"nodes": nodes, "unit": "days",
              "edges": [{"source": s, "target": t} for (s, t) in sorted(edges)]}

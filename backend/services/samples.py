@@ -240,11 +240,53 @@ _PUMP_MODES_CSV = (
     "P-71,4210,,A,60\nP-72,50,seal leak,B,60\n"
 ).encode()
 
+def _feed_pump_fleet(n: int = 40, seed: int = 12, stop: float = 120.0, every: float = 10.0) -> tuple[bytes, bytes]:
+    """Condition and life in one dataset: ``(life data, measurements)`` for
+    40 feed pumps watched for 120 days, their vibration read every 10 days.
+    Drawn from a joint model (each pump's vibration follows its own straight
+    line; a Weibull failure rate rises with the vibration now and with a
+    heavier duty, ``load`` 1), so the condition and life fit recovers it:
+    35 pumps fail, 5 are still running with their own readings to judge
+    them by. Deterministic (a fixed seed), so the seed is idempotent."""
+    import numpy as np
+
+    truth = dict(a=2.0, b=0.02, sd_a=0.3, sd_b=0.004, sd_noise=0.15, alpha=150.0, beta=2.0, zeta=0.8, ref=2.0,
+                 load=0.5)
+    rng = np.random.default_rng(seed)
+    grid = np.linspace(0, 1000, 20001)
+    life = ["pump,age_days,running,load"]
+    reads = ["pump,age_days,vibration_mm_s"]
+    for k in range(n):
+        load = k % 2
+        a, b = rng.normal(truth["a"], truth["sd_a"]), rng.normal(truth["b"], truth["sd_b"])
+        h = (truth["beta"] / truth["alpha"] * (np.maximum(grid, 1e-12) / truth["alpha"]) ** (truth["beta"] - 1)
+             * np.exp(truth["zeta"] * (a + b * grid - truth["ref"]) + truth["load"] * load))
+        cum = np.concatenate([[0], np.cumsum((h[1:] + h[:-1]) / 2 * np.diff(grid))])
+        t_fail = float(np.interp(rng.exponential(), cum, grid))
+        end = min(t_fail, stop)
+        ages = np.arange(0.0, end, every)
+        y = a + b * ages + rng.normal(0, truth["sd_noise"], ages.size)
+        uid = f"P-{k + 1:02d}"
+        life.append(f"{uid},{end:.1f},{int(t_fail >= stop)},{load}")
+        reads += [f"{uid},{t:g},{v:.3f}" for t, v in zip(ages, y)]
+    return ("\n".join(life) + "\n").encode(), ("\n".join(reads) + "\n").encode()
+
+
+_FEED_PUMP_LIVES_CSV, _FEED_PUMP_VIBRATION_CSV = _feed_pump_fleet()
+
 SAMPLE_DATASETS = [
     {
         "id": "sample-ds-bearings",
         "name": "Bearing fatigue test (sample)",
         "csv": _BEARINGS_CSV,
+    },
+    {
+        # One dataset with both parts (docs/datasets.md): the pumps' lives
+        # and their vibration readings, for condition and life.
+        "id": "sample-ds-feed-pumps",
+        "name": "Feed pumps — lives and vibration readings (sample)",
+        "csv": _FEED_PUMP_LIVES_CSV,
+        "measurements": _FEED_PUMP_VIBRATION_CSV,
     },
     {
         "id": "sample-ds-insulating-fluid",
@@ -285,6 +327,30 @@ SAMPLE_DATASETS = [
         "id": "sample-ds-pump-modes",
         "name": "Pump failures by mode (sample)",
         "csv": _PUMP_MODES_CSV,
+    },
+]
+
+# A condition and life (joint) model on the feed pumps: each running pump's
+# own risk from its own vibration readings. Fitted in-process at seed time
+# (about a second), once.
+SAMPLE_JOINT_MODELS = [
+    {
+        "id": "sample-joint-feed-pumps",
+        "name": "Feed pumps — condition and life (sample)",
+        "dataset_id": "sample-ds-feed-pumps",
+        "spec": {
+            "dataset_id": "sample-ds-feed-pumps",
+            "mapping": {"id": "pump", "x": "age_days", "c": "running"},
+            "readings_mapping": {"id": "pump", "age": "age_days", "value": "vibration_mm_s"},
+            "covariates": ["load"],
+            "hazard_covariates": ["load"],
+            "path_covariates": [],
+            "c_invert": False,
+            "path_model": "linear",
+            "unit": "Days",
+            "marker": "vibration",
+            "marker_unit": "mm/s",
+        },
     },
 ]
 
@@ -461,7 +527,7 @@ SAMPLE_MODELS = [
 
 # A small but representative diagram: a controller in series with two redundant
 # pumps in parallel (input -> controller -> {Pump A | Pump B} -> output). Each
-# component carries an inline Weibull life model so the RBD is self-contained
+# component carries an inline Weibull non-repairable model so the RBD is self-contained
 # (it doesn't depend on any saved model). Shape matches what the React Flow
 # builder produces, so it opens, analyses, and edits like any user diagram.
 def _weibull(alpha: float, beta: float) -> dict:
@@ -512,7 +578,7 @@ def _pump_station_graph() -> dict:
 #     compressors — they share suction, power and maintenance, so 10 % of
 #     compressor failures are assumed to take all three out together.
 #   * "availability" is repairable: every component carries a Lognormal
-#     repair-time model on top of its life model, and the dryers become a
+#     repair-time model on top of its non-repairable model, and the dryers become a
 #     1-out-of-2 gate (standby isn't supported in availability mode), so the
 #     result is steady-state uptime rather than a survival curve.
 # ---------------------------------------------------------------------------
@@ -896,22 +962,79 @@ def _upgrade_sample_dataset(db, spec: dict, existing: dict) -> None:
     so models fitted to the sample stay valid."""
     have = {str(c.get("name")) for c in existing.get("columns") or [] if isinstance(c, dict)}
     df = fitting.read_dataframe(spec["csv"])
-    if not set(map(str, df.columns)) - have:
+    update: dict = {}
+    if set(map(str, df.columns)) - have:
+        update.update({
+            "data": spec["csv"],
+            "checksum": storage.checksum(spec["csv"]),
+            "n_rows": int(df.shape[0]),
+            "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
+        })
+    # A measurements part this release gives the sample (never one it has).
+    if spec.get("measurements") and not existing.get("measurements"):
+        update["measurements"] = _sample_part(spec["measurements"]).model_dump()
+    if not update:
         return
-    db.datasets.update_one({"_id": spec["id"]}, {"$set": {
-        "data": spec["csv"],
-        "checksum": storage.checksum(spec["csv"]),
-        "n_rows": int(df.shape[0]),
-        "columns": [{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns],
-    }})
-    logger.info("Upgraded sample dataset %r (new columns).", spec["id"])
+    db.datasets.update_one({"_id": spec["id"]}, {"$set": update})
+    logger.info("Upgraded sample dataset %r (%s).", spec["id"],
+                "new columns" if "data" in update else "measurements")
+
+
+def _sample_part(csv: bytes):
+    """A sample dataset's measurements part from its CSV."""
+    from backend.schema import DatasetPart
+
+    df = fitting.read_dataframe(csv)
+    return DatasetPart(checksum=storage.checksum(csv), n_rows=int(df.shape[0]),
+                       columns=[{"name": str(c), "dtype": str(df[c].dtype)} for c in df.columns], data=csv)
+
+
+def _seed_joint_models(db) -> None:
+    """Fit and save the sample condition and life models (idempotent: a
+    saved one is left as it is)."""
+    for spec in SAMPLE_JOINT_MODELS:
+        try:
+            if db.models.find_one({"_id": spec["id"]}, {"_id": 1}) is not None:
+                continue
+            if db.datasets.find_one({"_id": spec["dataset_id"]}, {"_id": 1}) is None:
+                continue
+            from backend import joint as joint_fit  # local: heavy import
+            from backend.services import compute_core
+            from backend.services import joint as joint_service
+
+            s = spec["spec"]
+            items, summary = joint_service.items_for(db, s, SAMPLE_OWNER)
+            request = joint_fit.fit_request(
+                items, s["covariates"], path_model=s["path_model"], hazard_covariates=s.get("hazard_covariates"),
+                path_covariates=s.get("path_covariates"), unit=s.get("unit") or "", marker=s.get("marker") or "",
+                marker_unit=s.get("marker_unit") or "", summary=summary)
+            out = compute_core.to_wire(compute_core.run_joint_fit(request))
+            import surpyval
+
+            model = Model(
+                id=spec["id"],
+                name=spec["name"],
+                owner_id=SAMPLE_OWNER,
+                dataset_id=spec["dataset_id"],
+                kind=joint_service.KIND,
+                distribution_id=(out.get("results") or {}).get("distribution_id") or "joint",
+                spec=dict(s),
+                results=out.get("results") or {},
+                serialized={"format": "surpyval_joint", "model": out.get("model"), "units": out.get("units") or {}},
+                surpyval_version=getattr(surpyval, "__version__", None),
+                status="ready",
+            )
+            db.models.insert_one(to_doc(model))
+            logger.info("Seeded sample condition and life model %r.", spec["id"])
+        except Exception as exc:  # pragma: no cover - defensive; never block boot
+            logger.warning("Failed to seed sample condition and life model %r: %s", spec["id"], exc)
 
 
 def _upgrade_sample_recurrent(db, spec: dict, existing: dict) -> None:
     """A seeded sample recurrent model whose spec predates a mapping key or
     the default growth-projection settings this release ships (#265: the
     compressor model's failure-mode column): map them, and store the
-    projection, so repairable_analysis growth_projection and the app's Projection panel work on
+    projection, so analyse growth_projection and the app's Projection panel work on
     it straight away. The fit itself doesn't change (the mode column isn't
     part of it). Settings a sample already has are kept."""
     from backend import recurrent as recurrent_fit  # local: heavy import
@@ -973,11 +1096,14 @@ def seed_samples(db) -> None:
                 n_rows=int(df.shape[0]),
                 columns=columns,
                 data=spec["csv"],
+                measurements=_sample_part(spec["measurements"]) if spec.get("measurements") else None,
             )
             db.datasets.insert_one(to_doc(dataset))
             logger.info("Seeded sample dataset %r.", spec["id"])
         except Exception as exc:  # pragma: no cover - defensive; never block boot
             logger.warning("Failed to seed sample dataset %r: %s", spec["id"], exc)
+
+    _seed_joint_models(db)
 
     import surpyval
 
@@ -991,9 +1117,13 @@ def seed_samples(db) -> None:
                 if is_regression:
                     continue
                 # Upgrade older seeds whose cached results predate newer payload
-                # fields (parameter CIs / the randomness verdict).
-                old_params = (existing.get("results") or {}).get("params") or []
-                if old_params and "ci" in old_params[0]:
+                # fields (parameter CIs / the randomness verdict / the failures
+                # on the time scale that the model page's checks draw).
+                old_results = existing.get("results") or {}
+                old_params = old_results.get("params") or []
+                old_plot = old_results.get("plot")
+                has_points = not old_plot or "empirical" in old_plot
+                if old_params and "ci" in old_params[0] and has_points:
                     continue
             ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
             if ds_doc is None:
@@ -1009,7 +1139,7 @@ def seed_samples(db) -> None:
                 db.models.update_one(
                     {"_id": spec["id"]}, {"$set": {"results": result}}
                 )
-                logger.info("Upgraded sample model %r (param CIs).", spec["id"])
+                logger.info("Upgraded sample model %r (newer result fields).", spec["id"])
                 continue
             model = Model(
                 id=spec["id"],
@@ -1036,7 +1166,6 @@ def seed_samples(db) -> None:
             logger.warning("Failed to seed sample model %r: %s", spec["id"], exc)
 
     _seed_strategy_analyses(db)
-    _seed_rcm_study(db)
     _seed_fleet(db)
 
     for spec in SAMPLE_RBDS:
@@ -1060,7 +1189,13 @@ def seed_samples(db) -> None:
         try:
             from backend import degradation as degradation_fit  # local: heavy import
 
-            model_exists = db.degradation_models.find_one({"_id": spec["id"]}) is not None
+            existing_deg = db.degradation_models.find_one({"_id": spec["id"]})
+            model_exists = existing_deg is not None
+            # Upgrade an older seed whose results predate newer payload fields
+            # (each reading's residual, which the model page's checks draw).
+            stale = model_exists and not all(
+                "residuals" in u for u in ((existing_deg.get("results") or {}).get("units") or [])
+            )
 
             def _needs_seed(it):
                 doc = db.tracked_items.find_one({"_id": it["id"]})
@@ -1075,7 +1210,7 @@ def seed_samples(db) -> None:
                 it for it in SAMPLE_TRACKED_ITEMS
                 if it["model_id"] == spec["id"] and _needs_seed(it)
             ]
-            if model_exists and not missing_items:
+            if model_exists and not missing_items and not stale:
                 continue
 
             ds_doc = db.datasets.find_one({"_id": spec["dataset_id"]})
@@ -1100,6 +1235,9 @@ def seed_samples(db) -> None:
                 )
                 db.degradation_models.insert_one(to_doc(doc))
                 logger.info("Seeded sample degradation model %r.", spec["id"])
+            elif stale:
+                db.degradation_models.update_one({"_id": spec["id"]}, {"$set": {"results": payload}})
+                logger.info("Upgraded sample degradation model %r (newer result fields).", spec["id"])
 
             live = degradation_fit.get_live(cache_id)
             for it in missing_items:
@@ -1153,6 +1291,13 @@ def seed_samples(db) -> None:
     for spec in SAMPLE_ALT_MODELS:
         try:
             existing = db.alt_models.find_one({"_id": spec["id"]})
+            levels = ((existing or {}).get("results") or {}).get("levels") or []
+            if existing is not None and levels and "failures" not in levels[0]:
+                # The model page's frame: each level's failures and own fit,
+                # and a two-stress model's second chart. Refit once to gain them.
+                db.alt_models.delete_one({"_id": spec["id"]})
+                existing = None
+                logger.info("Refitting sample ALT model %r (model page).", spec["id"])
             if existing is not None:
                 units = spec["spec"].get("stress_units")
                 if units and not (existing.get("spec") or {}).get("stress_units"):
@@ -1199,124 +1344,9 @@ def seed_samples(db) -> None:
     _seed_tracked_fleet(db)
 
 
-def _seed_rcm_study(db) -> None:
-    """Sample RCM study wiring every sample artifact together as evidence.
-
-    One decision — the legacy run-to-failure plan on the wheel bearings — is
-    deliberately linked to a model that CONTRADICTS it (the bearing Weibull
-    fits wear-out, β ≈ 2.5): the study opens with a red badge that demos the
-    live evidence validation.
-    """
-    from backend.schema import RcmStudy
-
-    if db.rcm_studies.find_one({"_id": "sample-rcm-truck"}) is not None:
-        return
-    try:
-        functions = [
-            {
-                "id": "sample-rcm-f1",
-                "text": "Stop the vehicle within the rated distance",
-                "failures": [
-                    {
-                        "id": "sample-rcm-f1-ff1",
-                        "text": "Insufficient braking force",
-                        "modes": [
-                            {
-                                "id": "sample-rcm-m1",
-                                "text": "Brake pad wear beyond the 8 mm limit",
-                                "effects": "Extended stopping distance; risk of collision.",
-                                "consequence": "safety",
-                                "decision": {
-                                    "outcome": "on_condition",
-                                    "task": "Measure pad wear at each service; replace before the 8 mm threshold.",
-                                    "evidence": {"type": "degradation_model", "id": "sample-deg-brake-wear"},
-                                },
-                            },
-                            {
-                                "id": "sample-rcm-m2",
-                                "text": "Secondary hydraulic circuit failed (hidden until demanded)",
-                                "effects": "No redundancy on primary circuit failure.",
-                                "consequence": "hidden",
-                                "decision": {
-                                    "outcome": "failure_finding",
-                                    "task": "Function-test the secondary circuit.",
-                                    "evidence": {"type": "strategy_analysis", "id": "sample-strategy-ffi-brake-circuit"},
-                                },
-                            },
-                        ],
-                    },
-                ],
-            },
-            {
-                "id": "sample-rcm-f2",
-                "text": "Transmit drive to the wheels",
-                "failures": [
-                    {
-                        "id": "sample-rcm-f2-ff1",
-                        "text": "Wheel does not rotate freely",
-                        "modes": [
-                            {
-                                "id": "sample-rcm-m3",
-                                "text": "Wheel-bearing fatigue",
-                                "effects": "Vehicle immobilised; tow required.",
-                                "consequence": "operational",
-                                "decision": {
-                                    "outcome": "fixed_interval",
-                                    "task": "Replace wheel bearings preventively.",
-                                    "interval": 580,
-                                    "interval_unit": "hours",
-                                    "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"},
-                                },
-                            },
-                            {
-                                "id": "sample-rcm-m4",
-                                "text": "Wheel-bearing failure — legacy run-to-failure plan",
-                                "effects": "As above; inherited from the old maintenance plan.",
-                                "consequence": "operational",
-                                "decision": {
-                                    "outcome": "rtf",
-                                    "rtf_basis": "random",
-                                    "notes": "Legacy decision — kept to demonstrate live evidence validation.",
-                                    "evidence": {"type": "model", "id": "sample-model-bearings-weibull"},
-                                },
-                            },
-                            {
-                                "id": "sample-rcm-m5",
-                                "text": "Chassis cracking at the spring hanger",
-                                "effects": "Structural risk under load.",
-                                "consequence": "safety",
-                                "decision": {
-                                    "outcome": "redesign",
-                                    "notes": "No task can manage the risk — reinforcement redesign raised with engineering.",
-                                },
-                            },
-                        ],
-                    },
-                ],
-            },
-        ]
-        from backend.services import rcm as rcm_service
-
-        study = RcmStudy(
-            id="sample-rcm-truck",
-            name="Delivery truck — RCM demo (sample)",
-            system="Delivery truck (brakes + drivetrain)",
-            description=(
-                "A worked RCM study with every decision linked to its evidence. "
-                "Note the legacy run-to-failure decision flagged as CONTRADICTED — "
-                "its own life model shows wear-out, not random failure."
-            ),
-            owner_id=SAMPLE_OWNER,
-            functions=rcm_service.clean_tree(functions),
-        )
-        db.rcm_studies.insert_one(to_doc(study))
-        logger.info("Seeded sample RCM study 'sample-rcm-truck'.")
-    except Exception as exc:  # pragma: no cover - defensive; never block boot
-        logger.warning("Failed to seed sample RCM study: %s", exc)
-
-
 def _seed_strategy_analyses(db) -> None:
-    """Sample saved strategy analyses (evidence for the sample RCM study).
+    """Sample saved strategy analyses (the evidence the sample truck's RCM
+    links: backend/maintenance/templates.py).
 
     The bearing replacement analysis reads the just-seeded bearing model's
     fitted parameters, so this runs after the SAMPLE_MODELS loop.
@@ -1393,7 +1423,7 @@ def hide_sample(db, uid: str, sample_id: str) -> None:
 # Every collection that can hold a shared-sample artifact.
 _SAMPLE_COLLECTIONS = (
     "datasets", "models", "rbds", "degradation_models", "tracked_items",
-    "tracked_fleets", "rcm_studies", "strategy_analyses", "fleets",
+    "tracked_fleets", "strategy_analyses", "fleets",
 )
 
 

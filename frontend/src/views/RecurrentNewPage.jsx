@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select.jsx";
+import { usableDatasets } from "../datasetFit.js";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import RefLink from "../components/RefLink.jsx";
@@ -9,6 +10,8 @@ import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
 import RecurrentColumnMapper from "../components/RecurrentColumnMapper.jsx";
 import RecurrentParamsPanel from "../components/RecurrentParamsPanel.jsx";
 import RecurrentResultView from "../components/RecurrentResultView.jsx";
+import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
+import { recurrentAnswer } from "../recurrentResults.js";
 import {
   getRecurrentOptions,
   getColumns,
@@ -211,7 +214,7 @@ export default function RecurrentNewPage() {
       const saved = await saveRecurrentModel(name.trim(), result.dataset_id ? null : file, {
         datasetId: result.dataset_id, mapping: map, model, unit, options, windows,
       });
-      navigate(`/modelling/recurrent/${saved.id}`);
+      navigate(`/models/recurrent/${saved.id}`);
     } catch (err) {
       setError(err.message);
       setSaving(false);
@@ -278,8 +281,8 @@ export default function RecurrentNewPage() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/recurrent")}>Recurrent events</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/models")}>Model</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/models/recurrent")}>Repairable</button> /{" "}
             <b>New model</b>
           </div>
           <h1>
@@ -318,7 +321,7 @@ export default function RecurrentNewPage() {
 
       {mode === "params" && (
         <RecurrentParamsPanel
-          onCreated={(m) => navigate(`/modelling/recurrent/${m.id}`)}
+          onCreated={(m) => navigate(`/models/recurrent/${m.id}`)}
           onBack={() => setMode(null)}
         />
       )}
@@ -353,10 +356,10 @@ export default function RecurrentNewPage() {
               {sheetModal}
             </div>
 
-            {datasets.length > 0 && (
+            {usableDatasets("repairable", datasets).length > 0 && (
               <div className="recent">
                 <div className="recent-h">Or use a saved dataset</div>
-                {datasets.slice(0, 5).map((d) => (
+                {usableDatasets("repairable", datasets).slice(0, 5).map((d) => (
                   <button key={d.id} type="button" className="recent-row" disabled={loading}
                           onClick={() => pickDataset(d)}>
                     <span className="recent-ic">
@@ -450,7 +453,10 @@ export default function RecurrentNewPage() {
             <p className="muted-line" style={{ margin: 0 }}>
               Review the fit below. Go <b>Back</b> to change the mapping or model and re-fit, or save it.
             </p>
-            <RecurrentResultView results={result.results} />
+            {/* The model page's frame, inside the wizard: the answer line over the tabs. */}
+            <ModelFrame embedded notice={<div className="mf-wizard-head"><AnswerLine parts={recurrentAnswer(result.results)} /></div>}>
+              <RecurrentResultView results={result.results} name={name || null} />
+            </ModelFrame>
           </div>
         )}
 

@@ -20,6 +20,10 @@ MONGODB_TIMEOUT_MS = int(os.environ.get("MONGODB_TIMEOUT_MS", "3000"))
 # Upload ceiling for CSV datasets. Raw bytes are stored inside the Mongo
 # document, whose hard limit is 16MB — stay well under it.
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
+# A dataset's two tables (its life data and its measurements) live in one
+# document: together they stay under this, so the document (with its columns,
+# checksums and preview-free metadata) never nears Mongo's 16 MB.
+MAX_DATASET_BYTES = int(os.environ.get("MAX_DATASET_BYTES", str(12 * 1024 * 1024)))
 # Shape limits for a CSV read into a DataFrame (uploads and stored datasets).
 # Life data is long and narrow; these sit far above any real dataset while
 # keeping one parse's memory bounded.
@@ -69,6 +73,19 @@ if AUTH_DISABLED and os.environ.get("K_SERVICE"):
         "Single-user mode is for local and self-hosted installs only; unset "
         "AUTH_DISABLED for this deployment."
     )
+
+# A private test site: when ALLOWED_EMAILS is set (comma-separated), only those
+# verified addresses may use the API; every other signed-in account gets a 403.
+# Empty (the default) leaves sign-in open, as on reliafy.com.
+ALLOWED_EMAILS = {
+    e.strip().lower()
+    for e in os.environ.get("ALLOWED_EMAILS", "").split(",")
+    if e.strip()
+}
+
+# Shows the menu's placeholder entries (pages not built yet) so its structure
+# can be tried; set on a private test site only. Off by default.
+MENU_PREVIEW = _truthy(os.environ.get("MENU_PREVIEW"))
 
 # ---- Client address ----------------------------------------------------------
 # Rate limits and the visitor hash key on the client IP taken from
@@ -144,7 +161,6 @@ FREE_MAX_RBDS = _int("FREE_MAX_RBDS", 1)
 # Degradation/RUL is the flagship feature: free gets a taste, Pro gets fleets.
 FREE_MAX_DEGRADATION_MODELS = _int("FREE_MAX_DEGRADATION_MODELS", 1)
 FREE_MAX_TRACKED_ITEMS = _int("FREE_MAX_TRACKED_ITEMS", 3)
-FREE_MAX_RCM_STUDIES = _int("FREE_MAX_RCM_STUDIES", 1)
 FREE_MAX_FLEETS = _int("FREE_MAX_FLEETS", 1)
 # Outage logs (an RBD's observed up/down history, issue #159).
 FREE_MAX_OUTAGE_LOGS = _int("FREE_MAX_OUTAGE_LOGS", 1)
@@ -157,7 +173,6 @@ AGENT_MAX_MODELS = _int("AGENT_MAX_MODELS", 50)
 AGENT_MAX_RBDS = _int("AGENT_MAX_RBDS", 25)
 AGENT_MAX_DEGRADATION_MODELS = _int("AGENT_MAX_DEGRADATION_MODELS", 10)
 AGENT_MAX_TRACKED_ITEMS = _int("AGENT_MAX_TRACKED_ITEMS", 50)
-AGENT_MAX_RCM_STUDIES = _int("AGENT_MAX_RCM_STUDIES", 10)
 AGENT_MAX_FLEETS = _int("AGENT_MAX_FLEETS", 5)
 AGENT_MAX_OUTAGE_LOGS = _int("AGENT_MAX_OUTAGE_LOGS", 10)
 # Availability (Monte-Carlo) simulation is not part of the Agent plan: it stays
@@ -304,6 +319,10 @@ MAINTENANCE_STORE = (os.environ.get("MAINTENANCE_STORE") or "auto").strip().lowe
 MAINTENANCE_DB_PATH = os.environ.get("MAINTENANCE_DB_PATH") or os.path.expanduser(
     "~/.reliafy/maintenance.sqlite"
 )
+# How many MB of PDFs one maintenance workspace may keep (documents stored in
+# the app rather than linked; each is at most 20 MB). The bytes live beside the
+# event log: in MongoDB for a deployment, so keep this well within its storage.
+MAINTENANCE_DOCUMENT_BYTES = int(float(os.environ.get("MAINTENANCE_DOCUMENT_MB") or 100) * 1024 * 1024)
 # Where the graph projected from the log lives (docs/maintenance-graph.md):
 # "sqlite" (the default: in this process, in memory for a mongo log) or
 # "neo4j" (one shared graph in Neo4j: every read is a round trip to it, so only
@@ -460,7 +479,7 @@ RBD_RUN_PRO_TTL_DAYS = _int("RBD_RUN_PRO_TTL_DAYS", 90)
 # max instances × concurrency; the queue's max concurrent dispatches).
 COMPUTE_MACHINE = (os.environ.get("COMPUTE_MACHINE") or "").strip() or "compute"
 COMPUTE_PARALLEL_JOBS = _int("COMPUTE_PARALLEL_JOBS", 2)
-# MCP rbd_analysis analyze waits this long for a queued simulation before answering
+# MCP analyse rbd waits this long for a queued simulation before answering
 # with the job id (the agent then calls get kind job).
 MCP_JOB_WAIT_S = _float("MCP_JOB_WAIT_S", 20.0)
 

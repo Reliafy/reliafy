@@ -3,7 +3,7 @@ title: "Predict failure from condition measurements"
 task: "How do I turn wear or degradation readings into a remaining-life prediction?"
 category: "Life data modelling"
 prerequisites: "Repeated measurements of a degrading quantity on several items, and a threshold that counts as failure."
-related_href: "/modelling/degradation"
+related_href: "/models/degradation"
 related_label: "Open degradation models"
 order: 17
 ---
@@ -48,28 +48,55 @@ This is a judgement call, and it's yours to make. It's usually a standard, a
 manufacturer's limit, or the point past which secondary damage begins. It's worth
 being deliberate about, because everything downstream is expressed relative to it.
 
-Go to **Modelling → Degradation → New model**, pick your dataset, choose the
+Go to **Modelling → Models → Degradation → New model**, pick your dataset, choose the
 item id, time and measurement columns, and set the **Failure threshold** along
 with the **Time unit** and **Measurement unit** so the outputs are labelled
-properly.
+properly. A dataset that holds life data with its **Measurements** (readings on
+the same units; see [condition and life](/guides/condition-based-risk)) is read
+here by its measurements.
 
-In the next step you choose a **path** — how degradation progresses. Linear is the common
-case and the right default; use others when the physics says wear accelerates or
-plateaus. What the model does is fit a path to each item, extrapolate each to the
+In the next step you name the model. Under **Advanced** (the defaults are fine)
+you can choose a **path** — how degradation progresses. The
+default, **Best (auto-select by AICc)**, tries all nine paths and keeps the one
+that fits best. **Linear** is the common case for steady wear; choose another
+when the physics says wear accelerates or plateaus. What the model does is fit a path to each item, extrapolate each to the
 threshold, and then fit a life distribution to the resulting crossing times —
 which is how a set of wear curves becomes a reliability model of the population.
 
 ![A fitted degradation model: wear paths extrapolated to the threshold](/guides/img/degradation-01-model.png)
 
 For the sample brake pads (six pads, an 8 mm wear limit, linear paths) the
-crossing times fit a Weibull with a mean life of **5,960 hours**, and a design
-life of **3,210 hours**: 90% of pads survive that long, at 90% confidence.
+crossing times fit a Weibull with a mean life of **5,960 hours**. The line under
+the model's name gives the answer: B10 is **4,710 hours** (the time by which 10%
+of pads reach the limit), with **≥ 3,210 at 95%** beside it: we're 95% sure at
+least 90% of pads last 3,210 hours. That lower bound (the lower end of the
+two-sided 90% band, so a one-sided 95% bound) is the design life to plan with.
+
+## Reading the model's page
+
+The page has five tabs:
+
+- **Paths**: each item's readings and fitted path against the threshold, with
+  the path shape, the life model and the design life beside them.
+- **Calculator**: the population's reliability curve with its confidence band.
+  Enter a reliability to get the time (the best estimate and the design life),
+  or a time to get the reliability. Change the confidence here too.
+- **Model characteristics**: the mean life, the design life and the B-lives
+  (B1, B5, B10, B50) with their band.
+- **Diagnostics**: can you trust it? *Do the two routes to a life agree?*
+  compares the life the path model implies with the life fitted to the
+  crossing times. *Do the readings scatter evenly about each path?* shows each
+  reading less its path: a curve or a funnel there says the path shape doesn't
+  suit the readings. When the fit chose the path, *Which path shape fits the
+  readings best?* ranks every shape it tried.
+- **Data**: what the model was fitted to, each item's crossing time and every
+  parameter.
 
 ## From population to individual
 
 The population model is useful, but the real payoff is per-asset.
 
-Under **Fleet → Degradation tracking** (or **Track items** on the model's page),
+Under **Decisions → Risk →** [Condition monitoring](/risk) (or **Track items** on the model's page),
 register the individual assets you care about — Truck 07's front-left pad, specifically — and record measurements against
 them as you take them. Each new reading updates that asset's own projection: its
 current trajectory, when it's forecast to cross the threshold, and how much
@@ -79,7 +106,7 @@ That's the loop that makes condition monitoring worth the effort. A reading take
 on Tuesday can change a replacement date by Wednesday, for one named asset,
 rather than feeding a fleet-wide average that nobody acts on.
 
-![Per-asset degradation tracking, with projected threshold crossings](/guides/img/degradation-02-tracking.png)
+![Condition monitoring: each tracked asset with its projected threshold crossing](/guides/img/degradation-02-tracking.png)
 
 ## A caution about extrapolation
 
@@ -98,5 +125,5 @@ The modelling approaches and worked examples are covered in the blog post on
 [degradation analysis](/blog/degradation-analysis-predicting-failure).
 
 If you'd rather predict from failure history than from condition readings,
-[fit a life model](/guides/fit-your-first-model) instead — the two are
+[fit a non-repairable model](/guides/fit-your-first-model) instead — the two are
 complementary, and plenty of equipment justifies both.

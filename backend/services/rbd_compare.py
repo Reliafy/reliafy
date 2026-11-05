@@ -43,6 +43,7 @@ from typing import Optional
 import numpy as np
 
 from backend.services import rbd_analysis as ra
+from backend.services import repy_compat
 from backend.services.rbd_analysis import AnalysisError
 
 # Pilot replications timing one paired simulation, drawn from streams of their
@@ -102,11 +103,9 @@ def _key(entropy) -> int:
     """A run's stream entropy, derived as ``RepairableRBD.compare`` derives it
     from a seed (RePyability's ``_streams.entropy_of``): an int seed is
     used as is, a list (``[seed, batch index]``) is first folded into one."""
-    from repyability.rbd import _streams
-
     if not isinstance(entropy, (int, np.integer)):
         entropy = int(np.random.SeedSequence(entropy).generate_state(1, np.uint32)[0])
-    return _streams.entropy_of(int(entropy))
+    return repy_compat.entropy_of(int(entropy))
 
 
 def _paired_run(design: dict, t_sim: float, n: int, key: int):
@@ -121,8 +120,8 @@ def _paired_run(design: dict, t_sim: float, n: int, key: int):
     runs are laid out. Raises NotImplementedError where a block's draws
     can't be streamed."""
     ov = design["overrides"]
-    tally = design["rbd"]._run(
-        t_sim, set(ov["working_nodes"]), set(ov["broken_nodes"]), "c", n, False, None,
+    tally = repy_compat.run_simulations(
+        design["rbd"], t_sim, set(ov["working_nodes"]), set(ov["broken_nodes"]), "c", n, False, None,
         entropy=key, common=True,
     )
     costs = np.asarray(tally.cost_samples, dtype=float) if design["priced"] else None

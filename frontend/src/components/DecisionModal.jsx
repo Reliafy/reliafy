@@ -1,21 +1,43 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import Modal from "./Modal.jsx";
 import EvidencePicker from "./EvidencePicker.jsx";
 import Select from "./Select.jsx";
 import Chip from "./ui/Chip.jsx";
+import Field from "./ui/Field.jsx";
+import { TextArea } from "./ui/Controls.jsx";
+
+// The chosen tile's ✓, so the choice isn't shown by colour alone (not part of its name).
+const Tick = () => <span className="choice-tick" aria-hidden="true">✓ </span>;
+import { saveErrorText } from "../confirm.js";
+import { INTERVAL_UNITS, NEEDS_INTERVAL, checkDecision, rememberUnit, startUnit } from "../decisionCheck.js";
 
 // Guided RCM decision flow for one failure mode: consequence → outcome
 // (suggested first, per the classic decision diagram) → task details →
-// linked evidence. Saves back {consequence, decision} to the tree editor;
-// nothing hits the server until the study is saved.
-export default function DecisionModal({ options, mode, onSave, onClose }) {
+// linked evidence. Saves back {consequence, decision} straight to the
+// server (the Explorer): onSave returns a promise, and the dialog stays
+// open, Apply showing "Saving…", until it's done, and a refusal shows here
+// with everything as typed. Apply says what's missing whenever it can't be
+// pressed (decisionCheck.js); `limits` adds the Explorer's own checks.
+export default function DecisionModal({ options, mode, onSave, onClose, limits = false }) {
+  const id = useId();
   const existing = mode.decision || {};
+  // The decision's own task, when it also serves other failure modes: it keeps
+  // one name and interval for all of them, changed on the task itself, so the
+  // dialog shows them read-only (the same values go back, and the decision
+  // may still change). A mode not decided yet but with a task linked starts
+  // from that task's name and interval.
+  const own = (mode.tasks || existing.tasks || [])[0];
+  const sharedWith = own?.shared_with || 0;
+  const sharedNote = sharedWith
+    ? `“${own.name}” also serves ${sharedWith} other failure mode${sharedWith === 1 ? "" : "s"}, so its name and interval are changed on the task (under Tasks in the failure mode's dialog), for all of them.`
+    : null;
   const [consequence, setConsequence] = useState(mode.consequence || null);
   const [outcome, setOutcome] = useState(existing.outcome || null);
   const [rtfBasis, setRtfBasis] = useState(existing.rtf_basis || null);
-  const [task, setTask] = useState(existing.task || "");
-  const [interval, setInterval_] = useState(existing.interval ?? "");
-  const [intervalUnit, setIntervalUnit] = useState(existing.interval_unit || "hours");
+  const [task, setTask] = useState(existing.task || own?.text || own?.name || "");
+  const [interval, setInterval_] = useState(existing.interval ?? own?.interval ?? "");
+  // The decision's own unit, else its task's, else the one chosen last on this device, else hours.
+  const [intervalUnit, setIntervalUnit] = useState(() => startUnit(existing.interval_unit ? existing : { interval_unit: own?.unit }));
   const [notes, setNotes] = useState(existing.notes || "");
   const [evidenceId, setEvidenceId] = useState(existing.evidence?.id || null);
 
@@ -41,33 +63,62 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
   }, [options.outcomes, suggested]);
 
   const fields = outcomeOpt?.fields || [];
-  const canSave = !!outcome && (outcome !== "rtf" || !!rtfBasis);
+  const check = checkDecision({ outcome, rtfBasis, task, interval, intervalUnit, notes, fields }, { limits });
+  const canSave = check.blockers.length === 0;
+  const needsInterval = NEEDS_INTERVAL.has(outcome) && fields.includes("interval");
+  // One save at a time: a second click (or Enter) while one is on its way does nothing.
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const busy = useRef(false);
 
-  const save = () => {
-    if (!canSave) return;
+  const save = async () => {
+    if (!canSave || busy.current) return;
     const decision = { outcome };
     if (outcome === "rtf") decision.rtf_basis = rtfBasis;
     if (fields.includes("task") && task.trim()) decision.task = task.trim();
     if (fields.includes("interval") && interval !== "" && !Number.isNaN(Number(interval))) {
       decision.interval = Number(interval);
       decision.interval_unit = intervalUnit;
+      rememberUnit(intervalUnit); // the next decision starts at it
     }
     if (notes.trim()) decision.notes = notes.trim();
     decision.evidence = expectedEvidence && evidenceId
       ? { type: expectedEvidence, id: evidenceId }
       : null;
-    onSave({ consequence, decision });
+    busy.current = true;
+    setFailed(null);
+    const done = onSave({ consequence, decision });
+    if (!done || typeof done.then !== "function") return;
+    setSaving(true);
+    try {
+      await done;
+    } catch (e) {
+      busy.current = false;
+      setSaving(false);
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    }
   };
 
   return (
     <Modal
       title={`Decision — ${mode.text || "failure mode"}`}
       onClose={onClose}
+      locked={saving}
       className="decision-modal"
       footer={
         <>
-          <button className="secondary" onClick={onClose}>Cancel</button>
-          <button onClick={save} disabled={!canSave}>Apply</button>
+          <button className="secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <div className="decision-apply">
+            {(failed || !canSave) && (
+              <p className={"decision-why" + (failed ? " error" : "")} id={`${id}-why`} role={failed ? "alert" : "status"}>
+                {failed || check.blockers.join(" ")}
+              </p>
+            )}
+            <button onClick={save} disabled={!canSave || saving} aria-busy={saving || undefined}
+                    aria-describedby={failed || !canSave ? `${id}-why` : undefined}>
+              {saving ? "Saving…" : "Apply"}
+            </button>
+          </div>
         </>
       }
     >
@@ -79,9 +130,10 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
               key={c.id}
               type="button"
               className={"option-tile" + (consequence === c.id ? " selected" : "")}
+              aria-pressed={consequence === c.id}
               onClick={() => setConsequence(c.id)}
             >
-              <span className="option-title">{c.label}</span>
+              <span className="option-title">{consequence === c.id && <Tick />}{c.label}</span>
             </button>
           ))}
         </div>
@@ -100,6 +152,7 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
                 (outcome === o.id ? " selected" : "") +
                 (suggested.includes(o.id) ? " suggested" : "")
               }
+              aria-pressed={outcome === o.id}
               onClick={() => {
                 setOutcome(o.id);
                 if (o.id !== "rtf") setRtfBasis(null);
@@ -107,6 +160,7 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
               }}
             >
               <span className="option-title">
+                {outcome === o.id && <Tick />}
                 {o.label}
                 {suggested.includes(o.id) && <Chip tone="accent" style={{ marginLeft: 6 }}>Suggested</Chip>}
               </span>
@@ -125,9 +179,10 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
                 key={b.id}
                 type="button"
                 className={"option-tile" + (rtfBasis === b.id ? " selected" : "")}
+                aria-pressed={rtfBasis === b.id}
                 onClick={() => { setRtfBasis(b.id); setEvidenceId(null); }}
               >
-                <span className="option-title">{b.label}</span>
+                <span className="option-title">{rtfBasis === b.id && <Tick />}{b.label}</span>
               </button>
             ))}
           </div>
@@ -137,13 +192,16 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
 
       {(fields.includes("task") || fields.includes("interval")) && (
         <div className="decision-step">
-          <label className="field-label">Task</label>
+          <label className="field-label">{needsInterval ? "Task and interval (the interval is needed)" : "Task"}</label>
           <div className="field-row">
             {fields.includes("task") && (
               <input
                 type="text"
                 value={task}
                 placeholder={outcome === "rtf" ? "Corrective action on failure (optional)" : "e.g. Replace brake pads"}
+                readOnly={!!sharedNote && outcome !== "rtf"}
+                aria-describedby={sharedNote && outcome !== "rtf" ? `${id}-shared` : undefined}
+                title={sharedNote && outcome !== "rtf" ? "Shared with other failure modes: change it on the task" : undefined}
                 onChange={(e) => setTask(e.target.value)}
               />
             )}
@@ -156,17 +214,26 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
                   step="any"
                   value={interval}
                   placeholder="Interval"
+                  readOnly={!!sharedNote}
+                  aria-label={needsInterval ? "Interval (needed)" : "Interval"}
+                  aria-required={needsInterval || undefined}
+                  aria-invalid={check.intervalError ? "true" : undefined}
+                  aria-describedby={check.intervalError ? `${id}-interval` : undefined}
                   onChange={(e) => setInterval_(e.target.value)}
                 />
                 <Select
                   value={intervalUnit}
-                  onChange={setIntervalUnit}
+                  onChange={(u) => { setIntervalUnit(u); rememberUnit(u); }}
                   title="Use the same time unit as the linked analysis — a mismatch resolves as inconclusive."
-                  options={["hours", "days", "weeks", "months", "years", "cycles", "km"]}
+                  options={INTERVAL_UNITS}
+                  disabled={!!sharedNote}
                 />
               </>
             )}
           </div>
+          {sharedNote && outcome !== "rtf" && <p className="option-hint decision-shared" id={`${id}-shared`} role="note">{sharedNote}</p>}
+          {check.intervalError && <p className="field-error decision-interval-error" id={`${id}-interval`}>{check.intervalError}</p>}
+          {check.notice && <p className="option-hint decision-notice" role="note">{check.notice}</p>}
           {fields.includes("interval") && expectedEvidence && (
             <p className="option-hint">
               Use the same time unit as the linked analysis — mismatched units
@@ -189,13 +256,11 @@ export default function DecisionModal({ options, mode, onSave, onClose }) {
       )}
 
       <div className="decision-step">
-        <label className="field-label">Notes</label>
-        <textarea
-          rows={2}
-          value={notes}
-          placeholder={outcome === "redesign" || outcome === "accept" ? "Document the rationale" : "Optional"}
-          onChange={(e) => setNotes(e.target.value)}
-        />
+        <Field label="Notes" optional={!(outcome === "redesign" || outcome === "accept")}>
+          <TextArea value={notes} rows={2}
+                    placeholder={outcome === "redesign" || outcome === "accept" ? "Document the rationale" : "Why this decision"}
+                    onChange={(e) => setNotes(e.target.value)} />
+        </Field>
       </div>
     </Modal>
   );

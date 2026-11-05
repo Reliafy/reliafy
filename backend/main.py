@@ -64,6 +64,7 @@ from backend.routers import rbd_measures as rbd_measures_router
 from backend.routers import rbd_missions as rbd_missions_router
 from backend.routers import rbd_tvc as rbd_tvc_router
 from backend.routers import strategy as strategy_router
+from backend.routers import test_planning as test_planning_router
 from backend.routers import billing as billing_router
 from backend.routers import assistant as assistant_router
 from backend.routers import reliability_agent as reliability_agent_router
@@ -71,7 +72,7 @@ from backend.routers import degradation as degradation_router
 from backend.routers import degradation_induced as degradation_induced_router
 from backend.routers import recurrent as recurrent_router
 from backend.routers import alt as alt_router
-from backend.routers import rcm as rcm_router
+from backend.routers import joint as joint_router
 from backend.routers import excel as excel_router
 from backend.routers import teams as teams_router
 from backend.routers import shares as shares_router
@@ -81,12 +82,14 @@ from backend.routers import public as public_router
 from backend.routers import reports as reports_router
 from backend.routers import ingest as ingest_router
 from backend.routers import public_api as public_api_router
+from backend.routers import api_tools as api_tools_router
 from backend.routers import email_prefs as email_prefs_router
 from backend.routers import walkthroughs as walkthroughs_router
 from backend.routers import lifecycle as lifecycle_router
 from backend.routers import content_jobs as content_jobs_router
 from backend.routers import extensions as extensions_router
 from backend.routers import feeds as feeds_router
+from backend.routers import library as library_router
 from backend.routers import oauth as oauth_router
 from backend.routers import outage_logs as outage_logs_router
 from backend.routers import uploads as uploads_router
@@ -232,6 +235,7 @@ app.include_router(rbd_measures_router.router)
 app.include_router(rbd_missions_router.router)
 app.include_router(rbd_tvc_router.router)
 app.include_router(strategy_router.router)
+app.include_router(test_planning_router.router)
 app.include_router(compare_groups_router.router)
 app.include_router(regression_diagnostics_router.router)
 # Reliability along a covariate schedule (#60).
@@ -243,7 +247,7 @@ app.include_router(degradation_router.router)
 app.include_router(degradation_induced_router.router)
 app.include_router(recurrent_router.router)
 app.include_router(alt_router.router)
-app.include_router(rcm_router.router)
+app.include_router(joint_router.router)
 app.include_router(maintenance_router.router)
 app.include_router(maintenance_router.public_router)
 app.add_exception_handler(maintenance_router.WriteDenied, maintenance_router.write_denied_handler)
@@ -256,6 +260,10 @@ app.include_router(public_router.router)
 app.include_router(reports_router.router)
 app.include_router(ingest_router.router)
 app.include_router(public_api_router.router)
+# Every MCP tool action over REST (POST /api/v1/{tool}/{action}), its OpenAPI
+# spec and the REST-only photo upload. After public_api: its fixed /api/v1
+# routes win over the generic {tool}/{action} ones.
+app.include_router(api_tools_router.router)
 app.include_router(email_prefs_router.router)
 app.include_router(walkthroughs_router.router)
 # Lifecycle emails (#272): the daily day-3 trigger (Cloud Scheduler, OIDC).
@@ -269,6 +277,7 @@ app.include_router(workspace_changes_router.router)
 app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
 app.include_router(feeds_router.router)
+app.include_router(library_router.router)
 # Optional extensions (backend/extensions.py): the pages they add, and their
 # own routes. Nothing installed: an empty list, and no other routes.
 app.include_router(extensions_router.router)
@@ -320,6 +329,8 @@ def app_config() -> dict:
         "mcp": mcp_switch.enabled(get_db()),
         # Reliafy Maintenance (local only for now).
         "maintenance": bool(config.MAINTENANCE_ENABLED),
+        # Placeholder menu entries, on a private test site only.
+        "menu_preview": bool(config.MENU_PREVIEW),
     }
 
 
@@ -451,6 +462,8 @@ def fit_endpoint(
     how: str | None = Form(default=None),
     c_invert: str | None = Form(default=None),
     include_mixtures: str | None = Form(default=None),
+    criterion: str | None = Form(default=None),
+    frailty_family: str | None = Form(default=None),
     c_map: str | None = Form(default=None),
     covariate_units: str | None = Form(default=None),
     cox: str | None = Form(default=None),
@@ -492,7 +505,8 @@ def fit_endpoint(
             )
         options = options_from_form(
             offset, zi, lfp, fixed, mixture, mixture_distribution, how, c_invert=c_invert,
-            include_mixtures=include_mixtures, c_map=c_map,
+            include_mixtures=include_mixtures, c_map=c_map, criterion=criterion,
+            frailty_family=frailty_family,
         )
         options = regression_diagnostics.with_cox_form(options, cox)  # Cox ties / strata / cluster (#61)
         result = fit(
@@ -641,8 +655,13 @@ SPA_ROOTS = frozenset({
     "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",
     "reliability-analysis-software",
     # The signed-in app.
-    "modelling", "rbds", "datasets", "strategy", "fleet", "agent", "rcm", "team", "settings",
-    "tokens", "billing", "changes", "maintenance",
+    "home", "products", "items", "systems", "asset-register", "maintenance", "data", "models", "strategy",
+    "forecasts", "reports",
+    "agent", "team", "settings", "tokens", "billing", "changes", "data-model",
+    # Placeholder pages (frontend/src/plannedPages.js).
+    "requirements", "failures", "risk",
+    # Its earlier addresses, which redirect (frontend/src/redirects.js).
+    "modelling", "rbds", "datasets", "fleet", "rcm",
 })
 
 
@@ -662,7 +681,8 @@ def is_spa_route(full_path: str) -> bool:
 # page (BlogPost, WhatsNewPost, LearnArticle, GuidePage, ReferenceFamily): an
 # unknown or not-yet-dated slug gets that page from the shell, with a 404.
 CONTENT_COLLECTIONS = frozenset({"blog", "whats-new", "learn", "guides", "reference"})
-# Single prerendered pages: nothing lives beneath them.
+# Single prerendered pages: nothing lives beneath them but their own
+# prerendered pages (the API docs' /api-docs/<page>), served before this check.
 CONTENT_PAGES = frozenset({
     "api-docs", "terms", "privacy",
     "weibull-analysis-software", "rcm-software", "reliability-block-diagram-software",
@@ -730,7 +750,7 @@ _NOT_FOUND_HTML = """<!doctype html>
 <main>
   <h1>Page not found</h1>
   <p>There's nothing at this address. It may have moved, or the link may be mistyped.</p>
-  <p><a href="/">Go to the home page</a> &middot; <a href="/modelling">Open the app</a> &middot;
+  <p><a href="/">Go to the home page</a> &middot; <a href="/home">Open the app</a> &middot;
      <a href="/blog">Read the blog</a></p>
 </main>
 </body>
@@ -784,7 +804,7 @@ def spa_response(full_path: str, dist: Path, share_live=None) -> Response:
     (``/blog/<slug>``, ``/learn/<slug>``…) gets the shell with a 404, so the
     app's own "not found" page shows; anything else under a content root
     (``/terms/x``, ``/blog/a/b``) gets the plain 404 page. The app's own
-    routes with ids (``/modelling/m/<id>``…) keep the shell and a 200: only
+    routes with ids (``/models/m/<id>``…) keep the shell and a 200: only
     the browser knows whether the signed-in user has that id. With
     ``share_live`` (the live app passes :func:`share_link_live`), a share page
     ``/p/<token>`` whose link is unknown, expired or revoked gets the shell

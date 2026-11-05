@@ -6,6 +6,7 @@ import { pctAt, pctDigits, pointsAt } from "./availabilityPrecision.js";
 import { fmtMoney } from "./AvailabilityCosts.jsx";
 import { unitInText } from "./unitText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import ProTag from "./ProTag.jsx";
 
 // "Compare with…" on a repairable diagram's availability results (#104): pick
 // another saved repairable diagram — typically a copy of this one with one
@@ -148,7 +149,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
     try {
       const name = (rbds || []).find((d) => d.id === rbdId)?.name || "Diagram";
       const saved = await saveRbd(`${name.replace(/\s*\(sample\)\s*$/i, "")} (copy)`, graph, null, null);
-      navigate(`/rbds/b/${saved.id}`, { state: { compareWith: rbdId } });
+      navigate(`/systems/b/${saved.id}`, { state: { compareWith: rbdId } });
     } catch (err) {
       setError(err.message);
       setCopying(false);
@@ -173,7 +174,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
           title="Another saved repairable diagram to compare this one with"
         />
         <button type="button" onClick={run} disabled={!otherId || phase === "running"}>
-          {phase === "running" ? "Comparing…" : "Compare"}
+          {phase === "running" ? "Comparing…" : <>Compare<ProTag /></>}
         </button>
       </div>
       {!c && !error && !needsPro && (

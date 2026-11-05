@@ -20,7 +20,7 @@ from backend.db import from_doc, to_doc
 from backend.schema import StrategyAnalysis
 from backend.services import strategy as strategy_service
 from backend.services.strategy import StrategyError
-from backend.units import unit_in_text
+from backend.units import unit_in_text, with_unit
 
 KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration_test")
 
@@ -28,9 +28,8 @@ KINDS = ("optimal_replacement", "compare_two", "failure_finding", "demonstration
 DEMO_INPUTS = (
     "method", "reliability", "confidence", "mission_time", "failures", "test_multiple",
     "shape", "units", "mtbf", "design_reliability", "design_mtbf", "unit", "producer_risk",
-    "b_life", "shape_interval", "shape_model",
+    "b_life", "shape_interval", "shape_model", "failure_terminated",
 )
-
 
 
 def _list_query(owner_id, shared=frozenset()):
@@ -148,7 +147,7 @@ def headline(doc: StrategyAnalysis) -> str:
     if doc.kind == "failure_finding":
         unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
         i = r.get("interval")
-        return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure-finding interval"
+        return f"Check every ~{strategy_service.fmt_num(i)}{unit}" if i is not None else "Failure finding"
     if doc.kind == "demonstration_test":
         return demonstration_headline(r)
     return doc.kind
@@ -157,16 +156,28 @@ def headline(doc: StrategyAnalysis) -> str:
 def demonstration_headline(r: dict) -> str:
     """'59 units × 1,000 hours, 0 failures' — the plan in a few words."""
     fmt = strategy_service.fmt_num
-    unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
+    unit = unit_in_text(r["unit"]) if r.get("unit") else ""
     failures = r.get("failures") or 0
-    allowed = f"≤{failures} failure{'s' if failures != 1 else ''}" if failures else "0 failures"
+    allowed = (
+        f"≤{failures} failure{'s' if failures != 1 else ''}"
+        if failures
+        else "0 failures"
+    )
     if r.get("method") == "mtbf":
         total = r.get("total_test_time")
-        return f"{fmt(total)}{unit} total test time, {allowed}" if total is not None else "MTBF test"
+        return (
+            f"{with_unit(fmt(total), unit)} total test time, {allowed}"
+            if total is not None
+            else "MTBF test"
+        )
     n = r.get("units")
     if n is None:
         return "Demonstration test"
     per_unit = r.get("test_time_per_unit")
     k = r.get("test_multiple") or 1
-    length = f"{fmt(per_unit)}{unit}" if per_unit is not None else f"{fmt(k)} mission{'s' if k != 1 else ''}"
+    length = (
+        with_unit(fmt(per_unit), unit)
+        if per_unit is not None
+        else f"{fmt(k)} mission{'s' if k != 1 else ''}"
+    )
     return f"{n:,} units × {length}, {allowed}"

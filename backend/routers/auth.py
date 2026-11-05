@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Header
 from fastapi.responses import JSONResponse
 
 from backend.auth import current_user_doc
 from backend.db import get_session
 from backend.services import access as access_service
 from backend.services import billing as billing_service
+from backend.services import currency
+from backend.services import roles as roles_service
 from backend.services import samples as samples_service
 from backend.services import shares as shares_service
 from backend.services import teams as teams_service
@@ -45,10 +47,11 @@ def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> 
     billing_service.ensure_starter_grant(session, user["uid"])
     shares_service.claim_pending(session, user)
     acct = billing_service.account(session, user["uid"])
-    profile = session.users.find_one({"_id": user["uid"]}, {"time_zone": 1}) or {}
+    profile = session.users.find_one({"_id": user["uid"]}, {"time_zone": 1, "currency_symbol": 1}) or {}
     return {
         **user,
         "time_zone": time_zones.zone_name(profile.get("time_zone")),
+        "currency_symbol": currency.symbol(profile.get("currency_symbol")),
         "plan": acct["active_plan"],
         "admin": billing_service.is_admin_user(user),
         "credit_cents": acct["credit_cents"],
@@ -75,4 +78,56 @@ def put_time_zone(time_zone: str | None = Body(default=None, embed=True),
     try:
         return {"time_zone": time_zones.set_personal(session, user["uid"], time_zone)}
     except time_zones.BadTimeZone as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+
+
+@router.get("/me/roles")
+def get_roles(user: dict = Depends(current_user_doc), session=Depends(get_session),
+              x_workspace_id: str | None = Header(default=None)) -> dict:
+    """What the user does, and what the active workspace uses: together they
+    shape the menu. ``{"roles": [...], "offer": bool, "uses": {"risk": bool}}``.
+    No roles is everything shown; ``offer`` says to ask (once, new users);
+    ``uses`` turns on the entries a workspace sees only once it has used them."""
+    out = roles_service.of_user(session, user["uid"])
+    workspace = (x_workspace_id or access_service.PERSONAL).strip() or access_service.PERSONAL
+    owner = user["uid"]
+    if workspace != access_service.PERSONAL:
+        teams = access_service.user_teams(session, user["uid"])
+        owner = access_service.team_principal(workspace) if any(t["_id"] == workspace for t in teams) else None
+    out["uses"] = roles_service.uses(session, owner)
+    return out
+
+
+@router.put("/me/roles")
+def put_roles(roles: list | None = Body(default=None, embed=True),
+              user: dict = Depends(current_user_doc), session=Depends(get_session)):
+    """Save the roles, in the order picked (the first is the primary role);
+    ``[]`` shows everything."""
+    try:
+        return roles_service.save(session, user["uid"], roles)
+    except roles_service.BadRoles as err:
+        return JSONResponse(status_code=422, content={"detail": str(err)})
+
+
+@router.post("/me/roles/dismiss")
+def dismiss_roles_offer(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
+    """"Not now" to the one-time question: it isn't asked again."""
+    return roles_service.dismiss_offer(session, user["uid"])
+
+
+@router.get("/me/currency")
+def get_currency(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> dict:
+    """The personal workspace's currency symbol (shown in front of costs)."""
+    doc = session.users.find_one({"_id": user["uid"]}, {"currency_symbol": 1}) or {}
+    return {"currency_symbol": currency.symbol(doc.get("currency_symbol"))}
+
+
+@router.put("/me/currency")
+def put_currency(currency_symbol: str | None = Body(default=None, embed=True),
+                 user: dict = Depends(current_user_doc), session=Depends(get_session)):
+    """Set the personal workspace's currency symbol ("€"); null or "" sets it
+    back to "$". It labels costs only: nothing is converted."""
+    try:
+        return {"currency_symbol": currency.set_personal(session, user["uid"], currency_symbol)}
+    except currency.BadCurrency as err:
         return JSONResponse(status_code=422, content={"detail": str(err)})

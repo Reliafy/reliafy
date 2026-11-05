@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getBilling, buyCredits, subscribePro, billingPortal } from "../api.js";
-import { PRO_PRICE } from "../pricing.js";
+import { ENTERPRISE_CONTACT, PRO_PRICE } from "../pricing.js";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import McpOnRequest from "../components/McpOnRequest.jsx";
 import Chip from "../components/ui/Chip.jsx";
@@ -21,7 +21,6 @@ const ARTIFACTS = [
   ["RBDs", "rbds"],
   ["Degradation models", "degradation_models"],
   ["Tracked items", "tracked_items"],
-  ["RCM studies", "rcm_studies"],
   ["Fleet forecasts", "fleets"],
   ["Outage logs", "outage_logs"],
 ];
@@ -176,6 +175,11 @@ export default function BillingPage() {
           ) : (
             noPayments
           )}
+          <p className="muted-line">
+            Rolling Reliafy out across a team or site? Enterprise adds dedicated support,
+            proactive monitoring, full graph access and hosting in your region.{" "}
+            <a href={ENTERPRISE_CONTACT}>Talk to us</a>.
+          </p>
         </div>
       )}
 
@@ -283,7 +287,7 @@ export default function BillingPage() {
             </ul>
             <p className="muted-line">
               The daily limit resets at 00:00 UTC.{" "}
-              {mcpOn && <>Connect Claude or another MCP client from the <a href="/api-docs#mcp">API docs</a>. </>}
+              {mcpOn && <>Connect Claude or another MCP client from the <a href="/api-docs/mcp">API docs</a>. </>}
               Pro removes the daily limit and fits in Reliafy.
             </p>
             {!mcpOn && <McpOnRequest />}

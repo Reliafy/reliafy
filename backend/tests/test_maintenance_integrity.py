@@ -10,6 +10,7 @@ import pytest
 
 from backend.maintenance.service import (MAX_NOTES, PROJECTION_VERSION, PROJECTORS, Invalid, Maintenance)
 from backend.maintenance.store import GraphStore
+from backend.tests.rcm_tree import position_with_rcm
 
 ORG = "org-i"
 TODAY = date.today().isoformat()
@@ -28,8 +29,8 @@ def m():
     return Maintenance(GraphStore(":memory:", PROJECTORS), ORG, "tester")
 
 
-class _Study:
-    id, name, system = "s1", "Pump RCM", "Pump"
+class _Rcm:
+    name = "Pump"
     functions = [{"id": "f", "text": "Pump", "failures": [{"id": "ff", "text": "No flow", "modes": [
         {"id": "m1", "text": "Seal worn", "consequence": "operational",
          "decision": {"outcome": "fixed_interval", "interval": 500, "interval_unit": "hours",
@@ -82,7 +83,7 @@ def test_work_orders_cancelled_under_the_old_projector_get_their_notes_back(tmp_
 
     # Opened by this version, the graph is rebuilt from the log, which kept the notes.
     after = Maintenance(GraphStore(path, PROJECTORS, version=PROJECTION_VERSION), ORG)
-    assert PROJECTION_VERSION == 4
+    assert PROJECTION_VERSION >= 4
     wo = after.work_order(cancelled["id"])
     assert wo["notes"] == "Diagnosis: cavitation at low tank level" and wo["cancel_reason"] == "raised twice"
     assert after.work_order(closed["id"])["notes"] == "Seal weeping"
@@ -147,7 +148,7 @@ def test_work_order_notes_append_even_once_closed_or_cancelled(m):
 # ---- 1.3 readings: void, correct, the audit trail -----------------------------------------
 
 def _counter(m):
-    pos = m.position_from_rcm(_Study())["position"]
+    pos = position_with_rcm(m, _Rcm.functions, _Rcm.name)["position"]
     meter = m.add_point(pos["id"], "Run hours", kind="counter", unit="hours")
     return pos["id"], pos["tasks"][0]["id"], meter["id"]
 
@@ -174,10 +175,10 @@ def test_a_stale_reading_entered_as_today_moves_to_its_true_date(m):
     # Newest first by the date read: the original (today), then its correction.
     original, corrected = point["readings"][0], point["readings"][1]
     assert (corrected["status"], corrected["at"], corrected["value"]) == ("correction", _ago(200), 3774)
-    assert corrected["replaces"] == {"id": stale["id"], "at": TODAY, "value": 3774}
+    assert corrected["replaces"] == {"id": stale["id"], "at": TODAY, "when": TODAY, "value": 3774}
     assert corrected["reason"] == "an old reading, entered as today" and corrected["corrected_on"] == TODAY
     assert (original["status"], original["id"], original["voided_on"]) == ("replaced", stale["id"], TODAY)
-    assert original["replaced_by"] == {"id": corrected["id"], "at": _ago(200), "value": 3774}
+    assert original["replaced_by"] == {"id": corrected["id"], "at": _ago(200), "when": _ago(200), "value": 3774}
     assert point["reading"] == 3774 and point["read_at"] == _ago(200)
 
     point = m.record_reading(meter, 4774)

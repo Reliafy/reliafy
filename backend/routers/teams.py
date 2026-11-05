@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import billing as billing_service
+from backend.services import currency
 from backend.services import teams as teams_service
 from backend.services import time_zones
 
@@ -144,6 +145,27 @@ def set_time_zone(
     except time_zones.BadTimeZone as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return JSONResponse(content=teams_service.summary(session, {**team, "time_zone": name}, user, billing_service))
+
+
+@router.put("/{team_id}/currency")
+def set_currency(
+    team_id: str,
+    currency_symbol: str | None = Body(default=None, embed=True),
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """Set the team workspace's currency symbol (null or "" sets it back to
+    "$"). The owner sets it, as with the team's time zone."""
+    team, err = _team_or_404(session, team_id, user["uid"])
+    if err:
+        return err
+    if denied := _owner_only(team, user["uid"]):
+        return denied
+    try:
+        sym = currency.set_team(session, team["_id"], currency_symbol)
+    except currency.BadCurrency as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content=teams_service.summary(session, {**team, "currency_symbol": sym}, user, billing_service))
 
 
 @router.delete("/{team_id}")

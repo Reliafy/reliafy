@@ -7,9 +7,10 @@ its guide shows a labelled placeholder rather than a broken image.
 ## Kept up to date
 
 The **Guide screenshots** workflow (`.github/workflows/guide-screenshots.yml`)
-runs the harness every Monday, and on demand from the Actions tab. When any
-image changed it opens (or updates) a pull request on `chore/guide-screenshots`
-for a person to look over: a changed screenshot may mean a guide's text needs to
+runs the harness as a release step: it is dispatched by hand from the Actions
+tab on the release branch before releasing (there is no schedule). When any
+image changed it opens (or updates) a pull request from `chore/guide-screenshots`
+into that release branch for a person to look over: a changed screenshot may mean a guide's text needs to
 follow the UI too. A changed image never fails the run; a capture step that no
 longer matches the app does.
 

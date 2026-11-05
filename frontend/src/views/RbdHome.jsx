@@ -4,15 +4,16 @@ import { listRbds, deleteRbd, duplicateRbd, renameRbd, importRbdFile, downloadRb
 import ShareDialog from "../components/ShareDialog.jsx";
 import RbdExcelImportModal from "../components/RbdExcelImportModal.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
-import { FirstRunStrip } from "../components/FirstRun.jsx";
-import { useFirstRun } from "../firstRun.js";
-import { ShowMeHow } from "../components/Walkthrough.jsx";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
-import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+import { RBDS_TITLE } from "../navigation.js";
+
+const HELP = { walkthrough: "rbd", guide: "build-an-rbd" };
 
 const PencilIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -32,17 +33,15 @@ const CopyIcon = () => (
 );
 const ImportIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+    {/* An upload arrow (into Reliafy), not a download one. */}
+    <path d="M12 16V4m0 0 4 4m-4-4-4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
   </svg>
 );
 
-// Landing page for the RBDs section: list saved diagrams, open or create new.
+// Modelling › System models › RBDs: the saved block diagrams; open one or create a new one.
 export default function RbdHome() {
   const navigate = useNavigate();
   const [rbds, setRbds] = useState(null);
-  // No models, datasets or diagrams of their own yet (samples don't count).
-  const firstRun = useFirstRun(rbds ? rbds.some((r) => !r.is_sample) : undefined);
-  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [sharing, setSharing] = useState(null); // rbd being shared
   const { workspace } = useWorkspace();
@@ -52,7 +51,7 @@ export default function RbdHome() {
   const [excelMapping, setExcelMapping] = useState(null); // {file, message}: a workbook to map by hand
 
   // Open an imported diagram in the builder, unsaved (the builder's Save keeps it).
-  const openImported = (d) => navigate("/rbds/b", { state: { imported: d } });
+  const openImported = (d) => navigate("/systems/b", { state: { imported: d } });
 
   const onImportFile = async (e) => {
     const file = e.target.files?.[0];
@@ -86,11 +85,10 @@ export default function RbdHome() {
 
   useEffect(() => refresh(), [refresh]);
 
+  const confirm = useConfirm();
+  const askText = useAskText();
   const onDelete = async (r) => {
-    const msg = r.is_sample
-      ? `Remove the sample “${itemName(r)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete RBD “${r.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(r, "diagram", { name: itemName(r) })))) return;
     try {
       await deleteRbd(r.id);
       refresh();
@@ -115,9 +113,8 @@ export default function RbdHome() {
     }
   };
 
-  const open = (id) => navigate(`/rbds/b/${id}`);
-  const loading = rbds === null;
-  const visible = (rbds || []).filter((r) => matches(query, r.name, r.id));
+  const pathOf = (id) => `/systems/b/${id}`;
+  const newDiagram = <button onClick={() => navigate("/systems/b")}><PlusIcon /> New diagram</button>;
 
   return (
     <div className="app">
@@ -128,9 +125,10 @@ export default function RbdHome() {
         hidden
         onChange={onImportFile}
       />
-      <PageHeader
-        title="RBDs"
-        meta={<>Reliability block diagrams: system reliability, availability and importance. <ShowMeHow id="rbd" /></>}
+      <SectionHeader
+        title={RBDS_TITLE}
+        purpose="Your systems as block diagrams: reliability, availability and what matters most."
+        help={HELP}
         actions={
           <button
             className="secondary"
@@ -141,7 +139,7 @@ export default function RbdHome() {
             <ImportIcon /> {importing ? "Importing…" : "Import"}
           </button>
         }
-        primary={<button onClick={() => navigate("/rbds/b")}><PlusIcon /> New diagram</button>}
+        primary={newDiagram}
         menu={
           <button
             className="ovm-item"
@@ -152,8 +150,6 @@ export default function RbdHome() {
           </button>
         }
       />
-
-      <FirstRunStrip info={firstRun} />
 
       <SafetyStarterCard />
 
@@ -196,77 +192,63 @@ export default function RbdHome() {
         </div>
       )}
 
-      {loading ? (
-        <div className="card empty">Loading…</div>
-      ) : rbds.length === 0 ? (
-        <div className="card empty">
-          <h2>No saved RBDs</h2>
-          <p>Create a reliability block diagram and save it to see it here.</p>
-          <button style={{ marginTop: "1rem" }} onClick={() => navigate("/rbds/b")}>
-            <PlusIcon /> New diagram
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="tablebar">
-            <span className="count">{visible.length} of {rbds.length} diagrams</span>
-            <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search diagrams…" />
-          </div>
-
-          <div className="lib">
-            <table className="lib-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "44%" }}>Diagram</th>
-                  <th className="lib-opt" style={{ width: 90 }}>Blocks</th>
-                  <th className="lib-opt" style={{ width: 110 }}>Connections</th>
-                  <th className="lib-opt">Saved</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                <SampleGroups rows={visible} cols={5} render={(r) => (
-                  <tr key={r.id} className="lib-row" onClick={() => open(r.id)}>
-                    <td>
-                      <div className="lib-name">
-                        {itemName(r)}
-                        {r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}
-                      </div>
-                    </td>
-                    <td className="lib-n lib-opt">{(r.n_nodes ?? 0).toLocaleString()}</td>
-                    <td className="lib-n lib-opt">{(r.n_edges ?? 0).toLocaleString()}</td>
-                    <td className="lib-date lib-opt">{relativeTime(r.updated_at || r.created_at)}</td>
-                    <RowActions item={r} onOpen={() => open(r.id)} onDelete={() => onDelete(r)}>
-                      <button className="act" title="Duplicate" aria-label="Duplicate" disabled={duplicating === r.id}
-                              onClick={(e) => { e.stopPropagation(); onDuplicate(r); }}>
-                        <CopyIcon />
-                      </button>
-                      {!r.read_only && (
-                        <button className="act" title="Rename" aria-label="Rename" onClick={async (e) => {
-                          e.stopPropagation();
-                          const name = window.prompt("Diagram name", r.name);
-                          if (name && name.trim() && name.trim() !== r.name) {
-                            await renameRbd(r.id, name.trim());
-                            refresh();
-                          }
-                        }}>
-                          <PencilIcon />
-                        </button>
-                      )}
-                      {!r.read_only && workspace === "personal" && (
-                        <button className="act" title="Share" aria-label="Share" onClick={(e) => { e.stopPropagation(); setSharing(r); }}>
-                          <ShareIcon />
-                        </button>
-                      )}
-                    </RowActions>
-                  </tr>
-                )} />
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <SectionList
+        rows={rbds}
+        noun={["diagram", "diagrams"]}
+        help={HELP}
+        empty={{
+          title: "No diagrams yet",
+          body: "Lay out blocks in series and parallel, or import one from BlockSim, Open-PSA, Galileo or Excel.",
+          action: newDiagram,
+        }}
+        head={[
+          <th key="d" style={{ width: "44%" }}>Diagram</th>,
+          <th key="b" className="lib-opt" style={{ width: 90 }}>Blocks</th>,
+          <th key="c" className="lib-opt" style={{ width: 110 }}>Connections</th>,
+          <th key="s" className="lib-opt">Saved</th>,
+          <th key="a"><span className="sr-only">Actions</span></th>,
+        ]}
+        render={(r) => (
+          <tr key={r.id} className="lib-row" onClick={rowOpen(navigate, pathOf(r.id))}>
+            <td>
+              <div className="lib-name">
+                <RowLink to={pathOf(r.id)}>{itemName(r)}</RowLink>
+                {r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}
+              </div>
+            </td>
+            <td className="lib-n lib-opt">{(r.n_nodes ?? 0).toLocaleString()}</td>
+            <td className="lib-n lib-opt">{(r.n_edges ?? 0).toLocaleString()}</td>
+            <td className="lib-date lib-opt">{relativeTime(r.updated_at || r.created_at)}</td>
+            <RowActions item={r} to={pathOf(r.id)} onDelete={() => onDelete(r)}>
+              <button className="act" title="Duplicate" aria-label="Duplicate" disabled={duplicating === r.id}
+                      onClick={(e) => { e.stopPropagation(); onDuplicate(r); }}>
+                <CopyIcon />
+              </button>
+              {!r.read_only && (
+                <button className="act" title="Rename" aria-label="Rename" onClick={async (e) => {
+                  e.stopPropagation();
+                  const name = changedText(await askText(renamePrompt({ kind: "diagram", name: r.name })), r.name);
+                  if (name) {
+                    try {
+                      await renameRbd(r.id, name);
+                      refresh();
+                    } catch (err) {
+                      setError(err.message);
+                    }
+                  }
+                }}>
+                  <PencilIcon />
+                </button>
+              )}
+              {!r.read_only && workspace === "personal" && (
+                <button className="act" title="Share" aria-label="Share" onClick={(e) => { e.stopPropagation(); setSharing(r); }}>
+                  <ShareIcon />
+                </button>
+              )}
+            </RowActions>
+          </tr>
+        )}
+      />
 
       {sharing && (
         <ShareDialog

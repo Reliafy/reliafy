@@ -225,10 +225,11 @@ def test_regression_calculator_and_evaluate():
 
 
 def test_additive_hazards_negative_cumhazard_warns_not_clamps():
-    """An additive-hazards fit can drive the cumulative hazard negative, so the
-    reliability rises above 1. We surface that as a warning (and leave the true,
-    out-of-range values) rather than silently clamp it — and other model forms
-    stay silent."""
+    """An additive-hazards fit can drive the cumulative hazard negative, where
+    the reliability would rise above 1. Since SurPyval 0.25 those points are
+    outside the model's support (nan); we surface that as a warning and leave
+    them out rather than silently clamp them — and other model forms stay
+    silent."""
     import pandas as pd
     from backend.fitting import evaluate
 
@@ -244,8 +245,10 @@ def test_additive_hazards_negative_cumhazard_warns_not_clamps():
         curves = evaluate(ah_id, {"z": zval})["curves"]
         if "warning" in curves:
             warned = True
-            # Values pass through unclamped — the impossible sf > 1 is visible.
-            assert max(v for v in curves["sf"] if v is not None) > 1.0
+            # Nothing is clamped: the points outside the support are left out
+            # (null), and no reliability shown is above 1.
+            assert None in curves["sf"]
+            assert max(v for v in curves["sf"] if v is not None) <= 1.0
     assert warned, "additive-hazards fit should warn where the cumulative hazard goes negative"
 
     # A proportional-hazards fit keeps the hazard non-negative -> no warning.

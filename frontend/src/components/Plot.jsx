@@ -68,6 +68,10 @@ export function DownloadIcon() {
   );
 }
 
+// ``fill``: the chart takes its container's height instead of a fixed one
+// (the model pages, whose tabs fit the screen). The caller gives the
+// container its size (components/model/ModelFrame.css: .plot-fill); the
+// chart follows it as it changes, not only when the window does.
 export default function Plot({
   layout,
   config,
@@ -76,47 +80,80 @@ export default function Plot({
   useResizeHandler = true,
   onInitialized,
   onUpdate,
+  fill = false,
+  className,
   ...rest
 }) {
   const narrow = useNarrow();
   const gd = useRef(null);
+  const box = useRef(null);
   const merged = useMemo(() => {
     // The download button shows over the chart on hover, so it needs no room
-    // of its own.
-    return themedLayout(layout, { narrow });
-  }, [layout, narrow]);
+    // of its own. A filling chart has no height of its own.
+    const own = fill && layout ? { ...layout, height: undefined } : layout;
+    return themedLayout(own, { narrow });
+  }, [layout, narrow, fill]);
   const cfg = useMemo(() => themedConfig(config), [config]);
+
+  // A filling chart redraws at its box's size when the box changes (a panel
+  // beside it loading, the header wrapping), which no window event reports.
+  useEffect(() => {
+    if (!fill || typeof ResizeObserver === "undefined" || !box.current) return undefined;
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (gd.current && gd.current.isConnected) Plotly.Plots.resize(gd.current).catch?.(() => {});
+      });
+    });
+    ro.observe(box.current);
+    return () => { cancelAnimationFrame(frame); ro.disconnect(); };
+  }, [fill]);
 
   const plot = (
     <PlotlyPlot
       {...rest}
       layout={merged}
       config={cfg}
-      style={{ width: "100%", ...style }}
+      style={fill ? { width: "100%", height: "100%", ...style } : { width: "100%", ...style }}
       useResizeHandler={useResizeHandler}
       onInitialized={(fig, div) => { gd.current = div; onInitialized?.(fig, div); }}
       onUpdate={(fig, div) => { gd.current = div; onUpdate?.(fig, div); }}
     />
   );
+  if (fill) {
+    return (
+      <div className={"plot-fill plot-frame" + (className ? " " + className : "")} ref={box}>
+        {download && <DownloadButtons title={download} gd={gd} />}
+        <div className="plot-fill-inner">{plot}</div>
+      </div>
+    );
+  }
   if (!download) return plot;
   return (
     <div className="plot-frame">
-      <div className="plot-dl" role="group" aria-label={`Download ${download}`}>
-        <DownloadIcon />
-        {["png", "svg"].map((format) => (
-          <button
-            key={format}
-            type="button"
-            className="plot-dl-btn"
-            title={`Download ${format.toUpperCase()}`}
-            aria-label={`Download ${download} as ${format.toUpperCase()}`}
-            onClick={() => downloadImage(gd.current, download, format)}
-          >
-            {format.toUpperCase()}
-          </button>
-        ))}
-      </div>
+      <DownloadButtons title={download} gd={gd} />
       {plot}
+    </div>
+  );
+}
+
+function DownloadButtons({ title, gd }) {
+  return (
+    <div className="plot-dl" role="group" aria-label={`Download ${title}`}>
+      <DownloadIcon />
+      {["png", "svg"].map((format) => (
+        <button
+          key={format}
+          type="button"
+          className="plot-dl-btn"
+          title={`Download ${format.toUpperCase()}`}
+          aria-label={`Download ${title} as ${format.toUpperCase()}`}
+          onClick={() => downloadImage(gd.current, title, format)}
+        >
+          {format.toUpperCase()}
+        </button>
+      ))}
     </div>
   );
 }

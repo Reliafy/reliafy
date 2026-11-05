@@ -1,7 +1,8 @@
 """Photos for Reliafy Maintenance: cleaned, stored, and linked into the graph.
 
-Every photo is re-encoded before it's kept: turned upright, shrunk to at most
-1600 px (and a 400 px thumbnail), saved as JPEG with **no metadata** (no GPS,
+Every photo is re-encoded before it's kept: turned upright, converted to sRGB,
+shrunk to at most 1600 px (and a 400 px thumbnail), saved as JPEG with **no
+metadata** (no GPS,
 no camera details, nothing hidden in the file). The location and date it was
 taken are read first: the date is kept on the photo; the location is *offered*
 to the person uploading (save it as where the equipment is?) and kept only if
@@ -27,8 +28,18 @@ import secrets
 import threading
 from datetime import datetime, timedelta, timezone
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageCms, ImageOps
 from PIL import JpegImagePlugin, MpoImagePlugin, PngImagePlugin, WebPImagePlugin  # noqa: F401 - FORMATS
+
+# HEIC/HEIF, an iPhone's default (and many Android phones'). pi-heif is the
+# decode-only build of pillow-heif: libheif and libde265 (LGPL), with no HEVC
+# encoder. Without it (a platform with no wheel) HEIC is simply refused.
+try:
+    import pi_heif
+
+    pi_heif.register_heif_opener(thumbnails=False, depth_images=False, aux_images=False)
+except ImportError:  # pragma: no cover - it's in requirements.txt
+    pi_heif = None
 
 FULL_PX = 1600
 THUMB_PX = 400
@@ -38,8 +49,12 @@ MAX_PER_LINK = 20
 LINK_MINUTES = 30
 PHOTO_TARGETS = ("Position", "Location", "Item", "WorkOrder")
 # The decoders tried: JPEG (with MPO, a JPEG with extra frames as some phones
-# save, which recent Pillow opens through JPEG), PNG and WebP. Nothing else.
-FORMATS = tuple(f for f in ("JPEG", "MPO", "PNG", "WEBP") if f in Image.OPEN)
+# save, which recent Pillow opens through JPEG), PNG, WebP and HEIC/HEIF.
+# Nothing else.
+FORMATS = tuple(f for f in ("JPEG", "MPO", "PNG", "WEBP", "HEIF") if f in Image.OPEN)
+# What to tell someone whose file isn't one of them.
+READABLE = "JPEG, PNG, WebP or HEIC" if "HEIF" in FORMATS else "JPEG, PNG or WebP"
+_SRGB = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB"))
 
 # Pillow warns above MAX_IMAGE_PIXELS and raises above twice it: so it raises
 # above MAX_PIXELS, behind clean()'s own check of the size.
@@ -103,6 +118,22 @@ def _jpeg(img: Image.Image, px: int) -> bytes:
     return buf.getvalue()
 
 
+def _to_srgb(img: Image.Image, icc: bytes | None) -> Image.Image:
+    """The image in sRGB, which is what a JPEG with no profile is shown as.
+    Phones tag photos with a wider colour space (an iPhone's Display P3);
+    dropping the profile without converting would dull the colours. A profile
+    that can't be used leaves the pixels as they are."""
+    if icc:
+        try:
+            out = ImageCms.profileToProfile(img, ImageCms.ImageCmsProfile(io.BytesIO(icc)), _SRGB,
+                                            outputMode="RGB")
+            if out is not None:
+                return out
+        except Exception:  # noqa: BLE001 - a broken or mismatched profile: keep the pixels
+            pass
+    return img.convert("RGB")
+
+
 def _open(raw: bytes) -> Image.Image:
     """Open (not yet decode) an upload, refusing other formats and anything
     over MAX_PIXELS: the size is in the header, read before any pixel is."""
@@ -140,12 +171,15 @@ def _clean(raw: bytes) -> dict:
         img = _open(raw)
         exif = img.getexif()
         gps, taken = _gps(exif), _taken_on(exif)
+        icc = img.info.get("icc_profile")
         img.draft("RGB", (FULL_PX * 2, FULL_PX * 2))  # a JPEG decodes at a reduced scale when it can
-        img = ImageOps.exif_transpose(img)  # upright, as the camera held it
-        if img.mode not in ("RGB", "L"):
+        # Upright, as the camera held it. (A HEIC is turned by its decoder, which
+        # then sets the EXIF orientation to 1, so it isn't turned twice.)
+        img = ImageOps.exif_transpose(img)
+        if img.mode not in ("RGB", "L", "CMYK"):
             img = img.convert("RGB")
         img.thumbnail((FULL_PX, FULL_PX), Image.Resampling.LANCZOS)  # shrink before any more copies
-        img = img.convert("RGB")
+        img = _to_srgb(img, icc)
         full = _jpeg(img, FULL_PX)
         width, height = Image.open(io.BytesIO(full)).size
         thumb = _jpeg(img, THUMB_PX)
@@ -154,7 +188,7 @@ def _clean(raw: bytes) -> dict:
     except Image.DecompressionBombError:
         raise BadPhoto(f"The photo is too large; at most {MAX_PIXELS // 1_000_000} megapixels.") from None
     except Exception:  # noqa: BLE001 - any decoder failure is an unreadable photo
-        raise BadPhoto("That isn't a photo Reliafy can read (JPEG, PNG or WebP).") from None
+        raise BadPhoto(f"That isn't a photo Reliafy can read ({READABLE}).") from None
     return {"full": full, "thumb": thumb, "width": width, "height": height, "taken_on": taken, "gps": gps}
 
 

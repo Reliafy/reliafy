@@ -8,6 +8,7 @@ import {
   SPREADSHEET_ACCEPT,
 } from "../api.js";
 import { TIME_UNITS, distinctCount, guessMeasurementUnit, guessTimeUnit, usableForDegradation } from "../degradation.js";
+import { usableDatasets } from "../datasetFit.js";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import Modal from "./Modal.jsx";
 import Select from "./Select.jsx";
@@ -24,7 +25,8 @@ const STEPS = ["Source", "Data", "Model"];
 // "Brake pad wear (sample)" / "wear.csv" → "Brake pad wear" / "wear".
 const baseName = (s) => String(s || "").replace(/\s*\(sample\)\s*$/i, "").replace(/\.(csv|xlsx?|xlsm)$/i, "").trim();
 
-export default function DegradationNewModal({ onClose, onSaved }) {
+// initialDataset: {id, name} to start from (the Data list's Fit menu).
+export default function DegradationNewModal({ onClose, onSaved, initialDataset = null }) {
   const [step, setStep] = useState(1);
   // An Excel workbook becomes a CSV of the chosen sheet before anything else.
   const { toCsv, modal: sheetModal } = useSpreadsheet();
@@ -61,7 +63,7 @@ export default function DegradationNewModal({ onClose, onSaved }) {
   const name = nameTyped ?? `${baseName(sourceName) || "Degradation"} — ${
     path !== "best" && pathName ? `${pathName.toLowerCase()} degradation` : "degradation"}`;
   // Only the saved datasets the fit can use: item id, time and measurement.
-  const usable = datasets.filter(usableForDegradation);
+  const usable = usableDatasets("degradation", datasets.filter(usableForDegradation));
 
   // Distinct ids in the mapped item column over every row (the fit needs at
   // least 2 items); null when unknown, and then the wizard says nothing.
@@ -108,8 +110,11 @@ export default function DegradationNewModal({ onClose, onSaved }) {
     setLoading(true);
     try {
       const full = await getDataset(d.id);
-      const columns = full.preview_columns || [];
-      setCsv({ columns, preview: full.preview || [], n_rows: full.n_rows, n_unique: full.n_unique });
+      if (!d.name) setSourceName(full.name || "");
+      // The readings: the dataset's measurements part when it has one, else its one table.
+      const table = full.measurements || full;
+      const columns = table.preview_columns || [];
+      setCsv({ columns, preview: table.preview || [], n_rows: table.n_rows, n_unique: table.n_unique });
       setMapping({ i: columns[0] || "", x: columns[1] || "", y: columns[2] || "" });
       setStep(2);
     } catch (err) {
@@ -118,6 +123,11 @@ export default function DegradationNewModal({ onClose, onSaved }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (initialDataset?.id) pickDataset(initialDataset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDataset?.id]);
 
   const onDrop = (e) => {
     e.preventDefault();
@@ -285,6 +295,7 @@ export default function DegradationNewModal({ onClose, onSaved }) {
             <label className="login-field" style={{ flex: 1 }}>
               <span>Failure threshold *</span>
               <input type="number" step="any" value={threshold} placeholder="e.g. 8.0"
+                     aria-describedby="deg-threshold-hint"
                      onChange={(e) => setThreshold(e.target.value)} />
             </label>
             <label className="login-field" style={{ flex: 1 }}>
@@ -301,6 +312,10 @@ export default function DegradationNewModal({ onClose, onSaved }) {
                      onChange={(e) => setMeasurementUnitTyped(e.target.value)} />
             </label>
           </div>
+          <p className="hint" id="deg-threshold-hint" style={{ marginTop: "0.4rem" }}>
+            The reading at which an item counts as worn out, whether readings rise or fall: e.g. 80 for 80% capacity,
+            or 8 for 8 mm of wear.
+          </p>
           {itemCount !== null && itemCount < 2 ? (
             <p className="hint">
               The item id column has {itemCount === 1 ? "only 1 distinct value" : "no values"}: the fit needs at least 2 items.
@@ -315,19 +330,24 @@ export default function DegradationNewModal({ onClose, onSaved }) {
 
       {step === 3 && (
         <>
-          <p className="muted-line" style={{ marginTop: 0 }}>
-            The path model describes how the measurement evolves with time.
-            "Best" tries all nine and picks the lowest AICc (a few seconds).
-          </p>
-          <div className="row" style={{ gap: "0.8rem" }}>
-            {select("Degradation path", path, setPath, options.paths)}
-            {select("Life distribution", distribution, setDistribution, options.distributions)}
-            {select("Population method", populationMethod, setPopulationMethod, options.population_methods)}
-          </div>
-          <label className="login-field" style={{ marginTop: "0.8rem" }}>
+          <label className="login-field" style={{ marginTop: 0 }}>
             <span>Model name</span>
             <input type="text" value={name} onChange={(e) => setNameTyped(e.target.value)} />
           </label>
+          <details className="deg-advanced" style={{ marginTop: "0.8rem" }}>
+            <summary>Advanced (the defaults are fine)</summary>
+            <div className="row" style={{ gap: "0.8rem" }}>
+              {select("Degradation path", path, setPath, options.paths)}
+              {select("Life distribution", distribution, setDistribution, options.distributions)}
+              {select("Population method", populationMethod, setPopulationMethod, options.population_methods)}
+            </div>
+            <ul className="hint deg-advanced-notes">
+              <li><b>Degradation path</b>: the shape a reading follows over time on each item. "Best" tries every
+                shape and keeps the one that fits closest (a few seconds).</li>
+              <li><b>Life distribution</b>: the shape of the spread in when items reach the threshold.</li>
+              <li><b>Population method</b>: how the items' paths are pooled into one model for the whole population.</li>
+            </ul>
+          </details>
         </>
       )}
 

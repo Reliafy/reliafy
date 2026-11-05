@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { listStrategyAnalyses, deleteStrategyAnalysis } from "../api.js";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
-import { ShowMeHow } from "../components/Walkthrough.jsx";
+import OverflowMenu from "../components/OverflowMenu.jsx";
+import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
 import SafetyStarterCard from "../components/RbdSafetyStarter.jsx";
-import { RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { CompareIcon, CostIcon, StrategyIcon, TestIcon } from "../components/icons.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { deleteOrRemoveConfirm } from "../confirm.js";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -17,20 +18,26 @@ const KIND_LABEL = {
   demonstration_test: "Demonstration test",
 };
 
-// The tools that make an analysis: the Strategy page starts with them.
+const HELP = { walkthrough: "replacement", guide: "optimal-replacement-interval" };
+
+// The tools that make an analysis: the menu's Strategy children, and the
+// "New analysis" menu here.
 const TOOLS = [
   { to: "/strategy/replacement", icon: <CostIcon />, label: "Optimal replacement" },
   { to: "/strategy/compare", icon: <CompareIcon />, label: "Compare two models" },
   { to: "/strategy/failure-finding", icon: <StrategyIcon />, label: "Failure finding" },
-  { to: "/strategy/demonstration-test", icon: <TestIcon />, label: "Demonstration test" },
+  { to: "/strategy/test-planning", icon: <TestIcon />, label: "Test planning" },
 ];
 
-// The Strategy section's root: its tools, then the saved analyses —
-// persistent calculations that RCM decisions can link to as evidence.
+// The Strategy section's landing page: the saved analyses — persistent
+// calculations that RCM decisions can link to as evidence. The tools that
+// make them are its children in the menu, and under "New analysis".
 export default function StrategyAnalyses() {
   const navigate = useNavigate();
+  // A tool's "See all" opens the list filtered to its kind (?kind=).
+  const [params] = useSearchParams();
+  const kind = KIND_LABEL[params.get("kind")] ? params.get("kind") : "";
   const [analyses, setAnalyses] = useState(null);
-  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
 
   const refresh = useCallback(() => {
@@ -40,11 +47,9 @@ export default function StrategyAnalyses() {
   }, []);
   useEffect(() => refresh(), [refresh]);
 
+  const confirm = useConfirm();
   const onDelete = async (a) => {
-    const msg = a.is_sample
-      ? `Remove the sample “${itemName(a)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete analysis “${a.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(a, "analysis", { name: itemName(a) })))) return;
     try {
       await deleteStrategyAnalysis(a.id);
       refresh();
@@ -53,75 +58,68 @@ export default function StrategyAnalyses() {
     }
   };
 
-  const open = (id) => navigate(`/strategy/analyses/${id}`);
-  const visible = (analyses || []).filter((a) => matches(query, a.name, a.kind, a.headline, a.id));
+  const pathOf = (id) => `/strategy/analyses/${id}`;
+
+  const newAnalysis = (
+    <OverflowMenu label={<><PlusIcon /> New analysis</>}>
+      {TOOLS.map((t) => (
+        <Link key={t.to} className="ovm-item ovm-tool" to={t.to}>{t.icon}{t.label}</Link>
+      ))}
+    </OverflowMenu>
+  );
 
   return (
     <div className="app">
-      <PageHeader
+      <SectionHeader
         title="Strategy"
-        meta={<>Turn fitted models into maintenance decisions. Saved analyses can be cited as evidence in RCM studies. <ShowMeHow id="replacement" /></>}
+        purpose="Turn fitted models into maintenance decisions. Saved analyses can be cited as evidence for RCM decisions."
+        help={HELP}
+        primary={newAnalysis}
       />
-
-      <nav className="tool-strip" aria-label="Strategy tools">
-        {TOOLS.map((t) => (
-          <Link key={t.to} className="tool-link" to={t.to}>
-            {t.icon}
-            {t.label}
-          </Link>
-        ))}
-      </nav>
 
       <SafetyStarterCard />
 
       {error && <div className="card error">{error}</div>}
 
-      {analyses === null ? (
-        <div className="card empty">Loading…</div>
-      ) : analyses.length === 0 ? (
-        <div className="card empty">
-          <h2>No saved analyses</h2>
-          <p>Run one of the tools above and save its result to see it here.</p>
-          <p><ShowMeHow id="replacement">Show me how, on a sample</ShowMeHow></p>
-        </div>
-      ) : (
-        <>
-          <div className="tablebar">
-            <span className="count">{visible.length} of {analyses.length} saved analyses</span>
-            <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search analyses…" />
-          </div>
-          <div className="lib">
-            <table className="lib-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "34%" }}>Analysis</th>
-                  <th className="lib-opt" style={{ width: 180 }}>Kind</th>
-                  <th>Result</th>
-                  <th className="lib-opt">Saved</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                <SampleGroups rows={visible} cols={5} render={(a) => (
-                  <tr key={a.id} className="lib-row" onClick={() => open(a.id)}>
-                    <td>
-                      <div className="lib-name">
-                        {itemName(a)}
-                        {a.shared_by && <Chip title={`Shared by ${a.shared_by}`}>Shared</Chip>}
-                      </div>
-                    </td>
-                    <td className="lib-opt">{KIND_LABEL[a.kind] || a.kind}</td>
-                    <td className="lib-date">{a.headline}</td>
-                    <td className="lib-date lib-opt">{relativeTime(a.updated_at || a.created_at)}</td>
-                    <RowActions item={a} onOpen={() => open(a.id)} onDelete={() => onDelete(a)} />
-                  </tr>
-                )} />
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <SectionList
+        key={kind}
+        rows={analyses}
+        noun={["saved analysis", "saved analyses"]}
+        placeholder="Search analyses…"
+        fields={(a) => [a.name, a.kind, KIND_LABEL[a.kind], a.headline]}
+        types={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
+        typeOf={(a) => a.kind}
+        initialType={kind}
+        help={HELP}
+        empty={{
+          title: "No saved analyses yet",
+          body: <>Run a tool and save its result to see it here:{" "}
+            {TOOLS.map((t, i) => (
+              <span key={t.to}>{i > 0 && " · "}<Link to={t.to}>{t.label}</Link></span>
+            ))}.</>,
+        }}
+        head={[
+          <th key="n" style={{ width: "34%" }}>Analysis</th>,
+          <th key="k" className="lib-opt" style={{ width: 180 }}>Kind</th>,
+          <th key="r">Result</th>,
+          <th key="s" className="lib-opt">Saved</th>,
+          <th key="a"><span className="sr-only">Actions</span></th>,
+        ]}
+        render={(a) => (
+          <tr key={a.id} className="lib-row" onClick={rowOpen(navigate, pathOf(a.id))}>
+            <td>
+              <div className="lib-name">
+                <RowLink to={pathOf(a.id)}>{itemName(a)}</RowLink>
+                {a.shared_by && <Chip title={`Shared by ${a.shared_by}`}>Shared</Chip>}
+              </div>
+            </td>
+            <td className="lib-opt">{KIND_LABEL[a.kind] || a.kind}</td>
+            <td className="lib-date">{a.headline}</td>
+            <td className="lib-date lib-opt">{relativeTime(a.updated_at || a.created_at)}</td>
+            <RowActions item={a} to={pathOf(a.id)} onDelete={() => onDelete(a)} />
+          </tr>
+        )}
+      />
     </div>
   );
 }

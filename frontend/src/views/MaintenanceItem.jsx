@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import {
   createMaintenancePosition,
   getMaintenanceItem,
@@ -12,17 +13,23 @@ import {
 import PageHeader from "../components/ui/PageHeader.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import {
-  DocumentsCard, Field, FormModal, LocationPicker, MaintenanceTabs, NotesCard, PositionPicker, RoughDateField, flatten, fmtDate,
+  DocumentsCard, Field, FormModal, LocationPicker, NotesCard, PositionPicker, RoughDateField, flatten, fmtDate,
   fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue, roughDateValue } from "../maintenanceFields.js";
 import { itemWhere } from "../maintenanceLocations.js";
+import { explorerPath } from "../assetTree.js";
+import { EXPLORER_LABEL } from "../navigation.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import { MeasurementsCard } from "./MaintenancePosition.jsx";
 import { ItemKindCard, useKinds } from "../components/MaintenanceItemClasses.jsx";
 import { ConditionsCard } from "../components/MaintenanceConditions.jsx";
 import { ItemPartStructureCard } from "../components/MaintenanceStructure.jsx";
 import "./Maintenance.css";
+import "./MaintenanceProducts.css";
+import { tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
+import { ITEMS_PATH, itemTreePath, productPath } from "../products.js";
 
 const ITEM_DATES = [
   { key: "purchase_date", label: "Bought" },
@@ -46,21 +53,26 @@ export default function MaintenanceItem() {
   }, [id]);
   useEffect(() => refresh(), [refresh]);
 
-  if (error && !item) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !item) return <div className="app"><LoadFailed header error={error} notFound="Item not found." to={explorerPath("items")} label={`Open the ${EXPLORER_LABEL}`} /></div>;
   if (!item) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const plate = Object.entries(item.nameplate || {});
   const where = itemWhere(item, fmtDate);
   return (
     <div className="app">
+      <PageTitle name={item?.name} />
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: "/maintenance" }, { label: "Items", to: "/maintenance/items" }]}
+        // An item's page is under Items; one built from a product names it, and its tree.
+        crumbs={[{ label: "Items", to: ITEMS_PATH },
+          item.product ? { label: item.product.name, to: productPath(item.product.id, "items") }
+            : { label: EXPLORER_LABEL, to: explorerPath("items", { sel: item.id }) }]}
         title={item.name}
         meta={[item.manufacturer, item.model, item.serial && `serial ${item.serial}`].filter(Boolean).join(" · ") || "Item"}
         id={item.id}
         actions={
           <>
             {/* A fitted item is where its position is: only an item that isn't fitted is placed. */}
+            {item.product?.top_position_id && <Link className="pp-tree-link" to={itemTreePath(item.product.top_position_id)}>Its tree</Link>}
             {!item.fitted_to && <button className="secondary" onClick={() => setModal("place")}>Place at a location</button>}
             <button className="secondary" onClick={() => setModal("move")}>Move to a position</button>
             <button className="secondary" onClick={() => setModal("more")}>Dates, cost and warranty</button>
@@ -68,17 +80,16 @@ export default function MaintenanceItem() {
         }
         primary={<button onClick={() => setModal("edit")}>Edit details</button>}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
 
       <section className="card">
         <div className="maint-head"><h2>Details</h2></div>
         <dl className="maint-plate">
           <dt>Fitted to</dt>
-          <dd>{item.fitted_to ? <Link to={`/maintenance/positions/${item.fitted_to.id}`}>{item.fitted_to.name}</Link> : "Not fitted"}</dd>
+          <dd>{item.fitted_to ? <Link to={`/asset-register/positions/${item.fitted_to.id}`}>{item.fitted_to.name}</Link> : "Not fitted"}</dd>
           <dt>Location</dt>
           <dd>
-            {where.locationId ? <Link to={`/maintenance/locations/${where.locationId}`}>{where.label}</Link> : where.label || "—"}
+            {where.locationId ? <Link to={`/asset-register/locations/${where.locationId}`}>{where.label}</Link> : where.label || "—"}
             {where.note && <span className="lib-date"> · {where.note}</span>}
           </dd>
           {item.part_number && <><dt>Part number</dt><dd>{item.part_number}</dd></>}
@@ -120,7 +131,9 @@ export default function MaintenanceItem() {
                  onAppend={async (text) => setItem(await updateMaintenanceItem(item.id, { append_note: text }))} />
       <DocumentsCard documents={item.documents} target={{ target_id: item.id }} onChanged={refresh} />
 
-      <MaintenancePhotos title="Photos" targetId={item.id} targetName={item.name} photos={item.photos} onChanged={refresh} />
+      <MaintenancePhotos title="Photos" targetId={item.id} targetKind="Item" targetName={item.name} photos={item.photos} onChanged={refresh}
+                         related={[item.fitted_to && { ...item.fitted_to, kind: "Position" },
+                           item.location && { ...item.location, kind: "Location" }]} />
 
       <TasksCard subject={{ kind: "item", id: item.id, name: item.name }} tasks={item.tasks || []}
                  counters={(item.measurements || []).filter((mp) => mp.kind === "counter")} onChanged={refresh}
@@ -138,7 +151,7 @@ export default function MaintenanceItem() {
             <tbody>
               {item.history.map((h) => (
                 <tr key={h.id}>
-                  <td>{h.position && <Link to={`/maintenance/positions/${h.position.id}`}>{h.position.name}</Link>}</td>
+                  <td>{h.position && <Link to={`/asset-register/positions/${h.position.id}`}>{h.position.name}</Link>}</td>
                   <td className="lib-date">{fmtDated(h.from, h.from_precision)}</td>
                   <td className="lib-date">{h.to ? fmtDated(h.to, h.to_precision) : "still fitted"}</td>
                   <td className="lib-date">{h.end_reason === "failure"
@@ -161,7 +174,7 @@ export default function MaintenanceItem() {
           <ul className="maint-list">
             {item.positions.map((p) => (
               <li key={p.id}>
-                <Link to={`/maintenance/positions/${p.id}`}>{p.name}</Link>
+                <Link to={`/asset-register/positions/${p.id}`}>{p.name}</Link>
                 <span className="lib-date"> · {p.item ? p.item.name : "nothing fitted"}</span>
               </li>
             ))}
@@ -174,7 +187,7 @@ export default function MaintenanceItem() {
       {modal === "move" && <MoveModal item={item} onClose={() => setModal(null)} onDone={(d) => { setItem(d); setModal(null); }} />}
       {modal === "place" && <PlaceModal item={item} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "child" && (
-        <ChildModal item={item} onClose={() => setModal(null)} onDone={(p) => navigate(`/maintenance/positions/${p.id}`)} />
+        <ChildModal item={item} onClose={() => setModal(null)} onDone={(p) => navigate(`/asset-register/positions/${p.id}`)} />
       )}
     </div>
   );
@@ -194,8 +207,8 @@ function EditItemModal({ item, onClose, onDone }) {
     onDone(await updateMaintenanceItem(item.id, { ...f, nameplate }));
   };
   return (
-    <FormModal title="Edit item" submitLabel="Save" canSubmit={!!f.name.trim()} onClose={onClose} onSubmit={submit}>
-      <Field label="Name"><input value={f.name} onChange={set("name")} /></Field>
+    <FormModal title="Edit item" submitLabel="Save" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose} onSubmit={submit}>
+      <Field label="Name" text={f.name} hint="put the detail in the notes"><input value={f.name} onChange={set("name")} /></Field>
       <Field label="Manufacturer"><input value={f.manufacturer} onChange={set("manufacturer")} /></Field>
       <Field label="Model"><input value={f.model} onChange={set("model")} /></Field>
       <Field label="Serial"><input value={f.serial} onChange={set("serial")} /></Field>
@@ -333,10 +346,10 @@ function PlaceModal({ item, onClose, onDone }) {
 function ChildModal({ item, onClose, onDone }) {
   const [name, setName] = useState("");
   return (
-    <FormModal title={`A position inside ${item.name}`} submitLabel="Create" canSubmit={!!name.trim()} onClose={onClose}
+    <FormModal title={`A position inside ${item.name}`} submitLabel="Create" canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
                onSubmit={async () => onDone(await createMaintenancePosition({ name, parent_id: item.id }))}>
       <p className="lib-date">It travels with {item.name}: whatever is fitted to it goes where the item goes.</p>
-      <Field label="Name"><input autoFocus value={name} placeholder="e.g. Turbo 1" onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Name" text={name}><input autoFocus value={name} placeholder="e.g. Turbo 1" onChange={(e) => setName(e.target.value)} /></Field>
     </FormModal>
   );
 }

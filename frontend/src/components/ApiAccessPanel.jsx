@@ -6,6 +6,7 @@ import { relativeTime } from "../instrument.js";
 import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { useConfirm } from "./ConfirmProvider.jsx";
 
 // What a token may do. Each token carries a subset; a token created before
 // scopes existed carries all three.
@@ -72,8 +73,9 @@ export default function ApiAccessPanel() {
     }
   };
 
+  const confirm = useConfirm();
   const onRevoke = async (t) => {
-    if (!window.confirm(`Revoke “${t.name}” (${t.prefix}…)? Scripts using it will stop working.`)) return;
+    if (!(await confirm({ title: "Revoke this token?", body: `Scripts and tools using “${t.name}” (${t.prefix}…) stop working straight away. This can't be undone; you can make a new token any time.`, confirmLabel: "Revoke token" }))) return;
     await revokeApiToken(t.id);
     refresh();
   };
@@ -94,7 +96,8 @@ export default function ApiAccessPanel() {
         Personal tokens for scripts, cron jobs and AI agents. Give each token only what it
         needs: a token that only pushes data can't read your analyses. The{" "}
         <Link className="evidence-link" to="/api-docs">API reference</Link> has every
-        endpoint with copyable examples.
+        endpoint with copyable examples; <Link className="evidence-link" to="/api-docs/authentication">Tokens
+        and errors</Link> explains the scopes.
       </p>
 
       {!allowed && (

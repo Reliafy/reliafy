@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { SectionStarter } from "./SectionPage.jsx";
 import { openGuide } from "./HelpButton.jsx";
 
 const ShieldIcon = () => (
@@ -9,26 +9,27 @@ const ShieldIcon = () => (
   </svg>
 );
 
-// "Verify a safety function (SIL / PFDavg)" (#298), on the home, RBD and
-// Strategy pages: one slim card that opens the starter diagram — sensors
-// voting 1oo2, a logic solver and a final element — in safety mode, unsaved.
+// "Verify a safety function" (#298): the RBD and Strategy pages' starter
+// banner. It opens the starter diagram — sensors voting 1oo2, a logic solver
+// and a final element — in safety mode, unsaved. Plain words first; the
+// standard's terms follow on a quieter line, for the people who search for
+// them.
 export default function SafetyStarterCard() {
   return (
-    <div className="sif-card">
-      <span className="sif-card-ic"><ShieldIcon /></span>
-      <div className="sif-card-body">
-        <b>Verify a safety function (SIL / PFDavg)</b>
-        <span>
-          Sensors voting 1oo2, a logic solver and a final element: the PFDavg, the SIL it reaches (IEC 61511) and
-          which element dominates.{" "}
-          <button type="button" className="link" onClick={() => openGuide("verify-a-safety-function")}>
-            How it works
-          </button>
-        </span>
-      </div>
-      <Link className="sif-card-cta" to="/rbds/b" state={{ starter: "safety" }}>
-        Open the starter →
-      </Link>
-    </div>
+    <SectionStarter
+      icon={<ShieldIcon />}
+      title="Verify a safety function"
+      body={<>
+        Two sensors where either one can trip the plant, a logic box and a shut-off valve: how likely the trip is to
+        fail when it's needed, the safety level that reaches and which part matters most.{" "}
+        <button type="button" className="link" onClick={() => openGuide("verify-a-safety-function")}>
+          How it works
+        </button>
+      </>}
+      terms="In the standard's terms: 1oo2 voting, PFDavg and SIL (IEC 61511)."
+      to="/systems/b"
+      state={{ starter: "safety" }}
+      cta="Open the starter"
+    />
   );
 }

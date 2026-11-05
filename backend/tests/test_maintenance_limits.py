@@ -174,14 +174,14 @@ def test_one_organisations_trouble_doesnt_stop_the_daily_run(store, monkeypatch)
     first, second = Maintenance(store, "aaa"), Maintenance(store, "zzz")
     for org in (first, second):
         _task(org, org.create_position("P")["id"])
-    real = Maintenance.generate_work_orders
+    real = Maintenance.generate
 
     def generate(self, horizon_days=30):
         if self.org == "aaa":
             raise OverflowError("date value out of range")
         return real(self, horizon_days)
 
-    monkeypatch.setattr(Maintenance, "generate_work_orders", generate)
+    monkeypatch.setattr(Maintenance, "generate", generate)
     result = daily.run(mongomock.MongoClient()["daily_limits"], store)
     assert result["failed"] == 1 and result["work_orders"] == 1
     assert len(second.work_orders()) == 1
@@ -247,22 +247,14 @@ def test_malformed_requests_are_refused_cleanly(store):
         m.update_task(tid, checklist=7)
 
 
-class _Study:
-    def __init__(self, functions):
-        self.functions, self.system, self.name, self.id = functions, "Pool", "Pool RCM", "study-x"
-
-
-def test_rcm_modes_without_an_id_or_with_a_bad_interval(store):
+def test_a_decision_with_a_bad_interval_is_refused(store):
     m = Maintenance(store, UID)
     pos = m.create_position("Pool")
-    no_id = _Study([{"text": "Pump", "failures": [{"text": "No flow", "modes": [
-        {"text": "Blocked", "decision": {"outcome": "on_condition", "interval": 1, "interval_unit": "weeks"}}]}]}])
-    assert m.apply_rcm(pos["id"], no_id)["failure_modes_added"] == 0
-    bad = _Study([{"text": "Pump", "failures": [{"text": "No flow", "modes": [
-        {"id": "m1", "text": "Blocked", "decision": {"outcome": "on_condition", "interval": "1e400",
-                                                     "interval_unit": "weeks"}}]}]}])
+    mode = m.add_failure_mode(pos["id"], "Blocked")
     with pytest.raises(Invalid):
-        m.apply_rcm(pos["id"], bad)
+        m.decide_failure_mode(mode["id"], decision={"outcome": "on_condition", "interval": "1e400",
+                                                    "interval_unit": "weeks"})
+    assert m.position(pos["id"])["tasks"] == []
 
 
 def test_api_limits_answer_with_their_status(api, monkeypatch):

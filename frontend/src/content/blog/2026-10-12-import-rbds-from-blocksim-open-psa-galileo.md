@@ -86,7 +86,7 @@ isn't only for diagrams:
   upload an `.xlsx`: pick the sheet and header row, and carry on as before.
 - **FMEA and RCM worksheets** — map your spreadsheet's columns (Function,
   Functional failure, Failure mode, Effects, Consequence, Task, Interval…) and
-  it becomes an RCM study. Blank cells carry down the way spreadsheets are
+  it goes onto a position's RCM on your asset tree. Blank cells carry down the way spreadsheets are
   usually laid out, and severity, occurrence, detection and RPN can come
   across in each failure mode's notes.
 

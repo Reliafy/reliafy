@@ -79,6 +79,7 @@ from typing import Any, Optional
 import numpy as np
 
 from backend.services import rbd_analysis as ra
+from backend.services import repy_compat
 from backend.services.method_labels import route_reason
 from backend.services.rbd_analysis import AnalysisError
 from backend.units import unit_in_text
@@ -186,6 +187,7 @@ class _Lever:
         self.mean = None
         self.extras: dict = {}
         self.cls = None
+        self.spec = None  # RePyability's parametric spec of the lever's model
         self.params = None
         self.index = None
         # RePyability's range of the lever's values (#324), and the user's own
@@ -202,14 +204,15 @@ class _Lever:
         prefix, _, param = self.name.rpartition(".")
         if prefix in _MODELS:
             model = _model_of(rbd, self.raw, prefix)
-            spec = _parametric(model)
+            spec = repy_compat.parametric_spec(model)
             if spec is not None:
-                cls, params, names, extras = spec
-                self.cls, self.params, self.extras = cls, list(params), dict(extras)
-                self.index = list(names).index(param) if param in names else None
+                cls, names = spec.cls, list(spec.names)
+                self.spec, self.cls = spec, cls
+                self.params, self.extras = list(spec.params), dict(spec.extras)
+                self.index = names.index(param) if param in names else None
                 dist = getattr(cls, "name", type(cls).__name__)
                 kind = MEAN_PARAMETERS.get((dist, param))
-                mean = _mean(cls, self.params, self.extras)
+                mean = _mean(spec, self.params)
                 if kind and mean is not None and self.index is not None and not self.extras.get("gamma"):
                     self.mean_kind, self.mean = kind, mean
                     self.kind = "mean"
@@ -323,7 +326,7 @@ class _Lever:
             return raw
         trial = list(self.params)
         trial[self.index] = raw
-        return _mean(self.cls, trial, self.extras)
+        return _mean(self.spec, trial)
 
     def raw_per_shown(self) -> Optional[float]:
         """d(raw parameter) / d(shown value): turns RePyability's derivative
@@ -350,22 +353,13 @@ class _Lever:
         return f"a {pct} {word} {self.noun}"
 
 
-def _parametric(model):
-    from repyability.rbd._model_utils import parametric_spec
-
-    if model is None or isinstance(model, str):
-        return None
-    try:
-        return parametric_spec(model)
-    except Exception:  # noqa: BLE001 - not a model RePyability moves
-        return None
-
-
-def _mean(cls, params, extras) -> Optional[float]:
+def _mean(spec, params) -> Optional[float]:
+    """The mean of ``spec``'s model with its parameters at ``params`` (in
+    the spec's order, any limited-failure or zero-inflated share included)."""
     try:
         with np.errstate(all="ignore"), warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            m = float(cls.from_params(list(params), **extras).mean())
+            m = float(spec.build(list(params)).mean())
     except Exception:  # noqa: BLE001
         return None
     return m if math.isfinite(m) else None
@@ -1236,10 +1230,10 @@ def what_to_improve(rbd, overrides, labels, junctions=(), step=0.1):
         kind, mean = None, None
         model = model_of(key[0] if isinstance(key, tuple) else key, prefix)
         spec = None if model is None or isinstance(model, str) else parametric_spec(model)
-        if spec is not None and not spec[3].get("gamma"):
-            kind = WHAT_TO_IMPROVE_MEANS.get((getattr(spec[0], "name", ""), param))
+        if spec is not None and not spec.extras.get("gamma"):
+            kind = WHAT_TO_IMPROVE_MEANS.get((getattr(spec.cls, "name", ""), param))
             if kind:
-                mean = float(spec[0].from_params(list(spec[1]), **spec[3]).mean())
+                mean = float(spec.build(list(spec.params)).mean())
         if kind and not mean:
             kind = None
         per_mean = {None: 1.0, "scale": theta / (mean or 1.0), "rate": -theta / (mean or 1.0),

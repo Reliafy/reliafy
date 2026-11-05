@@ -4,8 +4,11 @@ The checks SurPyval gives a Cox proportional-hazards model, shaped for the
 app's Validation tab and the API, with a plain verdict first and the numbers
 second:
 
-* the proportional-hazards test (Grambsch-Therneau, ``check_ph``): one row
-  per covariate and a GLOBAL row. A small p-value says a covariate's effect
+* the proportional-hazards test (Grambsch-Therneau: the
+  ``proportional_hazards`` table of ``diagnose()``, which replaced
+  ``check_ph`` in SurPyval 0.26; since SurPyval 0.25 the exact score test
+  of R's ``cox.zph``, survival 3.0 and later, rather than the older
+  approximation): one row per covariate and a GLOBAL row. A small p-value says a covariate's effect
   changes over time, so one hazard ratio misstates it. A parametric PH model
   (Weibull PH, …) makes the same assumption; it is tested with a Cox model on
   the same covariates, the standard test of it;
@@ -270,11 +273,12 @@ def _names(names: list) -> str:
 
 
 def ph_test(cox, source: str = "model", transform: str = "km") -> dict:
-    """The Grambsch-Therneau test of ``cox`` (SurPyval's ``check_ph``), with
-    a verdict: ``holds`` (no covariate and not the GLOBAL row below
+    """The Grambsch-Therneau test of ``cox`` (the ``proportional_hazards``
+    table of SurPyval's ``diagnose()``, what ``check_ph`` gave), with a
+    verdict: ``holds`` (no covariate and not the GLOBAL row below
     ``ALPHA``), ``check`` (the GLOBAL row is fine but a covariate isn't) or
     ``fails`` (the GLOBAL row is below ``ALPHA``)."""
-    table = cox.check_ph(transform=transform).reset_index()
+    table = cox.diagnose(transform=transform).tables["proportional_hazards"].reset_index()
     rows, glob = [], None
     for rec in table.to_dict("records"):
         row = {"covariate": str(rec["covariate"]), "statistic": _num(rec["statistic"]),
@@ -401,10 +405,125 @@ def diagnose(model, df: pd.DataFrame, mapping: dict, fit_kwargs: dict, distribut
     try:
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore")
-            return _diagnose(model, df, mapping, fit_kwargs, distribution, effect, cox_opts or {})
+            out, kept = _diagnose(model, df, mapping, fit_kwargs, distribution, effect, cox_opts or {})
     except Exception as exc:  # noqa: BLE001 - a check is never worth a failed fit
         logger.info("Regression diagnostics failed: %s", exc)
-        return {"ph_test": unavailable("These checks couldn't be run for this model.")}, None
+        out, kept = {"ph_test": unavailable("These checks couldn't be run for this model.")}, None
+    if distribution != "cox_ph":
+        out["model_checks"] = model_checks(model, distribution)
+    return out, kept
+
+
+# ---------------------------------------------------------------------------
+# The model's own checks (SurPyval's diagnose()) for every family but Cox
+# ---------------------------------------------------------------------------
+
+#: What each check is, in words, and what to do when it flags.
+CHECK_TITLES = {
+    "proportional_odds": ("Odds stay proportional over time",
+                          "A covariate's effect on the odds of failing changes as the units age, so one odds "
+                          "ratio misstates it. Try an accelerated-failure-time or proportional-hazards model "
+                          "on the same covariates, or a Cox model, which leaves the shape of the baseline "
+                          "to the data."),
+    "constant_effects": ("Added hazard stays constant over time",
+                         "A covariate adds a different amount to the hazard early and late in life, so a "
+                         "single additive coefficient misstates it. Try a proportional-hazards or "
+                         "accelerated-failure-time model."),
+    "proportional_hazards": ("Hazards stay proportional over time",
+                             "A covariate's hazard ratio changes with age, so one hazard ratio misstates it. "
+                             "Stratify by it in a Cox model, or try an accelerated-failure-time model."),
+    "error_distribution": ("Baseline distribution fits the data",
+                           "Another baseline distribution fits these data markedly better (its AIC is more "
+                           "than 2 lower). Refit with the one named in the detail and compare."),
+    "common_shape": ("Same shape for every group",
+                     "The shape of the baseline differs between the levels of a category, so one shape for "
+                     "all misstates them. Fit the groups separately, or use a model with a shape per group."),
+    "functional_form": ("Covariate acts in a straight line",
+                        "A covariate's effect is curved, not a straight line. Transform it (a log, say) in "
+                        "a formula, or group it into bands and fit the bands as categories."),
+    "calibration": ("Predicted survival matches what happened",
+                    "The predicted chance of failing is off from what was observed at this time. The "
+                    "baseline or the form of the covariates' effects may be wrong; compare other baselines."),
+    "frailty_variance": ("Groups differ beyond the covariates",
+                         "The test found no sign of a shared group effect: the spread between groups (θ) may "
+                         "be zero, and the same model without a frailty would do."),
+    "frailty_family": ("Frailty distribution fits",
+                       "The other frailty distribution (gamma or log-normal) fits better; try it with the "
+                       "frailty family option."),
+}
+#: Most rows shown; a long list of per-covariate rows stays readable.
+MAX_CHECK_ROWS = 40
+
+
+def _check_row(row: dict) -> dict:
+    def num(v):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f if np.isfinite(f) else None
+
+    return {
+        "check": str(row.get("check", "")),
+        "test": str(row.get("test", "")),
+        "covariates": [str(c) for c in (row.get("covariates") or ())],
+        "statistic": num(row.get("statistic")),
+        "df": num(row.get("df")),
+        "p": num(row.get("p")),
+        "verdict": str(row.get("verdict", "")),
+        "detail": str(row.get("detail", "")),
+    }
+
+
+def model_checks(model, distribution: str) -> dict:
+    """SurPyval's ``diagnose()`` of a fitted regression, as plain rows with
+    a reading: the model's own assumption (proportional odds, constant
+    additive effects, proportional hazards), the form of each covariate's
+    effect, the baseline distribution, calibration, and a shared frailty's
+    variance. Never raises: a family SurPyval has no checks for (Buckley-James)
+    says so."""
+    try:
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore")
+            report = model.diagnose()
+            data = report.to_dict()
+    except NotImplementedError:
+        return unavailable("SurPyval has no assumption checks for this model yet. Judge it by how well it "
+                           "ranks the units (Validation).")
+    except Exception as exc:  # noqa: BLE001 - a check is never worth a failed fit
+        logger.info("Model checks failed for %s: %s", distribution, exc)
+        return unavailable("These checks couldn't be run for this model.")
+    rows = [_check_row(r) for r in (data.get("table") or [])][:MAX_CHECK_ROWS]
+    flagged = [r for r in rows if r["verdict"] in ("fail", "warn")]
+    failed = [r for r in rows if r["verdict"] == "fail"]
+    seen, advice = set(), []
+    for r in flagged:
+        title_text = CHECK_TITLES.get(r["check"])
+        if title_text and r["check"] not in seen:
+            seen.add(r["check"])
+            advice.append({"check": r["check"], "title": title_text[0], "text": title_text[1]})
+    if not rows:
+        reading = "No checks applied to this model."
+    elif failed:
+        what = ", ".join(sorted({CHECK_TITLES.get(r["check"], (r["check"],))[0].lower() for r in failed}))
+        reading = (f"{len(failed)} of {len(rows)} checks failed ({what}). The model may mislead for this "
+                   "data: see what to try below.")
+    elif flagged:
+        reading = (f"{len(flagged)} of {len(rows)} checks are borderline. Nothing clearly fails, but look at "
+                   "them before relying on the model.")
+    else:
+        reading = f"All {len(rows)} checks pass: no sign that the model's assumptions are broken."
+    titles = {c: t[0] for c, t in CHECK_TITLES.items()}
+    return {
+        "available": True,
+        "family": str(data.get("family", "")),
+        "alpha": data.get("alpha", ALPHA),
+        "ok": bool(data.get("ok", not failed)),
+        "reading": reading,
+        "rows": [{**r, "title": titles.get(r["check"], r["check"].replace("_", " ").capitalize())} for r in rows],
+        "advice": advice,
+        "notes": [str(n) for n in (data.get("notes") or [])][:6],
+    }
 
 
 def _diagnose(model, df, mapping, fit_kwargs, distribution, effect, cox_opts):

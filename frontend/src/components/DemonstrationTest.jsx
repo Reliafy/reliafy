@@ -7,15 +7,17 @@ import { betaSource, bLabel } from "../requirement.js";
 import { formatNumber } from "../format.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import PercentField from "./PercentField.jsx";
+import { readPercents } from "../percentForms.js";
+import { percentApiMessage } from "../percent.js";
 
 const num = (s) => (s === "" || s == null ? null : Number(s));
-const frac = (s) => (s === "" || s == null ? null : Number(s) / 100);
 
 // Demonstration test planner: how many units to test, for how long, with how
 // many failures allowed, to show a reliability (or a B-life) at a confidence
-// (RePyability's test planning). Needs no saved model; ``initial`` (from
-// requirement.js's parseDemoPrefill) starts it from a model's requirement
-// (#295): the B-life, its life, the confidence, the model's unit and its β.
+// (SurPyval's test planning). Needs no saved model; ``initial`` (from
+// requirement.js's parseDemoPrefill) starts it from a link: a requirement
+// (#295: the B-life, its life, the confidence), the model's unit and its β.
 export default function DemonstrationTest({ initial = null }) {
   const [method, setMethod] = useState("attribute");
   const [solveFor, setSolveFor] = useState("units");
@@ -36,6 +38,8 @@ export default function DemonstrationTest({ initial = null }) {
   const [mtbf, setMtbf] = useState("1000");
   const [design, setDesign] = useState("");
   const [producerRisk, setProducerRisk] = useState("");
+  // MTBF tests: stop at a set time (the usual) or at the last failure allowed.
+  const [stopAt, setStopAt] = useState("time");
   const [result, setResult] = useState(null);
   const [inputs, setInputs] = useState(null);
   const [error, setError] = useState(null);
@@ -74,23 +78,30 @@ export default function DemonstrationTest({ initial = null }) {
   const shapeShown = betaSrc ? fmtBeta(betaValue) : shape;
   // Both risks (#223): the plan chooses the failures allowed.
   const twoRisk = producerRisk !== "" && producerRisk != null;
+  // The percentages on screen, typed as 95 and sent as 0.95 (percent.js).
+  const pcts = readPercents(
+    "demonstration",
+    { reliability, confidence, design, producerRisk, bLife },
+    ["confidence", "producerRisk", ...(attribute ? ["design", byB ? "bLife" : "reliability"] : [])],
+  );
+  const f = pcts.fractions;
 
   const buildBody = () => {
     const body = {
       method,
-      confidence: frac(confidence),
+      confidence: f.confidence,
       failures: num(failures) ?? 0,
       unit: unit.trim() || null,
     };
-    if (twoRisk) body.producer_risk = frac(producerRisk);
+    if (twoRisk) body.producer_risk = f.producerRisk;
     if (attribute) {
       Object.assign(body, {
         mission_time: num(missionTime),
         shape: betaSrc ? betaValue : num(shape),
-        design_reliability: frac(design),
+        design_reliability: f.design,
       });
       if (byB) body.b_life = num(bLife);
-      else body.reliability = frac(reliability);
+      else body.reliability = f.reliability;
       if (betaSrc) {
         body.shape_model = betaSrc.name;
         if (betaSrc.lower != null && betaSrc.upper != null) body.shape_interval = [betaSrc.lower, betaSrc.upper];
@@ -99,6 +110,7 @@ export default function DemonstrationTest({ initial = null }) {
       else body.test_multiple = num(multiple) ?? 1;
     } else {
       Object.assign(body, { mtbf: num(mtbf), units: num(units), design_mtbf: num(design) });
+      if (stopAt === "failure") body.failure_terminated = true;
     }
     return body;
   };
@@ -112,7 +124,7 @@ export default function DemonstrationTest({ initial = null }) {
       setResult(res);
       setInputs(body);
     } catch (err) {
-      setError(err.message);
+      setError(percentApiMessage(err.message));
       setResult(null);
       setInputs(null);
     } finally {
@@ -164,6 +176,18 @@ export default function DemonstrationTest({ initial = null }) {
               ]}
             />
           )}
+          {!attribute && (
+            <SegmentedControl
+              label="The test stops"
+              showLabel
+              value={stopAt}
+              onChange={setStopAt}
+              options={[
+                { value: "time", label: "At a set test time" },
+                { value: "failure", label: "At the last failure allowed" },
+              ]}
+            />
+          )}
           {attribute && (
             <SegmentedControl
               label="Solve for"
@@ -180,12 +204,12 @@ export default function DemonstrationTest({ initial = null }) {
 
         <div className="strategy-costs">
           {byB
-            ? field("B-life (% failed)", bLife, setBLife, { min: "0.001", max: "99.999" })
+            ? <PercentField label="B-life (% failed)" value={bLife} onChange={setBLife} check={pcts.checks.bLife} />
             : attribute
-            ? field("Target reliability (%)", reliability, setReliability, { min: "0.1", max: "99.999" })
+            ? <PercentField label="Target reliability" value={reliability} onChange={setReliability} check={pcts.checks.reliability} />
             : field("MTBF to demonstrate", mtbf, setMtbf, { min: "0" })}
           {byB && field("Life required", missionTime, setMissionTime, { min: "0" })}
-          {field("Confidence (%)", confidence, setConfidence, { min: "1", max: "99.999" })}
+          <PercentField label="Confidence" value={confidence} onChange={setConfidence} check={pcts.checks.confidence} />
           {attribute && !byB && field("Mission time (optional)", missionTime, setMissionTime, { min: "0" })}
           <label className="calc-t">
             <span>Unit</span>
@@ -211,21 +235,15 @@ export default function DemonstrationTest({ initial = null }) {
               placeholder: "e.g. 2",
             })}
           {attribute
-            ? field(twoRisk ? "Good design's reliability (%)" : "Design's true reliability (%, optional)", design, setDesign, {
-                min: "0.1",
-                max: "99.999",
-                placeholder: "e.g. 99",
-              })
+            ? <PercentField label={twoRisk ? "Good design's reliability" : "Design's true reliability (optional)"}
+                value={design} onChange={setDesign} check={pcts.checks.design} placeholder="e.g. 99" />
             : field(twoRisk ? "Good design's MTBF" : "Design's true MTBF (optional)", design, setDesign, {
                 min: "0",
                 placeholder: "e.g. 3000",
               })}
-          {field("Producer's risk (%, optional)", producerRisk, setProducerRisk, {
-            min: "0.1",
-            max: "99.9",
-            placeholder: "e.g. 20",
-          })}
-          <button onClick={run} disabled={loading}>
+          <PercentField label="Producer's risk (optional)" value={producerRisk} onChange={setProducerRisk}
+            check={pcts.checks.producerRisk} placeholder="e.g. 20" />
+          <button onClick={run} disabled={loading || !pcts.ready}>
             {loading ? "Computing…" : "Compute"}
           </button>
         </div>
@@ -237,6 +255,12 @@ export default function DemonstrationTest({ initial = null }) {
             {byTime
               ? "Solving for the test time per unit trades time for units, which depends on the Weibull shape β of the lifetime (assumed known)."
               : `Testing each unit for longer than ${byB ? "the life" : "one mission"} needs fewer units when the Weibull shape β is known (Weibayes). Leave the length at 1 for a plain success-run / binomial test.`}
+          </p>
+        )}
+        {!attribute && stopAt === "failure" && (
+          <p className="hint">
+            A failure-terminated test runs until a set number of failures and passes if the last one comes late
+            enough. It needs at least one failure allowed, and plans with a producer&apos;s risk are time-terminated.
           </p>
         )}
         <p className="hint">

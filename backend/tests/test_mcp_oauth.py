@@ -322,11 +322,11 @@ def test_cimd_full_flow_and_token_works_on_mcp(env):
 
     async def use(client):
         tools = await client.list_tools()
-        fit = await client.call_tool("life_data_analysis", {"action": "fit", "data": [100, 200, 300, 400, 500]})
+        fit = await client.call_tool("analyse", {"action": "fit", "data": [100, 200, 300, 400, 500]})
         return tools, fit
 
     tools, fit = _mcp(tokens["access_token"], use)
-    assert "life_data_analysis" in {t.name for t in tools.tools}
+    assert "analyse" in {t.name for t in tools.tools}
     assert not fit.is_error and fit.structured_content["saved"] is False
     assert env.db.oauth_tokens.find_one({"uid": U})["last_used_at"] is not None
 
@@ -625,10 +625,10 @@ def test_free_oauth_user_tries_it_within_the_allowance(env, monkeypatch):
 
     async def use(client):
         return (await client.list_tools(), await client.call_tool("list", {"kind": "models"}),
-                await client.call_tool("life_data_analysis", {"action": "fit", "data": [100, 200, 300]}))
+                await client.call_tool("analyse", {"action": "fit", "data": [100, 200, 300]}))
 
     tools, listed, fit = _mcp(tokens["access_token"], use)
-    assert len(tools.tools) == 15  # connecting and listing work on Free...
+    assert len(tools.tools) == 6  # connecting and listing work on Free...
     assert not listed.is_error  # ...as do the allowance's tools...
     assert fit.is_error  # ...but not fitting, which is part of Pro
     text = fit.content[0].text
@@ -643,7 +643,7 @@ def test_free_oauth_user_tries_it_within_the_allowance(env, monkeypatch):
     # ...and once Pro, both work, fitting included.
     env.db.users.update_one({"_id": U}, {"$set": {"plan": "pro"}})
     assert _post_mcp(env, api).status_code == 200
-    ok = _mcp(tokens["access_token"], lambda c: c.call_tool("life_data_analysis", {"action": "fit", "data": [100, 200,
+    ok = _mcp(tokens["access_token"], lambda c: c.call_tool("analyse", {"action": "fit", "data": [100, 200,
         300]}))
     assert not ok.is_error
 
@@ -653,4 +653,129 @@ def test_api_tokens_still_work_alongside_oauth(env):
 
     api = tokens_service.create_token(env.db, U, "script")["token"]
     tools = _mcp(api, lambda c: c.list_tools())
-    assert "models" in {t.name for t in tools.tools}
+    assert "change" in {t.name for t in tools.tools}
+
+
+# ---- the Reliafy app (built-in native client) -------------------------------------------
+
+APP = "reliafy-app"
+APP_REDIRECT = "reliafy://auth/callback"
+EXPO_REDIRECT = "exp://192.168.0.42:8081/--/auth/callback"
+
+
+def _app_basic():
+    return {"Authorization": "Basic " + base64.b64encode(b"reliafy-app:").decode()}
+
+
+def _approve_app(env, handle, approve=True):
+    """The consent page's decision call as the web app makes it: the handle in the
+    query as well as the body (the MCP switch reads it there)."""
+    r = env.client.post(f"/oauth/authorize/decision?request={handle}", json={"request": handle, "approve": approve})
+    assert r.status_code == 200, r.text
+    return r.json()["redirect_to"]
+
+
+def _app_grant(env, redirect_uri=APP_REDIRECT):
+    """The phone's leg: authorize, approve in the browser, exchange with PKCE and
+    HTTP Basic client auth (an empty secret: a public client)."""
+    verifier, challenge = _pkce()
+    handle = _handle(_authorize(env, APP, redirect_uri, challenge))
+    assert handle.startswith("app_")
+    q = _query(_approve_app(env, handle))
+    r = env.client.post("/oauth/token", headers=_app_basic(), data=dict(
+        grant_type="authorization_code", code=q["code"], redirect_uri=redirect_uri, code_verifier=verifier))
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_native_app_full_flow_and_token_works_on_the_api(env):
+    for redirect in (APP_REDIRECT, EXPO_REDIRECT):
+        verifier, challenge = _pkce()
+        handle = _handle(_authorize(env, APP, redirect, challenge))
+        info = env.client.get("/oauth/authorize/request", params={"request": handle}).json()
+        assert info["client_name"] == "Reliafy app" and info["first_party"] is True
+        assert info["client_kind"] == "native" and info["loopback"] is False and info["hosted_claude"] is False
+        location = _approve_app(env, handle)
+        assert location.startswith(redirect + "?"), location
+        q = _query(location)
+        assert q["state"] == "st-123" and q["iss"] == BASE and q["code"]
+        r = env.client.post("/oauth/token", headers=_app_basic(), data=dict(
+            grant_type="authorization_code", code=q["code"], redirect_uri=redirect, code_verifier=verifier))
+        assert r.status_code == 200, r.text
+        tok = r.json()
+        assert tok["access_token"].startswith("rlfo_") and tok["refresh_token"].startswith("rlfr_")
+        assert tok["scope"] == "mcp offline_access"
+        # The token is the user on the REST channel the phone uses, and names them (the
+        # profile as the consent step upserted it from the signed-in session).
+        r = env.client.post("/api/v1/get/account", json={}, headers={"Authorization": f"Bearer {tok['access_token']}"})
+        assert r.status_code == 200, r.text
+        assert r.json()["who"] == {"email": "oauth-user@example.org", "name": "Test"}
+    # Connected apps lists it as the app; revoking there signs the phone out.
+    grants = env.client.get("/api/me/oauth-grants").json()["grants"]
+    assert [g["client_name"] for g in grants].count("Reliafy app") == 2
+
+
+def test_native_app_refresh_rotates_and_revoke_works(env):
+    tok = _app_grant(env)
+    r = env.client.post("/oauth/token", headers=_app_basic(),
+                        data=dict(grant_type="refresh_token", refresh_token=tok["refresh_token"]))
+    assert r.status_code == 200, r.text
+    fresh = r.json()
+    assert fresh["access_token"] != tok["access_token"]
+    # client_id in the body works too (what expo-auth-session's refresh sends), as long as it matches.
+    r = env.client.post("/oauth/token", headers=_app_basic(),
+                        data=dict(grant_type="refresh_token", refresh_token=fresh["refresh_token"], client_id=APP))
+    assert r.status_code == 200, r.text
+    r = env.client.post("/oauth/token", headers=_app_basic(),
+                        data=dict(grant_type="refresh_token", refresh_token=fresh["refresh_token"], client_id="rlfc_x"))
+    assert r.status_code == 400 and r.json()["error"] == "invalid_request"
+    latest = r.json() if r.status_code == 200 else None
+    assert latest is None
+    r = env.client.post("/oauth/revoke", headers=_app_basic(), data={"token": fresh["access_token"]})
+    assert r.status_code == 200
+    assert env.client.post("/api/v1/get/account", json={},
+                           headers={"Authorization": f"Bearer {fresh['access_token']}"}).status_code == 401
+
+
+def test_native_app_redirects_and_pkce_rules(env):
+    _, challenge = _pkce()
+    for bad in ("reliafy://evil/callback", "reliafy://auth/callback?x=1", "reliafy://auth/callback#f",
+                "exp://192.168.0.42:8081/--/other", "exp:///--/auth/callback", "https://reliafy.com/auth/callback",
+                "http://localhost/auth/callback", "myapp://auth/callback"):
+        r = _authorize(env, APP, bad, challenge)
+        assert r.status_code == 400 and "location" not in r.headers, bad
+    # Other clients can't use the app's scheme.
+    reg = env.client.post("/oauth/register", json={"redirect_uris": [APP_REDIRECT]})
+    assert reg.status_code == 400 and reg.json()["error"] == "invalid_redirect_uri"
+    # PKCE is still mandatory, and a code issued to the app can't be redeemed by another client.
+    r = _authorize(env, APP, APP_REDIRECT, None, code_challenge=None)
+    assert r.status_code == 302 and _query(r.headers["location"]).get("error") == "invalid_request"
+    verifier, challenge = _pkce()
+    q = _query(_approve(env, _handle(_authorize(env, APP, APP_REDIRECT, challenge))))
+    reg = env.client.post("/oauth/register", json={"redirect_uris": [HOSTED]}).json()
+    r = _token(env, grant_type="authorization_code", code=q["code"], client_id=reg["client_id"],
+               redirect_uri=APP_REDIRECT, code_verifier=verifier)
+    assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
+
+
+def test_native_app_signs_in_while_mcp_is_off(env, monkeypatch):
+    from backend import config as app_config
+
+    monkeypatch.setattr(app_config, "MCP_ENABLED", False)
+    # Connectors are refused at once …
+    assert env.client.post("/oauth/register", json={"redirect_uris": [HOSTED]}).status_code == 403
+    _, challenge = _pkce()
+    assert _authorize(env, CLAUDE_CODE, "http://localhost:1/callback", challenge).status_code == 403
+    # … the app's own sign-in is not: authorize, consent, decision and token all pass.
+    _, challenge = _pkce()
+    handle = _handle(_authorize(env, APP, EXPO_REDIRECT, challenge))
+    assert env.client.get("/oauth/authorize/request", params={"request": handle}).status_code == 200
+    tok = _app_grant(env, EXPO_REDIRECT)
+    assert tok["access_token"].startswith("rlfo_")
+    r = env.client.post("/oauth/token", headers=_app_basic(),
+                        data=dict(grant_type="refresh_token", refresh_token=tok["refresh_token"]))
+    assert r.status_code == 200
+    # A token request without the app's Basic auth is still refused while off.
+    r = env.client.post("/oauth/token", data=dict(grant_type="refresh_token", refresh_token=r.json()["refresh_token"],
+                                                   client_id=APP))
+    assert r.status_code == 403

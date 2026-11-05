@@ -28,6 +28,12 @@ const template = readFileSync(join(dist, "index.html"), "utf8");
 const escape = (s) =>
   String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
 
+// The shell's default title and description, between the head-meta
+// comments in index.html (or just its <title>, if the comments are gone).
+const HEAD_META = template.includes("<!-- /head-meta -->")
+  ? /<!-- head-meta[\s\S]*?<!-- \/head-meta -->/
+  : /<title>[\s\S]*?<\/title>/;
+
 let count = 0;
 for (const route of routes()) {
   const html = render(route.path);
@@ -62,8 +68,9 @@ for (const route of routes()) {
   ].join("\n    ");
 
   let page = template
-    // Replace the shell <title> with the per-page head block.
-    .replace(/<title>[\s\S]*?<\/title>/, head)
+    // Replace the shell's default title and description (the head-meta
+    // block in index.html) with the per-page head block.
+    .replace(HEAD_META, head)
     .replace('<div id="root"></div>', `<div id="root">${html}</div>`);
 
   const outDir = join(dist, "static", route.path === "/" ? "." : route.path.slice(1));

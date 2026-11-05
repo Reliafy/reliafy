@@ -26,7 +26,7 @@ from backend.maintenance.store import GraphStore
 pytestmark = pytest.mark.sqlite_only
 
 OWNER, OTHER = "owner-1", "other-1"
-GRAPH_TOOLS = {"maintenance_graph_query", "maintenance_graph_schema"}
+GRAPH_TOOLS = {"graph_query", "graph_schema"}
 
 
 # ---- who may ---------------------------------------------------------------------------
@@ -367,10 +367,10 @@ def _session(token, fn):
 async def _look(client):
     tools = {t.name: t for t in (await client.list_tools()).tools}
     return {"tools": tools, "instructions": client.instructions,
-            "query": await client.call_tool("maintenance_graph_query", {"cypher": "MATCH (n) RETURN n LIMIT 1"}),
-            "schema": await client.call_tool("maintenance_graph_schema", {}),
-            "guide": await client.call_tool("maintenance_guide", {"topic": "graph"}),
-            "index": await client.call_tool("maintenance_guide", {})}
+            "query": await client.call_tool("maintenance", {"action": "graph_query", "cypher": "MATCH (n) RETURN n LIMIT 1"}),
+            "schema": await client.call_tool("maintenance", {"action": "graph_schema"}),
+            "guide": await client.call_tool("maintenance", {"action": "guide", "topic": "graph"}),
+            "index": await client.call_tool("maintenance", {"action": "guide"})}
 
 
 def _topics(tool) -> list:
@@ -383,17 +383,23 @@ def test_mcp_hides_and_refuses_the_graph_tools_for_everyone_else(env, monkeypatc
 
     # A Maintenance user (an operator, even) who isn't listed: no tools, no topic, no instructions.
     other = _session(env["other"], _look)
-    assert not GRAPH_TOOLS & set(other["tools"]) and "maintenance_overview" in other["tools"]
-    assert "graph" not in _topics(other["tools"]["maintenance_guide"])
-    assert other["query"].is_error and other["query"].content[0].text.endswith("Unknown tool: maintenance_graph_query")
-    assert other["schema"].is_error and "Unknown tool" in other["schema"].content[0].text
+
+    def actions(look):
+        return look["tools"]["maintenance"].input_schema["properties"]["action"]["enum"]
+
+    assert not GRAPH_TOOLS & set(actions(other)) and "overview" in actions(other)
+    assert "graph_query(" not in other["tools"]["maintenance"].description
+    assert other["query"].is_error and other["query"].content[0].text.endswith("Unknown action: graph_query")
+    assert other["schema"].is_error and "Unknown action" in other["schema"].content[0].text
     assert other["guide"].is_error and "graph" not in other["index"].structured_content["topics"]
-    assert "maintenance_graph" not in other["instructions"]
+    assert "graph_query" not in other["instructions"]
 
     # The owner: listed, the topic and the instructions line; the call reaches the mirror (none here).
     owner = _session(env["owner"], _look)
-    assert GRAPH_TOOLS <= set(owner["tools"]) and "graph" in _topics(owner["tools"]["maintenance_guide"])
-    assert all(owner["tools"][n].annotations.read_only_hint for n in GRAPH_TOOLS)
+    assert GRAPH_TOOLS <= set(actions(owner)) and "graph_query(cypher)" in owner["tools"]["maintenance"].description
+    from backend.maintenance import mcp_tools
+
+    assert {mcp_tools.scope_of(f"maintenance_{n}") for n in GRAPH_TOOLS} == {"read"}
     assert owner["query"].is_error and "Neo4j mirror" in owner["query"].content[0].text
     assert owner["guide"].structured_content["guide"] == mcp_guide.GRAPH_TOPIC[1]
     assert mcp_guide.GRAPH_INSTRUCTIONS.strip() in owner["instructions"]
@@ -402,7 +408,7 @@ def test_mcp_hides_and_refuses_the_graph_tools_for_everyone_else(env, monkeypatc
     monkeypatch.setattr(config, "GRAPH_QUERY_EMAILS", set())
     off = _session(env["owner"], _look)
     assert not GRAPH_TOOLS & set(off["tools"]) and off["query"].is_error and off["guide"].is_error
-    assert "Unknown tool" in off["query"].content[0].text
+    assert "Unknown action" in off["query"].content[0].text
 
 
 def test_mcp_graph_calls_take_a_heavy_slot_and_are_logged(env, monkeypatch):
@@ -421,10 +427,10 @@ def test_mcp_graph_calls_take_a_heavy_slot_and_are_logged(env, monkeypatch):
     monkeypatch.setattr(mcp_server, "_run_in_slot", spy)
 
     async def flow(client):
-        q = await client.call_tool("maintenance_graph_query", {
+        q = await client.call_tool("maintenance", {"action": "graph_query", 
             "cypher": "MATCH (n:Node {ns: $ns, org: $org}) RETURN count(n) AS n", "params": {"x": 1}, "limit": 5,
             "include_props": True})
-        s = await client.call_tool("maintenance_graph_schema", {})
+        s = await client.call_tool("maintenance", {"action": "graph_schema"})
         return q, s
 
     q, s = _session(env["owner"], flow)

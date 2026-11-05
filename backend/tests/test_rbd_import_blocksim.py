@@ -411,7 +411,7 @@ def test_undecoded_models_import_without_a_model_and_warn():
     # The graph still normalises; analysis then asks for the missing models.
     ng = normalize_graph(imp.graph)
     v = ra.validate_graph(ng)
-    assert not v["valid"] and any("no life model" in e for e in v["errors"])
+    assert not v["valid"] and any("no non-repairable model" in e for e in v["errors"])
 
 
 def test_standby_container_variants():
@@ -456,7 +456,7 @@ def test_standby_container_that_cant_be_represented_is_a_placeholder():
     (imp,) = bs.convert_project(_project([_diagram(1, "S", blocks, [], containers={1: [[2], [3], [4]]})]))
     (node,) = [n for n in imp.graph["nodes"] if n["type"] not in ("input", "output")]
     assert node["type"] == "component" and "model" not in node
-    assert any("different life models" in w for w in imp.warnings)
+    assert any("different non-repairable models" in w for w in imp.warnings)
 
 
 def test_load_sharing_of_identical_exponential_units_is_exact():

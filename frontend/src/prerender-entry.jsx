@@ -19,6 +19,7 @@ import GuidePage from "./views/GuidePage.jsx";
 import ReferenceIndex from "./views/ReferenceIndex.jsx";
 import ReferenceFamily from "./views/ReferenceFamily.jsx";
 import ApiDocsPublicPage from "./views/ApiDocsPublicPage.jsx";
+import { API_DOCS_PAGES, apiDocsPath } from "./apiDocsPages.js";
 import ProductPage from "./views/ProductPage.jsx";
 import { PRODUCT_PAGES } from "./productPages.jsx";
 import { allPosts } from "./blog.js";
@@ -27,6 +28,7 @@ import { articles } from "./learn.js";
 import { guides } from "./guides.js";
 import { families as refFamilies, totalEntries } from "./reference.js";
 import { linkedinFeed, socialPost } from "./contentFeed.js";
+import { HOME_DESCRIPTION, HOME_TITLE, SITE, homeJsonLd } from "./siteCopy.js";
 
 // Short LinkedIn posts (#367). Globbed here, in the build-time bundle only:
 // they're never part of the website's own bundle or pages.
@@ -35,8 +37,6 @@ const socialFiles = import.meta.glob("./content/social/*.md", {
   import: "default",
   eager: true,
 });
-
-const SITE = "https://reliafy.com";
 
 // Every prerendered route with its head metadata (title, description, and
 // optional JSON-LD structured data). Future-dated blog posts and updates are
@@ -48,9 +48,9 @@ export function routes() {
   const base = [
     {
       path: "/",
-      title: "Reliafy — open-source reliability engineering",
-      description:
-        "Fit Weibull and other life distributions, build reliability block diagrams, and turn failure data into maintenance decisions. Open source and self-hostable, or ready in seconds in the cloud.",
+      title: HOME_TITLE,
+      description: HOME_DESCRIPTION,
+      jsonld: homeJsonLd(),
     },
     {
       path: "/blog",
@@ -76,12 +76,8 @@ export function routes() {
       description:
         `Reference for all ${totalEntries} models Reliafy fits: life distributions, discrete and non-parametric estimators, survival regression, accelerated-life relationships and recurrent-event models — parameters, functional forms and when to use each.`,
     },
-    {
-      path: "/api-docs",
-      title: "API Reference — Reliafy Reliability API",
-      description:
-        "The Reliafy HTTP API and reliafy-client Python package: read fitted models and reliability, create datasets and fit distributions, read fleet forecasts, run strategy calculators, and push operational data.",
-    },
+    // The API docs, one prerendered page each (apiDocsPages.js).
+    ...API_DOCS_PAGES.map((p) => ({ path: apiDocsPath(p.slug), title: p.title, description: p.description })),
     {
       path: "/terms",
       title: "Terms of Service — Reliafy",
@@ -140,6 +136,7 @@ export function routes() {
     title: `${u.title} — What's new in Reliafy`,
     description: u.summary || "",
     lastmod: u.date || null,
+    image: u.image || null,
   }));
   const guidePages = guides.map((g) => ({
     path: `/guides/${g.slug}`,
@@ -228,7 +225,15 @@ export function render(path) {
             <Route path="/guides/:slug" element={<GuidePage />} />
             <Route path="/reference" element={<ReferenceIndex />} />
             <Route path="/reference/:family" element={<ReferenceFamily />} />
-            <Route path="/api-docs" element={<ApiDocsPublicPage />} />
+            <Route path="/api-docs" element={<ApiDocsPublicPage page="" />} />
+            <Route path="/api-docs/authentication" element={<ApiDocsPublicPage page="authentication" />} />
+            <Route path="/api-docs/tools" element={<ApiDocsPublicPage page="tools" />} />
+            <Route path="/api-docs/examples" element={<ApiDocsPublicPage page="examples" />} />
+            <Route path="/api-docs/cli" element={<ApiDocsPublicPage page="cli" />} />
+            <Route path="/api-docs/python" element={<ApiDocsPublicPage page="python" />} />
+            <Route path="/api-docs/files" element={<ApiDocsPublicPage page="files" />} />
+            <Route path="/api-docs/mcp" element={<ApiDocsPublicPage page="mcp" />} />
+            <Route path="/api-docs/v1-routes" element={<ApiDocsPublicPage page="v1-routes" />} />
             {PRODUCT_PAGES.map((p) => (
               <Route key={p.path} path={p.path} element={<ProductPage page={p} />} />
             ))}

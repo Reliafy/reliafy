@@ -2,12 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { listRbdRunDiagrams, listRbdRuns } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import { relativeTime } from "../instrument.js";
 import { availabilityText, byText, keptLine, runtimeText, statusChip, viaText } from "../rbdRuns.js";
 import "../components/RbdRuns.css";
+import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
+import { RowLink, rowOpen } from "../components/LibRows.jsx";
 
 const MAX_COMPARE = 6;
+const PURPOSE = "Availability simulations from the app and your connectors.";
 
 // Simulation run history (#112): the user's availability simulations, newest
 // first, from the app or any MCP connector — filter by diagram, open one, or
@@ -46,21 +50,29 @@ export default function RbdRuns() {
   const diagram = diagrams.find((d) => d.rbd_id === rbdId);
   const toggle = (id) =>
     setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-MAX_COMPARE)));
-  const compare = () => navigate(`/rbds/runs/compare?ids=${picked.join(",")}`);
+  const compare = () => navigate(`/systems/runs/compare?ids=${picked.join(",")}`);
+  // Secondary: it acts on the ticked rows, so it isn't the page's next step.
+  const compareButton = (
+    <button type="button" className="secondary" disabled={picked.length < 2} onClick={compare}
+            title={picked.length < 2 ? "Tick two or more finished runs" : undefined}>
+      Compare{picked.length >= 2 ? ` ${picked.length} runs` : ""}
+    </button>
+  );
 
   return (
     <div className="app rbd-runs">
-      <PageHeader
-        crumbs={[{ label: "RBDs", to: "/rbds" }, ...(rbdId ? [{ label: diagram?.name || "Diagram", to: `/rbds/b/${rbdId}` }] : [])]}
-        title="Simulation runs"
-        meta="Availability simulations from the app and your connectors."
-        primary={
-          <button type="button" disabled={picked.length < 2} onClick={compare}
-                  title={picked.length < 2 ? "Tick two or more finished runs" : undefined}>
-            Compare{picked.length >= 2 ? ` ${picked.length} runs` : ""}
-          </button>
-        }
-      />
+      {/* A list page: the section header every list uses. Filtered to one
+          diagram, the header keeps its breadcrumb back to that diagram. */}
+      {rbdId ? (
+        <PageHeader
+          crumbs={[{ label: SYSTEM_MODELS_LABEL, to: RBDS_PATH }, { label: diagram?.name || "Diagram", to: `/systems/b/${rbdId}` }]}
+          title="Simulation runs"
+          meta={PURPOSE}
+          actions={compareButton}
+        />
+      ) : (
+        <SectionHeader section="systems" title="Simulation runs" purpose={PURPOSE} actions={compareButton} />
+      )}
 
       {error && <div className="card error">{error}</div>}
 
@@ -88,7 +100,7 @@ export default function RbdRuns() {
         <div className="card empty">
           <h2>No simulation runs yet</h2>
           <p>Run a simulation from a repairable diagram&rsquo;s Calculator tab to see it here.</p>
-          {rbdId && <p><Link to={`/rbds/b/${rbdId}`}>Open the diagram</Link></p>}
+          {rbdId && <p><Link to={`/systems/b/${rbdId}`}>Open the diagram</Link></p>}
         </div>
       ) : (
         <div className="lib">
@@ -110,7 +122,7 @@ export default function RbdRuns() {
                 const a = availabilityText(r.availability);
                 const chip = statusChip(r.status);
                 return (
-                  <tr key={r.run_id} className="lib-row" onClick={() => navigate(`/rbds/runs/${r.run_id}`)}>
+                  <tr key={r.run_id} className="lib-row" onClick={rowOpen(navigate, `/systems/runs/${r.run_id}`)}>
                     <td className="rbd-runs-pick" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
@@ -121,7 +133,7 @@ export default function RbdRuns() {
                       />
                     </td>
                     <td className="lib-date" title={r.created_at ? new Date(r.created_at).toLocaleString() : ""}>
-                      {relativeTime(r.created_at)}
+                      <RowLink to={`/systems/runs/${r.run_id}`} aria-label={`Open the run from ${relativeTime(r.created_at)}`}>{relativeTime(r.created_at)}</RowLink>
                     </td>
                     {!rbdId && <td className="rbd-runs-name">{r.rbd_name || "Unsaved diagram"}</td>}
                     <td className="lib-n">

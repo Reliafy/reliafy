@@ -3,13 +3,15 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   createSubjectTask, openWorkOrder, retireMaintenanceTask, setTaskLastDone, updateMaintenanceTask,
 } from "../api.js";
-import { PlusIcon } from "./LibRows.jsx";
+import { PlusIcon, RowLink, rowOpen } from "./LibRows.jsx";
 import { DueChip, Field, FormModal, TASK_SOURCES, everyText, fmtDate, today } from "./MaintenanceParts.jsx";
 import { subjectPath, taskUnits, whileStoredText } from "../maintenanceSubjects.js";
+import { TASK_HINT, tooLong } from "../maintenanceText.js";
+import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 
 // What a task on each kind of subject is for, under the Add task form.
 const SUBJECT_NOTES = {
-  position: "It falls due, raises work orders and counts again from each new item fitted, like a task from an RCM study.",
+  position: "It falls due, raises work orders and counts again from each new item fitted, like a task from an RCM decision.",
   item: "It follows this item wherever it goes (another position, or a store), and its work orders say where it is. "
     + "By use, it counts the item's own counter, else the use it has had at each position it was fitted to.",
   location: "It goes by the calendar and raises one work order for the place: a round or an area inspection.",
@@ -26,7 +28,8 @@ export function TasksCard({ subject, tasks, itemTasks = [], modes = [], counters
 
   const workOrderFor = async (task) => {
     try {
-      const wo = await openWorkOrder({ title: task.name, type: "preventive", task_id: task.id, due: task.next_due });
+      // No title: the server makes it from the task's name, shortened if it's long.
+      const wo = await openWorkOrder({ type: "preventive", task_id: task.id, due: task.next_due });
       navigate(`/maintenance/work-orders/${wo.id}`);
     } catch (e) {
       setError(e.message);
@@ -92,7 +95,7 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title={`Add a task to ${subject.name}`} submitLabel="Add task" canSubmit={!!f.name.trim() && Number(f.interval) > 0}
+    <FormModal title={`Add a task to ${subject.name}`} submitLabel="Add task" canSubmit={!!f.name.trim() && !tooLong(f.name) && Number(f.interval) > 0}
                onClose={onClose} onSubmit={async () => onDone(await createSubjectTask(subject, {
                  name: f.name, interval: Number(f.interval), unit: f.unit, outcome: f.outcome || null,
                  also_interval: f.also ? Number(f.also) : null, also_unit: f.also ? f.also_unit : null,
@@ -102,7 +105,7 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
                  ...(kind === "item" ? { while_stored: f.while_stored } : {}),
                  ...(kind === "location" ? { include_positions: f.include_positions } : {}),
                }))}>
-      <Field label="Task"><input autoFocus value={f.name} onChange={set("name")}
+      <Field label="Task" text={f.name} hint={TASK_HINT}><input autoFocus value={f.name} onChange={set("name")}
              placeholder={kind === "item" ? "e.g. Calibrate, Statutory inspection, Overhaul"
                : kind === "location" ? "e.g. Area walkdown, Ex inspection" : "e.g. Replace sacrificial anode"} /></Field>
       <Field label="Every">
@@ -118,9 +121,9 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
         </div>
       </Field>
       {counters.length > 0 && (
-        <Field label="Counter (for a task by use, optional)">
+        <Field label="Measurement (for a task by use, optional)">
           <select value={f.point_id} onChange={set("point_id")}>
-            <option value="">{kind === "item" ? "Its own counter in that unit, else its use where fitted" : "The position's counter in that unit"}</option>
+            <option value="">{kind === "item" ? "Automatic: its own counter in that unit, else its use where fitted" : "Automatic: this position's counter in that unit"}</option>
             {counters.map((mp) => <option key={mp.id} value={mp.id}>{mp.name} ({mp.unit})</option>)}
           </select>
         </Field>
@@ -187,10 +190,12 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
   const [trade, setTrade] = useState(task.trade || "");
   const [whileStored, setWhileStored] = useState(task.while_stored || "run");
   const [includePositions, setIncludePositions] = useState(!!task.include_positions);
+  const [meas, setMeas] = useState({ body: null, error: null });
   const [busy, setBusy] = useState(false);
   return (
-    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && Number(interval) > 0} onClose={onClose}
+    <FormModal title="Edit task" submitLabel="Save" canSubmit={!!name.trim() && !tooLong(name) && Number(interval) > 0 && !meas.error} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenanceTask(task.id, {
+                 ...(meas.body || {}),
                  name, interval: Number(interval), unit, also_interval: also ? Number(also) : 0, also_unit: alsoUnit,
                  instructions, checklist: checklist.split("\n").map((x) => x.trim()).filter(Boolean), trade,
                  ...(byHand ? { source, reference } : {}),
@@ -201,7 +206,7 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
       {kind !== "position" && task.subject && (
         <p className="lib-date">On the {kind} <Link to={subjectPath(task.subject)}>{task.subject.name}</Link>.</p>
       )}
-      <Field label="Task"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Task" text={name} hint={TASK_HINT}><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Every">
         <div className="maint-row" style={{ marginTop: 0 }}>
           <input type="number" inputMode="decimal" min="0" step="any" value={interval} onChange={(e) => setInterval(e.target.value)} style={{ width: "6rem" }} />
@@ -214,6 +219,10 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
           <UnitPicker units={units} value={alsoUnit} onChange={(e) => setAlsoUnit(e.target.value)} />
         </div>
       </Field>
+      {kind !== "location" && (
+        <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
+      )}
+      {meas.error && <p className="lib-date">{meas.error}</p>}
       {kind === "item" && (
         <Field label="While it's out of a position (in a store, or away)">
           <select value={whileStored} onChange={(e) => setWhileStored(e.target.value)}>
@@ -246,11 +255,10 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
             <Field label="Failure mode it prevents">
               <select value={mode} onChange={(e) => setMode(e.target.value)}>
                 <option value="">None</option>
-                {modes.map((m) => <option key={m.id} value={m.id}>{m.text}{m.from_rcm ? " (RCM)" : ""}</option>)}
+                {modes.map((m) => <option key={m.id} value={m.id}>{m.text}</option>)}
               </select>
             </Field>
-            <p className="lib-date">Linked to a failure mode from an RCM study, this becomes that decision's task:
-              applying the study again updates it.</p>
+            <p className="lib-date">Linked to a failure mode, this task is the one its RCM decision schedules.</p>
           </>
         )}
       </>}
@@ -283,9 +291,9 @@ export function WorkOrdersCard({ workOrders, emptyText = "None yet." }) {
           <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
           <tbody>
             {workOrders.map((w) => (
-              <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
+              <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
                 <td>{w.number}</td>
-                <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
+                <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink>{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                 <td>{w.type}</td><td>{w.status}</td>
                 <td className="lib-date">{fmtDate(w.opened)}</td><td className="lib-date">{fmtDate(w.closed)}</td>
               </tr>

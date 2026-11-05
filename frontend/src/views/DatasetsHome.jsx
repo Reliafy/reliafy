@@ -1,13 +1,19 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { listDatasets, deleteDataset } from "../api.js";
+import { listDatasets, deleteDataset, renameDataset } from "../api.js";
 import NewDatasetModal from "../components/NewDatasetModal.jsx";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
-import { PlusIcon, RowActions, SampleGroups, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, itemName, rowOpen } from "../components/LibRows.jsx";
+import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
+import { datasetPath } from "../navigation.js";
+import { fitOptions } from "../datasetFit.js";
+import useMenuDismiss from "../components/useMenuDismiss.js";
 import "../components/Datasets.css";
+import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
+import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
+
+const HELP = { guide: "fit-your-first-model" };
 
 const FileIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -15,13 +21,50 @@ const FileIcon = () => (
   </svg>
 );
 
-// Landing page for the Datasets section: list uploaded CSVs, upload new, open
-// or delete. Datasets are content-addressed, so re-uploading a file reuses it.
+// Each row's ⋯ menu: every fit for this data, the data (open, rename) and delete.
+function RowMenu({ d, onRename, onDelete }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const trigger = useRef(null);
+  const closeMenu = useCallback(() => setOpen(false), []);
+  const options = fitOptions(d);
+  useMenuDismiss(open, closeMenu, ref);
+  // Focus goes back to the "More actions" button before the menu closes, so a
+  // dialog opened from it (rename, delete) returns focus there.
+  const act = (fn) => (e) => { e.stopPropagation(); trigger.current?.focus(); setOpen(false); fn(); };
+  return (
+    <td className="lib-actions">
+      <div className="ds-acts" ref={ref} onClick={(e) => e.stopPropagation()}>
+        <button type="button" ref={trigger} className="ds-more" aria-haspopup="menu" aria-expanded={open} aria-label="More actions"
+          onClick={() => setOpen((o) => !o)}>
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></svg>
+        </button>
+        {open && (
+          <div className="ds-menu" role="menu">
+            <div className="ds-menu-h">Fit a model</div>
+            {options.map((o) => <button type="button" key={o.label} role="menuitem" onClick={act(() => navigate(o.to))}>{o.label}</button>)}
+            <div className="ds-menu-sep" />
+            <div className="ds-menu-h">Data</div>
+            <button type="button" role="menuitem" onClick={act(() => navigate(datasetPath(d.id)))}>Open and view the data</button>
+            {!d.read_only && <button type="button" role="menuitem" onClick={act(() => onRename(d))}>Rename</button>}
+            <div className="ds-menu-sep" />
+            <button type="button" role="menuitem" className="ds-menu-del" onClick={act(() => onDelete(d))}>
+              {d.read_only ? "Remove from my view" : "Delete"}
+            </button>
+          </div>
+        )}
+      </div>
+    </td>
+  );
+}
+
+// Modelling › Data: the datasets, uploaded, pasted or typed in; open, add or
+// delete. Datasets are content-addressed, so re-uploading a file reuses it.
 export default function DatasetsHome() {
   const navigate = useNavigate();
   const location = useLocation();
   const [datasets, setDatasets] = useState(null);
-  const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
 
@@ -46,14 +89,13 @@ export default function DatasetsHome() {
   const onCreated = (ds, typedName) => {
     setNewOpen(false);
     refresh();
-    navigate(`/datasets/d/${ds.id}`, ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
+    navigate(datasetPath(ds.id), ds.reused ? { state: { reused: true, name: typedName || null } } : undefined);
   };
 
+  const confirm = useConfirm();
+  const askText = useAskText();
   const onDelete = async (d) => {
-    const msg = d.is_sample
-      ? `Remove the sample “${itemName(d)}” from your workspace? It stays available to other users and you won't see it again.`
-      : `Delete dataset “${d.name}”?`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm(deleteOrRemoveConfirm(d, "dataset", { name: itemName(d) })))) return;
     try {
       await deleteDataset(d.id);
       refresh();
@@ -62,79 +104,74 @@ export default function DatasetsHome() {
     }
   };
 
-  const open = (id) => navigate(`/datasets/d/${id}`);
-  const loading = datasets === null;
-  const visible = (datasets || []).filter((d) => matches(query, d.name, d.id));
+  const onRename = async (d) => {
+    const name = changedText(await askText(renamePrompt({ kind: "dataset", name: d.name })), d.name);
+    if (!name) return;
+    try {
+      await renameDataset(d.id, name);
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  const newDataset = <button onClick={() => setNewOpen(true)}><PlusIcon /> New dataset</button>;
 
   return (
     <div className="app">
-      <PageHeader
-        title="Datasets"
-        meta="Stored once and reused by every model fitted from them."
-        primary={<button onClick={() => setNewOpen(true)}><PlusIcon /> New dataset</button>}
+      <SectionHeader
+        section="data"
+        title="Data"
+        purpose="Your datasets, stored once and reused by every model fitted from them."
+        help={HELP}
+        primary={newDataset}
       />
 
       {error && <div className="card error">{error}</div>}
 
-      {loading ? (
-        <div className="card empty">Loading…</div>
-      ) : datasets.length === 0 ? (
-        <div className="card empty">
-          <h2>No datasets yet</h2>
-          <p>Upload a CSV or Excel file, paste from a spreadsheet, type data into a form, or fit a model to create one.</p>
-          <button style={{ marginTop: "1rem" }} onClick={() => setNewOpen(true)}>
-            <PlusIcon /> New dataset
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="tablebar">
-            {/* A count only says something while it filters. */}
-            {query.trim() && <span className="count">{visible.length} of {datasets.length} datasets</span>}
-            <span className="grow" />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search datasets…" />
-          </div>
-
-          <div className="lib ds-lib">
-            <table className="lib-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "46%" }}>Dataset</th>
-                  <th style={{ width: 90 }}>Rows</th>
-                  <th className="lib-opt" style={{ width: 170 }}><span className="sr-only">Used by</span></th>
-                  <th className="lib-opt">Added</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                <SampleGroups rows={visible} cols={5} render={(d) => (
-                  <tr key={d.id} className="lib-row" onClick={() => open(d.id)}>
-                    <td>
-                      <div className="ds-name">
-                        <span className="ds-ic"><FileIcon /></span>
-                        {/* A real link, so the row opens from the keyboard too. */}
-                        <Link className="lib-name ds-row-link" to={`/datasets/d/${d.id}`} onClick={(e) => e.stopPropagation()}>
-                          {itemName(d)}
-                        </Link>
-                        {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}
-                      </div>
-                    </td>
-                    <td className="lib-n">{(d.n_rows ?? 0).toLocaleString()}</td>
-                    <td className="lib-opt">
-                      {d.n_models > 0 && (
-                        <span className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</span>
-                      )}
-                    </td>
-                    <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
-                    {/* The row opens the dataset, so no separate Open button. */}
-                    <RowActions item={d} onDelete={() => onDelete(d)} />
-                  </tr>
-                )} />
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <SectionList
+        rows={datasets}
+        noun={["dataset", "datasets"]}
+        className="ds-lib"
+        tagsOf={(d) => d.tags}
+        help={HELP}
+        empty={{
+          title: "No datasets yet",
+          body: "Upload a CSV or Excel file, paste from a spreadsheet, type data into a form, or fit a model to create one.",
+          action: newDataset,
+        }}
+        head={[
+          <th key="d">Dataset</th>,
+          <th key="h" className="lib-opt" style={{ width: 270 }}>Holds</th>,
+          <th key="r" className="ds-units-h">Size</th>,
+          <th key="tu" className="lib-opt" style={{ width: 90 }}>Time unit</th>,
+          <th key="t" className="lib-opt" style={{ width: 100 }}>Added</th>,
+          <th key="a" style={{ width: 48 }}><span className="sr-only">Actions</span></th>,
+        ]}
+        render={(d) => (
+          <tr key={d.id} className="lib-row" onClick={rowOpen(navigate, datasetPath(d.id))}>
+            <td>
+              <div className="ds-name">
+                <span className="ds-ic"><FileIcon /></span>
+                {/* A real link, so the row opens from the keyboard too. */}
+                <Link className="lib-name ds-row-link lib-link" to={datasetPath(d.id)} onClick={(e) => e.stopPropagation()}>
+                  {itemName(d)}
+                </Link>
+                {d.shared_by && <Chip title={`Shared by ${d.shared_by}`}>Shared</Chip>}
+              </div>
+            </td>
+            <td className="lib-opt">
+              <div className="ds-tags">{(d.tags || []).map((t) => <Chip key={t}>{t}</Chip>)}</div>
+            </td>
+            <td className="ds-units">
+              {d.summary || `${(d.n_rows ?? 0).toLocaleString()} rows`}
+              {d.n_models > 0 && <div className="ds-used">Used by {d.n_models} model{d.n_models === 1 ? "" : "s"}</div>}
+            </td>
+            <td className="lib-opt ds-tu">{d.time_unit ? `${d.time_unit}s` : <span className="ds-tu-none">—</span>}</td>
+            <td className="lib-date lib-opt">{relativeTime(d.created_at)}</td>
+            <RowMenu d={d} onRename={onRename} onDelete={onDelete} />
+          </tr>
+        )}
+      />
 
       {newOpen && (
         <NewDatasetModal onClose={() => setNewOpen(false)} onCreated={onCreated} />

@@ -22,7 +22,7 @@ export default function PublicNav() {
         <Link className="landing-nav-link nav-extra" to="/whats-new">What's new</Link>
         <Link className="landing-nav-link" to="/api-docs">API</Link>
         {user ? (
-          <Link className="cta cta-solid" to="/modelling">Open the app</Link>
+          <Link className="cta cta-solid" to="/home">Open the app</Link>
         ) : (
           <>
             <Link className="cta cta-ghost" to="/login">Sign in</Link>

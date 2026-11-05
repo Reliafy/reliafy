@@ -5,6 +5,11 @@ author: The Reliafy Team
 summary: Every mature RCM programme has the same artifact — a thorough, expensive study that was true the day it was written and has been quietly diverging from reality ever since. The fix isn't more discipline. It's making the worksheet check itself.
 ---
 
+*Editor's note, added October 2026: RCM in Reliafy now lives on your asset
+tree, on the Explorer's RCM tab, rather than as separate studies; the sample
+is the sample truck, which you add to your own tree. The post below is as
+published.*
+
 Somewhere near you is an RCM binder. It was produced by a serious team over
 several months, it was reviewed and signed, and it directs the maintenance of
 equipment your operation depends on. Some of its decisions are now wrong.
@@ -76,10 +81,10 @@ suspensions counted, run the replacement-interval analysis, and the RCM
 study consumes them as evidence — same platform, same datasets, no export
 dance between a statistics tool and a worksheet tool.
 
-There's a complete sample study in the app — a pump system with linked
+There's a complete sample in the app — a delivery truck with linked
 evidence, including one decision the sample data contradicts, so you can see
 the flag without waiting for your own data to turn on you. It's on the free
-tier, along with one study of your own with full live validation.
+tier, with the same live validation on your own asset tree.
 
 The binder was never the deliverable. The deliverable was maintenance that
 matches how the equipment actually fails — *keeps* matching it. Paper can't

@@ -11,6 +11,10 @@
 .maint-head h2 {
   margin: 0;
 }
+/* A picker in a card's heading (Open work orders: In <location>): a long
+   location path shortens the box rather than widening the page on a phone. */
+.maint-head > label { min-width: 0; max-width: 100%; }
+.maint-head > label select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
 
 .maint-row {
   display: flex;
@@ -109,6 +113,55 @@
   display: block;
 }
 
+/* A photo on several places: where else it is, and the "Link or move" picker. */
+.maint-photo-also {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.maint-place-kind {
+  opacity: 0.75;
+  font-weight: normal;
+}
+
+.maint-photo-places ul {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+.maint-photo-places li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+.maint-photo-places li button {
+  margin-left: auto;
+}
+
+.maint-place-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.maint-place-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.maint-place-hints button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
 .maint-photo-full {
   max-width: 100%;
   max-height: 70vh;
@@ -126,28 +179,6 @@
 
 .maint-ask p {
   margin: 0 0 0.5rem;
-}
-
-.maint-tabs {
-  display: flex;
-  gap: 0.25rem;
-  margin: 0 0 1rem;
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-}
-
-.maint-tabs a {
-  padding: 0.5rem 0.85rem;
-  color: var(--muted);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
-  white-space: nowrap;
-}
-
-.maint-tabs a.active {
-  color: var(--ink);
-  border-bottom-color: var(--acc);
-  font-weight: 600;
 }
 
 .maint-plate {
@@ -338,3 +369,154 @@ button.maint-toggle {
   padding: 0 0.3rem;
   font-weight: 600;
 }
+
+/* Documents: links, and PDFs kept here (opened in the viewer). */
+.maint-docs li {
+  overflow-wrap: anywhere;
+}
+
+.maint-doc-title {
+  text-align: left;
+}
+
+/* "Remove it?" asked in the row itself. */
+.maint-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.25rem;
+}
+
+.maint-pdf-meta {
+  margin-top: 0;
+}
+
+.maint-pdf-frame {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surf-2);
+}
+
+.maint-pdf-phone {
+  display: none;
+}
+
+/* Phones rarely show a PDF in a frame: the buttons open their own viewer. */
+@media (max-width: 600px) {
+  .maint-pdf-frame {
+    display: none;
+  }
+
+  .maint-pdf-phone {
+    display: block;
+  }
+}
+
+/* A name or title nearing its length limit, and past it. */
+.maint-length {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.maint-length-over {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Assets: the top-level places, with the positions at no place last. */
+.maint-assets .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.maint-assets td:first-child {
+  min-width: 11rem;
+}
+
+.maint-assets .maint-not-placed td {
+  border-top: 2px solid var(--line);
+}
+
+.maint-assets .maint-not-placed td:first-child > a {
+  font-style: italic;
+}
+
+/* On a phone each asset is a block: its name, then the counts in a row, each
+   labelled, and what's due beneath (no table to scroll sideways). */
+@media (max-width: 640px) {
+  .maint-assets thead {
+    display: none;
+  }
+
+  .maint-assets tr {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.35rem 0.75rem;
+    padding: 0.75rem 0.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .maint-assets td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+
+  .maint-assets td:first-child,
+  .maint-assets td:last-child {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .maint-assets .num {
+    text-align: left;
+  }
+
+  .maint-assets td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .maint-assets .maint-not-placed {
+    border-top: 2px solid var(--line);
+  }
+
+  .maint-assets .maint-not-placed td {
+    border-top: 0;
+  }
+}
+
+/* A filter that's on, above a list, with the way to clear it. */
+.maint-filter-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+}
+
+/* A photo thumbnail is a button (keyboard-reachable), drawn as just the image. */
+.maint-photo-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.maint-photo-btn:focus-visible { outline: none; box-shadow: var(--focus); }
+.maint-photo-btn:hover:not(:disabled) { background: none; opacity: 0.9; }
+
+/* Assets' landing: links to the register's other pages (they aren't in the menu). */
+.assets-links { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: -4px 0 12px; font-size: var(--fs-14); }
+.assets-links a { color: var(--acc); font-weight: 500; }

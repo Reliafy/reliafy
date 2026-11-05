@@ -1,16 +1,57 @@
 // Global setup for the local run: the samples cover most pages, but nothing
-// seeds Maintenance or an RBD simulation run, so make one of each here (a
-// position from the sample RCM study, a location, an item fitted to the
+// seeds Maintenance or an RBD simulation run, so make one of each here (the
+// sample truck with its RCM, as "Add the sample truck" makes it, a location, an item fitted to the
 // position, a work order, a part and an assembly of it, the starter item classes, a position
-// class with a fitted life model and a spare with a lead time, and one availability run)
+// class with a fitted non-repairable model and a spare with a lead time, one availability run,
+// and a model of each kind the samples don't cover)
 // through the API. Skipped against a deployed site.
 import { request } from "@playwright/test";
+import { seedModelKinds } from "./modelKinds.js";
+
+// A deterministic fleet: 40 pumps, a vibration path each, those whose
+// vibration starts high failing sooner; still running at day 120 otherwise.
+export function jointFleet() {
+  let state = 12345;
+  const rand = () => ((state = (state * 1103515245 + 12345) % 2147483648) + 0.5) / 2147483648;
+  const normal = () => Math.sqrt(-2 * Math.log(rand())) * Math.cos(2 * Math.PI * rand());
+  const life = ["pump,age,running,load"];
+  const reads = ["pump,age,vibration"];
+  for (let k = 0; k < 40; k += 1) {
+    const start = 2 + 0.4 * normal();
+    const rate = 0.02 + 0.005 * normal();
+    const load = k % 2;
+    const t = 100 * Math.sqrt(-Math.log(rand())) * Math.exp(-0.9 * (start - 2) - 0.3 * load);
+    const end = Math.min(t, 120);
+    life.push(`P${k},${end.toFixed(3)},${t >= 120 ? 1 : 0},${load}`);
+    for (let age = 0; age < end; age += 10) {
+      reads.push(`P${k},${age},${(start + rate * age + 0.2 * normal()).toFixed(4)}`);
+    }
+  }
+  return { lifetimes: life.join("\n"), readings: reads.join("\n") };
+}
+
+async function seedJointModel(post, put) {
+  const { lifetimes, readings } = jointFleet();
+  const life = await post("/api/datasets/paste", { name: "Smoke test pump lives", content: lifetimes });
+  await put(`/api/datasets/${life.id}/measurements/paste`, { content: readings });
+  await post("/api/joint/models", {
+    name: "Smoke test pumps (condition-based)",
+    dataset_id: life.id,
+    mapping: { id: "pump", x: "age", c: "running" },
+    readings_mapping: { id: "pump", age: "age", value: "vibration" },
+    covariates: ["load"],
+    path_model: "linear",
+    unit: "Days",
+    marker: "vibration",
+    marker_unit: "mm/s",
+  });
+}
 
 export default async function seed(config) {
   if (process.env.SMOKE_BASE_URL) return;
   const api = await request.newContext({ baseURL: config.projects[0].use.baseURL });
-  const send = (method) => async (path, data) => {
-    const res = await api.fetch(path, { method, data });
+  const send = (method) => async (path, data, timeout = undefined) => {
+    const res = await api.fetch(path, { method, data, timeout });
     if (!res.ok()) throw new Error(`Seeding: ${method} ${path} answered ${res.status()}: ${await res.text()}`);
     return res.json();
   };
@@ -18,7 +59,10 @@ export default async function seed(config) {
   const patch = send("PATCH");
   try {
     const m = "/api/maintenance";
-    const { position_id } = await post(`${m}/from-rcm`, { study_id: "sample-rcm-truck" });
+    const { position: { id: position_id } } = await post(`${m}/sample-truck`, {});
+    // A product with three items built from it, their reports and its RBD (Products, Items).
+    // About a thousand events (three items' trees copied): give it time on a busy machine.
+    await post(`${m}/sample-product`, {}, 180000);
     const location = await post(`${m}/locations`, { name: "Smoke test depot" });
     const item = await post(`${m}/items`, { name: "Smoke test brake set", serial: "SMOKE-1" });
     await patch(`${m}/positions/${position_id}`, { location_id: location.id });
@@ -32,7 +76,7 @@ export default async function seed(config) {
     await send("PUT")(`${m}/items/${item.id}/part`, { part_id: brakes.id });
     await post(`${m}/item-classes/starter`, { dry_run: false });
 
-    // A position class with a fitted life model, so its page draws the failure
+    // A position class with a fitted non-repairable model, so its page draws the failure
     // forecast (#407): three pumps, each with two past failures and an item in
     // now, a critical replacement part with one in stock, and the class's costs.
     const ago = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
@@ -56,6 +100,13 @@ export default async function seed(config) {
     }
     await send("PUT")(`${m}/classes/costs`, { position_class: pump, planned_cost: 400, failure_cost: 4000 });
     await post(`${m}/classes/fit`, { position_class: pump });
+
+    // A condition and life model: a small fleet of pumps, each with its
+    // vibration read every 10 days, fitted in-process (billing is off here).
+    await seedJointModel(post, send("PUT"));
+    // One model of each kind the samples don't cover, for the model pages'
+    // fit check (modelframe.spec.js).
+    await seedModelKinds(api);
 
     // One availability run, for the run history pages.
     const rbd = await (await api.get("/api/rbds/sample-rbd-instrument-air-availability")).json();

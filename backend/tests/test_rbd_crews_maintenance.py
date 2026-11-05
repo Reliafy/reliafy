@@ -14,10 +14,11 @@ matplotlib.use("Agg")
 import pytest  # noqa: E402
 import surpyval as sv  # noqa: E402
 from repyability import BetaFactor, CCFGroup, RepairableRBD  # noqa: E402
+from repyability.rbd import _long_run  # noqa: E402
 from scipy.integrate import quad  # noqa: E402
 
 from backend.services import rbd_analysis as ra  # noqa: E402
-from backend.services import rbd_export, rbd_policies  # noqa: E402
+from backend.services import rbd_export, rbd_policies, repy_compat  # noqa: E402
 from backend.services.rbd_analysis import AnalysisError  # noqa: E402
 from backend.services.rbds import availability_cache_key  # noqa: E402
 from backend.tests.test_mcp import A, _call, _err, _ok, env  # noqa: E402,F401 - env is a fixture
@@ -193,7 +194,8 @@ def test_standby_group_in_a_diagram_with_crews_and_costs():
     rbd2 = ra._build_repairable_rbd(g2)[0]
     assert r2["costs"]["cost_rate"] == pytest.approx(rbd2.expected_cost_rate(), rel=1e-12)
     assert r2["costs"]["by_category"]["repair"] == pytest.approx(
-        200 * rbd2._standby_long_run("g").unit_failure_frequency + 50 * rbd2._node_frequencies("v")[0], rel=1e-9)
+        200 * _long_run._standby_long_run(rbd2, "g").unit_failure_frequency
+        + 50 * _long_run._node_frequencies(rbd2, "v")[0], rel=1e-9)
 
 
 @pytest.mark.parametrize("data, needle", [
@@ -234,7 +236,7 @@ def test_condition_based_replacement_matches_repyability():
     assert c["cost_rate"] == pytest.approx(direct.expected_cost_rate(), rel=1e-12)
     assert math.fsum(c["by_category"].values()) == pytest.approx(c["cost_rate"], rel=1e-9)
     # A condition check at each interval the pump is up at.
-    up = direct._block_cycle("c").before
+    up = repy_compat.block_cycle(direct, "c").before
     assert c["by_category"]["inspection"] == pytest.approx(1 * up / 10, rel=1e-12)
     assert c["by_category"]["preventive"] > 0
 
@@ -291,7 +293,7 @@ def test_separate_groups_are_exact_with_a_setup_category():
     c = r["costs"]
     assert c["cost_rate_basis"] == "exact"
     assert c["cost_rate"] == pytest.approx(direct.expected_cost_rate(), rel=1e-12)
-    actions = sum(direct._node_actions("a", direct.node_availability()["a"]))
+    actions = sum(repy_compat.node_actions(direct, "a", direct.node_availability()["a"]))
     assert c["by_category"]["setup"] == pytest.approx(2 * 5000 * actions, rel=1e-9)
     assert math.fsum(c["by_category"].values()) == pytest.approx(c["cost_rate"], rel=1e-9)
 
@@ -488,7 +490,7 @@ def test_r2_maintenance_unchanged():
 
 
 # ---------------------------------------------------------------------------
-# MCP: rbd create / rbd edit round-trip the new fields
+# MCP: change rbd_create / change rbd_edit round-trip the new fields
 # ---------------------------------------------------------------------------
 def _m(dist, **params):
     return {"distribution_id": dist, "params": [{"name": k, "value": v} for k, v in params.items()]}
@@ -522,7 +524,7 @@ def _mcp_graph():
 
 
 def test_mcp_create_rbd_round_trips_the_new_fields(env):
-    out = _ok(_call(env.token[A], "rbd", {"action": "create",
+    out = _ok(_call(env.token[A], "change", {"action": "rbd_create",
         "name": "SIF", "unit": "Hours", "repairable": True, **_mcp_graph(), "repair_crews": 2,
         "maintenance_groups": {"north": {"setup_cost": 500}}, "safety_function": True, "target_sil": 2}))
     graph = _doc(env, out["id"])["graph"]
@@ -538,8 +540,8 @@ def test_mcp_create_rbd_round_trips_the_new_fields(env):
     got = _ok(_call(env.token[A], "get", {"kind": "rbd", "id": out["id"]}))["graph"]
     assert got["repair_crews"] == {"crews": 2} and got["safety_function"] is True
     assert {n["id"]: n for n in got["nodes"]}["fan"]["maintenance_group"] == "north"
-    # rbd_analysis analyze reports the method, the crews and the safety function.
-    res = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": out["id"]}))
+    # analyse rbd reports the method, the crews and the safety function.
+    res = _ok(_call(env.token[A], "analyse", {"action": "rbd", "rbd_id": out["id"]}))
     assert res["repair_crews"]["crews"] == 2 and res["long_run_method"]["route"] in (
         "exact", "numerical", "refused")
     assert res["safety"]["pfd_avg"] > 0
@@ -551,12 +553,12 @@ def test_mcp_create_rbd_refuses_settings_on_a_reliability_diagram(env):
     g = {"nodes": [{"id": "input", "type": "input"}, {"id": "output", "type": "output"},
                    {"id": "a", "type": "component", "model": _m("exponential", failure_rate=1e-3)}],
          "edges": [{"source": "input", "target": "a"}, {"source": "a", "target": "output"}]}
-    msg = _err(_call(env.token[A], "rbd", {"action": "create", "name": "x", **g, "repair_crews": 1}))
+    msg = _err(_call(env.token[A], "change", {"action": "rbd_create", "name": "x", **g, "repair_crews": 1}))
     assert "repairable diagrams only" in msg
 
 
 def test_mcp_edit_rbd_sets_and_clears_the_new_fields(env):
-    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "SIF", "unit": "Hours", "repairable": True,
+    rid = _ok(_call(env.token[A], "change", {"action": "rbd_create", "name": "SIF", "unit": "Hours", "repairable": True,
                                                  **_mcp_graph()}))["id"]
     out = _ok(_edit(env, rid,
                     {"op": "set", "repair_crews": 1, "safety_function": True, "target_sil": 3,
@@ -583,7 +585,7 @@ def test_mcp_edit_rbd_sets_and_clears_the_new_fields(env):
 
 
 def test_mcp_edit_rbd_errors(env):
-    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "SIF", "unit": "Hours", "repairable": True,
+    rid = _ok(_call(env.token[A], "change", {"action": "rbd_create", "name": "SIF", "unit": "Hours", "repairable": True,
                                                  **_mcp_graph()}))["id"]
     assert "only component nodes" in _err(_edit(env, rid, {"op": "update_node", "id": "bank",
                                                            "preventive": {"interval": 10}}))

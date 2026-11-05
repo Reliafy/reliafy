@@ -128,7 +128,7 @@ def test_unsupported_event_attributes_are_refused(attrs, match):
 
 def test_fixed_probability_events_import_without_a_life_model():
     """Galileo ``prob=`` events get Open-PSA's #188 treatment: a block with NO
-    life model, named in the notes with its probability; nothing invented."""
+    non-repairable model, named in the notes with its probability; nothing invented."""
     d = load("""toplevel "T";
         "T" or "Pumps" "MCC" "Op";
         "Pumps" and "PA" "PB";
@@ -140,11 +140,11 @@ def test_fixed_probability_events_import_without_a_life_model():
     assert by_label(d.graph, "PA")["model"]["distribution_id"] == "exponential"
     (note,) = [w for w in d.warnings if "fixed probability" in w]
     assert "2 basic event(s)" in note and "“MCC” (p = 0.01)" in note
-    assert "“Op” (p = 0.003)" in note and "WITHOUT a life model" in note
+    assert "“Op” (p = 0.003)" in note and "WITHOUT a non-repairable model" in note
     # The structure is intact; only the missing models stop the analysis.
     check = rbd_analysis.validate_graph(normalize_graph(d.graph))
     assert not check["valid"]
-    assert all("has no life model" in e for e in check["errors"]) and len(check["errors"]) == 2
+    assert all("has no non-repairable model" in e for e in check["errors"]) and len(check["errors"]) == 2
 
 
 def test_fixed_probability_unit_in_a_spare_gate_is_refused():

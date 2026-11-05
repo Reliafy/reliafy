@@ -15,7 +15,7 @@ import { relativeTime } from "../instrument.js";
 // A conversational chat with the Reliability Agent (Anthropic Managed Agents).
 // The agent assesses the task, builds the solution with surpyval/repyability in
 // its sandbox, proposes a plan, and — after the user approves — calls Reliafy
-// tools to load datasets + life models into the workspace. Messages persist in a
+// tools to load datasets + non-repairable models into the workspace. Messages persist in a
 // scrolling thread; the session is reused across turns.
 
 // Human labels for the Reliafy-side tools. Reads are phrased as looking, not
@@ -26,7 +26,7 @@ const TOOL_LABEL = {
   list_models: "Read your saved models",
   get_model: "Read a saved model",
   create_dataset: "Create dataset",
-  create_life_model: "Create life model",
+  create_life_model: "Create non-repairable model",
   create_recurrent_model: "Create recurrent model",
   create_alt_model: "Create accelerated-life model",
   create_degradation_model: "Create degradation model",

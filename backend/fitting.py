@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import math
 import re
 import warnings
@@ -81,6 +82,7 @@ from surpyval import (
     WeibullAH,
 )
 from surpyval import GumbelPH, LogisticPH
+from surpyval import AFT, AH, PH, PO
 from surpyval.univariate.regression import CoxPH
 
 from backend import life_bounds, np_life, param_intervals
@@ -167,6 +169,13 @@ REGRESSION_MODELS = {
     "gamma_ah": {"name": "Gamma AH", "fitter": GammaAH, "effect": "additive"},
     "logistic_ah": {"name": "Logistic AH", "fitter": LogisticAH, "effect": "additive"},
     "gumbel_ah": {"name": "Gumbel AH", "fitter": GumbelAH, "effect": "additive"},
+    # Log-logistic baselines (SurPyval's generic PH/AFT/PO/AH on LogLogistic): the
+    # usual alternative to Weibull and lognormal when the hazard rises then falls.
+    # For the log-logistic, proportional odds and AFT are the same model.
+    "loglogistic_ph": {"name": "LogLogistic PH", "fitter": PH(LogLogistic), "effect": "hazard"},
+    "loglogistic_aft": {"name": "LogLogistic AFT", "fitter": AFT(LogLogistic), "effect": "aft"},
+    "loglogistic_po": {"name": "LogLogistic PO", "fitter": PO(LogLogistic), "effect": "odds"},
+    "loglogistic_ah": {"name": "LogLogistic AH", "fitter": AH(LogLogistic), "effect": "additive"},
 }
 
 # More models (#179, #72, #63) — bounded and discretized distributions, the
@@ -314,15 +323,109 @@ def _head_text(file_bytes: bytes, limit: int = 1024 * 1024) -> str:
     return bytes(file_bytes[:limit]).decode("utf-8", errors="replace")
 
 
+logger = logging.getLogger(__name__)
+
+# The start of files people upload by mistake, and what to call them.
+_NOT_CSV_MAGIC = (
+    (b"\x89PNG", "a PNG image"),
+    (b"\xff\xd8\xff", "a JPEG image"),
+    (b"GIF8", "a GIF image"),
+    (b"%PDF", "a PDF"),
+    (b"PK\x03\x04", "an Excel workbook or a zip file"),
+    (b"\xd0\xcf\x11\xe0", "a legacy Office file (.xls or .doc)"),
+)
+_SAVE_AS_CSV = "Save it as CSV UTF-8 (comma delimited) and upload it again."
+
+
+def not_csv_text(data: bytes) -> Optional[str]:
+    """Plain words for bytes that can't be CSV text (an image, a PDF, a
+    workbook, UTF-16 text), or None when they could be."""
+    head = bytes(data[:8])
+    if head.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return f"This file is saved as UTF-16 (\"Unicode text\"). {_SAVE_AS_CSV}"
+    for magic, what in _NOT_CSV_MAGIC:
+        if head.startswith(magic):
+            if magic == b"PK\x03\x04":
+                return ("This looks like an Excel workbook (or a zip file), not a CSV file. Upload it as an "
+                        "Excel workbook (.xlsx), or save the sheet as CSV UTF-8 and upload that.")
+            return f"This looks like {what}, not a CSV file. {_SAVE_AS_CSV}"
+    if b"\x00" in bytes(data[:4096]):
+        return f"This file isn't text, so it can't be read as a CSV. {_SAVE_AS_CSV}"
+    return None
+
+
+def _unclosed_quote_line(text: str) -> Optional[int]:
+    """The 1-based line where a quote mark opens and never closes, or None."""
+    in_quote, opened, line = False, 0, 1
+    for ch in text:
+        if ch == "\n":
+            line += 1
+        elif ch == '"':
+            in_quote = not in_quote
+            if in_quote:
+                opened = line
+    return opened if in_quote else None
+
+
+def csv_error_message(exc: BaseException, data: bytes | str | None = None, *, what: str = "the file") -> str:
+    """A parser error in plain words that say what to do; the raw error is
+    logged, never shown. ``what`` names the thing read ("the file", "the
+    pasted data")."""
+    logger.warning("CSV parse failed (%s): %r", what, exc)
+    raw = data.encode("utf-8", "replace") if isinstance(data, str) else (bytes(data) if data else b"")
+    if raw:
+        sniffed = not_csv_text(raw)
+        if sniffed:
+            return sniffed
+    msg = str(exc)
+    if isinstance(exc, UnicodeDecodeError):
+        return f"Reliafy couldn't read the text in {what}: it isn't saved as UTF-8. {_SAVE_AS_CSV}"
+    if isinstance(exc, pd.errors.EmptyDataError) or "No columns to parse" in msg or not raw.strip():
+        return (f"{what[0].upper()}{what[1:]} is empty. Add a header row (the column names) "
+                "and at least one row of data.")
+    text = raw.decode("utf-8", "replace") if raw else ""
+    quote_line = _unclosed_quote_line(text) if text else None
+    if quote_line is not None and ("EOF inside string" in msg or "unexpected end of data" in msg
+                                   or "expected after" in msg or not msg):
+        return (f"Line {quote_line} has a quote mark (\") that is never closed. Close it, or remove it, "
+                "and upload it again.")
+    m = re.search(r"Expected (\d+) fields in line (\d+), saw (\d+)", msg)
+    if m:
+        want, line, saw = m.groups()
+        return (f"Line {line} has {saw} values but the header has {want} columns. Check that line for an "
+                "extra comma, or put quote marks around a value that contains a comma.")
+    if quote_line is not None:
+        return (f"Line {quote_line} has a quote mark (\") that is never closed. Close it, or remove it, "
+                "and upload it again.")
+    return (f"Reliafy couldn't read {what} as a table. Check it is comma- or tab-separated text with a "
+            f"header row. {_SAVE_AS_CSV}")
+
+
+def read_csv_bytes(file_bytes: bytes, *, what: str = "the file", **kwargs) -> pd.DataFrame:
+    """``read_csv_capped`` on uploaded bytes: refuses what can't be CSV text,
+    reads UTF-8 and falls back to Latin-1 (Excel's "CSV" on Windows), and turns
+    parser errors into FitErrors in plain words."""
+    sniffed = not_csv_text(file_bytes)
+    if sniffed:
+        logger.warning("Upload refused as not CSV text (%s)", what)
+        raise FitError(sniffed)
+    width_text = _head_text(file_bytes)
+    try:
+        try:
+            return read_csv_capped(io.BytesIO(file_bytes), width_text=width_text, **kwargs)
+        except UnicodeDecodeError:
+            return read_csv_capped(io.BytesIO(file_bytes), width_text=width_text,
+                                   encoding="latin-1", **kwargs)
+    except FitError:
+        raise
+    except Exception as exc:  # pandas raises many types
+        raise FitError(csv_error_message(exc, file_bytes, what=what)) from exc
+
+
 def read_dataframe(file_bytes: bytes) -> pd.DataFrame:
     """Parse uploaded bytes as a CSV into a DataFrame, within the
     ``MAX_CSV_COLS`` / ``MAX_CSV_ROWS`` limits."""
-    try:
-        df = read_csv_capped(io.BytesIO(file_bytes), width_text=_head_text(file_bytes))
-    except FitError:
-        raise
-    except Exception as exc:  # pragma: no cover - pandas raises many types
-        raise FitError(f"Could not parse the file as CSV: {exc}") from exc
+    df = read_csv_bytes(file_bytes)
 
     if df.empty or df.shape[1] == 0:
         raise FitError("The uploaded CSV is empty.")
@@ -373,12 +476,7 @@ HEADER_PREVIEW_HINT = ("The first row is all numbers, so it looks like data, not
 def with_generic_header(file_bytes: bytes) -> bytes:
     """A CSV with no header row, re-serialised with columns ``col 1``,
     ``col 2``, … so its first row is kept as data."""
-    try:
-        df = read_csv_capped(io.BytesIO(file_bytes), header=None, width_text=_head_text(file_bytes))
-    except FitError:
-        raise
-    except Exception as exc:  # pragma: no cover - pandas raises many types
-        raise FitError(f"Could not parse the file as CSV: {exc}") from exc
+    df = read_csv_bytes(file_bytes, header=None)
     if df.empty or df.shape[1] == 0:
         raise FitError("The uploaded CSV is empty.")
     df.columns = [f"col {i + 1}" for i in range(df.shape[1])]
@@ -968,6 +1066,29 @@ def _expo_weibull_paper_y(p: np.ndarray, mu: float) -> np.ndarray:
     return np.where(np.isfinite(y), y, a)
 
 
+def _empirical_points(model, data: dict, keep, heuristic: str) -> dict | None:
+    """The failures on the time scale, for the model page's checks: each
+    failure's time, the data's own estimate of the fraction failed by then
+    (the plotting position, from ``heuristic``) and the model's. The fitted
+    curve drawn over the data, and the P-P plot, read these. None when they
+    can't be had (they are a check, never a reason for a fit to fail)."""
+    try:
+        gamma = float(data.get("gamma") or 0.0)
+        x = np.asarray(data["x_"], dtype=float)[keep] + gamma
+        F = np.asarray(data["F"], dtype=float)[keep]
+        with np.errstate(all="ignore"):
+            model_F = np.asarray(model.ff(x), dtype=float)
+        ok = np.isfinite(x) & np.isfinite(F) & np.isfinite(model_F)
+        if not ok.any():
+            return None
+        return {
+            "x": x[ok].tolist(), "F": F[ok].tolist(), "model_F": model_F[ok].tolist(),
+            "method": heuristic,
+        }
+    except Exception:  # noqa: BLE001 - a check, never a reason to fail the fit
+        return None
+
+
 def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None) -> dict:
     """Shape SurPyval's plot data into Plotly-ready (already-linearised) arrays.
 
@@ -1021,6 +1142,7 @@ def _shape_plot(model, dist, heuristic: str = "Nelson-Aalen", paper_params=None)
 
     return {
         "scatter": {"x": scatter_x.tolist(), "y": scatter_y.tolist()},
+        "empirical": _empirical_points(model, data, keep, heuristic),
         "line": {"x": line_x.tolist(), "y": line_y.tolist()},
         "bounds": None if not has_bounds else {
             "x": line_x.tolist(),
@@ -1062,6 +1184,8 @@ def options_from_form(
     c_invert: Optional[str] = None,
     include_mixtures: Optional[str] = None,
     c_map: Optional[str] = None,
+    criterion: Optional[str] = None,
+    frailty_family: Optional[str] = None,
 ) -> Optional[dict]:
     """Build an options dict from HTML-form string fields (both fit routers).
     ``c_map`` is a JSON object of status words to censor codes."""
@@ -1096,6 +1220,10 @@ def options_from_form(
         opts["how"] = str(how).strip()
     if truthy(include_mixtures):
         opts["include_mixtures"] = True
+    if criterion and str(criterion).strip():
+        opts[CRITERION_KEY] = str(criterion).strip()
+    if frailty_family and str(frailty_family).strip():
+        opts[more_models.FAMILY_KEY] = str(frailty_family).strip()
     return opts if any(opts.values()) else None
 
 
@@ -1173,6 +1301,31 @@ def methods_for_data(mapping: Optional[dict]) -> dict:
 # Pseudo-distribution id: fit every plain distribution and keep the lowest-AIC.
 BEST_ID = "best"
 
+# Best fit's score: AIC unless asked (SurPyval's fit_best metrics).
+CRITERION_KEY = "criterion"
+CRITERIA = {
+    "aic": "AIC",
+    "aic_c": "AICc (AIC corrected for few failures)",
+    "bic": "BIC",
+    "neg_ll": "Negative log-likelihood",
+}
+DEFAULT_CRITERION = "aic"
+
+
+def clean_criterion(distribution: str, value) -> Optional[str]:
+    """Best fit's ranking score, None for the default (AIC) or when not
+    given. Refused where it doesn't apply."""
+    if value in (None, ""):
+        return None
+    key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    key = {"aicc": "aic_c", "nll": "neg_ll", "negll": "neg_ll", "neg_log_likelihood": "neg_ll"}.get(key, key)
+    if key not in CRITERIA:
+        raise FitError(f"criterion must be one of: {', '.join(CRITERIA)}.")
+    if distribution != BEST_ID:
+        raise FitError("criterion chooses how Best fit ranks the distributions: choose Best fit "
+                       "(distribution 'best'), or drop it.")
+    return None if key == DEFAULT_CRITERION else key
+
 
 def _normalize_mixture(value) -> int:
     """``mixture`` is the component count: absent/1 means an ordinary single fit."""
@@ -1209,6 +1362,19 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         # Best fit only: let two-component mixtures compete (#236).
         "include_mixtures": bool(opts.get("include_mixtures")),
     }
+    # Shared-frailty models: the frailty's own distribution (gamma or log-normal).
+    family = more_models.clean_family(distribution, opts.get(more_models.FAMILY_KEY))
+    # Best fit only: the score the candidates are ranked by.
+    criterion = clean_criterion(distribution, opts.get(CRITERION_KEY))
+    if family:
+        extra = {more_models.FAMILY_KEY: family}
+        if any([out["offset"], out["zi"], out["lfp"], out["fixed"], out["how"], out["include_mixtures"],
+                out["mixture"]]):
+            raise FitError("Fit options (offset/zi/lfp/fixed/method) apply to plain distributions only, "
+                           "not regression models.")
+        return extra
+    if criterion:
+        out[CRITERION_KEY] = criterion
     if out["include_mixtures"] and distribution != BEST_ID:
         raise FitError(
             "Two-mode mixtures compete only in Best fit — choose Best fit, or the Mixture "
@@ -1250,7 +1416,7 @@ def normalize_options(distribution: str, options: Optional[dict]) -> dict:
         )
     if not any([out["offset"], out["zi"], out["lfp"], out["fixed"], out["how"],
                 out["include_mixtures"]]):
-        return {}
+        return {CRITERION_KEY: criterion} if criterion else {}
     if out["include_mixtures"]:
         # A mixture is fitted by maximum likelihood (EM) with none of these:
         # ranked beside fits that have them, it wouldn't be the same contest.
@@ -1397,7 +1563,8 @@ def fit(
                            "time. Drop them, or fit without the item column.")
         result = tvc.fit(distribution, df, mapping, covariates, formula, covariate_units)
     elif distribution in REGRESSION_MODELS:
-        result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units, cox_opts)
+        result = _fit_regression(distribution, df, mapping, covariates, formula, covariate_units, cox_opts,
+                                 frailty_family=options.get(more_models.FAMILY_KEY))
     elif cox_opts:
         raise FitError("Tie methods, strata and clusters apply to Cox PH only. Choose Cox PH, or drop them.")
     elif distribution == BEST_ID:
@@ -1760,9 +1927,63 @@ MIXTURE_CRITERION = "bic"  # decides only whether the best mixture beats the bes
 
 
 def _criteria(gof: list) -> dict:
-    """``{aic, aic_c, bic}`` from a goodness-of-fit list (finite ones only)."""
-    return {g["id"]: float(g["value"]) for g in gof
-            if g["id"] in ("aic", "aic_c", "bic") and math.isfinite(float(g["value"]))}
+    """``{aic, aic_c, bic, neg_ll}`` from a goodness-of-fit list (finite ones
+    only); ``neg_ll`` is the negative of the log-likelihood."""
+    out = {g["id"]: float(g["value"]) for g in gof
+           if g["id"] in ("aic", "aic_c", "bic") and math.isfinite(float(g["value"]))}
+    ll = next((float(g["value"]) for g in gof if g["id"] == "log_likelihood"), None)
+    if ll is not None and math.isfinite(ll):
+        out["neg_ll"] = -ll
+    return out
+
+
+# Failures below this: a distribution with three or more parameters is
+# fitted to very little, and its win is likely to be noise.
+FEW_FAILURES = 15
+# AIC-type scores this close are a tie: the data can't tell them apart.
+TIE_DELTA = 2.0
+
+
+def _failure_count(kwargs: dict) -> int:
+    """How many units failed in the fit's inputs (counts respected)."""
+    c = kwargs.get("c")
+    n = np.asarray(kwargs.get("n", 1), dtype=float)
+    if c is None:
+        x = np.atleast_1d(kwargs.get("x", []))
+        return int(np.sum(np.broadcast_to(n, x.shape)))
+    c = np.asarray(c, dtype=float)
+    return int(np.sum(np.broadcast_to(n, c.shape)[c != 1]))
+
+
+def best_fit_guidance(ranking: list, criterion: str, failures: int, singles_only: bool = True) -> list:
+    """Plain-word cautions for Best fit's ranking: a tie, a flexible
+    winner on few failures, and what the chosen score does not weigh."""
+    notes = []
+    label = CRITERIA[criterion].split(" (")[0]
+    if not ranking:
+        return notes
+    best = ranking[0]
+    if criterion == "neg_ll":
+        notes.append("The negative log-likelihood does not penalise extra parameters, so it favours the "
+                     "distribution with the most freedom. Prefer AIC, AICc or BIC to choose between models.")
+    near = [r for r in ranking[1:] if r.get(criterion) is not None
+            and float(r[criterion]) - float(best[criterion]) < TIE_DELTA and r.get("k") is not None]
+    if criterion != "neg_ll" and near:
+        names = ", ".join(r["name"] for r in near[:3])
+        fewer = [r for r in near if best.get("k") is not None and r["k"] < best["k"]]
+        text = (f"{best['name']} and {names} are within {TIE_DELTA:g} {label} of each other: the data can't "
+                "separate them.")
+        text += (f" {fewer[0]['name']} has fewer parameters, so it is the safer choice."
+                 if fewer else " Choose on what you know about the failure mechanism.")
+        notes.append(text)
+    if best.get("k") is not None and best["k"] >= 3 and failures < FEW_FAILURES:
+        notes.append(f"{best['name']} has {best['k']} parameters and only {failures} "
+                     f"failure{'s' if failures != 1 else ''} were observed. A flexible winner on this little "
+                     "data may just be fitting noise: check it against a two-parameter distribution.")
+    if criterion == "aic_c" and failures < 4:
+        notes.append("AICc needs more failures than parameters to be defined; candidates it cannot score are "
+                     "left out.")
+    return notes
 
 
 def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -> dict:
@@ -1785,7 +2006,8 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
     """
     options = dict(options or {})
     with_mixtures = bool(options.pop("include_mixtures", False))
-    criterion = "aic"  # the single distributions' ranking, mixtures or not
+    # The single distributions' ranking, mixtures or not (AIC unless asked).
+    criterion = options.pop(CRITERION_KEY, None) or DEFAULT_CRITERION
     try:
         base_kwargs = build_fit_inputs(df, mapping)
     except Exception as exc:
@@ -1827,7 +2049,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
             failed.append({"id": dist_id, "name": entry["name"],
                            "reason": f"no finite {criterion.upper()}"})
             continue
-        ranking.append({"id": dist_id, "name": entry["name"], **scores})
+        ranking.append({"id": dist_id, "name": entry["name"], "k": _param_count(model, kwargs), **scores})
 
     mixtures = {}  # candidate id -> (base id, fitted SurPyval mixture)
     mixture_ranking = []
@@ -1863,7 +2085,7 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
             continue
         mixtures[cid] = (base, raw)
         mixture_ranking.append({"id": cid, "name": label, "mixture": BEST_MIXTURE_COMPONENTS,
-                                "base_distribution_id": base, **scores})
+                                "base_distribution_id": base, "k": _param_count(raw, {}), **scores})
 
     if not ranking and not mixture_ranking:
         if support_msg:
@@ -1889,7 +2111,16 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
         if win_options.get("offset") and not DISTRIBUTIONS[winner].get("offsetable"):
             win_options.pop("offset")
         result = _fit_distribution(winner, df, mapping, win_options)
-    result["selection"] = {"criterion": criterion, "candidates": ranking}
+    # Each candidate's distance from the best on the chosen score (mixtures
+    # are scored by BIC, but their rows carry every score).
+    scored = [float(r[criterion]) for r in ranking if r.get(criterion) is not None]
+    top = min(scored) if scored else None
+    for row in ranking:
+        row["delta"] = (float(row[criterion]) - float(top)
+                        if top is not None and row.get(criterion) is not None else None)
+    result["selection"] = {"criterion": criterion, "criterion_label": CRITERIA[criterion],
+                           "candidates": ranking,
+                           "guidance": best_fit_guidance(ranking, criterion, _failure_count(base_kwargs))}
     if with_mixtures:
         result["selection"].update({"include_mixtures": True, "mixture_criterion": MIXTURE_CRITERION,
                                     "decision": decision, "summary": decision["summary"]})
@@ -1901,6 +2132,15 @@ def _fit_best(df: pd.DataFrame, mapping: dict, options: Optional[dict] = None) -
             f"(failed: {', '.join(f['name'] for f in failed)}), so the choice is among those only.",
         ]
     return result
+
+
+def _param_count(model, kwargs: dict) -> Optional[int]:
+    """How many parameters the fitted model has (offset, cure fraction
+    and zero-inflation included)."""
+    try:
+        return int(np.atleast_1d(model.params).size)
+    except Exception:  # noqa: BLE001 - a column the table can do without
+        return None
 
 
 def _ic(value: float) -> str:
@@ -2439,9 +2679,11 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
         or [f"p{i}" for i in range(len(model.params))]
     )
     params = _params_with_uncertainty(model, param_names, param_intervals.bounds_of(dist))
+    counts = _discrete_counts(model)
 
     cache_id = _store_model(model, np.asarray(curves["x"], dtype=float), [])
     return {
+        **({"counts": counts} if counts else {}),
         "distribution": entry["name"],
         "distribution_id": distribution,
         "kind": "discrete",
@@ -2452,6 +2694,50 @@ def _fit_discrete(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
         "gof": gof,
         "metrics": metrics,
     }
+
+
+#: The most counts a discrete fit's count table carries; past it, only the
+#: counts at which units failed.
+_COUNT_TABLE_MAX = 120
+
+
+def _discrete_counts(model) -> dict | None:
+    """Observed against expected failures at each count, for a discrete fit's
+    "Chance by count" chart and its check: at each count ``k``, the units
+    still at risk (not failed or stopped before ``k``), the failures there,
+    the failures the model expects (at risk times its chance of failing at
+    ``k`` given it got that far), the model's chance of failing at exactly
+    ``k`` and the data's own (the Kaplan-Meier step at ``k``). Right-censored
+    and exact counts only; None otherwise or when it can't be had."""
+    try:
+        data = model.data
+        x = np.asarray(data["x"], dtype=float).reshape(-1)
+        c = np.asarray(data["c"], dtype=float).reshape(-1)
+        n = np.asarray(data["n"], dtype=float).reshape(-1)
+        if x.size == 0 or x.size != c.size or np.any(~np.isin(c, (0, 1))):
+            return None
+        failed_at = sorted({int(v) for v in x[c == 0]})
+        top = int(np.nanmax(x))
+        ks = list(range(1, top + 1)) if top <= _COUNT_TABLE_MAX else failed_at
+        if not ks:
+            return None
+        k = np.asarray(ks, dtype=float)
+        at_risk = np.array([n[x >= v].sum() for v in k])
+        failed = np.array([n[(x == v) & (c == 0)].sum() for v in k])
+        with np.errstate(all="ignore"):
+            pmf = np.asarray(model.df(k), dtype=float)
+            before = np.asarray(model.sf(k - 1), dtype=float)
+            expected = np.where(before > 0, at_risk * pmf / before, np.nan)
+            S = np.cumprod(np.where(at_risk > 0, 1.0 - failed / at_risk, 1.0))
+        observed = np.concatenate([[1.0], S[:-1]]) - S
+
+        def clean(arr):
+            return [None if not np.isfinite(v) else float(v) for v in arr]
+
+        return {"k": [int(v) for v in k], "at_risk": clean(at_risk), "failed": clean(failed),
+                "expected": clean(expected), "pmf": clean(pmf), "observed": clean(observed)}
+    except Exception:  # noqa: BLE001 - a check, never a reason to fail the fit
+        return None
 
 
 def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> dict:
@@ -2494,6 +2780,9 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
             "R": [float(v) for v in R[finite]],
             "cb_lower": [None if not np.isfinite(v) else float(v) for v in lower[finite]],
             "cb_upper": [None if not np.isfinite(v) else float(v) for v in upper[finite]],
+            # The life table on the model page's Data tab: units at risk and
+            # failing at each time (absent where the estimator has none).
+            **_life_table(model, finite),
             # #85: simultaneous 95% bands, for the plot's whole-curve toggle.
             "bands": np_life.bands(model),
         },
@@ -2501,6 +2790,20 @@ def _fit_nonparametric(distribution: str, df: pd.DataFrame, mapping: dict) -> di
         "gof": [],
         "metrics": metrics,
     }
+
+
+def _life_table(model, finite) -> dict:
+    """``at_risk`` and ``failed`` beside a non-parametric estimate's times
+    (Kaplan-Meier, Nelson-Aalen, Fleming-Harrington); {} for an estimator
+    without them (Turnbull's are fractional and on intervals)."""
+    try:
+        r = np.asarray(model.r, dtype=float)[finite]
+        d = np.asarray(model.d, dtype=float)[finite]
+        if r.size != int(np.sum(finite)) or not (np.all(np.isfinite(r)) and np.all(np.isfinite(d))):
+            return {}
+        return {"at_risk": r.tolist(), "failed": d.tolist()}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _life_metrics(model) -> dict:
@@ -2589,9 +2892,10 @@ def _fit_regression(
     formula: Optional[str],
     covariate_units: Optional[dict] = None,
     cox_opts: Optional[dict] = None,
+    frailty_family: Optional[str] = None,
 ) -> dict:
     entry = REGRESSION_MODELS[distribution]
-    fitter = entry["fitter"]
+    fitter = more_models.frailty_fitter(distribution, frailty_family) if entry.get("frailty") else entry["fitter"]
     mapping = {k: v for k, v in mapping.items() if v}
     try:
         cox_opts = regression_diagnostics.clean_cox_options(distribution, cox_opts, df.columns, covariates)
@@ -2776,6 +3080,8 @@ def _fit_regression(
         extra["covariate_units"] = units
     if cox_opts:
         extra["options"] = {regression_diagnostics.COX_KEY: cox_opts}
+    if frailty_family:
+        extra["options"] = {**extra.get("options", {}), more_models.FAMILY_KEY: frailty_family}
     return more_models.enrich_regression(distribution, model, {
         **extra,
         "maximum": getattr(model, "maximum", None),
@@ -2806,7 +3112,7 @@ def _raw_covariates(model, covariates: Optional[list]) -> list:
 
 
 REGRESSION_METRICS_NOTE = (
-    "Regression model: life metrics depend on the covariates; use life_data_analysis reliability_at with "
+    "Regression model: life metrics depend on the covariates; use analyse reliability_at with "
     "covariates, or the model's covariate means.")
 
 
@@ -3057,40 +3363,51 @@ FUNCTIONS = [
 ]
 
 
+#: SurPyval's warning (0.25) for an additive-hazards model asked about points
+#: outside its support, where it returns nan.
+_OUTSIDE_SUPPORT = "outside the model's support"
+
+
 def _eval_functions(model, grid, Z=None) -> dict:
     """Evaluate sf/ff/hf/Hf/df over ``grid`` (optionally at covariates ``Z``).
 
     Additive-hazards models allow the hazard — and thus the cumulative hazard —
-    to go negative, which makes sf = exp(-H) exceed 1 (an impossible reliability).
-    We do NOT silently clamp that away: the fit is unreliable and the user should
-    pick a different model form. Instead we flag it with ``curves["warning"]`` so
-    the calculator can show it, while returning the true (out-of-range) values.
+    to go negative, which would make sf = exp(-H) exceed 1 (an impossible
+    reliability). Since SurPyval 0.25 those points are outside the model's
+    support and come back ``nan`` with a warning (they used to come back as
+    sf > 1). We don't clamp either: we flag it with ``curves["warning"]`` so
+    the calculator can show it, and leave the points out (or, from a model
+    that still returns them, the out-of-range values).
     """
     grid = np.asarray(grid, dtype=float)
     curves = {"x": grid.tolist()}
     raw = {}
+    outside = False
     for fn in ("sf", "ff", "hf", "Hf", "df"):
         func = getattr(model, fn, None)
         if func is None:
             # Buckley-James has no hazard or density (#179): those are absent.
             curves[fn] = None
             continue
-        with np.errstate(all="ignore"):
+        with np.errstate(all="ignore"), warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", RuntimeWarning)
             y = np.asarray(func(grid) if Z is None else func(grid, Z), dtype=float)
+        outside = outside or any(_OUTSIDE_SUPPORT in str(w.message) for w in caught)
         raw[fn] = y
         # JSON can't carry inf/nan; null them so the frontend skips those points.
         curves[fn] = [None if not np.isfinite(v) else float(v) for v in y]
 
     Hf, sf = raw["Hf"], raw["sf"]
-    negative_hazard = bool(
+    negative_hazard = outside or bool(
         (np.isfinite(Hf) & (Hf < -1e-9)).any() or (np.isfinite(sf) & (sf > 1.0 + 1e-6)).any()
     )
     if negative_hazard:
         curves["warning"] = (
-            "The cumulative hazard goes negative here, so the reliability rises "
-            "above 1 — which is impossible. This additive-hazards fit is unreliable "
-            "at these covariate values; try a proportional-hazards (…_ph / cox_ph) "
-            "or accelerated-failure-time (…_aft) model instead."
+            "The cumulative hazard would go negative here, so the reliability would "
+            "rise above 1 — which is impossible. This additive-hazards fit isn't a "
+            "distribution at these covariate values, and those points aren't shown; "
+            "try a proportional-hazards (…_ph / cox_ph) or accelerated-failure-time "
+            "(…_aft) model instead."
         )
     return curves
 

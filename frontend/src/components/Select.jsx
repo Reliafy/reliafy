@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "../fullScreen.js";
 
 // Fully-styled dropdown replacing native <select> (whose popup list can't be
 // themed). A trigger button opens a portal-rendered listbox positioned under
@@ -197,7 +198,7 @@ export default function Select({
             )
           )}
         </div>,
-        document.body
+        portalHost()
       )}
     </>
   );

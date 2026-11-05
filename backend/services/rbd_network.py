@@ -8,7 +8,7 @@ canvas: a diagram with a ``"network"`` setting is read as a network::
 
     "network": {"source": "input", "target": "output"}
 
-* each **block** is a network node that can fail, with its life model (a
+* each **block** is a network node that can fail, with its non-repairable model (a
   pipe segment or a line that can fail is drawn as a block between the
   points it joins);
 * each **connection** is a link that works both ways and never fails itself
@@ -44,7 +44,7 @@ _LINK = "link~"
 
 #: What every block-diagram analysis says of a network (they don't apply).
 NETWORK_ONLY = ("This diagram is a network (undirected links between two terminals): its result is the chance "
-                "its two terminals stay connected, which the builder's Calculator tab and rbd_analysis analyze give. "
+                "its two terminals stay connected, which the builder's Calculator tab and analyse rbd give. "
                 "Block-diagram analyses don't apply to it.")
 
 
@@ -96,7 +96,7 @@ def carry(graph: dict, out: dict) -> None:
 
 
 def apply_set(graph: dict, op: dict) -> list[str]:
-    """rbd edit's ``set`` of ``network`` (true, {source, target}, or false):
+    """change rbd_edit's ``set`` of ``network`` (true, {source, target}, or false):
     what was done, in words. Raises
     :class:`backend.services.rbd_graph.GraphError`."""
     from backend.services.rbd_graph import GraphError
@@ -557,7 +557,7 @@ def python_body(script, graph: dict, resolve_model, resolve_subsystem) -> str:
               for n in nodes}
     L = script.lines
     L.append("# " + "-" * 75)
-    L.append("# Blocks: the network's nodes that can fail, one life model each, built")
+    L.append("# Blocks: the network's nodes that can fail, one non-repairable model each, built")
     L.append("# exactly as Reliafy builds them.")
     L.append("# " + "-" * 75)
     rel, working, broken, problems = [], [], [], []
@@ -592,7 +592,7 @@ def python_body(script, graph: dict, resolve_model, resolve_subsystem) -> str:
 
     out = list(L)
     out += ["", "", "# " + "-" * 75, "# The network", "# " + "-" * 75]
-    out.append("# Each block's life model (blocks with no connection are left out).")
+    out.append("# Each block's non-repairable model (blocks with no connection are left out).")
     out.append("NODES = {")
     out += [f"    {_lit(nid)}: {expr}," for nid, expr in rel]
     out.append("}")

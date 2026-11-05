@@ -3,7 +3,7 @@ title: "Fit an accelerated life model and extrapolate to use conditions"
 task: "How do I use high-stress test data to predict life at normal operating conditions?"
 category: "Life data modelling"
 prerequisites: "Failure times gathered at two or more stress levels (three is better), with the stress recorded per unit."
-related_href: "/modelling/alt/new"
+related_href: "/models/alt/new"
 related_label: "Open accelerated life"
 order: 15
 ---
@@ -24,10 +24,10 @@ extrapolate to a condition you never tested.
 One row per unit, with the failure time and the stress that unit was running at:
 
 ```
-hours,temp_C,censored
-1350,60,0
-950,80,0
-620,100,0
+hours,temp_K,censored
+1350,333,0
+950,353,0
+620,373,0
 ```
 
 Two stress levels is the bare minimum; **three or more is much better**, because
@@ -46,7 +46,7 @@ the same.
 
 ## Choosing the model
 
-Go to **Modelling → Accelerated life → New model**. The flow asks for the
+Go to **Modelling → Models → Accelerated life → New model**. The flow asks for the
 **model before the data**, which is deliberate — the life-stress relationship
 determines how many stress columns you'll be mapping.
 
@@ -63,8 +63,9 @@ Match the relationship to the physics:
   trips people up constantly, and using Celsius will give you a nonsense fit.
 - **Inverse power law** for voltage, load, or pressure.
 - **Eyring** as a physically-derived thermal alternative to Arrhenius.
-- **Dual-exponential**, **temperature–nonthermal**, or **dual power** for two
-  stresses together.
+- **Linear** for a simple straight-line trend of life with stress.
+- **Dual exponential (temp–humidity)**, **Temperature–nonthermal** or **Dual
+  power** for two stresses together.
 
 Then map your columns — the failure time, the stress column(s), and censoring if
 you have it — and fit.
@@ -73,16 +74,24 @@ you have it — and fit.
 
 ## Reading the fit
 
-Two views matter, and they answer different questions.
+A saved model opens on five tabs: **Life-stress**, **Probability plot**,
+**Calculator**, **Diagnostics** and **Data**. The line under the model's name
+gives the answer in short: the life-stress model, the shape with its interval,
+how far the life moves across the tested levels and the failures it was fitted
+to.
 
-The **life–stress plot** is the ALT signature: characteristic life against
+The **Life-stress** tab is the ALT signature: characteristic life against
 stress, with each tested level marked and the fitted relationship drawn through
-them, extended *below* your lowest test stress toward use conditions. This is
-where you see whether the extrapolation is a short reach or a heroic one.
+them. Enter your **use stress** beside the chart: the line runs on to it, a star
+marks the life there, and the table gives the **acceleration factor** against
+each tested level. This is where you see whether the extrapolation is a short
+reach or a heroic one. A model with two stresses shows two charts side by side,
+one along each stress, with a line for each tested level of the other (on a
+phone, a switch picks one).
 
-![The life–stress plot with each tested level and the fitted relationship](/guides/img/alt-02-lifestress.png)
+![The Life-stress tab with each tested level and the fitted relationship](/guides/img/alt-02-lifestress.png)
 
-The **probability plot** is the honesty check. Each stress level's failures are
+The **Probability plot** is the honesty check. Each stress level's failures are
 drawn on the distribution's probability paper. A trustworthy fit shows the levels
 as **parallel straight lines** — parallel because the shape parameter is shared
 across stresses, straight because the distribution is right. If they fan out or
@@ -92,12 +101,20 @@ than in the field.
 
 ![The probability plot: parallel straight lines mean a trustworthy fit](/guides/img/alt-03-probplot.png)
 
+**Diagnostics** puts the same questions as tests, each with a one-line answer:
+is the shape the same at every stress, do the levels follow the life model,
+would another life model fit better, and how far is your use stress from the
+stresses you tested. **Data** lists each tested level (its units, failures and
+fitted life), how the model was fitted and every parameter with its interval.
+
 ## Extrapolating to use level
 
-Save the model and open the **use-level calculator**. Enter the stress your
+Save the model and open the **Calculator** tab. Enter the stress your
 equipment actually runs at — below your tested range, which is the whole point —
-and you get the extrapolated reliability curve, the characteristic life, mean
-life, and B-lives at that condition.
+and press **Compute at use level**: you get the extrapolated reliability curve,
+the characteristic life, mean life, and B-lives at that condition, with their
+bounds (Wald, likelihood ratio or, on Pro, bootstrap). The use stress is one for
+the whole page: the Life-stress tab and Diagnostics use the one you enter here.
 
 Give it a reference stress as well and you get the **acceleration factor**: the
 ratio of use life to test life. That's the number that makes test planning
@@ -105,11 +122,50 @@ concrete. At AF = 100, one hour on the bench stands for a hundred hours in
 service, so demonstrating a 10,000-hour field life means surviving about 100
 hours on test.
 
-![The use-level calculator: extrapolated life and the acceleration factor](/guides/img/alt-04-uselevel.png)
+![The Calculator: extrapolated life and the acceleration factor](/guides/img/alt-04-uselevel.png)
 
 Treat the acceleration factor as a sanity check too. If it comes out
 implausibly large, you're either extrapolating much further than the data
-supports or you've fitted the wrong relationship.
+supports or you've fitted the wrong relationship. Diagnostics' last check says
+how far beyond the tested range your use stress lies.
+
+## Plan the next accelerated test
+
+A fit also tells you how to run the next test better. On a saved one-stress
+model, **Plan the next test** (in the **⋯** menu, and under Diagnostics' last
+check) opens
+**Decisions → Strategy → Test planning** on the
+[Accelerated test](/strategy/test-planning/accelerated) tab, with the fit's
+life-stress model, its coefficients, its shape and units already filled in, and
+the highest stress you tested as the **Highest test stress**.
+
+The trade-off it settles is simple. A higher stress gives failures quickly, but
+the further the test stress is from normal use, the further the answer is
+extrapolated, and the less precise it is. The plan picks the lowest test stress
+and splits the units between the stresses so the life at use comes out as
+precisely as the test allows.
+
+Give the **Use stress** and press **Compute**. For the sample insulating-fluid
+model (failures against voltage, in minutes), a use stress of **20 kV**, 40
+units and a 1,000-minute test give:
+
+> Test **34 at 23.6 kV**, **6 at 36 kV**, each for 1,000 minutes. Expect about
+> 16.9 failures in all. The test estimates B10 at the use stress (20 kV: 2,504
+> minutes on these planning values) to within a factor of 2.79 at 90%
+> confidence.
+
+![The accelerated test plan, started from a fitted model](/guides/img/alt-05-plan.png)
+
+Most units go to the lower stress: it is closer to use, but fewer of its units
+fail, so it needs more of them. The highest stress needs only a few, because
+they fail quickly. **Stress levels** offers 3 or 4
+levels instead of 2: a little less precise, but the middle level shows whether
+the life-stress model really holds. **Check a test of my own** works out what a
+test you have already designed would give.
+
+Plans take one stress, a Weibull or lognormal distribution, and the Arrhenius,
+Eyring or inverse power law model. Without a fit, open the tab directly and type
+planning values from a similar part.
 
 ## Where to go next
 

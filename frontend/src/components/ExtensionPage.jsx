@@ -12,6 +12,7 @@ import { renderMarkdown } from "../markdown.js";
 import * as plotTheme from "../plotTheme.js";
 import { getWalkthrough, stepFunnel } from "../walkthroughs.js";
 import Select from "./Select.jsx";
+import usePageTitle from "./usePageTitle.js";
 import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import Chip from "./ui/Chip.jsx";
@@ -124,13 +125,8 @@ export default function ExtensionPage({ mount }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search, location.hash, ready]);
 
-  useEffect(() => {
-    const before = document.title;
-    document.title = `${mount.title || mount.label} — Reliafy`;
-    return () => {
-      document.title = before;
-    };
-  }, [mount.title, mount.label]);
+  // The tab title leads with the page's own name ("Admin · Reliafy").
+  usePageTitle(mount.title || mount.label);
 
   return (
     <>

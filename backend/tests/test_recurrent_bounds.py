@@ -33,9 +33,24 @@ def _arrays(times=TIMES):
 MAPPING = {"i": "system", "x": "time", "tr": "obs_end"}
 
 
+def _ended(x, i, ends, tl=None):
+    """``x``, ``i``, ``c`` (and ``tl``) with each system's end of observation
+    as a ``c = 1`` row: how Reliafy gives SurPyval its windows (``tr`` is right
+    truncation since SurPyval 0.25)."""
+    ends = np.broadcast_to(np.asarray(ends, dtype=float), np.shape(x))
+    first = {s: k for k, s in reversed(list(enumerate(i)))}
+    systems = list(dict.fromkeys(i.tolist()))
+    end_of = {s: float(ends[i == s].max()) for s in systems}
+    out = {"x": np.r_[x, [end_of[s] for s in systems]], "i": np.r_[i, systems],
+           "c": np.r_[np.zeros(x.size, dtype=int), np.ones(len(systems), dtype=int)]}
+    if tl is not None:
+        out["tl"] = np.r_[tl, [tl[first[s]] for s in systems]]
+    return out
+
+
 def _ref(fitter=CrowAMSAA, times=TIMES, end=END):
     x, i = _arrays(times)
-    return fitter.fit(x=x, i=i, tr=np.full(x.size, end))
+    return fitter.fit(**_ended(x, i, end))
 
 
 def _fit(model_id="crow_amsaa", df=None, mapping=MAPPING):
@@ -136,7 +151,7 @@ def test_unequal_windows_fall_back_to_wald_bounds():
     df.loc[df.system == "B", "obs_end"] = 280.0
     r, _ = _fit(df=df)
     x, i = _arrays()
-    ref = CrowAMSAA.fit(x=x, i=i, tr=df["obs_end"].to_numpy(dtype=float))
+    ref = CrowAMSAA.fit(**_ended(x, i, df["obs_end"].to_numpy(dtype=float)))
     assert r["bounds_method"] == "wald" and r["demonstrated_mtbf"]["method"] == "wald"
     assert r["mtbf_ci"] == pytest.approx(ref.mtbf_cb(END, alpha_ci=0.05), rel=1e-9)
     assert r["rocof_ci"] == pytest.approx(ref.iif_cb(END, alpha_ci=0.05), rel=1e-9)
@@ -163,7 +178,7 @@ def test_trend_tests_match_surpyval_with_delayed_entry():
     r, _ = _fit(df=df, mapping={**MAPPING, "tl": "start"})
     x, i = _arrays()
     tl, tr = df["start"].to_numpy(dtype=float), np.full(x.size, END)
-    model = CrowAMSAA.fit(x=x, i=i, tl=tl, tr=tr)
+    model = CrowAMSAA.fit(**_ended(x, i, tr, tl=tl))
     by_id = {t["id"]: t for t in r["trend_tests"]}
     assert set(by_id) == {"laplace", "mil_hdbk_189c"}
     for test_id in by_id:
@@ -228,7 +243,7 @@ def test_refit_for_the_live_model_skips_the_bootstrap():
 def test_system_residuals_are_surpyvals_martingale_residuals():
     r, _ = _fit()
     ref = _ref()
-    res = dict(zip(ref.data.items, ref.residuals("martingale")))
+    res = dict(zip(ref.data.ids, ref.residuals("martingale")))
     rows = r["system_residuals"]
     assert [row["system"] for row in rows] == sorted(res, key=lambda s: -res[s])
     for row in rows:

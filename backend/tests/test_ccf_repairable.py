@@ -196,21 +196,21 @@ def test_a_mean_repair_time_keeps_the_group_in_every_figure():
 
 def test_proof_tests_that_take_time_keep_the_group_in_the_pfdavg():
     """Tests that take time are followed by the group's long-run chain
-    (#220), but RePyability 0.13 doesn't work out their failure frequency
-    with the groups: every figure but that one keeps the group (#328), the
-    exact failure frequency (and MUT/MDT) is left out with its reason, and
-    the PFDavg takes the group in."""
+    (#220); since RePyability 0.14 (#293 there) its failure frequency (and
+    MUT/MDT) is worked out with the groups too, so every figure keeps the
+    group (0.13 left the frequency out, #328), and the PFDavg takes it in."""
     g = _tested_pair(repair=_exp(1 / 8), test_duration=_exp(0.5))
     out = ra.analyze_availability(g, simulate=False)
     cc = out["common_cause"]
     assert cc["included"] is True and cc["reason"] is None
-    assert "tests that take time" in cc["frequency_reason"] and "failure frequency" in cc["frequency_left_out"]
-    assert out["failure_frequency"] is None and out["mean_up_time"] is None and out["mean_down_time"] is None
+    assert "frequency_reason" not in cc and "frequency_left_out" not in cc
     assert out["safety"]["common_cause"]["included"] is True
     direct = _tested_direct(E([1 / 8]), {"duration": E([0.5])})
+    assert out["failure_frequency"] == pytest.approx(direct.system_failure_frequency(), rel=1e-9)
+    assert out["mean_up_time"] == pytest.approx(direct.mean_up_time(), rel=1e-9)
     assert out["safety"]["pfd_avg"] == pytest.approx(direct.mean_unavailability(), rel=1e-9)
     note = rbd_policies.common_cause_note(g, out)
-    assert note["included"] is True and note["note"] == cc["frequency_left_out"]
+    assert note["included"] is True
     # The long-run availability takes the group, as the PFDavg does.
     assert out["steady_state_availability"] == pytest.approx(1 - out["safety"]["pfd_avg"], rel=1e-9)
 
@@ -473,14 +473,14 @@ def test_mcp_create_analyze_edit_improve_and_design(env, monkeypatch):
     from backend.tests.test_mcp import A, _call, _ok
 
     monkeypatch.setattr(billing_service, "premium_compute_allowed", lambda db, user: True)
-    made = _ok(_call(env.token[A], "rbd", {"action": "create",
+    made = _ok(_call(env.token[A], "change", {"action": "rbd_create",
         "name": "Pumps", "repairable": True,
         "stages": [_stage("Pumps", "Pump A", "Pump B", common_cause_beta=BETA)]}))
     rid = made["id"]
     graph = env.db.rbds.find_one({"_id": rid})["graph"]
     assert graph["ccf_groups"][0]["beta"] == BETA and len(graph["ccf_groups"][0]["members"]) == 2
     assert not any("common-cause" in w for w in made.get("warnings") or [])
-    out = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False}))
+    out = _ok(_call(env.token[A], "analyse", {"action": "rbd", "rbd_id": rid, "simulate": False}))
     a, b = graph["ccf_groups"][0]["members"]
     spec = {"reliability": E([1e-3]), "repairability": E([0.02])}
     direct = RepairableRBD([("s", a), ("s", b), (a, "t"), (b, "t")], {a: spec, b: spec}, input_node="s",
@@ -490,20 +490,20 @@ def test_mcp_create_analyze_edit_improve_and_design(env, monkeypatch):
     assert out["availability"]["without_common_cause"]["value"] > out["steady_state_availability"]
     assert out["common_cause"]["included"] is True
     # What to improve: the group's beta is a lever.
-    improve = _ok(_call(env.token[A], "rbd_analysis", {"action": "sensitivity", "rbd_id": rid, "limit": 20}))
+    improve = _ok(_call(env.token[A], "analyse", {"action": "rbd_sensitivity", "rbd_id": rid, "limit": 20}))
     assert any(r["id"].endswith("|ccf_beta") for r in improve["levers"])
     # remove_ccf / add_ccf on a repairable diagram: no "ignored" warning.
-    edited = _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
+    edited = _ok(_call(env.token[A], "change", {"action": "rbd_edit", "rbd_id": rid, "ops": [
         {"op": "remove_ccf", "id": graph["ccf_groups"][0]["id"]},
         {"op": "add_ccf", "members": [a, b], "beta": 0.05}]}))
     assert not any("common-cause" in w for w in edited.get("warnings") or [])
-    again = _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": False}))
+    again = _ok(_call(env.token[A], "analyse", {"action": "rbd", "rbd_id": rid, "simulate": False}))
     direct = RepairableRBD([("s", a), ("s", b), (a, "t"), (b, "t")], {a: spec, b: spec}, input_node="s",
                            output_node="t", ccf_groups=[CCFGroup([a, b], BetaFactor(0.05))])
     assert again["steady_state_availability"] == pytest.approx(direct.mean_availability(), rel=1e-12)
     # The cheapest design, with the group.
-    _ok(_call(env.token[A], "rbd", {"action": "edit", "rbd_id": rid, "ops": [
+    _ok(_call(env.token[A], "change", {"action": "rbd_edit", "rbd_id": rid, "ops": [
         {"op": "update_node", "ids": [a, b], "costs": {"acquisition": 5000}},
         {"op": "set", "costs": {"downtime_rate": 1000, "horizon": 87600}}]}))
-    design = _ok(_call(env.token[A], "rbd_analysis", {"action": "cheapest_design", "rbd_id": rid}))
+    design = _ok(_call(env.token[A], "analyse", {"action": "rbd_cheapest_design", "rbd_id": rid}))
     assert design["available"] is True and design["common_cause"]["included"] is True

@@ -32,7 +32,8 @@ from numbers import Real
 from typing import Any, Dict, Iterator, Optional, Set, Tuple, Union
 
 import numpy as np
-from dateutil.rrule import DAILY, FR, MO, MONTHLY, SA, SU, TH, TU, WE, rrule
+from dateutil.relativedelta import relativedelta
+from dateutil.rrule import DAILY, FR, MO, MONTHLY, SA, SU, TH, TU, WE, WEEKLY, rrule
 
 
 def _is_number(value) -> bool:
@@ -600,20 +601,22 @@ class Monthly:
         object.__setattr__(self, "nth", nth)
         object.__setattr__(self, "short_months", short_months)
 
-    def _rule(self, first: date) -> rrule:
-        """The rule's dates from ``first`` on."""
+    def _rule(self, first: date, interval: int = 1) -> rrule:
+        """The rule's dates from ``first`` on, in every ``interval`` th month
+        (counted from ``first``'s month)."""
         start = _midnight(first)
         if self.weekday is not None:
             assert self.nth is not None
             weekday = _WEEKDAYS[self.weekday](self.nth)
-            return rrule(MONTHLY, dtstart=start, byweekday=weekday)
+            return rrule(MONTHLY, dtstart=start, interval=interval, byweekday=weekday)
         assert self.day is not None
         if self.day <= 28 or self.short_months == "skip":
-            return rrule(MONTHLY, dtstart=start, bymonthday=self.day)
+            return rrule(MONTHLY, dtstart=start, interval=interval, bymonthday=self.day)
         # The latest of the 28th up to the day that the month has.
         return rrule(
             MONTHLY,
             dtstart=start,
+            interval=interval,
             bymonthday=tuple(range(28, self.day + 1)),
             bysetpos=-1,
         )
@@ -940,3 +943,218 @@ class TaskDates(_Result):
     dates: Tuple[date, ...]
     count: int
     cost: Optional[float]
+
+
+#: The units a work package's cadence counts in.
+CADENCE_UNITS = ("days", "weeks", "months", "years")
+#: The latest date a cadence gives (Reliafy's calendar ends in 2199).
+_LAST_DAY = date(2199, 12, 31)
+
+
+@dataclass(frozen=True, init=False)
+class Cadence:
+    """The dates a work package visits on: every ``every`` days, weeks,
+    months or years from ``anchor``; or on a pattern inside that: a
+    ``weekday`` every ``every`` weeks (every Saturday), the ``nth`` weekday
+    of every ``every`` th month (the first Saturday), or a ``day`` of every
+    ``every`` th month (the 15th; for the 29th to the 31st, a shorter
+    month's last day). Weeks and months are counted from the anchor's week
+    and month; no date comes before the anchor.
+
+    Months and years with no pattern keep the anchor's day of the month, the
+    last day of a shorter month instead (31 January, 28 February, 31 March),
+    as a task's interval in months does.
+
+    Examples
+    --------
+    Every Saturday, and the first Saturday of the month:
+
+    >>> from backend.maintenance.schedule import Cadence
+    >>> weekly = Cadence(1, "weeks", "2026-11-02", weekday="Saturday")
+    >>> [d.isoformat() for d in weekly.dates("2026-11-01", "2026-11-21")]
+    ['2026-11-07', '2026-11-14', '2026-11-21']
+    >>> monthly = Cadence(1, "months", "2026-11-01", weekday="Saturday", nth=1)
+    >>> [d.isoformat() for d in monthly.dates("2026-11-01", "2027-01-31")]
+    ['2026-11-07', '2026-12-05', '2027-01-02']
+    >>> monthly.number("2027-01-02")
+    3
+    """
+
+    every: int
+    unit: str
+    anchor: date
+    weekday: Optional[str]
+    nth: Optional[int]
+    day: Optional[int]
+
+    def __init__(self, every, unit, anchor, *, weekday=None, nth=None, day=None) -> None:
+        every = _whole_number(every, "every")
+        _one_of("unit", unit, CADENCE_UNITS)
+        anchor = _date(anchor, "anchor")
+        if weekday is not None:
+            name = weekday.capitalize() if isinstance(weekday, str) else None
+            if name not in _WEEKDAYS:
+                raise ValueError(f"weekday must be a day of the week, such as 'Saturday'; got {weekday!r}.")
+            weekday = name
+            if day is not None:
+                raise ValueError("Give a weekday or a day of the month, not both.")
+            if unit == "weeks":
+                if nth is not None:
+                    raise ValueError("nth goes with months (the first Saturday of the month), not weeks.")
+            elif unit == "months":
+                if not _is_whole(nth) or int(nth) not in _NTHS:
+                    raise ValueError("With a weekday every so many months, nth says which: 1 to 4 (the first "
+                                     f"to the fourth) or -1 to -4 (the last to the fourth from last); got {nth!r}.")
+                nth = int(nth)
+            else:
+                raise ValueError("A weekday goes with weeks (every Saturday) or months (the first Saturday of "
+                                 "the month).")
+        elif nth is not None:
+            raise ValueError("nth goes with a weekday (the first Saturday of the month).")
+        if day is not None:
+            if unit != "months":
+                raise ValueError("A day of the month goes with months (the 15th of every month).")
+            day = _whole_number(day, "day")
+            if day > 31:
+                raise ValueError(f"day must be 1 to 31; got {day!r}.")
+        object.__setattr__(self, "every", every)
+        object.__setattr__(self, "unit", unit)
+        object.__setattr__(self, "anchor", anchor)
+        object.__setattr__(self, "weekday", weekday)
+        object.__setattr__(self, "nth", nth)
+        object.__setattr__(self, "day", day)
+
+    def _rule(self) -> Optional[rrule]:
+        """The dates as a dateutil rule; None for months or years by the
+        anchor's day, which step by whole months instead."""
+        start = _midnight(self.anchor)
+        if self.unit == "days":
+            return rrule(DAILY, dtstart=start, interval=self.every)
+        if self.unit == "weeks":
+            if self.weekday is None:
+                return rrule(WEEKLY, dtstart=start, interval=self.every)
+            return rrule(WEEKLY, dtstart=start, interval=self.every, byweekday=_WEEKDAYS[self.weekday])
+        if self.weekday is not None:
+            return Monthly(weekday=self.weekday, nth=self.nth)._rule(self.anchor, self.every)
+        if self.day is not None:
+            return Monthly(day=self.day)._rule(self.anchor, self.every)
+        return None
+
+    def _months(self) -> int:
+        return self.every * (12 if self.unit == "years" else 1)
+
+    def _step(self, k: int) -> date:
+        return self.anchor + relativedelta(months=k * self._months())
+
+    def on_or_after(self, day) -> Optional[date]:
+        """The first date on or after ``day`` (None past the calendar's end)."""
+        day = max(_date(day, "day"), self.anchor)
+        rule = self._rule()
+        if rule is not None:
+            found = rule.after(_midnight(day), inc=True)
+            return found.date() if found is not None and found.date() <= _LAST_DAY else None
+        months = (day.year - self.anchor.year) * 12 + day.month - self.anchor.month
+        k = max(0, months // self._months() - 1)
+        while True:
+            found = self._step(k)
+            if found > _LAST_DAY:
+                return None
+            if found >= day:
+                return found
+            k += 1
+
+    def after(self, day) -> Optional[date]:
+        """The first date strictly after ``day``."""
+        day = _date(day, "day")
+        return None if day >= _LAST_DAY else self.on_or_after(day + timedelta(days=1))
+
+    def includes(self, day) -> bool:
+        """Whether the package visits on ``day``."""
+        day = _date(day, "day")
+        return self.on_or_after(day) == day
+
+    def dates(self, start, end, limit: int = 2000) -> Tuple[date, ...]:
+        """The dates from ``start`` to ``end``, both included (at most ``limit``)."""
+        start, end = _date(start, "start"), _date(end, "end")
+        out = []
+        found = self.on_or_after(start)
+        while found is not None and found <= end and len(out) < limit:
+            out.append(found)
+            found = self.after(found)
+        return tuple(out)
+
+    def number(self, day) -> int:
+        """How many dates there are from the anchor through ``day``: a visit's
+        number, the first being 1 (0 before the first)."""
+        day = _date(day, "day")
+        if day < self.anchor:
+            return 0
+        rule = self._rule()
+        if rule is not None:
+            return len(rule.between(_midnight(self.anchor), _midnight(day), inc=True))
+        months = (day.year - self.anchor.year) * 12 + day.month - self.anchor.month
+        k = max(0, months // self._months() + 1)
+        while k > 0 and self._step(k - 1) > day:
+            k -= 1
+        while self._step(k) <= day:
+            k += 1
+        return k
+
+
+@dataclass(frozen=True, init=False)
+class Season:
+    """The part of each year something operates in, like a ``Window`` for
+    days of the week but over the year: some months (April to October), or
+    from one day of the year to another (1 September to 30 April, across the
+    new year). A day outside it isn't a working day for it.
+
+    >>> from backend.maintenance.schedule import Season
+    >>> summer = Season(months=(10, 11, 12, 1, 2, 3))
+    >>> summer.includes("2027-01-15"), summer.includes("2027-06-01")
+    (True, False)
+    >>> Season(start="12-01", end="02-28").includes("2027-02-28")
+    True
+    """
+
+    months: Optional[Tuple[int, ...]]
+    start: Optional[str]
+    end: Optional[str]
+
+    def __init__(self, *, months=None, start=None, end=None) -> None:
+        if (months is None) == (start is None and end is None):
+            raise ValueError("A season is some months (months=[4, 5, 6]) or a start and end day of the year "
+                             "(start='09-01', end='04-30'), one of them.")
+        if months is not None:
+            if isinstance(months, (str, bytes)) or not hasattr(months, "__iter__"):
+                raise TypeError(f"months must be a list of month numbers, 1 to 12; got {months!r}.")
+            nums = tuple(sorted({_whole_number(mo, "month") for mo in months}))
+            if not nums or nums[-1] > 12:
+                raise ValueError(f"months must be month numbers, 1 to 12; got {months!r}.")
+            if len(nums) == 12:
+                raise ValueError("A season of all twelve months is the whole year: leave the season out.")
+            object.__setattr__(self, "months", nums)
+            object.__setattr__(self, "start", None)
+            object.__setattr__(self, "end", None)
+            return
+        for name, value in (("start", start), ("end", end)):
+            if not isinstance(value, str) or len(value) != 5 or value[2] != "-":
+                raise ValueError(f"{name} is a day of the year as MM-DD, such as '09-01'; got {value!r}.")
+            try:
+                date.fromisoformat(f"2028-{value}")  # a leap year: 02-29 is a day
+            except ValueError:
+                raise ValueError(f"{name} is a day of the year as MM-DD, such as '09-01'; got {value!r}.") from None
+        if start == end:
+            raise ValueError("A season's start and end are different days.")
+        object.__setattr__(self, "months", None)
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "end", end)
+
+    def includes(self, day) -> bool:
+        """Whether ``day`` is in the season (both ends included)."""
+        day = _date(day, "day")
+        if self.months is not None:
+            return day.month in self.months
+        md = day.isoformat()[5:]
+        if self.start <= self.end:
+            return self.start <= md <= self.end
+        return md >= self.start or md <= self.end  # across the new year

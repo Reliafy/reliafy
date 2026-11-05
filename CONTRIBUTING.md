@@ -9,7 +9,7 @@ Backend (Python 3.11):
 ```
 python3.11 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt pytest
+pip install -r requirements.txt pytest pillow-heif
 AUTH_DISABLED=true uvicorn backend.main:app --port 8000 --reload
 ```
 
@@ -49,7 +49,7 @@ new page with an id (`/things/:id`) needs one line in `DETAIL_IDS`
 cd frontend
 npx playwright install chromium                  # once
 SMOKE_PYTHON=../venv/bin/python npm run smoke    # build, start the backend, run
-npm run smoke -- --headed -g "/rbds"             # watch one part
+npm run smoke -- --headed -g "/systems"          # watch one part
 npm run smoke -- --base-url https://reliafy.com  # a deployed site, signed out
 ```
 

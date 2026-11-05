@@ -161,30 +161,6 @@ def test_shared_rbd_opens_only_the_sharers_own_references(client):
     assert client.get(f"/api/rbds/{a_rbd['id']}").status_code in (403, 404)
 
 
-def test_shared_study_evidence_from_another_owner_stays_closed(client):
-    _register_all(client)
-    client.act_as(A)
-    a_model = _save_model(client, "A's model")
-
-    client.act_as(B)
-    b_model = _save_model(client, "B's model", seed=12)
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    assert client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(b_model["id"])}).status_code == 200
-    # Pre-existing evidence link to A's model, written straight to the DB.
-    tree = client.db.rcm_studies.find_one({"_id": sid})["functions"]
-    tree[0]["failures"][0]["modes"].append(
-        {**tree[0]["failures"][0]["modes"][0], "id": "m-foreign",
-         "decision": {"outcome": "rtf", "rtf_basis": "random", "evidence": {"type": "model", "id": a_model["id"]}}})
-    client.db.rcm_studies.update_one({"_id": sid}, {"$set": {"functions": tree}})
-    _share(client, "rcm_studies", sid, "c@x.com")
-
-    client.act_as(C)
-    assert client.get(f"/api/rcm/studies/{sid}").status_code == 200
-    assert client.get(f"/api/models/{b_model['id']}").status_code == 200
-    assert client.get(f"/api/models/{a_model['id']}").status_code in (403, 404)
-    assert client.get(f"/api/datasets/{a_model['dataset_id']}").status_code in (403, 404)
-
-
 def test_reshared_reference_does_not_extend_a_share(client):
     """A shares a model with B; B's diagram uses it and B shares the diagram
     with C: C gets B's diagram, not A's model."""
@@ -309,24 +285,6 @@ def test_rbd_update_keeps_existing_references(client):
     assert r.status_code == 422
 
 
-def test_rcm_tree_save_checks_evidence(client):
-    _register_all(client)
-    client.act_as(A)
-    a_model = _save_model(client, "A's model")
-    a_analysis = client.db.strategy_analyses.insert_one(
-        {"_id": "a-analysis", "owner_id": A, "name": "x", "kind": "replacement"}).inserted_id
-
-    client.act_as(B)
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    r = client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(a_model["id"])})
-    assert r.status_code == 422 and r.json()["code"] == "unreadable_reference"
-    r = client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(a_analysis, "strategy_analysis")})
-    assert r.status_code == 422
-    assert client.db.rcm_studies.find_one({"_id": sid}).get("functions") in (None, [])
-    b_model = _save_model(client, "B's model", seed=12)
-    assert client.put(f"/api/rcm/studies/{sid}/tree", json={"functions": _tree(b_model["id"])}).status_code == 200
-
-
 def test_fleet_and_model_saves_check_references(client):
     _register_all(client)
     client.act_as(A)
@@ -356,22 +314,22 @@ def test_mcp_writes_check_references(client):
              {"id": "s", "type": "subsystem", "label": "Sub", "subsystem_rbd_id": a_rbd["id"]},
              {"id": "output", "type": "output"}]
     edges = [{"source": "input", "target": "s"}, {"source": "s", "target": "output"}]
-    msg = _err(_call(token, "rbd", {"action": "create", "name": "x", "nodes": nodes, "edges": edges}))
+    msg = _err(_call(token, "change", {"action": "rbd_create", "name": "x", "nodes": nodes, "edges": edges}))
     assert "can't open" in msg or "not found" in msg
-    msg = _err(_call(token, "rbd", {"action": "edit", "rbd_id": b_rbd["id"], "ops": [
+    msg = _err(_call(token, "change", {"action": "rbd_edit", "rbd_id": b_rbd["id"], "ops": [
         {"op": "add_node", "node": {"id": "s", "type": "subsystem", "label": "Sub",
                                     "subsystem_rbd_id": a_rbd["id"]}, "after": "input"}]}))
     assert "can't open" in msg or "not found" in msg
     assert client.db.rbds.count_documents({"owner_id": B}) == 1
     # A model by id the caller can't read is refused as before.
-    _err(_call(token, "rbd", {"action": "create", "name": "y", "nodes": [
+    _err(_call(token, "change", {"action": "rbd_create", "name": "y", "nodes": [
         {"id": "input", "type": "input"},
         {"id": "c", "type": "component", "label": "P", "model": {"saved_model_id": a_model["id"]}},
         {"id": "output", "type": "output"}],
         "edges": [{"source": "input", "target": "c"}, {"source": "c", "target": "output"}]}))
     # Copying a diagram saved before the check carries no foreign link along.
     client.db.rbds.update_one({"_id": b_rbd["id"]}, {"$set": {"graph": _graph(sub_rbd_id=a_rbd["id"])}})
-    assert "can't open" in _err(_call(token, "rbd", {"action": "clone", "rbd_id": b_rbd["id"]}))
+    assert "can't open" in _err(_call(token, "change", {"action": "rbd_clone", "rbd_id": b_rbd["id"]}))
     assert client.db.rbds.count_documents({"owner_id": B}) == 1
     _ok(_call(token, "list", {"kind": "rbds"}))
 
@@ -574,12 +532,12 @@ def test_token_scopes_on_mcp_tools(client):
 
     _ok(_call(read, "list", {"kind": "models"}))
     _ok(_call(read, "get", {"kind": "account"}))
-    assert "write" in _err(_call(read, "rbd", {"action": "create", "name": "x", **GRAPH}))
+    assert "write" in _err(_call(read, "change", {"action": "rbd_create", "name": "x", **GRAPH}))
     assert client.db.rbds.count_documents({"owner_id": B}) == 0
-    assert "write" in _err(_call(read, "models", {"action": "delete", "model_id": "nope"}))
-    assert "write" in _err(_call(read, "sharing", {"action": "create_link", "kind": "model", "id": "nope"}))
+    assert "write" in _err(_call(read, "change", {"action": "model_delete", "model_id": "nope"}))
+    assert "write" in _err(_call(read, "change", {"action": "share_link", "kind": "model", "id": "nope"}))
     # Read + write reaches the tool itself.
-    assert "scope" not in _err(_call(write, "models", {"action": "delete", "model_id": "nope"}))
+    assert "scope" not in _err(_call(write, "change", {"action": "model_delete", "model_id": "nope"}))
 
 
 def test_mcp_imports_check_the_token_scope_then_the_import_guard(client, monkeypatch):
@@ -596,11 +554,11 @@ def test_mcp_imports_check_the_token_scope_then_the_import_guard(client, monkeyp
     dft = 'toplevel "S";\n"S" or "A" "B";\n"A" lambda=1e-3;\n"B" lambda=2e-3;\n'
     args = {"content": dft, "format": "galileo", "save": False}
 
-    assert "write" in _err(_call(read, "uploads", {"action": "import_rbd", **args}))
-    _ok(_call(write, "uploads", {"action": "import_rbd", **args}))
+    assert "write" in _err(_call(read, "change", {"action": "import_rbd", **args}))
+    _ok(_call(write, "change", {"action": "import_rbd", **args}))
     db.import_locks.insert_one({"_id": B, "nonce": "busy",
                                 "until": datetime.now(timezone.utc) + timedelta(minutes=1)})
-    assert "Another import" in _err(_call(write, "uploads", {"action": "import_rbd", **args}))
+    assert "Another import" in _err(_call(write, "change", {"action": "import_rbd", **args}))
 
 
 def test_tool_scope_follows_annotations():

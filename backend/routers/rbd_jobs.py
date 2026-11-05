@@ -43,6 +43,25 @@ def active_job(rbd_id: str, kind: str = rbd_jobs_service.KIND_AVAILABILITY, sess
     return JSONResponse(content={"job": rbd_jobs_service.view(session, job, entitled)})
 
 
+@router.post("/api/rbd-jobs/{job_id}/cancel")
+def cancel_job(job_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """Cancel the caller's job, queued or running: it is marked cancelled at
+    once and its result, if the calculation still finishes, is discarded.
+    Only the user who started it can cancel it (404 otherwise). A finished
+    job is returned unchanged. ``job_id`` may instead be the ``run_token`` of
+    a run computing in the app's own process (no queue): that run is then
+    recorded as cancelled and keeps nothing when it finishes."""
+    job = rbd_jobs_service.cancel(session, job_id, ctx.uid)
+    if job is None:
+        if session.rbd_jobs.find_one({"_id": job_id}, {"_id": 1}) is not None:
+            return JSONResponse(status_code=404, content=JOB_NOT_FOUND)  # someone else's
+        rbd_jobs_service.cancel_token(session, ctx.uid, job_id)
+        return JSONResponse(content={"job_id": job_id, "status": rbd_jobs_service.CANCELLED,
+                                     "error": rbd_jobs_service.CANCELLED_NOTE})
+    entitled = billing_service.premium_compute_allowed(session, ctx.user)
+    return JSONResponse(content=rbd_jobs_service.view(session, job, entitled))
+
+
 @router.post("/internal/compute/callback")
 def compute_callback(
     payload: dict = Body(...),
@@ -62,4 +81,7 @@ def compute_callback(
         applied = rbd_jobs_service.apply_callback(session, payload)
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+    if payload.get("status") == "running" and rbd_jobs_service.is_cancelled(session, str(payload.get("job_id") or "")):
+        # Cancelled while queued: tells the compute service to skip it.
+        return JSONResponse(status_code=409, content={"ok": True, "applied": False, "cancelled": True})
     return JSONResponse(content={"ok": True, "applied": applied})

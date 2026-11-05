@@ -2,3 +2,7 @@
 // is the Stripe Price (STRIPE_PRO_PRICE_ID) — keep this in step with it. Used
 // by the landing page tiers and the /billing comparison.
 export const PRO_PRICE = { amount: "US$19", per: "per month" };
+
+// Enterprise has no list price: it's scoped with each organisation, so the
+// tier links to an email rather than checkout.
+export const ENTERPRISE_CONTACT = "mailto:hello@reliafy.com?subject=Reliafy%20Enterprise";

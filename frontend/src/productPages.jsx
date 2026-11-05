@@ -88,7 +88,7 @@ export const PRODUCT_PAGES = [
           which events are failures and which are suspensions, and fit. Datasets are saved and
           reusable, so next quarter's update is an append, not a rebuild. Fitted models flow
           straight into the rest of the platform — optimal replacement intervals, reliability block
-          diagrams, and evidence-linked RCM studies.
+          diagrams, and evidence-linked RCM on your asset tree.
         </p>
 
         <h2>Free to start, open source at the core</h2>
@@ -118,15 +118,15 @@ export const PRODUCT_PAGES = [
     path: "/rcm-software",
     title: "RCM Software — Link Maintenance Decisions to Failure Evidence | Reliafy",
     description:
-      "RCM software where every maintenance decision cites the life model, replacement analysis, or degradation model behind it — and gets flagged when new data contradicts it.",
+      "RCM software where every maintenance decision on your asset tree cites the non-repairable model, replacement analysis, or degradation model behind it — and gets flagged when new data contradicts it.",
     eyebrow: "Reliability centred maintenance",
     h1: "Reliability centred maintenance, backed by your failure data",
     lede:
-      "Build Function → Failure → Mode worksheets where every decision links to the analysis that justifies it — and stays linked, so the study flags itself when the data stops agreeing.",
+      "Build functions → functional failures → failure modes on each position of your asset tree, where every decision links to the analysis that justifies it — and stays linked, so the decision flags itself when the data stops agreeing.",
     hero: (
       <img
         src="/landing/rcm-worksheet.png"
-        alt="An RCM worksheet with live evidence statuses, including a contradicted run-to-failure decision"
+        alt="The Explorer's RCM tab: an asset tree with its functions, failure modes and decisions, each decision's evidence check beside it, including a contradicted run-to-failure decision"
         style={{ width: "100%", borderRadius: 10 }}
       />
     ),
@@ -138,7 +138,7 @@ export const PRODUCT_PAGES = [
           Most RCM tools are structured note-taking: the worksheet records that the team chose a
           fixed 6-month interval, but not <em>why</em>, and nothing ever checks the why again. In
           Reliafy, each decision links to the analysis behind it — a run-to-failure call cites the
-          fitted life model showing failures are random; a fixed interval cites the cost-optimal
+          fitted non-repairable model showing failures are random; a fixed interval cites the cost-optimal
           replacement analysis; an on-condition task cites the degradation model; a failure-finding
           interval cites the availability calculation.
         </p>
@@ -146,36 +146,38 @@ export const PRODUCT_PAGES = [
         <h2>Contradicted, not quietly stale</h2>
         <p>
           The links stay live. When new failure data shows a "random" failure mode is actually
-          wearing out, the study flags that decision as <strong>contradicted</strong> — with the
+          wearing out, Reliafy flags that decision as <strong>contradicted</strong> — with the
           evidence one click away — instead of letting the worksheet drift out of date for five
-          years. Each study rolls up how many decisions are supported, unverified, or contradicted,
-          so an audit starts from a dashboard rather than a binder.
+          years. Each position rolls up how many of its decisions are supported, inconclusive or
+          contradicted, so a review starts from the tree rather than a binder.
         </p>
 
-        <h2>The classic structure, without the ceremony</h2>
+        <h2>The classic structure, on your asset tree</h2>
         <p>
-          Worksheets follow the standard decomposition — functions, functional failures, failure
-          modes with effects and consequences, then the maintenance decision. Mode-level fields
-          keep the analysis honest (what does failure look like, how is it detected), and the
-          whole worksheet exports to CSV for reports and audits.
+          The RCM sits on the positions themselves: each position's functions, functional
+          failures and failure modes with effects and consequences, then the maintenance
+          decision, in one table with the tree as its first column. A functional failure on a
+          system can be explained by failures on the positions inside it, so each cause is
+          answered once, where it belongs. An existing FMEA or RCM worksheet imports onto a
+          position, and the whole RCM exports to CSV for reports and audits.
         </p>
 
         <h2>Built on real analyses, in the same tool</h2>
         <p>
           The evidence isn't imported from somewhere else — you fit the{" "}
-          <Link to="/weibull-analysis-software">life models</Link>, replacement intervals, and
-          degradation models in the same platform, from the same datasets. Teams work in a shared
-          workspace, and single studies can be shared view-only with anyone, referenced evidence
-          included. Walk through a{" "}
+          <Link to="/weibull-analysis-software">non-repairable models</Link>, replacement intervals, and
+          degradation models in the same platform, from the same datasets, and teams work on one
+          shared tree. Walk through a{" "}
           <Link to="/learn/rcm-analysis-example">complete worked RCM example</Link> — a pump
-          system, five failure modes, every decision reasoned — or start from the built-in
-          sample study.
+          system, five failure modes, every decision reasoned — or add the sample truck to your
+          tree: five failure modes, every decision linked to its evidence, one of them
+          contradicted on purpose.
         </p>
       </>
     ),
     band: {
       h2: "Your next RCM review could check itself.",
-      p: "Start from the sample study and link your first decision to real evidence — free.",
+      p: "Start from the sample truck and link your first decision to real evidence — free.",
     },
   },
   {
@@ -201,7 +203,7 @@ export const PRODUCT_PAGES = [
 
         <h2>Blocks backed by fitted models, not typed-in numbers</h2>
         <p>
-          Each block links to a life model <Link to="/weibull-analysis-software">fitted from your
+          Each block links to a non-repairable model <Link to="/weibull-analysis-software">fitted from your
           own failure data</Link> — Weibull, Lognormal, Gamma, proportional hazards — rather than a
           reliability number typed in from a datasheet. When you refit a model with new data, every
           diagram that uses it reflects the update. Mixed time units across blocks are detected and
@@ -239,7 +241,7 @@ export const PRODUCT_PAGES = [
     eyebrow: "Reliability engineering platform",
     h1: "The open reliability analysis platform",
     lede:
-      "One place for the whole chain: fit life models from failure data, build system diagrams, choose maintenance strategies, and track the fleet you're running today. Open source at the core; hosted when you want zero setup.",
+      "One place for the whole chain: fit non-repairable models from failure data, build system diagrams, choose maintenance strategies, and track the fleet you're running today. Open source at the core; hosted when you want zero setup.",
     hero: <HeroPlot />,
     jsonld: (p) => softwareJsonLd("Reliafy", p.description, p.path),
     body: (
@@ -262,9 +264,9 @@ export const PRODUCT_PAGES = [
             importance measures, and cut sets from your fitted models.
           </li>
           <li>
-            <Link to="/rcm-software"><strong>Evidence-linked RCM</strong></Link> — worksheets where
-            every maintenance decision cites the analysis that justifies it, re-checked live as
-            data changes.
+            <Link to="/rcm-software"><strong>Evidence-linked RCM</strong></Link> — RCM on your asset
+            tree, where every maintenance decision cites the analysis that justifies it,
+            re-checked live as data changes.
           </li>
           <li>
             <strong>Maintenance strategy</strong> — cost-optimal preventive-replacement intervals,
@@ -277,7 +279,7 @@ export const PRODUCT_PAGES = [
           </li>
           <li>
             <strong>Fleet failure forecasting</strong> — "how many failures next year?" answered
-            from your own life model and each item's current age, for spares and budget planning.
+            from your own non-repairable model and each item's current age, for spares and budget planning.
           </li>
         </ul>
 
@@ -299,8 +301,8 @@ export const PRODUCT_PAGES = [
         <h2>Or hosted, with the extras</h2>
         <p>
           Reliafy Cloud adds accounts, team workspaces with shared editing, view-only sharing of
-          any analysis, and an AI assistant that fits models, builds diagrams, and drafts RCM
-          studies from plain-language requests. Free tier to start;{" "}
+          any analysis, and an AI assistant that fits models and builds diagrams from
+          plain-language requests. Free tier to start;{" "}
           <Link to="/#pricing">Pro is US$19/month</Link>.
         </p>
 

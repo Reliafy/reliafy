@@ -248,8 +248,14 @@ def _fit_nhpp(model_id: str, inputs: dict):
     """Fit a Poisson-process model. A Crow-AMSAA search that doesn't reach a
     verified maximum (it can wander off from its default start when systems
     are watched for different lengths) is started again from the same fit to
-    the times rescaled to the unit interval, whose scale maps back exactly."""
+    the times rescaled to the unit interval, whose scale maps back exactly.
+    Each system's window (``tr``) goes in as its end-of-observation row
+    (:func:`backend.recurrent_models.observed`): SurPyval reads ``tr`` as
+    right truncation since 0.25."""
+    from backend.recurrent_models import observed
+
     fitter = MODELS[model_id]["fitter"]
+    inputs = observed(inputs)[0]
     if model_id != "crow_amsaa":
         return fitter.fit(**inputs)
     with warnings.catch_warnings():
@@ -261,9 +267,8 @@ def _fit_nhpp(model_id: str, inputs: dict):
     if not np.isfinite(scale) or scale <= 0:
         return para
     scaled = dict(inputs, x=np.asarray(inputs["x"], dtype=float) / scale)
-    for key in ("tl", "tr"):
-        if inputs.get(key) is not None:
-            scaled[key] = np.asarray(inputs[key], dtype=float) / scale
+    if inputs.get("tl") is not None:
+        scaled["tl"] = np.asarray(inputs["tl"], dtype=float) / scale
     if inputs.get("windows"):
         scaled["windows"] = {k: [(a / scale, b / scale) for a, b in v] for k, v in inputs["windows"].items()}
     try:
@@ -564,7 +569,7 @@ def system_residuals(model) -> list | None:
             warnings.simplefilter("ignore")
             res = np.asarray(model.residuals("martingale"), dtype=float)
         data = model.data
-        items = list(data.items)
+        items = list(data.ids)
     except Exception:  # noqa: BLE001 - no data
         return None
     c = np.asarray(data.c)

@@ -26,7 +26,7 @@ import io
 import re
 from datetime import date
 
-from backend.maintenance.service import MAX_ITEMS, MAX_POSITIONS, Invalid, Maintenance, new_id
+from backend.maintenance.service import MAX_ITEMS, MAX_POSITIONS, Invalid, Maintenance, _text, new_id
 
 MAX_ROWS = 5000
 MAX_COLS = 50
@@ -96,7 +96,8 @@ def check_csv(data: bytes) -> None:
                 if rows > MAX_ROWS:
                     raise Invalid(f"At most {MAX_ROWS} rows at a time.")
     except csv.Error as err:
-        raise Invalid(f"That file couldn't be read as CSV: {err}.") from None
+        from backend.fitting import csv_error_message
+        raise Invalid(csv_error_message(err, text)) from None
 
 
 def check_rows(rows: list[dict]) -> None:
@@ -164,6 +165,16 @@ def parse(rows: list[dict]) -> list[dict]:
             path = _path(get("position"))
             if not path:
                 raise Invalid(f"Row {i}: the position is blank.")
+            # The same limits as adding each by hand, checked before anything is written.
+            try:
+                for part in path:
+                    _text(part, "position's name")
+                for f, what in (("class", "class"), ("item", "item's name"), ("serial", "serial"),
+                                ("manufacturer", "manufacturer"), ("model", "model"),
+                                ("part_number", "part number"), ("failure_mode", "failure mode")):
+                    _text(get(f), what)
+            except Invalid as err:
+                raise Invalid(f"Row {i}: {err}") from None
             fitted, removed = _date(get("fitted"), "fitted", i), _date(get("removed"), "removed", i)
             item = get("item")
             if (fitted or removed) and not item:
@@ -269,7 +280,7 @@ def run(m: Maintenance, rows: list[dict], dry_run: bool = False) -> dict:
                     mode_id = new_id()
                     m._emit("failure_mode.added", {"id": mode_id, "position_id": pid, "text": r["failure_mode"],
                                                    "function": "", "failure": "", "consequence": None,
-                                                   "outcome": None, "rcm_mode_id": None, "study_id": None})
+                                                   "outcome": None})
             m.remove(pid, on=r["removed"], reason="failure" if r["failed"] else "planned",
                      failure_mode_id=mode_id)
     return report

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import Plot from "./Plot.jsx";
 import { ACCENT, DATA_INK, SURFACE, fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { applyRbdDesign, designRbd } from "../api.js";
+import { formatNumber } from "../format.js";
 import RbdCheapestDesign from "./RbdCheapestDesign.jsx";
 import RbdIntervals, { maintainedBlocks } from "./RbdIntervals.jsx";
 import RbdEmptyState, { TabEmptyState } from "./RbdEmptyState.jsx";
@@ -9,6 +10,7 @@ import { diagramGap } from "../rbdReadiness.js";
 import LifeModelModal from "./LifeModelModal.jsx";
 import Select from "./Select.jsx";
 import { modelSummary } from "./RbdNodes.jsx";
+import { lifeLine } from "./rbdModelText.js";
 import { graphSignature } from "./RbdValidation.jsx";
 import "./RbdDesignPanel.css";
 import { unitInText } from "./unitText.js";
@@ -40,7 +42,11 @@ const STRATEGIES = [
   { value: "choose", label: "Best of both" },
 ];
 
-const fmtR = (v) => (v == null || !Number.isFinite(v) ? "—" : v >= 0.9999 ? v.toFixed(6) : v.toFixed(4));
+// A reliability to four significant figures; near 1 the failure probability
+// (1 − R) carries the detail rather than six decimals.
+const fmtR = (v) =>
+  v == null || !Number.isFinite(v) ? "—"
+    : v >= 0.999 && v < 1 ? `${v.toFixed(4)} (1 − R = ${formatNumber(1 - v, { sig: 2 })})` : v.toFixed(4);
 const fmtN = (v) =>
   v == null || !Number.isFinite(v) ? "—" : Number(v.toPrecision(6)).toLocaleString(undefined, { maximumFractionDigits: 4 });
 const num = (v) => (v === "" || v == null ? null : Number(v));
@@ -161,7 +167,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
       return (
         <TabEmptyState
           title="Design: the cheapest copies of each block, and the best maintenance intervals"
-          need="It needs a purchase price, age replacement or proof tests on a block (double-click it → Cost & maintenance)."
+          need="It needs a purchase price, age replacement or proof tests on a block (double-click it → Maintenance or Costs)."
           action={readOnly
             ? onSaveCopy && { label: "Save a copy to edit", onClick: onSaveCopy }
             : onBuild && { label: "Go to the Builder", onClick: onBuild }}
@@ -327,7 +333,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
 
       {designable.length === 0 ? (
         <p className="hint">
-          Add components with life models on the Builder tab — each one can then be given copies.
+          Add components with non-repairable models on the Builder tab — each one can then be given copies.
         </p>
       ) : (
         <ScrollCue className="rbd-design-scroll">
@@ -356,7 +362,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                         <input type="checkbox" checked={r.include} onChange={(e) => update(n.id, { include: e.target.checked })} />
                         <span>
                           <b>{n.data.label || n.id}</b>
-                          <small>{modelSummary(n.data.model)}</small>
+                          <small title={modelSummary(n.data.model)}>{lifeLine(n.data.model, graph.unit)}</small>
                         </span>
                       </label>
                     </td>
@@ -416,7 +422,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                         <span className="rbd-design-type-name">
                           <input value={ty.name} disabled={off} onChange={(e) => updateType(n.id, i, { name: e.target.value })} aria-label="Type name" />
                           <button type="button" className="link" disabled={off} onClick={() => setModelFor({ id: n.id, index: i })}>
-                            {ty.model ? modelSummary(ty.model) : "Set life model"}
+                            {ty.model ? lifeLine(ty.model, graph.unit) : "Set non-repairable model"}
                           </button>
                         </span>
                       </td>
@@ -451,7 +457,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
           {Object.entries(
             fixed.reduce((groups, n) => {
               const kind = repeated.has(n.id) ? "repeated block"
-                : DESIGNABLE.has(n.type) ? "no life model" : KIND_NAMES[n.type] || n.type;
+                : DESIGNABLE.has(n.type) ? "no non-repairable model" : KIND_NAMES[n.type] || n.type;
               return { ...groups, [kind]: [...(groups[kind] || []), n.data?.label || n.id] };
             }, {})
           )

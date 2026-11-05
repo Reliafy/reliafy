@@ -25,4 +25,5 @@ def workspace_changes_summary(days: int | None = None, since: str | None = None,
                                                   tz=time_zones.zone(ctx.time_zone))
     except workspace_changes.PeriodError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    return JSONResponse(content=workspace_changes.summarize(session, ctx.list_owners, ctx.uid, period))
+    return JSONResponse(content=workspace_changes.summarize(session, ctx.list_owners, ctx.uid, period,
+                                                            user=ctx.user))

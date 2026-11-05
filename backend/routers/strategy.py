@@ -17,6 +17,10 @@ from backend.services.access import AccessCtx, get_access
 from backend.schema import StrategyAnalysis
 from backend.services import strategy_store
 from backend.services.strategy import StrategyError
+from backend.services import billing as billing_service
+from backend.services import strategy_calendar
+from backend.services import strategy_calendar_api
+from backend.services.rbd_analysis import AnalysisError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/strategy")
@@ -44,6 +48,81 @@ def optimal_replacement_endpoint(
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Optimal replacement failed")
+        return JSONResponse(
+            status_code=500, content={"detail": "Calculation failed. The error has been logged."}
+        )
+
+
+@router.post("/calendar-replacement")
+def calendar_replacement_endpoint(
+    distribution_id: str = Body(...),
+    params: list = Body(default=[]),
+    extras: dict | None = Body(default=None),
+    unit: str | None = Body(default=None),
+    today: str | None = Body(default=None, max_length=10),
+    opportunities: list = Body(default=[]),
+    failure_cost: float | None = Body(default=None),
+    anytime_cost: float | None = Body(default=None),
+    max_age: float | None = Body(default=None),
+    method: str = Body(default="dp", max_length=20),
+    mc_samples: int | None = Body(default=None),
+    seed: int | None = Body(default=None),
+    horizon_months: int | None = Body(default=None),
+    session=Depends(get_session),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """The long-run best replacement rule over a calendar of shuts (today is
+    time 0). The exact methods (``dp``, ``integration``) answer here and are
+    free; ``sampling`` is Pro and runs as a job (202 with ``job`` to poll at
+    ``/api/rbd-jobs/{id}``) when the compute queue is configured."""
+    inputs = {
+        "distribution_id": distribution_id, "params": params, "extras": extras, "unit": unit, "today": today,
+        "opportunities": opportunities, "failure_cost": failure_cost, "anytime_cost": anytime_cost,
+        "max_age": max_age, "method": method, "mc_samples": mc_samples, "seed": seed,
+        "horizon_months": horizon_months,
+    }
+    try:
+        code, payload = strategy_calendar_api.run(
+            session, user, inputs, entitled=billing_service.premium_compute_allowed(session, user))
+        return JSONResponse(status_code=code, content=payload)
+    except (StrategyError, AnalysisError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Calendar replacement failed")
+        return JSONResponse(
+            status_code=500, content={"detail": "Calculation failed. The error has been logged."}
+        )
+
+
+@router.post("/calendar-next")
+def calendar_next_endpoint(
+    distribution_id: str = Body(...),
+    params: list = Body(default=[]),
+    extras: dict | None = Body(default=None),
+    unit: str | None = Body(default=None),
+    today: str | None = Body(default=None, max_length=10),
+    opportunities: list = Body(default=[]),
+    failure_cost: float | None = Body(default=None),
+    anytime_cost: float | None = Body(default=None),
+    max_age: float | None = Body(default=None),
+    age: float | None = Body(default=None),
+    now_cost: float | None = Body(default=None),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    """One unit in service on the calendar: replace it now, at the next shut,
+    between shuts, or run it to failure, with break-even ages (exact, free)."""
+    if age is None:
+        return JSONResponse(status_code=422, content={"detail": "Enter the unit's age."})
+    try:
+        return JSONResponse(content=strategy_calendar.calendar_next(
+            distribution_id, params, age=age, now_cost=now_cost, extras=extras, unit=unit, today=today,
+            opportunities=opportunities, failure_cost=failure_cost, anytime_cost=anytime_cost,
+            max_age=max_age,
+        ))
+    except StrategyError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Calendar next replacement failed")
         return JSONResponse(
             status_code=500, content={"detail": "Calculation failed. The error has been logged."}
         )
@@ -112,6 +191,7 @@ def demonstration_test_endpoint(
     b_life: float | None = Body(default=None),
     shape_interval: list[float] | None = Body(default=None),
     shape_model: str | None = Body(default=None, max_length=200),
+    failure_terminated: bool | None = Body(default=None),
     user: dict = Depends(get_current_user),
 ) -> JSONResponse:
     """Plan a reliability demonstration test: units, test time and allowed failures
@@ -126,6 +206,7 @@ def demonstration_test_endpoint(
                 method=method, mtbf=mtbf, design_reliability=design_reliability,
                 design_mtbf=design_mtbf, unit=unit, producer_risk=producer_risk,
                 b_life=b_life, shape_interval=shape_interval, shape_model=shape_model,
+                failure_terminated=failure_terminated,
             )
         )
     except StrategyError as exc:

@@ -66,6 +66,11 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
     token = authorization.split(" ", 1)[1].strip()
 
     decoded = _verified_claims(token)
+    if config.ALLOWED_EMAILS and not (
+        decoded.get("email_verified") is True
+        and (decoded.get("email") or "").lower() in config.ALLOWED_EMAILS
+    ):
+        raise HTTPException(status_code=403, detail="This is a private test site.")
     return _noted({
         "uid": decoded["uid"],
         "email": decoded.get("email"),

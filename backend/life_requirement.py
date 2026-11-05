@@ -1,4 +1,4 @@
-"""Check a B-life requirement on a fitted life model (#295).
+"""Check a B-life requirement on a fitted non-repairable model (#295).
 
 A design engineer's requirement reads "B10 ≥ 50,000 cycles at 90%
 confidence": the time by which 10% have failed must be at least 50,000, and

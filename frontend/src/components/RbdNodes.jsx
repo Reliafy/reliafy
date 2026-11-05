@@ -4,6 +4,7 @@ import { maintenanceChips } from "./RbdBlockCosts.jsx";
 import { unitInText } from "./unitText.js";
 import { formatPercent } from "../format.js";
 import { lifeLine, repairLine } from "./rbdModelText.js";
+import { jointBlockLine } from "../joint.js";
 
 // The React Flow node components of a reliability block diagram, shared by the
 // builder (interactive) and the public read-only view (/p/:token). Pure
@@ -91,7 +92,7 @@ function UnitWarn({ title }) {
   );
 }
 
-// Marks a life model the assistant filled in as a guessed starting point
+// Marks a non-repairable model the assistant filled in as a guessed starting point
 // (data.model.placeholder) — the numbers are illustrative until replaced.
 function PlaceholderBadge() {
   const title = "Placeholder parameters — set real values before trusting the results";
@@ -123,6 +124,8 @@ const fmtParam = (v) =>
   Math.abs(v) >= 1e-3 || v === 0 ? Number(v).toPrecision(4) : Number(v).toExponential(2);
 
 export function modelSummary(model) {
+  // A condition-based block: one unit of a joint model, given its readings.
+  if (model.kind === "joint") return `${model.name || "Condition and life"} · ${jointBlockLine(model)}`;
   // Proportional-hazards models depend on covariates entered on the calculator;
   // summarise by the covariate names rather than the baseline parameters.
   if (model.kind === "regression") {
@@ -135,7 +138,7 @@ export function modelSummary(model) {
   return `${model.distribution}${ps ? ` · ${ps}` : ""}`;
 }
 
-// Custom component block: shows the assigned life model (or a prompt to set
+// Custom component block: shows the assigned non-repairable model (or a prompt to set
 // one) with left/right handles for the left-to-right flow. A repeated block —
 // a linked copy of another component (data.repeat_of) — shows that component.
 export function ComponentNode(props) {
@@ -164,7 +167,7 @@ function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false 
   // The block shows its name and its life (and, repairable, its repair) in
   // plain words, each on a line of its own that reads at fit-to-view (#314);
   // the full models are on its tooltip.
-  const life = data.model ? lifeLine(data.model, rbdUnit, { short: repairable }) : "";
+  const life = data.model ? lifeLine(data.model, rbdUnit, { short: repairable, repairable }) : "";
   const rep = !repairable ? "" : data.instant_repair ? "instant repair" : repairLine(data.repair, rbdUnit);
   const detail = [
     data.model ? `Life: ${modelSummary(data.model)}` : null,
@@ -174,7 +177,7 @@ function ComponentCard({ id, nodeId = id, data, repeat = false, missing = false 
   const title = [data.label, repeat ? repeatTitle : null, detail].filter(Boolean).join("\n");
   let body;
   if (missing) body = <div className="rbd-comp-empty warn">The block it repeats was removed</div>;
-  else if (!data.model) body = <div className="rbd-comp-empty">No life model — double-click to set</div>;
+  else if (!data.model) body = <div className="rbd-comp-empty">No failure data — double-click</div>;
   else if (repairable && !data.repair && !data.instant_repair) {
     body = (
       <>
@@ -263,7 +266,7 @@ export function KNode({ id, data }) {
 
 // Structural block types (standby / series / parallel / sub-system). Each is a
 // distinct labelled block; the sub-system represents a nested RBD. Series and
-// parallel blocks hold a life model and a count n of identical units.
+// parallel blocks hold a non-repairable model and a count n of identical units.
 export const BLOCK_TYPES = {
   standby: { label: "Standby", sub: "redundancy", cls: "rbd-standby" },
   loadshare: { label: "Load-sharing", sub: "shared load", cls: "rbd-loadshare" },
@@ -281,7 +284,7 @@ export function StructureNode({ id, data: nodeData, type }) {
   const meta = BLOCK_TYPES[data.kind] || {};
   const rbdUnit = useContext(RbdUnitContext);
   const repairable = useContext(RbdRepairableContext) && data.kind === "standby";
-  // Series/parallel/standby carry a life model whose unit can be checked.
+  // Series/parallel/standby carry a non-repairable model whose unit can be checked.
   const warn = unitWarning(data.model, rbdUnit);
 
   let body;
@@ -289,7 +292,7 @@ export function StructureNode({ id, data: nodeData, type }) {
     body = data.model ? (
       <div className="rbd-block-model">{lifeLine(data.model, rbdUnit)}</div>
     ) : (
-      <div className="rbd-block-sub">No life model</div>
+      <div className="rbd-block-sub">No failure data — double-click</div>
     );
   } else if (data.kind === "standby") {
     // "cold · 1 spare", then a line each for the unit's life and (repairable,
@@ -301,7 +304,7 @@ export function StructureNode({ id, data: nodeData, type }) {
             ` · ${data.spares ?? 1} spare${(data.spares ?? 1) === 1 ? "" : "s"}`}
           {repairable && data.repair_one_at_a_time ? " · one repairer" : ""}
         </div>
-        {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, rbdUnit, { short: true })}</div>}
+        {data.model && <div className="rbd-block-model one-line">{lifeLine(data.model, rbdUnit, { short: true, repairable })}</div>}
         {repairable && data.repair && <div className="rbd-block-model one-line">{repairLine(data.repair, rbdUnit)}</div>}
         {repairable && !data.repair && (
           <div className="rbd-comp-empty warn">No repair time — double-click</div>

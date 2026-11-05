@@ -351,14 +351,8 @@ def _strip_ui(value):
     return value
 
 
-# Node data that records where values came from (#100: the RCM study a
-# block's maintenance was filled from). The filled values themselves are in
-# the key; the link isn't, so it never invalidates a saved result.
-_PROVENANCE_KEYS = frozenset({"rcm_source"})
-
-
 def _analysis_data(data: dict) -> dict:
-    return _strip_ui({k: v for k, v in data.items() if k not in _PROVENANCE_KEYS})
+    return _strip_ui(dict(data))
 
 
 def _key_unit(graph: dict, spelling: str | None = None) -> str:
@@ -461,7 +455,7 @@ def _t_sim(t_simulation) -> float | None:
 # than from the parameters stored on the block (rbd_analysis._build_distribution):
 # proportional-hazards / regression models. (Non-parametric blocks are refused,
 # so never analysed.) A load-sharing block's load-life model is resolved too.
-_RESOLVED_KINDS = frozenset({"regression"})
+_RESOLVED_KINDS = frozenset({"regression", "joint"})
 
 
 def _ref_id(model) -> str | None:

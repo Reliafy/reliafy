@@ -141,7 +141,7 @@ def test_share_email(client, sent):
     client.post("/api/shares", json={"collection": "models", "artifact_id": mid, "email": "b@x.com"})
     assert sent[-1]["to"] == "b@x.com"
     assert "shared" in sent[-1]["subject"].lower()
-    assert f"/modelling/m/{mid}" in sent[-1]["body"]
+    assert f"/models/m/{mid}" in sent[-1]["body"]
     # Duplicate share doesn't re-send.
     n = len(sent)
     client.post("/api/shares", json={"collection": "models", "artifact_id": mid, "email": "b@x.com"})
@@ -158,31 +158,11 @@ def test_email_noop_when_unconfigured():
 # ---- Telemetry + admin stats -------------------------------------------------------
 
 def test_telemetry_endpoints(client):
-    assert client.post("/api/client-error", json={"message": "boom", "stack": "x", "path": "/rcm"}).status_code == 200
+    assert client.post("/api/client-error", json={"message": "boom", "stack": "x", "path": "/asset-register/explorer"}).status_code == 200
     assert client.post("/api/metrics/event", json={"name": "pageview", "path": "/"}).status_code == 200
 
 
 # ---- Optimistic locking + attribution ----------------------------------------------
-
-def test_rcm_tree_conflict_409(client):
-    client.act_as(A)
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    tree = {"functions": [{"text": "Fn", "failures": []}]}
-    first = client.put(f"/api/rcm/studies/{sid}/tree", json=tree)
-    assert first.status_code == 200
-    loaded_at = first.json()["updated_at"]
-
-    # A save carrying the current stamp succeeds and bumps updated_at.
-    r = client.put(f"/api/rcm/studies/{sid}/tree",
-                   json={**tree, "expected_updated_at": loaded_at})
-    assert r.status_code == 200
-    # Reusing the stale stamp now conflicts.
-    r = client.put(f"/api/rcm/studies/{sid}/tree",
-                   json={**tree, "expected_updated_at": loaded_at})
-    assert r.status_code == 409 and r.json()["code"] == "conflict"
-    # Without the precondition it's last-write-wins (backwards compatible).
-    assert client.put(f"/api/rcm/studies/{sid}/tree", json=tree).status_code == 200
-
 
 def test_rbd_conflict_and_attribution(client):
     client.act_as(A)
@@ -231,15 +211,6 @@ def test_saves_within_a_millisecond_still_conflict(client, monkeypatch, gap_us):
                                            "expected_updated_at": ok.json()["updated_at"]})
     assert again.status_code == 200
     assert client.db.rbds.find_one({"_id": saved["id"]})["name"] == "D4"
-
-    # The same for an RCM study's tree (and a fleet's items: same helpers).
-    sid = client.post("/api/rcm/studies", json={"name": "S"}).json()["id"]
-    tree = {"functions": [{"text": "Fn", "failures": []}]}
-    first = client.put(f"/api/rcm/studies/{sid}/tree", json=tree).json()["updated_at"]
-    assert client.put(f"/api/rcm/studies/{sid}/tree",
-                      json={**tree, "expected_updated_at": first}).status_code == 200
-    r = client.put(f"/api/rcm/studies/{sid}/tree", json={**tree, "expected_updated_at": first})
-    assert r.status_code == 409
 
 
 def test_conditional_write_catches_a_save_racing_the_check(client, monkeypatch):

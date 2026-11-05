@@ -1,0 +1,16 @@
+/* The degradation model page's own bits (the frame is model/ModelFrame.css). */
+.gof-card .gofh.deg-subhead { border-top: 1px solid var(--line2); }
+.life-reading .deg-to-calc { display: inline-block; margin-top: 6px; }
+.deg-params .mini-table tr.deg-part th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surf-2);
+  position: static;
+}
+.deg-induced-inputs { padding-top: 4px; }
+/* Diagnostics: the path comparison sits in the side column at its own
+   height; the column scrolls inside itself when it runs long. */
+.deg-diag .mf-l3-side > .mf-check { flex: none; overflow: visible; }
+.deg-diag .mf-l3-side > .mf-check .mf-check-body { overflow: visible; }
+.deg-crossings .mini-table .mf-num { text-align: right; }

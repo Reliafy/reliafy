@@ -322,6 +322,11 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/strategy/compare-two", "strategy_compare"),
     ("POST", "/api/strategy/failure-finding", "strategy_failure_finding"),
     ("POST", "/api/strategy/demonstration-test", "strategy_demonstration"),
+    ("POST", "/api/test-planning/sequential", "test_planning_sequential"),
+    ("POST", "/api/test-planning/life", "test_planning_life"),
+    ("POST", "/api/test-planning/accelerated", "test_planning_accelerated"),
+    ("POST", "/api/test-planning/comparison", "test_planning_comparison"),
+    ("POST", "/api/test-planning/simulate", "test_planning_simulate"),
     ("POST", "/api/strategy/analyses", "strategy_save"),
     ("POST", "/api/recurrent/models/{id}/overhaul", "strategy_overhaul"),
     # Recurrent, degradation, ALT
@@ -336,12 +341,10 @@ APP_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/alt/fit", "alt_fit"),
     ("POST", "/api/alt/models", "alt_save"),
     ("POST", "/api/alt/models/{id}/evaluate", "alt_evaluate"),
-    # RCM
-    ("POST", "/api/rcm/studies", "rcm_create"),
-    ("PUT", "/api/rcm/studies/{id}/tree", "rcm_edit"),
-    ("POST", "/api/rcm/import/preview", "rcm_import_preview"),
-    ("POST", "/api/rcm/import", "rcm_import"),
-    # Excel (.xlsx) uploads: sheets read for a dataset, an RCM study or an RBD
+    # RCM: a worksheet added to a position's RCM
+    ("POST", "/api/maintenance/positions/{id}/rcm/import/preview", "rcm_import_preview"),
+    ("POST", "/api/maintenance/positions/{id}/rcm/import", "rcm_import"),
+    # Excel (.xlsx) uploads: sheets read for a dataset, an RCM worksheet or an RBD
     ("POST", "/api/excel/inspect", "excel_inspect"),
     ("POST", "/api/excel/table", "excel_import"),
     ("POST", "/api/excel/csv", "excel_import"),

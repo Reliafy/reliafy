@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  createMaintenanceItem,
   createMaintenanceLocation,
   fitClassModel,
   getClassEconomics,
@@ -14,22 +15,25 @@ import {
   adjustMaintenanceStock,
   createMaintenancePart,
   getSparesCover,
-  listMaintenanceItems,
   listMaintenanceParts,
   setMaintenanceReorder,
   listMaintenanceLocations,
+  listMaintenanceWorkOrders,
+  placeMaintenanceItem,
   updateMaintenanceLocation,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../components/SectionPage.jsx";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
-import ListSearch, { matches } from "../components/ListSearch.jsx";
-import { PlusIcon } from "../components/LibRows.jsx";
+import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, Field, FormModal, LifeTable, MaintenanceTabs, Proposals, fmtDate,
+  DocumentsCard, Field, FormModal, LifeTable, Proposals, fmtDate,
 } from "../components/MaintenanceParts.jsx";
 import { costText, costValue } from "../maintenanceFields.js";
 import { roleLabel } from "../maintenanceSpares.js";
-import { countsText, inheritedText, itemWhere } from "../maintenanceLocations.js";
+import { countsText, inheritedText } from "../maintenanceLocations.js";
+import { openWorkPath } from "../maintenanceAssets.js";
+import { subjectBadge } from "../maintenanceSubjects.js";
 import { TasksCard, WorkOrdersCard } from "../components/MaintenanceTasks.jsx";
 import {
   ClassPicker, ItemClassesSection, KindFilters, PartKindModal, useKinds,
@@ -47,91 +51,43 @@ import {
   FORECAST_PERIODS, horizonText, money, moneyRange, periodLabels, rangeText, spareCover,
 } from "../maintenanceForecast.js";
 import "./Maintenance.css";
+import { tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
+import LoadFailed from "../components/LoadFailed.jsx";
+import { isNotFound } from "../components/loadFailed.js";
+import { explorerPath } from "../assetTree.js";
+import { EXPLORER_LABEL } from "../navigation.js";
 
-const crumbs = [{ label: "Maintenance", to: "/maintenance" }];
+const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
 // ---- items -------------------------------------------------------------------------------
 
-export function MaintenanceItems() {
-  const navigate = useNavigate();
-  const [items, setItems] = useState(null);
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState({ itemClassId: null, manufacturerId: null });
-  const [kinds] = useKinds();
-  const [error, setError] = useState(null);
-  useEffect(() => {
-    listMaintenanceItems(filter).then((d) => setItems(d.items)).catch((e) => setError(e.message));
-  }, [filter]);
-  const filtered = !!(filter.itemClassId || filter.manufacturerId);
-  // The class column only once items have classes.
-  const showClass = (items || []).some((i) => i.item_class);
-  const visible = (items || []).filter((i) => matches(query, i.name, i.serial, i.manufacturer, i.model, i.part_number,
-    i.item_class?.name, i.manufacturer_entry?.name));
-  return (
-    <div className="app">
-      <PageHeader crumbs={crumbs} title="Items" meta="Every physical thing: where it's fitted, where it is." />
-      <MaintenanceTabs />
-      {error && <div className="card error">{error}</div>}
-      {items === null ? <div className="card empty">Loading…</div> : items.length === 0 && !filtered ? (
-        <div className="card empty"><p>No items yet. Fit one to a position.</p></div>
-      ) : (
-        <>
-          <div className="tablebar">
-            <span className="count">{visible.length} of {items.length} items</span>
-            <span className="grow" />
-            <KindFilters classes={kinds.classes} makers={kinds.makers} value={filter} onChange={setFilter} />
-            <ListSearch value={query} onChange={setQuery} placeholder="Search items…" />
-          </div>
-          <div className="lib">
-            <table className="lib-table">
-              <thead><tr><th>Item</th>{showClass && <th>Class</th>}<th>Make and model</th><th>Serial</th><th>Fitted to</th><th>Location</th></tr></thead>
-              <tbody>
-                {visible.map((i) => (
-                  <tr key={i.id} className="lib-row" onClick={() => navigate(`/maintenance/items/${i.id}`)}>
-                    <td>{i.name}</td>
-                    {showClass && <td className="lib-date">{i.item_class?.name || "—"}</td>}
-                    <td className="lib-date">{[i.manufacturer_entry?.name || i.manufacturer, i.model].filter(Boolean).join(" ") || "—"}</td>
-                    <td className="lib-date">{i.serial || "—"}</td>
-                    <td>{i.fitted_to?.name || <span className="lib-date">not fitted</span>}</td>
-                    <td className="lib-date">{itemWhere(i).label || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ---- locations -------------------------------------------------------------------------
-
-function LocNode({ node }) {
-  return (
-    <li>
-      <div className="maint-node">
-        <Link className="maint-node-name" to={`/maintenance/locations/${node.id}`}>{node.name}</Link>
-        {node.all_positions > 0 && (
-          <span className="lib-date">{node.all_positions} position{node.all_positions === 1 ? "" : "s"}</span>
-        )}
-        {node.all_items > 0 && <span className="lib-date">{node.all_items} item{node.all_items === 1 ? "" : "s"} placed</span>}
-      </div>
-      {node.children.length > 0 && <ul>{node.children.map((c) => <LocNode key={c.id} node={c} />)}</ul>}
-    </li>
-  );
-}
-
-export function NewLocationModal({ locations, parentId = null, onClose, onDone }) {
+// A new item: a spare on the shelf, a unit back from repair, anything not
+// fitted yet. Fitting one to a position (from the position's page) makes it
+// there and then; this is for the rest. `locations`: where it can be put.
+export function NewItemModal({ locations, locationId = null, onClose, onDone }) {
   const [name, setName] = useState("");
-  const [parent, setParent] = useState(parentId || "");
+  const [serial, setSerial] = useState("");
+  const [where, setWhere] = useState(locationId || "");
   return (
-    <FormModal title="New location" submitLabel="Create" canSubmit={!!name.trim()} onClose={onClose}
-               onSubmit={async () => onDone(await createMaintenanceLocation({ name, parent_id: parent || null }))}>
-      <Field label="Name"><input autoFocus value={name} placeholder="e.g. Laundry, Garage, Store A" onChange={(e) => setName(e.target.value)} /></Field>
-      <Field label="Inside">
-        <select value={parent} onChange={(e) => setParent(e.target.value)}>
-          <option value="">None (top level)</option>
+    <FormModal title="New item" submitLabel="Create"
+               canSubmit={!!name.trim() && !tooLong(name) && !tooLong(serial)} onClose={onClose}
+               onSubmit={async () => {
+                 const item = await createMaintenanceItem({ name, serial });
+                 if (where) await placeMaintenanceItem(item.id, where);
+                 onDone(item);
+               }}>
+      <p className="lib-date">An item is one physical thing, with its own history. To fit a new one, open the
+        position it goes in and fit it there instead.</p>
+      <Field label="Name" text={name}>
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Spare seal kit, Motor M-118" />
+      </Field>
+      <Field label="Serial number (optional)" text={serial}>
+        <input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="e.g. SK-0042" />
+      </Field>
+      <Field label="Where it is">
+        <select value={where} onChange={(e) => setWhere(e.target.value)}>
+          <option value="">Nowhere yet (no home)</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
         </select>
       </Field>
@@ -139,29 +95,33 @@ export function NewLocationModal({ locations, parentId = null, onClose, onDone }
   );
 }
 
-export function MaintenanceLocations() {
-  const navigate = useNavigate();
-  const [data, setData] = useState(null);
-  const [modal, setModal] = useState(false);
-  const [error, setError] = useState(null);
-  useEffect(() => {
-    listMaintenanceLocations().then(setData).catch((e) => setError(e.message));
-  }, []);
+// ---- locations -------------------------------------------------------------------------
+
+// A new location. `asset`: a new asset, a top-level place (no "Inside" to pick).
+export function NewLocationModal({ locations, parentId = null, asset = false, onClose, onDone }) {
+  const [name, setName] = useState("");
+  const [parent, setParent] = useState(parentId || "");
   return (
-    <div className="app">
-      <PageHeader crumbs={crumbs} title="Locations"
-                  meta="Physical places: sites, areas, rooms and stores. Positions are located in them; spares are placed in them."
-                  primary={<button onClick={() => setModal(true)}><PlusIcon /> New location</button>} />
-      <MaintenanceTabs />
-      {error && <div className="card error">{error}</div>}
-      {data === null ? <div className="card empty">Loading…</div> : data.tree.length === 0 ? (
-        <div className="card empty"><p>No locations yet. Add the house, its rooms, the shed.</p></div>
-      ) : (
-        <section className="card"><ul className="maint-tree">{data.tree.map((n) => <LocNode key={n.id} node={n} />)}</ul></section>
+    <FormModal title={asset ? "New asset" : "New location"} submitLabel="Create" pendingLabel="Adding…"
+               canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
+               onSubmit={async () => onDone(await createMaintenanceLocation({ name, parent_id: (!asset && parent) || null }))}>
+      {asset && (
+        <p className="lib-date">An asset is a place you look after: a house, a site, a plant. Add the rooms or
+          areas inside it from its page, then say where each position is.</p>
       )}
-      {modal && <NewLocationModal locations={data?.locations || []} onClose={() => setModal(false)}
-                                  onDone={(l) => navigate(`/maintenance/locations/${l.id}`)} />}
-    </div>
+      <Field label="Name" text={name}>
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+               placeholder={asset ? "e.g. 12 Smith Street, North mine site" : "e.g. Laundry, Garage, Store A"} />
+      </Field>
+      {!asset && (
+        <Field label="Inside">
+          <select value={parent} onChange={(e) => setParent(e.target.value)}>
+            <option value="">None (top level: an asset)</option>
+            {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
+          </select>
+        </Field>
+      )}
+    </FormModal>
   );
 }
 
@@ -179,29 +139,34 @@ export function MaintenanceLocation() {
   useEffect(() => {
     listMaintenanceLocations().then((d) => setAll(d.locations)).catch(() => {});
   }, []);
-  if (error && !loc) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !loc) return <div className="app"><LoadFailed header error={error} notFound="Location not found." to={explorerPath("locations")} label={`Open the ${EXPLORER_LABEL}`} /></div>;
   if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
+  // The header leaves out the open work: it's its own card below, the whole area's
+  // (positions, items there now and the place itself), not only the positions'.
   return (
     <div className="app">
+      <PageTitle name={loc?.name} />
       <PageHeader
-        crumbs={[...crumbs, { label: "Locations", to: "/maintenance/locations" },
-          ...loc.path.map((a) => ({ label: a.name, to: `/maintenance/locations/${a.id}` }))]}
-        title={loc.name} meta={[loc.description, countsText(loc.counts)].filter(Boolean).join(" · ") || "Location"} id={loc.id}
-        actions={<>
-          {loc.counts.open_work_orders > 0 && (
-            <button className="secondary" onClick={() => navigate(`/maintenance?location=${loc.id}`)}>
-              Open work orders here ({loc.counts.open_work_orders})</button>
-          )}
-          <button className="secondary" onClick={() => setModal("child")}><PlusIcon /> Location inside</button>
-        </>}
+        crumbs={[...crumbs, ...loc.path.map((a) => ({ label: a.name, to: `/asset-register/locations/${a.id}` }))]}
+        title={loc.name} id={loc.id}
+        meta={[loc.description, countsText({ ...loc.counts, open_work_orders: 0 })].filter(Boolean).join(" · ")
+          || (loc.path.length ? "Location" : "Asset")}
+        actions={<button className="secondary" onClick={() => setModal("child")}><PlusIcon /> Location inside</button>}
         primary={<button onClick={() => setModal("rename")}>Rename</button>}
       />
-      <MaintenanceTabs />
-      <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
-                 emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
-                   + "building or area check: it raises one work order here, and can list every position here to check."} />
-      {(loc.work_orders || []).length > 0 && <WorkOrdersCard workOrders={loc.work_orders} />}
-      <ConditionsCard target={{ id: loc.id, name: loc.name, kind: "Location" }} view={loc} onChanged={refresh} />
+      {loc.children.length > 0 && (
+        <section className="card">
+          <div className="maint-head"><h2>Inside it</h2></div>
+          <ul className="maint-list">{loc.children.map((c) => (
+            <li key={c.id}><Link to={`/asset-register/locations/${c.id}`}>{c.name}</Link>
+              {(c.positions > 0 || c.items > 0) && (
+                <span className="lib-date"> · {[c.positions && `${c.positions} position${c.positions === 1 ? "" : "s"}`,
+                  c.items && `${c.items} item${c.items === 1 ? "" : "s"} placed`].filter(Boolean).join(", ")}</span>
+              )}</li>
+          ))}</ul>
+        </section>
+      )}
+      <OpenWorkHere loc={loc} />
       <LocationPositions loc={loc} />
       <section className="card">
         <div className="maint-head"><h2>Items placed here</h2></div>
@@ -211,32 +176,63 @@ export function MaintenanceLocation() {
         ) : (
           <ul className="maint-list">
             {loc.items.map((i) => (
-              <li key={i.id}><Link to={`/maintenance/items/${i.id}`}>{i.name}</Link>
+              <li key={i.id}><Link to={`/asset-register/items/${i.id}`}>{i.name}</Link>
                 <span className="lib-date">
-                  {i.location.id !== loc.id && <> · in <Link to={`/maintenance/locations/${i.location.id}`}>{i.location.name}</Link></>}
+                  {i.location.id !== loc.id && <> · in <Link to={`/asset-register/locations/${i.location.id}`}>{i.location.name}</Link></>}
                   {" "}· since {fmtDate(i.since)}</span></li>
             ))}
           </ul>
         )}
       </section>
-      {loc.children.length > 0 && (
-        <section className="card">
-          <div className="maint-head"><h2>Inside it</h2></div>
-          <ul className="maint-list">{loc.children.map((c) => (
-            <li key={c.id}><Link to={`/maintenance/locations/${c.id}`}>{c.name}</Link>
-              {(c.positions > 0 || c.items > 0) && (
-                <span className="lib-date"> · {[c.positions && `${c.positions} position${c.positions === 1 ? "" : "s"}`,
-                  c.items && `${c.items} item${c.items === 1 ? "" : "s"} placed`].filter(Boolean).join(", ")}</span>
-              )}</li>
-          ))}</ul>
-        </section>
-      )}
-      <MaintenancePhotos targetId={loc.id} targetName={loc.name} photos={loc.photos} onChanged={refresh} />
+      <TasksCard subject={{ kind: "location", id: loc.id, name: loc.name }} tasks={loc.tasks || []} onChanged={refresh}
+                 emptyText={"No tasks on this place. Add a round or walkdown, an Ex (hazardous-area) inspection, or a "
+                   + "building or area check: it raises one work order here, and can list every position here to check."} />
+      {(loc.work_orders || []).length > 0 && <WorkOrdersCard workOrders={loc.work_orders} />}
+      <ConditionsCard target={{ id: loc.id, name: loc.name, kind: "Location" }} view={loc} onChanged={refresh} />
+      <MaintenancePhotos targetId={loc.id} targetKind="Location" targetName={loc.name} photos={loc.photos} onChanged={refresh} />
       {loc.coordinates && <p className="lib-date">Coordinates: {loc.coordinates.lat}, {loc.coordinates.lon}</p>}
       {modal === "child" && <NewLocationModal locations={all} parentId={loc.id} onClose={() => setModal(null)}
-                                              onDone={(l) => { setModal(null); navigate(`/maintenance/locations/${l.id}`); }} />}
+                                              onDone={(l) => { setModal(null); navigate(`/asset-register/locations/${l.id}`); }} />}
       {modal === "rename" && <RenameLocation loc={loc} onClose={() => setModal(null)} onDone={(d) => { setLoc(d); setModal(null); }} />}
     </div>
+  );
+}
+
+// The open work orders in a place's area: on the positions there, the items there
+// now and the place itself (or a place inside it). The first few, and a link to all.
+const OPEN_HERE = 8;
+function OpenWorkHere({ loc }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(null);
+  useEffect(() => {
+    listMaintenanceWorkOrders({ status: "open", locationId: loc.id })
+      .then((d) => setOpen(d.work_orders)).catch(() => setOpen([]));
+  }, [loc]);
+  return (
+    <section className="card">
+      <div className="maint-head">
+        <h2>Open work here</h2>
+        {open?.length > OPEN_HERE && <Link to={openWorkPath(loc.id)} className="lib-date">All {open.length}</Link>}
+      </div>
+      {open === null ? <p className="lib-date">Loading…</p> : open.length === 0 ? (
+        <p className="lib-date">No open work orders here.</p>
+      ) : (
+        <div className="maint-scroll"><table className="lib-table">
+          <thead><tr><th>#</th><th>Title</th><th>On</th><th>Due</th></tr></thead>
+          <tbody>
+            {open.slice(0, OPEN_HERE).map((w) => (
+              <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
+                <td>{w.number}</td>
+                <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink></td>
+                <td>{w.subject?.name}{subjectBadge(w.subject) && <> <span className="maint-badge">{subjectBadge(w.subject)}</span></>}
+                  {w.location && ![loc.id, w.subject?.id].includes(w.location.id) && <div className="lib-date">{w.location.name}</div>}</td>
+                <td className="lib-date">{fmtDate(w.due)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      )}
+    </section>
   );
 }
 
@@ -252,7 +248,7 @@ function LocationPositions({ loc }) {
       ) : loc.systems.map((g) => (
         <div key={g.system.id} className="maint-group">
           <h3>
-            <Link to={`/maintenance/${g.system.kind === "Item" ? "items" : "positions"}/${g.system.id}`}>{g.system.name}</Link>
+            <Link to={`/asset-register/${g.system.kind === "Item" ? "items" : "positions"}/${g.system.id}`}>{g.system.name}</Link>
             <span className="lib-date"> · {g.count} here</span>
           </h3>
           <div className="maint-scroll"><table className="lib-table">
@@ -260,12 +256,12 @@ function LocationPositions({ loc }) {
             <tbody>
               {g.positions.map((r) => (
                 <tr key={r.id}>
-                  <td><Link to={`/maintenance/positions/${r.id}`}>{r.path}</Link>{r.tag && <span className="lib-date"> · {r.tag}</span>}</td>
+                  <td><Link to={`/asset-register/positions/${r.id}`}>{r.path}</Link>{r.tag && <span className="lib-date"> · {r.tag}</span>}</td>
                   <td className="lib-date">
-                    {r.location.id !== loc.id && <><Link to={`/maintenance/locations/${r.location.id}`}>{r.location.name}</Link> · </>}
+                    {r.location.id !== loc.id && <><Link to={`/asset-register/locations/${r.location.id}`}>{r.location.name}</Link> · </>}
                     {r.direct ? "set here" : inheritedText({ inherited: true, inherited_from: r.inherited_from })}
                   </td>
-                  <td>{r.item ? <Link to={`/maintenance/items/${r.item.id}`}>{r.item.name}</Link> : <span className="lib-date">nothing fitted</span>}</td>
+                  <td>{r.item ? <Link to={`/asset-register/items/${r.item.id}`}>{r.item.name}</Link> : <span className="lib-date">nothing fitted</span>}</td>
                   <td>{r.open_work_orders > 0 ? <span className="maint-badge">{r.open_work_orders} open</span> : <span className="lib-date">—</span>}</td>
                 </tr>
               ))}
@@ -285,9 +281,9 @@ function RenameLocation({ loc, onClose, onDone }) {
   const [name, setName] = useState(loc.name);
   const [description, setDescription] = useState(loc.description || "");
   return (
-    <FormModal title="Rename location" submitLabel="Save" canSubmit={!!name.trim()} onClose={onClose}
+    <FormModal title="Rename location" submitLabel="Save" canSubmit={!!name.trim() && !tooLong(name)} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenanceLocation(loc.id, { name, description }))}>
-      <Field label="Name"><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Name" text={name}><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Field label="Description"><input value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
     </FormModal>
   );
@@ -297,26 +293,39 @@ function RenameLocation({ loc, onClose, onDone }) {
 
 export function MaintenanceClasses() {
   const navigate = useNavigate();
-  // A class's own page (/maintenance/classes/Pool%20pump) opens its panel.
+  // A class's own page (/asset-register/classes/Pool%20pump) opens its panel.
   const { name: open = null } = useParams();
-  const setOpen = (name) => navigate(`/maintenance/classes/${encodeURIComponent(name)}`);
+  const classPath = (name) => `/asset-register/classes/${encodeURIComponent(name)}`;
   const [classes, setClasses] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [classError, setClassError] = useState(null);
   useEffect(() => {
     getPositionClasses().then((d) => setClasses(d.classes)).catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
+    setClassError(null);
     if (!open) return;
     setData(null);
-    getClassLifeData(open).then(setData).catch((e) => setError(e.message));
+    getClassLifeData(open).then(setData).catch((e) => setClassError(e.message));
   }, [open]);
+  // A class that isn't there (renamed, or a mistyped link): say so, with the
+  // way back to the list, rather than the list under a red banner.
+  if (open && isNotFound(classError)) {
+    return (
+      <div className="app">
+        <PageTitle name={open} />
+        <LoadFailed header error={classError} notFound="Class not found." to="/asset-register/classes" label="See all classes" />
+      </div>
+    );
+  }
+  const shownError = error || classError;
   return (
     <div className="app">
-      <PageHeader crumbs={crumbs} title="Classes"
-                  meta="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to." />
-      <MaintenanceTabs />
-      {error && <div className="card error">{error}</div>}
+      <PageTitle name={open} />
+      <SectionHeader section="assets" title="Classes"
+                  purpose="Position classes group like positions by their duty, so their items' lives can be compared and pooled into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to." />
+      {shownError && <div className="card error">{shownError}</div>}
       <h2 className="maint-section">Position classes</h2>
       {classes === null ? <div className="card empty">Loading…</div> : classes.length === 0 ? (
         <div className="card empty"><p>No classes yet. Give positions a class (e.g. “Pool pump”) when you create or edit them.</p></div>
@@ -326,9 +335,9 @@ export function MaintenanceClasses() {
             <thead><tr><th>Class</th><th>Positions</th><th>Fitments</th><th>Failures</th></tr></thead>
             <tbody>
               {classes.map((c) => (
-                <tr key={c.position_class} className="lib-row" onClick={() => setOpen(c.position_class)}
+                <tr key={c.position_class} className="lib-row" onClick={rowOpen(navigate, classPath(c.position_class))}
                     aria-current={c.position_class === open ? "true" : undefined}>
-                  <td>{c.position_class}</td><td>{c.positions}</td><td>{c.fitments}</td><td>{c.failures}</td>
+                  <td><RowLink to={classPath(c.position_class)}>{c.position_class}</RowLink></td><td>{c.positions}</td><td>{c.fitments}</td><td>{c.failures}</td>
                 </tr>
               ))}
             </tbody>
@@ -386,7 +395,7 @@ function ClassPanel({ name, onChanged }) {
   return (
     <>
       <section className="card">
-        <div className="maint-head"><h2>{name}: life model and costs</h2></div>
+        <div className="maint-head"><h2>{name}: non-repairable model and costs</h2></div>
         {error && <div className="card error">{error}</div>}
         <div className="rcm-form">
           <Field label="A planned replacement costs"><input type="number" inputMode="decimal" min="0" step="any" value={costs.planned_cost}
@@ -403,7 +412,7 @@ function ClassPanel({ name, onChanged }) {
             <option value="lognormal">Lognormal</option><option value="exponential">Exponential</option>
           </select>
           <button onClick={fit} disabled={busy === "fit" || c.failures < 2}>
-            {busy === "fit" ? "Fitting…" : model ? "Refit the life model" : "Fit a life model"}
+            {busy === "fit" ? "Fitting…" : model ? "Refit the non-repairable model" : "Fit a non-repairable model"}
           </button>
           {c.failures < 2 && <span className="lib-date">Needs at least 2 failures on record ({c.failures} so far).</span>}
         </div>
@@ -411,7 +420,7 @@ function ClassPanel({ name, onChanged }) {
           <p className="lib-date" style={{ marginTop: "0.75rem" }}>
             {model.distribution} fitted {fmtDate(model.fitted_on)} to {model.failures} failures and {model.suspensions} suspensions:{" "}
             {(model.params || []).map((p) => `${p.name} ${Number(p.value).toPrecision(4)}`).join(", ")} (days).{" "}
-            <Link to={`/modelling/m/${model.model_id}`}>Open the model</Link>
+            <Link to={`/models/m/${model.model_id}`}>Open the model</Link>
           </p>
         )}
         {made !== null && <p className="lib-date">{made ? `${made} change${made === 1 ? "" : "s"} proposed.` : "No changes to propose (no scheduled tasks here, or they already match)."}</p>}
@@ -594,7 +603,7 @@ function ForecastCard({ name }) {
                 <tbody>
                   {risk.map((r) => (
                     <tr key={r.position.id}>
-                      <td><Link to={`/maintenance/positions/${r.position.id}`}>{r.position.name}</Link></td>
+                      <td><Link to={`/asset-register/positions/${r.position.id}`}>{r.position.name}</Link></td>
                       <td>{r.item?.name || "—"}</td>
                       <td className="lib-date">{formatNumber(r.age)} {data.model.unit}{r.rate_basis === "counter" ? ` (+${formatNumber(r.rate_per_period)} a ${shown})` : ""}</td>
                       <td>{formatPercent(r.prob_next_period)}</td>
@@ -671,14 +680,18 @@ function ForecastCard({ name }) {
 
 // ---- parts and stock -------------------------------------------------------------------
 
-export function MaintenanceParts() {
+// `view`: "structure" is the same catalogue as structures, what each part is
+// made of (Product structure, out of the menu); "list" is Assets › Parts
+// and stock.
+export function MaintenanceParts({ view: initialView = "list" }) {
+  const structurePage = initialView === "structure";
   const [parts, setParts] = useState(null);
   const [locations, setLocations] = useState([]);
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState({ itemClassId: null, manufacturerId: null });
   const [kinds] = useKinds();
   const [error, setError] = useState(null);
-  const [view, setView] = useState("list");
+  const [view, setView] = useState(initialView);
   const filtered = !!(filter.itemClassId || filter.manufacturerId);
   const usesKinds = !!(kinds.classes?.length || kinds.makers?.length);
   const load = useCallback(() => {
@@ -690,17 +703,20 @@ export function MaintenanceParts() {
   }, [load]);
   return (
     <div className="app">
-      <PageHeader crumbs={crumbs} title="Parts" meta="The parts catalogue, what parts are made of, and what's in stock where."
+      <SectionHeader section="assets"
+                  title={structurePage ? "Product structure" : "Parts and stock"}
+                  purpose={structurePage
+                    ? "What each part is made of, from the parts catalogue, as a tree."
+                    : "The parts catalogue, what parts are made of, and what's in stock where."}
                   actions={<>
                     <button className="secondary" onClick={() => setModal("bom")}>Import a BOM</button>
                     <button className="secondary" onClick={() => setModal("levels")}>Indenture levels</button>
                   </>}
                   primary={<button onClick={() => setModal("new")}><PlusIcon /> New part</button>} />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
       {parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
       {parts?.length > 0 && (
-        <div className="tablebar" style={{ flexWrap: "wrap" }}>
+        <div className="tablebar section-tablebar">
           <span className="count">{`${parts.length} part${parts.length === 1 ? "" : "s"}`}</span>
           <SegmentedControl size="sm" label="Show" value={view} onChange={setView} style={{ flex: "none" }}
                             options={[{ value: "list", label: "List" }, { value: "structure", label: "Structure" }]} />
@@ -717,7 +733,7 @@ export function MaintenanceParts() {
             <tbody>
               {parts.map((pt) => (
                 <tr key={pt.id}>
-                  <td><Link to={`/maintenance/parts/${pt.id}`}>{pt.part_number}</Link>
+                  <td><Link to={`/asset-register/parts/${pt.id}`}>{pt.part_number}</Link>
                     {pt.superseded_by && <div className="lib-date">superseded by {pt.superseded_by.part_number}</div>}</td>
                   <td>{pt.name}{pt.level && <> <span className="maint-badge">{pt.level}</span></>}
                     <div className="lib-date">{[pt.manufacturer_entry?.name || pt.manufacturer,
@@ -728,7 +744,7 @@ export function MaintenanceParts() {
                   <td className="lib-date">{pt.stock.map((st) => `${st.location.name}: ${st.quantity}${st.reorder_point != null ? ` (reorder at ${st.reorder_point})` : ""}`).join("; ") || "—"}</td>
                   <td className="lib-date">{(pt.used_at || []).length === 0 ? "—" : pt.used_at.map((u, i) => (
                     <span key={u.listing_id}>{i > 0 && "; "}
-                      <Link to={`/maintenance/positions/${u.position.id}`}>{u.position.name}</Link>
+                      <Link to={`/asset-register/positions/${u.position.id}`}>{u.position.name}</Link>
                       {` (${roleLabel(u.role).toLowerCase()}${u.critical ? ", critical" : ""})`}</span>
                   ))}</td>
                   <td>{pt.used_last_year}</td>
@@ -785,7 +801,7 @@ function SparesCoverCard({ parts }) {
   const bare = cover.without_parts_list || [];
   const line = (v) => (
     <li key={v.id}>
-      <Link to={`/maintenance/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
+      <Link to={`/asset-register/positions/${v.position.id}`}>{v.position.name}</Link>: {v.part.part_number} {v.part.name}
       <span className="lib-date"> · {v.usable_on_hand} usable, keep {v.min_on_hand}
         {v.use_instead ? ` · use ${v.use_instead.part_number} instead` : ""}</span>
     </li>
@@ -818,7 +834,7 @@ function SparesCoverCard({ parts }) {
         <>
           <p><strong>No parts list</strong> ({bare.length})</p>
           <ul className="maint-list">
-            {bare.map((b) => <li key={b.id}><Link to={`/maintenance/positions/${b.id}`}>{b.name}</Link>
+            {bare.map((b) => <li key={b.id}><Link to={`/asset-register/positions/${b.id}`}>{b.name}</Link>
               {b.path.length > 0 && <span className="lib-date"> · {b.path.join(" › ")}</span>}</li>)}
           </ul>
         </>

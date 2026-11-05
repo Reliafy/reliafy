@@ -41,8 +41,8 @@ def test_mcp_logs_each_outcome_with_plan_client_and_duration(env, monkeypatch):
     _err(_call(env.oauth[PRO], "get", {"kind": "model", "id": "nope"}))  # error
     _ok(_call(env.oauth[FREE], "list", {"kind": "rbds"}))  # ok (the allowance)
     _err(_call(env.oauth[FREE], "list", {"kind": "rbds"}))  # limit
-    _err(_call(env.oauth[FREE], "life_data_analysis", {"action": "fit", **FIT}))  # pro_only (Free)
-    _err(_call(env.oauth[AGENT], "life_data_analysis", {"action": "fit", **FIT}))  # pro_only (grandfathered Agent)
+    _err(_call(env.oauth[FREE], "analyse", {"action": "fit", **FIT}))  # pro_only (Free)
+    _err(_call(env.oauth[AGENT], "analyse", {"action": "fit", **FIT}))  # pro_only (grandfathered Agent)
     assert _post_mcp(env.api[FREE]).status_code == 403  # locked: a non-Pro API token
 
     got = {(e["uid"], e["feature"], e["outcome"], e["plan"]) for e in _events(env.db)
@@ -52,8 +52,8 @@ def test_mcp_logs_each_outcome_with_plan_client_and_duration(env, monkeypatch):
         (PRO, "get.model", "error", "pro"),
         (FREE, "list.rbds", "ok", "free"),
         (FREE, "list.rbds", "limit", "free"),
-        (FREE, "life_data_analysis.fit", "pro_only", "free"),
-        (AGENT, "life_data_analysis.fit", "pro_only", "agent"),
+        (FREE, "analyse.fit", "pro_only", "free"),
+        (AGENT, "analyse.fit", "pro_only", "agent"),
         (FREE, "connect", "locked", "free"),
     }
     calls = _events(env.db, feature="list.models")
@@ -73,31 +73,31 @@ def test_mcp_logs_connections_and_upgrade_link(env, monkeypatch):
 
     # upgrade_link is logged like any tool (here Stripe isn't configured: an error).
     monkeypatch.setattr(billing_router, "_stripe", lambda: None)
-    _call(env.oauth[FREE], "upgrade_link")
-    assert _events(env.db, uid=FREE, feature="upgrade_link")
+    _call(env.oauth[FREE], "get", {"kind": "upgrade_link"})
+    assert _events(env.db, uid=FREE, feature="get.upgrade_link")
 
 
 def test_simulation_refusal_is_logged_pro_only(env):
     from backend.tests.test_mcp import REPAIRABLE_STAGES
 
-    rid = _ok(_call(env.oauth[FREE], "rbd", {"action": "create",
+    rid = _ok(_call(env.oauth[FREE], "change", {"action": "rbd_create",
         "name": "Pumps", "repairable": True, "stages": REPAIRABLE_STAGES}))["id"]
     # The exact figures are an answer (#154)...
-    assert _ok(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))["available"] is True
-    assert _events(env.db, feature="rbd_analysis.analyze")[0]["outcome"] == "ok"
+    assert _ok(_call(env.oauth[FREE], "analyse", {"action": "rbd", "rbd_id": rid}))["available"] is True
+    assert _events(env.db, feature="analyse.rbd")[0]["outcome"] == "ok"
     # ...a simulation-only diagram (one repair crew for wear-out lives) is the refusal.
     graph = env.db.rbds.find_one({"_id": rid})["graph"]
     graph["repair_crews"] = {"crews": 1}
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
-    assert _ok(_call(env.oauth[FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))["available"] is False
-    assert {e["outcome"] for e in _events(env.db, feature="rbd_analysis.analyze")} == {"ok", "pro_only"}
+    assert _ok(_call(env.oauth[FREE], "analyse", {"action": "rbd", "rbd_id": rid}))["available"] is False
+    assert {e["outcome"] for e in _events(env.db, feature="analyse.rbd")} == {"ok", "pro_only"}
 
 
 def test_daily_totals_carry_no_account_ids(env):
     from backend.services import usage
 
     _ok(_call(env.oauth[PRO], "list", {"kind": "models"}))
-    _err(_call(env.oauth[FREE], "life_data_analysis", {"action": "fit", **FIT}))
+    _err(_call(env.oauth[FREE], "analyse", {"action": "fit", **FIT}))
     tomorrow = datetime.now(timezone.utc) + timedelta(days=1, hours=1)
     assert usage.rollup(env.db, now=tomorrow)["days"]
     docs = list(env.db.usage_daily.find({}))
@@ -147,9 +147,6 @@ def test_init_db_creates_the_usage_indexes(monkeypatch):
     ("POST", "/api/strategy/optimal-replacement", "strategy_replacement"),
     ("POST", "/api/strategy/failure-finding", "strategy_failure_finding"),
     ("POST", "/api/recurrent/models/m1/overhaul", "strategy_overhaul"),
-    ("POST", "/api/rcm/studies", "rcm_create"),
-    ("PUT", "/api/rcm/studies/s1/tree", "rcm_edit"),
-    ("PATCH", "/api/rcm/studies/s1", "rcm_update"),
     ("POST", "/api/fleet/fleets", "fleet_create"),
     ("PUT", "/api/fleet/fleets/f1/items", "fleet_items"),
     ("DELETE", "/api/fleet/tracked/t1", "fleet_delete"),

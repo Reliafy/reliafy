@@ -29,8 +29,8 @@ const fmtP = (p) => (p == null ? "—" : p < 0.001 ? "< 0.001" : p < 0.01 ? p.to
 
 // Where to fit a model to rows that are unit histories, not one row per unit.
 const HISTORY_FIT = {
-  recurrent: { to: "/modelling/recurrent/new", label: "fit a recurrent model", what: "repair history" },
-  degradation: { to: "/modelling/degradation", label: "fit a degradation model", what: "measurements" },
+  recurrent: { to: "/models/recurrent/new", label: "fit a recurrent model", what: "repair history" },
+  degradation: { to: "/models/degradation", label: "fit a degradation model", what: "measurements" },
 };
 
 export default function CompareGroups({ dataset, splitBy, onClose }) {
@@ -160,7 +160,7 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
           </label>
           <label className="calc-t">
             <span>Censor column (optional)</span>
-            <Select value={censorCol} onChange={pickCensor} options={optional("— none: all failed —")} />
+            <Select value={censorCol} onChange={pickCensor} options={optional(causeCol ? "— none: blank mode = running —" : "— none: all failed —")} />
           </label>
           {censorCol && (
             <label className="map-invert cg-invert">

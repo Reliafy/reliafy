@@ -11,7 +11,7 @@ A job record::
     {_id, uid, kind: "availability", rbd_id, cache_key, quick, store,
      request: {graph, options},       # self-contained (compute_core)
      context: {exact, current_state}, # what the finished payload is shown with
-     status: queued | running | done | failed,
+     status: queued | running | done | failed | cancelled,
      created_at, started_at, finished_at, expires_at,
      result | error, timings, computed_at, free_sim_day}
 
@@ -22,7 +22,12 @@ state when the run starts from one (such a run is never stored). ``context``
 holds the free part of the answer computed on the web (the exact figures,
 #154), so a finished job's view is the whole availability payload, as an
 in-process run returns it (:func:`availability_out`). ``expires_at``
-drives a TTL index: finished jobs are kept ``RBD_JOB_TTL_DAYS``. A job still
+drives a TTL index: finished jobs are kept ``RBD_JOB_TTL_DAYS``. The owner
+can cancel a job still queued or running (:func:`cancel`): a task that hasn't
+started yet stops when its "running" report is refused (the compute service
+then skips the calculation), and a run already computing finishes on the
+compute service but its result is discarded (:func:`finish` only moves an
+active job). A job still
 queued or running after ``RBD_JOB_STALE_S`` was dropped by the queue (its
 retries were spent) and is reported failed. The names follow #111 (``rbd_jobs``
 / ``get kind job``), of which this is the first piece.
@@ -56,10 +61,22 @@ KIND_ALT_BOUNDS = "alt_bounds"
 # What to improve's other measures (#225): a heavy uncertainty run (Sobol
 # indices, figures over time over draws; see rbd_measures). Never stored.
 KIND_MEASURES = "measures"
+# A life or accelerated test plan checked by simulation (Test planning;
+# backend.routers.test_planning submits it). Never stored.
+KIND_TEST_PRECISION = "test_precision"
+# Replacement over a shutdown calendar, sampled (Strategy › Replacement).
+# No diagram: ``rbd_id`` is None. Never stored.
+KIND_CALENDAR = "calendar_replacement"
+# A condition-based (joint) model's fit: the model is saved when the job
+# finishes (``pending``), and the job's view gives its id.
+KIND_JOINT_FIT = "joint_fit"
 # Kinds whose finished result is shown as it came back.
-_PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS, KIND_MEASURES)
+_PLAIN_RESULT_KINDS = (KIND_SENSITIVITY, KIND_INTERVALS, KIND_ALT_BOUNDS, KIND_MEASURES, KIND_TEST_PRECISION,
+                       KIND_CALENDAR)
 ACTIVE = ("queued", "running")
-FINISHED = ("done", "failed")
+CANCELLED = "cancelled"
+FINISHED = ("done", "failed", CANCELLED)
+CANCELLED_NOTE = "Cancelled."
 
 QUEUE_UNAVAILABLE = "Couldn't start the calculation — try again in a moment."
 STALE_ERROR = "The calculation didn't finish. Please run it again."
@@ -216,9 +233,71 @@ def finish(db, job_id: str, status: str, *, result: Optional[dict] = None, error
             from backend.services import rbd_runs
 
             rbd_runs.on_finished(db, job, update["result"], timings, engines)
+        if job.get("kind") == KIND_JOINT_FIT:
+            from backend.services import joint as joint_service
+
+            joint_service.on_job_done(db, job, update["result"])
     elif job.get("quick"):
         free_sims.refund(db, job.get("uid"), job.get("free_sim_day"))
     return True
+
+
+def cancel(db, job_id: str, uid: str) -> Optional[dict]:
+    """Cancel the caller's job (owner only: None when it isn't theirs or
+    doesn't exist). A job still queued or running is marked cancelled at once
+    and never shows a result: a later callback can't move it (see
+    :func:`finish`). A task not yet started stops when its "running" report
+    is refused (see the callback route), and a free quick run is given
+    back. A finished job is returned
+    as it is. Returns the job as it now stands."""
+    job = db.rbd_jobs.find_one({"_id": job_id})
+    if job is None or job.get("uid") != uid:
+        return None
+    if job.get("status") not in ACTIVE:
+        return job
+    now = _now()
+    res = db.rbd_jobs.update_one(
+        {"_id": job_id, "status": {"$in": list(ACTIVE)}},
+        {"$set": {"status": CANCELLED, "finished_at": now, "cancelled_at": now, "error": CANCELLED_NOTE,
+                  "expires_at": now + timedelta(days=int(config.RBD_JOB_TTL_DAYS))}},
+    )
+    if getattr(res, "modified_count", 0):
+        if job.get("quick"):
+            free_sims.refund(db, job.get("uid"), job.get("free_sim_day"))
+    return db.rbd_jobs.find_one({"_id": job_id})
+
+
+def is_cancelled(db, job_id: str) -> bool:
+    job = db.rbd_jobs.find_one({"_id": job_id}, {"status": 1})
+    return bool(job) and job.get("status") == CANCELLED
+
+
+# ---- Runs in the web app's own process ------------------------------------------------
+# A run with no queue (self-hosted, dev, or a diagram that needs saved models
+# re-fitted) answers in the request itself, so there is no job to cancel while
+# it computes. The app sends a ``run_token`` with such a request; cancelling
+# that token (:func:`cancel_token`) makes the finished run record itself
+# cancelled, keep nothing on the diagram or as a saved model, and the app
+# ignores the answer.
+
+_TOKEN_MAX = 64  # the app's tokens are 32 hex characters
+
+
+def cancel_token(db, uid: str, token: str) -> None:
+    if not token or len(token) > _TOKEN_MAX:
+        return
+    now = _now()
+    db.rbd_job_cancels.update_one(
+        {"_id": f"{uid}:{token}"},
+        {"$set": {"uid": uid, "token": token, "created_at": now, "expires_at": now + timedelta(days=1)}},
+        upsert=True,
+    )
+
+
+def token_cancelled(db, uid: str, token: Optional[str]) -> bool:
+    if not token or not isinstance(token, str) or len(token) > _TOKEN_MAX:
+        return False
+    return db.rbd_job_cancels.find_one({"_id": f"{uid}:{token}"}) is not None
 
 
 def apply_callback(db, payload: dict) -> bool:
@@ -315,12 +394,18 @@ def view(db, job: dict, entitled: bool) -> dict:
 
         out.update(rbd_runs.progress(db, job))
     if job.get("status") == "done":
-        if job.get("kind") in _PLAIN_RESULT_KINDS:
+        if job.get("kind") == KIND_JOINT_FIT:
+            from backend.services import joint as joint_service
+
+            out["result"] = joint_service.job_result(job)
+        elif job.get("kind") in _PLAIN_RESULT_KINDS:
             out["result"] = generic_engine_fields({**(job.get("result") or {}), "job_id": job["_id"]})
         else:
             out["result"] = job_payload(job, entitled)
     elif job.get("status") == "failed":
         out["error"] = job.get("error") or FAILED_ERROR
+    elif job.get("status") == CANCELLED:
+        out["error"] = CANCELLED_NOTE
     return out
 
 
@@ -403,15 +488,22 @@ def run_availability(
             free_sims.refund(db, uid, free_day)
             raise
         computed_at = None
-        if store and rbd_id:
+        cancelled = token_cancelled(db, uid, (run_info or {}).get("run_token"))
+        if cancelled:
+            # Cancelled while it computed: nothing kept, the free run given back.
+            free_sims.refund(db, uid, free_day)
+        elif store and rbd_id:
             computed_at = rbds_service.save_availability_result(db, rbd_id, cache_key, result, uid,
                                                                 resolve_owners)
-        # Recorded as a finished run, for the history (#112).
+        # Recorded as a finished (or cancelled) run, for the history (#112).
         rbd_runs.record_in_process(
             db, uid=uid, graph=graph, options={"t_simulation": t_max, **options}, cache_key=cache_key,
             rbd_id=rbd_id, quick=quick, store=store, result=result, runtime_s=seconds,
-            computed_at=computed_at, context=context, owners=resolve_owners, info=run_info)
+            computed_at=computed_at, context=context, owners=resolve_owners, info=run_info,
+            cancelled=cancelled)
         payload = _result_payload(result, computed_at, entitled)
+        if cancelled:
+            payload["cancelled"] = True
         if quick:
             payload["free_sims"] = free_sims.summary(db, uid)
         return 200, payload
@@ -582,4 +674,38 @@ def _alt_bounds_accepted(db, job: dict) -> dict:
         "status": job.get("status"),
         "job": {"job_id": job["_id"], "status": job["status"], "queue_position": queue_position(db, job),
                 "kind": KIND_ALT_BOUNDS},
+    }
+
+
+# ---- Replacement over a shutdown calendar, sampled ------------------------------------
+
+def run_calendar(db, *, uid: str, request: dict, cache_key: str) -> tuple[int, dict]:
+    """Run (or queue) a sampled calendar-replacement request (``request``
+    from :func:`compute_core.calendar_request`). Returns ``(status,
+    payload)``: 200 with the result (in-process when no queue is configured,
+    or a finished identical job), 202 with a job to poll, 503 when the queue
+    can't take it."""
+    if not compute_queue.configured():
+        return 200, compute_core.run(KIND_CALENDAR, request)
+    existing = find_reusable(db, uid, cache_key, False, include_done=True)
+    if existing is not None:
+        if existing["status"] == "done":
+            return 200, {**(existing.get("result") or {}), "job_id": existing["_id"]}
+        return 202, _calendar_accepted(db, existing)
+    job = create(db, uid=uid, kind=KIND_CALENDAR, request=request, cache_key=cache_key, rbd_id=None,
+                 quick=False, store=False)
+    try:
+        compute_queue.enqueue(job["_id"], KIND_CALENDAR, request)
+    except compute_queue.QueueError as exc:
+        finish(db, job["_id"], "failed", error=str(exc) or QUEUE_UNAVAILABLE)
+        return 503, {"detail": QUEUE_UNAVAILABLE, "code": "compute_unavailable"}
+    return 202, _calendar_accepted(db, job)
+
+
+def _calendar_accepted(db, job: dict) -> dict:
+    return {
+        "kind": KIND_CALENDAR,
+        "status": job.get("status"),
+        "job": {"job_id": job["_id"], "status": job["status"], "queue_position": queue_position(db, job),
+                "kind": KIND_CALENDAR},
     }

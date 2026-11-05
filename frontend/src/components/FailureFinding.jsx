@@ -3,8 +3,14 @@ import { useLocation } from "react-router-dom";
 import ModelPicker from "./ModelPicker.jsx";
 import FfiResult from "./FfiResult.jsx";
 import SaveAnalysisButton from "./SaveAnalysisButton.jsx";
+import { ComputeReason } from "./StrategyTool.jsx";
+import { failureFindingMissing } from "../strategyTools.js";
 import { failureFinding } from "../api.js";
 import { analysisName, modelFromSearch } from "../modelNext.js";
+import PercentField from "./PercentField.jsx";
+import StrategyUnit from "./StrategyUnit.jsx";
+import { readPercents } from "../percentForms.js";
+import { percentApiMessage } from "../percent.js";
 
 // Failure-finding interval tool: how often to check a HIDDEN function (e.g. a
 // protective device) so its availability stays above the target.
@@ -26,8 +32,13 @@ export default function FailureFinding() {
   };
 
   const isRegression = model?.kind === "regression";
-  const canRun =
-    model && model.distribution_id && !isRegression && availability !== "";
+  // Typed as a percentage (99), sent as a fraction (0.99); 0.99 is asked
+  // about ("Did you mean 99%?"), never taken as 0.99%.
+  const pcts = readPercents("failureFinding", { availability });
+  const availCheck = pcts.checks.availability;
+  // Why Compute is greyed out, said beside it (null when ready).
+  const missing = failureFindingMissing({ model, availability, availCheck });
+  const canRun = !missing && !isRegression && pcts.ready;
 
   const run = async () => {
     setLoading(true);
@@ -36,8 +47,8 @@ export default function FailureFinding() {
       const body = {
         distribution_id: model.distribution_id,
         params: model.params,
-        target_availability: Number(availability) / 100,
-        unit: unit || model.unit || null,
+        target_availability: pcts.fractions.availability,
+        unit: model.unit || unit.trim() || null,
         extras: model.extras || null,
       };
       const res = await failureFinding(
@@ -47,7 +58,7 @@ export default function FailureFinding() {
       setInputs(body);
       setRanWith(model);
     } catch (err) {
-      setError(err.message);
+      setError(percentApiMessage(err.message));
       setResult(null);
       setInputs(null);
     } finally {
@@ -58,24 +69,19 @@ export default function FailureFinding() {
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker label="Life model of the hidden function" value={model} onChange={pickModel} preferSaved wanted={wanted} />
+        <ModelPicker label="Non-repairable model of the hidden function" value={model} onChange={pickModel} preferSaved wanted={wanted} />
         {isRegression && (
           <p className="hint">Pick a plain distribution — proportional-hazards models aren't supported here.</p>
         )}
         <div className="strategy-costs">
-          <label className="calc-t">
-            <span>Target availability (%)</span>
-            <input type="number" inputMode="decimal" min="1" max="99.999" step="any" value={availability}
-              onChange={(e) => setAvailability(e.target.value)} />
-          </label>
-          <label className="calc-t">
-            <span>Unit (optional)</span>
-            <input type="text" placeholder="e.g. Hours" value={unit}
-              onChange={(e) => setUnit(e.target.value)} />
-          </label>
-          <button onClick={run} disabled={!canRun || loading}>
+          <PercentField label="Target availability" value={availability} onChange={setAvailability}
+            check={availCheck} />
+          <StrategyUnit model={model} unit={unit} onUnit={setUnit} />
+          <button onClick={run} disabled={!canRun || loading}
+                  aria-describedby={missing ? "ffi-why" : undefined}>
             {loading ? "Computing…" : "Compute"}
           </button>
+          <ComputeReason id="ffi-why" reason={missing} />
         </div>
       </div>
 

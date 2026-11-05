@@ -4,7 +4,7 @@ A Python port of ``frontend/src/rbdGraph.js`` (``normalizeRbdGraph`` /
 ``compactGraph``) so programmatic callers — the MCP server — speak the same
 compact node format as the in-app assistant and get diagrams that open on the
 builder canvas exactly as if the assistant had drawn them: input/output
-handles, fleshed-out life models and a tidy left-to-right layered layout.
+handles, fleshed-out non-repairable models and a tidy left-to-right layered layout.
 
 Compact node (what an assistant writes and reads)::
 
@@ -33,7 +33,7 @@ component node with ``"repeat_of": "<id of the component it repeats>"`` and
 no model of its own (see :mod:`backend.services.rbd_repeats`).
 
 A node may instead carry the persisted ``data: {...}`` object; both are
-accepted. ``model.saved_model_id`` references a saved plain life model; it is
+accepted. ``model.saved_model_id`` references a saved plain non-repairable model; it is
 resolved (owner-scoped) into the same shape the builder's model picker stores.
 A repairable diagram may carry ``"costs": {"downtime_rate": 500, "horizon":
 87600}`` (see :mod:`backend.services.rbd_maintenance` for the cost and
@@ -56,7 +56,7 @@ NODE_TYPES = ("input", "output", "component", "series", "parallel", "knode", "st
 
 _ARROW = {"type": "arrowclosed", "width": 18, "height": 18}
 #: Repairable block fields beyond the models (#99/#100), carried as given.
-MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection", "rcm_source",
+MAINTENANCE_KEYS = ("instant_repair", "costs", "preventive", "inspection",
                     "maintenance_group", "crew_priority", "repair_one_at_a_time", "repair_quality")
 #: Diagram-level settings of a repairable diagram (#99, #156, #157), carried as given.
 DIAGRAM_KEYS = ("costs", "repair_crews", "maintenance_groups", "safety_function", "target_sil")
@@ -361,12 +361,62 @@ def _positions(nodes: list) -> Optional[dict]:
     return out
 
 
-def _saved_model(model_id: str, where: str, resolve_saved_model) -> dict:
+def _joint_unit(raw, saved, where: str) -> dict:
+    """A condition-based block's unit: ``{"id"}`` (a running unit of the
+    saved joint model) or ``{"age", "markers": [[age, value], ...],
+    "covariates": {name: value}}`` (``readings`` is taken for ``markers``)."""
+    if not isinstance(raw, dict) or not raw:
+        raise GraphError(
+            f"{where}: model “{saved.name}” is a condition-based (joint) model: give joint_unit, either "
+            '{"id": "<running unit id>"} or {"age": <age now since new>, "readings": [[age, value], ...], '
+            '"covariates": {...}}.')
+    if raw.get("id") not in (None, ""):
+        units = (getattr(saved, "serialized", None) or {}).get("units") or {}
+        uid = str(raw["id"])
+        if uid not in units:
+            shown = ", ".join(list(units)[:8]) or "none"
+            raise GraphError(f"{where}: {uid!r} isn't a running unit of “{saved.name}” (running units: {shown}).")
+        return {"id": uid}
+    try:
+        age = float(raw.get("age"))
+    except (TypeError, ValueError):
+        raise GraphError(f"{where}: joint_unit needs the unit's age now (since new), or a running unit's id.") from None
+    if not math.isfinite(age) or age < 0:
+        raise GraphError(f"{where}: joint_unit age must be 0 or more.")
+    readings = raw.get("markers", raw.get("readings")) or []
+    if isinstance(readings, dict):
+        readings = [[a, v] for a, v in readings.items()]
+    try:
+        markers = [[float(a), float(v)] for a, v in readings]
+    except (TypeError, ValueError):
+        raise GraphError(f"{where}: joint_unit readings are [age, value] pairs of numbers.") from None
+    covs = raw.get("covariates") or {}
+    if not isinstance(covs, dict):
+        raise GraphError(f"{where}: joint_unit covariates are an object, {{name: value}}.")
+    try:
+        covariates = {str(k): float(v) for k, v in covs.items()}
+    except (TypeError, ValueError):
+        raise GraphError(f"{where}: joint_unit covariates must be numbers.") from None
+    return {"age": age, "markers": markers, "covariates": covariates}
+
+
+def _saved_model(model_id: str, where: str, resolve_saved_model, joint_unit=None) -> dict:
     """The builder model-picker shape for a saved model reference."""
     saved = resolve_saved_model(model_id) if resolve_saved_model else None
     if saved is None:
         raise GraphError(f"{where}: saved model '{model_id}' not found.")
     r = saved.results or {}
+    if saved.kind == "joint":
+        # A condition-based block: one unit of the joint model, given its readings.
+        return {
+            "source": "joint",
+            "kind": "joint",
+            "modelId": saved.id,
+            "name": saved.name,
+            "distribution": "Condition and life",
+            "unit": r.get("unit") or "",
+            "joint_unit": _joint_unit(joint_unit, saved, where),
+        }
     if saved.kind == "nonparametric":
         # RePyability 0.12 refuses a non-parametric node in a diagram.
         raise GraphError(
@@ -401,7 +451,11 @@ def _model(model, where: str, resolve_saved_model) -> dict:
         raise GraphError(f"{where}: model must be an object.")
     saved_id = model.get("saved_model_id") or model.get("modelId") or model.get("model_id")
     if saved_id:
-        out = _saved_model(str(saved_id), where, resolve_saved_model)
+        out = _saved_model(str(saved_id), where, resolve_saved_model, model.get("joint_unit"))
+        if out.get("kind") == "joint":
+            if model.get("distribution_id") or model.get("params"):
+                raise GraphError(f"{where}: a condition-based block takes saved_model_id and joint_unit only.")
+            return out
         if model.get("source") != "saved" and _inline_disagrees(model, out):
             # The compact form get kind rbd returns repeats a saved model's own
             # distribution + params, so those round-trip; different ones are
@@ -446,7 +500,7 @@ def _inline_disagrees(model: dict, saved: dict) -> bool:
 
 
 def normalize_model(model, where: str, resolve_saved_model=None) -> dict:
-    """A compact life model (inline, or a ``saved_model_id``) in the persisted shape."""
+    """A compact non-repairable model (inline, or a ``saved_model_id``) in the persisted shape."""
     return _model(model, where, resolve_saved_model)
 
 
@@ -494,7 +548,7 @@ def normalize_node(raw, resolve_saved_model: Optional[Callable[[str], object]] =
             raise GraphError(f"{where}: {exc}") from None
         if data["covariate_schedules"] is None:
             del data["covariate_schedules"]
-    for key in ("costs", "preventive", "inspection", "rcm_source", "repair_quality"):
+    for key in ("costs", "preventive", "inspection", "repair_quality"):
         if data.get(key) is not None and not isinstance(data[key], dict):
             raise GraphError(f"{where}: {key} must be an object.")
     if isinstance(data.get("repair_quality"), dict) and data["repair_quality"].get("model", "perfect") == "perfect" \
@@ -625,6 +679,8 @@ def compact_graph(graph: dict) -> dict:
                     cm["base_distribution_id"] = m["base_distribution_id"]  # a mixture's modes (#318)
                 if m.get("modelId"):
                     cm["saved_model_id"] = m["modelId"]
+                if m.get("kind") == "joint":  # a condition-based block: its unit
+                    cm = {"saved_model_id": m.get("modelId"), "joint_unit": m.get("joint_unit")}
                 if m.get("placeholder"):
                     cm["placeholder"] = True
                 if m.get("extras") and not m.get("modelId"):
@@ -656,7 +712,7 @@ def compact_graph(graph: dict) -> dict:
 
 
 def placeholder_labels(graph: dict) -> list[str]:
-    """Labels of blocks whose life model is a guessed placeholder."""
+    """Labels of blocks whose non-repairable model is a guessed placeholder."""
     return [
         (n.get("data") or {}).get("label") or n.get("id")
         for n in graph.get("nodes") or []

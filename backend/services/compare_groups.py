@@ -38,11 +38,15 @@ _WEIGHTINGS = (
     ("gehan", "Gehan–Wilcoxon"),
     ("tarone-ware", "Tarone–Ware"),
 )
-_UNSPECIFIED = "(no mode given)"
 
 
 class CompareGroupsError(ValueError):
     """The comparison can't be run with these inputs (a message for the user)."""
+
+
+class FailureModeError(ValueError):
+    """A failure-mode column that contradicts the status column (a message
+    for the user; each caller re-raises it as its own error)."""
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +69,26 @@ def _label(value) -> Optional[str]:
         return f"{float(value):g}"
     text = str(value).strip()
     return text or None
+
+
+def statuses_from_modes(cause: list, c: Optional[np.ndarray], mode_name: str) -> tuple[np.ndarray, list]:
+    """Each row's status and failure mode, read the one way every analysis
+    by failure mode reads them (the competing-risks fit, compare groups and
+    its Gray's test): with no status column (``c`` None), a blank mode is a
+    unit still running (1) and a named one a failure (0); with one, a unit
+    still running has no mode, whatever the column says, and a failure with
+    no mode is an error. ``cause`` holds :func:`_label` values (None for a
+    blank). Returns ``(c, cause)``; raises FailureModeError, naming the
+    column as ``mode_name``."""
+    if c is None:
+        return np.array([1 if v is None else 0 for v in cause], dtype=int), list(cause)
+    c = np.asarray(c).astype(int)
+    unnamed = int(sum(1 for i in range(len(c)) if c[i] == 0 and cause[i] is None))
+    if unnamed:
+        raise FailureModeError(
+            f"{unnamed:,} row{'s' if unnamed != 1 else ''} failed with no failure mode in {mode_name}. Fill in "
+            "each failure's mode, or mark those units still running.")
+    return c, [None if c[i] == 1 else cause[i] for i in range(len(c))]
 
 
 def _natural_order(labels) -> list[str]:
@@ -153,9 +177,19 @@ def prepare(
     x, c, n, labels = x[keep], c[keep].astype(int), n[keep], labels[keep]
     if (x < 0).any():
         raise CompareGroupsError("Times must not be negative.")
+    if cause is not None:
+        # The failure-mode column sets the status as the competing-risks fit
+        # reads it: with no status column a blank mode is a unit still
+        # running, not a failure.
+        try:
+            c, modes = statuses_from_modes(list(cause[keep]), c if censor_column else None,
+                                           names.get(cause_column) or f"“{cause_column}”")
+        except FailureModeError as exc:
+            raise CompareGroupsError(str(exc)) from exc
+        cause = np.array(modes, dtype=object)
     out = {"x": x, "c": c, "n": n, "group": labels, "dropped": dropped}
     if cause is not None:
-        out["cause"] = cause[keep]
+        out["cause"] = cause
     return out
 
 
@@ -354,7 +388,8 @@ def _gray(x, c, n, lab, cause, order) -> dict:
     """Gray's test per failure mode: does each group's chance of failing BY
     THAT MODE differ, with the other modes competing?"""
     failed = c == 0
-    e = np.array([(cause[i] or _UNSPECIFIED) if failed[i] else None for i in range(len(x))], dtype=object)
+    # prepare() gave every failure a mode and every unit still running none.
+    e = np.array([cause[i] if failed[i] else None for i in range(len(x))], dtype=object)
     modes = pd.Series(n[failed], index=e[failed]).groupby(level=0).sum().sort_values(ascending=False)
     if len(modes) < 2:
         return {"available": False,

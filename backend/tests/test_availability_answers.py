@@ -1,4 +1,4 @@
-"""The repairable rbd_analysis analyze answer an agent reads (#184, #185, #186).
+"""The repairable analyse rbd answer an agent reads (#184, #185, #186).
 
 The CW pump train of the agent test drive: an MCC, a strainer with block PM,
 a 1+1 cold standby pair on a Weibull life and a check valve, with one repair
@@ -53,14 +53,14 @@ def _sif(beta=0.05):
 
 
 def _saved(env, graph):
-    rid = _ok(_call(env.token[A], "rbd", {"action": "create", "name": "Diagram", "repairable": True,
+    rid = _ok(_call(env.token[A], "change", {"action": "rbd_create", "name": "Diagram", "repairable": True,
                                                  "stages": REPAIRABLE_STAGES}))["id"]
     env.db.rbds.update_one({"_id": rid}, {"$set": {"graph": graph}})
     return rid
 
 
 def _analyze(env, rid, **kw):
-    return _ok(_call(env.token[A], "rbd_analysis", {"action": "analyze", "rbd_id": rid, **kw}))
+    return _ok(_call(env.token[A], "analyse", {"action": "rbd", "rbd_id": rid, **kw}))
 
 
 # ---- #184: simulate=false on a simulation-only diagram says so --------------------------
@@ -77,10 +77,9 @@ def test_simulation_only_diagram_without_the_simulation_is_not_available(env):
 def test_analyze_rbd_description_documents_the_needs_simulation_answer(env):
     """The tool description tells an agent what the #184 answer looks like
     and what to do with it."""
-    from backend.tests.test_mcp import _run
+    from backend.mcp_server import action_schema
 
-    tools = {t.name: t for t in _run(env.token[A], lambda c: c.list_tools()).tools}
-    text = " ".join(tools["rbd_analysis"].description.split())
+    text = action_schema("analyse.rbd")["does"]
     assert "simulate=false" in text and "available=false" in text
     assert "needs_simulation=true, code 'needs_simulation'" in text
     assert "call again with simulate=true" in text and "export_python" in text
@@ -115,11 +114,11 @@ def test_common_cause_in_every_figure_is_said(env):
     assert not any("common-cause" in w for w in out.get("warnings") or [])
 
 
-def test_timed_tests_keep_the_group_in_every_figure_but_the_frequency(env):
-    """A test that takes time outside the group: RePyability's failure
-    frequency refuses the groups, so only it (and the mean up and down
-    times) is left out, with the reason (#328); the availability, the
-    PFDavg and every other figure keep them."""
+def test_timed_tests_keep_the_group_in_every_figure(env):
+    """A test that takes time outside the group: since RePyability 0.14 the
+    failure frequency takes the groups too (0.13 refused them, and Reliafy
+    left it out with the reason, #328), so the availability, the PFDavg, the
+    frequency and every other figure keep them, with nothing to say."""
     graph = _sif()
     for n in graph["nodes"]:
         if n["id"] == "valve":
@@ -128,12 +127,11 @@ def test_timed_tests_keep_the_group_in_every_figure_but_the_frequency(env):
     safety, cc = out["safety"], out["common_cause"]
     assert safety["common_cause"]["included"] is True
     assert cc["groups"] == 1 and cc["included"] is True and cc["reason"] is None
-    assert "tests that take time" in cc["frequency_reason"] and "failure frequency" in cc["note"]
-    # Said once in the common-cause block, and as a warning.
-    assert "frequency_left_out" not in cc and out["warnings"].count(cc["note"]) == 1
-    # The long run takes the group, as the PFDavg does; the frequency isn't given.
+    assert "frequency_reason" not in cc and "frequency_left_out" not in cc and cc.get("note") is None
+    assert not any("common-cause" in w for w in out.get("warnings") or [])
+    # The long run takes the group, as the PFDavg does; so does the frequency.
     assert out["unavailability"] == pytest.approx(safety["pfd_avg"], rel=1e-9)
-    assert out.get("failure_frequency") is None
+    assert out["failure_frequency"] > 0
     head = out["availability"]
     assert head["common_cause_included"] is True and head["value"] == out["steady_state_availability"]
     assert head["without_common_cause"]["value"] == pytest.approx(cc["availability_without_common_cause"])

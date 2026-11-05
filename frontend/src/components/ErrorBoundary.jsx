@@ -2,7 +2,8 @@ import { Component } from "react";
 import { reportError } from "../telemetry.js";
 
 // Catches render crashes so a bug shows a recoverable card instead of a
-// white screen, and reports the error to the backend log.
+// white screen, and reports the error to the backend log. ``fallback``: the
+// card a boundary inside a page shows instead of the whole-app one.
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -19,6 +20,8 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (!this.state.error) return this.props.children;
+    // A local boundary (a panel inside a page) shows its own small card.
+    if (this.props.fallback) return this.props.fallback;
     return (
       <div className="app" style={{ padding: "2rem" }}>
         <div className="card error-boundary">
@@ -31,9 +34,9 @@ export default class ErrorBoundary extends Component {
             <button onClick={() => window.location.reload()}>Reload</button>
             <button
               className="secondary"
-              onClick={() => { window.location.href = "/modelling"; }}
+              onClick={() => { window.location.href = "/home"; }}
             >
-              Go to dashboard
+              Go to Home
             </button>
           </div>
         </div>

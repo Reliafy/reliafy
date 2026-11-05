@@ -74,7 +74,7 @@ development programme, and for projecting how many failures a fleet will see
 next year. **Watch out:** it assumes *minimal repair* — the system is returned
 to the condition it was in just before the failure, not to new. It also assumes
 one smooth trend, so a system that improved and then began wearing out will fit
-a misleading average of the two; look at the MCF plot before trusting `β`.
+a misleading average of the two; look at the mean cumulative function (Failures over time) before trusting `β`.
 
 ## duane
 

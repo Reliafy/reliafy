@@ -26,3 +26,13 @@ test("each change says what happened and why", () => {
   assert.equal(readingStatusText(trail[2], (d) => `<${d}>`), "correction of 3774 on <2026-10-13>: old reading");
   assert.equal(readingStatusText(trail[3]), "");
 });
+
+test("a reading's time shows to its precision (#264)", async () => {
+  const { readingWhen, readingClock } = await import("./maintenanceReadings.js");
+  const fmt = (d) => `[${d}]`;
+  assert.equal(readingWhen({ on: "2026-10-19", at: "2026-10-19T00:14:00Z", when: "2026-10-19 10:14", precision: "minute" }, fmt), "2026-10-19 10:14");
+  assert.equal(readingWhen({ on: "2026-10-19", at: "2026-10-19", when: "2026-10-19", precision: "day" }, fmt), "[2026-10-19]");
+  assert.equal(readingWhen({ on: "2026-10-01", at: "2026-10-01", when: "2026-10", precision: "month" }, fmt), "2026-10");
+  assert.equal(readingClock({ when: "2026-10-19 10:14" }), "10:14");
+  assert.equal(readingClock({ when: "2026-10-19" }), "");
+});

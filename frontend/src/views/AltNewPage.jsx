@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select.jsx";
+import { usableDatasets } from "../datasetFit.js";
 import RefLink from "../components/RefLink.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import HeaderNote, { detectHeader } from "../components/HeaderNote.jsx";
 import AltResultView from "../components/AltResultView.jsx";
+import ModelFrame, { AnswerLine } from "../components/model/ModelFrame.jsx";
+import { altAnswerParts } from "../altFrame.js";
 import {
   getAltOptions, getColumns, listDatasets, getDataset, fitAlt, saveAltModel, SPREADSHEET_ACCEPT,
 } from "../api.js";
@@ -57,7 +60,7 @@ export default function AltNewPage() {
   const lm = useMemo(() => lifeModels.find((m) => m.id === lifeModel), [lifeModels, lifeModel]);
   const nStress = lm?.n_stress || 1;
 
-  // Keep the stress-column slots in sync with the chosen life model's arity.
+  // Keep the stress-column slots in sync with the chosen non-repairable model's arity.
   useEffect(() => {
     setStress((cur) => {
       const next = cur.slice(0, nStress);
@@ -141,11 +144,11 @@ export default function AltNewPage() {
         datasetId: result.dataset_id, mapping, stress: stress.slice(0, nStress),
         distribution, lifeModel, unit,
       });
-      navigate(`/modelling/alt/${saved.id}`);
+      navigate(`/models/alt/${saved.id}`);
     } catch (err) { setError(err.message); setSaving(false); }
   };
 
-  const goBack = () => { setError(null); if (step === 1) return navigate("/modelling/alt"); setStep((s) => s - 1); };
+  const goBack = () => { setError(null); if (step === 1) return navigate("/models/alt"); setStep((s) => s - 1); };
 
   const stepper = (
     <div className="steps">
@@ -183,8 +186,8 @@ export default function AltNewPage() {
       <header>
         <div>
           <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/modelling")}>Modelling</button> /{" "}
-            <button className="crumb-link" onClick={() => navigate("/modelling/alt")}>Accelerated life</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/models")}>Model</button> /{" "}
+            <button className="crumb-link" onClick={() => navigate("/models/alt")}>Accelerated life</button> /{" "}
             <b>New model</b>
           </div>
           <h1>New accelerated-life model</h1>
@@ -212,10 +215,10 @@ export default function AltNewPage() {
                      onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
               {sheetModal}
             </div>
-            {datasets.length > 0 && (
+            {usableDatasets("accelerated", datasets).length > 0 && (
               <div className="recent">
                 <div className="recent-h">Or use a saved dataset</div>
-                {datasets.slice(0, 5).map((d) => (
+                {usableDatasets("accelerated", datasets).slice(0, 5).map((d) => (
                   <button key={d.id} type="button" className="recent-row" disabled={loading} onClick={() => pickDataset(d)}>
                     <span className="recent-ic">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -336,10 +339,13 @@ export default function AltNewPage() {
                      onChange={(e) => setName(e.target.value)} />
             </label>
             <p className="muted-line" style={{ margin: 0 }}>
-              Review the life-stress fit below. Go <b>Back</b> to change anything and re-fit, or save it — the
-              use-level calculator is available once saved.
+              Review the fit below. Go <b>Back</b> to change anything and fit again, or save it: the Calculator and
+              the Diagnostics tests run once it's saved.
             </p>
-            <AltResultView results={result.results} />
+            {/* The model page's frame, inside the wizard: the answer line over the tabs. */}
+            <ModelFrame embedded notice={<div className="mf-wizard-head"><AnswerLine parts={altAnswerParts(result.results)} /></div>}>
+              <AltResultView results={result.results} />
+            </ModelFrame>
           </div>
         )}
 

@@ -1,0 +1,5 @@
+Function,Performance standard,Functional failure,Failure mode,Effect,Consequence,Task type,Proposed task,Interval,Unit,Severity
+Move grain from the pit to the silo,At least 40 t/h,Moves no grain,Belt torn,Line stops,Operational,On-condition,Walk the belt and look for damage,1,weeks,7
+,,,Head pulley bearing seizes,"Line stops, belt may burn",Safety,Fixed interval,Replace head pulley bearings,12,months,9
+,,Moves less than 40 t/h,Belt slips on the drive drum,Slower filling,Non-operational,Redesign,Fit a lagged drive drum,,,3
+Stop the belt when someone pulls the lanyard,,Doesn't stop the belt,Pull-wire switch stuck,Belt keeps running,Hidden,Failure finding,Test the pull-wire switch,3,months,10

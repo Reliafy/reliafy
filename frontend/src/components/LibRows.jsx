@@ -1,6 +1,22 @@
 // Shared pieces of the saved-item lists (#312): the row actions, and the
 // "Samples" group that replaces a "(sample)" suffix plus a chip on every row.
 
+import { Link } from "react-router-dom";
+import { rowOpen } from "../rowLinks.js";
+
+export { rowOpen };
+
+// The name cell's link: a real <a href>, so a row can be opened in a new tab,
+// middle-clicked or its address copied, and reached with Tab. The click stops
+// here, so the row's own click handler doesn't navigate a second time.
+export function RowLink({ to, children, className = "", ...rest }) {
+  return (
+    <Link {...rest} className={`lib-link ${className}`.trim()} to={to} onClick={(e) => e.stopPropagation()}>
+      {children}
+    </Link>
+  );
+}
+
 export const OpenIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M7 17 17 7M9 7h8v8" />
@@ -24,13 +40,19 @@ export function itemName(item) {
   return item?.is_sample ? name.replace(/\s*\(sample\)\s*$/i, "") : name;
 }
 
-// Table rows: the user's own items first, then the shared samples under one
-// "Samples" heading row. ``cols`` is the table's column count.
+// Table rows: the user's own items first, under "Yours", then the shared
+// samples under "Samples" (always labelled: they aren't the user's). "Yours"
+// shows only above samples, where it tells the two apart. ``cols`` is the table's column count.
 export function SampleGroups({ rows, cols, render }) {
   const own = rows.filter((r) => !r.is_sample);
   const samples = rows.filter((r) => r.is_sample);
   return (
     <>
+      {own.length > 0 && samples.length > 0 && (
+        <tr className="lib-group">
+          <th colSpan={cols} scope="colgroup">Yours</th>
+        </tr>
+      )}
       {own.map(render)}
       {samples.length > 0 && (
         <tr className="lib-group">
@@ -46,7 +68,9 @@ export function SampleGroups({ rows, cols, render }) {
 // onOpen, e.g. where the row click already opens), any extras, then Delete
 // (which, for a shared sample or an item shared with you, hides it from your
 // view). Clicks don't reach the row's own open handler.
-export function RowActions({ item, onOpen, onDelete, children }) {
+// ``to`` makes Open a link (so it opens in a new tab too); ``onOpen`` alone keeps
+// a button for rows that don't have an address.
+export function RowActions({ item, onOpen, to, onDelete, children }) {
   const stop = (fn) => (e) => {
     e.stopPropagation();
     fn(e);
@@ -54,7 +78,11 @@ export function RowActions({ item, onOpen, onDelete, children }) {
   return (
     <td className="lib-actions">
       <div className="lib-acts">
-        {onOpen && (
+        {to ? (
+          <Link className="act act-open" to={to} title="Open" aria-label="Open" onClick={(e) => e.stopPropagation()}>
+            <OpenIcon />
+          </Link>
+        ) : onOpen && (
           <button className="act act-open" title="Open" aria-label="Open" onClick={stop(onOpen)}>
             <OpenIcon />
           </button>

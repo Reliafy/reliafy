@@ -8,14 +8,15 @@ import pytest
 
 from backend.maintenance.service import PROJECTORS, Invalid, Maintenance
 from backend.maintenance.store import GraphStore
+from backend.tests.rcm_tree import position_with_rcm
 
 
 def _ago(days: int) -> str:
     return (date.today() - timedelta(days=days)).isoformat()
 
 
-class _Study:
-    id, name, system = "s1", "Pool RCM", "Pool pump"
+class _Rcm:
+    name = "Pool pump"
     functions = [{"id": "f", "text": "Circulate", "failures": [{"id": "ff", "text": "No flow", "modes": [
         {"id": "m1", "text": "Seal worn", "consequence": "operational",
          "decision": {"outcome": "fixed_interval", "interval": 500, "interval_unit": "hours",
@@ -28,7 +29,7 @@ def m():
 
 
 def test_a_task_by_use_projects_its_date_from_the_meter(m):
-    pos = m.position_from_rcm(_Study())["position"]
+    pos = position_with_rcm(m, _Rcm.functions, _Rcm.name)["position"]
     pid, task = pos["id"], pos["tasks"][0]
     assert task["by_use"] and task["next_due"] is None and "counter" in task["limits"][0]["note"]
     meter = m.add_point(pid, "Run hours", kind="counter", unit="hrs")
@@ -46,7 +47,7 @@ def test_a_task_by_use_projects_its_date_from_the_meter(m):
 
 
 def test_whichever_comes_first_and_the_reading_at_the_work(m):
-    pos = m.position_from_rcm(_Study())["position"]
+    pos = position_with_rcm(m, _Rcm.functions, _Rcm.name)["position"]
     pid, task = pos["id"], pos["tasks"][0]
     meter = m.add_point(pid, "", kind="counter", unit="hours")
     m.record_reading(meter["id"], 0, _ago(200))
@@ -79,13 +80,13 @@ def test_daily_run_raises_work_once_and_emails_a_digest(monkeypatch):
     m = Maintenance(store, "user-u")
 
     class Weekly:
-        id, name, system = "s2", "Alarm RCM", "Smoke alarms"
+        name = "Smoke alarms"
         functions = [{"id": "f", "text": "Detect", "failures": [{"id": "ff", "text": "No alarm", "modes": [
             {"id": "m1", "text": "Battery flat", "consequence": "hidden",
              "decision": {"outcome": "failure_finding", "interval": 1, "interval_unit": "weeks",
                           "task": "Press test"}}]}]}]
 
-    m.position_from_rcm(Weekly())
+    position_with_rcm(m, Weekly.functions, Weekly.name)
     first = daily.run(db, store)
     assert first["work_orders"] == 1 and first["emails"] == 1
     assert "Press test" in sent[0][2] and sent[0][0] == "me@example.org"

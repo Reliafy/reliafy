@@ -5,7 +5,8 @@ import PublicFooter from "../components/PublicFooter.jsx";
 import HeroPlot from "../components/HeroPlot.jsx";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
-import { PRO_PRICE } from "../pricing.js";
+import { ENTERPRISE_CONTACT, PRO_PRICE } from "../pricing.js";
+import { HERO } from "../siteCopy.js";
 
 const CheckIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -100,7 +101,7 @@ const FEATURES = [
   {
     viz: <VizRcm />,
     title: "Evidence-linked RCM",
-    body: "Build Function → Failure → Mode worksheets where every maintenance decision cites the analysis that justifies it — and gets re-checked live when the data changes.",
+    body: "Build functions → functional failures → failure modes on each position of your asset tree, where every maintenance decision cites the analysis that justifies it — and gets re-checked live when the data changes.",
   },
   {
     viz: <VizDatasets />,
@@ -135,7 +136,7 @@ const TIERS = (primaryHref, mcpOn = true) => [
     features: [
       "3 saved datasets, 3 models, 1 RBD",
       "Degradation tracking: 1 model, 3 tracked assets",
-      "1 RCM study with live evidence validation",
+      "RCM on your asset tree, every decision checked against its evidence",
       "1 fleet failure forecast",
       "Join team workspaces free (view-only)",
       "Sample data and worked examples included",
@@ -157,7 +158,7 @@ const TIERS = (primaryHref, mcpOn = true) => [
       "Unlimited datasets, models, and RBDs",
       "1,000 AI credits included every month",
       "Unlimited fleet monitoring (degradation & RUL)",
-      "Unlimited evidence-linked RCM studies",
+      "Unlimited evidence-linked RCM across your asset tree",
       "Fleet failure forecasting — spares demand from your models",
       mcpOn
         ? "Unlimited use from AI agents (MCP) — Claude or any MCP client"
@@ -169,13 +170,29 @@ const TIERS = (primaryHref, mcpOn = true) => [
     ],
     cta: { label: "Start with Pro", href: primaryHref },
   },
+  {
+    name: "Enterprise",
+    // No list price: scoped with each organisation.
+    price: "Custom",
+    per: "per organisation",
+    blurb: "Reliafy across your organisation, with our team behind it.",
+    features: [
+      "Everything in Pro, for every engineer in your organisation",
+      "Dedicated support from the people who build Reliafy, with agreed response times",
+      "Proactive monitoring of your data feeds, models and integrations, with alerts before a gap becomes a wrong answer",
+      "Full graph access: ask questions across assets, maintenance history and failures that a table can't answer",
+      "Guided onboarding: we help bring your data in and get your team productive",
+      "Hosted in the region you need, on infrastructure we run for you",
+    ],
+    cta: { label: "Talk to us", href: ENTERPRISE_CONTACT, external: true, ghost: true },
+  },
 ];
 
 export default function Landing() {
   const { user } = useAuth();
   const { mcp: mcpOn } = useAppConfig();
   const location = useLocation();
-  const primaryHref = user ? "/modelling" : "/login?signup";
+  const primaryHref = user ? "/home" : "/login?signup";
   const primaryLabel = user ? "Open the app" : "Get started";
 
   // Support /#pricing links from other pages: scroll once the section exists.
@@ -191,13 +208,9 @@ export default function Landing() {
 
       <section className="landing-hero">
         <div className="landing-hero-text">
-          <div className="landing-eyebrow">Reliability engineering platform</div>
-          <h1>From failure data to maintenance decisions.</h1>
-          <p>
-            Reliafy turns your reliability data into fitted life models, reliability
-            block diagrams, and cost-optimal maintenance strategies — all in one
-            place.
-          </p>
+          <div className="landing-eyebrow">{HERO.eyebrow}</div>
+          <h1>{HERO.h1}</h1>
+          <p>{HERO.lede}</p>
           <div className="landing-cta">
             <Link className="cta cta-solid lg" to={primaryHref}>{primaryLabel}</Link>
           </div>
@@ -222,20 +235,21 @@ export default function Landing() {
           <div className="landing-eyebrow">Reliability centred maintenance</div>
           <h2>Maintenance decisions that prove themselves.</h2>
           <p>
-            Every decision in an RCM study links to the analysis behind it: a
-            run-to-failure call cites the life model that shows failures are
-            random, a fixed interval cites the cost-optimal replacement
-            analysis, condition monitoring cites the degradation model.
+            Every RCM decision on your asset tree links to the analysis behind
+            it: a run-to-failure call cites the non-repairable model that shows
+            failures are random, a fixed interval cites the cost-optimal
+            replacement analysis, condition monitoring cites the degradation
+            model.
           </p>
           <p>
             And the links stay live — when new data shows a "random" failure
-            mode is actually wearing out, the study flags the decision as
+            mode is actually wearing out, Reliafy flags the decision as
             <strong> contradicted</strong> instead of letting it quietly go
             stale.
           </p>
         </div>
         <div className="spotlight-shot">
-          <img src="/landing/rcm-worksheet.png" alt="An RCM worksheet with live evidence statuses, including a contradicted run-to-failure decision" loading="lazy" />
+          <img src="/landing/rcm-worksheet.png" alt="The Explorer's RCM tab: an asset tree with its functions, failure modes and decisions, each decision's evidence check beside it, including a contradicted run-to-failure decision" loading="lazy" />
         </div>
       </section>
 
@@ -265,7 +279,7 @@ export default function Landing() {
           <h3>Work as a team</h3>
           <p>
             Shared team workspaces where everyone sees the same models,
-            studies, and diagrams. Viewers are free; editing comes with Pro.
+            analyses, and diagrams. Viewers are free; editing comes with Pro.
             Or share a single analysis, view-only, with anyone.
           </p>
         </div>
@@ -273,9 +287,8 @@ export default function Landing() {
           <h3>An assistant that does the work</h3>
           <p>
             Ask in plain language and the assistant acts in the app: fits
-            models, builds RBDs, runs replacement calculations, tracks
-            degradation, and drafts RCM studies — with your data, on your
-            screen.
+            models, builds RBDs, runs replacement calculations and tracks
+            degradation — with your data, on your screen.
           </p>
         </div>
         <div className="trio-card">
@@ -294,8 +307,11 @@ export default function Landing() {
       <section className="landing-pricing" id="pricing">
         <div className="landing-pricing-head">
           <div className="landing-eyebrow">Pricing</div>
-          <h2>Free to run yourself. Effortless in the cloud.</h2>
-          <p>The core is open source and always will be. The cloud adds accounts, the AI assistant, and zero setup.</p>
+          <h2>Plans for one engineer or a whole organisation.</h2>
+          <p>
+            The core is open source and always will be: run it yourself at no cost, or start on
+            Cloud Free and move to Pro when the work grows. The cloud adds accounts, teams, the AI assistant and zero setup.
+          </p>
         </div>
         <div className="price-grid">
           {TIERS(primaryHref, mcpOn).map((t) => (
@@ -327,7 +343,7 @@ export default function Landing() {
       </section>
 
       <section className="landing-band">
-        <h2>Built for reliability engineers.</h2>
+        <h2>Built for the people who keep assets running.</h2>
         <p>Upload a CSV, fit a model, build a system, and decide when to act — in one place.</p>
         <Link className="cta cta-solid lg" to={primaryHref}>{primaryLabel}</Link>
       </section>

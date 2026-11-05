@@ -147,7 +147,8 @@ def read_table(text: str) -> pd.DataFrame:
         df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False,
                          skipinitialspace=True, engine="python")
     except Exception as exc:  # noqa: BLE001 - pandas raises many kinds
-        raise OutageLogError(f"Couldn't read the outage log: {exc}") from exc
+        from backend.fitting import csv_error_message
+        raise OutageLogError(csv_error_message(exc, text, what="the outage log")) from exc
     df.columns = [str(c).strip() for c in df.columns]
     df = df[[c for c in df.columns if c and not c.startswith("Unnamed:")]]
     if df.empty:
@@ -938,7 +939,7 @@ def _at(log: dict, t: Optional[float]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def _structure(graph: dict):
-    """The diagram's structure as a RePyability ``RBD`` (no life models: an
+    """The diagram's structure as a RePyability ``RBD`` (no non-repairable models: an
     observed history needs none), its blocks, and its vote gates."""
     from repyability import RBD
 
@@ -1355,7 +1356,7 @@ def _change_index(changes: list, t: float, down: bool) -> Optional[int]:
 
 def fit_models(graph: dict, log: dict, distribution: str = "weibull",
                repair_distribution: str = "lognormal") -> dict:
-    """Fit a life model (times between failures) and a repair model (repair
+    """Fit a non-repairable model (times between failures) and a repair model (repair
     durations) per block with Reliafy's fitting, from the log. Blocks with
     fewer than two failures (or repairs) aren't fitted and say why. Each
     fitted model comes back in the builder's block-model shape, ready to put

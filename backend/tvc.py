@@ -467,20 +467,23 @@ def evaluate(model, fields: list, schedule, grid, *, on: str = "sf", alpha_ci: O
     grid = np.asarray(grid, dtype=float)
     try:
         sched = step_schedule(model, times, rows)
-        with np.errstate(all="ignore"), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with np.errstate(all="ignore"), warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
             sf = np.asarray(model.sf_tvc(grid, sched), dtype=float)
             Hf = np.asarray(model.Hf_tvc(grid, sched), dtype=float)
+        # SurPyval 0.25: an additive-hazards model's points outside its
+        # support (where H would go negative) are nan, with this warning.
+        outside = any("outside the model's support" in str(w.message) for w in caught)
     except FitError:
         raise
     except Exception as exc:
         raise FitError(str(exc) or type(exc).__name__) from exc
     out = {"curves": {"x": grid.tolist(), "sf": _clean(sf), "ff": _clean(1.0 - sf), "Hf": _clean(Hf)},
            "schedule": normalised, "on": on}
-    if (np.isfinite(sf) & (sf > 1.0 + 1e-6)).any():
-        out["warning"] = ("The cumulative hazard goes negative along this schedule, so reliability rises "
-                          "above 1 — which is impossible. This additive-hazards fit is unreliable here; try a "
-                          "proportional-hazards model instead.")
+    if outside or (np.isfinite(sf) & (sf > 1.0 + 1e-6)).any():
+        out["warning"] = ("The cumulative hazard would go negative along this schedule, so reliability would "
+                          "rise above 1 — which is impossible. This additive-hazards fit isn't a distribution "
+                          "here, and those points aren't shown; try a proportional-hazards model instead.")
     if alpha_ci is not None:
         out["bounds"], out["bounds_note"] = _bounds(model, grid, sched, on, float(alpha_ci), bound)
     out["mean"] = _mean(model, sched)

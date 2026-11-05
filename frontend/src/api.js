@@ -132,6 +132,37 @@ export function setMyTimeZone(timeZone) {
   });
 }
 
+// What the user does: { roles: [...], offer }. No roles: everything shown;
+// `offer`: ask, once (new users).
+export function getMyRoles() {
+  return request("/api/me/roles");
+}
+
+export function setMyRoles(roles) {
+  return request("/api/me/roles", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roles }),
+  });
+}
+
+export function dismissRolesOffer() {
+  return request("/api/me/roles/dismiss", { method: "POST" });
+}
+
+// The personal workspace's currency symbol: { currency_symbol } ("$" unless set).
+export function getMyCurrency() {
+  return request("/api/me/currency");
+}
+
+export function setMyCurrency(symbol) {
+  return request("/api/me/currency", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currency_symbol: symbol || null }),
+  });
+}
+
 // Deployment capabilities (public, no auth): { auth, ai, billing }.
 export function getAppConfig() {
   return request("/api/config");
@@ -158,7 +189,7 @@ export function getColumns(file) {
 // the fit method, Best fit's "consider two-mode mixtures" (#236) and Cox PH's
 // tie method, strata and cluster columns (#61).
 function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distribution, how,
-                                  include_mixtures, cox } = {}) {
+                                  include_mixtures, criterion, frailty_family, cox } = {}) {
   if (offset) form.append("offset", "true");
   if (zi) form.append("zi", "true");
   if (lfp) form.append("lfp", "true");
@@ -167,6 +198,8 @@ function appendFitOptions(form, { offset, zi, lfp, fixed, mixture, mixture_distr
   if (mixture_distribution) form.append("mixture_distribution", mixture_distribution);
   if (how) form.append("how", how);
   if (include_mixtures) form.append("include_mixtures", "true");
+  if (criterion) form.append("criterion", criterion);
+  if (frailty_family) form.append("frailty_family", frailty_family);
   const coxSet = cox && Object.fromEntries(Object.entries(cox).filter(([, v]) => v));
   if (coxSet && Object.keys(coxSet).length) form.append("cox", JSON.stringify(coxSet));
 }
@@ -241,6 +274,26 @@ export function optimalReplacement(distributionId, params, plannedCost, unplanne
       unit: unit || null,
       extras: extras || null,
     }),
+  });
+}
+
+// Replacement over a shutdown calendar (Strategy › Replacement): the long-run
+// best rule, or (method "sampling", Pro, with the compute queue) ``{ job }`` to
+// poll at getRbdJob. A 402 (code pro_required) means sampling needs Pro.
+export function calendarReplacement(body) {
+  return request("/api/strategy/calendar-replacement", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// One unit in service on the calendar: replace it now, at the next shut, or later.
+export function calendarNext(body) {
+  return request("/api/strategy/calendar-next", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 }
 
@@ -403,6 +456,8 @@ export function updateModelFit(id, { distribution, mapping, covariates, covariat
       fixed: fitOptions?.fixed && Object.keys(fitOptions.fixed).length ? fitOptions.fixed : null,
       how: fitOptions?.how || null,
       include_mixtures: !!fitOptions?.include_mixtures,
+      criterion: fitOptions?.criterion || null,
+      frailty_family: fitOptions?.frailty_family || null,
       cox: fitOptions?.cox && Object.values(fitOptions.cox).some(Boolean) ? fitOptions.cox : null,
       ...(units !== undefined ? { covariate_units: units } : {}),
     }),
@@ -512,6 +567,44 @@ export function pasteDataset(name, content, noHeader = null) {
 
 export function deleteDataset(id) {
   return request(`/api/datasets/${id}`, { method: "DELETE" });
+}
+
+// ---- A dataset's parts: its measurements (readings on its units at ages),
+// or life data for a dataset of readings alone. ``part`` is "measurements"
+// or "life". Files and pastes take the same options as a new dataset. The
+// answer is the dataset's detail (with ``measurements``).
+export function uploadDatasetPart(id, part, file, noHeader = null, excel = null) {
+  const form = new FormData();
+  form.append("file", file);
+  if (noHeader != null) form.append("no_header", noHeader ? "true" : "false");
+  if (excel?.sheet) form.append("sheet", excel.sheet);
+  if (excel && excel.headerRow != null) form.append("header_row", String(excel.headerRow));
+  return withEvent(request(`/api/datasets/${id}/${part}`, { method: "PUT", body: form }), "dataset_upload");
+}
+
+export function pasteDatasetPart(id, part, content, noHeader = null) {
+  return withEvent(
+    request(`/api/datasets/${id}/${part}/paste`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: content || "", ...(noHeader != null ? { no_header: !!noHeader } : {}) }),
+    }),
+    "dataset_upload"
+  );
+}
+
+export function removeMeasurements(id) {
+  return request(`/api/datasets/${id}/measurements`, { method: "DELETE" });
+}
+
+// Split one table of life data and readings into the dataset's two parts
+// (the server's plan, ``profile.split``, with any overrides in ``plan``).
+export function splitDataset(id, plan = {}) {
+  return request(`/api/datasets/${id}/split`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(plan || {}),
+  });
 }
 
 export function renameDataset(id, name) {
@@ -795,7 +888,7 @@ export async function reliabilityAgentStream(message, { fileId, sessionId, appro
 export function analyzeRbd(
   graph, tMax, covariates, conditionalAge,
   { rbdId = null, force = false, band = null, simulate = null, currentState = null, exact = false,
-    targetReliability = null, quick = false } = {}
+    targetReliability = null, quick = false, runToken = null } = {}
 ) {
   return request("/api/rbds/analyze", {
     method: "POST",
@@ -813,6 +906,7 @@ export function analyzeRbd(
       ...(exact ? { exact: true } : {}),
       ...(targetReliability != null ? { target_reliability: targetReliability } : {}),
       ...(quick ? { quick: true } : {}),
+      ...(runToken ? { run_token: runToken } : {}),
     }),
   });
 }
@@ -833,6 +927,13 @@ export function previewRbdSchedule({ modelId, schedules, constants, tMax = null 
 // queue_position, result (done), error (failed)}.
 export function getRbdJob(jobId) {
   return request(`/api/rbd-jobs/${encodeURIComponent(jobId)}`);
+}
+
+// Cancel a job (its id), or a run computing in the request (the run token
+// sent with it): the server marks it cancelled and discards its result.
+// Only the user who started it can cancel it.
+export function cancelRbdJob(id) {
+  return request(`/api/rbd-jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
 }
 
 // The newest in-flight job for a diagram ({job: null} when none), so a
@@ -1275,6 +1376,17 @@ export function evaluateAlt(id, useStress, refStress, opts = {}) {
   });
 }
 
+// The Diagnostics checks of a saved ALT model (SurPyval's diagnose()): the
+// common shape, the life model's fit, the other life models and, with a use
+// stress, how far it lies from the tested stresses.
+export function diagnoseAlt(id, useStress = null) {
+  return request(`/api/alt/models/${id}/diagnostics`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(useStress ? { use_stress: useStress } : {}),
+  });
+}
+
 // Confidence bounds at a use stress by method (wald | lr | bootstrap, #231):
 // the bounds, or (bootstrap with the compute queue) ``{ job }`` to poll at
 // getRbdJob. A 402 (code pro_required) means bootstrap needs Pro.
@@ -1420,6 +1532,27 @@ export function demonstrationTest(body) {
   });
 }
 
+// Test planning (SurPyval's test_planning): kind is "sequential", "life",
+// "accelerated" or "comparison"; the body is that calculator's inputs.
+export function testPlan(kind, body) {
+  return request(`/api/test-planning/${encodeURIComponent(kind)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// Check a life ("life") or accelerated ("accelerated") test plan by
+// simulation (Pro): the result, or {job} to poll with getRbdJob; 402 with
+// code "pro_required" when not entitled.
+export function simulateTestPlan(kind, inputs, nSim = null) {
+  return request("/api/test-planning/simulate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, inputs, n_sim: nSim }),
+  });
+}
+
 // Persist a strategy analysis (results recomputed server-side from inputs).
 export function saveStrategyAnalysis(name, kind, inputs) {
   return request("/api/strategy/analyses", {
@@ -1451,86 +1584,10 @@ export function deleteStrategyAnalysis(id) {
 
 // ---- RCM ---------------------------------------------------------------------
 
+// The RCM decision vocabulary (consequences, outcomes, run-to-failure bases)
+// the decision dialog offers, with the evidence each outcome expects.
 export function getRcmOptions() {
-  return request("/api/rcm/options");
-}
-
-export function listRcmStudies() {
-  return request("/api/rcm/studies");
-}
-
-export function createRcmStudy(name, system, description) {
-  return withEvent(
-    request("/api/rcm/studies", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, system: system || "", description: description || "" }),
-    }),
-    "rcm_create"
-  );
-}
-
-export function getRcmStudy(id) {
-  return request(`/api/rcm/studies/${id}`);
-}
-
-export function renameRcmStudy(id, name) {
-  return request(`/api/rcm/studies/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
-}
-
-export function deleteRcmStudy(id) {
-  return request(`/api/rcm/studies/${id}`, { method: "DELETE" });
-}
-
-// What an FMEA / RCM spreadsheet would import as (nothing saved): the tree,
-// counts, warnings and the consequence / decision values found.
-// ``options`` = { mapping, consequence_map, outcome_map, extra_columns }.
-export function previewRcmImport(file, sheet, headerRow, options) {
-  return request("/api/rcm/import/preview", {
-    method: "POST",
-    body: excelForm(file, sheet, headerRow, { options }),
-  });
-}
-
-// Import the worksheet: a new study (``target.name``) or an existing one
-// (``target.studyId`` with mode "append" | "replace").
-export function importRcmWorksheet(file, sheet, headerRow, options, target) {
-  return withEvent(
-    request("/api/rcm/import", {
-      method: "POST",
-      body: excelForm(file, sheet, headerRow, {
-        options,
-        study_id: target.studyId,
-        mode: target.mode,
-        expected_updated_at: target.expectedUpdatedAt,
-        name: target.name,
-        system: target.system,
-        description: target.description,
-      }),
-    }),
-    "rcm_import"
-  );
-}
-
-// A study's tasks as a repairable RBD block's maintenance (#100): what each
-// would fill in a diagram in `unit` (scheduled replacement or proof test), or
-// why it can't.
-export function getRcmMaintenanceTasks(id, unit) {
-  return request(`/api/rcm/studies/${id}/maintenance-tasks?unit=${encodeURIComponent(unit || "")}`);
-}
-
-// Replace the whole worksheet tree; returns the study with fresh evidence
-// statuses resolved.
-export function putRcmTree(id, functions, expectedUpdatedAt) {
-  return request(`/api/rcm/studies/${id}/tree`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ functions, expected_updated_at: expectedUpdatedAt || null }),
-  });
+  return request("/api/maintenance/rcm/options");
 }
 
 // ---- Teams -------------------------------------------------------------------
@@ -1565,6 +1622,15 @@ export function setTeamTimeZone(id, timeZone) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ time_zone: timeZone || null }),
+  });
+}
+
+// A team workspace's currency symbol (owner only); null or "" is "$".
+export function setTeamCurrency(id, symbol) {
+  return request(`/api/teams/${id}/currency`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currency_symbol: symbol || null }),
   });
 }
 
@@ -1641,6 +1707,11 @@ export function createPublicLink(collection, artifactId, options = {}) {
 export function listPublicLinks(collection, artifactId) {
   const q = new URLSearchParams({ collection, artifact_id: artifactId });
   return request(`/api/public-links?${q}`);
+}
+
+// Every live link the user has made, newest first: { links: [...] } (Reports).
+export function listAllPublicLinks() {
+  return request("/api/public-links");
 }
 
 // Relabel, or set / rotate / remove the password: { label } |
@@ -1799,9 +1870,11 @@ export function getOAuthRequest(handle) {
   return request(`/oauth/authorize/request?request=${encodeURIComponent(handle)}`);
 }
 
-// Approve or deny it as the signed-in user; resolves to { redirect_to }.
+// Approve or deny it as the signed-in user; resolves to { redirect_to }. The
+// handle goes in the query as well as the body: the MCP switch reads it there
+// to let the Reliafy app's own sign-in through while connectors are off.
 export function decideOAuthRequest(handle, approve) {
-  return request("/oauth/authorize/decision", {
+  return request(`/oauth/authorize/decision?request=${encodeURIComponent(handle)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ request: handle, approve }),
@@ -1843,7 +1916,7 @@ export function listFleets() {
   return request("/api/fleet/fleets");
 }
 
-// ``modelKind``: what ``modelId`` is — "life" (a saved life model; the server
+// ``modelKind``: what ``modelId`` is — "life" (a saved non-repairable model; the server
 // stores "regression" when it's a regression model, #234), "alt" (an ALT
 // model, #234) or "recurrent" (a recurrent-event model — repairable items,
 // every failure counted; #235).
@@ -2041,6 +2114,12 @@ export function getMaintenanceOverview() {
   return request("/api/maintenance/overview");
 }
 
+// The asset trees for the tree pane: every position once, flat, with its status,
+// plus the locations, the spares placed at them and the items with no home.
+export function getMaintenanceTree() {
+  return request("/api/maintenance/tree");
+}
+
 // Work orders, newest first: status "open" for every one not yet done; locationId for
 // those on positions at that location or a location inside it.
 export function listMaintenanceWorkOrders({ status, locationId } = {}) {
@@ -2075,12 +2154,54 @@ export function removeMaintenanceItem(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/remove`, body);
 }
 
-export function applyRcmToPosition(positionId, studyId) {
-  return postJson(`/api/maintenance/positions/${positionId}/apply-rcm`, { study_id: studyId });
+// The sample delivery truck, with its RCM, copied into the workspace's tree. Once:
+// with a copy there, nothing is added ({ added: false, position }) unless again.
+export function addSampleTruck(again = false) {
+  return postJson("/api/maintenance/sample-truck", { again: !!again });
+}
+// The sample quadcopter UAV, with its FME(C)A (scored failure modes, some
+// directly under a function), copied into the tree the same way.
+export function addSampleUav(again = false) {
+  return postJson("/api/maintenance/sample-uav", { again: !!again });
 }
 
-export function maintenanceFromRcm(studyId, parentId) {
-  return postJson("/api/maintenance/from-rcm", { study_id: studyId, parent_id: parentId || null });
+// The sample product: a quadcopter's design with its FME(C)A, its part and bill
+// of materials, three items built from it with two failure reports, and a
+// flight-critical RBD (placeholder failure rates). Once, unless again.
+export function addSampleProduct(again = false) {
+  return postJson("/api/maintenance/sample-product", { again: !!again });
+}
+
+// ---- products (designs) and the items built from them --------------------------
+
+export function listProducts() {
+  return request("/api/maintenance/products");
+}
+export function getProduct(id) {
+  return request(`/api/maintenance/products/${encodeURIComponent(id)}`);
+}
+// {name, part_number?, rev?, description?}: the design's top position and its part, together.
+export function createProduct(body) {
+  return postJson("/api/maintenance/products", body);
+}
+export function listProductItems(id) {
+  return request(`/api/maintenance/products/${encodeURIComponent(id)}/items`);
+}
+// Build an item from a product: {serial, rev?, dry_run} (dry_run true only says what it would make).
+export function buildProductItem(id, body) {
+  return postJson(`/api/maintenance/products/${encodeURIComponent(id)}/build`, body);
+}
+// A design position (or the product itself) across every item built from it.
+export function getDesignRollup(positionId) {
+  return request(`/api/maintenance/positions/${encodeURIComponent(positionId)}/design-rollup`);
+}
+// Every item with its product, type, position path, status and open reports.
+export function listItemsOverview({ productId, itemClassId, q, limit = 500, offset = 0 } = {}) {
+  const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (productId) p.set("product_id", productId);
+  if (itemClassId) p.set("item_class_id", itemClassId);
+  if (q) p.set("q", q);
+  return request(`/api/maintenance/items/overview?${p}`);
 }
 
 // Items, optionally only an item class's (with the classes inside it) or a
@@ -2093,8 +2214,18 @@ export function listMaintenanceItems({ itemClassId, manufacturerId } = {}) {
   return request(`/api/maintenance/items${qs ? `?${qs}` : ""}`);
 }
 
+// A new item ({name, serial}): not fitted; place it, or fit it, after.
+export function createMaintenanceItem(body) {
+  return postJson("/api/maintenance/items", body);
+}
+
 export function listMaintenanceLocations() {
   return request("/api/maintenance/locations");
+}
+
+// The assets: the top-level places with what each holds, and the positions at none.
+export function listMaintenancePlaces() {
+  return request("/api/maintenance/places");
 }
 
 export function createMaintenanceLocation(body) {
@@ -2129,6 +2260,55 @@ export function setTaskLastDone(taskId, lastDone) {
   });
 }
 
+// Failure reports (the Explorer's Failure reports tab): a report of a failure
+// at a position, its investigation, corrective actions, verification and
+// closure. The list takes a scope (position_id with below=1|0, location_id or
+// item_id; none for the whole workspace), status ("open", one status, "all"),
+// consequence, failure_mode_id, since/until (occurred_on), q, sort, limit and
+// offset; it answers {reports, total, counts, scope}.
+function jsonMethod(method, url, body) {
+  return request(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+}
+
+export function listFailureReports(params = {}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  const qs = q.toString();
+  return request(`/api/maintenance/failure-reports${qs ? `?${qs}` : ""}`);
+}
+
+export function getFailureReport(id) {
+  return request(`/api/maintenance/failure-reports/${id}`);
+}
+
+export function createFailureReport(body) {
+  return postJson("/api/maintenance/failure-reports", body);
+}
+
+export function updateFailureReport(id, body) {
+  return jsonMethod("PATCH", `/api/maintenance/failure-reports/${id}`, body);
+}
+
+export function setFailureReportStatus(id, body) {
+  return postJson(`/api/maintenance/failure-reports/${id}/status`, body);
+}
+
+export function saveFailureReportInvestigation(id, body) {
+  return jsonMethod("PUT", `/api/maintenance/failure-reports/${id}/investigation`, body);
+}
+
+export function addCorrectiveAction(id, body) {
+  return postJson(`/api/maintenance/failure-reports/${id}/actions`, body);
+}
+
+export function updateCorrectiveAction(id, aid, body) {
+  return jsonMethod("PATCH", `/api/maintenance/failure-reports/${id}/actions/${aid}`, body);
+}
+
+export function verifyFailureReport(id, body) {
+  return jsonMethod("PUT", `/api/maintenance/failure-reports/${id}/verification`, body);
+}
+
 // Whether the signed-in user may use Reliafy Maintenance (in development):
 // asked once per page load.
 let maintenanceAccess = null;
@@ -2137,6 +2317,16 @@ export function getMaintenanceAccess() {
     maintenanceAccess = request("/api/maintenance/access").catch(() => ({ allowed: false }));
   }
   return maintenanceAccess;
+}
+
+// The Data model page (graph access only): the live graph's labels and
+// relationships, and the stored design ({available: false, reason} without one).
+export function getGraphSchema() {
+  return request("/api/maintenance/graph/schema");
+}
+
+export function getGraphDesign() {
+  return request("/api/maintenance/graph/design");
 }
 
 // Photos (Reliafy Maintenance). The image endpoints need auth, so <img> tags
@@ -2158,6 +2348,21 @@ export function uploadMaintenancePhoto(targetId, file, caption = "") {
 
 export function removeMaintenancePhoto(photoId) {
   return request(`/api/maintenance/photos/${photoId}`, { method: "DELETE" });
+}
+
+// Where a photo shows: link it to one more position, location, item or work
+// order; unlink it from one (never its last); or move it (off fromId, or off
+// everywhere else). Each returns the photo with `on`, every place it shows.
+export function linkMaintenancePhoto(photoId, targetId) {
+  return postJson(`/api/maintenance/photos/${photoId}/link`, { target_id: targetId });
+}
+
+export function unlinkMaintenancePhoto(photoId, targetId) {
+  return postJson(`/api/maintenance/photos/${photoId}/unlink`, { target_id: targetId });
+}
+
+export function moveMaintenancePhoto(photoId, targetId, fromId = null) {
+  return postJson(`/api/maintenance/photos/${photoId}/move`, { target_id: targetId, from_id: fromId });
 }
 
 export function setMaintenanceCoordinates(nodeId, lat, lon, source = "manual") {
@@ -2200,6 +2405,11 @@ export function cancelWorkOrder(id, reason) {
 export function updateMaintenanceTask(id, body) {
   return patchJson(`/api/maintenance/tasks/${id}`, body);
 }
+// What a task by use counts and what it could count instead ({measurement,
+// choices, last_done_reading, ...}); positionId: at a position it would move to.
+export function getTaskMeasurement(id, positionId = null) {
+  return request(`/api/maintenance/tasks/${id}/measurement${positionId ? `?position_id=${encodeURIComponent(positionId)}` : ""}`);
+}
 export function createMaintenanceTask(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/tasks`, body);
 }
@@ -2215,6 +2425,149 @@ export function updateFailureMode(id, body) {
 }
 export function mergeFailureMode(id, intoId) {
   return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
+}
+
+// Every position's RCM (those with any), for the Explorer's RCM tab.
+export function getWorkspaceRcm() {
+  return request("/api/maintenance/rcm");
+}
+
+// An FMEA / RCM worksheet (Excel or CSV) added to a position's RCM. The
+// preview writes nothing: what it would add (counts, a short tree), what's on
+// the position already, rows skipped, errors and warnings, and the
+// consequence / decision values found. The import only adds. ``options`` =
+// { mapping, consequence_map, outcome_map, extra_columns }.
+export function previewPositionRcmImport(positionId, file, sheet, headerRow, options) {
+  return request(`/api/maintenance/positions/${positionId}/rcm/import/preview`, {
+    method: "POST",
+    body: excelForm(file, sheet, headerRow, { options }),
+  });
+}
+export function importPositionRcm(positionId, file, sheet, headerRow, options) {
+  return withEvent(
+    request(`/api/maintenance/positions/${positionId}/rcm/import`, {
+      method: "POST",
+      body: excelForm(file, sheet, headerRow, { options }),
+    }),
+    "rcm_import"
+  );
+}
+
+// A position's RCM (scope "below": it and everything inside it; "this": it alone).
+export function getPositionRcm(positionId, scope = "below") {
+  return request(`/api/maintenance/positions/${positionId}/rcm?scope=${encodeURIComponent(scope)}`);
+}
+const sendJson = (method) => (url, body) => request(url, {
+  method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
+});
+export function addPositionFunction(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/functions`, body);
+}
+// One function in full: its working (Markdown) and the PDFs attached to it.
+export function getPositionFunction(id) {
+  return request(`/api/maintenance/functions/${id}`);
+}
+export function updatePositionFunction(id, body) {
+  return sendJson("PATCH")(`/api/maintenance/functions/${id}`, body);
+}
+export function removePositionFunction(id) {
+  return sendJson("DELETE")(`/api/maintenance/functions/${id}`);
+}
+export function addFunctionalFailure(functionId, body) {
+  return postJson(`/api/maintenance/functions/${functionId}/failures`, body);
+}
+export function updateFunctionalFailure(id, body) {
+  return sendJson("PATCH")(`/api/maintenance/functional-failures/${id}`, body);
+}
+export function removeFunctionalFailure(id) {
+  return sendJson("DELETE")(`/api/maintenance/functional-failures/${id}`);
+}
+// A functional failure results from `causeId`, a functional failure on a position
+// inside its own (the same link from either end); unlinking is the reverse.
+export function linkFunctionalFailureCause(id, causeId) {
+  return postJson(`/api/maintenance/functional-failures/${id}/causes`, { cause_id: causeId });
+}
+export function unlinkFunctionalFailureCause(id, causeId) {
+  return sendJson("DELETE")(`/api/maintenance/functional-failures/${id}/causes/${causeId}`);
+}
+// The RCM tab's drag and drop: one batch of arranging operations
+// ([{do, args}]), checked on a copy of the workspace first and all or
+// nothing. dryRun only checks. A refusal throws (status 422) with the
+// answer in err.data ({detail, failed}); a move that needs to know what its
+// tasks by use count there throws 409 with err.data.needs_choice ({op_index,
+// position, tasks}): send the batch again with that operation's measurement.
+// The answer's undo puts it back.
+export function applyRcm(operations, { dryRun = false } = {}) {
+  return postJson("/api/maintenance/rcm/apply", { operations, ...(dryRun ? { dry_run: true } : {}) });
+}
+// Under a functional failure, or (functionId, no functional failure) directly
+// under a function with no functional failure yet; neither: under none.
+export function assignFailureMode(id, functionalFailureId, functionId = null) {
+  return postJson(`/api/maintenance/failure-modes/${id}/assign`,
+    functionalFailureId ? { functional_failure_id: functionalFailureId } : { functional_failure_id: null, ...(functionId ? { function_id: functionId } : {}) });
+}
+// A position's FME(C)A worksheet as an Excel file (it and everything inside
+// it). The route is the server's to offer: `hasFmeaExcel` says whether it
+// does (asked once per session, with the one position's small sheet: a HEAD
+// would answer 405, which the browser logs as an error; a 404 hides the button).
+export const fmeaExcelUrl = (positionId) => `/api/maintenance/positions/${positionId}/fmea.xlsx`;
+let fmeaExcel = null;
+export async function hasFmeaExcel(positionId) {
+  if (fmeaExcel != null) return fmeaExcel;
+  try {
+    const res = await authedFetch(`${fmeaExcelUrl(positionId)}?scope=this`);
+    fmeaExcel = res.status !== 404;
+  } catch {
+    fmeaExcel = false;
+  }
+  return fmeaExcel;
+}
+export async function getFmeaExcelBlob(positionId) {
+  const res = await authedFetch(fmeaExcelUrl(positionId));
+  if (!res.ok) throw new Error(res.status === 404 ? "Excel export isn't available on this server." : `The export failed (${res.status}). Try again.`);
+  return res.blob();
+}
+// {consequence?, decision?}: a key left out is left as it is; decision null clears it.
+export function decideFailureMode(id, body) {
+  return sendJson("PUT")(`/api/maintenance/failure-modes/${id}/decision`, body);
+}
+export function retireFailureMode(id) {
+  return sendJson("DELETE")(`/api/maintenance/failure-modes/${id}`);
+}
+// A function's performance standards, as a list: one added ({text, parameter?,
+// comparator?, value?, unit?, when?, source?}), one changed, one removed, the
+// order set, and the old single text split (a proposal with no body or
+// dry_run true; written from {standards: [{text, when?, source?}], dry_run: false}).
+export function addFunctionStandard(functionId, body) {
+  return postJson(`/api/maintenance/functions/${functionId}/standards`, body);
+}
+export function updateFunctionStandard(id, body) {
+  return sendJson("PATCH")(`/api/maintenance/standards/${id}`, body);
+}
+export function removeFunctionStandard(id) {
+  return sendJson("DELETE")(`/api/maintenance/standards/${id}`);
+}
+export function reorderFunctionStandards(functionId, standardIds) {
+  return sendJson("PUT")(`/api/maintenance/functions/${functionId}/standards/order`, { standard_ids: standardIds });
+}
+export function splitFunctionStandard(functionId, body = {}) {
+  return postJson(`/api/maintenance/functions/${functionId}/standards/split`, body);
+}
+// A failure mode's tasks (its decision's own first) and the tasks on its
+// position, or above it, that could serve it too.
+export function getFailureModeTasks(id) {
+  return request(`/api/maintenance/failure-modes/${id}/tasks`);
+}
+// Another task for the failure mode: {name, interval, unit, outcome?, instructions?}.
+export function addFailureModeTask(id, body) {
+  return postJson(`/api/maintenance/failure-modes/${id}/tasks`, body);
+}
+// The task also prevents that failure mode (its other links stay); and the reverse.
+export function linkTaskFailureMode(taskId, modeId) {
+  return postJson(`/api/maintenance/tasks/${taskId}/failure-modes/${modeId}`);
+}
+export function unlinkTaskFailureMode(taskId, modeId) {
+  return sendJson("DELETE")(`/api/maintenance/tasks/${taskId}/failure-modes/${modeId}`);
 }
 export function addPastFitment(positionId, body) {
   return postJson(`/api/maintenance/positions/${positionId}/past-fitments`, body);
@@ -2257,6 +2610,26 @@ export function addMaintenanceDocument(body) {
 }
 export function removeMaintenanceDocument(id) {
   return request(`/api/maintenance/documents/${id}`, { method: "DELETE" });
+}
+
+// PDFs kept in the workspace, on the same targets as links: the request body is
+// the file. Reading one needs the session, so the viewer shows it from a blob.
+export function uploadMaintenanceDocument(target, file, { title = "", kind = "other" } = {}) {
+  const q = new URLSearchParams({ ...target, title, kind, filename: file.name || "document.pdf" });
+  return request(`/api/maintenance/documents/upload?${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/pdf" },
+    body: file,
+  });
+}
+export async function getMaintenanceDocumentBlob(id) {
+  const res = await authedFetch(`/api/maintenance/documents/${id}/file`);
+  if (!res.ok) {
+    throw new Error(res.status === 404 ? "This PDF isn't there any more. Refresh the page."
+      : `The PDF didn't load (${res.status}). Try again.`);
+  }
+  const blob = await res.blob();
+  return blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
 }
 export function setClassReplacementCost(positionClass, replacementCost) {
   return request("/api/maintenance/classes/replacement-cost", {
@@ -2444,16 +2817,70 @@ export function addMeasurementPoint(positionId, body) {
 export function addItemMeasurementPoint(itemId, body) {
   return postJson(`/api/maintenance/items/${itemId}/points`, body);
 }
-export function recordMeasurementReading(pointId, value, on) {
-  return postJson(`/api/maintenance/points/${pointId}/readings`, { value, on });
+// ``at`` (optional) is when it was read, e.g. "2026-10-19T10:14" (#264).
+export function recordMeasurementReading(pointId, value, on, at) {
+  return postJson(`/api/maintenance/points/${pointId}/readings`, at ? { value, at } : { value, on });
 }
 // Strike out a manual reading, or correct its value and/or date; each with a
 // reason. Both return the point, its readings list marking what was changed.
 export function voidMeasurementReading(readingId, reason) {
   return postJson(`/api/maintenance/readings/${readingId}/void`, { reason });
 }
-export function correctMeasurementReading(readingId, { value, on, reason }) {
-  return postJson(`/api/maintenance/readings/${readingId}/correct`, { value, on, reason });
+export function correctMeasurementReading(readingId, { value, on, at, reason }) {
+  return postJson(`/api/maintenance/readings/${readingId}/correct`, at ? { value, at, reason } : { value, on, reason });
+}
+
+// ---- signal channels (Reliafy Maintenance): vibration and other sensors that send snapshots ----
+
+export function listSignalChannels({ positionId, itemId } = {}) {
+  const q = new URLSearchParams();
+  if (positionId) q.set("position_id", positionId);
+  if (itemId) q.set("item_id", itemId);
+  return request(`/api/maintenance/signals/channels?${q}`);
+}
+export function createSignalChannel(body) {
+  return postJson("/api/maintenance/signals/channels", body);
+}
+export function getSignalChannel(id, snapshots = 500) {
+  return request(`/api/maintenance/signals/channels/${id}?snapshots=${snapshots}`);
+}
+// Several snapshots' spectra for one axis, thinned to `maxPoints` keeping the peaks.
+export function getSignalSpectra(channelId, ids, { axis, maxPoints = 700, fMin, fMax } = {}) {
+  const q = new URLSearchParams({ ids: ids.join(","), max_points: String(maxPoints) });
+  if (axis) q.set("axis", axis);
+  if (fMin !== undefined && fMin !== null) q.set("f_min", String(fMin));
+  if (fMax !== undefined && fMax !== null) q.set("f_max", String(fMax));
+  return request(`/api/maintenance/signals/channels/${channelId}/spectra?${q}`);
+}
+// What a band would have read at every stored snapshot (nothing is saved).
+export function previewSignalBand(channelId, { low, high, axis, unit = "Hz" }) {
+  const q = new URLSearchParams({ low: String(low), high: String(high), unit });
+  if (axis) q.set("axis", axis);
+  return request(`/api/maintenance/signals/channels/${channelId}/band-preview?${q}`);
+}
+export function addSignalBand(channelId, body) {
+  return postJson(`/api/maintenance/signals/channels/${channelId}/bands`, body);
+}
+export function removeSignalBand(pointId) {
+  return postJson(`/api/maintenance/signals/bands/${pointId}/remove`, {});
+}
+// Change a band: name and limits in place; a new range starts a new version from now.
+export function updateSignalBand(pointId, body) {
+  return patchJson(`/api/maintenance/signals/bands/${pointId}`, body);
+}
+// Add one snapshot from the app (a device uses the ingest route).
+export function addSignalSnapshot(body) {
+  return postJson("/api/maintenance/signals/snapshots", body);
+}
+export function updateSignalChannel(channelId, body) {
+  return patchJson(`/api/maintenance/signals/channels/${channelId}`, body);
+}
+// What the workspace's snapshots use, and the soft warning level (nothing is deleted).
+export function getSignalStorage() {
+  return request("/api/maintenance/signals/storage");
+}
+export function setSignalStorageCap(capMb) {
+  return putJson("/api/maintenance/signals/storage-cap", { cap_mb: capMb });
 }
 
 // ---- item classes and the manufacturer register (Reliafy Maintenance; optional) ----
@@ -2547,4 +2974,72 @@ export function importConditions({ format, text, dryRun = true, source }) {
 }
 export function downloadConditions(format = "csv") {
   return downloadFile(`/api/maintenance/conditions/export?format=${format}`, `conditions.${format}`);
+}
+
+// ---- Condition and life (joint models of readings and failures) ------------
+// Saved models of kind "joint": fitted to a lifetimes dataset (one row per
+// unit) and a readings dataset (one row per reading). The fit is Pro and runs
+// as a job when the calculation service is on (202 {job}: poll getRbdJob).
+
+export function getJointOptions() {
+  return request("/api/joint/options");
+}
+
+export function checkJointData(body) {
+  return request("/api/joint/check", jsonBody("POST", body));
+}
+
+// 200 {model_id, model} (fitted here) or 202 {job} (queued): both resolve.
+export async function fitJointModel(body) {
+  const res = await authedFetch("/api/joint/models", jsonBody("POST", body));
+  const data = await readJson(res);
+  return { ...data, status: res.status };
+}
+
+export function listJointModels() {
+  return request("/api/joint/models");
+}
+
+export function getJointModel(id) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}`);
+}
+
+export function updateJointModel(id, patch) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}`, jsonBody("PATCH", patch));
+}
+
+export function deleteJointModel(id) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function getJointUnit(id, unitId) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}/units/${encodeURIComponent(unitId)}`);
+}
+
+// A unit given by its values: {age, markers: [[age, value], ...], covariates}.
+export function predictJointUnit(id, body) {
+  return request(`/api/joint/models/${encodeURIComponent(id)}/predict`, jsonBody("POST", body));
+}
+
+// Download as Python: a script that refits the model with SurPyval's
+// fit_from_df from the data it was fitted to. Free for every viewer.
+export function downloadJointPython(id) {
+  return downloadFile(`/api/joint/models/${encodeURIComponent(id)}/export.py`, "condition-based-risk.py");
+}
+
+// ---- time to the limit (a watched band's trend, fitted with a degradation process) ----
+
+export function getTimeToLimit(pointId, { process = "wiener", limit, since, confidence } = {}) {
+  const q = new URLSearchParams({ process });
+  if (limit !== undefined && limit !== null && limit !== "") q.set("limit", String(limit));
+  if (since) q.set("since", since);
+  if (confidence) q.set("confidence", String(confidence));
+  return request(`/api/maintenance/signals/bands/${pointId}/time-to-limit?${q}`);
+}
+// The band's readings as rows of unit, age_days, value (and the same as CSV): a copy, never a link.
+export function getBandDegradationSeries(pointId, { since, unitName } = {}) {
+  const q = new URLSearchParams();
+  if (since) q.set("since", since);
+  if (unitName) q.set("unit_name", unitName);
+  return request(`/api/maintenance/signals/bands/${pointId}/degradation-series?${q}`);
 }

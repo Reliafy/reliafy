@@ -9,6 +9,37 @@ import pytest
 # that wants them sets EXTENSIONS_DISABLED=false before this runs.
 os.environ.setdefault("EXTENSIONS_DISABLED", "true")
 
+# The tools with actions take {action (or kind), args: {the action's arguments}} (backend/mcp_server.py,
+# "The tools"). Tests write a call's arguments flat beside its action, which reads better; the MCP
+# client the tests use puts them under args, as an agent sends them. A call that already has args, or
+# a tool without actions (guide), goes as written. test_mcp_tools.py checks the wire shape itself.
+_SELECTORS = {"get": "kind", "list": "kind", "analyse": "action", "change": "action", "report_problem": "action",
+              "maintenance": "action"}
+
+
+def _nest_args(name, arguments):
+    selector = _SELECTORS.get(name)
+    if selector is None or not arguments or "args" in arguments or selector not in arguments:
+        return arguments
+    return {selector: arguments[selector], "args": {k: v for k, v in arguments.items() if k != selector}}
+
+
+def _patch_mcp_client():
+    from mcp.client.client import Client
+
+    if getattr(Client.call_tool, "_nests_args", False):
+        return
+    original = Client.call_tool
+
+    async def call_tool(self, name, arguments=None, *args, **kwargs):
+        return await original(self, name, _nest_args(name, arguments), *args, **kwargs)
+
+    call_tool._nests_args = True
+    Client.call_tool = call_tool
+
+
+_patch_mcp_client()
+
 
 @pytest.fixture(autouse=True)
 def _fast_sample_availability(monkeypatch):
@@ -25,6 +56,14 @@ def pytest_configure(config):
         "markers", "real_seed: seed the samples for real, not from the suite's snapshot")
     config.addinivalue_line(
         "markers", "sqlite_only: tests the SQLite maintenance graph itself (skipped in the Neo4j parity run)")
+    # SurPyval's and RePyability's own deprecations fail the suite, so a name
+    # the next release removes is found here rather than in production. Their
+    # messages: SurPyval "... will be removed in v0.26", its dated converters
+    # "... removed in the first release on or after ...", RePyability "...
+    # will be refused in 0.16" (a FutureWarning).
+    library = r".*(will be removed in v0\.|removed in the first release on or after|will be refused in 0\.)"
+    for category in ("DeprecationWarning", "FutureWarning"):
+        config.addinivalue_line("filterwarnings", f"error:{library}:{category}")
 
 
 # The samples, seeded once per test run: (collection, documents) pairs.

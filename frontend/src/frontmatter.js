@@ -22,6 +22,7 @@ export function parseFrontmatter(raw) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (/^\s/.test(line)) continue; // an indented line outside a block
+    if (line.startsWith("#")) continue; // a comment for whoever edits the file
     const idx = line.indexOf(":");
     if (idx === -1) continue;
     const key = line.slice(0, idx).trim();

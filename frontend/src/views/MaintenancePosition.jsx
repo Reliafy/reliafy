@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import LoadFailed from "../components/LoadFailed.jsx";
 import {
   addFailureMode,
   addPastFitment,
-  applyRcmToPosition,
   fitMaintenanceItem,
   listMaintenanceItems,
   mergeFailureMode,
@@ -11,7 +11,6 @@ import {
   getMaintenanceOverview,
   getMaintenancePosition,
   listMaintenanceLocations,
-  listRcmStudies,
   openWorkOrder,
   addMeasurementPoint,
   addItemMeasurementPoint,
@@ -36,9 +35,9 @@ import {
   updatePositionPart,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
-import { PlusIcon } from "../components/LibRows.jsx";
+import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
 import {
-  DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, MaintenanceTabs, OUTCOME_LABELS,
+  DocumentsCard, FailureModePicker, Field, FormModal, LifeTable, LocationPicker, OUTCOME_LABELS,
   PositionPicker,
   RoughDateField, flatten, fmtDate, fmtDated, roughDate, today,
 } from "../components/MaintenanceParts.jsx";
@@ -46,12 +45,15 @@ import { failureModeBody, failureModeReady } from "../maintenanceModes.js";
 import { roughDateValue } from "../maintenanceFields.js";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import Modal from "../components/Modal.jsx";
-import { isStruck, liveReadings, readingStatusText } from "../maintenanceReadings.js";
+import { isStruck, liveReadings, readingClock, readingStatusText, readingWhen } from "../maintenanceReadings.js";
 import MaintenancePhotos from "../components/MaintenancePhotos.jsx";
 import { PART_ROLES, roleLabel, stockText } from "../maintenanceSpares.js";
 import { TasksCard } from "../components/MaintenanceTasks.jsx";
 import { ConditionsCard, ConnectionConditions } from "../components/MaintenanceConditions.jsx";
 import "./Maintenance.css";
+import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
+import { PageTitle } from "../components/usePageTitle.js";
+import { productPath } from "../products.js";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -73,14 +75,15 @@ export default function MaintenancePosition() {
     setModal("child");
   };
 
-  if (error && !p) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !p) return <div className="app"><LoadFailed header error={error} notFound="Position not found." to="/asset-register" label="See all assets" /></div>;
   if (!p) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   return (
     <div className="app">
+      <PageTitle name={p?.name} />
       <PageHeader
-        crumbs={[{ label: "Maintenance", to: "/maintenance" }, ...p.path.map((a) => ({
-          label: a.name, to: a.kind === "Item" ? `/maintenance/items/${a.id}` : `/maintenance/positions/${a.id}` }))]}
+        crumbs={[{ label: "Assets", to: "/asset-register" }, ...p.path.map((a) => ({
+          label: a.name, to: a.kind === "Item" ? `/asset-register/items/${a.id}` : `/asset-register/positions/${a.id}` }))]}
         title={p.name}
         meta={[p.tag, p.position_class, p.description].filter(Boolean).join(" · ") || "Position"}
         id={p.id}
@@ -93,12 +96,10 @@ export default function MaintenancePosition() {
         actions={
           <>
             <button className="secondary" onClick={openChild}><PlusIcon /> Position inside</button>
-            <button className="secondary" onClick={() => setModal("rcm")}>Apply an RCM study</button>
           </>
         }
         primary={<button onClick={() => setModal("wo")}>New work order</button>}
       />
-      <MaintenanceTabs />
       {error && <div className="card error">{error}</div>}
 
       <section className="card">
@@ -106,13 +107,16 @@ export default function MaintenancePosition() {
           <h2>Fitted</h2>
           {p.fitted ? (
             <button className="secondary" onClick={() => setModal("remove")}>Remove</button>
+          ) : p.in_design ? (
+            // A product's design: nothing is fitted here; its items are built from it.
+            <Link to={productPath(p.in_design.id, "items")}>The items built from {p.in_design.name}</Link>
           ) : (
             <button onClick={() => setModal("fit")}>Fit an item</button>
           )}
         </div>
         {p.fitted ? (
           <p>
-            <strong>{p.fitted.item ? <Link to={`/maintenance/items/${p.fitted.item.id}`}>{p.fitted.item.name}</Link> : "?"}</strong>
+            <strong>{p.fitted.item ? <Link to={`/asset-register/items/${p.fitted.item.id}`}>{p.fitted.item.name}</Link> : "?"}</strong>
             {p.fitted.item?.serial && <span className="lib-date"> · serial {p.fitted.item.serial}</span>}
             <span className="lib-date"> · since {fmtDated(p.fitted.from, p.fitted.from_precision)}</span>
           </p>
@@ -130,11 +134,11 @@ export default function MaintenancePosition() {
         </div>
         {p.location ? (
           <p>
-            <Link to={`/maintenance/locations/${p.location.id}`}>{p.location.display}</Link>
+            <Link to={`/asset-register/locations/${p.location.id}`}>{p.location.display}</Link>
             {p.location.inherited && p.location.inherited_from && (
               <span className="lib-date">
                 {" · "}{p.location.inherited_from.kind === "Item" ? "from " : "inherited from "}
-                <Link to={`/maintenance/${p.location.inherited_from.kind === "Item" ? "items" : "positions"}/${p.location.inherited_from.id}`}>
+                <Link to={`/asset-register/${p.location.inherited_from.kind === "Item" ? "items" : "positions"}/${p.location.inherited_from.id}`}>
                   {p.location.inherited_from.name}</Link>
                 {p.location.inherited_from.kind === "Item" ? ", the item it's inside" : ""}
               </span>
@@ -149,11 +153,15 @@ export default function MaintenancePosition() {
       <ConditionsCard target={{ id: p.id, name: p.name, kind: "Position" }} view={p} onChanged={refresh} />
 
       {p.fitted?.item && (
-        <MaintenancePhotos title={`Photos of the ${p.fitted.item.name}`} targetId={p.fitted.item.id}
-                           targetName={p.fitted.item.name} photos={p.item_photos} onChanged={refresh} />
+        <MaintenancePhotos title={`Photos of the ${p.fitted.item.name}`} targetId={p.fitted.item.id} targetKind="Item"
+                           targetName={p.fitted.item.name} photos={p.item_photos} onChanged={refresh}
+                           related={[{ id: p.id, kind: "Position", name: p.name },
+                             p.location && { ...p.location, kind: "Location" }]} />
       )}
-      <MaintenancePhotos title={p.fitted?.item ? `Photos of the ${p.name} position` : "Photos"} targetId={p.id}
-                         targetName={p.name} photos={p.photos} onChanged={refresh} />
+      <MaintenancePhotos title={p.fitted?.item ? `Photos of the ${p.name} position` : "Photos"} targetId={p.id} targetKind="Position"
+                         targetName={p.name} photos={p.photos} onChanged={refresh}
+                         related={[p.location && { ...p.location, kind: "Location" },
+                           p.fitted?.item && { ...p.fitted.item, kind: "Item" }]} />
       <DocumentsCard documents={p.documents} target={{ target_id: p.id }} onChanged={refresh}
                      title={p.fitted?.item ? `Documents for the ${p.name} position` : "Documents"} />
       {p.coordinates && (
@@ -168,7 +176,7 @@ export default function MaintenancePosition() {
       <TasksCard subject={{ kind: "position", id: p.id, name: p.name }} tasks={p.tasks} itemTasks={p.item_tasks || []}
                  modes={p.failure_modes} counters={p.measurements.filter((mp) => mp.kind === "counter")}
                  onChanged={refresh}
-                 emptyText="No scheduled tasks. Add one (from the maker's manual, a regulation or your own practice), or apply an RCM study whose decisions have intervals." />
+                 emptyText="No scheduled tasks. Add one (from the maker's manual, a regulation or your own practice), or decide the position's failure modes on the Explorer's RCM tab: a decision with an interval schedules its task." />
 
       <MeasurementsCard measurements={p.measurements} target={{ kind: "position", id: p.id }} onChanged={refresh} />
 
@@ -183,9 +191,9 @@ export default function MaintenancePosition() {
             <thead><tr><th>#</th><th>Title</th><th>Type</th><th>Trade</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
             <tbody>
               {p.work_orders.map((w) => (
-                <tr key={w.id} className="lib-row" onClick={() => navigate(`/maintenance/work-orders/${w.id}`)}>
+                <tr key={w.id} className="lib-row" onClick={rowOpen(navigate, `/maintenance/work-orders/${w.id}`)}>
                   <td>{w.number}</td>
-                  <td>{w.title}{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
+                  <td><RowLink to={`/maintenance/work-orders/${w.id}`}>{w.title}</RowLink>{w.under_warranty && <> <span className="maint-badge">warranty</span></>}</td>
                   <td>{w.type}</td><td className="lib-date">{w.trade || "—"}</td><td>{w.status}</td>
                   <td className="lib-date">{fmtDate(w.opened)}</td><td className="lib-date">{fmtDate(w.closed)}</td>
                 </tr>
@@ -201,7 +209,7 @@ export default function MaintenancePosition() {
           <button className="secondary" onClick={() => setModal({ mode: {} })}><PlusIcon /> Add failure mode</button>
         </div>
         {p.failure_modes.length === 0 ? (
-          <p className="lib-date">None yet. They come from an RCM study, are added here, or are recorded when
+          <p className="lib-date">None yet. They are added here or on the Explorer's RCM tab, or are recorded when
             something fails.</p>
         ) : (
           <div className="maint-scroll"><table className="lib-table">
@@ -213,7 +221,7 @@ export default function MaintenancePosition() {
                   <td className="lib-date">{m.failure || "—"}</td>
                   <td className="lib-date">{m.consequence || "—"}</td>
                   <td className="lib-date">{OUTCOME_LABELS[m.outcome] || "—"}</td>
-                  <td>{!m.from_rcm && <button className="crumb-link" onClick={() => setModal({ mode: m })}>Edit</button>}</td>
+                  <td><button className="crumb-link" onClick={() => setModal({ mode: m })}>Edit</button></td>
                 </tr>
               ))}
             </tbody>
@@ -241,7 +249,7 @@ export default function MaintenancePosition() {
         <section className="card">
           <div className="maint-head"><h2>Positions inside</h2></div>
           <ul className="maint-list">
-            {p.children.map((c) => <li key={c.id}><Link to={`/maintenance/positions/${c.id}`}>{c.name}</Link></li>)}
+            {p.children.map((c) => <li key={c.id}><Link to={`/asset-register/positions/${c.id}`}>{c.name}</Link></li>)}
           </ul>
         </section>
       )}
@@ -261,14 +269,13 @@ export default function MaintenancePosition() {
       {modal?.fix && <FixModal row={modal.fix} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />}
       {modal === "fit" && <FitModal positionId={id} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
       {modal === "remove" && <RemoveModal position={p} onClose={() => setModal(null)} onDone={(d) => { setP(d); setModal(null); }} />}
-      {modal === "rcm" && <ApplyRcmModal positionId={id} onClose={() => setModal(null)} onDone={(d) => { setP(d.position); setModal(null); }} />}
       {modal === "wo" && (
         <NewWorkOrderModal positionId={id} onClose={() => setModal(null)}
                            onDone={(wo) => navigate(`/maintenance/work-orders/${wo.id}`)} />
       )}
       {modal === "child" && (
         <NewPositionModal positions={positions} parentId={id} onClose={() => setModal(null)}
-                          onCreated={(c) => navigate(`/maintenance/positions/${c.id}`)} />
+                          onCreated={(c) => navigate(`/asset-register/positions/${c.id}`)} />
       )}
     </div>
   );
@@ -413,34 +420,14 @@ function PastFitmentModal({ p, onClose, onDone }) {
   );
 }
 
-function ApplyRcmModal({ positionId, onClose, onDone }) {
-  const [studies, setStudies] = useState(null);
-  const [studyId, setStudyId] = useState("");
-  useEffect(() => {
-    listRcmStudies().then((d) => setStudies(d.studies || [])).catch(() => setStudies([]));
-  }, []);
-  return (
-    <FormModal title="Apply an RCM study" submitLabel="Apply" canSubmit={!!studyId} onClose={onClose}
-               onSubmit={async () => onDone(await applyRcmToPosition(positionId, studyId))}>
-      <p className="lib-date">Adds the study's failure modes and scheduled tasks here. Applying it again picks up changes.</p>
-      <Field label="RCM study">
-        <select value={studyId} onChange={(e) => setStudyId(e.target.value)}>
-          <option value="">{studies === null ? "Loading…" : "Choose a study"}</option>
-          {(studies || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-      </Field>
-    </FormModal>
-  );
-}
-
 function NewWorkOrderModal({ positionId, onClose, onDone }) {
   const [title, setTitle] = useState("");
   const [type, setType] = useState("corrective");
   const [due, setDue] = useState("");
   return (
-    <FormModal title="New work order" submitLabel="Open work order" canSubmit={!!title.trim()} onClose={onClose}
+    <FormModal title="New work order" submitLabel="Open work order" canSubmit={!!title.trim() && !tooLong(title)} onClose={onClose}
                onSubmit={async () => onDone(await openWorkOrder({ position_id: positionId, title, type, due: due || null }))}>
-      <Field label="What needs doing"><input autoFocus value={title} placeholder="e.g. No hot water" onChange={(e) => setTitle(e.target.value)} /></Field>
+      <Field label="What needs doing" text={title} hint="add the detail to the notes once it's open"><input autoFocus value={title} placeholder="e.g. No hot water" onChange={(e) => setTitle(e.target.value)} /></Field>
       <Field label="Type">
         <select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="corrective">Corrective (something's wrong)</option>
@@ -483,9 +470,9 @@ function EditPositionModal({ p, onClose, onDone }) {
   const [f, setF] = useState({ name: p.name, tag: p.tag || "", position_class: p.position_class || "", description: p.description || "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <FormModal title="Edit position" submitLabel="Save" canSubmit={!!f.name.trim()} onClose={onClose}
+    <FormModal title="Edit position" submitLabel="Save" canSubmit={!!f.name.trim() && !tooLong(f.name)} onClose={onClose}
                onSubmit={async () => onDone(await updateMaintenancePosition(p.id, f))}>
-      <Field label="Name"><input value={f.name} onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name} hint={DESCRIPTION_HINT}><input value={f.name} onChange={set("name")} /></Field>
       <Field label="Tag"><input value={f.tag} onChange={set("tag")} /></Field>
       <Field label="Class (to compare like positions)"><input value={f.position_class} onChange={set("position_class")} /></Field>
       <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>
@@ -539,7 +526,7 @@ function PartsListCard({ p, onChanged }) {
       {error && <div className="card error">{error}</div>}
       {list.length === 0 ? (
         <p className="lib-date">No parts listed. Add the part that replaces what's fitted, and the kits and
-          consumables its maintenance uses, from the <Link to="/maintenance/parts">parts catalogue</Link>.</p>
+          consumables its maintenance uses, from the <Link to="/asset-register/parts">parts catalogue</Link>.</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
           <thead><tr><th>Part</th><th>Role</th><th>Per job</th><th>Stock</th><th>Compatibility notes</th><th><span className="sr-only">Change</span></th></tr></thead>
@@ -598,7 +585,7 @@ function PartEntryModal({ p, entry, onClose, onDone }) {
       {!entry && (
         <Field label="Part">
           {catalogue === null ? <span className="lib-date">Loading…</span> : catalogue.length === 0 ? (
-            <span className="lib-date">The catalogue is empty: add parts on the <Link to="/maintenance/parts">Parts</Link> page first.</span>
+            <span className="lib-date">The catalogue is empty: add parts on the <Link to="/asset-register/parts">Parts</Link> page first.</span>
           ) : (
             <select autoFocus value={f.part_id} onChange={set("part_id")}>
               <option value="">Choose…</option>
@@ -663,13 +650,13 @@ function ConnectionsCard({ p, onChanged }) {
       ) : (
         <ul className="maint-list">
           {upstream.map((c) => (
-            <li key={c.id}>From <Link to={`/maintenance/positions/${c.from.id}`}>{c.from.name}</Link>
+            <li key={c.id}>From <Link to={`/asset-register/positions/${c.from.id}`}>{c.from.name}</Link>
               <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
               <ConnectionConditions connection={c} name={`${c.from.name} → ${p.name}`} onChanged={onChanged} />{" "}
               <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
           ))}
           {downstream.map((c) => (
-            <li key={c.id}>To <Link to={`/maintenance/positions/${c.to.id}`}>{c.to.name}</Link>
+            <li key={c.id}>To <Link to={`/asset-register/positions/${c.to.id}`}>{c.to.name}</Link>
               <span className="lib-date"> · {c.kind}{c.medium ? `, ${c.medium}` : ""}</span>{" "}
               <ConnectionConditions connection={c} name={`${p.name} → ${c.to.name}`} onChanged={onChanged} />{" "}
               <button className="crumb-link" onClick={() => act(() => disconnectPositions(c.id))}>remove</button></li>
@@ -774,12 +761,12 @@ function RbdCard({ p, onChanged }) {
       <div className="maint-head">
         <h2>Reliability block diagram</h2>
         <div className="maint-row" style={{ marginTop: 0 }}>
-          {rbdId && <Link to={`/rbds/b/${rbdId}`}>Open the RBD</Link>}
+          {rbdId && <Link to={`/systems/b/${rbdId}`}>Open the RBD</Link>}
           <button onClick={make} disabled={busy}>{busy ? "Generating…" : rbdId ? "Regenerate from the plant" : "Generate from the plant"}</button>
         </div>
       </div>
       {error && <div className="card error">{error}</div>}
-      <p className="lib-date">The positions inside {p.name} become blocks, wired by their connections, with redundancy groups as k of n. Blocks take their class's fitted life model.</p>
+      <p className="lib-date">The positions inside {p.name} become blocks, wired by their connections, with redundancy groups as k of n. Blocks take their class's fitted non-repairable model.</p>
       {result?.notes?.length > 0 && <ul className="maint-list">{result.notes.map((n, i) => <li key={i} className="lib-date">{n}</li>)}</ul>}
     </section>
   );
@@ -836,7 +823,7 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
                   <div className="lib-date">{c.kind === "counter" ? "counts use" : "condition"} · {c.source === "automated" ? `feed: ${c.tag}` : "read by hand"}</div></td>
                 <td>{c.reading != null ? `${c.reading} ${c.unit}` : "—"}
                   {c.status !== "ok" && <span className="maint-overdue"> {c.status}</span>}
-                  <div className="lib-date">{c.read_at ? fmtDate(c.read_at.slice(0, 10)) : ""}</div></td>
+                  <div className="lib-date">{c.read_at ? readingWhen({ when: c.read_when, precision: c.read_precision, at: c.read_at }, fmtDate) : ""}</div></td>
                 <td><Sparkline point={c} /></td>
                 <td className="lib-date">
                   {c.kind === "counter"
@@ -871,7 +858,7 @@ function PointModal({ target, onClose, onDone }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const counter = f.kind === "counter";
   return (
-    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && (f.source === "manual" || !!f.tag.trim())}
+    <FormModal title="Add a measurement" submitLabel="Add" canSubmit={(counter ? !!f.unit : !!f.name.trim()) && !tooLong(f.name) && (f.source === "manual" || !!f.tag.trim())}
                onClose={onClose} onSubmit={async () => onDone(await (target.kind === "item" ? addItemMeasurementPoint : addMeasurementPoint)(target.id, {
                  ...f, alarm_above: counter ? null : f.alarm_above, alarm_below: counter ? null : f.alarm_below,
                }))}>
@@ -881,7 +868,7 @@ function PointModal({ target, onClose, onDone }) {
           <option value="counter">Counts use (run hours, cycles, km)</option>
         </select>
       </Field>
-      <Field label="Name"><input value={f.name} placeholder={counter ? "e.g. Hour meter" : "e.g. Vibration"} onChange={set("name")} /></Field>
+      <Field label="Name" text={f.name}><input value={f.name} placeholder={counter ? "e.g. Hour meter" : "e.g. Vibration"} onChange={set("name")} /></Field>
       {counter ? (
         <Field label="Counts"><select value={f.unit} onChange={set("unit")}>
           <option value="">Choose…</option>
@@ -913,12 +900,15 @@ function PointModal({ target, onClose, onDone }) {
 function PointReadingModal({ point, onClose, onDone }) {
   const [value, setValue] = useState("");
   const [on, setOn] = useState(today());
+  // The time of day it was read, now by default: clear it when it isn't known.
+  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   return (
     <FormModal title={`Reading: ${point.name}`} submitLabel="Save" canSubmit={value !== ""} onClose={onClose}
-               onSubmit={async () => onDone(await recordMeasurementReading(point.id, Number(value), on))}>
+               onSubmit={async () => onDone(await recordMeasurementReading(point.id, Number(value), on, time ? `${on}T${time}` : undefined))}>
       <Field label={`Reading${point.unit ? ` (${point.unit})` : ""}`}><input type="number" step="any" autoFocus value={value}
              placeholder={point.reading != null ? `last: ${point.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
       <Field label="Read on"><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
+      <Field label="At (clear it if not known)"><input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
     </FormModal>
   );
 }
@@ -932,13 +922,17 @@ function ReadingsModal({ point: initial, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const unit = point.unit ? ` ${point.unit}` : "";
-  const start = (r, mode) => { setError(null); setEdit({ id: r.id, mode, value: String(r.value), on: r.at, reason: "" }); };
+  const start = (r, mode) => {
+    setError(null);
+    setEdit({ id: r.id, mode, value: String(r.value), on: r.on || r.at.slice(0, 10), time: readingClock(r), reason: "" });
+  };
   const save = async () => {
     setBusy(true); setError(null);
     try {
       setPoint(edit.mode === "void"
         ? await voidMeasurementReading(edit.id, edit.reason)
-        : await correctMeasurementReading(edit.id, { value: Number(edit.value), on: edit.on, reason: edit.reason }));
+        : await correctMeasurementReading(edit.id, { value: Number(edit.value), on: edit.on,
+          at: edit.time ? `${edit.on}T${edit.time}` : undefined, reason: edit.reason }));
       setEdit(null);
     } catch (e) { setError(e.message); }
     setBusy(false);
@@ -956,7 +950,7 @@ function ReadingsModal({ point: initial, onClose }) {
           <tbody>
             {point.readings.map((r) => (
               <tr key={r.id}>
-                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{fmtDate(r.at)}</td>
+                <td className={isStruck(r) ? "maint-reading-struck" : ""}>{readingWhen(r, fmtDate)}</td>
                 <td className={isStruck(r) ? "maint-reading-struck" : ""}>{r.value}{unit}</td>
                 <td className="lib-date">{readingStatusText(r, fmtDate) || r.note || ""}</td>
                 <td>{!isStruck(r) && (
@@ -978,6 +972,7 @@ function ReadingsModal({ point: initial, onClose }) {
                 <input type="number" inputMode="decimal" step="any" value={edit.value} onChange={set("value")} />
               </Field>
               <Field label="Really read on"><input type="date" value={edit.on} max={today()} onChange={set("on")} /></Field>
+              <Field label="At (optional)"><input type="time" value={edit.time} onChange={set("time")} /></Field>
             </>}
             <Field label={edit.mode === "void" ? "Why it's struck out" : "Why it's corrected"}>
               <input autoFocus value={edit.reason} placeholder={edit.mode === "void" ? "e.g. entered twice" : "e.g. an old reading entered as today"}

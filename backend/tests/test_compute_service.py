@@ -173,7 +173,7 @@ def test_compute_app_health_and_availability():
 
     tc = TestClient(compute_app.app)
     health = tc.get("/health").json()
-    assert health["ok"] is True and health["repyability_version"].startswith("0.13")
+    assert health["ok"] is True and health["repyability_version"].startswith("0.16")
     # /healthz (Cloud Run reserves paths ending in "z") stays, for local use.
     assert tc.get("/healthz").json() == health
 
@@ -257,8 +257,10 @@ def test_request_is_self_contained_and_runs_without_a_database(monkeypatch):
 def test_job_kinds_are_a_registry():
     from backend.services import compute_core
 
-    assert compute_core.KINDS == ("availability", "sensitivity", "intervals", "alt_bounds", "measures")
-    assert set(compute_core.RUNNERS) == {"availability", "sensitivity", "intervals", "alt_bounds", "measures"}
+    assert compute_core.KINDS == ("availability", "sensitivity", "intervals", "alt_bounds", "measures",
+                                  "test_precision", "calendar_replacement", "joint_fit")
+    assert set(compute_core.RUNNERS) == {"availability", "sensitivity", "intervals", "alt_bounds", "measures",
+                                         "test_precision", "calendar_replacement", "joint_fit"}
     with pytest.raises(compute_core.InvalidRequest, match="Unknown kind"):
         compute_core.run("next_failure", {"graph": _graph()})
 
@@ -285,7 +287,7 @@ def test_run_reports_running_then_result_and_retries_a_failed_callback(monkeypat
     assert all(url == CALLBACK_URL for url, _ in sent)
     final = sent[-1][1]
     assert final["job_id"] == "job1" and final["result"]["n_simulations"] == 10
-    assert final["timings"]["compute_s"] >= 0 and final["repyability_version"].startswith("0.13")
+    assert final["timings"]["compute_s"] >= 0 and final["repyability_version"].startswith("0.16")
 
     # The web app didn't take the result: 5xx so Cloud Tasks retries.
     answer["status"] = 503
@@ -964,7 +966,7 @@ from backend.tests.test_mcp_plans import PRO as MCP_PRO  # noqa: E402
 @pytest.mark.parametrize("uid", [MCP_FREE, AGENT])
 def test_mcp_free_and_agent_still_get_no_simulations(env, uid):
     rid = _repairable(env, uid, "Pumps")
-    out = _ok(_call(env.oauth[uid], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
+    out = _ok(_call(env.oauth[uid], "analyse", {"action": "rbd", "rbd_id": rid}))
     assert out["available"] is True and out["has_simulation"] is False  # the exact figures
     assert out["simulation"]["available"] is False and out["simulation"]["code"] == "pro_required"
     assert env.simulations["n"] == 0 and env.db.free_sim_usage.count_documents({}) == 0
@@ -977,7 +979,7 @@ def test_mcp_free_quick_sims_flag_switches_them_on(env, monkeypatch):
     monkeypatch.setattr(config, "FREE_SIM_SECONDS", 0.05)
     rid = _repairable(env, MCP_FREE, "Pumps")
     # Every figure here is exact: the simulation runs on request (#262).
-    out = _ok(_call(env.oauth[MCP_FREE], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
+    out = _ok(_call(env.oauth[MCP_FREE], "analyse", {"action": "rbd", "rbd_id": rid, "simulate": True}))
     assert out["available"] is True and out["quick"] is True and out["precision"]["half_width"] > 0
     assert out["simulation"]["available"] is True
 
@@ -1013,7 +1015,7 @@ def test_mcp_analyze_waits_then_hands_back_a_job_and_get_job_finishes_it(env, mo
     tasks, dispatch = _mcp_queue(env, monkeypatch)
     rid = _repairable(env, MCP_PRO, "Pumps")
     # Every figure here is exact: the simulation runs on request (#262).
-    out = _ok(_call(env.oauth[MCP_PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
+    out = _ok(_call(env.oauth[MCP_PRO], "analyse", {"action": "rbd", "rbd_id": rid, "simulate": True}))
     # The exact figures now; the simulation as a job to fetch.
     assert out["available"] is True and out["exact"]["status"] == "ok"
     sim = out["simulation"]
@@ -1032,8 +1034,8 @@ def test_mcp_analyze_waits_then_hands_back_a_job_and_get_job_finishes_it(env, mo
     assert 0.9 < done["steady_state_availability"] < 1.0 and done["n_simulations"] == 20
     assert done["exact"]["status"] == "ok"
 
-    # Now saved on the diagram: rbd_analysis analyze answers straight away.
-    again = _ok(_call(env.oauth[MCP_PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid}))
+    # Now saved on the diagram: analyse rbd answers straight away.
+    again = _ok(_call(env.oauth[MCP_PRO], "analyse", {"action": "rbd", "rbd_id": rid}))
     assert again["available"] is True and again["cached"] is True
 
 
@@ -1057,7 +1059,7 @@ def test_mcp_analyze_returns_the_result_when_the_job_finishes_in_time(env, monke
     t.start()
     try:
         # Every figure here is exact: the simulation runs on request (#262).
-        out = _ok(_call(env.oauth[MCP_PRO], "rbd_analysis", {"action": "analyze", "rbd_id": rid, "simulate": True}))
+        out = _ok(_call(env.oauth[MCP_PRO], "analyse", {"action": "rbd", "rbd_id": rid, "simulate": True}))
     finally:
         stop.set()
         t.join(5)

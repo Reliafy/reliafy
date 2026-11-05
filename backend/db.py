@@ -95,13 +95,14 @@ def init_db() -> None:
     """
     db = get_db()
     db.datasets.create_index([("owner_id", 1), ("checksum", 1)])
+    db.agent_reports.create_index([("owner_id", 1), ("created_at", -1)])
+    db.agent_reports.create_index([("status", 1), ("created_at", -1)])
     db.datasets.create_index([("owner_id", 1), ("created_at", -1)])
     db.models.create_index([("owner_id", 1), ("dataset_id", 1)])
     db.models.create_index([("owner_id", 1), ("created_at", -1)])
     db.rbds.create_index([("owner_id", 1), ("created_at", -1)])
     db.outage_logs.create_index([("owner_id", 1), ("rbd_id", 1), ("created_at", -1)])
     db.strategy_analyses.create_index([("owner_id", 1), ("created_at", -1)])
-    db.rcm_studies.create_index([("owner_id", 1), ("created_at", -1)])
     db.degradation_models.create_index([("owner_id", 1), ("created_at", -1)])
     db.tracked_items.create_index([("owner_id", 1), ("model_id", 1)])
     db.tracked_items.create_index([("model_id", 1), ("created_at", -1)])
@@ -165,6 +166,8 @@ def init_db() -> None:
     db.rbd_jobs.create_index([("uid", 1), ("rbd_id", 1), ("created_at", -1)])
     db.rbd_jobs.create_index([("uid", 1), ("cache_key", 1), ("created_at", -1)])
     db.rbd_jobs.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    # Cancels of runs computing in the web process (rbd_jobs.cancel_token).
+    db.rbd_job_cancels.create_index([("expires_at", 1)], expireAfterSeconds=0)
     # Run history (#112) by diagram, and the runtime quote's calibration log (#286).
     from backend.services import rbd_runs
 

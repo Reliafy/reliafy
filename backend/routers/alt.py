@@ -312,3 +312,27 @@ def bounds(
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@router.post("/alt/models/{model_id}/diagnostics")
+def diagnostics(
+    model_id: str,
+    use_stress: list[float] | None = Body(default=None, embed=True),
+    session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The model page's Diagnostics checks for a saved ALT model: whether the
+    shape is the same at every tested level, whether the levels follow the
+    life model, how the other life models compare (AIC) and how far
+    ``use_stress`` (optional) lies from the tested stresses. About half a
+    second (the model is refitted several times); nothing resamples."""
+    doc, _ = access_service.fetch_readable(session, "alt_models", AltModelDoc, model_id, ctx)
+    if doc is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        out = alt_service.diagnose(session, model_id, [*ctx.read_owners, doc.owner_id],
+                                   use_stress=list(use_stress) if use_stress else None)
+        return JSONResponse(content=out)
+    except alt_service.ModelNotFound:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    except (FitError, ValueError, TypeError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})

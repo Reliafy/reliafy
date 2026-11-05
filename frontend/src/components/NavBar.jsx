@@ -110,7 +110,7 @@ export default function NavBar({ menuOpen = false, onMenu, menuButtonRef }) {
       return;
     }
     setWorkspaceId(value);
-    if (pathname === "/team" && value === "personal") navigate("/modelling");
+    if (pathname === "/team" && value === "personal") navigate("/home");
   };
 
   return (
@@ -131,7 +131,7 @@ export default function NavBar({ menuOpen = false, onMenu, menuButtonRef }) {
             <MenuIcon />
           </button>
         )}
-        <NavLink className="brand" to="/modelling">
+        <NavLink className="brand" to="/home">
           <Logo size={30} />
           <span className="brand-name">Reliafy</span>
         </NavLink>

@@ -19,12 +19,15 @@ from backend import db, main
 from backend.routers import feeds
 from backend.services import content_gate
 
+API_DOCS_PAGES = ["authentication", "tools", "examples", "cli", "python", "files", "mcp", "v1-routes"]
 NOINDEX = '<meta name="robots" content="noindex">'
 SHELL = "<!doctype html><html><head><title>Reliafy</title></head><body><div id=root></div>SHELL</body></html>"
 PRERENDERED = [
     ".", "blog", "blog/past", "blog/future", "whats-new", "whats-new/october-2026",
     "learn/weibull-analysis", "guides", "guides/repairable-rbd", "reference", "reference/weibull",
     "api-docs", "terms", "privacy", "rcm-software",
+    # The API docs' pages (frontend/src/apiDocsPages.js).
+    *(f"api-docs/{p}" for p in API_DOCS_PAGES),
 ]
 
 
@@ -93,7 +96,7 @@ def _is_404_shell(r) -> bool:
 
 # ---- unknown roots: the plain 404 page, as since #118 ---------------------------
 
-@pytest.mark.parametrize("path", ["/totally-made-up", "/models/abc", "/wp-login.php", "/Bloggs/past"])
+@pytest.mark.parametrize("path", ["/totally-made-up", "/widgets/abc", "/wp-login.php", "/Bloggs/past"])
 def test_unknown_roots_are_404_pages(site, path):
     r = site.get(path)
     assert r.status_code == 404, path
@@ -120,7 +123,7 @@ def test_future_dated_post_is_a_404_until_its_date(site, monkeypatch):
 @pytest.mark.parametrize("path", [
     "/", "/blog", "/blog/past", "/whats-new", "/whats-new/october-2026", "/learn/weibull-analysis",
     "/guides", "/guides/repairable-rbd", "/reference", "/reference/weibull", "/api-docs", "/terms",
-    "/privacy", "/rcm-software",
+    "/privacy", "/rcm-software", *(f"/api-docs/{p}" for p in API_DOCS_PAGES),
 ])
 def test_real_content_is_served_prerendered(site, path):
     r = site.get(path)
@@ -130,7 +133,7 @@ def test_real_content_is_served_prerendered(site, path):
 
 
 @pytest.mark.parametrize("path", [
-    "/blog/past/extra", "/terms/x", "/privacy/old", "/rcm-software/x", "/api-docs/v2",
+    "/blog/past/extra", "/terms/x", "/privacy/old", "/rcm-software/x", "/api-docs/v2", "/api-docs/cli/extra",
     "/reference/weibull/params",
 ])
 def test_other_paths_under_content_roots_are_404_pages(site, path):
@@ -161,9 +164,14 @@ def test_without_the_content_index_slugs_keep_the_shell(site, dist):
 # ---- the app's own routes ---------------------------------------------------------
 
 @pytest.mark.parametrize("path", [
+    "/models", "/models/m/abc123", "/models/recurrent/r1", "/systems/b/123", "/systems/runs/run9",
+    "/data/d1", "/home", "/risk", "/risk/f1", "/forecasts/f2", "/strategy/analyses/s1",
+    "/maintenance/rcm/s1", "/asset-register/positions/p1", "/reports",
+    # Earlier addresses, which the app redirects.
     "/modelling", "/modelling/m/abc123", "/modelling/recurrent/r1", "/rbds/b/123", "/rbds/runs/run9",
-    "/datasets/d/d1", "/fleet/tracking/f1", "/fleet/forecasts/f2", "/strategy/analyses/s1",
-    "/rcm/studies/s1", "/settings", "/login", "/oauth/consent", "/unsubscribe",
+    "/datasets/d/d1", "/modelling/data/d1", "/fleet/tracking/f1", "/fleet/forecasts/f2", "/rcm/studies/s1",
+    "/models/tracking/f1",
+    "/settings", "/login", "/oauth/consent", "/unsubscribe",
 ])
 def test_app_routes_with_ids_keep_the_shell_and_a_200(site, path):
     r = site.get(path)
@@ -248,6 +256,9 @@ def test_content_roots_match_the_prerendered_routes():
     collections = set(re.findall(r"path: `/([a-z-]+)/\$\{", routes))
     pages = set(re.findall(r'path: "/([a-z-]+)"', routes))
     pages |= set(re.findall(r'path: "/([a-z-]+)"', (src / "productPages.jsx").read_text()))
+    # The API docs' pages come from apiDocsPages.js: /api-docs and pages beneath it.
+    if "API_DOCS_PAGES.map" in routes:
+        pages.add("api-docs")
     assert collections == set(main.CONTENT_COLLECTIONS)
     assert pages - collections == set(main.CONTENT_PAGES)
     assert (main.CONTENT_COLLECTIONS | main.CONTENT_PAGES) <= main.SPA_ROOTS

@@ -10,27 +10,86 @@ import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
+  // The Explorer's "Add the sample truck" (once: smoke/seed.js added it, so this adds nothing).
+  ["POST", "/api/maintenance/sample-truck"],
+  // "Add the sample UAV" (the FME(C)A tab's scored sample quadcopter).
+  ["POST", "/api/maintenance/sample-uav"],
+  ["POST", "/api/maintenance/sample-product"],
+  // A dataset's measurements part (docs/datasets.md): add, paste, remove, split, life data for readings alone.
+  ["PUT", "/api/datasets/smoke/measurements"],
+  ["PUT", "/api/datasets/smoke/measurements/paste"],
+  ["DELETE", "/api/datasets/smoke/measurements"],
+  ["POST", "/api/datasets/smoke/split"],
+  ["PUT", "/api/datasets/smoke/life"],
+  ["POST", "/api/alt/models/smoke/diagnostics"], // the accelerated life page's Diagnostics checks
+  ["GET", "/api/me/roles"], // what the user does: the menu's order and Home's cards
+  ["GET", "/api/public-links"], // Reports: every shared link
+  ["POST", "/api/maintenance/documents/upload"], // PDFs kept in maintenance
+  ["GET", "/api/maintenance/documents/smoke/file"],
+  ["POST", "/api/test-planning/sequential"], // Test planning
+  ["POST", "/api/test-planning/life"],
+  ["POST", "/api/test-planning/accelerated"],
+  ["POST", "/api/test-planning/comparison"],
+  ["POST", "/api/test-planning/simulate"],
+  ["POST", "/api/strategy/calendar-replacement"], // replacement over a shutdown calendar
+  ["POST", "/api/strategy/calendar-next"],
+  ["POST", "/api/rbd-jobs/smoke/cancel"], // cancel a long calculation
+  ["POST", "/api/maintenance/photos/smoke/move"], // a photo on several places
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407
   ["POST", "/api/maintenance/graph/query"], // #423
   ["GET", "/api/maintenance/graph/schema"], // #423
+  ["GET", "/api/maintenance/graph/design"], // the Data model page
   ["GET", "/api/maintenance/conditions"], // #428
+  ["GET", "/api/maintenance/rcm"], // the RCM in the Explorer's tree
+  ["GET", "/api/maintenance/positions/smoke/rcm"], // a position's RCM
+  ["GET", "/api/maintenance/failure-reports"], // the Explorer's Failure reports tab
+  ["POST", "/api/maintenance/failure-reports"],
+  // Products: design trees and the items built from them (the Products and Items pages).
+  ["GET", "/api/maintenance/products"],
+  ["POST", "/api/maintenance/products"],
+  ["GET", "/api/maintenance/products/smoke"],
+  ["GET", "/api/maintenance/products/smoke/items"],
+  ["POST", "/api/maintenance/products/smoke/build"],
+  ["DELETE", "/api/maintenance/products/smoke/design"],
+  ["PUT", "/api/maintenance/positions/smoke/design"],
+  ["GET", "/api/maintenance/positions/smoke/design-rollup"],
+  ["GET", "/api/maintenance/items/overview"],
+  ["PUT", "/api/maintenance/failure-modes/smoke/decision"],
+  ["GET", "/api/maintenance/tasks/smoke/measurement"], // what a task by use counts (its dialog, a move's question)
   ["GET", "/api/maintenance/overview"],
+  ["GET", "/api/maintenance/tree"], // the asset tree pane
+  ["GET", "/api/maintenance/places"], // Assets: the top-level places
   ["GET", "/api/maintenance/work-orders"],
+  ["GET", "/api/maintenance/packages"], // work packages: tasks done on one visit
+  ["GET", "/api/maintenance/packages/propose"],
+  ["GET", "/api/maintenance/packages/smoke"],
+  ["POST", "/api/maintenance/packages"],
+  ["PATCH", "/api/maintenance/packages/smoke"],
+  ["POST", "/api/maintenance/packages/smoke/tasks"],
+  ["DELETE", "/api/maintenance/packages/smoke/tasks/smoke"],
+  ["POST", "/api/maintenance/packages/smoke/pause"],
+  ["POST", "/api/maintenance/positions/smoke/out-of-service"], // tasks not due while it's out of service
+  ["POST", "/api/maintenance/items/smoke/back-in-service"],
+  ["PUT", "/api/maintenance/work-orders/smoke/lines/smoke"], // a package line's mark, saved during the visit
   ["GET", "/api/rbd-runs"],
   ["POST", "/api/rbds/import"],
   ["GET", "/api/rbds"],
-  ["GET", "/api/rcm/studies"],
+  ["GET", "/api/maintenance/rcm/options"], // the decision dialog's vocabulary
   ["GET", "/api/fleet/fleets"],
   ["GET", "/api/strategy/analyses"],
   ["GET", "/api/models"],
+  ["GET", "/api/joint/models"],
   ["GET", "/api/datasets"],
   ["GET", "/api/me"],
+  ["GET", "/api/v1/tools"], // every MCP tool action over REST
+  ["POST", "/api/v1/list/models"],
+  ["POST", "/api/v1/maintenance/photos"],
 ];
 
 // Public: these answer anyone.
-const PUBLIC = ["/api/health", "/api/config", "/api/distributions"];
+const PUBLIC = ["/api/health", "/api/config", "/api/distributions", "/api/v1/openapi.json"];
 
 let auth;
 test.beforeAll(async ({ request }) => {

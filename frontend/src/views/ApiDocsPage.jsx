@@ -1,39 +1,37 @@
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import ApiReference, { McpDocs } from "../components/ApiReference.jsx";
+import { Link, useNavigate } from "react-router-dom";
+import ApiDocs from "../components/ApiReference.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
+import { apiDocsPage, apiDocsPath } from "../apiDocsPages.js";
 
-// Standalone in-app reference for the ingestion API. Token management lives in
-// Settings (/settings?tab=api); this page is the endpoint documentation.
-export default function ApiDocsPage() {
+// The API docs inside the app (self-hosted, single-user builds; cloud builds
+// show the public pages): one route per page (apiDocsPages.js). Token
+// management lives in Settings (/settings?tab=api).
+export default function ApiDocsPage({ page = "" }) {
   const navigate = useNavigate();
   const { mcp: mcpOn } = useAppConfig();
-  // Links such as /api-docs#mcp land on the section: the page renders after the
-  // browser's own fragment scroll, so do it once mounted.
-  useEffect(() => {
-    const id = decodeURIComponent(window.location.hash.slice(1));
-    if (id) document.getElementById(id)?.scrollIntoView();
-  }, []);
-  return (
-    <div className="app">
-      <header>
-        <div>
-          <div className="crumb">
-            <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
-              API access
-            </button>{" "}
-            / <b>Reference</b>
-          </div>
-          <h1>API reference</h1>
+  const meta = apiDocsPage(page);
+  const toSettings = (
+    <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
+      Settings › API access
+    </button>
+  );
+  const header = (
+    <header>
+      <div>
+        <div className="crumb">
+          <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
+            API access
+          </button>{" "}
+          / {page ? <><Link className="crumb-link" to={apiDocsPath("")}>Reference</Link> / <b>{meta.label}</b></> : <b>Reference</b>}
+        </div>
+        <h1>{meta.heading}</h1>
+        {page === "" && (
           <p>
-            Read models &amp; reliability, create datasets and fit, read fleet
-            forecasts, run strategy calculators, and push operational data —
-            through the <b>reliafy-client</b> Python package or the raw{" "}
-            <b>HTTP API</b>. Create a token under{" "}
-            <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
-              Settings › API access
-            </button>
-            .{" "}
+            Everything Reliafy’s Claude connector can do — fit, analyse RBDs, plan
+            tests, run strategy calculators, save and share — over plain HTTPS, from
+            the <b>reliafy</b> command line or the <b>reliafy-client</b> Python
+            package, plus pushing data and sending files. Create a token under{" "}
+            {toSettings}.{" "}
             {mcpOn ? (
               <>
                 To connect Claude (claude.ai, the desktop and mobile apps, or Claude
@@ -42,21 +40,18 @@ export default function ApiDocsPage() {
             ) : (
               <>Claude can also connect over MCP, available on request — see </>
             )}
-            <a className="crumb-link" href="#mcp">Use Reliafy from Claude (MCP)</a>.
+            <Link className="crumb-link" to={apiDocsPath("mcp")}>Use Reliafy from Claude (MCP)</Link>.
           </p>
-        </div>
-      </header>
-      <ApiReference />
-      <McpDocs
-        tokenNote={
-          <>
-            create one under{" "}
-            <button className="crumb-link" onClick={() => navigate("/settings?tab=api")}>
-              Settings › API access
-            </button>
-            .
-          </>
-        }
+        )}
+      </div>
+    </header>
+  );
+  return (
+    <div className="app">
+      <ApiDocs
+        page={page}
+        header={header}
+        tokenNote={<>create one under {toSettings}.</>}
       />
     </div>
   );

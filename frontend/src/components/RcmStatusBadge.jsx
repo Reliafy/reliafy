@@ -1,13 +1,14 @@
 import Chip from "./ui/Chip.jsx";
 
 // Evidence status of an RCM decision, as a Chip: green only when the evidence
-// supports the decision, red when it contradicts it, amber when it's missing
-// or inconclusive.
+// supports the decision, red when it contradicts it, amber when it's
+// inconclusive; grey when nothing is linked yet (not a warning: most RCM is
+// done from judgement) or the link has gone.
 const STATUS = {
   supported: { label: "Supported", tone: "success" },
   contradicted: { label: "Contradicted", tone: "danger" },
   inconclusive: { label: "Inconclusive", tone: "warning" },
-  unevidenced: { label: "No evidence", tone: "warning" },
+  unevidenced: { label: "Not linked", tone: "neutral" },
   stale: { label: "Stale link", tone: "neutral" },
 };
 
@@ -22,7 +23,8 @@ export function RollupBadges({ rollup }) {
   const parts = [
     ["supported", rollup.supported, "success"],
     ["contradicted", rollup.contradicted, "danger"],
-    ["inconclusive", (rollup.inconclusive || 0) + (rollup.unevidenced || 0), "warning"],
+    // Only linked evidence: a decision with nothing linked yet isn't inconclusive.
+    ["inconclusive", rollup.inconclusive, "warning"],
     ["stale", rollup.stale, "neutral"],
   ].filter(([, n]) => n > 0);
   if (!parts.length) return null;
