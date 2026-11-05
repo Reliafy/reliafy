@@ -149,7 +149,7 @@ export default function StrategyTracking() {
       <PageTitle name={fleet && itemName(fleet)} />
       <PageHeader
         className="trk-header"
-        crumbs={[{ label: "Risk", to: "/risk" }]}
+        crumbs={[{ label: "Condition monitoring", to: "/risk" }]}
         title={itemName(fleet)}
         badges={fleet.is_sample && <Chip>Sample</Chip>}
         meta={

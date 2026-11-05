@@ -49,7 +49,7 @@ export default function RecurrentModelPage() {
   return (
     <ModelFrame
       className="model-page"
-      crumbs={[{ label: "Model", to: "/models" }, { label: "Repairable", to: "/models/recurrent" }]}
+      crumbs={[{ label: "Models", to: "/models" }, { label: "Repairable", to: "/models/recurrent" }]}
       title={model ? itemName(model) : "Model"}
       badges={model?.is_sample && <Chip>Sample</Chip>}
       answer={model ? recurrentAnswer(r, { saved: `saved ${relativeTime(model.created_at)}` }) : null}

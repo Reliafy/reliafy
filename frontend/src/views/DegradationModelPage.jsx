@@ -55,7 +55,7 @@ export default function DegradationModelPage() {
   return (
     <ModelFrame
       className="model-page"
-      crumbs={[{ label: "Model", to: "/models" }, { label: "Degradation", to: "/models/degradation" }]}
+      crumbs={[{ label: "Models", to: "/models" }, { label: "Degradation", to: "/models/degradation" }]}
       title={model ? itemName(model) : error ? "Degradation model" : "Model"}
       badges={model?.is_sample && <Chip>Sample</Chip>}
       answer={model ? degradationAnswer(model.results, { saved: `saved ${relativeTime(model.updated_at || model.created_at)}` }) : null}

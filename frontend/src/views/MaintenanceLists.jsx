@@ -664,7 +664,7 @@ function ForecastCard({ name }) {
 // ---- parts and stock -------------------------------------------------------------------
 
 // `view`: "structure" is the same catalogue as structures, what each part is
-// made of (Design › Systems › Product structure); "list" is Assets › Parts
+// made of (Product structure, out of the menu); "list" is Assets › Parts
 // and stock.
 export function MaintenanceParts({ view: initialView = "list" }) {
   const structurePage = initialView === "structure";
@@ -686,7 +686,7 @@ export function MaintenanceParts({ view: initialView = "list" }) {
   }, [load]);
   return (
     <div className="app">
-      <SectionHeader section={structurePage ? "systems" : "assets"}
+      <SectionHeader section="assets"
                   title={structurePage ? "Product structure" : "Parts and stock"}
                   purpose={structurePage
                     ? "What each part is made of, from the parts catalogue, as a tree."
