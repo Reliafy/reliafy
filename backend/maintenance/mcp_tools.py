@@ -168,6 +168,10 @@ GET_KINDS: Table = {
         position (with path), the item as it was (a snapshot: name, serial, part, item class), failure mode,
         investigation, corrective actions, verification, repeat_check (failures at the position since the fix),
         closure or rejection, history (who, when, what), photos, open_actions and can.close (with reasons)."""),
+    "product": ("id", "", "A product (a design tree): part, rev, positions, items_built, open_reports."),
+    "design_rollup": ("id", "", """id = a position in a product's design (or its top). Across the items built
+        from it: each item's serial, rev, hours, what's fitted there; pooled life data (as class_life_data); failure
+        reports there and below, with the item."""),
 }
 
 LIST_KINDS: Table = {
@@ -217,6 +221,12 @@ LIST_KINDS: Table = {
         since / until bound when it occurred; q searches title, description, finder, failure mode and position.
         sort newest (default), oldest, status, consequence or position; limit up to 500 and offset page it.
         counts is by status over the scope and the other filters."""),
+    "products": ("", "", "Products (design trees): part, rev, items_built, open_reports."),
+    "product_items": ("product_id", "", "The items built from a product: serial, rev, built_on, hours, location, open "
+                                        "reports, top_position_id."),
+    "items_overview": ("", "product_id item_class_id q limit offset", """Every item with its product, item class,
+        position path, status (fitted, spare, not placed) and open reports. product_id ('none': no product),
+        item_class_id and q filter; limit up to 500 and offset page it."""),
 }
 
 POSITIONS: Table = {
@@ -383,6 +393,19 @@ FAILURE_REPORTS: Table = {
                       "Change one: status open, done (done_on, default today) or dropped."),
     "verify": ("report_id result", "notes verified_on", """Did it work? result worked, not_worked or unclear, with
         notes and the date checked. The answer's repeat_check counts failures at the position since the fix."""),
+}
+
+PRODUCTS: Table = {
+    "create": ("name", "part_number part_id rev description", """A product: its design's top position and the part it
+        is (part_number: a new part; part_id: one in the catalogue), declared together. Build its design tree
+        under it with positions.create, then build items from it (guide topic products)."""),
+    "declare": ("position_id", "part_id rev", """Make a top-level tree a product's design, or change its revision label
+        or part. Refused inside another position, with items fitted, or built from a design."""),
+    "clear": ("product_id", "",
+              "The tree isn't a product's design any more (refused while items built from it are in use)."),
+    "build": ("product_id serial", "rev name dry_run", """Build an item from a product: a copy of its design tree
+        named by the serial, the item (its part, this serial) fitted at the top, every position linked to its
+        design position. dry_run (default true) lists the paths it would make."""),
 }
 
 TASKS: Table = {
@@ -792,7 +815,7 @@ TABLES: dict[str, tuple[str, Table]] = {
     "maintenance_items": ("action", ITEMS), "maintenance_failure_modes": ("action", FAILURE_MODES),
     "maintenance_tasks": ("action", TASKS), "maintenance_proposals": ("action", PROPOSALS),
     "maintenance_work_orders": ("action", WORK_ORDERS), "maintenance_packages": ("action", PACKAGES),
-    "maintenance_failure_reports": ("action", FAILURE_REPORTS),
+    "maintenance_failure_reports": ("action", FAILURE_REPORTS), "maintenance_products": ("action", PRODUCTS),
     "maintenance_measurements": ("action", MEASUREMENTS), "maintenance_signals": ("action", SIGNALS),
     "maintenance_signal_data": ("action", SIGNAL_DATA),
     "maintenance_locations": ("action", LOCATIONS), "maintenance_parts": ("action", PARTS),
@@ -950,7 +973,8 @@ def register() -> None:
         cover), data (rough dates, placement, time zone, notes, dry runs, retire and restore, clearing),
         classes (position classes vs item classes, taxonomies, manufacturers), conditions (what things are
         exposed to, inherited), structure (parts made of parts: BOMs, indenture levels, where used), failures
-        (failure reports: from a report to its closure), apply (many changes in one call: build a branch, bulk
+        (failure reports: from a report to its closure), products (design trees and the items built from
+        them), apply (many changes in one call: build a branch, bulk
         edit, delete with confirm, undo). Read the one you need before a task you haven't done here yet."""
         m_for(ctx)  # Maintenance is on for this account
         pages = dict(mcp_guide.TOPICS)
@@ -1025,7 +1049,8 @@ def register() -> None:
                 "manufacturer": m.manufacturer, "task": m.explain_task, "class_life_data": m.class_life_data,
                 "impact": m.impact, "conditions": m.conditions_of, "part_structure": m.part_structure,
                 "where_used": m.where_used, "function": m.function, "package": m.package,
-                "failure_report": m.failure_report}[kind]
+                "failure_report": m.failure_report, "product": m.product,
+                "design_rollup": m.design_rollup}[kind]
         return run(read, rid)
 
     @tool("maintenance_list", _READ, "List maintenance records", LIST_KINDS, "kind")
@@ -1062,7 +1087,10 @@ def register() -> None:
                              "failure_reports: a date, reports that occurred on or before it."))] = None,
                          q: Annotated[str | None, Field(description="failure_reports: words to search for.")] = None,
                          sort: Literal["newest", "oldest", "status", "consequence", "position"] | None = None,
-                         offset: Annotated[int | None, Field(ge=0)] = None) -> dict[str, Any]:
+                         offset: Annotated[int | None, Field(ge=0)] = None,
+                         product_id: Annotated[str | None, Field(description=(
+                             "A product's id (its design's top position); items_overview: 'none' for items of no "
+                             "product."))] = None) -> dict[str, Any]:
         """Lists and reports across the maintenance workspace, by kind."""
         m = m_for(ctx)
         statuses = {"work_orders": ("open", "planned", "in_progress", "waiting", "closed", "cancelled"),
@@ -1081,6 +1109,12 @@ def register() -> None:
         if kind == "failure_reports":
             return run(m.failure_reports, position_id, _d(below, True), location_id, item_id, status, consequence,
                        failure_mode_id, part_id, since, until, q, _d(sort, "newest"), _d(limit, 100), _d(offset, 0))
+        if kind == "products":
+            return run(m.products)
+        if kind == "product_items":
+            return run(m.product_items, product_id)
+        if kind == "items_overview":
+            return run(m.items_overview, product_id, item_class_id, q, _d(limit, 100), _d(offset, 0))
         if kind == "rcm_gaps":
             from backend.maintenance import rcm_graph
 
@@ -1689,6 +1723,31 @@ def register() -> None:
             return run(m.update_corrective_action, report_id, action_id, by=who,
                        **{k: v for k, v in edits.items() if k in keep})
         return run(m.verify_failure_report, report_id, result, notes or "", verified_on, by=who)
+
+    @tool("maintenance_products", _WRITE, "Products: design trees, and items built from them", PRODUCTS)
+    def maintenance_products(
+            action: _choice(PRODUCTS), ctx: Context, name: str | None = None, part_number: str | None = None,
+            part_id: Annotated[str | None, Field(description=(
+                "A catalogue part's id. declare: 'none' takes the product's part off."))] = None,
+            rev: Annotated[str | None, Field(description="A revision label (text, e.g. 'C').")] = None,
+            description: str | None = None, position_id: str | None = None,
+            product_id: Annotated[str | None, Field(description=(
+                "A product's id: its design's top position (maintenance list.products)."))] = None,
+            serial: str | None = None,
+            dry_run: Annotated[bool | None, Field(description="build: only list what it would make (default true).")]
+            = None) -> dict[str, Any]:
+        """Products (what the user designs and builds): a product is a design tree (its functional
+        hierarchy) with its part (the bill of materials); items are built from it by serial. Read with
+        maintenance get.product / get.design_rollup and list.products / product_items / items_overview.
+        How-to: maintenance guide topic products."""
+        m = m_for(ctx)
+        if action == "create":
+            return run(m.create_product, name, part_number or "", rev or "", description or "", part_id)
+        if action == "declare":
+            return run(m.declare_design, position_id, part_id, rev)
+        if action == "clear":
+            return run(m.clear_design, product_id)
+        return run(m.build_item, product_id, serial, rev, name, _d(dry_run, True))
 
     PackageTasks = Annotated[list[dict[str, Any] | str] | None, Field(description=(
         "Task ids, or [{task_id, visit_rule?: every|nth, every_nth?: N (nth: the first visit and every Nth after), "
@@ -2315,9 +2374,10 @@ def register() -> None:
         functions, functional failures, failure modes, decisions, tasks, parts list, connections), or
         edit and delete many things at once. Each operation is one of the maintenance_<area> tools'
         actions (area = the tool name without maintenance_: positions, fitments, items, failure_modes,
-        tasks, proposals, work_orders, packages, failure_reports, measurements, locations, parts, topology,
-        item_classes, manufacturers, attachments) with its own arguments and error texts. Every operation is first
-        checked on a throwaway copy of the workspace: with any failure nothing is written. A delete-type
+        tasks, proposals, work_orders, packages, failure_reports, products, measurements, locations, parts,
+        topology, item_classes, manufacturers, attachments) with its own arguments and error
+        texts. Every operation is first checked on a throwaway copy of the workspace: with any failure
+        nothing is written. A delete-type
         operation (retire, remove, void, cancel, merge, disconnect, unlink, clear) needs confirm: the
         thing's name as it is now. Answers with each operation's result, counts, the events written and
         undo (the reverse operations). At most 200 operations (50 deletes). How-to and worked examples:

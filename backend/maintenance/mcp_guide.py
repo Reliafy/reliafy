@@ -20,7 +20,7 @@ or part is. Connections: what feeds what, for redundancy, impact and generated R
 things) are fitted to positions; every fitment is history and a row of life data.
 Start with maintenance overview (the position tree, what's due, open work, short spares, the time zone and \
 today). Read maintenance guide (args {topic}) for how-tos: model, register, plan, run, learn, decide, data, classes, \
-conditions, structure, signals, failures, apply. \
+conditions, structure, signals, failures, products, apply. \
 Reads are maintenance get.<kind> / list.<kind>; changes are maintenance <area>.<action>, and guide(action='maintenance.<action>') gives \
 what each takes. Many changes at once (a branch with its RCM, a bulk \
 edit): maintenance apply runs a list of those actions in one checked call (topic apply). Retired things restore.
@@ -557,6 +557,33 @@ position_id (below true: everything inside it; each row's level names the way do
 item_id or by part_id, with status (open by default in the app; all here), consequence, failure_mode_id, \
 since / until, q and sort. counts gives how many each status has.
 - Photos go on a report like on a work order (maintenance attachments, target_id = the report's id)."""),
+    "products": ("Products: design trees, building items from them by serial, and the design roll-up.", """\
+Products: for a user who designs and builds things (a drone, a pump skid) rather than only running a plant.
+- A product is a design: a top-level position tree (its functional hierarchy: Airframe > Propulsion > Motor 1) \
+flagged as a design, with the catalogue part it is (its bill of materials: topic structure). It's a template: \
+nothing is fitted to a design's positions and no failure is reported there.
+- Make one: maintenance products.create (name; part_number for a new part, or part_id for one in the catalogue; \
+rev, a revision label). Then build its tree under it with positions.create (or apply), each with its failure \
+modes and tasks. An existing top-level tree with no items in it becomes one with products.declare (position_id, \
+part_id, rev); declare again to change the rev label. A tree with items fitted is a plant, not a design: refused.
+- Build an item: maintenance products.build (product_id, serial; rev, default the design's; name, default \
+'<product> · <serial>'). It copies the design's tree to the top level, makes the item (of the product's part, with \
+that serial), fits it at the new tree's top and links every copied position to the design position it implements. \
+dry_run is true by default: show the user the paths, then run it with dry_run false. A serial already used by an \
+item of the product is refused. Items fitted into the built tree's positions are its as-built parts (fitments, as \
+anywhere: topic register).
+- The link survives renames and moves inside the item's tree; a design position retired later shows as gone \
+(implements.gone on maintenance get.position), never unlinked. A change to the design doesn't reach items already \
+built: say so if the user expects it.
+- Failure reports go on an item's position (topic failures), never on the design's: the design is a template.
+- Reading: maintenance list.products (part, rev, items built, open reports); list.product_items (product_id: \
+each item's serial, rev, built_on, hours when an hours counter is on the item or its tree's top, open reports); \
+get.design_rollup (id = a design position or the product: the items implementing it, what's fitted there on \
+each, the life data of everything fitted there pooled (x days, c 0 failed / 1 censored / 2 interval, as \
+class_life_data), and the failure reports there and below with the item's serial); list.items_overview (every \
+item with its product, item class, position path, status and open reports; product_id, item_class_id, q, limit, \
+offset). get.item and get.position say which product an item or position belongs to.
+- products.clear: the tree is a plain tree again; refused while items built from it are in use."""),
 }
 
 # Graph queries in Cypher (#423): only for the people allowed them
