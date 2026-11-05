@@ -50,8 +50,8 @@ The notes are the part to read carefully. Two are common:
 - **A block with no non-repairable model.** A basic event with only a fixed failure
   probability (the valve above, *p* = 0.001) has no failure time to model.
   Reliafy won't invent a failure rate for it, because that would change the
-  answer. It imports as a block marked *No non-repairable model*: double-click it and set
-  one, such as an exponential failure rate, before you calculate.
+  answer. It imports as a block marked *No failure data*: double-click it and set a
+  non-repairable model, such as an exponential failure rate, before you calculate.
 
 Press **Validate** once you've dealt with the notes. It names any block still
 missing a model and any wiring problem. Then **Save**. Saving is the moment the

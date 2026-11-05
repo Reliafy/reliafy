@@ -7,12 +7,20 @@ const wb = (a, b) => ({ distribution: "Weibull", distribution_id: "weibull", par
 const ln = (mu, s) => ({ distribution: "Lognormal", distribution_id: "lognormal", params: [{ name: "mu", value: mu }, { name: "sigma", value: s }] });
 
 test("a block's one line", () => {
-  assert.equal(blockLine({ model: exp(5e-7), repair: exp(1 / 8) }, "Hours", true), "λ 5e-7/h · MTTR 8 h");
+  assert.equal(blockLine({ model: exp(5e-7), repair: exp(1 / 8) }, "Hours", true), "MTBF 2,000,000\u00a0h · MTTR 8 h");
   assert.equal(lifeLine(wb(4000, 2), "Hours"), "Weibull · η 4,000 h · β 2");
   assert.equal(lifeLine(wb(4000, 2), "Hours", { short: true }), "η 4,000 h · β 2");
-  assert.equal(lifeLine(exp(1e-3), "Cycles", { short: true }), "λ 0.001/cycle");
+  assert.equal(lifeLine(exp(1e-3), "Cycles", { short: true }), "MTTF 1,000\u00a0cycles");
   assert.equal(blockLine({ model: wb(4000, 2), instant_repair: true }, "Hours", true), "Weibull · η 4,000 h · β 2 · instant repair");
-  assert.equal(blockLine({ model: exp(1e-3) }, "Cycles", false), "λ 0.001/cycle");
+  assert.equal(blockLine({ model: exp(1e-3) }, "Cycles", false), "MTTF 1,000\u00a0cycles");
+});
+
+test("a constant rate reads as its mean, and says when the unit isn't set", () => {
+  assert.equal(lifeLine(exp(1e-5), "Hours"), "MTTF 100,000\u00a0h");
+  assert.equal(lifeLine(exp(1e-5), "Hours", { repairable: true }), "MTBF 100,000\u00a0h");
+  assert.equal(lifeLine(exp(1e-5), ""), "MTTF 100,000 · unit not set");
+  assert.equal(lifeLine(exp(3e-5), "Hours"), "MTTF 33,300\u00a0h");
+  assert.equal(lifeLine(exp(0), "Hours"), "λ 0/h");
 });
 
 test("means", () => {

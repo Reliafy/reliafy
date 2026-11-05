@@ -10,6 +10,7 @@ import { diagramGap } from "../rbdReadiness.js";
 import LifeModelModal from "./LifeModelModal.jsx";
 import Select from "./Select.jsx";
 import { modelSummary } from "./RbdNodes.jsx";
+import { lifeLine } from "./rbdModelText.js";
 import { graphSignature } from "./RbdValidation.jsx";
 import "./RbdDesignPanel.css";
 import { unitInText } from "./unitText.js";
@@ -361,7 +362,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                         <input type="checkbox" checked={r.include} onChange={(e) => update(n.id, { include: e.target.checked })} />
                         <span>
                           <b>{n.data.label || n.id}</b>
-                          <small>{modelSummary(n.data.model)}</small>
+                          <small title={modelSummary(n.data.model)}>{lifeLine(n.data.model, graph.unit)}</small>
                         </span>
                       </label>
                     </td>
@@ -421,7 +422,7 @@ export default function RbdDesignPanel({ graph, onApply, onView, onBuild, readOn
                         <span className="rbd-design-type-name">
                           <input value={ty.name} disabled={off} onChange={(e) => updateType(n.id, i, { name: e.target.value })} aria-label="Type name" />
                           <button type="button" className="link" disabled={off} onClick={() => setModelFor({ id: n.id, index: i })}>
-                            {ty.model ? modelSummary(ty.model) : "Set non-repairable model"}
+                            {ty.model ? lifeLine(ty.model, graph.unit) : "Set non-repairable model"}
                           </button>
                         </span>
                       </td>
