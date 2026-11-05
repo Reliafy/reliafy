@@ -29,7 +29,8 @@ export function initCalcState(functions) {
   return {
     series: functions ? [{ id: 0, values, curves: functions.curves, error: null }] : [],
     active: "sf",
-    t: x.length ? Number(mid.toPrecision(4)) : 0,
+    // A round example time (1000, not 996.2): only the starting input.
+    t: x.length ? Number(mid.toPrecision(2)) : 0,
     condAge: "", // conditional survival age s
     xMin: "", // blank = auto-range from the data
     xMax: "",
