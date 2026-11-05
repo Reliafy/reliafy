@@ -8545,6 +8545,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-asof { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
 .rbd-asof-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); color: var(--ink); cursor: pointer; padding-bottom: 8px; }
 .rbd-asof-toggle input { margin: 0; }
+.rbd-asof-sub { display: block; font-size: var(--fs-12); color: var(--muted); }
 .rbd-asof-panel { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
 .rbd-asof-table { margin-bottom: 0; }
 .rbd-asof-table select, .rbd-asof-table input {
@@ -8569,6 +8570,26 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-size: var(--fs-13); font-weight: 500; color: var(--muted);
 }
 .rbd-design-life-value { font-size: var(--fs-20); font-variant-numeric: tabular-nums; color: var(--acc-d); }
+/* The answer at the time asked about (Evaluate at t), above the design life. */
+.rbd-answer {
+  display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-top: 12px; border: 1px solid var(--acc-line);
+  background: var(--acc-hover); border-radius: var(--r); font-size: var(--fs-14);
+}
+.rbd-answer-name { font-size: var(--fs-13); font-weight: 500; color: var(--muted); }
+.rbd-answer-value { font-size: var(--fs-20); font-variant-numeric: tabular-nums; color: var(--acc-d); }
+.rbd-answer-words { flex-basis: 100%; color: var(--ink); }
+.rbd-answer + .rbd-design-life { margin-top: 8px; }
+/* The importance columns in words, folded under the table. */
+.rbd-imp-help { margin-top: 6px; font-size: var(--fs-13); color: var(--muted); }
+.rbd-imp-help summary { cursor: pointer; color: var(--acc); width: max-content; }
+.rbd-imp-help dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 8px 0 0; }
+.rbd-imp-help dt { font-weight: 600; color: var(--ink); }
+.rbd-imp-help dd { margin: 0; }
+@media (max-width: 560px) {
+  .rbd-imp-help dl { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .rbd-imp-help dd { margin-bottom: 6px; }
+}
 
 /* Repeated blocks (#102): a linked copy of a component, drawn again */
 .rbd-comp.repeat:not(.state-working):not(.state-failed) {
@@ -8832,9 +8853,16 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 }
 .ref-link:hover { color: var(--acc); border-color: var(--acc); background: none; }
 
-/* RBD builder: the C-to-connect shortcut — key cap in the hint bar, and the
-   transient confirmation that replaces the hint after a press. */
-.rbd-hint-flash { font-weight: 600; color: var(--acc); }
+/* RBD builder: what an action just did ("Added Pump B alongside Pump A, in
+   parallel.", "Saved."), in the toolbar between the settings and the actions,
+   off the canvas so it never covers a block. It fills the gap and wraps to two
+   lines at most, so the toolbar doesn't jump. */
+.rbd-tb-flash {
+  flex: 1 1 0; min-width: 0; align-self: center;
+  font-size: var(--fs-13); font-weight: 600; color: var(--acc); line-height: 1.3; text-align: right;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.rbd-tb-flash:empty { display: none; }
 
 /* RBD junction — a k-node with n = 1, drawn as a bare dot rather than a full
    "1-out-of-k voting" block. Same node type and same maths (a perfectly reliable
@@ -8996,10 +9024,11 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--ink); border-color: var
 .fleet-gate.warn { color: var(--warn); }
 .trk-conf { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--muted); }
 /* Tracking page header: the meta runs the full width, and the ⋯ menu (its
-   only action) stays beside the title on phones instead of on a row of its own. */
+   only action) stays beside the title on phones instead of on a row of its own.
+   An RBD's header is the same: its ⋯ is its only action. */
 .trk-header .ph-meta { max-width: none; }
-.page-header.trk-header { flex-wrap: nowrap; }
-.page-header.trk-header .ph-main { flex-basis: 0; }
+.page-header.trk-header, .page-header.rbd-header { flex-wrap: nowrap; }
+.page-header.trk-header .ph-main, .page-header.rbd-header .ph-main { flex-basis: 0; }
 /* Register item: initial readings as a two-column grid of standard inputs. */
 .trk-readings { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-4); }
 .trk-readings-h { font-size: var(--fs-13); color: var(--muted); font-weight: 500; }
@@ -9500,20 +9529,16 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
   .rbd-ovm-settings input, .rbd-ovm-settings select { font-size: var(--fs-16); min-height: 40px; }
   /* The minimap would cover a third of the canvas, and the standing hint
      (right-click, shift-click, keys) is for a mouse and keyboard: on a phone,
-     show the diagram. A flashed hint (connect feedback) still shows. */
+     show the diagram. */
   .rbd-canvas .react-flow__minimap {
     display: none;
   }
   .rbd-hint {
-    white-space: normal;
-    width: max-content;
-    /* Clear of the zoom controls at the bottom left (#282). */
-    max-width: calc(100% - 120px);
-    text-align: center;
-  }
-  .rbd-hint:not(:has(.rbd-hint-flash)) {
     display: none;
   }
+  /* A phone's toolbar has no gap to spare: the notice takes a row of its own
+     under the actions while it shows. */
+  .rbd-tb-flash { flex-basis: 100%; order: 1; text-align: left; }
 }
 
 /* Reliability growth projection panel (#232). */
