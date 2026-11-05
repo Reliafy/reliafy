@@ -100,6 +100,11 @@ class ProductOps:
         top = self._top_of(position_id)
         return top if top.get("design") else None
 
+    def _not_a_design(self, position_id: str) -> None:
+        """Refuse fitting at a design's position: a design has no items."""
+        if self._design_root_of(position_id):
+            raise _sv().Invalid("This is a product's design: fit items into an item built from it.")
+
     def _tree_positions(self, root_id: str) -> list[dict]:
         """Every position in a tree (retired ones too), the top first: positions
         inside positions only, not those carried by an item fitted there."""

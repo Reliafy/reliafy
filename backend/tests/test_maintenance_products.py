@@ -214,6 +214,20 @@ def test_build_respects_the_copy_limit(m, monkeypatch):
     assert m.s.event_count(ORG) == events
 
 
+def test_items_cant_be_fitted_into_a_design(m):
+    ids = _uav(m)
+    events = m.s.event_count(ORG)
+    with pytest.raises(Invalid, match="This is a product's design: fit items into an item built from it."):
+        m.fit(ids["motor"], new_item={"name": "Motor", "serial": "M-1"})
+    with pytest.raises(Invalid, match="This is a product's design"):
+        m.add_past_fitment(ids["motor"], "2025-01-01", "2025-06-01", reason="planned",
+                           new_item={"name": "Motor", "serial": "M-0"})
+    assert m.s.event_count(ORG) == events
+    # Fitting into an item built from it is fine.
+    _, at = _built(m, ids["root"], "0007")
+    assert m.fit(at["Motor 1"], new_item={"name": "Motor", "serial": "M-1"})["fitted"]["item"]["serial"] == "M-1"
+
+
 # ---- the roll-up and failure reports ---------------------------------------------------------
 
 def _three(m):

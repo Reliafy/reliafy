@@ -3205,6 +3205,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
         ``on`` may be known only roughly: "2022", "2022-03", or a day with
         from_precision estimated."""
         self._get(position_id, "Position")
+        self._not_a_design(position_id)
         if self.current_fitment(position_id):
             raise Invalid("Something is already fitted here. Replace it through a work order, "
                           "or remove it first.")
@@ -7148,6 +7149,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps):
         current fitment, never across another one, and changes nothing else: the
         current item and the tasks stay as they are. from_precision / to_precision
         say how well each date is known (exact, month, year, estimated)."""
+        self._not_a_design(position_id)
         self._get(position_id, "Position")
         if start in (None, "") or end in (None, ""):
             raise Invalid("A past fitment needs the date it went in (start) and the date it came out (end).")
