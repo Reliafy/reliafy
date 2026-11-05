@@ -59,6 +59,10 @@ const icon = (paths) => (
 );
 const ICONS = {
   home: icon(<><path d="M4 11.5 12 5l8 6.5" /><path d="M6 10v9h12v-9" /><path d="M10 19v-5h4v5" /></>),
+  // A design: a blueprint sheet with its frame.
+  products: icon(<><rect x="4" y="4" width="16" height="16" rx="1.5" /><path d="M8 8h8M8 12h5M8 16h3M15 13l3 3-3 3" /></>),
+  // Serial-numbered things: tags.
+  items: icon(<><path d="M4 4h7l9 9-7 7-9-9z" /><circle cx="8.5" cy="8.5" r="1.4" /></>),
   assets: icon(<><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z" /><path d="M4 7.5 12 12l8-4.5M12 12v9" /></>),
   maintenance: icon(<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.4-.4-2.1z" />),
   modelling: icon(<path d="M3 7c3 0 3 10 6 10s3-14 6-14 3 8 6 8" />),

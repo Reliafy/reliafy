@@ -31,7 +31,10 @@ test("detail pages lead with the record's name", () => {
   assert.equal(titleFor("/systems/b/abc", "Feed pump train"), "Feed pump train · RBDs · Reliafy");
   assert.equal(titleFor("/models/m/x", "Bearing life"), "Bearing life · Non-repairable · Models · Reliafy");
   assert.equal(titleFor("/models/m/x"), "Non-repairable · Models · Reliafy");
-  assert.equal(titleFor("/asset-register/items/i1", "Pump 3"), "Pump 3 · Explorer · Assets · Reliafy");
+  assert.equal(titleFor("/asset-register/items/i1", "Pump 3"), "Pump 3 · Items · Reliafy");
+  assert.equal(titleFor("/asset-register/positions/p1", "Pump 3"), "Pump 3 · Explorer · Assets · Reliafy");
+  assert.equal(titleFor("/products/p1", "Survey quadcopter"), "Survey quadcopter · Products · Reliafy");
+  assert.equal(titleFor("/items"), "Items · Reliafy");
   assert.equal(titleFor("/data/d1", "Bearings"), "Bearings · Data · Reliafy");
   assert.equal(titleFor("/strategy/analyses/a1", "Pump PM"), "Pump PM · Strategy · Reliafy");
 });

@@ -35,7 +35,7 @@ const PAGES = [
   // Assets' pages (one menu entry, no children): the Explorer, and each
   // position's, location's and item's page under it; Parts and stock, Classes.
   [EXPLORER_PATH, EXPLORER_LABEL],
-  [/^\/asset-register\/(positions|locations|items)\/[^/]+(\/.*)?$/, EXPLORER_LABEL],
+  [/^\/asset-register\/(positions|locations)\/[^/]+(\/.*)?$/, EXPLORER_LABEL],
   [/^\/asset-register\/parts(\/[^/]+)?$/, "Parts and stock"],
   [/^\/asset-register\/classes(\/[^/]+)?$/, "Classes"],
   [STRUCTURE_PATH, "Product structure"],

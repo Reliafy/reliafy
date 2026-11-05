@@ -62,11 +62,11 @@ test("every menu link is a page of the app", () => {
   }
 });
 
-test("the menu is one flat list: Home, Assets, Maintenance, Modelling, Decisions, Reports, the Agent", () => {
+test("the menu is one flat list: Home, Products, Assets, Items, Maintenance, Modelling, Decisions, Reports, the Agent", () => {
   const { main } = buildMenu({ has: ALL });
-  assert.deepEqual(ids(main), ["home", "assets", "maintenance", "modelling", "decisions", "reports", "agent"]);
+  assert.deepEqual(ids(main), ["home", "products", "assets", "items", "maintenance", "modelling", "decisions", "reports", "agent"]);
   assert.deepEqual(main.map((e) => e.label),
-    ["Home", "Assets", "Maintenance", "Modelling", "Decisions", "Reports", "Reliability Agent"]);
+    ["Home", "Products", "Assets", "Items", "Maintenance", "Modelling", "Decisions", "Reports", "Reliability Agent"]);
   // No section headings any more.
   for (const e of ENTRIES) assert.equal(e.section, undefined, e.id);
 });
@@ -113,7 +113,7 @@ test("a group opens on its first live entry; an entry with no landing page opens
 test("a menu word is the title of the page it opens", () => {
   // The page titles (SectionHeader's title) of each entry's landing page.
   const TITLES = {
-    home: "Home", assets: "Assets", maintenance: "Maintenance", data: "Data", models: "Models",
+    home: "Home", products: "Products", assets: "Assets", items: "Items", maintenance: "Maintenance", data: "Data", models: "Models",
     strategy: "Strategy", forecasts: "Forecasts", reports: "Reports", agent: "Reliability Agent",
   };
   for (const e of MENU_ENTRIES) {
@@ -176,18 +176,18 @@ test("no roles shows everything the workspace has, nothing under More", () => {
   assert.deepEqual(more, []);
 });
 
-test("a technician sees Home, Assets and Maintenance; the rest is under More", () => {
+test("a technician sees Home, Assets, Items and Maintenance; the rest is under More", () => {
   const { main, more } = buildMenu({ roles: ["technician"], has: ALL });
-  assert.deepEqual(ids(main), ["home", "assets", "maintenance"]);
-  assert.deepEqual(ids(more), ["modelling", "decisions", "reports", "agent"]);
-  assert.equal(main[2].to, "/maintenance");
+  assert.deepEqual(ids(main), ["home", "assets", "items", "maintenance"]);
+  assert.deepEqual(ids(more), ["products", "modelling", "decisions", "reports", "agent"]);
+  assert.equal(main[3].to, "/maintenance");
 });
 
 test("a role keeps the menu's own order", () => {
   assert.deepEqual(ids(buildMenu({ roles: ["fleet"], has: ALL }).main),
-    ["home", "assets", "maintenance", "modelling", "decisions", "reports"]);
+    ["home", "assets", "items", "maintenance", "modelling", "decisions", "reports"]);
   assert.deepEqual(ids(buildMenu({ roles: ["planner", "analyst"], has: ALL }).main),
-    ["home", "assets", "maintenance", "modelling", "decisions", "reports", "agent"]);
+    ["home", "assets", "items", "maintenance", "modelling", "decisions", "reports", "agent"]);
   assert.deepEqual(ids(buildMenu({ roles: ["manager"], has: ALL }).main),
     ["home", "maintenance", "modelling", "decisions", "reports"]);
   assert.deepEqual(homeCards(["fleet"]), ["fleets", "due"]);
@@ -243,10 +243,15 @@ test("a page lights its place in the menu at every level", () => {
   // Assets is current on every page of the register, and on Product structure
   // (the longest match beats System models' /systems).
   for (const path of ["/asset-register", "/asset-register/explorer", "/asset-register/positions/p1",
-    "/asset-register/locations/l1", "/asset-register/items/i1", "/asset-register/parts/x", "/asset-register/classes",
+    "/asset-register/locations/l1", "/asset-register/parts/x", "/asset-register/classes",
     "/systems/structure"]) {
     assert.deepEqual(at(path), ["assets", null, null], path);
   }
+  // Products and Items: their landing pages, a product's page, and each item's own page.
+  assert.deepEqual(at("/products"), ["products", null, null]);
+  assert.deepEqual(at("/products/p1"), ["products", null, null]);
+  assert.deepEqual(at("/items"), ["items", null, null]);
+  assert.deepEqual(at("/asset-register/items/i1"), ["items", null, null]);
   assert.deepEqual(at("/maintenance/work-orders/w1"), ["maintenance", null, null]);
   assert.deepEqual(at("/reports"), ["reports", null, null]);
   assert.deepEqual(at("/settings"), [null, null, null]);
