@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, param_values, surpyval_extras
-from backend.units import unit_in_text
+from backend.units import unit_in_text, with_unit
 from repyability.non_repairable import NonRepairable
 from surpyval import KaplanMeier, logrank
 
@@ -662,7 +662,7 @@ def _failures_phrase(r: int) -> str:
 
 
 def _time_phrase(t: float, unit: str) -> str:
-    return f"{fmt_num(t)} {unit_in_text(unit)}" if unit else fmt_num(t)
+    return with_unit(fmt_num(t), unit_in_text(unit))
 
 
 def _multiple_phrase(k: float) -> str:

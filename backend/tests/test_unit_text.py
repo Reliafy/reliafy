@@ -78,3 +78,33 @@ def test_headlines_and_verdicts_read_lower_case():
     msg = rbd_intervals._not_met("", False, None, 5.0, "Hours")
     _clean(msg)
     assert "per hour" in msg
+
+
+def test_one_of_a_unit_reads_singular():
+    assert units.with_unit("1", "hours") == "1 hour"
+    assert units.with_unit("1", "flight hours") == "1 flight hour"
+    assert units.with_unit("1.5", "hours") == "1.5 hours"
+    assert units.with_unit("0", "hours") == "0 hours"
+    assert units.with_unit("1", "") == "1"
+    for u in [
+        "kWh",
+        "km",
+        "ms",
+        "hrs",
+        "MPa",
+        "Celsius",
+        "batteries",
+        "boxes",
+        "starts/day",
+    ]:
+        assert units.singular_unit(u) == u
+    assert units.singular_unit("Flights") == "Flight"
+
+
+def test_demonstration_reads_singular_for_one_hour():
+    r = strategy.demonstration_test(
+        reliability=0.9, confidence=0.9, mission_time=1, failures=0, unit="Hours"
+    )
+    assert r["summary"].startswith("Test 22 units for 1 hour each")
+    assert [row["label"] for row in r["tradeoff"]["rows"]] == ["1 hour (1×)"]
+    assert strategy_store.demonstration_headline(r) == "22 units × 1 hour, 0 failures"
