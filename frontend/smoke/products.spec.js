@@ -145,3 +145,26 @@ test("Assets leaves the products' designs and items' trees out", async ({ page, 
   }
   await expectHealthy(page, problems, { label: "assets without products" });
 });
+
+// With no products (the read answered empty here), the page says what a product is and offers the sample and the guide.
+test("Products and Items empty states offer the sample and the guide", async ({ page, problems }) => {
+  await page.route("**/api/maintenance/products", (route) => (route.request().method() === "GET"
+    ? route.fulfill({ json: { products: [] } }) : route.continue()));
+  await page.route("**/api/maintenance/items/overview*", (route) => route.fulfill({
+    json: { items: [], total: 0, limit: 100, offset: 0 } }));
+  for (const [width, height] of [[1440, 900], [400, 860]]) {
+    await page.setViewportSize({ width, height });
+    await open(page, "/products");
+    const empty = page.locator(".section-empty");
+    await expect(empty).toContainText("No products yet");
+    await expect(empty.getByRole("button", { name: "Add the sample UAV product" })).toBeVisible();
+    await expect(empty.getByRole("button", { name: "How products and items work" })).toBeVisible();
+    await shot(page, `${width}-products-empty`);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
+    await open(page, "/items");
+    await expect(page.locator(".section-empty")).toContainText("No items yet");
+    await shot(page, `${width}-items-empty`);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
+  }
+  await expectHealthy(page, problems, { label: "empty products and items" });
+});

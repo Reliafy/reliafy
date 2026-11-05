@@ -8,7 +8,7 @@ import { test, expect, open, expectHealthy } from "./health.js";
 
 test.describe.configure({ mode: "serial" });
 
-const EVERYTHING = ["Home", "Assets", "Maintenance", "Modelling", "Decisions", "Reports"];
+const EVERYTHING = ["Home", "Products", "Assets", "Items", "Maintenance", "Modelling", "Decisions", "Reports"];
 
 const setRoles = async (request, roles) => {
   const res = await request.put("/api/me/roles", { data: { roles } });
@@ -144,8 +144,8 @@ test("switching roles in Settings: technician, then every role, then none", asyn
   await card.getByRole("button", { name: "Save" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
 
-  // Home, Assets and Maintenance (work orders); the rest one click away.
-  expect(await shown(page)).toEqual(["Home", "Assets", "Maintenance"]);
+  // Home, Assets, Items and Maintenance (work orders); the rest one click away.
+  expect(await shown(page)).toEqual(["Home", "Assets", "Items", "Maintenance"]);
   await expect(page.locator("#side-more")).toHaveCount(0);
   await moreButton(page).click();
   const more = page.locator("#side-more");
@@ -239,7 +239,7 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
   await page.getByRole("button", { name: "Collapse menu" }).click();
   await expect(mainMenu(page).locator(".side-label")).toHaveCount(0);
   // Icons only, each named; no headings and nothing below an entry.
-  expect(await shown(page)).toEqual(["Home", "Assets", "Maintenance"]);
+  expect(await shown(page)).toEqual(["Home", "Assets", "Items", "Maintenance"]);
   await expect(mainMenu(page).locator(".side-section, .side-children")).toHaveCount(0);
   await moreButton(page).click();
   await expect(page.locator("#side-more").getByRole("link", { name: "Decisions" })).toBeVisible();
@@ -248,10 +248,12 @@ test("the collapsed menu and the keyboard", async ({ page, request, problems }) 
   await expect(page).toHaveURL(/\/strategy$/);
   await expect(page.locator("#side-more .side-item.active")).toHaveAttribute("title", "Decisions");
 
-  // Keyboard: Tab from Home reaches Assets, then Maintenance; Enter opens it.
+  // Keyboard: Tab from Home reaches Assets, then Items, then Maintenance; Enter opens it.
   await mainMenu(page).getByRole("link", { name: "Home" }).focus();
   await page.keyboard.press("Tab");
   await expect(mainMenu(page).getByRole("link", { name: "Assets" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(mainMenu(page).getByRole("link", { name: "Items" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(mainMenu(page).getByRole("link", { name: "Maintenance" })).toBeFocused();
   await page.keyboard.press("Enter");
