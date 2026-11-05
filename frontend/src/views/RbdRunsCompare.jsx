@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { compareRbdRuns } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
@@ -75,14 +75,12 @@ export default function RbdRunsCompare() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const key = ids.join(",");
+  const tooFew = ids.length < 2;
 
   useEffect(() => {
     setData(null);
     setError(null);
-    if (ids.length < 2) {
-      setError("Pick two or more finished runs to compare.");
-      return;
-    }
+    if (ids.length < 2) return;
     compareRbdRuns(ids).then(setData).catch((err) => setError(err.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
@@ -101,8 +99,17 @@ export default function RbdRunsCompare() {
         title="Compare runs"
         meta={names.length ? names.join(" · ") : null}
       />
+      {/* Opened with fewer than two runs (a bookmark, the back button, a
+          shared link): nothing to compare yet, not an error. */}
+      {tooFew && (
+        <div className="card empty">
+          <h2>Nothing to compare yet</h2>
+          <p>Pick two or more finished runs on Simulation runs to compare them.</p>
+          <p><Link to={runsPath()}>Open Simulation runs</Link></p>
+        </div>
+      )}
       {error && <div className="card error">{error}</div>}
-      {!data && !error && <div className="card empty">Loading…</div>}
+      {!data && !error && !tooFew && <div className="card empty">Loading…</div>}
       {data && (
         <div className="card">
           {sum ? (

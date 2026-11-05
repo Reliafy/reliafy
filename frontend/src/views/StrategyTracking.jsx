@@ -14,6 +14,7 @@ import {
 import Chip from "../components/ui/Chip.jsx";
 import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import LoadFailed from "../components/LoadFailed.jsx";
 import ResultSummary from "../components/ui/ResultSummary.jsx";
 import { itemName } from "../components/LibRows";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
@@ -85,7 +86,7 @@ export default function StrategyTracking() {
     return () => { cancelled = true; };
   }, [fleet, selectedId, confidence]);
 
-  if (error && !fleet) return <div className="app"><div className="card error">{error}</div></div>;
+  if (error && !fleet) return <div className="app"><LoadFailed header error={error} notFound="Tracked fleet not found." to="/risk" label="See condition monitoring" /></div>;
   if (!fleet) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const model = fleet.model || null;

@@ -276,7 +276,7 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
 
       <div className="side-grow" />
 
-      {!collapsed && <div className="side-label-group">Account</div>}
+      {!collapsed && <div className="side-section side-section-account">Account</div>}
       <NavLink
         to="/settings"
         className={({ isActive }) => "side-item" + (isActive ? " active" : "")}

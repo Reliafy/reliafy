@@ -131,6 +131,15 @@ body {
   color: var(--ink);
 }
 
+/* Base link style (UX audit, Nov 2026): a link with no class of its own is the
+   accent colour, underlined on hover and focus, never the browser's blue.
+   :where() keeps it at zero specificity, so any class rule (button-like links,
+   row titles, menu items) still wins, on hover too. Running text in guides and
+   reference pages keeps an underline, so colour isn't the only signal. */
+:where(a) { color: var(--acc); text-decoration: none; }
+:where(a):hover, :where(a):focus-visible { text-decoration: underline; text-underline-offset: 2px; }
+.guide-prose a, .ref-prose a { text-decoration: underline; text-underline-offset: 2px; }
+
 /* Three weights only (400, 500, 600): bold elements use the 600 face. */
 b,
 strong,
@@ -1934,6 +1943,11 @@ header p {
 .title-row h1 {
   font-size: var(--fs-28);
 }
+
+/* One page-title size (UX audit, Nov 2026): every PageHeader, list or
+   detail, uses the list pages' 24 px, so the title doesn't jump in size as
+   you open an item. */
+.page-header .title-row h1 { font-size: var(--fs-24); }
 
 .card {
   background: var(--surf);
@@ -9812,6 +9826,8 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 }
 @media (max-width: 899px) {
   .sh-purpose { display: inline; }
+  /* Inline, the flex gap is gone: keep a space before "Show me how". */
+  .sh-purpose .wt-launch { margin-left: 6px; }
 }
 
 /* A dialog takes focus as it opens (so the keyboard is in it): no ring on the box itself. */
@@ -9854,4 +9870,18 @@ main.content:focus { outline: none; }
 @media (max-width: 720px) {
   .side-subitem { min-height: 44px; display: flex; align-items: center; }
   .crumb-link, button.link { padding-block: 12px; margin-block: -12px; }
+}
+
+/* Shell touch targets on a phone (UX audit, Nov 2026): the menu button, help,
+   the workspace picker, team settings, the drawer's close button and each
+   menu row are at least 44 px to press. */
+@media (max-width: 720px) {
+  .nav-menu-btn { width: 44px; height: 44px; margin-left: -10px; margin-right: 4px; }
+  .nav-help-btn { width: 44px; height: 44px; }
+  .nav-workspace .nav-workspace-select { min-height: 44px; }
+  .nav-team-settings { min-width: 44px; min-height: 44px; justify-content: center; }
+  .sidebar.drawer .sidebar-toggle { width: 44px; height: 44px; font-size: var(--fs-20); }
+  .sidebar.drawer .side-item { min-height: 44px; }
+  .sidebar.drawer .side-signout { min-width: 44px; min-height: 44px; }
+  .navbar .brand { min-height: 44px; }
 }

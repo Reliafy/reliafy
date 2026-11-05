@@ -110,7 +110,7 @@ export default function FleetForecastPage() {
   };
   useEffect(load, [id]);
 
-  if (error && !fleet) return <div className="app"><LoadFailed error={error} to="/forecasts" label="See all forecasts" /></div>;
+  if (error && !fleet) return <div className="app"><LoadFailed header error={error} notFound="Forecast not found." to="/forecasts" label="See all forecasts" /></div>;
   if (!fleet || !settings) return <div className="app"><div className="card empty">Loading…</div></div>;
 
   const readOnly = fleet.read_only;
