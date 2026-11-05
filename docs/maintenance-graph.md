@@ -747,6 +747,43 @@ the node with who and when (`history`), the way a work order keeps its notes.
   `Maintenance._report_scope`, which the list reads and the tree roll-up
   (`open_reports` on each row and inside it) follows.
 
+## Products: design trees and the items built from them
+
+For a user who designs and builds things, not only runs a plant. A product is
+a design: a top-level position tree (the functional hierarchy) flagged as a
+design, with the catalogue part it is (its bill of materials hangs on that
+part). An item built from it is the existing serial-numbered `Item`, fitted at
+the top of a copy of the design's tree. Three event types, all new (older logs
+replay unchanged; no projection version bump):
+
+- `design.declared {position_id, part_id?, rev, on}` sets `design` {rev,
+  part_id, on} on the top position and `Position DESIGN_OF Part`. Declared
+  again, it changes the revision label or the part. Refused for a position
+  inside another, a tree with any fitment (a plant or an item, not a design)
+  or a tree built from a design.
+- `design.cleared {position_id, on}` sets `design` to null and drops
+  `DESIGN_OF`. Refused while items built from it are in use.
+- `position.implements {position_id, design_position_id, design_rev}` on
+  every position of a built tree: `design_position_id`, `design_rev` and
+  `Position IMPLEMENTS Position` (the design's). The built tree's top also
+  carries `item_id` and `serial` (`built_item_id`, `built_serial`): the item
+  built into it, kept when that item is later swapped.
+
+Building (`Maintenance.build_item`) is `copy_position` to the top level, then
+`create_item` (the product's part, the serial), `fit` at the new top, then one
+`position.implements` per copied position. The provenance survives renames
+and moves inside the item's tree; a design position retired later reads as
+"gone" (`implements.gone` on a position, `design_gone` on a tree row), never
+unlinked. A design change never reaches a built item by itself.
+
+Reads group built positions by the design position they implement
+(`design_rollup`: items, what's fitted there, pooled life rows in
+`class_life_data`'s shape, failure reports there and below on each item).
+Failure reports can't be filed on a design's positions: a report is about an
+item. The tree rows carry `design` (a design's top), `design_position_id`
+(a built position) and `built_from` (a built tree's top), so the app can keep
+designs and built items out of the Assets landing.
+
 ## Signal channels and derived points
 
 A `SignalChannel` node sits on a position or an item (an `ON` edge) and holds a

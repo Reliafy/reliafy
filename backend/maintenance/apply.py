@@ -50,7 +50,7 @@ EXCLUDED = {
     "item_classes.load_starter", "item_classes.import_conditions", "manufacturers.link_by_name",
     "positions.adopt_placements", "positions.add_sample_truck", "positions.add_sample_uav", "attachments.photo_link",
     "failure_modes.split_standard", "signals.add_snapshot", "signals.add_band", "signals.add_level", "signals.update_band",
-    "signals.set_storage_cap",
+    "signals.set_storage_cap", "products.build",
 }
 
 #: Delete-type actions: the argument naming what goes, for the confirm check.
@@ -69,6 +69,7 @@ DELETES = {
     "attachments.remove_photo": "photo_id", "attachments.unlink_photo": "photo_id",
     "attachments.remove_document": "document_id", "attachments.clear_coordinates": "target_id",
     "packages.retire": "package_id", "signals.retire_channel": "channel_id", "signals.remove_band": "point_id",
+    "products.clear": "product_id",
 }
 
 #: Creates, and the delete that undoes each: (action, the argument it takes).

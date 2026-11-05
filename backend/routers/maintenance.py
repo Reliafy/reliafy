@@ -1371,7 +1371,68 @@ def graph_design(ctx: AccessCtx = Depends(graph_access)) -> JSONResponse:
     return JSONResponse(content=design.load(get_db()))
 
 
+# ---- products: design trees, and the items built from them ------------------------------
+
+@router.get("/products")
+def list_products(m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every product (a design tree): its part, revision, positions, items built and their open reports."""
+    return _run(m.products)
+
+
+@router.post("/products")
+def create_product(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A product: its design's top position and its part (part_number: a new one; part_id: one in the
+    catalogue), declared together."""
+    return _run(m.create_product, body.get("name"), body.get("part_number", ""), body.get("rev", ""),
+                body.get("description", ""), body.get("part_id"))
+
+
+@router.get("/products/{product_id}")
+def get_product(product_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    return _run(m.product, product_id)
+
+
+@router.get("/products/{product_id}/items")
+def product_items(product_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The items built from a product, by serial."""
+    return _run(m.product_items, product_id)
+
+
+@router.post("/products/{product_id}/build")
+def build_item(product_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Build an item from a product by serial (dry_run, the default, only says what it would make)."""
+    return _run(m.build_item, product_id, body.get("serial"), body.get("rev"), body.get("name"),
+                body.get("dry_run", True) is not False)
+
+
+@router.delete("/products/{product_id}/design")
+def clear_design(product_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """The tree isn't a product's design any more."""
+    return _run(m.clear_design, product_id)
+
+
+@router.put("/positions/{position_id}/design")
+def declare_design(position_id: str, body: dict = Body(default={}),
+                   m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Make a top-level tree a product's design, or change its rev or part."""
+    return _run(m.declare_design, position_id, body.get("part_id"), body.get("rev"))
+
+
+@router.get("/positions/{position_id}/design-rollup")
+def design_rollup(position_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A design position across every item built from its product."""
+    return _run(m.design_rollup, position_id)
+
+
 # ---- items and locations ---------------------------------------------------------------
+
+@router.get("/items/overview")
+def items_overview(product_id: str | None = None, item_class_id: str | None = None, q: str | None = None,
+                   limit: int = 100, offset: int = 0, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Every item with its product, item class, position path, status and open failure reports;
+    filtered and paged (before /items/{item_id})."""
+    return _run(m.items_overview, product_id or None, item_class_id or None, q or None, limit, offset)
+
 
 @router.get("/items")
 def list_items(item_class_id: str | None = None, manufacturer_id: str | None = None,

@@ -159,6 +159,9 @@ reliafy ingest readings readings.csv
 reliafy ingest snapshot burst.json               # a signal channel's snapshot (JSON; docs/signal-snapshots.md)
 reliafy maintenance progression.time_to_limit --point-id BAND_POINT_ID   # when a watched band reaches its limit (a range, not a date)
 reliafy maintenance progression.series --point-id BAND_POINT_ID          # the band as a degradation series (rows and CSV)
+reliafy maintenance products.build --product-id PRODUCT_ID --serial 0007            # what it would make (a dry run)
+reliafy maintenance products.build --product-id PRODUCT_ID --serial 0007 --dry-run false   # build the item
+reliafy maintenance get.design_rollup --id DESIGN_POSITION_ID   # one design position across every item built
 reliafy apply ops.json --run                     # maintenance changes in one call (dry run without --run)
 reliafy list kind library --query "check valve" --kind rate   # published failure data
 reliafy get kind library_record --id nrc-inl-2020:ckv-fto

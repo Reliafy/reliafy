@@ -44,6 +44,16 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/positions/smoke/rcm"], // a position's RCM
   ["GET", "/api/maintenance/failure-reports"], // the Explorer's Failure reports tab
   ["POST", "/api/maintenance/failure-reports"],
+  // Products: design trees and the items built from them (the Products and Items pages).
+  ["GET", "/api/maintenance/products"],
+  ["POST", "/api/maintenance/products"],
+  ["GET", "/api/maintenance/products/smoke"],
+  ["GET", "/api/maintenance/products/smoke/items"],
+  ["POST", "/api/maintenance/products/smoke/build"],
+  ["DELETE", "/api/maintenance/products/smoke/design"],
+  ["PUT", "/api/maintenance/positions/smoke/design"],
+  ["GET", "/api/maintenance/positions/smoke/design-rollup"],
+  ["GET", "/api/maintenance/items/overview"],
   ["PUT", "/api/maintenance/failure-modes/smoke/decision"],
   ["GET", "/api/maintenance/tasks/smoke/measurement"], // what a task by use counts (its dialog, a move's question)
   ["GET", "/api/maintenance/overview"],

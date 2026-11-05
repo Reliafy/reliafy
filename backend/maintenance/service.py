@@ -58,6 +58,8 @@ from backend.maintenance import fmea, rcm_decisions
 from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
 from backend.maintenance.schedule import Cadence, Season
 from backend.maintenance.signals import PROJECTORS as _SIGNAL_PROJECTORS
+from backend.maintenance.products import PROJECTORS as _PRODUCT_PROJECTORS
+from backend.maintenance.products import ProductOps
 from backend.maintenance.progression import ProgressionOps
 from backend.maintenance.signals import SignalOps
 
@@ -2561,7 +2563,7 @@ PROJECTORS = {
 
 # ---- the domain ------------------------------------------------------------------
 
-class Maintenance(SignalOps, ProgressionOps):
+class Maintenance(SignalOps, ProgressionOps, ProductOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -2654,9 +2656,15 @@ class Maintenance(SignalOps, ProgressionOps):
         if "parent_id" in changes:
             parent = changes["parent_id"] or None
             if parent:
-                self._parent_node(parent)
+                node = self._parent_node(parent)
                 if parent == id or id in self._ancestor_ids(parent):
                     raise Invalid("A position can't sit inside itself.")
+                if self.s.node(self.org, id, "Position").get("design"):
+                    raise Invalid("This is a product's design: it stays a whole tree at the top level. Clear its "
+                                  "design first to move it.")
+                if node["label"] == "Position" and bool(self._design_root_of(parent)) != bool(self._design_root_of(id)):
+                    raise Invalid("A position can't move between a product's design and another tree: copy it "
+                                  "instead.")
             allowed["parent_id"] = parent
             now = self._parent(id)
             leaving = self._links_leaving(id, parent) if (now and now["id"]) != parent else []
@@ -2726,11 +2734,12 @@ class Maintenance(SignalOps, ProgressionOps):
             parent = self._parent(parent["id"])
         return out
 
-    def copy_position(self, position_id: str, name, parent_id=None) -> dict:
+    def copy_position(self, position_id: str, name, parent_id=None, mapping: dict | None = None) -> dict:
         """Copy a position and everything inside it: the positions, their
         failure modes (with their RCM: functions, functional failures, decisions), their
         tasks and their parts lists, and the locations set on them (not items, stock or
-        work orders). For a second pump station like the first, or a template."""
+        work orders). For a second pump station like the first, or a template.
+        mapping: when given, filled with each copied position's id -> its copy's."""
         source = self._get(position_id, "Position")
         new_name = _text(name, "copy's name", required=True)
         if parent_id:
@@ -2738,10 +2747,21 @@ class Maintenance(SignalOps, ProgressionOps):
             if parent_id == position_id or position_id in self._ancestor_ids(parent_id):
                 raise Invalid("A position can't be copied into itself.")
         today = self.today()
+        new = new_id()
+        plan = self._copy_read(source, new, new_name, parent_id or None)
+        if mapping is not None:
+            mapping.update({src["id"]: pid for src, pid, *_ in plan})
+        return self._copy_write(plan, new, parent_id or None, today)
 
-        # Read the whole subtree first, then write: what's copied is the tree as
-        # it was, never the copy being made.
-        plan, seen, size = [], set(), 0
+    def _copy_read(self, source: dict, new: str, new_name: str, parent_id: str | None) -> list[tuple]:
+        """What copy_position would make, read before anything is written (so what's
+        copied is the tree as it was, never the copy being made): one entry per
+        position, (source, the copy's id, its name, its parent's id, failure modes,
+        tasks, parts-list entries, the location set on it), parents first. Refused over
+        MAX_COPY_NODES."""
+        plan: list[tuple] = []
+        seen: set = set()
+        size = 0
 
         def read(src: dict, new_pid: str, label: str, parent: str | None) -> None:
             nonlocal size
@@ -2760,11 +2780,14 @@ class Maintenance(SignalOps, ProgressionOps):
                 if child["label"] == "Position":
                     read(child, new_id(), shortened(child["name"])[0], new_pid)
 
-        new = new_id()
+        read(source, new, new_name, parent_id)
+        return plan
+
+    def _copy_write(self, plan: list[tuple], new: str, parent_id: str | None, today: str) -> dict:
+        """Write a copy read by _copy_read; returns the copy's top position."""
         ff_ids: dict[str, str] = {}  # each copied functional failure -> its copy
         copied_modes: dict[str, str] = {}  # every copied failure mode -> its copy (across the branch)
         copied_tasks: list[tuple[list, str]] = []  # (the modes a task prevented, its copy's id)
-        read(source, new, new_name, parent_id or None)
         self._quota("Position", MAX_POSITIONS, adding=len(plan))
         self._quota("PartListing", MAX_PART_LISTINGS, adding=sum(len(x[6]) for x in plan), what="parts-list entries")
         for src, pid, label, parent, modes, tasks, listings, place in plan:
@@ -3182,6 +3205,7 @@ class Maintenance(SignalOps, ProgressionOps):
         ``on`` may be known only roughly: "2022", "2022-03", or a day with
         from_precision estimated."""
         self._get(position_id, "Position")
+        self._not_a_design(position_id)
         if self.current_fitment(position_id):
             raise Invalid("Something is already fitted here. Replace it through a work order, "
                           "or remove it first.")
@@ -6759,6 +6783,8 @@ class Maintenance(SignalOps, ProgressionOps):
             if at is None and (kind == "replace" or a.get("failure_mode_id") or a.get("failure_mode_text")):
                 raise Invalid(self._no_position_why(subject, kind) + (
                     " On a work package's work order, name the line's position_id." if line_positions else ""))
+            if kind == "replace":
+                self._not_a_design(at)
             fm = at and self._mode_ref(at, a.get("failure_mode_id") or None, a.get("failure_mode_text"))
             finding = a.get("finding") or None
             if kind == "inspect" and finding not in FINDINGS:
@@ -7068,6 +7094,7 @@ class Maintenance(SignalOps, ProgressionOps):
         removal there, a fit here): a rotable going round."""
         self._live_item(item_id)
         self._get(to_position_id, "Position")
+        self._not_a_design(to_position_id)
         if self.current_fitment(to_position_id):
             raise Invalid("Something is already fitted there. Move or remove it first.")
         day = _day(on, today=self.today())
@@ -7125,6 +7152,7 @@ class Maintenance(SignalOps, ProgressionOps):
         current fitment, never across another one, and changes nothing else: the
         current item and the tasks stay as they are. from_precision / to_precision
         say how well each date is known (exact, month, year, estimated)."""
+        self._not_a_design(position_id)
         self._get(position_id, "Position")
         if start in (None, "") or end in (None, ""):
             raise Invalid("A past fitment needs the date it went in (start) and the date it came out (end).")
@@ -9993,6 +10021,8 @@ class Maintenance(SignalOps, ProgressionOps):
                 self._item_part(id)),
             "manufacturer_entry": (lambda found: found[0] and {**self._maker_brief(found[0]), "via": found[1]})(
                 self._made_by(item)),
+            # The product it is: built from one (top_position_id: its tree), or of a product's part.
+            "product": self._item_product(id),
             # What it's exposed to: its own conditions, then its position's or where it's placed.
             **self._conditions_view(item),
         }
@@ -11006,6 +11036,7 @@ class Maintenance(SignalOps, ProgressionOps):
                 "tasks": tasks.get(pid, 0), "own_next_due": own["next_due"], "own_open": own["open_work"],
                 # The fitted item's own (its tasks, work orders and points), for its row by item.
                 "item_status": status.get(item["id"]) if item else None,
+                **_product_marks(p, part_of.get(pid) is None, every),
             }
         return {
             "positions": rows,
@@ -11096,6 +11127,7 @@ class Maintenance(SignalOps, ProgressionOps):
                 "fitted": r["item"] is not None, "status": r["status"], "inside": inside[pid],
                 "location": r["location"], "carried_by": r["carried_by"],
                 "children": [None] * len(kids.get(pid, [])),
+                **{k: r[k] for k in _PRODUCT_MARKS if r.get(k)},
             }
             into[at_] = node
             stack.extend((c, node["children"], i) for i, c in enumerate(kids.get(pid, [])))
@@ -11137,6 +11169,7 @@ class Maintenance(SignalOps, ProgressionOps):
                 row["not_analysed"] = True
             if pid in context:  # it has an operating context (a working can point at it)
                 row["context"] = True
+            row.update({k: r[k] for k in _PRODUCT_MARKS if r.get(k)})
             positions.append(row)
 
         def thing(d: dict) -> dict:
@@ -11183,6 +11216,8 @@ class Maintenance(SignalOps, ProgressionOps):
             "connections": self.connections(id),
             "groups": self.groups_of(id),
             "rbd_id": p.get("rbd_id"),
+            # A product's design (on its top position), or what a built position implements.
+            "design": self._design_view(p), "implements": self._provenance(p),
             "photos": self.photos_of(id),
             "documents": self.documents_of(id),
             "parts_list": self._parts_list(id),
@@ -11476,6 +11511,8 @@ class Maintenance(SignalOps, ProgressionOps):
         position = self._get(position_id, "Position")
         if position.get("retired"):
             raise Invalid("That position has been retired. Restore it, or report the failure at a position in use.")
+        if self._design_root_of(position_id):
+            raise Invalid("A report is about an item: pick one of the items built from this product.")
         title = _text(title, "report's title", required=True)
         description = _text(description, "description")
         found_by = _text(found_by, "name of who found it")
@@ -11973,6 +12010,27 @@ class Maintenance(SignalOps, ProgressionOps):
         return sorted(rows, key=lambda r: r["from"])
 
 
+_PRODUCT_MARKS = ("design", "design_position_id", "design_gone", "built_from")
+
+
+def _product_marks(p: dict, top: bool, every: dict) -> dict:
+    """A tree row's product marks: a design's top (design: rev, part_id), a built
+    position (design_position_id; design_gone when that design position is retired or
+    missing) and a built tree's top (built_from: the product, the revision, the serial)."""
+    out: dict = {}
+    if p.get("design"):
+        out["design"] = {"rev": p["design"].get("rev", ""), "part_id": p["design"].get("part_id")}
+    dpid = p.get("design_position_id")
+    if dpid:
+        out["design_position_id"] = dpid
+        if dpid not in every or every[dpid].get("retired"):
+            out["design_gone"] = True
+        if top:
+            out["built_from"] = {"product_id": dpid, "rev": p.get("design_rev", ""),
+                                 "serial": p.get("built_serial", "")}
+    return out
+
+
 def _blank_status() -> dict:
     return {"overdue": 0, "open_work": 0, "alarms": 0, "open_reports": 0, "next_due": None}
 
@@ -12013,5 +12071,7 @@ def summary(m: Maintenance) -> dict:
 #    modes and tasks (study_id, rcm_*_id) are no longer projected; old events still
 #    carry them and are read as before
 PROJECTORS.update(_SIGNAL_PROJECTORS)
+# Products (Nov 2026): design trees and the items built from them (products.py).
+PROJECTORS.update(_PRODUCT_PROJECTORS)
 
 PROJECTION_VERSION = 5
