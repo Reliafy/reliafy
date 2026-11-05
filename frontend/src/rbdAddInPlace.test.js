@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-  STEP_X, STEP_Y, chainOf, downstreamOf, inPlaceItems, insertAfter, insertAlongside, insertOnEdge,
+  STEP_X, STEP_Y, chainOf, downstreamOf, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge,
 } from "./rbdBuilderOps.js";
 
 const EXP = { source: "params", distribution: "Exponential", distribution_id: "exponential",
@@ -100,6 +100,68 @@ test("add alongside in a network: the same connections, no junction", () => {
   const out = insertAlongside(single(), ["a"], N(), { junctionId: "k9", junctions: false });
   assert.deepEqual(pairs(out.edges), ["a>output", "input>a", "input>n", "n>output"]);
   assert.ok(!out.nodes.some((x) => x.id === "k9"));
+});
+
+// A new diagram as the builder opens it: Input and Output, nothing joined.
+const fresh = () => ({ nodes: [
+  { id: "input", type: "input", data: { label: "Input" }, position: { x: 0, y: 120 } },
+  { id: "output", type: "output", data: { label: "Output" }, position: { x: 520, y: 120 } },
+], edges: [] });
+const B = (id) => ({ ...N(), id, data: { label: id, model: EXP } });
+// Every block lies on a path from Input to Output.
+const connected = ({ nodes, edges }) => {
+  const from = downstreamOf(edges, ["input"]);
+  const rev = edges.map((x) => ({ source: x.target, target: x.source }));
+  const to = downstreamOf(rev, ["output"]);
+  return nodes.filter((x) => x.type !== "input" && x.type !== "output")
+    .every((x) => from.has(x.id) && to.has(x.id)) && from.has("output");
+};
+// Every line runs left to right: nothing loops back across the diagram.
+const forwards = ({ nodes, edges }) => {
+  const byId = Object.fromEntries(nodes.map((x) => [x.id, x]));
+  return edges.every((x) => byId[x.target].position.x > byId[x.source].position.x);
+};
+
+test("the first block on a new diagram is wired between Input and Output", () => {
+  const out = insertFirst(fresh(), B("a"), { type: "smoothstep" });
+  assert.ok(out, "a fresh diagram takes the first block in place");
+  assert.deepEqual(pairs(out.edges), ["a>output", "input>a"]);
+  assert.ok(out.edges.every((x) => x.type === "smoothstep"), "the lines take the look given");
+  const byId = Object.fromEntries(out.nodes.map((x) => [x.id, x]));
+  assert.ok(byId.a.position.x > byId.input.position.x && byId.a.position.x < byId.output.position.x);
+  assert.deepEqual(out.nodes.filter((x) => x.selected).map((x) => x.id), ["a"], "ready for add after / alongside");
+  assert.ok(connected(out) && forwards(out));
+  // Not once there's anything else: a block added then goes where asked, unwired.
+  assert.equal(insertFirst(out, B("b")), null);
+  const loose = fresh();
+  loose.nodes.push(block("x", 200, 300));
+  assert.equal(insertFirst(loose, B("b")), null);
+  assert.equal(insertFirst({ nodes: fresh().nodes, edges: [e("input", "output")] }, B("b")), null);
+});
+
+test("add after at the end on another row: Output moves on ahead of the new block", () => {
+  // The block sits lower than Output (where the builder dropped it): the
+  // new block doesn't overlap Output, but would land past it.
+  const g = { nodes: [...fresh().nodes, block("a", 280, 300)], edges: [e("input", "a"), e("a", "output")] };
+  const out = insertAfter(g, "a", N());
+  const byId = Object.fromEntries(out.nodes.map((x) => [x.id, x]));
+  assert.equal(byId.n.position.x, 560);
+  assert.ok(byId.output.position.x >= byId.n.position.x + 171, `Output at ${byId.output.position.x} is behind the new block`);
+  assert.equal(byId.output.position.x % STEP_X, 520 % STEP_X, "it moves in whole columns");
+  assert.ok(forwards(out));
+});
+
+test("build a new diagram: add, add after, add alongside, add after: connected, left to right", () => {
+  let g = insertFirst(fresh(), B("fc"));
+  g = insertAfter(g, "fc", B("imuA"));
+  g = insertAlongside(g, ["imuA"], B("imuB"), { junctionId: "j1" });
+  const j = g.nodes.find((x) => x.id === "j1");
+  assert.ok(j, "the pair merges through a junction");
+  g = insertAfter(g, "j1", B("gps"));
+  assert.deepEqual(pairs(g.edges),
+    ["fc>imuA", "fc>imuB", "gps>output", "imuA>j1", "imuB>j1", "input>fc", "j1>gps"]);
+  assert.ok(connected(g), "every block is on a path from Input to Output");
+  assert.ok(forwards(g), "no line loops back");
 });
 
 test("the chain check: one line in series, in order", () => {
