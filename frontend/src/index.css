@@ -4841,9 +4841,10 @@ h1 .chip,
 .unsaved-fit-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--fs-14); }
 .unsaved-fit-text span { color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }
 .unsaved-fit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.fit-save-cta-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
 @media (max-width: 560px) {
-  .fit-save-cta > button, .unsaved-fit-actions > button { min-height: 44px; }
-  .fit-save-cta > button { width: 100%; }
+  .fit-save-cta > button, .unsaved-fit-actions > button, .fit-save-cta-actions > button { min-height: 44px; }
+  .fit-save-cta > button, .fit-save-cta-actions, .fit-save-cta-actions > button { width: 100%; }
   .ds-header-note .link { min-height: 44px; }
 }
 @media (max-width: 560px) {
@@ -7552,6 +7553,16 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   .fit-flow-foot .steps .sep { width: 10px; }
   .fit-flow-foot .row { flex-wrap: wrap; }
   .fit-save-name { flex: 1 1 100%; width: auto; order: -1; }
+  /* One line of numbered dots, with only the current step's name. */
+  .fit-flow-foot .steps { flex-wrap: nowrap; }
+  .fit-flow-foot .steps .step:not(.active) .step-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
 /* ---- Settings page ---------------------------------------------------- */

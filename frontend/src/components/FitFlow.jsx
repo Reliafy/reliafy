@@ -496,25 +496,8 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       </>
     );
   } else {
-    // The name sits beside Save: it is only needed to save (#311).
-    nav = (
-      <>
-        <button className="secondary" onClick={goBack} disabled={saving}>Back</button>
-        <input
-          className="fit-save-name"
-          type="text"
-          aria-label="Model name"
-          title="Model name"
-          value={name}
-          placeholder="Model name"
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSave()}
-        />
-        <button onClick={onSave} disabled={!name.trim() || saving}>
-          {saving ? "Saving…" : "Save model"}
-        </button>
-      </>
-    );
+    // The name and Save sit in the "isn't saved yet" banner above (#311).
+    nav = <button className="secondary" onClick={goBack} disabled={saving}>Back</button>;
   }
 
   return (
@@ -828,10 +811,23 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                   : "Save the model to come back to it."}
               </span>
             </div>
-            <button type="button" onClick={onSave} disabled={!name.trim() || saving}
-                    title={name.trim() ? undefined : "Name the model beside Save first"}>
-              {saving ? "Saving…" : file ? "Save this model and its data" : "Save this model"}
-            </button>
+            {/* The one primary action on the Result step: name it, save it. */}
+            <div className="fit-save-cta-actions">
+              <input
+                className="fit-save-name"
+                type="text"
+                aria-label="Model name"
+                title="Model name"
+                value={name}
+                placeholder="Model name"
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && onSave()}
+              />
+              <button type="button" onClick={onSave} disabled={!name.trim() || saving}
+                      title={name.trim() ? undefined : "Name the model beside Save first"}>
+                {saving ? "Saving…" : file ? "Save this model and its data" : "Save this model"}
+              </button>
+            </div>
           </div>
           {/* The model page's frame, inside the wizard: the answer line and
               "Use this model" (which saves the fit first) over the tabs. */}
