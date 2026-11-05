@@ -4224,6 +4224,19 @@ h1 .chip,
   font-family: inherit;
 }
 
+/* A unit box with suggestions looks like the app's selects: its chevron,
+   over the browser's own datalist arrow (kept, invisible, so it still opens
+   the list). */
+.units-input[list] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c727c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 13px;
+  padding-right: 30px;
+}
+.units-input[list]::-webkit-calendar-picker-indicator { opacity: 0; cursor: pointer; }
+.units-input[list]:disabled { background-color: var(--surf-2); color: var(--muted); }
+
 .units-input:focus {
   outline: none;
   border-color: var(--acc);
@@ -4712,6 +4725,7 @@ h1 .chip,
 .ds-label { font-size: var(--fs-13); font-weight: 500; color: var(--ink); }
 .ds-hint { font-size: var(--fs-12); line-height: 1.4; color: var(--muted); }
 .ds-unit .units-input { width: 100%; max-width: 240px; padding: 7px 10px; }
+.ds-unit .units-input[list] { padding-right: 30px; }
 .ds-status {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -4750,6 +4764,23 @@ h1 .chip,
   line-height: 1.5;
 }
 .fit-step .ds-change { align-self: flex-start; font-size: var(--fs-14); }
+/* Most units still running: the flags may be the other way round. */
+.ds-flag-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-sm);
+  color: var(--warn);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.ds-flag-notice > span { flex: 1 1 260px; min-width: 0; }
+.ds-flag-notice .link { font-size: inherit; }
 
 /* Every column and its role (#434), the used / ignored summary as its head. */
 .col-roles { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -4824,9 +4855,10 @@ h1 .chip,
 .unsaved-fit-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--fs-14); }
 .unsaved-fit-text span { color: var(--muted); font-size: var(--fs-13); overflow-wrap: anywhere; }
 .unsaved-fit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.fit-save-cta-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
 @media (max-width: 560px) {
-  .fit-save-cta > button, .unsaved-fit-actions > button { min-height: 44px; }
-  .fit-save-cta > button { width: 100%; }
+  .fit-save-cta > button, .unsaved-fit-actions > button, .fit-save-cta-actions > button { min-height: 44px; }
+  .fit-save-cta > button, .fit-save-cta-actions, .fit-save-cta-actions > button { width: 100%; }
   .ds-header-note .link { min-height: 44px; }
 }
 @media (max-width: 560px) {
@@ -6502,12 +6534,31 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   border-color: var(--acc);
 }
 
+/* Home's question on a phone: one line until "Pick your roles" opens it. */
+.roles-offer-compact {
+  display: none;
+  gap: 0.6rem;
+  align-items: center;
+  margin: 0;
+}
+
 @media (max-width: 600px) {
   .home .recent-model-when {
     min-width: 0;
   }
   .role-picker {
     grid-template-columns: 1fr;
+  }
+  .roles-offer:not(.open) .card-sub,
+  .roles-offer:not(.open) .role-picker,
+  .roles-offer:not(.open) .role-actions {
+    display: none;
+  }
+  .roles-offer:not(.open) .roles-offer-compact {
+    display: flex;
+  }
+  .roles-offer:not(.open) .roles-offer-compact > * {
+    min-height: 44px;
   }
 }
 
@@ -7516,6 +7567,16 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   .fit-flow-foot .steps .sep { width: 10px; }
   .fit-flow-foot .row { flex-wrap: wrap; }
   .fit-save-name { flex: 1 1 100%; width: auto; order: -1; }
+  /* One line of numbered dots, with only the current step's name. */
+  .fit-flow-foot .steps { flex-wrap: nowrap; }
+  .fit-flow-foot .steps .step:not(.active) .step-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
 /* ---- Settings page ---------------------------------------------------- */

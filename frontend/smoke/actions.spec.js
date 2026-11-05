@@ -11,7 +11,7 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
   await expect(page.getByText("Shape β").first()).toBeVisible({ timeout: 30_000 });
   await expectHealthy(page, problems, { label: "fitted model", chart: true });
 
-  await page.getByRole("button", { name: "Save model" }).click();
+  await page.getByRole("button", { name: "Save this model", exact: true }).click();
   await page.waitForURL(/\/models\/m\/[0-9a-f]{32}$/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: /Weibull/ })).toBeVisible();
   await expectHealthy(page, problems, { label: "saved model", chart: true });
