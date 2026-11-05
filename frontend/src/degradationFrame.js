@@ -132,7 +132,8 @@ export const oneSidedLevel = (level) => 100 - (100 - Number(level)) / 2;
 // The band's lower end as the other model pages say a bound: "≥ 3,210 at 95%".
 export function lowerBoundWords(life, level) {
   if (life?.lower == null) return "";
-  return `≥ ${formatNumber(life.lower)} at ${formatNumber(oneSidedLevel(level))}%`;
+  // A no-break space keeps "≥" with its number when the line wraps.
+  return `≥\u00a0${formatNumber(life.lower)} at ${formatNumber(oneSidedLevel(level))}%`;
 }
 
 // The life model's mean in the shape the shared mean-life words take.

@@ -82,10 +82,10 @@ test("the curve is read at a time and at a reliability, with the band's ends", (
   assert.equal(bandLevel(curves), 90);
   assert.equal(bandLevel({}), 90);
   assert.equal(bandWords({ value: 500, lower: 400, upper: 600 }, 90), "90% band 400–600");
-  assert.equal(bandWords({ value: 500, lower: 400, upper: null }, 95), "≥ 400 at 97.5%");
+  assert.equal(bandWords({ value: 500, lower: 400, upper: null }, 95), "≥\u00a0400 at 97.5%");
   // The lower end of a two-sided band is a one-sided bound at the higher level.
   assert.equal(oneSidedLevel(90), 95);
-  assert.equal(lowerBoundWords({ value: 500, lower: 400, upper: 600 }, 90), "≥ 400 at 95%");
+  assert.equal(lowerBoundWords({ value: 500, lower: 400, upper: 600 }, 90), "≥\u00a0400 at 95%");
   assert.equal(lowerBoundWords({ value: 500, lower: null, upper: 600 }, 90), "");
 });
 
@@ -94,7 +94,7 @@ test("the answer line: the path, the life, B10 with its band, the mean and the d
   assert.deepEqual(parts, [
     "Linear path to 8 mm",
     "Weibull life",
-    "B10 100 hours (≥ 0 at 95%)",
+    "B10 100 hours (≥\u00a00 at 95%)",
     "mean 5,960 hours",
     "3 items, 9 readings, 1 not yet at the threshold",
     "saved just now",
