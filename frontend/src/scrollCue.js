@@ -21,6 +21,17 @@ export function scrollToReveal({ scrollLeft, clientWidth, scrollWidth }, { left,
   return null;
 }
 
+// A reveal's scrollLeft moved on to a whole item: the first item shown
+// starts at least `pad` in from the start edge (clear of the chevron and the
+// fade), so a tab row never shows the tail of a tab ("ary" for "Summary").
+// Only ever further along than `left`, so the item revealed stays in view;
+// `starts` are the items' left edges in the strip, `max` the furthest scroll.
+export function wholeItemLeft(left, starts, { pad = 0, max = Infinity } = {}) {
+  if (left == null || left <= 0) return left;
+  const s = starts.find((x) => x - pad >= left);
+  return s == null ? Math.min(max, left) : Math.min(max, s - pad);
+}
+
 // The scrollLeft after an arrow press: most of a view's width, keeping a bit
 // of what was showing so the reader keeps their place.
 export function scrollStep({ scrollLeft, clientWidth, scrollWidth }, dir) {

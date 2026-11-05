@@ -879,12 +879,6 @@ a.rw-cklink:focus-visible {
     border-bottom-color: var(--line);
     box-shadow: 0 4px 8px -3px rgba(20, 23, 28, 0.22);
   }
-  /* The tabs come to rest on a tab's edge too: the first one shown is whole
-     ("RCM", never "ary"), clear of the chevron. */
-  .tx.phone .tt-tabs .tabs,
-  .tx.phone .tp-tabs .tabs { scroll-snap-type: x proximity; scroll-padding-inline: 32px; }
-  .tx.phone .tt-tabs .tab,
-  .tx.phone .tp-tabs .tab { scroll-snap-align: start; }
   /* The same height as the Summary tab's tree (the details open as a sheet over it). */
   .tx.phone .tp-table .tp-scroll {
     overflow-x: hidden;

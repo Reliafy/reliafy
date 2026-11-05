@@ -1426,7 +1426,7 @@ export default function AssetExplorer() {
   const phoneTabs = phone && posRow && tabsFor(posRow).length > 1 && (
     <div className="tp-tabs-wrap">
       <p className="tp-tabs-for">For <strong>{posRow.ref.name || "(no name)"}</strong></p>
-      <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} className="tp-tabs" />
+      <Tabs tabs={tabsFor(posRow)} value={shownTab(tab, posRow)} onChange={setTab} label={`What to show for ${posRow.ref.name || "this row"}`} className="tp-tabs" wholeTabs />
     </div>
   );
   // A row picked in the panel (a crumb, a row in "Directly inside").
