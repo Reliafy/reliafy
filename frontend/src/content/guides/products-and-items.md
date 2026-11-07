@@ -21,11 +21,12 @@ failure reports.
 
 ## Start with the sample
 
-On **Products**, press **Add the sample UAV product**. It adds a small survey
-quadcopter (entirely invented): its design with every failure mode scored,
-its part with a short bill of materials, three items built from it, a motor
-replaced on one of them, two failure reports, and a flight-critical RBD whose
-failure rates are placeholders.
+On **Products**, press **Add the sample UAV product**. It adds a small
+inspection quadcopter (entirely invented): its design with a complete RCM
+study and every failure mode scored, its part with a short bill of materials,
+three items built from it, each with its flight hours and flights counted, a
+motor replaced on one of them, two failure reports, and a flight-critical RBD
+whose failure rates are placeholders.
 
 ## A product's page
 
@@ -75,9 +76,9 @@ A product's locations are part of its design, never assets: they don't show on
 positions placed the same way. The copy is wherever the item is kept, and moves
 with it.
 
-The sample quadcopter's layout has four arms (each with its motor, speed
-controller and propeller), the centre body with its battery bay, and the
-payload bay.
+The sample quadcopter's layout has four arms (each with its arm structure,
+motor, speed controller and propeller), the centre body with its battery bay,
+and the payload bay.
 
 ## Items
 

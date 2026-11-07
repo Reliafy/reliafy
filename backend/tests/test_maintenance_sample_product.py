@@ -1,12 +1,14 @@
 """The sample product: "Add the sample UAV product" on Products (and "Open the sample
-UAV product" on the Explorer) adds an invented quadcopter's design, the one sample for
-the RCM and FME(C)A tabs (its RCM, some decisions linked to sample evidence, on every
-position the modes belong to),
-its part with a bill of materials, three items built from it, a replaced motor, two
-failure reports and a flight-critical RBD with placeholder failure rates, through the
-ordinary service methods (events), once unless asked again; over the app's route,
-MCP (maintenance products.add_sample) and the CLI. Products' trees stay off the
-Assets list."""
+UAV product" on the Explorer) adds an invented inspection quadcopter's design, the one
+sample for the RCM and FME(C)A tabs: a complete RCM study for its mission (the operating
+context on the top position; functions with performance standards on every position;
+functional failures breaching them, the higher ones explained by the lower; failure
+modes scored and decided, some decisions linked to sample evidence; the decisions'
+tasks as the maintenance programme), its part with a bill of materials, three items
+built from it, a replaced motor, two failure reports and a flight-critical RBD with
+placeholder failure rates, through the ordinary service methods (events), once unless
+asked again; over the app's route, MCP (maintenance products.add_sample) and the CLI.
+Products' trees stay off the Assets list."""
 
 import mongomock
 import pytest
@@ -42,30 +44,39 @@ def test_the_sample_product_is_a_design_with_items_built_and_reports(store, db):
     out = templates.add_sample_product(m, db)
     assert out["added"] and out["product"]["name"] == "Survey quadcopter (sample)"
     pid = out["product"]["id"]
-    # The design: 25 positions, the sample's modes on each motor, ESC, propeller and IMU.
+    # The design: 33 positions, the sample's modes on each arm, motor, ESC, propeller and IMU.
     assert {k: out[k] for k in ("positions", "failure_modes", "scored")} == {
-        "positions": 25, "failure_modes": 41, "scored": 41}
+        "positions": 33, "failure_modes": 83, "scored": 83}
     [product] = m.products()["products"]
     assert product["id"] == pid and product["rev"] == "C" and product["part"]["part_number"] == "SQ-4"
-    assert product["positions"] == 25 and product["items_built"] == 3 and product["open_reports"] == 2
+    assert product["positions"] == 33 and product["items_built"] == 3 and product["open_reports"] == 2
+    assert "12 km rural 11 kV distribution feeder" in product["description"]
+    # The mission is the top position's operating context: the numbers the standards come from.
+    assert m.position(pid)["operating_context"].startswith("Mission: routine corridor inspection of a 12 km")
     tree = m.tree_rows()["positions"]
     names = {p["name"] for p in tree if p.get("design_position_id") is None}
-    assert {"Motor 1", "Motor 4", "ESC 4", "Propeller 4", "IMU 1", "IMU 2", "GPS", "BMS", "Comms",
-            "Payload gimbal"} <= names
+    assert {"Centre frame", "Arm 1", "Arm 4", "Landing gear", "Motor 1", "Motor 4", "ESC 4", "Propeller 4", "IMU 1",
+            "IMU 2", "GPS", "Compass", "BMS", "Comms", "Payload gimbal", "Camera"} <= names
     sheet = m.rcm_worksheet(pid, "below")
     motors = [p for p in sheet["positions"] if p["name"].startswith("Motor ")]
     assert len(motors) == 4 and all(p["fmea"]["max_rpn"] == 216 for p in motors)
+    arms = [p for p in sheet["positions"] if p["name"].startswith("Arm ")]
+    assert len(arms) == 4 and all(p["fmea"]["modes"] == 2 for p in arms)
+    assert m.position(arms[0]["id"])["operating_context"].startswith("16 mm carbon tube")
 
     # Its part and bill of materials: four motors in one quadcopter.
     structure = m.part_structure(product["part"]["id"])
     lines = {c["part_number"]: c["qty"] for c in structure["tree"]["children"]}
     assert lines["SQ-M2210"] == 4 and lines["SQ-IMU9"] == 2 and len(lines) == 11
 
-    # Three items, by serial, with their revisions and flight hours.
+    # Three items, by serial, with their revisions and flight hours (and a flights counter
+    # beside the hours, for the pre-flight check).
     items = m.product_items(pid)["items"]
     assert [(r["serial"], r["rev"], r["hours"]["value"]) for r in items] == [
         ("0007", "C", 212), ("0008", "C", 31), ("0009", "B", 640)]
     assert [r["open_reports"] for r in items] == [1, 0, 1]
+    counters = {(pt["name"], pt["unit"]) for pt in m.s.nodes(ORG, "MeasurementPoint")}
+    assert {("Flight hours", "hours"), ("Flights", "flights")} <= counters
 
     # Motor 1 across the items: 0007's first motor failed (bearing seizure) and was replaced.
     motor1 = next(p for p in tree if p["name"] == "Motor 1" and p["parent_id"] and not p.get("design_position_id"))
@@ -134,41 +145,71 @@ def _modes(sheet: dict) -> list[dict]:
 
 
 def test_the_design_carries_a_whole_rcm(store, db):
-    """Every position has a function, every function a functional failure, every mode sits
-    under one, and every mode has a decision but the two left undecided on purpose; the
-    performance standards are each breached by a functional failure; the higher positions'
-    failures are explained by those below them; the decisions that schedule a task have one."""
+    """Every position has a function with performance standards from the mission, every
+    function a functional failure, every mode sits under one, and every mode has a decision
+    but the two left undecided on purpose; the performance standards are each breached by a
+    functional failure; the higher positions' failures are explained by those below them;
+    the decisions that schedule a task have one, and the shared ones read as a programme."""
     m = Maintenance(store, ORG, "tester")
     out = templates.add_sample_product(m, db)
     assert {k: out[k] for k in ("functions", "standards", "functional_failures", "failure_modes", "decisions",
-                                "causes_linked")} == {
-        "functions": 25, "standards": 4, "functional_failures": 34, "failure_modes": 41, "decisions": 39,
-        "causes_linked": 29}
+                                "causes_linked", "tasks")} == {
+        "functions": 47, "standards": 63, "functional_failures": 79, "failure_modes": 83, "decisions": 81,
+        "causes_linked": 64, "tasks": 17}
     sheet = m.rcm_worksheet(out["product"]["id"], "below")
     gaps = rcm_graph.gaps(sheet)
     assert gaps["counts"]["functions_without_failure"] == 0 and gaps["counts"]["no_functional_failure"] == 0
     assert gaps["counts"]["standards_without_failure"] == 0 and gaps["counts"]["functional_failures_empty"] == 0
     assert sorted((r["position"]["name"], r["text"]) for r in gaps["undecided"]) == [
-        ("Airframe", "Landing gear leg breaks on touchdown"), ("Battery pack", "Internal cell short (thermal runaway)")]
+        ("Battery pack", "Internal cell short (thermal runaway)"), ("Landing gear", "Landing gear leg breaks on touchdown")]
     # Not analysed: only where an undecided mode is, and the positions above it.
     assert sorted(p["name"] for p in sheet["positions"] if not p["analysed"]) == [
-        "Airframe", "Battery pack", "Power", "Survey quadcopter (sample)"]
+        "Airframe", "Battery pack", "Landing gear", "Power", "Survey quadcopter (sample)"]
+    # Every position has at least one function; every function has a performance standard
+    # but the gimbal's picture function (explained by the camera's).
+    assert all(p["functions"] for p in sheet["positions"])
+    assert sum(1 for p in sheet["positions"] for fn in p["functions"] if not fn["standards"]) == 1
     propulsion = next(p for p in sheet["positions"] if p["name"] == "Propulsion")
-    [thrust] = propulsion["functions"][0]["failures"]
-    assert thrust["modes"] == [] and len(thrust["causes"]) == 16  # four motors, ESCs and propellers (two failures each)
-    by_text = {mo["text"]: mo for mo in _modes(sheet)}
+    thrust, hover = propulsion["functions"][0]["failures"]
+    assert thrust["modes"] == [] and len(thrust["causes"]) == 12  # four motors, ESCs and propellers (one failure each)
+    assert hover["text"] == "Hover throttle above 60 %" and len(hover["causes"]) == 8
+    modes = _modes(sheet)
+    by_text = {mo["text"]: mo for mo in modes}
     assert "waits on the crushable-foot trial" in by_text["Landing gear leg breaks on touchdown"]["notes"]
-    # Three hidden failures (the BMS cut-off, each IMU failing silently), each with its failure-finding task.
-    hidden = [mo for mo in _modes(sheet) if mo["consequence"] == "hidden"]
-    assert len(hidden) == 3 and gaps["counts"]["hidden_without_failure_finding"] == 0
+    # The whole decision logic: on condition, scheduled discard or restoration, failure finding,
+    # run to failure (random and uneconomic), redesign and risk accepted.
+    outcomes = {}
+    for mo in modes:
+        d = mo.get("decision") or {}
+        outcomes[d.get("outcome")] = outcomes.get(d.get("outcome"), 0) + 1
+    assert outcomes == {"on_condition": 46, "fixed_interval": 9, "failure_finding": 8, "rtf": 7, "redesign": 8,
+                        "accept": 3, None: 2}
+    assert {(mo["decision"] or {}).get("rtf_basis") for mo in modes if (mo.get("decision") or {}).get("outcome") == "rtf"} \
+        == {"random", "uneconomic"}
+    # Eight hidden failures (the four failsafes, each IMU failing silently, the BMS cut-off
+    # and its state of charge), each with its failure-finding task.
+    hidden = [mo for mo in modes if mo["consequence"] == "hidden"]
+    assert len(hidden) == 8 and gaps["counts"]["hidden_without_failure_finding"] == 0
     gps = next(p for p in sheet["positions"] if p["name"] == "GPS")
     [fn] = gps["functions"]
-    assert [st["text"] for st in fn["standards"]] == ["Horizontal position within 2 m"]
-    assert [f["text"] for f in fn["failures"]] == ["Position error over 2 m, or no fix"]
+    assert [st["text"] for st in fn["standards"]] == ["Horizontal position within 2 m",
+                                                      "A fix with at least 12 satellites before take-off"]
+    assert [f["text"] for f in fn["failures"]] == ["Position error over 2 m, or no fix",
+                                                   "Fewer than 12 satellites at arming"]
     bms = next(p for p in sheet["positions"] if p["name"] == "BMS")
-    [cutoff] = _modes({"positions": [bms]})
+    cutoff = next(mo for mo in _modes({"positions": [bms]}) if mo["text"] == "Cut-off relay welded closed")
     assert cutoff["decision"]["interval"] == 160 and cutoff["decision"]["interval_unit"] == "hours"
     assert [(t["interval"], t["unit"], t["outcome"]) for t in cutoff["tasks"]] == [(160, "hours", "failure_finding")]
+    # The programme: shared tasks on the product, each serving the modes that name it, with
+    # the modes' checks as its checklist; the four failsafes share one failure-finding test.
+    shared = {t["name"]: t for mo in modes for t in mo["tasks"] if t["name"] in templates.SAMPLE_UAV_PROGRAMME_NAMES}
+    assert set(shared) == set(templates.SAMPLE_UAV_PROGRAMME_NAMES)
+    failsafe = store.node(ORG, shared["Failsafe function tests"]["id"], "Task")
+    assert (failsafe["interval"], failsafe["unit"], failsafe["outcome"]) == (25, "hours", "failure_finding")
+    assert len(failsafe["checklist"]) == 4 and failsafe["checklist"][0].startswith("Link loss:")
+    pre_flight = store.node(ORG, shared["Pre-flight check"]["id"], "Task")
+    assert (pre_flight["interval"], pre_flight["unit"]) == (1, "flights") and len(pre_flight["checklist"]) == 13
+    assert sum(1 for mo in modes if any(t["id"] == pre_flight["id"] for t in mo["tasks"])) == 26
     # New ids everywhere: nothing carries the template's.
     assert not any(n["id"].startswith("sample-") for label in ("Function", "FunctionalFailure", "FailureMode")
                    for n in store.nodes(ORG, label))
@@ -176,10 +217,12 @@ def test_the_design_carries_a_whole_rcm(store, db):
 
 
 def test_the_evidence_check_shows_each_case(store, db):
-    """The decisions linked to sample evidence: the BMS failure-finding test and the
-    propeller replacement supported; the motors' legacy run-to-failure plan contradicted
-    on purpose (the bearing model shows wear-out); the battery's retirement inconclusive
-    (its task counts cycles, its analysis flight hours)."""
+    """The decisions linked to sample evidence: the BMS failure-finding test, the propeller
+    replacement, the speed controllers' thermal-pad check (a degradation model), the
+    radio's run-to-failure (an exponential fit: random) and the gimbal motor's (a
+    replacement analysis with no worthwhile interval) supported; the motors' legacy
+    run-to-failure plan contradicted on purpose (the bearing model shows wear-out); the
+    battery's retirement inconclusive (its task counts cycles, its analysis flight hours)."""
     from backend.services import samples
     from backend.services.samples import SAMPLE_OWNER
 
@@ -191,10 +234,13 @@ def test_the_evidence_check_shows_each_case(store, db):
               for p in graph["positions"] for fn in p["functions"] for f in fn["failures"] for mo in f["modes"]}
     assert status[("BMS", "Cut-off relay welded closed")] == "supported"
     assert status[("Propeller 3", "Blade fatigue crack at the hub")] == "supported"
+    assert status[("ESC 4", "Thermal pad dries out; the controller runs hot and limits current")] == "supported"
+    assert status[("Comms", "Radio module fails (electronic)")] == "supported"
+    assert status[("Payload gimbal", "Gimbal motor stalls on a snagged cable")] == "supported"
     assert status[("Motor 2", "Bearing seizure")] == "contradicted"
     assert status[("Battery pack", "Cell capacity fade")] == "inconclusive"
-    assert graph["rollup"] == {"modes": 41, "decided": 39, "supported": 5, "contradicted": 4,
-                               "inconclusive": 1, "unevidenced": 23, "stale": 0}
+    assert graph["rollup"] == {"modes": 83, "decided": 81, "supported": 11, "contradicted": 4,
+                               "inconclusive": 1, "unevidenced": 54, "stale": 0}
     check = rcm_graph.gaps(graph)["evidence_to_check"]
     assert sorted({(r["text"], r["status"]) for r in check}) == [
         ("Bearing seizure", "contradicted"), ("Cell capacity fade", "inconclusive")]
@@ -220,7 +266,7 @@ def test_over_the_route(api):  # noqa: F811
 def test_over_mcp(env):  # noqa: F811
     async def go(client):
         made = _ok(await _do(client, "maintenance", "products.add_sample"))
-        assert made["added"] and made["failure_modes"] == 41
+        assert made["added"] and made["failure_modes"] == 83
         assert made["rbd"]["name"].endswith("(placeholder failure rates)")
         twice = _ok(await _do(client, "maintenance", "products.add_sample"))
         assert twice["added"] is False

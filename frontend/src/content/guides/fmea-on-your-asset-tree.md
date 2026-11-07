@@ -27,9 +27,11 @@ A quadcopter is something you design, so the sample one is a product. On
 **Products**, press **Add the sample UAV product** (in **Assets → Explorer**,
 **Open the sample UAV product** in the **⋯** beside the tree's search box, or on the empty
 tree's card, does the same and opens it). *Survey quadcopter (sample)* is a
-small fictional quadcopter: airframe, propulsion with four motors, power,
-flight control, comms and a payload gimbal, with every failure mode scored and
-its criticality figures filled in. Its **Functional structure** tab is the
+small fictional inspection quadcopter: an airframe with four arms, a centre
+frame and landing gear, propulsion with four motors, power, flight control,
+comms and a payload gimbal with its camera, with every failure mode scored
+and its criticality figures filled in over a year's 150 flight hours. Its
+**Functional structure** tab is the
 same Explorer, scoped to the design: pick its **FME(C)A** tab. Everything below
 works the same on a product's design and on your asset tree. Its **RCM** tab
 holds the same failure modes as an RCM, each with its decision (see
@@ -122,8 +124,9 @@ The fields, in the **Criticality** group of a failure mode's Details:
 - **Severity class**: I Catastrophic, II Critical, III Marginal, IV Minor.
 
 The formula is C<sub>m</sub> = β × α × λ × t. For the sample UAV product's
-motor bearing seizure that is 1.0 × 0.5 × 0.00008 per hour × 100 hours = 0.004: four
-expected losses per thousand flight hours from that one mode. The **item
+motor bearing seizure that is 1.0 × 0.5 × 0.00008 per hour × 150 hours = 0.006: the
+chance, over a year's 150 flight hours, of losing the aircraft to that one
+mode on that one motor. The **item
 criticality** C<sub>r</sub> of a position is the sum of its modes'
 C<sub>m</sub>, shown on the position's row and in its Details, with the sum
 per severity class.
