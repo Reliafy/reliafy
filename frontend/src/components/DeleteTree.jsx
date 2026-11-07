@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { deleteTree, deleteTreePreview, restoreTree } from "../api.js";
+import { deleteRcm, deleteRcmPreview, deleteTree, deleteTreePreview, restoreTree } from "../api.js";
 import { DELETE_NOTE, deleteButton, deleteLines, deleteTitle, deletedText, isUndoKey, undoneText } from "../treeDelete.js";
+import {
+  RCM_DELETE_NOTE, rcmDeleteButton, rcmDeleteCounts, rcmDeleteLines, rcmDeleteTitle, rcmDeletedText,
+} from "../rcmDelete.js";
 import { FormModal } from "./MaintenanceParts.jsx";
 import { hasOpenLayer } from "../fullScreen.js";
 import "./DeleteTree.css";
@@ -40,6 +43,45 @@ export function DeleteTreeModal({ kind, id, name, onClose, onDone }) {
             </>
           ) : <p>Nothing else is inside it.</p>}
           <p className="lib-date">{DELETE_NOTE}</p>
+        </div>
+      )}
+    </FormModal>
+  );
+}
+
+// Delete… on a row of a position's RCM (the RCM and FME(C)A tabs): a
+// function, performance standard, functional failure or failure mode with
+// everything under it. The same dialog as a position's: the server's dry-run
+// counts in plain words ("2 functional failures, 5 failure modes, 3 tasks."),
+// one click deletes it all (rcmDelete.js has the words). `onDone(answer,
+// toast)`: the server's answer and the toast to show ({text, id, name}).
+export function DeleteRcmModal({ kind, id, name, onClose, onDone }) {
+  const [counts, setCounts] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let live = true;
+    deleteRcmPreview(kind, id).then((c) => live && setCounts({ ...c, kind, name: c.name || name }))
+      .catch((e) => live && setError(e.message));
+    return () => { live = false; };
+  }, [kind, id, name]);
+  const summary = counts ? rcmDeleteCounts(counts) : "";
+  const lines = counts ? rcmDeleteLines(counts) : [];
+  return (
+    <FormModal title={counts ? rcmDeleteTitle(counts) : `Delete “${name || "it"}”?`} danger
+               submitLabel={counts ? rcmDeleteButton(counts) : "Delete"} pendingLabel="Deleting…"
+               canSubmit={!!counts} onClose={onClose}
+               onSubmit={async () => {
+                 const answer = await deleteRcm(kind, id);
+                 const done = { ...counts, ...answer, kind, name: answer.name || counts.name };
+                 onDone(done, { text: rcmDeletedText(done), id, name: done.name });
+               }}>
+      {error && <p className="card error">{error}</p>}
+      {!counts && !error && <p className="lib-date" aria-live="polite">Counting what's under it…</p>}
+      {counts && (
+        <div className="td-body" data-testid="delete-counts">
+          {summary ? <p>Everything under it goes too: {summary}</p> : <p>Nothing else is under it.</p>}
+          {lines.length > 0 && <ul className="td-list">{lines.map((l) => <li key={l}>{l}</li>)}</ul>}
+          <p className="lib-date">{RCM_DELETE_NOTE}</p>
         </div>
       )}
     </FormModal>

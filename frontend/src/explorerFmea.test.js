@@ -80,7 +80,10 @@ test("the worksheet nested in the tree: position › function › failure modes 
 test("each row's menu on the FME(C)A tab: a function adds a failure mode directly under it; no moving", () => {
   const d = graftFmea(buildDisplay(DATA, "positions"), RCM);
   const ids = (key, o) => rowActions(d.rows.get(key), o).map((a) => a.id);
-  assert.deepEqual(ids("motor"), ["add-fn", "import-sheet", "export-csv", "print"]);
+  assert.deepEqual(ids("motor"), ["add-fn", "import-sheet", "export-csv", "print", "tree-delete"]);
+  assert.equal(rowActions(d.rows.get("motor")).at(-1).label, "Delete…");
+  assert.equal(rowActions(d.rows.get("f1")).at(-1).label, "Delete function…");
+  assert.equal(rowActions(d.rows.get("m1")).at(-1).label, "Delete failure mode…");
   assert.deepEqual(ids("f1"), ["open", "add-mode", "rename", "delete"]);
   assert.deepEqual(ids("m1"), ["open", "score", "rename", "delete"]);
   assert.deepEqual(ids("U:motor"), ["add-mode"]);

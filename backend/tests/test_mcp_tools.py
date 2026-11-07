@@ -448,7 +448,7 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
         _, table = mcp_tools.TOOL_TABLES["maintenance"]
         expected = {f"{area[len('maintenance_'):]}.{verb}" for area, (_, t) in mcp_tools.TABLES.items() for verb in t}
         expected |= {"overview", "guide", "view_photo", "graph_schema", "graph_query", "apply"}
-        assert set(table) == expected and len(table) == 239  # 189 + work packages (Nov 2026): 9 actions, 2 reads, work_orders.mark, out of service ×4; + signals ×9, signal_data ×3; progression ×2; + failure reports (Nov 2026): 7 actions, 2 reads; + FME(C)A: failure_modes.score (positions.add_sample_uav since removed: the sample quadcopter is products.add_sample); + products (Nov 2026): 4 actions, 2 gets, 3 lists; products.add_sample; - positions.add_sample_truck (Nov 2026: the sample product is the one sample)
+        assert set(table) == expected and len(table) == 240  # 189 + work packages (Nov 2026): 9 actions, 2 reads, work_orders.mark, out of service ×4; + signals ×9, signal_data ×3; progression ×2; + failure reports (Nov 2026): 7 actions, 2 reads; + FME(C)A: failure_modes.score (positions.add_sample_uav since removed: the sample quadcopter is products.add_sample); + products (Nov 2026): 4 actions, 2 gets, 3 lists; products.add_sample; - positions.add_sample_truck (Nov 2026: the sample product is the one sample); + failure_modes.undo_delete (Nov 2026)
         # The whole list an operator loads on every connection, guarded (301,819 characters as 40 tools).
         listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in every])
         assert len(listed) < 22_000  # was 20,000 before the signal channel actions, 21,000 before failure reports

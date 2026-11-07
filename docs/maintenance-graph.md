@@ -717,7 +717,19 @@ with `cascade` undoes it as a unit: `fitment.reinstated` reopens a fitment the
 delete ended, `work_order.uncancelled` puts a work order back at the status
 it had, and `tree.restored` marks the record. What changed since (an item
 fitted elsewhere) is skipped and listed. `dry_run` with `cascade` counts what
-would go and writes nothing. Reads leave retired locations, items, parts,
+would go and writes nothing.
+In a position's RCM, `remove_function`, `remove_standard`,
+`remove_functional_failure` and `retire_failure_mode` take `cascade` the same
+way (`rcm_delete.py`): everything under the row goes (a function's standards,
+functional failures, the modes under them or placed directly under it, the
+documents on it; a standard's breaching failures; their tasks, a task serving
+a mode outside what goes being unlinked instead; the cause links of every
+failure that goes). It's built from the existing events plus `rcm.deleted` (an
+`RcmDeletion` node recording it all) so that `restore_rcm` undoes it as a
+unit, with `function.restored`, `functional_failure.restored` and
+`standard.restored` (which also re-points the failures that breached it) and
+`rcm.restored` marking the record. Without `cascade` the removes keep their
+old meaning (the modes stay on the position, unassigned). Reads leave retired locations, items, parts,
 makers and points out of lists and matches; a direct read answers with
 `retired: true`.
 

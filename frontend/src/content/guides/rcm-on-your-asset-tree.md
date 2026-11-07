@@ -94,8 +94,9 @@ To find your way around a big tree:
   can still see where you are; open and close rows by hand after as usual.
 - **Pin this branch** in a position's row menu shows that position and what's
   inside it on its own; **Show whole tree** brings the rest back.
-- **Delete…** in a position's or location's menu on the Summary tab (or press
-  **Delete** on the row) deletes it. Everything inside it goes too: the
+- **Delete…** in a position's or location's menu (on the Summary tab, and a
+  position's on the RCM and FME(C)A tabs too; or press **Delete** on the row)
+  deletes it. Everything inside it goes too: the
   positions inside, their tasks and their RCM; open work orders are cancelled.
   Items are never deleted: those fitted there are taken out and kept, loose,
   in Items. The dialog counts what will go before you confirm. Its history
@@ -161,10 +162,17 @@ fields, then the quieter things at the foot:
 
 **Edit description**
 (on a performance standard, **Edit text**) in a row's menu changes the text in the table
-itself. **Delete this function** (or functional failure, or failure mode), at the
-foot of the Details or in their **⋯**, removes a row and everything inside it, after asking; **Remove
-this performance standard** takes a performance standard off its function and its functional failures
-stay, under **No performance standard**.
+itself. **Delete function…** (or performance standard, functional failure or
+failure mode) in a row's menu, or **Delete this …** at the foot of its Details,
+deletes the row and everything under it. A function takes its performance
+standards, functional failures and failure modes; a performance standard takes
+the functional failures that breach it; a functional failure takes its failure
+modes. Their tasks go too, except a task that also serves a failure mode
+elsewhere: that one stays with it. The dialog counts what will go before you
+confirm (*Delete “Pump water” and everything under it? 2 functional failures,
+5 failure modes, 3 tasks.*), and **Undo** in the message that follows (or
+Ctrl+Z, Cmd+Z on a Mac) brings it all back as it was. Failures already recorded
+against a failure mode keep it in their history.
 
 Every change is saved as you make it: there is no Save button. A field says
 **✓ Saved** by its label once it is; if a change can't be kept, it stays as you
@@ -329,9 +337,11 @@ the rows:
 
 - In a function's row menu, **Add a performance standard…** adds one. In a performance standard's
   row menu, **Add a functional failure…** adds one that breaches it,
-  **Edit text** changes its words in the table, and **Remove performance standard**
-  takes it off the function after asking (its functional failures move under
-  **No performance standard**, with their failure modes). Drag a performance standard above or below
+  **Edit text** changes its words in the table, and **Delete performance
+  standard…** deletes it with the functional failures that breach it and their
+  failure modes, after counting them (**Undo** brings them back). To keep the
+  functional failures, move them under another performance standard (or **No
+  performance standard**) first. Drag a performance standard above or below
   another to change the order (from the keyboard: **Move up** and **Move
   down** in its menu).
 - Which performance standard a functional failure breaches is where it sits in

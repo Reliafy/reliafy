@@ -461,7 +461,8 @@ export function Details({
     const own = ownStart?.list === list ? ownStart.at : null;
     return from == null && own == null ? null : Math.max(from ?? 0, own ?? 0);
   };
-  const deleteLabel = r.type === "std" ? "Remove this performance standard" : `Delete this ${kindWord}`;
+  // Everything under it goes too (the old single standard text is only cleared).
+  const deleteLabel = r.type === "std" && r.ref?.legacy ? "Remove this performance standard" : `Delete this ${kindWord}`;
   const headItems = readOnly ? [] : [
     ...(level.child ? [{ id: "add", label: `${addLabel}…`, onSelect: () => (insideList ? setOwnStart({ list: "inside", at: Date.now() }) : onAdd(r)) }] : []),
     // Move to… (the one picker every kind uses), and a failure mode's Move a task….

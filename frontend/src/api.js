@@ -2699,6 +2699,19 @@ export function deleteTree(kind, id, reason = "") {
 export function restoreTree(kind, id) {
   return postJson(`/api/maintenance/${TREE_PATHS[kind]}/${id}/restore`, { cascade: true });
 }
+// A row of a position's RCM (a function, performance standard, functional
+// failure or failure mode) deleted with everything under it: deleteRcmPreview
+// counts what would go and writes nothing; restoreRcm undoes the latest delete.
+const RCM_PATHS = { function: "functions", standard: "standards", functional_failure: "functional-failures", failure_mode: "failure-modes" };
+export function deleteRcmPreview(kind, id) {
+  return sendJson("DELETE")(`/api/maintenance/${RCM_PATHS[kind]}/${id}?cascade=true&dry_run=true`);
+}
+export function deleteRcm(kind, id) {
+  return sendJson("DELETE")(`/api/maintenance/${RCM_PATHS[kind]}/${id}?cascade=true`);
+}
+export function restoreRcm(id) {
+  return postJson(`/api/maintenance/rcm/${id}/restore`, {});
+}
 export function getMaintenanceLocation(id) {
   return request(`/api/maintenance/locations/${id}`);
 }

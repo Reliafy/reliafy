@@ -2,6 +2,14 @@
 
 ## Unreleased (0.5.1)
 
+- **Delete an RCM row with everything under it**: `maintenance
+  failure_modes.remove_function`, `remove_standard`,
+  `remove_functional_failure` and `retire` take `cascade` (everything under it
+  goes: standards, functional failures, failure modes, their tasks and links)
+  and `dry_run` (only count it). The new `failure_modes.undo_delete`
+  (`deleted_id`) brings the lot back as a unit. Without `cascade` they behave
+  as before.
+
 - **A product's physical layout**: `maintenance locations.create` takes
   `design_of` (a product's id) for one of the product's design locations
   (Forward left arm, Battery bay), and `maintenance list.locations` takes

@@ -407,9 +407,13 @@ restore_group, attachments restore_document. Retiring is refused while something
 located, placed, stocked, listed, an open work order, a task going by it): the refusal says what to do first; \
 positions / locations retire with cascade true deletes the thing and everything inside it, never refused \
 (items are never retired: fitted ones taken out and kept, stored ones lose their place; open work orders \
-cancelled, tasks retired; dry_run true counts it first, to show the user), and restore with cascade true undoes that delete as a unit. Not undoable, by design: voiding, \
+cancelled, tasks retired; dry_run true counts it first, to show the user), and restore with cascade true undoes that delete as a unit. \
+In the RCM the same goes for failure_modes remove_function / remove_standard / remove_functional_failure / retire \
+with cascade true: everything under it goes (its standards, functional failures, failure modes, their tasks; a \
+task serving a mode outside it is unlinked and kept), dry_run counts it, and undo_delete (deleted_id) brings the \
+lot back. Not undoable, by design: voiding, \
 correcting, merging, cancelling and closing, removing a photo or a kept PDF (bytes gone), removing a function \
-or functional failure (re-add them). Delete only on the user's say-so, naming the thing.
+or functional failure without cascade (re-add them). Delete only on the user's say-so, naming the thing.
 - Clearing a field: '' for text, [] for a list, 0 for a second limit, clear_* flags and clear lists for numbers \
 and links (parts update clear, parts reorder clear_reorder_point, topology update clear_realised_by, \
 attachments clear_coordinates). A field left out is unchanged.

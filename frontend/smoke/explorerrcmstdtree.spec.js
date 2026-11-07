@@ -178,7 +178,7 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   // A function's menu: Add a performance standard… (the first standard; its loose failure stays on show, under "No standard").
   let menu = await menuOf(page, circulate);
   // With the mouse: Move to…, but no Move up / down (a drag does them); Isolate › before Delete.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Isolate", "Isolate incomplete rows", "Delete function"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a performance standard…", "Add functional failure", "Edit description", "Move to…", "Isolate", "Isolate incomplete rows", "Delete function…"]);
   await menu.getByRole("menuitem", { name: "Add a performance standard…" }).click();
   // The function's details, on the standards' add row: typed in place, Enter writes it.
   const details = page.getByRole("complementary", { name: "Details" });
@@ -198,11 +198,11 @@ test("row menus: add a standard, a failure under it, change a failure's standard
 
   // A standard's menu: Add a functional failure… (it breaches this standard).
   menu = await menuOf(page, fifty);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move to…", "Isolate", "Remove performance standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move to…", "Isolate", "Delete performance standard…"]);
   await page.keyboard.press("Escape");
   // From the keyboard: Move up / down too.
   menu = await menuOf(page, fifty, { keyboard: true });
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Move to…", "Isolate", "Remove performance standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Edit text", "Add a functional failure…", "Move up", "Move down", "Move to…", "Isolate", "Delete performance standard…"]);
   await expect(menu.getByRole("menuitem", { name: "Move up" })).toHaveAttribute("aria-disabled", "true"); // the only one
   await menu.getByRole("menuitem", { name: "Add a functional failure…" }).click();
   // The standard's details, on their functional failures' add row (one that breaches it).
@@ -260,19 +260,21 @@ test("row menus: add a standard, a failure under it, change a failure's standard
   fn = await readFn(request, p.balance.id);
   expect(fn.standards[0].text).toBe(`Total alkalinity 80-110 ppm ${tag}`);
 
-  // Remove: asked first, saying where its failures go; they move under "No standard".
+  // Delete: the counted dialog; the failures breaching it go with it, and Undo brings them all back.
   menu = await menuOf(page, ph);
-  await menu.getByRole("menuitem", { name: "Remove performance standard" }).click();
-  const confirm = page.getByRole("alertdialog", { name: "Remove this performance standard?" });
-  await expect(confirm).toContainText("Its 2 functional failures move to the function with no performance standard (they breach the whole function), with their failure modes.");
-  await confirm.getByRole("button", { name: "Remove performance standard" }).click();
+  await menu.getByRole("menuitem", { name: "Delete performance standard…" }).click();
+  const confirm = page.getByRole("dialog", { name: /and everything under it\?$/ });
+  await expect(confirm.getByTestId("delete-counts")).toContainText("2 functional failures");
+  await confirm.getByRole("button", { name: "Delete the performance standard" }).click();
   await expect(ph).toHaveCount(0);
   const high = trow(page, `^Functional failure: pH above 7.8 ${tag}`);
-  await expect(high).toBeVisible();
-  expect(await level(high)).toBe((await level(trow(page, `^Function: Keep the water balanced ${tag}`))) + 2);
+  await expect(high).toHaveCount(0);
   fn = await readFn(request, p.balance.id);
   expect(fn.standards.length).toBe(2);
-  expect(fn.failures.every((f) => f.standard === null)).toBe(true);
+  await page.locator(".rcm-toast").getByRole("button", { name: "Undo" }).click();
+  await expect(high).toBeVisible();
+  fn = await readFn(request, p.balance.id);
+  expect(fn.standards.length).toBe(3);
   // The one text's row: Edit text changes the function's text; Remove clears it; no event for a standard.
   const legacy = trow(page, `^Performance standard: FC 1-3 ppm; CC under 0.5 ppm ${tag}`);
   menu = await menuOf(page, legacy);
@@ -382,7 +384,7 @@ test("at 400 px the standard rows, their menus and the details sheet fit", async
   // The menu: no in-place edit on a phone (the details edit the text); Open… shows them.
   await ca.getByRole("button", { name: "Actions", exact: true }).click();
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to…", "Isolate", "Remove performance standard"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Add a functional failure…", "Move up", "Move down", "Move to…", "Isolate", "Delete performance standard…"]);
   await menu.getByRole("menuitem", { name: "Open…" }).click();
   const dlg = panel(page);
   await expect(dlg).toBeVisible();

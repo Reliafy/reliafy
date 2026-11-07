@@ -162,6 +162,17 @@ criticality and any decision stay with it.
 Modes written on the RCM tab under a functional failure show on the FME(C)A
 tab too, with the functional failure named in its own column.
 
+## Delete a row
+
+**Delete…** is last in every row's menu on the FME(C)A tab, and it deletes the
+row with everything under it. A position takes the positions inside it and
+their analysis (as it does on the Summary tab; items fitted there are kept).
+A function takes its failure modes, including those written directly under
+it, with their tasks; a failure mode takes its tasks. A task that also serves
+a failure mode elsewhere stays with that one. The dialog counts what will go
+before you confirm, and **Undo** in the message that follows (or Ctrl+Z, Cmd+Z
+on a Mac) brings it all back as it was, scores and all.
+
 ## Bring in a worksheet, take one out
 
 **Import worksheet…** in a position's row menu reads an FMEA worksheet the

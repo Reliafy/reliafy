@@ -327,8 +327,8 @@ FAILURE_MODES: Table = {
         (an inspection plus a hard-time replacement); its decision's stays first."""),
     "assign": ("failure_mode_id", "functional_failure_id function_id", "Put it under one of its position's "
                "functional failures, or (function_id) directly under a function (both left out: under none)."),
-    "retire": ("failure_mode_id", "", "Delete it, with its tasks (a shared one is unlinked; recorded failures "
-               "keep it)."),
+    "retire": ("failure_mode_id", "cascade dry_run", "Delete it, with its tasks (a shared one is unlinked; "
+               "recorded failures keep it). cascade: undo_delete can bring it all back; dry_run: only count."),
     "restore": ("failure_mode_id", "", "Put a deleted mode back, with its decision and the task retired with it."),
     "add_function": ("position_id text", "standard standard_basis", "A function the position performs (its "
                      "performance standards: add_standard), with the working behind them (standard_basis)."),
@@ -339,22 +339,24 @@ FAILURE_MODES: Table = {
         applies and its source are optional. A function may hold several."""),
     "update_standard": ("standard_id", "text parameter comparator value unit when source", "Change one ('' clears "
                         "a field)."),
-    "remove_standard": ("standard_id", "", "Take one off its function (functional failures breaching it then "
-                        "breach none)."),
+    "remove_standard": ("standard_id", "cascade dry_run", "Take one off its function (functional failures "
+                        "breaching it then breach none; cascade: they go too, with their modes and tasks)."),
     "reorder_standards": ("function_id standard_ids", "", "The function's performance standards in that order."),
     "move_standard": ("standard_id function_id", "ids", "To another function, alone (functional failures "
                       "breaching it stay, under none); ids: that function's ones that breach it."),
     "split_standard": ("function_id", "standards dry_run", """A function's single performance standard text as
         a list: proposed from its ';' and line breaks (dry_run true, default), then sent back edited as
         standards [{text, parameter?, comparator?, value?, unit?, when?, source?}] with dry_run false."""),
-    "remove_function": ("function_id", "", "Delete a function, its functional failures and documents; their modes "
-                        "stay, unassigned."),
+    "remove_function": ("function_id", "cascade dry_run", "Delete a function, its functional failures and "
+                        "documents; their modes stay, unassigned (cascade: everything under it goes)."),
     "add_functional_failure": ("function_id text", "standard_id", "A way the function fails ('No flow'); "
                                "standard_id: the performance standard it breaches (none: the whole function)."),
     "update_functional_failure": ("functional_failure_id", "text standard_id", "Change its text, or the performance "
                                   "standard it breaches (standard_id 'none': the whole function)."),
-    "remove_functional_failure": ("functional_failure_id", "", "Delete a functional failure; its modes stay, "
-                                  "unassigned."),
+    "remove_functional_failure": ("functional_failure_id", "cascade dry_run", "Delete a functional failure; its "
+                                  "modes stay, unassigned (cascade: they and their tasks go too)."),
+    "undo_delete": ("deleted_id", "", """Undo the latest cascade delete of that function, standard, functional
+        failure or mode: everything it took comes back (what changed since is listed in skipped)."""),
     "link_cause": ("functional_failure_id cause_id", "", "functional_failure_id (the effect) results from "
                    "cause_id, a functional failure on a position inside its own."),
     "unlink_cause": ("functional_failure_id cause_id", "", "Take that cause off it."),
@@ -1402,6 +1404,10 @@ def register() -> None:
                                   dry_run: bool | None = None, parent_id: str | None = None,
                                   ids: list[str] | None = None,
                                   measurement: Measurement = None,
+                                  cascade: Annotated[bool | None, Field(description=(
+                                      "remove_* and retire: everything under it goes too (undo_delete brings "
+                                      "it back); dry_run then only counts."))] = None,
+                                  deleted_id: str | None = None,
                                   severity: int | None = None, occurrence: int | None = None,
                                   detection: int | None = None, cause: str | None = None,
                                   effect_local: str | None = None, effect_next: str | None = None,
@@ -1485,14 +1491,18 @@ def register() -> None:
         if action == "assign":
             return run(m.assign_failure_mode, failure_mode_id, functional_failure_id, function_id)
         if action == "retire":
-            return run(m.retire_failure_mode, failure_mode_id)
+            return run(m.retire_failure_mode, failure_mode_id, bool(cascade), bool(dry_run))
         if action == "restore":
             return run(m.restore_failure_mode, failure_mode_id)
+        if action == "undo_delete":
+            return run(m.restore_rcm, deleted_id)
         if action == "add_function":
             return run(m.add_function, position_id, text, standard or "", standard_basis=standard_basis or "")
         if action == "update_function":
             return run(m.update_function, function_id, text, standard, standard_basis)
         if action == "remove_function":
+            if cascade or dry_run:
+                return run(m.remove_function, function_id, bool(cascade), bool(dry_run))
             return run(remove_function_bytes, m, function_id)
         if action == "add_functional_failure":
             return run(m.add_functional_failure, function_id, text, standard_id)
@@ -1504,7 +1514,7 @@ def register() -> None:
         if action == "update_standard":
             return run(m.update_standard, standard_id, text, parameter, comparator, value, unit, when, source)
         if action == "remove_standard":
-            return run(m.remove_standard, standard_id)
+            return run(m.remove_standard, standard_id, bool(cascade), bool(dry_run))
         if action == "reorder_standards":
             return run(m.reorder_standards, function_id, standard_ids)
         if action == "move_standard":
@@ -1512,7 +1522,7 @@ def register() -> None:
         if action == "split_standard":
             return run(m.split_standard, function_id, standards, _d(dry_run, True))
         if action == "remove_functional_failure":
-            return run(m.remove_functional_failure, functional_failure_id)
+            return run(m.remove_functional_failure, functional_failure_id, bool(cascade), bool(dry_run))
         if action == "link_cause":
             return run(m.link_cause, functional_failure_id, cause_id)
         if action == "unlink_cause":

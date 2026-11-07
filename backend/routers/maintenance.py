@@ -99,9 +99,13 @@ def remove_document(m: Maintenance, document_id: str) -> dict:
     return out
 
 
-def remove_function(m: Maintenance, function_id: str) -> dict:
+def remove_function(m: Maintenance, function_id: str, cascade: bool = False, dry_run: bool = False) -> dict:
     """Delete a function (see Maintenance.remove_function); the kept PDFs on it
-    go with it, bytes and all (the history keeps that they were there)."""
+    go with it, bytes and all (the history keeps that they were there). With
+    ``cascade`` (everything under it goes, and Undo brings it back) the bytes are
+    kept, so the undo brings the PDFs back whole."""
+    if cascade or dry_run:
+        return m.remove_function(function_id, cascade=cascade, dry_run=dry_run)
     out = m.remove_function(function_id)
     store = None
     for document_id in out["documents_removed"]:
@@ -603,10 +607,19 @@ def update_function(function_id: str, body: dict = Body(...),
 
 
 @router.delete("/functions/{function_id}")
-def delete_function(function_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+def delete_function(function_id: str, cascade: bool = False, dry_run: bool = False,
+                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Delete a function and its functional failures (their failure modes stay, unassigned)
-    and the documents on it."""
-    return _run(remove_function, m, function_id)
+    and the documents on it. cascade: everything under it goes too (POST /rcm/{id}/restore
+    undoes it); dry_run: only count what that would take."""
+    return _run(remove_function, m, function_id, cascade, dry_run)
+
+
+@router.post("/rcm/{root_id}/restore")
+def restore_rcm(root_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Undo the latest delete with cascade of a function, performance standard, functional failure
+    or failure mode (root_id: the one deleted): everything it took comes back."""
+    return _run(m.restore_rcm, root_id)
 
 
 @router.post("/functions/{function_id}/failures")
@@ -642,8 +655,10 @@ def update_standard(standard_id: str, body: dict = Body(...), m: Maintenance = D
 
 
 @router.delete("/standards/{standard_id}")
-def remove_standard(standard_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.remove_standard, standard_id)
+def remove_standard(standard_id: str, cascade: bool = False, dry_run: bool = False,
+                    m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """cascade: the functional failures breaching it go too, with their modes and tasks."""
+    return _run(m.remove_standard, standard_id, cascade, dry_run)
 
 
 @router.put("/functions/{function_id}/standards/order")
@@ -671,8 +686,10 @@ def split_standard(function_id: str, body: dict | None = Body(None),
 
 
 @router.delete("/functional-failures/{ff_id}")
-def remove_functional_failure(ff_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    return _run(m.remove_functional_failure, ff_id)
+def remove_functional_failure(ff_id: str, cascade: bool = False, dry_run: bool = False,
+                              m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """cascade: its failure modes and their tasks go too."""
+    return _run(m.remove_functional_failure, ff_id, cascade, dry_run)
 
 
 @router.post("/functional-failures/{ff_id}/causes")
@@ -748,9 +765,11 @@ def unlink_task_failure_mode(task_id: str, mode_id: str, m: Maintenance = Depend
 
 
 @router.delete("/failure-modes/{mode_id}")
-def retire_failure_mode(mode_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Delete it from the position's RCM, with its task (failures recorded against it keep it)."""
-    return _run(m.retire_failure_mode, mode_id)
+def retire_failure_mode(mode_id: str, cascade: bool = False, dry_run: bool = False,
+                        m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Delete it from the position's RCM, with its task (failures recorded against it keep it).
+    cascade: recorded so POST /rcm/{id}/restore brings it back with its tasks and their links."""
+    return _run(m.retire_failure_mode, mode_id, cascade, dry_run)
 
 
 @router.post("/failure-modes/{mode_id}/move")
