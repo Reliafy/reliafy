@@ -278,10 +278,22 @@ another task**: *On-condition*, *Fixed-interval replacement* or
 *Failure-finding*. Each one you add asks for its own task name and interval,
 and each becomes its own scheduled task on the position. A **Redesign** can
 sit beside one task, the task done until the change is made. Run-to-failure
-and accept stand alone. The evidence and notes are once for the whole
-decision, and the **Decision** column reads *On-condition + Fixed-interval*.
-For an operational or non-operational consequence, say in the notes what the
-second task earns.
+and accept stand alone. The notes are once for the whole decision, and the
+**Decision** column reads *On-condition + Fixed-interval*. For an operational
+or non-operational consequence, say in the notes what the second task earns.
+
+Each task of a combination needs its own evidence. The evidence you link in
+step 3 counts for every task it fits: a degradation model backs the
+inspection, a replacement analysis backs the fixed-interval task, and a report
+or a function's notes back any task. Where one piece can't cover them all,
+open **Evidence for this task** under the other task and link its own. Until
+every task has some, the check reads *Partly evidenced*, and the Evidence card
+names the task that has none.
+
+A worksheet import builds a combination too: a second row for the same
+failure mode with another scheduled outcome joins its decision, in row order.
+The export writes a combination the same way, one row per task, so a sheet you
+export imports back as the same decisions.
 
 ## Several tasks for one failure mode, one task for several
 

@@ -13,15 +13,18 @@ const LINKED_ONLY = new Set(["report", "working"]);
 const Tick = () => <span className="choice-tick" aria-hidden="true">✓ </span>;
 import { saveErrorText } from "../confirm.js";
 import {
-  INTERVAL_UNITS, NEEDS_INTERVAL, SCHEDULED, checkDecision, combineChoices, pruneExtras, rememberUnit, startUnit,
+  INTERVAL_UNITS, NEEDS_INTERVAL, SCHEDULED, analysisKindOf, checkDecision, combineChoices, extraBody, pruneExtras,
+  rememberUnit, startUnit,
 } from "../decisionCheck.js";
 
 // Guided RCM decision flow for one failure mode: consequence → outcome
 // (suggested first, per the classic decision diagram) → task details →
 // linked evidence. A scheduled outcome (or a redesign) may take further tasks,
 // a combination of tasks (RCM II: a regular inspection plus a fixed-time
-// replacement), each with its own name and interval; the evidence and notes
-// are once per decision. Saves back {consequence, decision} straight to the
+// replacement), each with its own name and interval; the notes are once per
+// decision, and the decision's evidence counts for every task it fits, while a
+// further task may link its own (one piece can't cover a degradation model's
+// task and a replacement analysis's). Saves back {consequence, decision} straight to the
 // server (the Explorer): onSave returns a promise, and the dialog stays
 // open, Apply showing "Saving…", until it's done, and a refusal shows here
 // with everything as typed. Apply says what's missing whenever it can't be
@@ -54,14 +57,18 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
   const [extras, setExtras] = useState(() => (Array.isArray(existing.outcomes) && existing.outcomes.length > 1
     ? existing.outcomes.slice(1).map((o) => ({
       outcome: o.outcome, task: o.task || "", interval: o.interval ?? "", intervalUnit: o.interval_unit || startUnit(null),
+      evidence: o.evidence || null, had: o.evidence || null,
     }))
     : []));
+  // The first task's own evidence, if it has any (linked over the API): kept as it was.
+  const firstOwn = Array.isArray(existing.outcomes) && existing.outcomes.length > 1 ? existing.outcomes[0].evidence : null;
+  const expectedOf = (o) => options.outcomes.find((x) => x.id === o)?.expected_evidence || null;
   const chosen = extras.map((x) => x.outcome);
   const choices = combineChoices(outcome, chosen);
   const labelOf = (o) => options.outcomes.find((x) => x.id === o)?.label || o;
   const toggleExtra = (o) => setExtras((xs) => (xs.some((x) => x.outcome === o)
     ? xs.filter((x) => x.outcome !== o)
-    : [...xs, { outcome: o, task: "", interval: "", intervalUnit: startUnit(null) }]));
+    : [...xs, { outcome: o, task: "", interval: "", intervalUnit: startUnit(null), evidence: null, had: null }]));
   const setExtra = (o, patch) => setExtras((xs) => xs.map((x) => (x.outcome === o ? { ...x, ...patch } : x)));
   // A new outcome or basis expects other models: a linked model goes, a report or a working stays.
   const dropModel = () => setEvidence((e) => (e && LINKED_ONLY.has(e.type) ? e : null));
@@ -111,14 +118,12 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       // A combination: every task as one of outcomes, the decision's own first.
       const first = { outcome };
       for (const k of ["task", "interval", "interval_unit"]) if (decision[k] !== undefined) first[k] = decision[k];
+      if (firstOwn?.type && firstOwn?.id) first.evidence = { type: firstOwn.type, id: firstOwn.id };
       delete decision.outcome;
       delete decision.task;
       delete decision.interval;
       delete decision.interval_unit;
-      decision.outcomes = [first, ...extras.map((x) => (SCHEDULED.includes(x.outcome)
-        ? { outcome: x.outcome, ...(x.task.trim() ? { task: x.task.trim() } : {}), interval: Number(x.interval),
-          interval_unit: x.intervalUnit }
-        : { outcome: x.outcome }))];
+      decision.outcomes = [first, ...extras.map((x) => extraBody(x, expectedOf(x.outcome)))];
     }
     // A report or a working goes with any decision; a model only with one that expects its kind
     // (or the one linked before, left as it was: the check then says why it doesn't fit).
@@ -323,6 +328,20 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
               {check.extraErrors?.[i] && (
                 <p className="field-error decision-interval-error" id={`${id}-x-${x.outcome}-error`}>{check.extraErrors[i]}</p>
               )}
+              <details className="decision-extra-evidence" open={!!x.evidence}>
+                <summary>Evidence for this task (optional){x.evidence ? ": linked" : ""}</summary>
+                <p className="option-hint">
+                  Only when the decision's evidence (step 3) doesn't cover this task: a replacement analysis for a
+                  fixed-interval task, say, beside a degradation model for the inspection.
+                </p>
+                <EvidencePicker
+                  expectedType={expectedOf(x.outcome)}
+                  analysisKind={analysisKindOf(x.outcome)}
+                  value={x.evidence}
+                  onChange={(e) => setExtra(x.outcome, { evidence: e })}
+                  workings={workings}
+                />
+              </details>
             </div>
           ))}
         </div>
@@ -331,6 +350,12 @@ export default function DecisionModal({ options, mode, onSave, onClose, limits =
       {outcome && (outcome !== "rtf" || rtfBasis) && (
         <div className="decision-step">
           <label className="field-label">3. Link the evidence (optional)</label>
+          {extras.some((x) => SCHEDULED.includes(x.outcome)) && (
+            <p className="option-hint">
+              In a combination this evidence counts for every task it fits (a report or function notes fit any). A task
+              it doesn't cover can link its own above; the decision shows as partly evidenced until each task has some.
+            </p>
+          )}
           <EvidencePicker
             expectedType={expectedEvidence}
             analysisKind={analysisKind}

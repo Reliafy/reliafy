@@ -1,7 +1,8 @@
 """A position's FME(C)A as an Excel workbook (``GET /api/maintenance/positions/{id}/fmea.xlsx``).
 
 One sheet, "FMECA", one row per failure mode (a second row per further task,
-as the RCM tab's CSV export writes them), the header frozen. The columns are
+as the RCM tab's CSV export writes them; a combination of tasks one row per
+member, in its order), the header frozen. The columns are
 the RCM export's with the FME(C)A fields after Consequence, named as the
 worksheet import's synonyms, so the file imports again adding nothing. A mode
 directly under a function (no functional failure yet) has a blank Functional
@@ -38,7 +39,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _CONSEQUENCE = {c["id"]: c["label"] for c in rcm_decisions.CONSEQUENCE_OPTIONS}
 _OUTCOME = {o["id"]: o["label"] for o in rcm_decisions.OUTCOME_OPTIONS}
 _STATUS = {"supported": "Supported", "contradicted": "Contradicted", "inconclusive": "Inconclusive",
-           "stale": "Stale link"}
+           "stale": "Stale link", "partly": "Partly evidenced"}
 # Linked, not checked: what's linked says which ("Report linked", "Notes linked": a function's notes and rationale).
 _LINKED = {"report": "Report linked", "working": "Notes linked"}
 _AP = fmea.AP_LABELS
@@ -124,8 +125,18 @@ def rows(worksheet: dict) -> list[list]:
 
         def mode_rows(fn, fail, m) -> None:
             out.append(mode_row(fn, fail, m))
-            for t in ((m.get("decision") or {}).get("tasks") or [])[1:]:
-                out.append(task_row(fn, fail, m, t))
+            d = m.get("decision") or {}
+            members = d.get("outcomes") or []
+            # A combination of tasks: a row per further member, in its order (a redesign
+            # with no task too), so the import builds the same combination; then any
+            # task outside the decision.
+            for o in members[1:]:
+                out.append(task_row(fn, fail, m, {"outcome": o["outcome"], "text": o.get("task") or "",
+                                                  "interval": o.get("interval"), "unit": o.get("interval_unit")}))
+            in_members = {o.get("task_id") for o in members}
+            for t in (d.get("tasks") or [])[1:]:
+                if t.get("id") not in in_members:
+                    out.append(task_row(fn, fail, m, t))
 
         for m in p.get("unassigned") or []:
             mode_rows(None, None, m)

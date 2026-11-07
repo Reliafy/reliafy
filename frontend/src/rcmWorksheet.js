@@ -73,6 +73,8 @@ export const STATUS_LABEL = {
   unevidenced: "Not linked",
   stale: "Stale link",
   linked: "Linked",
+  // A combination of tasks with evidence for some of its tasks, not all.
+  partly: "Partly evidenced",
 };
 // A report or a function's notes and rationale (evidence type "working": they
 // hold the working behind its performance standard): linked, not checked
@@ -129,7 +131,8 @@ export function modeCounts(m) {
     // Linked evidence that doesn't settle it (the wrong kind, a unit mismatch...).
     unsure: s === "inconclusive" ? 1 : 0,
     stale: s === "stale" ? 1 : 0,
-    unlinked: s === "unevidenced" ? 1 : 0,
+    // Nothing linked, or (a combination of tasks) nothing for some of its tasks.
+    unlinked: s === "unevidenced" || s === "partly" ? 1 : 0,
   };
 }
 
@@ -236,6 +239,18 @@ export function memberLine(o) {
   return `${label}: ${[o.task, o.interval != null ? `every ${intervalText(o)}` : null].filter(Boolean).join(" · ")}`;
 }
 
+// A combination's member's evidence as a line (the worksheet's Evidence card):
+// "Fixed-interval: Supported · Bearing replacement (the decision's)", or
+// "Fixed-interval: none linked"; a redesign needs none.
+export function memberEvidenceLine(o) {
+  const label = OUTCOME_LABEL[o.outcome] || o.outcome;
+  if (!o.status) return `${label}: needs no evidence`;
+  if (o.status === "unevidenced") return `${label}: none linked`;
+  const check = o.status === "linked" ? LINKED_LABEL[o.evidence_kind] || STATUS_LABEL.linked : STATUS_LABEL[o.status] || o.status;
+  const what = o.artifact_name ? ` · ${o.artifact_name}` : "";
+  return `${label}: ${check}${what}${o.evidence_from === "decision" ? " (the decision's)" : ""}`;
+}
+
 // A decision as the server takes it back: the fields a decision is made of,
 // without the evidence check the server added. A combination goes back whole
 // (its members, the change applied to the first: the decision's own task), so
@@ -244,8 +259,11 @@ export function decisionBody(d, patch = {}) {
   if (!d) return null;
   if (isCombination(d)) {
     const given = (v) => v !== undefined && v !== null && v !== "";
-    const keep = (o) => Object.fromEntries(["outcome", "task", "interval", "interval_unit"]
-      .filter((k) => given(o[k])).map((k) => [k, o[k]]));
+    // Each member goes back with its own evidence, if any (only {type, id}: the read adds its check).
+    const keep = (o) => ({
+      ...Object.fromEntries(["outcome", "task", "interval", "interval_unit"].filter((k) => given(o[k])).map((k) => [k, o[k]])),
+      ...(o.evidence?.type && o.evidence?.id ? { evidence: { type: o.evidence.type, id: o.evidence.id } } : {}),
+    });
     const first = keep(d.outcomes[0]);
     for (const k of ["task", "interval", "interval_unit"]) {
       if (!(k in patch)) continue;

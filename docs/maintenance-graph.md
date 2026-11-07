@@ -373,6 +373,11 @@ the other way: a round at the pool covers the chlorinator's modes.
   its task has gone), and `scheduled_without_task` counts a combination any
   of whose scheduled tasks has gone. Copying a position copies it.
   `PROJECTION_VERSION` stays: a new event, no existing shape changed.
+  A member may carry its own `evidence` (`{type, id}`, an optional key in the
+  event's payload since Nov 2026; absent, the member is projected exactly as
+  before). The evidence check takes each scheduled member on its own (its
+  evidence, else the decision's where it fits) and gives the whole one status;
+  `partly` when some members have evidence and some don't.
 - Retiring a mode retires its sole tasks and unlinks shared ones; restoring
   it brings its sole tasks back (`tasks_restored`), not the shared links.
   Merging a mode moves every link across. Moving a mode (or a function) takes

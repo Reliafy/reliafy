@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { flatten, levelSet } from "./outlineTree.js";
 import {
   COLUMN, COLUMNS, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
-  insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, decisionText, hasTask, isCombination, memberLine, moreTasks, rowText, tasksOf,
+  insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, decisionText, hasTask, isCombination, memberEvidenceLine, memberLine, modeCounts, moreTasks, rowText, tasksOf,
   tasksTip } from "./rcmWorksheet.js";
 
 // A house pool pump's RCM, as the server sends it back (decisions resolved).
@@ -235,4 +235,18 @@ test("a decision's tasks: its own first, how many more, the tooltip, and an olde
   assert.equal(hasTask({ decision: { outcome: "on_condition" } }), false);
   // The search reaches the other tasks' names too.
   assert.match(rowText({ ref: { text: "Acid", decision: d } }), /replace the acid pump/);
+});
+
+test("a combination's evidence: each member's own goes back with it, and each reads as a line", () => {
+  const withOwn = { ...COMBO, outcomes: [COMBO.outcomes[0], { ...COMBO.outcomes[1], evidence: { type: "strategy_analysis", id: "sa1" }, status: "supported" }] };
+  assert.deepEqual(decisionBody(withOwn).outcomes[1].evidence, { type: "strategy_analysis", id: "sa1" });
+  assert.equal(decisionBody(withOwn).outcomes[0].evidence, undefined);
+  assert.equal(memberEvidenceLine({ outcome: "fixed_interval", status: "supported", artifact_name: "Bearing replacement", evidence_from: "own" }),
+    "Fixed-interval: Supported · Bearing replacement");
+  assert.equal(memberEvidenceLine({ outcome: "on_condition", status: "linked", evidence_kind: "working", artifact_name: "Pump water", evidence_from: "decision" }),
+    "On-condition: Notes linked · Pump water (the decision's)");
+  assert.equal(memberEvidenceLine({ outcome: "fixed_interval", status: "unevidenced" }), "Fixed-interval: none linked");
+  assert.equal(memberEvidenceLine({ outcome: "redesign", status: null }), "Redesign: needs no evidence");
+  // Partly evidenced counts with the decisions that still want evidence.
+  assert.equal(modeCounts({ decision: { ...COMBO, status: "partly" } }).unlinked, 1);
 });

@@ -67,7 +67,7 @@ export function forecastDetail(f) {
 
 const STATUS = {
   supported: "supported", contradicted: "contradicted", inconclusive: "inconclusive",
-  unevidenced: "unevidenced", stale: "stale",
+  unevidenced: "unevidenced", stale: "stale", partly: "partly evidenced",
 };
 
 export function rcmDetail(e) {
