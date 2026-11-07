@@ -165,8 +165,10 @@ test("switching arrangements keeps the same thing picked where it can", () => {
     { id: "shed", name: "Shed", parent_id: "yard", location_id: "site" }, // its parent is elsewhere: a top here too
     { id: "yard", name: "Yard", parent_id: null, location_id: "other" },
     { id: "annex", name: "Annex (sample)", parent_id: null, location_id: "site" }, // first A–Z, but nothing beneath it
+    { id: "pump", name: "Pump", parent_id: "pool" }, // inherits its place from the pool: still counts for the house
   ];
   assert.equal(carryOver(loc.rows.get("site"), "positions", placed), "house");
+  // Without the house, the pool (its parent elsewhere) is a top with the pump beneath it.
   assert.equal(carryOver(loc.rows.get("site"), "positions", placed.filter((p) => p.id !== "house")), "pool");
   assert.equal(carryOver(loc.rows.get("site"), "positions", []), null);
   assert.equal(carryOver(items.rows.get("G:fitted"), "positions"), null);
